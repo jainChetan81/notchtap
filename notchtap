@@ -1,0 +1,64 @@
+#!/bin/sh
+# notchtap — cli push for the notchtap notification engine (spec §12).
+# flags only, no positional form:
+#   notchtap --title <title> --body <body> [--subtitle <s>] [--port <p>]
+# a non-empty --subtitle folds into the posted body as "<subtitle> — <body>";
+# the server never sees a subtitle field. port resolution:
+# --port flag → $NOTCHTAP_PORT → 9789. never reads config.toml.
+# exits non-zero on connection failure or any non-2xx response so relay
+# callers (cmux) surface failures instead of swallowing them.
+
+set -u
+
+usage() {
+  echo "usage: notchtap --title <title> --body <body> [--subtitle <s>] [--port <p>]" >&2
+  exit 2
+}
+
+title=""
+body=""
+subtitle=""
+port="${NOTCHTAP_PORT:-9789}"
+
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --title)
+      [ $# -ge 2 ] || usage
+      title="$2"; shift 2 ;;
+    --body)
+      [ $# -ge 2 ] || usage
+      body="$2"; shift 2 ;;
+    --subtitle)
+      [ $# -ge 2 ] || usage
+      subtitle="$2"; shift 2 ;;
+    --port)
+      [ $# -ge 2 ] || usage
+      port="$2"; shift 2 ;;
+    *)
+      usage ;;
+  esac
+done
+
+[ -n "$title" ] || usage
+[ -n "$body" ] || usage
+
+if [ -n "$subtitle" ]; then
+  body="$subtitle — $body"
+fi
+
+# jq -n --arg gives safe escaping for quotes/newlines in relayed bodies
+payload=$(jq -n --arg title "$title" --arg body "$body" \
+  '{title: $title, body: $body}') || exit 1
+
+status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
+  --max-time 5 \
+  --request POST "http://127.0.0.1:${port}/notify" \
+  --header 'content-type: application/json' \
+  --data "$payload") || exit 1
+
+case "$status" in
+  2*) exit 0 ;;
+  *)
+    echo "notchtap: server answered $status" >&2
+    exit 1 ;;
+esac
