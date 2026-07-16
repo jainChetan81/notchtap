@@ -20,7 +20,7 @@ changelog/audit artifacts from the planning pass, not sources of
 truth — the decisions they describe are already folded into the three
 docs below.
 
-`docs/IMPLEMENTATION_PLAN.md` §6's former open item is resolved
+`docs/IMPLEMENTATION_PLAN.md` §7's former open item is resolved
 (2026-07-16): the dev machine is the mac mini, user `chetanjain`, home
 `/Users/chetanjain`. one prerequisite remains before §1.1: the rust
 toolchain isn't installed on this machine — set it up via rustup first.
@@ -74,7 +74,7 @@ recipes: `dev`, `test-rust`, `test-web`, `test-all`, `build`, `push
 errors.
 
 `cargo test` and `npx vitest run` should both be clean before any phase
-in `docs/IMPLEMENTATION_PLAN.md` is marked done — see that doc's §5 and
+in `docs/IMPLEMENTATION_PLAN.md` is marked done — see that doc's §6 and
 `docs/TESTING_STRATEGY.md` §7. there's no repo-wide coverage percentage
 gate (see `docs/TESTING_STRATEGY.md` §6 for why) — the bar is "every example
 case listed for the phase's components has a passing test," not a

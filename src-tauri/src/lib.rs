@@ -49,7 +49,7 @@ pub fn run() {
     let (mode, inset) = presentation::detect_mode(&config);
     // this info line is load-bearing: the hud fallback is silent by
     // design, so the log is the only tell that detection worked
-    // (manual checklist, IMPLEMENTATION_PLAN.md §5)
+    // (manual checklist, IMPLEMENTATION_PLAN.md §6)
     tracing::info!(?mode, inset, "presentation mode resolved");
 
     let queue = Arc::new(Mutex::new(NotificationQueue::new(

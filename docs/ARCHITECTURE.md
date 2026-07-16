@@ -172,7 +172,7 @@ standard pattern, v1 day one:
   conditional third item; the bar for further tray items stays high.
   no settings ui beyond that — the config file (§10) is the settings
   surface. tauri's default icon is fine until the deferred real-icon
-  item (`IMPLEMENTATION_PLAN.md` §4)
+  item (`IMPLEMENTATION_PLAN.md` §5)
 - **always-on-top** (`setAlwaysOnTop` / `NSWindowLevel.floating`) — v1
 day one. a notification overlay buried under other windows is useless.
 - **transparent overlay window** — the main window is undecorated,
@@ -455,7 +455,7 @@ the phased build sequence and exit criteria.
   recheck against sleep/timer-throttle staleness; `app_handle.exit(1)`
   instead of `process::exit` in the server task; a runtime-thread
   guard before the tray's `blocking_lock`). notch-precise positioning
-  stays deferred (`IMPLEMENTATION_PLAN.md` §4) — it needs the macbook
+  stays deferred (`IMPLEMENTATION_PLAN.md` §5) — it needs the macbook
   physically present.
 - the cmux relay needed no v2 work at all: it was live-verified on the
   mac mini on 2026-07-16 (a real claude code "needs input" alert

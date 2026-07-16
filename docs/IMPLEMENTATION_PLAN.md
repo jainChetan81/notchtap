@@ -13,7 +13,7 @@ behaviour) are already locked — see `ARCHITECTURE.md` in this folder for
 the full rationale. this document is the *execution* plan: what gets
 built, in what order, and how each phase is verified. `TESTING_STRATEGY.md`
 holds the testing approach in full detail (frameworks, tdd scope,
-per-component test plan) — §5 below only summarizes it.
+per-component test plan) — §6 below only summarizes it.
 
 ---
 
@@ -38,7 +38,7 @@ visible, animated notification on both target machines.
 
 ### 1.1 project scaffold
 - prerequisite: install the rust toolchain via rustup (confirmed not
-  present on the mac mini as of 2026-07-16 — see §6)
+  present on the mac mini as of 2026-07-16 — see §7)
 - `npm create tauri-app@latest` — react + typescript template
 - confirm `npm run tauri dev` opens a blank window before writing any
   feature code
@@ -99,7 +99,7 @@ visible, animated notification on both target machines.
   notification on the macbook
 - same build, run on the mac mini, produces a visible hud notification
   (even if not yet notch-precise on the macbook — that's deferred, see
-  §4)
+  §5)
 
 ---
 
@@ -205,7 +205,61 @@ animation table lands before the poller so it's testable with plain
 
 ---
 
-## 4. explicitly deferred polish (not blocking any phase above)
+## 4. v4 — github, ci, expanded test suites
+
+added 2026-07-16. everything here is repo/automation infrastructure —
+it changes no product behaviour. distribution/deployment is
+deliberately **not** part of v4: the install story stays
+`ARCHITECTURE.md` §9 (build locally per machine) until the user
+reopens it.
+
+### 4.1 github hosting
+- push this repo to github (private). the remote is the backup and
+  collaboration surface; the two dev machines keep building locally.
+- secrets hygiene carries over from §3: nothing in the repo history
+  may contain a key or token. `.gitignore` already covers build
+  output and agent worktrees.
+
+### 4.2 ci — github actions
+- one workflow on `macos-latest`, triggered on push + pull request,
+  jobs mirroring the local gates (§6's automated section — ci runs
+  exactly what a dev runs, nothing extra to memorize):
+  - rust: `cargo fmt --check`, `cargo clippy -- -D warnings`,
+    `cargo test` (from `src-tauri/`)
+  - web: `npx tsc --noEmit`, `npx vitest run`, `npx vite build`
+  - swift shim: `swiftc` compile check of `notchtap-detect` (build
+    only — its behaviour is hardware-dependent and stays manual per
+    `TESTING_STRATEGY.md` §5)
+- no live network calls in ci — same rule as the test suite (espn is
+  fixture-tested; wiremock covers the http paths)
+- cache cargo + npm dependencies; keep the workflow under ~10 min
+- clippy/fmt become gates here for the first time — fix what they
+  flag in a dedicated commit before enabling `-D warnings`
+
+### 4.3 expanded test suites
+- raise the automated floor beyond the per-phase example cases:
+  - http integration: exercise every documented status code
+    (200/202/400/413/429/500) against a real axum stack via tower
+    `oneshot` — some already exist; make the set exhaustive
+  - queue/property edge: burst-at-cap, ttl-boundary, pause/resume
+    interleavings currently only covered by the manual checklist rows
+    that *can* be simulated without hardware
+  - frontend: wall-clock deadline sweep timing cases (v2 spec §6.1)
+    beyond the happy path
+- what stays manual stays manual: notch geometry, hud placement,
+  animation look, real cmux/espn end-to-end (`TESTING_STRATEGY.md`
+  §5's reasoning is unchanged by ci)
+
+### 4.4 v4 exit criteria
+- repo on github, default branch protected against force-push
+- ci green on the default branch, running all §4.2 jobs
+- a deliberately broken test pushed to a branch turns ci red (verify
+  the gate actually gates, once)
+- local commands and ci run the same thing — no ci-only scripts
+
+---
+
+## 5. explicitly deferred polish (not blocking any phase above)
 
 - notch-precise window positioning via the native swift shim
   (`NSScreen.auxiliaryTopLeftArea`/`NSScreen.auxiliaryTopRightArea`) — v1 ships
@@ -223,7 +277,7 @@ other windows isn't validating the pipe either.
 
 ---
 
-## 5. verification checklist (run before calling any phase "done")
+## 6. verification checklist (run before calling any phase "done")
 
 full detail in `TESTING_STRATEGY.md`. summary:
 
@@ -262,7 +316,7 @@ full detail in `TESTING_STRATEGY.md`. summary:
 
 ---
 
-## 6. open items — resolved 2026-07-16
+## 7. open items — resolved 2026-07-16
 
 - username / home path confirmed on the dev machine: `chetanjain` /
   `/Users/chetanjain`. the dev machine is the **mac mini** (`Mac16,10`,

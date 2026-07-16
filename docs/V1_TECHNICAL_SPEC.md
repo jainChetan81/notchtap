@@ -345,7 +345,7 @@ that feeds the function above):
   on the macbook would still "pass" v1's visible-notification exit
   criterion in hud mode — this log line is the only thing that makes
   that failure visible (2026-07-16 consensus review). the manual
-  checklist (`IMPLEMENTATION_PLAN.md` §5) verifies it on the macbook.
+  checklist (`IMPLEMENTATION_PLAN.md` §6) verifies it on the macbook.
 
 **build & install** (was left open in an earlier draft of this doc —
 resolved here since it's a prerequisite for `IMPLEMENTATION_PLAN.md`
@@ -681,7 +681,7 @@ calling v1 "done" (`IMPLEMENTATION_PLAN.md` §1.5):
   ui — the underlying queue pause logic is automated in §4.1) | not in `TESTING_STRATEGY.md`
   today — manual-only by the same logic as §4.6 (physical, visual,
   not worth automating for a personal tool); worth folding into
-  `IMPLEMENTATION_PLAN.md` §5's manual checklist alongside the
+  `IMPLEMENTATION_PLAN.md` §6's manual checklist alongside the
   existing notch/hud placement checks |
 
 ---

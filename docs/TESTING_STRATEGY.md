@@ -185,7 +185,7 @@ of "here is a string of stdout" is fair game:
   template on a personal tool. revisit only if v2's per-event-type
   animation table (§4 of `ARCHITECTURE.md`) grows large enough that
   regressions become hard to eyeball.
-- **manual check**: covered by `IMPLEMENTATION_PLAN.md` §5 checklist
+- **manual check**: covered by `IMPLEMENTATION_PLAN.md` §6 checklist
 
 ### 4.7 espn scoreboard poller (v2, rust)
 
@@ -238,7 +238,7 @@ of "here is a string of stdout" is fair game:
 
 ---
 
-## 5. what stays manual, and why (maps to `IMPLEMENTATION_PLAN.md` §5)
+## 5. what stays manual, and why (maps to `IMPLEMENTATION_PLAN.md` §6)
 
 these aren't gaps to close later — they're inherent to what's being
 tested:
@@ -260,7 +260,7 @@ tested:
 resist tracking one repo-wide coverage number — it rewards testing
 trivial getters and framework glue, and this repo has almost none of
 that to begin with. instead, each phase's exit criteria
-(`IMPLEMENTATION_PLAN.md` §5) should require: every example case listed
+(`IMPLEMENTATION_PLAN.md` §6) should require: every example case listed
 in §4 above for that phase's components has a passing test before the
 phase is called done.
 
@@ -269,4 +269,4 @@ phase is called done.
 - `cargo test` (from `src-tauri/`) — all rust unit + integration tests
 - `npx vitest run` (from repo root) — all frontend unit tests
 - both should run clean before any phase in `IMPLEMENTATION_PLAN.md` is
-  marked complete — this is now also reflected in that doc's §5
+  marked complete — this is now also reflected in that doc's §6
