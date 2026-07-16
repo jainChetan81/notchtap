@@ -205,7 +205,14 @@ animation table lands before the poller so it's testable with plain
 
 ---
 
-## 4. v4 — github, ci, expanded test suites
+## 4. v4 — github, ci, expanded test suites — ✅ done 2026-07-16
+
+all four exit criteria in §4.4 verified 2026-07-16: repo live at
+`github.com/jainChetan81/notchtap` with force-push/deletion protection
+on `master`; ci green on the default branch (rust 63, web 11, swift
+compile — run 29502443487); a deliberately broken test on a pr branch
+turned ci red (run 29503004557, pr #1, closed unmerged); ci jobs are
+the same commands a dev runs locally.
 
 added 2026-07-16. everything here is repo/automation infrastructure —
 it changes no product behaviour. distribution/deployment is
