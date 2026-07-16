@@ -166,7 +166,13 @@ of "here is a string of stdout" is fair game:
 - **example cases**:
   - receiving a tauri event adds an item to visible state
   - item past ttl removes itself from visible state
-  - 4th concurrent item does not render until a slot frees
+  - the frontend renders every `notification-promoted` event it
+    receives without enforcing any cap itself — cap and promotion
+    authority live rust-side (spec §8's queue-authority resolution); a
+    4th visible item can only appear because rust promoted it. (an
+    earlier draft of this case read "4th concurrent item does not
+    render until a slot frees" — that predates the queue-authority
+    resolution and described a frontend-side cap that must not exist.)
 
 ### 4.6 animation rendering (css/react)
 

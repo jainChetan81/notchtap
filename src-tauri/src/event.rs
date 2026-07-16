@@ -56,6 +56,21 @@ pub fn dispatch(event: Event) -> Result<(), EventError> {
     }
 }
 
+/// The single emit path (spec §4's emit rule): one `notification-promoted`
+/// event per promoted item, wherever the promotion happened (enqueue
+/// fast-path, heartbeat tick, or resume). Emit failure is logged, never
+/// propagated — by this point the item is already promoted, so failing the
+/// caller would report a notification as lost when it may still display.
+pub fn emit_promoted<R: tauri::Runtime>(app: &tauri::AppHandle<R>, promoted: Vec<Event>) {
+    use tauri::Emitter;
+    for event in promoted {
+        let payload = NotificationPayload::from(&event);
+        if let Err(e) = app.emit("notification-promoted", &payload) {
+            tracing::error!("failed to emit notification-promoted: {e}");
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

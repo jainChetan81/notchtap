@@ -13,11 +13,11 @@ use std::time::{Duration, Instant};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::webview::PageLoadEvent;
-use tauri::{ActivationPolicy, Emitter, Manager};
+use tauri::{ActivationPolicy, Manager};
 use tokio::sync::Mutex;
 
 use crate::config::Config;
-use crate::event::NotificationPayload;
+use crate::event::emit_promoted;
 use crate::queue::NotificationQueue;
 
 // tracing-appender flushes through this guard; it must live as long as
@@ -183,11 +183,3 @@ fn spawn_heartbeat(app: tauri::AppHandle, queue: Arc<Mutex<NotificationQueue>>) 
     });
 }
 
-fn emit_promoted(app: &tauri::AppHandle, promoted: Vec<crate::event::Event>) {
-    for event in promoted {
-        let payload = NotificationPayload::from(&event);
-        if let Err(e) = app.emit("notification-promoted", &payload) {
-            tracing::error!("failed to emit notification-promoted: {e}");
-        }
-    }
-}

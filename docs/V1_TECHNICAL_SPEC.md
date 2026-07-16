@@ -248,12 +248,13 @@ constructs `EventType::Generic` itself and has no way to receive an
 impl NotificationQueue {
     pub fn new(max_concurrent: usize, max_queued: usize) -> Self;
 
-    /// enqueues; promotes to `visible` immediately if there's a free
-    /// slot and the queue is not paused (setting `promoted_at =
-    /// Some(now)`), otherwise appends to `waiting` with `promoted_at =
-    /// None`. while paused it always appends to `waiting`, even with a
-    /// free visible slot. errors if `waiting` is already at
-    /// `max_queued` — paused or not.
+    /// enqueues; promotes to `visible` immediately only if there's a
+    /// free slot, the queue is not paused, *and* `waiting` is empty —
+    /// a new push must never jump ahead of older waiting items (fifo).
+    /// otherwise appends to `waiting` with `promoted_at = None`.
+    /// while paused it always appends to `waiting`, even with a free
+    /// visible slot. errors if `waiting` is already at `max_queued` —
+    /// paused or not.
     pub fn enqueue(&mut self, event: Event) -> Result<(), QueueError>;
 
     /// called from the 250ms heartbeat (see below): removes any
@@ -468,11 +469,18 @@ this doc — that's fixed here.
     "$schema": "../gen/schemas/desktop-schema.json",
     "identifier": "default",
     "windows": ["main"],
-    "permissions": ["core:event:default"]
+    "permissions": ["core:event:allow-listen", "core:event:allow-unlisten"]
   }
   ```
   no `core:path:*`, `core:fs:*`, `shell:*`, or `http:*` permissions —
-  the frontend never invokes back into rust in v1. one check at
+  the frontend never invokes back into rust in v1. listen/unlisten
+  only, not `core:event:default` (which would also grant emit to a
+  receive-only frontend).
+- `tauri.conf.json` sets a csp with `connect-src` limited to tauri's
+  ipc endpoints (`ipc: http://ipc.localhost`), so the webview cannot
+  `fetch()` `/notify` or any other network target (`ARCHITECTURE.md`
+  §14). the dev csp additionally allows vite's hmr websocket and
+  injected styles. one check at
   scaffold time: confirm `core:event:default` actually grants the
   frontend `listen` operation under the tauri version the scaffold
   resolves — don't assume the permission name is sufficient

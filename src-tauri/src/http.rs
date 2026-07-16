@@ -9,12 +9,11 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
-use tauri::Emitter;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::error::{EventError, QueueError};
-use crate::event::{dispatch, Event, EventPayload, EventType, NotificationPayload, Priority};
+use crate::event::{dispatch, emit_promoted, Event, EventPayload, EventType, Priority};
 use crate::queue::NotificationQueue;
 
 // generic over the tauri runtime so tests can use tauri::test::mock_app()
@@ -94,13 +93,7 @@ async fn notify_handler<R: tauri::Runtime>(
         (queue.take_promoted(), queue.is_paused(), queue.waiting().len())
     };
 
-    for event in promoted {
-        let payload = NotificationPayload::from(&event);
-        state
-            .app_handle
-            .emit("notification-promoted", &payload)
-            .map_err(|e| HttpError::Internal(anyhow::anyhow!("emit failed: {}", e)))?;
-    }
+    emit_promoted(&state.app_handle, promoted);
 
     let response = if paused {
         (
@@ -119,7 +112,6 @@ enum HttpError {
     BadRequest(&'static str),
     Event(EventError),
     Queue(QueueError),
-    Internal(anyhow::Error),
 }
 
 impl IntoResponse for HttpError {
@@ -129,10 +121,6 @@ impl IntoResponse for HttpError {
             HttpError::Event(e) => (StatusCode::BAD_REQUEST, e.to_string()),
             HttpError::Queue(QueueError::QueueFull) => {
                 (StatusCode::TOO_MANY_REQUESTS, "queue is full".to_string())
-            }
-            HttpError::Internal(e) => {
-                tracing::error!("internal error: {}", e);
-                (StatusCode::INTERNAL_SERVER_ERROR, "internal error".to_string())
             }
         };
         Response::builder()
@@ -245,6 +233,20 @@ mod tests {
         // max_concurrent 0 and max_queued 0: nothing can be promoted and
         // nothing can wait, so the very first enqueue is rejected.
         let app = router(test_state(NotificationQueue::new(0, 0)));
+        let response = app
+            .oneshot(json_request(r#"{"title":"t","body":"b"}"#))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+    }
+
+    #[tokio::test]
+    async fn full_queue_returns_429_while_paused() {
+        // TESTING_STRATEGY.md §4.3: "still 429 when full while paused" —
+        // pause buffers, it never lifts the max_queued cap.
+        let mut queue = NotificationQueue::new(0, 0);
+        queue.pause();
+        let app = router(test_state(queue));
         let response = app
             .oneshot(json_request(r#"{"title":"t","body":"b"}"#))
             .await

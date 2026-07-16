@@ -166,6 +166,13 @@ standard pattern, v1 day one:
   item (`IMPLEMENTATION_PLAN.md` §4)
 - **always-on-top** (`setAlwaysOnTop` / `NSWindowLevel.floating`) — v1
 day one. a notification overlay buried under other windows is useless.
+- **transparent overlay window** — the main window is undecorated,
+transparent, shadowless, non-resizable, and never takes focus. on macos
+a transparent tauri webview requires `macOSPrivateApi: true` in
+`tauri.conf.json`; that private-api use is the accepted cost of the
+overlay look (added 2026-07-16, post-implementation review — it was in
+the code but undocumented). app-store distribution is already ruled out
+by §9, so the private-api restriction has no practical bite.
 
 **minimum macos version**: v1 targets **macos 13 (ventura)** and later.
 `SMAppService.mainApp.register()` is unavailable on macos 12 (monterey)
@@ -394,8 +401,15 @@ it's first-party. the rust core treats it as a display-only consumer:
 
 - frontend **receives** events via tauri `emit` / `listen`
 - frontend **does not invoke** commands back into rust in v1
-- the tauri capabilities file should reflect this: one event permission,
-  no filesystem, no shell, no network from the frontend
+- the tauri capabilities file should reflect this: listen-only event
+  permissions (`core:event:allow-listen`/`allow-unlisten`, not the
+  `core:event:default` set, which would also grant emit), no
+  filesystem, no shell, no network from the frontend
+- the webview csp restricts `connect-src` to tauri's ipc endpoints
+  only — the frontend cannot `fetch()` the local `/notify` endpoint
+  (or anything else). a `csp: null` config would leave that network
+  path open even with locked-down capabilities (added 2026-07-16,
+  post-implementation review)
 
 this boundary matters if the app ever processes untrusted content (e.g.,
 whatsapp messages from unknown senders in v3). establishing the
