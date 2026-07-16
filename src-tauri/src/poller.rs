@@ -491,9 +491,36 @@ async fn fetch_league(client: &reqwest::Client, league: &str) -> anyhow::Result<
     Ok(body)
 }
 
+/// Enqueues each event and offers the accepted ones to every connector —
+/// the poller-side twin of `http.rs`'s acceptance fan-out (plan §3:
+/// "every accepted event goes to every enabled connector, always").
+/// Returns the promotions to emit. An earlier draft fanned out only from
+/// the http handler, silently excluding score events from outbound
+/// (caught in the 2026-07-16 v3 review).
+pub(crate) fn enqueue_and_fan_out(
+    queue: &mut NotificationQueue,
+    connectors: &[crate::notifier::ConnectorHandle],
+    events: Vec<Event>,
+    context: &str,
+) -> Vec<Event> {
+    for event in events {
+        let accepted = event.clone();
+        match queue.enqueue(event) {
+            Ok(()) => {
+                for connector in connectors {
+                    connector.offer(&accepted);
+                }
+            }
+            Err(e) => tracing::warn!(context, "espn event dropped: {e}"),
+        }
+    }
+    queue.take_promoted()
+}
+
 pub fn spawn_espn_poller(
     app: tauri::AppHandle,
     queue: Arc<Mutex<NotificationQueue>>,
+    connectors: Arc<Vec<crate::notifier::ConnectorHandle>>,
     leagues: Vec<String>,
     poll_secs: u64,
     ttl_secs: u64,
@@ -554,12 +581,7 @@ pub fn spawn_espn_poller(
 
                 let promoted = {
                     let mut q = queue.lock().await;
-                    for event in events {
-                        if let Err(e) = q.enqueue(event) {
-                            tracing::warn!(league, "espn event dropped: {e}");
-                        }
-                    }
-                    q.take_promoted()
+                    enqueue_and_fan_out(&mut q, &connectors, events, league)
                 };
                 emit_promoted(&app, promoted);
             }
@@ -570,9 +592,46 @@ pub fn spawn_espn_poller(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::event::{EventPayload, EventType, Priority};
+    use crate::notifier::ConnectorHandle;
 
     const USA: &str = include_str!("../tests/fixtures/scoreboard-usa.1.json");
     const UCL: &str = include_str!("../tests/fixtures/scoreboard-uefa.champions.json");
+
+    fn score_event(title: &str) -> Event {
+        Event {
+            id: uuid::Uuid::new_v4(),
+            event_type: EventType::ScoreUpdate,
+            priority: Priority::Normal,
+            ttl_secs: 8,
+            payload: EventPayload {
+                title: title.to_string(),
+                body: "body".to_string(),
+            },
+        }
+    }
+
+    #[test]
+    fn poller_accepted_events_fan_out_and_rejected_do_not() {
+        // regression for the 2026-07-16 v3 review finding: score events
+        // must reach connectors the same as http pushes (plan §3). one
+        // visible slot, no waiting room: first accepted, second rejected.
+        let (tx, mut rx) = tokio::sync::mpsc::channel(8);
+        let connector = ConnectorHandle::new("test", tx);
+        let mut q = NotificationQueue::new(1, 0);
+
+        let promoted = enqueue_and_fan_out(
+            &mut q,
+            &[connector],
+            vec![score_event("accepted"), score_event("rejected")],
+            "test.league",
+        );
+
+        assert_eq!(promoted.len(), 1);
+        let fanned = rx.try_recv().expect("accepted score event must fan out");
+        assert_eq!(fanned.payload.title, "accepted");
+        assert!(rx.try_recv().is_err(), "rejected event must not fan out");
+    }
 
     fn baseline(fixture: &str) -> (Snapshot, Scoreboard) {
         let sb = parse_scoreboard(fixture).unwrap();

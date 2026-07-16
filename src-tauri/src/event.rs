@@ -12,6 +12,18 @@ pub struct Event {
     pub payload: EventPayload,
 }
 
+/// Event type on the `/notify` wire, snake_case per the v1 spec §7.
+/// Unknown types are rejected at deserialization — never silently
+/// coerced to [`EventType::Generic`]:
+///
+/// ```
+/// use notchtap_lib::event::EventType;
+///
+/// let t: EventType = serde_json::from_str(r#""score_update""#).unwrap();
+/// assert!(matches!(t, EventType::ScoreUpdate));
+///
+/// assert!(serde_json::from_str::<EventType>(r#""posture_alert""#).is_err());
+/// ```
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EventType {
@@ -32,6 +44,25 @@ pub struct EventPayload {
     pub body: String,
 }
 
+/// The `notification-promoted` payload the frontend receives — camelCase
+/// on the wire (the frontend's `NotificationPayload` type mirrors this
+/// shape, v2 spec §5):
+///
+/// ```
+/// use notchtap_lib::event::{Event, EventPayload, EventType, NotificationPayload, Priority};
+///
+/// let event = Event {
+///     id: uuid::Uuid::new_v4(),
+///     event_type: EventType::ScoreUpdate,
+///     priority: Priority::Normal,
+///     ttl_secs: 8,
+///     payload: EventPayload { title: "GOAL".into(), body: "1-0".into() },
+/// };
+///
+/// let json = serde_json::to_value(NotificationPayload::from(&event)).unwrap();
+/// assert_eq!(json["ttlSecs"], 8);              // camelCase, not ttl_secs
+/// assert_eq!(json["eventType"], "score_update"); // value stays snake_case
+/// ```
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct NotificationPayload {

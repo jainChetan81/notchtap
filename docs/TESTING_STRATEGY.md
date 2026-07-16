@@ -2,10 +2,38 @@
 
 companion to `ARCHITECTURE.md` (decisions) and `IMPLEMENTATION_PLAN.md`
 (build sequence). this doc answers: what gets an automated test, what
-doesn't, which framework, and in what order tests get written.
+doesn't, which framework, in what order tests get written — and, since
+the 2026-07-16 merge, what is already done vs what is left. it absorbed
+`DEEP_TESTING_PLAN.md` (now deleted) as §9; this is the only testing
+doc.
 
-no test suite exists yet — this is the strategy claude code should
-implement against once §1.1 of `IMPLEMENTATION_PLAN.md` is scaffolded.
+---
+
+## 0. status at a glance (2026-07-16) — done vs left
+
+**done — built, green, ci-gated** (counts live here and only here;
+other sections point back rather than repeating them):
+
+| suite | size | where |
+|---|---|---|
+| rust unit/integration | 88 tests — queue 16, poller 18, http 15, presentation 7, event 7, config 6, notifier 19 | `cargo test` from `src-tauri/` |
+| rust doc-tests | 4 — public `queue`/`event` apis | same `cargo test` run |
+| frontend | 11 tests — lifecycle, sweep, queue-authority contract | `npx vitest run` |
+| ci (v4) | fmt, clippy `-D warnings`, cargo test, tsc, vitest, vite build, swiftc compile check | every push + pr |
+
+every example case listed in §4 for v1/v2/v3 components has a passing
+test; the v4 §4.3 expansion (exhaustive status codes, queue edge
+interleavings, sweep timing) is in, and the v3 notifier suite (§4.9 —
+telegram) landed 2026-07-16.
+
+**left — each is a decision with an owner section, not a gap:**
+
+| item | status | where |
+|---|---|---|
+| deep testing work order (proptest invariants, http burst, poller fuzz, frontend timing fuzz) | **parked 2026-07-16** — un-park triggers in §8 | §9 (the full, implementation-ready plan) |
+| ~~outbound connector tests~~ | **landed with v3 (telegram)** 2026-07-16 | §4.9 |
+| `test-cli.sh` for the `notchtap` script | only if the script grows | §8 |
+| manual hardware checklist | recurring per change — never "done" | §5, `IMPLEMENTATION_PLAN.md` §6 |
 
 ---
 
@@ -39,6 +67,8 @@ pays off.
 | rust http layer | `axum` + `tower`'s `ServiceExt::oneshot` (dev-dependency: `tower = { features = ["util"] }`) | lets the `/notify` route be tested in-process — no real socket bind, no port cleanup, no flaky "address in use" failures. this is also why axum is the pick over `tiny_http`: `IMPLEMENTATION_PLAN.md` §1.2 didn't pin an http crate — closing that gap here, in favour of axum specifically for this testability property |
 | rust external http mocking (v2 espn poller) | none — dropped 2026-07-16 (was `wiremock`) | the poller design (v2 spec §3) keeps the fetch loop thin and untested; parsing, delta logic, and backoff are pure functions tested directly against captured fixture files, so nothing needs an http mock |
 | frontend unit/component | `vitest` + `@testing-library/react` | vitest is free — the tauri react template already runs on vite, so it shares config and is fast; testing-library tests behaviour (what's rendered) not implementation details |
+| rust doc-tests | built-in (`cargo test` runs them) | added 2026-07-16 — the public `queue`/`event` apis carry runnable examples that double as documentation. these are *not* the coverage layer (the `#[cfg(test)]` modules are); a doc-test exists to keep the documented usage honest, so keep them few and lifecycle-shaped, not exhaustive |
+| deep testing, when un-parked (§9) | `proptest` (rust), `fast-check` (web, droppable) | dev-dependencies only; see §9 for the full rationale per section |
 
 ---
 
@@ -69,7 +99,11 @@ tdd is **not** worth it, and shouldn't be forced, for:
 
 ## 4. component-by-component test plan
 
-### 4.1 notification queue (rust)
+each subsection notes its status; "done" means every example case
+listed has a passing test (the §6 bar), not that the component is
+frozen.
+
+### 4.1 notification queue (rust) — ✅ done
 
 - **type**: unit, tdd
 - **coverage target**: every state transition (~100% branch coverage —
@@ -94,8 +128,12 @@ tdd is **not** worth it, and shouldn't be forced, for:
     fifo into the free slots
   - `max_queued` enforced identically while paused (51st waiting item
     rejected)
+  - (v4 expansion) burst-at-cap fifo/ttl accounting, exact expiry
+    boundary (`>=` semantics), pause/resume interleavings with
+    exactly-once promotion, resume promotes only up to cap
+- property-based invariants on top of these: §9.1, parked
 
-### 4.2 event bus / dispatch router (rust)
+### 4.2 event bus / dispatch router (rust) — ✅ done
 
 - **type**: unit, tdd
 - **coverage target**: ~100% — every event type + malformed-input path
@@ -105,10 +143,11 @@ tdd is **not** worth it, and shouldn't be forced, for:
   - missing required field (`title` or `body`) → rejected with a
     specific error, not a panic
 
-### 4.3 `/notify` http handler (rust)
+### 4.3 `/notify` http handler (rust) — ✅ done
 
 - **type**: integration, tdd, via `tower::ServiceExt::oneshot`
 - **coverage target**: every response code path
+  (200/202/400/413/429 + method-not-allowed all asserted)
 - **example cases**:
   - valid POST body → 200 with `{"status": "accepted"}`, event
     forwarded to bus
@@ -123,13 +162,14 @@ tdd is **not** worth it, and shouldn't be forced, for:
   - queue paused → `202` with `{"status": "paused", "queued": <n>}`,
     event buffered into `waiting`, not dropped — and still `429` when
     full while paused
+- burst accounting and exact 413/ttl boundaries: §9.2, parked
 
-### 4.4 notch/hud mode decision (rust or ts, wherever the check lands)
+### 4.4 notch/hud mode decision (rust, `presentation.rs`) — ✅ done
 
 - **type**: unit, tdd
 - **coverage target**: 100% — cheap, and it's the one native-adjacent
   decision that's actually testable
-- **example cases**: isolate this as a pure function —
+- **example cases**: isolated as a pure function —
   `fn presentation_mode(safe_area_top_inset: f64) -> Mode` — so the
   test can pass in `0.0` (mac mini → hud) and a positive value
   (macbook → notch) without touching `NSScreen` at all. the actual
@@ -157,7 +197,7 @@ of "here is a string of stdout" is fair game:
     most likely real-world failure (a fresh macos install, or the shim
     not yet built) and the one most worth a dedicated test
 
-### 4.5 frontend visible-notification render state (react/ts)
+### 4.5 frontend visible-notification render state (react/ts) — ✅ done
 
 - **type**: unit (vitest), tdd
 - **coverage target**: every transition in the enter → hold → exit
@@ -168,7 +208,8 @@ of "here is a string of stdout" is fair game:
   - item past ttl removes itself from visible state
   - (v2 hardening) an item whose wall-clock deadline has passed is
     removed by the 1s sweep even if its setTimeout timers never fired —
-    simulates system sleep / webview timer throttling (v2 spec §6.1)
+    simulates system sleep / webview timer throttling (v2 spec §6.1);
+    multi-item and not-yet-due sweep cases included (v4 expansion)
   - the frontend renders every `notification-promoted` event it
     receives without enforcing any cap itself — cap and promotion
     authority live rust-side (spec §8's queue-authority resolution); a
@@ -176,24 +217,32 @@ of "here is a string of stdout" is fair game:
     earlier draft of this case read "4th concurrent item does not
     render until a slot frees" — that predates the queue-authority
     resolution and described a frontend-side cap that must not exist.)
+- generated emit/clock-jump schedules: §9.4, parked
 
-### 4.6 animation rendering (css/react)
+### 4.6 animation rendering (css/react) — manual by design
 
-- **type**: manual only, v1
+- **type**: manual only
 - **why no automated visual regression**: the tooling cost (screenshot
   diffing, baseline management) isn't justified for a single generic
   template on a personal tool. revisit only if v2's per-event-type
   animation table (§4 of `ARCHITECTURE.md`) grows large enough that
   regressions become hard to eyeball.
+- **revisit trigger evaluated 2026-07-16**: v2's animation table landed
+  (three event types: `generic`, `score_update`, `match_state`). three
+  keyframe sets are still trivially eyeball-able, so the decision
+  stands. re-evaluate if the table reaches ~6+ types or per-type
+  styling starts regressing during unrelated css edits.
 - **manual check**: covered by `IMPLEMENTATION_PLAN.md` §6 checklist
 
-### 4.7 espn scoreboard poller (v2, rust)
+### 4.7 espn scoreboard poller (v2, rust) — ✅ done
 
-- **type**: unit. `wiremock` fixtures cover the fetch layer; all delta
-  logic lives in a pure `diff_scoreboard(prev, fetched)` function
-  tested with no mocking at all (v2 spec §3). not tdd-first (external
-  api shape needs to be observed before tests can assert against it),
-  write tests once the real response shape is confirmed
+- **type**: unit. the fetch loop stays thin and untested (§5.1);
+  parsing and all delta logic live in pure functions
+  (`parse_scoreboard`, `diff_scoreboard(prev, fetched)`) tested
+  directly against captured fixture files — no http mocking (wiremock
+  dropped 2026-07-16, see §2). not tdd-first (the external api shape
+  was observed before tests asserted against it, per
+  `IMPLEMENTATION_PLAN.md` §2.1)
 - **example cases**:
   - well-formed scoreboard response → normalized `score-update` event
   - score delta against the snapshot → one `ScoreUpdate` per changed
@@ -210,8 +259,9 @@ of "here is a string of stdout" is fair game:
   - http timeout / 5xx from espn → per-league backoff, no event
     emitted, no crash; the other leagues keep polling
   - never call the live espn endpoint from a test — fixtures only
+- parse fuzz beyond hand-picked malformed fixtures: §9.3, parked
 
-### 4.8 cmux relay ingestion (v2)
+### 4.8 cmux relay ingestion (v2) — manual by design, live-verified
 
 - **type**: manual (revised 2026-07-16 — this section originally
   planned rust unit tests for env-var parsing, written before the cli
@@ -229,12 +279,36 @@ of "here is a string of stdout" is fair game:
   - end-to-end: live-verified 2026-07-16 on the mac mini (real claude
     code "needs input" alert surfaced through the overlay)
 
-### 4.9 whatsapp/twilio outbound (v3)
+### 4.9 outbound connectors (v3 — telegram; whatsapp/twilio demoted)
 
-- **type**: unit, mocked http client only
-- **rule**: no test ever sends a real whatsapp message or makes a real
-  twilio api call. mock the http client boundary; assert on the
-  request that *would* have been sent.
+(rewritten 2026-07-16 when v3 locked telegram-first — see
+`IMPLEMENTATION_PLAN.md` §3; the old whatsapp/twilio framing predated
+that decision. the no-live-calls rule is unchanged and applies to any
+future connector too.)
+
+- **type**: unit (pure fns, tdd) + `wiremock` integration (send path)
+  + http-layer fan-out cases in §4.3's suite
+- **rule**: no test ever sends a real telegram message. wiremock only.
+- **pure, tdd'd first**:
+  - `format_message` per event type + a nasty-characters escaping case
+    (`<b>`, `&`, underscores, backticks in the body)
+  - `escape_html` ampersand-first (no double-escaping)
+  - `on_send_failure` — every arm: first transient → retry, first 400 →
+    plain resend, fatal → drop, any second failure → drop
+  - `ConnectorHandle::offer` — drop-on-full, never blocks
+  - secrets loader against temp files (never `$HOME`): valid `0600`
+    loads; missing file, non-`0600` perms, malformed toml each yield
+    their specific `SecretsError` variant
+  - config gate: `[connectors.telegram] enabled` parses, defaults to
+    `false`
+- **wiremock (send path)**:
+  - 200 → exactly one request, html `parse_mode` present
+  - 400 → exactly one plain-text resend, `parse_mode` absent
+  - 5xx → exactly one retry, then drop
+  - 401 (fatal) → no retry at all
+- **http fan-out (in §4.3's suite)**: accepted push lands in a test
+  connector channel; 429-rejected push does not; paused `202` push
+  **does** (acceptance succeeded — v3 spec §1)
 
 ---
 
@@ -253,6 +327,34 @@ tested:
   without also faking cmux itself, which would test the fake, not the
   integration
 
+### 5.1 modules with no test module, and why (recorded 2026-07-16)
+
+silence is ambiguous — this list makes "untested by design" explicit
+per module, so a missing `#[cfg(test)]` block is never mistaken for an
+oversight:
+
+- **`lib.rs`** — tauri wiring (window, tray construction, heartbeat
+  spawn, page-load gate). thin orchestration of native apis; §3's
+  "don't test thin wrappers" rule. the logic it calls (queue, emit
+  rule) is tested where it lives.
+- **`logging.rs`** — file-appender setup and rotation glue. filesystem
+  side effects, no decision logic worth asserting.
+- **`login_item.rs`** — `SMAppService` registration shim. only
+  observable against a real macos session; manual checklist territory.
+- **`error.rs`** — `thiserror` declarations only; the variants are
+  asserted where they're produced (queue, event, http tests).
+- **`poller.rs` fetch loop** (`fetch_league` + the spawn loop) —
+  deliberately thin per v2 spec §3; everything downstream of "here is
+  a response body string" (parse, diff, backoff decisions) is the
+  tested surface.
+- **`presentation.rs` subprocess spawn** — the `std::process::Command`
+  call to `notchtap-detect`; §4.4 already covers why only the parse +
+  fallback paths downstream of it are tested.
+
+if a module on this list grows a real decision (a branch someone could
+get wrong), it comes off the list and gets a test module in the same
+change.
+
 ---
 
 ## 6. no global coverage percentage gate
@@ -264,9 +366,248 @@ that to begin with. instead, each phase's exit criteria
 in §4 above for that phase's components has a passing test before the
 phase is called done.
 
-## 7. running the suite (once scaffolded)
+## 7. running the suite
 
-- `cargo test` (from `src-tauri/`) — all rust unit + integration tests
+- `cargo test` (from `src-tauri/`) — all rust unit + integration tests,
+  including the doc-tests on the public `queue`/`event` apis
 - `npx vitest run` (from repo root) — all frontend unit tests
 - both should run clean before any phase in `IMPLEMENTATION_PLAN.md` is
   marked complete — this is now also reflected in that doc's §6
+- ci (v4) runs the same two commands plus `cargo fmt --check`,
+  `cargo clippy -- -D warnings`, `npx tsc --noEmit`, `npx vite build`,
+  and a `swiftc` compile check — nothing ci-only
+
+---
+
+## 8. planned / deliberately-not-yet (as of 2026-07-16)
+
+tracked here so "not done" is a decision with a trigger, not a gap:
+
+- **deep testing (§9)** — the one genuine rigor upgrade available; the
+  full implementation-ready work order is §9 below. reviewed and
+  **parked 2026-07-16**: the example-based suite covers every listed
+  transition and the extra rigor wasn't judged worth the work yet.
+  **trigger to un-park**: first queue regression the example cases
+  miss, the next queue-semantics change (e.g. a priority lane), or the
+  user asking for it. when picked up, §9 is the work order — don't
+  re-plan.
+- ~~**v3 connector tests**~~ — landed with v3 (telegram, not
+  twilio/whatsapp — that demotion is in `IMPLEMENTATION_PLAN.md` §3);
+  see §4.9. the no-live-calls rule held: wiremock only.
+- **`test-cli.sh` for the `notchtap` script** — v2 spec §8, add only if
+  the script grows beyond flag-parsing + one curl.
+- **visual regression for animations** — §4.6's trigger, re-evaluated
+  and declined 2026-07-16; see there.
+
+---
+
+## 9. deep testing work order — parked, implementation-ready
+
+**status: parked 2026-07-16 — reviewed and accepted, deliberately not
+scheduled.** nothing in this section is implemented. un-park triggers
+are in §8. when picked up, follow §9.6's build order and review gates
+as written. (formerly the standalone `DEEP_TESTING_PLAN.md`, merged
+here 2026-07-16 so the testing story lives in one document.)
+
+like `V1_TECHNICAL_SPEC.md`, this section is not locked: adjust freely
+as implementation surfaces friction; fold any *decision* changes back
+into §1–§8.
+
+### 9.0 what "deep" means here, and what it doesn't
+
+the existing suite is example-based: every listed transition has a
+hand-written case. deep testing adds *machine-generated adversaries* —
+random operation interleavings and malformed inputs — checked against
+*invariants* (properties that must hold after every step, no matter the
+sequence). it finds the interleavings nobody thought to write.
+
+explicitly **not** in this section (unchanged from §5):
+
+- notch geometry, hud placement, animation look — physical/manual
+- live espn or twilio calls — fixtures and mocks only, in ci and locally
+- visual regression — §4.6's trigger was re-evaluated and declined
+- coverage percentage gates — still banned (§6's reasoning stands)
+
+### 9.1 queue property tests (rust, `proptest`) — the core
+
+**file**: `src-tauri/src/queue.rs`, new `#[cfg(test)] mod proptests`
+alongside the existing example-based `mod tests` (same module so it can
+keep using `expire_visible_for_test`).
+
+**dependency**: `proptest = "1"` under `[dev-dependencies]` in
+`src-tauri/Cargo.toml`. dev-only — no shipped-binary impact.
+
+**the operation model** — drive a `NotificationQueue` with a generated
+script of operations against a simulated clock (a `start: Instant` plus
+an accumulated `Duration` — never real sleeps):
+
+```rust
+enum Op {
+    Enqueue { ttl_secs: u64 },   // ttl in 1..=10
+    Pause,
+    Resume,
+    Advance { ms: u64 },          // 0..=3000, clock moves, no tick
+    Tick,                         // expire_and_promote(simulated now)
+}
+```
+
+generator shape: `vec(any_op(), 0..120)` operations, with queue
+parameters themselves generated per case: `max_concurrent in 1..=5`,
+`max_queued in 1..=10`. small bounds on purpose — proptest shrinks
+failures toward minimal scripts, and small state spaces shrink better.
+
+each `Enqueue` carries a fresh uuid; the harness records, per op, what
+the queue accepted vs rejected, and drains `take_promoted()` after
+*every* op (not just ticks — the enqueue fast-path promotes too).
+
+**the invariants (checked after every single op)**:
+
+- **I1 — cap**: `visible().len() <= max_concurrent`, always.
+- **I2 — bound**: `waiting().len() <= max_queued`, always.
+- **I3 — exactly-once promotion**: no event id ever appears in the
+  drained `take_promoted` stream twice. at script end, run the drain
+  protocol (resume + advance past max ttl + tick, repeated until
+  empty); then every *accepted* id has appeared exactly once, every
+  *rejected* id never.
+- **I4 — fifo**: the concatenated promotion stream is exactly the
+  accepted-enqueue order (promotion never reorders; it's a prefix
+  relation at every step and equality at drain-end).
+- **I5 — paused ticks are silent**: a `Tick` executed while paused
+  yields an empty `take_promoted` drain.
+- **I6 — rejection leaves state untouched**: on `QueueError::QueueFull`,
+  `visible`/`waiting` lengths and contents (by id) are identical before
+  and after the failed call.
+- **I7 — no premature expiry**: an item never leaves `visible` before
+  its ttl has elapsed on the simulated clock (cross-check the removal
+  against `promoted_at + ttl <= now`).
+
+I3 and I4 are the ones example-based tests can't honestly claim — they
+quantify over *all* interleavings of pause/resume/expiry windows,
+including the freed-slot-between-ticks window the fast-path guards
+against (`queue.rs` `can_promote_now`).
+
+**expected size and cost**: one proptest
+(`#[test] fn queue_invariants_hold_under_any_op_script()`) with the
+default 256 cases, plus proptest's persisted-failure regression file
+(`src-tauri/proptest-regressions/`, committed — that's the point: a
+found counterexample becomes a permanent regression test). runtime
+target: well under 1s; all clock math is simulated.
+
+**exit criteria**:
+
+- the property passes 256 cases locally and in ci
+- deliberately breaking the queue (e.g. inverting the
+  `waiting.is_empty()` fast-path guard, or letting promotion run while
+  paused) makes the property fail with a small shrunk script — verify
+  both mutations once, then revert. this is the "does the gate actually
+  gate" check, same discipline as v4 §4.4.
+- the existing example-based queue tests stay untouched and green —
+  the property *supplements* them (readable spec cases stay readable),
+  it does not replace them
+
+### 9.2 http layer — burst and boundary integration cases
+
+**file**: `src-tauri/src/http.rs`, extending the existing `mod tests`.
+no new dependencies (tower `oneshot`, as everywhere in §4.3).
+
+- **burst accounting**: with `max_concurrent = 3`, `max_queued = 50`,
+  fire 60 sequential posts at the router. assert exactly 53 succeed
+  (200) and 7 are rejected (429), and the queue ends at 3 visible + 50
+  waiting. this is the http-visible face of queue invariants I1/I2.
+- **paused burst accounting**: same, paused: 50× 202 then 10× 429,
+  nothing visible.
+- **boundary body sizes**: a body exactly at the 413 limit passes; one
+  byte over is rejected. (the limit exists and is tested today only
+  with a grossly oversized body — pin the exact boundary.)
+- **ttl clamping/normalization** at the handler: whatever the v1 spec
+  §7 says about absent/zero/absurd `ttlSecs` values gets one case each
+  (absent → `default_ttl` is presumably covered; add `0` and
+  `10_000_000` explicitly, asserting the documented behaviour — check
+  the spec first, and if the behaviour is *undocumented*, that's a spec
+  gap to fix in `V1_TECHNICAL_SPEC.md` §7 before writing the test).
+
+true concurrency (simultaneous in-flight requests) is deliberately not
+simulated: the queue sits behind a mutex, so interleaving reduces to
+ordering — which §9.1 already covers exhaustively.
+
+**exit criteria**: each case above written and green; the existing http
+tests untouched.
+
+### 9.3 poller robustness — parse fuzz (rust, `proptest`)
+
+**file**: `src-tauri/src/poller.rs`, new `#[cfg(test)] mod proptests`.
+reuses the §9.1 dependency.
+
+- **`parse_scoreboard` never panics**: feed arbitrary strings
+  (including non-utf8-boundary junk via `\PC*` and truncated prefixes of
+  a real fixture) — the result is `Ok` or `Err`, never a panic. this
+  hardens the "undocumented public endpoint changes shape without
+  notice" failure mode (`IMPLEMENTATION_PLAN.md` §2.1) beyond the
+  hand-picked malformed fixtures.
+- **fixture-mutation fuzz**: take the committed real fixture, apply
+  generated structural mutations (delete a random key, null a random
+  value, retype a number to a string), and assert `parse_scoreboard` +
+  `diff_scoreboard` combined never panic and never emit an event with an
+  empty title. this catches the "half-changed payload shape" case that
+  pure junk strings don't reach.
+
+**exit criteria**: both properties green at 256 cases; no live network
+anywhere (unchanged rule).
+
+### 9.4 frontend deep timing tests (vitest + `fast-check`)
+
+**file**: `src/useVisibleNotifications.test.tsx` (or a sibling
+`useVisibleNotifications.property.test.tsx` if the file gets long).
+
+**dependency**: `fast-check` as a devDependency (the vitest-ecosystem
+proptest equivalent; integrates with fake timers cleanly).
+
+- **no immortal cards**: for a generated sequence of
+  (emit, advance-fake-clock) steps — including advances that skip past
+  deadlines in one jump, simulating sleep/timer-throttling — after
+  advancing past every emitted item's deadline **plus one sweep
+  interval**, visible state is empty. this generalizes the hand-written
+  sweep cases (v2 spec §6.1) to arbitrary schedules.
+- **no duplicate renders**: duplicate ids across the generated emits
+  never yield two simultaneous cards with the same id.
+- **phase monotonicity**: a card's phase only ever moves
+  enter → hold → exit (never backwards) across any advance schedule.
+
+scope guard: the hook remains rendered through the real
+`renderHook`/fake-timer harness the existing tests use — no new render
+infrastructure. if fast-check + fake timers fight each other in
+practice, fall back to a seeded hand-rolled fuzz loop (a plain test
+generating 100 random schedules from a fixed seed) — the invariants
+matter, the framework doesn't.
+
+**exit criteria**: three properties green; the existing frontend tests
+untouched; `npx vitest run` stays under ~5s.
+
+### 9.5 deliberately still out (even when §9 is un-parked)
+
+- **proptest on `diff_scoreboard` semantics** (beyond §9.3's
+  never-panic): the delta logic's *meaning* (which transitions emit
+  what) is spec-by-example; the fixture cases are the spec. a property
+  here would just re-encode the implementation. skip.
+- **doc-tests beyond queue/event**: the other pub-worthy surfaces
+  (`http::router`, `poller::parse_scoreboard`) are internal; making
+  them pub just for doc-tests inverts the §2 doc-test rule (few,
+  lifecycle-shaped, on genuinely public api). skip.
+- **mutation testing (`cargo-mutants`)**: interesting, but the §9.1 /
+  v4-style "break it once, watch it fail" manual check buys most of the
+  value at zero tooling cost for a one-person repo. note as a future
+  idea only.
+
+### 9.6 build order and review gates
+
+1. §9.1 queue proptest (highest value, pure, no new test infra beyond
+   the dep) → review the shrunk-failure ergonomics before proceeding
+2. §9.2 http burst/boundary cases (no deps, quick)
+3. §9.3 poller fuzz (reuses proptest)
+4. §9.4 frontend fast-check (new dep on the web side — last, so a
+   decision to drop it doesn't block the rust work)
+
+each step lands with `cargo fmt --check`, `cargo clippy -- -D warnings`,
+`cargo test`, `npx tsc --noEmit`, `npx vitest run`, `npx vite build`
+all green — same gates as ci, no exceptions. as each section lands,
+update §0's status table and the per-component pointers in §4.

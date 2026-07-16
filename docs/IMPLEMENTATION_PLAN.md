@@ -196,12 +196,116 @@ animation table lands before the poller so it's testable with plain
 
 ## 3. v3 — outbound connectors
 
-- whatsapp via twilio (preferred over baileys — ban risk — or meta
-  cloud api — heavier setup)
-- telegram and other connectors follow the same notifier interface, no
-  core rework
-- any api keys (twilio, etc.) go in a local env var / secret file —
-  never committed, never pasted into chat
+decisions locked 2026-07-16 (grilling session; code-level contract in
+`docs/V3_TECHNICAL_SPEC.md`):
+
+- **the seam sits at acceptance, not promotion**: once a push passes
+  validation and `enqueue` succeeds, it fans out to every connector.
+  the queue (cap/ttl/pause/promotion) is a *display* concern owned by
+  the overlay path alone — pausing the overlay must not silence the
+  phone (that's when outbound matters most). paused pushes (`202`)
+  fan out normally — acceptance succeeded; rejected pushes
+  (`400`/`413`/`429`) reach no connector.
+- **honest asymmetry**: the `Notifier` trait is outbound-only. the
+  overlay is not a notifier; the queue keeps owning the http contract
+  (200/202/429). a connector's outcome never influences the response
+  to the pusher.
+- **worker-per-connector**: each connector = one bounded mpsc channel
+  (~64) + one long-lived worker task sending serially. acceptance does
+  `try_send`; channel full → drop + warn. the guarantee is *bounded
+  and non-blocking*, not *fresh*: acceptance is never delayed and the
+  backlog is hard-capped at the channel depth, but under a degraded
+  network up to a channel's worth of events can still be delivered
+  late before drops kick in — accepted; the cap bounds the damage
+  rather than eliminating staleness.
+- **telegram first** (botfather bot + `sendMessage`, one rest call, no
+  approval process). whatsapp/twilio demoted to "maybe later" — the
+  twilio sandbox's 72h re-join and meta's template rules make it a
+  poor fit for an always-on personal notifier; re-evaluate only if
+  telegram proves insufficient. (reopens the earlier "whatsapp
+  preferred" line, 2026-07-16.)
+- **no routing, no presence-gating in v3**: every accepted event goes
+  to every enabled connector, always — even while at the mac. a
+  per-connector event-type filter and away-detection are both
+  deliberate v3.5 candidates, not v3 scope.
+- **failure semantics**: 10s send timeout; one retry after ~5s, then
+  drop. formatting rejections (`400`) resend once as plain text
+  instead of retrying the same broken payload.
+- **message format**: per-event-type templates over telegram html mode
+  (3-char escaping), unknown types fall back to generic — the same
+  data-not-code move as the frontend's animation table.
+- **secrets**: bot token + chat id in `~/.config/notchtap/secrets.toml`
+  (checked for `600` perms), never in `config.toml`, never committed,
+  never pasted into chat. no env vars — login-item launches don't
+  inherit shell env. missing secrets = connector disables itself with
+  a warning; the app runs overlay-only.
+
+### 3.1 v3 exit criteria
+- `cargo test` passes with the new notifier suite: `format_message`
+  per type + escaping, `RetryDecision` rules, channel-full drop, and
+  the acceptance fan-out test (accepted event reaches the channel,
+  rejected doesn't, paused-202 does) — see `TESTING_STRATEGY.md` §4.9
+- config gates are tested too: `connectors.telegram.enabled` parses
+  with default `false` (outbound is opt-in per machine), and the
+  secrets loader disables the connector on a missing file or non-`0600`
+  permissions (unit tests against temp files)
+- wiremock covers the send path (success / 400 / 5xx); no live
+  telegram call in any test, ever
+- manual (§6): one real end-to-end telegram message on the mac mini;
+  overlay behaviour unchanged with the connector enabled and with
+  secrets absent
+
+---
+
+## 3.5. notch-morph nudge (ui polish)
+
+decided 2026-07-16 via `prototype-notch-morph.html` (throwaway
+prototype, four variants A–D, switchable live in a browser — not part
+of the app build). the picked design isn't one variant but two,
+selected by event type:
+
+- **compact pill (variant C's shape)**: stays fixed at notch height,
+  only widens horizontally into a pill — no vertical growth. used for
+  terse/status content: `ScoreUpdate`, `MatchState`.
+- **grow (variant A's motion)**: drops down and widens simultaneously,
+  gaining height. used for richer content that needs multi-line body
+  text: `Generic` (cmux relay, cli pushes).
+- this composes with the existing v2.3 animation-type table (event
+  type → animation) rather than replacing it — morph shape becomes
+  another column keyed by event type, the same data-not-code move,
+  not a new lookup mechanism. unknown types fall back to **grow**,
+  mirroring v2.3's `generic` css fallback.
+- **notch-precise geometry**: extend `notchtap-detect`'s swift shim
+  beyond the existing safe-area-top presence check to also report the
+  cutout's actual left/right bounds (`NSScreen.auxiliaryTopLeftArea`/
+  `auxiliaryTopRightArea`). supersedes the "notch-precise window
+  positioning" bullet in §5's deferred-polish list — promoted here
+  into scoped work.
+- **window anchoring**: the tauri window anchors to that reported
+  cutout geometry in notch mode, replacing the current top-center
+  placement.
+- **hud fallback stays simple**: mac mini / no-notch machines keep a
+  smaller "pill drop" (prototype's "mini" toggle) — there's no cutout
+  to grow out of, so neither morph shape applies as-is.
+- css-only animation (framer motion already declined,
+  `ARCHITECTURE.md` §16); true-black background + matched corner radii
+  so the boundary between hardware notch and window is invisible.
+- scope: frontend css/animation-table changes + one swift-shim
+  extension + window positioning. no queue/core/http changes — same
+  non-goal boundary v2.3 kept (data change, not a new render path).
+
+### 3.5.1 notch-morph exit criteria
+- `npx vitest run` covers the event-type → morph-shape mapping:
+  `ScoreUpdate`/`MatchState` → pill, `Generic` → grow, unknown types →
+  grow (fallback)
+- swift shim: `notchtap-detect` gains fixture coverage for cutout
+  left/right/width reporting, alongside the existing safe-area-top
+  cases (`presentation::tests`)
+- manual (§6, physical hardware, macbook): the pill widens without any
+  vertical jump; grow drops-then-widens with no visible seam against
+  the real cutout; hud fallback still looks correct on the mac mini
+- `prototype-notch-morph.html` deleted once the real implementation
+  lands — it's throwaway by design, not meant to ship
 
 ---
 
@@ -270,9 +374,8 @@ reopens it.
 
 ## 5. explicitly deferred polish (not blocking any phase above)
 
-- notch-precise window positioning via the native swift shim
-  (`NSScreen.auxiliaryTopLeftArea`/`NSScreen.auxiliaryTopRightArea`) — v1 ships
-  with a top-center window that isn't yet notch-cutout-aware
+- ~~notch-precise window positioning via the native swift shim~~ —
+  promoted to scoped work in §3.5 (2026-07-16); no longer deferred
 - click-through window (`set_ignore_cursor_events`)
 - real app icon (`npm run tauri icon <path>`)
 

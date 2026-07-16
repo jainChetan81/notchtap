@@ -13,6 +13,22 @@ pub struct Config {
     pub espn_enabled: bool,
     pub espn_leagues: Vec<String>,
     pub espn_poll_secs: u64,
+    pub connectors: Connectors,
+}
+
+/// `[connectors.*]` tables — non-secret on/off switches only; credentials
+/// live in `secrets.toml` (v3 spec §4) so `config.toml` stays paste-safe.
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct Connectors {
+    pub telegram: TelegramToggle,
+}
+
+#[derive(Debug, Default, Deserialize)]
+#[serde(default)]
+pub struct TelegramToggle {
+    /// default off — v3 outbound is opt-in per machine
+    pub enabled: bool,
 }
 
 fn default_port() -> u16 {
@@ -63,6 +79,7 @@ impl Default for Config {
             espn_enabled: default_espn_enabled(),
             espn_leagues: default_espn_leagues(),
             espn_poll_secs: default_espn_poll_secs(),
+            connectors: Connectors::default(),
         }
     }
 }
@@ -124,6 +141,20 @@ mod tests {
         assert_eq!(c.port, 1234);
         assert_eq!(c.default_ttl, 8);
         assert_eq!(c.max_queued, 50);
+    }
+
+    #[test]
+    fn telegram_connector_defaults_to_disabled() {
+        // v3 exit criteria (IMPLEMENTATION_PLAN.md §3.1): outbound is
+        // opt-in per machine — absent table means off.
+        let c = Config::parse("").unwrap();
+        assert!(!c.connectors.telegram.enabled);
+    }
+
+    #[test]
+    fn telegram_connector_can_be_enabled() {
+        let c = Config::parse("[connectors.telegram]\nenabled = true\n").unwrap();
+        assert!(c.connectors.telegram.enabled);
     }
 
     #[test]

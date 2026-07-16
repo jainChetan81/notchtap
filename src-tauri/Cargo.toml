@@ -32,4 +32,5 @@ reqwest = { version = "0.13.4", features = ["json"] }
 [dev-dependencies]
 tower = { version = "0.5.3", features = ["util"] }
 tauri = { version = "2", features = ["tray-icon", "macos-private-api", "test"] }
+wiremock = "0.6"
 

@@ -40,6 +40,11 @@ and `docs/adr/`.
 - **Relay** — an external tool (cmux in v2) forwarding its own
   notifications into notchtap. a Relay is heads-up only: it can never
   answer back into the tool that raised the alert.
+- **Connector** — an outbound sink (telegram in v3) that receives
+  every accepted Event and forwards it off the machine, best-effort.
+  a Connector observes acceptance, not Promotion: the queue's display
+  rules (cap, TTL, Paused) never apply to it, and its failures never
+  affect the pusher's response.
 - **Poller** — an internal event source that repeatedly checks an
   external service (espn in v2) and turns observed *changes* into
   Events. a Poller emits deltas only: the first sighting of a match is

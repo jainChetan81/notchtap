@@ -15,7 +15,7 @@ external branding, code, or assets are used.
 | animation | one generic template | per-event-type variety | — |
 | live football scores (espn public api) | — | yes | — |
 | posture module (airpods motion, optional) | — | optional | — |
-| whatsapp + other connectors | — | — | yes |
+| outbound connectors (telegram first) | — | — | yes |
 | notch overlay / mac mini hud | yes (both machines from day one) | — | — |
 
 v1 is deliberately thin: engine + queue + one animation + cli push,
@@ -71,8 +71,8 @@ a background utility that:
     └───────────────────────────────┘
 ```
 
-v3 adds a notifiers layer alongside the ui (whatsapp/twilio, telegram,
-etc.) — deliberately not drawn here, it's out of scope until v3.
+v3 adds a connectors layer at event *acceptance* (telegram first) —
+deliberately not drawn here, it's out of scope until v3.
 
 the same core (rust) and ui (react/ts webview) run unmodified on both
 machines. only one module differs: **window placement** — notch-aware
@@ -257,9 +257,14 @@ this isn't needed — the goal is just knowing claude needs input, via
 one cli command. that's fully solved by the notification-command relay
 alone.
 
-**v3**: whatsapp (twilio recommended — official-adjacent, one rest
-call, no baileys ban-risk) and other connectors (telegram, etc.) sit
-here as additional notifiers, same interface, no core rework.
+**v3**: outbound connectors sit here as additional sinks observing
+accepted events — telegram first (bot api: free, instant, no approval
+process). the earlier "whatsapp via twilio recommended" preference was
+reopened and reversed 2026-07-16: twilio's sandbox needs a 72h re-join
+and meta's template rules block freeform alerts — wrong fit for an
+always-on personal notifier. whatsapp is "maybe later", re-evaluated
+only if telegram proves insufficient. decisions in
+`IMPLEMENTATION_PLAN.md` §3; contract in `V3_TECHNICAL_SPEC.md`.
 
 ---
 
@@ -353,8 +358,9 @@ chosen rust deserializer).
 v2 adds (locked 2026-07-16, §16): `espn_enabled` (default `true`),
 `espn_leagues` (default `["eng.1", "uefa.champions", "esp.1"]`),
 `espn_poll_secs` (default `30`). posture module remains future, not
-v2. api keys (twilio, etc.) live in a separate env var or secret
-file — never in the committed config.
+v2. api keys / bot tokens (telegram, etc.) live in a separate secrets
+file (`secrets.toml`, see `V3_TECHNICAL_SPEC.md` §4 — not env vars;
+login items don't inherit shell env) — never in the committed config.
 
 the rust core reads this file once at startup. changes require a restart
 in v1; a file-watcher or settings ui is a v2+ convenience.

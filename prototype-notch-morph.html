@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<!--
+  PROTOTYPE — THROWAWAY. Not part of the app build.
+  Question: what should the notch-morph nudge animation look like?
+  Three variants of the notch-morph nudge, switchable via ?variant= (A/B/C)
+  or the floating bottom bar / arrow keys. Open directly in a browser:
+    open prototype-notch-morph.html
+  Fakes a MacBook screen + hardware notch so the morph can be judged
+  before touching the real app.
+-->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>PROTOTYPE — notch morph</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { height: 100%; }
+  body {
+    background: #1c1c1e;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    overflow: hidden;
+  }
+
+  /* ---------- fake macbook ---------- */
+  .laptop {
+    background: #000;
+    border-radius: 18px;
+    padding: 14px;
+    box-shadow: 0 30px 80px rgba(0,0,0,.6);
+  }
+  .screen {
+    position: relative;
+    width: min(1100px, 88vw);
+    aspect-ratio: 16 / 10;
+    border-radius: 10px;
+    overflow: hidden;
+    background:
+      radial-gradient(120% 90% at 20% 0%, #3a4a7a 0%, transparent 60%),
+      radial-gradient(100% 80% at 85% 15%, #7a3a5e 0%, transparent 55%),
+      radial-gradient(120% 120% at 50% 100%, #1a2a4a 0%, #0d1526 70%);
+  }
+  .menubar {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 32px;
+    background: rgba(20, 22, 30, .55);
+    backdrop-filter: blur(10px);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 16px;
+    color: rgba(255,255,255,.85);
+    font-size: 12.5px;
+    font-weight: 500;
+  }
+  .menubar .left, .menubar .right { display: flex; gap: 16px; }
+
+  /* ---------- hardware notch ---------- */
+  .notch {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    width: 200px;
+    height: 32px;
+    background: #000;
+    border-radius: 0 0 10px 10px;
+    z-index: 20;
+  }
+
+  /* ---------- the nudge ---------- */
+  .nudge {
+    position: absolute;
+    top: 0;
+    left: 50%;
+    transform: translateX(-50%);
+    background: #000;
+    z-index: 10;
+    overflow: hidden;
+    display: flex;
+  }
+  .nudge .content { opacity: 0; width: 100%; }
+  .nudge .title { color: #fff; font-weight: 600; }
+  .nudge .body  { color: rgba(255,255,255,.65); }
+
+  /* === Variant A — Grow: expands down + outward from the notch === */
+  .nudge.vA {
+    width: 200px;
+    height: 32px;
+    border-radius: 0 0 10px 10px;
+    transition:
+      width  .45s cubic-bezier(.34,1.56,.64,1),
+      height .45s cubic-bezier(.34,1.56,.64,1),
+      border-radius .45s ease;
+    align-items: flex-end;
+  }
+  .nudge.vA .content {
+    padding: 10px 20px 14px;
+    transition: opacity .25s ease .18s;
+  }
+  .nudge.vA .title { font-size: 14px; margin-bottom: 2px; }
+  .nudge.vA .body  { font-size: 12.5px; }
+  .nudge.vA.show {
+    width: 360px;
+    height: 92px;
+    border-radius: 0 0 24px 24px;
+    box-shadow: 0 12px 30px rgba(0,0,0,.45);
+  }
+  .nudge.vA.show .content { opacity: 1; }
+
+  /* === Variant B — Tongue: notch-width card slides straight down === */
+  .nudge.vB {
+    width: 200px;
+    height: 32px;
+    border-radius: 0 0 14px 14px;
+    transition: height .4s cubic-bezier(.3,1.3,.5,1);
+    align-items: flex-end;
+  }
+  .nudge.vB .content {
+    padding: 8px 16px 14px;
+    text-align: center;
+    transition: opacity .25s ease .15s;
+  }
+  .nudge.vB .title { font-size: 13px; margin-bottom: 3px; }
+  .nudge.vB .body  { font-size: 11.5px; line-height: 1.35; }
+  .nudge.vB.show {
+    height: 118px;
+    box-shadow: 0 10px 26px rgba(0,0,0,.45);
+  }
+  .nudge.vB.show .content { opacity: 1; }
+
+  /* === Variant C — Island: stays notch height, grows wide into a pill === */
+  .nudge.vC {
+    width: 200px;
+    height: 36px;
+    border-radius: 0 0 14px 14px;
+    transition:
+      width .45s cubic-bezier(.34,1.4,.64,1),
+      height .3s ease,
+      border-radius .3s ease;
+    align-items: center;
+  }
+  .nudge.vC .content {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 0 18px;
+    white-space: nowrap;
+    transition: opacity .25s ease .2s;
+  }
+  .nudge.vC .dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #34c759;
+    flex: none;
+  }
+  .nudge.vC .title { font-size: 13px; }
+  .nudge.vC .body  { font-size: 13px; overflow: hidden; text-overflow: ellipsis; }
+  .nudge.vC.show {
+    width: 460px;
+    height: 36px;
+    border-radius: 0 0 18px 18px;
+    box-shadow: 0 8px 22px rgba(0,0,0,.4);
+  }
+  .nudge.vC.show .content { opacity: 1; }
+
+  /* === Variant D — Hybrid A+B: tongue down first, then widen out.
+     Content sits below the 32px notch line, so nothing readable is
+     ever behind the cutout — the hidden strip is pure black. === */
+  .nudge.vD {
+    width: 200px;
+    height: 32px;
+    border-radius: 0 0 12px 12px;
+    /* exit: retract width first, then height */
+    transition:
+      width  .3s cubic-bezier(.4,0,.6,1) 0s,
+      height .3s cubic-bezier(.4,0,.6,1) .18s,
+      border-radius .3s ease .18s;
+  }
+  .nudge.vD .content {
+    padding: 40px 22px 14px; /* top padding clears the notch line */
+    transition: opacity .2s ease 0s;
+  }
+  .nudge.vD .title { font-size: 14px; margin-bottom: 3px; }
+  .nudge.vD .body  { font-size: 12.5px; line-height: 1.4; }
+  .nudge.vD.show {
+    width: 340px;
+    height: 112px;
+    border-radius: 0 0 22px 22px;
+    box-shadow: 0 12px 30px rgba(0,0,0,.45);
+    /* enter: drop down first, then widen */
+    transition:
+      height .3s cubic-bezier(.34,1.4,.64,1) 0s,
+      width  .35s cubic-bezier(.34,1.4,.64,1) .16s,
+      border-radius .3s ease 0s;
+  }
+  .nudge.vD.show .content {
+    opacity: 1;
+    transition: opacity .25s ease .3s;
+  }
+
+  /* mac-mini mode: no hardware notch */
+  .screen.no-notch .notch { display: none; }
+
+  /* ---------- prototype chrome (not part of the design) ---------- */
+  .switcher {
+    position: fixed;
+    bottom: 22px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #f2f2f7;
+    color: #111;
+    border-radius: 999px;
+    padding: 8px 14px;
+    font-size: 13px;
+    font-weight: 600;
+    box-shadow: 0 6px 20px rgba(0,0,0,.4);
+    user-select: none;
+    z-index: 100;
+  }
+  .switcher button {
+    border: none;
+    background: #d9d9e0;
+    border-radius: 50%;
+    width: 26px; height: 26px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .switcher button:hover { background: #c4c4cc; }
+  .switcher .label { min-width: 150px; text-align: center; }
+  .switcher .replay {
+    width: auto;
+    border-radius: 999px;
+    padding: 0 12px;
+    background: #111;
+    color: #fff;
+  }
+</style>
+</head>
+<body>
+
+<div class="laptop">
+  <div class="screen">
+    <div class="menubar">
+      <div class="left"><span></span><span>Finder</span><span>File</span><span>Edit</span><span>View</span></div>
+      <div class="right"><span>&#8634;</span><span>100%</span><span>Thu 16 Jul&nbsp;&nbsp;9:41</span></div>
+    </div>
+
+    <div class="nudge" id="nudge">
+      <div class="content" id="content"></div>
+    </div>
+
+    <div class="notch"></div>
+  </div>
+</div>
+
+<div class="switcher">
+  <button id="prev">&#8592;</button>
+  <div class="label" id="label"></div>
+  <button id="next">&#8594;</button>
+  <button class="replay" id="replay">Replay</button>
+  <button class="replay" id="mini">Mini: off</button>
+</div>
+
+<script>
+  const VARIANTS = [
+    { key: 'A', name: 'Grow (down + out)' },
+    { key: 'B', name: 'Tongue (straight down)' },
+    { key: 'C', name: 'Island (wide pill)' },
+    { key: 'D', name: 'Hybrid (down, then out)' },
+  ];
+  const HOLD_MS = 2600;
+
+  const nudge = document.getElementById('nudge');
+  const content = document.getElementById('content');
+  const label = document.getElementById('label');
+
+  const sample = { title: 'Claude Code', body: 'Waiting for permission: run cargo test' };
+
+  let idx = Math.max(0, VARIANTS.findIndex(v =>
+    v.key === new URLSearchParams(location.search).get('variant')));
+  let timer = null;
+
+  function renderContent(key) {
+    if (key === 'C') {
+      content.innerHTML =
+        `<span class="dot"></span><span class="title">${sample.title}</span>` +
+        `<span class="body">${sample.body}</span>`;
+    } else {
+      content.innerHTML =
+        `<div class="title">${sample.title}</div><div class="body">${sample.body}</div>`;
+    }
+  }
+
+  function play() {
+    clearTimeout(timer);
+    nudge.classList.remove('show');
+    // force reflow so re-trigger restarts the transition
+    void nudge.offsetWidth;
+    requestAnimationFrame(() => {
+      nudge.classList.add('show');
+      timer = setTimeout(() => nudge.classList.remove('show'), HOLD_MS);
+    });
+  }
+
+  function apply() {
+    const v = VARIANTS[idx];
+    nudge.className = 'nudge v' + v.key;
+    renderContent(v.key);
+    label.textContent = `${v.key} — ${v.name}`;
+    const url = new URL(location);
+    url.searchParams.set('variant', v.key);
+    history.replaceState(null, '', url);
+    setTimeout(play, 250);
+  }
+
+  function cycle(d) { idx = (idx + d + VARIANTS.length) % VARIANTS.length; apply(); }
+
+  document.getElementById('prev').onclick = () => cycle(-1);
+  document.getElementById('next').onclick = () => cycle(1);
+  document.getElementById('replay').onclick = play;
+  document.getElementById('mini').onclick = function () {
+    const screen = document.querySelector('.screen');
+    screen.classList.toggle('no-notch');
+    this.textContent = 'Mini: ' + (screen.classList.contains('no-notch') ? 'on' : 'off');
+    play();
+  };
+  document.addEventListener('keydown', e => {
+    if (/input|textarea/i.test(e.target.tagName) || e.target.isContentEditable) return;
+    if (e.key === 'ArrowLeft') cycle(-1);
+    if (e.key === 'ArrowRight') cycle(1);
+    if (e.key === ' ') { e.preventDefault(); play(); }
+  });
+
+  apply();
+</script>
+</body>
+</html>

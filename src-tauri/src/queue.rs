@@ -14,6 +14,46 @@ pub struct QueueItem {
     pub promoted_at: Option<Instant>,
 }
 
+/// A fifo notification queue with a cap on concurrently visible items,
+/// a bounded waiting buffer, ttl-based expiry, and pause/resume gating
+/// promotion (never expiry). See `ARCHITECTURE.md` §3 and the v1 spec §4.
+///
+/// The full lifecycle — enqueue, cap, expiry, fifo promotion, and the
+/// exactly-once promotion report consumed by [`take_promoted`](Self::take_promoted):
+///
+/// ```
+/// use std::time::{Duration, Instant};
+/// use notchtap_lib::event::{Event, EventPayload, EventType, Priority};
+/// use notchtap_lib::queue::NotificationQueue;
+///
+/// fn event(title: &str, ttl_secs: u64) -> Event {
+///     Event {
+///         id: uuid::Uuid::new_v4(),
+///         event_type: EventType::Generic,
+///         priority: Priority::Normal,
+///         ttl_secs,
+///         payload: EventPayload { title: title.into(), body: "body".into() },
+///     }
+/// }
+///
+/// let mut queue = NotificationQueue::new(3, 50); // cap 3 visible, 50 waiting
+/// for title in ["a", "b", "c", "d"] {
+///     queue.enqueue(event(title, 1)).unwrap();
+/// }
+///
+/// // cap = 3: the fourth item waits instead of displaying
+/// assert_eq!(queue.visible().len(), 3);
+/// assert_eq!(queue.waiting().len(), 1);
+///
+/// // each promoted item is reported exactly once, at promotion time
+/// assert_eq!(queue.take_promoted().len(), 3);
+/// assert!(queue.take_promoted().is_empty());
+///
+/// // once the ttl elapses, expired items leave and "d" promotes fifo
+/// queue.expire_and_promote(Instant::now() + Duration::from_secs(2));
+/// assert_eq!(queue.visible().len(), 1);
+/// assert_eq!(queue.take_promoted().len(), 1);
+/// ```
 pub struct NotificationQueue {
     visible: VecDeque<QueueItem>,
     waiting: VecDeque<QueueItem>,
@@ -35,6 +75,37 @@ impl NotificationQueue {
         }
     }
 
+    /// Adds an event, promoting it immediately when a visible slot is
+    /// free, nothing is already waiting, and the queue isn't paused —
+    /// otherwise it joins the waiting buffer in fifo order.
+    ///
+    /// Rejects with [`QueueError::QueueFull`] once `max_queued` items are
+    /// waiting (the http layer maps this to `429`), leaving queue state
+    /// untouched:
+    ///
+    /// ```
+    /// use notchtap_lib::error::QueueError;
+    /// use notchtap_lib::event::{Event, EventPayload, EventType, Priority};
+    /// use notchtap_lib::queue::NotificationQueue;
+    ///
+    /// fn event(title: &str) -> Event {
+    ///     Event {
+    ///         id: uuid::Uuid::new_v4(),
+    ///         event_type: EventType::Generic,
+    ///         priority: Priority::Normal,
+    ///         ttl_secs: 8,
+    ///         payload: EventPayload { title: title.into(), body: "body".into() },
+    ///     }
+    /// }
+    ///
+    /// let mut queue = NotificationQueue::new(3, 1); // one waiting slot
+    /// queue.pause(); // paused: enqueues buffer instead of promoting
+    ///
+    /// queue.enqueue(event("buffered")).unwrap();
+    /// let err = queue.enqueue(event("overflow")).unwrap_err();
+    /// assert!(matches!(err, QueueError::QueueFull));
+    /// assert_eq!(queue.waiting().len(), 1); // state unchanged
+    /// ```
     pub fn enqueue(&mut self, event: Event) -> Result<(), QueueError> {
         // fifo: the fast-path may only promote when nothing is already
         // waiting, otherwise a new push would jump items queued before it

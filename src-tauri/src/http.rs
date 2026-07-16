@@ -14,6 +14,7 @@ use uuid::Uuid;
 
 use crate::error::{EventError, QueueError};
 use crate::event::{dispatch, emit_promoted, Event, EventPayload, EventType, Priority};
+use crate::notifier::ConnectorHandle;
 use crate::queue::NotificationQueue;
 
 // generic over the tauri runtime so tests can use tauri::test::mock_app()
@@ -22,6 +23,7 @@ pub struct AppState<R: tauri::Runtime = tauri::Wry> {
     pub queue: Arc<Mutex<NotificationQueue>>,
     pub default_ttl: u64,
     pub app_handle: tauri::AppHandle<R>,
+    pub connectors: Arc<Vec<ConnectorHandle>>,
 }
 
 impl<R: tauri::Runtime> Clone for AppState<R> {
@@ -30,6 +32,7 @@ impl<R: tauri::Runtime> Clone for AppState<R> {
             queue: self.queue.clone(),
             default_ttl: self.default_ttl,
             app_handle: self.app_handle.clone(),
+            connectors: self.connectors.clone(),
         }
     }
 }
@@ -89,6 +92,10 @@ async fn notify_handler<R: tauri::Runtime>(
 
     dispatch(event.clone()).map_err(HttpError::Event)?;
 
+    // kept for the connector fan-out below — it must only happen after
+    // enqueue succeeds (v3 spec §1: rejected pushes reach no connector)
+    let accepted = event.clone();
+
     let (promoted, paused, waiting_count) = {
         let mut queue = state.queue.lock().await;
         queue.enqueue(event).map_err(HttpError::Queue)?;
@@ -98,6 +105,14 @@ async fn notify_handler<R: tauri::Runtime>(
             queue.waiting().len(),
         )
     };
+
+    // acceptance fan-out (v3 spec §1): every enabled connector gets every
+    // accepted event — including paused-202 ones (a paused overlay is
+    // exactly when outbound matters most). never blocks, never affects
+    // the http status.
+    for connector in state.connectors.iter() {
+        connector.offer(&accepted);
+    }
 
     emit_promoted(&state.app_handle, promoted);
 
@@ -143,12 +158,27 @@ mod tests {
     use tower::ServiceExt;
 
     fn test_state(queue: NotificationQueue) -> AppState<tauri::test::MockRuntime> {
+        test_state_with_connectors(queue, Vec::new())
+    }
+
+    fn test_state_with_connectors(
+        queue: NotificationQueue,
+        connectors: Vec<ConnectorHandle>,
+    ) -> AppState<tauri::test::MockRuntime> {
         let app = tauri::test::mock_app();
         AppState {
             queue: Arc::new(Mutex::new(queue)),
             default_ttl: 8,
             app_handle: app.handle().clone(),
+            connectors: Arc::new(connectors),
         }
+    }
+
+    /// a connector whose receiving end the test holds, so fan-out can be
+    /// asserted without any worker or network
+    fn test_connector() -> (ConnectorHandle, tokio::sync::mpsc::Receiver<Event>) {
+        let (tx, rx) = tokio::sync::mpsc::channel(8);
+        (ConnectorHandle::new("test", tx), rx)
     }
 
     fn json_request(body: &str) -> Request<Body> {
@@ -310,5 +340,61 @@ mod tests {
             .unwrap();
         let response = app.oneshot(request).await.unwrap();
         assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+    }
+
+    // --- v3 acceptance fan-out (spec §1 / TESTING_STRATEGY.md §4.9) ---
+
+    #[tokio::test]
+    async fn accepted_push_fans_out_to_connectors() {
+        let (connector, mut rx) = test_connector();
+        let app = router(test_state_with_connectors(
+            NotificationQueue::new(3, 50),
+            vec![connector],
+        ));
+        let response = app
+            .oneshot(json_request(r#"{"title":"t","body":"b"}"#))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let event = rx
+            .try_recv()
+            .expect("accepted event must reach the connector");
+        assert_eq!(event.payload.title, "t");
+    }
+
+    #[tokio::test]
+    async fn rejected_push_reaches_no_connector() {
+        let (connector, mut rx) = test_connector();
+        let app = router(test_state_with_connectors(
+            NotificationQueue::new(0, 0),
+            vec![connector],
+        ));
+        let response = app
+            .oneshot(json_request(r#"{"title":"t","body":"b"}"#))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert!(rx.try_recv().is_err(), "429 must not fan out");
+    }
+
+    #[tokio::test]
+    async fn paused_202_push_still_fans_out() {
+        // v3 spec §1: a paused overlay is exactly when outbound matters
+        // most — acceptance succeeded, so connectors hear about it.
+        let (connector, mut rx) = test_connector();
+        let mut queue = NotificationQueue::new(3, 50);
+        queue.pause();
+        let app = router(test_state_with_connectors(queue, vec![connector]));
+        let response = app
+            .oneshot(json_request(r#"{"title":"t","body":"b"}"#))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+
+        let event = rx
+            .try_recv()
+            .expect("paused-202 event must reach the connector");
+        assert_eq!(event.payload.title, "t");
     }
 }

@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ## project state
 
@@ -113,9 +113,9 @@ electron and not pure native swift (see `docs/ARCHITECTURE.md` §8 for why).
   call — the function is unit-testable, the subprocess call is not
   (`docs/TESTING_STRATEGY.md` §4.4).
 - **v1 has no approve/deny action.** notifications are display-only,
-  auto-dismissed by ttl. do not add a "respond back into claude code"
+  auto-dismissed by ttl. do not add a "respond back into Codex"
   loop without reading `docs/ARCHITECTURE.md` §7 first — that requires
-  claude code's own `PreToolUse`/`PermissionRequest` hooks, which is a
+  Codex's own `PreToolUse`/`PermissionRequest` hooks, which is a
   deliberately separate, harder problem, out of scope until explicitly
   requested.
 
@@ -155,3 +155,5 @@ the rust core sends it.
 this split is standard in the rust ecosystem and matches the testing
 strategy: unit tests match on `thiserror` variants; integration tests
 assert on HTTP status codes.
+
+## Imported Claude Cowork project instructions

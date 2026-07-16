@@ -1,12 +1,16 @@
 mod config;
-mod error;
-mod event;
+// queue, event, and error are `pub` so their doc-tests can exercise the
+// real public api (doc-tests link against the lib crate from outside);
+// nothing else consumes this crate as a library.
+pub mod error;
+pub mod event;
 mod http;
 mod logging;
 mod login_item;
+mod notifier;
 mod poller;
 mod presentation;
-mod queue;
+pub mod queue;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Once, OnceLock};
@@ -62,6 +66,34 @@ pub fn run() {
     let espn_leagues = config.espn_leagues.clone();
     let espn_poll_secs = config.espn_poll_secs;
 
+    // v3 outbound connectors: built here (channel needs no runtime), the
+    // worker future is spawned in setup once the runtime exists. missing
+    // or badly-permissioned secrets disable the connector with a warning —
+    // the app runs overlay-only (v3 spec §4).
+    let mut connector_handles = Vec::new();
+    let mut telegram_worker = None;
+    if config.connectors.telegram.enabled {
+        match notifier::default_secrets_path() {
+            Some(path) => match notifier::load_secrets(&path) {
+                Ok(secrets) => {
+                    let (handle, worker) = notifier::telegram_connector(
+                        secrets,
+                        notifier::TELEGRAM_API_BASE.to_string(),
+                        notifier::RETRY_DELAY,
+                    );
+                    connector_handles.push(handle);
+                    telegram_worker = Some(worker);
+                    tracing::info!("telegram connector enabled");
+                }
+                Err(e) => tracing::warn!("telegram connector disabled: {e}"),
+            },
+            None => tracing::warn!("telegram connector disabled: no home directory"),
+        }
+    }
+    let connectors = Arc::new(connector_handles);
+    let page_load_connectors = connectors.clone();
+    let poller_connectors = connectors.clone();
+
     let setup_queue = queue.clone();
     let page_load_queue = queue.clone();
     let server_once = Arc::new(Once::new());
@@ -77,6 +109,9 @@ pub fn run() {
             position_top_center(&window)?;
 
             login_item::register();
+            if let Some(worker) = telegram_worker {
+                tauri::async_runtime::spawn(worker);
+            }
             // tray-controlled polling switch: true = polling. lives here
             // (not in the queue) because it gates network fetches, not
             // promotion — pausing scores must not touch cmux/cli pushes.
@@ -92,6 +127,7 @@ pub fn run() {
                 poller::spawn_espn_poller(
                     app.handle().clone(),
                     setup_queue,
+                    poller_connectors,
                     espn_leagues,
                     espn_poll_secs,
                     default_ttl,
@@ -110,12 +146,14 @@ pub fn run() {
             if payload.event() == PageLoadEvent::Finished && webview.label() == "main" {
                 let queue = page_load_queue.clone();
                 let app_handle = webview.app_handle().clone();
+                let connectors = page_load_connectors.clone();
                 server_once.call_once(move || {
                     let app_handle = app_handle.clone();
                     let state = http::AppState {
                         queue,
                         default_ttl,
                         app_handle: app_handle.clone(),
+                        connectors,
                     };
                     tauri::async_runtime::spawn(async move {
                         let listener = match http::bind_listener(port).await {
