@@ -87,10 +87,11 @@ pub fn run() {
                 let queue = page_load_queue.clone();
                 let app_handle = webview.app_handle().clone();
                 server_once.call_once(move || {
+                    let app_handle = app_handle.clone();
                     let state = http::AppState {
                         queue,
                         default_ttl,
-                        app_handle,
+                        app_handle: app_handle.clone(),
                     };
                     tauri::async_runtime::spawn(async move {
                         let listener = match http::bind_listener(port).await {
@@ -100,7 +101,8 @@ pub fn run() {
                                 // startup error, never a silent fallback port
                                 tracing::error!("cannot bind 127.0.0.1:{port}: {e}");
                                 eprintln!("notchtap: cannot bind 127.0.0.1:{port}: {e}");
-                                std::process::exit(1);
+                                app_handle.exit(1);
+                                return;
                             }
                         };
                         tracing::info!("listening on 127.0.0.1:{port}");
@@ -141,6 +143,10 @@ fn build_tray(
             "pause" => {
                 // menu events arrive on the main thread, outside the tokio
                 // runtime, so a blocking lock is safe here
+                debug_assert!(
+                    tokio::runtime::Handle::try_current().is_err(),
+                    "tray menu events must arrive off the tokio runtime; blocking_lock would deadlock"
+                );
                 let promoted = {
                     let mut q = queue.blocking_lock();
                     if q.is_paused() {

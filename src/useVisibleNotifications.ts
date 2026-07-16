@@ -6,10 +6,12 @@ export type NotificationPayload = {
   title: string;
   body: string;
   ttlSecs: number;
+  eventType: "generic" | "score_update" | "match_state";
 };
 
 export type VisibleNotification = NotificationPayload & {
   phase: "enter" | "hold" | "exit";
+  deadline: number;
 };
 
 export const ENTER_DURATION_MS = 300;
@@ -35,11 +37,28 @@ export function useVisibleNotifications(): VisibleNotification[] {
 
     const remove = (id: string) => {
       setItems((current) => current.filter((item) => item.id !== id));
-      timers.current.delete(id);
+      const ids = timers.current.get(id);
+      if (ids) {
+        ids.forEach((t) => window.clearTimeout(t));
+        timers.current.delete(id);
+      }
+    };
+
+    const clearTimersFor = (id: string) => {
+      const ids = timers.current.get(id);
+      if (ids) {
+        ids.forEach((t) => window.clearTimeout(t));
+        timers.current.delete(id);
+      }
     };
 
     listen<NotificationPayload>("notification-promoted", ({ payload }) => {
-      setItems((current) => [...current, { ...payload, phase: "enter" }]);
+      const eventType = payload.eventType ?? "generic";
+      const full = { ...payload, eventType };
+      const deadline =
+        Date.now() + ENTER_DURATION_MS + payload.ttlSecs * 1000 + EXIT_DURATION_MS;
+
+      setItems((current) => [...current, { ...full, phase: "enter", deadline }]);
 
       const holdAt = window.setTimeout(() => {
         setPhase(payload.id, "hold");
@@ -60,10 +79,23 @@ export function useVisibleNotifications(): VisibleNotification[] {
       }
     });
 
+    // wall-clock backstop for system sleep / webview timer throttling
+    // (v2 spec §6.1): remove any item whose absolute deadline has passed,
+    // clearing its happy-path timers so they don't fire late.
+    const sweep = window.setInterval(() => {
+      const now = Date.now();
+      setItems((current) => {
+        const expired = current.filter((item) => now >= item.deadline);
+        expired.forEach((item) => clearTimersFor(item.id));
+        return current.filter((item) => now < item.deadline);
+      });
+    }, 1000);
+
     const pendingTimers = timers.current;
     return () => {
       unmounted = true;
       unlisten?.();
+      window.clearInterval(sweep);
       for (const ids of pendingTimers.values()) {
         ids.forEach((t) => window.clearTimeout(t));
       }

@@ -73,6 +73,34 @@ body {
   }
 }
 
+/* score update: bounce-style overshoot */
+@keyframes bounce-in {
+  0% {
+    opacity: 0;
+    transform: translateY(-16px) scale(0.9);
+  }
+  60% {
+    opacity: 1;
+    transform: translateY(4px) scale(1.04);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* match state: distinct slide from the left */
+@keyframes slide-from-left {
+  from {
+    opacity: 0;
+    transform: translateX(-24px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
 .notification.enter {
   animation: slide-in 300ms ease-out both;
 }
@@ -83,4 +111,12 @@ body {
 
 .notification.exit {
   animation: slide-out 300ms ease-in both;
+}
+
+.notification.score_update.enter {
+  animation: bounce-in 300ms ease-out both;
+}
+
+.notification.match_state.enter {
+  animation: slide-from-left 300ms ease-out both;
 }

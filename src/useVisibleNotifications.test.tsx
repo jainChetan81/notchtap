@@ -23,6 +23,7 @@ function emit(payload: Partial<NotificationPayload> & { id: string }) {
     title: "title",
     body: "body",
     ttlSecs: 8,
+    eventType: "generic",
     ...payload,
   };
   act(() => {
@@ -102,5 +103,38 @@ describe("useVisibleNotifications", () => {
     const clearSpy = vi.spyOn(window, "clearTimeout");
     unmount(); // effect cleanup runs synchronously
     expect(clearSpy).toHaveBeenCalled();
+  });
+
+  it("removes an item whose wall-clock deadline has passed even if setTimeout never fired", async () => {
+    // simulate system sleep / webview timer throttling: the happy-path
+    // timers are stalled, but the 1s sweep sees the deadline is past.
+    const now = Date.now();
+    vi.setSystemTime(now);
+
+    const { result } = await renderReady();
+    emit({ id: "stale", ttlSecs: 1 });
+    expect(result.current).toHaveLength(1);
+
+    // jump past the full lifecycle deadline without advancing timers
+    vi.setSystemTime(now + ENTER_DURATION_MS + 1000 + EXIT_DURATION_MS + 1);
+    act(() => vi.advanceTimersByTime(1000));
+
+    expect(result.current).toHaveLength(0);
+  });
+
+  it("defaults a missing eventType to generic", async () => {
+    const { result } = await renderReady();
+    act(() => {
+      handlers.forEach((h) =>
+        h({ payload: { id: "legacy", title: "t", body: "b", ttlSecs: 8 } as NotificationPayload }),
+      );
+    });
+    expect(result.current[0].eventType).toBe("generic");
+  });
+
+  it("carries the eventType through to the returned state", async () => {
+    const { result } = await renderReady();
+    emit({ id: "goal", eventType: "score_update" });
+    expect(result.current[0].eventType).toBe("score_update");
   });
 });

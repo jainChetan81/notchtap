@@ -16,6 +16,8 @@ pub struct Event {
 #[serde(rename_all = "snake_case")]
 pub enum EventType {
     Generic,
+    ScoreUpdate,
+    MatchState,
 }
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
@@ -37,6 +39,7 @@ pub struct NotificationPayload {
     pub title: String,
     pub body: String,
     pub ttl_secs: u64,
+    pub event_type: EventType,
 }
 
 impl From<&Event> for NotificationPayload {
@@ -46,13 +49,14 @@ impl From<&Event> for NotificationPayload {
             title: event.payload.title.clone(),
             body: event.payload.body.clone(),
             ttl_secs: event.ttl_secs,
+            event_type: event.event_type.clone(),
         }
     }
 }
 
 pub fn dispatch(event: Event) -> Result<(), EventError> {
     match event.event_type {
-        EventType::Generic => Ok(()),
+        EventType::Generic | EventType::ScoreUpdate | EventType::MatchState => Ok(()),
     }
 }
 
@@ -95,21 +99,44 @@ mod tests {
 
     #[test]
     fn unknown_type_string_is_rejected_at_deserialization() {
-        // v1 has one variant; an unknown `type` can only arrive as data,
-        // and serde rejects it before dispatch ever sees it
-        let result: Result<EventType, _> = serde_json::from_str(r#""score_update""#);
+        // score_update and match_state are real variants now; pick something
+        // that is not a variant to exercise the unknown-type path.
+        let result: Result<EventType, _> = serde_json::from_str(r#""posture_alert""#);
         assert!(result.is_err());
     }
 
     #[test]
-    fn wire_payload_uses_camel_case_ttl_secs() {
+    fn score_update_deserializes() {
+        let event_type: EventType = serde_json::from_str(r#""score_update""#).unwrap();
+        assert!(matches!(event_type, EventType::ScoreUpdate));
+    }
+
+    #[test]
+    fn match_state_deserializes() {
+        let event_type: EventType = serde_json::from_str(r#""match_state""#).unwrap();
+        assert!(matches!(event_type, EventType::MatchState));
+    }
+
+    #[test]
+    fn dispatch_accepts_all_three_variants() {
+        for event_type in [EventType::Generic, EventType::ScoreUpdate, EventType::MatchState] {
+            let mut event = generic_event();
+            event.event_type = event_type;
+            assert!(dispatch(event).is_ok());
+        }
+    }
+
+    #[test]
+    fn wire_payload_uses_camel_case_ttl_secs_and_event_type() {
         let event = generic_event();
         let payload = NotificationPayload::from(&event);
         let json = serde_json::to_value(&payload).unwrap();
         assert_eq!(json["title"], "t");
         assert_eq!(json["body"], "b");
         assert_eq!(json["ttlSecs"], 8);
+        assert_eq!(json["eventType"], "generic");
         assert!(json.get("ttl_secs").is_none());
+        assert!(json.get("event_type").is_none());
     }
 
     #[test]

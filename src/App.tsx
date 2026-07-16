@@ -7,7 +7,7 @@ function App() {
   return (
     <div className="stack">
       {notifications.map((n) => (
-        <div key={n.id} className={`notification ${n.phase}`}>
+        <div key={n.id} className={`notification ${n.eventType} ${n.phase}`}>
           <div className="title">{n.title}</div>
           <div className="body">{n.body}</div>
         </div>
