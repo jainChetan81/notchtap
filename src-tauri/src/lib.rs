@@ -4,6 +4,7 @@ mod event;
 mod http;
 mod logging;
 mod login_item;
+mod poller;
 mod presentation;
 mod queue;
 
@@ -56,6 +57,9 @@ pub fn run() {
     )));
     let port = config.port;
     let default_ttl = config.default_ttl;
+    let espn_enabled = config.espn_enabled;
+    let espn_leagues = config.espn_leagues.clone();
+    let espn_poll_secs = config.espn_poll_secs;
 
     let setup_queue = queue.clone();
     let page_load_queue = queue.clone();
@@ -73,7 +77,21 @@ pub fn run() {
 
             login_item::register();
             build_tray(app.handle(), setup_queue.clone())?;
-            spawn_heartbeat(app.handle().clone(), setup_queue);
+            spawn_heartbeat(app.handle().clone(), setup_queue.clone());
+
+            // espn poller (v2 spec §3) — config-gated: `espn_enabled =
+            // false` means it never spawns. first poll only baselines
+            // (silent), so starting before the webview loads can't drop
+            // anything a listener would have shown.
+            if espn_enabled {
+                poller::spawn_espn_poller(
+                    app.handle().clone(),
+                    setup_queue,
+                    espn_leagues,
+                    espn_poll_secs,
+                    default_ttl,
+                );
+            }
 
             Ok(())
         })

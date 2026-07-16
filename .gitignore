@@ -25,3 +25,4 @@ dist-ssr
 
 # swift package build output
 notchtap-detect/.build
+.claude/worktrees/

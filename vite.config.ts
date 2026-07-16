@@ -11,6 +11,9 @@ export default defineConfig(async () => ({
 
   test: {
     environment: "jsdom",
+    // don't discover tests inside agent worktrees (.claude/worktrees/<name>
+    // holds full repo copies whose tests would double-count or break ours)
+    exclude: ["**/node_modules/**", "**/.claude/**", "**/dist/**"],
   },
 
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`

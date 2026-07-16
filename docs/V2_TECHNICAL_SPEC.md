@@ -131,9 +131,11 @@ new module `src-tauri/src/poller.rs`, spawned from `lib.rs` at startup
   handles the rest downstream.
 - **separation for testability** (same pattern as v1's
   `presentation_mode`): the pure function
-  `fn diff_scoreboard(prev: &Snapshot, fetched: &Scoreboard) -> Vec<Event>`
-  holds all delta logic and is unit-tested against fixtures; the
-  fetch loop around it stays thin and untested.
+  `fn diff_scoreboard(prev: &Snapshot, fetched: &Scoreboard, ttl_secs: u64) -> (Vec<Event>, Snapshot)`
+  holds all delta logic and is unit-tested against fixtures. returning
+  the next snapshot (rather than mutating in place) is what makes
+  eviction fall out of construction. the fetch loop around it stays
+  thin and untested.
 
 ---
 
@@ -210,12 +212,23 @@ from a test.** capture real responses once (a `docs/fixtures/` or
 
 ## 8. what's genuinely open
 
-- exact espn scoreboard field names for scorer/clock detail — resolve
-  by capturing real payloads as the first step of the poller work
-  (`IMPLEMENTATION_PLAN.md` §2.1), before writing the fixture tests
-  (per §4.7's observe-first rule).
-- whether `CardEvent` earns its own variant (see §2) — decide from the
-  observed payloads.
 - whether the cli shell script gets automated tests (a tiny
   `test-cli.sh` asserting fold/port behaviour) or stays
   manually-verified — currently manual; revisit if the script grows.
+
+resolved 2026-07-16 by capturing real payloads
+(`src-tauri/tests/fixtures/scoreboard-*.json`, five leagues incl. one
+finished ucl match):
+
+- **scorer/clock fields**: `competitions[0].details[]` carries
+  `scoringPlay`/`redCard` booleans, `type.text` ("Goal", "Yellow
+  Card", "Penalty - Scored"), `clock.displayValue` ("6'"), and
+  `athletesInvolved[].shortName` ("K. Havertz"). half-time is
+  `status.type.name == "STATUS_HALFTIME"` while `state` stays "in".
+  scores arrive as strings.
+- **`CardEvent` does not earn a variant**: cards emit as `MatchState`
+  with the card detail as body ("Yellow Card — B. Saka 54'"). yellows
+  included — "everything espn reports" (`ARCHITECTURE.md` §16) was
+  chosen with eyes open; a busy match means several card
+  notifications, and narrowing to red-only is a two-line filter if it
+  proves too chatty in practice.

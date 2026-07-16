@@ -37,7 +37,7 @@ pays off.
 |---|---|---|
 | rust unit/integration | built-in `cargo test` (`#[test]`, `#[tokio::test]`) | no extra dependency needed; idiomatic default; tauri already pulls in tokio, so async tests are free |
 | rust http layer | `axum` + `tower`'s `ServiceExt::oneshot` (dev-dependency: `tower = { features = ["util"] }`) | lets the `/notify` route be tested in-process — no real socket bind, no port cleanup, no flaky "address in use" failures. this is also why axum is the pick over `tiny_http`: `IMPLEMENTATION_PLAN.md` §1.2 didn't pin an http crate — closing that gap here, in favour of axum specifically for this testability property |
-| rust external http mocking (v2 espn poller) | `wiremock` (dev-dependency) | async-native, works directly with `reqwest`, lets fixture responses (success/malformed/timeout) be asserted without hitting the real espn endpoint from tests |
+| rust external http mocking (v2 espn poller) | none — dropped 2026-07-16 (was `wiremock`) | the poller design (v2 spec §3) keeps the fetch loop thin and untested; parsing, delta logic, and backoff are pure functions tested directly against captured fixture files, so nothing needs an http mock |
 | frontend unit/component | `vitest` + `@testing-library/react` | vitest is free — the tauri react template already runs on vite, so it shares config and is fast; testing-library tests behaviour (what's rendered) not implementation details |
 
 ---

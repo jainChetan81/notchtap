@@ -10,6 +10,9 @@ pub struct Config {
     pub max_concurrent: usize,
     pub max_queued: usize,
     pub detect_path: PathBuf,
+    pub espn_enabled: bool,
+    pub espn_leagues: Vec<String>,
+    pub espn_poll_secs: u64,
 }
 
 fn default_port() -> u16 {
@@ -32,6 +35,23 @@ fn default_detect_path() -> PathBuf {
     PathBuf::from("/usr/local/bin/notchtap-detect")
 }
 
+fn default_espn_enabled() -> bool {
+    true
+}
+
+fn default_espn_leagues() -> Vec<String> {
+    // ARCHITECTURE.md §16 locks the three leagues
+    vec![
+        "eng.1".to_string(),
+        "uefa.champions".to_string(),
+        "esp.1".to_string(),
+    ]
+}
+
+fn default_espn_poll_secs() -> u64 {
+    30
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -40,6 +60,9 @@ impl Default for Config {
             max_concurrent: default_max_concurrent(),
             max_queued: default_max_queued(),
             detect_path: default_detect_path(),
+            espn_enabled: default_espn_enabled(),
+            espn_leagues: default_espn_leagues(),
+            espn_poll_secs: default_espn_poll_secs(),
         }
     }
 }
@@ -78,6 +101,17 @@ mod tests {
         assert_eq!(c.max_concurrent, 3);
         assert_eq!(c.max_queued, 50);
         assert_eq!(c.detect_path, PathBuf::from("/usr/local/bin/notchtap-detect"));
+        assert!(c.espn_enabled);
+        assert_eq!(c.espn_leagues, ["eng.1", "uefa.champions", "esp.1"]);
+        assert_eq!(c.espn_poll_secs, 30);
+    }
+
+    #[test]
+    fn espn_fields_are_overridable() {
+        let c = Config::parse("espn_enabled = false\nespn_leagues = [\"usa.1\"]\n").unwrap();
+        assert!(!c.espn_enabled);
+        assert_eq!(c.espn_leagues, ["usa.1"]);
+        assert_eq!(c.espn_poll_secs, 30);
     }
 
     #[test]
