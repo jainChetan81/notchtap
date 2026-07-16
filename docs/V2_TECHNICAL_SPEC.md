@@ -35,8 +35,14 @@ dedupe for it).
 
 1. **hardening fixes (§6)** — small, independent, land first
 2. **event model + animation table (§2, §5)** — extends the wire
-   contract and frontend; fully testable with `notchtap`/`curl`, no
-   espn dependency
+   contract and frontend. *automated* coverage needs no espn: vitest
+   synthesizes `notification-promoted` events with any `eventType`,
+   and rust serde tests cover the new variants. but `/notify` stays
+   generic-only (§2), so the *visual* eyeball of the non-generic
+   animations waits for the poller's first real events — §7's manual
+   row. (a dev-only typed-injection endpoint was considered and
+   rejected as speculative for a personal tool; revisit in §8 only if
+   the wait actually hurts.)
 3. **espn poller (§3, §4)** — observe the real payload shape first,
    then fixtures, then tests (`TESTING_STRATEGY.md` §4.7 explicitly
    orders it this way)
@@ -110,9 +116,19 @@ new module `src-tauri/src/poller.rs`, spawned from `lib.rs` at startup
     snapshot is silent, otherwise every restart floods with the
     current state of every live match.
 - **failure mode** (locked, `IMPLEMENTATION_PLAN.md` §2.1): malformed
-  json / timeout / 5xx → `tracing::warn`, skip the cycle, exponential
-  backoff (30s → 60s → 120s, cap 300s, reset on first success). the
-  poller can never panic the app or block the queue.
+  json / timeout / 5xx → `tracing::warn`, skip that league's cycle,
+  exponential backoff **per league** (30s → 60s → 120s, cap 300s,
+  reset on that league's first success) — one flapping league must
+  never stop the others from updating. the poller can never panic the
+  app or block the queue.
+- **snapshot eviction**: when a match reports final or disappears from
+  its league's feed, drop its snapshot entry at the end of that poll.
+  the snapshot never outlives the scoreboard it mirrors, so memory is
+  bounded by however many matches espn currently lists — no unbounded
+  growth across weeks of uptime.
+- **ordering**: multiple deltas in one poll emit in feed order (league
+  order, then match order within the feed) — deterministic; fifo
+  handles the rest downstream.
 - **separation for testability** (same pattern as v1's
   `presentation_mode`): the pure function
   `fn diff_scoreboard(prev: &Snapshot, fetched: &Scoreboard) -> Vec<Event>`
@@ -131,6 +147,12 @@ espn_poll_secs = 30
 
 all three `serde(default)` like the v1 fields — a v1 config file keeps
 working untouched (espn defaults to on with the three locked leagues).
+
+note stated plainly: `espn_enabled = true` by default means a machine
+upgrading from v1 starts making background network calls to espn on
+next launch with no config change. intentional (`ARCHITECTURE.md`
+§16 — the owner picked the leagues), recorded here so it's never a
+surprise.
 
 ---
 
@@ -164,7 +186,9 @@ working untouched (espn defaults to on with the three locked leagues).
 3. **runtime-thread guard before `blocking_lock`** in the tray handler:
    `debug_assert!(tokio::runtime::Handle::try_current().is_err(), …)`
    — makes the "menu events are off-runtime" assumption explicit and
-   loud in dev if a refactor ever moves them.
+   loud in dev if a refactor ever moves them. (dev builds only — it
+   compiles out of release. accepted: the guard exists to catch
+   refactors during development, not to protect production.)
 
 ---
 
@@ -175,7 +199,7 @@ working untouched (espn defaults to on with the three locked leagues).
 | §3 `diff_scoreboard` + poller failure modes | §4.7 (fixtures via `wiremock` for the fetch layer; pure-function tests need no mocking at all) |
 | §2 new `EventType` variants / serde | §4.2 (unknown-type case now real) |
 | §5 animation table | §4.6 (stays manual — eyeball each type once) |
-| §6.1 deadline sweep | new §4.5 case: item past wall-clock deadline is removed even if its timers never fired |
+| §6.1 deadline sweep | §4.5's wall-clock deadline case (added 2026-07-16): item past deadline is removed even if its timers never fired |
 | cmux relay | §4.8 — reduced by the flags-only cli: the "env-var parsing" is the shell's, not ours. the fold/empty-subtitle logic is the script's and is covered by manual verification; see §8 |
 
 fixture rule restated from §4.7: **never call the live espn endpoint
@@ -187,8 +211,9 @@ from a test.** capture real responses once (a `docs/fixtures/` or
 ## 8. what's genuinely open
 
 - exact espn scoreboard field names for scorer/clock detail — resolve
-  by capturing real payloads during §2.1's first implementation step,
-  before writing the fixture tests (per §4.7's observe-first rule).
+  by capturing real payloads as the first step of the poller work
+  (`IMPLEMENTATION_PLAN.md` §2.1), before writing the fixture tests
+  (per §4.7's observe-first rule).
 - whether `CardEvent` earns its own variant (see §2) — decide from the
   observed payloads.
 - whether the cli shell script gets automated tests (a tiny

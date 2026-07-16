@@ -49,9 +49,12 @@ src-tauri/
   capabilities/
     default.json
   src/
-    main.rs        — entrypoint: tracing init, config load, axum server
-                      + tauri app boot, window setup, tray (§6),
-                      250ms promotion heartbeat (§4)
+    main.rs        — two-line binary shim calling notchtap_lib::run()
+                      (tauri template convention)
+    lib.rs          — the actual entrypoint wiring: tracing init,
+                      config load, axum server + tauri app boot,
+                      window setup, tray (§6), 250ms promotion
+                      heartbeat (§4)
     http.rs         — axum router, POST /notify handler
     event.rs        — Event, EventType, dispatch/routing
     queue.rs        — NotificationQueue (fifo, cap, ttl)

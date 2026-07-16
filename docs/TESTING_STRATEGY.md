@@ -166,6 +166,9 @@ of "here is a string of stdout" is fair game:
 - **example cases**:
   - receiving a tauri event adds an item to visible state
   - item past ttl removes itself from visible state
+  - (v2 hardening) an item whose wall-clock deadline has passed is
+    removed by the 1s sweep even if its setTimeout timers never fired —
+    simulates system sleep / webview timer throttling (v2 spec §6.1)
   - the frontend renders every `notification-promoted` event it
     receives without enforcing any cap itself — cap and promotion
     authority live rust-side (spec §8's queue-authority resolution); a
@@ -186,23 +189,41 @@ of "here is a string of stdout" is fair game:
 
 ### 4.7 espn scoreboard poller (v2, rust)
 
-- **type**: unit, with `wiremock` fixtures — not tdd-first (external
+- **type**: unit. `wiremock` fixtures cover the fetch layer; all delta
+  logic lives in a pure `diff_scoreboard(prev, fetched)` function
+  tested with no mocking at all (v2 spec §3). not tdd-first (external
   api shape needs to be observed before tests can assert against it),
   write tests once the real response shape is confirmed
 - **example cases**:
   - well-formed scoreboard response → normalized `score-update` event
+  - score delta against the snapshot → one `ScoreUpdate` per changed
+    match; unchanged matches emit nothing
+  - status delta (pre→in, in→halftime, →final) → one `MatchState`
+  - first sighting of a match → no event (silent baseline, no restart
+    flood)
+  - match gone final / absent from the feed → snapshot entry evicted
   - malformed/empty json → no crash, no event emitted
-  - http timeout / 5xx from espn → backoff, no event emitted, no crash
+  - http timeout / 5xx from espn → per-league backoff, no event
+    emitted, no crash; the other leagues keep polling
   - never call the live espn endpoint from a test — fixtures only
 
 ### 4.8 cmux relay ingestion (v2)
 
-- **type**: unit, tdd
-- **coverage target**: 100% — small, pure env-var parsing
-- **example cases**:
-  - all three env vars present → forwarded correctly
-  - missing `CMUX_NOTIFICATION_BODY` → handled explicitly, not a panic
-  - empty-string values → handled explicitly
+- **type**: manual (revised 2026-07-16 — this section originally
+  planned rust unit tests for env-var parsing, written before the cli
+  was locked as a flags-only shell script. there is no rust env-var
+  parsing to test: cmux's notification command passes
+  `$CMUX_NOTIFICATION_*` through shell expansion into `notchtap`'s
+  flags, and the fold/empty-subtitle logic lives in the script.)
+- an optional automated `test-cli.sh` is tracked in the v2 spec §8 —
+  add it only if the script grows
+- **example checks (manual)**:
+  - all three env vars present → notification shows
+    "subtitle — body" folded correctly
+  - empty/unset `CMUX_NOTIFICATION_SUBTITLE` → body passes through
+    untouched, no stray separator
+  - end-to-end: live-verified 2026-07-16 on the mac mini (real claude
+    code "needs input" alert surfaced through the overlay)
 
 ### 4.9 whatsapp/twilio outbound (v3)
 
