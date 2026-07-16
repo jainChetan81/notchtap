@@ -74,3 +74,39 @@ unbounded `.text()`) remain recorded as such.
 
 reviewed by: openai/gpt-5.1-codex (for) and google/gemini-2.5-pro
 (against) — both completed; substitutions as recorded above.
+
+### round 2
+
+**executor's diff**: commit 24609a3 (the round-1 fixes) —
+`MatchSnapshot.missed_polls` + `ABSENT_POLLS_BEFORE_EVICTION = 10`
+carry-forward pass (double condition guards just-finalized matches
+from resurrection; warn on threshold eviction), `league_label` +
+league-tagged `matchup` titles, `diff_scoreboard` league param, tests
+52 → 54 (carry-forward, blip-goal-caught, threshold eviction), spec
+§3 / TESTING §4.7 updated.
+
+**reviewer 1 (openai/gpt-5.1-codex, for)**: **approve** (confidence
+8/10) — bounded carry-forward "honors the reviewer's functional
+intent while avoiding memory leaks"; double condition verified
+correct for finalized / first-seen-post / reappearing cases;
+league threading clean; O(prev×fetched) scan negligible (HashSet
+optimization deferrable); `missed_polls` in PartialEq a non-issue.
+
+**reviewer 2 (google/gemini-2.5-pro, against)**: **approve**
+(confidence 10/10) — "exemplary response to code review feedback…
+the merge is approved." explicitly rated the threshold approach
+*superior* to its own round-1 "never evict on absence" ask (bounded
+memory vs. permanently pulled matches); confirmed the carry-forward
+double condition, league tagging, PartialEq, and loop complexity all
+sound; new tests give "strong confidence the primary resilience goal
+has been met."
+
+**disagreement surfaced**: no — unanimous approve.
+
+**model substitutions**: same as round 1 (pair carried over).
+
+**action taken**: no changes — approved. v2 §2.1 code closed pending
+the live-match manual checks in `IMPLEMENTATION_PLAN.md` §2.5.
+
+reviewed by: openai/gpt-5.1-codex (for) and google/gemini-2.5-pro
+(against) — both completed.
