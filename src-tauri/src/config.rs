@@ -81,7 +81,8 @@ impl Config {
 
         let content = std::fs::read_to_string(&path)
             .map_err(|e| anyhow::anyhow!("failed to read config at {:?}: {}", path, e))?;
-        Self::parse(&content).map_err(|e| anyhow::anyhow!("failed to parse config at {:?}: {}", path, e))
+        Self::parse(&content)
+            .map_err(|e| anyhow::anyhow!("failed to parse config at {:?}: {}", path, e))
     }
 
     pub fn parse(content: &str) -> Result<Self, toml::de::Error> {
@@ -100,7 +101,10 @@ mod tests {
         assert_eq!(c.default_ttl, 8);
         assert_eq!(c.max_concurrent, 3);
         assert_eq!(c.max_queued, 50);
-        assert_eq!(c.detect_path, PathBuf::from("/usr/local/bin/notchtap-detect"));
+        assert_eq!(
+            c.detect_path,
+            PathBuf::from("/usr/local/bin/notchtap-detect")
+        );
         assert!(c.espn_enabled);
         assert_eq!(c.espn_leagues, ["eng.1", "uefa.champions", "esp.1"]);
         assert_eq!(c.espn_poll_secs, 30);

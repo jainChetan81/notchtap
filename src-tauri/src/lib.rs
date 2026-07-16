@@ -235,4 +235,3 @@ fn spawn_heartbeat(app: tauri::AppHandle, queue: Arc<Mutex<NotificationQueue>>) 
         }
     });
 }
-

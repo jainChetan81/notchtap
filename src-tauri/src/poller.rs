@@ -165,7 +165,11 @@ fn view(event: &SbEvent) -> MatchView<'_> {
 
     if let Some(comp) = comp {
         for c in &comp.competitors {
-            let abbrev = c.team.as_ref().map(|t| t.abbreviation.clone()).unwrap_or_default();
+            let abbrev = c
+                .team
+                .as_ref()
+                .map(|t| t.abbreviation.clone())
+                .unwrap_or_default();
             let score = c
                 .score
                 .as_deref()
@@ -199,7 +203,7 @@ fn view(event: &SbEvent) -> MatchView<'_> {
         .iter()
         .rev()
         .find(|d| d.scoring_play)
-        .map(|d| detail_line(d))
+        .map(detail_line)
         .filter(|s| !s.is_empty());
     let last_card = details
         .iter()
@@ -324,8 +328,16 @@ pub fn diff_scoreboard(
                 let title = matchup(league, &v.snap);
 
                 if v.snap.home_score != old.home_score || v.snap.away_score != old.away_score {
-                    let body = v.last_scoring_play.clone().unwrap_or_else(|| "goal".to_string());
-                    out.push(make_event(EventType::ScoreUpdate, title.clone(), body, ttl_secs));
+                    let body = v
+                        .last_scoring_play
+                        .clone()
+                        .unwrap_or_else(|| "goal".to_string());
+                    out.push(make_event(
+                        EventType::ScoreUpdate,
+                        title.clone(),
+                        body,
+                        ttl_secs,
+                    ));
                 }
 
                 if old.state == "pre" && v.snap.state == "in" {
@@ -467,8 +479,7 @@ impl PauseGate {
 // ---------------------------------------------------------------------------
 
 async fn fetch_league(client: &reqwest::Client, league: &str) -> anyhow::Result<String> {
-    let url =
-        format!("https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/scoreboard");
+    let url = format!("https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/scoreboard");
     let body = client
         .get(&url)
         .timeout(Duration::from_secs(10))

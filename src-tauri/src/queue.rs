@@ -144,7 +144,10 @@ mod tests {
     }
 
     fn titles(items: &VecDeque<QueueItem>) -> Vec<&str> {
-        items.iter().map(|i| i.event.payload.title.as_str()).collect()
+        items
+            .iter()
+            .map(|i| i.event.payload.title.as_str())
+            .collect()
     }
 
     #[test]

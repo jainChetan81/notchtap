@@ -32,7 +32,10 @@ pub fn detect_mode(config: &Config) -> (Mode, f64) {
             (mode, output.safe_area_top_inset)
         }
         Err(e) => {
-            tracing::warn!("failed to detect presentation mode: {}; falling back to hud", e);
+            tracing::warn!(
+                "failed to detect presentation mode: {}; falling back to hud",
+                e
+            );
             (Mode::Hud, 0.0)
         }
     }

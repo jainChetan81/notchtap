@@ -64,7 +64,9 @@ async fn notify_handler<R: tauri::Runtime>(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     if !content_type.starts_with("application/json") {
-        return Err(HttpError::BadRequest("content-type must be application/json"));
+        return Err(HttpError::BadRequest(
+            "content-type must be application/json",
+        ));
     }
 
     let req: NotifyRequest =
@@ -90,7 +92,11 @@ async fn notify_handler<R: tauri::Runtime>(
     let (promoted, paused, waiting_count) = {
         let mut queue = state.queue.lock().await;
         queue.enqueue(event).map_err(HttpError::Queue)?;
-        (queue.take_promoted(), queue.is_paused(), queue.waiting().len())
+        (
+            queue.take_promoted(),
+            queue.is_paused(),
+            queue.waiting().len(),
+        )
     };
 
     emit_promoted(&state.app_handle, promoted);
@@ -211,20 +217,14 @@ mod tests {
     #[tokio::test]
     async fn missing_title_returns_400() {
         let app = router(test_state(NotificationQueue::new(3, 50)));
-        let response = app
-            .oneshot(json_request(r#"{"body":"b"}"#))
-            .await
-            .unwrap();
+        let response = app.oneshot(json_request(r#"{"body":"b"}"#)).await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
     async fn missing_body_returns_400() {
         let app = router(test_state(NotificationQueue::new(3, 50)));
-        let response = app
-            .oneshot(json_request(r#"{"title":"t"}"#))
-            .await
-            .unwrap();
+        let response = app.oneshot(json_request(r#"{"title":"t"}"#)).await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 

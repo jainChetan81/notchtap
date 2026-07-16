@@ -119,7 +119,11 @@ mod tests {
 
     #[test]
     fn dispatch_accepts_all_three_variants() {
-        for event_type in [EventType::Generic, EventType::ScoreUpdate, EventType::MatchState] {
+        for event_type in [
+            EventType::Generic,
+            EventType::ScoreUpdate,
+            EventType::MatchState,
+        ] {
             let mut event = generic_event();
             event.event_type = event_type;
             assert!(dispatch(event).is_ok());

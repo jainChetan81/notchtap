@@ -25,7 +25,8 @@ pub fn init_logging() -> anyhow::Result<WorkerGuard> {
 }
 
 fn log_dir() -> anyhow::Result<PathBuf> {
-    let home = dirs::home_dir().ok_or_else(|| anyhow::anyhow!("could not determine home directory"))?;
+    let home =
+        dirs::home_dir().ok_or_else(|| anyhow::anyhow!("could not determine home directory"))?;
     let dir = home.join("Library").join("Logs").join("notchtap");
     fs::create_dir_all(&dir)?;
     Ok(dir)
@@ -53,15 +54,17 @@ struct Inner {
 }
 
 impl SizeRotatingAppender {
-    fn new(dir: impl AsRef<Path>, filename: impl AsRef<str>, max_size: u64, max_files: usize) -> io::Result<Self> {
+    fn new(
+        dir: impl AsRef<Path>,
+        filename: impl AsRef<str>,
+        max_size: u64,
+        max_files: usize,
+    ) -> io::Result<Self> {
         let dir = dir.as_ref().to_path_buf();
         fs::create_dir_all(&dir)?;
         let filename = filename.as_ref().to_string();
         let path = dir.join(&filename);
-        let file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path)?;
+        let file = OpenOptions::new().create(true).append(true).open(&path)?;
         let size = file.metadata()?.len();
         Ok(Self {
             inner: Mutex::new(Inner {
