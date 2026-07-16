@@ -147,8 +147,11 @@ new module `src-tauri/src/poller.rs`, spawned from `lib.rs` at startup
   scores" tray item flips a shared `Arc<AtomicBool>`; the loop reads
   it each tick through the pure `PauseGate` (unit-tested), which says
   whether to poll and whether to first clear all snapshots. paused
-  means zero network requests — distinct from the promotion pause,
-  which buffers but keeps polling. resume clears snapshots so the
+  means no new network requests — distinct from the promotion pause,
+  which buffers but keeps polling. the flag is read only at tick
+  boundaries, so a pause takes effect within one poll interval
+  (`espn_poll_secs`): an in-flight tick finishes its fetches and may
+  still emit before the pause lands. resume clears snapshots so the
   next poll is a silent baseline, the same rule as first sighting.
 
 ---

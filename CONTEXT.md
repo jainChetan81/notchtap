@@ -23,6 +23,12 @@ and `docs/adr/`.
   still accepted and buffered into Waiting (caller is told the app is
   paused); already-Visible Notifications finish their natural TTL and
   exit. Resuming re-enables Promotion; nothing is dropped.
+- **Polling Pause** — a Poller-level state (per source, from the tray)
+  in which the Poller stops checking its external service; no Events
+  are produced and changes during the pause are never seen. distinct
+  from Paused: Paused buffers and drops nothing, a Polling Pause
+  observes nothing. resuming re-baselines silently, like a first
+  sighting.
 - **Presentation Mode** — how the window anchors: **Notch** (over the
   macbook's notch cutout) or **HUD** (floating top-center, on
   notchless machines). decided at runtime, never at build time.

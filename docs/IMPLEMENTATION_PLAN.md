@@ -250,6 +250,11 @@ full detail in `TESTING_STRATEGY.md`. summary:
 - [ ] tray: pause → new pushes answered `202` and buffered, nothing new
       renders, visible items still age out; resume → buffered items
       promote fifo immediately; quit exits the app
+- [ ] tray: pause football scores (v2, `espn_enabled = true` only) →
+      poller log shows no new fetches after the next tick; resume →
+      first poll re-baselines silently (no burst of stale score
+      alerts), and a subsequent real score change still surfaces; item
+      absent when `espn_enabled = false`
 - [ ] cmux relay (v2): trigger a real claude code "needs input" moment,
       confirm it surfaces without manual intervention
 - [ ] notch-cutout anchoring looks correct on the macbook; hud placement

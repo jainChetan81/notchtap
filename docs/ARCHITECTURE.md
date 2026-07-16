@@ -163,13 +163,16 @@ standard pattern, v1 day one:
 - menu-bar tray icon (tauri's tray api) with two always-present items:
   **pause** (semantics in §3 — label toggles to "resume" while paused)
   and **quit**, plus — only when `espn_enabled = true` — **pause
-  football scores** (v2): stops the espn poller's network fetches
-  entirely, independent of the promotion pause; resuming re-baselines
-  silently (no burst of stale score alerts). like pause, it's
-  in-memory only — polling always starts active on launch. no settings
-  ui beyond that — the config file (§10) is the settings surface.
-  tauri's default icon is fine until the deferred real-icon item
-  (`IMPLEMENTATION_PLAN.md` §4)
+  football scores** (v2): stops the espn poller from issuing new
+  network fetches (takes effect at the next poll tick), independent of
+  the promotion pause; resuming re-baselines silently (no burst of
+  stale score alerts). like pause, it's in-memory only — polling
+  always starts active on launch. the original "exactly two items"
+  decision was reopened and approved 2026-07-16 to admit this one
+  conditional third item; the bar for further tray items stays high.
+  no settings ui beyond that — the config file (§10) is the settings
+  surface. tauri's default icon is fine until the deferred real-icon
+  item (`IMPLEMENTATION_PLAN.md` §4)
 - **always-on-top** (`setAlwaysOnTop` / `NSWindowLevel.floating`) — v1
 day one. a notification overlay buried under other windows is useless.
 - **transparent overlay window** — the main window is undecorated,
