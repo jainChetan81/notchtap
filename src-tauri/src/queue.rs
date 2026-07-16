@@ -429,3 +429,11 @@ mod tests {
         assert_eq!(titles(q.waiting()), vec!["d", "e"]);
     }
 }
+
+#[cfg(test)]
+mod ci_red_check {
+    #[test]
+    fn deliberately_failing_gate_check() {
+        assert_eq!(1 + 1, 3, "ci-red-check: this must fail");
+    }
+}
