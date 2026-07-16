@@ -214,8 +214,10 @@ deliberately **not** part of v4: the install story stays
 reopens it.
 
 ### 4.1 github hosting
-- push this repo to github (private). the remote is the backup and
-  collaboration surface; the two dev machines keep building locally.
+- repo lives at `github.com/jainChetan81/notchtap` (public — chosen
+  2026-07-16; the docs deliberately contain no secrets, and the code
+  binds to loopback only). the remote is the backup and collaboration
+  surface; the two dev machines keep building locally.
 - secrets hygiene carries over from §3: nothing in the repo history
   may contain a key or token. `.gitignore` already covers build
   output and agent worktrees.
