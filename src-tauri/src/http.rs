@@ -270,4 +270,45 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         assert!(addr.ip().is_loopback());
     }
+
+    #[tokio::test]
+    async fn ok_and_paused_response_bodies_match_documented_shape() {
+        // deserialize rather than substring-match so the contract is pinned
+        // field-by-field.
+        let app = router(test_state(NotificationQueue::new(3, 50)));
+        let ok_response = app
+            .clone()
+            .oneshot(json_request(r#"{"title":"t","body":"b"}"#))
+            .await
+            .unwrap();
+        assert_eq!(ok_response.status(), StatusCode::OK);
+        let ok_body = body_json(ok_response).await;
+        assert_eq!(ok_body["status"].as_str(), Some("accepted"));
+        assert!(ok_body["queued"].is_null());
+
+        let mut queue = NotificationQueue::new(3, 50);
+        queue.pause();
+        let paused_app = router(test_state(queue));
+        let paused_response = paused_app
+            .oneshot(json_request(r#"{"title":"t","body":"b"}"#))
+            .await
+            .unwrap();
+        assert_eq!(paused_response.status(), StatusCode::ACCEPTED);
+        let paused_body = body_json(paused_response).await;
+        assert_eq!(paused_body["status"].as_str(), Some("paused"));
+        assert_eq!(paused_body["queued"].as_u64(), Some(1));
+    }
+
+    #[tokio::test]
+    async fn get_method_on_notify_is_rejected() {
+        // only POST /notify is routed; axum rejects other methods with 405.
+        let app = router(test_state(NotificationQueue::new(3, 50)));
+        let request = Request::builder()
+            .method("GET")
+            .uri("/notify")
+            .body(Body::empty())
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
+    }
 }

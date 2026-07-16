@@ -294,4 +294,138 @@ mod tests {
         assert_eq!(promoted[0].payload.title, "b");
         assert!(q.take_promoted().is_empty());
     }
+
+    #[test]
+    fn burst_of_six_holds_cap_fifo_and_ttl_dismissal() {
+        // six rapid enqueues with the same ttl: the cap must stay at 3,
+        // promotion must be fifo, and every item must promote exactly once
+        // before the queue is finally empty.
+        let mut q = NotificationQueue::new(3, 50);
+        for t in ["a", "b", "c", "d", "e", "f"] {
+            q.enqueue(event(t, 1)).unwrap();
+        }
+        assert_eq!(titles(q.visible()), vec!["a", "b", "c"]);
+        assert_eq!(titles(q.waiting()), vec!["d", "e", "f"]);
+
+        let first_promoted = q.take_promoted();
+        assert_eq!(first_promoted.len(), 3);
+        assert_eq!(
+            first_promoted
+                .iter()
+                .map(|e| e.payload.title.as_str())
+                .collect::<Vec<_>>(),
+            vec!["a", "b", "c"],
+        );
+
+        let later = Instant::now() + Duration::from_secs(2);
+        q.expire_and_promote(later);
+        assert_eq!(titles(q.visible()), vec!["d", "e", "f"]);
+        assert!(q.waiting().is_empty());
+        assert!(q.visible().len() <= 3);
+
+        let second_promoted = q.take_promoted();
+        assert_eq!(second_promoted.len(), 3);
+        assert_eq!(
+            second_promoted
+                .iter()
+                .map(|e| e.payload.title.as_str())
+                .collect::<Vec<_>>(),
+            vec!["d", "e", "f"],
+        );
+
+        q.expire_and_promote(later + Duration::from_secs(2));
+        assert!(q.visible().is_empty());
+        assert!(q.waiting().is_empty());
+        assert!(q.take_promoted().is_empty());
+    }
+
+    #[test]
+    fn expiry_boundary_at_exact_deadline() {
+        // expire_visible uses `elapsed_secs < ttl_secs`, i.e. an item is
+        // removed once elapsed_secs >= ttl_secs (>= semantics, not >).
+        let mut q = NotificationQueue::new(1, 50);
+        q.enqueue(event("a", 1)).unwrap();
+
+        let promoted_at = q.visible()[0].promoted_at.unwrap();
+
+        // one nanosecond before the deadline: still visible
+        let just_before = promoted_at + Duration::from_secs(1) - Duration::from_nanos(1);
+        q.expire_and_promote(just_before);
+        assert_eq!(titles(q.visible()), vec!["a"]);
+
+        // exactly at the deadline: expired
+        let exactly_at = promoted_at + Duration::from_secs(1);
+        q.expire_and_promote(exactly_at);
+        assert!(q.visible().is_empty());
+    }
+
+    #[test]
+    fn pause_resume_pause_interleaving_never_double_promotes() {
+        // interleave pause/resume with expiry and new enqueues; every item
+        // id must appear in take_promoted exactly once, and paused ticks
+        // must never produce a promotion.
+        let mut q = NotificationQueue::new(3, 50);
+
+        q.enqueue(event("a", 1)).unwrap();
+        q.enqueue(event("b", 1)).unwrap();
+        q.enqueue(event("c", 1)).unwrap();
+        let mut all_promoted: Vec<uuid::Uuid> =
+            q.take_promoted().into_iter().map(|e| e.id).collect();
+
+        q.pause();
+
+        // visible items age out while paused; nothing should promote
+        let t1 = Instant::now() + Duration::from_secs(2);
+        q.expire_and_promote(t1);
+        assert!(q.visible().is_empty());
+        assert!(q.take_promoted().is_empty());
+
+        // enqueue more while paused; they stay waiting
+        q.enqueue(event("d", 10)).unwrap();
+        q.enqueue(event("e", 10)).unwrap();
+        q.enqueue(event("f", 10)).unwrap();
+        assert!(q.visible().is_empty());
+
+        q.resume();
+        q.expire_and_promote(t1);
+        assert_eq!(titles(q.visible()), vec!["d", "e", "f"]);
+        all_promoted.extend(q.take_promoted().into_iter().map(|e| e.id));
+
+        // pause again and let the new visible items expire; no promotion
+        q.pause();
+        let t2 = t1 + Duration::from_secs(11);
+        q.expire_and_promote(t2);
+        assert!(q.visible().is_empty());
+        assert!(q.take_promoted().is_empty());
+
+        // resume and promote the last batch, again checking no double promote
+        q.resume();
+        q.expire_and_promote(t2);
+        all_promoted.extend(q.take_promoted().into_iter().map(|e| e.id));
+        assert!(q.waiting().is_empty());
+
+        // every id is unique (exactly one promotion each)
+        let unique: std::collections::HashSet<_> = all_promoted.iter().copied().collect();
+        assert_eq!(unique.len(), all_promoted.len());
+        assert_eq!(all_promoted.len(), 6);
+    }
+
+    #[test]
+    fn resume_promotes_only_up_to_cap_in_fifo_order() {
+        // while paused with an empty visible list, enqueue five items and
+        // resume: the first tick must promote only the first three in fifo
+        // order, leaving the remaining two waiting.
+        let mut q = NotificationQueue::new(3, 50);
+        q.pause();
+        for t in ["a", "b", "c", "d", "e"] {
+            q.enqueue(event(t, 8)).unwrap();
+        }
+        assert!(q.visible().is_empty());
+        assert_eq!(titles(q.waiting()), vec!["a", "b", "c", "d", "e"]);
+
+        q.resume();
+        q.expire_and_promote(Instant::now());
+        assert_eq!(titles(q.visible()), vec!["a", "b", "c"]);
+        assert_eq!(titles(q.waiting()), vec!["d", "e"]);
+    }
 }

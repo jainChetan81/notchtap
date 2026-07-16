@@ -137,4 +137,68 @@ describe("useVisibleNotifications", () => {
     emit({ id: "goal", eventType: "score_update" });
     expect(result.current[0].eventType).toBe("score_update");
   });
+
+  it("the deadline sweep removes several stale items in one pass", async () => {
+    // two items whose deadlines have passed plus one long-ttl item: the 1s
+    // sweep must remove both stale items and leave the fresh one.
+    const now = Date.now();
+    vi.setSystemTime(now);
+
+    const { result } = await renderReady();
+    emit({ id: "stale1", ttlSecs: 1 });
+    emit({ id: "stale2", ttlSecs: 1 });
+    emit({ id: "fresh", ttlSecs: 100 });
+    expect(result.current).toHaveLength(3);
+
+    vi.setSystemTime(now + ENTER_DURATION_MS + 1000 + EXIT_DURATION_MS + 1);
+    act(() => vi.advanceTimersByTime(1000));
+
+    expect(result.current.map((n) => n.id)).toEqual(["fresh"]);
+  });
+
+  it("the sweep does not remove an item before its deadline", async () => {
+    // an item whose deadline is 1ms in the future when the sweep fires must
+    // survive; once mocked time is advanced past the deadline the item is
+    // removed.
+    const now = Date.now();
+    vi.setSystemTime(now);
+
+    const { result } = await renderReady();
+    emit({ id: "almost", ttlSecs: 1 });
+    const deadline = now + ENTER_DURATION_MS + 1000 + EXIT_DURATION_MS;
+
+    // advanceTimersByTime also advances the mocked system clock, so start
+    // 1000ms before the desired sweep time to land 1ms before the deadline.
+    vi.setSystemTime(deadline - 1001);
+    act(() => vi.advanceTimersByTime(1000));
+    expect(result.current.map((n) => n.id)).toEqual(["almost"]);
+
+    // advance mocked time past the deadline and let the next sweep run
+    vi.setSystemTime(deadline + 1);
+    act(() => vi.advanceTimersByTime(1000));
+    expect(result.current).toHaveLength(0);
+  });
+
+  it("a sweep firing while an item is already exiting does not double-remove or crash", async () => {
+    // drive an item into its exit animation, then force a sweep whose
+    // wall-clock time is past the item's deadline. the remove timer may
+    // also fire, but the item must end up removed exactly and no error
+    // thrown.
+    const now = Date.now();
+    vi.setSystemTime(now);
+
+    const { result } = await renderReady();
+    emit({ id: "exiting", ttlSecs: 1 });
+
+    act(() => vi.advanceTimersByTime(ENTER_DURATION_MS));
+    expect(result.current[0].phase).toBe("hold");
+    act(() => vi.advanceTimersByTime(1000));
+    expect(result.current[0].phase).toBe("exit");
+
+    const deadline = now + ENTER_DURATION_MS + 1000 + EXIT_DURATION_MS;
+    vi.setSystemTime(deadline + 1);
+    act(() => vi.advanceTimersByTime(1000));
+
+    expect(result.current).toHaveLength(0);
+  });
 });
