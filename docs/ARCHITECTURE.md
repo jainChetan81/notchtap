@@ -160,11 +160,16 @@ standard pattern, v1 day one:
   menu-bar presence only
 - register as a login item via `SMAppService.mainApp.register()`
   (current macos api; requires **macos 13+**)
-- menu-bar tray icon (tauri's tray api) with exactly two items:
+- menu-bar tray icon (tauri's tray api) with two always-present items:
   **pause** (semantics in §3 — label toggles to "resume" while paused)
-  and **quit**. no settings ui — the config file (§10) is the settings
-  surface. tauri's default icon is fine until the deferred real-icon
-  item (`IMPLEMENTATION_PLAN.md` §4)
+  and **quit**, plus — only when `espn_enabled = true` — **pause
+  football scores** (v2): stops the espn poller's network fetches
+  entirely, independent of the promotion pause; resuming re-baselines
+  silently (no burst of stale score alerts). like pause, it's
+  in-memory only — polling always starts active on launch. no settings
+  ui beyond that — the config file (§10) is the settings surface.
+  tauri's default icon is fine until the deferred real-icon item
+  (`IMPLEMENTATION_PLAN.md` §4)
 - **always-on-top** (`setAlwaysOnTop` / `NSWindowLevel.floating`) — v1
 day one. a notification overlay buried under other windows is useless.
 - **transparent overlay window** — the main window is undecorated,

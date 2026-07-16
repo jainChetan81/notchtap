@@ -8,6 +8,7 @@ mod poller;
 mod presentation;
 mod queue;
 
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Once, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -76,20 +77,25 @@ pub fn run() {
             position_top_center(&window)?;
 
             login_item::register();
-            build_tray(app.handle(), setup_queue.clone())?;
+            // tray-controlled polling switch: true = polling. lives here
+            // (not in the queue) because it gates network fetches, not
+            // promotion — pausing scores must not touch cmux/cli pushes.
+            let espn_active = espn_enabled.then(|| Arc::new(AtomicBool::new(true)));
+            build_tray(app.handle(), setup_queue.clone(), espn_active.clone())?;
             spawn_heartbeat(app.handle().clone(), setup_queue.clone());
 
             // espn poller (v2 spec §3) — config-gated: `espn_enabled =
             // false` means it never spawns. first poll only baselines
             // (silent), so starting before the webview loads can't drop
             // anything a listener would have shown.
-            if espn_enabled {
+            if let Some(espn_active) = espn_active {
                 poller::spawn_espn_poller(
                     app.handle().clone(),
                     setup_queue,
                     espn_leagues,
                     espn_poll_secs,
                     default_ttl,
+                    espn_active,
                 );
             }
 
@@ -148,10 +154,21 @@ fn position_top_center(window: &tauri::WebviewWindow) -> tauri::Result<()> {
 fn build_tray(
     app: &tauri::AppHandle,
     queue: Arc<Mutex<NotificationQueue>>,
+    espn_active: Option<Arc<AtomicBool>>,
 ) -> tauri::Result<()> {
     let pause_item = MenuItem::with_id(app, "pause", "Pause", true, None::<&str>)?;
+    // only offered when the poller exists (`espn_enabled = true`)
+    let espn_item = espn_active
+        .as_ref()
+        .map(|_| MenuItem::with_id(app, "espn", "Pause Football Scores", true, None::<&str>))
+        .transpose()?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
-    let menu = Menu::with_items(app, &[&pause_item, &quit_item])?;
+    let menu = Menu::new(app)?;
+    menu.append(&pause_item)?;
+    if let Some(item) = &espn_item {
+        menu.append(item)?;
+    }
+    menu.append(&quit_item)?;
 
     TrayIconBuilder::new()
         .icon(app.default_window_icon().expect("bundled icon").clone())
@@ -181,6 +198,18 @@ fn build_tray(
                     }
                 };
                 emit_promoted(app, promoted);
+            }
+            "espn" => {
+                if let (Some(flag), Some(item)) = (&espn_active, &espn_item) {
+                    // fetch_xor toggles and returns the previous value
+                    let now_active = !flag.fetch_xor(true, Ordering::Relaxed);
+                    let _ = item.set_text(if now_active {
+                        "Pause Football Scores"
+                    } else {
+                        "Resume Football Scores"
+                    });
+                    tracing::info!(active = now_active, "espn polling toggled from tray");
+                }
             }
             "quit" => app.exit(0),
             _ => {}

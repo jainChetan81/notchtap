@@ -143,6 +143,13 @@ new module `src-tauri/src/poller.rs`, spawned from `lib.rs` at startup
   the next snapshot (rather than mutating in place) is what makes
   eviction fall out of construction. the fetch loop around it stays
   thin and untested.
+- **tray polling toggle** (`ARCHITECTURE.md` §6): a "pause football
+  scores" tray item flips a shared `Arc<AtomicBool>`; the loop reads
+  it each tick through the pure `PauseGate` (unit-tested), which says
+  whether to poll and whether to first clear all snapshots. paused
+  means zero network requests — distinct from the promotion pause,
+  which buffers but keeps polling. resume clears snapshots so the
+  next poll is a silent baseline, the same rule as first sighting.
 
 ---
 
