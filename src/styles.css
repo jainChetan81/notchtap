@@ -120,3 +120,142 @@ body {
 .notification.match_state.enter {
   animation: slide-from-left 300ms ease-out both;
 }
+
+/* notch-morph nudge (IMPLEMENTATION_PLAN.md §3.5): pill and grow shapes,
+   true-black bg + matched corner radii so the window boundary disappears
+   against the real hardware notch. only applied in notch mode (App.tsx sets
+   these classes when usePresentationMode() === "notch"); hud mode gets its
+   own simpler `.mini` shape below instead, not these two. in notch mode
+   these rules intentionally supersede the event-type-specific animations
+   above via the later-declared-wins specificity tiebreak — they do not
+   blend with them. */
+
+.notification.pill {
+  height: 32px;
+  width: 240px;
+  padding: 0 14px;
+  border-radius: 16px;
+  background: #000;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+}
+
+.notification.pill.enter {
+  animation: pill-widen-in 260ms ease-out both;
+}
+
+.notification.pill.exit {
+  animation: pill-widen-out 220ms ease-in both;
+}
+
+@keyframes pill-widen-in {
+  from {
+    opacity: 0;
+    width: 40px;
+  }
+  to {
+    opacity: 1;
+    width: 240px;
+  }
+}
+
+@keyframes pill-widen-out {
+  from {
+    opacity: 1;
+    width: 240px;
+  }
+  to {
+    opacity: 0;
+    width: 40px;
+  }
+}
+
+.notification.grow {
+  width: 360px;
+  max-height: 84px;
+  border-radius: 14px;
+  background: #000;
+  overflow: hidden;
+}
+
+.notification.grow.enter {
+  /* must stay under useVisibleNotifications.ts's ENTER_DURATION_MS (300ms) —
+     that's what tears off the `enter` class; a longer animation gets cut
+     short and snaps instead of finishing (the "no visible seam" bug). */
+  animation: grow-in 280ms ease-out both;
+}
+
+.notification.grow.exit {
+  animation: grow-out 260ms ease-in both;
+}
+
+@keyframes grow-in {
+  from {
+    opacity: 0;
+    max-height: 0px;
+    width: 120px;
+    border-radius: 16px;
+    transform: translateY(-2px);
+  }
+  to {
+    opacity: 1;
+    max-height: 84px;
+    width: 360px;
+    border-radius: 14px;
+    transform: translateY(0);
+  }
+}
+
+@keyframes grow-out {
+  from {
+    opacity: 1;
+    max-height: 84px;
+    width: 360px;
+    border-radius: 14px;
+    transform: translateY(0);
+  }
+  to {
+    opacity: 0;
+    max-height: 0px;
+    width: 120px;
+    border-radius: 16px;
+    transform: translateY(-2px);
+  }
+}
+
+.notification.mini {
+  width: 220px;
+  padding: 8px 14px;
+  border-radius: 18px;
+}
+
+.notification.mini.enter {
+  animation: mini-drop-in 280ms ease-out both;
+}
+
+.notification.mini.exit {
+  animation: mini-drop-out 240ms ease-in both;
+}
+
+@keyframes mini-drop-in {
+  from {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.92);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes mini-drop-out {
+  from {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.92);
+  }
+}

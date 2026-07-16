@@ -50,7 +50,7 @@ pub fn run() {
         }
     };
 
-    let (mode, inset) = presentation::detect_mode(&config);
+    let (mode, inset, cutout) = presentation::detect_mode(&config);
     // this info line is load-bearing: the hud fallback is silent by
     // design, so the log is the only tell that detection worked
     // (manual checklist, IMPLEMENTATION_PLAN.md §6)
@@ -97,6 +97,7 @@ pub fn run() {
     let setup_queue = queue.clone();
     let page_load_queue = queue.clone();
     let server_once = Arc::new(Once::new());
+    let mode_once = Arc::new(Once::new());
 
     tauri::Builder::default()
         .setup(move |app| {
@@ -106,7 +107,7 @@ pub fn run() {
                 .get_webview_window("main")
                 .expect("main window missing from tauri.conf.json");
             window.set_always_on_top(true)?;
-            position_top_center(&window)?;
+            position_window(&window, mode, cutout)?;
 
             login_item::register();
             if let Some(worker) = telegram_worker {
@@ -147,6 +148,12 @@ pub fn run() {
                 let queue = page_load_queue.clone();
                 let app_handle = webview.app_handle().clone();
                 let connectors = page_load_connectors.clone();
+
+                mode_once.call_once(|| {
+                    use tauri::Emitter;
+                    let _ = webview.emit("presentation-mode", PresentationModePayload { mode });
+                });
+
                 server_once.call_once(move || {
                     let app_handle = app_handle.clone();
                     let state = http::AppState {
@@ -187,6 +194,30 @@ fn position_top_center(window: &tauri::WebviewWindow) -> tauri::Result<()> {
         window.set_position(tauri::PhysicalPosition::new(x, 0))?;
     }
     Ok(())
+}
+
+// notch-morph nudge (plan §3.5): anchor to the reported cutout when we have
+// notch-precise geometry, else fall back to screen-center (covers hud mode,
+// and notch mode when the shim couldn't report a cutout).
+fn position_window(
+    window: &tauri::WebviewWindow,
+    mode: presentation::Mode,
+    cutout: Option<presentation::CutoutGeometry>,
+) -> tauri::Result<()> {
+    if let (presentation::Mode::Notch, Some(cutout)) = (mode, cutout) {
+        let scale_factor = window.scale_factor()?;
+        let win_width = window.outer_size()?.to_logical::<f64>(scale_factor).width;
+        let x = cutout.center_x() - (win_width / 2.0);
+        window.set_position(tauri::LogicalPosition::new(x, 0.0))?;
+        Ok(())
+    } else {
+        position_top_center(window)
+    }
+}
+
+#[derive(serde::Serialize, Clone)]
+struct PresentationModePayload {
+    mode: presentation::Mode,
 }
 
 fn build_tray(
