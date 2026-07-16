@@ -121,7 +121,18 @@ pub struct MatchSnapshot {
     pub state: String,
     pub status_name: String,
     pub cards: usize,
+    /// consecutive polls this match has been absent from its league's
+    /// feed. reset to 0 whenever it appears; evicted at
+    /// ABSENT_POLLS_BEFORE_EVICTION (review fix, 2026-07-16: a
+    /// transient empty-but-valid espn response must not silently drop
+    /// live matches and lose their in-window events).
+    pub missed_polls: usize,
 }
+
+/// ~5 minutes at the default 30s cadence — long enough to ride out a
+/// transient feed glitch, short enough that a genuinely pulled match
+/// (postponement) can't pin the snapshot forever.
+const ABSENT_POLLS_BEFORE_EVICTION: usize = 10;
 
 struct MatchView<'a> {
     id: &'a str,
@@ -222,18 +233,35 @@ fn view(event: &SbEvent) -> MatchView<'_> {
             state: event.status.status_type.state.clone(),
             status_name: event.status.status_type.name.clone(),
             cards,
+            missed_polls: 0,
         },
         last_scoring_play,
         last_card,
     }
 }
 
-fn matchup(s: &MatchSnapshot) -> String {
-    // away-first, matching espn's "ARS @ PSG" orientation:
-    // "ARS 1–1 PSG" (spec §3's title shape)
+fn league_label(league: &str) -> &str {
+    // friendly labels for the locked leagues (ARCHITECTURE.md §16);
+    // anything else falls back to its raw slug
+    match league {
+        "eng.1" => "EPL",
+        "uefa.champions" => "UCL",
+        "esp.1" => "La Liga",
+        _ => league,
+    }
+}
+
+fn matchup(league: &str, s: &MatchSnapshot) -> String {
+    // league-tagged, away-first (matching espn's "ARS @ PSG"
+    // orientation): "UCL: ARS 1–1 PSG" (review fix, 2026-07-16 — two
+    // simultaneous matches can share team abbreviations across leagues)
     format!(
-        "{} {}–{} {}",
-        s.away_abbrev, s.away_score, s.home_score, s.home_abbrev
+        "{}: {} {}–{} {}",
+        league_label(league),
+        s.away_abbrev,
+        s.away_score,
+        s.home_score,
+        s.home_abbrev
     )
 }
 
@@ -264,7 +292,18 @@ fn make_event(event_type: EventType, title: String, body: String, ttl_secs: u64)
 /// - card count increased → MatchState with the latest card's detail
 ///   ("Yellow Card — B. Saka 54'"). "everything espn reports"
 ///   (ARCHITECTURE.md §16) includes yellows, chosen with eyes open.
-pub fn diff_scoreboard(prev: &Snapshot, fetched: &Scoreboard, ttl_secs: u64) -> (Vec<Event>, Snapshot) {
+/// - a match merely *absent* from the feed is carried forward (counter
+///   incremented) and only evicted after ABSENT_POLLS_BEFORE_EVICTION
+///   consecutive misses — so a transient empty-but-valid response
+///   neither drops live matches nor loses the goals scored during the
+///   blip (they diff against the carried snapshot on reappearance).
+///   only an explicit "post" evicts immediately.
+pub fn diff_scoreboard(
+    prev: &Snapshot,
+    fetched: &Scoreboard,
+    ttl_secs: u64,
+    league: &str,
+) -> (Vec<Event>, Snapshot) {
     let mut out = Vec::new();
     let mut next = Snapshot::new();
 
@@ -281,7 +320,7 @@ pub fn diff_scoreboard(prev: &Snapshot, fetched: &Scoreboard, ttl_secs: u64) -> 
                 }
             }
             Some(old) => {
-                let title = matchup(&v.snap);
+                let title = matchup(league, &v.snap);
 
                 if v.snap.home_score != old.home_score || v.snap.away_score != old.away_score {
                     let body = v.last_scoring_play.clone().unwrap_or_else(|| "goal".to_string());
@@ -321,6 +360,26 @@ pub fn diff_scoreboard(prev: &Snapshot, fetched: &Scoreboard, ttl_secs: u64) -> 
                 if !final_now {
                     next.insert(v.id.to_string(), v.snap);
                 }
+            }
+        }
+    }
+
+    // carry forward matches absent from this poll's feed (review fix,
+    // 2026-07-16): evict only after sustained absence, never on one
+    // missing poll. no events are emitted for absent matches.
+    for (id, old) in prev {
+        if !next.contains_key(id) && !fetched.events.iter().any(|e| &e.id == id) {
+            let missed = old.missed_polls + 1;
+            if missed < ABSENT_POLLS_BEFORE_EVICTION {
+                let mut carried = old.clone();
+                carried.missed_polls = missed;
+                next.insert(id.clone(), carried);
+            } else {
+                tracing::warn!(
+                    league,
+                    match_id = %id,
+                    "match absent for {missed} consecutive polls; evicting"
+                );
             }
         }
     }
@@ -429,7 +488,7 @@ pub fn spawn_espn_poller(
                 };
 
                 let prev = snapshots.entry(league.clone()).or_default();
-                let (events, next) = diff_scoreboard(prev, &scoreboard, ttl_secs);
+                let (events, next) = diff_scoreboard(prev, &scoreboard, ttl_secs, league);
                 snapshots.insert(league.clone(), next);
                 if events.is_empty() {
                     continue;
@@ -459,7 +518,7 @@ mod tests {
 
     fn baseline(fixture: &str) -> (Snapshot, Scoreboard) {
         let sb = parse_scoreboard(fixture).unwrap();
-        let (events, snap) = diff_scoreboard(&Snapshot::new(), &sb, 8);
+        let (events, snap) = diff_scoreboard(&Snapshot::new(), &sb, 8, "usa.1");
         assert!(events.is_empty(), "first sighting must be silent");
         (snap, sb)
     }
@@ -496,10 +555,10 @@ mod tests {
     fn score_delta_emits_one_score_update_and_nothing_for_unchanged() {
         let (snap, mut sb) = baseline(USA);
         sb.events[0].competitions[0].competitors[0].score = Some("1".to_string());
-        let (events, next) = diff_scoreboard(&snap, &sb, 8);
+        let (events, next) = diff_scoreboard(&snap, &sb, 8, "usa.1");
         assert_eq!(events.len(), 1);
         assert!(matches!(events[0].event_type, EventType::ScoreUpdate));
-        assert_eq!(events[0].payload.title, "TOR 0–1 MTL");
+        assert_eq!(events[0].payload.title, "usa.1: TOR 0–1 MTL");
         assert_eq!(events[0].payload.body, "goal"); // no scoring play in feed
         assert_eq!(events[0].ttl_secs, 8);
         assert_eq!(next.len(), 4);
@@ -509,7 +568,7 @@ mod tests {
     fn state_transitions_emit_match_state() {
         let (snap, mut sb) = baseline(USA);
         sb.events[0].status.status_type.state = "in".to_string();
-        let (events, _) = diff_scoreboard(&snap, &sb, 8);
+        let (events, _) = diff_scoreboard(&snap, &sb, 8, "usa.1");
         assert_eq!(events.len(), 1);
         assert!(matches!(events[0].event_type, EventType::MatchState));
         assert_eq!(events[0].payload.body, "kickoff");
@@ -521,7 +580,7 @@ mod tests {
         snap.get_mut("761659").unwrap().state = "in".to_string();
         sb.events[0].status.status_type.state = "in".to_string();
         sb.events[0].status.status_type.name = "STATUS_HALFTIME".to_string();
-        let (events, _) = diff_scoreboard(&snap, &sb, 8);
+        let (events, _) = diff_scoreboard(&snap, &sb, 8, "usa.1");
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].payload.body, "half-time");
     }
@@ -531,7 +590,7 @@ mod tests {
         let (mut snap, mut sb) = baseline(USA);
         snap.get_mut("761659").unwrap().state = "in".to_string();
         sb.events[0].status.status_type.state = "post".to_string();
-        let (events, next) = diff_scoreboard(&snap, &sb, 8);
+        let (events, next) = diff_scoreboard(&snap, &sb, 8, "usa.1");
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].payload.body, "full-time");
         assert!(!next.contains_key("761659")); // evicted
@@ -539,12 +598,50 @@ mod tests {
     }
 
     #[test]
-    fn absent_match_is_evicted_silently() {
+    fn absent_match_is_carried_forward_not_evicted() {
+        // review fix 2026-07-16: a transient empty-but-valid response
+        // must not drop live matches
         let (snap, mut sb) = baseline(USA);
         sb.events.remove(0);
-        let (events, next) = diff_scoreboard(&snap, &sb, 8);
+        let (events, next) = diff_scoreboard(&snap, &sb, 8, "usa.1");
         assert!(events.is_empty());
-        assert_eq!(next.len(), 3);
+        assert_eq!(next.len(), 4); // still tracked
+        assert_eq!(next.get("761659").unwrap().missed_polls, 1);
+    }
+
+    #[test]
+    fn goal_during_feed_blip_is_caught_on_reappearance() {
+        let (snap, sb) = baseline(USA);
+
+        // poll 1: entire feed transiently empty — everything carried
+        let empty = parse_scoreboard("{}").unwrap();
+        let (events, carried) = diff_scoreboard(&snap, &empty, 8, "usa.1");
+        assert!(events.is_empty());
+        assert_eq!(carried.len(), 4);
+
+        // poll 2: feed back, one match scored during the blip
+        let mut back = sb;
+        back.events[0].competitions[0].competitors[0].score = Some("1".to_string());
+        let (events, next) = diff_scoreboard(&carried, &back, 8, "usa.1");
+        assert_eq!(events.len(), 1);
+        assert!(matches!(events[0].event_type, EventType::ScoreUpdate));
+        assert_eq!(next.get("761659").unwrap().missed_polls, 0); // reset
+    }
+
+    #[test]
+    fn sustained_absence_evicts_after_threshold() {
+        let (mut snap, _) = baseline(USA);
+        let empty = parse_scoreboard("{}").unwrap();
+        for i in 1..ABSENT_POLLS_BEFORE_EVICTION {
+            let (events, next) = diff_scoreboard(&snap, &empty, 8, "usa.1");
+            assert!(events.is_empty());
+            assert_eq!(next.len(), 4, "still carried at miss {i}");
+            snap = next;
+        }
+        // the miss that reaches the threshold evicts, silently
+        let (events, next) = diff_scoreboard(&snap, &empty, 8, "usa.1");
+        assert!(events.is_empty());
+        assert!(next.is_empty());
     }
 
     #[test]
@@ -560,7 +657,7 @@ mod tests {
         let mut live = parse_scoreboard(UCL).unwrap();
         live.events[0].status.status_type.state = "in".to_string();
 
-        let (events, _) = diff_scoreboard(&snap, &live, 8);
+        let (events, _) = diff_scoreboard(&snap, &live, 8, "uefa.champions");
         assert_eq!(events.len(), 1);
         assert!(matches!(events[0].event_type, EventType::MatchState));
         assert!(events[0].payload.body.contains("Card"));
@@ -572,7 +669,7 @@ mod tests {
         snap.get_mut("761659").unwrap().state = "in".to_string();
         sb.events[0].competitions[0].competitors[0].score = Some("1".to_string());
         sb.events[0].status.status_type.state = "post".to_string();
-        let (events, _) = diff_scoreboard(&snap, &sb, 8);
+        let (events, _) = diff_scoreboard(&snap, &sb, 8, "usa.1");
         assert_eq!(events.len(), 2);
         assert!(matches!(events[0].event_type, EventType::ScoreUpdate));
         assert_eq!(events[1].payload.body, "full-time");
@@ -583,7 +680,7 @@ mod tests {
         assert!(parse_scoreboard("{not json").is_err());
         let sb = parse_scoreboard("{}").unwrap();
         assert!(sb.events.is_empty());
-        let (events, snap) = diff_scoreboard(&Snapshot::new(), &sb, 8);
+        let (events, snap) = diff_scoreboard(&Snapshot::new(), &sb, 8, "usa.1");
         assert!(events.is_empty());
         assert!(snap.is_empty());
     }

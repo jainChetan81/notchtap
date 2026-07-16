@@ -109,8 +109,10 @@ new module `src-tauri/src/poller.rs`, spawned from `lib.rs` at startup
 - **delta detection**: keep an in-memory snapshot per espn event id
   (`score home/away`, `status`). each poll, compare against the
   snapshot and emit one typed `Event` per changed fact:
-  - score changed → `ScoreUpdate` (title: `"LIV 2–1 MUN"`, body: the
-    scorer/clock text if the payload has it, else `"goal"`)
+  - score changed → `ScoreUpdate` (title: `"EPL: LIV 2–1 MUN"` —
+    league-tagged since 2026-07-16's panel review, two simultaneous
+    matches can share team abbreviations; body: the scorer/clock text
+    if the payload has it, else `"goal"`)
   - status changed (`pre→in`, `in→halftime`, `→final`) → `MatchState`
   - first sighting of a match does **not** emit — the baseline
     snapshot is silent, otherwise every restart floods with the
@@ -121,17 +123,22 @@ new module `src-tauri/src/poller.rs`, spawned from `lib.rs` at startup
   reset on that league's first success) — one flapping league must
   never stop the others from updating. the poller can never panic the
   app or block the queue.
-- **snapshot eviction**: when a match reports final or disappears from
-  its league's feed, drop its snapshot entry at the end of that poll.
-  the snapshot never outlives the scoreboard it mirrors, so memory is
-  bounded by however many matches espn currently lists — no unbounded
-  growth across weeks of uptime.
+- **snapshot eviction** (tightened by the 2026-07-16 panel review): an
+  explicit `"post"` state evicts immediately (after emitting
+  full-time). a match merely *absent* from a poll is carried forward
+  with a consecutive-miss counter and evicted only after 10 straight
+  misses (~5 min at the default cadence) — so a transient
+  empty-but-valid espn response neither drops live matches nor loses
+  goals scored during the blip (they diff against the carried snapshot
+  on reappearance). memory stays bounded: nothing survives sustained
+  absence, and a permanently pulled match (postponement) ages out in
+  minutes.
 - **ordering**: multiple deltas in one poll emit in feed order (league
   order, then match order within the feed) — deterministic; fifo
   handles the rest downstream.
 - **separation for testability** (same pattern as v1's
   `presentation_mode`): the pure function
-  `fn diff_scoreboard(prev: &Snapshot, fetched: &Scoreboard, ttl_secs: u64) -> (Vec<Event>, Snapshot)`
+  `fn diff_scoreboard(prev: &Snapshot, fetched: &Scoreboard, ttl_secs: u64, league: &str) -> (Vec<Event>, Snapshot)`
   holds all delta logic and is unit-tested against fixtures. returning
   the next snapshot (rather than mutating in place) is what makes
   eviction fall out of construction. the fetch loop around it stays

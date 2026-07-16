@@ -201,7 +201,11 @@ of "here is a string of stdout" is fair game:
   - status delta (pre→in, in→halftime, →final) → one `MatchState`
   - first sighting of a match → no event (silent baseline, no restart
     flood)
-  - match gone final / absent from the feed → snapshot entry evicted
+  - match gone final → snapshot entry evicted immediately (after the
+    full-time event)
+  - match merely absent from a poll → carried forward, not evicted; a
+    goal scored during the blip is still caught on reappearance;
+    sustained absence (10 consecutive misses) evicts
   - malformed/empty json → no crash, no event emitted
   - http timeout / 5xx from espn → per-league backoff, no event
     emitted, no crash; the other leagues keep polling
