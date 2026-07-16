@@ -34,8 +34,10 @@ one new capability: accepted events fan out to outbound connectors
 - fan-out happens in the http handler (and any future internal event
   source) **after** `enqueue` returns `Ok`. promotion is irrelevant to
   connectors; paused overlay still fans out.
-- the `Notifier` trait is **outbound-only** — the overlay is not an
-  implementation. the queue's result alone decides the http status.
+- the Notifier seam is **outbound-only** — the overlay is not a
+  member of it. (a seam, not a rust trait — `ConnectorHandle` is the
+  code-level shape until a second connector earns an abstraction;
+  see `CONTEXT.md`.) the queue's result alone decides the http status.
 - new module `src-tauri/src/notifier.rs` owns everything below.
 
 ## 2. types

@@ -141,6 +141,26 @@ body {
   overflow: hidden;
 }
 
+/* the pill is one 32px line: title + body sit side by side, each
+   ellipsizing rather than wrapping or clipping mid-glyph (2026-07-17
+   review — long score titles must degrade gracefully in 240px) */
+.notification.pill .title {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  flex-shrink: 0;
+  max-width: 55%;
+  margin-right: 8px;
+}
+
+.notification.pill .body {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  display: block;
+  -webkit-line-clamp: unset;
+}
+
 .notification.pill.enter {
   animation: pill-widen-in 260ms ease-out both;
 }

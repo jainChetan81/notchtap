@@ -3,11 +3,25 @@ import { listen } from "@tauri-apps/api/event";
 
 export type PresentationMode = "notch" | "hud";
 
-// Default is "hud" deliberately: that's today's existing visual behavior, so
-// a notification rendered before the rust core's one-shot `presentation-mode`
-// event arrives still looks like it does today, not broken.
+declare global {
+  interface Window {
+    __NOTCHTAP_MODE__?: string;
+  }
+}
+
+// Mode delivery is double-shielded against the listener-registration race
+// (2026-07-17 review): the rust core both sets `window.__NOTCHTAP_MODE__`
+// via eval AND emits a `presentation-mode` event at every page load. If
+// react mounts after page load, the initial-state read below catches the
+// global; if it mounts before, the listener catches the emit. "hud" is the
+// fallback when neither has landed yet — today's existing visual behavior,
+// so an early-rendered notification looks normal, not broken.
+function initialMode(): PresentationMode {
+  return window.__NOTCHTAP_MODE__ === "notch" ? "notch" : "hud";
+}
+
 export function usePresentationMode(): PresentationMode {
-  const [mode, setMode] = useState<PresentationMode>("hud");
+  const [mode, setMode] = useState<PresentationMode>(initialMode);
 
   useEffect(() => {
     let unlisten: (() => void) | undefined;

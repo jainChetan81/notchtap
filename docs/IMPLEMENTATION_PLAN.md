@@ -206,8 +206,9 @@ decisions locked 2026-07-16 (grilling session; code-level contract in
   phone (that's when outbound matters most). paused pushes (`202`)
   fan out normally — acceptance succeeded; rejected pushes
   (`400`/`413`/`429`) reach no connector.
-- **honest asymmetry**: the `Notifier` trait is outbound-only. the
-  overlay is not a notifier; the queue keeps owning the http contract
+- **honest asymmetry**: the Notifier seam (`CONTEXT.md`) is
+  outbound-only. the overlay is not a notifier; the queue keeps owning
+  the http contract
   (200/202/429). a connector's outcome never influences the response
   to the pusher.
 - **worker-per-connector**: each connector = one bounded mpsc channel
@@ -251,9 +252,11 @@ decisions locked 2026-07-16 (grilling session; code-level contract in
   permissions (unit tests against temp files)
 - wiremock covers the send path (success / 400 / 5xx); no live
   telegram call in any test, ever
-- manual (§6): one real end-to-end telegram message on the mac mini;
-  overlay behaviour unchanged with the connector enabled and with
-  secrets absent
+- manual (§6): one real end-to-end telegram message on the mac mini —
+  ✅ verified 2026-07-17 (cli push arrived on the phone via the bot;
+  connector-enabled overlay behaviour unchanged). the secrets-absent
+  case was exercised throughout v1–v3 dev: every pre-secrets run
+  logged "telegram connector disabled" and ran overlay-only
 
 ---
 
@@ -393,18 +396,24 @@ other windows isn't validating the pipe either.
 
 full detail in `TESTING_STRATEGY.md`. summary:
 
+checked 2026-07-16 against `HEAD` = `b061577` (v1–v4). v3.5
+(notch-morph) is uncommitted and not covered by these checks yet —
+see `docs/IMPLEMENTATION_PLAN.md` §3.5.1 for its own exit criteria.
+
 **automated — must pass:**
-- [ ] `npx tsc --noEmit` clean
-- [ ] `npx vite build` clean
-- [ ] `cargo build` clean (rust toolchain required — install via
+- [x] `npx tsc --noEmit` clean
+- [x] `npx vite build` clean
+- [x] `cargo build` clean (rust toolchain required — install via
       `rustup` if not already on the mac)
-- [ ] `cargo test` clean — queue, event bus, `/notify` handler, notch/hud
-      decision function all covered (`TESTING_STRATEGY.md` §4.1–4.4)
-- [ ] `npx vitest run` clean — frontend queue state covered
-      (`TESTING_STRATEGY.md` §4.5)
+- [x] `cargo test` clean — queue, event bus, `/notify` handler, notch/hud
+      decision function all covered (`TESTING_STRATEGY.md` §4.1–4.4) —
+      88 tests + 4 doc-tests, per the 2026-07-16 v3 review log
+- [x] `npx vitest run` clean — frontend queue state covered
+      (`TESTING_STRATEGY.md` §4.5) — 11/11, per the same review log
 
 **manual — physical hardware, not automatable (`TESTING_STRATEGY.md` §5):**
-- [ ] manual push → visible animation, both machines
+- [ ] manual push → visible animation, both machines — mac mini side
+      exercised repeatedly during dev; macbook side not yet confirmed
 - [ ] startup log shows **notch** mode on the macbook — the hud
       fallback is silent by design (`V1_TECHNICAL_SPEC.md` §5), so this
       log line is the only tell that the detector actually worked
@@ -421,8 +430,9 @@ full detail in `TESTING_STRATEGY.md`. summary:
       first poll re-baselines silently (no burst of stale score
       alerts), and a subsequent real score change still surfaces; item
       absent when `espn_enabled = false`
-- [ ] cmux relay (v2): trigger a real claude code "needs input" moment,
-      confirm it surfaces without manual intervention
+- [x] cmux relay (v2): trigger a real claude code "needs input" moment,
+      confirm it surfaces without manual intervention — ✅ verified
+      2026-07-16 on the mac mini, see §2.2
 - [ ] notch-cutout anchoring looks correct on the macbook; hud placement
       looks correct on the mac mini
 

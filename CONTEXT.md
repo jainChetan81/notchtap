@@ -45,6 +45,11 @@ and `docs/adr/`.
   a Connector observes acceptance, not Promotion: the queue's display
   rules (cap, TTL, Paused) never apply to it, and its failures never
   affect the pusher's response.
+- **Notifier** — the outbound half of notchtap as a whole: the seam
+  through which accepted Events leave the machine. Connectors are its
+  members; the overlay is not one. a seam, not a code interface —
+  earlier drafts said "the Notifier trait," but no trait exists (and
+  none is needed until a second Connector does).
 - **Poller** — an internal event source that repeatedly checks an
   external service (espn in v2) and turns observed *changes* into
   Events. a Poller emits deltas only: the first sighting of a match is

@@ -26,3 +26,7 @@ dist-ssr
 # swift package build output
 notchtap-detect/.build
 .claude/worktrees/
+
+# opencode: local config + credentials (PAL endpoint, openrouter key)
+opencode.json
+.opencode/

@@ -14,7 +14,7 @@ exists and must stay green (`cargo test` from `src-tauri/`, `npx
 vitest run` from repo root, all gated by ci) — current counts live in
 `docs/TESTING_STRATEGY.md` §0 and only there.
 
-`docs/review/BLIND_REVIEW.md` and `docs/review/CHANGES_SUMMARY.md` are
+`docs/archive/BLIND_REVIEW.md` and `docs/archive/CHANGES_SUMMARY.md` are
 changelog/audit artifacts from the planning pass, not sources of
 truth — the decisions they describe are already folded into the three
 docs below.

@@ -97,7 +97,6 @@ pub fn run() {
     let setup_queue = queue.clone();
     let page_load_queue = queue.clone();
     let server_once = Arc::new(Once::new());
-    let mode_once = Arc::new(Once::new());
 
     tauri::Builder::default()
         .setup(move |app| {
@@ -149,10 +148,21 @@ pub fn run() {
                 let app_handle = webview.app_handle().clone();
                 let connectors = page_load_connectors.clone();
 
-                mode_once.call_once(|| {
+                // mode delivery is double-shielded against the
+                // listener-registration race (2026-07-17 review): the eval
+                // plants a global that react reads as *initial* state if it
+                // mounts after this moment; the emit reaches the listener if
+                // react mounted before it. one of the two always lands, and
+                // running on every page load (not once) covers reloads too.
+                {
                     use tauri::Emitter;
+                    let mode_str = match mode {
+                        presentation::Mode::Notch => "notch",
+                        presentation::Mode::Hud => "hud",
+                    };
+                    let _ = webview.eval(format!("window.__NOTCHTAP_MODE__ = '{mode_str}';"));
                     let _ = webview.emit("presentation-mode", PresentationModePayload { mode });
-                });
+                }
 
                 server_once.call_once(move || {
                     let app_handle = app_handle.clone();
@@ -208,6 +218,26 @@ fn position_window(
         let scale_factor = window.scale_factor()?;
         let win_width = window.outer_size()?.to_logical::<f64>(scale_factor).width;
         let x = cutout.center_x() - (win_width / 2.0);
+
+        // coordinate-space invariant (2026-07-17 review): NSScreen reports
+        // points (= logical px, global origin); tauri's LogicalPosition
+        // shares the x-axis on the primary display. multi-display
+        // arrangements can break that assumption, so a result outside the
+        // current monitor falls back to top-center instead of placing the
+        // window somewhere invisible. y stays 0.0 deliberately: the cards
+        // sit flush with the screen top, inside the notch band.
+        if let Some(monitor) = window.current_monitor()? {
+            let m_pos = monitor.position().to_logical::<f64>(scale_factor);
+            let m_size = monitor.size().to_logical::<f64>(scale_factor);
+            if x < m_pos.x || (x + win_width) > (m_pos.x + m_size.width) {
+                tracing::warn!(
+                    x,
+                    "cutout-anchored x lands outside the current monitor; falling back to top-center"
+                );
+                return position_top_center(window);
+            }
+        }
+
         window.set_position(tauri::LogicalPosition::new(x, 0.0))?;
         Ok(())
     } else {
