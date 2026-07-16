@@ -312,6 +312,149 @@ selected by event type:
 
 ---
 
+## 3.6. permanent rotating overlay (replaces the transient display model)
+
+decided 2026-07-17 via grilling session, inspired by trycrossbar.live
+("the world cup, living in your macbook's notch" — toggle/expand/replay
+hotkeys, content persists until dismissed rather than auto-expiring).
+**this supersedes §3.5's pill/grow/mini shape system and the
+multi-item stack entirely** — not an addition alongside them. an
+earlier draft of this section proposed a second, additive window; that
+was reopened and reversed 2026-07-17: the user wants one persistent
+surface, not two display paradigms to keep in sync.
+
+this is the biggest architectural change since v1: it reopens the
+transient/TTL display assumption `ARCHITECTURE.md` and `CONTEXT.md`
+have carried since v1. it does **not** reopen the receive-only ipc
+boundary (`CLAUDE.md` "ipc & security") — that constraint is
+deliberately preserved, see the expand-mechanism bullet below.
+
+**what survives, reconfigured rather than rebuilt**: `queue.rs`'s
+accept/buffer machinery — FIFO-capped `Waiting`, a heartbeat that
+promotes on a timer — is not thrown away. what changes:
+
+- **`max_concurrent` → 1**: exactly one `Visible` item at a time (the
+  slot), not a 3-item stack. everything else sits `Waiting`.
+- **promotion becomes priority-ordered, not pure fifo**: a new
+  `priority: low | medium | high` field, decoupled from `EventType`
+  (not every high-priority thing is a score — "a service is down" is
+  high-priority and isn't `ScoreUpdate`/`MatchState`). higher-priority
+  `Waiting` items are promoted next, ahead of older lower-priority
+  ones. **ordering only — never live interruption**: the currently
+  `Visible` item always finishes its own turn; a high-priority arrival
+  jumps the `Waiting` line for the *next* promotion, it does not cut
+  the current item off mid-display. avoids jarring half-finished exit
+  animations and the open question of what "resume" would even mean
+  for an interrupted item.
+- **ttl becomes rotation duration**: ~8s base per item (reuses today's
+  `default_ttl`), longer while an item is expanded. **low-priority
+  items may be infinite-duration**: they don't expire on a clock, they
+  keep recurring in rotation until superseded by fresher data for the
+  same thing (e.g. a live score updates in place) or the underlying
+  state naturally ends (match over). this is also how the
+  "always something there" requirement is met — **not a special idle
+  mode**, just one or more perpetual low-priority items (exact content
+  tbd by the user later: candidates mentioned were current match
+  score/time, a calendar event starting soon, order-arrival tracking,
+  world clock) always sitting in `Waiting`, promoted whenever nothing
+  higher-priority is pending. the architecture must stay generic
+  enough to accept these later sources without a redesign — this
+  section does not scope or build any of them now.
+- **every source feeds this one queue**: the espn poller, the cmux
+  relay, and cli pushes all produce events for the same
+  priority-ordered queue — no separate transient path for "urgent"
+  content. an urgent cmux "needs input" alert does not interrupt or
+  bypass the slot; it's a high-priority item that gets promoted next,
+  same as a goal.
+- **cli gains `--priority low|medium|high`** (default: unspecified →
+  treated as `medium`... **open detail, not blocking**: exact default
+  and whether cmux's relay path needs its own default separately from
+  raw cli pushes is an implementation-time call, not re-litigated
+  here). the poller sets `high` on goals/cards itself.
+
+**display**: single fixed-position slot, edge-flush to the top of the
+screen, no padding/gap — crossbar-style, notch-integrated on notch
+hardware (anchors to the cutout precisely, same geometry §3.5 already
+built) — generic top-edge-flush on hud machines. replaces
+`.notification.pill`/`.grow`/`.mini` and `getMorphShape` entirely; the
+event-type → shape lookup table is gone, replaced by a single
+slot renderer that reads whatever item the queue currently has
+`Visible` plus its `priority`/expand state.
+
+**expand — two independent triggers, ipc boundary preserved**:
+- **automatic**, content-driven, for `priority: high` items — the slot
+  grows to fit (same `max-height`/width-animation technique §3.5
+  already built for the `grow` shape, just applied uniformly rather
+  than per-event-type).
+- **manual**, via a **macOS global hotkey** (exact combo tbd), for
+  everything else ("news"). this stays consistent with `CLAUDE.md`'s
+  locked receive-only frontend: the hotkey is registered and handled
+  **rust-side** (global shortcut api, not a browser/webview keyboard
+  handler), rust decides the resulting expand state, and pushes it to
+  the frontend via the same one-way event pattern already used for
+  `presentation-mode` — no new frontend-to-rust invoke command, no
+  in-window click handler.
+
+**window behaviour — new requirement, applies to the one window this
+section leaves in place**: must stay visible over fullscreen apps and
+follow the user across macOS Spaces, not just sit on bare desktop.
+`window.set_always_on_top(true)` (already set) does not cover this —
+needs the window's `NSWindowCollectionBehavior` to include
+`canJoinAllSpaces` (and likely `fullScreenAuxiliary`), which tauri's
+cross-platform api doesn't expose directly; needs a small macos-
+specific call against the raw `NSWindow` handle. single physical
+monitor scope — no multi-monitor window spawning.
+
+**paused semantics carry over unchanged**: the tray's `Paused` state
+still means promotion is frozen and new pushes still buffer into
+`Waiting` — same contract as today (`CONTEXT.md`), just operating on
+the single-slot queue instead of the 3-item stack.
+
+**explicitly deferred, not decided here**:
+- exact idle/evergreen content (which perpetual low-priority items
+  exist, and their data sources) — user's call, later
+- exact global hotkey combination
+- the longer-term content-source taxonomy (stocks, calendar, order
+  tracking, clock, claude code session status, etc.) beyond "the
+  queue and priority model must be generic enough to accept them"
+- `CONTEXT.md` glossary updates (this section introduces `Priority`,
+  redefines `Visible` as singular, and probably retires "Promotion
+  disabled while Paused, stack" language) — needed before
+  implementation starts, not written speculatively here
+- a code-level technical spec (mirroring `V3_TECHNICAL_SPEC.md`'s
+  precedent) for the wire schema change, the `NSWindowCollectionBehavior`
+  call, and the global-hotkey registration mechanism — this section is
+  the architecture decision, not the implementation contract — ✅
+  written 2026-07-17, see `docs/V3_6_TECHNICAL_SPEC.md` (HLD+LLD, plus
+  a five-workstream parallel-agent breakdown for implementation)
+
+### 3.6.1 v3.6 exit criteria
+
+full detail and the workstream breakdown live in
+`docs/V3_6_TECHNICAL_SPEC.md` §8/§10; summarized here to match the
+§3.1/§3.5.1 pattern:
+
+- `cargo test` passes: the single-slot queue suite (never-interrupt,
+  tier-strict promotion, fifo-within-tier, `Recurring` requeue-to-own-
+  tier-back, `OneShot` drop-forever, topic supersession both
+  visible/waiting, per-tier `429`), `Priority` ordering, and the
+  `slot-state` change-guard emission tests
+- `npx vitest run` passes: `useSlotState` render tests (empty, showing,
+  replace-without-empty-frame) and `App.tsx` against the new markup —
+  `morphShape.test.ts` and the old `.stack`-based tests are deleted,
+  not just left passing-by-accident
+- `npx tsc --noEmit` / `npx vite build` clean against the rewritten
+  frontend
+- manual (physical hardware, per `TESTING_STRATEGY.md` §5): the global
+  hotkey toggles expand on the macbook; the window survives a Spaces
+  switch and stays visible over a fullscreen app; a live espn goal
+  still auto-expands and rotates out correctly under the new model
+- `CONTEXT.md` glossary updated per this doc's §3.6 note and
+  `V3_6_TECHNICAL_SPEC.md` §2/§9 (single reviewable commit, not bundled
+  into the code-focused spec)
+
+---
+
 ## 4. v4 — github, ci, expanded test suites — ✅ done 2026-07-16
 
 all four exit criteria in §4.4 verified 2026-07-16: repo live at
