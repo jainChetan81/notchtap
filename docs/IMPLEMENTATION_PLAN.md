@@ -105,10 +105,31 @@ visible, animated notification on both target machines.
 
 ## 2. v2 — external triggers, real content, animation variety
 
+decisions locked in `ARCHITECTURE.md` §16 (leagues, trigger scope,
+css keyframes, hardening carry-over); code-level contract in
+`docs/V2_TECHNICAL_SPEC.md`. build order: 2.0 → 2.3 → 2.1 (the
+animation table lands before the poller so it's testable with plain
+`notchtap`/`curl` pushes, no espn dependency).
+
+### 2.0 v1 hardening carry-over (first, small, independent)
+- frontend wall-clock deadline sweep (stale cards after sleep/timer
+  throttling), `app_handle.exit(1)` in the server task, runtime-thread
+  guard before the tray's `blocking_lock` — v2 spec §6, from
+  `docs/review-logs/2026-07-16-v1-implementation-review.md`
+
 ### 2.1 espn live football scores
 - poll `site.api.espn.com/apis/site/v2/sports/soccer/{league}/scoreboard`
-  (public, keyless)
-- new event type: `score-update`, feeds the same v1 queue
+  (public, keyless) for `espn_leagues` (default: `eng.1`,
+  `uefa.champions`, `esp.1`) every `espn_poll_secs` (default 30s)
+- new event types: `ScoreUpdate` (goal) and `MatchState`
+  (kickoff/half-time/full-time — plus cards if the payload carries
+  them), feeding the same v1 queue. trigger scope is "everything espn
+  reports" (`ARCHITECTURE.md` §16)
+- delta detection via an in-memory per-match snapshot; first sighting
+  of a match is silent (no restart flood). all diff logic in a pure
+  `diff_scoreboard` function, fixture-tested (v2 spec §3)
+- **observe the real payload shape before writing fixture tests**
+  (`TESTING_STRATEGY.md` §4.7 orders it this way)
 - **failure mode is a requirement, not an afterthought**: this is an
   undocumented public endpoint, best-effort — no sla, no notice before
   it changes shape or goes down. the poller must fail gracefully: no
@@ -117,7 +138,12 @@ visible, animated notification on both target machines.
   for the corresponding fixture-based test cases (malformed response,
   http timeout/5xx)
 
-### 2.2 cmux notification relay
+### 2.2 cmux notification relay — ✅ verified early (2026-07-16)
+- **already working on the mac mini**: during v1's live test a real
+  claude code "needs input" alert surfaced through the overlay via
+  cmux's notification command — this section's integration work is
+  done there. remaining: configure the same one setting on the
+  macbook.
 - cmux (terminal) has a built-in "settings > app > notification command"
   hook that fires on every notification it raises, including claude
   code / copilot cli / opencode "agent needs input" alerts — documented
@@ -134,8 +160,13 @@ visible, animated notification on both target machines.
 - replace the single v1 template with a config table: event type →
   animation (e.g. score-update = bounce, cmux-generic = simple slide,
   posture-alert = shake)
-- react + css keyframes (or framer motion) — a config change, not a new
-  code path
+- css keyframes only — framer motion declined (`ARCHITECTURE.md` §16).
+  the table is the stylesheet keyed by event type: the wire payload
+  gains an `eventType` field, the notification div's class becomes
+  `notification ${eventType} ${phase}`, unknown types fall back to
+  `generic` (v2 spec §2/§5)
+- lands **before** the poller — verifiable end-to-end by hand-pushing
+  events, no espn needed
 
 ### 2.4 posture module (future, not in v2 scope)
 - confirmed feasible via `CMHeadphoneMotionManager` (apple's public
@@ -146,12 +177,20 @@ visible, animated notification on both target machines.
 
 ### 2.5 v2 exit criteria
 - `cargo test` passes — every example case in `TESTING_STRATEGY.md`
-  §4.7 (espn poller, fixture-based, no live api calls in tests) and
-  §4.8 (cmux env-var parsing) has a written, passing test
+  §4.7 (espn poller: fixture-based `diff_scoreboard` + failure modes,
+  no live api calls in tests) has a written, passing test. §4.8 (cmux
+  env-var handling) is reduced by the flags-only cli — the shell
+  expands the env vars; the script's fold/empty-subtitle behaviour
+  stays manually verified (v2 spec §7/§8)
+- `npx vitest run` passes — including the new wall-clock deadline
+  sweep case (v2 spec §6.1)
+- the three hardening fixes (§2.0) are in and `cargo test` /
+  `npx vitest run` stay clean
 - a live espn score change produces a distinct animation from a cmux
   relay event
 - cmux "agent needs input" alerts visibly surface through the app
-  without any claude code hook configuration
+  without any claude code hook configuration — ✅ already verified on
+  the mac mini (2026-07-16); re-verify once on the macbook
 
 ---
 

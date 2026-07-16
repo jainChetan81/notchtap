@@ -34,3 +34,11 @@ and `docs/adr/`.
 - **Relay** — an external tool (cmux in v2) forwarding its own
   notifications into notchtap. a Relay is heads-up only: it can never
   answer back into the tool that raised the alert.
+- **Poller** — an internal event source that repeatedly checks an
+  external service (espn in v2) and turns observed *changes* into
+  Events. a Poller emits deltas only: the first sighting of a match is
+  silent, and repetition of an unchanged fact never produces an Event.
+- **Score Update** — an Event produced when a watched match's score
+  changes (a goal).
+- **Match State** — an Event produced when a watched match's phase
+  changes: kickoff, half-time, full-time (and cards, where reported).

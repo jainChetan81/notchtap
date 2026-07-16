@@ -125,9 +125,10 @@ gets the pipe working end to end before investing in variety.
 
 v2: swap the single template for a config table (event type →
 animation), e.g. goal = confetti + bounce, posture-alert = shake,
-generic/cmux = simple slide. **css keyframes** (or framer motion, evaluated
-at v2 time) keeps this a config change, not a new code path, when that
-point is reached.
+generic/cmux = simple slide. **css keyframes** (locked — framer motion
+was the alternative, evaluated and declined 2026-07-16 in favour of
+zero new dependencies, see §16) keeps this a config change, not a new
+code path.
 
 ---
 
@@ -341,9 +342,11 @@ chosen rust deserializer).
 | `max_queued` | `50` | waiting items before rejecting |
 | `detect_path` | `/usr/local/bin/notchtap-detect` | absolute path to the notch-detection helper — gui/login-item-launched apps get a minimal `PATH`, so the core never does a `PATH` lookup (added 2026-07-16, consensus review) |
 
-v2 may add: espn league list, cmux integration on/off, posture
-module on/off. api keys (twilio, etc.) live in a separate env var or
-secret file — never in the committed config.
+v2 adds (locked 2026-07-16, §16): `espn_enabled` (default `true`),
+`espn_leagues` (default `["eng.1", "uefa.champions", "esp.1"]`),
+`espn_poll_secs` (default `30`). posture module remains future, not
+v2. api keys (twilio, etc.) live in a separate env var or secret
+file — never in the committed config.
 
 the rust core reads this file once at startup. changes require a restart
 in v1; a file-watcher or settings ui is a v2+ convenience.
@@ -422,3 +425,34 @@ one-way data flow in v1 means v3 doesn't accidentally open a hole.
 all decisions above are locked — scope, stack, distribution model,
 cross-device behaviour. see `IMPLEMENTATION_PLAN.md` in this folder for
 the phased build sequence and exit criteria.
+
+---
+
+## 16. v2 decisions (locked 2026-07-16)
+
+- **leagues**: premier league (`eng.1`), champions league
+  (`uefa.champions`), la liga (`esp.1`) — the default `espn_leagues`
+  config list (§10); changing leagues is a config edit, never code.
+- **trigger scope**: every scoreboard delta espn reports — score
+  changes (goals), match-state transitions (kickoff, half-time,
+  full-time), and card/situation events where the payload actually
+  carries them. chosen over "goals only" with eyes open about noise;
+  if it proves too chatty, narrowing is a filter/config change, not a
+  redesign.
+- **animation library**: css keyframes, no framer motion (resolves
+  §4's deferred evaluation) — zero new dependencies; the "config
+  table" is the stylesheet keyed by event type.
+- **v2 absorbs three hardening fixes** from the 2026-07-16
+  implementation consensus review (frontend wall-clock deadline
+  recheck against sleep/timer-throttle staleness; `app_handle.exit(1)`
+  instead of `process::exit` in the server task; a runtime-thread
+  guard before the tray's `blocking_lock`). notch-precise positioning
+  stays deferred (`IMPLEMENTATION_PLAN.md` §4) — it needs the macbook
+  physically present.
+- the cmux relay needed no v2 work at all: it was live-verified on the
+  mac mini on 2026-07-16 (a real claude code "needs input" alert
+  surfaced through the overlay). only the macbook's cmux setting
+  remains to configure.
+
+code-level detail for all of the above: `V2_TECHNICAL_SPEC.md` (v0
+draft, adjustable, same rules as the v1 spec).
