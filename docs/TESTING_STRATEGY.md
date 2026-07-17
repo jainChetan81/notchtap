@@ -16,9 +16,9 @@ other sections point back rather than repeating them):
 
 | suite | size | where |
 |---|---|---|
-| rust unit/integration | 209 tests — settings 36, queue 36, http 26, notifier 22, rss_poller 21, poller 19, event 17, config 16, presentation 11, lib (hotkey) 5 | `cargo test` from `src-tauri/` |
+| rust unit/integration | 214 tests — settings 41, queue 38, http 26, notifier 22, rss_poller 21, poller 19, event 17, config 16, presentation 11, lib (hotkey) 5 | `cargo test` from `src-tauri/` |
 | rust doc-tests | 3 — public `queue`/`event` apis | same `cargo test` run |
-| frontend | 60 tests — presentation tables 14, slot-state hook 14, StatusRailCard 14, settings form 9, App render 5, presentation mode 4 | `npx vitest run` |
+| frontend | 61 tests — presentation tables 14, slot-state hook 14, StatusRailCard 14, settings form 10, App render 5, presentation mode 4 | `npx vitest run` |
 | ci (v4) | fmt, clippy `-D warnings`, cargo test, tsc, vitest, vite build, swiftc compile check | every push + pr |
 
 every example case listed in §4 for v1/v2/v3 components has a passing
@@ -26,10 +26,12 @@ test; the v4 §4.3 expansion (exhaustive status codes, queue edge
 interleavings, sweep timing) is in; the v3 notifier suite (§4.9 —
 telegram) landed 2026-07-16; the v3.6 single-slot rotating overlay
 suite (§4.10) landed 2026-07-17, superseding §4.1's 3-item-cap queue
-example cases; the v5 settings-window rust suite (§4.11) and the v5
-rss poller + status-rail news card suite (§4.12) both landed
-2026-07-17 — §4.11's form/vitest cases and §4.12's manual live-feed
-check are the only pieces still open, tracked in their own sections.
+example cases; the v5 settings-window rust suite (§4.11), the v5
+rss poller + status-rail news card suite (§4.12), and the v5.1
+appearance/test-notification additions (queue test-promotion,
+`send_test_notification`, `set_appearance`, AppearanceSection vitest)
+all landed 2026-07-17 — §4.12's manual live-feed check is the only
+piece still open, tracked in its own section.
 
 **left — each is a decision with an owner section, not a gap:**
 

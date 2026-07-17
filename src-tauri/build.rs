@@ -10,6 +10,8 @@ fn main() {
             "get_secret_status",
             "save_config_and_relaunch",
             "set_secret",
+            "send_test_notification",
+            "set_appearance",
         ]),
     ))
     .expect("failed to run tauri-build");

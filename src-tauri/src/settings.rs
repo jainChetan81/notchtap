@@ -11,10 +11,20 @@
 //! a bricked boot given `Config::load`'s fail-fast rule.
 
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex as StdMutex};
 
+use chrono::Local;
 use serde::{Deserialize, Serialize};
+use tokio::sync::Mutex;
 
-use crate::config::Config;
+use crate::config::{Appearance, Config};
+use crate::event::{
+    dispatch, Event, EventMeta, EventPayload, EventSignal, EventType, RotationSpec, SourceKind,
+};
+use tauri::Manager;
+use crate::http;
+use crate::notifier::ConnectorHandle;
+use crate::queue::SingleSlotQueue;
 
 // ---------------------------------------------------------------------------
 // validation (pure, unit-tested — spec §3)
@@ -124,6 +134,37 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
         );
     }
 
+    if let Err(mut appearance_errors) = validate_appearance(&c.appearance) {
+        errors.append(&mut appearance_errors);
+    }
+
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(errors)
+    }
+}
+
+pub fn validate_appearance(a: &Appearance) -> Result<(), Vec<String>> {
+    let mut errors = Vec::new();
+    if !(0.8..=1.4).contains(&a.card_scale) {
+        errors.push(format!(
+            "card_scale must be 0.8–1.4 (got {})",
+            a.card_scale
+        ));
+    }
+    if !(0.0..=24.0).contains(&a.card_radius) {
+        errors.push(format!(
+            "card_radius must be 0.0–24.0 (got {})",
+            a.card_radius
+        ));
+    }
+    if !(0.5..=1.0).contains(&a.card_opacity) {
+        errors.push(format!(
+            "card_opacity must be 0.5–1.0 (got {})",
+            a.card_opacity
+        ));
+    }
     if errors.is_empty() {
         Ok(())
     } else {
@@ -401,15 +442,124 @@ fn ensure_settings_window<R: tauri::Runtime>(
     }
 }
 
+/// IPC payload for `appearance-changed`: sent to the overlay whenever the
+/// user updates card styling. The field names stay camelCase-free; the
+/// frontend's listener mirrors this shape directly.
+#[derive(Clone, serde::Serialize)]
+pub struct AppearanceChangedPayload {
+    pub scale: f64,
+    pub radius: f64,
+    pub opacity: f64,
+}
+
+fn broadcast_appearance_change<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    appearance: &Appearance,
+) {
+    use tauri::Emitter;
+    let payload = AppearanceChangedPayload {
+        scale: appearance.card_scale,
+        radius: appearance.card_radius,
+        opacity: appearance.card_opacity,
+    };
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.emit("appearance-changed", &payload);
+    }
+}
+
+fn timestamp_body() -> String {
+    format!("Test · sent {}", Local::now().format("%H:%M:%S"))
+}
+
+fn build_test_event(config: &Config, source: &str) -> Result<Event, String> {
+    let kind = source.to_ascii_lowercase();
+    let now_ms = Local::now().timestamp_millis();
+    match kind.as_str() {
+        "football" => Ok(Event {
+            id: uuid::Uuid::new_v4(),
+            event_type: EventType::ScoreUpdate,
+            priority: config.espn_priority,
+            rotation: RotationSpec::OneShot {
+                ttl_secs: config.espn_ttl_secs,
+            },
+            topic: None,
+            payload: EventPayload {
+                title: "Test score update".into(),
+                body: timestamp_body(),
+            },
+            meta: EventMeta::default(),
+            signal: EventSignal::Goal,
+            origin: SourceKind::Football,
+        }),
+        "news" => Ok(Event {
+            id: uuid::Uuid::new_v4(),
+            event_type: EventType::NewsItem,
+            priority: config.rss_priority,
+            rotation: RotationSpec::OneShot {
+                ttl_secs: config.rss_ttl_secs,
+            },
+            topic: None,
+            payload: EventPayload {
+                title: "Test news headline".into(),
+                body: timestamp_body(),
+            },
+            meta: EventMeta {
+                source: Some("Settings".into()),
+                category: Some("preview".into()),
+                published_at_ms: Some(now_ms),
+                link: None,
+            },
+            signal: EventSignal::Generic,
+            origin: SourceKind::News,
+        }),
+        "cmux" => Ok(Event {
+            id: uuid::Uuid::new_v4(),
+            event_type: EventType::Generic,
+            priority: config.cmux_priority,
+            rotation: RotationSpec::OneShot {
+                ttl_secs: config.cmux_ttl_secs,
+            },
+            topic: None,
+            payload: EventPayload {
+                title: "Test · agent relay".into(),
+                body: "This is how cmux alerts look".into(),
+            },
+            meta: EventMeta::default(),
+            signal: EventSignal::Generic,
+            origin: SourceKind::Cmux,
+        }),
+        "manual" => Ok(Event {
+            id: uuid::Uuid::new_v4(),
+            event_type: EventType::Generic,
+            priority: config.manual_default_priority,
+            rotation: RotationSpec::OneShot {
+                ttl_secs: config.default_ttl,
+            },
+            topic: None,
+            payload: EventPayload {
+                title: "Test notification".into(),
+                body: timestamp_body(),
+            },
+            meta: EventMeta::default(),
+            signal: EventSignal::Generic,
+            origin: SourceKind::Manual,
+        }),
+        _ => Err(format!(
+            "unknown test source {source:?} — must be football, news, cmux, or manual"
+        )),
+    }
+}
+
 /// Returns the **booted** config (managed state) — "what is running",
 /// which save-and-relaunch makes true of the file again after every save.
 #[tauri::command]
 pub fn get_config(
     window: tauri::WebviewWindow,
-    state: tauri::State<'_, Config>,
+    state: tauri::State<'_, StdMutex<Config>>,
 ) -> Result<Config, String> {
     ensure_settings_window(&window)?;
-    Ok(state.inner().clone())
+    let config = state.inner().lock().unwrap().clone();
+    Ok(config)
 }
 
 #[tauri::command]
@@ -438,11 +588,12 @@ pub fn pin_uneditable_fields(mut submitted: Config, booted: &Config) -> Config {
 pub fn save_config_and_relaunch(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
-    state: tauri::State<'_, Config>,
+    state: tauri::State<'_, StdMutex<Config>>,
     config: Config,
 ) -> Result<(), Vec<String>> {
     ensure_settings_window(&window).map_err(|e| vec![e])?;
-    let config = pin_uneditable_fields(config, state.inner());
+    let booted = state.inner().lock().unwrap().clone();
+    let config = pin_uneditable_fields(config, &booted);
     validate(&config)?;
     let dir = notchtap_config_dir().map_err(|e| vec![e])?;
     write_config_atomic(&dir, &config)
@@ -460,6 +611,56 @@ pub fn set_secret(
     ensure_settings_window(&window)?;
     let dir = notchtap_config_dir()?;
     set_secret_in(&dir, field, value)
+}
+
+#[tauri::command]
+pub async fn send_test_notification(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, StdMutex<Config>>,
+    queue: tauri::State<'_, Arc<Mutex<SingleSlotQueue>>>,
+    connectors: tauri::State<'_, Arc<Vec<ConnectorHandle>>>,
+    source: String,
+) -> Result<(), String> {
+    ensure_settings_window(&window)?;
+    let config = state.inner().lock().unwrap().clone();
+    let event = build_test_event(&config, &source)?;
+    dispatch(event.clone()).map_err(|e| e.to_string())?;
+    let queue = queue.inner().clone();
+    let connectors = connectors.inner().clone();
+    http::enqueue_and_emit(&queue, connectors.as_slice(), &app, event, true)
+        .await
+        .map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub fn set_appearance(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, StdMutex<Config>>,
+    scale: f64,
+    radius: f64,
+    opacity: f64,
+) -> Result<(), String> {
+    ensure_settings_window(&window)?;
+    let appearance = Appearance {
+        card_scale: scale,
+        card_radius: radius,
+        card_opacity: opacity,
+    };
+    validate_appearance(&appearance).map_err(|errors| errors.join("; "))?;
+
+    let dir = notchtap_config_dir()?;
+    let mut config = state.inner().lock().unwrap().clone();
+    config.appearance = appearance.clone();
+    write_config_atomic(&dir, &config)
+        .map_err(|e| format!("could not write config.toml: {e}"))?;
+    {
+        let mut managed = state.inner().lock().unwrap();
+        managed.appearance = appearance.clone();
+    }
+    broadcast_appearance_change(&app, &appearance);
+    Ok(())
 }
 
 #[cfg(test)]
@@ -608,6 +809,41 @@ mod tests {
         };
         let errors = validate(&c).unwrap_err();
         assert_eq!(errors.len(), 3);
+    }
+
+    #[test]
+    fn appearance_boundaries_accepted() {
+        assert!(validate_appearance(&Appearance {
+            card_scale: 0.8,
+            card_radius: 0.0,
+            card_opacity: 0.5,
+        })
+        .is_ok());
+        assert!(validate_appearance(&Appearance {
+            card_scale: 1.4,
+            card_radius: 24.0,
+            card_opacity: 1.0,
+        })
+        .is_ok());
+    }
+
+    #[test]
+    fn appearance_rejects_out_of_range_values() {
+        let low = validate_appearance(&Appearance {
+            card_scale: 0.79,
+            card_radius: -0.1,
+            card_opacity: 0.49,
+        })
+        .unwrap_err();
+        assert_eq!(low.len(), 3);
+
+        let high = validate_appearance(&Appearance {
+            card_scale: 1.41,
+            card_radius: 24.1,
+            card_opacity: 1.01,
+        })
+        .unwrap_err();
+        assert_eq!(high.len(), 3);
     }
 
     // --- rss rules (v5 news backend, folded into the panel 2026-07-17) ---

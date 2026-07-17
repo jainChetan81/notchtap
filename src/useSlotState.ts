@@ -42,6 +42,11 @@ export type SlotState =
 declare global {
   interface Window {
     __NOTCHTAP_SLOT_STATE__?: unknown;
+    __NOTCHTAP_APPEARANCE__?: {
+      scale: number;
+      radius: number;
+      opacity: number;
+    };
   }
 }
 

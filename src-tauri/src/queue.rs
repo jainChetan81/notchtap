@@ -85,7 +85,21 @@ impl SingleSlotQueue {
     // ------------------------------------------------------------------
 
     pub fn enqueue(&mut self, event: Event) -> Result<(), QueueError> {
-        self.enqueue_at(event, Instant::now())
+        self.enqueue_with_options(event, Instant::now(), false)
+    }
+
+    /// Test-enqueue variant: promotes into the visible slot even when the
+    /// engine is paused, provided the slot is empty and no one is waiting.
+    /// Real `/notify` pushes must never bypass pause, so the public `enqueue`
+    /// path stays unchanged. Used by `send_test_notification`.
+    pub fn enqueue_test(&mut self, event: Event) -> Result<(), QueueError> {
+        self.enqueue_with_options(event, Instant::now(), true)
+    }
+
+    /// Deterministic, simulated-clock entry point used only by tests.
+    #[cfg(test)]
+    fn enqueue_at(&mut self, event: Event, now: Instant) -> Result<(), QueueError> {
+        self.enqueue_with_options(event, now, false)
     }
 
     // `now`-parameterized core so tests can drive the supersede/top-up path
@@ -93,18 +107,30 @@ impl SingleSlotQueue {
     // needs a consistent notion of "now" alongside `promoted_at`, the same
     // way `tick()` already does. `enqueue` is the real entry point (always
     // real wall-clock time in production); this is the shared internal path.
-    fn enqueue_at(&mut self, event: Event, now: Instant) -> Result<(), QueueError> {
+    fn enqueue_with_options(
+        &mut self,
+        event: Event,
+        now: Instant,
+        bypass_pause_when_slot_empty: bool,
+    ) -> Result<(), QueueError> {
         if let Some(topic) = event.topic.clone() {
             if self.supersede_if_topic_matches(&topic, &event, now) {
                 return Ok(());
             }
         }
-        self.enqueue_new(event, now)
+        self.enqueue_new(event, now, bypass_pause_when_slot_empty)
     }
 
-    fn enqueue_new(&mut self, event: Event, now: Instant) -> Result<(), QueueError> {
+    fn enqueue_new(
+        &mut self,
+        event: Event,
+        now: Instant,
+        bypass_pause_when_slot_empty: bool,
+    ) -> Result<(), QueueError> {
         let tier = event.priority as usize;
-        let can_promote_now = self.visible.is_none() && !self.paused && self.all_tiers_empty();
+        let can_promote_now = self.visible.is_none()
+            && (bypass_pause_when_slot_empty || !self.paused)
+            && self.all_tiers_empty();
         if !can_promote_now && self.waiting[tier].len() >= self.max_queued_per_tier {
             return Err(QueueError::QueueFull);
         }
@@ -901,6 +927,24 @@ mod tests {
         // a aged out even while paused; b was NOT promoted
         assert!(q.visible.is_none());
         assert_eq!(waiting_titles(&q, Priority::Medium as usize), vec!["b"]);
+    }
+
+    #[test]
+    fn test_enqueue_promotes_when_slot_empty_even_while_paused() {
+        let mut q = SingleSlotQueue::new(50);
+        q.pause();
+        q.enqueue_test(event("test", Priority::Medium, 8)).unwrap();
+        assert_eq!(visible_title(&q), Some("test"));
+        assert!(q.is_paused(), "engine must remain paused after a test promotion");
+    }
+
+    #[test]
+    fn test_enqueue_waits_behind_a_visible_item() {
+        let mut q = SingleSlotQueue::new(50);
+        q.enqueue(event("real", Priority::Medium, 8)).unwrap();
+        q.enqueue_test(event("test", Priority::Medium, 8)).unwrap();
+        assert_eq!(visible_title(&q), Some("real"));
+        assert_eq!(waiting_titles(&q, Priority::Medium as usize), vec!["test"]);
     }
 
     #[test]

@@ -3,6 +3,8 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SettingsApp, type Config, type SecretStatus } from "./SettingsApp";
 
+vi.mock("lottie-react", () => ({ default: () => null }));
+
 const config: Config = {
   port: 4321,
   default_ttl: 14,
@@ -28,6 +30,7 @@ const config: Config = {
   cmux_ttl_secs: 16,
   rotation_order: ["news", "cmux", "manual", "football"],
   connectors: { telegram: { enabled: true } },
+  appearance: { card_scale: 1, card_radius: 8, card_opacity: 0.9 },
 };
 
 const unsetSecrets: SecretStatus = {
@@ -61,8 +64,8 @@ describe("SettingsApp", () => {
     expect(screen.getByRole("button", { name: "Connectors & Keys" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Shortcuts" })).toBeTruthy();
 
-    const appearance = screen.getByRole("button", { name: "Appearance soon" }) as HTMLButtonElement;
-    expect(appearance.disabled).toBe(true);
+    const appearance = screen.getByRole("button", { name: "Appearance" }) as HTMLButtonElement;
+    expect(appearance.disabled).toBe(false);
 
     fireEvent.click(screen.getByRole("button", { name: "Football" }));
     expect(await screen.findByRole("heading", { level: 1, name: "Football" })).toBeTruthy();
@@ -80,6 +83,27 @@ describe("SettingsApp", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Shortcuts" })).toBeTruthy();
     expect(await screen.findByText("Expand or collapse the slot (manual)")).toBeTruthy();
     expect(await screen.findAllByText("planned · not implemented")).toHaveLength(2);
+  });
+
+  it("Appearance section is enabled and renders all four preview cards", async () => {
+    mockLoads();
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    const appearanceButton = screen.getByRole("button", { name: "Appearance" }) as HTMLButtonElement;
+    expect(appearanceButton.disabled).toBe(false);
+
+    fireEvent.click(appearanceButton);
+    expect(await screen.findByRole("heading", { level: 1, name: "Appearance" })).toBeTruthy();
+    expect(await screen.findByText("Goal (High priority, football)")).toBeTruthy();
+    expect(await screen.findByText("Red card (High priority, football)")).toBeTruthy();
+    expect(await screen.findByText("Generic alert (High priority, cmux)")).toBeTruthy();
+    expect(await screen.findByText("News headline (Low priority)")).toBeTruthy();
+    expect(await screen.findByText("GOAL")).toBeTruthy();
+    expect(await screen.findByText("Parliament passes the landmark digital rights bill")).toBeTruthy();
+
+    const appearanceSection = screen.getByRole("heading", { level: 1, name: "Appearance" }).closest("form") as HTMLElement;
+    expect(within(appearanceSection).getByRole("button", { name: "Send test notification" })).toBeTruthy();
   });
 
   it("shows loaded values in General", async () => {

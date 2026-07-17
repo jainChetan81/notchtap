@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent, type ReactNode } from "react";
+import { useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import {
@@ -11,6 +11,9 @@ import {
   Trophy,
   type LucideIcon,
 } from "lucide-react";
+import { StatusRailCard } from "../components/StatusRailCard";
+import type { SlotState } from "../useSlotState";
+import "./preview-overlay.css";
 
 export interface RssFeedConfig {
   url: string;
@@ -20,6 +23,12 @@ export interface RssFeedConfig {
 
 export type PriorityLevel = "low" | "medium" | "high";
 export type SourceKind = "football" | "manual" | "news" | "cmux";
+
+export interface AppearanceConfig {
+  card_scale: number;
+  card_radius: number;
+  card_opacity: number;
+}
 
 export interface Config {
   port: number;
@@ -47,6 +56,7 @@ export interface Config {
       enabled: boolean;
     };
   };
+  appearance: AppearanceConfig;
 }
 
 export interface SecretStatus {
@@ -56,7 +66,7 @@ export interface SecretStatus {
 }
 
 type SecretField = keyof SecretStatus;
-type SectionId = "general" | "football" | "news" | "cmux" | "connectors" | "shortcuts";
+type SectionId = "general" | "football" | "news" | "cmux" | "connectors" | "shortcuts" | "appearance";
 
 // Keep this synchronized with src-tauri/src/config.rs::Config::default.
 // This frontend mirror can drift when Rust defaults change, so update both together.
@@ -88,13 +98,13 @@ export const DEFAULTS: Config = {
   cmux_ttl_secs: 8,
   rotation_order: ["football", "manual", "cmux", "news"],
   connectors: { telegram: { enabled: false } },
+  appearance: { card_scale: 1, card_radius: 8, card_opacity: 0.9 },
 };
 
 const navigation: ReadonlyArray<{
-  id: SectionId | "appearance";
+  id: SectionId;
   label: string;
   icon: LucideIcon;
-  disabled?: boolean;
 }> = [
   { id: "general", label: "General", icon: SlidersHorizontal },
   { id: "football", label: "Football", icon: Trophy },
@@ -102,7 +112,7 @@ const navigation: ReadonlyArray<{
   { id: "cmux", label: "Cmux", icon: Terminal },
   { id: "connectors", label: "Connectors & Keys", icon: KeyRound },
   { id: "shortcuts", label: "Shortcuts", icon: Command },
-  { id: "appearance", label: "Appearance", icon: Palette, disabled: true },
+  { id: "appearance", label: "Appearance", icon: Palette },
 ];
 
 const sectionCopy: Record<SectionId, { index: string; title: string; description: string }> = {
@@ -135,6 +145,11 @@ const sectionCopy: Record<SectionId, { index: string; title: string; description
     index: "06",
     title: "Shortcuts",
     description: "A reference for the global controls available now and planned next.",
+  },
+  appearance: {
+    index: "07",
+    title: "Appearance",
+    description: "Preview the overlay's shape and animations, and send live test notifications.",
   },
 };
 
@@ -536,6 +551,11 @@ function GeneralSection({ config, patchConfig }: {
           unit="PORT"
           onChange={(port) => patchConfig({ port })}
         />
+        <TestButtonRow
+          name="Test notification"
+          help="Send a manual push to the overlay."
+          source="manual"
+        />
       </SettingsGroup>
 
       <SettingsGroup
@@ -640,6 +660,11 @@ function FootballSection({
         value={config.espn_priority}
         onChange={(espn_priority) => patchConfig({ espn_priority })}
       />
+      <TestButtonRow
+        name="Test football notification"
+        help="Send a one-off football notification to the overlay."
+        source="football"
+      />
     </SettingsGroup>
   );
 }
@@ -683,6 +708,11 @@ function NewsSection({
         value={config.rss_priority}
         onChange={(rss_priority) => patchConfig({ rss_priority })}
       />
+      <TestButtonRow
+        name="Test news notification"
+        help="Send a one-off news headline to the overlay."
+        source="news"
+      />
     </SettingsGroup>
   );
 }
@@ -712,6 +742,11 @@ function CmuxSection({ config, patchConfig }: {
         max={3600}
         unit="SEC"
         onChange={(cmux_ttl_secs) => patchConfig({ cmux_ttl_secs })}
+      />
+      <TestButtonRow
+        name="Test cmux notification"
+        help="Send a one-off cmux notification to the overlay."
+        source="cmux"
       />
     </SettingsGroup>
   );
@@ -775,6 +810,245 @@ function ShortcutsSection() {
       </div>
       <p className="shortcut-footnote">Planned key combinations are placeholders and may change before implementation.</p>
     </SettingsGroup>
+  );
+}
+
+type TestSource = "football" | "news" | "cmux" | "manual";
+
+function TestButton({ source }: { source: TestSource }) {
+  async function send() {
+    try {
+      await invoke("send_test_notification", { source });
+    } catch (reason) {
+      // Errors are fire-and-forget from the settings panel; the overlay owns the real queue state.
+      console.error("send_test_notification failed:", reason);
+    }
+  }
+
+  return (
+    <button
+      type="button"
+      className="secondary-button test-button"
+      onClick={() => void send()}
+    >
+      Send test notification
+    </button>
+  );
+}
+
+function TestButtonRow({ name, help, source }: {
+  name: string;
+  help: string;
+  source: TestSource;
+}) {
+  return (
+    <div className="control-row">
+      <ControlCopy htmlFor={name.replace(/\s+/g, "-")} name={name} help={help} />
+      <TestButton source={source} />
+    </div>
+  );
+}
+
+type SegmentedOption = { label: string; value: number };
+
+function SegmentedControl({ label, options, value, onChange }: {
+  label: string;
+  options: SegmentedOption[];
+  value: number;
+  onChange: (value: number) => void;
+}) {
+  return (
+    <div className="control-row">
+      <div className="control-copy">
+        <label className="control-name">{label}</label>
+      </div>
+      <div className="segmented-control" role="group" aria-label={label}>
+        {options.map((option) => (
+          <button
+            key={option.value}
+            type="button"
+            className={`segmented-control-button${value === option.value ? " is-selected" : ""}`}
+            aria-pressed={value === option.value}
+            onClick={() => onChange(option.value)}
+          >
+            {option.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+type ShowingSlotState = Extract<SlotState, { state: "showing" }>;
+
+const PREVIEW_SAMPLES: ReadonlyArray<{ label: string; slot: ShowingSlotState }> = [
+  {
+    label: "Goal (High priority, football)",
+    slot: {
+      state: "showing",
+      id: "preview-goal",
+      title: "GOAL",
+      body: "Arsenal 2-0",
+      eventType: "score_update",
+      priority: "high",
+      signal: "goal",
+      expanded: true,
+      source: null,
+      category: null,
+      publishedAtMs: null,
+      link: null,
+    },
+  },
+  {
+    label: "Red card (High priority, football)",
+    slot: {
+      state: "showing",
+      id: "preview-red-card",
+      title: "Red Card",
+      body: "Chelsea down to 10",
+      eventType: "match_state",
+      priority: "high",
+      signal: "red_card",
+      expanded: true,
+      source: null,
+      category: null,
+      publishedAtMs: null,
+      link: null,
+    },
+  },
+  {
+    label: "Generic alert (High priority, cmux)",
+    slot: {
+      state: "showing",
+      id: "preview-cmux",
+      title: "Claude Code needs input",
+      body: "Workspace command is waiting",
+      eventType: "generic",
+      priority: "high",
+      signal: "generic",
+      expanded: true,
+      source: null,
+      category: null,
+      publishedAtMs: null,
+      link: null,
+    },
+  },
+  {
+    label: "News headline (Low priority)",
+    slot: {
+      state: "showing",
+      id: "preview-news",
+      title: "Parliament passes the landmark digital rights bill",
+      body: "The measure passed after a late-night vote.",
+      eventType: "news_item",
+      priority: "low",
+      signal: "generic",
+      expanded: true,
+      source: "NDTV",
+      category: "politics",
+      publishedAtMs: null,
+      link: "https://example.com/digital-rights",
+    },
+  },
+];
+
+function AppearanceSection({ config, patchConfig }: {
+  config: Config;
+  patchConfig: (patch: Partial<Config>) => void;
+}) {
+  const initial = config.appearance;
+  const [scale, setScale] = useState(initial.card_scale);
+  const [radius, setRadius] = useState(initial.card_radius);
+  const [opacity, setOpacity] = useState(initial.card_opacity);
+
+  function updateAppearance(partial: Partial<AppearanceConfig>) {
+    const next = {
+      ...config.appearance,
+      card_scale: partial.card_scale ?? scale,
+      card_radius: partial.card_radius ?? radius,
+      card_opacity: partial.card_opacity ?? opacity,
+    };
+    setScale(next.card_scale);
+    setRadius(next.card_radius);
+    setOpacity(next.card_opacity);
+    void invoke("set_appearance", next);
+    patchConfig({ appearance: next });
+  }
+
+  function updateScale(next: number) {
+    updateAppearance({ card_scale: next });
+  }
+
+  function updateRadius(next: number) {
+    updateAppearance({ card_radius: next });
+  }
+
+  function updateOpacity(next: number) {
+    updateAppearance({ card_opacity: next });
+  }
+
+  const previewStyle: CSSProperties = {
+    "--card-scale": scale,
+    "--card-radius": `${radius}px`,
+    "--card-opacity": opacity,
+  } as CSSProperties;
+
+  return (
+    <div className="section-stack">
+      <SettingsGroup title="Card shape" description="Adjust the overlay card size, corner radius, and opacity. Changes apply immediately.">
+        <SegmentedControl
+          label="Scale"
+          options={[
+            { label: "Small", value: 0.85 },
+            { label: "Medium", value: 1.0 },
+            { label: "Large", value: 1.15 },
+          ]}
+          value={scale}
+          onChange={updateScale}
+        />
+        <SegmentedControl
+          label="Radius"
+          options={[
+            { label: "Square", value: 0 },
+            { label: "Soft", value: 8 },
+            { label: "Round", value: 16 },
+          ]}
+          value={radius}
+          onChange={updateRadius}
+        />
+        <SegmentedControl
+          label="Opacity"
+          options={[
+            { label: "Glass", value: 0.7 },
+            { label: "Default", value: 0.9 },
+            { label: "Solid", value: 1.0 },
+          ]}
+          value={opacity}
+          onChange={updateOpacity}
+        />
+        <TestButtonRow
+          name="Live check"
+          help="Send a one-off manual notification to the overlay."
+          source="manual"
+        />
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="Overlay animations"
+        description="These are the built-in card styles the overlay renders. The preview reflects the shape settings above."
+      >
+        <div className="appearance-preview" style={previewStyle}>
+          {PREVIEW_SAMPLES.map(({ label, slot }) => (
+            <div className="preview-row" key={slot.id}>
+              <div className="preview-label">{label}</div>
+              <div className="preview-stage">
+                <StatusRailCard slot={slot} />
+              </div>
+            </div>
+          ))}
+        </div>
+      </SettingsGroup>
+    </div>
   );
 }
 
@@ -865,21 +1139,17 @@ export function SettingsApp() {
           <nav className="sidebar-nav">
             {navigation.map((item) => {
               const Icon = item.icon;
-              const selected = !item.disabled && item.id === activeSection;
+              const selected = item.id === activeSection;
               return (
                 <button
                   key={item.id}
                   className={`nav-item${selected ? " is-active" : ""}`}
                   type="button"
-                  disabled={item.disabled}
                   aria-current={selected ? "page" : undefined}
-                  onClick={() => {
-                    if (!item.disabled) setActiveSection(item.id as SectionId);
-                  }}
+                  onClick={() => setActiveSection(item.id)}
                 >
                   <Icon aria-hidden="true" />
                   <span>{item.label}</span>
-                  {item.disabled ? <span className="soon-badge">soon</span> : null}
                 </button>
               );
             })}
@@ -913,6 +1183,7 @@ export function SettingsApp() {
                     {activeSection === "cmux" ? <CmuxSection config={config} patchConfig={patchConfig} /> : null}
                     {activeSection === "connectors" ? <ConnectorsSection config={config} secretStatus={secretStatus} patchConfig={patchConfig} refreshSecretStatus={refreshSecretStatus} /> : null}
                     {activeSection === "shortcuts" ? <ShortcutsSection /> : null}
+                    {activeSection === "appearance" ? <AppearanceSection config={config} patchConfig={patchConfig} /> : null}
                   </motion.div>
                 </AnimatePresence>
               </div>

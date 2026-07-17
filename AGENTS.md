@@ -15,9 +15,12 @@ rss poller (`src-tauri/src/rss_poller.rs`), `NewsItem` events with
 wire metadata (source/category/publishedAtMs), `[[rss_feeds]]` config,
 and the status-rail news cards (masthead, category shaders, pills) —
 landed alongside the settings rust core. v5 (settings window / control
-panel) itself is **rust-side done, frontend now unblocked** — the four
-invoke commands, config/secrets write paths, `start_paused` kill
-switch, tray "Settings…" item, and per-window command acl are built
+panel) itself is **rust-side done, frontend now unblocked** — six
+invoke commands (the original four plus `send_test_notification` and
+`set_appearance`), config/secrets write paths, `start_paused` kill
+switch, tray "Settings…" item, per-window command acl, an Appearance
+section with card-shape presets, and per-source test notification
+buttons are built
 and tested; the settings *page* (`IMPLEMENTATION_PLAN.md` §4.5 step 5)
 was held on the ui migration and is the next open item now that the
 migration is done. decisions in `docs/ARCHITECTURE.md` §17, plan in
@@ -166,7 +169,7 @@ the rust core sends it.
 **v5 amendment (rust side built 2026-07-17)**: the receive-only
 rule above now applies to the *overlay* window (`main`), permanently.
 the settings window (`settings` label, `src-tauri/src/settings.rs`)
-has exactly four
+has six
 invoke commands, gated per-window. critical tauri v2 gotcha: app-
 defined commands are allowed to **every** window by
 default — the gate only exists with the `tauri_build::AppManifest::

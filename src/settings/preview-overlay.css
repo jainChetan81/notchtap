@@ -1,25 +1,13 @@
-:root {
+.appearance-preview {
   --card-scale: 1;
   --card-radius: 8px;
   --card-opacity: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
 }
 
-html,
-body,
-#root {
-  margin: 0;
-  padding: 0;
-  background: transparent;
-  overflow: hidden;
-}
-
-body {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-  -webkit-font-smoothing: antialiased;
-  user-select: none;
-}
-
-.rail-card {
+.appearance-preview .rail-card {
   box-sizing: border-box;
   position: relative;
   width: calc(400px * var(--card-scale));
@@ -35,50 +23,36 @@ body {
     background 180ms ease;
 }
 
-.rail-card.expanded {
+.appearance-preview .rail-card.expanded {
   width: calc(500px * var(--card-scale));
   border-radius: 0 0 var(--card-radius) var(--card-radius);
 }
 
-.rail-card.idle {
+.appearance-preview .rail-card.idle {
   width: calc(270px * var(--card-scale));
   border-radius: 0 0 var(--card-radius) var(--card-radius);
 }
 
-/* priority accent — a single named color per tier, consumed by the
-   tier-code icon/text and the stamp pill. deliberately NOT signal-driven
-   (goal/red_card share "high" accent with any other high-priority
-   source) — see lib/presentation.ts's stamp table for where signal does
-   change what's shown. */
-.rail-card.low {
+.appearance-preview .rail-card.low {
   --accent: #aab3bd;
   --accent-soft: rgba(170, 179, 189, 0.2);
 }
 
-.rail-card.medium {
+.appearance-preview .rail-card.medium {
   --accent: #55d6bd;
   --accent-soft: rgba(85, 214, 189, 0.24);
 }
 
-.rail-card.high {
+.appearance-preview .rail-card.high {
   --accent: #ff6b57;
   --accent-soft: rgba(255, 107, 87, 0.28);
 }
 
-/* signature moment #1 — Goal: one celebratory burst over the card
-   surface, plus a quick scale overshoot on the card itself. plays once,
-   never loops (this sits in a persistent overlay). keyed by
-   <StatusRailCard> off slot.signal, never slot.priority.
-   z-index 0, NOT -1 (2026-07-17 live smoke): the card background is
-   opaque, so a negative-z layer paints behind it — rendered but
-   invisible. content sits at z-index 1, effects at 0, background below.
-   `isolation` pins the stacking context so 0/-1 mean the card, not the
-   page. */
-.rail-card {
+.appearance-preview .rail-card {
   isolation: isolate;
 }
 
-.rail-card::after {
+.appearance-preview .rail-card::after {
   content: "";
   position: absolute;
   inset: -40px;
@@ -89,11 +63,11 @@ body {
   pointer-events: none;
 }
 
-.rail-card.pulse-goal {
+.appearance-preview .rail-card.pulse-goal {
   animation: goal-overshoot 620ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.rail-card.pulse-goal::after {
+.appearance-preview .rail-card.pulse-goal::after {
   animation: goal-burst 620ms ease-out;
 }
 
@@ -124,9 +98,7 @@ body {
   }
 }
 
-/* signature moment #2 — Red Card: a sharp two-pulse alert strobe,
-   different register from Goal's celebration — urgent, not festive. */
-.rail-card.pulse-red {
+.appearance-preview .rail-card.pulse-red {
   animation: red-alert 460ms steps(1, end) 2;
 }
 
@@ -143,18 +115,15 @@ body {
   }
 }
 
-/* the two pulses above are plain CSS, not `motion` components, so
-   <MotionConfig reducedMotion="user"> (App.tsx) does not cover them —
-   they need this override in their own right. */
 @media (prefers-reduced-motion: reduce) {
-  .rail-card.pulse-goal,
-  .rail-card.pulse-goal::after,
-  .rail-card.pulse-red {
+  .appearance-preview .rail-card.pulse-goal,
+  .appearance-preview .rail-card.pulse-goal::after,
+  .appearance-preview .rail-card.pulse-red {
     animation: none;
   }
 }
 
-.compact {
+.appearance-preview .compact {
   position: relative;
   box-sizing: border-box;
   min-height: 74px;
@@ -165,11 +134,11 @@ body {
   gap: 12px;
 }
 
-.expanded .compact {
+.appearance-preview .expanded .compact {
   min-height: 82px;
 }
 
-.tier-code {
+.appearance-preview .tier-code {
   align-self: stretch;
   display: grid;
   justify-items: start;
@@ -179,16 +148,16 @@ body {
   color: var(--accent);
 }
 
-.tier-code svg {
+.appearance-preview .tier-code svg {
   color: var(--accent);
 }
 
-.tier-code .code {
+.appearance-preview .tier-code .code {
   font: 750 22px/0.9 "Arial Narrow", "SF Pro Display", sans-serif;
   letter-spacing: -0.04em;
 }
 
-.tier-code .tier-label {
+.appearance-preview .tier-code .tier-label {
   margin-top: 3px;
   color: rgba(255, 255, 255, 0.4);
   font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
@@ -196,11 +165,11 @@ body {
   text-transform: uppercase;
 }
 
-.copy {
+.appearance-preview .copy {
   min-width: 0;
 }
 
-.title {
+.appearance-preview .title {
   display: -webkit-box;
   overflow: hidden;
   font-size: 14px;
@@ -211,7 +180,7 @@ body {
   -webkit-line-clamp: 2;
 }
 
-.body {
+.appearance-preview .body {
   display: -webkit-box;
   margin-top: 4px;
   overflow: hidden;
@@ -223,7 +192,7 @@ body {
   -webkit-line-clamp: 2;
 }
 
-.stamp {
+.appearance-preview .stamp {
   align-self: center;
   padding: 4px 6px;
   border: 1px solid var(--accent);
@@ -233,7 +202,7 @@ body {
   text-transform: uppercase;
 }
 
-.compact-hint {
+.appearance-preview .compact-hint {
   position: absolute;
   right: 18px;
   bottom: 8px;
@@ -243,7 +212,7 @@ body {
   text-transform: uppercase;
 }
 
-.track {
+.appearance-preview .track {
   position: absolute;
   right: 0;
   bottom: 0;
@@ -255,24 +224,22 @@ body {
   padding: 0 3px;
 }
 
-.track span {
+.appearance-preview .track span {
   background: rgba(255, 255, 255, 0.09);
 }
 
-.track span.lit {
+.appearance-preview .track span.lit {
   background: var(--accent);
   box-shadow: 0 -3px 14px var(--accent-soft);
 }
 
-/* height/opacity are animated inline by motion.div (Manifest.tsx) — this
-   only supplies the static box treatment, not a max-height transition. */
-.manifest {
+.appearance-preview .manifest {
   overflow: hidden;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent);
 }
 
-.manifest-inner {
+.appearance-preview .manifest-inner {
   box-sizing: border-box;
   padding: 14px 18px 18px;
   display: grid;
@@ -280,7 +247,7 @@ body {
   gap: 16px;
 }
 
-.detail-label {
+.appearance-preview .detail-label {
   margin-bottom: 5px;
   color: var(--accent);
   font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
@@ -288,13 +255,13 @@ body {
   text-transform: uppercase;
 }
 
-.detail-value {
+.appearance-preview .detail-value {
   color: rgba(255, 255, 255, 0.74);
   font-size: 11px;
   line-height: 1.45;
 }
 
-.idle-view {
+.appearance-preview .idle-view {
   box-sizing: border-box;
   min-height: 38px;
   padding: 0 16px;
@@ -304,20 +271,20 @@ body {
   font-size: 11px;
 }
 
-.idle-view .time {
+.appearance-preview .idle-view .time {
   font: 720 12px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
   letter-spacing: 0.04em;
   white-space: nowrap;
 }
 
-.idle-view .timeline {
+.appearance-preview .idle-view .timeline {
   position: relative;
   flex: 1;
   height: 1px;
   background: rgba(255, 255, 255, 0.14);
 }
 
-.idle-view .timeline::before {
+.appearance-preview .idle-view .timeline::before {
   content: "";
   position: absolute;
   top: -2px;
@@ -330,23 +297,25 @@ body {
   box-shadow: 0 0 10px rgba(182, 245, 229, 0.75);
 }
 
-.goal-celebration {
+.appearance-preview .goal-celebration {
   position: absolute;
   inset: -30px;
   z-index: 0;
   pointer-events: none;
 }
 
-/* ==== news card v5: category system (shader + masthead + pills) ==== */
-.cat-politics { --cat: #7c9df5; --cat-deep: rgba(124,157,245,0.16); --cat-pill: rgba(124,157,245,0.14); }
-.cat-tech     { --cat: #5fd4e8; --cat-deep: rgba(95,212,232,0.15);  --cat-pill: rgba(95,212,232,0.13); }
-.cat-sports   { --cat: #7fe08d; --cat-deep: rgba(127,224,141,0.15); --cat-pill: rgba(127,224,141,0.13); }
-.cat-business { --cat: #f0c46a; --cat-deep: rgba(240,196,106,0.15); --cat-pill: rgba(240,196,106,0.13); }
-.cat-world    { --cat: #c99df0; --cat-deep: rgba(201,157,240,0.15); --cat-pill: rgba(201,157,240,0.13); }
-.cat-generic  { --cat: #aab3bd; --cat-deep: rgba(170,179,189,0.10); --cat-pill: rgba(170,179,189,0.10); }
+.appearance-preview .cat-politics { --cat: #7c9df5; --cat-deep: rgba(124,157,245,0.16); --cat-pill: rgba(124,157,245,0.14); }
+.appearance-preview .cat-tech     { --cat: #5fd4e8; --cat-deep: rgba(95,212,232,0.15);  --cat-pill: rgba(95,212,232,0.13); }
+.appearance-preview .cat-sports   { --cat: #7fe08d; --cat-deep: rgba(127,224,141,0.15); --cat-pill: rgba(127,224,141,0.13); }
+.appearance-preview .cat-business { --cat: #f0c46a; --cat-deep: rgba(240,196,106,0.15); --cat-pill: rgba(240,196,106,0.13); }
+.appearance-preview .cat-world    { --cat: #c99df0; --cat-deep: rgba(201,157,240,0.15); --cat-pill: rgba(201,157,240,0.13); }
+.appearance-preview .cat-generic  { --cat: #aab3bd; --cat-deep: rgba(170,179,189,0.10); --cat-pill: rgba(170,179,189,0.10); }
 
-.news-shade::before {
-  content: ""; position: absolute; inset: 0; z-index: 0;
+.appearance-preview .news-shade::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   background:
     radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%),
     linear-gradient(135deg, var(--cat-deep) 0%, transparent 46%);
@@ -354,38 +323,109 @@ body {
   animation: shade-drift 12s ease-in-out infinite alternate;
   pointer-events: none;
 }
-@keyframes shade-drift { from { background-position: 0% 0%; } to { background-position: 60% 40%; } }
 
-.news-shade .compact,
-.news-shade .manifest { position: relative; z-index: 1; }
+@keyframes shade-drift {
+  from { background-position: 0% 0%; }
+  to { background-position: 60% 40%; }
+}
 
-.masthead {
-  display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
+.appearance-preview .news-shade .compact,
+.appearance-preview .news-shade .manifest {
+  position: relative;
+  z-index: 1;
+}
+
+.appearance-preview .masthead {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-bottom: 4px;
   font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  letter-spacing: 0.14em; text-transform: uppercase;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
   color: rgba(255, 255, 255, 0.38);
 }
-.masthead::after { content: ""; flex: 1; height: 1px; background: rgba(255,255,255,0.12); }
-.masthead .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--cat); box-shadow: 0 0 6px var(--cat); }
 
-.title.headline {
+.appearance-preview .masthead::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.appearance-preview .masthead .dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--cat);
+  box-shadow: 0 0 6px var(--cat);
+}
+
+.appearance-preview .title.headline {
   white-space: normal;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-  font-size: 13px; line-height: 1.3;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  font-size: 13px;
+  line-height: 1.3;
 }
 
-.pills { display: flex; gap: 5px; margin-top: 6px; }
-.pill {
-  padding: 3px 7px; border-radius: 999px;
+.appearance-preview .pills {
+  display: flex;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.appearance-preview .pill {
+  padding: 3px 7px;
+  border-radius: 999px;
   font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  letter-spacing: 0.1em; text-transform: uppercase;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
 }
-.pill.category { color: var(--cat); background: var(--cat-pill); border: 1px solid color-mix(in srgb, var(--cat) 35%, transparent); }
-.pill.age { color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); }
 
-.manifest-inner.news { grid-template-columns: 1.5fr 1fr 1fr; }
-.manifest-inner.news .detail-label { color: var(--cat); }
+.appearance-preview .pill.category {
+  color: var(--cat);
+  background: var(--cat-pill);
+  border: 1px solid color-mix(in srgb, var(--cat) 35%, transparent);
+}
+
+.appearance-preview .pill.age {
+  color: rgba(255, 255, 255, 0.5);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.appearance-preview .manifest-inner.news {
+  grid-template-columns: 1.5fr 1fr 1fr;
+}
+
+.appearance-preview .manifest-inner.news .detail-label {
+  color: var(--cat);
+}
 
 @media (prefers-reduced-motion: reduce) {
-  .news-shade::before { animation: none; }
+  .appearance-preview .news-shade::before {
+    animation: none;
+  }
+}
+
+.appearance-preview .preview-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.appearance-preview .preview-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+.appearance-preview .preview-stage {
+  display: flex;
+  justify-content: center;
+  padding: 24px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--divider);
 }

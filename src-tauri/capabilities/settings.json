@@ -8,6 +8,8 @@
     "allow-get-secret-status",
     "allow-save-config-and-relaunch",
     "allow-set-secret",
+    "allow-send-test-notification",
+    "allow-set-appearance",
     "core:event:allow-listen",
     "core:event:allow-unlisten"
   ]

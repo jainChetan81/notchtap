@@ -60,6 +60,7 @@ pub struct Config {
     /// enforced by `settings::validate`.
     pub rotation_order: Vec<SourceKind>,
     pub connectors: Connectors,
+    pub appearance: Appearance,
 }
 
 /// `[connectors.*]` tables — non-secret on/off switches only; credentials
@@ -75,6 +76,24 @@ pub struct Connectors {
 pub struct TelegramToggle {
     /// default off — v3 outbound is opt-in per machine
     pub enabled: bool,
+}
+
+/// `[appearance]` — overlay card styling. Serialized as its own table so
+/// hand-edited `config.toml` can override one value without touching others.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Appearance {
+    #[serde(default = "default_card_scale")]
+    pub card_scale: f64,
+    #[serde(default = "default_card_radius")]
+    pub card_radius: f64,
+    #[serde(default = "default_card_opacity")]
+    pub card_opacity: f64,
+}
+
+impl Default for Appearance {
+    fn default() -> Self {
+        default_appearance()
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -195,6 +214,26 @@ fn default_rss_max_per_poll() -> usize {
     10
 }
 
+fn default_card_scale() -> f64 {
+    1.0
+}
+
+fn default_card_radius() -> f64 {
+    8.0
+}
+
+fn default_card_opacity() -> f64 {
+    0.9
+}
+
+fn default_appearance() -> Appearance {
+    Appearance {
+        card_scale: default_card_scale(),
+        card_radius: default_card_radius(),
+        card_opacity: default_card_opacity(),
+    }
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -219,6 +258,7 @@ impl Default for Config {
             cmux_ttl_secs: default_cmux_ttl_secs(),
             rotation_order: default_rotation_order(),
             connectors: Connectors::default(),
+            appearance: default_appearance(),
         }
     }
 }
@@ -316,6 +356,9 @@ mod tests {
                 SourceKind::News
             ]
         );
+        assert_eq!(c.appearance.card_scale, 1.0);
+        assert_eq!(c.appearance.card_radius, 8.0);
+        assert_eq!(c.appearance.card_opacity, 0.9);
     }
 
     #[test]
@@ -398,6 +441,22 @@ url = "https://example.com/without-meta"
     fn telegram_connector_can_be_enabled() {
         let c = Config::parse("[connectors.telegram]\nenabled = true\n").unwrap();
         assert!(c.connectors.telegram.enabled);
+    }
+
+    #[test]
+    fn appearance_fields_use_toml_table_and_partial_defaults() {
+        let full = Config::parse(
+            "[appearance]\ncard_scale = 1.2\ncard_radius = 12.0\ncard_opacity = 0.75\n",
+        )
+        .unwrap();
+        assert_eq!(full.appearance.card_scale, 1.2);
+        assert_eq!(full.appearance.card_radius, 12.0);
+        assert_eq!(full.appearance.card_opacity, 0.75);
+
+        let partial = Config::parse("[appearance]\ncard_scale = 0.9\n").unwrap();
+        assert_eq!(partial.appearance.card_scale, 0.9);
+        assert_eq!(partial.appearance.card_radius, 8.0);
+        assert_eq!(partial.appearance.card_opacity, 0.9);
     }
 
     #[test]

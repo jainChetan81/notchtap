@@ -15,7 +15,7 @@ mod rss_poller;
 mod settings;
 
 use std::sync::atomic::AtomicBool;
-use std::sync::{Arc, Once, OnceLock};
+use std::sync::{Arc, Mutex as StdMutex, Once, OnceLock};
 use std::time::{Duration, Instant};
 
 use tauri::menu::{Menu, MenuItem};
@@ -27,6 +27,7 @@ use tokio::sync::Mutex;
 use crate::config::Config;
 use crate::event::emit_slot_state;
 use crate::queue::SingleSlotQueue;
+use crate::settings::AppearanceChangedPayload;
 
 #[cfg(target_os = "macos")]
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
@@ -153,10 +154,17 @@ pub fn run() {
             settings::get_secret_status,
             settings::save_config_and_relaunch,
             settings::set_secret,
+            settings::send_test_notification,
+            settings::set_appearance,
         ])
         .setup(move |app| {
             app.set_activation_policy(ActivationPolicy::Accessory);
-            app.manage(config_for_state);
+            app.manage(StdMutex::new(config_for_state));
+            // These are also cloned into the /notify handler and pollers,
+            // but publishing them as managed state lets the settings commands
+            // enqueue test notifications through the same queue/connectors.
+            app.manage(queue.clone());
+            app.manage(connectors.clone());
 
             let window = app
                 .get_webview_window("main")
@@ -345,6 +353,33 @@ pub fn run() {
                         .replace('<', "\\u003c");
                     let _ = webview.eval(format!("window.__NOTCHTAP_SLOT_STATE__ = {safe_json};"));
                     emit_slot_state(&app_handle, current_state);
+                }
+
+                // Double-shield the initial appearance values the same way as
+                // presentation mode / slot state: a global for the React mount
+                // race, plus an emit for listeners already registered.
+                {
+                    use tauri::Emitter;
+                    let appearance = app_handle
+                        .state::<StdMutex<Config>>()
+                        .lock()
+                        .unwrap()
+                        .appearance
+                        .clone();
+                    let payload = AppearanceChangedPayload {
+                        scale: appearance.card_scale,
+                        radius: appearance.card_radius,
+                        opacity: appearance.card_opacity,
+                    };
+                    let payload_json = serde_json::to_string(&payload)
+                        .unwrap_or_else(|_| "null".into())
+                        .replace('\u{2028}', "\\u2028")
+                        .replace('\u{2029}', "\\u2029")
+                        .replace('<', "\\u003c");
+                    let _ = webview.eval(format!(
+                        "window.__NOTCHTAP_APPEARANCE__ = {payload_json};"
+                    ));
+                    let _ = webview.emit("appearance-changed", &payload);
                 }
 
                 // re-assert level/collection-behavior/position now that the

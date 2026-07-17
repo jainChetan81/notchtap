@@ -53,6 +53,36 @@ impl<R: tauri::Runtime> Clone for AppState<R> {
     }
 }
 
+/// Shared enqueue path used by `/notify` and by `send_test_notification`:
+/// dispatch is the caller's responsibility (so malformed `/notify` requests
+/// can still return a 400 without entering the queue). Enqueues the event,
+/// fans it out to connectors, and emits any resulting slot-state change.
+pub async fn enqueue_and_emit<R: tauri::Runtime>(
+    queue: &Arc<Mutex<SingleSlotQueue>>,
+    connectors: &[ConnectorHandle],
+    app_handle: &tauri::AppHandle<R>,
+    event: Event,
+    bypass_pause_when_slot_empty: bool,
+) -> Result<(), QueueError> {
+    let to_offer = event.clone();
+    let slot_change = {
+        let mut q = queue.lock().await;
+        if bypass_pause_when_slot_empty {
+            q.enqueue_test(event)?;
+        } else {
+            q.enqueue(event)?;
+        }
+        q.slot_state_if_changed()
+    };
+    for connector in connectors {
+        connector.offer(&to_offer);
+    }
+    if let Some(state) = slot_change {
+        emit_slot_state(app_handle, state);
+    }
+    Ok(())
+}
+
 /// The one origin a `/notify` caller may self-declare (v6.1) — a closed,
 /// single-variant set, deliberately not the full `SourceKind`:
 /// `Football`/`News` must never be wire-claimable, since only the
@@ -142,31 +172,20 @@ async fn notify_handler<R: tauri::Runtime>(
 
     dispatch(event.clone()).map_err(HttpError::Event)?;
 
-    // kept for the connector fan-out below — it must only happen after
-    // enqueue succeeds (v3 spec §1: rejected pushes reach no connector)
-    let accepted = event.clone();
+    enqueue_and_emit(
+        &state.queue,
+        state.connectors.as_slice(),
+        &state.app_handle,
+        event,
+        false,
+    )
+    .await
+    .map_err(HttpError::Queue)?;
 
-    let (slot_change, paused, waiting_count) = {
-        let mut queue = state.queue.lock().await;
-        queue.enqueue(event).map_err(HttpError::Queue)?;
-        (
-            queue.slot_state_if_changed(),
-            queue.is_paused(),
-            queue.total_waiting(),
-        )
+    let (paused, waiting_count) = {
+        let q = state.queue.lock().await;
+        (q.is_paused(), q.total_waiting())
     };
-
-    // acceptance fan-out (v3 spec §1): every enabled connector gets every
-    // accepted event — including paused-202 ones (a paused overlay is
-    // exactly when outbound matters most). never blocks, never affects
-    // the http status.
-    for connector in state.connectors.iter() {
-        connector.offer(&accepted);
-    }
-
-    if let Some(new_state) = slot_change {
-        emit_slot_state(&state.app_handle, new_state);
-    }
 
     let response = if paused {
         (
