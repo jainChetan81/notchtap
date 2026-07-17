@@ -305,3 +305,56 @@ body {
   z-index: -1;
   pointer-events: none;
 }
+
+/* ==== news card v5: category system (shader + masthead + pills) ==== */
+.cat-politics { --cat: #7c9df5; --cat-deep: rgba(124,157,245,0.16); --cat-pill: rgba(124,157,245,0.14); }
+.cat-tech     { --cat: #5fd4e8; --cat-deep: rgba(95,212,232,0.15);  --cat-pill: rgba(95,212,232,0.13); }
+.cat-sports   { --cat: #7fe08d; --cat-deep: rgba(127,224,141,0.15); --cat-pill: rgba(127,224,141,0.13); }
+.cat-business { --cat: #f0c46a; --cat-deep: rgba(240,196,106,0.15); --cat-pill: rgba(240,196,106,0.13); }
+.cat-world    { --cat: #c99df0; --cat-deep: rgba(201,157,240,0.15); --cat-pill: rgba(201,157,240,0.13); }
+.cat-generic  { --cat: #aab3bd; --cat-deep: rgba(170,179,189,0.10); --cat-pill: rgba(170,179,189,0.10); }
+
+.news-shade::before {
+  content: ""; position: absolute; inset: 0; z-index: 0;
+  background:
+    radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%),
+    linear-gradient(135deg, var(--cat-deep) 0%, transparent 46%);
+  background-size: 200% 200%;
+  animation: shade-drift 12s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+@keyframes shade-drift { from { background-position: 0% 0%; } to { background-position: 60% 40%; } }
+
+.news-shade .compact,
+.news-shade .manifest { position: relative; z-index: 1; }
+
+.masthead {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
+  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.38);
+}
+.masthead::after { content: ""; flex: 1; height: 1px; background: rgba(255,255,255,0.12); }
+.masthead .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--cat); box-shadow: 0 0 6px var(--cat); }
+
+.title.headline {
+  white-space: normal;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  font-size: 13px; line-height: 1.3;
+}
+
+.pills { display: flex; gap: 5px; margin-top: 6px; }
+.pill {
+  padding: 3px 7px; border-radius: 999px;
+  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+.pill.category { color: var(--cat); background: var(--cat-pill); border: 1px solid color-mix(in srgb, var(--cat) 35%, transparent); }
+.pill.age { color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); }
+
+.manifest-inner.news { grid-template-columns: 1.5fr 1fr 1fr; }
+.manifest-inner.news .detail-label { color: var(--cat); }
+
+@media (prefers-reduced-motion: reduce) {
+  .news-shade::before { animation: none; }
+}

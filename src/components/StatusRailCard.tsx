@@ -7,6 +7,7 @@ import { Track } from "./Track";
 import { Manifest } from "./Manifest";
 import { IdleView } from "./IdleView";
 import { GoalCelebration } from "./GoalCelebration";
+import { ageLabel, categoryClass, categoryLabel } from "../lib/presentation";
 
 type Pulse = "pulse-goal" | "pulse-red" | null;
 
@@ -22,6 +23,9 @@ export function StatusRailCard({ slot }: { slot: SlotState }) {
   const showing = slot.state === "showing";
   const currentId = showing ? slot.id : null;
   const currentSignal = showing ? slot.signal : null;
+  const news = showing && slot.eventType === "news_item";
+  const newsCategory = news ? categoryLabel(slot.category) : null;
+  const newsAge = news ? ageLabel(slot.publishedAtMs, Date.now()) : null;
 
   const [pulse, setPulse] = useState<Pulse>(null);
 
@@ -52,6 +56,8 @@ export function StatusRailCard({ slot }: { slot: SlotState }) {
     showing ? slot.priority : "idle",
     expanded && "expanded",
     pulse,
+    news && "news-shade",
+    news && categoryClass(slot.category),
   ]
     .filter(Boolean)
     .join(" ");
@@ -83,15 +89,62 @@ export function StatusRailCard({ slot }: { slot: SlotState }) {
             transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
           >
             <div className="compact">
-              <TierCode priority={slot.priority} />
+              <TierCode priority={slot.priority} eventType={slot.eventType} />
               <div className="copy">
-                <div className="title">{slot.title}</div>
-                <div className="body">{slot.body}</div>
+                {slot.eventType === "news_item" ? (
+                  <>
+                    <div className="masthead">
+                      <span className="dot" />
+                      {slot.source ?? "RSS"} · Wire
+                    </div>
+                    <div className="title headline">{slot.title}</div>
+                    {(newsCategory !== null || newsAge !== null) && (
+                      <div className="pills">
+                        {newsCategory !== null && (
+                          <motion.span
+                            className="pill category"
+                            initial={{ opacity: 0, y: 3 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                          >
+                            {newsCategory}
+                          </motion.span>
+                        )}
+                        {newsAge !== null && (
+                          <motion.span
+                            className="pill age"
+                            initial={{ opacity: 0, y: 3 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            transition={{
+                              duration: 0.22,
+                              delay: 0.07,
+                              ease: [0.22, 1, 0.36, 1],
+                            }}
+                          >
+                            {newsAge}
+                          </motion.span>
+                        )}
+                      </div>
+                    )}
+                  </>
+                ) : (
+                  <>
+                    <div className="title">{slot.title}</div>
+                    <div className="body">{slot.body}</div>
+                  </>
+                )}
               </div>
-              <Stamp priority={slot.priority} signal={slot.signal} />
+              <Stamp priority={slot.priority} signal={slot.signal} eventType={slot.eventType} />
               <Track priority={slot.priority} />
             </div>
-            <Manifest body={slot.body} eventType={slot.eventType} expanded={expanded} />
+            <Manifest
+              body={slot.body}
+              eventType={slot.eventType}
+              expanded={expanded}
+              source={slot.source}
+              category={slot.category}
+              publishedAtMs={slot.publishedAtMs}
+            />
           </motion.div>
         )}
       </AnimatePresence>

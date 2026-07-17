@@ -36,6 +36,9 @@ const GOAL: SlotState = {
   priority: "high",
   signal: "goal",
   expanded: true,
+  source: null,
+  category: null,
+  publishedAtMs: null,
 };
 
 const RED_CARD: SlotState = {
@@ -47,6 +50,9 @@ const RED_CARD: SlotState = {
   priority: "high",
   signal: "red_card",
   expanded: true,
+  source: null,
+  category: null,
+  publishedAtMs: null,
 };
 
 const CMUX_NEEDS_INPUT: SlotState = {
@@ -58,6 +64,23 @@ const CMUX_NEEDS_INPUT: SlotState = {
   priority: "high",
   signal: "generic",
   expanded: true,
+  source: null,
+  category: null,
+  publishedAtMs: null,
+};
+
+const NEWS: SlotState = {
+  state: "showing",
+  id: "news-1",
+  title: "Parliament passes the landmark digital rights bill",
+  body: "The measure passed after a late-night vote.",
+  eventType: "news_item",
+  priority: "low",
+  signal: "generic",
+  expanded: true,
+  source: "NDTV",
+  category: "politics",
+  publishedAtMs: 2_000_000_000_000 - 5 * 60_000,
 };
 
 describe("StatusRailCard", () => {
@@ -149,5 +172,37 @@ describe("StatusRailCard", () => {
     // "Arsenal 2-0" legitimately appears twice while expanded — once in
     // the compact preview, once in the manifest's "Message" detail.
     expect(screen.getAllByText("Arsenal 2-0").length).toBe(2);
+  });
+
+  it("renders the news masthead, headline, category, age, and category shader classes", () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(2_000_000_000_000);
+    const { container } = render(<StatusRailCard slot={NEWS} />);
+
+    expect(screen.getByText("NDTV · Wire")).toBeTruthy();
+    expect(screen.getByText(NEWS.title).classList.contains("title")).toBe(true);
+    expect(screen.getByText(NEWS.title).classList.contains("headline")).toBe(true);
+    expect(screen.getAllByText("Politics").length).toBeGreaterThan(0);
+    expect(screen.getByText("5m ago").classList.contains("pill")).toBe(true);
+    expect(screen.getByText("5m ago").classList.contains("age")).toBe(true);
+    expect(container.querySelector(".rail-card.low.news-shade.cat-politics")).not.toBeNull();
+    expect(container.querySelector(".tier-code .lucide-newspaper")).not.toBeNull();
+    expect(screen.getByText("Wire").classList.contains("stamp")).toBe(true);
+    expect(screen.getByText("Summary")).toBeTruthy();
+    expect(screen.getByText("Source / Published")).toBeTruthy();
+
+    now.mockRestore();
+  });
+
+  it("omits category and age pills when news metadata is null", () => {
+    const { container } = render(
+      <StatusRailCard
+        slot={{ ...NEWS, expanded: false, source: null, category: null, publishedAtMs: null }}
+      />,
+    );
+
+    expect(screen.getByText("RSS · Wire")).toBeTruthy();
+    expect(container.querySelector(".pill.category")).toBeNull();
+    expect(container.querySelector(".pill.age")).toBeNull();
+    expect(container.querySelector(".rail-card.news-shade.cat-generic")).not.toBeNull();
   });
 });

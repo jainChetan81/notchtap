@@ -33,6 +33,9 @@ export type SlotState =
       priority: Priority;
       signal: EventSignal;
       expanded: boolean;
+      source: string | null;
+      category: string | null;
+      publishedAtMs: number | null;
     };
 
 declare global {
@@ -69,7 +72,10 @@ function isValidSlotState(v: unknown): v is SlotState {
     typeof obj.expanded === "boolean" &&
     EVENT_TYPES.includes(obj.eventType as EventType) &&
     PRIORITIES.includes(obj.priority as Priority) &&
-    EVENT_SIGNALS.includes(obj.signal as EventSignal)
+    EVENT_SIGNALS.includes(obj.signal as EventSignal) &&
+    (obj.source === null || typeof obj.source === "string") &&
+    (obj.category === null || typeof obj.category === "string") &&
+    (obj.publishedAtMs === null || typeof obj.publishedAtMs === "number")
   );
 }
 

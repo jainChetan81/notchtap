@@ -28,6 +28,9 @@ const SHOWING_N1: SlotState = {
   priority: "medium",
   signal: "generic",
   expanded: false,
+  source: null,
+  category: null,
+  publishedAtMs: null,
 };
 
 describe("useSlotState", () => {
@@ -67,6 +70,9 @@ describe("useSlotState", () => {
       priority: "low",
       signal: "generic",
       expanded: false,
+      source: null,
+      category: null,
+      publishedAtMs: null,
     });
     emit({
       state: "showing",
@@ -77,6 +83,9 @@ describe("useSlotState", () => {
       priority: "high",
       signal: "goal",
       expanded: true,
+      source: null,
+      category: null,
+      publishedAtMs: null,
     });
     // must go straight from n1 to n2 — assert the final state only, since
     // there's no async gap between the two synchronous emits in this test
@@ -91,6 +100,25 @@ describe("useSlotState", () => {
     expect(result.current.state).toBe("showing");
     emit({ state: "empty" });
     expect(result.current).toEqual({ state: "empty" });
+  });
+
+  it("round-trips a news_item payload with its source metadata", async () => {
+    const { result } = await renderReady();
+    const news: SlotState = {
+      state: "showing",
+      id: "news-1",
+      title: "Budget announced",
+      body: "The finance minister presented the annual budget.",
+      eventType: "news_item",
+      priority: "low",
+      signal: "generic",
+      expanded: false,
+      source: "NDTV",
+      category: "politics",
+      publishedAtMs: 1_768_579_920_000,
+    };
+    emit(news);
+    expect(result.current).toEqual(news);
   });
 
   it("cleans up the listener on unmount", async () => {
@@ -153,6 +181,9 @@ describe("useSlotState", () => {
       priority: "low",
       signal: "generic",
       expanded: false,
+      source: "NDTV",
+      category: "politics",
+      publishedAtMs: 1_789_600_000_000,
     };
     window.__NOTCHTAP_SLOT_STATE__ = news;
     const { result } = renderHook(() => useSlotState());
