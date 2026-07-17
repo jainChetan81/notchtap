@@ -671,10 +671,14 @@ against a frozen `slot-state` contract, merged sequentially onto
   slot-state validation of the three nullable fields)
 - [x] tray gains "Pause News" (only when `rss_enabled`); resume
   re-baselines — no headline flood
-- [ ] manual (§6): `rss_enabled = true` against the live NDTV feed —
-  first poll silent, headlines arrive with masthead/shader/pills,
-  ⌃⇧N opens the news manifest, a High-priority push preempts a queued
-  headline; notch-mode eyeball on the macbook
+- [x] manual, hud mode (mac mini, 2026-07-17): live-feed smoke run —
+  poller started against a local rss fixture, first poll **200 →
+  silent baseline**, second poll **304 Not Modified** (conditional GET
+  path proven), item published after baseline fetched **200** and
+  displayed within one poll cycle; high-priority cli push rendered
+  instantly alongside. re-pointed at the real NDTV feed after the run.
+- [ ] manual, notch mode: same checklist eyeballed on the macbook
+  (geometry only — logic is device-independent)
 
 ---
 
