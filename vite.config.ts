@@ -9,6 +9,15 @@ const host = process.env.TAURI_DEV_HOST;
 export default defineConfig(async () => ({
   plugins: [react()],
 
+  build: {
+    rollupOptions: {
+      input: {
+        main: "index.html",
+        settings: "settings.html",
+      },
+    },
+  },
+
   test: {
     environment: "jsdom",
     // don't discover tests inside agent worktrees (.claude/worktrees/<name>
