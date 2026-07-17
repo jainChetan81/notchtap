@@ -79,11 +79,17 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
         ));
     }
     for feed in &c.rss_feeds {
-        if !(feed.url.starts_with("https://") || feed.url.starts_with("http://"))
-            || feed.url.chars().any(char::is_whitespace)
-        {
+        // full parse, not a prefix check (2026-07-17 review): "https://"
+        // alone or a host-less url would pass a starts_with test and then
+        // fail on every poll. whitespace is rejected explicitly because
+        // the url parser is lenient enough to percent-encode some of it.
+        let parsed_ok = !feed.url.chars().any(char::is_whitespace)
+            && reqwest::Url::parse(&feed.url)
+                .map(|u| (u.scheme() == "http" || u.scheme() == "https") && u.host_str().is_some())
+                .unwrap_or(false);
+        if !parsed_ok {
             errors.push(format!(
-                "feed {:?} is invalid — entries must be http(s) urls with no whitespace",
+                "feed {:?} is invalid — entries must be full http(s) urls with a host and no whitespace",
                 feed.url
             ));
         }
@@ -126,12 +132,20 @@ pub fn mask(value: &str) -> String {
 /// others exist. The telegram *connector* keeps its own strict loader
 /// (`notifier::load_secrets`) — incomplete telegram secrets disable the
 /// connector at boot with a warning, same as always.
+///
+/// The `extra` maps (2026-07-17 review) preserve unknown tables and
+/// unknown fields inside known tables across a read-modify-write —
+/// without them, serde would silently drop anything this struct doesn't
+/// model, and "setting one key deletes a hand-added table" would violate
+/// the never-clobber rule this module promises.
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct SecretsDoc {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub telegram: Option<TelegramTable>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub openrouter: Option<OpenRouterTable>,
+    #[serde(default, flatten)]
+    pub extra: toml::Table,
 }
 
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -140,12 +154,16 @@ pub struct TelegramTable {
     pub bot_token: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub chat_id: Option<String>,
+    #[serde(default, flatten)]
+    pub extra: toml::Table,
 }
 
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct OpenRouterTable {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub api_key: Option<String>,
+    #[serde(default, flatten)]
+    pub extra: toml::Table,
 }
 
 /// The three settable fields — a closed set, so the ipc surface can never
@@ -225,6 +243,43 @@ pub fn validate_secret_value(value: &str) -> Result<(), String> {
 // write paths (atomic; integration-tested against temp dirs, never $HOME)
 // ---------------------------------------------------------------------------
 
+/// A fresh, never-before-existing temp path in `dir` (2026-07-17 review):
+/// a *fixed* temp name could pre-exist with permissive permissions, and
+/// `OpenOptions::mode` only applies at creation — writing a secret into a
+/// stale world-readable temp file would void the 0600 guarantee. Unique
+/// name + `create_new` makes creation (and therefore the mode) certain.
+fn unique_tmp(dir: &Path, base: &str) -> PathBuf {
+    dir.join(format!("{base}.tmp.{}", uuid::Uuid::new_v4()))
+}
+
+fn write_then_rename(
+    tmp: &Path,
+    dest: &Path,
+    contents: &str,
+    mode: Option<u32>,
+) -> anyhow::Result<()> {
+    use std::io::Write;
+    use std::os::unix::fs::OpenOptionsExt;
+
+    let attempt = (|| -> anyhow::Result<()> {
+        let mut options = std::fs::OpenOptions::new();
+        options.write(true).create_new(true);
+        if let Some(mode) = mode {
+            options.mode(mode);
+        }
+        let mut f = options.open(tmp)?;
+        f.write_all(contents.as_bytes())?;
+        f.sync_all()?;
+        std::fs::rename(tmp, dest)?;
+        Ok(())
+    })();
+    if attempt.is_err() {
+        // best-effort: don't leave a half-written temp file behind
+        let _ = std::fs::remove_file(tmp);
+    }
+    attempt
+}
+
 /// Serialize the whole config and atomically replace `config.toml` in
 /// `dir`. Same-dir temp file + rename — rename across filesystems isn't
 /// atomic, and a torn `config.toml` is a bricked boot. Known, accepted
@@ -232,67 +287,65 @@ pub fn validate_secret_value(value: &str) -> Result<(), String> {
 pub fn write_config_atomic(dir: &Path, config: &Config) -> anyhow::Result<()> {
     std::fs::create_dir_all(dir)?;
     let serialized = toml::to_string_pretty(config)?;
-    let tmp = dir.join("config.toml.tmp");
-    {
-        use std::io::Write;
-        let mut f = std::fs::File::create(&tmp)?;
-        f.write_all(serialized.as_bytes())?;
-        f.sync_all()?;
-    }
-    std::fs::rename(&tmp, dir.join("config.toml"))?;
-    Ok(())
+    write_then_rename(
+        &unique_tmp(dir, "config.toml"),
+        &dir.join("config.toml"),
+        &serialized,
+        None,
+    )
 }
 
 /// Atomically replace `secrets.toml` in `dir`, mode `0600` from the first
-/// byte (the temp file is created with the final permissions — there is
-/// no window where the content sits world-readable).
+/// byte — the temp file is `create_new` with the final permissions, so
+/// there is no window where secret content sits with any other mode.
 pub fn write_secrets_atomic(dir: &Path, doc: &SecretsDoc) -> anyhow::Result<()> {
-    use std::os::unix::fs::OpenOptionsExt;
-
     std::fs::create_dir_all(dir)?;
     let serialized = toml::to_string_pretty(doc)?;
-    let tmp = dir.join("secrets.toml.tmp");
-    {
-        use std::io::Write;
-        let mut f = std::fs::OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(true)
-            .mode(0o600)
-            .open(&tmp)?;
-        f.write_all(serialized.as_bytes())?;
-        f.sync_all()?;
-    }
-    // .mode() only applies on creation; if a stale tmp pre-existed with
-    // other perms, correct it before the rename makes it live.
-    let mut perms = std::fs::metadata(&tmp)?.permissions();
-    {
-        use std::os::unix::fs::PermissionsExt;
-        perms.set_mode(0o600);
-    }
-    std::fs::set_permissions(&tmp, perms)?;
-    std::fs::rename(&tmp, dir.join("secrets.toml"))?;
-    Ok(())
+    write_then_rename(
+        &unique_tmp(dir, "secrets.toml"),
+        &dir.join("secrets.toml"),
+        &serialized,
+        Some(0o600),
+    )
 }
 
 /// Load the secrets doc for a read-modify-write. Missing file → empty doc
 /// (first key ever pasted creates it). **Malformed file → hard error**,
 /// never a clobber — the user may have hand-edited it wrong, and silently
 /// overwriting would destroy whatever they meant to keep (spec §4).
+///
+/// The parse error itself is deliberately withheld (2026-07-17 review):
+/// `toml::de::Error`'s Display can echo the offending source line — which
+/// in this file is secret material — straight across ipc.
 pub fn load_secrets_doc(dir: &Path) -> Result<SecretsDoc, String> {
     let path = dir.join("secrets.toml");
     match std::fs::read_to_string(&path) {
-        Ok(content) => toml::from_str(&content)
-            .map_err(|e| format!("secrets.toml is malformed — fix or delete it by hand: {e}")),
+        Ok(content) => toml::from_str(&content).map_err(|_| {
+            "secrets.toml is malformed — fix or delete it by hand \
+             (parse detail withheld: it could echo secret material)"
+                .to_string()
+        }),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(SecretsDoc::default()),
         Err(e) => Err(format!("secrets.toml unreadable: {e}")),
     }
 }
 
-/// The one full set-a-secret path the command wraps: load → validate →
-/// merge → atomic 0600 write.
+/// Serializes every secrets read-modify-write (2026-07-17 review): two
+/// concurrent `set_secret` invocations would otherwise both read the old
+/// doc and one field would silently overwrite the other. In-process only —
+/// the app has no single-instance enforcement, but two running copies
+/// already fail loudly at the port bind, so a file lock is unearned.
+static SECRETS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+/// The one full set-a-secret path the command wraps: trim → validate →
+/// load → merge → atomic 0600 write, all under [`SECRETS_LOCK`]. The trim
+/// (2026-07-17 review) forgives the trailing newline every clipboard
+/// paste carries — rejecting it as "contains whitespace" would make the
+/// most common paste fail confusingly.
 pub fn set_secret_in(dir: &Path, field: SecretField, value: String) -> Result<(), String> {
+    let value = value.trim().to_string();
     validate_secret_value(&value)?;
+    let _guard = SECRETS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
     let mut doc = load_secrets_doc(dir)?;
     merge_secret(&mut doc, field, value);
     write_secrets_atomic(dir, &doc).map_err(|e| format!("could not write secrets.toml: {e}"))
@@ -341,6 +394,17 @@ pub fn get_secret_status(window: tauri::WebviewWindow) -> Result<SecretStatus, S
     Ok(secret_status(&doc))
 }
 
+/// The panel never edits `detect_path` (ARCHITECTURE.md §17: file-only) —
+/// but the ui not *showing* a field is not a boundary (2026-07-17 review:
+/// it's an executed subprocess path, the one config field with code-exec
+/// consequences). Pin it server-side to the booted value so the ipc
+/// surface enforces what the spec states, regardless of what the webview
+/// submits.
+pub fn pin_uneditable_fields(mut submitted: Config, booted: &Config) -> Config {
+    submitted.detect_path = booted.detect_path.clone();
+    submitted
+}
+
 /// Validate → atomic write → relaunch. The `Err` arm carries the whole
 /// per-field message list for the form; on success the process is gone
 /// before a reply could matter.
@@ -348,9 +412,11 @@ pub fn get_secret_status(window: tauri::WebviewWindow) -> Result<SecretStatus, S
 pub fn save_config_and_relaunch(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,
+    state: tauri::State<'_, Config>,
     config: Config,
 ) -> Result<(), Vec<String>> {
     ensure_settings_window(&window).map_err(|e| vec![e])?;
+    let config = pin_uneditable_fields(config, state.inner());
     validate(&config)?;
     let dir = notchtap_config_dir().map_err(|e| vec![e])?;
     write_config_atomic(&dir, &config)
@@ -532,6 +598,21 @@ mod tests {
     }
 
     #[test]
+    fn rss_feeds_require_a_real_parsed_host_not_just_a_prefix() {
+        // 2026-07-17 review: a prefix check let "https://" and host-less
+        // urls through to fail on every poll instead of at save time.
+        // note "https:///x" is NOT a rejectable case: the whatwg parser
+        // skips extra slashes after a special scheme and yields host "x".
+        for junk in ["https://", "notaurl", "http://["] {
+            let c = Config {
+                rss_feeds: vec![junk.into()],
+                ..Config::default()
+            };
+            assert!(validate(&c).is_err(), "{junk:?} must be rejected");
+        }
+    }
+
+    #[test]
     fn empty_feed_list_rejected_only_while_rss_enabled() {
         let mut c = Config {
             rss_feeds: vec![],
@@ -597,8 +678,10 @@ mod tests {
             telegram: Some(TelegramTable {
                 bot_token: Some("tok".into()),
                 chat_id: Some("42".into()),
+                ..Default::default()
             }),
             openrouter: None,
+            ..Default::default()
         };
         merge_secret(&mut doc, SecretField::OpenrouterApiKey, "sk-or-key1".into());
         assert_eq!(
@@ -621,10 +704,13 @@ mod tests {
             telegram: Some(TelegramTable {
                 bot_token: None,
                 chat_id: Some("42".into()),
+                ..Default::default()
             }),
             openrouter: Some(OpenRouterTable {
                 api_key: Some("sk-or-key1".into()),
+                ..Default::default()
             }),
+            ..Default::default()
         };
         merge_secret(&mut doc, SecretField::TelegramBotToken, "newtok".into());
         assert_eq!(
@@ -670,8 +756,10 @@ mod tests {
             telegram: Some(TelegramTable {
                 bot_token: Some("longtoken1234".into()),
                 chat_id: None,
+                ..Default::default()
             }),
             openrouter: None,
+            ..Default::default()
         };
         let status = secret_status(&doc);
         assert_eq!(status.telegram_bot_token.as_deref(), Some("set (…1234)"));
@@ -696,8 +784,8 @@ mod tests {
         let reparsed = Config::parse(&on_disk).unwrap();
         assert_eq!(reparsed.port, 4242);
         assert!(
-            !dir.join("config.toml.tmp").exists(),
-            "temp file must be gone after the rename"
+            no_tmp_leftovers(&dir),
+            "temp files must be gone after the rename"
         );
         std::fs::remove_dir_all(&dir).ok();
     }
@@ -717,7 +805,7 @@ mod tests {
         let secrets = crate::notifier::load_secrets(&path).unwrap();
         assert_eq!(secrets.bot_token, "tok12345");
         assert_eq!(secrets.chat_id, "42");
-        assert!(!dir.join("secrets.toml.tmp").exists());
+        assert!(no_tmp_leftovers(&dir));
         std::fs::remove_dir_all(&dir).ok();
     }
 
@@ -759,5 +847,147 @@ mod tests {
     fn missing_secrets_file_yields_an_empty_doc() {
         let dir = temp_dir();
         assert_eq!(load_secrets_doc(&dir).unwrap(), SecretsDoc::default());
+    }
+
+    fn no_tmp_leftovers(dir: &Path) -> bool {
+        std::fs::read_dir(dir)
+            .map(|entries| {
+                entries
+                    .flatten()
+                    .all(|e| !e.file_name().to_string_lossy().contains(".tmp."))
+            })
+            .unwrap_or(true)
+    }
+
+    // --- 2026-07-17 review round: sentinel leak, unknown-key preservation,
+    // --- trim, detect_path pinning, stale-tmp safety, label gate ---
+
+    #[test]
+    fn malformed_secrets_error_never_echoes_secret_material() {
+        let dir = temp_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        // malformed line that CONTAINS the secret — toml::de::Error's
+        // Display would echo this source line if formatted
+        std::fs::write(
+            dir.join("secrets.toml"),
+            "[telegram]\nbot_token = \"SENTINEL-hunter2",
+        )
+        .unwrap();
+
+        let err = load_secrets_doc(&dir).unwrap_err();
+        assert!(!err.contains("SENTINEL"), "leaked secret in: {err}");
+        assert!(!err.contains("hunter2"), "leaked secret in: {err}");
+
+        let err2 =
+            set_secret_in(&dir, SecretField::OpenrouterApiKey, "sk-or-new1".into()).unwrap_err();
+        assert!(!err2.contains("SENTINEL"), "leaked secret in: {err2}");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn unknown_tables_and_fields_survive_a_secret_write() {
+        let dir = temp_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(
+            dir.join("secrets.toml"),
+            "[telegram]\nbot_token = \"tok12345\"\nwebhook = \"keep-me\"\n\n[future_service]\napi_key = \"also-keep-me\"\n",
+        )
+        .unwrap();
+
+        set_secret_in(&dir, SecretField::OpenrouterApiKey, "sk-or-new1".into()).unwrap();
+
+        let on_disk = std::fs::read_to_string(dir.join("secrets.toml")).unwrap();
+        assert!(
+            on_disk.contains("keep-me"),
+            "unknown telegram field dropped:\n{on_disk}"
+        );
+        assert!(
+            on_disk.contains("future_service"),
+            "unknown table dropped:\n{on_disk}"
+        );
+        assert!(on_disk.contains("also-keep-me"));
+        assert!(on_disk.contains("tok12345"));
+        assert!(on_disk.contains("sk-or-new1"));
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn secret_values_are_trimmed_before_validation_and_storage() {
+        // the trailing newline every clipboard paste carries must not be
+        // rejected as "contains whitespace" — and must not be stored
+        let dir = temp_dir();
+        set_secret_in(&dir, SecretField::OpenrouterApiKey, "sk-or-key9\n".into()).unwrap();
+        let doc = load_secrets_doc(&dir).unwrap();
+        assert_eq!(
+            doc.openrouter.unwrap().api_key.as_deref(),
+            Some("sk-or-key9")
+        );
+        // interior whitespace is still rejected
+        assert!(set_secret_in(&dir, SecretField::OpenrouterApiKey, "bad key".into()).is_err());
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn stale_permissive_tmp_files_are_never_written_into() {
+        use std::os::unix::fs::PermissionsExt;
+        let dir = temp_dir();
+        std::fs::create_dir_all(&dir).unwrap();
+        // attacker/leftover file at a plausible fixed temp name, world-readable
+        let stale = dir.join("secrets.toml.tmp");
+        std::fs::write(&stale, "old junk").unwrap();
+        std::fs::set_permissions(&stale, std::fs::Permissions::from_mode(0o644)).unwrap();
+
+        set_secret_in(&dir, SecretField::OpenrouterApiKey, "sk-or-key9".into()).unwrap();
+
+        // the stale file was never touched — no secret ever entered it
+        assert_eq!(std::fs::read_to_string(&stale).unwrap(), "old junk");
+        let mode = std::fs::metadata(dir.join("secrets.toml"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600);
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn detect_path_is_pinned_to_the_booted_value() {
+        let booted = Config::default();
+        let submitted = Config {
+            detect_path: PathBuf::from("/tmp/evil-binary"),
+            port: 9999,
+            ..Config::default()
+        };
+        let pinned = pin_uneditable_fields(submitted, &booted);
+        assert_eq!(
+            pinned.detect_path, booted.detect_path,
+            "detect_path must not be ipc-editable"
+        );
+        assert_eq!(pinned.port, 9999, "editable fields must pass through");
+    }
+
+    #[test]
+    fn ensure_settings_window_gates_on_the_window_label() {
+        let app = tauri::test::mock_app();
+        let settings = tauri::WebviewWindowBuilder::new(
+            app.handle(),
+            "settings",
+            tauri::WebviewUrl::App("settings.html".into()),
+        )
+        .build()
+        .unwrap();
+        assert!(ensure_settings_window(&settings).is_ok());
+
+        let main = tauri::WebviewWindowBuilder::new(
+            app.handle(),
+            "main",
+            tauri::WebviewUrl::App("index.html".into()),
+        )
+        .build()
+        .unwrap();
+        assert!(
+            ensure_settings_window(&main).is_err(),
+            "the overlay window must be refused even if the acl were misconfigured"
+        );
     }
 }
