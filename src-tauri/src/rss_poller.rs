@@ -20,18 +20,10 @@ const MAX_FEED_BYTES: usize = 1024 * 1024;
 /// Bounded, process-local memory of stories observed across every configured
 /// feed. Insertion order is retained separately from membership so eviction
 /// is deterministic and does not depend on hash iteration order.
+#[derive(Default)]
 pub struct SeenStore {
     keys: HashSet<String>,
     insertion_order: VecDeque<(String, Instant)>,
-}
-
-impl Default for SeenStore {
-    fn default() -> Self {
-        Self {
-            keys: HashSet::new(),
-            insertion_order: VecDeque::new(),
-        }
-    }
 }
 
 impl SeenStore {
