@@ -77,6 +77,8 @@ export function sourceLabelFor(eventType: EventType): string {
     case "score_update":
     case "match_state":
       return "ESPN · football";
+    case "news_item":
+      return "RSS · news";
     default:
       return assertNever(eventType);
   }

@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { StatusRailCard } from "./StatusRailCard";
 import type { SlotState } from "../useSlotState";
@@ -13,6 +13,19 @@ vi.mock("lottie-react", () => ({ default: () => null }));
 // without this, DOM from one test's render leaks into the next and
 // screen.getByText finds duplicates across tests.
 afterEach(cleanup);
+
+// jsdom has no AnimationEvent constructor at all, and fireEvent.animationEnd
+// silently drops non-standard init properties (confirmed: it produces a
+// plain Event with animationName === undefined) — so simulate a real
+// browser's animationend by patching the property directly onto a plain
+// Event before dispatch, which React's synthetic event reads through fine.
+function fireAnimationEnd(el: HTMLElement, animationName: string) {
+  const event = new Event("animationend", { bubbles: true });
+  Object.defineProperty(event, "animationName", { value: animationName });
+  act(() => {
+    el.dispatchEvent(event);
+  });
+}
 
 const GOAL: SlotState = {
   state: "showing",
@@ -49,25 +62,20 @@ const CMUX_NEEDS_INPUT: SlotState = {
 
 describe("StatusRailCard", () => {
   describe("goal/red-card pulse", () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
-    });
-
-    afterEach(() => {
-      vi.useRealTimers();
-    });
-
     it("applies pulse-goal and mounts the celebration on a goal signal", () => {
       const { container } = render(<StatusRailCard slot={GOAL} />);
       expect(container.querySelector(".rail-card.pulse-goal")).not.toBeNull();
       expect(container.querySelector(".goal-celebration")).not.toBeNull();
     });
 
-    it("clears pulse-goal after its duration", () => {
+    // The pulse clears on the CSS animation's own animationend, not a
+    // JS-side timer — there's no duration to keep in sync with styles.css
+    // this way. jsdom never runs the animation itself, so tests simulate
+    // its natural completion.
+    it("clears pulse-goal when its animation ends", () => {
       const { container } = render(<StatusRailCard slot={GOAL} />);
-      act(() => {
-        vi.advanceTimersByTime(620);
-      });
+      const card = container.querySelector(".rail-card") as HTMLElement;
+      fireAnimationEnd(card, "goal-overshoot");
       expect(container.querySelector(".pulse-goal")).toBeNull();
     });
 
@@ -77,19 +85,24 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".goal-celebration")).toBeNull();
     });
 
-    it("clears pulse-red after its duration", () => {
+    it("clears pulse-red when its animation ends", () => {
       const { container } = render(<StatusRailCard slot={RED_CARD} />);
-      act(() => {
-        vi.advanceTimersByTime(920);
-      });
+      const card = container.querySelector(".rail-card") as HTMLElement;
+      fireAnimationEnd(card, "red-alert");
       expect(container.querySelector(".pulse-red")).toBeNull();
+    });
+
+    it("ignores an unrelated animation ending on the same element", () => {
+      const { container } = render(<StatusRailCard slot={GOAL} />);
+      const card = container.querySelector(".rail-card") as HTMLElement;
+      fireAnimationEnd(card, "goal-burst");
+      expect(container.querySelector(".pulse-goal")).not.toBeNull();
     });
 
     it("does not replay the pulse on an unrelated re-render of the same notification", () => {
       const { container, rerender } = render(<StatusRailCard slot={GOAL} />);
-      act(() => {
-        vi.advanceTimersByTime(620);
-      });
+      const card = container.querySelector(".rail-card") as HTMLElement;
+      fireAnimationEnd(card, "goal-overshoot");
       expect(container.querySelector(".pulse-goal")).toBeNull();
 
       // same id + signal, only `expanded` flips — must not replay the burst
@@ -113,6 +126,20 @@ describe("StatusRailCard", () => {
     expect(container.querySelector(".rail-card.idle")).not.toBeNull();
     expect(container.querySelector(".idle-view")).not.toBeNull();
     expect(screen.queryByText("GOAL")).toBeNull();
+  });
+
+  // The idle clock re-renders every 30s (useClock) — a live region there
+  // would re-announce the time to assistive tech on every tick, which
+  // isn't what an arrival-alert live region is for.
+  it("is not a live region while idle, and becomes one while showing", () => {
+    const { container, rerender } = render(<StatusRailCard slot={{ state: "empty" }} />);
+    const card = container.querySelector(".rail-card") as HTMLElement;
+    expect(card.getAttribute("role")).toBeNull();
+    expect(card.getAttribute("aria-live")).toBeNull();
+
+    rerender(<StatusRailCard slot={GOAL} />);
+    expect(card.getAttribute("role")).toBe("status");
+    expect(card.getAttribute("aria-live")).toBe("polite");
   });
 
   it("renders the priority class and expanded class when showing", () => {

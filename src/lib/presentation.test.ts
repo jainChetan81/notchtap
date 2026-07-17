@@ -44,4 +44,8 @@ describe("sourceLabelFor", () => {
     expect(sourceLabelFor("score_update")).toBe("ESPN · football");
     expect(sourceLabelFor("match_state")).toBe("ESPN · football");
   });
+
+  it("labels the rss poller's event type as news", () => {
+    expect(sourceLabelFor("news_item")).toBe("RSS · news");
+  });
 });

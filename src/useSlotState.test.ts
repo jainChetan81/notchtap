@@ -118,6 +118,47 @@ describe("useSlotState", () => {
     expect(result.current).toEqual({ state: "empty" });
   });
 
+  it("ignores a well-tagged but incomplete showing payload (missing signal)", () => {
+    window.__NOTCHTAP_SLOT_STATE__ = {
+      state: "showing",
+      id: "n1",
+      title: "t",
+      body: "b",
+      eventType: "generic",
+      priority: "medium",
+      expanded: false,
+      // signal omitted
+    };
+    const { result } = renderHook(() => useSlotState());
+    expect(result.current).toEqual({ state: "empty" });
+  });
+
+  it("ignores a showing payload with an out-of-range enum value", () => {
+    window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, signal: "confetti" };
+    const { result } = renderHook(() => useSlotState());
+    expect(result.current).toEqual({ state: "empty" });
+  });
+
+  // Regression test: EVENT_TYPES must track the backend's EventType enum
+  // (currently generic/score_update/match_state/news_item, event.rs) or a
+  // real rss_poller.rs payload gets silently dropped to empty by the
+  // validator above instead of rendering.
+  it("accepts a real news_item payload from the rss poller", () => {
+    const news: SlotState = {
+      state: "showing",
+      id: "n4",
+      title: "Headline",
+      body: "Summary",
+      eventType: "news_item",
+      priority: "low",
+      signal: "generic",
+      expanded: false,
+    };
+    window.__NOTCHTAP_SLOT_STATE__ = news;
+    const { result } = renderHook(() => useSlotState());
+    expect(result.current).toEqual(news);
+  });
+
   it("updates from the slot-state event even when a valid global was also planted (early-mount side still wins on new data)", async () => {
     window.__NOTCHTAP_SLOT_STATE__ = { state: "empty" };
     const { result } = await renderReady();

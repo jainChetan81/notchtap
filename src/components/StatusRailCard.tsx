@@ -9,9 +9,13 @@ import { IdleView } from "./IdleView";
 import { GoalCelebration } from "./GoalCelebration";
 
 type Pulse = "pulse-goal" | "pulse-red" | null;
-const PULSE_DURATION_MS: Record<NonNullable<Pulse>, number> = {
-  "pulse-goal": 620,
-  "pulse-red": 920, // two 460ms strobe cycles
+
+// Which @keyframes name (styles.css) ends each pulse — the *only* place
+// either duration lives is the CSS animation itself; clearing on
+// animationend means there's no JS-side duration to keep in sync with it.
+const PULSE_END_ANIMATION: Record<NonNullable<Pulse>, string> = {
+  "pulse-goal": "goal-overshoot",
+  "pulse-red": "red-alert",
 };
 
 export function StatusRailCard({ slot }: { slot: SlotState }) {
@@ -27,14 +31,20 @@ export function StatusRailCard({ slot }: { slot: SlotState }) {
   // celebration. Not keyed on `expanded` either, so toggling the manual
   // hotkey on an already-visible item doesn't replay the burst.
   useEffect(() => {
-    if (currentSignal === "goal" || currentSignal === "red_card") {
-      const next: Pulse = currentSignal === "goal" ? "pulse-goal" : "pulse-red";
-      setPulse(next);
-      const timeout = window.setTimeout(() => setPulse(null), PULSE_DURATION_MS[next]);
-      return () => window.clearTimeout(timeout);
+    if (currentSignal === "goal") {
+      setPulse("pulse-goal");
+    } else if (currentSignal === "red_card") {
+      setPulse("pulse-red");
+    } else {
+      setPulse(null);
     }
-    setPulse(null);
   }, [currentId, currentSignal]);
+
+  function clearPulseWhenItsAnimationEnds(event: React.AnimationEvent<HTMLDivElement>) {
+    if (pulse && event.animationName === PULSE_END_ANIMATION[pulse]) {
+      setPulse(null);
+    }
+  }
 
   const expanded = showing && slot.expanded;
   const cardClass = [
@@ -47,7 +57,12 @@ export function StatusRailCard({ slot }: { slot: SlotState }) {
     .join(" ");
 
   return (
-    <div className={cardClass} role="status" aria-live="polite">
+    <div
+      className={cardClass}
+      role={showing ? "status" : undefined}
+      aria-live={showing ? "polite" : undefined}
+      onAnimationEnd={clearPulseWhenItsAnimationEnds}
+    >
       <AnimatePresence mode="wait" initial={false}>
         {!showing ? (
           <motion.div
