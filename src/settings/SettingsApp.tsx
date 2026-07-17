@@ -305,7 +305,7 @@ function ToggleControl({
 
 const PRIORITY_LABELS: Record<PriorityLevel, string> = {
   low: "Low",
-  medium: "Med",
+  medium: "Medium",
   high: "High",
 };
 const PRIORITY_LEVELS: PriorityLevel[] = ["low", "medium", "high"];
@@ -539,7 +539,7 @@ function GeneralSection({ config, patchConfig }: {
       </SettingsGroup>
 
       <SettingsGroup
-        title="Rotation & Priority"
+        title="Rotation and priority"
         description="Waiting items promote high → medium → low. Priority chooses the next turn; it never interrupts the visible item."
       >
         <NumberControl

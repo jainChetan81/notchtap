@@ -78,7 +78,7 @@ export function Manifest({
                 <div className="detail-value">{body}</div>
               </div>
               <div>
-                <div className="detail-label">Source / control</div>
+                <div className="detail-label">Source / Control</div>
                 <div className="detail-value">
                   {sourceLabelFor(eventType)}
                   <br />

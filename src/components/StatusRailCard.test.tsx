@@ -226,7 +226,7 @@ describe("StatusRailCard", () => {
   it("shows only the collapse control in an expanded manifest without a link", () => {
     render(<StatusRailCard slot={{ ...CMUX_NEEDS_INPUT, link: null }} />);
 
-    const control = screen.getByText("Source / control").nextElementSibling;
+    const control = screen.getByText("Source / Control").nextElementSibling;
     expect(control?.textContent).toContain("⌃⇧N collapse");
     expect(control?.textContent).not.toContain("⌃⇧O read");
     expect(screen.queryByText("⌃⇧N more")).toBeNull();
@@ -239,7 +239,7 @@ describe("StatusRailCard", () => {
       />,
     );
 
-    expect(screen.getByText("Source / control").nextElementSibling?.textContent).toContain(
+    expect(screen.getByText("Source / Control").nextElementSibling?.textContent).toContain(
       "⌃⇧O read · ⌃⇧N collapse",
     );
   });

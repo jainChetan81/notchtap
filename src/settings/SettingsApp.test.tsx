@@ -172,7 +172,7 @@ describe("SettingsApp", () => {
     expect((screen.getByLabelText("Rotation seconds") as HTMLInputElement).value).toBe("8");
     expect((screen.getByLabelText("Queue cap per priority tier") as HTMLInputElement).value).toBe("50");
     expect((screen.getByLabelText("Start paused") as HTMLInputElement).checked).toBe(false);
-    expect(selectedPriorityLabel(screen.getByLabelText("Manual push priority"))).toBe("Med");
+    expect(selectedPriorityLabel(screen.getByLabelText("Manual push priority"))).toBe("Medium");
     expect(rotationOrderRowNames()).toEqual([
       "Football",
       "Manual / CLI push",
@@ -215,7 +215,7 @@ describe("SettingsApp", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Football" }));
     const espnToggle = await screen.findByLabelText("Priority");
-    expect(selectedPriorityLabel(espnToggle)).toBe("Med");
+    expect(selectedPriorityLabel(espnToggle)).toBe("Medium");
     fireEvent.click(within(espnToggle).getByRole("button", { name: "High" }));
     expect(selectedPriorityLabel(espnToggle)).toBe("High");
 
@@ -232,7 +232,7 @@ describe("SettingsApp", () => {
     fireEvent.click(screen.getByRole("button", { name: "Cmux" }));
 
     const cmuxToggle = await screen.findByLabelText("Priority");
-    expect(selectedPriorityLabel(cmuxToggle)).toBe("Med");
+    expect(selectedPriorityLabel(cmuxToggle)).toBe("Medium");
     fireEvent.click(within(cmuxToggle).getByRole("button", { name: "High" }));
     expect(selectedPriorityLabel(cmuxToggle)).toBe("High");
     expect((screen.getByLabelText("Rotation seconds") as HTMLInputElement).value).toBe("16");

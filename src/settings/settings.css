@@ -775,6 +775,7 @@ textarea:focus-visible,
 .shortcut-action {
   color: #d3d5d9;
   font-size: 9px;
+  font-weight: 560;
   line-height: 1.3;
 }
 
