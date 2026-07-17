@@ -6,12 +6,12 @@ implementation surfaces friction; if a change is a *decision* change
 (a default, a scope boundary), it goes to `ARCHITECTURE.md` /
 `IMPLEMENTATION_PLAN.md` §3.6 instead. §3.6 itself calls this out as
 still-needed: *"a code-level technical spec (mirroring
-`V3_TECHNICAL_SPEC.md`'s precedent) for the wire schema change, the
+`archive/V3_TECHNICAL_SPEC.md`'s precedent) for the wire schema change, the
 `NSWindowCollectionBehavior` call, and the global-hotkey registration
 mechanism."* This is that spec.
 
 this is the **biggest architectural change since v1**. it does not
-replace `V3_TECHNICAL_SPEC.md` (telegram/notifier — shipped, tested,
+replace `archive/V3_TECHNICAL_SPEC.md` (telegram/notifier — shipped, tested,
 unrelated seam) — it replaces the *display* half of v1/v2/v3.5: the
 3-item TTL stack, the pill/grow/mini shape table, and the frontend's
 self-timed dismissal.
@@ -927,6 +927,38 @@ hotkey does if pressed while a High item happens to be showing. Flagged
 here explicitly so it's easy to override in one function if that
 reading is wrong.
 
+**7.1.2 dismiss and pause-toggle shortcuts** — two more combos, added
+later, same file, same registration pattern as §7.1's `EXPAND_TOGGLE_SHORTCUT`:
+
+```rust
+const DISMISS_SHORTCUT: (Option<Modifiers>, Code) =
+    (Some(Modifiers::CONTROL.union(Modifiers::SHIFT)), Code::KeyX);
+const PAUSE_TOGGLE_SHORTCUT: (Option<Modifiers>, Code) =
+    (Some(Modifiers::CONTROL.union(Modifiers::SHIFT)), Code::KeyP);
+```
+
+`⌃⇧X`/`⌃⇧P` were picked to avoid the two combos already registered
+(`N`, `O`) and to avoid common macOS `⌘`-based shortcuts — same `⌃⇧`
+family, same low-collision reasoning already applied to the first two.
+
+`⌃⇧X` calls `dismiss_current`, which clears the visible slot and calls
+`SingleSlotQueue::promote_next` immediately (`queue.rs`) rather than
+waiting for the item's TTL to elapse — the manual equivalent of what
+`tick` does on natural rotation-out, except a dismissed `Recurring` item
+is dropped, not requeued (deliberate: "get rid of this" means gone, not
+"back after a lap through the other tiers").
+
+`⌃⇧P` calls `toggle_pause`, extracted out of the tray's `"pause"`
+menu-event handler so both the tray click and the hotkey drive the exact
+same pause/resume + label-sync logic — the tray's "Pause"/"Resume" label
+now needs to stay correct regardless of which path triggered the toggle,
+so there's exactly one place that updates it, not two. Same
+resume-promotes-immediately behavior as the tray (§4.5).
+
+Neither addition needs a `capabilities/default.json` entry, for the same
+reason §7.1 already gives: registration goes through
+`app.global_shortcut()` directly in Rust, not the IPC/capability layer.
+
 ### 7.2 `NSWindowCollectionBehavior`
 
 ```toml
@@ -976,6 +1008,7 @@ setting to configure.
 | cli `--priority` (§6) | manual + a `test-cli.sh` case if one gets written (today's cli stays manually verified per `IMPLEMENTATION_PLAN.md` §8 — no new automated coverage tier introduced by this field alone) |
 | frontend `useSlotState` (§5.2) | vitest: renders `empty` as nothing, renders `showing` with the right classes, re-render on a new `slot-state` payload replaces content without an intermediate empty frame |
 | global hotkey (§7.1) | manual only — `TESTING_STRATEGY.md` §5's existing rule (hardware-dependent OS interaction) extends naturally; the **pure** no-op-while-High branch of `toggle_manual_expand` should still be unit-tested against the queue directly, bypassing the actual OS hotkey |
+| dismiss/pause-toggle hotkeys (§7.1.2) | manual only — same `TESTING_STRATEGY.md` §5 rule; `dismiss_current`/`toggle_pause` and `SingleSlotQueue::dismiss_visible` are unit-tested directly against the queue, bypassing the actual OS keypress |
 | `NSWindowCollectionBehavior` (§7.2) | manual only (physical Spaces-switch + fullscreen-app check on the macbook) |
 
 no live network calls, no live hotkey simulation, no live NSWindow
@@ -1082,7 +1115,7 @@ checklist entries for the actual keypress + Spaces/fullscreen behavior
 **depends on**: nothing functionally; best done last so it reflects
 what actually landed rather than what was planned. **owns**:
 `CONTEXT.md` glossary pass (§2/§9), `TESTING_STRATEGY.md` crosswalk
-entry mirroring §3's `V3_TECHNICAL_SPEC.md` precedent (a `§4.10 single-
+entry mirroring §3's `archive/V3_TECHNICAL_SPEC.md` precedent (a `§4.10 single-
 slot rotating overlay` section, same shape as `§4.9`'s), and
 `IMPLEMENTATION_PLAN.md` §3.6's own exit-criteria checklist (currently
 absent — §3.6 has no `### 3.6.1 exit criteria` subsection the way

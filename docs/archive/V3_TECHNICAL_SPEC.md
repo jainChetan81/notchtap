@@ -1,5 +1,11 @@
 # notchtap — v3 technical spec (v0 draft)
 
+> Archived 2026-07-17 — v3 shipped and is done. Moved here from `docs/`
+> alongside the v1/v2 specs once v3.6/v5 superseded them as the active
+> working drafts. Not updated inline below to preserve the record as-written
+> — file paths inside this document still read `docs/...`, meaning the
+> repo-root `docs/` folder, not this `docs/archive/` subfolder.
+
 operationalizes `IMPLEMENTATION_PLAN.md` §3 into code-level specifics.
 like the v1/v2 specs, this is a working draft — adjust freely as
 implementation surfaces friction; if a change is a *decision* change,

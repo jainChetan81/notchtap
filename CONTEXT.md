@@ -1,8 +1,9 @@
 # notchtap — ubiquitous language
 
 glossary only. no implementation details — those live in
-`docs/V1_TECHNICAL_SPEC.md`. decisions live in `docs/ARCHITECTURE.md`
-and `docs/adr/`.
+`docs/V3_6_TECHNICAL_SPEC.md` / `docs/V5_TECHNICAL_SPEC.md` (the v1/v2/v3
+equivalents shipped and are archived at `docs/archive/`). decisions live
+in `docs/ARCHITECTURE.md` and `docs/adr/`.
 
 ## terms
 
@@ -17,16 +18,26 @@ and `docs/adr/`.
   Notification on screen at a time.
 - **Visible** — the Notification currently occupying the Slot, if any
   (at most one, see **Slot**).
-- **Waiting** — Notifications accepted but not yet shown, in FIFO
-  order **within their own Priority tier** (v3.6: Low/Medium/High are
-  three separate FIFO lines, not one). capped per tier
-  (`max_queued_per_tier`); pushes beyond a tier's own cap are rejected,
-  independent of the other two tiers.
+- **Waiting** — Notifications accepted but not yet shown, ordered
+  **within their own Priority tier** by Rotation Order first and
+  arrival order (FIFO) as the tie-break (v3.6: Low/Medium/High are
+  three separate lines, not one; v6 added Rotation Order ahead of pure
+  FIFO). capped per tier (`max_queued_per_tier`); pushes beyond a
+  tier's own cap are rejected, independent of the other two tiers.
 - **Priority** — `Low | Medium | High` on every Event (v3.6),
   independent of `EventType` — not every high-priority thing is a
   score. governs Promotion order only: higher-priority Waiting items
   are promoted next, but a Priority arrival never interrupts the
   currently-Visible item — it always finishes its own turn.
+- **Origin** — which source produced an Event (v6): `Football | News |
+  Manual`. orthogonal to Priority and `EventType` — a source's Origin
+  never changes, but its Priority is user-configurable per source. the
+  only thing Origin governs is Rotation Order.
+- **Rotation Order** — the configured tie-break (v6) among Waiting
+  Notifications that share a Priority tier: a ranking over Origin,
+  checked before arrival order. it never overrides Priority — a
+  higher-Priority arrival still promotes ahead of a lower-Priority one
+  regardless of Rotation Order.
 - **Promotion** — the moment the highest-priority Waiting Notification
   moves into the Slot. the engine's decision alone; the frontend never
   promotes.
@@ -56,12 +67,14 @@ and `docs/adr/`.
   formerly gated a 3-item cap. v5: the tray toggle stays session-only,
   but the persisted `start_paused` config flag — the **Kill Switch** —
   makes the app *launch* Paused.)
-- **Polling Pause** — a Poller-level state (per source, from the tray)
-  in which the Poller stops checking its external service; no Events
-  are produced and changes during the pause are never seen. distinct
-  from Paused: Paused buffers and drops nothing, a Polling Pause
-  observes nothing. resuming re-baselines silently, like a first
-  sighting.
+- **Polling Pause** — a Poller-level state (per source) in which the
+  Poller stops checking its external service; no Events are produced
+  and changes during the pause are never seen. distinct from Paused:
+  Paused buffers and drops nothing, a Polling Pause observes nothing.
+  resuming re-baselines silently, like a first sighting. (v6: no
+  longer tray-toggleable — set once at boot from `espn_enabled`/
+  `rss_enabled`; per-source control lives entirely in the Settings
+  Window now.)
 - **Presentation Mode** — how the window anchors: **Notch** (over the
   macbook's notch cutout) or **HUD** (floating top-center, on
   notchless machines). decided at runtime, never at build time.

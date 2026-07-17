@@ -1,5 +1,13 @@
 # notchtap — v1 technical spec (v0 draft)
 
+> Archived 2026-07-17 — v1 shipped and is done (see `CLAUDE.md`'s project
+> state note and `../IMPLEMENTATION_PLAN.md` §1's exit criteria). Moved
+> here from `docs/` alongside the v2/v3 specs once v3.6/v5 superseded
+> them as the active working drafts. Not updated inline below to
+> preserve the record as-written — file paths inside this document still
+> read `docs/...`, meaning the repo-root `docs/` folder, not this
+> `docs/archive/` subfolder.
+
 this is the concrete, code-level contract for v1 (`IMPLEMENTATION_PLAN.md`
 §1). `ARCHITECTURE.md` holds the *locked* decisions (scope, stack,
 defaults, distribution model) — this doc doesn't re-decide any of

@@ -65,7 +65,7 @@ visible, animated notification on both target machines.
   loaded (tauri page-load callback) — tauri events are transient, so a
   `200` accepted before the frontend's listener registers would render
   nothing; connection-refused during startup is the honest failure
-  mode (see `V1_TECHNICAL_SPEC.md` §3, startup ordering)
+  mode (see `archive/V1_TECHNICAL_SPEC.md` §3, startup ordering)
 - window positioning: top-center on launch
 - the notch/hud mode check (§5 of `ARCHITECTURE.md`) should be written
   as an isolated pure function taking the safe-area inset as a
@@ -107,7 +107,7 @@ visible, animated notification on both target machines.
 
 decisions locked in `ARCHITECTURE.md` §16 (leagues, trigger scope,
 css keyframes, hardening carry-over); code-level contract in
-`docs/V2_TECHNICAL_SPEC.md`. build order: 2.0 → 2.3 → 2.1 (the
+`docs/archive/V2_TECHNICAL_SPEC.md`. build order: 2.0 → 2.3 → 2.1 (the
 animation table lands before the poller so it's testable with plain
 `notchtap`/`curl` pushes, no espn dependency).
 
@@ -209,7 +209,7 @@ animation table lands before the poller so it's testable with plain
 ## 3. v3 — outbound connectors
 
 decisions locked 2026-07-16 (grilling session; code-level contract in
-`docs/V3_TECHNICAL_SPEC.md`):
+`docs/archive/V3_TECHNICAL_SPEC.md`):
 
 - **the seam sits at acceptance, not promotion**: once a push passes
   validation and `enqueue` succeeds, it fans out to every connector.
@@ -442,7 +442,7 @@ per-second ticking would be pure waste).
   redefines `Visible` as singular, and probably retires "Promotion
   disabled while Paused, stack" language) — needed before
   implementation starts, not written speculatively here
-- a code-level technical spec (mirroring `V3_TECHNICAL_SPEC.md`'s
+- a code-level technical spec (mirroring `archive/V3_TECHNICAL_SPEC.md`'s
   precedent) for the wire schema change, the `NSWindowCollectionBehavior`
   call, and the global-hotkey registration mechanism — this section is
   the architecture decision, not the implementation contract — ✅
@@ -754,11 +754,11 @@ v3.6's rewritten queue/frontend — see `TESTING_STRATEGY.md` §4.10.
 - [ ] manual push → visible animation, both machines — mac mini side
       exercised repeatedly during dev; macbook side not yet confirmed
 - [ ] startup log shows **notch** mode on the macbook — the hud
-      fallback is silent by design (`V1_TECHNICAL_SPEC.md` §5), so this
+      fallback is silent by design (`archive/V1_TECHNICAL_SPEC.md` §5), so this
       log line is the only tell that the detector actually worked
 - [ ] mac mini build transferred via a quarantine-free method
       (`ARCHITECTURE.md` §9), and `notchtap-detect` built + symlinked
-      on that machine too (`V1_TECHNICAL_SPEC.md` §5)
+      on that machine too (`archive/V1_TECHNICAL_SPEC.md` §5)
 - [ ] queue behaviour under load: push 5+ notifications rapidly, confirm
       fifo + cap-3 + ttl-dismiss all hold
 - [ ] tray: pause → new pushes answered `202` and buffered, nothing new

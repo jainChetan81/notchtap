@@ -57,10 +57,13 @@ notchtap --title "hello" --body "world"
 | doc | purpose |
 |---|---|
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | locked decisions: scope phasing, stack, cross-device behavior, distribution |
-| [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) | phased build sequence, exit criteria for v1/v2/v3 |
+| [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) | phased build sequence, exit criteria for v1–v5 |
 | [`docs/TESTING_STRATEGY.md`](docs/TESTING_STRATEGY.md) | what gets automated vs. manual, framework choices, per-component test plan |
-| [`docs/V1_TECHNICAL_SPEC.md`](docs/V1_TECHNICAL_SPEC.md) | v0 draft: concrete v1 file layout, types, api/json schemas, ready to code against |
-| [`docs/V2_TECHNICAL_SPEC.md`](docs/V2_TECHNICAL_SPEC.md) | v0 draft: v2 delta — espn poller, event types, animation table, hardening fixes |
+| [`docs/V3_6_TECHNICAL_SPEC.md`](docs/V3_6_TECHNICAL_SPEC.md) | v0 draft: permanent rotating overlay — single-slot queue, priority tiers, global hotkeys |
+| [`docs/V5_TECHNICAL_SPEC.md`](docs/V5_TECHNICAL_SPEC.md) | v0 draft: settings window |
+| [`docs/archive/V1_TECHNICAL_SPEC.md`](docs/archive/V1_TECHNICAL_SPEC.md) | archived — v1 shipped; superseded by the specs above |
+| [`docs/archive/V2_TECHNICAL_SPEC.md`](docs/archive/V2_TECHNICAL_SPEC.md) | archived — v2 shipped; superseded by the specs above |
+| [`docs/archive/V3_TECHNICAL_SPEC.md`](docs/archive/V3_TECHNICAL_SPEC.md) | archived — v3 shipped; superseded by the specs above |
 | [`docs/archive/BLIND_REVIEW.md`](docs/archive/BLIND_REVIEW.md) | planning-pass audit, folded into the docs above |
 | [`docs/archive/CHANGES_SUMMARY.md`](docs/archive/CHANGES_SUMMARY.md) | changelog of the planning-pass edits |
 | [`CONTEXT.md`](CONTEXT.md) | glossary / ubiquitous language (Promotion, Visible/Waiting, Paused, …) |

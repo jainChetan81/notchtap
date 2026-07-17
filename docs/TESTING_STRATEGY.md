@@ -620,7 +620,7 @@ are in §8. when picked up, follow §9.6's build order and review gates
 as written. (formerly the standalone `DEEP_TESTING_PLAN.md`, merged
 here 2026-07-16 so the testing story lives in one document.)
 
-like `V1_TECHNICAL_SPEC.md`, this section is not locked: adjust freely
+like `V3_6_TECHNICAL_SPEC.md`, this section is not locked: adjust freely
 as implementation surfaces friction; fold any *decision* changes back
 into §1–§8.
 
@@ -748,7 +748,9 @@ no new dependencies (tower `oneshot`, as everywhere in §4.3).
   (absent → `default_ttl` is presumably covered; add `0` and
   `10_000_000` explicitly, asserting the documented behaviour — check
   the spec first, and if the behaviour is *undocumented*, that's a spec
-  gap to fix in `V1_TECHNICAL_SPEC.md` §7 before writing the test).
+  gap to fix in `archive/V1_TECHNICAL_SPEC.md` §7 before writing the
+  test — archived, but still the doc of record for v1's `ttlSecs`
+  behaviour).
 
 true concurrency (simultaneous in-flight requests) is deliberately not
 simulated: the queue sits behind a mutex, so interleaving reduces to

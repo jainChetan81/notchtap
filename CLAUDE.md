@@ -6,18 +6,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 scaffolded and shipping. v1 (core engine, queue, one animation, cli
 push), v2 (espn poller, cmux relay, animation table), v3 (outbound
-connectors — telegram, `src-tauri/src/notifier.rs`), and v4
-(github + ci at `github.com/jainChetan81/notchtap`) are done as of
-2026-07-16. the tauri/rust/web project lives at repo root alongside
-`docs/` — the docs folder isn't part of the app build. the test suite
-exists and must stay green (`cargo test` from `src-tauri/`, `npx
-vitest run` from repo root, all gated by ci) — current counts live in
-`docs/TESTING_STRATEGY.md` §0 and only there.
+connectors — telegram, `src-tauri/src/notifier.rs`), v4
+(github + ci at `github.com/jainChetan81/notchtap`), and v3.6
+(permanent rotating overlay — single-slot queue, priority tiers, the
+"Status Rail" frontend redesign, global hotkeys for expand-toggle/
+open-story/dismiss/pause-toggle) are done as of 2026-07-17. as of the
+same date, the rss poller (`src-tauri/src/rss_poller.rs`), `NewsItem`
+events with wire metadata (source/category/publishedAtMs), and the
+status-rail news cards also landed. v5 (settings window / control
+panel) is **rust-side done, frontend in progress** — the invoke
+commands, config/secrets write paths, `start_paused` kill switch, and
+per-window command acl are built and tested; the settings *page* itself
+is the next open item. decisions in `docs/ARCHITECTURE.md` §17, plan in
+`docs/IMPLEMENTATION_PLAN.md` §4.5/§4.6, contract in
+`docs/V5_TECHNICAL_SPEC.md`. the tauri/rust/web project lives at repo
+root alongside `docs/` — the docs folder isn't part of the app build.
+the test suite exists and must stay green (`cargo test` from
+`src-tauri/`, `npx vitest run` from repo root, all gated by ci) —
+current counts live in `docs/TESTING_STRATEGY.md` §0 and only there.
 
 `docs/archive/BLIND_REVIEW.md` and `docs/archive/CHANGES_SUMMARY.md` are
 changelog/audit artifacts from the planning pass, not sources of
 truth — the decisions they describe are already folded into the three
-docs below.
+docs below. `docs/archive/V1_TECHNICAL_SPEC.md`,
+`docs/archive/V2_TECHNICAL_SPEC.md`, and `docs/archive/V3_TECHNICAL_SPEC.md`
+are likewise archived: those phases shipped, and `docs/V3_6_TECHNICAL_SPEC.md`
+/ `docs/V5_TECHNICAL_SPEC.md` are the active working-draft specs now.
 
 the dev machine is the mac mini (no notch), user `chetanjain`, home
 `/Users/chetanjain`; the rust toolchain is installed. notch-mode
@@ -33,20 +47,24 @@ details.
 `docs/ARCHITECTURE.md` holds the locked decisions (scope phasing, tech
 stack, cross-device behaviour, distribution model) — do not re-litigate
 these without the user explicitly reopening them. `docs/IMPLEMENTATION_PLAN.md`
-holds the phased build sequence and exit criteria for v1/v2/v3.
+holds the phased build sequence and exit criteria for v1–v5.
 `docs/TESTING_STRATEGY.md` holds the testing approach — frameworks, what's
 tdd'd first vs written after, per-component test plan, and what's
 deliberately left as manual-only verification. read all three before
 starting implementation work.
 
-`docs/V1_TECHNICAL_SPEC.md` is a v0 draft that operationalizes those
-three into code-level specifics for v1 only — exact file layout,
-struct/type shapes, the `/notify` json schema, the `notchtap-detect`
-subprocess contract, config/logging paths, error-to-status-code
-mapping. unlike `ARCHITECTURE.md`, it isn't locked — adjust it freely
-as implementation surfaces friction. if a change there is actually a
+`docs/V3_6_TECHNICAL_SPEC.md` and `docs/V5_TECHNICAL_SPEC.md` are v0
+drafts that operationalize those three into code-level specifics for
+the currently-active phases — exact file layout, struct/type shapes,
+the `/notify` json schema, the `notchtap-detect` subprocess contract,
+config/logging paths, error-to-status-code mapping. unlike
+`ARCHITECTURE.md`, neither is locked — adjust them freely as
+implementation surfaces friction. if a change there is actually a
 *decision* change (a default, a scope boundary), make that edit in
-`ARCHITECTURE.md` instead.
+`ARCHITECTURE.md` instead. the equivalent v1/v2/v3 specs are archived
+at `docs/archive/` — those phases already shipped, so they're historical
+records now, not active contracts (same status as `BLIND_REVIEW.md`/
+`CHANGES_SUMMARY.md` above).
 
 ## commands (once scaffolded)
 

@@ -1,5 +1,11 @@
 # notchtap — v2 technical spec (v0 draft)
 
+> Archived 2026-07-17 — v2 shipped and is done. Moved here from `docs/`
+> alongside the v1/v3 specs once v3.6/v5 superseded them as the active
+> working drafts. Not updated inline below to preserve the record as-written
+> — file paths inside this document still read `docs/...`, meaning the
+> repo-root `docs/` folder, not this `docs/archive/` subfolder.
+
 concrete contract for v2 (`IMPLEMENTATION_PLAN.md` §2). same status
 rules as the v1 spec: `ARCHITECTURE.md` (§16 for v2) holds the locked
 decisions; everything here is adjustable the moment implementation

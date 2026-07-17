@@ -32,7 +32,10 @@ vitest run` from repo root, all gated by ci) — current counts live in
 `docs/archive/BLIND_REVIEW.md` and `docs/archive/CHANGES_SUMMARY.md` are
 changelog/audit artifacts from the planning pass, not sources of
 truth — the decisions they describe are already folded into the three
-docs below.
+docs below. `docs/archive/V1_TECHNICAL_SPEC.md`,
+`docs/archive/V2_TECHNICAL_SPEC.md`, and `docs/archive/V3_TECHNICAL_SPEC.md`
+are likewise archived: those phases shipped, and `docs/V3_6_TECHNICAL_SPEC.md`
+/ `docs/V5_TECHNICAL_SPEC.md` are the active working-draft specs now.
 
 the dev machine is the mac mini (no notch), user `chetanjain`, home
 `/Users/chetanjain`; the rust toolchain is installed. notch-mode
@@ -48,20 +51,24 @@ details.
 `docs/ARCHITECTURE.md` holds the locked decisions (scope phasing, tech
 stack, cross-device behaviour, distribution model) — do not re-litigate
 these without the user explicitly reopening them. `docs/IMPLEMENTATION_PLAN.md`
-holds the phased build sequence and exit criteria for v1/v2/v3.
+holds the phased build sequence and exit criteria for v1–v5.
 `docs/TESTING_STRATEGY.md` holds the testing approach — frameworks, what's
 tdd'd first vs written after, per-component test plan, and what's
 deliberately left as manual-only verification. read all three before
 starting implementation work.
 
-`docs/V1_TECHNICAL_SPEC.md` is a v0 draft that operationalizes those
-three into code-level specifics for v1 only — exact file layout,
-struct/type shapes, the `/notify` json schema, the `notchtap-detect`
-subprocess contract, config/logging paths, error-to-status-code
-mapping. unlike `ARCHITECTURE.md`, it isn't locked — adjust it freely
-as implementation surfaces friction. if a change there is actually a
+`docs/V3_6_TECHNICAL_SPEC.md` and `docs/V5_TECHNICAL_SPEC.md` are v0
+drafts that operationalize those three into code-level specifics for
+the currently-active phases — exact file layout, struct/type shapes,
+the `/notify` json schema, the `notchtap-detect` subprocess contract,
+config/logging paths, error-to-status-code mapping. unlike
+`ARCHITECTURE.md`, neither is locked — adjust them freely as
+implementation surfaces friction. if a change there is actually a
 *decision* change (a default, a scope boundary), make that edit in
-`ARCHITECTURE.md` instead.
+`ARCHITECTURE.md` instead. the equivalent v1/v2/v3 specs are archived
+at `docs/archive/` — those phases already shipped, so they're historical
+records now, not active contracts (same status as `BLIND_REVIEW.md`/
+`CHANGES_SUMMARY.md` above).
 
 ## commands (once scaffolded)
 
