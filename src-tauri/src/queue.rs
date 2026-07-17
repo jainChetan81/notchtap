@@ -110,10 +110,7 @@ impl SingleSlotQueue {
     fn supersede_if_topic_matches(&mut self, topic: &str, fresh: &Event, now: Instant) -> bool {
         if let Some(visible) = &mut self.visible {
             if visible.event.topic.as_deref() == Some(topic) {
-                visible.event.payload = fresh.payload.clone();
-                visible.event.priority = fresh.priority;
-                visible.event.rotation = fresh.rotation;
-                visible.event.signal = fresh.signal;
+                apply_fresh_content(&mut visible.event, fresh);
                 self.top_up_visible_remaining_time(now);
                 return true;
             }
@@ -127,19 +124,12 @@ impl SingleSlotQueue {
             };
             let new_tier_idx = fresh.priority as usize;
             if new_tier_idx == tier_idx {
-                let existing = &mut self.waiting[tier_idx][pos];
-                existing.event.payload = fresh.payload.clone();
-                existing.event.priority = fresh.priority;
-                existing.event.rotation = fresh.rotation;
-                existing.event.signal = fresh.signal;
+                apply_fresh_content(&mut self.waiting[tier_idx][pos].event, fresh);
             } else {
                 let mut existing = self.waiting[tier_idx]
                     .remove(pos)
                     .expect("position just found");
-                existing.event.payload = fresh.payload.clone();
-                existing.event.priority = fresh.priority;
-                existing.event.rotation = fresh.rotation;
-                existing.event.signal = fresh.signal;
+                apply_fresh_content(&mut existing.event, fresh);
                 self.waiting[new_tier_idx].push_back(existing);
             }
             return true;
@@ -272,6 +262,19 @@ impl SingleSlotQueue {
             },
         }
     }
+}
+
+// The one place a superseding event's content lands on an existing item —
+// used at all three supersede sites (visible, same-tier waiting, cross-tier
+// waiting) so a new `Event` field only needs to be added here once. `signal`
+// was previously missing from all three call sites until Stage A's
+// EventSignal work added it back to each copy independently; a shared
+// function makes that class of gap structurally impossible to reintroduce.
+fn apply_fresh_content(existing: &mut Event, fresh: &Event) {
+    existing.payload = fresh.payload.clone();
+    existing.priority = fresh.priority;
+    existing.rotation = fresh.rotation;
+    existing.signal = fresh.signal;
 }
 
 const MIN_REMAINING_ON_SUPERSEDE_SECS: u64 = 2;
@@ -504,6 +507,7 @@ mod tests {
             },
             priority: Priority::High,
             rotation: RotationSpec::Recurring { display_secs: 4 },
+            signal: EventSignal::Goal,
             ..base.clone()
         };
         q.enqueue_at(base, t0).unwrap();
@@ -517,6 +521,9 @@ mod tests {
             visible.event.rotation,
             RotationSpec::Recurring { display_secs: 4 }
         );
+        // signal was the field missing from all three supersede call sites
+        // until Stage A added it — this is the regression test for that gap.
+        assert_eq!(visible.event.signal, EventSignal::Goal);
         // promoted_at is never mutated by a supersede — only extension_secs is.
         assert_eq!(visible.promoted_at, promoted_at);
     }
