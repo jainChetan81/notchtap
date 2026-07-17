@@ -1,7 +1,8 @@
 # Implementation Plans
 
-Two `improve` sessions have written plans here, both against commit
-`d40445e` (2026-07-17):
+Two `improve` sessions wrote the original plans against commit `d40445e`
+(2026-07-17). Plans 005 and 006 were cold-reviewed and refreshed against
+`b1981c9` later that day; their files contain the current baselines and gates.
 
 - **Plans 001–003**: a `next`-invocation session (direction-only audit).
 - **Plans 004–023**: a `deep`-invocation session (all nine audit
@@ -22,10 +23,10 @@ plans are independent. P1s first.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 005 | Relocate + rotate the OpenRouter key in `opencode.json` | P1 | S | — | TODO |
-| 006 | Redact telegram bot token from transport-error logs | P1 | S | — | TODO |
-| 007 | Supply chain + CI: pin nspanel rev, `--locked`, audit scans, Linux web job, `sh -n` gate | P1 | S | — | TODO |
-| 008 | Expanded semantics: auto-expand High, reset per item, idle no-op | P1 | S | — | TODO |
+| 005 | Verify relocated OpenRouter key + complete operator rotation | P1 | S | — | DONE |
+| 006 | Prevent telegram transport errors from logging the bot token | P1 | S | — | DONE |
+| 007 | Supply chain + CI: pin nspanel rev, `--locked`, audit scans, Linux web job, `sh -n` gate | P1 | S | — | TODO (reviewed 2026-07-18) |
+| 008 | Expanded semantics: auto-expand High, reset per item, idle no-op | P1 | S | — | DONE (`b1981c9`, verified 2026-07-18) |
 | 009 | Validate live `slot-state` payloads + pin the event-name seam | P1 | S | — | TODO |
 | 010 | ESPN fetch hardening: gzip, 1 MiB cap, redirect limit, UA | P1 | S | — | TODO |
 | 011 | RSS robustness: `fetch_feed` wiremock tests, bounded entity decoder, streaming cap | P1 | M | — | TODO |
@@ -41,21 +42,35 @@ plans are independent. P1s first.
 | 019 | Dead code removal: presentation channel, polling gates, no-op dispatch, scaffold | P3 | M | 004 (soft) | TODO |
 | 020 | Config defaults single-source (`get_default_config` invoke) | P3 | M | — | TODO |
 | 021 | Settings save polish: feed metadata, duplicate rejection, port pre-flight | P3 | M | — | TODO |
-| 001  | Wire the two "planned" global hotkeys (⌃⇧] skip, ⌃⇧, open settings) | P2 | S | — | TODO |
 
 ## Done
 
 Completed in this session (2026-07-17), filed with a `(done)` suffix:
 
+- [`001-wire-skip-and-open-settings-hotkeys(done).md`](./001-wire-skip-and-open-settings-hotkeys(done).md) — ⌃⇧] skip + ⌃⇧, open-settings hotkeys; code review approved, manual real-keypress verification pending.
 - [`002-settings-animation-previews(done).md`](./002-settings-animation-previews(done).md) — Appearance section + static preview cards.
 - [`003-kuma-webhook-recipe(done).md`](./003-kuma-webhook-recipe(done).md) — Uptime Kuma → notchtap webhook recipe (docs only); kuma-side verification not run, see `docs/recipes/kuma-webhook.md`'s status line.
 - [`004-docs-truth-pass(done).md`](./004-docs-truth-pass(done).md) — agent-facing docs/comments synced to shipped reality (~14 stale claims fixed); executed via `/improve execute`, reviewed and merged into `master` at `0749235`.
 - [`004-test-notifications(done).md`](./004-test-notifications(done).md) — per-source test-notification buttons.
 - [`005-appearance-config(done).md`](./005-appearance-config(done).md) — card scale/radius/opacity presets with hot-apply.
+- [`008-expanded-semantics-high-auto-expand(done).md`](./008-expanded-semantics-high-auto-expand(done).md) — auto-expand High at both promotion sites, per-item reset, idle no-op toggle; executed at `b1981c9`, done criteria re-verified 2026-07-18 (clippy/fmt gate fails only on pre-existing out-of-scope files).
+- [`005-relocate-opencode-api-key(done).md`](./005-relocate-opencode-api-key(done).md) — OpenRouter key relocated, file mode locked down, key rotated, auth smoke check passed.
+- [`006-redact-telegram-token-from-logs(done).md`](./006-redact-telegram-token-from-logs(done).md) — `reqwest::Error::without_url()` redaction at `notifier.rs:278` plus a production-path regression test, `cargo test` 225 + 3 doc-tests.
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
 ## Dependency notes
+
+- **005 relocation is already complete** — both OpenCode configs use an
+  external file reference and the credential file is `0600`; do not move
+  tooling config again. The remaining completion gate is operator-confirmed
+  replacement-key use plus revocation of the old key.
+- **006 has a red repository baseline outside its scope at `b1981c9`** — full
+  fmt fails in `settings.rs`, and full clippy fails on four
+  unrelated lints. Its reviewed plan uses targeted gates and must not absorb
+  that cleanup. The Rust total changed concurrently while 006 was reviewed, so
+  its count step records the clean execution baseline and increments it rather
+  than hard-coding the original total.
 
 - **004 first** — it corrects the project-state files every subsequent
   agent session reads. 014/017/019 touch some of the same doc lines;

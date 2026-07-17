@@ -275,7 +275,7 @@ async fn send_once(
 
     let response = client.post(&url).json(&body).send().await.map_err(|e| {
         // timeouts, connect failures, dns — all transient per v3 spec §6
-        tracing::debug!("telegram request error: {e}");
+        tracing::debug!("telegram request error: {}", e.without_url());
         FailureKind::Transient
     })?;
 
@@ -295,6 +295,7 @@ async fn send_once(
 mod tests {
     use super::*;
     use crate::event::{EventMeta, EventPayload, EventSignal, Priority, RotationSpec, SourceKind};
+    use std::sync::{Arc, Mutex};
     use uuid::Uuid;
 
     fn event(event_type: EventType, title: &str, body: &str) -> Event {
@@ -486,6 +487,22 @@ mod tests {
         std::fs::remove_file(&path).ok();
     }
 
+    #[derive(Clone)]
+    struct TestLogWriter {
+        buf: Arc<Mutex<Vec<u8>>>,
+    }
+
+    impl std::io::Write for TestLogWriter {
+        fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+            self.buf.lock().unwrap().extend_from_slice(buf);
+            Ok(buf.len())
+        }
+
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+
     // --- wiremock: the send path. no live telegram call, ever. ---
 
     mod send_path {
@@ -589,6 +606,62 @@ mod tests {
 
             let cfg = test_cfg(server.uri());
             send_with_policy(&client(), &cfg, &event(EventType::Generic, "t", "b")).await;
+        }
+
+        #[tokio::test(flavor = "current_thread")]
+        async fn transport_error_log_omits_token() {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .respond_with(ResponseTemplate::new(200).set_delay(Duration::from_millis(250)))
+                .mount(&server)
+                .await;
+
+            let marker = "SENTINEL-TG-TOKEN-X7Y";
+            let cfg = WorkerConfig {
+                api_base: server.uri(),
+                secrets: TelegramSecrets {
+                    bot_token: marker.to_string(),
+                    chat_id: "42".to_string(),
+                },
+                retry_delay: Duration::from_millis(10),
+            };
+
+            let client = reqwest::Client::builder()
+                .timeout(Duration::from_millis(20))
+                .build()
+                .unwrap();
+
+            let buf = Arc::new(Mutex::new(Vec::<u8>::new()));
+            let writer = TestLogWriter {
+                buf: Arc::clone(&buf),
+            };
+            let subscriber = tracing_subscriber::fmt()
+                .with_max_level(tracing::Level::DEBUG)
+                .with_ansi(false)
+                .without_time()
+                .with_writer(move || writer.clone())
+                .finish();
+            let _subscriber_guard = tracing::subscriber::set_default(subscriber);
+
+            let result = send_once(
+                &client,
+                &cfg,
+                &event(EventType::Generic, "transport error title", "body"),
+                false,
+            )
+            .await;
+
+            assert_eq!(result, Err(FailureKind::Transient));
+            let buf_guard = buf.lock().unwrap();
+            let log = String::from_utf8_lossy(&buf_guard);
+            assert!(
+                log.contains("telegram request error"),
+                "expected stable log prefix from production branch"
+            );
+            assert!(
+                !log.contains(marker),
+                "tracing output leaked the synthetic telegram token marker"
+            );
         }
     }
 }
