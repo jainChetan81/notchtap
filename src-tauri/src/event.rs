@@ -47,6 +47,7 @@ pub enum EventType {
     Generic,
     ScoreUpdate,
     MatchState,
+    NewsItem,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -94,7 +95,10 @@ pub enum SlotState {
 
 pub fn dispatch(event: Event) -> Result<(), EventError> {
     match event.event_type {
-        EventType::Generic | EventType::ScoreUpdate | EventType::MatchState => Ok(()),
+        EventType::Generic
+        | EventType::ScoreUpdate
+        | EventType::MatchState
+        | EventType::NewsItem => Ok(()),
     }
 }
 
@@ -153,11 +157,24 @@ mod tests {
     }
 
     #[test]
-    fn dispatch_accepts_all_three_variants() {
+    fn news_item_deserializes() {
+        let event_type: EventType = serde_json::from_str(r#""news_item""#).unwrap();
+        assert!(matches!(event_type, EventType::NewsItem));
+    }
+
+    #[test]
+    fn news_item_serializes_snake_case() {
+        let json = serde_json::to_value(EventType::NewsItem).unwrap();
+        assert_eq!(json, "news_item");
+    }
+
+    #[test]
+    fn dispatch_accepts_all_variants() {
         for event_type in [
             EventType::Generic,
             EventType::ScoreUpdate,
             EventType::MatchState,
+            EventType::NewsItem,
         ] {
             let mut event = generic_event();
             event.event_type = event_type;
