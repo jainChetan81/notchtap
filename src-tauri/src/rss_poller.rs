@@ -7,8 +7,9 @@ use reqwest::header::{IF_MODIFIED_SINCE, IF_NONE_MATCH};
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
+use crate::config::RssFeedConfig;
 use crate::event::{
-    emit_slot_state, Event, EventPayload, EventSignal, EventType, Priority, RotationSpec,
+    emit_slot_state, Event, EventMeta, EventPayload, EventSignal, EventType, Priority, RotationSpec,
 };
 use crate::poller::{Backoff, PauseGate};
 use crate::queue::SingleSlotQueue;
@@ -16,6 +17,24 @@ use crate::queue::SingleSlotQueue;
 const TITLE_MAX_CHARS: usize = 120;
 const BODY_MAX_CHARS: usize = 240;
 const MAX_FEED_BYTES: usize = 1024 * 1024;
+const CATEGORY_KEYWORDS: &[(&str, &str)] = &[
+    ("politic", "politics"),
+    ("election", "politics"),
+    ("parliament", "politics"),
+    ("tech", "tech"),
+    ("science", "tech"),
+    ("gadget", "tech"),
+    ("sport", "sports"),
+    ("cricket", "sports"),
+    ("football", "sports"),
+    ("business", "business"),
+    ("econom", "business"),
+    ("market", "business"),
+    ("profit", "business"),
+    ("world", "world"),
+    ("global", "world"),
+    ("international", "world"),
+];
 
 /// Bounded, process-local memory of stories observed across every configured
 /// feed. Insertion order is retained separately from membership so eviction
@@ -191,18 +210,46 @@ fn sanitize(text: &str, max_chars: usize) -> String {
     }
 }
 
+fn derive_category(entry_categories: &[String], feed_default: Option<&str>) -> Option<String> {
+    let entry_categories: Vec<String> = entry_categories
+        .iter()
+        .map(|category| category.to_lowercase())
+        .collect();
+
+    CATEGORY_KEYWORDS
+        .iter()
+        .find_map(|(keyword, category)| {
+            entry_categories
+                .iter()
+                .any(|term| term.contains(keyword))
+                .then(|| (*category).to_string())
+        })
+        .or_else(|| feed_default.map(str::to_lowercase))
+}
+
+fn derive_source(configured_source: Option<&str>, feed: &feed_rs::model::Feed) -> Option<String> {
+    configured_source.map(str::to_string).or_else(|| {
+        feed.title.as_ref().and_then(|title| {
+            let title = title.content.trim();
+            (!title.is_empty()).then(|| title.to_string())
+        })
+    })
+}
+
 /// Pure set-difference and event-building heart of the RSS poller. All new
 /// keys enter the shared store before baseline/display filtering, so skipped
 /// or rate-limited stories cannot replay on a later tick.
 pub fn diff_feed(
     seen: &mut SeenStore,
     feed: &feed_rs::model::Feed,
+    feed_config: &RssFeedConfig,
     baseline: bool,
     max_per_poll: usize,
     ttl_secs: u64,
     now: Instant,
 ) -> Vec<Event> {
     let mut candidates = Vec::new();
+    let source = derive_source(feed_config.source.as_deref(), feed);
 
     for (order, entry) in feed.entries.iter().enumerate() {
         let guid = (!entry.id.trim().is_empty()).then_some(entry.id.as_str());
@@ -244,6 +291,12 @@ pub fn diff_feed(
             .as_ref()
             .or(entry.updated.as_ref())
             .map(|date| date.timestamp_millis());
+        let entry_categories: Vec<String> = entry
+            .categories
+            .iter()
+            .map(|category| category.term.clone())
+            .collect();
+        let category = derive_category(&entry_categories, feed_config.category.as_deref());
         let event = Event {
             id: Uuid::new_v4(),
             event_type: EventType::NewsItem,
@@ -254,6 +307,11 @@ pub fn diff_feed(
             // signature moments (goal/red card) exclusive to real signals
             signal: EventSignal::Generic,
             payload: EventPayload { title, body },
+            meta: EventMeta {
+                source: source.clone(),
+                category,
+                published_at_ms: published,
+            },
         };
         candidates.push((published, order, event));
     }
@@ -349,7 +407,7 @@ async fn fetch_feed(
 pub fn spawn_rss_poller(
     app: tauri::AppHandle,
     queue: Arc<Mutex<SingleSlotQueue>>,
-    feeds: Vec<String>,
+    feeds: Vec<crate::config::RssFeedConfig>,
     poll_secs: u64,
     ttl_secs: u64,
     max_per_poll: usize,
@@ -388,13 +446,13 @@ pub fn spawn_rss_poller(
                 continue;
             }
 
-            for (url, state) in feeds.iter().zip(&mut states) {
+            for (feed_config, state) in feeds.iter().zip(&mut states) {
                 let now = Instant::now();
                 if !state.backoff.ready(now) {
                     continue;
                 }
 
-                let feed = match fetch_feed(&client, url, state).await {
+                let feed = match fetch_feed(&client, &feed_config.url, state).await {
                     Ok(Some(feed)) => {
                         state.backoff.on_success();
                         feed
@@ -404,7 +462,7 @@ pub fn spawn_rss_poller(
                         continue;
                     }
                     Err(error) => {
-                        tracing::warn!(feed = %url, "rss poll failed: {error}");
+                        tracing::warn!(feed = %feed_config.url, "rss poll failed: {error}");
                         state.backoff.on_failure(now);
                         continue;
                     }
@@ -413,6 +471,7 @@ pub fn spawn_rss_poller(
                 let events = diff_feed(
                     &mut seen,
                     &feed,
+                    feed_config,
                     state.baseline,
                     max_per_poll,
                     ttl_secs,
@@ -424,7 +483,7 @@ pub fn spawn_rss_poller(
                     let slot_change = {
                         let mut queue = queue.lock().await;
                         if let Err(error) = queue.enqueue(event) {
-                            tracing::warn!(feed = %url, "rss event dropped: {error}");
+                            tracing::warn!(feed = %feed_config.url, "rss event dropped: {error}");
                         }
                         queue.slot_state_if_changed()
                     };
@@ -454,6 +513,14 @@ mod tests {
 </rss>"#
         );
         feed_rs::parser::parse(xml.as_bytes()).unwrap()
+    }
+
+    fn feed_config(source: Option<&str>, category: Option<&str>) -> RssFeedConfig {
+        RssFeedConfig {
+            url: "https://example.com/feed".to_string(),
+            source: source.map(str::to_string),
+            category: category.map(str::to_string),
+        }
     }
 
     #[test]
@@ -555,15 +622,77 @@ mod tests {
     }
 
     #[test]
+    fn category_derivation_uses_entry_tag_hit() {
+        assert_eq!(
+            derive_category(&["Science".to_string()], Some("world")),
+            Some("tech".to_string())
+        );
+    }
+
+    #[test]
+    fn category_derivation_uses_keyword_table_order() {
+        assert_eq!(
+            derive_category(&["Tech and Parliament".to_string()], None),
+            Some("politics".to_string())
+        );
+    }
+
+    #[test]
+    fn category_derivation_falls_back_to_feed_default() {
+        assert_eq!(
+            derive_category(&["Culture".to_string()], Some("BUSINESS")),
+            Some("business".to_string())
+        );
+    }
+
+    #[test]
+    fn category_derivation_returns_none_without_match_or_default() {
+        assert_eq!(derive_category(&["Culture".to_string()], None), None);
+    }
+
+    #[test]
+    fn source_fallback_chain_prefers_config_then_feed_title_then_none() {
+        let mut feed = parse_feed("");
+        feed.title.as_mut().unwrap().content = "  Test News  ".to_string();
+
+        assert_eq!(
+            derive_source(Some("Configured Source"), &feed),
+            Some("Configured Source".to_string())
+        );
+        assert_eq!(derive_source(None, &feed), Some("Test News".to_string()));
+
+        feed.title = None;
+        assert_eq!(derive_source(None, &feed), None);
+    }
+
+    #[test]
     fn diff_feed_baseline_records_without_emitting() {
         let feed = parse_feed(
             r#"<item><guid>a</guid><title>First</title><link>https://example.com/a</link></item>"#,
         );
         let now = Instant::now();
         let mut seen = SeenStore::default();
-        assert!(diff_feed(&mut seen, &feed, true, 10, 10, now).is_empty());
+        assert!(diff_feed(
+            &mut seen,
+            &feed,
+            &feed_config(None, None),
+            true,
+            10,
+            10,
+            now
+        )
+        .is_empty());
         assert!(seen.contains("a"));
-        assert!(diff_feed(&mut seen, &feed, false, 10, 10, now).is_empty());
+        assert!(diff_feed(
+            &mut seen,
+            &feed,
+            &feed_config(None, None),
+            false,
+            10,
+            10,
+            now
+        )
+        .is_empty());
     }
 
     #[test]
@@ -579,8 +708,24 @@ mod tests {
         );
         let now = Instant::now();
         let mut seen = SeenStore::default();
-        diff_feed(&mut seen, &baseline, true, 10, 17, now);
-        let events = diff_feed(&mut seen, &changed, false, 10, 17, now);
+        diff_feed(
+            &mut seen,
+            &baseline,
+            &feed_config(None, None),
+            true,
+            10,
+            17,
+            now,
+        );
+        let events = diff_feed(
+            &mut seen,
+            &changed,
+            &feed_config(None, None),
+            false,
+            10,
+            17,
+            now,
+        );
         assert_eq!(events.len(), 1);
         let event = &events[0];
         assert_eq!(event.event_type, EventType::NewsItem);
@@ -589,6 +734,39 @@ mod tests {
         assert_eq!(event.topic, None);
         assert_eq!(event.payload.title, "Second & Latest");
         assert_eq!(event.payload.body, "Details");
+    }
+
+    #[test]
+    fn diff_feed_events_carry_source_category_and_published_at_meta() {
+        let feed = parse_feed(
+            r#"
+<item>
+  <guid>story</guid>
+  <title>Science story</title>
+  <category>Science</category>
+  <pubDate>Mon, 01 Jan 2024 00:00:00 GMT</pubDate>
+</item>
+"#,
+        );
+        let events = diff_feed(
+            &mut SeenStore::default(),
+            &feed,
+            &feed_config(Some("Configured News"), Some("world")),
+            false,
+            10,
+            10,
+            Instant::now(),
+        );
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].meta,
+            EventMeta {
+                source: Some("Configured News".to_string()),
+                category: Some("tech".to_string()),
+                published_at_ms: Some(1_704_067_200_000),
+            }
+        );
     }
 
     #[test]
@@ -604,6 +782,7 @@ mod tests {
         let events = diff_feed(
             &mut SeenStore::default(),
             &feed,
+            &feed_config(None, None),
             false,
             10,
             10,
@@ -626,7 +805,15 @@ mod tests {
 "#,
         );
         let mut seen = SeenStore::default();
-        let events = diff_feed(&mut seen, &feed, false, 2, 10, Instant::now());
+        let events = diff_feed(
+            &mut seen,
+            &feed,
+            &feed_config(None, None),
+            false,
+            2,
+            10,
+            Instant::now(),
+        );
         let titles: Vec<_> = events
             .iter()
             .map(|event| event.payload.title.as_str())
@@ -643,7 +830,15 @@ mod tests {
             r#"<item><guid>empty</guid><title><![CDATA[<img src="only.jpg">]]></title></item>"#,
         );
         let mut seen = SeenStore::default();
-        let events = diff_feed(&mut seen, &feed, false, 10, 10, Instant::now());
+        let events = diff_feed(
+            &mut seen,
+            &feed,
+            &feed_config(None, None),
+            false,
+            10,
+            10,
+            Instant::now(),
+        );
         assert!(events.is_empty());
         assert!(seen.contains("empty"));
     }
@@ -663,7 +858,28 @@ mod tests {
 
         let now = Instant::now();
         let mut seen = SeenStore::default();
-        assert_eq!(diff_feed(&mut seen, &first, false, 10, 10, now).len(), 1);
-        assert!(diff_feed(&mut seen, &second, false, 10, 10, now).is_empty());
+        assert_eq!(
+            diff_feed(
+                &mut seen,
+                &first,
+                &feed_config(None, None),
+                false,
+                10,
+                10,
+                now,
+            )
+            .len(),
+            1
+        );
+        assert!(diff_feed(
+            &mut seen,
+            &second,
+            &feed_config(None, None),
+            false,
+            10,
+            10,
+            now
+        )
+        .is_empty());
     }
 }

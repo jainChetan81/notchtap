@@ -14,7 +14,8 @@ use uuid::Uuid;
 
 use crate::error::{EventError, QueueError};
 use crate::event::{
-    dispatch, emit_slot_state, Event, EventPayload, EventSignal, EventType, Priority, RotationSpec,
+    dispatch, emit_slot_state, Event, EventMeta, EventPayload, EventSignal, EventType, Priority,
+    RotationSpec,
 };
 use crate::notifier::ConnectorHandle;
 use crate::queue::SingleSlotQueue;
@@ -101,6 +102,7 @@ async fn notify_handler<R: tauri::Runtime>(
         },
         topic: None,
         payload: EventPayload { title, body },
+        meta: EventMeta::default(),
         signal: req.signal,
     };
 
@@ -441,6 +443,7 @@ mod tests {
                     title: "t".into(),
                     body: "b".into(),
                 },
+                meta: EventMeta::default(),
                 signal: req.signal,
             })
             .unwrap();
@@ -487,6 +490,7 @@ mod tests {
                     title: "t".into(),
                     body: "b".into(),
                 },
+                meta: EventMeta::default(),
                 signal: req.signal,
             })
             .unwrap();

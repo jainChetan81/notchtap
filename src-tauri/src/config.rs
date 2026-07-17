@@ -18,7 +18,15 @@ pub struct Config {
     /// default false — news is opt-in per machine; ambient sources must
     /// not default on top of the app's primary agent-notification purpose.
     pub rss_enabled: bool,
-    pub rss_feeds: Vec<String>,
+    /// Per-feed configuration uses TOML array tables:
+    ///
+    /// ```toml
+    /// [[rss_feeds]]
+    /// url = "https://feeds.feedburner.com/ndtvnews-top-stories"
+    /// source = "NDTV"
+    /// category = "politics"
+    /// ```
+    pub rss_feeds: Vec<RssFeedConfig>,
     pub rss_poll_secs: u64,
     pub rss_ttl_secs: u64,
     pub rss_max_per_poll: usize,
@@ -38,6 +46,15 @@ pub struct Connectors {
 pub struct TelegramToggle {
     /// default off — v3 outbound is opt-in per machine
     pub enabled: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct RssFeedConfig {
+    pub url: String,
+    #[serde(default)]
+    pub source: Option<String>,
+    #[serde(default)]
+    pub category: Option<String>,
 }
 
 fn default_port() -> u16 {
@@ -77,8 +94,12 @@ fn default_rss_enabled() -> bool {
     false
 }
 
-fn default_rss_feeds() -> Vec<String> {
-    vec!["https://feeds.feedburner.com/ndtvnews-top-stories".to_string()]
+fn default_rss_feeds() -> Vec<RssFeedConfig> {
+    vec![RssFeedConfig {
+        url: "https://feeds.feedburner.com/ndtvnews-top-stories".to_string(),
+        source: Some("NDTV".to_string()),
+        category: None,
+    }]
 }
 
 fn default_rss_poll_secs() -> u64 {
@@ -163,7 +184,11 @@ mod tests {
         assert!(!c.rss_enabled);
         assert_eq!(
             c.rss_feeds,
-            ["https://feeds.feedburner.com/ndtvnews-top-stories"]
+            [RssFeedConfig {
+                url: "https://feeds.feedburner.com/ndtvnews-top-stories".to_string(),
+                source: Some("NDTV".to_string()),
+                category: None,
+            }]
         );
         assert_eq!(c.rss_poll_secs, 60);
         assert_eq!(c.rss_ttl_secs, 10);
@@ -181,14 +206,53 @@ mod tests {
     #[test]
     fn rss_fields_are_overridable() {
         let c = Config::parse(
-            "rss_enabled = true\nrss_feeds = [\"https://example.com/feed\"]\nrss_poll_secs = 120\n",
+            "rss_enabled = true\nrss_poll_secs = 120\n\n[[rss_feeds]]\nurl = \"https://example.com/feed\"\nsource = \"Example News\"\ncategory = \"world\"\n",
         )
         .unwrap();
         assert!(c.rss_enabled);
-        assert_eq!(c.rss_feeds, ["https://example.com/feed"]);
+        assert_eq!(
+            c.rss_feeds,
+            [RssFeedConfig {
+                url: "https://example.com/feed".to_string(),
+                source: Some("Example News".to_string()),
+                category: Some("world".to_string()),
+            }]
+        );
         assert_eq!(c.rss_poll_secs, 120);
         assert_eq!(c.rss_ttl_secs, 10);
         assert_eq!(c.rss_max_per_poll, 10);
+    }
+
+    #[test]
+    fn rss_feed_tables_parse_with_and_without_optional_keys() {
+        let c = Config::parse(
+            r#"
+[[rss_feeds]]
+url = "https://example.com/with-meta"
+source = "Example"
+category = "tech"
+
+[[rss_feeds]]
+url = "https://example.com/without-meta"
+"#,
+        )
+        .unwrap();
+
+        assert_eq!(
+            c.rss_feeds,
+            [
+                RssFeedConfig {
+                    url: "https://example.com/with-meta".to_string(),
+                    source: Some("Example".to_string()),
+                    category: Some("tech".to_string()),
+                },
+                RssFeedConfig {
+                    url: "https://example.com/without-meta".to_string(),
+                    source: None,
+                    category: None,
+                },
+            ]
+        );
     }
 
     #[test]

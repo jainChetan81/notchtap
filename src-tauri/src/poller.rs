@@ -8,7 +8,8 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::event::{
-    emit_slot_state, Event, EventPayload, EventSignal, EventType, Priority, RotationSpec, SlotState,
+    emit_slot_state, Event, EventMeta, EventPayload, EventSignal, EventType, Priority,
+    RotationSpec, SlotState,
 };
 use crate::queue::SingleSlotQueue;
 
@@ -304,6 +305,7 @@ fn make_event(
         // constructs Recurring, and topic is a Recurring-adjacent concern).
         topic: None,
         payload: EventPayload { title, body },
+        meta: EventMeta::default(),
         signal,
     }
 }
@@ -640,7 +642,9 @@ pub fn spawn_espn_poller(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event::{EventPayload, EventSignal, EventType, Priority, RotationSpec, SlotState};
+    use crate::event::{
+        EventMeta, EventPayload, EventSignal, EventType, Priority, RotationSpec, SlotState,
+    };
     use crate::notifier::ConnectorHandle;
 
     const USA: &str = include_str!("../tests/fixtures/scoreboard-usa.1.json");
@@ -657,6 +661,7 @@ mod tests {
                 title: title.to_string(),
                 body: "body".to_string(),
             },
+            meta: EventMeta::default(),
             signal: EventSignal::Goal,
         }
     }
