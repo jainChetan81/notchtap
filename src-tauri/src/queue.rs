@@ -313,6 +313,26 @@ impl SingleSlotQueue {
         self.promote_next(now);
     }
 
+    /// Skip the Visible item: end its turn now, exactly as if its Rotation
+    /// window had elapsed naturally — a Recurring item requeues to the back
+    /// of its own Priority tier's Waiting line, a OneShot drops — then
+    /// promote the next Waiting item immediately. Contrast with
+    /// [`Self::dismiss_visible`], which drops a Recurring item outright:
+    /// skip means "not now, come back later", dismiss means "gone".
+    /// The requeue arm deliberately mirrors (not shares — see the plan that
+    /// added this) `rotate_out_if_elapsed`'s: stale `promoted_at` /
+    /// `extension_secs` on the requeued item are reset at its next
+    /// Promotion, so neither needs touching here.
+    pub fn skip_visible(&mut self, now: Instant) {
+        if let Some(item) = self.visible.take() {
+            if let RotationSpec::Recurring { .. } = item.event.rotation {
+                let tier = item.event.priority as usize;
+                self.waiting[tier].push_back(item);
+            }
+        }
+        self.promote_next(now);
+    }
+
     pub fn current_priority(&self) -> Option<Priority> {
         self.visible.as_ref().map(|i| i.event.priority)
     }
@@ -1027,6 +1047,59 @@ mod tests {
 
         assert!(q.visible.is_none());
         assert_eq!(waiting_titles(&q, Priority::Medium as usize), vec!["b"]);
+    }
+
+    #[test]
+    fn skip_visible_requeues_recurring_to_back_of_own_tier_and_promotes_next() {
+        // the exact case that distinguishes skip from dismiss: a Recurring
+        // item survives a skip (dismiss_visible_drops_recurring_item_rather_
+        // than_requeue proves dismiss destroys it)
+        let mut q = SingleSlotQueue::new(50);
+        q.enqueue(recurring_event("recur", Priority::Medium, 8))
+            .unwrap();
+        q.enqueue(event("next", Priority::Medium, 8)).unwrap();
+
+        q.skip_visible(Instant::now());
+
+        assert_eq!(visible_title(&q), Some("next"));
+        assert_eq!(waiting_titles(&q, Priority::Medium as usize), vec!["recur"]);
+    }
+
+    #[test]
+    fn skip_visible_drops_oneshot_and_promotes_next() {
+        let mut q = SingleSlotQueue::new(50);
+        q.enqueue(event("a", Priority::Medium, 8)).unwrap();
+        q.enqueue(event("b", Priority::Medium, 8)).unwrap();
+
+        q.skip_visible(Instant::now());
+
+        assert_eq!(visible_title(&q), Some("b"));
+        assert_eq!(q.total_waiting(), 0);
+    }
+
+    #[test]
+    fn skip_visible_is_noop_when_nothing_visible() {
+        let mut q = SingleSlotQueue::new(50);
+
+        q.skip_visible(Instant::now());
+
+        assert!(q.visible.is_none());
+        assert_eq!(q.total_waiting(), 0);
+    }
+
+    #[test]
+    fn skip_visible_respects_paused() {
+        // paused: the recurring item still requeues, but nothing promotes
+        // (Promotion is frozen — CONTEXT.md's Paused contract)
+        let mut q = SingleSlotQueue::new(50);
+        q.enqueue(recurring_event("recur", Priority::Medium, 8))
+            .unwrap();
+        q.pause();
+
+        q.skip_visible(Instant::now());
+
+        assert!(q.visible.is_none());
+        assert_eq!(waiting_titles(&q, Priority::Medium as usize), vec!["recur"]);
     }
 
     #[test]

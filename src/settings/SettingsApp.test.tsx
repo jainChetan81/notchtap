@@ -82,7 +82,9 @@ describe("SettingsApp", () => {
     fireEvent.click(screen.getByRole("button", { name: "Shortcuts" }));
     expect(await screen.findByRole("heading", { level: 1, name: "Shortcuts" })).toBeTruthy();
     expect(await screen.findByText("Expand or collapse the slot (manual)")).toBeTruthy();
-    expect(await screen.findAllByText("planned · not implemented")).toHaveLength(2);
+    const shortcutTable = screen.getByRole("table", { name: "Keyboard shortcuts" });
+    expect(within(shortcutTable).getAllByText("active")).toHaveLength(6);
+    expect(screen.queryAllByText("planned · not implemented")).toHaveLength(0);
   });
 
   it("Appearance section is enabled and renders all four preview cards", async () => {
