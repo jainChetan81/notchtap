@@ -16,9 +16,9 @@ other sections point back rather than repeating them):
 
 | suite | size | where |
 |---|---|---|
-| rust unit/integration | 141 tests — queue 27, settings 22 (v5 rust side, 2026-07-17), notifier 20, http 20, poller 19, event 12, presentation 11, config 8, lib (hotkey) 2 | `cargo test` from `src-tauri/` |
+| rust unit/integration | 180 tests — settings 34 (v5 rust side + rss rules + review hardening, 2026-07-17), queue 27, notifier 22, rss_poller 20 (v5 news, 2026-07-17), http 20, poller 19, event 15, presentation 11, config 10, lib (hotkey) 2 | `cargo test` from `src-tauri/` |
 | rust doc-tests | 3 — public `queue`/`event` apis | same `cargo test` run |
-| frontend | 18 tests — slot-state hook, App render, presentation mode | `npx vitest run` |
+| frontend | 48 tests — presentation tables 14, slot-state hook 13, StatusRailCard 12, App render 5, presentation mode 4 | `npx vitest run` |
 | ci (v4) | fmt, clippy `-D warnings`, cargo test, tsc, vitest, vite build, swiftc compile check | every push + pr |
 
 every example case listed in §4 for v1/v2/v3 components has a passing
@@ -26,7 +26,10 @@ test; the v4 §4.3 expansion (exhaustive status codes, queue edge
 interleavings, sweep timing) is in; the v3 notifier suite (§4.9 —
 telegram) landed 2026-07-16; the v3.6 single-slot rotating overlay
 suite (§4.10) landed 2026-07-17, superseding §4.1's 3-item-cap queue
-example cases.
+example cases; the v5 settings-window rust suite (§4.11) and the v5
+rss poller + status-rail news card suite (§4.12) both landed
+2026-07-17 — §4.11's form/vitest cases and §4.12's manual live-feed
+check are the only pieces still open, tracked in their own sections.
 
 **left — each is a decision with an owner section, not a gap:**
 
@@ -35,8 +38,9 @@ example cases.
 | deep testing work order (proptest invariants, http burst, poller fuzz, frontend timing fuzz) | **parked 2026-07-16** — un-park triggers in §8 | §9 (the full, implementation-ready plan) |
 | ~~outbound connector tests~~ | **landed with v3 (telegram)** 2026-07-16 | §4.9 |
 | ~~single-slot rotating overlay tests~~ | **landed with v3.6** 2026-07-17 (branch `v3.6-rotating-overlay`, not yet merged) | §4.10 |
-| v3.6 manual hardware checks (hotkey keypress, Spaces/fullscreen survival) | not yet run — needs the macbook | §4.10, §5, `IMPLEMENTATION_PLAN.md` §3.6.1/§6 |
-| v5 settings-window suite | **rust side landed 2026-07-17** (validate/mask/round-trip/merge/write paths — the settings 22 above); form + vitest cases held with `IMPLEMENTATION_PLAN.md` §4.5 step 5 (ui migration) | §4.11, `V5_TECHNICAL_SPEC.md` §7 |
+| ~~v5 rss poller + news-card suite~~ | **landed 2026-07-17** (rss_poller 20 above + the news-card share of the frontend 48) | §4.12 |
+| v5 settings-window suite | **rust side landed 2026-07-17** (validate/mask/round-trip/merge/write paths — the settings 34 above, which also folds in rss validation rules and review hardening); form + vitest cases held with `IMPLEMENTATION_PLAN.md` §4.5 step 5 (ui migration) | §4.11, `V5_TECHNICAL_SPEC.md` §7 |
+| manual checks not yet run (v3.6 hotkey keypress + Spaces/fullscreen survival, v5 news live-feed check) | needs the macbook + (for news) `rss_enabled = true` | §4.10, §4.12, §5, `IMPLEMENTATION_PLAN.md` §3.6.1/§4.6.1/§6 |
 | `test-cli.sh` for the `notchtap` script | only if the script grows | §8 |
 | manual hardware checklist | recurring per change — never "done" | §5, `IMPLEMENTATION_PLAN.md` §6 |
 
@@ -450,6 +454,54 @@ security boundary (the overlay must stay receive-only).
   glue); `app.restart()` (kills the process — nothing to assert
   from inside it); the openrouter key's *use* (no consumer exists
   until the first ai feature)
+
+### 4.12 rss news poller + status-rail news cards (v5 news — landed 2026-07-17)
+
+code-level detail lives with the feature, not a separate spec; build
+sequence in `IMPLEMENTATION_PLAN.md` §4.6. `rss_feeds`/`rss_enabled`/
+`rss_poll_secs`/`rss_ttl_secs`/`rss_max_per_poll` validation rules live
+in `settings.rs` and are already covered by §4.11 (folded into that
+suite's count the same day, not duplicated here) — this section is the
+poller and the frontend render path only.
+
+- **type**: unit (pure fns, tdd) — same shape as §4.7's espn poller:
+  the fetch loop stays thin and untested (§5.1), parsing/dedup/diff
+  logic are pure functions tested directly against fixtures, including
+  real-shaped ndtv captures. no live rss fetch in any test.
+- **example cases** (`rss_poller.rs`, 20 tests):
+  - `SeenStore`: bounds enforcement (1k keys, oldest evicted first),
+    7-day eviction, guid dedup, canonical-link fallback when a guid is
+    absent, cross-feed duplicate guard (the same story from two feeds
+    only surfaces once)
+  - sanitize: strips markup/entities from real-shaped ndtv fixture
+    items without mangling plain text
+  - diff/baseline: first poll per feed is silent (no restart flood,
+    same rule as §4.7's espn baseline); subsequent polls emit only
+    unseen items in feed order; `rss_max_per_poll` caps a single poll's
+    emissions (replay bug-guard) without dropping the excess from
+    `SeenStore` (they're still marked seen, not re-offered next poll)
+  - metadata derivation: category from entry `<category>` tags via the
+    keyword table, falling back to the feed's configured default;
+    source from `[[rss_feeds]]` config, falling back to the parsed
+    feed title
+  - malformed/empty feed body → no crash, no event emitted (same
+    failure-mode contract as §4.7)
+- **frontend (vitest, part of the 48 total — presentation tables 14 +
+  `StatusRailCard` 12 cover the news branch)**: masthead render
+  (`{source} · Wire`), 2-line clamped headline, category + age pill
+  content, `stampFor`/`categoryClass`/`ageLabel`/`publishedLabel`
+  lookup-table cases including unknown-category fallback, null-metadata
+  fallback (non-news `SlotState` items render with no source/category/
+  publishedAtMs and don't crash the news branch), the news manifest's
+  3-column layout
+- **untested by design** (extends §5.1): the category-hued gradient
+  shader's visual output and reduced-motion behaviour — same
+  eyeball-only reasoning as §4.6; conditional-GET (etag/last-modified)
+  http mechanics reuse §4.7's "fetch loop stays thin" boundary
+- **manual, not yet run**: `rss_enabled = true` against the live ndtv
+  feed — first-poll silence, masthead/shader/pill rendering, the news
+  manifest hotkey, a `High`-priority push preempting a queued headline;
+  tracked in `IMPLEMENTATION_PLAN.md` §4.6.1 and §6
 
 ---
 

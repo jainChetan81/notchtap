@@ -621,6 +621,63 @@ blank window until step 5 — accepted, not a bug.
 
 ---
 
+## 4.6. v5 — news source (rss poller + status-rail news cards) — ✅ landed 2026-07-17
+
+built via two delegated slices (rust wire metadata, frontend cards)
+against a frozen `slot-state` contract, merged sequentially onto
+`v3.6-rotating-overlay` the same day as the settings rust core.
+
+- **rust** (`src-tauri/src/rss_poller.rs`): polls configured rss feeds
+  (default NDTV top-stories) every `rss_poll_secs` (default 60, floor
+  15); shared bounded `SeenStore` dedup (guid → canonical-link
+  fallback, 1k keys / 7-day eviction, cross-feed duplicate guard);
+  silent baseline on start and tray-resume; conditional GET
+  (etag/last-modified, validators persisted only after a successful
+  parse); per-feed `Backoff`; 1 MiB body cap; ≤3 redirects;
+  `rss_max_per_poll` (default 10) as a replay bug-guard. events are
+  `NewsItem` / `Priority::Low` / `OneShot { rss_ttl_secs }` /
+  `topic: None` (every-headline decision — no supersession
+  coalescing), overlay-only (never offered to connectors).
+- **wire metadata**: `EventMeta { source, category, published_at_ms }`
+  on `Event`, surfaced on `SlotState::Showing` as `source` /
+  `category` / `publishedAtMs` (null for non-news). category derives
+  from entry `<category>` tags via a keyword table, else the feed's
+  configured default; source from `[[rss_feeds]]` config, else the
+  parsed feed title.
+- **config** (breaking, pre-release): `rss_feeds` is an array of
+  tables — `[[rss_feeds]] url / source / category` — plus
+  `rss_enabled` (default **false**, opt-in), `rss_poll_secs`,
+  `rss_ttl_secs` (default 10), `rss_max_per_poll`. all panel-validated
+  (§4.5's `validate`, extended same day).
+- **frontend** (status rail): news branch keyed off
+  `eventType === "news_item"` — masthead row (`{source} · Wire`),
+  2-line clamped headline, category + age pills (staggered entry),
+  category-hued gradient shader (`.news-shade`, sub-16%-alpha drift,
+  reduced-motion aware), newspaper tier glyph, 3-column news manifest
+  (summary / source + published / category + control). priority keeps
+  tier column, stamp, and track — the two color systems never touch
+  the same element. all lookups are typed tables in
+  `lib/presentation.ts` (`stampFor` news → "Wire", `categoryClass`,
+  `ageLabel`, `publishedLabel`), `assertNever`-guarded.
+
+### 4.6.1 news source exit criteria
+
+- [x] `cargo test` green with the rss_poller suite (20 cases: seen
+  store bounds, dedup key fallbacks, sanitize incl. real-shaped ndtv
+  fixtures, diff ordering/baseline/cap, cross-feed dedup, metadata
+  derivation) — `TESTING_STRATEGY.md` §0 counts
+- [x] `npx vitest run` green with the news-card cases (presentation
+  tables, StatusRailCard news rendering incl. null-metadata fallbacks,
+  slot-state validation of the three nullable fields)
+- [x] tray gains "Pause News" (only when `rss_enabled`); resume
+  re-baselines — no headline flood
+- [ ] manual (§6): `rss_enabled = true` against the live NDTV feed —
+  first poll silent, headlines arrive with masthead/shader/pills,
+  ⌃⇧N opens the news manifest, a High-priority push preempts a queued
+  headline; notch-mode eyeball on the macbook
+
+---
+
 ## 5. explicitly deferred polish (not blocking any phase above)
 
 - ~~notch-precise window positioning via the native swift shim~~ —

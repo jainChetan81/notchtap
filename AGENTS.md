@@ -8,13 +8,20 @@ scaffolded and shipping. v1 (core engine, queue, one animation, cli
 push), v2 (espn poller, cmux relay, animation table), v3 (outbound
 connectors — telegram, `src-tauri/src/notifier.rs`), and v4
 (github + ci at `github.com/jainChetan81/notchtap`) are done as of
-2026-07-16. v5 (settings window / control panel) is **rust-side done,
-frontend held** as of 2026-07-17 — the four invoke commands, config/
-secrets write paths, `start_paused` kill switch, tray "Settings…"
-item, and per-window command acl are built and tested; the settings
-*page* (step 5) waits for the in-flight ui migration (framer motion +
-lucide). decisions in `docs/ARCHITECTURE.md` §17,
-plan in `docs/IMPLEMENTATION_PLAN.md` §4.5, contract in
+2026-07-16. as of 2026-07-17 (branch `v3.6-rotating-overlay`), three
+more things landed the same day: the frontend ui migration (motion +
+lucide + the status rail) is **done and committed**; v5 news — the
+rss poller (`src-tauri/src/rss_poller.rs`), `NewsItem` events with
+wire metadata (source/category/publishedAtMs), `[[rss_feeds]]` config,
+and the status-rail news cards (masthead, category shaders, pills) —
+landed alongside the settings rust core. v5 (settings window / control
+panel) itself is **rust-side done, frontend now unblocked** — the four
+invoke commands, config/secrets write paths, `start_paused` kill
+switch, tray "Settings…" item, and per-window command acl are built
+and tested; the settings *page* (`IMPLEMENTATION_PLAN.md` §4.5 step 5)
+was held on the ui migration and is the next open item now that the
+migration is done. decisions in `docs/ARCHITECTURE.md` §17, plan in
+`docs/IMPLEMENTATION_PLAN.md` §4.5/§4.6, contract in
 `docs/V5_TECHNICAL_SPEC.md`. the tauri/rust/web project lives at repo
 root alongside
 `docs/` — the docs folder isn't part of the app build. the test suite
