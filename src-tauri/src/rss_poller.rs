@@ -9,7 +9,8 @@ use uuid::Uuid;
 
 use crate::config::RssFeedConfig;
 use crate::event::{
-    emit_slot_state, Event, EventMeta, EventPayload, EventSignal, EventType, Priority, RotationSpec,
+    emit_slot_state, Event, EventMeta, EventPayload, EventSignal, EventType, Priority,
+    RotationSpec, SourceKind,
 };
 use crate::poller::{Backoff, PauseGate};
 use crate::queue::SingleSlotQueue;
@@ -246,6 +247,7 @@ pub fn diff_feed(
     baseline: bool,
     max_per_poll: usize,
     ttl_secs: u64,
+    priority: Priority,
     now: Instant,
 ) -> Vec<Event> {
     let mut candidates = Vec::new();
@@ -300,7 +302,7 @@ pub fn diff_feed(
         let event = Event {
             id: Uuid::new_v4(),
             event_type: EventType::NewsItem,
-            priority: Priority::Low,
+            priority,
             rotation: RotationSpec::OneShot { ttl_secs },
             topic: None,
             // news has no football signal; Generic keeps the frontend's
@@ -313,6 +315,7 @@ pub fn diff_feed(
                 published_at_ms: published,
                 link: link.map(str::to_string),
             },
+            origin: SourceKind::News,
         };
         candidates.push((published, order, event));
     }
@@ -412,6 +415,7 @@ pub fn spawn_rss_poller(
     poll_secs: u64,
     ttl_secs: u64,
     max_per_poll: usize,
+    priority: Priority,
     active: Arc<AtomicBool>,
 ) {
     tauri::async_runtime::spawn(async move {
@@ -476,6 +480,7 @@ pub fn spawn_rss_poller(
                     state.baseline,
                     max_per_poll,
                     ttl_secs,
+                    priority,
                     now,
                 );
                 state.baseline = false;
@@ -680,7 +685,8 @@ mod tests {
             true,
             10,
             10,
-            now
+            Priority::Low,
+            now,
         )
         .is_empty());
         assert!(seen.contains("a"));
@@ -691,7 +697,8 @@ mod tests {
             false,
             10,
             10,
-            now
+            Priority::Low,
+            now,
         )
         .is_empty());
     }
@@ -716,6 +723,7 @@ mod tests {
             true,
             10,
             17,
+            Priority::Low,
             now,
         );
         let events = diff_feed(
@@ -725,6 +733,7 @@ mod tests {
             false,
             10,
             17,
+            Priority::Low,
             now,
         );
         assert_eq!(events.len(), 1);
@@ -758,6 +767,7 @@ mod tests {
             false,
             10,
             10,
+            Priority::Low,
             Instant::now(),
         );
 
@@ -784,6 +794,7 @@ mod tests {
             false,
             10,
             10,
+            Priority::Low,
             Instant::now(),
         );
 
@@ -808,6 +819,7 @@ mod tests {
             false,
             10,
             10,
+            Priority::Low,
             Instant::now(),
         );
         let titles: Vec<_> = events
@@ -834,6 +846,7 @@ mod tests {
             false,
             2,
             10,
+            Priority::Low,
             Instant::now(),
         );
         let titles: Vec<_> = events
@@ -859,6 +872,7 @@ mod tests {
             false,
             10,
             10,
+            Priority::Low,
             Instant::now(),
         );
         assert!(events.is_empty());
@@ -888,6 +902,7 @@ mod tests {
                 false,
                 10,
                 10,
+                Priority::Low,
                 now,
             )
             .len(),
@@ -900,7 +915,8 @@ mod tests {
             false,
             10,
             10,
-            now
+            Priority::Low,
+            now,
         )
         .is_empty());
     }

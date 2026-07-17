@@ -105,6 +105,8 @@ pub fn run() {
     let rss_ttl_secs = config.rss_ttl_secs;
     let rss_max_per_poll = config.rss_max_per_poll;
     let manual_default_priority = config.manual_default_priority;
+    let cmux_priority = config.cmux_priority;
+    let cmux_ttl_secs = config.cmux_ttl_secs;
 
     // v3 outbound connectors: built here (channel needs no runtime), the
     // worker future is spawned in setup once the runtime exists. missing
@@ -210,10 +212,7 @@ pub fn run() {
                                 {
                                     open_current_story(app, &hotkey_queue_for_handler);
                                 } else if *shortcut
-                                    == Shortcut::new(
-                                        DISMISS_SHORTCUT.0,
-                                        DISMISS_SHORTCUT.1,
-                                    )
+                                    == Shortcut::new(DISMISS_SHORTCUT.0, DISMISS_SHORTCUT.1)
                                 {
                                     dismiss_current(app, &hotkey_queue_for_handler);
                                 } else if *shortcut
@@ -370,6 +369,8 @@ pub fn run() {
                         queue,
                         default_ttl,
                         manual_default_priority,
+                        cmux_priority,
+                        cmux_ttl_secs,
                         app_handle: app_handle.clone(),
                         connectors,
                     };

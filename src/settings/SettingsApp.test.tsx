@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SettingsApp, type Config, type SecretStatus } from "./SettingsApp";
 
@@ -12,14 +12,21 @@ const config: Config = {
   espn_enabled: false,
   espn_leagues: ["eng.1", "usa.1"],
   espn_poll_secs: 45,
+  espn_priority: "medium",
+  espn_ttl_secs: 22,
   rss_enabled: true,
   rss_feeds: [
     { url: "https://example.com/world.xml", source: "Example", category: "world" },
     { url: "https://example.com/tech.xml", source: null, category: null },
   ],
   rss_poll_secs: 90,
+  rss_priority: "high",
   rss_ttl_secs: 18,
   rss_max_per_poll: 6,
+  manual_default_priority: "low",
+  cmux_priority: "medium",
+  cmux_ttl_secs: 16,
+  rotation_order: ["news", "cmux", "manual", "football"],
   connectors: { telegram: { enabled: true } },
 };
 
@@ -50,6 +57,7 @@ describe("SettingsApp", () => {
     expect(screen.getByRole("button", { name: "General" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Football" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "News" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Cmux" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Connectors & Keys" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Shortcuts" })).toBeTruthy();
 
@@ -62,13 +70,16 @@ describe("SettingsApp", () => {
     fireEvent.click(screen.getByRole("button", { name: "News" }));
     expect(await screen.findByRole("heading", { level: 1, name: "News" })).toBeTruthy();
 
+    fireEvent.click(screen.getByRole("button", { name: "Cmux" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Cmux" })).toBeTruthy();
+
     fireEvent.click(screen.getByRole("button", { name: "Connectors & Keys" }));
     expect(await screen.findByRole("heading", { level: 1, name: "Connectors & Keys" })).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Shortcuts" }));
     expect(await screen.findByRole("heading", { level: 1, name: "Shortcuts" })).toBeTruthy();
     expect(await screen.findByText("Expand or collapse the slot (manual)")).toBeTruthy();
-    expect(await screen.findAllByText("planned · not implemented")).toHaveLength(4);
+    expect(await screen.findAllByText("planned · not implemented")).toHaveLength(2);
   });
 
   it("shows loaded values in General", async () => {
@@ -161,11 +172,105 @@ describe("SettingsApp", () => {
     expect((screen.getByLabelText("Rotation seconds") as HTMLInputElement).value).toBe("8");
     expect((screen.getByLabelText("Queue cap per priority tier") as HTMLInputElement).value).toBe("50");
     expect((screen.getByLabelText("Start paused") as HTMLInputElement).checked).toBe(false);
+    expect(selectedPriorityLabel(screen.getByLabelText("Manual push priority"))).toBe("Med");
+    expect(rotationOrderRowNames()).toEqual([
+      "Football",
+      "Cmux (Claude Code relay)",
+      "Manual / CLI push",
+      "News",
+    ]);
 
     fireEvent.click(screen.getByRole("button", { name: "Football" }));
     expect((await screen.findByLabelText("Enable ESPN scores") as HTMLInputElement).checked).toBe(true);
     expect((screen.getByLabelText("Leagues") as HTMLTextAreaElement).value).toBe(
       "eng.1\nuefa.champions\nesp.1",
     );
+    expect((screen.getByLabelText("Rotation seconds") as HTMLInputElement).value).toBe("8");
+    expect(selectedPriorityLabel(screen.getByLabelText("Priority"))).toBe("High");
+  });
+
+  function rotationOrderRowNames() {
+    return screen
+      .getAllByRole("listitem")
+      .map((row) => row.querySelector(".rotation-order-name")?.textContent);
+  }
+
+  function selectedPriorityLabel(toggle: HTMLElement) {
+    const selected = within(toggle)
+      .getAllByRole("button")
+      .find((button) => button.getAttribute("aria-pressed") === "true");
+    return selected?.textContent ?? null;
+  }
+
+  it("shows each source's loaded priority and reflects a click immediately", async () => {
+    mockLoads();
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    const manualToggle = screen.getByLabelText("Manual push priority");
+    expect(selectedPriorityLabel(manualToggle)).toBe("Low");
+
+    fireEvent.click(within(manualToggle).getByRole("button", { name: "High" }));
+    expect(selectedPriorityLabel(manualToggle)).toBe("High");
+
+    fireEvent.click(screen.getByRole("button", { name: "Football" }));
+    const espnToggle = await screen.findByLabelText("Priority");
+    expect(selectedPriorityLabel(espnToggle)).toBe("Med");
+    fireEvent.click(within(espnToggle).getByRole("button", { name: "High" }));
+    expect(selectedPriorityLabel(espnToggle)).toBe("High");
+
+    fireEvent.click(screen.getByRole("button", { name: "News" }));
+    const rssToggle = await screen.findByLabelText("Priority");
+    expect(selectedPriorityLabel(rssToggle)).toBe("High");
+  });
+
+  it("shows the loaded Cmux priority and reflects a click immediately", async () => {
+    mockLoads();
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "Cmux" }));
+
+    const cmuxToggle = await screen.findByLabelText("Priority");
+    expect(selectedPriorityLabel(cmuxToggle)).toBe("Med");
+    fireEvent.click(within(cmuxToggle).getByRole("button", { name: "High" }));
+    expect(selectedPriorityLabel(cmuxToggle)).toBe("High");
+    expect((screen.getByLabelText("Rotation seconds") as HTMLInputElement).value).toBe("16");
+  });
+
+  it("rotation order loads in the saved order and reorders with edge-disabled buttons", async () => {
+    mockLoads();
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    expect(rotationOrderRowNames()).toEqual([
+      "News",
+      "Cmux (Claude Code relay)",
+      "Manual / CLI push",
+      "Football",
+    ]);
+
+    const rows = screen.getAllByRole("listitem");
+    const [newsRow, cmuxRow, manualRow, footballRow] = rows;
+    expect(
+      (within(newsRow).getByRole("button", { name: /earlier/ }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(
+      (within(footballRow).getByRole("button", { name: /later/ }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+    expect(
+      (within(manualRow).getByRole("button", { name: /earlier/ }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+    expect(
+      (within(cmuxRow).getByRole("button", { name: /earlier/ }) as HTMLButtonElement).disabled,
+    ).toBe(false);
+
+    fireEvent.click(within(manualRow).getByRole("button", { name: /earlier/ }));
+    expect(rotationOrderRowNames()).toEqual([
+      "News",
+      "Manual / CLI push",
+      "Cmux (Claude Code relay)",
+      "Football",
+    ]);
   });
 });

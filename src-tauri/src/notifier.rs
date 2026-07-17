@@ -294,7 +294,7 @@ async fn send_once(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event::{EventMeta, EventPayload, EventSignal, Priority, RotationSpec};
+    use crate::event::{EventMeta, EventPayload, EventSignal, Priority, RotationSpec, SourceKind};
     use uuid::Uuid;
 
     fn event(event_type: EventType, title: &str, body: &str) -> Event {
@@ -310,6 +310,7 @@ mod tests {
             },
             meta: EventMeta::default(),
             signal: EventSignal::Generic,
+            origin: SourceKind::Manual,
         }
     }
 

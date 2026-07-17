@@ -49,6 +49,12 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
             c.espn_poll_secs
         ));
     }
+    if !(1..=3600).contains(&c.espn_ttl_secs) {
+        errors.push(format!(
+            "espn_ttl_secs must be 1–3600 seconds (got {})",
+            c.espn_ttl_secs
+        ));
+    }
     for league in &c.espn_leagues {
         if league.is_empty() || league.chars().any(char::is_whitespace) {
             errors.push(format!(
@@ -96,6 +102,26 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
     }
     if c.rss_enabled && c.rss_feeds.is_empty() {
         errors.push("rss_enabled is on but rss_feeds is empty — add a feed or disable".into());
+    }
+
+    // rotation_order must be a permutation of all four SourceKind variants
+    // — the ui is a fixed 4-row reorder list, never add/remove, so any
+    // other shape means the ipc caller bypassed it.
+    let expected_sources = [
+        crate::event::SourceKind::Football,
+        crate::event::SourceKind::Manual,
+        crate::event::SourceKind::News,
+        crate::event::SourceKind::Cmux,
+    ];
+    let is_permutation = c.rotation_order.len() == expected_sources.len()
+        && expected_sources
+            .iter()
+            .all(|source| c.rotation_order.contains(source));
+    if !is_permutation {
+        errors.push(
+            "rotation_order must contain each of football, manual, news, and cmux exactly once"
+                .into(),
+        );
     }
 
     if errors.is_empty() {
@@ -490,6 +516,51 @@ mod tests {
     }
 
     #[test]
+    fn espn_ttl_boundaries() {
+        let mut c = Config {
+            espn_ttl_secs: 0,
+            ..Config::default()
+        };
+        assert!(validate(&c).is_err());
+        c.espn_ttl_secs = 1;
+        assert!(validate(&c).is_ok());
+        c.espn_ttl_secs = 3600;
+        assert!(validate(&c).is_ok());
+        c.espn_ttl_secs = 3601;
+        assert!(validate(&c).is_err());
+    }
+
+    #[test]
+    fn rotation_order_must_be_a_permutation() {
+        use crate::event::SourceKind;
+
+        // missing entries
+        let mut c = Config {
+            rotation_order: vec![SourceKind::Football, SourceKind::Manual],
+            ..Config::default()
+        };
+        assert!(validate(&c).is_err());
+
+        // duplicate entry (still length 4, but News is missing)
+        c.rotation_order = vec![
+            SourceKind::Football,
+            SourceKind::Football,
+            SourceKind::Manual,
+            SourceKind::Cmux,
+        ];
+        assert!(validate(&c).is_err());
+
+        // correct permutation, any order
+        c.rotation_order = vec![
+            SourceKind::News,
+            SourceKind::Football,
+            SourceKind::Cmux,
+            SourceKind::Manual,
+        ];
+        assert!(validate(&c).is_ok());
+    }
+
+    #[test]
     fn poll_interval_boundaries() {
         let mut c = Config {
             espn_poll_secs: 4,
@@ -654,11 +725,23 @@ mod tests {
             espn_enabled: false,
             espn_leagues: vec!["usa.1".into()],
             espn_poll_secs: 60,
+            espn_priority: crate::event::Priority::Medium,
+            espn_ttl_secs: 20,
             rss_enabled: true,
             rss_feeds: vec!["https://example.com/feed.xml".into()],
             rss_poll_secs: 120,
+            rss_priority: crate::event::Priority::High,
             rss_ttl_secs: 15,
             rss_max_per_poll: 5,
+            manual_default_priority: crate::event::Priority::Low,
+            cmux_priority: crate::event::Priority::High,
+            cmux_ttl_secs: 9,
+            rotation_order: vec![
+                crate::event::SourceKind::News,
+                crate::event::SourceKind::Manual,
+                crate::event::SourceKind::Cmux,
+                crate::event::SourceKind::Football,
+            ],
             connectors: crate::config::Connectors {
                 telegram: crate::config::TelegramToggle { enabled: true },
             },

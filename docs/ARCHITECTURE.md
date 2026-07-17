@@ -278,6 +278,11 @@ point for this, documented at cmux.com/docs/notifications:
   notifies on flows through this one setting, no per-tool integration
   work required.
 
+the `notchtap` cli self-identifies a cmux-relayed push when the
+`CMUX_NOTIFICATION_BODY` environment variable is present, adding
+`source: "cmux"` on the wire. cmux priority and rotation seconds are
+configured independently in settings.
+
 **precise about the limit, so v1 scope stays honest**: cmux's
 notification command is a **heads-up relay**, not an approval gate. it
 fires *after* cmux decides to show a notification — it doesn't hand

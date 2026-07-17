@@ -1,16 +1,22 @@
 #!/bin/sh
 # notchtap — cli push for the notchtap notification engine (spec §12).
 # flags only, no positional form:
-#   notchtap --title <title> --body <body> [--subtitle <s>] [--priority low|medium|high] [--signal <s>] [--port <p>]
+#   notchtap --title <title> --body <body> [--subtitle <s>] [--priority low|medium|high] [--signal <s>] [--source cmux] [--port <p>]
 # a non-empty --subtitle folds into the posted body as "<subtitle> — <body>";
-# the server never sees a subtitle field. --priority and --signal fold into
-# the posted json as-is; when omitted, the field is left off the payload
-# entirely and the server's own default (medium priority, generic signal)
-# applies — v3.6 spec §6: there is exactly one place "what does unspecified
-# mean" lives, not two kept in sync. --signal is mainly a manual-testing
-# aid (real football signals come from the espn poller, which knows the
-# specific event structurally — cmux/CLI callers can't) — see
-# IMPLEMENTATION_PLAN.md's manual verification section for its use.
+# the server never sees a subtitle field. --priority, --signal, and --source
+# fold into the posted json as-is; when omitted, the field is left off the
+# payload entirely and the server's own default applies — v3.6 spec §6:
+# there is exactly one place "what does unspecified mean" lives, not two
+# kept in sync. --signal is mainly a manual-testing aid (real football
+# signals come from the espn poller, which knows the specific event
+# structurally — cmux/CLI callers can't) — see IMPLEMENTATION_PLAN.md's
+# manual verification section for its use.
+# --source cmux (v6): cmux's own "settings > app > notification command"
+# always sets CMUX_NOTIFICATION_TITLE/SUBTITLE/BODY when it runs this
+# script (ARCHITECTURE.md's cmux relay section) — a plain manual
+# invocation never has CMUX_NOTIFICATION_BODY set, so it's auto-detected
+# below and cmux's own notification-command setting needs no change.
+# --source is still accepted explicitly for manual testing.
 # port resolution: --port flag → $NOTCHTAP_PORT → 9789. never reads
 # config.toml. exits non-zero on connection failure or any non-2xx
 # response so relay callers (cmux) surface failures instead of
@@ -19,7 +25,7 @@
 set -u
 
 usage() {
-  echo "usage: notchtap --title <title> --body <body> [--subtitle <s>] [--priority low|medium|high] [--signal <s>] [--port <p>]" >&2
+  echo "usage: notchtap --title <title> --body <body> [--subtitle <s>] [--priority low|medium|high] [--signal <s>] [--source cmux] [--port <p>]" >&2
   exit 2
 }
 
@@ -28,6 +34,7 @@ body=""
 subtitle=""
 priority=""
 signal=""
+source=""
 port="${NOTCHTAP_PORT:-9789}"
 
 while [ $# -gt 0 ]; do
@@ -55,6 +62,13 @@ while [ $# -gt 0 ]; do
         *) usage ;;
       esac
       shift 2 ;;
+    --source)
+      [ $# -ge 2 ] || usage
+      case "$2" in
+        cmux) source="$2" ;;
+        *) usage ;;
+      esac
+      shift 2 ;;
     --port)
       [ $# -ge 2 ] || usage
       port="$2"; shift 2 ;;
@@ -70,16 +84,25 @@ if [ -n "$subtitle" ]; then
   body="$subtitle — $body"
 fi
 
+# auto-detect a cmux-relayed push: only cmux's notification command sets
+# this env var, so its presence means "cmux invoked us" without cmux's own
+# settings needing to pass --source explicitly. an explicit --source
+# always wins over the guess.
+if [ -z "$source" ] && [ -n "${CMUX_NOTIFICATION_BODY+x}" ]; then
+  source="cmux"
+fi
+
 # jq -n --arg gives safe escaping for quotes/newlines in relayed bodies.
-# priority/signal are merged in only when set, so an unspecified field is
-# genuinely absent from the wire (not sent as an empty string) — the
-# server's own default is the single source of truth for "unspecified".
+# priority/signal/source are merged in only when set, so an unspecified
+# field is genuinely absent from the wire (not sent as an empty string) —
+# the server's own default is the single source of truth for "unspecified".
 payload=$(jq -n \
   --arg title "$title" --arg body "$body" \
-  --arg priority "$priority" --arg signal "$signal" \
+  --arg priority "$priority" --arg signal "$signal" --arg source "$source" \
   '{title: $title, body: $body}
    + (if $priority != "" then {priority: $priority} else {} end)
-   + (if $signal != "" then {signal: $signal} else {} end)') || exit 1
+   + (if $signal != "" then {signal: $signal} else {} end)
+   + (if $source != "" then {source: $source} else {} end)') || exit 1
 
 status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
   --max-time 5 \

@@ -30,7 +30,7 @@ in `docs/ARCHITECTURE.md` and `docs/adr/`.
   are promoted next, but a Priority arrival never interrupts the
   currently-Visible item — it always finishes its own turn.
 - **Origin** — which source produced an Event (v6): `Football | News |
-  Manual`. orthogonal to Priority and `EventType` — a source's Origin
+  Manual | Cmux`. orthogonal to Priority and `EventType` — a source's Origin
   never changes, but its Priority is user-configurable per source. the
   only thing Origin governs is Rotation Order.
 - **Rotation Order** — the configured tie-break (v6) among Waiting

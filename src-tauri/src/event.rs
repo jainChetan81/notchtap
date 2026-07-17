@@ -14,6 +14,11 @@ pub struct Event {
     #[serde(default)]
     pub meta: EventMeta,
     pub signal: EventSignal,
+    /// Which source produced this event (v6: rotation-order tie-break) —
+    /// orthogonal to `Priority`, which still decides cross-tier order
+    /// first. Always server-assigned, never accepted from the `/notify`
+    /// wire (same rule as `rotation`/`topic`).
+    pub origin: SourceKind,
 }
 
 impl Event {
@@ -59,6 +64,18 @@ pub enum Priority {
     Low,
     Medium,
     High,
+}
+
+/// The source that produced an [`Event`] (v6: `Config.rotation_order`
+/// tie-break). A closed set, same rigor as [`EventType`]/[`EventSignal`] —
+/// unknown values are rejected at deserialization, never silently coerced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceKind {
+    Football,
+    News,
+    Manual,
+    Cmux,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -182,6 +199,7 @@ mod tests {
             },
             meta: EventMeta::default(),
             signal: EventSignal::Generic,
+            origin: SourceKind::Manual,
         }
     }
 
@@ -239,6 +257,25 @@ mod tests {
     #[test]
     fn priority_ord_is_low_lt_medium_lt_high() {
         assert!(Priority::Low < Priority::Medium && Priority::Medium < Priority::High);
+    }
+
+    #[test]
+    fn source_kind_round_trips_every_variant() {
+        for (kind, wire) in [
+            (SourceKind::Football, "football"),
+            (SourceKind::News, "news"),
+            (SourceKind::Manual, "manual"),
+            (SourceKind::Cmux, "cmux"),
+        ] {
+            assert_eq!(serde_json::to_value(kind).unwrap(), wire);
+            let parsed: SourceKind = serde_json::from_str(&format!("\"{wire}\"")).unwrap();
+            assert_eq!(parsed, kind);
+        }
+    }
+
+    #[test]
+    fn unknown_source_kind_is_rejected_at_deserialization() {
+        assert!(serde_json::from_str::<SourceKind>(r#""telegram""#).is_err());
     }
 
     #[test]
@@ -340,6 +377,7 @@ mod tests {
             },
             meta: EventMeta::default(),
             signal: EventSignal::Generic,
+            origin: SourceKind::Manual,
         };
         assert_eq!(event.rotation_window(false), 4);
         assert_eq!(event.rotation_window(true), 12);

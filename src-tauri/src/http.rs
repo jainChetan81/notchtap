@@ -15,7 +15,7 @@ use uuid::Uuid;
 use crate::error::{EventError, QueueError};
 use crate::event::{
     dispatch, emit_slot_state, Event, EventMeta, EventPayload, EventSignal, EventType, Priority,
-    RotationSpec,
+    RotationSpec, SourceKind,
 };
 use crate::notifier::ConnectorHandle;
 use crate::queue::SingleSlotQueue;
@@ -25,6 +25,16 @@ use crate::queue::SingleSlotQueue;
 pub struct AppState<R: tauri::Runtime = tauri::Wry> {
     pub queue: Arc<Mutex<SingleSlotQueue>>,
     pub default_ttl: u64,
+    /// v6: the `/notify` fallback when a request omits its own `priority`
+    /// (`Config.manual_default_priority`, default `Medium`) — a request
+    /// that sets `priority` explicitly still overrides this.
+    pub manual_default_priority: Priority,
+    /// v6.1: same fallback role as `manual_default_priority`, but for a
+    /// request that self-identifies as `source: "cmux"`.
+    pub cmux_priority: Priority,
+    /// v6.1: rotation window for a cmux-originated request, mirroring
+    /// `default_ttl`'s role for a plain manual one.
+    pub cmux_ttl_secs: u64,
     pub app_handle: tauri::AppHandle<R>,
     pub connectors: Arc<Vec<ConnectorHandle>>,
 }
@@ -34,10 +44,25 @@ impl<R: tauri::Runtime> Clone for AppState<R> {
         Self {
             queue: self.queue.clone(),
             default_ttl: self.default_ttl,
+            manual_default_priority: self.manual_default_priority,
+            cmux_priority: self.cmux_priority,
+            cmux_ttl_secs: self.cmux_ttl_secs,
             app_handle: self.app_handle.clone(),
             connectors: self.connectors.clone(),
         }
     }
+}
+
+/// The one origin a `/notify` caller may self-declare (v6.1) — a closed,
+/// single-variant set, deliberately not the full `SourceKind`:
+/// `Football`/`News` must never be wire-claimable, since only the
+/// ESPN/RSS pollers may legitimately produce those. Set by the `notchtap`
+/// CLI's `--source cmux` (explicit or auto-detected from
+/// `CMUX_NOTIFICATION_BODY`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[serde(rename_all = "snake_case")]
+enum RequestSource {
+    Cmux,
 }
 
 #[derive(Deserialize)]
@@ -52,6 +77,7 @@ struct NotifyRequest {
     // rather than `priority`'s `unwrap_or` pattern in this same file.
     #[serde(default)]
     signal: EventSignal,
+    source: Option<RequestSource>,
 }
 
 pub fn router<R: tauri::Runtime>(state: AppState<R>) -> Router {
@@ -93,17 +119,25 @@ async fn notify_handler<R: tauri::Runtime>(
         .body
         .ok_or(HttpError::Event(EventError::MissingField("body")))?;
 
+    let (origin, default_priority, ttl_secs) = match req.source {
+        Some(RequestSource::Cmux) => (SourceKind::Cmux, state.cmux_priority, state.cmux_ttl_secs),
+        None => (
+            SourceKind::Manual,
+            state.manual_default_priority,
+            state.default_ttl,
+        ),
+    };
+
     let event = Event {
         id: Uuid::new_v4(),
         event_type: EventType::Generic,
-        priority: req.priority.unwrap_or(Priority::Medium),
-        rotation: RotationSpec::OneShot {
-            ttl_secs: state.default_ttl,
-        },
+        priority: req.priority.unwrap_or(default_priority),
+        rotation: RotationSpec::OneShot { ttl_secs },
         topic: None,
         payload: EventPayload { title, body },
         meta: EventMeta::default(),
         signal: req.signal,
+        origin,
     };
 
     dispatch(event.clone()).map_err(HttpError::Event)?;
@@ -187,6 +221,9 @@ mod tests {
         AppState {
             queue: Arc::new(Mutex::new(queue)),
             default_ttl: 8,
+            manual_default_priority: Priority::Medium,
+            cmux_priority: Priority::High,
+            cmux_ttl_secs: 8,
             app_handle: app.handle().clone(),
             connectors: Arc::new(connectors),
         }
@@ -445,9 +482,122 @@ mod tests {
                 },
                 meta: EventMeta::default(),
                 signal: req.signal,
+                origin: SourceKind::Manual,
             })
             .unwrap();
         assert_eq!(queue.current_priority(), Some(Priority::Medium));
+    }
+
+    #[tokio::test]
+    async fn manual_default_priority_drives_the_absent_field_fallback() {
+        // v6: the fallback used to be the hardcoded Priority::Medium; now
+        // it's state.manual_default_priority (Config.manual_default_priority).
+        let mut state = test_state(SingleSlotQueue::new(50));
+        state.manual_default_priority = Priority::Low;
+        let app = router(state.clone());
+        let response = app
+            .oneshot(json_request(r#"{"title":"t","body":"b"}"#))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            state.queue.lock().await.current_priority(),
+            Some(Priority::Low)
+        );
+    }
+
+    #[tokio::test]
+    async fn explicit_priority_field_overrides_manual_default_priority() {
+        let mut state = test_state(SingleSlotQueue::new(50));
+        state.manual_default_priority = Priority::Low;
+        let app = router(state.clone());
+        let response = app
+            .oneshot(json_request(
+                r#"{"title":"t","body":"b","priority":"high"}"#,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            state.queue.lock().await.current_priority(),
+            Some(Priority::High)
+        );
+    }
+
+    // --- v6.1 cmux source field ---
+
+    #[tokio::test]
+    async fn cmux_source_uses_cmux_default_priority_not_manual() {
+        let mut state = test_state(SingleSlotQueue::new(50));
+        state.manual_default_priority = Priority::Low;
+        state.cmux_priority = Priority::High;
+        let app = router(state.clone());
+        let response = app
+            .oneshot(json_request(r#"{"title":"t","body":"b","source":"cmux"}"#))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            state.queue.lock().await.current_priority(),
+            Some(Priority::High)
+        );
+    }
+
+    #[tokio::test]
+    async fn absent_source_still_uses_manual_default_priority() {
+        let mut state = test_state(SingleSlotQueue::new(50));
+        state.manual_default_priority = Priority::Low;
+        state.cmux_priority = Priority::High;
+        let app = router(state.clone());
+        let response = app
+            .oneshot(json_request(r#"{"title":"t","body":"b"}"#))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            state.queue.lock().await.current_priority(),
+            Some(Priority::Low)
+        );
+    }
+
+    #[tokio::test]
+    async fn explicit_priority_field_overrides_cmux_priority() {
+        let state = test_state(SingleSlotQueue::new(50));
+        let app = router(state.clone());
+        let response = app
+            .oneshot(json_request(
+                r#"{"title":"t","body":"b","source":"cmux","priority":"low"}"#,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(
+            state.queue.lock().await.current_priority(),
+            Some(Priority::Low)
+        );
+    }
+
+    #[tokio::test]
+    async fn unknown_source_string_returns_400() {
+        // proves rejection, not silent coercion to a known source — same
+        // rigor as the signal/priority fields' own unknown-string handling.
+        // Football/News specifically must never be wire-claimable even
+        // though they're valid SourceKind values elsewhere in the app.
+        let app = router(test_state(SingleSlotQueue::new(50)));
+        for source in ["football", "news", "manual", "telegram"] {
+            let response = app
+                .clone()
+                .oneshot(json_request(&format!(
+                    r#"{{"title":"t","body":"b","source":"{source}"}}"#
+                )))
+                .await
+                .unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::BAD_REQUEST,
+                "{source:?} must be rejected"
+            );
+        }
     }
 
     #[tokio::test]
@@ -492,6 +642,7 @@ mod tests {
                 },
                 meta: EventMeta::default(),
                 signal: req.signal,
+                origin: SourceKind::Manual,
             })
             .unwrap();
         match queue.current_slot_state() {

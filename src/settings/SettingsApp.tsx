@@ -7,6 +7,7 @@ import {
   Newspaper,
   Palette,
   SlidersHorizontal,
+  Terminal,
   Trophy,
   type LucideIcon,
 } from "lucide-react";
@@ -17,6 +18,9 @@ export interface RssFeedConfig {
   category: string | null;
 }
 
+export type PriorityLevel = "low" | "medium" | "high";
+export type SourceKind = "football" | "manual" | "news" | "cmux";
+
 export interface Config {
   port: number;
   default_ttl: number;
@@ -26,11 +30,18 @@ export interface Config {
   espn_enabled: boolean;
   espn_leagues: string[];
   espn_poll_secs: number;
+  espn_priority: PriorityLevel;
+  espn_ttl_secs: number;
   rss_enabled: boolean;
   rss_feeds: RssFeedConfig[];
   rss_poll_secs: number;
+  rss_priority: PriorityLevel;
   rss_ttl_secs: number;
   rss_max_per_poll: number;
+  manual_default_priority: PriorityLevel;
+  cmux_priority: PriorityLevel;
+  cmux_ttl_secs: number;
+  rotation_order: SourceKind[];
   connectors: {
     telegram: {
       enabled: boolean;
@@ -45,7 +56,7 @@ export interface SecretStatus {
 }
 
 type SecretField = keyof SecretStatus;
-type SectionId = "general" | "football" | "news" | "connectors" | "shortcuts";
+type SectionId = "general" | "football" | "news" | "cmux" | "connectors" | "shortcuts";
 
 // Keep this synchronized with src-tauri/src/config.rs::Config::default.
 // This frontend mirror can drift when Rust defaults change, so update both together.
@@ -58,6 +69,8 @@ export const DEFAULTS: Config = {
   espn_enabled: true,
   espn_leagues: ["eng.1", "uefa.champions", "esp.1"],
   espn_poll_secs: 30,
+  espn_priority: "high",
+  espn_ttl_secs: 8,
   rss_enabled: false,
   rss_feeds: [
     {
@@ -67,8 +80,13 @@ export const DEFAULTS: Config = {
     },
   ],
   rss_poll_secs: 60,
+  rss_priority: "low",
   rss_ttl_secs: 10,
   rss_max_per_poll: 10,
+  manual_default_priority: "medium",
+  cmux_priority: "high",
+  cmux_ttl_secs: 8,
+  rotation_order: ["football", "cmux", "manual", "news"],
   connectors: { telegram: { enabled: false } },
 };
 
@@ -81,6 +99,7 @@ const navigation: ReadonlyArray<{
   { id: "general", label: "General", icon: SlidersHorizontal },
   { id: "football", label: "Football", icon: Trophy },
   { id: "news", label: "News", icon: Newspaper },
+  { id: "cmux", label: "Cmux", icon: Terminal },
   { id: "connectors", label: "Connectors & Keys", icon: KeyRound },
   { id: "shortcuts", label: "Shortcuts", icon: Command },
   { id: "appearance", label: "Appearance", icon: Palette, disabled: true },
@@ -102,13 +121,18 @@ const sectionCopy: Record<SectionId, { index: string; title: string; description
     title: "News",
     description: "Manage RSS sources and the pace of headline delivery.",
   },
-  connectors: {
+  cmux: {
     index: "04",
+    title: "Cmux",
+    description: "Set the priority and rotation time for notifications relayed by cmux.",
+  },
+  connectors: {
+    index: "05",
     title: "Connectors & Keys",
     description: "Configure outbound Telegram delivery and write-only credentials.",
   },
   shortcuts: {
-    index: "05",
+    index: "06",
     title: "Shortcuts",
     description: "A reference for the global controls available now and planned next.",
   },
@@ -142,8 +166,9 @@ const secretRows: ReadonlyArray<{
 
 const shortcuts = [
   { keys: "⌃⇧N", action: "Expand or collapse the slot (manual)", status: "active" },
-  { keys: "⌃⇧P", action: "Pause or resume promotion", status: "planned" },
-  { keys: "⌃⇧R", action: "Replay the last notification", status: "planned" },
+  { keys: "⌃⇧O", action: "Open the current story's link", status: "active" },
+  { keys: "⌃⇧X", action: "Dismiss the visible notification now", status: "active" },
+  { keys: "⌃⇧P", action: "Pause or resume promotion", status: "active" },
   { keys: "⌃⇧]", action: "Skip to the next waiting item", status: "planned" },
   { keys: "⌃⇧,", action: "Open settings", status: "planned" },
 ] as const;
@@ -153,6 +178,7 @@ function copyConfig(config: Config): Config {
     ...config,
     espn_leagues: [...config.espn_leagues],
     rss_feeds: config.rss_feeds.map((feed) => ({ ...feed })),
+    rotation_order: [...config.rotation_order],
     connectors: { telegram: { ...config.connectors.telegram } },
   };
 }
@@ -273,6 +299,99 @@ function ToggleControl({
     <div className="control-row">
       <ControlCopy htmlFor={id} name={name} help={help} />
       <Switch id={id} label={label} checked={checked} onChange={onChange} />
+    </div>
+  );
+}
+
+const PRIORITY_LABELS: Record<PriorityLevel, string> = {
+  low: "Low",
+  medium: "Med",
+  high: "High",
+};
+const PRIORITY_LEVELS: PriorityLevel[] = ["low", "medium", "high"];
+
+function PriorityToggle({
+  id,
+  name,
+  help,
+  value,
+  onChange,
+}: {
+  id: string;
+  name: string;
+  help: string;
+  value: PriorityLevel;
+  onChange: (value: PriorityLevel) => void;
+}) {
+  return (
+    <div className="control-row">
+      <ControlCopy htmlFor={id} name={name} help={help} />
+      <div className="priority-toggle" id={id} role="group" aria-label={name}>
+        {PRIORITY_LEVELS.map((level) => (
+          <button
+            key={level}
+            type="button"
+            className={`priority-toggle-button${value === level ? " is-selected" : ""}`}
+            aria-pressed={value === level}
+            onClick={() => onChange(level)}
+          >
+            {PRIORITY_LABELS[level]}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+const SOURCE_LABELS: Record<SourceKind, string> = {
+  football: "Football",
+  cmux: "Cmux (Claude Code relay)",
+  manual: "Manual / CLI push",
+  news: "News",
+};
+
+function RotationOrderList({
+  order,
+  onChange,
+}: {
+  order: SourceKind[];
+  onChange: (order: SourceKind[]) => void;
+}) {
+  function move(index: number, delta: number) {
+    const next = [...order];
+    const target = index + delta;
+    [next[index], next[target]] = [next[target], next[index]];
+    onChange(next);
+  }
+
+  return (
+    <div className="rotation-order-list" role="list" aria-label="Rotation order">
+      {order.map((source, index) => (
+        <div className="rotation-order-row" role="listitem" key={source}>
+          <span className="rotation-order-rank">{index + 1}</span>
+          <span className="rotation-order-name">{SOURCE_LABELS[source]}</span>
+          <div className="rotation-order-controls">
+            <button
+              type="button"
+              className="rotation-order-button"
+              aria-label={`Move ${SOURCE_LABELS[source]} earlier`}
+              disabled={index === 0}
+              onClick={() => move(index, -1)}
+            >
+              ▲
+            </button>
+            <button
+              type="button"
+              className="rotation-order-button"
+              aria-label={`Move ${SOURCE_LABELS[source]} later`}
+              disabled={index === order.length - 1}
+              onClick={() => move(index, 1)}
+            >
+              ▼
+            </button>
+          </div>
+        </div>
+      ))}
     </div>
   );
 }
@@ -443,6 +562,23 @@ function GeneralSection({ config, patchConfig }: {
           unit="ITEMS"
           onChange={(max_queued_per_tier) => patchConfig({ max_queued_per_tier })}
         />
+        <PriorityToggle
+          id="manual-default-priority"
+          name="Manual push priority"
+          help="Fallback for a CLI push that doesn't set its own priority."
+          value={config.manual_default_priority}
+          onChange={(manual_default_priority) => patchConfig({ manual_default_priority })}
+        />
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="Rotation order"
+        description="Same-tier tie-break, checked before arrival order. Priority still decides which tier goes first."
+      >
+        <RotationOrderList
+          order={config.rotation_order}
+          onChange={(rotation_order) => patchConfig({ rotation_order })}
+        />
       </SettingsGroup>
     </div>
   );
@@ -487,6 +623,23 @@ function FootballSection({
         unit="SEC"
         onChange={(espn_poll_secs) => patchConfig({ espn_poll_secs })}
       />
+      <NumberControl
+        id="espn-ttl-secs"
+        name="Rotation seconds"
+        help="How long a score card occupies the slot once shown."
+        value={config.espn_ttl_secs}
+        min={1}
+        max={3600}
+        unit="SEC"
+        onChange={(espn_ttl_secs) => patchConfig({ espn_ttl_secs })}
+      />
+      <PriorityToggle
+        id="espn-priority"
+        name="Priority"
+        help="Which tier a waiting score/match-state update promotes in."
+        value={config.espn_priority}
+        onChange={(espn_priority) => patchConfig({ espn_priority })}
+      />
     </SettingsGroup>
   );
 }
@@ -523,6 +676,43 @@ function NewsSection({
       <NumberControl id="rss-poll-secs" name="Poll interval" help="How often configured feeds are checked." value={config.rss_poll_secs} min={5} max={3600} unit="SEC" onChange={(rss_poll_secs) => patchConfig({ rss_poll_secs })} />
       <NumberControl id="rss-ttl-secs" name="Headline rotation" help="How long each headline occupies the slot." value={config.rss_ttl_secs} min={1} max={3600} unit="SEC" onChange={(rss_ttl_secs) => patchConfig({ rss_ttl_secs })} />
       <NumberControl id="rss-max-per-poll" name="Maximum per poll" help="New headlines accepted from a single poll pass." value={config.rss_max_per_poll} min={1} max={100} unit="ITEMS" onChange={(rss_max_per_poll) => patchConfig({ rss_max_per_poll })} />
+      <PriorityToggle
+        id="rss-priority"
+        name="Priority"
+        help="Which tier a waiting headline promotes in."
+        value={config.rss_priority}
+        onChange={(rss_priority) => patchConfig({ rss_priority })}
+      />
+    </SettingsGroup>
+  );
+}
+
+function CmuxSection({ config, patchConfig }: {
+  config: Config;
+  patchConfig: (patch: Partial<Config>) => void;
+}) {
+  return (
+    <SettingsGroup
+      title="Cmux relay"
+      description="Cmux's notification command already calls the notchtap CLI, which auto-detects relayed pushes through CMUX_NOTIFICATION_BODY. Nothing needs enabling here; these controls set how relayed notifications are promoted and rotated."
+    >
+      <PriorityToggle
+        id="cmux-priority"
+        name="Priority"
+        help="Which tier a waiting cmux-relayed notification promotes in."
+        value={config.cmux_priority}
+        onChange={(cmux_priority) => patchConfig({ cmux_priority })}
+      />
+      <NumberControl
+        id="cmux-ttl-secs"
+        name="Rotation seconds"
+        help="How long a cmux-relayed notification occupies the slot once shown."
+        value={config.cmux_ttl_secs}
+        min={1}
+        max={3600}
+        unit="SEC"
+        onChange={(cmux_ttl_secs) => patchConfig({ cmux_ttl_secs })}
+      />
     </SettingsGroup>
   );
 }
@@ -720,6 +910,7 @@ export function SettingsApp() {
                     {activeSection === "general" ? <GeneralSection config={config} patchConfig={patchConfig} /> : null}
                     {activeSection === "football" ? <FootballSection config={config} leaguesText={espnLeaguesText} patchConfig={patchConfig} setLeaguesText={setEspnLeaguesText} /> : null}
                     {activeSection === "news" ? <NewsSection config={config} feedsText={rssFeedsText} patchConfig={patchConfig} setFeedsText={setRssFeedsText} /> : null}
+                    {activeSection === "cmux" ? <CmuxSection config={config} patchConfig={patchConfig} /> : null}
                     {activeSection === "connectors" ? <ConnectorsSection config={config} secretStatus={secretStatus} patchConfig={patchConfig} refreshSecretStatus={refreshSecretStatus} /> : null}
                     {activeSection === "shortcuts" ? <ShortcutsSection /> : null}
                   </motion.div>

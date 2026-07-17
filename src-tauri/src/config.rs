@@ -2,6 +2,8 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
+use crate::event::{Priority, SourceKind};
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
@@ -15,6 +17,12 @@ pub struct Config {
     pub espn_enabled: bool,
     pub espn_leagues: Vec<String>,
     pub espn_poll_secs: u64,
+    /// v6: was hardcoded `Priority::High` in `poller.rs`; now configurable
+    /// per source (`docs/CONTEXT.md`'s Origin/Rotation Order glossary).
+    pub espn_priority: Priority,
+    /// v6: previously football silently reused `default_ttl` — now has its
+    /// own rotation window like `rss_ttl_secs` already does for news.
+    pub espn_ttl_secs: u64,
     /// default false — news is opt-in per machine; ambient sources must
     /// not default on top of the app's primary agent-notification purpose.
     pub rss_enabled: bool,
@@ -28,8 +36,29 @@ pub struct Config {
     /// ```
     pub rss_feeds: Vec<RssFeedConfig>,
     pub rss_poll_secs: u64,
+    /// v6: was hardcoded `Priority::Low` in `rss_poller.rs`.
+    pub rss_priority: Priority,
     pub rss_ttl_secs: u64,
     pub rss_max_per_poll: usize,
+    /// v6: the `/notify` fallback when a request omits its own `priority`
+    /// (was the hardcoded `Priority::Medium` in `http.rs`). A request that
+    /// sets `priority` explicitly still overrides this.
+    pub manual_default_priority: Priority,
+    /// v6.1: fallback priority for a `/notify` request that self-identifies
+    /// as `source: "cmux"` (see `notchtap` CLI's `--source`/auto-detect) —
+    /// same override rule as `manual_default_priority`. Defaults to `High`
+    /// to match the documented cmux notification-command convention
+    /// (`--priority high`), so a cmux push that omits `priority` resolves
+    /// identically to before this field existed.
+    pub cmux_priority: Priority,
+    /// v6.1: rotation window for a cmux-originated push — previously
+    /// indistinguishable from any other manual `/notify` caller, so it
+    /// silently used `default_ttl`.
+    pub cmux_ttl_secs: u64,
+    /// v6/v6.1: same-tier promotion tie-break, checked before arrival
+    /// order. Must be a permutation of all four `SourceKind` variants —
+    /// enforced by `settings::validate`.
+    pub rotation_order: Vec<SourceKind>,
     pub connectors: Connectors,
 }
 
@@ -102,8 +131,48 @@ fn default_espn_poll_secs() -> u64 {
     30
 }
 
+fn default_espn_priority() -> Priority {
+    Priority::High
+}
+
+fn default_espn_ttl_secs() -> u64 {
+    8
+}
+
 fn default_rss_enabled() -> bool {
     false
+}
+
+fn default_rss_priority() -> Priority {
+    Priority::Low
+}
+
+fn default_manual_default_priority() -> Priority {
+    Priority::Medium
+}
+
+fn default_cmux_priority() -> Priority {
+    Priority::High
+}
+
+fn default_cmux_ttl_secs() -> u64 {
+    8
+}
+
+fn default_rotation_order() -> Vec<SourceKind> {
+    // v6.1 review fix: Manual ranks ahead of Cmux — at default priorities
+    // (Football/Cmux both High, Manual Medium, News Low) this never
+    // actually breaks a tie, since Cmux and Manual don't share a tier
+    // unless the user manually equalizes their priorities. Still, an
+    // install already running both should see the pre-existing, more
+    // established Manual path win any such tie by default, not the
+    // newer Cmux origin.
+    vec![
+        SourceKind::Football,
+        SourceKind::Manual,
+        SourceKind::Cmux,
+        SourceKind::News,
+    ]
 }
 
 fn default_rss_feeds() -> Vec<RssFeedConfig> {
@@ -137,11 +206,18 @@ impl Default for Config {
             espn_enabled: default_espn_enabled(),
             espn_leagues: default_espn_leagues(),
             espn_poll_secs: default_espn_poll_secs(),
+            espn_priority: default_espn_priority(),
+            espn_ttl_secs: default_espn_ttl_secs(),
             rss_enabled: default_rss_enabled(),
             rss_feeds: default_rss_feeds(),
             rss_poll_secs: default_rss_poll_secs(),
+            rss_priority: default_rss_priority(),
             rss_ttl_secs: default_rss_ttl_secs(),
             rss_max_per_poll: default_rss_max_per_poll(),
+            manual_default_priority: default_manual_default_priority(),
+            cmux_priority: default_cmux_priority(),
+            cmux_ttl_secs: default_cmux_ttl_secs(),
+            rotation_order: default_rotation_order(),
             connectors: Connectors::default(),
         }
     }
@@ -172,7 +248,27 @@ impl Config {
     }
 
     pub fn parse(content: &str) -> Result<Self, toml::de::Error> {
-        toml::from_str(content)
+        let mut config: Config = toml::from_str(content)?;
+        // v6.1 review fix: espn_ttl_secs/cmux_ttl_secs were split out of
+        // the one shared default_ttl. serde's whole-struct #[serde(default)]
+        // can't express "inherit sibling field X when absent" — only "use
+        // Config::default()'s value" — so an install that had already
+        // customized default_ttl before this split would otherwise see
+        // football/cmux silently revert to the new fields' own hardcoded
+        // default instead of keeping the value it actually configured.
+        // Re-parsing as a raw table to see which keys the file itself set
+        // (not what serde defaulted them to) lets us inherit the file's
+        // effective default_ttl exactly where the old shared-field
+        // behavior would have applied it.
+        if let Ok(raw) = content.parse::<toml::Table>() {
+            if !raw.contains_key("espn_ttl_secs") {
+                config.espn_ttl_secs = config.default_ttl;
+            }
+            if !raw.contains_key("cmux_ttl_secs") {
+                config.cmux_ttl_secs = config.default_ttl;
+            }
+        }
+        Ok(config)
     }
 }
 
@@ -193,6 +289,8 @@ mod tests {
         assert!(c.espn_enabled);
         assert_eq!(c.espn_leagues, ["eng.1", "uefa.champions", "esp.1"]);
         assert_eq!(c.espn_poll_secs, 30);
+        assert_eq!(c.espn_priority, Priority::High);
+        assert_eq!(c.espn_ttl_secs, 8);
         assert!(!c.rss_enabled);
         assert_eq!(
             c.rss_feeds,
@@ -203,8 +301,21 @@ mod tests {
             }]
         );
         assert_eq!(c.rss_poll_secs, 60);
+        assert_eq!(c.rss_priority, Priority::Low);
         assert_eq!(c.rss_ttl_secs, 10);
         assert_eq!(c.rss_max_per_poll, 10);
+        assert_eq!(c.manual_default_priority, Priority::Medium);
+        assert_eq!(c.cmux_priority, Priority::High);
+        assert_eq!(c.cmux_ttl_secs, 8);
+        assert_eq!(
+            c.rotation_order,
+            [
+                SourceKind::Football,
+                SourceKind::Manual,
+                SourceKind::Cmux,
+                SourceKind::News
+            ]
+        );
     }
 
     #[test]
@@ -305,5 +416,70 @@ url = "https://example.com/without-meta"
     #[test]
     fn malformed_toml_is_an_error() {
         assert!(Config::parse("port = \"not a number\"").is_err());
+    }
+
+    #[test]
+    fn per_source_priority_and_ttl_are_overridable() {
+        let c = Config::parse(
+            "espn_priority = \"medium\"\nespn_ttl_secs = 12\nrss_priority = \"high\"\nmanual_default_priority = \"low\"\ncmux_priority = \"low\"\ncmux_ttl_secs = 20\n",
+        )
+        .unwrap();
+        assert_eq!(c.espn_priority, Priority::Medium);
+        assert_eq!(c.espn_ttl_secs, 12);
+        assert_eq!(c.rss_priority, Priority::High);
+        assert_eq!(c.manual_default_priority, Priority::Low);
+        assert_eq!(c.cmux_priority, Priority::Low);
+        assert_eq!(c.cmux_ttl_secs, 20);
+    }
+
+    #[test]
+    fn espn_and_cmux_ttl_inherit_a_customized_default_ttl_when_absent() {
+        // v6.1 review fix: an install that already had `default_ttl = 20`
+        // before espn_ttl_secs/cmux_ttl_secs existed must not silently
+        // revert football/cmux to the new fields' own hardcoded default.
+        let c = Config::parse("default_ttl = 20\n").unwrap();
+        assert_eq!(c.default_ttl, 20);
+        assert_eq!(c.espn_ttl_secs, 20);
+        assert_eq!(c.cmux_ttl_secs, 20);
+    }
+
+    #[test]
+    fn explicit_espn_or_cmux_ttl_is_not_overridden_by_inheritance() {
+        let c = Config::parse("default_ttl = 20\nespn_ttl_secs = 5\ncmux_ttl_secs = 6\n").unwrap();
+        assert_eq!(c.default_ttl, 20);
+        assert_eq!(c.espn_ttl_secs, 5);
+        assert_eq!(c.cmux_ttl_secs, 6);
+    }
+
+    #[test]
+    fn absent_default_ttl_still_yields_the_shared_default_of_eight() {
+        // no default_ttl in the file at all: default_ttl resolves to its
+        // own default (8), and espn/cmux inherit that same resolved
+        // value — identical to today's fresh-install behavior.
+        let c = Config::parse("").unwrap();
+        assert_eq!(c.default_ttl, 8);
+        assert_eq!(c.espn_ttl_secs, 8);
+        assert_eq!(c.cmux_ttl_secs, 8);
+    }
+
+    #[test]
+    fn rotation_order_is_overridable() {
+        let c = Config::parse("rotation_order = [\"news\", \"football\", \"cmux\", \"manual\"]\n")
+            .unwrap();
+        assert_eq!(
+            c.rotation_order,
+            [
+                SourceKind::News,
+                SourceKind::Football,
+                SourceKind::Cmux,
+                SourceKind::Manual
+            ]
+        );
+    }
+
+    #[test]
+    fn unknown_priority_or_source_kind_string_is_a_parse_error() {
+        assert!(Config::parse("espn_priority = \"urgent\"").is_err());
+        assert!(Config::parse("rotation_order = [\"telegram\"]").is_err());
     }
 }
