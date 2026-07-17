@@ -175,8 +175,8 @@ describe("SettingsApp", () => {
     expect(selectedPriorityLabel(screen.getByLabelText("Manual push priority"))).toBe("Med");
     expect(rotationOrderRowNames()).toEqual([
       "Football",
-      "Cmux (Claude Code relay)",
       "Manual / CLI push",
+      "Cmux (agent relay)",
       "News",
     ]);
 
@@ -245,7 +245,7 @@ describe("SettingsApp", () => {
     await screen.findByRole("heading", { level: 1, name: "General" });
     expect(rotationOrderRowNames()).toEqual([
       "News",
-      "Cmux (Claude Code relay)",
+      "Cmux (agent relay)",
       "Manual / CLI push",
       "Football",
     ]);
@@ -269,7 +269,7 @@ describe("SettingsApp", () => {
     expect(rotationOrderRowNames()).toEqual([
       "News",
       "Manual / CLI push",
-      "Cmux (Claude Code relay)",
+      "Cmux (agent relay)",
       "Football",
     ]);
   });

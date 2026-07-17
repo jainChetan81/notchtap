@@ -86,7 +86,7 @@ export const DEFAULTS: Config = {
   manual_default_priority: "medium",
   cmux_priority: "high",
   cmux_ttl_secs: 8,
-  rotation_order: ["football", "cmux", "manual", "news"],
+  rotation_order: ["football", "manual", "cmux", "news"],
   connectors: { telegram: { enabled: false } },
 };
 
@@ -345,7 +345,7 @@ function PriorityToggle({
 
 const SOURCE_LABELS: Record<SourceKind, string> = {
   football: "Football",
-  cmux: "Cmux (Claude Code relay)",
+  cmux: "Cmux (agent relay)",
   manual: "Manual / CLI push",
   news: "News",
 };
@@ -699,7 +699,7 @@ function CmuxSection({ config, patchConfig }: {
       <PriorityToggle
         id="cmux-priority"
         name="Priority"
-        help="Which tier a waiting cmux-relayed notification promotes in."
+        help="Which tier a waiting cmux-relayed notification promotes in. Only applies when the request omits its own priority — cmux's built-in notification-command setting currently always passes --priority high explicitly, which overrides this. Drop that flag from cmux's own settings (not this app) to let this control take effect."
         value={config.cmux_priority}
         onChange={(cmux_priority) => patchConfig({ cmux_priority })}
       />

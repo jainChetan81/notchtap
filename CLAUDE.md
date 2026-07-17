@@ -14,10 +14,11 @@ open-story/dismiss/pause-toggle) are done as of 2026-07-17. as of the
 same date, the rss poller (`src-tauri/src/rss_poller.rs`), `NewsItem`
 events with wire metadata (source/category/publishedAtMs), and the
 status-rail news cards also landed. v5 (settings window / control
-panel) is **rust-side done, frontend in progress** — the invoke
-commands, config/secrets write paths, `start_paused` kill switch, and
-per-window command acl are built and tested; the settings *page* itself
-is the next open item. decisions in `docs/ARCHITECTURE.md` §17, plan in
+panel) is **done** — the invoke commands, config/secrets write paths,
+`start_paused` kill switch, per-window command acl, and the settings
+*page* itself (sidebar nav, rotation/priority group, shortcuts
+cheatsheet) are all built and tested as of 2026-07-17; only the
+§4.5.1 manual checklist rows remain. decisions in `docs/ARCHITECTURE.md` §17, plan in
 `docs/IMPLEMENTATION_PLAN.md` §4.5/§4.6, contract in
 `docs/V5_TECHNICAL_SPEC.md`. the tauri/rust/web project lives at repo
 root alongside `docs/` — the docs folder isn't part of the app build.
@@ -158,6 +159,19 @@ minimum: one permission for the custom event channel, no file-system
 access, no shell access, no network access from the frontend. the
 frontend should not be able to trigger notifications — only display what
 the rust core sends it.
+
+**v5 settings window is the one exception, and it's opt-in-gated,
+not default-safe.** tauri v2 grants app-defined commands to *every*
+window by default — the settings window's four invoke commands
+(`get_config`, `get_secret_status`, `save_config_and_relaunch`,
+`set_secret`) are scoped to it alone only because `src-tauri/build.rs`
+opts into `tauri_build::AppManifest::commands(&[...])` (deny-by-default)
+plus a dedicated `capabilities/settings.json`. never add a new
+`#[tauri::command]` without adding it to that `build.rs` list —
+otherwise it silently becomes callable from the overlay (`main`)
+window too, breaking the receive-only guarantee above.
+`capabilities/default.json` must never change. full contract:
+`docs/V5_TECHNICAL_SPEC.md` §2.
 
 ## rust error handling
 

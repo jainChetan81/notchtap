@@ -247,17 +247,29 @@ opening `Recurring`/`topic` to untrusted/external input in this pass.
 
 ### 3.4 default priority per source
 
+**superseded 2026-07-17 (v6/v6.1):** the table below described the
+original, hardcoded-in-rust defaults. Each source's default is now a
+`Config` field, independently configurable from the settings window
+(`docs/V5_TECHNICAL_SPEC.md`) rather than a compile-time constant —
+see `src-tauri/src/config.rs` (`espn_priority`, `rss_priority`,
+`manual_default_priority`, `cmux_priority`) and `src-tauri/src/http.rs`
+(`notify_handler`'s `req.priority.unwrap_or(default_priority)`, where
+`default_priority` is looked up by `req.source`). The *values* below
+are still the shipped defaults (`Config::default`) — only "hardcoded"
+became "configurable, defaulting to this."
+
 | source | default priority | rationale |
 |---|---|---|
-| `/notify` http (cli, cmux relay) | request's `priority` field, else `Medium` | §3.6 explicit default |
-| cli `--priority low\|medium\|high` | folds into the same http field; cli's own flag default is unspecified → the http layer's `Medium` default applies (cli sends no field at all when the flag is omitted — see §6) |
-| espn poller: `ScoreUpdate` (goal) | `High` | §3.6: "the poller sets `high` on goals/cards itself" |
-| espn poller: `MatchState` (kickoff/half/full-time, cards) | `High` | same line — "and cards" |
+| `/notify` http, no `source` field (manual/cli) | request's `priority` field, else `manual_default_priority` (`Medium`) | `Config::default_manual_default_priority` |
+| `/notify` http, `source: "cmux"` | request's `priority` field, else `cmux_priority` (`High`) | `Config::default_cmux_priority`. **Caveat:** cmux's own built-in notification-command setting (`docs/IMPLEMENTATION_PLAN.md` §2.2, external to this repo) always passes `--priority high` explicitly today, so this config default is currently a no-op for the real relay unless that external command is edited to drop the flag. |
+| cli `--priority low\|medium\|high` | folds into the same http field; when the flag is omitted the cli sends no `priority` field at all, so the source-appropriate default above applies (see §6) |
+| espn poller: `ScoreUpdate` (goal) | `espn_priority` (`High`) | `Config::default_espn_priority` — was unconditional `High`, now configurable |
+| espn poller: `MatchState` (kickoff/half/full-time, cards) | `espn_priority` (`High`) | same field, both event kinds share one per-source default |
+| rss poller | `rss_priority` (`Low`) | `Config::default_rss_priority` — added with the news-poller phase, not present in the original v3.6 pass |
 
-no source in this pass constructs `Low` or `Recurring` — that's the
-"mechanism must exist, no content yet" requirement (§3.6). `Low` and
-`Recurring` are exercised only by tests until a real evergreen source
-lands.
+no source in this pass constructs `Recurring` — that's the "mechanism
+must exist, no content yet" requirement (§3.6), still true. `Low` is
+now live (the rss poller's default), no longer test-only.
 
 ### 3.5 wire-out payload (`notification-promoted` → replaced by `slot-state`)
 
