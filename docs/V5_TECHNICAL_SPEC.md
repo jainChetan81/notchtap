@@ -318,3 +318,4 @@ discipline as v4's break-the-ci check).
 - whether the espn tray item's presence (gated on `espn_enabled`)
   needs a "changed after relaunch" hint in the ui, or whether
   relaunch-makes-it-true is self-explanatory. lean: self-explanatory.
+- appearance customization (fonts/background/colors/gradients per tab) is parked as a future settings section — user request 2026-07-17.

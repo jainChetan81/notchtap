@@ -565,8 +565,11 @@ reopens it.
 decisions locked 2026-07-17 (grilling session) in `ARCHITECTURE.md`
 §17; code-level contract in `docs/V5_TECHNICAL_SPEC.md`. numbered §4.5
 to avoid renumbering §5–§8 (same fractional-section precedent as
-§3.5/§3.6). **steps 1–4 (all rust) landed 2026-07-17**; step 5 is
-held per the sequencing note below.
+§3.5/§3.6). **all five steps landed 2026-07-17** — steps 1–4 (rust)
+first; step 5 (the settings page) same day once the ui migration
+unblocked it, then redesigned per live review (sidebar navigation,
+toned-down palette, shortcuts cheatsheet, save/reset/reset-to-defaults
+footer). remaining: the §4.5.1 manual checklist rows in §6.
 
 the shape in one paragraph: a fourth tray item ("Settings…") opens a
 second webview window (label `settings`) — the app's first

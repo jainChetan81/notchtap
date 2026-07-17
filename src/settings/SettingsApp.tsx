@@ -1,7 +1,15 @@
 import { useEffect, useState, type FormEvent, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
-import { KeyRound, Save, Settings } from "lucide-react";
+import {
+  Command,
+  KeyRound,
+  Newspaper,
+  Palette,
+  SlidersHorizontal,
+  Trophy,
+  type LucideIcon,
+} from "lucide-react";
 
 export interface RssFeedConfig {
   url: string;
@@ -37,6 +45,74 @@ export interface SecretStatus {
 }
 
 type SecretField = keyof SecretStatus;
+type SectionId = "general" | "football" | "news" | "connectors" | "shortcuts";
+
+// Keep this synchronized with src-tauri/src/config.rs::Config::default.
+// This frontend mirror can drift when Rust defaults change, so update both together.
+export const DEFAULTS: Config = {
+  port: 9789,
+  default_ttl: 8,
+  max_queued_per_tier: 50,
+  detect_path: "/usr/local/bin/notchtap-detect",
+  start_paused: false,
+  espn_enabled: true,
+  espn_leagues: ["eng.1", "uefa.champions", "esp.1"],
+  espn_poll_secs: 30,
+  rss_enabled: false,
+  rss_feeds: [
+    {
+      url: "https://feeds.feedburner.com/ndtvnews-top-stories",
+      source: "NDTV",
+      category: null,
+    },
+  ],
+  rss_poll_secs: 60,
+  rss_ttl_secs: 10,
+  rss_max_per_poll: 10,
+  connectors: { telegram: { enabled: false } },
+};
+
+const navigation: ReadonlyArray<{
+  id: SectionId | "appearance";
+  label: string;
+  icon: LucideIcon;
+  disabled?: boolean;
+}> = [
+  { id: "general", label: "General", icon: SlidersHorizontal },
+  { id: "football", label: "Football", icon: Trophy },
+  { id: "news", label: "News", icon: Newspaper },
+  { id: "connectors", label: "Connectors & Keys", icon: KeyRound },
+  { id: "shortcuts", label: "Shortcuts", icon: Command },
+  { id: "appearance", label: "Appearance", icon: Palette, disabled: true },
+];
+
+const sectionCopy: Record<SectionId, { index: string; title: string; description: string }> = {
+  general: {
+    index: "01",
+    title: "General",
+    description: "Control startup, the local listener, and how notifications rotate.",
+  },
+  football: {
+    index: "02",
+    title: "Football",
+    description: "Choose the leagues and cadence used for live score checks.",
+  },
+  news: {
+    index: "03",
+    title: "News",
+    description: "Manage RSS sources and the pace of headline delivery.",
+  },
+  connectors: {
+    index: "04",
+    title: "Connectors & Keys",
+    description: "Configure outbound Telegram delivery and write-only credentials.",
+  },
+  shortcuts: {
+    index: "05",
+    title: "Shortcuts",
+    description: "A reference for the global controls available now and planned next.",
+  },
+};
 
 const secretRows: ReadonlyArray<{
   field: SecretField;
@@ -59,10 +135,27 @@ const secretRows: ReadonlyArray<{
   {
     field: "telegram_chat_id",
     id: "telegram-chat-id",
-    label: "Telegram chat id",
-    placeholder: "Enter a new chat id",
+    label: "Telegram chat ID",
+    placeholder: "Enter a new chat ID",
   },
 ];
+
+const shortcuts = [
+  { keys: "⌃⇧N", action: "Expand or collapse the slot (manual)", status: "active" },
+  { keys: "⌃⇧P", action: "Pause or resume promotion", status: "planned" },
+  { keys: "⌃⇧R", action: "Replay the last notification", status: "planned" },
+  { keys: "⌃⇧]", action: "Skip to the next waiting item", status: "planned" },
+  { keys: "⌃⇧,", action: "Open settings", status: "planned" },
+] as const;
+
+function copyConfig(config: Config): Config {
+  return {
+    ...config,
+    espn_leagues: [...config.espn_leagues],
+    rss_feeds: config.rss_feeds.map((feed) => ({ ...feed })),
+    connectors: { telegram: { ...config.connectors.telegram } },
+  };
+}
 
 function lines(value: string): string[] {
   return value
@@ -78,26 +171,18 @@ function errorList(error: unknown): string[] {
   return [typeof error === "string" ? error : "settings could not be saved"];
 }
 
-function Section({
-  id,
-  label,
-  code,
-  children,
-}: {
-  id: string;
-  label: string;
-  code: string;
+function SettingsGroup({ title, description, children }: {
+  title: string;
+  description?: string;
   children: ReactNode;
 }) {
   return (
-    <section className="settings-section" aria-labelledby={id}>
-      <div className="section-heading">
-        <h2 id={id} className="section-label">
-          {label}
-        </h2>
-        <div className="section-code">{code}</div>
+    <section className="settings-group">
+      <div className="group-heading">
+        <h2>{title}</h2>
+        {description ? <p>{description}</p> : null}
       </div>
-      {children}
+      <div className="group-controls">{children}</div>
     </section>
   );
 }
@@ -124,7 +209,7 @@ function Switch({ id, label, checked, onChange }: {
 
 function ControlCopy({ htmlFor, name, help }: { htmlFor: string; name: string; help: string }) {
   return (
-    <div>
+    <div className="control-copy">
       <label className="control-name" htmlFor={htmlFor}>{name}</label>
       <span className="control-help">{help}</span>
     </div>
@@ -192,6 +277,35 @@ function ToggleControl({
   );
 }
 
+function TextareaControl({
+  id,
+  name,
+  help,
+  value,
+  caption,
+  onChange,
+}: {
+  id: string;
+  name: string;
+  help: string;
+  value: string;
+  caption: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="textarea-control">
+      <ControlCopy htmlFor={id} name={name} help={help} />
+      <textarea
+        id={id}
+        spellCheck={false}
+        value={value}
+        onChange={(event) => onChange(event.currentTarget.value)}
+      />
+      <div className="field-caption">{caption}</div>
+    </div>
+  );
+}
+
 function ErrorPanel({ errors }: { errors: string[] }) {
   return (
     <AnimatePresence initial={false}>
@@ -200,9 +314,9 @@ function ErrorPanel({ errors }: { errors: string[] }) {
           className="error-panel"
           role="alert"
           aria-live="assertive"
-          initial={{ opacity: 0, y: -4 }}
+          initial={{ opacity: 0, y: -3 }}
           animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: -4 }}
+          exit={{ opacity: 0, y: -3 }}
         >
           <div className="error-title">Config rejected</div>
           <ul>{errors.map((error) => <li key={error}>{error}</li>)}</ul>
@@ -264,14 +378,13 @@ function SecretRow({
           onChange={(event) => setValue(event.currentTarget.value)}
         />
         <button
-          className="secondary-button"
+          className="secondary-button secret-save"
           type="button"
           aria-label={`Save ${label}`}
           disabled={saving || value.trim().length === 0}
           onClick={() => void saveSecret()}
         >
-          <Save aria-hidden="true" />
-          {saving ? "Saving…" : "Save key"}
+          {saving ? "Saving…" : "Save"}
         </button>
       </div>
       {error ? <div className="secret-error" role="alert">{error}</div> : null}
@@ -279,13 +392,219 @@ function SecretRow({
   );
 }
 
+function GeneralSection({ config, patchConfig }: {
+  config: Config;
+  patchConfig: (patch: Partial<Config>) => void;
+}) {
+  return (
+    <div className="section-stack">
+      <SettingsGroup title="Engine">
+        <ToggleControl
+          id="start-paused"
+          name="Start paused"
+          help="Launch with promotion paused. The tray will read Resume."
+          label="Start paused"
+          checked={config.start_paused}
+          onChange={(start_paused) => patchConfig({ start_paused })}
+        />
+        <NumberControl
+          id="port"
+          name="Listener port"
+          help="Local loopback port used by the notchtap CLI."
+          value={config.port}
+          min={1024}
+          max={65535}
+          unit="PORT"
+          onChange={(port) => patchConfig({ port })}
+        />
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="Rotation & Priority"
+        description="Waiting items promote high → medium → low. Priority chooses the next turn; it never interrupts the visible item."
+      >
+        <NumberControl
+          id="default-ttl"
+          name="Rotation seconds"
+          help="How long a one-shot notification occupies the slot."
+          value={config.default_ttl}
+          min={1}
+          max={3600}
+          unit="SEC"
+          onChange={(default_ttl) => patchConfig({ default_ttl })}
+        />
+        <NumberControl
+          id="queue-cap"
+          name="Queue cap per priority tier"
+          help="Maximum waiting items kept independently in each priority tier."
+          value={config.max_queued_per_tier}
+          min={1}
+          max={1000}
+          unit="ITEMS"
+          onChange={(max_queued_per_tier) => patchConfig({ max_queued_per_tier })}
+        />
+      </SettingsGroup>
+    </div>
+  );
+}
+
+function FootballSection({
+  config,
+  leaguesText,
+  patchConfig,
+  setLeaguesText,
+}: {
+  config: Config;
+  leaguesText: string;
+  patchConfig: (patch: Partial<Config>) => void;
+  setLeaguesText: (value: string) => void;
+}) {
+  return (
+    <SettingsGroup title="Score polling">
+      <ToggleControl
+        id="espn-enabled"
+        name="ESPN scores"
+        help="Poll watched leagues for score and match-state changes."
+        label="Enable ESPN scores"
+        checked={config.espn_enabled}
+        onChange={(espn_enabled) => patchConfig({ espn_enabled })}
+      />
+      <TextareaControl
+        id="espn-leagues"
+        name="Leagues"
+        help="Use one ESPN league code per line."
+        value={leaguesText}
+        caption="one league code per line"
+        onChange={setLeaguesText}
+      />
+      <NumberControl
+        id="espn-poll-secs"
+        name="Poll interval"
+        help="How often enabled leagues are checked."
+        value={config.espn_poll_secs}
+        min={5}
+        max={3600}
+        unit="SEC"
+        onChange={(espn_poll_secs) => patchConfig({ espn_poll_secs })}
+      />
+    </SettingsGroup>
+  );
+}
+
+function NewsSection({
+  config,
+  feedsText,
+  patchConfig,
+  setFeedsText,
+}: {
+  config: Config;
+  feedsText: string;
+  patchConfig: (patch: Partial<Config>) => void;
+  setFeedsText: (value: string) => void;
+}) {
+  return (
+    <SettingsGroup title="RSS polling">
+      <ToggleControl
+        id="rss-enabled"
+        name="RSS news"
+        help="Poll configured feeds and rotate fresh headlines through the slot."
+        label="Enable RSS news"
+        checked={config.rss_enabled}
+        onChange={(rss_enabled) => patchConfig({ rss_enabled })}
+      />
+      <TextareaControl
+        id="rss-feeds"
+        name="Feeds"
+        help="Use one complete HTTP(S) feed URL per line."
+        value={feedsText}
+        caption="one feed URL per line"
+        onChange={setFeedsText}
+      />
+      <NumberControl id="rss-poll-secs" name="Poll interval" help="How often configured feeds are checked." value={config.rss_poll_secs} min={5} max={3600} unit="SEC" onChange={(rss_poll_secs) => patchConfig({ rss_poll_secs })} />
+      <NumberControl id="rss-ttl-secs" name="Headline rotation" help="How long each headline occupies the slot." value={config.rss_ttl_secs} min={1} max={3600} unit="SEC" onChange={(rss_ttl_secs) => patchConfig({ rss_ttl_secs })} />
+      <NumberControl id="rss-max-per-poll" name="Maximum per poll" help="New headlines accepted from a single poll pass." value={config.rss_max_per_poll} min={1} max={100} unit="ITEMS" onChange={(rss_max_per_poll) => patchConfig({ rss_max_per_poll })} />
+    </SettingsGroup>
+  );
+}
+
+function ConnectorsSection({
+  config,
+  secretStatus,
+  patchConfig,
+  refreshSecretStatus,
+}: {
+  config: Config;
+  secretStatus: SecretStatus | null;
+  patchConfig: (patch: Partial<Config>) => void;
+  refreshSecretStatus: () => Promise<void>;
+}) {
+  return (
+    <div className="section-stack">
+      <SettingsGroup title="Telegram">
+        <ToggleControl
+          id="telegram-enabled"
+          name="Enable connector"
+          help="Forward every accepted event after Save & Relaunch."
+          label="Enable Telegram connector"
+          checked={config.connectors.telegram.enabled}
+          onChange={(enabled) => patchConfig({ connectors: { telegram: { enabled } } })}
+        />
+        <div className="relaunch-note">Config change · applied after relaunch</div>
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="Write-only keys"
+        description="Values never come back across IPC. Status reveals only whether a value is set and, when safe, its masked suffix."
+      >
+        {secretRows.map((row) => (
+          <SecretRow
+            key={row.field}
+            {...row}
+            status={secretStatus?.[row.field] ?? null}
+            onSaved={refreshSecretStatus}
+          />
+        ))}
+      </SettingsGroup>
+    </div>
+  );
+}
+
+function ShortcutsSection() {
+  return (
+    <SettingsGroup title="Global shortcuts" description="These work while notchtap is running, regardless of which app has focus.">
+      <div className="shortcut-table" role="table" aria-label="Keyboard shortcuts">
+        {shortcuts.map((shortcut) => (
+          <div className="shortcut-row" role="row" key={shortcut.action}>
+            <kbd role="cell">{shortcut.keys}</kbd>
+            <span className="shortcut-action" role="cell">{shortcut.action}</span>
+            <span className={`shortcut-status ${shortcut.status}`} role="cell">
+              {shortcut.status === "active" ? "active" : "planned · not implemented"}
+            </span>
+          </div>
+        ))}
+      </div>
+      <p className="shortcut-footnote">Planned key combinations are placeholders and may change before implementation.</p>
+    </SettingsGroup>
+  );
+}
+
 export function SettingsApp() {
+  const [activeSection, setActiveSection] = useState<SectionId>("general");
   const [config, setConfig] = useState<Config | null>(null);
+  const [lastLoadedConfig, setLastLoadedConfig] = useState<Config | null>(null);
   const [secretStatus, setSecretStatus] = useState<SecretStatus | null>(null);
   const [espnLeaguesText, setEspnLeaguesText] = useState("");
   const [rssFeedsText, setRssFeedsText] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+
+  function applyForm(nextConfig: Config) {
+    const next = copyConfig(nextConfig);
+    setConfig(next);
+    setEspnLeaguesText(next.espn_leagues.join("\n"));
+    setRssFeedsText(next.rss_feeds.map((feed) => feed.url).join("\n"));
+    setErrors([]);
+  }
 
   async function refreshSecretStatus() {
     setSecretStatus(await invoke<SecretStatus>("get_secret_status"));
@@ -298,10 +617,10 @@ export function SettingsApp() {
       invoke<SecretStatus>("get_secret_status"),
     ]).then(([loadedConfig, loadedStatus]) => {
       if (active) {
-        setConfig(loadedConfig);
+        const loaded = copyConfig(loadedConfig);
+        setLastLoadedConfig(loaded);
+        applyForm(loaded);
         setSecretStatus(loadedStatus);
-        setEspnLeaguesText(loadedConfig.espn_leagues.join("\n"));
-        setRssFeedsText(loadedConfig.rss_feeds.map((feed) => feed.url).join("\n"));
       }
     }).catch((reason: unknown) => {
       if (active) setErrors(errorList(reason));
@@ -313,6 +632,14 @@ export function SettingsApp() {
 
   function patchConfig(patch: Partial<Config>) {
     setConfig((current) => current ? { ...current, ...patch } : current);
+  }
+
+  function resetLoaded() {
+    if (lastLoadedConfig) applyForm(lastLoadedConfig);
+  }
+
+  function resetDefaults() {
+    applyForm(DEFAULTS);
   }
 
   async function saveConfig(event: FormEvent<HTMLFormElement>) {
@@ -335,108 +662,86 @@ export function SettingsApp() {
     }
   }
 
+  const currentSection = sectionCopy[activeSection];
+
   return (
-    <MotionConfig reducedMotion="user" transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}>
-      <main className="settings-window" aria-labelledby="window-title">
-        <header className="titlebar">
-          <div className="traffic-lights" aria-hidden="true"><span /><span /><span /></div>
-          <div className="title-copy">
-            <div className="eyebrow">Control panel / v5</div>
-            <h1 id="window-title">notchtap settings</h1>
+    <MotionConfig reducedMotion="user" transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}>
+      <main className="settings-window" aria-labelledby="section-title">
+        <aside className="settings-sidebar" aria-label="Settings sections">
+          <div className="sidebar-brand">
+            <span className="brand-slot" aria-hidden="true" />
+            <span>notchtap</span>
           </div>
-          <div className="title-icon" aria-hidden="true"><Settings /></div>
-          <div className="system-track" aria-hidden="true">
-            <span className="lit" /><span className="lit" /><span className={saving ? "lit" : undefined} />
-          </div>
-        </header>
+          <nav className="sidebar-nav">
+            {navigation.map((item) => {
+              const Icon = item.icon;
+              const selected = !item.disabled && item.id === activeSection;
+              return (
+                <button
+                  key={item.id}
+                  className={`nav-item${selected ? " is-active" : ""}`}
+                  type="button"
+                  disabled={item.disabled}
+                  aria-current={selected ? "page" : undefined}
+                  onClick={() => {
+                    if (!item.disabled) setActiveSection(item.id as SectionId);
+                  }}
+                >
+                  <Icon aria-hidden="true" />
+                  <span>{item.label}</span>
+                  {item.disabled ? <span className="soon-badge">soon</span> : null}
+                </button>
+              );
+            })}
+          </nav>
+          <div className="sidebar-meta">settings / v5</div>
+        </aside>
 
-        {config ? (
-          <form id="settings-form" className="settings-content" noValidate onSubmit={(event) => void saveConfig(event)}>
-            <Section id="engine-heading" label="Engine" code="CORE / 01">
-              <ToggleControl
-                id="start-paused"
-                name="Start paused"
-                help="Launches with promotion paused; the tray reads Resume."
-                label="Start paused"
-                checked={config.start_paused}
-                onChange={(start_paused) => patchConfig({ start_paused })}
-              />
-              <NumberControl id="default-ttl" name="Default TTL" help="Time each one-shot notification occupies the slot." value={config.default_ttl} min={1} max={3600} unit="SEC" onChange={(default_ttl) => patchConfig({ default_ttl })} />
-              <NumberControl id="port" name="Listener port" help="Local loopback endpoint used by the notchtap CLI." value={config.port} min={1024} max={65535} onChange={(port) => patchConfig({ port })} />
-              <NumberControl id="queue-cap" name="Queue cap per tier" help="Maximum waiting items in each priority lane." value={config.max_queued_per_tier} min={1} max={1000} onChange={(max_queued_per_tier) => patchConfig({ max_queued_per_tier })} />
-            </Section>
+        <div className="settings-pane">
+          {config ? (
+            <form id="settings-form" className="settings-form" noValidate onSubmit={(event) => void saveConfig(event)}>
+              <header className="content-header">
+                <div className="section-index">Settings / {currentSection.index}</div>
+                <h1 id="section-title">{currentSection.title}</h1>
+                <p>{currentSection.description}</p>
+              </header>
 
-            <Section id="football-heading" label="Football" code="POLLER / 02">
-              <ToggleControl id="espn-enabled" name="ESPN scores" help="Poll watched leagues for score and match-state changes." label="Enable ESPN scores" checked={config.espn_enabled} onChange={(espn_enabled) => patchConfig({ espn_enabled })} />
-              <div className="textarea-field">
-                <ControlCopy htmlFor="espn-leagues" name="League codes" help="One ESPN league code per line." />
-                <div>
-                  <textarea id="espn-leagues" spellCheck={false} value={espnLeaguesText} onChange={(event) => setEspnLeaguesText(event.currentTarget.value)} />
-                  <div className="range">ONE CODE / LINE</div>
-                </div>
+              <ErrorPanel errors={errors} />
+
+              <div className="section-scroll">
+                <AnimatePresence mode="wait" initial={false}>
+                  <motion.div
+                    className="section-content"
+                    key={activeSection}
+                    initial={{ opacity: 0, x: 3 }}
+                    animate={{ opacity: 1, x: 0 }}
+                    exit={{ opacity: 0, x: -2 }}
+                  >
+                    {activeSection === "general" ? <GeneralSection config={config} patchConfig={patchConfig} /> : null}
+                    {activeSection === "football" ? <FootballSection config={config} leaguesText={espnLeaguesText} patchConfig={patchConfig} setLeaguesText={setEspnLeaguesText} /> : null}
+                    {activeSection === "news" ? <NewsSection config={config} feedsText={rssFeedsText} patchConfig={patchConfig} setFeedsText={setRssFeedsText} /> : null}
+                    {activeSection === "connectors" ? <ConnectorsSection config={config} secretStatus={secretStatus} patchConfig={patchConfig} refreshSecretStatus={refreshSecretStatus} /> : null}
+                    {activeSection === "shortcuts" ? <ShortcutsSection /> : null}
+                  </motion.div>
+                </AnimatePresence>
               </div>
-              <NumberControl id="poll-secs" name="Poll interval" help="How often enabled leagues are checked." value={config.espn_poll_secs} min={5} max={3600} unit="SEC" onChange={(espn_poll_secs) => patchConfig({ espn_poll_secs })} />
-            </Section>
+            </form>
+          ) : (
+            <div className="loading-state" role="status">Loading settings…</div>
+          )}
 
-            <Section id="news-heading" label="News" code="POLLER / 03">
-              <ToggleControl id="rss-enabled" name="RSS news" help="Poll configured feeds and rotate fresh headlines through the slot." label="Enable RSS news" checked={config.rss_enabled} onChange={(rss_enabled) => patchConfig({ rss_enabled })} />
-              <div className="textarea-field">
-                <ControlCopy htmlFor="rss-feeds" name="Feeds" help="One RSS feed URL per line." />
-                <div>
-                  <textarea id="rss-feeds" spellCheck={false} value={rssFeedsText} onChange={(event) => setRssFeedsText(event.currentTarget.value)} />
-                  <div className="range">ONE HTTP(S) URL / LINE</div>
-                </div>
-              </div>
-              <NumberControl id="rss-poll-secs" name="Poll interval" help="How often configured feeds are checked." value={config.rss_poll_secs} min={5} max={3600} unit="SEC" onChange={(rss_poll_secs) => patchConfig({ rss_poll_secs })} />
-              <NumberControl id="rss-ttl-secs" name="Headline TTL" help="Slot time per headline." value={config.rss_ttl_secs} min={1} max={3600} unit="SEC" onChange={(rss_ttl_secs) => patchConfig({ rss_ttl_secs })} />
-              <NumberControl id="rss-max-per-poll" name="Max per poll" help="New headlines accepted from one poll pass." value={config.rss_max_per_poll} min={1} max={100} onChange={(rss_max_per_poll) => patchConfig({ rss_max_per_poll })} />
-            </Section>
-
-            <Section id="connectors-heading" label="Connectors" code="OUTBOUND / 04">
-              <div className="connector-box">
-                <div>
-                  <span className="config-stamp">Config · relaunch-applied</span>
-                  <ControlCopy htmlFor="telegram-enabled" name="Telegram enabled" help="Forward every accepted event after the app relaunches." />
-                </div>
-                <Switch
-                  id="telegram-enabled"
-                  label="Enable Telegram connector"
-                  checked={config.connectors.telegram.enabled}
-                  onChange={(enabled) => patchConfig({ connectors: { telegram: { enabled } } })}
-                />
-              </div>
-            </Section>
-
-            <Section id="secrets-heading" label="Secrets" code="WRITE ONLY / 05">
-              <div className="secrets-intro">
-                <span className="key-mark" aria-hidden="true"><KeyRound /></span>
-                <span>Keys are never displayed back. Saving a key writes it immediately; status shows only a masked suffix.</span>
-              </div>
-              {secretRows.map((row) => (
-                <SecretRow
-                  key={row.field}
-                  {...row}
-                  status={secretStatus?.[row.field] ?? null}
-                  onSaved={refreshSecretStatus}
-                />
-              ))}
-            </Section>
-            <ErrorPanel errors={errors} />
-          </form>
-        ) : (
-          <div className="loading-state" role="status">Loading settings…</div>
-        )}
-
-        <footer className="settings-footer">
-          <div>
-            <div className="footer-hint">Saving restarts the app so every config change is live.</div>
-            {saving ? <div className="save-state" role="status">saved — relaunching…</div> : null}
-          </div>
-          <button className="primary-button" type="submit" form="settings-form" disabled={!config || saving}>
-            <Save aria-hidden="true" />
-            <span>{saving ? "Relaunching…" : "Save & Relaunch"}</span>
-          </button>
-        </footer>
+          <footer className="settings-footer">
+            <button className="primary-button" type="submit" form="settings-form" disabled={!config || saving}>
+              {saving ? "Relaunching…" : "Save & Relaunch"}
+            </button>
+            <button className="footer-button" type="button" disabled={!lastLoadedConfig || saving} onClick={resetLoaded}>
+              Reset
+            </button>
+            <button className="footer-button" type="button" disabled={!config || saving} onClick={resetDefaults}>
+              Reset to defaults
+            </button>
+          </footer>
+        </div>
       </main>
     </MotionConfig>
   );

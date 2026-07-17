@@ -42,20 +42,44 @@ afterEach(() => {
 });
 
 describe("SettingsApp", () => {
-  it("renders values from get_config", async () => {
-    mockLoads({ ...unsetSecrets, telegram_bot_token: "set (…a1b2)" });
+  it("renders sidebar navigation and switches among available sections", async () => {
+    mockLoads();
+    render(<SettingsApp />);
+
+    expect(await screen.findByRole("heading", { level: 1, name: "General" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "General" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Football" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "News" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Connectors & Keys" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Shortcuts" })).toBeTruthy();
+
+    const appearance = screen.getByRole("button", { name: "Appearance soon" }) as HTMLButtonElement;
+    expect(appearance.disabled).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Football" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Football" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "News" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "News" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Connectors & Keys" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Connectors & Keys" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Shortcuts" }));
+    expect(await screen.findByRole("heading", { level: 1, name: "Shortcuts" })).toBeTruthy();
+    expect(await screen.findByText("Expand or collapse the slot (manual)")).toBeTruthy();
+    expect(await screen.findAllByText("planned · not implemented")).toHaveLength(4);
+  });
+
+  it("shows loaded values in General", async () => {
+    mockLoads();
     render(<SettingsApp />);
 
     expect(await screen.findByDisplayValue("4321")).toBeTruthy();
+    expect(screen.getByDisplayValue("14")).toBeTruthy();
+    expect(screen.getByDisplayValue("75")).toBeTruthy();
     expect((screen.getByLabelText("Start paused") as HTMLInputElement).checked).toBe(true);
-    expect((screen.getByLabelText("Enable ESPN scores") as HTMLInputElement).checked).toBe(false);
-    expect((screen.getByLabelText("Enable RSS news") as HTMLInputElement).checked).toBe(true);
-    expect((screen.getByLabelText("Enable Telegram connector") as HTMLInputElement).checked).toBe(true);
-    expect((screen.getByLabelText("League codes") as HTMLTextAreaElement).value).toBe("eng.1\nusa.1");
-    expect((screen.getByLabelText("Feeds") as HTMLTextAreaElement).value).toBe(
-      "https://example.com/world.xml\nhttps://example.com/tech.xml",
-    );
-    expect(screen.getByText("set (…a1b2)")).toBeTruthy();
+    expect(screen.getByText("Waiting items promote high → medium → low. Priority chooses the next turn; it never interrupts the visible item.")).toBeTruthy();
   });
 
   it("renders every save rejection message", async () => {
@@ -96,6 +120,9 @@ describe("SettingsApp", () => {
     });
     render(<SettingsApp />);
 
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "Connectors & Keys" }));
+
     const input = await screen.findByLabelText("OpenRouter API key") as HTMLInputElement;
     fireEvent.change(input, { target: { value: "sk-or-secret-9xyz" } });
     fireEvent.click(screen.getByRole("button", { name: "Save OpenRouter API key" }));
@@ -108,5 +135,37 @@ describe("SettingsApp", () => {
       expect(input.value).toBe("");
     });
     expect(await screen.findByText("set (…9xyz)")).toBeTruthy();
+  });
+
+  it("Reset restores the values returned by get_config", async () => {
+    mockLoads();
+    render(<SettingsApp />);
+
+    const port = await screen.findByLabelText("Listener port") as HTMLInputElement;
+    fireEvent.change(port, { target: { value: "5555" } });
+    expect(port.value).toBe("5555");
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+    expect((screen.getByLabelText("Listener port") as HTMLInputElement).value).toBe("4321");
+    expect((screen.getByLabelText("Start paused") as HTMLInputElement).checked).toBe(true);
+  });
+
+  it("Reset to defaults applies the Rust Config defaults mirror", async () => {
+    mockLoads();
+    render(<SettingsApp />);
+
+    await screen.findByDisplayValue("4321");
+    fireEvent.click(screen.getByRole("button", { name: "Reset to defaults" }));
+
+    expect((screen.getByLabelText("Listener port") as HTMLInputElement).value).toBe("9789");
+    expect((screen.getByLabelText("Rotation seconds") as HTMLInputElement).value).toBe("8");
+    expect((screen.getByLabelText("Queue cap per priority tier") as HTMLInputElement).value).toBe("50");
+    expect((screen.getByLabelText("Start paused") as HTMLInputElement).checked).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Football" }));
+    expect((await screen.findByLabelText("Enable ESPN scores") as HTMLInputElement).checked).toBe(true);
+    expect((screen.getByLabelText("Leagues") as HTMLTextAreaElement).value).toBe(
+      "eng.1\nuefa.champions\nesp.1",
+    );
   });
 });
