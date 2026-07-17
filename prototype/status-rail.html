@@ -1,0 +1,992 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>notchtap — Status Rail design-system showcase (rev 2)</title>
+<style>
+/* ============================================================
+   PART 1 — verbatim copy of src/styles.css (the shipped overlay CSS)
+   untouched — PART 1.5 below layers the PROPOSED changes on top so
+   the diff between shipped and proposed stays visible.
+   ============================================================ */
+:root {
+  --card-scale: 1;
+  --card-radius: 8px;
+  --card-opacity: 0.9; /* shipped runtime default (config.rs) */
+}
+
+.rail-card {
+  box-sizing: border-box;
+  position: relative;
+  width: calc(400px * var(--card-scale));
+  margin: 0 auto;
+  overflow: hidden;
+  border-radius: 0 0 var(--card-radius) var(--card-radius);
+  background: rgba(5, 6, 7, var(--card-opacity));
+  color: #f5f7fa;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+  transition:
+    width 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 320ms ease,
+    background 180ms ease;
+}
+
+.rail-card.expanded {
+  width: calc(500px * var(--card-scale));
+  border-radius: 0 0 var(--card-radius) var(--card-radius);
+}
+
+.rail-card.idle {
+  width: calc(270px * var(--card-scale));
+  border-radius: 0 0 var(--card-radius) var(--card-radius);
+}
+
+.rail-card.low {
+  --accent: #aab3bd;
+  --accent-soft: rgba(170, 179, 189, 0.2);
+}
+
+.rail-card.medium {
+  --accent: #55d6bd;
+  --accent-soft: rgba(85, 214, 189, 0.24);
+}
+
+.rail-card.high {
+  --accent: #ff6b57;
+  --accent-soft: rgba(255, 107, 87, 0.28);
+}
+
+.rail-card {
+  isolation: isolate;
+}
+
+.rail-card::after {
+  content: "";
+  position: absolute;
+  inset: -40px;
+  z-index: 0;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 107, 87, 0.5), transparent 70%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.rail-card.pulse-goal {
+  animation: goal-overshoot 620ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.rail-card.pulse-goal::after {
+  animation: goal-burst 620ms ease-out;
+}
+
+@keyframes goal-overshoot {
+  0% { transform: scale(1); }
+  35% { transform: scale(1.045); }
+  100% { transform: scale(1); }
+}
+
+@keyframes goal-burst {
+  0% { opacity: 0; transform: scale(0.6); }
+  40% { opacity: 0.9; transform: scale(1.15); }
+  100% { opacity: 0; transform: scale(1.5); }
+}
+
+.rail-card.pulse-red {
+  animation: red-alert 460ms steps(1, end) 2;
+}
+
+@keyframes red-alert {
+  0%, 100% {
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+  }
+  50% {
+    box-shadow:
+      0 14px 32px rgba(0, 0, 0, 0.32),
+      0 0 0 2px #ff6b57,
+      0 0 26px 4px rgba(255, 107, 87, 0.65);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rail-card.pulse-goal,
+  .rail-card.pulse-goal::after,
+  .rail-card.pulse-red {
+    animation: none;
+  }
+}
+
+.compact {
+  position: relative;
+  box-sizing: border-box;
+  min-height: 74px;
+  padding: 12px 18px 14px;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.expanded .compact {
+  min-height: 82px;
+}
+
+.tier-code {
+  align-self: stretch;
+  display: grid;
+  justify-items: start;
+  align-content: center;
+  gap: 2px;
+  border-right: 1px solid rgba(255, 255, 255, 0.11);
+  color: var(--accent);
+}
+
+.tier-code svg { color: var(--accent); }
+
+.tier-code .code {
+  font: 750 22px/0.9 "Arial Narrow", "SF Pro Display", sans-serif;
+  letter-spacing: -0.04em;
+}
+
+.tier-code .tier-label {
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.4);
+  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.copy { min-width: 0; }
+
+.title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 680;
+  line-height: 1.2;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.body {
+  display: -webkit-box;
+  margin-top: 4px;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  line-height: 1.3;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.stamp {
+  align-self: center;
+  padding: 4px 6px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.compact-hint {
+  position: absolute;
+  right: 18px;
+  bottom: 8px;
+  color: rgba(255, 255, 255, 0.4);
+  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.track {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 4px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+  padding: 0 3px;
+}
+
+.track span { background: rgba(255, 255, 255, 0.09); }
+
+.track span.lit {
+  background: var(--accent);
+  box-shadow: 0 -3px 14px var(--accent-soft);
+}
+
+.manifest {
+  overflow: hidden;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent);
+}
+
+.manifest-inner {
+  box-sizing: border-box;
+  padding: 14px 18px 18px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.detail-label {
+  margin-bottom: 5px;
+  color: var(--accent);
+  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.detail-value {
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.idle-view {
+  box-sizing: border-box;
+  min-height: 38px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+}
+
+.idle-view .time {
+  font: 720 12px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.idle-view .timeline {
+  position: relative;
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.idle-view .timeline::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: var(--day-progress, 50%);
+  width: 5px;
+  height: 5px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: #b6f5e5;
+  box-shadow: 0 0 10px rgba(182, 245, 229, 0.75);
+}
+
+.goal-celebration {
+  position: absolute;
+  inset: -30px;
+  z-index: 0;
+  pointer-events: none;
+}
+
+/* ==== news card v5: category system (shader + masthead + pills) ==== */
+.cat-politics { --cat: #7c9df5; --cat-deep: rgba(124,157,245,0.16); --cat-pill: rgba(124,157,245,0.14); }
+.cat-tech     { --cat: #5fd4e8; --cat-deep: rgba(95,212,232,0.15);  --cat-pill: rgba(95,212,232,0.13); }
+.cat-sports   { --cat: #7fe08d; --cat-deep: rgba(127,224,141,0.15); --cat-pill: rgba(127,224,141,0.13); }
+.cat-business { --cat: #f0c46a; --cat-deep: rgba(240,196,106,0.15); --cat-pill: rgba(240,196,106,0.13); }
+.cat-world    { --cat: #c99df0; --cat-deep: rgba(201,157,240,0.15); --cat-pill: rgba(201,157,240,0.13); }
+.cat-generic  { --cat: #aab3bd; --cat-deep: rgba(170,179,189,0.10); --cat-pill: rgba(170,179,189,0.10); }
+
+.news-shade::before {
+  content: ""; position: absolute; inset: 0; z-index: 0;
+  background:
+    radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%),
+    linear-gradient(135deg, var(--cat-deep) 0%, transparent 46%);
+  background-size: 200% 200%;
+  animation: shade-drift 12s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+@keyframes shade-drift { from { background-position: 0% 0%; } to { background-position: 60% 40%; } }
+
+.news-shade .compact,
+.news-shade .manifest { position: relative; z-index: 1; }
+
+.masthead {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
+  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.38);
+}
+.masthead::after { content: ""; flex: 1; height: 1px; background: rgba(255,255,255,0.12); }
+.masthead .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--cat); box-shadow: 0 0 6px var(--cat); }
+
+.title.headline {
+  white-space: normal;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  font-size: 13px; line-height: 1.3;
+}
+
+.pills { display: flex; gap: 5px; margin-top: 6px; }
+.pill {
+  padding: 3px 7px; border-radius: 999px;
+  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+.pill.category { color: var(--cat); background: var(--cat-pill); border: 1px solid color-mix(in srgb, var(--cat) 35%, transparent); }
+.pill.age { color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); }
+
+.manifest-inner.news { grid-template-columns: 1.5fr 1fr 1fr; }
+.manifest-inner.news .detail-label { color: var(--cat); }
+
+@media (prefers-reduced-motion: reduce) {
+  .news-shade::before { animation: none; }
+}
+
+/* ============================================================
+   PART 1.5 — PROPOSED CHANGES (rev 2, this review round)
+   1. rounded corners by default (--card-radius: 16px)
+   2. tier chip (L1/M2/H3 + label) removed — accent color only,
+      carried by a 3px accent edge + stamp + track
+   3. track = QUEUE indicator, not priority load: one segment per
+      queued item, done items dim-lit, current item bright —
+      advances like an automated slider as the queue rotates
+   ============================================================ */
+:root { --card-radius: 16px; }
+
+/* 2 — tier chip gone; copy takes the full left side */
+.compact {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding-left: 20px;
+}
+.compact::before { /* accent edge: the only remaining priority mark besides stamp/track */
+  content: "";
+  position: absolute;
+  left: 0; top: 12px; bottom: 12px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent-soft);
+}
+
+/* 3 — queue track */
+.track { grid-template-columns: repeat(var(--queue-n, 3), 1fr); }
+.track span {
+  transition: background 260ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 260ms ease;
+}
+.track span.done { background: color-mix(in srgb, var(--accent) 30%, rgba(255,255,255,0.06)); }
+.track span.cur {
+  background: var(--accent);
+  box-shadow: 0 -3px 14px var(--accent-soft);
+}
+
+/* ============================================================
+   PART 1.6 — CELEBRATION CANDIDATES (new one-shot animations,
+   same register as pulse-goal: play once at promotion, never loop)
+   ============================================================ */
+
+/* B · ripple — concentric accent rings from card center */
+.cele-ripple { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.cele-ripple span {
+  position: absolute; left: 50%; top: 50%;
+  width: 22px; height: 22px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.4);
+}
+.cele-ripple.play span { animation: ripple-out 720ms ease-out forwards; }
+.cele-ripple.play span:nth-child(2) { animation-delay: 140ms; }
+.cele-ripple.play span:nth-child(3) { animation-delay: 280ms; }
+@keyframes ripple-out {
+  0%   { opacity: 0.85; transform: translate(-50%, -50%) scale(0.4); }
+  100% { opacity: 0;    transform: translate(-50%, -50%) scale(9); }
+}
+
+/* C · shimmer — one diagonal light sweep across the card face */
+.cele-shimmer { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.cele-shimmer::before {
+  content: "";
+  position: absolute; top: -30%; bottom: -30%;
+  width: 34%; left: -60%;
+  transform: skewX(-18deg);
+  background: linear-gradient(90deg,
+    transparent,
+    rgba(255, 255, 255, 0.10),
+    color-mix(in srgb, var(--accent) 28%, transparent),
+    rgba(255, 255, 255, 0.10),
+    transparent);
+}
+.cele-shimmer.play::before { animation: shimmer-sweep 640ms cubic-bezier(0.22, 1, 0.36, 1) forwards; }
+@keyframes shimmer-sweep { from { left: -60%; } to { left: 130%; } }
+
+/* D · tada — scale + micro-rotation wiggle on the card itself */
+.rail-card.pulse-tada { animation: tada 700ms cubic-bezier(0.22, 1, 0.36, 1); }
+@keyframes tada {
+  0%   { transform: scale(1)    rotate(0); }
+  15%  { transform: scale(0.97) rotate(-0.6deg); }
+  35%  { transform: scale(1.05) rotate(0.8deg); }
+  55%  { transform: scale(1.03) rotate(-0.5deg); }
+  75%  { transform: scale(1.01) rotate(0.3deg); }
+  100% { transform: scale(1)    rotate(0); }
+}
+
+/* E · confetti rain — particles fall from the top edge across the width */
+.cele-rain { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
+.cele-rain span {
+  position: absolute; top: -10px;
+  width: 4px; height: 9px; border-radius: 1px;
+  opacity: 0;
+}
+.cele-rain.play span { animation: rain-fall 900ms ease-in forwards; animation-delay: var(--d, 0ms); }
+@keyframes rain-fall {
+  0%   { opacity: 1; transform: translateY(0) rotate(0); }
+  100% { opacity: 0; transform: translateY(120px) rotate(220deg); }
+}
+
+/* A' · reworked goal confetti (lottie stand-in): fly out, then fall */
+.goal-celebration .cf {
+  position: absolute; left: 50%; top: 50%;
+  width: 6px; height: 6px; border-radius: 1px; opacity: 0;
+}
+.goal-celebration.play .cf { animation: cf-fly 850ms ease-out forwards; animation-delay: var(--d, 0ms); }
+@keyframes cf-fly {
+  0%   { opacity: 0; transform: translate(0, 0) rotate(0) scale(0.6); }
+  12%  { opacity: 1; }
+  55%  { opacity: 1; transform: translate(var(--fx), var(--fy)) rotate(var(--fr)) scale(1); }
+  100% { opacity: 0; transform: translate(var(--fx), calc(var(--fy) + 48px)) rotate(calc(var(--fr) * 1.6)) scale(0.9); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .cele-ripple.play span,
+  .cele-shimmer.play::before,
+  .rail-card.pulse-tada,
+  .cele-rain.play span,
+  .goal-celebration.play .cf { animation: none; }
+}
+
+/* ============================================================
+   PART 2 — showcase-only chrome (NOT part of the design system)
+   ============================================================ */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: #101318;
+  color: #e8ecf1;
+  padding: 40px 32px 120px;
+}
+h1 { font-size: 20px; font-weight: 700; margin: 0 0 4px; }
+h2 {
+  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em;
+  color: #8b95a3; margin: 56px 0 16px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 24px;
+}
+p.note { font-size: 12px; color: #8b95a3; margin: 4px 0 24px; max-width: 760px; line-height: 1.5; }
+p.note b { color: #c3ccd6; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(540px, 1fr)); gap: 20px; }
+.frame {
+  border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 12px;
+  overflow: hidden;
+  background: #171b22;
+}
+.frame .label {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 9px 14px;
+  font: 600 11px/1.3 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color: #9aa5b4;
+  border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+.frame .label .meta { color: #5b6572; font-weight: 400; text-align: right; }
+.screen {
+  position: relative;
+  min-height: 190px;
+  padding: 0 0 28px;
+  background:
+    radial-gradient(120% 90% at 20% 10%, #3d4f6b 0%, transparent 55%),
+    radial-gradient(110% 100% at 85% 90%, #55365e 0%, transparent 60%),
+    linear-gradient(160deg, #2a3245 0%, #1b2130 60%, #232c3d 100%);
+}
+.screen.tall { min-height: 250px; }
+.window { width: 500px; margin: 0 auto; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 14px; border-top: 1px solid rgba(255,255,255,0.07); }
+button.ctl {
+  appearance: none; cursor: pointer;
+  background: #232a35; color: #dfe5ec;
+  border: 1px solid rgba(255,255,255,0.12); border-radius: 6px;
+  font: 600 11px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  padding: 7px 12px;
+}
+button.ctl:hover { background: #2c3542; }
+button.ctl.active { background: #3b4757; border-color: #5b7089; }
+.seg { display: flex; gap: 0; border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; overflow: hidden; }
+.seg button.ctl { border: none; border-radius: 0; }
+.seg button.ctl + button.ctl { border-left: 1px solid rgba(255,255,255,0.12); }
+.appearance-bar {
+  position: sticky; top: 0; z-index: 50;
+  display: flex; flex-wrap: wrap; align-items: center; gap: 18px;
+  background: rgba(16, 19, 24, 0.92); backdrop-filter: blur(8px);
+  border: 1px solid rgba(255,255,255,0.1); border-radius: 10px;
+  padding: 12px 16px; margin: 20px 0 8px;
+}
+.appearance-bar .group { display: flex; align-items: center; gap: 8px; }
+.appearance-bar .group > span {
+  font: 700 9px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: #7c8796;
+}
+
+/* motion/react replicas — 220ms, ease [0.22,1,0.36,1], mode="wait" */
+.motion-wrapper { transition: opacity 220ms cubic-bezier(0.22,1,0.36,1), transform 220ms cubic-bezier(0.22,1,0.36,1); }
+.motion-wrapper.m-exit { opacity: 0; transform: translateY(-4px); }
+.motion-wrapper.m-enter-from { opacity: 0; transform: translateY(-4px); }
+.pill { transition: opacity 220ms cubic-bezier(0.22,1,0.36,1), transform 220ms cubic-bezier(0.22,1,0.36,1); }
+.pill.p-hidden { opacity: 0; transform: translateY(3px); }
+.pill.age { transition-delay: 70ms; }
+.manifest.m-animating { transition: height 240ms cubic-bezier(0.22,1,0.36,1), opacity 240ms cubic-bezier(0.22,1,0.36,1); }
+</style>
+</head>
+<body>
+
+<h1>notchtap · Status Rail — showcase rev 2 (proposed changes)</h1>
+<p class="note">
+  To answer the variant question directly: there is <b>one card component</b>, not multiple variants.
+  Everything on this page is that single card in different <b>states</b> (idle / compact / expanded) and
+  <b>skins</b> (3 priority accents, 6 news categories, per-signal stamps). What changed in this rev:
+  <b>rounded corners by default</b> (Round 16px), <b>tier chip (L1/Low) deleted</b> — priority now reads from the
+  accent edge + stamp + track color only, <b>track repurposed as a queue slider</b> (one segment per queued item,
+  advancing automatically), <b>auto-expand lifecycle for every item</b> (expand on show → retract → rotate on),
+  and <b>five celebration candidates</b> to judge. Opacity: yes, three shipped presets — Glass 0.7 / Default 0.9 /
+  Solid 1.0 — in the bar below; Default stays selected.
+</p>
+
+<div class="appearance-bar" id="appearance-bar">
+  <div class="group"><span>Scale</span>
+    <div class="seg" data-var="--card-scale">
+      <button class="ctl" data-val="0.85">Small</button>
+      <button class="ctl active" data-val="1">Medium</button>
+      <button class="ctl" data-val="1.15">Large</button>
+    </div>
+  </div>
+  <div class="group"><span>Radius</span>
+    <div class="seg" data-var="--card-radius">
+      <button class="ctl" data-val="0px">Square</button>
+      <button class="ctl" data-val="8px">Soft</button>
+      <button class="ctl active" data-val="16px">Round</button>
+    </div>
+  </div>
+  <div class="group"><span>Opacity</span>
+    <div class="seg" data-var="--card-opacity">
+      <button class="ctl" data-val="0.7">Glass</button>
+      <button class="ctl active" data-val="0.9">Default</button>
+      <button class="ctl" data-val="1">Solid</button>
+    </div>
+  </div>
+</div>
+
+<h2>0 · Full lifecycle — auto-expand, retract, queue slider</h2>
+<p class="note">
+  The proposed flow, end to end: item promotes <b>already expanded</b> (regardless of priority) → holds →
+  <b>retracts</b> to compact → holds → rotates to the next queued item, or drains to idle when the queue is empty.
+  The bottom track is the queue slider: 5 segments for 5 queued items — dim = consumed, bright = current.
+  Hold durations here are stand-ins (2.2s expanded / 1.6s compact) since the real timer is already configurable.
+</p>
+<div class="grid">
+  <div class="frame">
+    <div class="label">queue of 5 → idle <span class="meta">enter expanded 220ms · retract 320/240ms · slider advances</span></div>
+    <div class="screen tall"><div class="window" id="life-mount"></div></div>
+    <div class="controls">
+      <button class="ctl" id="life-run">Run queue (5 items)</button>
+      <button class="ctl" id="life-stop">Stop / reset to idle</button>
+    </div>
+  </div>
+</div>
+
+<h2>1 · Celebration candidates — pick one (or a combo)</h2>
+<p class="note">
+  <b>A</b> is the shipped goal celebration rechecked: 620ms scale overshoot + radial burst + confetti
+  (confetti reworked — bigger particles, fly-out then gravity fall; still a CSS stand-in for the Lottie comp).
+  <b>B–E</b> are new candidates in the same register (one-shot at promotion, never looping, accent-aware —
+  they pick up each tier's color automatically). The red-card strobe is unchanged, shown last for contrast.
+</p>
+<div class="grid" id="celebrations"></div>
+
+<h2>2 · Priority skins — color only, chip deleted</h2>
+<p class="note">The L1/M2/H3 chip is gone. Priority now reads from: the 3px <b>accent edge</b> on the left, the <b>stamp</b>, and the queue track's lit color. Same card, three accents.</p>
+<div class="grid" id="tiers"></div>
+
+<h2>3 · Expanded state (500px, manifest)</h2>
+<p class="note">Width morph 320ms + manifest height/opacity 240ms. Toggle to judge. In the proposed flow this state plays automatically on every promotion (section 0); the manual ⌃⇧N toggle still exists on top.</p>
+<div class="grid" id="expanded"></div>
+
+<h2>4 · News cards (RSS) — all six categories</h2>
+<p class="note">Unchanged apart from the chip removal and queue track. Masthead + 13px headline + pills + the 12s <code>shade-drift</code> tint.</p>
+<div class="grid" id="news"></div>
+
+<script>
+/* stamp table — mirror of lib/presentation.ts */
+function stamp(cfg) {
+  const bySignal = { goal: "Live", kickoff: "Live", halftime: "Break", yellow_card: "Card", fulltime: "Final", red_card: "Off" };
+  if (cfg.signal && bySignal[cfg.signal]) return bySignal[cfg.signal];
+  if (cfg.news) return "Wire";
+  return { low: "Live", medium: "Done", high: "Now" }[cfg.priority];
+}
+function sourceText(cfg) {
+  if (cfg.news) return cfg.news.source;
+  if (cfg.eventType === "score_update" || cfg.eventType === "match_state") return "ESPN · football";
+  return "cmux / CLI · local";
+}
+function esc(s) { return s.replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
+function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+
+/* ---------- card renderer — proposed DOM: no tier-code, queue track ---------- */
+function renderCard(cfg) {
+  const el = document.createElement("div");
+  const cls = ["rail-card", cfg.priority];
+  if (cfg.expanded) cls.push("expanded");
+  if (cfg.news) cls.push("news-shade", "cat-" + cfg.news.category);
+  el.className = cls.join(" ");
+  el.setAttribute("role", "status");
+  el.setAttribute("aria-live", "polite");
+
+  const q = cfg.queue || { count: 3, index: 0 };
+  el.style.setProperty("--queue-n", q.count);
+  const track = Array.from({ length: q.count }, (_, i) =>
+    `<span class="${i < q.index ? "done" : i === q.index ? "cur" : ""}"></span>`).join("");
+
+  let copy;
+  if (cfg.news) {
+    copy = `
+      <div class="masthead"><span class="dot"></span>${esc(cfg.news.source)}</div>
+      <div class="title headline">${esc(cfg.title)}</div>
+      <div class="pills">
+        <span class="pill category">${esc(cap(cfg.news.category))}</span>
+        <span class="pill age">${esc(cfg.news.age)}</span>
+      </div>`;
+  } else {
+    copy = `
+      <div class="title">${esc(cfg.title)}</div>
+      ${cfg.body ? `<div class="body">${esc(cfg.body)}</div>` : ""}`;
+  }
+
+  let manifest = "";
+  if (cfg.expanded) {
+    if (cfg.news) {
+      manifest = `
+        <div class="manifest"><div class="manifest-inner news">
+          <div><div class="detail-label">Summary</div><div class="detail-value">${esc(cfg.body || cfg.title)}</div></div>
+          <div><div class="detail-label">Source / Published</div><div class="detail-value">${esc(cfg.news.source)}<br/>${esc(cfg.news.published || "09:41")}</div></div>
+          <div><div class="detail-label">Category / Control</div><div class="detail-value">${esc(cap(cfg.news.category))}<br/>⌃⇧O read · ⌃⇧N collapse</div></div>
+        </div></div>`;
+    } else {
+      const ctl = cfg.link ? "⌃⇧O read · ⌃⇧N collapse" : "⌃⇧N collapse";
+      manifest = `
+        <div class="manifest"><div class="manifest-inner">
+          <div><div class="detail-label">Message</div><div class="detail-value">${esc(cfg.body || cfg.title)}</div></div>
+          <div><div class="detail-label">Source / Control</div><div class="detail-value">${esc(sourceText(cfg))}<br/>${ctl}</div></div>
+        </div></div>`;
+    }
+  }
+
+  el.innerHTML = `
+    <div class="motion-wrapper">
+      <div class="compact">
+        <div class="copy">${copy}</div>
+        <div class="stamp">${stamp(cfg)}</div>
+        ${cfg.expanded ? "" : '<div class="compact-hint">⌃⇧N more</div>'}
+        <div class="track" aria-hidden="true">${track}</div>
+      </div>
+      ${manifest}
+    </div>`;
+  return el;
+}
+
+function renderIdle() {
+  const el = document.createElement("div");
+  el.className = "rail-card idle";
+  const fmt = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const now = new Date();
+  const dayPct = ((now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds()) / 86400 * 100).toFixed(1);
+  el.innerHTML = `
+    <div class="motion-wrapper">
+      <div class="idle-view">
+        <span class="time">${fmt.format(now)}</span>
+        <span class="timeline" style="--day-progress: ${dayPct}%" aria-hidden="true"></span>
+      </div>
+    </div>`;
+  return el;
+}
+
+function frame(parent, cfg, labelHtml, metaHtml, opts = {}) {
+  const f = document.createElement("div");
+  f.className = "frame";
+  f.innerHTML = `<div class="label">${labelHtml} <span class="meta">${metaHtml}</span></div>
+    <div class="screen${opts.tall ? " tall" : ""}"><div class="window"></div></div>`;
+  const card = cfg ? renderCard(cfg) : renderIdle();
+  f.querySelector(".window").appendChild(card);
+  if (opts.controls) {
+    const c = document.createElement("div");
+    c.className = "controls";
+    f.appendChild(c);
+    opts.controls(c, card, f);
+  }
+  parent.appendChild(f);
+  return card;
+}
+
+/* one-shot animation helper: add class, remove on animationend(name) */
+function pulse(card, cls, keyframeName) {
+  card.classList.remove(cls);
+  void card.offsetWidth;
+  card.classList.add(cls);
+  card.addEventListener("animationend", function h(e) {
+    if (e.animationName === keyframeName) { card.classList.remove(cls); card.removeEventListener("animationend", h); }
+  });
+}
+/* one-shot layer helper: mount an effect layer, play, remove after ms */
+function layer(card, cls, ms, build) {
+  card.querySelectorAll("." + cls.split(" ")[0]).forEach(n => n.remove());
+  const d = document.createElement("div");
+  d.className = cls;
+  d.setAttribute("aria-hidden", "true");
+  if (build) build(d);
+  card.appendChild(d);
+  void d.offsetWidth;
+  d.classList.add("play");
+  setTimeout(() => d.remove(), ms);
+}
+
+const CONFETTI_COLORS = ["#ff6b57", "#f0c46a", "#55d6bd", "#7c9df5", "#7fe08d", "#c99df0"];
+
+const CELEBRATIONS = {
+  "A · goal (shipped, confetti reworked)": (card) => {
+    pulse(card, "pulse-goal", "goal-overshoot");
+    layer(card, "goal-celebration", 1300, (d) => {
+      CONFETTI_COLORS.concat(CONFETTI_COLORS).forEach((col, i) => {
+        const s = document.createElement("span");
+        s.className = "cf";
+        const ang = (i / 12) * Math.PI * 2 + 0.35;
+        s.style.background = col;
+        s.style.setProperty("--fx", Math.round(Math.cos(ang) * (60 + (i % 4) * 12)) + "px");
+        s.style.setProperty("--fy", Math.round(Math.sin(ang) * (28 + (i % 3) * 8) - 14) + "px");
+        s.style.setProperty("--fr", (140 + i * 47) + "deg");
+        s.style.setProperty("--d", (i % 4) * 40 + "ms");
+        d.appendChild(s);
+      });
+    });
+  },
+  "B · ripple": (card) => {
+    pulse(card, "pulse-goal", "goal-overshoot"); // keep the overshoot, swap the effect
+    layer(card, "cele-ripple", 1100, (d) => { d.innerHTML = "<span></span><span></span><span></span>"; });
+  },
+  "C · shimmer": (card) => {
+    layer(card, "cele-shimmer", 800);
+  },
+  "D · tada": (card) => {
+    pulse(card, "pulse-tada", "tada");
+  },
+  "E · confetti rain": (card) => {
+    layer(card, "cele-rain", 1500, (d) => {
+      for (let i = 0; i < 14; i++) {
+        const s = document.createElement("span");
+        s.style.background = CONFETTI_COLORS[i % CONFETTI_COLORS.length];
+        s.style.left = (4 + (i * 6.8) % 92) + "%";
+        s.style.setProperty("--d", ((i * 53) % 320) + "ms");
+        d.appendChild(s);
+      }
+    });
+  },
+};
+
+/* ---------- 1 · celebrations ---------- */
+const celebrations = document.getElementById("celebrations");
+Object.entries(CELEBRATIONS).forEach(([name, fire]) => {
+  const cfg = { priority: "high", eventType: "score_update", signal: "goal", title: "GOAL", body: "Arsenal 2-0", queue: { count: 5, index: 1 } };
+  frame(celebrations, cfg, name, "one-shot at promotion", {
+    controls: (c, card) => {
+      const btn = document.createElement("button");
+      btn.className = "ctl"; btn.textContent = "Replay";
+      btn.onclick = () => fire(card);
+      c.appendChild(btn);
+      // autoplay once so the page isn't static on load
+      setTimeout(() => fire(card), 600 + celebrations.children.length * 350);
+    }
+  });
+});
+/* red-card strobe, unchanged, for contrast */
+frame(celebrations, { priority: "high", eventType: "match_state", signal: "red_card", title: "Red Card", body: "Chelsea down to 10", queue: { count: 5, index: 3 } },
+  "red_card strobe (unchanged)", "red-alert 460ms steps(1,end) ×2", {
+    controls: (c, card) => {
+      const btn = document.createElement("button");
+      btn.className = "ctl"; btn.textContent = "Replay";
+      btn.onclick = () => pulse(card, "pulse-red", "red-alert");
+      c.appendChild(btn);
+    }
+  });
+
+/* ---------- 2 · tiers (chip-less) ---------- */
+const tiers = document.getElementById("tiers");
+frame(tiers, { priority: "low", eventType: "generic", title: "Build finished", body: "cargo build completed in 42s", queue: { count: 5, index: 0 } },
+  "low", "accent #aab3bd · edge + stamp + track only");
+frame(tiers, { priority: "medium", eventType: "generic", title: "Task complete", body: "vitest run — 128 passed", queue: { count: 5, index: 2 } },
+  "medium", "accent #55d6bd");
+frame(tiers, { priority: "high", eventType: "generic", title: "Agent needs input", body: "Workspace command is waiting", queue: { count: 5, index: 4 } },
+  "high", "accent #ff6b57");
+
+/* ---------- 3 · expanded with toggle ---------- */
+function attachExpandToggle(controls, card, cfgFactory) {
+  let expanded = true;
+  const btn = document.createElement("button");
+  btn.className = "ctl";
+  btn.textContent = "⌃⇧N toggle expand";
+  btn.onclick = () => {
+    expanded = !expanded;
+    swapExpansion(card, cfgFactory(expanded), expanded);
+  };
+  controls.appendChild(btn);
+}
+/* expand/collapse on the SAME element so width transitions; manifest height animated */
+function swapExpansion(card, cfg, expanding) {
+  const next = renderCard(cfg);
+  if (expanding) {
+    card.className = next.className;
+    card.replaceChildren(...next.children);
+    const manifest = card.querySelector(".manifest");
+    if (manifest) {
+      manifest.classList.add("m-animating");
+      manifest.style.height = "0px"; manifest.style.opacity = "0";
+      requestAnimationFrame(() => {
+        manifest.style.height = manifest.scrollHeight + "px";
+        manifest.style.opacity = "1";
+        manifest.addEventListener("transitionend", () => {
+          manifest.style.height = ""; manifest.style.opacity = "";
+          manifest.classList.remove("m-animating");
+        }, { once: true });
+      });
+    }
+  } else {
+    const manifest = card.querySelector(".manifest");
+    card.className = next.className; // width 500→400 starts now
+    if (manifest) {
+      manifest.classList.add("m-animating");
+      manifest.style.height = manifest.scrollHeight + "px";
+      void manifest.offsetHeight;
+      manifest.style.height = "0px"; manifest.style.opacity = "0";
+      manifest.addEventListener("transitionend", () => {
+        card.replaceChildren(...next.children);
+      }, { once: true });
+    } else {
+      card.replaceChildren(...next.children);
+    }
+  }
+}
+
+const expandedGrid = document.getElementById("expanded");
+{
+  const cfgF = (exp) => ({ priority: "high", eventType: "generic", title: "Agent needs input", body: "Workspace command is waiting", expanded: exp, queue: { count: 5, index: 1 } });
+  frame(expandedGrid, cfgF(true), "generic · expanded", "manifest 1fr 1fr",
+    { tall: true, controls: (c, card) => attachExpandToggle(c, card, cfgF) });
+}
+{
+  const cfgF = (exp) => ({ priority: "low", eventType: "news_item", title: "Parliament passes the landmark digital rights bill", body: "The bill introduces sweeping data-protection duties for platforms and a new privacy regulator.", expanded: exp, link: true, queue: { count: 5, index: 3 }, news: { source: "NDTV", category: "politics", age: "42m ago", published: "13:32" } });
+  frame(expandedGrid, cfgF(true), "news · expanded", "manifest 1.5fr 1fr 1fr",
+    { tall: true, controls: (c, card) => attachExpandToggle(c, card, cfgF) });
+}
+
+/* ---------- 4 · news categories ---------- */
+const news = document.getElementById("news");
+const NEWS_SAMPLES = [
+  ["politics", "NDTV", "Parliament passes the landmark digital rights bill", "42m ago"],
+  ["tech", "The Verge", "Open-weights model tops the coding benchmark leaderboard", "<1m ago"],
+  ["sports", "ESPN", "Arsenal clinch the title with two games to spare", "3h ago"],
+  ["business", "Reuters", "Central bank holds rates, signals cuts later this year", "18m ago"],
+  ["world", "BBC", "Summit ends with a joint statement on maritime security", "1h ago"],
+  ["generic", "Hacker News", "Show HN: a terminal that renders notebooks inline", "2d ago"],
+];
+NEWS_SAMPLES.forEach(([category, source, title, age], i) => {
+  const card = frame(news,
+    { priority: "low", eventType: "news_item", title, queue: { count: 5, index: i % 5 }, news: { source, category, age } },
+    "cat-" + category, "shade-drift 12s");
+  card.querySelectorAll(".pill").forEach(p => p.classList.add("p-hidden"));
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    card.querySelectorAll(".pill").forEach(p => p.classList.remove("p-hidden"));
+  }));
+});
+
+/* ---------- 0 · lifecycle: enter expanded → retract → advance ---------- */
+const LIFE_QUEUE = [
+  { priority: "high", eventType: "generic", title: "Agent needs input", body: "Workspace command is waiting" },
+  { priority: "high", eventType: "score_update", signal: "goal", title: "GOAL", body: "Arsenal 2-0", celebrate: true },
+  { priority: "low", eventType: "news_item", title: "Open-weights model tops the coding benchmark leaderboard", body: "The release ships permissive weights and a 1M-token context window.", link: true, news: { source: "The Verge", category: "tech", age: "<1m ago", published: "14:02" } },
+  { priority: "medium", eventType: "generic", title: "Task complete", body: "vitest run — 128 passed" },
+  { priority: "low", eventType: "news_item", title: "Summit ends with a joint statement on maritime security", body: "Delegates agreed to a joint patrol framework starting next quarter.", link: true, news: { source: "BBC", category: "world", age: "1h ago", published: "13:10" } },
+];
+const HOLD_EXPANDED = 2200, HOLD_COMPACT = 1600, SWAP = 230;
+
+const lifeMount = document.getElementById("life-mount");
+let lifeCard = renderIdle();
+lifeMount.appendChild(lifeCard);
+let lifeTimers = [], lifeRunning = false;
+
+function later(fn, ms) { lifeTimers.push(setTimeout(fn, ms)); }
+function lifeSwap(makeNext, after) {
+  const wrap = lifeCard.querySelector(".motion-wrapper");
+  wrap.classList.add("m-exit");
+  later(() => {
+    const next = makeNext();
+    lifeCard.className = next.className;
+    lifeCard.style.cssText = next.style.cssText;
+    const newWrap = next.querySelector(".motion-wrapper");
+    newWrap.classList.add("m-enter-from");
+    lifeCard.replaceChildren(...next.children);
+    void lifeCard.offsetWidth;
+    lifeCard.querySelector(".motion-wrapper").classList.remove("m-enter-from");
+    if (after) after();
+  }, SWAP);
+}
+
+function lifeStep(i) {
+  if (!lifeRunning) return;
+  if (i >= LIFE_QUEUE.length) { lifeSwap(renderIdle); lifeRunning = false; return; }
+  const item = LIFE_QUEUE[i];
+  const q = { count: LIFE_QUEUE.length, index: i };
+  // 1 — promote, ALREADY expanded, regardless of priority
+  lifeSwap(() => renderCard({ ...item, expanded: true, queue: q }), () => {
+    if (item.celebrate) later(() => CELEBRATIONS["A · goal (shipped, confetti reworked)"](lifeCard), 260);
+  });
+  // 2 — retract to compact
+  later(() => {
+    if (!lifeRunning) return;
+    swapExpansion(lifeCard, { ...item, expanded: false, queue: q }, false);
+  }, SWAP + HOLD_EXPANDED);
+  // 3 — move on
+  later(() => lifeStep(i + 1), SWAP + HOLD_EXPANDED + HOLD_COMPACT);
+}
+
+document.getElementById("life-run").onclick = () => {
+  lifeTimers.forEach(clearTimeout); lifeTimers = [];
+  lifeRunning = true;
+  lifeStep(0);
+};
+document.getElementById("life-stop").onclick = () => {
+  lifeTimers.forEach(clearTimeout); lifeTimers = [];
+  lifeRunning = false;
+  lifeSwap(renderIdle);
+};
+
+/* ---------- appearance bar ---------- */
+document.querySelectorAll("#appearance-bar .seg").forEach(seg => {
+  const cssVar = seg.dataset.var;
+  seg.querySelectorAll("button").forEach(btn => {
+    btn.onclick = () => {
+      seg.querySelectorAll("button").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      document.documentElement.style.setProperty(cssVar, btn.dataset.val);
+    };
+  });
+});
+</script>
+</body>
+</html>
