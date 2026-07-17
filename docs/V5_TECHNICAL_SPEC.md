@@ -91,9 +91,12 @@ legs, all required:
    `allow-get-config`, `allow-get-secret-status`,
    `allow-save-config-and-relaunch`, `allow-set-secret`,
    `allow-send-test-notification`, `allow-set-appearance`, plus
-   `core:event:allow-listen`/`allow-unlisten` (used by the live
-   appearance preview). `capabilities/default.json` (the `main` window)
-   is **not touched** — byte-for-byte identical to today.
+   `core:event:allow-listen`/`allow-unlisten` (still an unused
+   reservation — the Appearance section's preview is pure local React
+   state, not a live event stream; the reservation stays for a future
+   iteration that wants Rust to drive the preview directly).
+   `capabilities/default.json` (the `main` window) is **not touched** —
+   byte-for-byte identical to today.
 
 3. **defense-in-depth label check** — every command takes
    `window: tauri::WebviewWindow` and starts with:

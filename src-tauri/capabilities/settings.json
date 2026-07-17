@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "settings",
-  "description": "Settings window only: the four v5 settings commands plus event listen (V5_TECHNICAL_SPEC.md §2). The overlay's default.json must never gain any of these.",
+  "description": "Settings window only: the six v5 settings commands plus event listen (V5_TECHNICAL_SPEC.md §2). The overlay's default.json must never gain any of these.",
   "windows": ["settings"],
   "permissions": [
     "allow-get-config",

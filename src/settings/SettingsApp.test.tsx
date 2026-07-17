@@ -106,6 +106,30 @@ describe("SettingsApp", () => {
     expect(within(appearanceSection).getByRole("button", { name: "Send test notification" })).toBeTruthy();
   });
 
+  it("calls set_appearance with scale/radius/opacity, not card_scale/card_radius/card_opacity", async () => {
+    const setAppearance = vi.fn();
+    mockIPC((command, payload) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "set_appearance") {
+        setAppearance(payload);
+        return null;
+      }
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
+    await screen.findByRole("heading", { level: 1, name: "Appearance" });
+
+    const scaleToggle = await screen.findByRole("group", { name: "Scale" });
+    fireEvent.click(within(scaleToggle).getByRole("button", { name: "Large" }));
+
+    await waitFor(() => {
+      expect(setAppearance).toHaveBeenCalledWith({ scale: 1.15, radius: 8, opacity: 0.9 });
+    });
+  });
+
   it("shows loaded values in General", async () => {
     mockLoads();
     render(<SettingsApp />);

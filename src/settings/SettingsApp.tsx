@@ -921,7 +921,7 @@ const PREVIEW_SAMPLES: ReadonlyArray<{ label: string; slot: ShowingSlotState }> 
     slot: {
       state: "showing",
       id: "preview-cmux",
-      title: "Claude Code needs input",
+      title: "Agent needs input",
       body: "Workspace command is waiting",
       eventType: "generic",
       priority: "high",
@@ -971,7 +971,13 @@ function AppearanceSection({ config, patchConfig }: {
     setScale(next.card_scale);
     setRadius(next.card_radius);
     setOpacity(next.card_opacity);
-    void invoke("set_appearance", next);
+    invoke("set_appearance", {
+      scale: next.card_scale,
+      radius: next.card_radius,
+      opacity: next.card_opacity,
+    }).catch((reason) => {
+      console.error("set_appearance failed:", reason);
+    });
     patchConfig({ appearance: next });
   }
 

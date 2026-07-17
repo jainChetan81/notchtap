@@ -366,11 +366,7 @@ pub fn run() {
                         .unwrap()
                         .appearance
                         .clone();
-                    let payload = AppearanceChangedPayload {
-                        scale: appearance.card_scale,
-                        radius: appearance.card_radius,
-                        opacity: appearance.card_opacity,
-                    };
+                    let payload = AppearanceChangedPayload::from(&appearance);
                     let payload_json = serde_json::to_string(&payload)
                         .unwrap_or_else(|_| "null".into())
                         .replace('\u{2028}', "\\u2028")

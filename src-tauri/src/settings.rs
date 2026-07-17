@@ -452,16 +452,22 @@ pub struct AppearanceChangedPayload {
     pub opacity: f64,
 }
 
+impl From<&Appearance> for AppearanceChangedPayload {
+    fn from(appearance: &Appearance) -> Self {
+        Self {
+            scale: appearance.card_scale,
+            radius: appearance.card_radius,
+            opacity: appearance.card_opacity,
+        }
+    }
+}
+
 fn broadcast_appearance_change<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     appearance: &Appearance,
 ) {
     use tauri::Emitter;
-    let payload = AppearanceChangedPayload {
-        scale: appearance.card_scale,
-        radius: appearance.card_radius,
-        opacity: appearance.card_opacity,
-    };
+    let payload = AppearanceChangedPayload::from(appearance);
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.emit("appearance-changed", &payload);
     }
@@ -471,11 +477,10 @@ fn timestamp_body() -> String {
     format!("Test · sent {}", Local::now().format("%H:%M:%S"))
 }
 
-fn build_test_event(config: &Config, source: &str) -> Result<Event, String> {
-    let kind = source.to_ascii_lowercase();
+fn build_test_event(config: &Config, source: SourceKind) -> Event {
     let now_ms = Local::now().timestamp_millis();
-    match kind.as_str() {
-        "football" => Ok(Event {
+    match source {
+        SourceKind::Football => Event {
             id: uuid::Uuid::new_v4(),
             event_type: EventType::ScoreUpdate,
             priority: config.espn_priority,
@@ -490,8 +495,8 @@ fn build_test_event(config: &Config, source: &str) -> Result<Event, String> {
             meta: EventMeta::default(),
             signal: EventSignal::Goal,
             origin: SourceKind::Football,
-        }),
-        "news" => Ok(Event {
+        },
+        SourceKind::News => Event {
             id: uuid::Uuid::new_v4(),
             event_type: EventType::NewsItem,
             priority: config.rss_priority,
@@ -511,8 +516,8 @@ fn build_test_event(config: &Config, source: &str) -> Result<Event, String> {
             },
             signal: EventSignal::Generic,
             origin: SourceKind::News,
-        }),
-        "cmux" => Ok(Event {
+        },
+        SourceKind::Cmux => Event {
             id: uuid::Uuid::new_v4(),
             event_type: EventType::Generic,
             priority: config.cmux_priority,
@@ -527,8 +532,8 @@ fn build_test_event(config: &Config, source: &str) -> Result<Event, String> {
             meta: EventMeta::default(),
             signal: EventSignal::Generic,
             origin: SourceKind::Cmux,
-        }),
-        "manual" => Ok(Event {
+        },
+        SourceKind::Manual => Event {
             id: uuid::Uuid::new_v4(),
             event_type: EventType::Generic,
             priority: config.manual_default_priority,
@@ -543,10 +548,7 @@ fn build_test_event(config: &Config, source: &str) -> Result<Event, String> {
             meta: EventMeta::default(),
             signal: EventSignal::Generic,
             origin: SourceKind::Manual,
-        }),
-        _ => Err(format!(
-            "unknown test source {source:?} — must be football, news, cmux, or manual"
-        )),
+        },
     }
 }
 
@@ -620,11 +622,11 @@ pub async fn send_test_notification(
     state: tauri::State<'_, StdMutex<Config>>,
     queue: tauri::State<'_, Arc<Mutex<SingleSlotQueue>>>,
     connectors: tauri::State<'_, Arc<Vec<ConnectorHandle>>>,
-    source: String,
+    source: SourceKind,
 ) -> Result<(), String> {
     ensure_settings_window(&window)?;
     let config = state.inner().lock().unwrap().clone();
-    let event = build_test_event(&config, &source)?;
+    let event = build_test_event(&config, source);
     dispatch(event.clone()).map_err(|e| e.to_string())?;
     let queue = queue.inner().clone();
     let connectors = connectors.inner().clone();
