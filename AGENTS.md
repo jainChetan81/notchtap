@@ -6,31 +6,33 @@ This file provides guidance to Codex (Codex.ai/code) when working with code in t
 
 scaffolded and shipping. v1 (core engine, queue, one animation, cli
 push), v2 (espn poller, cmux relay, animation table), v3 (outbound
-connectors — telegram, `src-tauri/src/notifier.rs`), and v4
-(github + ci at `github.com/jainChetan81/notchtap`) are done as of
-2026-07-16. as of 2026-07-17 (branch `v3.6-rotating-overlay`), three
-more things landed the same day: the frontend ui migration (motion +
-lucide + the status rail) is **done and committed**; v5 news — the
-rss poller (`src-tauri/src/rss_poller.rs`), `NewsItem` events with
-wire metadata (source/category/publishedAtMs), `[[rss_feeds]]` config,
-and the status-rail news cards (masthead, category shaders, pills) —
-landed alongside the settings rust core. v5 (settings window / control
-panel) itself is **rust-side done, frontend now unblocked** — six
-invoke commands (the original four plus `send_test_notification` and
-`set_appearance`), config/secrets write paths, `start_paused` kill
-switch, tray "Settings…" item, per-window command acl, an Appearance
-section with card-shape presets, and per-source test notification
-buttons are built
-and tested; the settings *page* (`IMPLEMENTATION_PLAN.md` §4.5 step 5)
-was held on the ui migration and is the next open item now that the
-migration is done. decisions in `docs/ARCHITECTURE.md` §17, plan in
-`docs/IMPLEMENTATION_PLAN.md` §4.5/§4.6, contract in
+connectors — telegram, `src-tauri/src/notifier.rs`), v4
+(github + ci at `github.com/jainChetan81/notchtap`), and v3.6
+(permanent rotating overlay — single-slot queue, priority tiers, the
+"Status Rail" frontend redesign, global hotkeys for expand-toggle/
+open-story/dismiss/pause-toggle) are done as of 2026-07-17. as of the
+same date, the rss poller (`src-tauri/src/rss_poller.rs`), `NewsItem`
+events with wire metadata (source/category/publishedAtMs), and the
+status-rail news cards also landed. v5 (settings window / control
+panel) is **done** — the invoke commands, config/secrets write paths,
+`start_paused` kill switch, per-window command acl, and the settings
+*page* itself (sidebar nav, rotation/priority group, shortcuts
+cheatsheet) are all built and tested as of 2026-07-17. the same day,
+`efa1bd2` (v5.1 appearance hot-apply + per-source test notifications)
+added two more invoke commands — `send_test_notification` and
+`set_appearance`, six invoke commands total — an Appearance section
+with card-shape presets, and per-source test-notification buttons. v6
+(commits `e1f1998`, `a693cf2`) added per-source priority, rotation-order
+tie-break, and cmux origin naming. decisions in `docs/ARCHITECTURE.md`
+§17, plan in `docs/IMPLEMENTATION_PLAN.md` §4.5/§4.6, contract in
 `docs/V5_TECHNICAL_SPEC.md`. the tauri/rust/web project lives at repo
 root alongside
 `docs/` — the docs folder isn't part of the app build. the test suite
 exists and must stay green (`cargo test` from `src-tauri/`, `npx
 vitest run` from repo root, all gated by ci) — current counts live in
-`docs/TESTING_STRATEGY.md` §0 and only there.
+`docs/TESTING_STRATEGY.md` §0 and only there. remaining open work: the
+manual checklist rows in `docs/IMPLEMENTATION_PLAN.md` §6, and whatever
+`plans/` holds.
 
 `docs/archive/BLIND_REVIEW.md` and `docs/archive/CHANGES_SUMMARY.md` are
 changelog/audit artifacts from the planning pass, not sources of
@@ -192,5 +194,3 @@ change. full contract: `docs/V5_TECHNICAL_SPEC.md` §2.
 this split is standard in the rust ecosystem and matches the testing
 strategy: unit tests match on `thiserror` variants; integration tests
 assert on HTTP status codes.
-
-## Imported Claude Cowork project instructions

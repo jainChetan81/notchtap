@@ -73,7 +73,7 @@ impl SingleSlotQueue {
     }
 
     /// Builder: sets the same-tier tie-break order. `Config.rotation_order`
-    /// (validated as a permutation of all three `SourceKind` variants) is
+    /// (validated as a permutation of all four `SourceKind` variants) is
     /// the only production caller; tests are free to leave this unset.
     pub fn with_rotation_order(mut self, rotation_order: Vec<SourceKind>) -> Self {
         self.rotation_order = rotation_order;

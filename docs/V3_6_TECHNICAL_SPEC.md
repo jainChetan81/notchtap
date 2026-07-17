@@ -226,24 +226,35 @@ snake-case naming, not a new validation layer.
 default for one-shot pushes (cli, cmux relay), which have no notion of
 "the same thing happening again."
 
-wire (`/notify`) request shape, `http.rs`'s `NotifyRequest`:
+wire (`/notify`) request shape, `http.rs`'s `NotifyRequest`
+(`src-tauri/src/http.rs:98–111`, current as of v6.1):
 
 ```rust
 #[derive(Deserialize)]
 struct NotifyRequest {
     title: Option<String>,
     body: Option<String>,
-    priority: Option<Priority>,   // NEW, optional
+    priority: Option<Priority>,
+    #[serde(default)]
+    signal: EventSignal,
+    source: Option<RequestSource>,
 }
 ```
 
-`priority` absent → `Priority::Medium` (§3.6: "default unspecified→
-medium"). `rotation` is never accepted from the wire — always
-constructed server-side as `RotationSpec::OneShot { ttl_secs:
-state.default_ttl }`. `topic` is never accepted from the wire — always
-`None`. This keeps the http schema narrow (one new optional field)
-while satisfying "every source feeds this one queue" (§3.6) without
-opening `Recurring`/`topic` to untrusted/external input in this pass.
+`priority` absent → falls back to per-source config rather than a
+single hardcoded default: `state.manual_default_priority` when
+`source` is absent/`None`, `state.cmux_priority` when `source` is
+`Cmux` (both `Config` fields, independently editable from the settings
+window — see §3.4 below). `rotation` is never accepted from the wire —
+always constructed server-side from the resolved source's ttl config.
+`topic` is never accepted from the wire — always `None`. This keeps the
+http schema narrow while satisfying "every source feeds this one
+queue" (§3.6) without opening `Recurring`/`topic` to untrusted/external
+input in this pass.
+
+the outbound `SlotState::Showing` wire (`src-tauri/src/event.rs:146–160`)
+also carries a v5.1 `link: Option<String>` field — the target for the
+⌃⇧O open-story hotkey on news items; absent for non-news sources.
 
 ### 3.4 default priority per source
 

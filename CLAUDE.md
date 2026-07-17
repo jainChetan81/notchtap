@@ -17,14 +17,21 @@ status-rail news cards also landed. v5 (settings window / control
 panel) is **done** — the invoke commands, config/secrets write paths,
 `start_paused` kill switch, per-window command acl, and the settings
 *page* itself (sidebar nav, rotation/priority group, shortcuts
-cheatsheet) are all built and tested as of 2026-07-17; only the
-§4.5.1 manual checklist rows remain. decisions in `docs/ARCHITECTURE.md` §17, plan in
-`docs/IMPLEMENTATION_PLAN.md` §4.5/§4.6, contract in
+cheatsheet) are all built and tested as of 2026-07-17. the same day,
+`efa1bd2` (v5.1 appearance hot-apply + per-source test notifications)
+added two more invoke commands — `send_test_notification` and
+`set_appearance`, six invoke commands total — an Appearance section
+with card-shape presets, and per-source test-notification buttons. v6
+(commits `e1f1998`, `a693cf2`) added per-source priority, rotation-order
+tie-break, and cmux origin naming. decisions in `docs/ARCHITECTURE.md`
+§17, plan in `docs/IMPLEMENTATION_PLAN.md` §4.5/§4.6, contract in
 `docs/V5_TECHNICAL_SPEC.md`. the tauri/rust/web project lives at repo
 root alongside `docs/` — the docs folder isn't part of the app build.
 the test suite exists and must stay green (`cargo test` from
 `src-tauri/`, `npx vitest run` from repo root, all gated by ci) —
 current counts live in `docs/TESTING_STRATEGY.md` §0 and only there.
+remaining open work: the manual checklist rows in
+`docs/IMPLEMENTATION_PLAN.md` §6, and whatever `plans/` holds.
 
 `docs/archive/BLIND_REVIEW.md` and `docs/archive/CHANGES_SUMMARY.md` are
 changelog/audit artifacts from the planning pass, not sources of

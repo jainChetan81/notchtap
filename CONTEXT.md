@@ -3,7 +3,7 @@
 glossary only. no implementation details — those live in
 `docs/V3_6_TECHNICAL_SPEC.md` / `docs/V5_TECHNICAL_SPEC.md` (the v1/v2/v3
 equivalents shipped and are archived at `docs/archive/`). decisions live
-in `docs/ARCHITECTURE.md` and `docs/adr/`.
+in `docs/ARCHITECTURE.md`.
 
 ## terms
 
@@ -43,7 +43,9 @@ in `docs/ARCHITECTURE.md` and `docs/adr/`.
   promotes.
 - **Rotation** — how long a Notification stays Visible, measured from
   Promotion (not from arrival); replaces the old TTL concept (v3.6).
-  extended (see **Expanded**) while the Slot is grown.
+  extended (see **Expanded**) while the Slot is grown. config file keys
+  retain `*ttl*` names for file compatibility; the domain term is
+  Rotation.
 - **Recurring** — a Rotation kind that requeues to the back of its own
   Priority tier's Waiting line after its turn, instead of being
   dropped (v3.6). bounded by supersession or the underlying state
@@ -91,10 +93,11 @@ in `docs/ARCHITECTURE.md` and `docs/adr/`.
   notifications into notchtap. a Relay is heads-up only: it can never
   answer back into the tool that raised the alert.
 - **Connector** — an outbound sink (telegram in v3) that receives
-  every accepted Event and forwards it off the machine, best-effort.
-  a Connector observes acceptance, not Promotion: the queue's display
-  rules (cap, TTL, Paused) never apply to it, and its failures never
-  affect the pusher's response.
+  every accepted Event *except News items, which are overlay-only by
+  design* — see `IMPLEMENTATION_PLAN.md` §4.6 — and forwards the rest
+  off the machine, best-effort. a Connector observes acceptance, not
+  Promotion: the queue's display rules (cap, Rotation, Paused) never
+  apply to it, and its failures never affect the pusher's response.
 - **Notifier** — the outbound half of notchtap as a whole: the seam
   through which accepted Events leave the machine. Connectors are its
   members; the overlay is not one. a seam, not a code interface —

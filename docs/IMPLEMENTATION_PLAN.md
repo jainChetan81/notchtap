@@ -714,7 +714,8 @@ against a frozen `slot-state` contract, merged sequentially onto
 
 - ~~notch-precise window positioning via the native swift shim~~ —
   promoted to scoped work in §3.5 (2026-07-16); no longer deferred
-- click-through window (`set_ignore_cursor_events`)
+- ~~click-through window (`set_ignore_cursor_events`)~~ — shipped
+  (`src-tauri/src/lib.rs`); no longer deferred
 - real app icon (`npm run tauri icon <path>`)
 
 note: `LSUIElement = true` + `SMAppService.mainApp.register()` (login
@@ -759,11 +760,15 @@ v3.6's rewritten queue/frontend — see `TESTING_STRATEGY.md` §4.10.
 - [ ] mac mini build transferred via a quarantine-free method
       (`ARCHITECTURE.md` §9), and `notchtap-detect` built + symlinked
       on that machine too (`archive/V1_TECHNICAL_SPEC.md` §5)
-- [ ] queue behaviour under load: push 5+ notifications rapidly, confirm
-      fifo + cap-3 + ttl-dismiss all hold
+- [ ] queue behaviour under load (v3.6 single-slot model): push 5+
+      notifications rapidly, confirm exactly one item is ever Visible,
+      the rest wait ordered by Priority tier → Rotation Order →
+      arrival, and the Visible item rotation-dismisses (not ttl) into
+      the next promotion
 - [ ] tray: pause → new pushes answered `202` and buffered, nothing new
-      renders, visible items still age out; resume → buffered items
-      promote fifo immediately; quit exits the app
+      renders, the Visible item still finishes its own Rotation and
+      exits, nothing further promotes; resume → highest-priority
+      Waiting item promotes immediately; quit exits the app
 - [ ] tray: pause football scores (v2, `espn_enabled = true` only) →
       poller log shows no new fetches after the next tick; resume →
       first poll re-baselines silently (no burst of stale score
