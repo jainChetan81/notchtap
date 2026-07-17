@@ -142,6 +142,7 @@ impl SingleSlotQueue {
         };
         if can_promote_now {
             item.promoted_at = Some(now);
+            self.set_expanded_for_promotion(item.event.priority);
             self.visible = Some(item);
         } else {
             self.waiting[tier].push_back(item);
@@ -209,8 +210,18 @@ impl SingleSlotQueue {
         if let Some(mut item) = self.pop_highest_priority_waiting() {
             item.promoted_at = Some(now);
             item.extension_secs = 0;
+            self.set_expanded_for_promotion(item.event.priority);
             self.visible = Some(item);
         }
+    }
+
+    // Expanded is per-turn (CONTEXT.md "Expanded"): automatic for High,
+    // cleared for everything else — a leftover manual expand must not leak
+    // onto the next item. Called from both promotion sites (promote_next and
+    // enqueue_new's immediate-promote fast path) so neither can drift from
+    // the other.
+    fn set_expanded_for_promotion(&mut self, priority: Priority) {
+        self.expanded = priority == Priority::High;
     }
 
     fn pop_highest_priority_waiting(&mut self) -> Option<QueueItem> {
@@ -313,6 +324,9 @@ impl SingleSlotQueue {
     }
 
     pub fn toggle_expanded(&mut self) {
+        if self.visible.is_none() {
+            return;
+        }
         self.expanded = !self.expanded;
     }
 
@@ -1134,4 +1148,110 @@ mod tests {
         q.tick(at_deadline);
         assert!(q.visible.is_none());
     }
+
+    // ------------------------------------------------------------------
+    // plan 008: expanded auto-expand for High, per-item reset, idle no-op
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn high_priority_immediate_enqueue_auto_expands() {
+        // Exercises enqueue_new's can_promote_now fast path directly (no
+        // tick()/promote_next involved) — the more common of the two
+        // promotion call sites in production (see plan 008).
+        let mut q = SingleSlotQueue::new(50);
+        q.enqueue(event("h", Priority::High, 8)).unwrap();
+        match q.current_slot_state() {
+            SlotState::Showing { expanded, .. } => {
+                assert!(
+                    expanded,
+                    "High priority must auto-expand on immediate promotion"
+                )
+            }
+            SlotState::Empty => panic!("expected Showing"),
+        }
+    }
+
+    #[test]
+    fn high_priority_promoted_from_waiting_auto_expands() {
+        // A Medium item occupies the slot, so the High item queues behind
+        // it (higher-or-equal doesn't preempt). Ticking past the Medium
+        // item's window drives promote_next, not the enqueue fast path.
+        let mut q = SingleSlotQueue::new(50);
+        q.enqueue(event("medium", Priority::Medium, 1)).unwrap();
+        q.enqueue(event("h", Priority::High, 8)).unwrap();
+        assert_eq!(waiting_titles(&q, Priority::High as usize), vec!["h"]);
+
+        let later = Instant::now() + Duration::from_secs(2);
+        q.tick(later);
+
+        assert_eq!(visible_title(&q), Some("h"));
+        match q.current_slot_state() {
+            SlotState::Showing { expanded, .. } => {
+                assert!(expanded, "High priority must auto-expand on promote_next")
+            }
+            SlotState::Empty => panic!("expected Showing"),
+        }
+    }
+
+    #[test]
+    fn expanded_resets_when_next_item_promotes() {
+        let mut q = SingleSlotQueue::new(50);
+        q.enqueue(event("a", Priority::Medium, 1)).unwrap();
+        q.toggle_expanded();
+        match q.current_slot_state() {
+            SlotState::Showing { expanded, .. } => assert!(expanded),
+            SlotState::Empty => panic!("expected Showing"),
+        }
+
+        q.enqueue(event("b", Priority::Medium, 8)).unwrap();
+
+        // "a" is expanded (9s window); ticking past its base 1s but before
+        // its expanded 3s window must not promote "b" yet.
+        let later = Instant::now() + Duration::from_secs(4);
+        q.tick(later);
+
+        assert_eq!(visible_title(&q), Some("b"));
+        match q.current_slot_state() {
+            SlotState::Showing { expanded, .. } => {
+                assert!(!expanded, "next item must start collapsed")
+            }
+            SlotState::Empty => panic!("expected Showing"),
+        }
+    }
+
+    #[test]
+    fn auto_expanded_high_uses_expanded_rotation_window() {
+        // Mirrors expanded_increases_rotation_window's arithmetic, but the
+        // expansion here is automatic (High priority), not a manual toggle.
+        let mut q = SingleSlotQueue::new(50);
+        q.enqueue(event("h", Priority::High, 3)).unwrap();
+
+        let just_before = Instant::now() + Duration::from_secs(8);
+        q.tick(just_before);
+        assert!(q.visible.is_some(), "expanded window is 9s");
+
+        let at_deadline = Instant::now() + Duration::from_secs(10);
+        q.tick(at_deadline);
+        assert!(q.visible.is_none());
+    }
+
+    #[test]
+    fn toggle_expanded_is_noop_while_slot_empty() {
+        let mut q = SingleSlotQueue::new(50);
+        assert!(q.visible.is_none());
+
+        q.toggle_expanded(); // idle press must arm nothing
+
+        q.enqueue(event("a", Priority::Medium, 8)).unwrap();
+        match q.current_slot_state() {
+            SlotState::Showing { expanded, .. } => {
+                assert!(
+                    !expanded,
+                    "idle toggle must not leak into the next promotion"
+                )
+            }
+            SlotState::Empty => panic!("expected Showing"),
+        }
+    }
 }
+

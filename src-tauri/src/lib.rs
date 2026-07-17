@@ -644,7 +644,11 @@ fn spawn_heartbeat(app: tauri::AppHandle, queue: Arc<Mutex<SingleSlotQueue>>) {
 // v3.6 spec §7.1.1: the hotkey is a manual override for "everything else"
 // (§3.6's wording) — it's a no-op while the current slot is already
 // auto-expanded (High priority), not a forced-collapse of an automatic
-// expand.
+// expand. The auto-expand itself lives in queue.rs's
+// `set_expanded_for_promotion`, called from both promotion call sites
+// (`promote_next` and `enqueue_new`'s immediate-promote fast path) — by
+// the time this guard runs, a visible High item's `expanded` is already
+// `true`.
 #[cfg(target_os = "macos")]
 fn toggle_manual_expand<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
@@ -733,11 +737,29 @@ mod tests {
         inner.enqueue(event(Priority::High)).unwrap();
         let queue = Arc::new(Mutex::new(inner));
 
+        // High auto-expands at promotion (queue.rs's
+        // set_expanded_for_promotion) — confirm that baseline first, then
+        // prove the hotkey doesn't collapse it.
+        {
+            let q = queue.blocking_lock();
+            match q.current_slot_state() {
+                SlotState::Showing { expanded, .. } => {
+                    assert!(expanded, "High must auto-expand on promotion")
+                }
+                SlotState::Empty => panic!("expected Showing"),
+            }
+        }
+
         toggle_manual_expand(&app.handle().clone(), &queue);
 
         let q = queue.blocking_lock();
         match q.current_slot_state() {
-            SlotState::Showing { expanded, .. } => assert!(!expanded, "High must not toggle"),
+            SlotState::Showing { expanded, .. } => {
+                assert!(
+                    expanded,
+                    "hotkey must not collapse an auto-expanded High item"
+                )
+            }
             SlotState::Empty => panic!("expected Showing"),
         }
     }

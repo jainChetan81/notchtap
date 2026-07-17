@@ -16,7 +16,7 @@ other sections point back rather than repeating them):
 
 | suite | size | where |
 |---|---|---|
-| rust unit/integration | 214 tests — settings 38, queue 38, http 26, notifier 22, rss_poller 21, poller 19, event 17, config 17, presentation 11, lib (hotkey) 5 | `cargo test` from `src-tauri/` |
+| rust unit/integration | 219 tests — settings 38, queue 43, http 26, notifier 22, rss_poller 21, poller 19, event 17, config 17, presentation 11, lib (hotkey) 5 | `cargo test` from `src-tauri/` |
 | rust doc-tests | 3 — public `queue`/`event` apis | same `cargo test` run |
 | frontend | 62 tests — presentation tables 14, slot-state hook 14, StatusRailCard 14, settings form 11, App render 5, presentation mode 4 | `npx vitest run` |
 | ci (v4) | fmt, clippy `-D warnings`, cargo test, tsc, vitest, vite build, swiftc compile check | every push + pr |
@@ -368,9 +368,18 @@ priority tiers, not pure fifo; rotation, not ttl).
   - pause/resume: pause gates promotion, not rotation (an already-
     Visible item still ages out while paused); resume promotes
     immediately on the next `tick`, not the next heartbeat
-  - `slot_state_if_changed`: suppresses a re-emit when nothing changed
-    between two ticks; an actual promotion, rotation-to-empty, or
-    expand toggle always emits
+   - `slot_state_if_changed`: suppresses a re-emit when nothing changed
+     between two ticks; an actual promotion, rotation-to-empty, or
+     expand toggle always emits
+   - **expanded semantics** (plan 008, 2026-07-17 — `queue.rs`):
+     automatic for `High` on both promotion call sites (the
+     `enqueue_new` immediate-promote fast path, and `promote_next` via
+     `tick`/rotation), reset to `false` for every non-`High` promotion
+     (a leftover manual expand from the previous item never leaks onto
+     the next one), the expanded rotation window applies to an
+     auto-expanded `High` item exactly as it does to a manually-toggled
+     one, and `toggle_expanded` is a no-op while the slot is Empty (an
+     idle press arms nothing for whatever promotes next)
 - **`Priority` ordering** (`event.rs`): `Low < Medium < High` pinned by
   a dedicated test — the array-index promotion logic in `queue.rs`
   depends on declaration order matching `Ord`, so a rustfmt/refactor
@@ -387,8 +396,9 @@ priority tiers, not pure fifo; rotation, not ttl).
   about, and the snapshot test caught it on the first real run rather
   than shipping a frontend that silently never renders anything.
 - **hotkey no-op branch** (`lib.rs`): `toggle_manual_expand`'s pure
-  decision (no-op while a `High`-priority item is Visible, toggles
-  otherwise) is unit-tested directly against a `SingleSlotQueue` and a
+  decision (no-op while a `High`-priority item is Visible — because
+  it's already auto-expanded, per plan 008 — toggles otherwise) is
+  unit-tested directly against a `SingleSlotQueue` and a
   `tauri::test::mock_app()` handle, bypassing the actual OS hotkey —
   same split as §4.4's subprocess boundary
 - **frontend** (`useSlotState.ts` + `App.tsx`, 10 of the 14 total
