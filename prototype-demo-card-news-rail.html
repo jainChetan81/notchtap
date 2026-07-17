@@ -1,0 +1,378 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>notchtap — news card v2: metadata, pills, category shaders</title>
+<style>
+  /* ==== page scaffolding (not part of the card) ==== */
+  body {
+    margin: 0; padding: 48px 32px 90px;
+    background: #17191c;
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+    -webkit-font-smoothing: antialiased;
+    color: #f5f7fa; user-select: none;
+  }
+  h1 { font-size: 16px; font-weight: 700; margin: 0 0 6px; }
+  .page-sub { font-size: 12px; color: rgba(255,255,255,0.45); margin-bottom: 44px; max-width: 660px; line-height: 1.5; }
+  .page-sub code { color: #8ecdf5; }
+  .variant { margin-bottom: 60px; }
+  .variant-label {
+    font: 700 10px/1 ui-monospace,"SFMono-Regular",Menlo,monospace;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: #8ea2b5; margin-bottom: 4px;
+  }
+  .variant-note { font-size: 11.5px; color: rgba(255,255,255,0.42); margin-bottom: 18px; max-width: 640px; line-height: 1.55; }
+  .variant-note strong { color: rgba(255,255,255,0.72); font-weight: 650; }
+  .gallery { display: flex; flex-direction: column; gap: 22px; }
+  .demo-controls { margin-top: 14px; display: flex; gap: 8px; }
+  .demo-controls button {
+    background: #24282d; color: #cdd6df; border: 1px solid rgba(255,255,255,0.12);
+    font: 600 11px/1 -apple-system,sans-serif; padding: 7px 12px; border-radius: 6px; cursor: pointer;
+  }
+  .demo-controls button:hover { background: #2c3138; }
+
+  /* ==== status-rail card base, verbatim from src/styles.css ==== */
+  .rail-card {
+    box-sizing: border-box; position: relative; width: 400px;
+    overflow: hidden; border-radius: 0 0 8px 8px;
+    background: #050607; color: #f5f7fa;
+    box-shadow: 0 14px 32px rgba(0,0,0,0.32);
+    transition: width 320ms cubic-bezier(0.22,1,0.36,1), border-radius 320ms ease;
+  }
+  .rail-card.expanded { width: 500px; border-radius: 0 0 12px 12px; }
+  .rail-card.low    { --accent: #aab3bd; --accent-soft: rgba(170,179,189,0.2); }
+  .rail-card.medium { --accent: #55d6bd; --accent-soft: rgba(85,214,189,0.24); }
+  .rail-card.high   { --accent: #ff6b57; --accent-soft: rgba(255,107,87,0.28); }
+
+  .compact {
+    position: relative; box-sizing: border-box; min-height: 74px;
+    padding: 12px 18px 14px; display: grid;
+    grid-template-columns: 64px minmax(0,1fr) auto;
+    align-items: center; gap: 12px;
+  }
+  .expanded .compact { min-height: 82px; }
+
+  .tier-code {
+    align-self: stretch; display: grid; justify-items: start; align-content: center; gap: 2px;
+    border-right: 1px solid rgba(255,255,255,0.11); color: var(--accent);
+    position: relative; z-index: 1;
+  }
+  .tier-code svg { color: var(--accent); }
+  .tier-code .code { font: 750 22px/0.9 "Arial Narrow","SF Pro Display",sans-serif; letter-spacing: -0.04em; }
+  .tier-code .tier-label {
+    margin-top: 3px; color: rgba(255,255,255,0.4);
+    font: 700 8px/1 ui-monospace,"SFMono-Regular",Menlo,monospace;
+    letter-spacing: 0.16em; text-transform: uppercase;
+  }
+
+  .copy { min-width: 0; position: relative; z-index: 1; }
+  .title { overflow: hidden; font-size: 14px; font-weight: 680; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+  .title.headline {
+    white-space: normal;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    font-size: 13px; line-height: 1.3;
+  }
+  .body { margin-top: 4px; overflow: hidden; color: rgba(255,255,255,0.55); font-size: 11px; line-height: 1.3; text-overflow: ellipsis; white-space: nowrap; }
+
+  .stamp {
+    align-self: center; padding: 4px 6px;
+    border: 1px solid var(--accent); color: var(--accent);
+    font: 700 8px/1 ui-monospace,"SFMono-Regular",Menlo,monospace;
+    letter-spacing: 0.12em; text-transform: uppercase;
+    position: relative; z-index: 1;
+  }
+
+  .track {
+    position: absolute; right: 0; bottom: 0; left: 0; height: 4px;
+    display: grid; grid-template-columns: repeat(3,1fr); gap: 3px; padding: 0 3px; z-index: 1;
+  }
+  .track span { background: rgba(255,255,255,0.09); transition: background 300ms ease; }
+  .track span.lit { background: var(--accent); box-shadow: 0 -3px 14px var(--accent-soft); }
+
+  .manifest { overflow: hidden; border-top: 1px solid rgba(255,255,255,0.1); background: linear-gradient(180deg, rgba(255,255,255,0.025), transparent); position: relative; z-index: 1; }
+  .manifest-inner { box-sizing: border-box; padding: 14px 18px 18px; display: grid; grid-template-columns: 1.4fr 1fr; gap: 16px; }
+  .detail-label {
+    margin-bottom: 5px; color: var(--accent);
+    font: 700 8px/1 ui-monospace,"SFMono-Regular",Menlo,monospace;
+    letter-spacing: 0.14em; text-transform: uppercase;
+  }
+  .detail-value { color: rgba(255,255,255,0.74); font-size: 11px; line-height: 1.45; }
+
+  /* ================================================================
+     NEWS v2 — category system: shader + pills + metadata
+     ================================================================ */
+
+  /* each category owns a hue pair consumed by (1) the background shader,
+     (2) the category pill, (3) the masthead dot. the PRIORITY accent
+     (--accent, gray for low) still owns tier column, stamp, and track —
+     the two systems never touch the same pixel. */
+  .cat-politics { --cat: #7c9df5; --cat-deep: rgba(124,157,245,0.16); --cat-pill: rgba(124,157,245,0.14); }
+  .cat-tech     { --cat: #5fd4e8; --cat-deep: rgba(95,212,232,0.15);  --cat-pill: rgba(95,212,232,0.13); }
+  .cat-sports   { --cat: #7fe08d; --cat-deep: rgba(127,224,141,0.15); --cat-pill: rgba(127,224,141,0.13); }
+  .cat-business { --cat: #f0c46a; --cat-deep: rgba(240,196,106,0.15); --cat-pill: rgba(240,196,106,0.13); }
+  .cat-world    { --cat: #c99df0; --cat-deep: rgba(201,157,240,0.15); --cat-pill: rgba(201,157,240,0.13); }
+  .cat-generic  { --cat: #aab3bd; --cat-deep: rgba(170,179,189,0.10); --cat-pill: rgba(170,179,189,0.10); }
+
+  /* the shader: a diagonal wash from the category hue into the card
+     black, plus a slow 12s drift. sits UNDER all content (z-index 0 vs 1),
+     capped at ~16% alpha so the card stays a dark surface. */
+  .news-shade::before {
+    content: ""; position: absolute; inset: 0; z-index: 0;
+    background:
+      radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%),
+      linear-gradient(135deg, var(--cat-deep) 0%, transparent 46%);
+    background-size: 200% 200%;
+    animation: shade-drift 12s ease-in-out infinite alternate;
+    pointer-events: none;
+  }
+  @keyframes shade-drift {
+    from { background-position: 0% 0%; }
+    to   { background-position: 60% 40%; }
+  }
+
+  /* masthead row — source identity, dot now category-hued */
+  .masthead {
+    display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
+    font: 700 8px/1 ui-monospace,"SFMono-Regular",Menlo,monospace;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: rgba(255,255,255,0.38);
+  }
+  .masthead::after { content: ""; flex: 1; height: 1px; background: rgba(255,255,255,0.12); }
+  .masthead .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--cat); box-shadow: 0 0 6px var(--cat); }
+
+  /* pills row — category + age. mono, rounded, category-tinted. */
+  .pills { display: flex; gap: 5px; margin-top: 6px; }
+  .pill {
+    padding: 3px 7px; border-radius: 999px;
+    font: 700 8px/1 ui-monospace,"SFMono-Regular",Menlo,monospace;
+    letter-spacing: 0.1em; text-transform: uppercase;
+  }
+  .pill.category { color: var(--cat); background: var(--cat-pill); border: 1px solid color-mix(in srgb, var(--cat) 35%, transparent); }
+  .pill.age { color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); }
+
+  /* pill stagger on entry */
+  .demo-item .pill { animation: pill-in 260ms cubic-bezier(0.22,1,0.36,1) both; }
+  .demo-item .pill:nth-child(2) { animation-delay: 70ms; }
+  @keyframes pill-in { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+
+  /* card enter, matching motion.div's 220ms fade+drop */
+  .demo-item { animation: enter 220ms cubic-bezier(0.22,1,0.36,1); }
+  @keyframes enter { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+  /* manifest expand animation (CSS approximation of Manifest.tsx's
+     height:auto tween) */
+  .manifest.anim { animation: manifest-in 240ms cubic-bezier(0.22,1,0.36,1); transform-origin: top; }
+  @keyframes manifest-in { from { opacity: 0; transform: scaleY(0.6); } to { opacity: 1; transform: none; } }
+
+  @media (prefers-reduced-motion: reduce) {
+    .news-shade::before, .demo-item, .demo-item .pill, .manifest.anim { animation: none; }
+  }
+</style>
+</head>
+<body>
+
+<h1>news card v2 — metadata, pills, category shaders</h1>
+<p class="page-sub">
+  Two color systems that never collide: <strong>priority</strong> keeps the tier column / stamp / track
+  (locked decision — news is always low-tier gray there), while <strong>category</strong> gets everything news
+  owns — a sub-16%-alpha gradient shader drifting under the content, the masthead dot, and the pills.
+  New wire metadata this requires from the backend: <code>source</code> ("NDTV"), <code>category</code>
+  (politics/tech/sports/business/world), <code>publishedAt</code> — all derivable in the rss poller
+  (per-feed config + RSS <code>&lt;category&gt;</code> tags + <code>pubDate</code>).
+</p>
+
+<!-- ================================================= category gallery -->
+<div class="variant">
+  <div class="variant-label">1 — category shader gallery (compact cards)</div>
+  <div class="variant-note">
+    Same card, five categories. The gradient is a corner radial + diagonal wash in the category hue,
+    drifting slowly (12s alternate) — alive but not eye-grabbing. Pills carry <strong>category</strong> and
+    <strong>age</strong>. Tier column, stamp and track stay priority-gray on every one of these.
+  </div>
+  <div class="gallery" id="gallery"></div>
+</div>
+
+<!-- ================================================= the big card -->
+<div class="variant">
+  <div class="variant-label">2 — the big one: expanded card, full metadata manifest</div>
+  <div class="variant-note">
+    Manifest becomes a real metadata surface: <strong>Summary</strong> (240-char body),
+    <strong>Source</strong>, <strong>Category</strong>, <strong>Published</strong> — plus the control hint.
+    Labels take the category hue in the manifest only (they're metadata about the story, not about priority).
+  </div>
+  <div class="rail-card low expanded news-shade cat-politics">
+    <div class="compact">
+      <div class="tier-code" id="tier-svg-slot-1"></div>
+      <div class="copy">
+        <div class="masthead"><span class="dot"></span>NDTV · Wire</div>
+        <div class="title headline">Parliament Clears Key Data Protection Amendment After Marathon Session</div>
+        <div class="pills">
+          <span class="pill category">Politics</span>
+          <span class="pill age">2m ago</span>
+        </div>
+      </div>
+      <div class="stamp">Wire</div>
+      <div class="track"><span class="lit"></span><span class="lit"></span><span></span></div>
+    </div>
+    <div class="manifest">
+      <div class="manifest-inner" style="grid-template-columns: 1.5fr 1fr 1fr;">
+        <div>
+          <div class="detail-label" style="color: var(--cat);">Summary</div>
+          <div class="detail-value">The amendment passed with 312 votes in favour after a nine-hour debate. Opposition members staged a walkout over the surveillance-exemption clause; the bill moves to the upper house next week.</div>
+        </div>
+        <div>
+          <div class="detail-label" style="color: var(--cat);">Source</div>
+          <div class="detail-value">NDTV · Top Stories<br><span style="color: rgba(255,255,255,0.4);">feeds.feedburner.com</span></div>
+          <div class="detail-label" style="color: var(--cat); margin-top: 10px;">Published</div>
+          <div class="detail-value">Today 14:32 IST</div>
+        </div>
+        <div>
+          <div class="detail-label" style="color: var(--cat);">Category</div>
+          <div class="detail-value">Politics · National</div>
+          <div class="detail-label" style="color: var(--cat); margin-top: 10px;">Control</div>
+          <div class="detail-value">⌃⇧N collapse</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================= priority shader comparison -->
+<div class="variant">
+  <div class="variant-label">3 — same shader idea mapped to priority (non-news cards)</div>
+  <div class="variant-note">
+    You asked "priority <strong>or</strong> news type" — here's priority-driven for comparison, on a generic
+    (cmux) and a football card. It works, but note the cost: <strong>high-priority coral wash on every cmux
+    alert adds permanent urgency-noise</strong> to the overlay. My recommendation: shader = category (news only),
+    priority keeps its existing three cues (icon, code, track). Decide after seeing both.
+  </div>
+  <div class="gallery">
+    <div class="rail-card medium news-shade" style="--cat: #55d6bd; --cat-deep: rgba(85,214,189,0.14);">
+      <div class="compact">
+        <div class="tier-code"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/></svg><span class="code">M2</span><small class="tier-label">Medium</small></div>
+        <div class="copy">
+          <div class="title">build finished — notchtap</div>
+          <div class="body">cargo build completed in 42s, 0 warnings</div>
+        </div>
+        <div class="stamp">Done</div>
+        <div class="track"><span class="lit"></span><span class="lit"></span><span></span></div>
+      </div>
+    </div>
+    <div class="rail-card high news-shade" style="--cat: #ff6b57; --cat-deep: rgba(255,107,87,0.16);">
+      <div class="compact">
+        <div class="tier-code"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M2 20h.01"/><path d="M7 20v-4"/><path d="M12 20v-8"/><path d="M17 20V8"/><path d="M22 4v16"/></svg><span class="code">H3</span><small class="tier-label">High</small></div>
+        <div class="copy">
+          <div class="title">GOAL — Arsenal 2:1 Madrid</div>
+          <div class="body">Saka 87' — assisted by Ødegaard</div>
+        </div>
+        <div class="stamp">Live</div>
+        <div class="track"><span class="lit"></span><span class="lit"></span><span class="lit"></span></div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ================================================= live demo -->
+<div class="variant">
+  <div class="variant-label">4 — live demo: rotation across categories, ttl track, expand</div>
+  <div class="variant-note">
+    Full lifecycle: headlines rotate every 5s with the 220ms enter, pills stagger in, the ttl track
+    fills as time passes, shader hue cross-fades with the category. Click the card to expand
+    (rotation pauses while expanded, mirroring the real x3 rotation-window multiplier).
+  </div>
+  <div class="rail-card low news-shade cat-politics" id="demo-card" style="cursor: pointer;">
+    <div id="demo-content"></div>
+  </div>
+  <div class="demo-controls">
+    <button id="demo-toggle">pause rotation</button>
+  </div>
+</div>
+
+<script>
+  const NEWSPAPER = '<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/><path d="M18 14h-8"/><path d="M15 18h-5"/><path d="M10 6h8v4h-8V6Z"/></svg>';
+  const tierCol = () => `<div class="tier-code">${NEWSPAPER}<span class="code">L1</span><small class="tier-label">Low</small></div>`;
+  document.getElementById("tier-svg-slot-1").outerHTML = tierCol();
+
+  const STORIES = [
+    { cat: "politics", label: "Politics", title: "Parliament Clears Key Data Protection Amendment After Marathon Session",
+      body: "The amendment passed with 312 votes in favour after a nine-hour debate; opposition staged a walkout over the surveillance-exemption clause.", age: "2m ago", pub: "Today 14:32 IST" },
+    { cat: "tech", label: "Tech", title: "Chip Fab Consortium Breaks Ground on Second Gujarat Facility",
+      body: "The 28nm-node plant is expected to begin trial production by late 2027, with packaging lines coming online first.", age: "9m ago", pub: "Today 14:25 IST" },
+    { cat: "sports", label: "Sports", title: "India Names Squad for Border-Gavaskar Opener, Two Debutants In",
+      body: "Selectors handed first call-ups to the U-19 captain and the Ranji season's leading wicket-taker ahead of the Perth test.", age: "14m ago", pub: "Today 14:20 IST" },
+    { cat: "business", label: "Business", title: "RBI Holds Repo Rate, Signals Shift to Neutral Stance",
+      body: "The monetary policy committee voted 5-1; the governor flagged easing food inflation as the deciding factor.", age: "21m ago", pub: "Today 14:13 IST" },
+    { cat: "world", label: "World", title: "UN Climate Panel Fast-Tracks Adaptation Fund for Island Nations",
+      body: "The mechanism unlocks $2.1B in first-loss guarantees, with disbursements beginning next quarter.", age: "30m ago", pub: "Today 14:04 IST" },
+  ];
+  const CATS = ["cat-politics","cat-tech","cat-sports","cat-business","cat-world","cat-generic"];
+
+  let index = 0, expanded = false, running = true, tick = 0;
+  const card = document.getElementById("demo-card");
+  const content = document.getElementById("demo-content");
+
+  function render(fresh) {
+    const s = STORIES[index];
+    CATS.forEach(c => card.classList.remove(c));
+    card.classList.add("cat-" + s.cat);
+    card.classList.toggle("expanded", expanded);
+    const lit = n => n <= tick ? "lit" : "";
+    content.innerHTML = `
+      <div class="${fresh ? "demo-item" : ""}">
+        <div class="compact">
+          ${tierCol()}
+          <div class="copy">
+            <div class="masthead"><span class="dot"></span>NDTV · Wire</div>
+            <div class="title headline">${s.title}</div>
+            <div class="pills">
+              <span class="pill category">${s.label}</span>
+              <span class="pill age">${s.age}</span>
+            </div>
+          </div>
+          <div class="stamp">Wire</div>
+          <div class="track"><span class="${lit(1)}"></span><span class="${lit(2)}"></span><span class="${lit(3)}"></span></div>
+        </div>
+        ${expanded ? `<div class="manifest anim"><div class="manifest-inner" style="grid-template-columns: 1.5fr 1fr 1fr;">
+          <div><div class="detail-label" style="color: var(--cat);">Summary</div><div class="detail-value">${s.body}</div></div>
+          <div><div class="detail-label" style="color: var(--cat);">Source</div><div class="detail-value">NDTV · Top Stories</div>
+               <div class="detail-label" style="color: var(--cat); margin-top: 10px;">Published</div><div class="detail-value">${s.pub}</div></div>
+          <div><div class="detail-label" style="color: var(--cat);">Category</div><div class="detail-value">${s.label}</div>
+               <div class="detail-label" style="color: var(--cat); margin-top: 10px;">Control</div><div class="detail-value">⌃⇧N collapse</div></div>
+        </div></div>` : ""}
+      </div>`;
+  }
+
+  card.addEventListener("click", () => { expanded = !expanded; render(false); });
+  document.getElementById("demo-toggle").addEventListener("click", (e) => {
+    running = !running;
+    e.target.textContent = running ? "pause rotation" : "resume rotation";
+  });
+
+  // ttl track fills across the 5s window; rotation advances at tick 4
+  setInterval(() => {
+    if (!running || expanded) return;
+    tick += 1;
+    if (tick > 3) { tick = 0; index = (index + 1) % STORIES.length; render(true); }
+    else render(false);
+  }, 1250);
+
+  // static gallery
+  document.getElementById("gallery").innerHTML = STORIES.map(s => `
+    <div class="rail-card low news-shade cat-${s.cat}">
+      <div class="compact">
+        ${tierCol()}
+        <div class="copy">
+          <div class="masthead"><span class="dot"></span>NDTV · Wire</div>
+          <div class="title headline">${s.title}</div>
+          <div class="pills"><span class="pill category">${s.label}</span><span class="pill age">${s.age}</span></div>
+        </div>
+        <div class="stamp">Wire</div>
+        <div class="track"><span class="lit"></span><span></span><span></span></div>
+      </div>
+    </div>`).join("");
+
+  render(true);
+</script>
+
+</body>
+</html>

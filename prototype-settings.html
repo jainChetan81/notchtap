@@ -1,0 +1,1133 @@
+<!-- Throwaway prototype for docs/V5_TECHNICAL_SPEC.md §6 review; delete once the real settings page lands, following the same rule as prototype-notch-morph.html. -->
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>notchtap settings — prototype</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        --window: #050607;
+        --text: #f5f7fa;
+        --muted: rgba(255, 255, 255, 0.55);
+        --muted-strong: rgba(255, 255, 255, 0.74);
+        --dim: rgba(255, 255, 255, 0.4);
+        --divider: rgba(255, 255, 255, 0.1);
+        --field: rgba(255, 255, 255, 0.045);
+        --field-hover: rgba(255, 255, 255, 0.065);
+        --low: #aab3bd;
+        --low-soft: rgba(170, 179, 189, 0.2);
+        --accent: #55d6bd;
+        --accent-soft: rgba(85, 214, 189, 0.24);
+        --high: #ff6b57;
+        --high-soft: rgba(255, 107, 87, 0.28);
+        --ease: cubic-bezier(0.22, 1, 0.36, 1);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        width: 100%;
+        min-width: 320px;
+        height: 100%;
+        margin: 0;
+      }
+
+      body {
+        display: grid;
+        place-items: center;
+        padding: 12px;
+        overflow: hidden;
+        background:
+          radial-gradient(circle at 50% 34%, #282c30 0, #1b1e21 42%, #141618 100%);
+        color: var(--text);
+        font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+        -webkit-font-smoothing: antialiased;
+      }
+
+      button,
+      input,
+      textarea {
+        font: inherit;
+      }
+
+      button,
+      label,
+      input[type="checkbox"] {
+        -webkit-tap-highlight-color: transparent;
+      }
+
+      button {
+        color: inherit;
+      }
+
+      .window {
+        position: relative;
+        width: min(480px, calc(100vw - 24px));
+        height: min(600px, calc(100vh - 24px));
+        min-height: 480px;
+        display: grid;
+        grid-template-rows: auto minmax(0, 1fr) auto;
+        overflow: hidden;
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        border-radius: 12px;
+        background: var(--window);
+        box-shadow:
+          0 26px 70px rgba(0, 0, 0, 0.55),
+          0 0 0 1px rgba(0, 0, 0, 0.35);
+      }
+
+      .titlebar {
+        position: relative;
+        min-height: 82px;
+        display: grid;
+        grid-template-columns: 72px minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 12px;
+        padding: 17px 20px 18px;
+        border-bottom: 1px solid var(--divider);
+        background: linear-gradient(180deg, rgba(255, 255, 255, 0.035), transparent);
+      }
+
+      .traffic-lights {
+        align-self: start;
+        display: flex;
+        gap: 7px;
+        padding-top: 2px;
+      }
+
+      .traffic-lights span {
+        width: 10px;
+        height: 10px;
+        border-radius: 50%;
+        border: 1px solid rgba(0, 0, 0, 0.16);
+        box-shadow: inset 0 0 0 0.5px rgba(255, 255, 255, 0.16);
+      }
+
+      .traffic-lights span:nth-child(1) {
+        background: var(--high);
+      }
+
+      .traffic-lights span:nth-child(2) {
+        background: #e8b94f;
+      }
+
+      .traffic-lights span:nth-child(3) {
+        background: var(--accent);
+      }
+
+      .title-copy {
+        min-width: 0;
+      }
+
+      .eyebrow,
+      .micro-label,
+      .section-label,
+      .unit,
+      .range,
+      .status-chip,
+      .config-stamp,
+      .error-title,
+      .save-state {
+        font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+      }
+
+      .eyebrow {
+        margin-bottom: 5px;
+        color: var(--accent);
+        font-size: 8px;
+        font-weight: 700;
+        line-height: 1;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        overflow: hidden;
+        font-size: 16px;
+        font-weight: 680;
+        line-height: 1.2;
+        letter-spacing: -0.01em;
+        text-overflow: ellipsis;
+        white-space: nowrap;
+      }
+
+      .title-icon {
+        width: 30px;
+        height: 30px;
+        display: grid;
+        place-items: center;
+        border: 1px solid var(--accent);
+        color: var(--accent);
+        background: var(--accent-soft);
+      }
+
+      .title-icon svg,
+      .key-mark svg,
+      button svg {
+        width: 13px;
+        height: 13px;
+        fill: none;
+        stroke: currentColor;
+        stroke-width: 2;
+        stroke-linecap: round;
+        stroke-linejoin: round;
+      }
+
+      .system-track {
+        position: absolute;
+        right: 0;
+        bottom: 0;
+        left: 0;
+        height: 4px;
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 3px;
+        padding: 0 3px;
+      }
+
+      .system-track span {
+        background: rgba(255, 255, 255, 0.09);
+        transition:
+          background 260ms var(--ease),
+          box-shadow 260ms var(--ease);
+      }
+
+      .system-track span.lit {
+        background: var(--accent);
+        box-shadow: 0 -3px 14px var(--accent-soft);
+      }
+
+      .content {
+        min-height: 0;
+        overflow-y: auto;
+        overscroll-behavior: contain;
+        scrollbar-color: rgba(255, 255, 255, 0.17) transparent;
+        scrollbar-width: thin;
+      }
+
+      .content::-webkit-scrollbar {
+        width: 8px;
+      }
+
+      .content::-webkit-scrollbar-thumb {
+        border: 2px solid transparent;
+        border-radius: 8px;
+        background: rgba(255, 255, 255, 0.16);
+        background-clip: padding-box;
+      }
+
+      .section {
+        padding: 19px 20px 20px;
+        border-bottom: 1px solid var(--divider);
+      }
+
+      .section:last-child {
+        border-bottom: 0;
+      }
+
+      .section-heading {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 14px;
+      }
+
+      .section-label {
+        color: var(--accent);
+        font-size: 8px;
+        font-weight: 700;
+        line-height: 1;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .section-code {
+        color: rgba(255, 255, 255, 0.28);
+        font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+        letter-spacing: 0.12em;
+      }
+
+      .control-row {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 18px;
+        padding: 11px 0;
+      }
+
+      .control-row + .control-row {
+        border-top: 1px solid rgba(255, 255, 255, 0.07);
+      }
+
+      .control-name {
+        display: block;
+        color: var(--text);
+        font-size: 12px;
+        font-weight: 620;
+        line-height: 1.25;
+      }
+
+      .control-help {
+        display: block;
+        max-width: 310px;
+        margin-top: 4px;
+        color: var(--muted);
+        font-size: 10px;
+        line-height: 1.4;
+      }
+
+      .number-field {
+        position: relative;
+        width: 104px;
+      }
+
+      .number-field input {
+        width: 100%;
+        height: 34px;
+        padding: 0 30px 0 10px;
+        border: 1px solid rgba(255, 255, 255, 0.13);
+        border-radius: 5px;
+        outline: none;
+        background: var(--field);
+        color: var(--text);
+        font: 650 11px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+        transition:
+          border-color 220ms var(--ease),
+          background 220ms var(--ease),
+          box-shadow 220ms var(--ease);
+      }
+
+      .number-field input:hover {
+        background: var(--field-hover);
+      }
+
+      .number-field input:focus-visible {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-soft);
+      }
+
+      .number-field input[aria-invalid="true"] {
+        border-color: var(--high);
+        box-shadow: 0 0 0 3px var(--high-soft);
+      }
+
+      .unit {
+        position: absolute;
+        top: 50%;
+        right: 9px;
+        transform: translateY(-50%);
+        color: var(--dim);
+        font-size: 8px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        pointer-events: none;
+      }
+
+      .switch-control {
+        position: relative;
+        display: inline-flex;
+        align-items: center;
+        cursor: pointer;
+      }
+
+      .switch-control input {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        overflow: hidden;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .switch {
+        position: relative;
+        width: 34px;
+        height: 20px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.1);
+        transition:
+          border-color 240ms var(--ease),
+          background 240ms var(--ease),
+          box-shadow 240ms var(--ease);
+      }
+
+      .switch::after {
+        content: "";
+        position: absolute;
+        top: 2px;
+        left: 2px;
+        width: 14px;
+        height: 14px;
+        border-radius: 50%;
+        background: var(--low);
+        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.45);
+        transition:
+          transform 260ms var(--ease),
+          background 240ms var(--ease);
+      }
+
+      .switch-control input:checked + .switch {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+        box-shadow: 0 0 12px rgba(85, 214, 189, 0.12);
+      }
+
+      .switch-control input:checked + .switch::after {
+        transform: translateX(14px);
+        background: var(--accent);
+      }
+
+      .switch-control input:focus-visible + .switch {
+        box-shadow: 0 0 0 3px var(--accent-soft);
+      }
+
+      .leagues-field {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) 170px;
+        align-items: start;
+        gap: 18px;
+        padding: 12px 0 11px;
+        border-top: 1px solid rgba(255, 255, 255, 0.07);
+      }
+
+      textarea,
+      .secret-input {
+        width: 100%;
+        border: 1px solid rgba(255, 255, 255, 0.13);
+        border-radius: 5px;
+        outline: none;
+        background: var(--field);
+        color: var(--text);
+        transition:
+          border-color 220ms var(--ease),
+          background 220ms var(--ease),
+          box-shadow 220ms var(--ease);
+      }
+
+      textarea:hover,
+      .secret-input:hover {
+        background: var(--field-hover);
+      }
+
+      textarea:focus-visible,
+      .secret-input:focus-visible {
+        border-color: var(--accent);
+        box-shadow: 0 0 0 3px var(--accent-soft);
+      }
+
+      textarea {
+        min-height: 76px;
+        padding: 8px 10px;
+        resize: vertical;
+        font: 600 10px/1.55 ui-monospace, "SFMono-Regular", Menlo, monospace;
+      }
+
+      .range {
+        margin-top: 6px;
+        color: rgba(255, 255, 255, 0.32);
+        font-size: 8px;
+        line-height: 1.3;
+        letter-spacing: 0.06em;
+      }
+
+      .connector-box {
+        position: relative;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 18px;
+        padding: 12px 13px 13px;
+        border: 1px solid rgba(85, 214, 189, 0.34);
+        background: linear-gradient(90deg, rgba(85, 214, 189, 0.1), rgba(85, 214, 189, 0.025));
+      }
+
+      .config-stamp {
+        display: inline-block;
+        margin-bottom: 6px;
+        padding: 3px 5px;
+        border: 1px solid var(--accent);
+        color: var(--accent);
+        font-size: 8px;
+        font-weight: 700;
+        line-height: 1;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .secrets-intro {
+        display: grid;
+        grid-template-columns: auto minmax(0, 1fr);
+        align-items: center;
+        gap: 10px;
+        margin: -2px 0 13px;
+        color: var(--muted);
+        font-size: 10px;
+        line-height: 1.4;
+      }
+
+      .key-mark {
+        width: 27px;
+        height: 27px;
+        display: grid;
+        place-items: center;
+        border: 1px solid rgba(255, 255, 255, 0.13);
+        color: var(--low);
+        background: rgba(255, 255, 255, 0.035);
+      }
+
+      .secret-row {
+        padding: 12px 0;
+        border-top: 1px solid rgba(255, 255, 255, 0.07);
+      }
+
+      .secret-meta {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        margin-bottom: 8px;
+      }
+
+      .secret-label {
+        color: var(--text);
+        font-size: 11px;
+        font-weight: 620;
+      }
+
+      .status-chip {
+        flex: none;
+        padding: 4px 6px;
+        border: 1px solid rgba(170, 179, 189, 0.35);
+        color: rgba(170, 179, 189, 0.62);
+        font-size: 8px;
+        font-weight: 700;
+        line-height: 1;
+        letter-spacing: 0.1em;
+        text-transform: uppercase;
+        transition:
+          border-color 240ms var(--ease),
+          color 240ms var(--ease),
+          background 240ms var(--ease);
+      }
+
+      .status-chip.is-set {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+        color: var(--accent);
+      }
+
+      .secret-controls {
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        gap: 8px;
+      }
+
+      .secret-input {
+        height: 34px;
+        padding: 0 10px;
+        font: 600 10px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+      }
+
+      .secret-input::placeholder {
+        color: rgba(255, 255, 255, 0.28);
+      }
+
+      .secondary-button,
+      .primary-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        border-radius: 4px;
+        cursor: pointer;
+        font-size: 10px;
+        font-weight: 680;
+        line-height: 1;
+        transition:
+          transform 220ms var(--ease),
+          border-color 220ms var(--ease),
+          background 220ms var(--ease),
+          color 220ms var(--ease),
+          box-shadow 220ms var(--ease),
+          opacity 220ms var(--ease);
+      }
+
+      .secondary-button {
+        min-width: 86px;
+        height: 34px;
+        padding: 0 10px;
+        border: 1px solid rgba(255, 255, 255, 0.16);
+        background: rgba(255, 255, 255, 0.055);
+        color: var(--muted-strong);
+      }
+
+      .secondary-button:hover {
+        border-color: var(--accent);
+        color: var(--accent);
+        background: var(--accent-soft);
+      }
+
+      .primary-button {
+        height: 36px;
+        padding: 0 14px;
+        border: 1px solid var(--accent);
+        background: var(--accent-soft);
+        color: var(--accent);
+        box-shadow: 0 0 18px rgba(85, 214, 189, 0.1);
+      }
+
+      .primary-button:hover {
+        background: rgba(85, 214, 189, 0.34);
+        box-shadow: 0 0 22px rgba(85, 214, 189, 0.16);
+      }
+
+      .secondary-button:active,
+      .primary-button:active {
+        transform: translateY(1px) scale(0.985);
+      }
+
+      .secondary-button:focus-visible,
+      .primary-button:focus-visible {
+        outline: none;
+        box-shadow: 0 0 0 3px var(--accent-soft);
+      }
+
+      .secondary-button:disabled,
+      .primary-button:disabled {
+        cursor: default;
+        opacity: 0.5;
+      }
+
+      .error-panel {
+        display: none;
+        margin: 0 20px 18px;
+        padding: 11px 12px 12px;
+        border: 1px solid var(--high);
+        background: linear-gradient(90deg, var(--high-soft), rgba(255, 107, 87, 0.04));
+        color: rgba(255, 255, 255, 0.8);
+      }
+
+      .error-panel.visible {
+        display: block;
+        animation: reveal 280ms var(--ease);
+      }
+
+      .error-title {
+        margin-bottom: 7px;
+        color: var(--high);
+        font-size: 8px;
+        font-weight: 700;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .error-panel ul {
+        margin: 0;
+        padding-left: 17px;
+        color: rgba(255, 255, 255, 0.74);
+        font-size: 10px;
+        line-height: 1.55;
+      }
+
+      .footer {
+        min-height: 68px;
+        display: grid;
+        grid-template-columns: minmax(0, 1fr) auto;
+        align-items: center;
+        gap: 16px;
+        padding: 14px 20px;
+        border-top: 1px solid var(--divider);
+        background: rgba(5, 6, 7, 0.96);
+        box-shadow: 0 -12px 30px rgba(0, 0, 0, 0.16);
+      }
+
+      .footer-hint {
+        color: var(--muted);
+        font-size: 10px;
+        line-height: 1.35;
+      }
+
+      .save-state {
+        display: none;
+        margin-top: 4px;
+        color: var(--accent);
+        font-size: 8px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .save-state.visible {
+        display: block;
+        animation: reveal 260ms var(--ease);
+      }
+
+      @keyframes reveal {
+        from {
+          opacity: 0;
+          transform: translateY(-4px);
+        }
+        to {
+          opacity: 1;
+          transform: translateY(0);
+        }
+      }
+
+      @media (max-width: 430px) {
+        .titlebar {
+          grid-template-columns: 60px minmax(0, 1fr) auto;
+          padding-right: 15px;
+          padding-left: 15px;
+        }
+
+        .section,
+        .footer {
+          padding-right: 15px;
+          padding-left: 15px;
+        }
+
+        .leagues-field {
+          grid-template-columns: 1fr;
+        }
+
+        .error-panel {
+          margin-right: 15px;
+          margin-left: 15px;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          animation-duration: 0.01ms !important;
+          animation-iteration-count: 1 !important;
+          transition-duration: 0.01ms !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="window" aria-labelledby="window-title">
+      <header class="titlebar">
+        <div class="traffic-lights" aria-hidden="true">
+          <span></span><span></span><span></span>
+        </div>
+        <div class="title-copy">
+          <div class="eyebrow">Control panel / v5</div>
+          <h1 id="window-title">notchtap settings</h1>
+        </div>
+        <div class="title-icon" aria-hidden="true">
+          <svg viewBox="0 0 24 24">
+            <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.38a2 2 0 0 0-.73-2.73l-.15-.09a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
+            <circle cx="12" cy="12" r="3" />
+          </svg>
+        </div>
+        <div class="system-track" aria-hidden="true">
+          <span class="lit"></span><span class="lit"></span><span></span>
+        </div>
+      </header>
+
+      <form id="settings-form" class="content" novalidate>
+        <section class="section" aria-labelledby="engine-heading">
+          <div class="section-heading">
+            <div id="engine-heading" class="section-label">Engine</div>
+            <div class="section-code">CORE / 01</div>
+          </div>
+
+          <div class="control-row">
+            <div>
+              <label class="control-name" for="start-paused">Start paused</label>
+              <span class="control-help">Launches with promotion paused; the tray reads Resume.</span>
+            </div>
+            <label class="switch-control" aria-label="Start paused">
+              <input id="start-paused" type="checkbox" />
+              <span class="switch" aria-hidden="true"></span>
+            </label>
+          </div>
+
+          <div class="control-row">
+            <div>
+              <label class="control-name" for="default-ttl">Default TTL</label>
+              <span class="control-help">Time each one-shot notification occupies the slot.</span>
+            </div>
+            <div class="number-field">
+              <input id="default-ttl" name="default_ttl" type="number" min="1" max="3600" value="8" inputmode="numeric" />
+              <span class="unit">SEC</span>
+            </div>
+          </div>
+
+          <div class="control-row">
+            <div>
+              <label class="control-name" for="port">Listener port</label>
+              <span class="control-help">Local loopback endpoint used by the notchtap CLI.</span>
+            </div>
+            <div class="number-field">
+              <input id="port" name="port" type="number" min="1024" max="65535" value="9789" inputmode="numeric" />
+            </div>
+          </div>
+
+          <div class="control-row">
+            <div>
+              <label class="control-name" for="queue-cap">Queue cap per tier</label>
+              <span class="control-help">Maximum waiting items in each priority lane.</span>
+            </div>
+            <div class="number-field">
+              <input id="queue-cap" name="max_queued_per_tier" type="number" min="1" max="1000" value="50" inputmode="numeric" />
+            </div>
+          </div>
+        </section>
+
+        <section class="section" aria-labelledby="football-heading">
+          <div class="section-heading">
+            <div id="football-heading" class="section-label">Football</div>
+            <div class="section-code">POLLER / 02</div>
+          </div>
+
+          <div class="control-row">
+            <div>
+              <label class="control-name" for="espn-enabled">ESPN scores</label>
+              <span class="control-help">Poll watched leagues for score and match-state changes.</span>
+            </div>
+            <label class="switch-control" aria-label="Enable ESPN scores">
+              <input id="espn-enabled" type="checkbox" checked />
+              <span class="switch" aria-hidden="true"></span>
+            </label>
+          </div>
+
+          <div class="leagues-field">
+            <div>
+              <label class="control-name" for="espn-leagues">League codes</label>
+              <span class="control-help">One ESPN league code per line.</span>
+            </div>
+            <div>
+              <textarea id="espn-leagues" name="espn_leagues" spellcheck="false">eng.1
+uefa.champions
+esp.1</textarea>
+              <div class="range">ONE CODE / LINE</div>
+            </div>
+          </div>
+
+          <div class="control-row">
+            <div>
+              <label class="control-name" for="poll-secs">Poll interval</label>
+              <span class="control-help">How often enabled leagues are checked.</span>
+            </div>
+            <div class="number-field">
+              <input id="poll-secs" name="espn_poll_secs" type="number" min="5" max="3600" value="30" inputmode="numeric" />
+              <span class="unit">SEC</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="section" aria-labelledby="news-heading">
+          <div class="section-heading">
+            <div id="news-heading" class="section-label">News</div>
+            <div class="section-code">POLLER / 03</div>
+          </div>
+
+          <div class="control-row">
+            <div>
+              <label class="control-name" for="rss-enabled">RSS news</label>
+              <span class="control-help">Poll configured feeds and rotate fresh headlines through the slot.</span>
+            </div>
+            <label class="switch-control" aria-label="Enable RSS news">
+              <input id="rss-enabled" type="checkbox" />
+              <span class="switch" aria-hidden="true"></span>
+            </label>
+          </div>
+
+          <div class="leagues-field">
+            <div>
+              <label class="control-name" for="rss-feeds">Feeds</label>
+              <span class="control-help">One RSS feed URL per line.</span>
+            </div>
+            <div>
+              <textarea id="rss-feeds" name="rss_feeds" spellcheck="false">https://feeds.feedburner.com/ndtvnews-top-stories</textarea>
+              <div class="range">ONE HTTP(S) URL / LINE</div>
+            </div>
+          </div>
+
+          <div class="control-row">
+            <div>
+              <label class="control-name" for="rss-poll-secs">Poll interval</label>
+              <span class="control-help">How often configured feeds are checked.</span>
+            </div>
+            <div class="number-field">
+              <input id="rss-poll-secs" name="rss_poll_secs" type="number" min="5" max="3600" value="60" inputmode="numeric" />
+              <span class="unit">SEC</span>
+            </div>
+          </div>
+
+          <div class="control-row">
+            <div>
+              <label class="control-name" for="rss-ttl-secs">Headline TTL</label>
+              <span class="control-help">Slot time per headline.</span>
+            </div>
+            <div class="number-field">
+              <input id="rss-ttl-secs" name="rss_ttl_secs" type="number" min="1" max="3600" value="10" inputmode="numeric" />
+              <span class="unit">SEC</span>
+            </div>
+          </div>
+
+          <div class="control-row">
+            <div>
+              <label class="control-name" for="rss-max-per-poll">Max per poll</label>
+              <span class="control-help">New headlines accepted from one poll pass.</span>
+            </div>
+            <div class="number-field">
+              <input id="rss-max-per-poll" name="rss_max_per_poll" type="number" min="1" max="100" value="10" inputmode="numeric" />
+            </div>
+          </div>
+        </section>
+
+        <section class="section" aria-labelledby="connectors-heading">
+          <div class="section-heading">
+            <div id="connectors-heading" class="section-label">Connectors</div>
+            <div class="section-code">OUTBOUND / 04</div>
+          </div>
+
+          <div class="connector-box">
+            <div>
+              <span class="config-stamp">Config · relaunch-applied</span>
+              <label class="control-name" for="telegram-enabled">Telegram enabled</label>
+              <span class="control-help">Forward every accepted event after the app relaunches.</span>
+            </div>
+            <label class="switch-control" aria-label="Enable Telegram connector">
+              <input id="telegram-enabled" type="checkbox" />
+              <span class="switch" aria-hidden="true"></span>
+            </label>
+          </div>
+        </section>
+
+        <section class="section" aria-labelledby="secrets-heading">
+          <div class="section-heading">
+            <div id="secrets-heading" class="section-label">Secrets</div>
+            <div class="section-code">WRITE ONLY / 05</div>
+          </div>
+
+          <div class="secrets-intro">
+            <span class="key-mark" aria-hidden="true">
+              <svg viewBox="0 0 24 24">
+                <circle cx="7.5" cy="15.5" r="5.5" />
+                <path d="m21 2-9.6 9.6M15.5 7.5l3 3M18 5l1.5 1.5" />
+              </svg>
+            </span>
+            <span>Keys are never displayed back. Saving a key writes it immediately; status shows only a masked suffix.</span>
+          </div>
+
+          <div class="secret-row" data-secret-row>
+            <div class="secret-meta">
+              <label class="secret-label" for="openrouter-key">OpenRouter API key</label>
+              <span class="status-chip" data-status aria-live="polite">unset</span>
+            </div>
+            <div class="secret-controls">
+              <input id="openrouter-key" class="secret-input" type="password" autocomplete="new-password" placeholder="Enter a new key" />
+              <button class="secondary-button" type="button" data-save-key>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" />
+                  <path d="M17 21v-8H7v8M7 3v5h8" />
+                </svg>
+                Save key
+              </button>
+            </div>
+          </div>
+
+          <div class="secret-row" data-secret-row>
+            <div class="secret-meta">
+              <label class="secret-label" for="telegram-token">Telegram bot token</label>
+              <span class="status-chip is-set" data-status aria-live="polite">set (…a1b2)</span>
+            </div>
+            <div class="secret-controls">
+              <input id="telegram-token" class="secret-input" type="password" autocomplete="new-password" placeholder="Enter a replacement token" />
+              <button class="secondary-button" type="button" data-save-key>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" />
+                  <path d="M17 21v-8H7v8M7 3v5h8" />
+                </svg>
+                Save key
+              </button>
+            </div>
+          </div>
+
+          <div class="secret-row" data-secret-row>
+            <div class="secret-meta">
+              <label class="secret-label" for="telegram-chat-id">Telegram chat id</label>
+              <span class="status-chip" data-status aria-live="polite">unset</span>
+            </div>
+            <div class="secret-controls">
+              <input id="telegram-chat-id" class="secret-input" type="password" autocomplete="new-password" placeholder="Enter a new chat id" />
+              <button class="secondary-button" type="button" data-save-key>
+                <svg viewBox="0 0 24 24" aria-hidden="true">
+                  <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" />
+                  <path d="M17 21v-8H7v8M7 3v5h8" />
+                </svg>
+                Save key
+              </button>
+            </div>
+          </div>
+        </section>
+
+        <div id="error-panel" class="error-panel" role="alert" aria-live="assertive">
+          <div class="error-title">Config rejected</div>
+          <ul id="error-list"></ul>
+        </div>
+      </form>
+
+      <footer class="footer">
+        <div>
+          <div class="footer-hint">Saving restarts the app so every config change is live.</div>
+          <div id="save-state" class="save-state" role="status" aria-live="polite">saved — relaunching…</div>
+        </div>
+        <button id="save-config" class="primary-button" type="submit" form="settings-form">
+          <svg viewBox="0 0 24 24" aria-hidden="true">
+            <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" />
+            <path d="M17 21v-8H7v8M7 3v5h8" />
+          </svg>
+          <span>Save &amp; Relaunch</span>
+        </button>
+      </footer>
+    </main>
+
+    <script>
+      (() => {
+        const form = document.querySelector("#settings-form");
+        const content = document.querySelector(".content");
+        const errorPanel = document.querySelector("#error-panel");
+        const errorList = document.querySelector("#error-list");
+        const saveButton = document.querySelector("#save-config");
+        const saveButtonLabel = saveButton.querySelector("span");
+        const saveState = document.querySelector("#save-state");
+        const trackSegments = Array.from(document.querySelectorAll(".system-track span"));
+
+        const numberRules = [
+          {
+            id: "default-ttl",
+            min: 1,
+            max: 3600,
+            message: (value) => `default_ttl must be 1–3600 seconds (got ${value})`,
+          },
+          {
+            id: "port",
+            min: 1024,
+            max: 65535,
+            message: (value) => `port must be 1024–65535 (got ${value})`,
+          },
+          {
+            id: "queue-cap",
+            min: 1,
+            max: 1000,
+            message: (value) => `max_queued_per_tier must be 1–1000 (got ${value})`,
+          },
+          {
+            id: "poll-secs",
+            min: 5,
+            max: 3600,
+            message: (value) => `espn_poll_secs must be 5–3600 (got ${value})`,
+          },
+          {
+            id: "rss-poll-secs",
+            min: 5,
+            max: 3600,
+            message: (value) => `rss_poll_secs must be 5–3600 (got ${value})`,
+          },
+          {
+            id: "rss-ttl-secs",
+            min: 1,
+            max: 3600,
+            message: (value) => `rss_ttl_secs must be 1–3600 (got ${value})`,
+          },
+          {
+            id: "rss-max-per-poll",
+            min: 1,
+            max: 100,
+            message: (value) => `rss_max_per_poll must be 1–100 (got ${value})`,
+          },
+        ];
+
+        document.querySelectorAll("[data-secret-row]").forEach((row) => {
+          const input = row.querySelector(".secret-input");
+          const button = row.querySelector("[data-save-key]");
+          const status = row.querySelector("[data-status]");
+
+          button.addEventListener("click", () => {
+            const value = input.value.trim();
+            if (!value) {
+              input.focus();
+              return;
+            }
+
+            const masked = value.length >= 8 ? `set (…${value.slice(-4)})` : "set";
+            input.value = "";
+            status.textContent = masked;
+            status.classList.add("is-set");
+            button.disabled = true;
+            window.setTimeout(() => {
+              button.disabled = false;
+            }, 520);
+          });
+        });
+
+        form.addEventListener("submit", (event) => {
+          event.preventDefault();
+
+          const errors = [];
+          numberRules.forEach((rule) => {
+            const input = document.getElementById(rule.id);
+            const raw = input.value.trim();
+            const value = Number(raw);
+            const invalid = raw === "" || !Number.isInteger(value) || value < rule.min || value > rule.max;
+            input.setAttribute("aria-invalid", String(invalid));
+            if (invalid) {
+              errors.push(rule.message(raw || "empty"));
+            }
+          });
+
+          saveState.classList.remove("visible");
+          window.clearTimeout(window.__notchtapMockSaveTimer);
+
+          if (errors.length > 0) {
+            errorList.replaceChildren(
+              ...errors.map((message) => {
+                const item = document.createElement("li");
+                item.textContent = message;
+                return item;
+              }),
+            );
+            errorPanel.classList.add("visible");
+            content.scrollTo({ top: content.scrollHeight, behavior: "smooth" });
+            return;
+          }
+
+          errorPanel.classList.remove("visible");
+          saveButton.disabled = true;
+          saveButtonLabel.textContent = "Relaunching…";
+          saveState.classList.add("visible");
+          trackSegments.forEach((segment) => segment.classList.add("lit"));
+
+          window.__notchtapMockSaveTimer = window.setTimeout(() => {
+            saveButton.disabled = false;
+            saveButtonLabel.textContent = "Save & Relaunch";
+            saveState.classList.remove("visible");
+            trackSegments[2].classList.remove("lit");
+          }, 1800);
+        });
+
+        numberRules.forEach((rule) => {
+          document.getElementById(rule.id).addEventListener("input", (event) => {
+            event.currentTarget.removeAttribute("aria-invalid");
+          });
+        });
+      })();
+    </script>
+  </body>
+</html>
