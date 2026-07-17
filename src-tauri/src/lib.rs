@@ -118,12 +118,15 @@ pub fn run() {
             // v3.6 spec §7.2: survive Spaces switches and fullscreen apps.
             #[cfg(target_os = "macos")]
             {
-                use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
+                use objc2_app_kit::{NSStatusWindowLevel, NSWindow, NSWindowCollectionBehavior};
                 let ns_window_ptr = window.ns_window()? as *mut NSWindow;
                 let ns_window: &NSWindow = unsafe { &*ns_window_ptr };
                 let behavior = NSWindowCollectionBehavior::CanJoinAllSpaces
                     | NSWindowCollectionBehavior::FullScreenAuxiliary;
                 ns_window.setCollectionBehavior(behavior);
+                // Floating level (3) cannot overlap the menu bar or appear over fullscreen
+                // Spaces; status level (25) can and is required for the flush-to-top overlay.
+                ns_window.setLevel(NSStatusWindowLevel);
             }
 
             position_window(&window, mode, cutout)?;
