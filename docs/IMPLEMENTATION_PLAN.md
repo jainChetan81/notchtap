@@ -683,6 +683,31 @@ against a frozen `slot-state` contract, merged sequentially onto
 - [ ] manual, notch mode: same checklist eyeballed on the macbook
   (geometry only — logic is device-independent)
 
+### 4.6.2 v5.1 — open current story (⌃⇧O) — ✅ landed 2026-07-17
+
+- [x] `EventMeta.link` / `SlotState::Showing.link` carry the rss entry's
+  link end to end (`event.rs`, `queue.rs`, `rss_poller::diff_feed`);
+  `cargo test` green with the new queue (`current_link`, 2 cases) and
+  rss_poller (link carried/absent, 1 case) coverage —
+  `TESTING_STRATEGY.md` §0 counts
+- [x] `OPEN_STORY_SHORTCUT` (⌃⇧O) registered alongside
+  `EXPAND_TOGGLE_SHORTCUT` in the same global-shortcut handler
+  (`lib.rs`); `open_current_story` opens the visible item's link via
+  `std::process::Command::new("open")` only after an http(s) scheme
+  check — no new crate dependency, no capabilities/permissions change
+  (still receive-only), no-op (not an error dialog) when there's
+  nothing to open
+- [x] `npx vitest run` green: `useSlotState` validates `link` as
+  null-or-string, `Manifest` shows "⌃⇧O read · ⌃⇧N collapse" only when
+  a link is present, `StatusRailCard` masthead no longer repeats "Wire"
+  next to the stamp badge that already says it, and a collapsed-state
+  "⌃⇧N more" hint (plus a 2-line clamp instead of hard single-line
+  truncation on non-news title/body) closes the gap where the expand
+  affordance had zero cue before you'd already found it once
+- [ ] manual: `rss_enabled = true`, wait for a headline, ⌃⇧O opens the
+  article in the browser; ⌃⇧O with the idle pill or a cmux card does
+  nothing; hint text visible in the expanded news manifest
+
 ---
 
 ## 5. explicitly deferred polish (not blocking any phase above)

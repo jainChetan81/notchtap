@@ -227,6 +227,12 @@ impl SingleSlotQueue {
         self.visible.as_ref().map(|i| i.event.priority)
     }
 
+    pub fn current_link(&self) -> Option<&str> {
+        self.visible
+            .as_ref()
+            .and_then(|item| item.event.meta.link.as_deref())
+    }
+
     pub fn toggle_expanded(&mut self) {
         self.expanded = !self.expanded;
     }
@@ -263,6 +269,7 @@ impl SingleSlotQueue {
                 source: item.event.meta.source.clone(),
                 category: item.event.meta.category.clone(),
                 published_at_ms: item.event.meta.published_at_ms,
+                link: item.event.meta.link.clone(),
             },
         }
     }
@@ -361,6 +368,27 @@ mod tests {
         q.enqueue(event("a", Priority::Medium, 8)).unwrap();
         assert_eq!(visible_title(&q), Some("a"));
         assert_eq!(q.total_waiting(), 0);
+    }
+
+    #[test]
+    fn current_link_returns_visible_event_link() {
+        let mut q = SingleSlotQueue::new(50);
+        let mut story = event("story", Priority::Low, 8);
+        story.meta.link = Some("https://example.com/story".to_string());
+
+        q.enqueue(story).unwrap();
+
+        assert_eq!(q.current_link(), Some("https://example.com/story"));
+    }
+
+    #[test]
+    fn current_link_returns_none_without_link_or_visible_event() {
+        let mut q = SingleSlotQueue::new(50);
+        assert_eq!(q.current_link(), None);
+
+        q.enqueue(event("status", Priority::Medium, 8)).unwrap();
+
+        assert_eq!(q.current_link(), None);
     }
 
     #[test]

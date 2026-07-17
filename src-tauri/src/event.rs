@@ -14,6 +14,11 @@ pub struct Event {
     #[serde(default)]
     pub meta: EventMeta,
     pub signal: EventSignal,
+    /// Which source produced this event (v6: rotation-order tie-break) —
+    /// orthogonal to `Priority`, which still decides cross-tier order
+    /// first. Always server-assigned, never accepted from the `/notify`
+    /// wire (same rule as `rotation`/`topic`).
+    pub origin: SourceKind,
 }
 
 impl Event {
@@ -59,6 +64,17 @@ pub enum Priority {
     Low,
     Medium,
     High,
+}
+
+/// The source that produced an [`Event`] (v6: `Config.rotation_order`
+/// tie-break). A closed set, same rigor as [`EventType`]/[`EventSignal`] —
+/// unknown values are rejected at deserialization, never silently coerced.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SourceKind {
+    Football,
+    News,
+    Manual,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -113,6 +129,7 @@ pub struct EventMeta {
     pub source: Option<String>,
     pub category: Option<String>,
     pub published_at_ms: Option<i64>,
+    pub link: Option<String>,
 }
 
 /// The rust-authoritative slot state pushed to the frontend whenever it
@@ -138,6 +155,7 @@ pub enum SlotState {
         source: Option<String>,
         category: Option<String>,
         published_at_ms: Option<i64>,
+        link: Option<String>,
     },
 }
 
@@ -180,6 +198,7 @@ mod tests {
             },
             meta: EventMeta::default(),
             signal: EventSignal::Generic,
+            origin: SourceKind::Manual,
         }
     }
 
@@ -275,6 +294,7 @@ mod tests {
             source: Some("NDTV".to_string()),
             category: Some("politics".to_string()),
             published_at_ms: Some(1_789_600_000_000),
+            link: Some("https://example.com/story".to_string()),
         };
         let json = serde_json::to_value(&state).unwrap();
         assert_eq!(json["state"], "showing");
@@ -288,6 +308,7 @@ mod tests {
         assert_eq!(json["source"], "NDTV");
         assert_eq!(json["category"], "politics");
         assert_eq!(json["publishedAtMs"], 1_789_600_000_000_i64);
+        assert_eq!(json["link"], "https://example.com/story");
         assert!(json.get("event_type").is_none());
         assert!(json.get("published_at_ms").is_none());
         assert!(json.get("ttlSecs").is_none());
@@ -306,12 +327,14 @@ mod tests {
             source: None,
             category: None,
             published_at_ms: None,
+            link: None,
         };
 
         let json = serde_json::to_value(state).unwrap();
         assert!(json["source"].is_null());
         assert!(json["category"].is_null());
         assert!(json["publishedAtMs"].is_null());
+        assert!(json["link"].is_null());
     }
 
     #[test]

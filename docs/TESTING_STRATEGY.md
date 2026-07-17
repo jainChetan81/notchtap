@@ -16,9 +16,9 @@ other sections point back rather than repeating them):
 
 | suite | size | where |
 |---|---|---|
-| rust unit/integration | 180 tests — settings 34 (v5 rust side + rss rules + review hardening, 2026-07-17), queue 27, notifier 22, rss_poller 20 (v5 news, 2026-07-17), http 20, poller 19, event 15, presentation 11, config 10, lib (hotkey) 2 | `cargo test` from `src-tauri/` |
+| rust unit/integration | 183 tests — settings 34 (v5 rust side + rss rules + review hardening, 2026-07-17), queue 29 (+2 v5.1: `current_link`, 2026-07-17), notifier 22, rss_poller 21 (+1 v5.1: link carried/absent, 2026-07-17), http 20, poller 19, event 15, presentation 11, config 10, lib (hotkey) 2 | `cargo test` from `src-tauri/` |
 | rust doc-tests | 3 — public `queue`/`event` apis | same `cargo test` run |
-| frontend | 48 tests — presentation tables 14, slot-state hook 13, StatusRailCard 12, App render 5, presentation mode 4 | `npx vitest run` |
+| frontend | 57 tests — presentation tables 14, slot-state hook 14 (+1 v5.1: link validation, 2026-07-17), StatusRailCard 14 (+2 v5.1: link-aware hint, deduped masthead, 2026-07-17), settings form 6, App render 5, presentation mode 4 | `npx vitest run` |
 | ci (v4) | fmt, clippy `-D warnings`, cargo test, tsc, vitest, vite build, swiftc compile check | every push + pr |
 
 every example case listed in §4 for v1/v2/v3 components has a passing

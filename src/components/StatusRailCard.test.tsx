@@ -39,6 +39,7 @@ const GOAL: SlotState = {
   source: null,
   category: null,
   publishedAtMs: null,
+  link: null,
 };
 
 const RED_CARD: SlotState = {
@@ -53,6 +54,7 @@ const RED_CARD: SlotState = {
   source: null,
   category: null,
   publishedAtMs: null,
+  link: null,
 };
 
 const CMUX_NEEDS_INPUT: SlotState = {
@@ -67,6 +69,7 @@ const CMUX_NEEDS_INPUT: SlotState = {
   source: null,
   category: null,
   publishedAtMs: null,
+  link: null,
 };
 
 const NEWS: SlotState = {
@@ -81,6 +84,7 @@ const NEWS: SlotState = {
   source: "NDTV",
   category: "politics",
   publishedAtMs: 2_000_000_000_000 - 5 * 60_000,
+  link: "https://example.com/digital-rights",
 };
 
 describe("StatusRailCard", () => {
@@ -178,7 +182,8 @@ describe("StatusRailCard", () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(2_000_000_000_000);
     const { container } = render(<StatusRailCard slot={NEWS} />);
 
-    expect(screen.getByText("NDTV · Wire")).toBeTruthy();
+    expect(screen.getByText("NDTV")).toBeTruthy();
+    expect(screen.queryByText("NDTV · Wire")).toBeNull();
     expect(screen.getByText(NEWS.title).classList.contains("title")).toBe(true);
     expect(screen.getByText(NEWS.title).classList.contains("headline")).toBe(true);
     expect(screen.getAllByText("Politics").length).toBeGreaterThan(0);
@@ -189,6 +194,9 @@ describe("StatusRailCard", () => {
     expect(screen.getByText("Wire").classList.contains("stamp")).toBe(true);
     expect(screen.getByText("Summary")).toBeTruthy();
     expect(screen.getByText("Source / Published")).toBeTruthy();
+    expect(screen.getByText("Category / Control").nextElementSibling?.textContent).toContain(
+      "⌃⇧O read · ⌃⇧N collapse",
+    );
 
     now.mockRestore();
   });
@@ -196,13 +204,43 @@ describe("StatusRailCard", () => {
   it("omits category and age pills when news metadata is null", () => {
     const { container } = render(
       <StatusRailCard
-        slot={{ ...NEWS, expanded: false, source: null, category: null, publishedAtMs: null }}
+        slot={{
+          ...NEWS,
+          expanded: false,
+          source: null,
+          category: null,
+          publishedAtMs: null,
+          link: null,
+        }}
       />,
     );
 
-    expect(screen.getByText("RSS · Wire")).toBeTruthy();
+    expect(screen.getByText("RSS")).toBeTruthy();
+    expect(screen.getByText("⌃⇧N more").classList.contains("compact-hint")).toBe(true);
+    expect(screen.queryByText("⌃⇧N collapse")).toBeNull();
     expect(container.querySelector(".pill.category")).toBeNull();
     expect(container.querySelector(".pill.age")).toBeNull();
     expect(container.querySelector(".rail-card.news-shade.cat-generic")).not.toBeNull();
+  });
+
+  it("shows only the collapse control in an expanded manifest without a link", () => {
+    render(<StatusRailCard slot={{ ...CMUX_NEEDS_INPUT, link: null }} />);
+
+    const control = screen.getByText("Source / control").nextElementSibling;
+    expect(control?.textContent).toContain("⌃⇧N collapse");
+    expect(control?.textContent).not.toContain("⌃⇧O read");
+    expect(screen.queryByText("⌃⇧N more")).toBeNull();
+  });
+
+  it("shows the read and collapse controls in a non-news manifest with a link", () => {
+    render(
+      <StatusRailCard
+        slot={{ ...CMUX_NEEDS_INPUT, link: "https://example.com/local-notification" }}
+      />,
+    );
+
+    expect(screen.getByText("Source / control").nextElementSibling?.textContent).toContain(
+      "⌃⇧O read · ⌃⇧N collapse",
+    );
   });
 });

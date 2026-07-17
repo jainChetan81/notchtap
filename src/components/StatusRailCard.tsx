@@ -95,7 +95,7 @@ export function StatusRailCard({ slot }: { slot: SlotState }) {
                   <>
                     <div className="masthead">
                       <span className="dot" />
-                      {slot.source ?? "RSS"} · Wire
+                      {slot.source ?? "RSS"}
                     </div>
                     <div className="title headline">{slot.title}</div>
                     {(newsCategory !== null || newsAge !== null) && (
@@ -135,6 +135,7 @@ export function StatusRailCard({ slot }: { slot: SlotState }) {
                 )}
               </div>
               <Stamp priority={slot.priority} signal={slot.signal} eventType={slot.eventType} />
+              {!expanded && <div className="compact-hint">⌃⇧N more</div>}
               <Track priority={slot.priority} />
             </div>
             <Manifest
@@ -144,6 +145,7 @@ export function StatusRailCard({ slot }: { slot: SlotState }) {
               source={slot.source}
               category={slot.category}
               publishedAtMs={slot.publishedAtMs}
+              hasLink={slot.link !== null}
             />
           </motion.div>
         )}

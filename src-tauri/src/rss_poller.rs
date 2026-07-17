@@ -311,6 +311,7 @@ pub fn diff_feed(
                 source: source.clone(),
                 category,
                 published_at_ms: published,
+                link: link.map(str::to_string),
             },
         };
         candidates.push((published, order, event));
@@ -737,17 +738,19 @@ mod tests {
     }
 
     #[test]
-    fn diff_feed_events_carry_source_category_and_published_at_meta() {
+    fn diff_feed_events_carry_source_category_published_at_and_link_meta() {
         let feed = parse_feed(
             r#"
 <item>
   <guid>story</guid>
   <title>Science story</title>
+  <link>HTTPS://News.Example.com/Story/?utm_source=one#top</link>
   <category>Science</category>
   <pubDate>Mon, 01 Jan 2024 00:00:00 GMT</pubDate>
 </item>
 "#,
         );
+        let entry_link = feed.entries[0].links[0].href.clone();
         let events = diff_feed(
             &mut SeenStore::default(),
             &feed,
@@ -765,8 +768,27 @@ mod tests {
                 source: Some("Configured News".to_string()),
                 category: Some("tech".to_string()),
                 published_at_ms: Some(1_704_067_200_000),
+                link: Some(entry_link),
             }
         );
+    }
+
+    #[test]
+    fn diff_feed_guid_without_link_carries_no_link() {
+        let feed = parse_feed(r#"<item><guid>story</guid><title>Story</title></item>"#);
+
+        let events = diff_feed(
+            &mut SeenStore::default(),
+            &feed,
+            &feed_config(None, None),
+            false,
+            10,
+            10,
+            Instant::now(),
+        );
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].meta.link, None);
     }
 
     #[test]

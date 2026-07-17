@@ -36,6 +36,9 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut,
 #[cfg(target_os = "macos")]
 const EXPAND_TOGGLE_SHORTCUT: (Option<Modifiers>, Code) =
     (Some(Modifiers::CONTROL.union(Modifiers::SHIFT)), Code::KeyN);
+#[cfg(target_os = "macos")]
+const OPEN_STORY_SHORTCUT: (Option<Modifiers>, Code) =
+    (Some(Modifiers::CONTROL.union(Modifiers::SHIFT)), Code::KeyO);
 
 // tracing-appender flushes through this guard; it must live as long as
 // the process, so it's parked in a static rather than dropped at the
@@ -180,9 +183,20 @@ pub fn run() {
                 let hotkey_queue_for_handler = hotkey_queue.clone();
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
-                        .with_handler(move |app, _shortcut, event| {
+                        .with_handler(move |app, shortcut, event| {
                             if event.state() == ShortcutState::Pressed {
-                                toggle_manual_expand(app, &hotkey_queue_for_handler);
+                                if *shortcut
+                                    == Shortcut::new(
+                                        EXPAND_TOGGLE_SHORTCUT.0,
+                                        EXPAND_TOGGLE_SHORTCUT.1,
+                                    )
+                                {
+                                    toggle_manual_expand(app, &hotkey_queue_for_handler);
+                                } else if *shortcut
+                                    == Shortcut::new(OPEN_STORY_SHORTCUT.0, OPEN_STORY_SHORTCUT.1)
+                                {
+                                    open_current_story(app, &hotkey_queue_for_handler);
+                                }
                             }
                         })
                         .build(),
@@ -191,6 +205,8 @@ pub fn run() {
                     EXPAND_TOGGLE_SHORTCUT.0,
                     EXPAND_TOGGLE_SHORTCUT.1,
                 ))?;
+                app.global_shortcut()
+                    .register(Shortcut::new(OPEN_STORY_SHORTCUT.0, OPEN_STORY_SHORTCUT.1))?;
             }
 
             login_item::register();
@@ -595,6 +611,33 @@ fn toggle_manual_expand<R: tauri::Runtime>(
     if let Some(state) = q.slot_state_if_changed() {
         drop(q);
         emit_slot_state(app, state);
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn open_current_story<R: tauri::Runtime>(
+    _app: &tauri::AppHandle<R>,
+    queue: &Arc<Mutex<SingleSlotQueue>>,
+) {
+    let url = {
+        let q = queue.blocking_lock();
+        let Some(url) = q.current_link() else {
+            tracing::debug!("open story ignored: no visible article link");
+            return;
+        };
+        url.to_string()
+    };
+
+    let is_http = reqwest::Url::parse(&url)
+        .map(|parsed| parsed.scheme() == "http" || parsed.scheme() == "https")
+        .unwrap_or(false);
+    if !is_http {
+        tracing::debug!(%url, "open story ignored: link is not a valid http(s) url");
+        return;
+    }
+
+    if let Err(error) = std::process::Command::new("open").arg(&url).spawn() {
+        tracing::debug!(%error, %url, "open story command could not be spawned");
     }
 }
 

@@ -31,6 +31,7 @@ const SHOWING_N1: SlotState = {
   source: null,
   category: null,
   publishedAtMs: null,
+  link: null,
 };
 
 describe("useSlotState", () => {
@@ -73,6 +74,7 @@ describe("useSlotState", () => {
       source: null,
       category: null,
       publishedAtMs: null,
+      link: null,
     });
     emit({
       state: "showing",
@@ -86,6 +88,7 @@ describe("useSlotState", () => {
       source: null,
       category: null,
       publishedAtMs: null,
+      link: null,
     });
     // must go straight from n1 to n2 — assert the final state only, since
     // there's no async gap between the two synchronous emits in this test
@@ -116,6 +119,7 @@ describe("useSlotState", () => {
       source: "NDTV",
       category: "politics",
       publishedAtMs: 1_768_579_920_000,
+      link: "https://example.com/budget",
     };
     emit(news);
     expect(result.current).toEqual(news);
@@ -161,6 +165,17 @@ describe("useSlotState", () => {
     expect(result.current).toEqual({ state: "empty" });
   });
 
+  it("ignores a showing payload with a missing or non-string link", () => {
+    const { link: _link, ...missingLink } = SHOWING_N1;
+    window.__NOTCHTAP_SLOT_STATE__ = missingLink;
+    const missingResult = renderHook(() => useSlotState()).result;
+    expect(missingResult.current).toEqual({ state: "empty" });
+
+    window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, link: 42 };
+    const invalidResult = renderHook(() => useSlotState()).result;
+    expect(invalidResult.current).toEqual({ state: "empty" });
+  });
+
   it("ignores a showing payload with an out-of-range enum value", () => {
     window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, signal: "confetti" };
     const { result } = renderHook(() => useSlotState());
@@ -184,6 +199,7 @@ describe("useSlotState", () => {
       source: "NDTV",
       category: "politics",
       publishedAtMs: 1_789_600_000_000,
+      link: "https://example.com/headline",
     };
     window.__NOTCHTAP_SLOT_STATE__ = news;
     const { result } = renderHook(() => useSlotState());

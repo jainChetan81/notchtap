@@ -36,6 +36,7 @@ export type SlotState =
       source: string | null;
       category: string | null;
       publishedAtMs: number | null;
+      link: string | null;
     };
 
 declare global {
@@ -75,7 +76,8 @@ function isValidSlotState(v: unknown): v is SlotState {
     EVENT_SIGNALS.includes(obj.signal as EventSignal) &&
     (obj.source === null || typeof obj.source === "string") &&
     (obj.category === null || typeof obj.category === "string") &&
-    (obj.publishedAtMs === null || typeof obj.publishedAtMs === "number")
+    (obj.publishedAtMs === null || typeof obj.publishedAtMs === "number") &&
+    (obj.link === null || typeof obj.link === "string")
   );
 }
 

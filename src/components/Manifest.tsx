@@ -17,6 +17,7 @@ export function Manifest({
   source,
   category,
   publishedAtMs,
+  hasLink,
 }: {
   body: string;
   eventType: EventType;
@@ -24,6 +25,7 @@ export function Manifest({
   source?: string | null;
   category?: string | null;
   publishedAtMs?: number | null;
+  hasLink: boolean;
 }) {
   const newsPublished = publishedLabel(publishedAtMs ?? null, Date.now());
   const newsCategory = categoryLabel(category ?? null);
@@ -65,7 +67,7 @@ export function Manifest({
                       <br />
                     </>
                   )}
-                  ⌃⇧N collapse
+                  {hasLink ? "⌃⇧O read · ⌃⇧N collapse" : "⌃⇧N collapse"}
                 </div>
               </div>
             </div>
@@ -80,7 +82,7 @@ export function Manifest({
                 <div className="detail-value">
                   {sourceLabelFor(eventType)}
                   <br />
-                  ⌃⇧N collapse
+                  {hasLink ? "⌃⇧O read · ⌃⇧N collapse" : "⌃⇧N collapse"}
                 </div>
               </div>
             </div>
