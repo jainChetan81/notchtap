@@ -49,6 +49,9 @@ describe("App", () => {
       priority: "high",
       signal: "goal",
       expanded: false,
+      source: null,
+      category: null,
+      publishedAtMs: null,
     });
     expect(await screen.findByText("GOAL")).toBeTruthy();
     expect(screen.getByText("1-0")).toBeTruthy();
@@ -66,6 +69,9 @@ describe("App", () => {
       priority: "medium",
       signal: "generic",
       expanded: true,
+      source: null,
+      category: null,
+      publishedAtMs: null,
     });
     await screen.findByText("t");
     expect(container.querySelector(".rail-card.expanded")).not.toBeNull();
@@ -82,6 +88,9 @@ describe("App", () => {
       priority: "medium",
       signal: "generic",
       expanded: false,
+      source: null,
+      category: null,
+      publishedAtMs: null,
     });
     await screen.findByText("t");
     expect(container.querySelector(".rail-card.expanded")).toBeNull();
@@ -103,6 +112,9 @@ describe("App", () => {
       priority: "medium",
       signal: "generic",
       expanded: false,
+      source: null,
+      category: null,
+      publishedAtMs: null,
     });
     await screen.findByText("t");
     expect(container.querySelector(".rail-card")).toBe(card);

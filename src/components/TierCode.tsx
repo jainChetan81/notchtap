@@ -1,5 +1,5 @@
-import { SignalLow, SignalMedium, SignalHigh } from "lucide-react";
-import { tierCode, tierLabel, type Priority } from "../lib/presentation";
+import { Newspaper, SignalLow, SignalMedium, SignalHigh } from "lucide-react";
+import { tierCode, tierLabel, type EventType, type Priority } from "../lib/presentation";
 
 // The Lucide icon is the review's requested non-color priority cue —
 // deliberately a *second*, independent signal alongside the code text
@@ -12,8 +12,8 @@ const TIER_ICONS: Record<Priority, typeof SignalLow> = {
   high: SignalHigh,
 };
 
-export function TierCode({ priority }: { priority: Priority }) {
-  const Icon = TIER_ICONS[priority];
+export function TierCode({ priority, eventType }: { priority: Priority; eventType?: EventType }) {
+  const Icon = eventType === "news_item" ? Newspaper : TIER_ICONS[priority];
   return (
     <div className="tier-code">
       <Icon size={12} aria-hidden="true" />

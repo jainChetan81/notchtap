@@ -63,9 +63,18 @@ const GENERIC_PRIORITY_STAMPS: Record<Priority, string> = {
   high: "Now",
 };
 
-export function stampFor(priority: Priority, signal: EventSignal): string {
+export function stampFor(priority: Priority, signal: EventSignal, eventType: EventType): string {
   if (signal === "generic") {
-    return GENERIC_PRIORITY_STAMPS[priority];
+    switch (eventType) {
+      case "news_item":
+        return "Wire";
+      case "generic":
+      case "score_update":
+      case "match_state":
+        return GENERIC_PRIORITY_STAMPS[priority];
+      default:
+        return assertNever(eventType);
+    }
   }
   return SIGNAL_STAMPS[signal];
 }
@@ -77,7 +86,75 @@ export function sourceLabelFor(eventType: EventType): string {
     case "score_update":
     case "match_state":
       return "ESPN · football";
+    case "news_item":
+      return "RSS · news wire";
     default:
       return assertNever(eventType);
   }
+}
+
+const CATEGORY_CLASSES = {
+  politics: "cat-politics",
+  tech: "cat-tech",
+  sports: "cat-sports",
+  business: "cat-business",
+  world: "cat-world",
+  generic: "cat-generic",
+} as const;
+
+type KnownCategory = Exclude<keyof typeof CATEGORY_CLASSES, "generic">;
+
+function knownCategory(category: string | null): KnownCategory | "generic" {
+  switch (category) {
+    case "politics":
+    case "tech":
+    case "sports":
+    case "business":
+    case "world":
+      return category;
+    default:
+      return "generic";
+  }
+}
+
+export function categoryClass(category: string | null): string {
+  return CATEGORY_CLASSES[knownCategory(category)];
+}
+
+export function categoryLabel(category: string | null): string | null {
+  if (category === null) {
+    return null;
+  }
+  return `${category.charAt(0).toUpperCase()}${category.slice(1)}`;
+}
+
+export function ageLabel(publishedAtMs: number | null, nowMs: number): string | null {
+  if (publishedAtMs === null) {
+    return null;
+  }
+
+  const ageMs = Math.max(0, nowMs - publishedAtMs);
+  const ageMinutes = Math.floor(ageMs / 60_000);
+  if (ageMinutes < 1) {
+    return "<1m ago";
+  }
+  if (ageMinutes < 60) {
+    return `${ageMinutes}m ago`;
+  }
+
+  const ageHours = Math.floor(ageMinutes / 60);
+  if (ageHours < 24) {
+    return `${ageHours}h ago`;
+  }
+  return `${Math.floor(ageHours / 24)}d ago`;
+}
+
+export function publishedLabel(publishedAtMs: number | null, _nowMs: number): string | null {
+  if (publishedAtMs === null) {
+    return null;
+  }
+  const published = new Date(publishedAtMs);
+  const hours = published.getHours().toString().padStart(2, "0");
+  const minutes = published.getMinutes().toString().padStart(2, "0");
+  return `${hours}:${minutes}`;
 }

@@ -1,5 +1,10 @@
 import { AnimatePresence, motion } from "motion/react";
-import { sourceLabelFor, type EventType } from "../lib/presentation";
+import {
+  categoryLabel,
+  publishedLabel,
+  sourceLabelFor,
+  type EventType,
+} from "../lib/presentation";
 
 // The hardcoded "⌃⇧N" hint mirrors EXPAND_TOGGLE_SHORTCUT in lib.rs (a
 // hardcoded rust constant itself, since v3.6 spec §7.1 explicitly defers
@@ -9,11 +14,20 @@ export function Manifest({
   body,
   eventType,
   expanded,
+  source,
+  category,
+  publishedAtMs,
 }: {
   body: string;
   eventType: EventType;
   expanded: boolean;
+  source?: string | null;
+  category?: string | null;
+  publishedAtMs?: number | null;
 }) {
+  const newsPublished = publishedLabel(publishedAtMs ?? null, Date.now());
+  const newsCategory = categoryLabel(category ?? null);
+
   return (
     <AnimatePresence initial={false}>
       {expanded && (
@@ -24,20 +38,53 @@ export function Manifest({
           exit={{ height: 0, opacity: 0 }}
           transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
         >
-          <div className="manifest-inner">
-            <div>
-              <div className="detail-label">Message</div>
-              <div className="detail-value">{body}</div>
-            </div>
-            <div>
-              <div className="detail-label">Source / control</div>
-              <div className="detail-value">
-                {sourceLabelFor(eventType)}
-                <br />
-                ⌃⇧N collapse
+          {eventType === "news_item" ? (
+            <div className="manifest-inner news">
+              <div>
+                <div className="detail-label">Summary</div>
+                <div className="detail-value">{body}</div>
+              </div>
+              <div>
+                <div className="detail-label">Source / Published</div>
+                <div className="detail-value">
+                  {source ?? "RSS"}
+                  {newsPublished !== null && (
+                    <>
+                      <br />
+                      {newsPublished}
+                    </>
+                  )}
+                </div>
+              </div>
+              <div>
+                <div className="detail-label">Category / Control</div>
+                <div className="detail-value">
+                  {newsCategory !== null && (
+                    <>
+                      {newsCategory}
+                      <br />
+                    </>
+                  )}
+                  ⌃⇧N collapse
+                </div>
               </div>
             </div>
-          </div>
+          ) : (
+            <div className="manifest-inner">
+              <div>
+                <div className="detail-label">Message</div>
+                <div className="detail-value">{body}</div>
+              </div>
+              <div>
+                <div className="detail-label">Source / control</div>
+                <div className="detail-value">
+                  {sourceLabelFor(eventType)}
+                  <br />
+                  ⌃⇧N collapse
+                </div>
+              </div>
+            </div>
+          )}
         </motion.div>
       )}
     </AnimatePresence>

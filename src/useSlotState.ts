@@ -17,10 +17,13 @@ export type SlotState =
       id: string;
       title: string;
       body: string;
-      eventType: "generic" | "score_update" | "match_state";
+      eventType: "generic" | "score_update" | "match_state" | "news_item";
       priority: "low" | "medium" | "high";
       signal: EventSignal;
       expanded: boolean;
+      source: string | null;
+      category: string | null;
+      publishedAtMs: number | null;
     };
 
 declare global {
