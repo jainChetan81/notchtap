@@ -22,7 +22,6 @@ plans are independent. P1s first.
 
 | Plan | Title | Priority | Effort | Depends on | Status |
 |------|-------|----------|--------|------------|--------|
-| 004 | Docs truth pass — agent-facing docs/comments match shipped reality | P1 | M | — | TODO |
 | 005 | Relocate + rotate the OpenRouter key in `opencode.json` | P1 | S | — | TODO |
 | 006 | Redact telegram bot token from transport-error logs | P1 | S | — | TODO |
 | 007 | Supply chain + CI: pin nspanel rev, `--locked`, audit scans, Linux web job, `sh -n` gate | P1 | S | — | TODO |
@@ -43,13 +42,14 @@ plans are independent. P1s first.
 | 020 | Config defaults single-source (`get_default_config` invoke) | P3 | M | — | TODO |
 | 021 | Settings save polish: feed metadata, duplicate rejection, port pre-flight | P3 | M | — | TODO |
 | 001  | Wire the two "planned" global hotkeys (⌃⇧] skip, ⌃⇧, open settings) | P2 | S | — | TODO |
-| 003  | Uptime Kuma → notchtap webhook recipe (docs only) | P3 | S | — | TODO |
 
 ## Done
 
 Completed in this session (2026-07-17), filed with a `(done)` suffix:
 
 - [`002-settings-animation-previews(done).md`](./002-settings-animation-previews(done).md) — Appearance section + static preview cards.
+- [`003-kuma-webhook-recipe(done).md`](./003-kuma-webhook-recipe(done).md) — Uptime Kuma → notchtap webhook recipe (docs only); kuma-side verification not run, see `docs/recipes/kuma-webhook.md`'s status line.
+- [`004-docs-truth-pass(done).md`](./004-docs-truth-pass(done).md) — agent-facing docs/comments synced to shipped reality (~14 stale claims fixed); executed via `/improve execute`, reviewed and merged into `master` at `0749235`.
 - [`004-test-notifications(done).md`](./004-test-notifications(done).md) — per-source test-notification buttons.
 - [`005-appearance-config(done).md`](./005-appearance-config(done).md) — card scale/radius/opacity presets with hot-apply.
 
