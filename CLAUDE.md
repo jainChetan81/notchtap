@@ -30,6 +30,9 @@ root alongside `docs/` — the docs folder isn't part of the app build.
 the test suite exists and must stay green (`cargo test` from
 `src-tauri/`, `npx vitest run` from repo root, all gated by ci) —
 current counts live in `docs/TESTING_STRATEGY.md` §0 and only there.
+an uptime kuma → notchtap webhook integration recipe (docs only, no
+source changes) landed 2026-07-17 at `docs/recipes/kuma-webhook.md` —
+verified working end-to-end against kuma v2.4.0.
 remaining open work: the manual checklist rows in
 `docs/IMPLEMENTATION_PLAN.md` §6, and whatever `plans/` holds.
 

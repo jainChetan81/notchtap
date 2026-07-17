@@ -5,10 +5,12 @@ routes an uptime kuma monitor's up/down alert through notchtap's existing
 card — no new notchtap code, no new service, one kuma notification config
 entry.
 
-status: **not yet manually verified end-to-end** (`IMPLEMENTATION_PLAN.md`
-§8) — kuma's custom-webhook template substitution has known bugs in some
-versions (github issues #3635, #4861 on `louislam/uptime-kuma`); smoke-test
-before relying on this for anything you actually care about noticing.
+status: **verified working 2026-07-17** — kuma v2.4.0, test-button webhook
+correctly substituted `{{name}}`/`{{msg}}` into the overlay card (no sign
+of the known template-substitution bugs, github issues #3635/#4861 on
+`louislam/uptime-kuma`, on this version). still worth a smoke-test on any
+other kuma version before relying on this for anything you actually care
+about noticing — those issues are version-specific.
 
 ## constraint: same machine only
 
@@ -28,9 +30,7 @@ not a config tweak.
    notchtap's configured `port` (default `9789`; check the settings window's
    General section, "Listener port", if it's been changed from the
    default).
-4. **Content Type**: `application/json` — required; notchtap's `/notify`
-   rejects any other content-type with a 400.
-5. **Request Body**: choose the "Custom Body" / template option (exact
+4. **Request Body**: choose the "Custom Body" / template option (exact
    label depends on your kuma version) and set it to:
    ```json
    {"title": "{{name}}", "body": "{{msg}}"}
@@ -38,6 +38,16 @@ not a config tweak.
    `{{name}}` and `{{msg}}` are kuma's own template variables for the
    monitor's name and the alert message — kuma substitutes them before
    sending.
+5. **set the content-type header explicitly** — kuma's webhook form has no
+   dedicated "Content Type" field; a Custom Body alone does *not* make kuma
+   send `application/json`, and notchtap's `/notify` rejects anything else
+   with a 400 (`content-type must be application/json`). toggle
+   **Additional Headers** on (below the Request Body box) and add:
+   ```json
+   {"Content-Type": "application/json"}
+   ```
+   skipping this step is the single most likely reason this recipe fails
+   on first try — confirmed by hitting exactly this 400 during verification.
 6. attach this notification to whichever monitor(s) you want relayed, save.
 
 this sends the minimal valid `/notify` payload — no `priority`, `signal`,
@@ -70,7 +80,9 @@ unlabeled manual pushes, not just kuma's.
    the step that specifically exercises kuma's known template-substitution
    bugs (#3635, #4861). if the title/body come through as the literal
    strings `{{name}}`/`{{msg}}` instead of substituted values, that's the
-   bug — check your kuma version against the linked issues.
+   bug — check your kuma version against the linked issues. (on kuma
+   v2.4.0, this substituted correctly — see "status" at the top of this
+   doc. if you hit a `400` here instead, you skipped setup step 5 above.)
 3. optionally, actually take a monitored service down briefly and confirm
    a real down-alert reaches the overlay end-to-end.
 
