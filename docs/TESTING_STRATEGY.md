@@ -16,9 +16,9 @@ other sections point back rather than repeating them):
 
 | suite | size | where |
 |---|---|---|
-| rust unit/integration | 110 tests — queue 27, notifier 19, poller 18, http 17, presentation 11, event 10, config 6, lib (hotkey) 2 | `cargo test` from `src-tauri/` |
-| rust doc-tests | 2 — public `queue`/`event` apis | same `cargo test` run |
-| frontend | 14 tests — slot-state hook, App render, presentation mode | `npx vitest run` |
+| rust unit/integration | 141 tests — queue 27, settings 22 (v5 rust side, 2026-07-17), notifier 20, http 20, poller 19, event 12, presentation 11, config 8, lib (hotkey) 2 | `cargo test` from `src-tauri/` |
+| rust doc-tests | 3 — public `queue`/`event` apis | same `cargo test` run |
+| frontend | 18 tests — slot-state hook, App render, presentation mode | `npx vitest run` |
 | ci (v4) | fmt, clippy `-D warnings`, cargo test, tsc, vitest, vite build, swiftc compile check | every push + pr |
 
 every example case listed in §4 for v1/v2/v3 components has a passing
@@ -36,6 +36,7 @@ example cases.
 | ~~outbound connector tests~~ | **landed with v3 (telegram)** 2026-07-16 | §4.9 |
 | ~~single-slot rotating overlay tests~~ | **landed with v3.6** 2026-07-17 (branch `v3.6-rotating-overlay`, not yet merged) | §4.10 |
 | v3.6 manual hardware checks (hotkey keypress, Spaces/fullscreen survival) | not yet run — needs the macbook | §4.10, §5, `IMPLEMENTATION_PLAN.md` §3.6.1/§6 |
+| v5 settings-window suite | **rust side landed 2026-07-17** (validate/mask/round-trip/merge/write paths — the settings 22 above); form + vitest cases held with `IMPLEMENTATION_PLAN.md` §4.5 step 5 (ui migration) | §4.11, `V5_TECHNICAL_SPEC.md` §7 |
 | `test-cli.sh` for the `notchtap` script | only if the script grows | §8 |
 | manual hardware checklist | recurring per change — never "done" | §5, `IMPLEMENTATION_PLAN.md` §6 |
 
@@ -401,6 +402,54 @@ priority tiers, not pure fifo; rotation, not ttl).
   fullscreen app (`NSWindowCollectionBehavior`)
 - a live espn goal auto-expanding (`High` priority) and rotating out
   correctly under the new single-slot model, on the macbook
+
+### 4.11 settings window (v5 — rust side landed 2026-07-17; form held for the ui migration)
+
+code-level contract in `V5_TECHNICAL_SPEC.md` (§7 is the source this
+section mirrors); build sequence in `IMPLEMENTATION_PLAN.md` §4.5.
+this is the app's first frontend→rust invoke surface, so the suite's
+job is twofold: the usual pure-logic coverage, plus pinning the
+security boundary (the overlay must stay receive-only).
+
+- **type**: unit (pure fns, tdd) + temp-dir integration (write paths)
+  + vitest (form) — no new frameworks, no new dependencies
+- **pure, tdd'd first** (`settings.rs`):
+  - `validate` — every rule's accept/reject boundary (`port` 1024
+    floor, `default_ttl` 1..=3600, `max_queued_per_tier` 1..=1000,
+    `espn_poll_secs` 5..=3600, league entries non-empty/no-whitespace,
+    empty league list rejected only when `espn_enabled = true`)
+  - `mask` — long value → `set (…last4)`, short value → `set` (no
+    partial leak), boundary length
+  - config serialize→parse round-trip — a non-default `Config`
+    through `toml::to_string_pretty` then `Config::parse` compares
+    equal; pins the new `Serialize` derive against field drift (same
+    spirit as §4.10's `SlotState` snapshot test)
+  - secrets merge — setting the openrouter key preserves an existing
+    telegram table and vice versa; a malformed existing file yields
+    an error, never a clobber; `SecretField` covers exactly the three
+    allowed fields
+- **temp-dir integration** (never `$HOME` — same rule as §4.9's
+  secrets-loader tests):
+  - atomic config write: result parses via `Config::parse`, the temp
+    file is gone after rename, a missing parent dir is created
+  - secrets write: resulting file is mode `0600` and loads through
+    the existing `load_secrets`
+- **frontend (vitest, small)**: form renders values from a mocked
+  `get_config`; a mocked `save_config_and_relaunch` rejection renders
+  the error list. `@tauri-apps/api/core`'s `invoke` is mocked — no
+  webview in ci. overlay tests untouched.
+- **security boundary, pinned two ways**:
+  - automated: `capabilities/default.json` unchanged in the diff
+    (review-level check, called out in the v5 exit criteria)
+  - manual, once: `invoke("get_config")` from the *main* window's
+    devtools console is denied — verifies the `build.rs`
+    `AppManifest::commands` opt-in + per-window capability actually
+    gate (v4 §4.4's "does the gate gate" discipline)
+- **untested by design** (extends §5.1's list): the lazy
+  `WebviewWindowBuilder` call and tray-item wiring (thin native
+  glue); `app.restart()` (kills the process — nothing to assert
+  from inside it); the openrouter key's *use* (no consumer exists
+  until the first ai feature)
 
 ---
 

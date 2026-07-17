@@ -100,6 +100,10 @@ each event enqueues as:
   already-visible items finish their natural ttl and exit. resume
   re-enables promotion immediately; nothing buffered is dropped. pause
   state is in-memory only — the app always launches unpaused.
+  **(amended 2026-07-17, v5, §17)**: the *toggle* stays session-only,
+  but a persisted `start_paused` config flag can make the app launch
+  already paused — the master kill switch. same paused semantics,
+  only the launch state changes.
 - v1 is info-only — auto-dismiss after ttl, no approve/deny action wired
   to anything. an interactive "this blocks until you respond" model is
   a v2+ concern if true remote-approve is ever wanted (see §7 note on
@@ -144,6 +148,15 @@ was the alternative, evaluated and declined 2026-07-16 in favour of
 zero new dependencies, see §16) keeps this a config change, not a new
 code path.
 
+**reversed 2026-07-17**: the css-keyframes lock above is reopened by
+the user — the ui is migrating wholesale to **framer motion + lucide
+icons** (migration in flight in the working tree as of this note, not
+yet specced in docs). the data-not-code principle survives the stack
+change: per-event-type variety stays a table, it just moves from the
+stylesheet into the component layer. the migration gets its own
+spec/plan entry when it stabilizes; §16's addendum records the
+decision trail.
+
 ---
 
 ## 5. cross-device behaviour
@@ -184,8 +197,14 @@ standard pattern, v1 day one:
   always starts active on launch. the original "exactly two items"
   decision was reopened and approved 2026-07-16 to admit this one
   conditional third item; the bar for further tray items stays high.
-  no settings ui beyond that — the config file (§10) is the settings
-  surface. tauri's default icon is fine until the deferred real-icon
+  **(reopened again 2026-07-17, v5, §17)**: a fourth item,
+  **settings…**, opens the settings window — the tray itself stays
+  minimal; anything richer than a toggle belongs in that window, not
+  in more tray items. the "no settings ui beyond that — the config
+  file (§10) is the settings surface" line that used to close this
+  bullet is superseded by §17: the config file remains the *storage*,
+  the settings window becomes the *editing surface*. tauri's default
+  icon is fine until the deferred real-icon
   item (`IMPLEMENTATION_PLAN.md` §5)
 - **always-on-top** (`setAlwaysOnTop` / `NSWindowLevel.floating`) — v1
 day one. a notification overlay buried under other windows is useless.
@@ -383,7 +402,12 @@ above) and renames `max_queued` to `max_queued_per_tier` (same default,
 shared cap).
 
 the rust core reads this file once at startup. changes require a restart
-in v1; a file-watcher or settings ui is a v2+ convenience.
+in v1; a file-watcher or settings ui is a v2+ convenience. **(resolved
+2026-07-17, v5, §17)**: the settings ui is that convenience — a
+settings window whose save path validates, writes this file
+atomically, and relaunches the app. the read-once-at-boot rule is
+unchanged and now permanent: there is no file-watcher and no
+hot-reload; restart *is* the reload mechanism.
 
 ---
 
@@ -448,6 +472,17 @@ it's first-party. the rust core treats it as a display-only consumer:
   path open even with locked-down capabilities (added 2026-07-16,
   post-implementation review)
 
+**amended 2026-07-17 (v5, §17)**: everything above now describes the
+*overlay* window (`main`), where it stays permanent — that window
+never gains an invoke command. the v5 settings window (`settings`) is
+a second, separately-scoped webview with exactly four invoke commands,
+gated per-window through the capability acl (which for app-defined
+commands requires the explicit `build.rs` opt-in — see
+`V5_TECHNICAL_SPEC.md` §2; without it tauri allows app commands to
+every window, which would silently void this section). one-way data
+flow into the overlay remains the rule that keeps v3-style untrusted
+content safe.
+
 this boundary matters if the app ever processes untrusted content (e.g.,
 whatsapp messages from unknown senders in v3). establishing the
 one-way data flow in v1 means v3 doesn't accidentally open a hole.
@@ -475,7 +510,11 @@ the phased build sequence and exit criteria.
   redesign.
 - **animation library**: css keyframes, no framer motion (resolves
   §4's deferred evaluation) — zero new dependencies; the "config
-  table" is the stylesheet keyed by event type.
+  table" is the stylesheet keyed by event type. **reversed 2026-07-17
+  by the user**: the ui is migrating to framer motion + lucide icons
+  (see §4's addendum). the zero-new-dependencies rationale is
+  consciously traded for the richer ui; this line is kept as the
+  historical record, not the current decision.
 - **v2 absorbs three hardening fixes** from the 2026-07-16
   implementation consensus review (frontend wall-clock deadline
   recheck against sleep/timer-throttle staleness; `app_handle.exit(1)`
@@ -490,3 +529,59 @@ the phased build sequence and exit criteria.
 
 code-level detail for all of the above: `V2_TECHNICAL_SPEC.md` (v0
 draft, adjustable, same rules as the v1 spec).
+
+---
+
+## 17. v5 decisions (locked 2026-07-17) — settings window (control panel)
+
+reopens two locked lines with eyes open: §6's "no settings ui — the
+config file is the settings surface" and §14's receive-only frontend
+(for **one new window only**; the overlay's receive-only rule is
+unchanged and permanent). code-level contract in
+`V5_TECHNICAL_SPEC.md`; build sequence in `IMPLEMENTATION_PLAN.md`
+§4.5.
+
+- **entry point**: a fourth tray item, **settings…**, opening a second
+  webview window (label `settings`) — a normal decorated, closable,
+  activating window (tailscale-style), nothing like the overlay panel.
+  the tray stays minimal; the window exists because the tray can't
+  hold key entry or (future) animation previews.
+- **two windows, two trust levels**: the overlay (`main`) keeps its
+  listen-only capability file byte-for-byte. the settings window gets
+  its own capability with exactly the invoke commands it needs
+  (`get_config`, `get_secret_status`, `save_config_and_relaunch`,
+  `set_secret`). the tauri v2 gotcha that makes this a decision
+  rather than a formality: app-defined commands are allowed to *all*
+  windows by default — per-window gating requires the explicit
+  `tauri_build::AppManifest::commands` opt-in in `build.rs` plus
+  autogenerated `allow-*` permissions granted only to the `settings`
+  capability, with a label check inside each handler as
+  defense-in-depth (spec §2).
+- **save & relaunch**: config is still read exactly once at boot.
+  saving validates rust-side, writes `config.toml` atomically
+  (same-dir temp file + rename — a half-written file is a bricked
+  boot given §10's fail-fast rule), then relaunches the app. **no
+  hot-reload plumbing, ever** — restart is the reload mechanism; no
+  file-watcher.
+- **secrets stay in `secrets.toml` (0600), plaintext**: same pattern
+  and loader lineage as the telegram token (§10, v3). "hash the key"
+  was raised and rejected — hashing is one-way; an outbound api key
+  must be sent as-is, so hashing would destroy it. macos keychain was
+  evaluated and declined: encryption-at-rest buys little on a
+  single-user machine and costs a dependency plus prompts. the honest
+  security model here is file permissions.
+- **keys are write-only across ipc**: the settings window can *set* a
+  secret and read a masked status ("set (…a1b2)"); a full secret
+  value never crosses ipc outbound. an **openrouter api key** field
+  lands now — storage ahead of the ai features it will serve (the key
+  sits unused until the first such feature; adding the field commits
+  to nothing else).
+- **master kill switch**: a persisted `start_paused` config flag —
+  the app launches with promotion paused (tray reads "resume").
+  amends §3's "always launches unpaused"; the tray toggle itself
+  stays session-only. reuses paused semantics wholesale, no new
+  queue states.
+- **panel scope (v5)**: `start_paused`, espn on/off + leagues + poll
+  interval, `default_ttl` / `port` / `max_queued_per_tier`, openrouter
+  key, telegram enable + token/chat-id. `detect_path` stays
+  file-only.

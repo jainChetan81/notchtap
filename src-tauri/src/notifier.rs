@@ -134,7 +134,9 @@ pub struct TelegramSecrets {
 
 #[derive(Debug, Deserialize)]
 struct SecretsFile {
-    telegram: TelegramSecrets,
+    // optional since v5: secrets.toml may hold other tables (e.g.
+    // [openrouter]) without a [telegram] one — see V5_TECHNICAL_SPEC.md §4
+    telegram: Option<TelegramSecrets>,
 }
 
 #[derive(Debug, thiserror::Error)]
@@ -147,6 +149,8 @@ pub enum SecretsError {
     Unreadable(std::io::Error),
     #[error("secrets file malformed: {0}")]
     Malformed(#[from] toml::de::Error),
+    #[error("secrets file has no [telegram] table")]
+    MissingTable,
 }
 
 pub fn default_secrets_path() -> Option<PathBuf> {
@@ -174,7 +178,7 @@ pub fn load_secrets(path: &Path) -> Result<TelegramSecrets, SecretsError> {
 
     let content = std::fs::read_to_string(path).map_err(SecretsError::Unreadable)?;
     let parsed: SecretsFile = toml::from_str(&content)?;
-    Ok(parsed.telegram)
+    parsed.telegram.ok_or(SecretsError::MissingTable)
 }
 
 // ---------------------------------------------------------------------------
@@ -285,7 +289,7 @@ async fn send_once(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event::{EventPayload, Priority, RotationSpec};
+    use crate::event::{EventPayload, EventSignal, Priority, RotationSpec};
     use uuid::Uuid;
 
     fn event(event_type: EventType, title: &str, body: &str) -> Event {
@@ -299,6 +303,7 @@ mod tests {
                 title: title.to_string(),
                 body: body.to_string(),
             },
+            signal: EventSignal::Generic,
         }
     }
 
@@ -442,6 +447,16 @@ mod tests {
         let path = temp_secrets("[telegram]\nbot_token = 12\n", 0o600);
         let err = load_secrets(&path).unwrap_err();
         assert!(matches!(err, SecretsError::Malformed(_)));
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn openrouter_only_file_is_missing_table_not_malformed() {
+        // v5: secrets.toml may legitimately hold only an [openrouter]
+        // table — the telegram connector disables itself cleanly
+        let path = temp_secrets("[openrouter]\napi_key = \"sk-or-x\"\n", 0o600);
+        let err = load_secrets(&path).unwrap_err();
+        assert!(matches!(err, SecretsError::MissingTable));
         std::fs::remove_file(&path).ok();
     }
 

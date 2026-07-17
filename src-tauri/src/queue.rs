@@ -19,7 +19,7 @@ pub struct QueueItem {
 ///
 /// ```
 /// use std::time::{Duration, Instant};
-/// use notchtap_lib::event::{Event, EventPayload, EventType, Priority, RotationSpec};
+/// use notchtap_lib::event::{Event, EventPayload, EventSignal, EventType, Priority, RotationSpec};
 /// use notchtap_lib::queue::SingleSlotQueue;
 ///
 /// fn event(title: &str, priority: Priority, ttl_secs: u64) -> Event {
@@ -30,6 +30,7 @@ pub struct QueueItem {
 ///         rotation: RotationSpec::OneShot { ttl_secs },
 ///         topic: None,
 ///         payload: EventPayload { title: title.into(), body: "body".into() },
+///         signal: EventSignal::Generic,
 ///     }
 /// }
 ///
@@ -112,6 +113,7 @@ impl SingleSlotQueue {
                 visible.event.payload = fresh.payload.clone();
                 visible.event.priority = fresh.priority;
                 visible.event.rotation = fresh.rotation;
+                visible.event.signal = fresh.signal;
                 self.top_up_visible_remaining_time(now);
                 return true;
             }
@@ -129,6 +131,7 @@ impl SingleSlotQueue {
                 existing.event.payload = fresh.payload.clone();
                 existing.event.priority = fresh.priority;
                 existing.event.rotation = fresh.rotation;
+                existing.event.signal = fresh.signal;
             } else {
                 let mut existing = self.waiting[tier_idx]
                     .remove(pos)
@@ -136,6 +139,7 @@ impl SingleSlotQueue {
                 existing.event.payload = fresh.payload.clone();
                 existing.event.priority = fresh.priority;
                 existing.event.rotation = fresh.rotation;
+                existing.event.signal = fresh.signal;
                 self.waiting[new_tier_idx].push_back(existing);
             }
             return true;
@@ -263,6 +267,7 @@ impl SingleSlotQueue {
                 body: item.event.payload.body.clone(),
                 event_type: item.event.event_type.clone(),
                 priority: item.event.priority,
+                signal: item.event.signal,
                 expanded: self.expanded,
             },
         }
@@ -276,7 +281,7 @@ const MAX_EXTENSION_ON_SUPERSEDE_SECS: u64 = 6;
 mod tests {
     use super::*;
     use crate::error::QueueError;
-    use crate::event::{EventPayload, EventType};
+    use crate::event::{EventPayload, EventSignal, EventType};
     use std::time::Duration;
     use uuid::Uuid;
 
@@ -291,6 +296,7 @@ mod tests {
                 title: title.to_string(),
                 body: "body".to_string(),
             },
+            signal: EventSignal::Generic,
         }
     }
 
@@ -305,6 +311,7 @@ mod tests {
                 title: title.to_string(),
                 body: "body".to_string(),
             },
+            signal: EventSignal::Generic,
         }
     }
 
@@ -319,6 +326,7 @@ mod tests {
                 title: title.to_string(),
                 body: "body".to_string(),
             },
+            signal: EventSignal::Generic,
         }
     }
 

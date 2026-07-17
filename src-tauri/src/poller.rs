@@ -8,7 +8,7 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::event::{
-    emit_slot_state, Event, EventPayload, EventType, Priority, RotationSpec, SlotState,
+    emit_slot_state, Event, EventPayload, EventSignal, EventType, Priority, RotationSpec, SlotState,
 };
 use crate::queue::SingleSlotQueue;
 
@@ -81,6 +81,14 @@ pub struct SbDetail {
     pub detail_type: Option<SbDetailType>,
     #[serde(rename = "scoringPlay", default)]
     pub scoring_play: bool,
+    // structural card-color signal (v3.6 EventSignal work) — espn's real
+    // payload carries this boolean per detail (and a matching yellowCard
+    // one we don't need: within a "Card" detail it's binary, not-red
+    // means yellow). verified against the checked-in uefa.champions
+    // fixture. reading it directly avoids text-matching "Red"/"Yellow"
+    // out of the composed detail_type.text.
+    #[serde(rename = "redCard", default)]
+    pub red_card: bool,
     #[serde(default)]
     pub clock: Option<SbClock>,
     #[serde(rename = "athletesInvolved", default)]
@@ -142,6 +150,9 @@ struct MatchView<'a> {
     snap: MatchSnapshot,
     last_scoring_play: Option<String>, // "K. Havertz 6'"
     last_card: Option<String>,         // "Yellow Card — B. Saka 54'"
+    // only meaningful when last_card.is_some(); structural, from espn's
+    // own redCard boolean, not derived from last_card's display text.
+    last_card_is_red: bool,
 }
 
 fn detail_line(d: &SbDetail) -> String {
@@ -207,28 +218,26 @@ fn view(event: &SbEvent) -> MatchView<'_> {
         .find(|d| d.scoring_play)
         .map(detail_line)
         .filter(|s| !s.is_empty());
-    let last_card = details
-        .iter()
-        .rev()
-        .find(|d| {
-            d.detail_type
-                .as_ref()
-                .map(|t| t.text.contains("Card"))
-                .unwrap_or(false)
-        })
-        .map(|d| {
-            let kind = d
-                .detail_type
-                .as_ref()
-                .map(|t| t.text.clone())
-                .unwrap_or_default();
-            let line = detail_line(d);
-            if line.is_empty() {
-                kind
-            } else {
-                format!("{kind} — {line}")
-            }
-        });
+    let last_card_detail = details.iter().rev().find(|d| {
+        d.detail_type
+            .as_ref()
+            .map(|t| t.text.contains("Card"))
+            .unwrap_or(false)
+    });
+    let last_card = last_card_detail.map(|d| {
+        let kind = d
+            .detail_type
+            .as_ref()
+            .map(|t| t.text.clone())
+            .unwrap_or_default();
+        let line = detail_line(d);
+        if line.is_empty() {
+            kind
+        } else {
+            format!("{kind} — {line}")
+        }
+    });
+    let last_card_is_red = last_card_detail.map(|d| d.red_card).unwrap_or(false);
 
     MatchView {
         id: &event.id,
@@ -244,6 +253,7 @@ fn view(event: &SbEvent) -> MatchView<'_> {
         },
         last_scoring_play,
         last_card,
+        last_card_is_red,
     }
 }
 
@@ -272,13 +282,20 @@ fn matchup(league: &str, s: &MatchSnapshot) -> String {
     )
 }
 
-fn make_event(event_type: EventType, title: String, body: String, ttl_secs: u64) -> Event {
+fn make_event(
+    event_type: EventType,
+    title: String,
+    body: String,
+    ttl_secs: u64,
+    signal: EventSignal,
+) -> Event {
     Event {
         id: Uuid::new_v4(),
         event_type,
         // v3.6 spec §3.4: both ScoreUpdate and MatchState from this source
         // are High unconditionally — there's no lower-priority path from
-        // the espn poller in this pass.
+        // the espn poller in this pass. `signal` is presentation-only
+        // (icon/animation selection) and deliberately doesn't affect this.
         priority: Priority::High,
         rotation: RotationSpec::OneShot { ttl_secs },
         // the poller has its own per-match dedup/eviction via Snapshot /
@@ -287,6 +304,7 @@ fn make_event(event_type: EventType, title: String, body: String, ttl_secs: u64)
         // constructs Recurring, and topic is a Recurring-adjacent concern).
         topic: None,
         payload: EventPayload { title, body },
+        signal,
     }
 }
 
@@ -347,6 +365,7 @@ pub fn diff_scoreboard(
                         title.clone(),
                         body,
                         ttl_secs,
+                        EventSignal::Goal,
                     ));
                 }
 
@@ -356,6 +375,7 @@ pub fn diff_scoreboard(
                         title.clone(),
                         "kickoff".to_string(),
                         ttl_secs,
+                        EventSignal::Kickoff,
                     ));
                 }
                 if v.snap.status_name == "STATUS_HALFTIME" && old.status_name != "STATUS_HALFTIME" {
@@ -364,6 +384,7 @@ pub fn diff_scoreboard(
                         title.clone(),
                         "half-time".to_string(),
                         ttl_secs,
+                        EventSignal::Halftime,
                     ));
                 }
                 if final_now && old.state != "post" {
@@ -372,12 +393,24 @@ pub fn diff_scoreboard(
                         title.clone(),
                         "full-time".to_string(),
                         ttl_secs,
+                        EventSignal::Fulltime,
                     ));
                 }
 
                 if v.snap.cards > old.cards {
                     let body = v.last_card.clone().unwrap_or_else(|| "card".to_string());
-                    out.push(make_event(EventType::MatchState, title, body, ttl_secs));
+                    let signal = if v.last_card_is_red {
+                        EventSignal::RedCard
+                    } else {
+                        EventSignal::YellowCard
+                    };
+                    out.push(make_event(
+                        EventType::MatchState,
+                        title,
+                        body,
+                        ttl_secs,
+                        signal,
+                    ));
                 }
 
                 if !final_now {
@@ -607,7 +640,7 @@ pub fn spawn_espn_poller(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event::{EventPayload, EventType, Priority, RotationSpec, SlotState};
+    use crate::event::{EventPayload, EventSignal, EventType, Priority, RotationSpec, SlotState};
     use crate::notifier::ConnectorHandle;
 
     const USA: &str = include_str!("../tests/fixtures/scoreboard-usa.1.json");
@@ -624,6 +657,7 @@ mod tests {
                 title: title.to_string(),
                 body: "body".to_string(),
             },
+            signal: EventSignal::Goal,
         }
     }
 
@@ -697,6 +731,7 @@ mod tests {
         assert_eq!(events[0].payload.title, "usa.1: TOR 0–1 MTL");
         assert_eq!(events[0].payload.body, "goal"); // no scoring play in feed
         assert_eq!(events[0].rotation, RotationSpec::OneShot { ttl_secs: 8 });
+        assert_eq!(events[0].signal, EventSignal::Goal);
         assert_eq!(next.len(), 4);
     }
 
@@ -708,6 +743,7 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert!(matches!(events[0].event_type, EventType::MatchState));
         assert_eq!(events[0].payload.body, "kickoff");
+        assert_eq!(events[0].signal, EventSignal::Kickoff);
     }
 
     #[test]
@@ -719,6 +755,7 @@ mod tests {
         let (events, _) = diff_scoreboard(&snap, &sb, 8, "usa.1");
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].payload.body, "half-time");
+        assert_eq!(events[0].signal, EventSignal::Halftime);
     }
 
     #[test]
@@ -729,6 +766,7 @@ mod tests {
         let (events, next) = diff_scoreboard(&snap, &sb, 8, "usa.1");
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].payload.body, "full-time");
+        assert_eq!(events[0].signal, EventSignal::Fulltime);
         assert!(!next.contains_key("761659")); // evicted
         assert_eq!(next.len(), 3);
     }
@@ -797,6 +835,39 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert!(matches!(events[0].event_type, EventType::MatchState));
         assert!(events[0].payload.body.contains("Card"));
+        // the ucl fixture's cards are all yellow (verified against the raw
+        // json) — signal must come from that structurally, not a guess.
+        assert_eq!(events[0].signal, EventSignal::YellowCard);
+    }
+
+    #[test]
+    fn red_card_emits_red_card_signal() {
+        // none of the checked-in fixtures contain a real red card, so this
+        // synthesizes one by mutating a detail's structural booleans —
+        // same technique the malformed/absence tests already use for
+        // hand-constructing scenarios the real fixtures don't cover.
+        let sb = parse_scoreboard(UCL).unwrap();
+        let mut v_snap = view(&sb.events[0]).snap;
+        v_snap.state = "in".to_string();
+        v_snap.cards -= 1;
+        let mut snap = Snapshot::new();
+        snap.insert(sb.events[0].id.clone(), v_snap);
+
+        let mut live = parse_scoreboard(UCL).unwrap();
+        live.events[0].status.status_type.state = "in".to_string();
+        let last_detail = live.events[0].competitions[0]
+            .details
+            .last_mut()
+            .expect("fixture has at least one detail");
+        last_detail.red_card = true;
+        if let Some(t) = last_detail.detail_type.as_mut() {
+            t.text = "Red Card".to_string();
+        }
+
+        let (events, _) = diff_scoreboard(&snap, &live, 8, "uefa.champions");
+        assert_eq!(events.len(), 1);
+        assert!(matches!(events[0].event_type, EventType::MatchState));
+        assert_eq!(events[0].signal, EventSignal::RedCard);
     }
 
     #[test]

@@ -11,6 +11,7 @@ pub struct Event {
     pub rotation: RotationSpec,
     pub topic: Option<String>,
     pub payload: EventPayload,
+    pub signal: EventSignal,
 }
 
 impl Event {
@@ -64,6 +65,36 @@ pub enum RotationSpec {
     Recurring { display_secs: u64 },
 }
 
+/// Which icon/animation the frontend plays — orthogonal to [`EventType`]
+/// and [`Priority`]: this never touches queue/rotation/priority
+/// semantics, it's presentation-only. Unknown values are rejected at
+/// deserialization, same rigor as `EventType`:
+///
+/// ```
+/// use notchtap_lib::event::EventSignal;
+///
+/// let s: EventSignal = serde_json::from_str(r#""goal""#).unwrap();
+/// assert!(matches!(s, EventSignal::Goal));
+///
+/// assert!(serde_json::from_str::<EventSignal>(r#""confetti""#).is_err());
+/// ```
+///
+/// Sources that can't know a specific signal (the CLI, cmux) omit the
+/// field on the wire and get `Generic` via `#[serde(default)]` on the
+/// containing struct — see `http.rs`'s `NotifyRequest`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum EventSignal {
+    #[default]
+    Generic,
+    Goal,
+    RedCard,
+    YellowCard,
+    Kickoff,
+    Halftime,
+    Fulltime,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EventPayload {
     pub title: String,
@@ -88,12 +119,15 @@ pub enum SlotState {
         body: String,
         event_type: EventType,
         priority: Priority,
+        signal: EventSignal,
         expanded: bool,
     },
 }
 
 pub fn dispatch(event: Event) -> Result<(), EventError> {
     match event.event_type {
+        // `signal` is presentation-only (icon/animation selection) and
+        // doesn't participate in acceptance — nothing to match on here.
         EventType::Generic | EventType::ScoreUpdate | EventType::MatchState => Ok(()),
     }
 }
@@ -124,6 +158,7 @@ mod tests {
                 title: "t".to_string(),
                 body: "b".to_string(),
             },
+            signal: EventSignal::Generic,
         }
     }
 
@@ -171,6 +206,28 @@ mod tests {
     }
 
     #[test]
+    fn event_signal_default_is_generic() {
+        assert_eq!(EventSignal::default(), EventSignal::Generic);
+    }
+
+    #[test]
+    fn event_signal_round_trips_every_variant() {
+        for (signal, wire) in [
+            (EventSignal::Generic, "generic"),
+            (EventSignal::Goal, "goal"),
+            (EventSignal::RedCard, "red_card"),
+            (EventSignal::YellowCard, "yellow_card"),
+            (EventSignal::Kickoff, "kickoff"),
+            (EventSignal::Halftime, "halftime"),
+            (EventSignal::Fulltime, "fulltime"),
+        ] {
+            assert_eq!(serde_json::to_value(signal).unwrap(), wire);
+            let parsed: EventSignal = serde_json::from_str(&format!("\"{wire}\"")).unwrap();
+            assert_eq!(parsed, signal);
+        }
+    }
+
+    #[test]
     fn slot_state_showing_serializes_camel_case_and_tag() {
         let id = Uuid::new_v4();
         let state = SlotState::Showing {
@@ -179,6 +236,7 @@ mod tests {
             body: "1-0".to_string(),
             event_type: EventType::ScoreUpdate,
             priority: Priority::High,
+            signal: EventSignal::Goal,
             expanded: false,
         };
         let json = serde_json::to_value(&state).unwrap();
@@ -188,6 +246,7 @@ mod tests {
         assert_eq!(json["body"], "1-0");
         assert_eq!(json["eventType"], "score_update");
         assert_eq!(json["priority"], "high");
+        assert_eq!(json["signal"], "goal");
         assert_eq!(json["expanded"], false);
         assert!(json.get("event_type").is_none());
         assert!(json.get("ttlSecs").is_none());
@@ -211,6 +270,7 @@ mod tests {
                 title: "t".to_string(),
                 body: "b".to_string(),
             },
+            signal: EventSignal::Generic,
         };
         assert_eq!(event.rotation_window(false), 4);
         assert_eq!(event.rotation_window(true), 12);

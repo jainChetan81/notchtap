@@ -149,7 +149,19 @@ animation table lands before the poller so it's testable with plain
   code / copilot cli / opencode "agent needs input" alerts — documented
   at cmux.com/docs/notifications
 - point that setting at the same `/notify` endpoint from v1 §1.4:
-  `notchtap --title "$CMUX_NOTIFICATION_TITLE" --subtitle "$CMUX_NOTIFICATION_SUBTITLE" --body "$CMUX_NOTIFICATION_BODY"`
+  `notchtap --title "$CMUX_NOTIFICATION_TITLE" --subtitle "$CMUX_NOTIFICATION_SUBTITLE" --body "$CMUX_NOTIFICATION_BODY" --priority high`
+- **`--priority high` added 2026-07-17** (v3.6 grilling session): cmux's
+  own notification-command hook exposes no kind/type/urgency signal —
+  confirmed against `cmux.com/docs/notifications`, which lists only
+  the three variables above. rather than guess at urgency by
+  pattern-matching title/body text (fragile, breaks silently if
+  cmux's wording changes), every cmux-relayed notification is treated
+  as `High` uniformly — matches actual usage (frequent, time-sensitive
+  "claude code needs input"/"finished" alerts the user wants full,
+  auto-expanded detail on, not partial attention). **this setting lives
+  in cmux itself** (`settings > app > notification command`), not in
+  this repo — update it on both machines, mac mini done, macbook still
+  pending same as the base relay setup above.
 - no custom claude code hook needed — this is a heads-up relay, not an
   approval gate. it does not let the ui answer back into claude code's
   permission prompt. that would need claude code's own
@@ -410,12 +422,21 @@ still means promotion is frozen and new pushes still buffer into
 `Waiting` — same contract as today (`CONTEXT.md`), just operating on
 the single-slot queue instead of the 3-item stack.
 
+**idle content — decided 2026-07-17, grilled separately from the rest of
+this section**: a local date/time clock (`useClock.ts`), rendered by
+`App.tsx` only when `useSlotState()` reports `empty`. **deliberately
+bypasses the queue entirely** — it's computed client-side from the
+webview's own `Date()`, not pushed as an `Event`/`Priority`/`Recurring`
+item, so it does not exercise the evergreen-queue mechanism §4 of
+`V3_6_TECHNICAL_SPEC.md` describes. that mechanism stays functionally
+untested until a real backend-driven evergreen source (calendar, order
+tracking) needs it. 30s refresh interval (display has no seconds, so
+per-second ticking would be pure waste).
+
 **explicitly deferred, not decided here**:
-- exact idle/evergreen content (which perpetual low-priority items
-  exist, and their data sources) — user's call, later
 - exact global hotkey combination
 - the longer-term content-source taxonomy (stocks, calendar, order
-  tracking, clock, claude code session status, etc.) beyond "the
+  tracking, claude code session status, etc.) beyond "the
   queue and priority model must be generic enough to accept them"
 - `CONTEXT.md` glossary updates (this section introduces `Priority`,
   redefines `Visible` as singular, and probably retires "Promotion
@@ -539,6 +560,67 @@ reopens it.
 
 ---
 
+## 4.5. v5 — settings window (control panel)
+
+decisions locked 2026-07-17 (grilling session) in `ARCHITECTURE.md`
+§17; code-level contract in `docs/V5_TECHNICAL_SPEC.md`. numbered §4.5
+to avoid renumbering §5–§8 (same fractional-section precedent as
+§3.5/§3.6). **steps 1–4 (all rust) landed 2026-07-17**; step 5 is
+held per the sequencing note below.
+
+the shape in one paragraph: a fourth tray item ("Settings…") opens a
+second webview window (label `settings`) — the app's first
+frontend→rust invoke surface, scoped to that window alone via the
+`build.rs` command-acl opt-in + a dedicated capability file (the
+overlay's `default.json` stays byte-for-byte). saving validates
+rust-side, writes `config.toml` atomically, and relaunches the app
+(no hot-reload, ever). secrets (openrouter api key now, telegram
+folded in) are write-only across ipc into `secrets.toml` (0600) with
+masked status display. a persisted `start_paused` flag becomes the
+master kill switch.
+
+build order (each step leaves the suite green):
+
+1. **pure core first, tdd**: `settings.rs` — `validate`, `mask`,
+   config `Serialize` + round-trip test, secrets-file merge logic
+   (all tables optional; spec §3/§4)
+2. **write paths**: atomic config write, secrets read-modify-write
+   with `0600`, temp-dir integration tests
+3. **ipc surface**: the four commands + label checks, `build.rs`
+   `AppManifest::commands` opt-in, `capabilities/settings.json`
+4. **window + tray**: lazy `WebviewWindowBuilder` from the new tray
+   item; `start_paused` wiring in `lib.rs`/`build_tray`
+5. **frontend page**: `settings.html` + `src/settings/`, vite
+   multi-page input, form + vitest cases
+
+**sequencing note (2026-07-17)**: steps 1–4 are rust-only and don't
+touch `src/`; they proceed **now**, in parallel with the ui migration
+(framer motion + lucide, `ARCHITECTURE.md` §4/§16 reversal). step 5
+is **deliberately held** until that migration lands, so the settings
+form is built once, on the new stack, instead of built plain and
+restyled. interim consequence: the tray's "Settings…" item opens a
+blank window until step 5 — accepted, not a bug.
+
+### 4.5.1 v5 exit criteria
+
+- `cargo test` passes with the new settings suite (`TESTING_STRATEGY.md`
+  §4.11): every `validate` rule boundary, `mask`, config
+  serialize→parse round-trip, secrets merge (preserve-other-table,
+  malformed-file-errors-not-clobbers), atomic-write + `0600`
+  integration cases against temp dirs
+- `npx vitest run` passes with the settings-form cases (mocked
+  `invoke`); `npx tsc --noEmit` / `npx vite build` clean with the
+  multi-page config; overlay tests untouched and green
+- `capabilities/default.json` is unchanged in the diff — reviewable
+  proof the overlay stayed receive-only
+- manual (§6): settings window opens from the tray; save relaunches
+  with the change live; a pasted key lands in `secrets.toml` mode
+  `0600` and shows masked; `start_paused = true` boots to "Resume";
+  an `invoke("get_config")` from the *main* window's devtools is
+  denied (the acl gate actually gates — run once, v4 §4.4 discipline)
+
+---
+
 ## 5. explicitly deferred polish (not blocking any phase above)
 
 - ~~notch-precise window positioning via the native swift shim~~ —
@@ -610,6 +692,16 @@ v3.6's rewritten queue/frontend — see `TESTING_STRATEGY.md` §4.10.
       a fullscreen app (`NSWindowCollectionBehavior`)
 - [ ] v3.6: a live espn goal (`High` priority) auto-expands and rotates
       out correctly under the single-slot model
+- [ ] v5 (once built, mac mini is enough — no notch dependency):
+      settings window opens from the tray and re-focuses instead of
+      duplicating; "Save & Relaunch" restarts the app with the change
+      observably live (e.g. a new `default_ttl`); a pasted openrouter
+      key lands in `secrets.toml` with mode `0600` and the panel shows
+      only the masked status; `start_paused = true` boots the app
+      paused with the tray reading "Resume"
+- [ ] v5: `invoke("get_config")` from the *main* window's devtools
+      console is denied — verifies the command acl actually gates
+      (once, same discipline as v4's break-the-ci check)
 
 ---
 
@@ -622,3 +714,50 @@ v3.6's rewritten queue/frontend — see `TESTING_STRATEGY.md` §4.10.
 - the rust toolchain is **not installed** on the mac mini — install via
   rustup before §1.1. `swift` (6.2.4), `node` (22), `npm`, `jq`, and
   `curl` are all present; port `9789` is free.
+
+---
+
+## 8. future integration idea — kuma alert relay (not scoped, not committed)
+
+surfaced 2026-07-17 while reviewing whether notchtap should integrate
+with the user's separate "mac mini automation" home-lab project
+(hermes agent, uptime kuma, wiz lights, media stack, etc. — an
+unrelated repo). that review concluded almost every proposed
+integration was low-value: notchtap is receive-only by design
+(`ARCHITECTURE.md` §7 rules out any respond-back/approval loop), so it
+cannot control or query anything in that stack, only display. most
+"integration" ideas (a notchtap telegram bot, hook scripts pushing to
+notchtap on failures, secrets-storage alignment) were rejected as
+either redundant with what the hermes telegram bot already does, or
+pure hygiene with no functional value. see the user's cowork project
+memory for the full rejected list.
+
+**the one idea judged genuinely worth keeping, not yet built**:
+uptime kuma (already monitoring jellyfin/qbittorrent/sonarr/etc. on
+the mini) has a generic "webhook" notification provider that supports
+a custom json body template. pointed at notchtap's existing
+`/notify` endpoint with a body of `{"title": "{{name}}", "body":
+"{{msg}}"}`, a kuma monitor going down could push straight into
+notchtap — no new service, no relay script, just one kuma notification
+config entry.
+
+**real constraints, not glossed over**:
+- **loopback-only applies here too**: notchtap's `/notify` binds
+  `127.0.0.1` only (§1.2, `ARCHITECTURE.md` §7 — deliberate, not an
+  oversight). kuma runs on the mac mini, so this only reaches a
+  notchtap instance running on **that same machine**, never the
+  macbook over the tailnet. reaching the macbook would mean reopening
+  the loopback-only decision — a real scope change, not a config
+  tweak, and not proposed here.
+- kuma's custom-body webhook has known bugs with template-variable
+  substitution in some versions (github issues #3635, #4861 on
+  louislam/uptime-kuma) — needs a manual smoke test before trusting it,
+  not assumed to work first try.
+- **open question, not resolved**: whether this is worth building at
+  all depends on how often the user is actually looking at the mac
+  mini's own screen when a monitor fires — if it's mostly headless for
+  him, kuma's existing telegram alert already covers it and this adds
+  nothing.
+
+no timeline, no owner, not blocking any phase above — recorded here so
+the idea isn't lost, same treatment as §2.4's posture module.

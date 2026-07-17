@@ -8,7 +8,15 @@ scaffolded and shipping. v1 (core engine, queue, one animation, cli
 push), v2 (espn poller, cmux relay, animation table), v3 (outbound
 connectors — telegram, `src-tauri/src/notifier.rs`), and v4
 (github + ci at `github.com/jainChetan81/notchtap`) are done as of
-2026-07-16. the tauri/rust/web project lives at repo root alongside
+2026-07-16. v5 (settings window / control panel) is **rust-side done,
+frontend held** as of 2026-07-17 — the four invoke commands, config/
+secrets write paths, `start_paused` kill switch, tray "Settings…"
+item, and per-window command acl are built and tested; the settings
+*page* (step 5) waits for the in-flight ui migration (framer motion +
+lucide). decisions in `docs/ARCHITECTURE.md` §17,
+plan in `docs/IMPLEMENTATION_PLAN.md` §4.5, contract in
+`docs/V5_TECHNICAL_SPEC.md`. the tauri/rust/web project lives at repo
+root alongside
 `docs/` — the docs folder isn't part of the app build. the test suite
 exists and must stay green (`cargo test` from `src-tauri/`, `npx
 vitest run` from repo root, all gated by ci) — current counts live in
@@ -140,6 +148,18 @@ minimum: one permission for the custom event channel, no file-system
 access, no shell access, no network access from the frontend. the
 frontend should not be able to trigger notifications — only display what
 the rust core sends it.
+
+**v5 amendment (rust side built 2026-07-17)**: the receive-only
+rule above now applies to the *overlay* window (`main`), permanently.
+the settings window (`settings` label, `src-tauri/src/settings.rs`)
+has exactly four
+invoke commands, gated per-window. critical tauri v2 gotcha: app-
+defined commands are allowed to **every** window by
+default — the gate only exists with the `tauri_build::AppManifest::
+commands` opt-in in `build.rs` plus a dedicated
+`capabilities/settings.json`. never add a `#[tauri::command]` without
+also adding it to that `build.rs` list; `default.json` must never
+change. full contract: `docs/V5_TECHNICAL_SPEC.md` §2.
 
 ## rust error handling
 

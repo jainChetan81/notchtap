@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::error::{EventError, QueueError};
 use crate::event::{
-    dispatch, emit_slot_state, Event, EventPayload, EventType, Priority, RotationSpec,
+    dispatch, emit_slot_state, Event, EventPayload, EventSignal, EventType, Priority, RotationSpec,
 };
 use crate::notifier::ConnectorHandle;
 use crate::queue::SingleSlotQueue;
@@ -44,6 +44,13 @@ struct NotifyRequest {
     title: Option<String>,
     body: Option<String>,
     priority: Option<Priority>,
+    // non-`Option`, unlike `priority` — deliberate: sources that can't
+    // know a specific signal (this endpoint's own CLI/cmux callers)
+    // simply never set the field and get `Generic` via this default,
+    // mirroring `presentation.rs`'s `DetectOutput` cutout-field pattern
+    // rather than `priority`'s `unwrap_or` pattern in this same file.
+    #[serde(default)]
+    signal: EventSignal,
 }
 
 pub fn router<R: tauri::Runtime>(state: AppState<R>) -> Router {
@@ -94,6 +101,7 @@ async fn notify_handler<R: tauri::Runtime>(
         },
         topic: None,
         payload: EventPayload { title, body },
+        signal: req.signal,
     };
 
     dispatch(event.clone()).map_err(HttpError::Event)?;
@@ -419,6 +427,7 @@ mod tests {
 
         let req: NotifyRequest = serde_json::from_str(r#"{"title":"t","body":"b"}"#).unwrap();
         assert_eq!(req.priority, None); // absent on the wire
+        assert_eq!(req.signal, EventSignal::Generic); // absent -> default, not None
 
         let mut queue = SingleSlotQueue::new(50);
         queue
@@ -432,6 +441,7 @@ mod tests {
                     title: "t".into(),
                     body: "b".into(),
                 },
+                signal: req.signal,
             })
             .unwrap();
         assert_eq!(queue.current_priority(), Some(Priority::Medium));
@@ -451,6 +461,69 @@ mod tests {
         let req: NotifyRequest =
             serde_json::from_str(r#"{"title":"t","body":"b","priority":"high"}"#).unwrap();
         assert_eq!(req.priority, Some(Priority::High));
+    }
+
+    // --- signal field (v3.6 EventSignal work) ---
+
+    #[tokio::test]
+    async fn signal_field_defaults_to_generic_when_absent() {
+        let mut queue = SingleSlotQueue::new(50);
+        let app = router(test_state(SingleSlotQueue::new(50)));
+        let response = app
+            .oneshot(json_request(r#"{"title":"t","body":"b"}"#))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let req: NotifyRequest = serde_json::from_str(r#"{"title":"t","body":"b"}"#).unwrap();
+        queue
+            .enqueue(Event {
+                id: Uuid::new_v4(),
+                event_type: EventType::Generic,
+                priority: req.priority.unwrap_or(Priority::Medium),
+                rotation: RotationSpec::OneShot { ttl_secs: 8 },
+                topic: None,
+                payload: EventPayload {
+                    title: "t".into(),
+                    body: "b".into(),
+                },
+                signal: req.signal,
+            })
+            .unwrap();
+        match queue.current_slot_state() {
+            crate::event::SlotState::Showing { signal, .. } => {
+                assert_eq!(signal, EventSignal::Generic)
+            }
+            other => panic!("expected Showing, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_signal_field_is_honored() {
+        let app = router(test_state(SingleSlotQueue::new(50)));
+        let response = app
+            .oneshot(json_request(r#"{"title":"t","body":"b","signal":"goal"}"#))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let req: NotifyRequest =
+            serde_json::from_str(r#"{"title":"t","body":"b","signal":"goal"}"#).unwrap();
+        assert_eq!(req.signal, EventSignal::Goal);
+    }
+
+    #[tokio::test]
+    async fn malformed_signal_string_returns_400() {
+        // proves rejection, not silent coercion to Generic — same rigor
+        // as EventType's own unknown-string handling.
+        let app = router(test_state(SingleSlotQueue::new(50)));
+        let response = app
+            .oneshot(json_request(
+                r#"{"title":"t","body":"b","signal":"confetti"}"#,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]

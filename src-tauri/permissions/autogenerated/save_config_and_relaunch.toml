@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-save-config-and-relaunch"
+description = "Enables the save_config_and_relaunch command without any pre-configured scope."
+commands.allow = ["save_config_and_relaunch"]
+
+[[permission]]
+identifier = "deny-save-config-and-relaunch"
+description = "Denies the save_config_and_relaunch command without any pre-configured scope."
+commands.deny = ["save_config_and_relaunch"]

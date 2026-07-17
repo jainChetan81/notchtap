@@ -1,21 +1,25 @@
 #!/bin/sh
 # notchtap — cli push for the notchtap notification engine (spec §12).
 # flags only, no positional form:
-#   notchtap --title <title> --body <body> [--subtitle <s>] [--priority low|medium|high] [--port <p>]
+#   notchtap --title <title> --body <body> [--subtitle <s>] [--priority low|medium|high] [--signal <s>] [--port <p>]
 # a non-empty --subtitle folds into the posted body as "<subtitle> — <body>";
-# the server never sees a subtitle field. --priority folds into the posted
-# json as-is; when omitted, the field is left off the payload entirely and
-# the server's own default (medium) applies — v3.6 spec §6: there is
-# exactly one place "what does unspecified mean" lives, not two kept in
-# sync. port resolution:
-# --port flag → $NOTCHTAP_PORT → 9789. never reads config.toml.
-# exits non-zero on connection failure or any non-2xx response so relay
-# callers (cmux) surface failures instead of swallowing them.
+# the server never sees a subtitle field. --priority and --signal fold into
+# the posted json as-is; when omitted, the field is left off the payload
+# entirely and the server's own default (medium priority, generic signal)
+# applies — v3.6 spec §6: there is exactly one place "what does unspecified
+# mean" lives, not two kept in sync. --signal is mainly a manual-testing
+# aid (real football signals come from the espn poller, which knows the
+# specific event structurally — cmux/CLI callers can't) — see
+# IMPLEMENTATION_PLAN.md's manual verification section for its use.
+# port resolution: --port flag → $NOTCHTAP_PORT → 9789. never reads
+# config.toml. exits non-zero on connection failure or any non-2xx
+# response so relay callers (cmux) surface failures instead of
+# swallowing them.
 
 set -u
 
 usage() {
-  echo "usage: notchtap --title <title> --body <body> [--subtitle <s>] [--priority low|medium|high] [--port <p>]" >&2
+  echo "usage: notchtap --title <title> --body <body> [--subtitle <s>] [--priority low|medium|high] [--signal <s>] [--port <p>]" >&2
   exit 2
 }
 
@@ -23,6 +27,7 @@ title=""
 body=""
 subtitle=""
 priority=""
+signal=""
 port="${NOTCHTAP_PORT:-9789}"
 
 while [ $# -gt 0 ]; do
@@ -43,6 +48,13 @@ while [ $# -gt 0 ]; do
         *) usage ;;
       esac
       shift 2 ;;
+    --signal)
+      [ $# -ge 2 ] || usage
+      case "$2" in
+        generic|goal|red_card|yellow_card|kickoff|halftime|fulltime) signal="$2" ;;
+        *) usage ;;
+      esac
+      shift 2 ;;
     --port)
       [ $# -ge 2 ] || usage
       port="$2"; shift 2 ;;
@@ -58,14 +70,16 @@ if [ -n "$subtitle" ]; then
   body="$subtitle — $body"
 fi
 
-# jq -n --arg gives safe escaping for quotes/newlines in relayed bodies
-if [ -n "$priority" ]; then
-  payload=$(jq -n --arg title "$title" --arg body "$body" --arg priority "$priority" \
-    '{title: $title, body: $body, priority: $priority}') || exit 1
-else
-  payload=$(jq -n --arg title "$title" --arg body "$body" \
-    '{title: $title, body: $body}') || exit 1
-fi
+# jq -n --arg gives safe escaping for quotes/newlines in relayed bodies.
+# priority/signal are merged in only when set, so an unspecified field is
+# genuinely absent from the wire (not sent as an empty string) — the
+# server's own default is the single source of truth for "unspecified".
+payload=$(jq -n \
+  --arg title "$title" --arg body "$body" \
+  --arg priority "$priority" --arg signal "$signal" \
+  '{title: $title, body: $body}
+   + (if $priority != "" then {priority: $priority} else {} end)
+   + (if $signal != "" then {signal: $signal} else {} end)') || exit 1
 
 status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
   --max-time 5 \

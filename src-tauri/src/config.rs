@@ -1,14 +1,17 @@
 use std::path::PathBuf;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Config {
     pub port: u16,
     pub default_ttl: u64,
     pub max_queued_per_tier: usize,
     pub detect_path: PathBuf,
+    /// v5 master kill switch: launch with promotion paused (tray reads
+    /// "Resume"). the tray toggle itself stays session-only.
+    pub start_paused: bool,
     pub espn_enabled: bool,
     pub espn_leagues: Vec<String>,
     pub espn_poll_secs: u64,
@@ -17,13 +20,13 @@ pub struct Config {
 
 /// `[connectors.*]` tables — non-secret on/off switches only; credentials
 /// live in `secrets.toml` (v3 spec §4) so `config.toml` stays paste-safe.
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Connectors {
     pub telegram: TelegramToggle,
 }
 
-#[derive(Debug, Default, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct TelegramToggle {
     /// default off — v3 outbound is opt-in per machine
@@ -70,6 +73,7 @@ impl Default for Config {
             default_ttl: default_ttl(),
             max_queued_per_tier: default_max_queued_per_tier(),
             detect_path: default_detect_path(),
+            start_paused: false,
             espn_enabled: default_espn_enabled(),
             espn_leagues: default_espn_leagues(),
             espn_poll_secs: default_espn_poll_secs(),
@@ -84,7 +88,7 @@ impl Config {
         // is wrong here: on macOS it resolves to ~/Library/Application Support.
         let home = dirs::home_dir()
             .ok_or_else(|| anyhow::anyhow!("could not determine home directory"))?;
-        let path = home.join(".config").join("notchtap").join("config.toml");
+        let path = Self::dir_from_home(&home).join("config.toml");
 
         if !path.exists() {
             return Ok(Self::default());
@@ -94,6 +98,12 @@ impl Config {
             .map_err(|e| anyhow::anyhow!("failed to read config at {:?}: {}", path, e))?;
         Self::parse(&content)
             .map_err(|e| anyhow::anyhow!("failed to parse config at {:?}: {}", path, e))
+    }
+
+    /// `~/.config/notchtap/` — the one directory config and secrets share
+    /// (v5 settings write paths need it as a value, not a hardcode).
+    pub fn dir_from_home(home: &std::path::Path) -> PathBuf {
+        home.join(".config").join("notchtap")
     }
 
     pub fn parse(content: &str) -> Result<Self, toml::de::Error> {
@@ -148,6 +158,19 @@ mod tests {
     fn telegram_connector_can_be_enabled() {
         let c = Config::parse("[connectors.telegram]\nenabled = true\n").unwrap();
         assert!(c.connectors.telegram.enabled);
+    }
+
+    #[test]
+    fn start_paused_defaults_to_false() {
+        // v5 kill switch is opt-in: absent field means normal launch
+        let c = Config::parse("").unwrap();
+        assert!(!c.start_paused);
+    }
+
+    #[test]
+    fn start_paused_is_overridable() {
+        let c = Config::parse("start_paused = true\n").unwrap();
+        assert!(c.start_paused);
     }
 
     #[test]

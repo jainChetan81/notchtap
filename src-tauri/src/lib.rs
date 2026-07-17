@@ -11,6 +11,7 @@ mod notifier;
 mod poller;
 mod presentation;
 pub mod queue;
+mod settings;
 
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Once, OnceLock};
@@ -65,7 +66,20 @@ pub fn run() {
     // (manual checklist, IMPLEMENTATION_PLAN.md §6)
     tracing::info!(?mode, inset, "presentation mode resolved");
 
-    let queue = Arc::new(Mutex::new(SingleSlotQueue::new(config.max_queued_per_tier)));
+    // v5 kill switch (spec §5): launch with promotion already paused.
+    // reuses the paused semantics wholesale — pushes still buffer (202),
+    // rotation still ages out anything visible; only the launch state
+    // differs. the tray toggle stays session-only.
+    let mut initial_queue = SingleSlotQueue::new(config.max_queued_per_tier);
+    if config.start_paused {
+        initial_queue.pause();
+        tracing::info!("start_paused: launching with promotion paused");
+    }
+    let queue = Arc::new(Mutex::new(initial_queue));
+    let start_paused = config.start_paused;
+    // v5 settings window reads the *booted* config via get_config —
+    // managed as state in setup, after the fields below are cloned out.
+    let config_for_state = config.clone();
     let port = config.port;
     let default_ttl = config.default_ttl;
     let espn_enabled = config.espn_enabled;
@@ -108,8 +122,18 @@ pub fn run() {
 
     tauri::Builder::default()
         .plugin(tauri_nspanel::init())
+        // v5 settings commands (settings.rs) — every one of these is also
+        // listed in build.rs's AppManifest::commands; that pairing is what
+        // keeps them deniable to the overlay window (spec §2).
+        .invoke_handler(tauri::generate_handler![
+            settings::get_config,
+            settings::get_secret_status,
+            settings::save_config_and_relaunch,
+            settings::set_secret,
+        ])
         .setup(move |app| {
             app.set_activation_policy(ActivationPolicy::Accessory);
+            app.manage(config_for_state);
 
             let window = app
                 .get_webview_window("main")
@@ -170,7 +194,12 @@ pub fn run() {
             // (not in the queue) because it gates network fetches, not
             // promotion — pausing scores must not touch cmux/cli pushes.
             let espn_active = espn_enabled.then(|| Arc::new(AtomicBool::new(true)));
-            build_tray(app.handle(), setup_queue.clone(), espn_active.clone())?;
+            build_tray(
+                app.handle(),
+                setup_queue.clone(),
+                espn_active.clone(),
+                start_paused,
+            )?;
             spawn_heartbeat(app.handle().clone(), setup_queue.clone());
 
             // espn poller (v2 spec §3) — config-gated: `espn_enabled =
@@ -199,6 +228,7 @@ pub fn run() {
             // 200-drop.
             if payload.event() == PageLoadEvent::Finished && webview.label() == "main" {
                 let queue = page_load_queue.clone();
+                let eval_queue = page_load_queue.clone();
                 let app_handle = webview.app_handle().clone();
                 let connectors = page_load_connectors.clone();
 
@@ -216,6 +246,33 @@ pub fn run() {
                     };
                     let _ = webview.eval(format!("window.__NOTCHTAP_MODE__ = '{mode_str}';"));
                     let _ = webview.emit("presentation-mode", PresentationModePayload { mode });
+                }
+
+                // same double-shield, mirrored for `slot-state` (this
+                // migration's own fix): the transient-event race the
+                // presentation-mode shield above was already built for
+                // also affects slot-state, but was never applied there —
+                // an independent review caught this. blocking_lock is
+                // safe here, same as the tray menu handler below: this
+                // callback runs off the tokio runtime, not on it.
+                {
+                    let current_state = eval_queue.blocking_lock().current_slot_state();
+                    let state_json =
+                        serde_json::to_string(&current_state).unwrap_or_else(|_| "null".into());
+                    // unlike presentation-mode's fixed enum, this payload is
+                    // arbitrary caller text (espn scoring-play strings, cmux
+                    // titles) — escape everything that's illegal or unsafe
+                    // to splice raw into eval'd script text: U+2028/U+2029
+                    // are legal in JSON strings but illegal raw in JS
+                    // source, and `<` closes the gap JSON encoding leaves
+                    // open (it doesn't escape `/`, so a literal "</script>"
+                    // in a title would otherwise break out of this context).
+                    let safe_json = state_json
+                        .replace('\u{2028}', "\\u2028")
+                        .replace('\u{2029}', "\\u2029")
+                        .replace('<', "\\u003c");
+                    let _ = webview.eval(format!("window.__NOTCHTAP_SLOT_STATE__ = {safe_json};"));
+                    emit_slot_state(&app_handle, current_state);
                 }
 
                 // re-assert level/collection-behavior/position now that the
@@ -360,19 +417,28 @@ fn build_tray(
     app: &tauri::AppHandle,
     queue: Arc<Mutex<SingleSlotQueue>>,
     espn_active: Option<Arc<AtomicBool>>,
+    start_paused: bool,
 ) -> tauri::Result<()> {
-    let pause_item = MenuItem::with_id(app, "pause", "Pause", true, None::<&str>)?;
+    // v5 kill switch: a start_paused boot renders the toggle as "Resume"
+    // from the first open — the label always names the *next* action.
+    let initial_pause_label = if start_paused { "Resume" } else { "Pause" };
+    let pause_item = MenuItem::with_id(app, "pause", initial_pause_label, true, None::<&str>)?;
     // only offered when the poller exists (`espn_enabled = true`)
     let espn_item = espn_active
         .as_ref()
         .map(|_| MenuItem::with_id(app, "espn", "Pause Football Scores", true, None::<&str>))
         .transpose()?;
+    // v5 (ARCHITECTURE.md §17): the fourth tray item — opens the settings
+    // window; everything richer than a toggle lives there, not in more
+    // tray items.
+    let settings_item = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let menu = Menu::new(app)?;
     menu.append(&pause_item)?;
     if let Some(item) = &espn_item {
         menu.append(item)?;
     }
+    menu.append(&settings_item)?;
     menu.append(&quit_item)?;
 
     TrayIconBuilder::new()
@@ -418,12 +484,40 @@ fn build_tray(
                     tracing::info!(active = now_active, "espn polling toggled from tray");
                 }
             }
+            "settings" => open_settings_window(app),
             "quit" => app.exit(0),
             _ => {}
         })
         .build(app)?;
 
     Ok(())
+}
+
+/// v5 spec §1: lazy creation, focus-if-open. A normal decorated window —
+/// everything the overlay is not (no nspanel, no always-on-top, no
+/// collection-behavior calls); closing it leaves the app running.
+/// until IMPLEMENTATION_PLAN.md §4.5's step 5 lands (held for the ui
+/// migration), `settings.html` doesn't exist and the window opens blank —
+/// accepted interim state, documented there.
+fn open_settings_window(app: &tauri::AppHandle) {
+    if let Some(window) = app.get_webview_window("settings") {
+        let _ = window.set_focus();
+        return;
+    }
+    match tauri::WebviewWindowBuilder::new(
+        app,
+        "settings",
+        tauri::WebviewUrl::App("settings.html".into()),
+    )
+    .title("notchtap settings")
+    .inner_size(480.0, 600.0)
+    .build()
+    {
+        Ok(window) => {
+            let _ = window.set_focus();
+        }
+        Err(e) => tracing::warn!("settings window failed to open: {e}"),
+    }
 }
 
 fn spawn_heartbeat(app: tauri::AppHandle, queue: Arc<Mutex<SingleSlotQueue>>) {
@@ -468,7 +562,9 @@ fn toggle_manual_expand<R: tauri::Runtime>(
 #[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
-    use crate::event::{Event, EventPayload, EventType, Priority, RotationSpec, SlotState};
+    use crate::event::{
+        Event, EventPayload, EventSignal, EventType, Priority, RotationSpec, SlotState,
+    };
 
     fn event(priority: Priority) -> Event {
         Event {
@@ -481,6 +577,7 @@ mod tests {
                 title: "t".to_string(),
                 body: "b".to_string(),
             },
+            signal: EventSignal::Generic,
         }
     }
 

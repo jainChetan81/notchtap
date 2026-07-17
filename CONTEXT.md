@@ -53,7 +53,9 @@ and `docs/adr/`.
   paused); an already-Visible Notification finishes its natural
   Rotation and exits. Resuming re-enables Promotion immediately;
   nothing is dropped. (v3.6: gates the single Slot, same contract,
-  formerly gated a 3-item cap.)
+  formerly gated a 3-item cap. v5: the tray toggle stays session-only,
+  but the persisted `start_paused` config flag — the **Kill Switch** —
+  makes the app *launch* Paused.)
 - **Polling Pause** — a Poller-level state (per source, from the tray)
   in which the Poller stops checking its external service; no Events
   are produced and changes during the pause are never seen. distinct
@@ -63,6 +65,10 @@ and `docs/adr/`.
 - **Presentation Mode** — how the window anchors: **Notch** (over the
   macbook's notch cutout) or **HUD** (floating top-center, on
   notchless machines). decided at runtime, never at build time.
+- **Settings Window** — the second webview window (v5), opened from
+  the tray, where config and secrets are edited. the one window
+  allowed to invoke commands into the engine; the overlay never is.
+  saving always relaunches the app — there is no hot-reload.
 - **notchtap** — the product: the always-on engine + overlay app, and
   the name of the CLI that pushes to it.
 - **notchtap-detect** — the standalone swift helper that reports
