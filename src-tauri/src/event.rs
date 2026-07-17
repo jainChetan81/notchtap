@@ -11,6 +11,8 @@ pub struct Event {
     pub rotation: RotationSpec,
     pub topic: Option<String>,
     pub payload: EventPayload,
+    #[serde(default)]
+    pub meta: EventMeta,
     pub signal: EventSignal,
 }
 
@@ -102,6 +104,17 @@ pub struct EventPayload {
     pub body: String,
 }
 
+/// News-source metadata (v5): populated only by the rss poller; every
+/// other source leaves it default. Presentation-only — never consulted
+/// by queue/rotation/priority logic.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct EventMeta {
+    pub source: Option<String>,
+    pub category: Option<String>,
+    pub published_at_ms: Option<i64>,
+}
+
 /// The rust-authoritative slot state pushed to the frontend whenever it
 /// changes (promotion, rotation-to-empty, expand toggle). camelCase on
 /// the wire so the TS `SlotState` type mirrors this shape exactly.
@@ -122,6 +135,9 @@ pub enum SlotState {
         priority: Priority,
         signal: EventSignal,
         expanded: bool,
+        source: Option<String>,
+        category: Option<String>,
+        published_at_ms: Option<i64>,
     },
 }
 
@@ -162,6 +178,7 @@ mod tests {
                 title: "t".to_string(),
                 body: "b".to_string(),
             },
+            meta: EventMeta::default(),
             signal: EventSignal::Generic,
         }
     }
@@ -255,6 +272,9 @@ mod tests {
             priority: Priority::High,
             signal: EventSignal::Goal,
             expanded: false,
+            source: Some("NDTV".to_string()),
+            category: Some("politics".to_string()),
+            published_at_ms: Some(1_789_600_000_000),
         };
         let json = serde_json::to_value(&state).unwrap();
         assert_eq!(json["state"], "showing");
@@ -265,8 +285,33 @@ mod tests {
         assert_eq!(json["priority"], "high");
         assert_eq!(json["signal"], "goal");
         assert_eq!(json["expanded"], false);
+        assert_eq!(json["source"], "NDTV");
+        assert_eq!(json["category"], "politics");
+        assert_eq!(json["publishedAtMs"], 1_789_600_000_000_i64);
         assert!(json.get("event_type").is_none());
+        assert!(json.get("published_at_ms").is_none());
         assert!(json.get("ttlSecs").is_none());
+    }
+
+    #[test]
+    fn slot_state_showing_without_metadata_serializes_null_fields() {
+        let state = SlotState::Showing {
+            id: Uuid::new_v4(),
+            title: "Status".to_string(),
+            body: "No news metadata".to_string(),
+            event_type: EventType::Generic,
+            priority: Priority::Medium,
+            signal: EventSignal::Generic,
+            expanded: false,
+            source: None,
+            category: None,
+            published_at_ms: None,
+        };
+
+        let json = serde_json::to_value(state).unwrap();
+        assert!(json["source"].is_null());
+        assert!(json["category"].is_null());
+        assert!(json["publishedAtMs"].is_null());
     }
 
     #[test]
@@ -287,6 +332,7 @@ mod tests {
                 title: "t".to_string(),
                 body: "b".to_string(),
             },
+            meta: EventMeta::default(),
             signal: EventSignal::Generic,
         };
         assert_eq!(event.rotation_window(false), 4);

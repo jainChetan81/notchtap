@@ -602,7 +602,7 @@ fn toggle_manual_expand<R: tauri::Runtime>(
 mod tests {
     use super::*;
     use crate::event::{
-        Event, EventPayload, EventSignal, EventType, Priority, RotationSpec, SlotState,
+        Event, EventMeta, EventPayload, EventSignal, EventType, Priority, RotationSpec, SlotState,
     };
 
     fn event(priority: Priority) -> Event {
@@ -616,6 +616,7 @@ mod tests {
                 title: "t".to_string(),
                 body: "b".to_string(),
             },
+            meta: EventMeta::default(),
             signal: EventSignal::Generic,
         }
     }

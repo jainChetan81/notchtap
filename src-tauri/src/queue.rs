@@ -19,7 +19,7 @@ pub struct QueueItem {
 ///
 /// ```
 /// use std::time::{Duration, Instant};
-/// use notchtap_lib::event::{Event, EventPayload, EventSignal, EventType, Priority, RotationSpec};
+/// use notchtap_lib::event::{Event, EventMeta, EventPayload, EventSignal, EventType, Priority, RotationSpec};
 /// use notchtap_lib::queue::SingleSlotQueue;
 ///
 /// fn event(title: &str, priority: Priority, ttl_secs: u64) -> Event {
@@ -30,6 +30,7 @@ pub struct QueueItem {
 ///         rotation: RotationSpec::OneShot { ttl_secs },
 ///         topic: None,
 ///         payload: EventPayload { title: title.into(), body: "body".into() },
+///         meta: EventMeta::default(),
 ///         signal: EventSignal::Generic,
 ///     }
 /// }
@@ -269,6 +270,9 @@ impl SingleSlotQueue {
                 priority: item.event.priority,
                 signal: item.event.signal,
                 expanded: self.expanded,
+                source: item.event.meta.source.clone(),
+                category: item.event.meta.category.clone(),
+                published_at_ms: item.event.meta.published_at_ms,
             },
         }
     }
@@ -281,7 +285,7 @@ const MAX_EXTENSION_ON_SUPERSEDE_SECS: u64 = 6;
 mod tests {
     use super::*;
     use crate::error::QueueError;
-    use crate::event::{EventPayload, EventSignal, EventType};
+    use crate::event::{EventMeta, EventPayload, EventSignal, EventType};
     use std::time::Duration;
     use uuid::Uuid;
 
@@ -296,6 +300,7 @@ mod tests {
                 title: title.to_string(),
                 body: "body".to_string(),
             },
+            meta: EventMeta::default(),
             signal: EventSignal::Generic,
         }
     }
@@ -311,6 +316,7 @@ mod tests {
                 title: title.to_string(),
                 body: "body".to_string(),
             },
+            meta: EventMeta::default(),
             signal: EventSignal::Generic,
         }
     }
@@ -326,6 +332,7 @@ mod tests {
                 title: title.to_string(),
                 body: "body".to_string(),
             },
+            meta: EventMeta::default(),
             signal: EventSignal::Generic,
         }
     }
@@ -502,6 +509,7 @@ mod tests {
                 title: "new".to_string(),
                 body: "fresh body".to_string(),
             },
+            meta: EventMeta::default(),
             priority: Priority::High,
             rotation: RotationSpec::Recurring { display_secs: 4 },
             ..base.clone()
