@@ -14,11 +14,6 @@ pub struct Event {
     #[serde(default)]
     pub meta: EventMeta,
     pub signal: EventSignal,
-    /// Which source produced this event (v6: rotation-order tie-break) —
-    /// orthogonal to `Priority`, which still decides cross-tier order
-    /// first. Always server-assigned, never accepted from the `/notify`
-    /// wire (same rule as `rotation`/`topic`).
-    pub origin: SourceKind,
 }
 
 impl Event {
@@ -64,17 +59,6 @@ pub enum Priority {
     Low,
     Medium,
     High,
-}
-
-/// The source that produced an [`Event`] (v6: `Config.rotation_order`
-/// tie-break). A closed set, same rigor as [`EventType`]/[`EventSignal`] —
-/// unknown values are rejected at deserialization, never silently coerced.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SourceKind {
-    Football,
-    News,
-    Manual,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -198,7 +182,6 @@ mod tests {
             },
             meta: EventMeta::default(),
             signal: EventSignal::Generic,
-            origin: SourceKind::Manual,
         }
     }
 
