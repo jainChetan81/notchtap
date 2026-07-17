@@ -850,3 +850,5 @@ config entry.
 
 no timeline, no owner, not blocking any phase above — recorded here so
 the idea isn't lost, same treatment as §2.4's posture module.
+
+step-by-step recipe written: `docs/recipes/kuma-webhook.md`.
