@@ -1048,10 +1048,7 @@ mod tests {
         q.skip_visible(Instant::now());
 
         assert_eq!(visible_title(&q), Some("next"));
-        assert_eq!(
-            waiting_titles(&q, Priority::Medium as usize),
-            vec!["recur"]
-        );
+        assert_eq!(waiting_titles(&q, Priority::Medium as usize), vec!["recur"]);
     }
 
     #[test]
@@ -1088,10 +1085,7 @@ mod tests {
         q.skip_visible(Instant::now());
 
         assert!(q.visible.is_none());
-        assert_eq!(
-            waiting_titles(&q, Priority::Medium as usize),
-            vec!["recur"]
-        );
+        assert_eq!(waiting_titles(&q, Priority::Medium as usize), vec!["recur"]);
     }
 
     #[test]

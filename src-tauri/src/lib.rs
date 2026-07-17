@@ -47,6 +47,20 @@ const DISMISS_SHORTCUT: (Option<Modifiers>, Code) =
 const PAUSE_TOGGLE_SHORTCUT: (Option<Modifiers>, Code) =
     (Some(Modifiers::CONTROL.union(Modifiers::SHIFT)), Code::KeyP);
 
+// ⌃⇧] / ⌃⇧, — chosen (and already shipped in the settings UI's shortcut
+// table) to avoid the four combos above and common macOS ⌘-based
+// shortcuts, same rule as ⌃⇧X/⌃⇧P (v3.6 spec §7.1.2).
+#[cfg(target_os = "macos")]
+const SKIP_SHORTCUT: (Option<Modifiers>, Code) = (
+    Some(Modifiers::CONTROL.union(Modifiers::SHIFT)),
+    Code::BracketRight,
+);
+#[cfg(target_os = "macos")]
+const OPEN_SETTINGS_SHORTCUT: (Option<Modifiers>, Code) = (
+    Some(Modifiers::CONTROL.union(Modifiers::SHIFT)),
+    Code::Comma,
+);
+
 // tracing-appender flushes through this guard; it must live as long as
 // the process, so it's parked in a static rather than dropped at the
 // end of run()'s setup.
@@ -234,6 +248,17 @@ pub fn run() {
                                         &hotkey_queue_for_handler,
                                         &pause_item_for_handler,
                                     );
+                                } else if *shortcut
+                                    == Shortcut::new(SKIP_SHORTCUT.0, SKIP_SHORTCUT.1)
+                                {
+                                    skip_current(app, &hotkey_queue_for_handler);
+                                } else if *shortcut
+                                    == Shortcut::new(
+                                        OPEN_SETTINGS_SHORTCUT.0,
+                                        OPEN_SETTINGS_SHORTCUT.1,
+                                    )
+                                {
+                                    open_settings_window(app);
                                 }
                             }
                         })
@@ -250,6 +275,12 @@ pub fn run() {
                 app.global_shortcut().register(Shortcut::new(
                     PAUSE_TOGGLE_SHORTCUT.0,
                     PAUSE_TOGGLE_SHORTCUT.1,
+                ))?;
+                app.global_shortcut()
+                    .register(Shortcut::new(SKIP_SHORTCUT.0, SKIP_SHORTCUT.1))?;
+                app.global_shortcut().register(Shortcut::new(
+                    OPEN_SETTINGS_SHORTCUT.0,
+                    OPEN_SETTINGS_SHORTCUT.1,
                 ))?;
             }
 
@@ -674,6 +705,19 @@ fn dismiss_current<R: tauri::Runtime>(
     }
 }
 
+// ⌃⇧]: end the Visible item's turn as if its Rotation elapsed (Recurring
+// requeues, OneShot drops) — deliberately different from ⌃⇧X's dismiss,
+// which drops a Recurring item outright. See SingleSlotQueue::skip_visible.
+#[cfg(target_os = "macos")]
+fn skip_current<R: tauri::Runtime>(app: &tauri::AppHandle<R>, queue: &Arc<Mutex<SingleSlotQueue>>) {
+    let mut q = queue.blocking_lock();
+    q.skip_visible(Instant::now());
+    if let Some(state) = q.slot_state_if_changed() {
+        drop(q);
+        emit_slot_state(app, state);
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn open_current_story<R: tauri::Runtime>(
     _app: &tauri::AppHandle<R>,
@@ -789,6 +833,38 @@ mod tests {
         let mut q = queue.blocking_lock();
         assert_eq!(q.current_slot_state(), SlotState::Empty);
         assert!(q.slot_state_if_changed().is_none());
+    }
+
+    #[test]
+    fn skip_current_requeues_recurring_and_promotes_next() {
+        let app = tauri::test::mock_app();
+        let mut inner = SingleSlotQueue::new(50);
+        let mut recurring = event(Priority::Medium);
+        recurring.rotation = RotationSpec::Recurring { display_secs: 8 };
+        let recurring_id = recurring.id;
+        inner.enqueue(recurring).unwrap();
+        let next = event(Priority::Medium);
+        let next_id = next.id;
+        inner.enqueue(next).unwrap();
+        let queue = Arc::new(Mutex::new(inner));
+
+        skip_current(&app.handle().clone(), &queue);
+
+        let mut q = queue.blocking_lock();
+        match q.current_slot_state() {
+            SlotState::Showing { id, .. } => assert_eq!(id, next_id),
+            SlotState::Empty => panic!("expected Showing"),
+        }
+        // the skipped Recurring item survived — this is what distinguishes
+        // skip_current from dismiss_current (whose test proves the drop)
+        assert_eq!(q.total_waiting(), 1);
+        // and it comes back: skip the next item too and the recurring one
+        // promotes again
+        q.skip_visible(Instant::now());
+        match q.current_slot_state() {
+            SlotState::Showing { id, .. } => assert_eq!(id, recurring_id),
+            SlotState::Empty => panic!("expected recurring item to return"),
+        }
     }
 
     #[test]
