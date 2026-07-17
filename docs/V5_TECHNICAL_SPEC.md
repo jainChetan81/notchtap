@@ -146,16 +146,26 @@ pub enum SecretField {
   - rss (added 2026-07-17 with the `v5-news-backend` merge):
     `rss_poll_secs` in `5..=3600`, `rss_ttl_secs` in `1..=3600`,
     `rss_max_per_poll` in `1..=100`; every `rss_feeds` entry an
-    http(s) url with no whitespace; an empty list is an error only
-    when `rss_enabled = true`
+    http(s) url with no whitespace that fully parses, uses the `http`
+    or `https` scheme, and has a host; an empty list is an error only
+    when `rss_enabled = true`. this is a real url parse, not a prefix
+    check.
 
 - **atomic write**: serialize the whole `Config` with `toml::to_string_pretty`,
-  write to `config.toml.tmp` **in the same directory** (rename across
-  filesystems isn't atomic), fsync, `std::fs::rename` over
-  `config.toml`. a half-written config is a bricked boot
-  (`Config::load` fail-fast) — the rename is the whole point.
-  create `~/.config/notchtap/` if missing (first-run machines have no
-  config file at all today).
+  write to a **unique** temp path in the same directory (rename across
+  filesystems isn't atomic), opened with `create_new(true)`, fsync,
+  then `std::fs::rename` over `config.toml`. a fixed temp name is not
+  safe: a stale permissive file would bypass creation-time permissions.
+  config and secrets use this same helper; the secrets call supplies
+  mode `0600`. a half-written config is a bricked boot (`Config::load`
+  fail-fast) — the rename is the whole point. create
+  `~/.config/notchtap/` if missing (first-run machines have no config
+  file at all today).
+- **uneditable fields are pinned server-side**: before validation and
+  write, `save_config_and_relaunch` calls `pin_uneditable_fields` and
+  replaces the submitted `detect_path` with the booted value. hiding
+  that field in the ui is not a security boundary; it is an executed
+  subprocess path and remains file-only by contract.
 - **known, accepted loss**: the file is rewritten from the struct —
   hand-written comments and unknown keys in a hand-edited
   `config.toml` disappear on first panel save. single-user tool,
@@ -185,17 +195,27 @@ chat_id = "..."
 api_key = "..."
 ```
 
-- `SecretsFile { telegram: Option<TelegramSecrets>, openrouter: Option<OpenRouterSecrets> }`;
-  the existing `load_secrets` keeps its exact contract (telegram
-  present and well-formed or a `SecretsError`) as a thin wrapper over
-  the new whole-file loader.
+- `SecretsDoc` carries optional `telegram` and `openrouter` tables plus
+  serde-flattened extra maps at the document and known-table levels.
+  unknown tables and fields therefore survive a settings write; the
+  never-clobber guarantee covers content the current version does not
+  understand too. the existing `load_secrets` keeps its exact contract
+  (telegram present and well-formed or a `SecretsError`) through its
+  connector-specific loader.
 - **`set_secret` is read-modify-write**: load the existing file (if
-  any), set the one field, write the whole file atomically (temp +
-  rename, same-dir, as §3) with mode `0600` set on the temp file
-  *before* content is written. missing file → created (plus parent
-  dir). **malformed existing file → hard error back to the ui**
-  ("fix or delete secrets.toml by hand") — never silently clobber a
-  file the user hand-edited wrong.
+  any), set the one field, write the whole file atomically (unique
+  same-dir temp + `create_new` + rename, as §3) with mode `0600` set
+  before content is written. the entire load→merge→write transaction
+  is serialized by the in-process `SECRETS_LOCK` mutex so concurrent
+  invokes cannot lose one another's updates. missing file → created
+  (plus parent dir). **malformed existing file → hard error back to the
+  ui** ("fix or delete secrets.toml by hand") — never silently clobber
+  a file the user hand-edited wrong.
+- malformed-file messages are fixed strings in both the settings loader
+  and the telegram connector's `SecretsError::Malformed` display. the
+  `toml::de::Error` detail is deliberately withheld because its
+  `Display` can echo the offending source line, which may be the secret
+  itself; parse detail must never cross ipc or enter logs.
 - a partial telegram pair (token set, chat_id not yet) is fine at
   rest; the connector's own loader already treats an incomplete
   telegram table as "disabled, warn" at boot.
@@ -207,10 +227,11 @@ api_key = "..."
   pub fn mask(value: &str) -> String
   ```
 
-- the openrouter key is **stored and validated for shape only**
-  (non-empty, no whitespace). nothing reads it in v5 — it waits for
-  the first ai feature. no "test key" button (that would be the app's
-  first outbound ai call, out of scope).
+- submitted secret values are trimmed before validation and storage so
+  a clipboard newline is harmless, then **validated for shape only**
+  (non-empty, no remaining whitespace). nothing reads the openrouter
+  key in v5 — it waits for the first ai feature. no "test key" button
+  (that would be the app's first outbound ai call, out of scope).
 
 ## 5. `start_paused` (master kill switch)
 
@@ -265,7 +286,14 @@ versa, malformed existing file errors instead of clobbering,
 temp-dir integration (never `$HOME`): atomic config write — file
 parseable by `Config::parse` after write, tmp file gone, parent dir
 created; secrets write — resulting file is `0600` and loads via the
-existing `load_secrets`.
+existing `load_secrets`. the 2026-07-17 review round added sentinel
+tests proving malformed parse errors never echo secret material through
+either loader; unknown tables/fields survive a secret write; pasted
+values are trimmed; a stale permissive fixed-name temp file is never
+written into; submitted `detect_path` is pinned to the booted value;
+rss feeds require a parsed http(s) url with a real host; and
+`ensure_settings_window` accepts only the `settings` label using a tauri
+mock app + `WebviewWindowBuilder`.
 
 frontend (vitest, small): form renders values from a mocked
 `get_config`; validation errors from a mocked rejection render as a

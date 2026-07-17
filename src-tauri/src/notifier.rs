@@ -148,7 +148,11 @@ pub enum SecretsError {
     BadPermissions(u32),
     #[error("secrets file unreadable: {0}")]
     Unreadable(std::io::Error),
-    #[error("secrets file malformed: {0}")]
+    // the parse error is retained for programmatic matching but NEVER
+    // displayed (2026-07-17 review): toml::de::Error's Display echoes the
+    // offending source line, which in this file is secret material — and
+    // this variant's message reaches the log file at boot (lib.rs).
+    #[error("secrets file malformed — fix or delete it by hand (parse detail withheld: it could echo secret material)")]
     Malformed(#[from] toml::de::Error),
     #[error("secrets file has no [telegram] table")]
     MissingTable,
@@ -455,6 +459,19 @@ mod tests {
         let path = temp_secrets("[telegram]\nbot_token = 12\n", 0o600);
         let err = load_secrets(&path).unwrap_err();
         assert!(matches!(err, SecretsError::Malformed(_)));
+        std::fs::remove_file(&path).ok();
+    }
+
+    #[test]
+    fn malformed_secrets_display_never_echoes_secret_material() {
+        // 2026-07-17 review: toml::de::Error's Display includes the
+        // offending source line — which here is a secret — and this
+        // variant's message is logged at boot. The Display must stay fixed.
+        let path = temp_secrets("[telegram]\nbot_token = \"SENTINEL-hunter2", 0o600);
+        let err = load_secrets(&path).unwrap_err();
+        let displayed = format!("{err}");
+        assert!(!displayed.contains("SENTINEL"), "leaked: {displayed}");
+        assert!(!displayed.contains("hunter2"), "leaked: {displayed}");
         std::fs::remove_file(&path).ok();
     }
 

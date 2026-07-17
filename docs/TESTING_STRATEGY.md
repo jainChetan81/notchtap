@@ -438,6 +438,22 @@ security boundary (the overlay must stay receive-only).
     file is gone after rename, a missing parent dir is created
   - secrets write: resulting file is mode `0600` and loads through
     the existing `load_secrets`
+- **2026-07-17 review-round additions**:
+  - malformed secrets containing a sentinel never echo that material
+    through either the settings-facing error or the connector error's
+    `Display`
+  - unknown top-level tables and unknown fields inside known secret
+    tables survive a write
+  - leading/trailing clipboard whitespace is trimmed before secret
+    validation and storage; interior whitespace remains invalid
+  - a stale permissive fixed-name temp file is never reused or written
+    into
+  - submitted `detect_path` is replaced with the booted value before a
+    config save
+  - rss feed validation requires a fully parsed http(s) url with a host,
+    not just a matching prefix
+  - `ensure_settings_window` accepts the `settings` label and rejects
+    `main`, using `tauri::test::mock_app()` + `WebviewWindowBuilder`
 - **frontend (vitest, small)**: form renders values from a mocked
   `get_config`; a mocked `save_config_and_relaunch` rejection renders
   the error list. `@tauri-apps/api/core`'s `invoke` is mocked — no
@@ -449,11 +465,13 @@ security boundary (the overlay must stay receive-only).
     devtools console is denied — verifies the `build.rs`
     `AppManifest::commands` opt-in + per-window capability actually
     gate (v4 §4.4's "does the gate gate" discipline)
-- **untested by design** (extends §5.1's list): the lazy
-  `WebviewWindowBuilder` call and tray-item wiring (thin native
-  glue); `app.restart()` (kills the process — nothing to assert
-  from inside it); the openrouter key's *use* (no consumer exists
-  until the first ai feature)
+- **untested by design** (extends §5.1's list): lazy settings-window
+  creation and tray-item wiring remain thin native glue, but window
+  construction is now partially covered by the label-gate test's mock
+  `WebviewWindowBuilder`; `app.restart()` remains untested (kills the
+  process — nothing to assert from inside it); the openrouter key's
+  *use* remains untested because no consumer exists until the first ai
+  feature
 
 ### 4.12 rss news poller + status-rail news cards (v5 news — landed 2026-07-17)
 
