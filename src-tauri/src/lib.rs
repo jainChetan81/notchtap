@@ -14,7 +14,7 @@ pub mod queue;
 mod rss_poller;
 mod settings;
 
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Once, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -39,6 +39,12 @@ const EXPAND_TOGGLE_SHORTCUT: (Option<Modifiers>, Code) =
 #[cfg(target_os = "macos")]
 const OPEN_STORY_SHORTCUT: (Option<Modifiers>, Code) =
     (Some(Modifiers::CONTROL.union(Modifiers::SHIFT)), Code::KeyO);
+#[cfg(target_os = "macos")]
+const DISMISS_SHORTCUT: (Option<Modifiers>, Code) =
+    (Some(Modifiers::CONTROL.union(Modifiers::SHIFT)), Code::KeyX);
+#[cfg(target_os = "macos")]
+const PAUSE_TOGGLE_SHORTCUT: (Option<Modifiers>, Code) =
+    (Some(Modifiers::CONTROL.union(Modifiers::SHIFT)), Code::KeyP);
 
 // tracing-appender flushes through this guard; it must live as long as
 // the process, so it's parked in a static rather than dropped at the
@@ -74,7 +80,8 @@ pub fn run() {
     // reuses the paused semantics wholesale — pushes still buffer (202),
     // rotation still ages out anything visible; only the launch state
     // differs. the tray toggle stays session-only.
-    let mut initial_queue = SingleSlotQueue::new(config.max_queued_per_tier);
+    let mut initial_queue = SingleSlotQueue::new(config.max_queued_per_tier)
+        .with_rotation_order(config.rotation_order.clone());
     if config.start_paused {
         initial_queue.pause();
         tracing::info!("start_paused: launching with promotion paused");
@@ -89,11 +96,15 @@ pub fn run() {
     let espn_enabled = config.espn_enabled;
     let espn_leagues = config.espn_leagues.clone();
     let espn_poll_secs = config.espn_poll_secs;
+    let espn_priority = config.espn_priority;
+    let espn_ttl_secs = config.espn_ttl_secs;
     let rss_enabled = config.rss_enabled;
     let rss_feeds = config.rss_feeds.clone();
     let rss_poll_secs = config.rss_poll_secs;
+    let rss_priority = config.rss_priority;
     let rss_ttl_secs = config.rss_ttl_secs;
     let rss_max_per_poll = config.rss_max_per_poll;
+    let manual_default_priority = config.manual_default_priority;
 
     // v3 outbound connectors: built here (channel needs no runtime), the
     // worker future is spawned in setup once the runtime exists. missing
@@ -173,6 +184,7 @@ pub fn run() {
             apply_overlay_native_config(&window)?;
 
             position_window(&window, mode, cutout)?;
+            let pause_item = build_tray(app.handle(), setup_queue.clone(), start_paused)?;
 
             // v3.6 spec §7.1: manual expand toggle, rust-side only — the
             // frontend never calls the plugin's JS api (receive-only
@@ -181,6 +193,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             {
                 let hotkey_queue_for_handler = hotkey_queue.clone();
+                let pause_item_for_handler = pause_item.clone();
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
                         .with_handler(move |app, shortcut, event| {
@@ -196,6 +209,24 @@ pub fn run() {
                                     == Shortcut::new(OPEN_STORY_SHORTCUT.0, OPEN_STORY_SHORTCUT.1)
                                 {
                                     open_current_story(app, &hotkey_queue_for_handler);
+                                } else if *shortcut
+                                    == Shortcut::new(
+                                        DISMISS_SHORTCUT.0,
+                                        DISMISS_SHORTCUT.1,
+                                    )
+                                {
+                                    dismiss_current(app, &hotkey_queue_for_handler);
+                                } else if *shortcut
+                                    == Shortcut::new(
+                                        PAUSE_TOGGLE_SHORTCUT.0,
+                                        PAUSE_TOGGLE_SHORTCUT.1,
+                                    )
+                                {
+                                    toggle_pause(
+                                        app,
+                                        &hotkey_queue_for_handler,
+                                        &pause_item_for_handler,
+                                    );
                                 }
                             }
                         })
@@ -207,24 +238,28 @@ pub fn run() {
                 ))?;
                 app.global_shortcut()
                     .register(Shortcut::new(OPEN_STORY_SHORTCUT.0, OPEN_STORY_SHORTCUT.1))?;
+                app.global_shortcut()
+                    .register(Shortcut::new(DISMISS_SHORTCUT.0, DISMISS_SHORTCUT.1))?;
+                app.global_shortcut().register(Shortcut::new(
+                    PAUSE_TOGGLE_SHORTCUT.0,
+                    PAUSE_TOGGLE_SHORTCUT.1,
+                ))?;
             }
 
             login_item::register();
             if let Some(worker) = telegram_worker {
                 tauri::async_runtime::spawn(worker);
             }
-            // tray-controlled polling switch: true = polling. lives here
-            // (not in the queue) because it gates network fetches, not
-            // promotion — pausing scores must not touch cmux/cli pushes.
+            // Poll-loop gate: true = polling. Lives here (not in the queue)
+            // because it gates network fetches, not promotion — pausing
+            // scores must not touch cmux/cli pushes. v6: no longer
+            // tray-toggleable (the tray's "Pause Football Scores"/"Pause
+            // News" items were redundant with the settings panel's
+            // espn_enabled/rss_enabled toggles, ARCHITECTURE.md §17's
+            // "richer than a toggle lives in Settings" rule) — set once at
+            // boot from Config and never flipped again.
             let espn_active = espn_enabled.then(|| Arc::new(AtomicBool::new(true)));
             let rss_active = rss_enabled.then(|| Arc::new(AtomicBool::new(true)));
-            build_tray(
-                app.handle(),
-                setup_queue.clone(),
-                espn_active.clone(),
-                rss_active.clone(),
-                start_paused,
-            )?;
             spawn_heartbeat(app.handle().clone(), setup_queue.clone());
 
             // espn poller (v2 spec §3) — config-gated: `espn_enabled =
@@ -238,7 +273,8 @@ pub fn run() {
                     poller_connectors,
                     espn_leagues,
                     espn_poll_secs,
-                    default_ttl,
+                    espn_ttl_secs,
+                    espn_priority,
                     espn_active,
                 );
             }
@@ -250,6 +286,7 @@ pub fn run() {
                     rss_poll_secs,
                     rss_ttl_secs,
                     rss_max_per_poll,
+                    rss_priority,
                     rss_active,
                 );
             }
@@ -332,6 +369,7 @@ pub fn run() {
                     let state = http::AppState {
                         queue,
                         default_ttl,
+                        manual_default_priority,
                         app_handle: app_handle.clone(),
                         connectors,
                     };
@@ -368,6 +406,15 @@ pub fn run() {
 #[cfg(target_os = "macos")]
 fn apply_overlay_native_config(window: &tauri::WebviewWindow) -> tauri::Result<()> {
     use objc2_app_kit::{NSStatusWindowLevel, NSWindow, NSWindowCollectionBehavior};
+    // click-through, always (2026-07-17 bug: on notchless HUD-mode machines,
+    // the flush-to-top/NSStatusWindowLevel placement below lands this window
+    // directly over the real, interactive system menu bar — not a notch
+    // cutout's dead zone — so without this, every click in its bounds
+    // (including ones meant for the menu bar's own tray icons) was captured
+    // by notchtap instead of passing through. safe unconditionally: the
+    // frontend is receive-only and has no click handlers anywhere — every
+    // interaction is a global hotkey (⌃⇧N/⌃⇧O), never a click.
+    window.set_ignore_cursor_events(true)?;
     // tao tracks this flag in its own window state, so it survives tao's
     // internal re-applies (unlike a raw setCollectionBehavior alone).
     window.set_visible_on_all_workspaces(true)?;
@@ -449,39 +496,58 @@ struct PresentationModePayload {
     mode: presentation::Mode,
 }
 
-fn build_tray(
-    app: &tauri::AppHandle,
+fn toggle_pause<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    queue: &Arc<Mutex<SingleSlotQueue>>,
+    pause_item: &MenuItem<R>,
+) {
+    // menu events and global-shortcut handlers arrive on the main thread,
+    // outside the tokio runtime, so a blocking lock is safe here
+    debug_assert!(
+        tokio::runtime::Handle::try_current().is_err(),
+        "pause toggles must arrive off the tokio runtime; blocking_lock would deadlock"
+    );
+    let slot_change = {
+        let mut q = queue.blocking_lock();
+        if q.is_paused() {
+            q.resume();
+            // v3.6 spec §4.5: resume promotes immediately, not on the next
+            // heartbeat tick
+            q.tick(Instant::now());
+            let _ = pause_item.set_text("Pause");
+            q.slot_state_if_changed()
+        } else {
+            q.pause();
+            let _ = pause_item.set_text("Resume");
+            None
+        }
+    };
+    if let Some(state) = slot_change {
+        emit_slot_state(app, state);
+    }
+}
+
+/// v6: the tray is deliberately minimal — Pause/Resume, Settings…, Quit.
+/// It previously also carried "Pause Football Scores"/"Pause News" items,
+/// but those duplicated the `espn_enabled`/`rss_enabled` toggles already in
+/// Settings (which, since v6, also carry per-source priority and rotation
+/// order — richer than a toggle belongs there, per ARCHITECTURE.md §17's
+/// "everything richer than a toggle lives [in Settings], not in more tray
+/// items" rule, which this tray had not yet caught up to).
+fn build_tray<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
     queue: Arc<Mutex<SingleSlotQueue>>,
-    espn_active: Option<Arc<AtomicBool>>,
-    rss_active: Option<Arc<AtomicBool>>,
     start_paused: bool,
-) -> tauri::Result<()> {
+) -> tauri::Result<MenuItem<R>> {
     // v5 kill switch: a start_paused boot renders the toggle as "Resume"
     // from the first open — the label always names the *next* action.
     let initial_pause_label = if start_paused { "Resume" } else { "Pause" };
     let pause_item = MenuItem::with_id(app, "pause", initial_pause_label, true, None::<&str>)?;
-    // only offered when the poller exists (`espn_enabled = true`)
-    let espn_item = espn_active
-        .as_ref()
-        .map(|_| MenuItem::with_id(app, "espn", "Pause Football Scores", true, None::<&str>))
-        .transpose()?;
-    let rss_item = rss_active
-        .as_ref()
-        .map(|_| MenuItem::with_id(app, "news", "Pause News", true, None::<&str>))
-        .transpose()?;
-    // v5 (ARCHITECTURE.md §17): the settings tray item — opens the settings
-    // window; everything richer than a toggle lives there, not in more
-    // tray items.
     let settings_item = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+    let pause_item_for_handler = pause_item.clone();
     let menu = Menu::new(app)?;
     menu.append(&pause_item)?;
-    if let Some(item) = &espn_item {
-        menu.append(item)?;
-    }
-    if let Some(item) = &rss_item {
-        menu.append(item)?;
-    }
     menu.append(&settings_item)?;
     menu.append(&quit_item)?;
 
@@ -490,62 +556,14 @@ fn build_tray(
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(move |app, event| match event.id().as_ref() {
-            "pause" => {
-                // menu events arrive on the main thread, outside the tokio
-                // runtime, so a blocking lock is safe here
-                debug_assert!(
-                    tokio::runtime::Handle::try_current().is_err(),
-                    "tray menu events must arrive off the tokio runtime; blocking_lock would deadlock"
-                );
-                let slot_change = {
-                    let mut q = queue.blocking_lock();
-                    if q.is_paused() {
-                        q.resume();
-                        // v3.6 spec §4.5: resume promotes immediately, not
-                        // on the next heartbeat tick
-                        q.tick(Instant::now());
-                        let _ = pause_item.set_text("Pause");
-                        q.slot_state_if_changed()
-                    } else {
-                        q.pause();
-                        let _ = pause_item.set_text("Resume");
-                        None
-                    }
-                };
-                if let Some(state) = slot_change {
-                    emit_slot_state(app, state);
-                }
-            }
-            "espn" => {
-                if let (Some(flag), Some(item)) = (&espn_active, &espn_item) {
-                    // fetch_xor toggles and returns the previous value
-                    let now_active = !flag.fetch_xor(true, Ordering::Relaxed);
-                    let _ = item.set_text(if now_active {
-                        "Pause Football Scores"
-                    } else {
-                        "Resume Football Scores"
-                    });
-                    tracing::info!(active = now_active, "espn polling toggled from tray");
-                }
-            }
-            "news" => {
-                if let (Some(flag), Some(item)) = (&rss_active, &rss_item) {
-                    let now_active = !flag.fetch_xor(true, Ordering::Relaxed);
-                    let _ = item.set_text(if now_active {
-                        "Pause News"
-                    } else {
-                        "Resume News"
-                    });
-                    tracing::info!(active = now_active, "rss polling toggled from tray");
-                }
-            }
+            "pause" => toggle_pause(app, &queue, &pause_item_for_handler),
             "settings" => open_settings_window(app),
             "quit" => app.exit(0),
             _ => {}
         })
         .build(app)?;
 
-    Ok(())
+    Ok(pause_item)
 }
 
 /// v5 spec §1: lazy creation, focus-if-open. A normal decorated window —
@@ -554,7 +572,7 @@ fn build_tray(
 /// until IMPLEMENTATION_PLAN.md §4.5's step 5 lands (held for the ui
 /// migration), `settings.html` doesn't exist and the window opens blank —
 /// accepted interim state, documented there.
-fn open_settings_window(app: &tauri::AppHandle) {
+fn open_settings_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     if let Some(window) = app.get_webview_window("settings") {
         let _ = window.set_focus();
         return;
@@ -615,6 +633,19 @@ fn toggle_manual_expand<R: tauri::Runtime>(
 }
 
 #[cfg(target_os = "macos")]
+fn dismiss_current<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    queue: &Arc<Mutex<SingleSlotQueue>>,
+) {
+    let mut q = queue.blocking_lock();
+    q.dismiss_visible(Instant::now());
+    if let Some(state) = q.slot_state_if_changed() {
+        drop(q);
+        emit_slot_state(app, state);
+    }
+}
+
+#[cfg(target_os = "macos")]
 fn open_current_story<R: tauri::Runtime>(
     _app: &tauri::AppHandle<R>,
     queue: &Arc<Mutex<SingleSlotQueue>>,
@@ -646,6 +677,7 @@ mod tests {
     use super::*;
     use crate::event::{
         Event, EventMeta, EventPayload, EventSignal, EventType, Priority, RotationSpec, SlotState,
+        SourceKind,
     };
 
     fn event(priority: Priority) -> Event {
@@ -661,6 +693,7 @@ mod tests {
             },
             meta: EventMeta::default(),
             signal: EventSignal::Generic,
+            origin: SourceKind::Manual,
         }
     }
 
@@ -694,5 +727,62 @@ mod tests {
             SlotState::Showing { expanded, .. } => assert!(expanded, "Medium must toggle"),
             SlotState::Empty => panic!("expected Showing"),
         }
+    }
+
+    #[test]
+    fn dismiss_current_promotes_next_waiting_item() {
+        let app = tauri::test::mock_app();
+        let mut inner = SingleSlotQueue::new(50);
+        inner.enqueue(event(Priority::Medium)).unwrap();
+        let next = event(Priority::Medium);
+        let next_id = next.id;
+        inner.enqueue(next).unwrap();
+        let queue = Arc::new(Mutex::new(inner));
+
+        dismiss_current(&app.handle().clone(), &queue);
+
+        let q = queue.blocking_lock();
+        match q.current_slot_state() {
+            SlotState::Showing { id, .. } => assert_eq!(id, next_id),
+            SlotState::Empty => panic!("expected Showing"),
+        }
+    }
+
+    #[test]
+    fn dismiss_current_is_noop_when_slot_already_empty() {
+        let app = tauri::test::mock_app();
+        let mut inner = SingleSlotQueue::new(50);
+        assert_eq!(inner.slot_state_if_changed(), Some(SlotState::Empty));
+        let queue = Arc::new(Mutex::new(inner));
+
+        dismiss_current(&app.handle().clone(), &queue);
+
+        let mut q = queue.blocking_lock();
+        assert_eq!(q.current_slot_state(), SlotState::Empty);
+        assert!(q.slot_state_if_changed().is_none());
+    }
+
+    #[test]
+    fn toggle_pause_updates_label_and_promotes_on_resume() {
+        let app = tauri::test::mock_app();
+        let pause_item =
+            MenuItem::with_id(app.handle(), "pause", "Pause", true, None::<&str>).unwrap();
+        let queue = Arc::new(Mutex::new(SingleSlotQueue::new(50)));
+
+        toggle_pause(&app.handle().clone(), &queue, &pause_item);
+        assert_eq!(pause_item.text().unwrap(), "Resume");
+        {
+            let mut q = queue.blocking_lock();
+            assert!(q.is_paused());
+            q.enqueue(event(Priority::Medium)).unwrap();
+            assert_eq!(q.current_slot_state(), SlotState::Empty);
+        }
+
+        toggle_pause(&app.handle().clone(), &queue, &pause_item);
+        assert_eq!(pause_item.text().unwrap(), "Pause");
+        let q = queue.blocking_lock();
+        assert!(!q.is_paused());
+        assert!(matches!(q.current_slot_state(), SlotState::Showing { .. }));
+        assert_eq!(q.total_waiting(), 0);
     }
 }

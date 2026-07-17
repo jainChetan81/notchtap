@@ -2,7 +2,7 @@ use std::collections::VecDeque;
 use std::time::Instant;
 
 use crate::error::QueueError;
-use crate::event::{Event, Priority, RotationSpec, SlotState};
+use crate::event::{Event, Priority, RotationSpec, SlotState, SourceKind};
 
 pub struct QueueItem {
     pub event: Event,
@@ -19,7 +19,7 @@ pub struct QueueItem {
 ///
 /// ```
 /// use std::time::{Duration, Instant};
-/// use notchtap_lib::event::{Event, EventMeta, EventPayload, EventSignal, EventType, Priority, RotationSpec};
+/// use notchtap_lib::event::{Event, EventMeta, EventPayload, EventSignal, EventType, Priority, RotationSpec, SourceKind};
 /// use notchtap_lib::queue::SingleSlotQueue;
 ///
 /// fn event(title: &str, priority: Priority, ttl_secs: u64) -> Event {
@@ -32,6 +32,7 @@ pub struct QueueItem {
 ///         payload: EventPayload { title: title.into(), body: "body".into() },
 ///         meta: EventMeta::default(),
 ///         signal: EventSignal::Generic,
+///         origin: SourceKind::Manual,
 ///     }
 /// }
 ///
@@ -51,6 +52,11 @@ pub struct SingleSlotQueue {
     paused: bool,
     expanded: bool,
     last_emitted: Option<SlotState>,
+    /// Same-tier promotion tie-break, checked before arrival order — see
+    /// `pop_highest_priority_waiting`. Empty by default: every origin ties,
+    /// so promotion degenerates to plain arrival-order FIFO (today's
+    /// behavior). Set via `with_rotation_order`.
+    rotation_order: Vec<SourceKind>,
 }
 
 impl SingleSlotQueue {
@@ -62,7 +68,16 @@ impl SingleSlotQueue {
             paused: false,
             expanded: false,
             last_emitted: None,
+            rotation_order: Vec::new(),
         }
+    }
+
+    /// Builder: sets the same-tier tie-break order. `Config.rotation_order`
+    /// (validated as a permutation of all three `SourceKind` variants) is
+    /// the only production caller; tests are free to leave this unset.
+    pub fn with_rotation_order(mut self, rotation_order: Vec<SourceKind>) -> Self {
+        self.rotation_order = rotation_order;
+        self
     }
 
     // ------------------------------------------------------------------
@@ -174,11 +189,38 @@ impl SingleSlotQueue {
 
     fn pop_highest_priority_waiting(&mut self) -> Option<QueueItem> {
         for tier in (0..3).rev() {
-            if let Some(item) = self.waiting[tier].pop_front() {
-                return Some(item);
+            if self.waiting[tier].is_empty() {
+                continue;
             }
+            let index = self.best_index_in_tier(tier);
+            return self.waiting[tier].remove(index);
         }
         None
+    }
+
+    /// Within one tier: the item whose `origin` sorts earliest in
+    /// `rotation_order` wins; unlisted origins (or an empty/unset order)
+    /// rank last and tie with each other, so ties fall back to position —
+    /// i.e. arrival order, identical to the pre-v6 behavior. `position()`
+    /// finds the first (lowest-index / earliest-arrived) match among equal
+    /// ranks, which is what makes that fallback exact.
+    fn best_index_in_tier(&self, tier: usize) -> usize {
+        let rank = |item: &QueueItem| {
+            self.rotation_order
+                .iter()
+                .position(|origin| *origin == item.event.origin)
+                .unwrap_or(self.rotation_order.len())
+        };
+        let mut best = 0;
+        let mut best_rank = rank(&self.waiting[tier][0]);
+        for (i, item) in self.waiting[tier].iter().enumerate().skip(1) {
+            let r = rank(item);
+            if r < best_rank {
+                best = i;
+                best_rank = r;
+            }
+        }
+        best
     }
 
     fn all_tiers_empty(&self) -> bool {
@@ -221,6 +263,17 @@ impl SingleSlotQueue {
 
     pub fn is_paused(&self) -> bool {
         self.paused
+    }
+
+    /// Manually dismiss the current visible item, if any, and promote the
+    /// next waiting item immediately — mirrors what `tick` does on natural
+    /// rotation-out, but caller-triggered rather than TTL-triggered. Unlike
+    /// a natural rotation-out, a dismissed Recurring item is dropped, not
+    /// requeued: "get rid of this" means gone, not "back after a lap
+    /// through the other tiers."
+    pub fn dismiss_visible(&mut self, now: Instant) {
+        self.visible = None;
+        self.promote_next(now);
     }
 
     pub fn current_priority(&self) -> Option<Priority> {
@@ -312,6 +365,7 @@ mod tests {
             },
             meta: EventMeta::default(),
             signal: EventSignal::Generic,
+            origin: SourceKind::Manual,
         }
     }
 
@@ -328,6 +382,7 @@ mod tests {
             },
             meta: EventMeta::default(),
             signal: EventSignal::Generic,
+            origin: SourceKind::Manual,
         }
     }
 
@@ -344,6 +399,17 @@ mod tests {
             },
             meta: EventMeta::default(),
             signal: EventSignal::Generic,
+            origin: SourceKind::Manual,
+        }
+    }
+
+    /// Same as `event()` but from a specific origin — for tie-break tests
+    /// only; every other test relies on every helper sharing one origin so
+    /// rank-based selection degenerates to pre-v6 arrival-order FIFO.
+    fn event_from(title: &str, priority: Priority, ttl_secs: u64, origin: SourceKind) -> Event {
+        Event {
+            origin,
+            ..event(title, priority, ttl_secs)
         }
     }
 
@@ -450,6 +516,86 @@ mod tests {
         q.tick(Instant::now() + Duration::from_secs(2));
         assert_eq!(visible_title(&q), Some("second"));
         assert_eq!(waiting_titles(&q, Priority::Medium as usize), vec!["third"]);
+    }
+
+    #[test]
+    fn rotation_order_breaks_same_tier_ties_ahead_of_arrival_order() {
+        // arrival order is news, manual, football — rotation_order says
+        // football wins regardless.
+        let mut q = SingleSlotQueue::new(50).with_rotation_order(vec![
+            SourceKind::Football,
+            SourceKind::Manual,
+            SourceKind::News,
+        ]);
+        q.pause();
+        q.enqueue(event_from("news", Priority::Medium, 8, SourceKind::News))
+            .unwrap();
+        q.enqueue(event_from(
+            "manual",
+            Priority::Medium,
+            8,
+            SourceKind::Manual,
+        ))
+        .unwrap();
+        q.enqueue(event_from(
+            "football",
+            Priority::Medium,
+            8,
+            SourceKind::Football,
+        ))
+        .unwrap();
+        q.resume();
+        q.tick(Instant::now());
+        assert_eq!(visible_title(&q), Some("football"));
+        assert_eq!(
+            waiting_titles(&q, Priority::Medium as usize),
+            vec!["news", "manual"]
+        );
+    }
+
+    #[test]
+    fn unset_rotation_order_falls_back_to_arrival_order_across_origins() {
+        // default (empty) rotation_order: every origin ties, so mixed-origin
+        // same-tier items still promote in plain arrival order.
+        let mut q = SingleSlotQueue::new(50);
+        q.pause();
+        q.enqueue(event_from("news", Priority::Medium, 8, SourceKind::News))
+            .unwrap();
+        q.enqueue(event_from(
+            "football",
+            Priority::Medium,
+            8,
+            SourceKind::Football,
+        ))
+        .unwrap();
+        q.resume();
+        q.tick(Instant::now());
+        assert_eq!(visible_title(&q), Some("news"));
+    }
+
+    #[test]
+    fn rotation_order_only_breaks_ties_within_a_tier_not_across_tiers() {
+        // football is favored by rotation_order, but a waiting High item
+        // from a lower-ranked origin still promotes first — Priority beats
+        // rotation_order, exactly as documented.
+        let mut q = SingleSlotQueue::new(50).with_rotation_order(vec![
+            SourceKind::Football,
+            SourceKind::Manual,
+            SourceKind::News,
+        ]);
+        q.pause();
+        q.enqueue(event_from("news-high", Priority::High, 8, SourceKind::News))
+            .unwrap();
+        q.enqueue(event_from(
+            "football-medium",
+            Priority::Medium,
+            8,
+            SourceKind::Football,
+        ))
+        .unwrap();
+        q.resume();
+        q.tick(Instant::now());
+        assert_eq!(visible_title(&q), Some("news-high"));
     }
 
     #[test]
@@ -776,6 +922,53 @@ mod tests {
         q.enqueue(event("b", Priority::Medium, 8)).unwrap();
         let err = q.enqueue(event("c", Priority::Medium, 8)).unwrap_err();
         assert!(matches!(err, QueueError::QueueFull));
+    }
+
+    #[test]
+    fn dismiss_visible_clears_and_promotes_next_waiting() {
+        let mut q = SingleSlotQueue::new(50);
+        q.enqueue(event("a", Priority::Medium, 8)).unwrap();
+        q.enqueue(event("b", Priority::Medium, 8)).unwrap();
+
+        q.dismiss_visible(Instant::now());
+
+        assert_eq!(visible_title(&q), Some("b"));
+        assert_eq!(q.total_waiting(), 0);
+    }
+
+    #[test]
+    fn dismiss_visible_is_noop_when_nothing_visible() {
+        let mut q = SingleSlotQueue::new(50);
+
+        q.dismiss_visible(Instant::now());
+
+        assert!(q.visible.is_none());
+        assert_eq!(q.total_waiting(), 0);
+    }
+
+    #[test]
+    fn dismiss_visible_drops_recurring_item_rather_than_requeue() {
+        let mut q = SingleSlotQueue::new(50);
+        q.enqueue(recurring_event("recur", Priority::Medium, 8))
+            .unwrap();
+
+        q.dismiss_visible(Instant::now());
+
+        assert!(q.visible.is_none());
+        assert!(q.waiting.iter().all(|t| t.is_empty()));
+    }
+
+    #[test]
+    fn dismiss_visible_respects_paused() {
+        let mut q = SingleSlotQueue::new(50);
+        q.enqueue(event("a", Priority::Medium, 8)).unwrap();
+        q.enqueue(event("b", Priority::Medium, 8)).unwrap();
+        q.pause();
+
+        q.dismiss_visible(Instant::now());
+
+        assert!(q.visible.is_none());
+        assert_eq!(waiting_titles(&q, Priority::Medium as usize), vec!["b"]);
     }
 
     #[test]
