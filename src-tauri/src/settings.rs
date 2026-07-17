@@ -60,6 +60,37 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
         errors
             .push("espn_enabled is on but espn_leagues is empty — add a league or disable".into());
     }
+    if !(5..=3600).contains(&c.rss_poll_secs) {
+        errors.push(format!(
+            "rss_poll_secs must be 5–3600 (got {})",
+            c.rss_poll_secs
+        ));
+    }
+    if !(1..=3600).contains(&c.rss_ttl_secs) {
+        errors.push(format!(
+            "rss_ttl_secs must be 1–3600 (got {})",
+            c.rss_ttl_secs
+        ));
+    }
+    if !(1..=100).contains(&c.rss_max_per_poll) {
+        errors.push(format!(
+            "rss_max_per_poll must be 1–100 (got {})",
+            c.rss_max_per_poll
+        ));
+    }
+    for feed in &c.rss_feeds {
+        if !(feed.url.starts_with("https://") || feed.url.starts_with("http://"))
+            || feed.url.chars().any(char::is_whitespace)
+        {
+            errors.push(format!(
+                "feed {:?} is invalid — entries must be http(s) urls with no whitespace",
+                feed.url
+            ));
+        }
+    }
+    if c.rss_enabled && c.rss_feeds.is_empty() {
+        errors.push("rss_enabled is on but rss_feeds is empty — add a feed or disable".into());
+    }
 
     if errors.is_empty() {
         Ok(())
@@ -442,6 +473,76 @@ mod tests {
         assert_eq!(errors.len(), 3);
     }
 
+    // --- rss rules (v5 news backend, folded into the panel 2026-07-17) ---
+
+    #[test]
+    fn rss_poll_interval_boundaries() {
+        let mut c = Config {
+            rss_poll_secs: 4,
+            ..Config::default()
+        };
+        assert!(validate(&c).is_err());
+        c.rss_poll_secs = 5;
+        assert!(validate(&c).is_ok());
+        c.rss_poll_secs = 3601;
+        assert!(validate(&c).is_err());
+    }
+
+    #[test]
+    fn rss_ttl_boundaries() {
+        let mut c = Config {
+            rss_ttl_secs: 0,
+            ..Config::default()
+        };
+        assert!(validate(&c).is_err());
+        c.rss_ttl_secs = 1;
+        assert!(validate(&c).is_ok());
+        c.rss_ttl_secs = 3601;
+        assert!(validate(&c).is_err());
+    }
+
+    #[test]
+    fn rss_max_per_poll_boundaries() {
+        let mut c = Config {
+            rss_max_per_poll: 0,
+            ..Config::default()
+        };
+        assert!(validate(&c).is_err());
+        c.rss_max_per_poll = 1;
+        assert!(validate(&c).is_ok());
+        c.rss_max_per_poll = 100;
+        assert!(validate(&c).is_ok());
+        c.rss_max_per_poll = 101;
+        assert!(validate(&c).is_err());
+    }
+
+    #[test]
+    fn rss_feeds_must_be_http_urls_without_whitespace() {
+        let mut c = Config {
+            rss_feeds: vec!["ftp://example.com/feed".into()],
+            ..Config::default()
+        };
+        assert!(validate(&c).is_err());
+        c.rss_feeds = vec!["https://example.com/a feed".into()];
+        assert!(validate(&c).is_err());
+        c.rss_feeds = vec!["https://example.com/feed.xml".into()];
+        assert!(validate(&c).is_ok());
+        c.rss_feeds = vec!["http://example.com/feed.xml".into()];
+        assert!(validate(&c).is_ok());
+    }
+
+    #[test]
+    fn empty_feed_list_rejected_only_while_rss_enabled() {
+        let mut c = Config {
+            rss_feeds: vec![],
+            rss_enabled: true,
+            ..Config::default()
+        };
+        assert!(validate(&c).is_err());
+        c.rss_enabled = false;
+        assert!(validate(&c).is_ok());
+    }
+
     // --- mask ---
 
     #[test]
@@ -472,6 +573,11 @@ mod tests {
             espn_enabled: false,
             espn_leagues: vec!["usa.1".into()],
             espn_poll_secs: 60,
+            rss_enabled: true,
+            rss_feeds: vec!["https://example.com/feed.xml".into()],
+            rss_poll_secs: 120,
+            rss_ttl_secs: 15,
+            rss_max_per_poll: 5,
             connectors: crate::config::Connectors {
                 telegram: crate::config::TelegramToggle { enabled: true },
             },

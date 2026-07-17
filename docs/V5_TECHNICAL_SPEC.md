@@ -143,6 +143,11 @@ pub enum SecretField {
     endpoint)
   - every `espn_leagues` entry non-empty, no whitespace; an empty list
     is an error only when `espn_enabled = true`
+  - rss (added 2026-07-17 with the `v5-news-backend` merge):
+    `rss_poll_secs` in `5..=3600`, `rss_ttl_secs` in `1..=3600`,
+    `rss_max_per_poll` in `1..=100`; every `rss_feeds` entry an
+    http(s) url with no whitespace; an empty list is an error only
+    when `rss_enabled = true`
 
 - **atomic write**: serialize the whole `Config` with `toml::to_string_pretty`,
   write to `config.toml.tmp` **in the same directory** (rename across
@@ -231,8 +236,10 @@ opens a blank window (accepted interim state,
 
 - react form on the post-migration stack: number inputs for
   ttl/port/cap/poll-secs, checkboxes for `start_paused` /
-  `espn_enabled` / `connectors.telegram.enabled`, a textarea (one
-  league per line) for `espn_leagues`, password-type inputs +
+  `espn_enabled` / `rss_enabled` / `connectors.telegram.enabled`, a
+  textarea (one league per line) for `espn_leagues` and one (one url
+  per line) for `rss_feeds`, number inputs for `rss_poll_secs` /
+  `rss_ttl_secs` / `rss_max_per_poll`, password-type inputs +
   "save key" buttons for the three secret fields, masked status text
   from `get_secret_status` beside each.
 - load once on mount (`invoke("get_config")`, `invoke("get_secret_status")`);

@@ -57,6 +57,18 @@ pub struct RssFeedConfig {
     pub category: Option<String>,
 }
 
+/// Bare-url ergonomics: a feed known only by url (tests, minimal
+/// configs) gets no source/category metadata.
+impl From<&str> for RssFeedConfig {
+    fn from(url: &str) -> Self {
+        Self {
+            url: url.to_string(),
+            source: None,
+            category: None,
+        }
+    }
+}
+
 fn default_port() -> u16 {
     9789
 }

@@ -584,4 +584,7 @@ unchanged and permanent). code-level contract in
 - **panel scope (v5)**: `start_paused`, espn on/off + leagues + poll
   interval, `default_ttl` / `port` / `max_queued_per_tier`, openrouter
   key, telegram enable + token/chat-id. `detect_path` stays
-  file-only.
+  file-only. **extended 2026-07-17** (same day, after the
+  `v5-news-backend` merge landed rss config): news on/off + feeds +
+  poll interval + ttl + max-per-poll (`rss_*` fields) join the panel —
+  "i decide when to poll news" was the panel's founding ask.
