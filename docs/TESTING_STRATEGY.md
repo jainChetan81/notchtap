@@ -40,8 +40,8 @@ piece still open, tracked in its own section.
 | deep testing work order (proptest invariants, http burst, poller fuzz, frontend timing fuzz) | **parked 2026-07-16** — un-park triggers in §8 | §9 (the full, implementation-ready plan) |
 | ~~outbound connector tests~~ | **landed with v3 (telegram)** 2026-07-16 | §4.9 |
 | ~~single-slot rotating overlay tests~~ | **landed with v3.6** 2026-07-17 (branch `v3.6-rotating-overlay`, not yet merged) | §4.10 |
-| ~~v5 rss poller + news-card suite~~ | **landed 2026-07-17** (rss_poller 20 above + the news-card share of the frontend 48) | §4.12 |
-| v5 settings-window suite | **rust side landed 2026-07-17** (validate/mask/round-trip/merge/write paths — the settings 34 above, which also folds in rss validation rules and review hardening); form + vitest cases held with `IMPLEMENTATION_PLAN.md` §4.5 step 5 (ui migration) | §4.11, `V5_TECHNICAL_SPEC.md` §7 |
+| ~~v5 rss poller + news-card suite~~ | **landed 2026-07-17** (see §0) | §4.12 |
+| v5 settings-window suite | **landed 2026-07-17, rust side and ui side both** (see §0) — validate/mask/round-trip/merge/write paths, plus the settings form + vitest cases (`IMPLEMENTATION_PLAN.md` §4.5 step 5) | §4.11, `V5_TECHNICAL_SPEC.md` §7 |
 | manual checks not yet run (v3.6 hotkey keypress + Spaces/fullscreen survival, v5 news live-feed check) | needs the macbook + (for news) `rss_enabled = true` | §4.10, §4.12, §5, `IMPLEMENTATION_PLAN.md` §3.6.1/§4.6.1/§6 |
 | `test-cli.sh` for the `notchtap` script | only if the script grows | §8 |
 | manual hardware checklist | recurring per change — never "done" | §5, `IMPLEMENTATION_PLAN.md` §6 |
@@ -343,7 +343,7 @@ priority tiers, not pure fifo; rotation, not ttl).
   model — tick/rotation, tier-strict promotion, fast-path,
   supersession (including the hard extension cap), pause/resume, and
   the `slot_state_if_changed` change-guard
-- **example cases** (`queue.rs`, 27 tests):
+- **example cases** (`queue.rs`, see §0 for the current count):
   - `tick`: never-interrupt (a `High` enqueue while something is
     Visible does not promote until the Visible item's own rotation
     elapses), tier-strict promotion order, fifo within a tier,
@@ -488,7 +488,7 @@ poller and the frontend render path only.
   the fetch loop stays thin and untested (§5.1), parsing/dedup/diff
   logic are pure functions tested directly against fixtures, including
   real-shaped ndtv captures. no live rss fetch in any test.
-- **example cases** (`rss_poller.rs`, 20 tests):
+- **example cases** (`rss_poller.rs`, see §0 for the current count):
   - `SeenStore`: bounds enforcement (1k keys, oldest evicted first),
     7-day eviction, guid dedup, canonical-link fallback when a guid is
     absent, cross-feed duplicate guard (the same story from two feeds
@@ -506,8 +506,9 @@ poller and the frontend render path only.
     feed title
   - malformed/empty feed body → no crash, no event emitted (same
     failure-mode contract as §4.7)
-- **frontend (vitest, part of the 48 total — presentation tables 14 +
-  `StatusRailCard` 12 cover the news branch)**: masthead render
+- **frontend (vitest, part of the frontend total — see §0 for current
+  counts — presentation tables and `StatusRailCard` cover the news
+  branch)**: masthead render
   (`{source} · Wire`), 2-line clamped headline, category + age pill
   content, `stampFor`/`categoryClass`/`ageLabel`/`publishedLabel`
   lookup-table cases including unknown-category fallback, null-metadata
@@ -546,10 +547,12 @@ silence is ambiguous — this list makes "untested by design" explicit
 per module, so a missing `#[cfg(test)]` block is never mistaken for an
 oversight:
 
-- **`lib.rs`** — tauri wiring (window, tray construction, heartbeat
-  spawn, page-load gate). thin orchestration of native apis; §3's
-  "don't test thin wrappers" rule. the logic it calls (queue, emit
-  rule) is tested where it lives.
+- **`lib.rs`** — partially tested: the pure hotkey handlers
+  (`toggle_manual_expand`, `dismiss_current`, `toggle_pause`) have their
+  own suite, §4.10. the rest — window, tray construction, heartbeat
+  spawn, page-load gate — stays untested by design: thin orchestration
+  of native apis; §3's "don't test thin wrappers" rule. the logic it
+  calls (queue, emit rule) is tested where it lives.
 - **`logging.rs`** — file-appender setup and rotation glue. filesystem
   side effects, no decision logic worth asserting.
 - **`login_item.rs`** — `SMAppService` registration shim. only

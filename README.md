@@ -13,15 +13,33 @@ branches at runtime.
 ## what it does
 
 - runs permanently as a menu-bar app (no dock icon)
-- accepts notification pushes from the command line:
-  `notchtap --title "title" --body "body"`
-- auto-relays notifications from [cmux](https://cmux.com) (including
-  claude code "agent needs input" alerts)
-- renders each push as a slick, animated overlay — notch-cutout-aware on
-  the MacBook, floating HUD on the Mac mini
-- v1: one generic animation template, FIFO queue, TTL auto-dismiss
-- v2: per-event-type animations, ESPN live football scores
-- v3: outbound connectors (WhatsApp via Twilio, Telegram)
+- a **single visible slot**: at most one notification on screen at a
+  time, permanently rotating — not a stacked queue
+- accepts pushes from four sources: the `notchtap` cli, cmux's
+  notification relay (including claude code "agent needs input"
+  alerts), an ESPN live-football poller, and an rss news poller
+- each source has a configurable Priority (`Low`/`Medium`/`High`);
+  within a tier, a configurable Rotation Order breaks ties ahead of
+  plain arrival order
+- news items render as status-rail cards and are overlay-only — never
+  relayed outbound
+- outbound: accepted events (except news) are relayed to Telegram
+- a settings window (opened from the tray) edits config and secrets;
+  saving relaunches the app — there's no hot-reload
+- renders as a slick, animated overlay — notch-cutout-aware on the
+  MacBook, floating HUD on the Mac mini
+
+### global hotkeys
+
+these are OS-level global grabs — they work even when notchtap isn't
+focused:
+
+| shortcut | action |
+|---|---|
+| ⌃⇧N | toggle expand on the visible notification |
+| ⌃⇧O | open the story/link for the visible item (news only) |
+| ⌃⇧X | dismiss the visible item now |
+| ⌃⇧P | toggle pause (stop/resume promotion) |
 
 ## tech stack
 
@@ -35,7 +53,7 @@ see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for full rationale on every
 decision (why Tauri over Electron, why no App Store, why this stack,
 etc.).
 
-## quick start (once scaffolded)
+## quick start
 
 ```bash
 # install dependencies
@@ -51,6 +69,23 @@ npx vitest run          # from repo root
 # trigger a notification manually (flags only — no positional form)
 notchtap --title "hello" --body "world"
 ```
+
+## setup
+
+- rust toolchain via [`rustup`](https://rustup.rs) — required for
+  `cargo build`/`cargo test`
+- build the notch-detection helper and symlink it where the app expects
+  it (or point `detect_path` in config at it instead):
+  ```bash
+  swift build -c release   # from notchtap-detect/
+  ln -s "$(pwd)/.build/release/notchtap-detect" /usr/local/bin/notchtap-detect
+  ```
+- `brew install jq` — the `notchtap` cli script needs `jq` and `curl`
+- optionally symlink the `notchtap` script somewhere on your `PATH`
+- first run: if `~/.config/notchtap/config.toml` is absent, the app
+  runs with all defaults and never creates the file — only a
+  settings-window save creates it
+- logs: `~/Library/Logs/notchtap/notchtap.log` (10 MB × 3 rotation)
 
 ## project docs
 

@@ -601,9 +601,6 @@ fn build_tray<R: tauri::Runtime>(
 /// v5 spec §1: lazy creation, focus-if-open. A normal decorated window —
 /// everything the overlay is not (no nspanel, no always-on-top, no
 /// collection-behavior calls); closing it leaves the app running.
-/// until IMPLEMENTATION_PLAN.md §4.5's step 5 lands (held for the ui
-/// migration), `settings.html` doesn't exist and the window opens blank —
-/// accepted interim state, documented there.
 fn open_settings_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     if let Some(window) = app.get_webview_window("settings") {
         let _ = window.set_focus();

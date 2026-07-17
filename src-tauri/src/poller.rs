@@ -546,7 +546,9 @@ async fn fetch_league(client: &reqwest::Client, league: &str) -> anyhow::Result<
 
 /// Enqueues each event and offers the accepted ones to every connector —
 /// the poller-side twin of `http.rs`'s acceptance fan-out (plan §3:
-/// "every accepted event goes to every enabled connector, always").
+/// "every accepted event goes to every enabled connector, always" — with
+/// one recorded exception: rss/news events are overlay-only and never
+/// offered, `IMPLEMENTATION_PLAN.md` §4.6).
 /// Returns the promotions to emit. An earlier draft fanned out only from
 /// the http handler, silently excluding score events from outbound
 /// (caught in the 2026-07-16 v3 review).

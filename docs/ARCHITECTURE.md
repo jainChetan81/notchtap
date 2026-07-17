@@ -421,12 +421,13 @@ hot-reload; restart *is* the reload mechanism.
 ## 11. logging & observability
 
 - **rust core**: use `tracing` (already pulled in by tauri/axum). write
-to a rotating log file at `~/.local/share/notchtap/logs/notchtap.log`
-(or `~/Library/Logs/notchtap/` on macos). rotate at 10 mb, keep 3
+to a rotating log file at `~/Library/Logs/notchtap/notchtap.log`
+(`src-tauri/src/logging.rs`). rotate at 10 mb, keep 3
 backups. log level `info` in release, `debug` in dev.
-- **frontend errors**: any react error boundary catch or animation
-failure logs back to the same file via a tauri command — the frontend
-never writes to disk directly.
+- **frontend errors**: superseded 2026-07-17: never built; the overlay
+is receive-only (§14/§17), so frontend errors are devtools-only by
+design — no tauri command carries them back to the log file, and none
+should be added.
 - **macos console**: optionally bridge `tracing` events to `os_log` via
 a small adapter, but file logs are the primary source of truth.
 
