@@ -786,6 +786,11 @@ v3.6's rewritten queue/frontend — see `TESTING_STRATEGY.md` §4.10.
       a fullscreen app (`NSWindowCollectionBehavior`)
 - [ ] v3.6: a live espn goal (`High` priority) auto-expands and rotates
       out correctly under the single-slot model
+- [ ] hotkeys (plans/001): ⌃⇧] with a Recurring item Visible requeues it
+      (it returns after the queue laps) and promotes the next item; ⌃⇧]
+      with a OneShot Visible drops it; ⌃⇧, opens/focuses the settings
+      window from any app; both verified by real keypress on the dev
+      machine (TESTING_STRATEGY.md §5 — not automatable)
 - [ ] v5 (once built, mac mini is enough — no notch dependency):
       settings window opens from the tray and re-focuses instead of
       duplicating; "Save & Relaunch" restarts the app with the change

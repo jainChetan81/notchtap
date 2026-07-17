@@ -144,7 +144,7 @@ const sectionCopy: Record<SectionId, { index: string; title: string; description
   shortcuts: {
     index: "06",
     title: "Shortcuts",
-    description: "A reference for the global controls available now and planned next.",
+    description: "A reference for the global controls available while notchtap runs.",
   },
   appearance: {
     index: "07",
@@ -184,8 +184,8 @@ const shortcuts = [
   { keys: "⌃⇧O", action: "Open the current story's link", status: "active" },
   { keys: "⌃⇧X", action: "Dismiss the visible notification now", status: "active" },
   { keys: "⌃⇧P", action: "Pause or resume promotion", status: "active" },
-  { keys: "⌃⇧]", action: "Skip to the next waiting item", status: "planned" },
-  { keys: "⌃⇧,", action: "Open settings", status: "planned" },
+  { keys: "⌃⇧]", action: "Skip to the next waiting item", status: "active" },
+  { keys: "⌃⇧,", action: "Open settings", status: "active" },
 ] as const;
 
 function copyConfig(config: Config): Config {
@@ -808,7 +808,6 @@ function ShortcutsSection() {
           </div>
         ))}
       </div>
-      <p className="shortcut-footnote">Planned key combinations are placeholders and may change before implementation.</p>
     </SettingsGroup>
   );
 }
