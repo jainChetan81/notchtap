@@ -16,16 +16,27 @@ body {
 .slot {
   box-sizing: border-box;
   width: 360px;
+  min-height: 32px;
   max-height: 84px;
+  margin: 0 auto;
   padding: 10px 16px;
-  border-radius: 14px;
+  border-radius: 0 0 14px 14px;
   background: #000;
   color: #f5f5f7;
   box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
   overflow: hidden;
   border-left: 3px solid transparent;
-  transition: max-height 250ms ease, width 250ms ease;
-  animation: slot-enter 280ms ease-out both;
+  transition:
+    max-height 250ms ease,
+    width 250ms ease,
+    padding 250ms ease;
+}
+
+.slot.idle {
+  width: 220px;
+  max-height: 32px;
+  padding: 0;
+  border-left-color: transparent;
 }
 
 .slot .title {
@@ -66,19 +77,4 @@ body {
 
 .slot.expanded .body {
   -webkit-line-clamp: 5;
-}
-
-@keyframes slot-enter {
-  from {
-    opacity: 0;
-    max-height: 0px;
-    width: 120px;
-    transform: translateY(-2px);
-  }
-  to {
-    opacity: 1;
-    max-height: 84px;
-    width: 360px;
-    transform: translateY(0);
-  }
 }
