@@ -1,9 +1,13 @@
 #!/bin/sh
 # notchtap — cli push for the notchtap notification engine (spec §12).
 # flags only, no positional form:
-#   notchtap --title <title> --body <body> [--subtitle <s>] [--port <p>]
+#   notchtap --title <title> --body <body> [--subtitle <s>] [--priority low|medium|high] [--port <p>]
 # a non-empty --subtitle folds into the posted body as "<subtitle> — <body>";
-# the server never sees a subtitle field. port resolution:
+# the server never sees a subtitle field. --priority folds into the posted
+# json as-is; when omitted, the field is left off the payload entirely and
+# the server's own default (medium) applies — v3.6 spec §6: there is
+# exactly one place "what does unspecified mean" lives, not two kept in
+# sync. port resolution:
 # --port flag → $NOTCHTAP_PORT → 9789. never reads config.toml.
 # exits non-zero on connection failure or any non-2xx response so relay
 # callers (cmux) surface failures instead of swallowing them.
@@ -11,13 +15,14 @@
 set -u
 
 usage() {
-  echo "usage: notchtap --title <title> --body <body> [--subtitle <s>] [--port <p>]" >&2
+  echo "usage: notchtap --title <title> --body <body> [--subtitle <s>] [--priority low|medium|high] [--port <p>]" >&2
   exit 2
 }
 
 title=""
 body=""
 subtitle=""
+priority=""
 port="${NOTCHTAP_PORT:-9789}"
 
 while [ $# -gt 0 ]; do
@@ -31,6 +36,13 @@ while [ $# -gt 0 ]; do
     --subtitle)
       [ $# -ge 2 ] || usage
       subtitle="$2"; shift 2 ;;
+    --priority)
+      [ $# -ge 2 ] || usage
+      case "$2" in
+        low|medium|high) priority="$2" ;;
+        *) usage ;;
+      esac
+      shift 2 ;;
     --port)
       [ $# -ge 2 ] || usage
       port="$2"; shift 2 ;;
@@ -47,8 +59,13 @@ if [ -n "$subtitle" ]; then
 fi
 
 # jq -n --arg gives safe escaping for quotes/newlines in relayed bodies
-payload=$(jq -n --arg title "$title" --arg body "$body" \
-  '{title: $title, body: $body}') || exit 1
+if [ -n "$priority" ]; then
+  payload=$(jq -n --arg title "$title" --arg body "$body" --arg priority "$priority" \
+    '{title: $title, body: $body, priority: $priority}') || exit 1
+else
+  payload=$(jq -n --arg title "$title" --arg body "$body" \
+    '{title: $title, body: $body}') || exit 1
+fi
 
 status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
   --max-time 5 \

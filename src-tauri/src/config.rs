@@ -7,8 +7,7 @@ use serde::Deserialize;
 pub struct Config {
     pub port: u16,
     pub default_ttl: u64,
-    pub max_concurrent: usize,
-    pub max_queued: usize,
+    pub max_queued_per_tier: usize,
     pub detect_path: PathBuf,
     pub espn_enabled: bool,
     pub espn_leagues: Vec<String>,
@@ -39,11 +38,7 @@ fn default_ttl() -> u64 {
     8
 }
 
-fn default_max_concurrent() -> usize {
-    3
-}
-
-fn default_max_queued() -> usize {
+fn default_max_queued_per_tier() -> usize {
     50
 }
 
@@ -73,8 +68,7 @@ impl Default for Config {
         Self {
             port: default_port(),
             default_ttl: default_ttl(),
-            max_concurrent: default_max_concurrent(),
-            max_queued: default_max_queued(),
+            max_queued_per_tier: default_max_queued_per_tier(),
             detect_path: default_detect_path(),
             espn_enabled: default_espn_enabled(),
             espn_leagues: default_espn_leagues(),
@@ -116,8 +110,7 @@ mod tests {
         let c = Config::parse("").unwrap();
         assert_eq!(c.port, 9789);
         assert_eq!(c.default_ttl, 8);
-        assert_eq!(c.max_concurrent, 3);
-        assert_eq!(c.max_queued, 50);
+        assert_eq!(c.max_queued_per_tier, 50);
         assert_eq!(
             c.detect_path,
             PathBuf::from("/usr/local/bin/notchtap-detect")
@@ -140,7 +133,7 @@ mod tests {
         let c = Config::parse("port = 1234\n").unwrap();
         assert_eq!(c.port, 1234);
         assert_eq!(c.default_ttl, 8);
-        assert_eq!(c.max_queued, 50);
+        assert_eq!(c.max_queued_per_tier, 50);
     }
 
     #[test]

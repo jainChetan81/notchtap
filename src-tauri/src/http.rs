@@ -13,14 +13,16 @@ use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::error::{EventError, QueueError};
-use crate::event::{dispatch, emit_promoted, Event, EventPayload, EventType, Priority};
+use crate::event::{
+    dispatch, emit_slot_state, Event, EventPayload, EventType, Priority, RotationSpec,
+};
 use crate::notifier::ConnectorHandle;
-use crate::queue::NotificationQueue;
+use crate::queue::SingleSlotQueue;
 
 // generic over the tauri runtime so tests can use tauri::test::mock_app()
 // (MockRuntime) while the app runs on the default Wry runtime
 pub struct AppState<R: tauri::Runtime = tauri::Wry> {
-    pub queue: Arc<Mutex<NotificationQueue>>,
+    pub queue: Arc<Mutex<SingleSlotQueue>>,
     pub default_ttl: u64,
     pub app_handle: tauri::AppHandle<R>,
     pub connectors: Arc<Vec<ConnectorHandle>>,
@@ -41,6 +43,7 @@ impl<R: tauri::Runtime> Clone for AppState<R> {
 struct NotifyRequest {
     title: Option<String>,
     body: Option<String>,
+    priority: Option<Priority>,
 }
 
 pub fn router<R: tauri::Runtime>(state: AppState<R>) -> Router {
@@ -85,8 +88,11 @@ async fn notify_handler<R: tauri::Runtime>(
     let event = Event {
         id: Uuid::new_v4(),
         event_type: EventType::Generic,
-        priority: Priority::Normal,
-        ttl_secs: state.default_ttl,
+        priority: req.priority.unwrap_or(Priority::Medium),
+        rotation: RotationSpec::OneShot {
+            ttl_secs: state.default_ttl,
+        },
+        topic: None,
         payload: EventPayload { title, body },
     };
 
@@ -96,13 +102,13 @@ async fn notify_handler<R: tauri::Runtime>(
     // enqueue succeeds (v3 spec §1: rejected pushes reach no connector)
     let accepted = event.clone();
 
-    let (promoted, paused, waiting_count) = {
+    let (slot_change, paused, waiting_count) = {
         let mut queue = state.queue.lock().await;
         queue.enqueue(event).map_err(HttpError::Queue)?;
         (
-            queue.take_promoted(),
+            queue.slot_state_if_changed(),
             queue.is_paused(),
-            queue.waiting().len(),
+            queue.total_waiting(),
         )
     };
 
@@ -114,7 +120,9 @@ async fn notify_handler<R: tauri::Runtime>(
         connector.offer(&accepted);
     }
 
-    emit_promoted(&state.app_handle, promoted);
+    if let Some(new_state) = slot_change {
+        emit_slot_state(&state.app_handle, new_state);
+    }
 
     let response = if paused {
         (
@@ -157,12 +165,12 @@ mod tests {
     use axum::http::Request;
     use tower::ServiceExt;
 
-    fn test_state(queue: NotificationQueue) -> AppState<tauri::test::MockRuntime> {
+    fn test_state(queue: SingleSlotQueue) -> AppState<tauri::test::MockRuntime> {
         test_state_with_connectors(queue, Vec::new())
     }
 
     fn test_state_with_connectors(
-        queue: NotificationQueue,
+        queue: SingleSlotQueue,
         connectors: Vec<ConnectorHandle>,
     ) -> AppState<tauri::test::MockRuntime> {
         let app = tauri::test::mock_app();
@@ -199,7 +207,7 @@ mod tests {
 
     #[tokio::test]
     async fn valid_post_returns_200_accepted() {
-        let app = router(test_state(NotificationQueue::new(3, 50)));
+        let app = router(test_state(SingleSlotQueue::new(50)));
         let response = app
             .oneshot(json_request(r#"{"title":"t","body":"b"}"#))
             .await
@@ -210,7 +218,7 @@ mod tests {
 
     #[tokio::test]
     async fn paused_post_returns_202_with_queued_count() {
-        let mut queue = NotificationQueue::new(3, 50);
+        let mut queue = SingleSlotQueue::new(50);
         queue.pause();
         let app = router(test_state(queue));
         let response = app
@@ -226,14 +234,14 @@ mod tests {
 
     #[tokio::test]
     async fn malformed_json_returns_400() {
-        let app = router(test_state(NotificationQueue::new(3, 50)));
+        let app = router(test_state(SingleSlotQueue::new(50)));
         let response = app.oneshot(json_request("{not json")).await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
     async fn wrong_content_type_returns_400() {
-        let app = router(test_state(NotificationQueue::new(3, 50)));
+        let app = router(test_state(SingleSlotQueue::new(50)));
         let request = Request::builder()
             .method("POST")
             .uri("/notify")
@@ -246,35 +254,47 @@ mod tests {
 
     #[tokio::test]
     async fn missing_title_returns_400() {
-        let app = router(test_state(NotificationQueue::new(3, 50)));
+        let app = router(test_state(SingleSlotQueue::new(50)));
         let response = app.oneshot(json_request(r#"{"body":"b"}"#)).await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
     async fn missing_body_returns_400() {
-        let app = router(test_state(NotificationQueue::new(3, 50)));
+        let app = router(test_state(SingleSlotQueue::new(50)));
         let response = app.oneshot(json_request(r#"{"title":"t"}"#)).await.unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
     }
 
     #[tokio::test]
     async fn full_queue_returns_429() {
-        // max_concurrent 0 and max_queued 0: nothing can be promoted and
-        // nothing can wait, so the very first enqueue is rejected.
-        let app = router(test_state(NotificationQueue::new(0, 0)));
-        let response = app
+        // per-tier cap 0: the first push still fast-path-promotes (nothing
+        // waiting yet, nothing visible); the second push at the same tier
+        // has nowhere to go, since the fast path only checks "is anything
+        // waiting", not the per-tier cap.
+        let app = router(test_state(SingleSlotQueue::new(0)));
+        let first = app
+            .clone()
             .oneshot(json_request(r#"{"title":"t","body":"b"}"#))
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert_eq!(first.status(), StatusCode::OK);
+
+        let second = app
+            .oneshot(json_request(r#"{"title":"t2","body":"b2"}"#))
+            .await
+            .unwrap();
+        assert_eq!(second.status(), StatusCode::TOO_MANY_REQUESTS);
     }
 
     #[tokio::test]
     async fn full_queue_returns_429_while_paused() {
         // TESTING_STRATEGY.md §4.3: "still 429 when full while paused" —
-        // pause buffers, it never lifts the max_queued cap.
-        let mut queue = NotificationQueue::new(0, 0);
+        // pause buffers, it never lifts the max_queued_per_tier cap. paused
+        // forces every push onto the waiting path (no fast path), so a
+        // 0-per-tier cap rejects the very first push here, unlike the
+        // non-paused variant above which needs a second push to see it.
+        let mut queue = SingleSlotQueue::new(0);
         queue.pause();
         let app = router(test_state(queue));
         let response = app
@@ -286,7 +306,7 @@ mod tests {
 
     #[tokio::test]
     async fn oversized_body_returns_413() {
-        let app = router(test_state(NotificationQueue::new(3, 50)));
+        let app = router(test_state(SingleSlotQueue::new(50)));
         let big = format!(r#"{{"title":"t","body":"{}"}}"#, "x".repeat(70 * 1024));
         let response = app.oneshot(json_request(&big)).await.unwrap();
         assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
@@ -305,7 +325,7 @@ mod tests {
     async fn ok_and_paused_response_bodies_match_documented_shape() {
         // deserialize rather than substring-match so the contract is pinned
         // field-by-field.
-        let app = router(test_state(NotificationQueue::new(3, 50)));
+        let app = router(test_state(SingleSlotQueue::new(50)));
         let ok_response = app
             .clone()
             .oneshot(json_request(r#"{"title":"t","body":"b"}"#))
@@ -316,7 +336,7 @@ mod tests {
         assert_eq!(ok_body["status"].as_str(), Some("accepted"));
         assert!(ok_body["queued"].is_null());
 
-        let mut queue = NotificationQueue::new(3, 50);
+        let mut queue = SingleSlotQueue::new(50);
         queue.pause();
         let paused_app = router(test_state(queue));
         let paused_response = paused_app
@@ -332,7 +352,7 @@ mod tests {
     #[tokio::test]
     async fn get_method_on_notify_is_rejected() {
         // only POST /notify is routed; axum rejects other methods with 405.
-        let app = router(test_state(NotificationQueue::new(3, 50)));
+        let app = router(test_state(SingleSlotQueue::new(50)));
         let request = Request::builder()
             .method("GET")
             .uri("/notify")
@@ -348,7 +368,7 @@ mod tests {
     async fn accepted_push_fans_out_to_connectors() {
         let (connector, mut rx) = test_connector();
         let app = router(test_state_with_connectors(
-            NotificationQueue::new(3, 50),
+            SingleSlotQueue::new(50),
             vec![connector],
         ));
         let response = app
@@ -367,15 +387,70 @@ mod tests {
     async fn rejected_push_reaches_no_connector() {
         let (connector, mut rx) = test_connector();
         let app = router(test_state_with_connectors(
-            NotificationQueue::new(0, 0),
+            SingleSlotQueue::new(0),
             vec![connector],
         ));
+        let first = app
+            .clone()
+            .oneshot(json_request(r#"{"title":"t","body":"b"}"#))
+            .await
+            .unwrap();
+        assert_eq!(first.status(), StatusCode::OK);
+        rx.try_recv().expect("first accepted push must fan out");
+
+        let second = app
+            .oneshot(json_request(r#"{"title":"t2","body":"b2"}"#))
+            .await
+            .unwrap();
+        assert_eq!(second.status(), StatusCode::TOO_MANY_REQUESTS);
+        assert!(rx.try_recv().is_err(), "429 must not fan out");
+    }
+
+    // --- v3.6 priority field (spec §3.3) ---
+
+    #[tokio::test]
+    async fn priority_field_defaults_to_medium_when_absent() {
+        let app = router(test_state(SingleSlotQueue::new(50)));
         let response = app
             .oneshot(json_request(r#"{"title":"t","body":"b"}"#))
             .await
             .unwrap();
-        assert_eq!(response.status(), StatusCode::TOO_MANY_REQUESTS);
-        assert!(rx.try_recv().is_err(), "429 must not fan out");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let req: NotifyRequest = serde_json::from_str(r#"{"title":"t","body":"b"}"#).unwrap();
+        assert_eq!(req.priority, None); // absent on the wire
+
+        let mut queue = SingleSlotQueue::new(50);
+        queue
+            .enqueue(Event {
+                id: Uuid::new_v4(),
+                event_type: EventType::Generic,
+                priority: req.priority.unwrap_or(Priority::Medium),
+                rotation: RotationSpec::OneShot { ttl_secs: 8 },
+                topic: None,
+                payload: EventPayload {
+                    title: "t".into(),
+                    body: "b".into(),
+                },
+            })
+            .unwrap();
+        assert_eq!(queue.current_priority(), Some(Priority::Medium));
+    }
+
+    #[tokio::test]
+    async fn explicit_priority_field_is_honored() {
+        let app = router(test_state(SingleSlotQueue::new(50)));
+        let response = app
+            .oneshot(json_request(
+                r#"{"title":"t","body":"b","priority":"high"}"#,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let req: NotifyRequest =
+            serde_json::from_str(r#"{"title":"t","body":"b","priority":"high"}"#).unwrap();
+        assert_eq!(req.priority, Some(Priority::High));
     }
 
     #[tokio::test]
@@ -383,7 +458,7 @@ mod tests {
         // v3 spec §1: a paused overlay is exactly when outbound matters
         // most — acceptance succeeded, so connectors hear about it.
         let (connector, mut rx) = test_connector();
-        let mut queue = NotificationQueue::new(3, 50);
+        let mut queue = SingleSlotQueue::new(50);
         queue.pause();
         let app = router(test_state_with_connectors(queue, vec![connector]));
         let response = app

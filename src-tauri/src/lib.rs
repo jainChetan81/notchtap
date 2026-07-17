@@ -23,8 +23,17 @@ use tauri::{ActivationPolicy, Manager};
 use tokio::sync::Mutex;
 
 use crate::config::Config;
-use crate::event::emit_promoted;
-use crate::queue::NotificationQueue;
+use crate::event::emit_slot_state;
+use crate::queue::SingleSlotQueue;
+
+#[cfg(target_os = "macos")]
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
+
+// placeholder combo — v3.6 spec §7.1 explicitly defers "exact global hotkey
+// combination" as an open detail; isolated to one constant.
+#[cfg(target_os = "macos")]
+const EXPAND_TOGGLE_SHORTCUT: (Option<Modifiers>, Code) =
+    (Some(Modifiers::CONTROL.union(Modifiers::SHIFT)), Code::KeyN);
 
 // tracing-appender flushes through this guard; it must live as long as
 // the process, so it's parked in a static rather than dropped at the
@@ -56,10 +65,7 @@ pub fn run() {
     // (manual checklist, IMPLEMENTATION_PLAN.md §6)
     tracing::info!(?mode, inset, "presentation mode resolved");
 
-    let queue = Arc::new(Mutex::new(NotificationQueue::new(
-        config.max_concurrent,
-        config.max_queued,
-    )));
+    let queue = Arc::new(Mutex::new(SingleSlotQueue::new(config.max_queued_per_tier)));
     let port = config.port;
     let default_ttl = config.default_ttl;
     let espn_enabled = config.espn_enabled;
@@ -96,6 +102,8 @@ pub fn run() {
 
     let setup_queue = queue.clone();
     let page_load_queue = queue.clone();
+    #[cfg(target_os = "macos")]
+    let hotkey_queue = queue.clone();
     let server_once = Arc::new(Once::new());
 
     tauri::Builder::default()
@@ -106,7 +114,41 @@ pub fn run() {
                 .get_webview_window("main")
                 .expect("main window missing from tauri.conf.json");
             window.set_always_on_top(true)?;
+
+            // v3.6 spec §7.2: survive Spaces switches and fullscreen apps.
+            #[cfg(target_os = "macos")]
+            {
+                use objc2_app_kit::{NSWindow, NSWindowCollectionBehavior};
+                let ns_window_ptr = window.ns_window()? as *mut NSWindow;
+                let ns_window: &NSWindow = unsafe { &*ns_window_ptr };
+                let behavior = NSWindowCollectionBehavior::CanJoinAllSpaces
+                    | NSWindowCollectionBehavior::FullScreenAuxiliary;
+                ns_window.setCollectionBehavior(behavior);
+            }
+
             position_window(&window, mode, cutout)?;
+
+            // v3.6 spec §7.1: manual expand toggle, rust-side only — the
+            // frontend never calls the plugin's JS api (receive-only
+            // boundary, unchanged), so no capabilities/permissions entry
+            // is needed for this.
+            #[cfg(target_os = "macos")]
+            {
+                let hotkey_queue_for_handler = hotkey_queue.clone();
+                app.handle().plugin(
+                    tauri_plugin_global_shortcut::Builder::new()
+                        .with_handler(move |app, _shortcut, event| {
+                            if event.state() == ShortcutState::Pressed {
+                                toggle_manual_expand(app, &hotkey_queue_for_handler);
+                            }
+                        })
+                        .build(),
+                )?;
+                app.global_shortcut().register(Shortcut::new(
+                    EXPAND_TOGGLE_SHORTCUT.0,
+                    EXPAND_TOGGLE_SHORTCUT.1,
+                ))?;
+            }
 
             login_item::register();
             if let Some(worker) = telegram_worker {
@@ -252,7 +294,7 @@ struct PresentationModePayload {
 
 fn build_tray(
     app: &tauri::AppHandle,
-    queue: Arc<Mutex<NotificationQueue>>,
+    queue: Arc<Mutex<SingleSlotQueue>>,
     espn_active: Option<Arc<AtomicBool>>,
 ) -> tauri::Result<()> {
     let pause_item = MenuItem::with_id(app, "pause", "Pause", true, None::<&str>)?;
@@ -281,22 +323,24 @@ fn build_tray(
                     tokio::runtime::Handle::try_current().is_err(),
                     "tray menu events must arrive off the tokio runtime; blocking_lock would deadlock"
                 );
-                let promoted = {
+                let slot_change = {
                     let mut q = queue.blocking_lock();
                     if q.is_paused() {
                         q.resume();
-                        // spec §4: resume promotes immediately, not on the
-                        // next heartbeat tick
-                        q.expire_and_promote(Instant::now());
+                        // v3.6 spec §4.5: resume promotes immediately, not
+                        // on the next heartbeat tick
+                        q.tick(Instant::now());
                         let _ = pause_item.set_text("Pause");
-                        q.take_promoted()
+                        q.slot_state_if_changed()
                     } else {
                         q.pause();
                         let _ = pause_item.set_text("Resume");
-                        Vec::new()
+                        None
                     }
                 };
-                emit_promoted(app, promoted);
+                if let Some(state) = slot_change {
+                    emit_slot_state(app, state);
+                }
             }
             "espn" => {
                 if let (Some(flag), Some(item)) = (&espn_active, &espn_item) {
@@ -318,19 +362,93 @@ fn build_tray(
     Ok(())
 }
 
-fn spawn_heartbeat(app: tauri::AppHandle, queue: Arc<Mutex<NotificationQueue>>) {
-    // 250ms promotion heartbeat (spec §4): expiry and promotion never
-    // depend on a new push arriving
+fn spawn_heartbeat(app: tauri::AppHandle, queue: Arc<Mutex<SingleSlotQueue>>) {
+    // 250ms rotation heartbeat (v3.6 spec §4.3): rotation and promotion
+    // never depend on a new push arriving
     tauri::async_runtime::spawn(async move {
         let mut interval = tokio::time::interval(Duration::from_millis(250));
         loop {
             interval.tick().await;
-            let promoted = {
+            let slot_change = {
                 let mut q = queue.lock().await;
-                q.expire_and_promote(Instant::now());
-                q.take_promoted()
+                q.tick(Instant::now());
+                q.slot_state_if_changed()
             };
-            emit_promoted(&app, promoted);
+            if let Some(state) = slot_change {
+                emit_slot_state(&app, state);
+            }
         }
     });
+}
+
+// v3.6 spec §7.1.1: the hotkey is a manual override for "everything else"
+// (§3.6's wording) — it's a no-op while the current slot is already
+// auto-expanded (High priority), not a forced-collapse of an automatic
+// expand.
+#[cfg(target_os = "macos")]
+fn toggle_manual_expand<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    queue: &Arc<Mutex<SingleSlotQueue>>,
+) {
+    let mut q = queue.blocking_lock();
+    if q.current_priority() == Some(crate::event::Priority::High) {
+        return;
+    }
+    q.toggle_expanded();
+    if let Some(state) = q.slot_state_if_changed() {
+        drop(q);
+        emit_slot_state(app, state);
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod tests {
+    use super::*;
+    use crate::event::{Event, EventPayload, EventType, Priority, RotationSpec, SlotState};
+
+    fn event(priority: Priority) -> Event {
+        Event {
+            id: uuid::Uuid::new_v4(),
+            event_type: EventType::Generic,
+            priority,
+            rotation: RotationSpec::OneShot { ttl_secs: 8 },
+            topic: None,
+            payload: EventPayload {
+                title: "t".to_string(),
+                body: "b".to_string(),
+            },
+        }
+    }
+
+    #[test]
+    fn toggle_manual_expand_is_a_noop_while_high_priority_is_visible() {
+        let app = tauri::test::mock_app();
+        let mut inner = SingleSlotQueue::new(50);
+        inner.enqueue(event(Priority::High)).unwrap();
+        let queue = Arc::new(Mutex::new(inner));
+
+        toggle_manual_expand(&app.handle().clone(), &queue);
+
+        let q = queue.blocking_lock();
+        match q.current_slot_state() {
+            SlotState::Showing { expanded, .. } => assert!(!expanded, "High must not toggle"),
+            SlotState::Empty => panic!("expected Showing"),
+        }
+    }
+
+    #[test]
+    fn toggle_manual_expand_flips_expanded_for_non_high_priority() {
+        let app = tauri::test::mock_app();
+        let mut inner = SingleSlotQueue::new(50);
+        inner.enqueue(event(Priority::Medium)).unwrap();
+        let queue = Arc::new(Mutex::new(inner));
+
+        toggle_manual_expand(&app.handle().clone(), &queue);
+
+        let q = queue.blocking_lock();
+        match q.current_slot_state() {
+            SlotState::Showing { expanded, .. } => assert!(expanded, "Medium must toggle"),
+            SlotState::Empty => panic!("expected Showing"),
+        }
+    }
 }

@@ -30,3 +30,6 @@ notchtap-detect/.build
 # opencode: local config + credentials (PAL endpoint, openrouter key)
 opencode.json
 .opencode/
+
+# agent tooling, not app code
+.agents/

@@ -6,23 +6,54 @@ and `docs/adr/`.
 
 ## terms
 
-- **Event** — one incoming push (title + body, plus type/priority/ttl
-  assigned by the engine). the unit that flows through the system.
+- **Event** — one incoming push (title + body, plus type/priority/
+  rotation assigned by the engine). the unit that flows through the
+  system.
 - **Notification** — an Event being (or waiting to be) displayed.
   every Notification is an Event; "Notification" is the word for the
   display-side view of it.
-- **Visible** — the set of Notifications currently rendered on screen.
-  capped (`max_concurrent`). ordered as a stack.
+- **Slot** — the single Visible position (v3.6; replaces the 3-item
+  "Visible... ordered as a stack" model). there is never more than one
+  Notification on screen at a time.
+- **Visible** — the Notification currently occupying the Slot, if any
+  (at most one, see **Slot**).
 - **Waiting** — Notifications accepted but not yet shown, in FIFO
-  order. capped (`max_queued`); pushes beyond the cap are rejected.
-- **Promotion** — the moment a Waiting Notification moves into
-  Visible. the engine's decision alone; the frontend never promotes.
-- **TTL** — how long a Notification stays Visible, measured from
-  Promotion (not from arrival). time spent Waiting never burns TTL.
+  order **within their own Priority tier** (v3.6: Low/Medium/High are
+  three separate FIFO lines, not one). capped per tier
+  (`max_queued_per_tier`); pushes beyond a tier's own cap are rejected,
+  independent of the other two tiers.
+- **Priority** — `Low | Medium | High` on every Event (v3.6),
+  independent of `EventType` — not every high-priority thing is a
+  score. governs Promotion order only: higher-priority Waiting items
+  are promoted next, but a Priority arrival never interrupts the
+  currently-Visible item — it always finishes its own turn.
+- **Promotion** — the moment the highest-priority Waiting Notification
+  moves into the Slot. the engine's decision alone; the frontend never
+  promotes.
+- **Rotation** — how long a Notification stays Visible, measured from
+  Promotion (not from arrival); replaces the old TTL concept (v3.6).
+  extended (see **Expanded**) while the Slot is grown.
+- **Recurring** — a Rotation kind that requeues to the back of its own
+  Priority tier's Waiting line after its turn, instead of being
+  dropped (v3.6). bounded by supersession or the underlying state
+  naturally ending, not a clock. the alternative kind, one-shot, is
+  today's plain drop-forever-after-Rotation behaviour.
+- **Topic** — the supersession identity carried by a Recurring Event
+  (v3.6). a fresh Event sharing a Topic updates the existing
+  Notification in place — Waiting or Visible — rather than adding a
+  new one; a Visible supersede can grant a small, capped Rotation
+  extension if remaining time was already low, but never mutates when
+  it was first promoted.
+- **Expanded** — a Slot's optional grown state (v3.6): automatic for
+  `High`-priority Notifications, manual (global hotkey) for everything
+  else. never both triggers on the same item — the hotkey is a no-op
+  while an automatically-Expanded `High` item is Visible.
 - **Paused** — engine state in which Promotion is disabled. pushes are
   still accepted and buffered into Waiting (caller is told the app is
-  paused); already-Visible Notifications finish their natural TTL and
-  exit. Resuming re-enables Promotion; nothing is dropped.
+  paused); an already-Visible Notification finishes its natural
+  Rotation and exits. Resuming re-enables Promotion immediately;
+  nothing is dropped. (v3.6: gates the single Slot, same contract,
+  formerly gated a 3-item cap.)
 - **Polling Pause** — a Poller-level state (per source, from the tray)
   in which the Poller stops checking its external service; no Events
   are produced and changes during the pause are never seen. distinct

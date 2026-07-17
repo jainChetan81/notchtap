@@ -432,26 +432,47 @@ the single-slot queue instead of the 3-item stack.
 
 full detail and the workstream breakdown live in
 `docs/V3_6_TECHNICAL_SPEC.md` §8/§10; summarized here to match the
-§3.1/§3.5.1 pattern:
+§3.1/§3.5.1 pattern. **implementation landed 2026-07-17** on branch
+`v3.6-rotating-overlay` (not yet merged to `master`) — automated
+criteria below are verified; manual criteria need the physical
+macbook and are still open:
 
-- `cargo test` passes: the single-slot queue suite (never-interrupt,
+- ✅ `cargo test` passes: the single-slot queue suite (never-interrupt,
   tier-strict promotion, fifo-within-tier, `Recurring` requeue-to-own-
   tier-back, `OneShot` drop-forever, topic supersession both
   visible/waiting, per-tier `429`), `Priority` ordering, and the
-  `slot-state` change-guard emission tests
-- `npx vitest run` passes: `useSlotState` render tests (empty, showing,
+  `slot-state` change-guard emission tests — see
+  `TESTING_STRATEGY.md` §4.10 for the full case list and current
+  counts (§0)
+- ✅ `npx vitest run` passes: `useSlotState` render tests (empty, showing,
   replace-without-empty-frame) and `App.tsx` against the new markup —
   `morphShape.test.ts` and the old `.stack`-based tests are deleted,
   not just left passing-by-accident
-- `npx tsc --noEmit` / `npx vite build` clean against the rewritten
+- ✅ `npx tsc --noEmit` / `npx vite build` clean against the rewritten
   frontend
-- manual (physical hardware, per `TESTING_STRATEGY.md` §5): the global
-  hotkey toggles expand on the macbook; the window survives a Spaces
-  switch and stays visible over a fullscreen app; a live espn goal
-  still auto-expands and rotates out correctly under the new model
-- `CONTEXT.md` glossary updated per this doc's §3.6 note and
+- [ ] manual (physical hardware, per `TESTING_STRATEGY.md` §5/§4.10):
+  the global hotkey toggles expand on the macbook; the window survives
+  a Spaces switch and stays visible over a fullscreen app; a live espn
+  goal still auto-expands and rotates out correctly under the new
+  model — not yet run, tracked in §6's checklist too
+- ✅ `CONTEXT.md` glossary updated per this doc's §3.6 note and
   `V3_6_TECHNICAL_SPEC.md` §2/§9 (single reviewable commit, not bundled
-  into the code-focused spec)
+  into the code-focused spec) — landed 2026-07-17 alongside this entry
+
+**implementation notes worth recording** (not decisions, just facts
+that would otherwise only live in the branch's commit history):
+- the rust backend was split across two coding agents (kimi, then
+  Claude directly after kimi hit a billing quota limit mid-`queue.rs`)
+  against the same written plan; the frontend was done by codex
+  (gpt-5.6-sol) in one pass. all of it was independently re-verified
+  (fresh `cargo build`/`cargo test`/`tsc`/`vitest`/`vite build` runs,
+  not trusted from either agent's own self-report) before being
+  recorded as done here.
+- verification caught one real production bug before it shipped:
+  `SlotState`'s camelCase rename didn't apply to struct-variant field
+  names without `rename_all_fields` too — see `TESTING_STRATEGY.md`
+  §4.10 for detail. this is exactly the failure mode the spec's own
+  §5.2 "integration risk" note flagged in advance.
 
 ---
 
@@ -539,9 +560,9 @@ other windows isn't validating the pipe either.
 
 full detail in `TESTING_STRATEGY.md`. summary:
 
-checked 2026-07-16 against `HEAD` = `b061577` (v1–v4). v3.5
-(notch-morph) is uncommitted and not covered by these checks yet —
-see `docs/IMPLEMENTATION_PLAN.md` §3.5.1 for its own exit criteria.
+checked 2026-07-16 against `HEAD` = `b061577` (v1–v4); re-checked
+2026-07-17 on branch `v3.6-rotating-overlay` (not yet merged) to cover
+v3.6's rewritten queue/frontend — see `TESTING_STRATEGY.md` §4.10.
 
 **automated — must pass:**
 - [x] `npx tsc --noEmit` clean
@@ -549,10 +570,14 @@ see `docs/IMPLEMENTATION_PLAN.md` §3.5.1 for its own exit criteria.
 - [x] `cargo build` clean (rust toolchain required — install via
       `rustup` if not already on the mac)
 - [x] `cargo test` clean — queue, event bus, `/notify` handler, notch/hud
-      decision function all covered (`TESTING_STRATEGY.md` §4.1–4.4) —
-      88 tests + 4 doc-tests, per the 2026-07-16 v3 review log
+      decision function, and (as of 2026-07-17) the v3.6 single-slot
+      queue/priority/rotation suite all covered (`TESTING_STRATEGY.md`
+      §4.1–4.4, §4.10) — current counts live in `TESTING_STRATEGY.md`
+      §0 and only there, not duplicated here
 - [x] `npx vitest run` clean — frontend queue state covered
-      (`TESTING_STRATEGY.md` §4.5) — 11/11, per the same review log
+      (`TESTING_STRATEGY.md` §4.5), superseded 2026-07-17 by the v3.6
+      `useSlotState`/`App.tsx` suite (§4.10) — counts in
+      `TESTING_STRATEGY.md` §0
 
 **manual — physical hardware, not automatable (`TESTING_STRATEGY.md` §5):**
 - [ ] manual push → visible animation, both machines — mac mini side
@@ -578,6 +603,13 @@ see `docs/IMPLEMENTATION_PLAN.md` §3.5.1 for its own exit criteria.
       2026-07-16 on the mac mini, see §2.2
 - [ ] notch-cutout anchoring looks correct on the macbook; hud placement
       looks correct on the mac mini
+- [ ] v3.6: the global hotkey toggles expand on the macbook (manual
+      trigger, `Medium`/`Low`-priority item Visible); pressing it while
+      a `High`-priority item is auto-Expanded is a no-op
+- [ ] v3.6: the window survives a Spaces switch and stays visible over
+      a fullscreen app (`NSWindowCollectionBehavior`)
+- [ ] v3.6: a live espn goal (`High` priority) auto-expands and rotates
+      out correctly under the single-slot model
 
 ---
 

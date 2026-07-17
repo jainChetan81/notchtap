@@ -1,26 +1,17 @@
-import { useVisibleNotifications } from "./useVisibleNotifications";
-import { usePresentationMode } from "./presentationMode";
-import { getMorphShape } from "./morphShape";
+import { useSlotState } from "./useSlotState";
 import "./styles.css";
 
 function App() {
-  const notifications = useVisibleNotifications();
-  const mode = usePresentationMode();
-
+  const slot = useSlotState();
+  // no exit animation in this pass — slot.state flips straight to null on
+  // rotation-out; see docs/V3_6_TECHNICAL_SPEC.md §5.3 for the open gap
+  // this resolves (enter-only, via the mount-keyed CSS animation)
+  if (slot.state === "empty") return null;
+  const cls = `slot ${slot.priority} ${slot.expanded ? "expanded" : ""}`.trim();
   return (
-    <div className="stack">
-      {notifications.map((n) => {
-        const shapeClass = mode === "notch" ? getMorphShape(n.eventType) : "mini";
-        return (
-          <div
-            key={n.id}
-            className={`notification ${n.eventType} ${n.phase} ${shapeClass}`.trim()}
-          >
-            <div className="title">{n.title}</div>
-            <div className="body">{n.body}</div>
-          </div>
-        );
-      })}
+    <div key={slot.id} className={cls}>
+      <div className="title">{slot.title}</div>
+      <div className="body">{slot.body}</div>
     </div>
   );
 }

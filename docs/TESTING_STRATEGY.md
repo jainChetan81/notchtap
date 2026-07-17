@@ -9,22 +9,24 @@ doc.
 
 ---
 
-## 0. status at a glance (2026-07-16) — done vs left
+## 0. status at a glance (2026-07-17) — done vs left
 
 **done — built, green, ci-gated** (counts live here and only here;
 other sections point back rather than repeating them):
 
 | suite | size | where |
 |---|---|---|
-| rust unit/integration | 88 tests — queue 16, poller 18, http 15, presentation 7, event 7, config 6, notifier 19 | `cargo test` from `src-tauri/` |
-| rust doc-tests | 4 — public `queue`/`event` apis | same `cargo test` run |
-| frontend | 11 tests — lifecycle, sweep, queue-authority contract | `npx vitest run` |
+| rust unit/integration | 110 tests — queue 27, notifier 19, poller 18, http 17, presentation 11, event 10, config 6, lib (hotkey) 2 | `cargo test` from `src-tauri/` |
+| rust doc-tests | 2 — public `queue`/`event` apis | same `cargo test` run |
+| frontend | 14 tests — slot-state hook, App render, presentation mode | `npx vitest run` |
 | ci (v4) | fmt, clippy `-D warnings`, cargo test, tsc, vitest, vite build, swiftc compile check | every push + pr |
 
 every example case listed in §4 for v1/v2/v3 components has a passing
 test; the v4 §4.3 expansion (exhaustive status codes, queue edge
-interleavings, sweep timing) is in, and the v3 notifier suite (§4.9 —
-telegram) landed 2026-07-16.
+interleavings, sweep timing) is in; the v3 notifier suite (§4.9 —
+telegram) landed 2026-07-16; the v3.6 single-slot rotating overlay
+suite (§4.10) landed 2026-07-17, superseding §4.1's 3-item-cap queue
+example cases.
 
 **left — each is a decision with an owner section, not a gap:**
 
@@ -32,6 +34,8 @@ telegram) landed 2026-07-16.
 |---|---|---|
 | deep testing work order (proptest invariants, http burst, poller fuzz, frontend timing fuzz) | **parked 2026-07-16** — un-park triggers in §8 | §9 (the full, implementation-ready plan) |
 | ~~outbound connector tests~~ | **landed with v3 (telegram)** 2026-07-16 | §4.9 |
+| ~~single-slot rotating overlay tests~~ | **landed with v3.6** 2026-07-17 (branch `v3.6-rotating-overlay`, not yet merged) | §4.10 |
+| v3.6 manual hardware checks (hotkey keypress, Spaces/fullscreen survival) | not yet run — needs the macbook | §4.10, §5, `IMPLEMENTATION_PLAN.md` §3.6.1/§6 |
 | `test-cli.sh` for the `notchtap` script | only if the script grows | §8 |
 | manual hardware checklist | recurring per change — never "done" | §5, `IMPLEMENTATION_PLAN.md` §6 |
 
@@ -78,8 +82,10 @@ red-green-refactor (write the failing test first) is worth the
 discipline where the logic is pure, deterministic, and wrong-by-default
 if untested. that's a short, specific list:
 
-- **notification queue** — fifo ordering, cap-3 enforcement (4th item
-  waits), ttl-based expiry
+- **single-slot priority queue** (v3.6, formerly "notification queue" —
+  fifo ordering, cap-3 enforcement, ttl-based expiry; see §4.10) —
+  tier-strict promotion, fast-path never-jump, rotation (one-shot vs
+  recurring), topic supersession with a capped extension
 - **event bus / dispatch router** — event type routing, malformed
   payload rejection
 - **`/notify` http handler** — request parsing, validation, status
@@ -103,7 +109,13 @@ each subsection notes its status; "done" means every example case
 listed has a passing test (the §6 bar), not that the component is
 frozen.
 
-### 4.1 notification queue (rust) — ✅ done
+### 4.1 notification queue (rust) — superseded by §4.10 (v3.6, 2026-07-17)
+
+kept for historical record: this section describes the pre-v3.6
+3-item-cap, pure-fifo `NotificationQueue`. that type no longer exists
+— `queue.rs` now holds `SingleSlotQueue` (single slot, priority-tiered
+waiting, rotation instead of ttl). the current, accurate example-case
+list is §4.10; don't add new cases here.
 
 - **type**: unit, tdd
 - **coverage target**: every state transition (~100% branch coverage —
@@ -310,6 +322,86 @@ future connector too.)
   connector channel; 429-rejected push does not; paused `202` push
   **does** (acceptance succeeded — v3 spec §1)
 
+### 4.10 single-slot rotating overlay (v3.6 — priority queue, rotation, hotkey expand)
+
+landed 2026-07-17 (branch `v3.6-rotating-overlay`, code-level contract
+in `docs/V3_6_TECHNICAL_SPEC.md`). supersedes §4.1's notification-queue
+example-case list — same file (`queue.rs`), renamed type
+(`SingleSlotQueue`), materially different model (one slot, not three;
+priority tiers, not pure fifo; rotation, not ttl).
+
+- **type**: unit, written alongside the implementation against the
+  frozen types in `V3_6_TECHNICAL_SPEC.md` §3/§4
+- **coverage target**: every state transition in the single-slot
+  model — tick/rotation, tier-strict promotion, fast-path,
+  supersession (including the hard extension cap), pause/resume, and
+  the `slot_state_if_changed` change-guard
+- **example cases** (`queue.rs`, 27 tests):
+  - `tick`: never-interrupt (a `High` enqueue while something is
+    Visible does not promote until the Visible item's own rotation
+    elapses), tier-strict promotion order, fifo within a tier,
+    `OneShot` drops forever, `Recurring` requeues to the back of its
+    **own** tier
+  - fast-path: a push with any tier non-empty never fast-path-promotes,
+    even a `High` push arriving while only `Low` is waiting — the
+    3-tier generalization of the old `fast_path_never_jumps_waiting_items`
+  - supersession: a visible-item supersede updates
+    payload/priority/rotation and grants a capped extension only when
+    remaining time is already below the 2s floor (`promoted_at` is
+    never mutated — only `extension_secs`); a burst of 25 rapid
+    below-floor supersedes still rotates the item out at exactly
+    `base_window + 6s`, never later, regardless of how many land; a
+    same-tier waiting supersede keeps its queue position; a
+    priority-changing supersede moves to the back of its *new* tier
+    (not its old one, not the front)
+  - per-tier cap: a full `Low` tier rejects a new `Low` push while a
+    simultaneous `High` push is still accepted (`max_queued_per_tier`,
+    independent per tier — a `Low` burst can't starve `High`'s own
+    waiting room)
+  - pause/resume: pause gates promotion, not rotation (an already-
+    Visible item still ages out while paused); resume promotes
+    immediately on the next `tick`, not the next heartbeat
+  - `slot_state_if_changed`: suppresses a re-emit when nothing changed
+    between two ticks; an actual promotion, rotation-to-empty, or
+    expand toggle always emits
+- **`Priority` ordering** (`event.rs`): `Low < Medium < High` pinned by
+  a dedicated test — the array-index promotion logic in `queue.rs`
+  depends on declaration order matching `Ord`, so a rustfmt/refactor
+  reorder would silently break promotion without this test
+- **`SlotState` wire contract** (`event.rs`): a `serde_json::to_value`
+  snapshot test on `SlotState::Showing` pins the exact camelCase field
+  names. this caught a real bug during implementation:
+  `#[serde(rename_all = "camelCase")]` on the enum only renames the
+  variant *tag* ("showing"), not fields inside the struct variant
+  (`event_type` stayed `event_type` instead of becoming `eventType`)
+  — needs the additional `rename_all_fields = "camelCase"` attribute
+  too. flagged here because it's exactly the drift
+  `V3_6_TECHNICAL_SPEC.md` §5.2's "integration risk" note warned
+  about, and the snapshot test caught it on the first real run rather
+  than shipping a frontend that silently never renders anything.
+- **hotkey no-op branch** (`lib.rs`): `toggle_manual_expand`'s pure
+  decision (no-op while a `High`-priority item is Visible, toggles
+  otherwise) is unit-tested directly against a `SingleSlotQueue` and a
+  `tauri::test::mock_app()` handle, bypassing the actual OS hotkey —
+  same split as §4.4's subprocess boundary
+- **frontend** (`useSlotState.ts` + `App.tsx`, 10 of the 14 total
+  frontend tests): renders `empty` as nothing; renders `showing` with
+  the right priority/expanded classes; a new `slot-state` payload
+  replaces content directly, without an intermediate empty frame;
+  listener cleanup on unmount
+- **cli** (`notchtap --priority low|medium|high`): manual only, same
+  as the rest of the script (§4.8) — `sh -n` syntax check is the only
+  automated gate
+
+**manual-only, not automatable** (extends §5):
+- the global hotkey keypress actually toggling expand on real
+  hardware — the pure decision logic above is unit-tested; os-level
+  registration and keypress delivery are not
+- the window surviving a Spaces switch and staying visible over a
+  fullscreen app (`NSWindowCollectionBehavior`)
+- a live espn goal auto-expanding (`High` priority) and rotating out
+  correctly under the new single-slot model, on the macbook
+
 ---
 
 ## 5. what stays manual, and why (maps to `IMPLEMENTATION_PLAN.md` §6)
@@ -412,6 +504,19 @@ here 2026-07-16 so the testing story lives in one document.)
 like `V1_TECHNICAL_SPEC.md`, this section is not locked: adjust freely
 as implementation surfaces friction; fold any *decision* changes back
 into §1–§8.
+
+**stale as of 2026-07-17 — retarget before un-parking**: §9.1's
+`Op`/invariant design below (`NotificationQueue`, `max_concurrent`,
+`visible().len()`, `expire_and_promote`) targets the pre-v3.6 queue
+shape, which no longer exists (`queue.rs` now holds `SingleSlotQueue`
+— see §4.10). the *properties* (cap, bound, exactly-once promotion,
+fifo, paused-ticks-silent, rejection-leaves-state-untouched,
+no-premature-rotation) still make sense conceptually, but the `Op`
+enum, field names, and the fifo-within-a-single-queue framing (I4)
+need reworking for three priority tiers, `tick`/rotation naming, and
+supersession before this is implementation-ready again. whoever
+un-parks §9 does that retarget pass first, as its own step before
+9.6's build order.
 
 ### 9.0 what "deep" means here, and what it doesn't
 

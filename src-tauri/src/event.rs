@@ -8,9 +8,26 @@ pub struct Event {
     pub id: Uuid,
     pub event_type: EventType,
     pub priority: Priority,
-    pub ttl_secs: u64,
+    pub rotation: RotationSpec,
+    pub topic: Option<String>,
     pub payload: EventPayload,
 }
+
+impl Event {
+    pub fn rotation_window(&self, expanded: bool) -> u64 {
+        let base = match self.rotation {
+            RotationSpec::OneShot { ttl_secs } => ttl_secs,
+            RotationSpec::Recurring { display_secs } => display_secs,
+        };
+        if expanded {
+            base * EXPANDED_MULTIPLIER
+        } else {
+            base
+        }
+    }
+}
+
+pub const EXPANDED_MULTIPLIER: u64 = 3;
 
 /// Event type on the `/notify` wire, snake_case per the v1 spec §7.
 /// Unknown types are rejected at deserialization — never silently
@@ -24,7 +41,7 @@ pub struct Event {
 ///
 /// assert!(serde_json::from_str::<EventType>(r#""posture_alert""#).is_err());
 /// ```
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum EventType {
     Generic,
@@ -32,10 +49,19 @@ pub enum EventType {
     MatchState,
 }
 
-#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum Priority {
-    Normal,
+    Low,
+    Medium,
+    High,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case", tag = "kind")]
+pub enum RotationSpec {
+    OneShot { ttl_secs: u64 },
+    Recurring { display_secs: u64 },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -44,45 +70,26 @@ pub struct EventPayload {
     pub body: String,
 }
 
-/// The `notification-promoted` payload the frontend receives — camelCase
-/// on the wire (the frontend's `NotificationPayload` type mirrors this
-/// shape, v2 spec §5):
-///
-/// ```
-/// use notchtap_lib::event::{Event, EventPayload, EventType, NotificationPayload, Priority};
-///
-/// let event = Event {
-///     id: uuid::Uuid::new_v4(),
-///     event_type: EventType::ScoreUpdate,
-///     priority: Priority::Normal,
-///     ttl_secs: 8,
-///     payload: EventPayload { title: "GOAL".into(), body: "1-0".into() },
-/// };
-///
-/// let json = serde_json::to_value(NotificationPayload::from(&event)).unwrap();
-/// assert_eq!(json["ttlSecs"], 8);              // camelCase, not ttl_secs
-/// assert_eq!(json["eventType"], "score_update"); // value stays snake_case
-/// ```
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct NotificationPayload {
-    pub id: Uuid,
-    pub title: String,
-    pub body: String,
-    pub ttl_secs: u64,
-    pub event_type: EventType,
-}
-
-impl From<&Event> for NotificationPayload {
-    fn from(event: &Event) -> Self {
-        Self {
-            id: event.id,
-            title: event.payload.title.clone(),
-            body: event.payload.body.clone(),
-            ttl_secs: event.ttl_secs,
-            event_type: event.event_type.clone(),
-        }
-    }
+/// The rust-authoritative slot state pushed to the frontend whenever it
+/// changes (promotion, rotation-to-empty, expand toggle). camelCase on
+/// the wire so the TS `SlotState` type mirrors this shape exactly.
+// `rename_all` alone only renames the variant tag ("Showing" -> "showing");
+// struct-variant field names need `rename_all_fields` too, or `event_type`
+// would serialize as-is instead of `eventType` (caught by
+// slot_state_showing_serializes_camel_case_and_tag's own assertion).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
+#[serde(tag = "state")]
+pub enum SlotState {
+    Empty,
+    Showing {
+        id: Uuid,
+        title: String,
+        body: String,
+        event_type: EventType,
+        priority: Priority,
+        expanded: bool,
+    },
 }
 
 pub fn dispatch(event: Event) -> Result<(), EventError> {
@@ -91,18 +98,14 @@ pub fn dispatch(event: Event) -> Result<(), EventError> {
     }
 }
 
-/// The single emit path (spec §4's emit rule): one `notification-promoted`
-/// event per promoted item, wherever the promotion happened (enqueue
-/// fast-path, heartbeat tick, or resume). Emit failure is logged, never
-/// propagated — by this point the item is already promoted, so failing the
-/// caller would report a notification as lost when it may still display.
-pub fn emit_promoted<R: tauri::Runtime>(app: &tauri::AppHandle<R>, promoted: Vec<Event>) {
+/// The single emit path (spec §5.1): one `slot-state` event whenever the
+/// displayed slot changes. Emit failure is logged, never propagated — by
+/// this point the queue state has already changed, so failing the caller
+/// would report a notification as lost when it may still display.
+pub fn emit_slot_state<R: tauri::Runtime>(app: &tauri::AppHandle<R>, state: SlotState) {
     use tauri::Emitter;
-    for event in promoted {
-        let payload = NotificationPayload::from(&event);
-        if let Err(e) = app.emit("notification-promoted", &payload) {
-            tracing::error!("failed to emit notification-promoted: {e}");
-        }
+    if let Err(e) = app.emit("slot-state", &state) {
+        tracing::error!("failed to emit slot-state: {e}");
     }
 }
 
@@ -114,8 +117,9 @@ mod tests {
         Event {
             id: Uuid::new_v4(),
             event_type: EventType::Generic,
-            priority: Priority::Normal,
-            ttl_secs: 8,
+            priority: Priority::Medium,
+            rotation: RotationSpec::OneShot { ttl_secs: 8 },
+            topic: None,
             payload: EventPayload {
                 title: "t".to_string(),
                 body: "b".to_string(),
@@ -162,16 +166,54 @@ mod tests {
     }
 
     #[test]
-    fn wire_payload_uses_camel_case_ttl_secs_and_event_type() {
-        let event = generic_event();
-        let payload = NotificationPayload::from(&event);
-        let json = serde_json::to_value(&payload).unwrap();
-        assert_eq!(json["title"], "t");
-        assert_eq!(json["body"], "b");
-        assert_eq!(json["ttlSecs"], 8);
-        assert_eq!(json["eventType"], "generic");
-        assert!(json.get("ttl_secs").is_none());
+    fn priority_ord_is_low_lt_medium_lt_high() {
+        assert!(Priority::Low < Priority::Medium && Priority::Medium < Priority::High);
+    }
+
+    #[test]
+    fn slot_state_showing_serializes_camel_case_and_tag() {
+        let id = Uuid::new_v4();
+        let state = SlotState::Showing {
+            id,
+            title: "GOAL".to_string(),
+            body: "1-0".to_string(),
+            event_type: EventType::ScoreUpdate,
+            priority: Priority::High,
+            expanded: false,
+        };
+        let json = serde_json::to_value(&state).unwrap();
+        assert_eq!(json["state"], "showing");
+        assert_eq!(json["id"], serde_json::to_value(id).unwrap());
+        assert_eq!(json["title"], "GOAL");
+        assert_eq!(json["body"], "1-0");
+        assert_eq!(json["eventType"], "score_update");
+        assert_eq!(json["priority"], "high");
+        assert_eq!(json["expanded"], false);
         assert!(json.get("event_type").is_none());
+        assert!(json.get("ttlSecs").is_none());
+    }
+
+    #[test]
+    fn slot_state_empty_serializes_to_tag_only() {
+        let json = serde_json::to_value(&SlotState::Empty).unwrap();
+        assert_eq!(json, serde_json::json!({"state": "empty"}));
+    }
+
+    #[test]
+    fn rotation_window_doubles_when_expanded() {
+        let event = Event {
+            id: Uuid::new_v4(),
+            event_type: EventType::Generic,
+            priority: Priority::Medium,
+            rotation: RotationSpec::OneShot { ttl_secs: 4 },
+            topic: None,
+            payload: EventPayload {
+                title: "t".to_string(),
+                body: "b".to_string(),
+            },
+        };
+        assert_eq!(event.rotation_window(false), 4);
+        assert_eq!(event.rotation_window(true), 12);
     }
 
     #[test]

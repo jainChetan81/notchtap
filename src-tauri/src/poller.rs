@@ -7,8 +7,10 @@ use serde::Deserialize;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
-use crate::event::{emit_promoted, Event, EventPayload, EventType, Priority};
-use crate::queue::NotificationQueue;
+use crate::event::{
+    emit_slot_state, Event, EventPayload, EventType, Priority, RotationSpec, SlotState,
+};
+use crate::queue::SingleSlotQueue;
 
 // ---------------------------------------------------------------------------
 // scoreboard wire shape — minimal, tolerant structs for the fields the diff
@@ -274,8 +276,16 @@ fn make_event(event_type: EventType, title: String, body: String, ttl_secs: u64)
     Event {
         id: Uuid::new_v4(),
         event_type,
-        priority: Priority::Normal,
-        ttl_secs,
+        // v3.6 spec §3.4: both ScoreUpdate and MatchState from this source
+        // are High unconditionally — there's no lower-priority path from
+        // the espn poller in this pass.
+        priority: Priority::High,
+        rotation: RotationSpec::OneShot { ttl_secs },
+        // the poller has its own per-match dedup/eviction via Snapshot /
+        // missed_polls already; it doesn't need the queue's topic
+        // supersession mechanism in this pass (spec §3.4: no source here
+        // constructs Recurring, and topic is a Recurring-adjacent concern).
+        topic: None,
         payload: EventPayload { title, body },
     }
 }
@@ -498,11 +508,11 @@ async fn fetch_league(client: &reqwest::Client, league: &str) -> anyhow::Result<
 /// the http handler, silently excluding score events from outbound
 /// (caught in the 2026-07-16 v3 review).
 pub(crate) fn enqueue_and_fan_out(
-    queue: &mut NotificationQueue,
+    queue: &mut SingleSlotQueue,
     connectors: &[crate::notifier::ConnectorHandle],
     events: Vec<Event>,
     context: &str,
-) -> Vec<Event> {
+) -> Option<SlotState> {
     for event in events {
         let accepted = event.clone();
         match queue.enqueue(event) {
@@ -514,12 +524,15 @@ pub(crate) fn enqueue_and_fan_out(
             Err(e) => tracing::warn!(context, "espn event dropped: {e}"),
         }
     }
-    queue.take_promoted()
+    // only one item can ever be visible now, so there's no batch of
+    // "promotions" to report — just whatever the final slot state is after
+    // this whole poll's events have been enqueued.
+    queue.slot_state_if_changed()
 }
 
 pub fn spawn_espn_poller(
     app: tauri::AppHandle,
-    queue: Arc<Mutex<NotificationQueue>>,
+    queue: Arc<Mutex<SingleSlotQueue>>,
     connectors: Arc<Vec<crate::notifier::ConnectorHandle>>,
     leagues: Vec<String>,
     poll_secs: u64,
@@ -579,11 +592,13 @@ pub fn spawn_espn_poller(
                     continue;
                 }
 
-                let promoted = {
+                let slot_change = {
                     let mut q = queue.lock().await;
                     enqueue_and_fan_out(&mut q, &connectors, events, league)
                 };
-                emit_promoted(&app, promoted);
+                if let Some(state) = slot_change {
+                    emit_slot_state(&app, state);
+                }
             }
         }
     });
@@ -592,7 +607,7 @@ pub fn spawn_espn_poller(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event::{EventPayload, EventType, Priority};
+    use crate::event::{EventPayload, EventType, Priority, RotationSpec, SlotState};
     use crate::notifier::ConnectorHandle;
 
     const USA: &str = include_str!("../tests/fixtures/scoreboard-usa.1.json");
@@ -602,8 +617,9 @@ mod tests {
         Event {
             id: uuid::Uuid::new_v4(),
             event_type: EventType::ScoreUpdate,
-            priority: Priority::Normal,
-            ttl_secs: 8,
+            priority: Priority::High,
+            rotation: RotationSpec::OneShot { ttl_secs: 8 },
+            topic: None,
             payload: EventPayload {
                 title: title.to_string(),
                 body: "body".to_string(),
@@ -618,16 +634,19 @@ mod tests {
         // visible slot, no waiting room: first accepted, second rejected.
         let (tx, mut rx) = tokio::sync::mpsc::channel(8);
         let connector = ConnectorHandle::new("test", tx);
-        let mut q = NotificationQueue::new(1, 0);
+        let mut q = SingleSlotQueue::new(0);
 
-        let promoted = enqueue_and_fan_out(
+        let slot_change = enqueue_and_fan_out(
             &mut q,
             &[connector],
             vec![score_event("accepted"), score_event("rejected")],
             "test.league",
         );
 
-        assert_eq!(promoted.len(), 1);
+        match slot_change.expect("first event should have promoted") {
+            SlotState::Showing { title, .. } => assert_eq!(title, "accepted"),
+            SlotState::Empty => panic!("expected a Showing slot state"),
+        }
         let fanned = rx.try_recv().expect("accepted score event must fan out");
         assert_eq!(fanned.payload.title, "accepted");
         assert!(rx.try_recv().is_err(), "rejected event must not fan out");
@@ -677,7 +696,7 @@ mod tests {
         assert!(matches!(events[0].event_type, EventType::ScoreUpdate));
         assert_eq!(events[0].payload.title, "usa.1: TOR 0–1 MTL");
         assert_eq!(events[0].payload.body, "goal"); // no scoring play in feed
-        assert_eq!(events[0].ttl_secs, 8);
+        assert_eq!(events[0].rotation, RotationSpec::OneShot { ttl_secs: 8 });
         assert_eq!(next.len(), 4);
     }
 

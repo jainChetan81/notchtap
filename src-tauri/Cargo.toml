@@ -29,6 +29,10 @@ tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "time", "
 smappservice-rs = "0.1"
 reqwest = { version = "0.13.4", features = ["json"] }
 
+[target.'cfg(target_os = "macos")'.dependencies]
+tauri-plugin-global-shortcut = "2.3.2"
+objc2-app-kit = { version = "0.3.2", features = ["NSWindow"] }
+
 [dev-dependencies]
 tower = { version = "0.5.3", features = ["util"] }
 tauri = { version = "2", features = ["tray-icon", "macos-private-api", "test"] }

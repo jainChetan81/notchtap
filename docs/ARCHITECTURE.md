@@ -116,6 +116,20 @@ each event enqueues as:
 | `exit_duration` | `300` ms | animation out |
 | `queue_overflow` | reject with `429` | prevents unbounded memory growth if the ui is stuck |
 
+**superseded 2026-07-17 (v3.6, locked via grilling session, see
+`IMPLEMENTATION_PLAN.md` §3.6 and `V3_6_TECHNICAL_SPEC.md`)**: the
+whole "cap-3 visible stack" model above is retired, not just tuned.
+`max_concurrent` is gone entirely — exactly one item is ever visible
+(the **Slot**, see `CONTEXT.md`) — and promotion is priority-ordered
+(`low | medium | high`) rather than pure fifo, though a priority
+arrival still never interrupts the currently-visible item mid-display.
+`ttl` is renamed **rotation**, and gains a `Recurring` kind that
+requeues instead of dropping. `max_queued` becomes
+`max_queued_per_tier`, applied independently per priority tier (a
+`Low` burst can't starve `High`'s own waiting room). this table is
+kept as the v1 historical record; `V3_6_TECHNICAL_SPEC.md` §3/§4 is
+the current design.
+
 ---
 
 ## 4. animation system
@@ -361,6 +375,12 @@ v2 adds (locked 2026-07-16, §16): `espn_enabled` (default `true`),
 v2. api keys / bot tokens (telegram, etc.) live in a separate secrets
 file (`secrets.toml`, see `V3_TECHNICAL_SPEC.md` §4 — not env vars;
 login items don't inherit shell env) — never in the committed config.
+
+v3.6 (locked 2026-07-17, see `V3_6_TECHNICAL_SPEC.md` §4.6) removes
+`max_concurrent` outright (no longer meaningful — see §3's addendum
+above) and renames `max_queued` to `max_queued_per_tier` (same default,
+`50`, now applied independently per priority tier rather than as one
+shared cap).
 
 the rust core reads this file once at startup. changes require a restart
 in v1; a file-watcher or settings ui is a v2+ convenience.
