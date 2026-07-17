@@ -107,6 +107,7 @@ pub fn run() {
     let server_once = Arc::new(Once::new());
 
     tauri::Builder::default()
+        .plugin(tauri_nspanel::init())
         .setup(move |app| {
             app.set_activation_policy(ActivationPolicy::Accessory);
 
@@ -115,19 +116,27 @@ pub fn run() {
                 .expect("main window missing from tauri.conf.json");
             window.set_always_on_top(true)?;
 
-            // v3.6 spec §7.2: survive Spaces switches and fullscreen apps.
+            // permanent-overlay pass: a plain NSWindow is never composited
+            // into another app's fullscreen Space, regardless of level or
+            // collection behavior — macOS only honors fullScreenAuxiliary
+            // for nonactivating panels (or perfectly nonactivating agent
+            // windows, which tao's show path is not). swizzle the window
+            // into an NSPanel with the nonactivating style mask; same
+            // object, so all other window APIs keep working.
             #[cfg(target_os = "macos")]
             {
-                use objc2_app_kit::{NSStatusWindowLevel, NSWindow, NSWindowCollectionBehavior};
-                let ns_window_ptr = window.ns_window()? as *mut NSWindow;
-                let ns_window: &NSWindow = unsafe { &*ns_window_ptr };
-                let behavior = NSWindowCollectionBehavior::CanJoinAllSpaces
-                    | NSWindowCollectionBehavior::FullScreenAuxiliary;
-                ns_window.setCollectionBehavior(behavior);
-                // Floating level (3) cannot overlap the menu bar or appear over fullscreen
-                // Spaces; status level (25) can and is required for the flush-to-top overlay.
-                ns_window.setLevel(NSStatusWindowLevel);
+                use tauri_nspanel::WebviewWindowExt as _;
+                let panel = window
+                    .to_panel()
+                    .map_err(|e| format!("nspanel conversion failed: {e:?}"))?;
+                // NSWindowStyleMaskNonactivatingPanel (1 << 7); the window
+                // is borderless (mask 0), so the panel bit is the whole mask.
+                panel.set_style_mask(1 << 7);
             }
+
+            // v3.6 spec §7.2: survive Spaces switches and fullscreen apps.
+            #[cfg(target_os = "macos")]
+            apply_overlay_native_config(&window)?;
 
             position_window(&window, mode, cutout)?;
 
@@ -209,6 +218,22 @@ pub fn run() {
                     let _ = webview.emit("presentation-mode", PresentationModePayload { mode });
                 }
 
+                // re-assert level/collection-behavior/position now that the
+                // window is shown — tao's show path resets them (see
+                // apply_overlay_native_config).
+                #[cfg(target_os = "macos")]
+                if let Some(window) = app_handle.get_webview_window("main") {
+                    let w = window.clone();
+                    let _ = window.run_on_main_thread(move || {
+                        if let Err(e) = apply_overlay_native_config(&w) {
+                            tracing::warn!("overlay native config re-apply failed: {e}");
+                        }
+                        if let Err(e) = position_window(&w, mode, cutout) {
+                            tracing::warn!("overlay re-position failed: {e}");
+                        }
+                    });
+                }
+
                 server_once.call_once(move || {
                     let app_handle = app_handle.clone();
                     let state = http::AppState {
@@ -239,6 +264,42 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running notchtap");
+}
+
+// v3.6 spec §7.2 + permanent-overlay pass: the window must overlap the menu
+// bar (flush to y=0), survive Spaces switches, and stay visible over
+// fullscreen apps. tao resets the window level and collection behavior when
+// it shows the window (observed live: layer back to 5, y clamped below the
+// menu bar), so this must be applied both at setup AND re-applied after the
+// window is actually shown (the page-load hook).
+#[cfg(target_os = "macos")]
+fn apply_overlay_native_config(window: &tauri::WebviewWindow) -> tauri::Result<()> {
+    use objc2_app_kit::{NSStatusWindowLevel, NSWindow, NSWindowCollectionBehavior};
+    // tao tracks this flag in its own window state, so it survives tao's
+    // internal re-applies (unlike a raw setCollectionBehavior alone).
+    window.set_visible_on_all_workspaces(true)?;
+    let ns_window_ptr = window.ns_window()? as *mut NSWindow;
+    let ns_window: &NSWindow = unsafe { &*ns_window_ptr };
+    // set the EXACT behavior, never OR with the current bits: tao puts
+    // FullScreenNone on non-resizable windows, and that bit silently defeats
+    // FullScreenAuxiliary (the window then never joins fullscreen Spaces).
+    // Stationary + IgnoresCycle make it behave like a system overlay
+    // (unaffected by Exposé, skipped by cmd-backtick cycling).
+    let behavior = NSWindowCollectionBehavior::CanJoinAllSpaces
+        | NSWindowCollectionBehavior::FullScreenAuxiliary
+        | NSWindowCollectionBehavior::Stationary
+        | NSWindowCollectionBehavior::IgnoresCycle;
+    ns_window.setCollectionBehavior(behavior);
+    // Floating-tier levels cannot overlap the menu bar or appear over
+    // fullscreen Spaces; status level (25) can — required for the
+    // flush-to-top permanent overlay.
+    ns_window.setLevel(NSStatusWindowLevel);
+    tracing::info!(
+        behavior = ns_window.collectionBehavior().0,
+        level = ns_window.level(),
+        "overlay native config applied"
+    );
+    Ok(())
 }
 
 fn position_top_center(window: &tauri::WebviewWindow) -> tauri::Result<()> {
