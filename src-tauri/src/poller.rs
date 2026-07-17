@@ -575,6 +575,11 @@ pub(crate) fn enqueue_and_fan_out(
     queue.slot_state_if_changed()
 }
 
+// 8 args trips clippy 1.97's too_many_arguments; the spawn signature grew
+// one handle per shipped phase (connectors v3, pause/active v5) — bundling
+// them into a struct is tracked as tech-debt, not worth churning the call
+// sites for a lint.
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_espn_poller(
     app: tauri::AppHandle,
     queue: Arc<Mutex<SingleSlotQueue>>,

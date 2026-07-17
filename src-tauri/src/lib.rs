@@ -403,9 +403,8 @@ pub fn run() {
                         .replace('\u{2028}', "\\u2028")
                         .replace('\u{2029}', "\\u2029")
                         .replace('<', "\\u003c");
-                    let _ = webview.eval(format!(
-                        "window.__NOTCHTAP_APPEARANCE__ = {payload_json};"
-                    ));
+                    let _ =
+                        webview.eval(format!("window.__NOTCHTAP_APPEARANCE__ = {payload_json};"));
                     let _ = webview.emit("appearance-changed", &payload);
                 }
 

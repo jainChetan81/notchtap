@@ -240,6 +240,10 @@ fn derive_source(configured_source: Option<&str>, feed: &feed_rs::model::Feed) -
 /// Pure set-difference and event-building heart of the RSS poller. All new
 /// keys enter the shared store before baseline/display filtering, so skipped
 /// or rate-limited stories cannot replay on a later tick.
+// 8 args trips clippy 1.97's too_many_arguments — this is the pure,
+// exhaustively-tested core and every argument is a distinct test axis;
+// bundling them would only obscure the test call sites.
+#[allow(clippy::too_many_arguments)]
 pub fn diff_feed(
     seen: &mut SeenStore,
     feed: &feed_rs::model::Feed,
@@ -408,6 +412,9 @@ async fn fetch_feed(
     Ok(Some(feed))
 }
 
+// same rationale as spawn_espn_poller: one handle per shipped phase,
+// struct-bundling tracked as tech-debt rather than lint-driven churn.
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_rss_poller(
     app: tauri::AppHandle,
     queue: Arc<Mutex<SingleSlotQueue>>,

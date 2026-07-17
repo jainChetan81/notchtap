@@ -969,7 +969,10 @@ mod tests {
         q.pause();
         q.enqueue_test(event("test", Priority::Medium, 8)).unwrap();
         assert_eq!(visible_title(&q), Some("test"));
-        assert!(q.is_paused(), "engine must remain paused after a test promotion");
+        assert!(
+            q.is_paused(),
+            "engine must remain paused after a test promotion"
+        );
     }
 
     #[test]
@@ -1327,4 +1330,3 @@ mod tests {
         }
     }
 }
-

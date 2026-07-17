@@ -21,10 +21,10 @@ use crate::config::{Appearance, Config};
 use crate::event::{
     dispatch, Event, EventMeta, EventPayload, EventSignal, EventType, RotationSpec, SourceKind,
 };
-use tauri::Manager;
 use crate::http;
 use crate::notifier::ConnectorHandle;
 use crate::queue::SingleSlotQueue;
+use tauri::Manager;
 
 // ---------------------------------------------------------------------------
 // validation (pure, unit-tested — spec §3)
@@ -148,10 +148,7 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
 pub fn validate_appearance(a: &Appearance) -> Result<(), Vec<String>> {
     let mut errors = Vec::new();
     if !(0.8..=1.4).contains(&a.card_scale) {
-        errors.push(format!(
-            "card_scale must be 0.8–1.4 (got {})",
-            a.card_scale
-        ));
+        errors.push(format!("card_scale must be 0.8–1.4 (got {})", a.card_scale));
     }
     if !(0.0..=24.0).contains(&a.card_radius) {
         errors.push(format!(
@@ -655,8 +652,7 @@ pub fn set_appearance(
     let dir = notchtap_config_dir()?;
     let mut config = state.inner().lock().unwrap().clone();
     config.appearance = appearance.clone();
-    write_config_atomic(&dir, &config)
-        .map_err(|e| format!("could not write config.toml: {e}"))?;
+    write_config_atomic(&dir, &config).map_err(|e| format!("could not write config.toml: {e}"))?;
     {
         let mut managed = state.inner().lock().unwrap();
         managed.appearance = appearance.clone();
@@ -1097,8 +1093,10 @@ mod tests {
     #[test]
     fn config_write_is_atomic_parseable_and_creates_the_dir() {
         let dir = temp_dir(); // deliberately not created — the writer must
-        let mut c = Config::default();
-        c.port = 4242;
+        let c = Config {
+            port: 4242,
+            ..Default::default()
+        };
         write_config_atomic(&dir, &c).unwrap();
 
         let on_disk = std::fs::read_to_string(dir.join("config.toml")).unwrap();
