@@ -15,6 +15,13 @@ pub struct Config {
     pub espn_enabled: bool,
     pub espn_leagues: Vec<String>,
     pub espn_poll_secs: u64,
+    /// default false — news is opt-in per machine; ambient sources must
+    /// not default on top of the app's primary agent-notification purpose.
+    pub rss_enabled: bool,
+    pub rss_feeds: Vec<String>,
+    pub rss_poll_secs: u64,
+    pub rss_ttl_secs: u64,
+    pub rss_max_per_poll: usize,
     pub connectors: Connectors,
 }
 
@@ -66,6 +73,26 @@ fn default_espn_poll_secs() -> u64 {
     30
 }
 
+fn default_rss_enabled() -> bool {
+    false
+}
+
+fn default_rss_feeds() -> Vec<String> {
+    vec!["https://feeds.feedburner.com/ndtvnews-top-stories".to_string()]
+}
+
+fn default_rss_poll_secs() -> u64 {
+    60
+}
+
+fn default_rss_ttl_secs() -> u64 {
+    10
+}
+
+fn default_rss_max_per_poll() -> usize {
+    10
+}
+
 impl Default for Config {
     fn default() -> Self {
         Self {
@@ -77,6 +104,11 @@ impl Default for Config {
             espn_enabled: default_espn_enabled(),
             espn_leagues: default_espn_leagues(),
             espn_poll_secs: default_espn_poll_secs(),
+            rss_enabled: default_rss_enabled(),
+            rss_feeds: default_rss_feeds(),
+            rss_poll_secs: default_rss_poll_secs(),
+            rss_ttl_secs: default_rss_ttl_secs(),
+            rss_max_per_poll: default_rss_max_per_poll(),
             connectors: Connectors::default(),
         }
     }
@@ -128,6 +160,14 @@ mod tests {
         assert!(c.espn_enabled);
         assert_eq!(c.espn_leagues, ["eng.1", "uefa.champions", "esp.1"]);
         assert_eq!(c.espn_poll_secs, 30);
+        assert!(!c.rss_enabled);
+        assert_eq!(
+            c.rss_feeds,
+            ["https://feeds.feedburner.com/ndtvnews-top-stories"]
+        );
+        assert_eq!(c.rss_poll_secs, 60);
+        assert_eq!(c.rss_ttl_secs, 10);
+        assert_eq!(c.rss_max_per_poll, 10);
     }
 
     #[test]
@@ -136,6 +176,19 @@ mod tests {
         assert!(!c.espn_enabled);
         assert_eq!(c.espn_leagues, ["usa.1"]);
         assert_eq!(c.espn_poll_secs, 30);
+    }
+
+    #[test]
+    fn rss_fields_are_overridable() {
+        let c = Config::parse(
+            "rss_enabled = true\nrss_feeds = [\"https://example.com/feed\"]\nrss_poll_secs = 120\n",
+        )
+        .unwrap();
+        assert!(c.rss_enabled);
+        assert_eq!(c.rss_feeds, ["https://example.com/feed"]);
+        assert_eq!(c.rss_poll_secs, 120);
+        assert_eq!(c.rss_ttl_secs, 10);
+        assert_eq!(c.rss_max_per_poll, 10);
     }
 
     #[test]

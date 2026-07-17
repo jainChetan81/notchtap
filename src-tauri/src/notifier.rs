@@ -112,6 +112,7 @@ pub fn format_message(event: &Event) -> String {
         EventType::ScoreUpdate => "⚽ ",
         EventType::MatchState => "🕐 ",
         EventType::Generic => "🤖 ",
+        EventType::NewsItem => "📰 ",
     };
     format!("{icon}<b>{title}</b>\n{body}")
 }
@@ -366,6 +367,12 @@ mod tests {
     fn generic_uses_robot_template() {
         let msg = format_message(&event(EventType::Generic, "claude", "needs input"));
         assert_eq!(msg, "🤖 <b>claude</b>\nneeds input");
+    }
+
+    #[test]
+    fn news_item_uses_newspaper_template() {
+        let msg = format_message(&event(EventType::NewsItem, "Headline", "Details here"));
+        assert_eq!(msg, "📰 <b>Headline</b>\nDetails here");
     }
 
     #[test]

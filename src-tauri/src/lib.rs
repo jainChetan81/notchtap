@@ -11,6 +11,7 @@ mod notifier;
 mod poller;
 mod presentation;
 pub mod queue;
+mod rss_poller;
 mod settings;
 
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -85,6 +86,11 @@ pub fn run() {
     let espn_enabled = config.espn_enabled;
     let espn_leagues = config.espn_leagues.clone();
     let espn_poll_secs = config.espn_poll_secs;
+    let rss_enabled = config.rss_enabled;
+    let rss_feeds = config.rss_feeds.clone();
+    let rss_poll_secs = config.rss_poll_secs;
+    let rss_ttl_secs = config.rss_ttl_secs;
+    let rss_max_per_poll = config.rss_max_per_poll;
 
     // v3 outbound connectors: built here (channel needs no runtime), the
     // worker future is spawned in setup once the runtime exists. missing
@@ -115,6 +121,7 @@ pub fn run() {
     let poller_connectors = connectors.clone();
 
     let setup_queue = queue.clone();
+    let rss_queue = queue.clone();
     let page_load_queue = queue.clone();
     #[cfg(target_os = "macos")]
     let hotkey_queue = queue.clone();
@@ -194,10 +201,12 @@ pub fn run() {
             // (not in the queue) because it gates network fetches, not
             // promotion — pausing scores must not touch cmux/cli pushes.
             let espn_active = espn_enabled.then(|| Arc::new(AtomicBool::new(true)));
+            let rss_active = rss_enabled.then(|| Arc::new(AtomicBool::new(true)));
             build_tray(
                 app.handle(),
                 setup_queue.clone(),
                 espn_active.clone(),
+                rss_active.clone(),
                 start_paused,
             )?;
             spawn_heartbeat(app.handle().clone(), setup_queue.clone());
@@ -215,6 +224,17 @@ pub fn run() {
                     espn_poll_secs,
                     default_ttl,
                     espn_active,
+                );
+            }
+            if let Some(rss_active) = rss_active {
+                rss_poller::spawn_rss_poller(
+                    app.handle().clone(),
+                    rss_queue,
+                    rss_feeds,
+                    rss_poll_secs,
+                    rss_ttl_secs,
+                    rss_max_per_poll,
+                    rss_active,
                 );
             }
 
@@ -417,6 +437,7 @@ fn build_tray(
     app: &tauri::AppHandle,
     queue: Arc<Mutex<SingleSlotQueue>>,
     espn_active: Option<Arc<AtomicBool>>,
+    rss_active: Option<Arc<AtomicBool>>,
     start_paused: bool,
 ) -> tauri::Result<()> {
     // v5 kill switch: a start_paused boot renders the toggle as "Resume"
@@ -428,7 +449,11 @@ fn build_tray(
         .as_ref()
         .map(|_| MenuItem::with_id(app, "espn", "Pause Football Scores", true, None::<&str>))
         .transpose()?;
-    // v5 (ARCHITECTURE.md §17): the fourth tray item — opens the settings
+    let rss_item = rss_active
+        .as_ref()
+        .map(|_| MenuItem::with_id(app, "news", "Pause News", true, None::<&str>))
+        .transpose()?;
+    // v5 (ARCHITECTURE.md §17): the settings tray item — opens the settings
     // window; everything richer than a toggle lives there, not in more
     // tray items.
     let settings_item = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
@@ -436,6 +461,9 @@ fn build_tray(
     let menu = Menu::new(app)?;
     menu.append(&pause_item)?;
     if let Some(item) = &espn_item {
+        menu.append(item)?;
+    }
+    if let Some(item) = &rss_item {
         menu.append(item)?;
     }
     menu.append(&settings_item)?;
@@ -482,6 +510,17 @@ fn build_tray(
                         "Resume Football Scores"
                     });
                     tracing::info!(active = now_active, "espn polling toggled from tray");
+                }
+            }
+            "news" => {
+                if let (Some(flag), Some(item)) = (&rss_active, &rss_item) {
+                    let now_active = !flag.fetch_xor(true, Ordering::Relaxed);
+                    let _ = item.set_text(if now_active {
+                        "Pause News"
+                    } else {
+                        "Resume News"
+                    });
+                    tracing::info!(active = now_active, "rss polling toggled from tray");
                 }
             }
             "settings" => open_settings_window(app),

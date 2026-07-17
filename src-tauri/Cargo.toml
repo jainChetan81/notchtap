@@ -28,6 +28,7 @@ axum = "0.8.9"
 tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "time", "net", "sync"] }
 smappservice-rs = "0.1"
 reqwest = { version = "0.13.4", features = ["json"] }
+feed-rs = "2"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri-plugin-global-shortcut = "2.3.2"
@@ -38,4 +39,3 @@ tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", branch = "v2"
 tower = { version = "0.5.3", features = ["util"] }
 tauri = { version = "2", features = ["tray-icon", "macos-private-api", "test"] }
 wiremock = "0.6"
-
