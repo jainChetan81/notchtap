@@ -13,68 +13,295 @@ body {
   user-select: none;
 }
 
-.slot {
+.rail-card {
   box-sizing: border-box;
-  width: 360px;
-  min-height: 32px;
-  max-height: 84px;
+  position: relative;
+  width: 400px;
   margin: 0 auto;
-  padding: 10px 16px;
-  border-radius: 0 0 14px 14px;
-  background: #000;
-  color: #f5f5f7;
-  box-shadow: 0 4px 18px rgba(0, 0, 0, 0.35);
   overflow: hidden;
-  border-left: 3px solid transparent;
+  border-radius: 0 0 8px 8px;
+  background: #050607;
+  color: #f5f7fa;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
   transition:
-    max-height 250ms ease,
-    width 250ms ease,
-    padding 250ms ease;
+    width 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 320ms ease;
 }
 
-.slot.idle {
-  width: 220px;
-  max-height: 32px;
-  padding: 0;
-  border-left-color: transparent;
+.rail-card.expanded {
+  width: 500px;
+  border-radius: 0 0 12px 12px;
 }
 
-.slot .title {
-  font-size: 13px;
-  font-weight: 600;
-  line-height: 1.3;
-  white-space: nowrap;
+.rail-card.idle {
+  width: 270px;
+}
+
+/* priority accent — a single named color per tier, consumed by the
+   tier-code icon/text and the stamp pill. deliberately NOT signal-driven
+   (goal/red_card share "high" accent with any other high-priority
+   source) — see lib/presentation.ts's stamp table for where signal does
+   change what's shown. */
+.rail-card.low {
+  --accent: #aab3bd;
+  --accent-soft: rgba(170, 179, 189, 0.2);
+}
+
+.rail-card.medium {
+  --accent: #55d6bd;
+  --accent-soft: rgba(85, 214, 189, 0.24);
+}
+
+.rail-card.high {
+  --accent: #ff6b57;
+  --accent-soft: rgba(255, 107, 87, 0.28);
+}
+
+/* signature moment #1 — Goal: one celebratory burst behind the card,
+   plus a quick scale overshoot on the card itself. plays once, never
+   loops (this sits in a persistent overlay). keyed by <StatusRailCard>
+   off slot.signal, never slot.priority. */
+.rail-card::after {
+  content: "";
+  position: absolute;
+  inset: -40px;
+  z-index: -1;
+  border-radius: 50%;
+  background: radial-gradient(circle, rgba(255, 107, 87, 0.5), transparent 70%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.rail-card.pulse-goal {
+  animation: goal-overshoot 620ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.rail-card.pulse-goal::after {
+  animation: goal-burst 620ms ease-out;
+}
+
+@keyframes goal-overshoot {
+  0% {
+    transform: scale(1);
+  }
+  35% {
+    transform: scale(1.045);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes goal-burst {
+  0% {
+    opacity: 0;
+    transform: scale(0.6);
+  }
+  40% {
+    opacity: 0.9;
+    transform: scale(1.15);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.5);
+  }
+}
+
+/* signature moment #2 — Red Card: a sharp two-pulse alert strobe,
+   different register from Goal's celebration — urgent, not festive. */
+.rail-card.pulse-red {
+  animation: red-alert 460ms steps(1, end) 2;
+}
+
+@keyframes red-alert {
+  0%,
+  100% {
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+  }
+  50% {
+    box-shadow:
+      0 14px 32px rgba(0, 0, 0, 0.32),
+      0 0 0 2px #ff6b57,
+      0 0 26px 4px rgba(255, 107, 87, 0.65);
+  }
+}
+
+/* the two pulses above are plain CSS, not `motion` components, so
+   <MotionConfig reducedMotion="user"> (App.tsx) does not cover them —
+   they need this override in their own right. */
+@media (prefers-reduced-motion: reduce) {
+  .rail-card.pulse-goal,
+  .rail-card.pulse-goal::after,
+  .rail-card.pulse-red {
+    animation: none;
+  }
+}
+
+.compact {
+  position: relative;
+  box-sizing: border-box;
+  min-height: 74px;
+  padding: 12px 18px 14px;
+  display: grid;
+  grid-template-columns: 64px minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+
+.expanded .compact {
+  min-height: 82px;
+}
+
+.tier-code {
+  align-self: stretch;
+  display: grid;
+  justify-items: start;
+  align-content: center;
+  gap: 2px;
+  border-right: 1px solid rgba(255, 255, 255, 0.11);
+  color: var(--accent);
+}
+
+.tier-code svg {
+  color: var(--accent);
+}
+
+.tier-code .code {
+  font: 750 22px/0.9 "Arial Narrow", "SF Pro Display", sans-serif;
+  letter-spacing: -0.04em;
+}
+
+.tier-code .tier-label {
+  margin-top: 3px;
+  color: rgba(255, 255, 255, 0.4);
+  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.copy {
+  min-width: 0;
+}
+
+.title {
   overflow: hidden;
+  font-size: 14px;
+  font-weight: 680;
+  line-height: 1.2;
   text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.slot .body {
-  font-size: 12px;
-  line-height: 1.35;
-  color: rgba(245, 245, 247, 0.75);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
+.body {
+  margin-top: 4px;
   overflow: hidden;
+  color: rgba(255, 255, 255, 0.55);
+  font-size: 11px;
+  line-height: 1.3;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.slot.low {
-  border-left-color: rgba(245, 245, 247, 0.25);
+.stamp {
+  align-self: center;
+  padding: 4px 6px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
 }
 
-.slot.medium {
-  border-left-color: #5ac8fa;
+.track {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 4px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 3px;
+  padding: 0 3px;
 }
 
-.slot.high {
-  border-left-color: #ff453a;
+.track span {
+  background: rgba(255, 255, 255, 0.09);
 }
 
-.slot.expanded {
-  max-height: 168px;
-  width: 420px;
+.track span.lit {
+  background: var(--accent);
+  box-shadow: 0 -3px 14px var(--accent-soft);
 }
 
-.slot.expanded .body {
-  -webkit-line-clamp: 5;
+/* height/opacity are animated inline by motion.div (Manifest.tsx) — this
+   only supplies the static box treatment, not a max-height transition. */
+.manifest {
+  overflow: hidden;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent);
+}
+
+.manifest-inner {
+  box-sizing: border-box;
+  padding: 14px 18px 18px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+
+.detail-label {
+  margin-bottom: 5px;
+  color: var(--accent);
+  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.detail-value {
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.idle-view {
+  box-sizing: border-box;
+  min-height: 38px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+}
+
+.idle-view .time {
+  font: 720 12px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.idle-view .timeline {
+  position: relative;
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.14);
+}
+
+.idle-view .timeline::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: var(--day-progress, 50%);
+  width: 5px;
+  height: 5px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: #b6f5e5;
+  box-shadow: 0 0 10px rgba(182, 245, 229, 0.75);
+}
+
+.goal-celebration {
+  position: absolute;
+  inset: -30px;
+  z-index: -1;
+  pointer-events: none;
 }
