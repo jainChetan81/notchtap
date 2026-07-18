@@ -64,10 +64,17 @@
 .rail-card::after {
   content: "";
   position: absolute;
-  inset: -40px;
+  inset: -60px;
   z-index: 0;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 107, 87, 0.5), transparent 70%);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 224, 130, 0.95), transparent 40%),
+    radial-gradient(circle at 22% 32%, rgba(255, 107, 87, 0.9), transparent 12%),
+    radial-gradient(circle at 78% 30%, rgba(120, 224, 200, 0.85), transparent 12%),
+    radial-gradient(circle at 30% 74%, rgba(124, 157, 245, 0.85), transparent 12%),
+    radial-gradient(circle at 72% 72%, rgba(255, 196, 106, 0.9), transparent 12%),
+    radial-gradient(circle at 50% 16%, rgba(255, 255, 255, 0.9), transparent 10%),
+    radial-gradient(circle at 50% 50%, rgba(255, 107, 87, 0.55), transparent 68%);
   opacity: 0;
   pointer-events: none;
 }
@@ -80,16 +87,41 @@
   animation: goal-burst 620ms ease-out;
 }
 
+/* SHIPPED (plan 023): confetti-spray ::after + this expanding ::before ring */
+.rail-card.pulse-goal::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+  z-index: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 224, 130, 0.9);
+  opacity: 0;
+  pointer-events: none;
+  animation: goal-ring 620ms ease-out;
+}
+
 @keyframes goal-overshoot {
   0% { transform: scale(1); }
-  35% { transform: scale(1.045); }
+  30% { transform: scale(1.06); }
+  55% { transform: scale(0.995); }
   100% { transform: scale(1); }
 }
 
 @keyframes goal-burst {
-  0% { opacity: 0; transform: scale(0.6); }
-  40% { opacity: 0.9; transform: scale(1.15); }
-  100% { opacity: 0; transform: scale(1.5); }
+  0% { opacity: 0; transform: scale(0.5) rotate(-8deg); }
+  35% { opacity: 1; transform: scale(1.15) rotate(0deg); }
+  70% { opacity: 0.85; transform: scale(1.4) rotate(4deg); }
+  100% { opacity: 0; transform: scale(1.7) rotate(6deg); }
+}
+
+@keyframes goal-ring {
+  0% { opacity: 0; transform: scale(0.3); }
+  25% { opacity: 0.9; }
+  100% { opacity: 0; transform: scale(6); }
 }
 
 .rail-card.pulse-red {
@@ -110,6 +142,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .rail-card.pulse-goal,
+  .rail-card.pulse-goal::before,
   .rail-card.pulse-goal::after,
   .rail-card.pulse-red {
     animation: none;
@@ -284,13 +317,6 @@
   box-shadow: 0 0 10px rgba(182, 245, 229, 0.75);
 }
 
-.goal-celebration {
-  position: absolute;
-  inset: -30px;
-  z-index: 0;
-  pointer-events: none;
-}
-
 /* ==== news card v5: category system (shader + masthead + pills) ==== */
 .cat-politics { --cat: #7c9df5; --cat-deep: rgba(124,157,245,0.16); --cat-pill: rgba(124,157,245,0.14); }
 .cat-tech     { --cat: #5fd4e8; --cat-deep: rgba(95,212,232,0.15);  --cat-pill: rgba(95,212,232,0.13); }
@@ -300,15 +326,18 @@
 .cat-generic  { --cat: #aab3bd; --cat-deep: rgba(170,179,189,0.10); --cat-pill: rgba(170,179,189,0.10); }
 
 .news-shade::before {
-  content: ""; position: absolute; inset: 0; z-index: 0;
+  content: ""; position: absolute; inset: -30% -30% -30% -30%; z-index: 0;
   background:
     radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%),
     linear-gradient(135deg, var(--cat-deep) 0%, transparent 46%);
-  background-size: 200% 200%;
   animation: shade-drift 12s ease-in-out infinite alternate;
   pointer-events: none;
+  will-change: transform;
 }
-@keyframes shade-drift { from { background-position: 0% 0%; } to { background-position: 60% 40%; } }
+@keyframes shade-drift {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(-8%, -6%, 0); }
+}
 
 .news-shade .compact,
 .news-shade .manifest { position: relative; z-index: 1; }
@@ -445,7 +474,14 @@
   100% { opacity: 0; transform: translateY(120px) rotate(220deg); }
 }
 
-/* A' · reworked goal confetti (lottie stand-in): fly out, then fall */
+/* A' · goal confetti layer (prototype-only stand-in particles; the shipped
+   celebration above is plan 023's pure-CSS burst + ring) */
+.goal-celebration {
+  position: absolute;
+  inset: -30px;
+  z-index: 0;
+  pointer-events: none;
+}
 .goal-celebration .cf {
   position: absolute; left: 50%; top: 50%;
   width: 6px; height: 6px; border-radius: 1px; opacity: 0;
@@ -465,6 +501,58 @@
   .cele-rain.play span,
   .goal-celebration.play .cf { animation: none; }
 }
+
+/* ============================================================
+   PART 1.7 — PROPOSED CHANGES (rev 3, this review round)
+   1. body/message more prominent (weight + contrast + size)
+   2. inline markdown in body + expanded message (`code`, **bold**,
+      *italic*, line breaks) so cmux/CLI text reads as written
+   3. idle rail shows SOURCE STATUS (football live w/ score+minute,
+      news on/paused, N queued) instead of clock-only
+   ============================================================ */
+
+/* 1 + 2 — body prominence + inline markdown marks */
+.body {
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 12px;
+  line-height: 1.35;
+}
+.body code, .detail-value code {
+  font: 600 11px/1.4 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--accent);
+}
+.body strong, .detail-value strong { color: #fff; font-weight: 720; }
+.body em, .detail-value em { font-style: italic; color: rgba(255, 255, 255, 0.9); }
+.detail-value.message {
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+/* 3 — idle source-status rail */
+.rail-card.idle.status { width: calc(460px * var(--card-scale)); }
+.idle-view.status { min-height: 40px; gap: 14px; }
+.src-rail { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; overflow: hidden; }
+.src-chip {
+  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
+  font: 700 9px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.62);
+}
+.src-chip .src-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, 0.4); }
+.src-chip.live { color: #7fe08d; }
+.src-chip.live .src-dot { background: #7fe08d; box-shadow: 0 0 8px #7fe08d; animation: live-pulse 1.4s ease-in-out infinite; }
+@keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+.src-chip.paused { color: rgba(255, 255, 255, 0.34); }
+.src-chip.paused .src-dot { background: rgba(255, 255, 255, 0.28); box-shadow: none; }
+.src-chip.next { color: #55d6bd; }
+.src-chip.next .src-dot { background: #55d6bd; box-shadow: 0 0 8px rgba(85,214,189,0.6); }
+.src-chip.clear { color: rgba(255, 255, 255, 0.34); }
+.src-chip + .src-chip::before { content: "·"; margin-right: 10px; color: rgba(255, 255, 255, 0.2); }
+@media (prefers-reduced-motion: reduce) { .src-chip.live .src-dot { animation: none; } }
 
 /* ============================================================
    PART 2 — showcase-only chrome (NOT part of the design system)
@@ -546,6 +634,44 @@ button.ctl.active { background: #3b4757; border-color: #5b7089; }
 .pill.p-hidden { opacity: 0; transform: translateY(3px); }
 .pill.age { transition-delay: 70ms; }
 .manifest.m-animating { transition: height 240ms cubic-bezier(0.22,1,0.36,1), opacity 240ms cubic-bezier(0.22,1,0.36,1); }
+
+/* ============================================================
+   PART 3 — DESIGN REVIEW: rich cmux manifest (proposed, NOT shipped)
+   the expanded manifest gains a Subtitle cell + label/value detail
+   cells fed by the claude-code / cmux hook relays. three layout
+   variants below; values wrap anywhere so long commands/paths fit.
+   ============================================================ */
+.design-024 .detail-value { overflow-wrap: anywhere; }
+.design-024 .variant-b .detail-cell { grid-column: 1 / -1; }
+.design-024 .variant-c .detail-block {
+  grid-column: 1 / -1;
+  margin-top: 2px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  font: 560 9px/1.7 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color: rgba(255, 255, 255, 0.72);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.design-024 .variant-c .detail-block b {
+  color: var(--accent);
+  font-weight: 700;
+  font-size: 7.5px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+.wire-json {
+  margin: 0 14px 12px;
+  padding: 9px 11px;
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 6px;
+  background: #10141b;
+  color: #8fa3bd;
+  font: 500 9.5px/1.65 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 </style>
 </head>
 <body>
@@ -625,6 +751,18 @@ button.ctl.active { background: #3b4757; border-color: #5b7089; }
 <p class="note">Unchanged apart from the chip removal and queue track. Masthead + 13px headline + pills + the 12s <code>shade-drift</code> tint.</p>
 <div class="grid" id="news"></div>
 
+<h2>5 · Design review — rich cmux cards (proposed, not shipped)</h2>
+<p class="note">
+  Where the data comes from: a <b>Claude Code hook</b> (PermissionRequest / Notification / Stop —
+  real fields: <code>tool_name</code>, <code>tool_input</code>, <code>cwd</code>) and a <b>cmux
+  notification hook</b> (workspace title, subtitle, <code>cwd</code>). The compact card is
+  unchanged — the richness lives only in the expanded manifest, as a <b>Subtitle</b> cell plus
+  label/value <b>detail cells</b>. Judge the three layouts on the same permission card
+  (A / B / C), then the error + cmux-waiting examples in the recommended layout. Wire JSON the
+  hook POSTs is shown under the first card.
+</p>
+<div class="grid" id="cmux-rich"></div>
+
 <script>
 /* stamp table — mirror of lib/presentation.ts */
 function stamp(cfg) {
@@ -640,6 +778,35 @@ function sourceText(cfg) {
 }
 function esc(s) { return s.replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
 function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+/* rev 3 — lightweight inline markdown for body/message text */
+function mdInline(s) {
+  if (!s) return "";
+  let t = esc(s);
+  t = t.replace(/`([^`]+)`/g, (m, c) => `<code>${c}</code>`);
+  t = t.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
+  t = t.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
+  t = t.replace(/\n/g, "<br/>");
+  return t;
+}
+/* rev 3 — idle rail that reports source status, not just the clock */
+function renderIdleStatus(st) {
+  const el = document.createElement("div");
+  el.className = "rail-card idle status";
+  const chips = [];
+  if (st.football) chips.push(`<span class="src-chip live"><span class="src-dot"></span>${esc(st.football)}</span>`);
+  if (st.news) chips.push(`<span class="src-chip ${st.news.paused ? "paused" : ""}"><span class="src-dot"></span>${esc(st.news.label)}${st.news.paused ? " paused" : ""}</span>`);
+  chips.push(st.queued > 0
+    ? `<span class="src-chip next"><span class="src-dot"></span>${st.queued} queued</span>`
+    : `<span class="src-chip clear">clear</span>`);
+  el.innerHTML = `
+    <div class="motion-wrapper">
+      <div class="idle-view status">
+        <span class="time">${esc(st.time)}</span>
+        <span class="src-rail">${chips.join("")}</span>
+      </div>
+    </div>`;
+  return el;
+}
 
 /* ---------- card renderer — proposed DOM: no tier-code, queue track ---------- */
 function renderCard(cfg) {
@@ -647,6 +814,7 @@ function renderCard(cfg) {
   const cls = ["rail-card", cfg.priority];
   if (cfg.expanded) cls.push("expanded");
   if (cfg.news) cls.push("news-shade", "cat-" + cfg.news.category);
+  if (cfg.manifestVariant) cls.push("design-024", cfg.manifestVariant);
   el.className = cls.join(" ");
   el.setAttribute("role", "status");
   el.setAttribute("aria-live", "polite");
@@ -668,7 +836,7 @@ function renderCard(cfg) {
   } else {
     copy = `
       <div class="title">${esc(cfg.title)}</div>
-      ${cfg.body ? `<div class="body">${esc(cfg.body)}</div>` : ""}`;
+      ${cfg.body ? `<div class="body">${mdInline(cfg.body)}</div>` : ""}`;
   }
 
   let manifest = "";
@@ -682,10 +850,21 @@ function renderCard(cfg) {
         </div></div>`;
     } else {
       const ctl = cfg.link ? "⌃⇧O read · ⌃⇧N collapse" : "⌃⇧N collapse";
+      const subtitleCell = cfg.subtitle
+        ? `<div class="detail-cell"><div class="detail-label">Subtitle</div><div class="detail-value">${esc(cfg.subtitle)}</div></div>`
+        : "";
+      const dets = cfg.details || [];
+      const detailCells = dets.map((d) =>
+        `<div class="detail-cell"><div class="detail-label">${esc(d.label)}</div><div class="detail-value">${esc(d.value)}</div></div>`).join("");
+      const detailBlock = dets.length
+        ? `<div class="detail-block">${dets.map((d) => `<b>${esc(d.label)}</b>  ${esc(d.value)}`).join("\n")}</div>`
+        : "";
       manifest = `
         <div class="manifest"><div class="manifest-inner">
-          <div><div class="detail-label">Message</div><div class="detail-value">${esc(cfg.body || cfg.title)}</div></div>
+          <div><div class="detail-label">Message</div><div class="detail-value message">${mdInline(cfg.body || cfg.title)}</div></div>
           <div><div class="detail-label">Source / Control</div><div class="detail-value">${esc(sourceText(cfg))}<br/>${ctl}</div></div>
+          ${subtitleCell}
+          ${cfg.manifestVariant === "variant-c" ? detailBlock : detailCells}
         </div></div>`;
     }
   }
@@ -987,6 +1166,140 @@ document.querySelectorAll("#appearance-bar .seg").forEach(seg => {
     };
   });
 });
+
+/* ---------- 5 · design review: rich cmux cards ---------- */
+const rich = document.getElementById("cmux-rich");
+
+const PERMISSION_CARD = {
+  priority: "high", eventType: "generic",
+  title: "Claude Code",
+  body: "Permission requested: Bash",
+  subtitle: "Permission request",
+  details: [
+    { label: "Tool", value: "Bash" },
+    { label: "Command", value: "git push origin master" },
+    { label: "Project", value: "~/Desktop/code/mac-notification-nudge" },
+  ],
+  expanded: true, queue: { count: 3, index: 0 },
+};
+
+const PERMISSION_WIRE = `POST /notify — what the claude-code hook sends
+{
+  "title": "Claude Code",
+  "body": "Permission requested: Bash",
+  "priority": "high",
+  "source": "cmux",
+  "subtitle": "Permission request",
+  "details": [
+    { "label": "Tool",    "value": "Bash" },
+    { "label": "Command", "value": "git push origin master" },
+    { "label": "Project", "value": "~/Desktop/code/mac-notification-nudge" }
+  ]
+}`;
+
+function richFrame(cfg, label, meta, wire) {
+  const f = document.createElement("div");
+  f.className = "frame";
+  f.innerHTML = `<div class="label">${label} <span class="meta">${meta}</span></div>
+    <div class="screen tall"><div class="window"></div></div>`;
+  f.querySelector(".window").appendChild(renderCard(cfg));
+  if (wire) {
+    const pre = document.createElement("pre");
+    pre.className = "wire-json";
+    pre.textContent = wire;
+    f.appendChild(pre);
+  }
+  rich.appendChild(f);
+}
+
+richFrame(
+  { ...PERMISSION_CARD, manifestVariant: "variant-a" },
+  "A · detail cells (recommended)",
+  "reuses the existing manifest cells — zero new visual language",
+  PERMISSION_WIRE
+);
+richFrame(
+  { ...PERMISSION_CARD, manifestVariant: "variant-b" },
+  "B · full-width rows",
+  "each detail spans the whole manifest — airier, taller card"
+);
+richFrame(
+  { ...PERMISSION_CARD, manifestVariant: "variant-c" },
+  "C · terminal block",
+  "one mono block — densest, most 'log-like'"
+);
+richFrame(
+  {
+    priority: "high", eventType: "generic",
+    title: "Claude Code", body: "Command failed (exit 1)",
+    subtitle: "Error",
+    details: [
+      { label: "Tool", value: "Bash" },
+      { label: "Command", value: "npm test" },
+      { label: "Project", value: "~/Desktop/code/notchtap" },
+    ],
+    expanded: true, queue: { count: 3, index: 1 }, manifestVariant: "variant-a",
+  },
+  "error card · layout A",
+  "PostToolUse / errorOccurred hook"
+);
+richFrame(
+  {
+    priority: "high", eventType: "generic",
+    title: "Codex", body: "Agent needs input",
+    subtitle: "Waiting",
+    details: [{ label: "Project", value: "~/Desktop/code/mac-notification-nudge" }],
+    expanded: true, queue: { count: 3, index: 2 }, manifestVariant: "variant-a",
+  },
+  "cmux waiting · layout A",
+  "cmux notifications.hooks JSON — workspace name as title"
+);
+
+/* ---------- 6 · body rendering: markdown / cmux ---------- */
+(function () {
+  const h = document.createElement("h2");
+  h.textContent = "6 · Body rendering — markdown / cmux (proposed)";
+  const note = document.createElement("p");
+  note.className = "note";
+  note.innerHTML = "Bodies now render lightweight inline markdown: <code>`code`</code> as monospace, <b>**bold**</b>, <i>*italic*</i>, and line breaks — so a cmux/CLI message with a path, a command, or emphasis reads the way it was written instead of as flat grey text. Body contrast + size bumped too.";
+  const grid = document.createElement("div");
+  grid.className = "grid";
+  document.body.appendChild(h); document.body.appendChild(note); document.body.appendChild(grid);
+  const S = [
+    { priority: "high", title: "Agent needs input", body: "run `git push origin master`? tool: **Bash**", queue: { count: 3, index: 0 } },
+    { priority: "medium", title: "Build finished", body: "`cargo build` completed in **42s** — *0 warnings*", queue: { count: 3, index: 1 } },
+    { priority: "low", title: "Deploy note", body: "edited `src/lib.rs`\nnext: *retry* in 5m", queue: { count: 3, index: 2 } },
+  ];
+  S.forEach((cfg) => {
+    const f = document.createElement("div"); f.className = "frame";
+    f.innerHTML = `<div class="label">${cfg.title} <span class="meta">markdown body</span></div><div class="screen"><div class="window"></div></div>`;
+    f.querySelector(".window").appendChild(renderCard(cfg));
+    grid.appendChild(f);
+  });
+})();
+
+/* ---------- 7 · idle: source status ---------- */
+(function () {
+  const h = document.createElement("h2");
+  h.textContent = "7 · Idle — source status (proposed)";
+  const note = document.createElement("p");
+  note.className = "note";
+  note.innerHTML = "The idle rail should report the <b>state of the world at a glance</b>: a live match with score + minute, whether news polling is on or paused, and how many items are queued behind the empty slot — so you know what is happening and what is next. Replaces the clock-only idle.";
+  const grid = document.createElement("div");
+  grid.className = "grid";
+  document.body.appendChild(h); document.body.appendChild(note); document.body.appendChild(grid);
+  const IDLE = [
+    ["all clear", { time: "Sat 14:20", news: { label: "News", paused: false }, queued: 0 }],
+    ["football live", { time: "Sat 20:47", football: "Arsenal 2–0 · 45'", news: { label: "News" }, queued: 0 }],
+    ["news paused · 2 queued", { time: "Sat 09:05", news: { label: "News", paused: true }, queued: 2 }],
+  ];
+  IDLE.forEach(([label, st]) => {
+    const f = document.createElement("div"); f.className = "frame";
+    f.innerHTML = `<div class="label">idle · ${label} <span class="meta">source status rail</span></div><div class="screen"><div class="window"></div></div>`;
+    f.querySelector(".window").appendChild(renderIdleStatus(st));
+    grid.appendChild(f);
+  });
+})();
 </script>
 </body>
 </html>

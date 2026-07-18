@@ -1,5 +1,39 @@
 # Implementation Plans
 
+**Third audit session (2026-07-18, planned at `a58f115`)**: a standard
+`improve` run scoped to the ~30 commits landed since the deep audit's
+`d40445e` baseline (the executed plans 009–023 themselves were the
+unaudited surface). Four parallel audit agents (correctness+perf,
+security, tests+debt, dx/deps/docs/direction); every tabled finding
+re-verified against the code by the advisor. Suites green at HEAD
+(`cargo test` 251 + 3 doc-tests, `npx vitest run` 62, both matching
+TESTING_STRATEGY §0 exactly). Headline finding: a lost-wakeup race in
+the plan-015 deadline heartbeat (plan 036 — drafted as 024, renumbered
+because the concurrent proptest follow-up holds 024; despite the number
+it is the P1 to run first). Plans 025–031 + 036 below; the operator
+selected all eight. Note: master moved to `d926977` (plan 022's
+deep-testing merges) while these were being written — every plan's
+drift check + "recount, don't trust" count language covers that, but
+executors should expect the §0 baselines to have grown past 251/62.
+Uncommitted working-tree changes
+(`plans/022`, `prototype/status-rail.html`,
+`src/settings/preview-overlay.css`, untracked `testing/`) belong to a
+concurrent session and were excluded from the audit.
+
+**Status-rail redesign (2026-07-18, planned at `d926977`)**: plans
+032–035, from the `prototype/status-rail.html` rev-3 review session with
+the operator. The numbering 025–031 and 036 belongs to the third audit
+session above (its heartbeat plan ceded 024 to the in-flight proptest
+follow-up; an earlier draft of this redesign work called itself "unfiled
+plan 024" — superseded). Operator decisions locked at planning: celebration =
+shipped goal burst+ring **plus** a staggered accent ripple (goal signal
+only); rich-manifest layout **A** (detail cells); markdown inline-only
+(`` `code` ``/bold/italic/line-break) rendered as React nodes, never raw
+HTML; queue-slider batch semantics with a 10-segment proportional
+ceiling; **every** promotion starts expanded with a mid-rotation
+auto-retract (reverses plan 008's High-only); the `/notify` subtitle-fold
+contract is amended (035). Recommended order: 032 → 033 → 034 → 035.
+
 **Reconciled 2026-07-18 at `b43a7ca` (advisor verify pass)**: plans
 001–008 + the two extra-session plans (004-test-notifications,
 005-appearance-config) were re-verified against HEAD — every claimed
@@ -60,6 +94,19 @@ plans are independent. P1s first.
 | 019 | Dead code removal: presentation channel, polling gates, no-op dispatch, scaffold | P3 | M | — | DONE — `/improve execute` 2026-07-18, reviewed **APPROVE**, fast-forwarded to master and **pushed** (`f2f3299..c376479`). 4 commits: A `647e1b4` (presentation channel), B `df25b0d` (pause gates), D `089bf33` (scaffold), C `c376479` (dispatch). Executor STOPPED at C first pass — correctly caught the plan's "sole `dispatch` caller" was wrong (2nd caller `settings.rs:684`, v5.1 `efa1bd2`); plan corrected (settings.rs → scope/Step C/drift list) and C re-run green. Reviewer re-verified ALL done-criteria independently: dead-symbol grep zero, no `dispatch(` callers left, `cargo test --locked` 251+3, clippy/fmt `--locked` exit 0, vitest 62, tsc/biome/vite build exit 0, index.html retitled, `capabilities/default.json` byte-identical, §0 counts reconciled (rust 256→251: poller 19→16, event 18→16; frontend 66→62), CONTEXT.md Polling Pause updated. Scope 100% in-plan (17 files). One documented deviation approved on merit: relocated `use crate::error::EventError` into event.rs `mod tests` (test at :353 still uses `MissingField`). Remaining manual check owed to operator: `npm run tauri dev` overlay boot (headless worktree couldn't). File → `(done)`. |
 | 020 | Config defaults single-source (`get_default_config` invoke) | P3 | M | — | DONE (`9774930`, merged to master 2026-07-18; `/improve execute` → reviewed APPROVE after 1 REVISE; file → `(done)`) |
 | 021 | Settings save polish: feed metadata, duplicate rejection, port pre-flight | P3 | M | — | DONE (`8c35f1e`, merged to master 2026-07-18; `/improve execute` → reviewed APPROVE; frontend gates green, rust structural-verified + macOS CI; file → `(done)`) |
+| 036 | Heartbeat lost-wakeup: register the `Notified` waiter under the queue lock (renumbered from 024 — that number stays with the in-flight proptest plan) | P1 | S | — | TODO |
+| 025 | ESPN streaming body cap + shared poller client/fetch helpers (`net.rs`) | P1 | M | — | TODO |
+| 026 | Docs/DX truth pass: seven invoke commands, deadline-heartbeat prose, biome-ci wording, `just setup` | P2 | S | — | TODO |
+| 027 | Appearance section follows Reset; App.tsx unlisten unmount-guard | P3 | S | — | TODO |
+| 028 | Shared Event test builder (rust) + shared listen-mock harness (frontend) | P3 | M | 036, 025 (soft) | TODO |
+| 029 | Pin CI actions to commit SHAs + dependabot for github-actions | P3 | S | — | TODO |
+| 030 | SPIKE: OpenRouter news enrichment design doc (`docs/design/`) | P2 | M | — | TODO |
+| 031 | SPIKE: live-match scoreboard Topic card design doc (`docs/design/`) | P2 | M | — | TODO |
+| 024 | Proptest rotation_order coverage (invariant 4 rank tie-break) | P3 | S | 022 (DONE) | IN PROGRESS — follow-up from 022's review (property suite tested FIFO tie-break only). Planned at `d926977`; `/improve execute` dispatched (tests-only: generate per-case `rotation_order`, rank-aware invariant-4 predictor mirroring `best_index_in_tier`, Step 4 inversion check to prove non-vacuous). |
+| 032 | Status Rail visual refresh: chip removal + accent edge, rounded default (16px), body prominence, inline-markdown body, celebration A+B ripple | P2 | M | — | TODO |
+| 033 | Queue slider track (batch counters, slot-state `queueTotal`/`queueDone`) + auto-expand-all lifecycle with mid-rotation retract | P2 | M | 032 | TODO |
+| 034 | Idle source-status rail: `status-state` channel, poller live-match surface, IdleView redesign | P2 | M | — (soft 032) | TODO |
+| 035 | Rich relay manifest: `/notify` `subtitle`/`details[]`, CLI `--detail`, claude-code + cmux hook scripts, manifest layout A | P2 | M | — | TODO |
 
 ## Done
 
@@ -130,6 +177,31 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
   instances remain — investigate after 015 lands if blank/ghost cards
   are ever observed around rotation boundaries.
 
+Third audit session (036, 025–031):
+
+- **036 first among these** — it fixes a shipped P1 regression (plan
+  015's lost wakeup); its heartbeat loop is also touched by nothing
+  else here, so it lands cleanly.
+- **028 after 036 and 025 (soft)** — both add rust tests; landing the
+  fixture consolidation first would force them to rebase over moved
+  fixtures. 028 should also re-inventory after the 022/024-proptest
+  merges (its Step 1 is grep-based for exactly this reason).
+- **025 vs 030** — 030's design doc should reference `net::build_poll_client`
+  if 025 has landed by then (noted inside 030).
+- **026 vs 032–035** — 026 edits CLAUDE.md/AGENTS.md/spec prose; the
+  redesign plans will touch adjacent doc regions when they land.
+  Whoever lands second reconciles textually (the 004/014/017/019
+  precedent).
+- **027 vs 032** — both touch frontend presentation; 027 is
+  settings-window + App.tsx listener only, 032 is overlay card CSS —
+  no file overlap expected except possibly `App.tsx`; reconcile by
+  reading.
+- **029 needs network** (tag→SHA resolution) and its definitive gate is
+  a green CI run on push — operator-owed, like 007's was.
+- **030/031 are spikes**: deliverable is a design doc in
+  `docs/design/`, zero production code. The *features* stay undecided
+  until the operator reads the docs.
+
 ## Findings considered and rejected
 
 From the deep session (2026-07-17) — recorded so they aren't re-audited:
@@ -186,7 +258,36 @@ feature — best-effort summary/category into `EventMeta`) and **a first
 Recurring/Topic producer** (live-match scoreboard card superseding in
 place — the supersession machinery currently has zero production
 producers) and **a "what did I miss" history surface**. All grounded;
-re-raise with `improve next` when wanted.
+re-raise with `improve next` when wanted. *(Third-session update: the
+first two are now spike plans 030/031; the history surface remains
+unplanned — weakest grounding, needs a persistence decision.)*
+
+From the third audit session (2026-07-18) — recorded so they aren't
+re-audited:
+
+- **`App.tsx` appearance-listener unlisten race**: real but near-zero
+  impact (overlay root never unmounts) — folded into plan 027 as a
+  consistency fix, not a standalone finding.
+- **Wall-clock heartbeat test** (`heartbeat_rotates_out_via_deadline_
+  sleep_not_polling` uses real ~1 s sleeps inside a 3 s timeout — the
+  suite's one real-timer async test, contra §9.1's simulated-clock
+  discipline): accepted as-is; injectable-clock refactor is
+  disproportionate for one characterization test. Revisit only if it
+  flakes in CI (noted in plan 036's maintenance section).
+- **Poller spawn-signature param bundles** (8 positional args,
+  `too_many_arguments` allows): already self-recorded as tech-debt in
+  code comments; deliberately not absorbed into plan 025.
+- **`prototype/status-rail.html` reconcile/hygiene**: deferred — the
+  file was under active uncommitted edit by a concurrent session during
+  the audit (and that session has since filed plans 032–035 around it);
+  any hygiene verdict would have fought live work.
+- **Upstream health of `tauri-nspanel` (git-rev pin) / `smappservice-rs`
+  (0.1.x)**: still unchecked (needs network) — carried forward from the
+  deep session, now twice-deferred; fold into the next deliberate
+  dependency bump rather than a standalone plan.
+- **Slot-state emit-after-unlock reordering**: re-examined; still no
+  new failure mode beyond the known reordering, still symptom-free —
+  remains deferred per the note above.
 
 ## What was not audited (deep session)
 
@@ -196,3 +297,17 @@ animation look — manual-checklist territory by the repo's own design);
 Rust advisory database (cargo-audit not installed — plan 007 adds it);
 upstream repo health for `tauri-nspanel`/`smappservice-rs` (needs
 network).
+
+## What was not audited (third session, 2026-07-18)
+
+Scope was the `d40445e..a58f115` delta plus fresh eyes on its
+surroundings — not a full re-sweep of code the deep session already
+covered. Additionally not audited: the uncommitted working-tree changes
+and untracked `testing/` scratch (a concurrent session's live work);
+the `022` deep-testing merges (`5b51855`..`d926977`, landed mid-audit —
+the concurrent session's own executor/review covered them); exhaustive
+assert-quality reads of all 45 `settings.rs` and 28 `rss_poller.rs`
+tests (sampled only); `SettingsApp.tsx`'s IPC-argument construction
+beyond an injection-sink pass; live `cargo audit`/`npm outdated`
+(CI gates the former; lockfiles read for the latter); everything on the
+deep session's not-audited list above (unchanged).
