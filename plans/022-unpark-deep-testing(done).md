@@ -7,10 +7,22 @@
 > stop and report. When done, update this plan's status row in
 > `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat b43a7ca..HEAD -- docs/TESTING_STRATEGY.md src-tauri/src/queue.rs src-tauri/Cargo.toml`
-> Also: if plans 008 (expanded semantics) or 015 (heartbeat/next_deadline)
-> landed, the queue's op-surface grew — INCLUDE their behaviors in the
-> §9.1 retarget (Step 2); that is expected drift, not a STOP.
+> **Drift check (run first)**: `git diff --stat a58f115..HEAD -- docs/TESTING_STRATEGY.md src-tauri/src/queue.rs src-tauri/src/http.rs src-tauri/Cargo.toml`
+> Plans 008 (expanded semantics) and 015 (heartbeat/`next_deadline`) have
+> BOTH landed (invariants 8 and 9 in Step 2 are now live, not
+> conditional); their queue behaviors MUST be in the §9.1 retarget.
+> **Plan 019 (dead-code removal) also landed at `a58f115`** — it deleted
+> the `dispatch()` call + import from `http.rs` (irrelevant to your burst
+> tests, which exercise the `/notify` enqueue path, not dispatch) and
+> dropped the §0 counts to **rust 251 + 3 doc-tests / frontend 62**
+> (poller 19→16, event 18→16, frontend lost presentation-mode 4). Step 5
+> reconciles against THOSE numbers, not the older 256/66. `queue.rs` is
+> UNCHANGED since the review pass — its excerpts are exact. The
+> `file:line` numbers below are indicative; this repo churns from
+> concurrent agent sessions, so locate every target with the `rg` command
+> given, not the line number. Run `git status` first — if any in-scope
+> file is already dirty in the working tree, STOP and report rather than
+> layering onto someone's in-flight edit.
 
 ## Status
 
@@ -22,7 +34,24 @@
   invariants in Step 2 already assume it); Step 0's operator decision gate
   remains
 - **Category**: tests
-- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `b43a7ca` 2026-07-18 (excerpts re-verified unchanged)
+- **Planned at**: commit `d40445e`, 2026-07-17; **review-plan pass
+  2026-07-18 at `4af5e8e`** — the earlier `b43a7ca` baseline was stale
+  (in-scope files moved since: queue.rs +88, http.rs +59). All excerpts
+  and line refs re-verified against `4af5e8e`. New facts folded in:
+  the queue grew a `skip_visible` public op (plan 001's wire-skip
+  hotkey) that Step 2's Op model was missing — now added as `Skip`; both
+  008 and 015 have landed (`next_deadline` present at queue.rs:364 with 5
+  tests), so invariants 8/9 are live; the http test router now builds at
+  http.rs:124 with the `oneshot` test module at ~280–380 (not ~220).
+  **Step 0 DECIDED = EXECUTE by operator 2026-07-18** (un-park trigger
+  confirmed fired: v3.6 tiers, v6 rotation tie-break, `8b216ee` gap).
+  **Pre-dispatch reconcile at `a58f115`** (`/improve execute`): plan 019
+  merged since `4af5e8e` (drift is benign — see Drift check); a
+  kimi-authored §9.1 scoping pass, independently verified against
+  `queue.rs` by the reviewer, was folded into Step 2 below — specifically
+  the full cap-bypass set on invariant 2, the two-caps split on invariant
+  6, and explicit `enqueue_test` handling so it does not trip the Step 2
+  STOP condition.
 
 ## Why this matters
 
@@ -53,20 +82,29 @@ human enumerates it by hand.
 
 ## Current state
 
-- `docs/TESTING_STRATEGY.md` §9 (lines ~615–839): the work order.
+- `docs/TESTING_STRATEGY.md` §9 (lines ~623–861): the work order.
   §9.0 scope/philosophy; §9.1 queue property tests (proptest, an `Op`
-  enum + invariants); §9.2 http burst/boundary; §9.3 poller parse fuzz;
-  §9.4 frontend timing (fast-check, marked droppable); §9.5 exclusions;
-  §9.6 build order and review gates. **§9's own stale-note** (lines
-  ~627–638) says §9.1 was written against the pre-v3.6 queue and needs a
-  retarget pass first — that note is part of the work order.
+  enum + invariants — header at ~677); §9.2 http burst/boundary; §9.3
+  poller parse fuzz (~784); §9.4 frontend timing (fast-check, marked
+  droppable); §9.5 exclusions (~834); §9.6 build order and review gates
+  (~851). **§9's own stale-note** (lines ~649–659) says §9.1 was written
+  against the pre-v3.6 queue and needs a retarget pass first — that note
+  is part of the work order. (Locate all of these with
+  `rg -n "^### 9\.|stale as of" docs/TESTING_STRATEGY.md`; line numbers
+  drift.)
 - `src-tauri/src/queue.rs`: `SingleSlotQueue` public surface —
   `enqueue`, `tick(Instant)`, `dismiss_visible(Instant)`,
-  `toggle_expanded`, `pause`/`resume` (find exact names via
-  `rg -n "pub fn" src-tauri/src/queue.rs`), `current_slot_state`,
-  `slot_state_if_changed`, `total_waiting`, `with_rotation_order`,
-  plus (post-015) `next_deadline`. 36+ example tests in the same file
-  show construction patterns (events with priorities/rotations/topics,
+  **`skip_visible(Instant)`** (queue.rs:326 — end the Visible item's turn
+  now: a Recurring item requeues to the back of its own tier, a OneShot
+  drops, then promote; distinct from dismiss, which drops Recurring
+  outright), `toggle_expanded`, `pause`/`resume`, `current_slot_state`,
+  `slot_state_if_changed`, `total_waiting`, `with_rotation_order`, plus
+  `next_deadline` (015, present) — enumerate the FULL set yourself via
+  `rg -n "pub fn" src-tauri/src/queue.rs` and treat every state-mutating
+  fn as a candidate `Op` (the read-only accessors — `is_paused`,
+  `current_priority`, `current_link`, `current_slot_state` — are
+  invariant probes, not ops). 52 example tests in the same file show
+  construction patterns (events with priorities/rotations/topics,
   simulated `Instant`s).
 - `src-tauri/Cargo.toml` dev-deps: tower, tauri(test), wiremock — no
   proptest yet.
@@ -130,26 +168,69 @@ Present the maintainer this choice with the evidence above:
 
 Edit `docs/TESTING_STRATEGY.md` §9.1 in place: rewrite the `Op` model and
 invariant list against today's queue. The op set (derive the exact list
-from `pub fn`s): `Enqueue(priority, rotation_kind, topic, source)`,
-`Tick(advance_secs)`, `Dismiss`, `ToggleExpanded`, `Pause`, `Resume`.
+from `pub fn`s — one variant per state-mutating fn):
+`Enqueue(priority, rotation_kind, topic, source)`, `Tick(advance_secs)`,
+`Dismiss`, `Skip`, `ToggleExpanded`, `Pause`, `Resume`. **`Skip`
+(`skip_visible`) is easy to miss and must be in the model** — it ends
+the Visible turn early like `Dismiss`, but requeues a Recurring item to
+the back of its tier instead of dropping it, so it is a distinct
+transition (and a documented cap-bypass, see invariant 2). If you find a
+state-mutating `pub fn` not in this list, STOP and report before
+building the strategy — **with two pre-cleared exceptions the reviewer
+already verified, so do NOT stop on these**:
+- `enqueue_test` (`rg -n "pub fn enqueue_test" src-tauri/src/queue.rs`)
+  is a public, state-mutating, **test-only** variant of `enqueue` that
+  promotes into the visible slot even while paused (it calls
+  `enqueue_with_options(.., bypass_pause_when_slot_empty = true)`). Do
+  NOT add it as a distinct `Op`; the production op model covers the real
+  `/notify` path. (If you later want to cover the `send_test_notification`
+  path, a separate `EnqueueTest` variant is the way — but that is
+  out-of-scope for this pass; note it as a follow-up, don't build it.)
+- `slot_state_if_changed` mutates `last_emitted` but is the **probe for
+  invariant 7**, not an `Op`. Call it to *check* the invariant; never
+  generate it as a transition.
 Invariants to state (translate §9.1's originals + add the post-v3.6/v6
 ones):
 
 1. at most one Visible item ever;
-2. per-tier waiting length ≤ `max_queued_per_tier` **via `enqueue`**
-   (recurring-requeue and cross-tier supersede are documented cap
-   bypasses — encode the cap check accordingly, and leave a note that
-   tightening it is a known open question);
+2. per-tier waiting length ≤ `max_queued_per_tier`, **asserted only
+   immediately after an `Enqueue` that lands in `waiting`** — NOT after
+   every op. The reviewer verified (against `queue.rs`) that the cap
+   check lives at `enqueue_new`'s `if !can_promote_now && waiting[tier]
+   .len() >= max_queued_per_tier` guard, so there are THREE documented
+   bypasses that can legally push a tier over the cap; an always-on
+   assertion would false-fail on all three:
+   (a) the **immediate-promote fast path** — when `can_promote_now`
+   (slot empty, all tiers empty, not paused) the item goes straight to
+   `visible` and the cap is never evaluated;
+   (b) **Recurring requeue** — both natural rotation (`tick`) and `Skip`
+   (`skip_visible`) `push_back` a Recurring item with no cap check;
+   (c) **cross-tier Topic supersede** — moves an existing waiting item to
+   the back of a different tier with no cap check.
+   Encode the assertion accordingly (post-`Enqueue`-into-waiting only),
+   and leave a note that tightening any of these bypasses is a known open
+   question for the maintainer;
 3. a Visible item is never replaced before its window elapses (no
-   preemption), for any op sequence;
+   preemption) EXCEPT by an explicit `Dismiss` or `Skip` op — those two
+   are the only early-removal transitions, and after either at most one
+   Visible remains and the next promotion follows the tier/rotation rule
+   in invariant 4;
 4. promotion picks the highest non-empty tier, and within a tier respects
    rotation_order rank then FIFO;
 5. while Paused, `tick` never promotes but Visible still ages out;
    Resume promotes on the next tick; nothing enqueued while paused is
    lost (count conservation: enqueued-accepted = visible + waiting +
-   rotated-out-dropped + dismissed, tracked by the model);
+   rotated-out-dropped + dismissed + skipped-oneshot-dropped, tracked by
+   the model — note a skipped Recurring item is NOT a drop, it returns to
+   waiting, so only the OneShot arm of `Skip` decrements);
 6. supersession by Topic never creates a second item (count conservation
-   again) and never extends beyond the documented cap;
+   again). Two DISTINCT caps are in play here — the reviewer confirmed
+   the draft's "the documented cap" was ambiguous: (i) a **visible
+   Topic supersede** tops up remaining time bounded by
+   `MAX_EXTENSION_ON_SUPERSEDE_SECS` (currently `6`, a `const` in
+   `queue.rs` — assert `extension_secs <= 6` after a visible supersede);
+   (ii) a **cross-tier waiting supersede** is the invariant-2(c) per-tier
+   cap bypass, NOT bounded here. State both separately;
 7. `slot_state_if_changed` never returns two consecutive equal states;
 8. (if plan 008 landed) after any promotion of a non-High item,
    expanded == false; a High promotion sets it true;
@@ -180,8 +261,12 @@ generation; note the wall-time delta in your report.
 
 Implement §9.2 as written in the doc (read it — it lists the cases):
 burst enqueues to tier caps via `tower::ServiceExt::oneshot` against the
-existing test router construction in `http.rs` (~line 220), boundary
-bodies (empty title, 64 KiB limit edge), and paused-state responses.
+existing test router — the router builds at `http.rs:124` (`Router::new()`)
+and the `#[cfg(test)]` module's `oneshot` cases run ~http.rs:280–380;
+model new burst tests on those (find the exact helper with
+`rg -n "oneshot|Router::new|json_request" src-tauri/src/http.rs`) —
+boundary bodies (empty title, 64 KiB limit edge), and paused-state
+responses.
 Skip any §9.2 case the example suite already covers identically (list
 skips in your report).
 
