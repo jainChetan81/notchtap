@@ -18,6 +18,8 @@ The founding rule survives unchanged: **the advisor never edits source code.** I
 
 Spawn **one** `general-purpose` subagent with `isolation: "worktree"`. Executor model: default `sonnet`; use what the user named if they named one (`execute 003 haiku`).
 
+Before dispatching, prompt the user to run `cargo build && cargo test --no-run` in the new worktree's `src-tauri/` — a fresh worktree shares git history but not `target/`, and a cold compile can eat the executor's whole timeout; warming the cache first keeps the executor's budget for the plan itself.
+
 The subagent prompt must contain:
 
 1. **The full plan file text, inlined.** The worktree contains only committed files — if `plans/` is uncommitted, the executor can't read it. Never assume; always inline.
