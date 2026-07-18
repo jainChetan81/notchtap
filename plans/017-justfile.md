@@ -5,7 +5,7 @@
 > If anything in "STOP conditions" occurs, stop and report. When done,
 > update this plan's status row in `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat b43a7ca..HEAD -- AGENTS.md CLAUDE.md package.json .github/workflows/ci.yml`
+> **Drift check (run first)**: `git diff --stat cd64e19..HEAD -- AGENTS.md CLAUDE.md package.json .github/workflows/ci.yml`
 > (Read-only inputs; this plan creates a new file plus doc edits.)
 
 ## Status
@@ -13,11 +13,12 @@
 - **Priority**: P3
 - **Effort**: S
 - **Risk**: LOW
-- **Depends on**: none — 007 is DONE, so the recipes must include its gates
-  (`--locked` on cargo, `sh -n notchtap`); add biome to `check-web` only if
-  016 has landed (see Step 1's note)
+- **Depends on**: none — 007 is DONE (its `--locked` cargo gates and
+  `sh -n notchtap` are baked into the sample below, not conditional).
+  016 (biome) was IN FLIGHT at review time: check ci.yml for a biome
+  step at execution time and mirror it in `check-web` if present
 - **Category**: dx
-- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `b43a7ca` 2026-07-18 (excerpts re-verified unchanged)
+- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `b43a7ca` 2026-07-18; **review-plan pass 2026-07-18 at `cd64e19`** — drift verified trivial (package.json: only 023's lottie removal; AGENTS.md:96 / CLAUDE.md:98 "consider adding" paragraphs confirmed in place; ci.yml unchanged since 007). Sample justfile corrected to mirror CI exactly: `--locked` baked in (007 already landed — the plan's conditional was stale), `audit-web` + `check-swift` recipes added (they're CI gates the sample had omitted), `just -n` fallback row fixed to name a real recipe. **Pass 3 same day, also at `cd64e19`** — re-verified ci.yml gate list, AGENTS.md:96/CLAUDE.md:98 (line refs corrected from stale ~76–80), 016 still TODO/no biome step in ci.yml, `"tauri"` script present in package.json; added: `just`-absent fact (confirmed on this machine) with named manual-fallback commands, cargo PATH-prefix quirk, stage-by-name git guidance for the shared working tree, red-baseline STOP condition, grep exit-code clarification in Step 3's verify, and a brew-install note requirement for the doc edits.
 
 ## Why this matters
 
@@ -32,16 +33,22 @@ an agent-driven repo every session currently re-derives the dance. The
 ## Current state
 
 - No `justfile` or `Makefile` at repo root.
-- `AGENTS.md` (~lines 76–80) and `CLAUDE.md` carry the "consider adding a
+- `AGENTS.md:96` and `CLAUDE.md:98` carry the "consider adding a
   `justfile` (or `Makefile`)" paragraph suggesting recipes: `dev`,
-  `test-rust`, `test-web`, `test-all`, `build`, `push "title" "body"`.
+  `test-rust`, `test-web`, `test-all`, `build`, `push "title" "body"`
+  (one occurrence of "consider adding" per file — verified 2026-07-18).
 - CI (`.github/workflows/ci.yml`) is the authoritative gate list; the
   justfile must mirror it, not invent new gates.
 - The CLI script is `./notchtap --title <t> --body <b>` (flags only).
-- `just` may not be installed on the machine (`which just` to check —
-  install is `brew install just`, but do NOT install it yourself if
-  absent; write the file and verify with `make`-free dry checks per
-  Step 2).
+- `just` is NOT installed on the dev mac mini as of 2026-07-18
+  (`which just` → not found; install is `brew install just`, but do NOT
+  install it yourself; write the file and take the manual-verification
+  path in Steps 1–2). Re-check with `which just` in case the operator
+  installed it since.
+- On this machine `cargo` may not be on PATH in non-interactive shells —
+  if `cargo: command not found`, prefix the command with
+  `PATH="$HOME/.cargo/bin:$PATH"` (this is a shell-environment quirk,
+  not a plan drift; do not "fix" anything for it).
 
 ## Commands you will need
 
@@ -49,7 +56,10 @@ an agent-driven repo every session currently re-derives the dance. The
 |---|---|---|
 | Syntax check | `just --list` (if just installed) | lists recipes |
 | Full local gate | `just test-all` (if installed) | exit 0 |
-| Fallback check | `just -n check` (dry-run, if installed) | prints commands |
+| Fallback check | `just -n test-all` (dry-run, if installed) | prints the recipe commands without running |
+| Manual rust gate | `cd src-tauri && cargo test --locked` | exit 0, all pass |
+| Manual web gate | `npx vitest run` (repo root) | exit 0, all pass |
+| Manual cli gate | `sh -n notchtap` (repo root) | exit 0, no output |
 
 ## Scope
 
@@ -68,6 +78,11 @@ an agent-driven repo every session currently re-derives the dance. The
 ## Git workflow
 
 - Current branch; commit style: `dx: justfile — dev/test/check recipes mirroring ci`.
+- **Stage only the in-scope files by name** (`git add justfile AGENTS.md
+  CLAUDE.md plans/README.md`) — never `git add -A`/`git add .`.
+  Concurrent agent sessions share this working tree, so `git status`
+  will likely show unrelated modified files (e.g. under `src-tauri/src/`);
+  leave them alone and re-check `git status` right before committing.
 - Do NOT push.
 
 ## Steps
@@ -87,12 +102,12 @@ default:
 dev:
     npm run tauri dev
 
-# rust gates (run from src-tauri, as CI does)
+# rust gates (run from src-tauri, as CI does — `--locked` per plan 007)
 test-rust:
-    cd src-tauri && cargo test
+    cd src-tauri && cargo test --locked
 
 check-rust:
-    cd src-tauri && cargo fmt --check && cargo clippy --all-targets -- -D warnings
+    cd src-tauri && cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings
 
 # frontend gates
 test-web:
@@ -101,6 +116,9 @@ test-web:
 check-web:
     npx tsc --noEmit
 
+audit-web:
+    npm audit --audit-level=high
+
 build-web:
     npx vite build
 
@@ -108,8 +126,12 @@ build-web:
 check-cli:
     sh -n notchtap
 
-# everything CI runs, locally
-test-all: check-rust test-rust check-web test-web build-web check-cli
+# swift detect-binary compile check
+check-swift:
+    cd notchtap-detect && swift build
+
+# everything CI runs, locally (except cargo-audit — see note below)
+test-all: check-rust test-rust check-web audit-web test-web build-web check-cli check-swift
 
 # manual push against the local endpoint
 push title body:
@@ -117,27 +139,45 @@ push title body:
 ```
 
 Notes: `cd src-tauri &&` inside a recipe is correct just-usage for this
-repo's split (each recipe line runs in its own shell). **If plans 007/016
-landed first**, add their gates: `--locked` on the cargo invocations
-(007) and an `npx biome ci .` line in `check-web` (016) — check
-`.github/workflows/ci.yml`'s current steps and mirror exactly what it
-runs at the time you execute this plan.
+repo's split (each recipe line runs in its own shell). The sample above
+already mirrors CI as of 2026-07-18 (`--locked` from 007, `sh -n`,
+`npm audit`, swift compile). Two deliberate omissions: **cargo-audit**
+(runs in CI as an action; locally it needs a separate `cargo install
+cargo-audit` — if the binary exists on your machine, add an
+`audit-rust: cargo audit` recipe to `test-all` and note it in your
+report; otherwise skip it and say so) and **`npm ci`** (local dev uses
+the existing `node_modules`). **If plan 016 (biome) has landed by
+execution time** — check `.github/workflows/ci.yml` for an
+`npx biome ci .` step — add `npx biome ci .` to `check-web`; if ci.yml
+has no biome step, leave `check-web` as written.
 
-**Verify**: if `just` is installed: `just --list` shows all recipes and `just check-cli` exits 0. If not installed: verify the file manually — every command in it, run by hand from the stated directory, must exit 0 (run at least `sh -n notchtap` and one rust + one web gate); state in your report that `just` itself was unavailable.
+**Verify**: if `just` is installed: `just --list` shows all recipes and `just check-cli` exits 0. If not installed (the expected case — see Current state): verify manually by running, by hand from the stated directory, at minimum `sh -n notchtap` (repo root), `cd src-tauri && cargo test --locked`, and `npx vitest run` (repo root) — each exit 0; state in your report that `just` itself was unavailable so the recipes were hand-verified.
 
 ### Step 2: Run the full gate once
 
-`just test-all` (or the manual equivalent) — everything green.
+`just test-all` — or, with `just` unavailable, the manual equivalent:
+every `test-all` prerequisite's command, run by hand from its stated
+directory, in the listed order (`check-rust`, `test-rust`, `check-web`,
+`audit-web`, `test-web`, `build-web`, `check-cli`, `check-swift`).
 
-**Verify**: exit 0 across all recipes.
+**Verify**: exit 0 across all recipes. A failure here on code you did
+not touch is a STOP condition (pre-existing red baseline), not
+something to fix.
 
 ### Step 3: Update the agent docs
 
 In AGENTS.md and CLAUDE.md: delete the "consider adding a justfile"
 paragraph, add `just test-all` (and `just push "t" "b"`) to the commands
-list with one line noting the justfile mirrors CI.
+list with one line noting the justfile mirrors CI and that `just` needs
+`brew install just` (it is not currently installed on the dev machine —
+without that note, the docs would tell future sessions to run a command
+that fails).
 
-**Verify**: `grep -c "consider adding a" AGENTS.md CLAUDE.md` → 0 in each.
+**Verify**: `grep -c "consider adding a" AGENTS.md CLAUDE.md` prints
+`AGENTS.md:0` and `CLAUDE.md:0` and exits 1 — the non-zero exit code IS
+the pass condition here (grep exits 1 when nothing matches). Then
+`grep -c "just test-all" AGENTS.md CLAUDE.md` → at least 1 in each,
+exit 0.
 
 ## Test plan
 
@@ -155,10 +195,19 @@ None — the justfile is itself a test runner; Step 2 is the proof.
 - CI's gate list at execution time differs from both this plan's recipe
   set AND what plans 007/016 describe — report the delta rather than
   guessing which is authoritative.
+- Any Step 2 gate fails on code this plan did not touch (this repo
+  hosts concurrent agent sessions, so a red baseline from in-flight
+  work is plausible): report which gate failed and its output. Do NOT
+  fix source files — they are all out of scope — and do NOT commit a
+  justfile whose `test-all` has never been seen green.
 
 ## Maintenance notes
 
 - The justfile mirrors CI — every future CI step addition gets a matching
   recipe edit (reviewers: check both files move together).
-- Plan 004 also edits AGENTS.md/CLAUDE.md (project-state paragraph) —
-  different sections, trivial merge.
+- Plan 016 (biome) also edits AGENTS.md/CLAUDE.md (adds one lint line to
+  each commands section) and adds the ci.yml biome step — same two doc
+  files, different regions; whoever lands second reconciles textually,
+  and if 016 landed first, `check-web` gains the biome line per Step 1.
+- Plan 004 has landed; its AGENTS/CLAUDE edits are simply the text you
+  see — no reconciliation conditional remains.

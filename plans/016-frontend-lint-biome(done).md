@@ -98,7 +98,7 @@ version-independent form the Biome v2 docs recommend — no URL to adjust):
     "includes": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"],
     "ignoreUnknown": true
   },
-  "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2 },
+  "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },
   "linter": {
     "enabled": true,
     "rules": {
@@ -115,14 +115,27 @@ version-independent form the Biome v2 docs recommend — no URL to adjust):
 (Keys verified against the Biome v2 configuration reference 2026-07-18:
 `files.includes` / `files.ignoreUnknown` are current; `linter.rules.preset:
 "recommended"` replaced the deprecated `linter.rules.recommended`;
-`useExhaustiveDependencies` lives in the `correctness` group. **CSS is
-deliberately out of scope**: `src/styles.css` and `src/settings/*.css` use
-hand-tuned compact one-line rules (e.g. the `.cat-*` category blocks)
-that any CSS formatter would explode into multi-line churn — the gate is
-for the TS/React side only, matching "Why this matters". If you believe
-CSS should be included, STOP and report rather than widening the glob.
-2-space/double-quote matches the existing code's prevailing style —
-verify by eyeballing `src/useSlotState.ts`.)
+`useExhaustiveDependencies` lives in the `correctness` group.
+**`lineWidth: 100` is an operator decision (2026-07-18), not a default**:
+the codebase's prevailing style is ~100 cols (147 lines >80 vs 33 >100 at
+`af9be44`), and Biome's default 80 churned 782 lines across 16 files in
+the first executor pass vs 343 at 100 — the narrower wrap was rejected as
+unreviewable noise. **Expected first-run findings** (from that pass, all
+verified): ~12 a11y diagnostics in `SettingsApp.tsx` (useSemanticElements
+& friends — fixing means migrating div+ARIA markup to semantic elements,
+which breaks role-based test queries; suppress per the containment rule,
+the markup migration is a separate future task), 2 noNonNullAssertion in
+`SettingsApp.test.tsx` (Biome's `?.` suggestion provably breaks tsc's
+control-flow narrowing — suppress), 2 useExhaustiveDependencies
+(deliberate re-trigger keys — suppress with the documented reason), and
+3 mechanical useIterableCallbackReturn in test files (safe to apply).
+**CSS is deliberately out of scope**: `src/styles.css` and
+`src/settings/*.css` use hand-tuned compact one-line rules (e.g. the
+`.cat-*` category blocks) that any CSS formatter would explode into
+multi-line churn — the gate is for the TS/React side only, matching "Why
+this matters". If you believe CSS should be included, STOP and report
+rather than widening the glob. 2-space/double-quote matches the existing
+code's prevailing style — verify by eyeballing `src/useSlotState.ts`.)
 
 Add to package.json scripts: `"lint": "biome check .",
 "lint:fix": "biome check --write ."`.
@@ -171,12 +184,16 @@ suite (66 vitest tests) + tsc + vite build green after the churn commit.
 
 ## STOP conditions
 
-- Biome cannot express the file scoping for this layout (unlikely) or
-  its formatter fights the existing style so hard the churn commit
-  exceeds ~500 changed lines — report the diffstat and wait for a human
-  call before committing.
+- The formatter churn commit exceeds ~500 changed lines (with
+  `lineWidth: 100` the expected churn is ~343 across 16 files — measured
+  in the first executor pass). If you see materially more than that,
+  something drifted: report the diffstat and wait for a human call
+  before committing.
 - Any `useExhaustiveDependencies` fix changes observable behavior
   (a vitest test fails) — revert that fix to a suppression.
+- A suppression category appears that isn't in Step 1's expected-
+  findings list (a11y cluster, noNonNullAssertion, exhaustive-deps) —
+  report it before suppressing.
 
 ## Maintenance notes
 
@@ -188,7 +205,15 @@ suite (66 vitest tests) + tsc + vite build green after the churn commit.
   decision with a big one-time churn commit — do not widen the glob in
   passing.
 - If the repo ever wants rust-style strictness parity, Biome's
-  `noExplicitAny`/`noNonNullAssertion` rules are the next ratchet — off
-  by default here to keep the initial diff small.
+  `noExplicitAny`/`noNonNullAssertion` rules are the next ratchet — note
+  `noNonNullAssertion` IS in the recommended preset (it fired twice in
+  the first pass and was suppressed where the non-null is provably
+  safe); the ratchet question is whether to keep those suppressions or
+  fix the code.
+- The suppressed a11y cluster in `SettingsApp.tsx` (12 findings:
+  div+ARIA-role markup vs semantic elements) is a real, separate task —
+  fixing it means migrating markup AND the role-based test queries AND
+  the hand-tuned class CSS. Re-raise with `improve next` when wanted;
+  do not fold it into lint churn.
 - Plan 007 landed first in the same ci.yml web job (audit step, ubuntu
   runner, `sh -n`) — the biome step goes alongside, after `npm ci`.
