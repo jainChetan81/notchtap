@@ -431,7 +431,11 @@ in v1; a file-watcher or settings ui is a v2+ convenience. **(resolved
 settings window whose save path validates, writes this file
 atomically, and relaunches the app. the read-once-at-boot rule is
 unchanged and now permanent: there is no file-watcher and no
-hot-reload; restart *is* the reload mechanism.
+hot-reload; restart *is* the reload mechanism. **(2026-07-18, plan
+013)**: boot now runs the loaded config through the settings window's
+`validate()` and logs each violation as a warning, continuing with the
+file's values rather than exiting — malformed TOML still fails fast in
+`Config::load`.
 
 ---
 

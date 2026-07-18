@@ -85,6 +85,16 @@ pub fn run() {
         }
     };
 
+    // Boot-time contract parity with the settings window (plan 013): the
+    // file is the other editing surface, so it gets the same validation —
+    // but warn-and-continue, not exit: a range violation must not brick an
+    // always-on login item. Malformed TOML still fails fast in Config::load.
+    if let Err(violations) = crate::settings::validate(&config) {
+        for v in &violations {
+            tracing::warn!(violation = %v, "config.toml value out of range — running with it anyway");
+        }
+    }
+
     let (mode, inset, cutout) = presentation::detect_mode(&config);
     // this info line is load-bearing: the hud fallback is silent by
     // design, so the log is the only tell that detection worked
