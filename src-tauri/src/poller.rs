@@ -460,6 +460,7 @@ pub fn diff_scoreboard(
 
 const BACKOFF_BASE: Duration = Duration::from_secs(30);
 const BACKOFF_CAP: Duration = Duration::from_secs(300);
+const MAX_SCOREBOARD_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug)]
 pub struct Backoff {
@@ -533,15 +534,18 @@ impl PauseGate {
 
 async fn fetch_league(client: &reqwest::Client, league: &str) -> anyhow::Result<String> {
     let url = format!("https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/scoreboard");
-    let body = client
-        .get(&url)
-        .timeout(Duration::from_secs(10))
-        .send()
-        .await?
-        .error_for_status()?
-        .text()
-        .await?;
-    Ok(body)
+    let response = client.get(&url).send().await?.error_for_status()?;
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_SCOREBOARD_BYTES as u64)
+    {
+        anyhow::bail!("scoreboard response exceeds 1 MiB");
+    }
+    let bytes = response.bytes().await?;
+    if bytes.len() > MAX_SCOREBOARD_BYTES {
+        anyhow::bail!("scoreboard response exceeds 1 MiB");
+    }
+    Ok(String::from_utf8(bytes.to_vec())?)
 }
 
 /// Enqueues each event and offers the accepted ones to every connector —
@@ -591,7 +595,18 @@ pub fn spawn_espn_poller(
     active: Arc<AtomicBool>,
 ) {
     tauri::async_runtime::spawn(async move {
-        let client = reqwest::Client::new();
+        let client = match reqwest::Client::builder()
+            .user_agent("notchtap/0.1 (+https://github.com/jainChetan81/notchtap)")
+            .redirect(reqwest::redirect::Policy::limited(3))
+            .timeout(Duration::from_secs(10))
+            .build()
+        {
+            Ok(client) => client,
+            Err(error) => {
+                tracing::error!("espn poller could not build http client: {error}");
+                return;
+            }
+        };
         let mut snapshots: HashMap<String, Snapshot> = HashMap::new();
         let mut backoffs: HashMap<String, Backoff> = HashMap::new();
         let mut gate = PauseGate::new();
