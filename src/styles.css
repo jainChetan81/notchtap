@@ -46,7 +46,8 @@ body {
 }
 
 /* priority accent — a single named color per tier, consumed by the
-   tier-code icon/text and the stamp pill. deliberately NOT signal-driven
+   compact row's accent edge (.compact::before), the stamp pill, and the
+   track rail. deliberately NOT signal-driven
    (goal/red_card share "high" accent with any other high-priority
    source) — see lib/presentation.ts's stamp table for where signal does
    change what's shown. */
@@ -214,9 +215,9 @@ body {
   position: relative;
   box-sizing: border-box;
   min-height: 74px;
-  padding: 12px 18px 14px;
+  padding: 12px 18px 14px 20px;
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
 }
@@ -225,31 +226,19 @@ body {
   min-height: 82px;
 }
 
-.tier-code {
-  align-self: stretch;
-  display: grid;
-  justify-items: start;
-  align-content: center;
-  gap: 2px;
-  border-right: 1px solid rgba(255, 255, 255, 0.11);
-  color: var(--accent);
-}
-
-.tier-code svg {
-  color: var(--accent);
-}
-
-.tier-code .code {
-  font: 750 22px/0.9 "Arial Narrow", "SF Pro Display", sans-serif;
-  letter-spacing: -0.04em;
-}
-
-.tier-code .tier-label {
-  margin-top: 3px;
-  color: rgba(255, 255, 255, 0.4);
-  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+/* priority now reads from a 3px accent edge on the compact row's left
+   (plan 032 — replaces the deleted L1/M2/H3 tier chip; the Stamp pill and
+   Track rail survive as the other two non-color cues). */
+.compact::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent-soft);
 }
 
 .copy {

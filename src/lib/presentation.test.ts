@@ -5,25 +5,7 @@ import {
   publishedLabel,
   sourceLabelFor,
   stampFor,
-  tierCode,
-  tierLabel,
 } from "./presentation";
-
-describe("tierCode", () => {
-  it("maps each priority to its short code", () => {
-    expect(tierCode("low")).toBe("L1");
-    expect(tierCode("medium")).toBe("M2");
-    expect(tierCode("high")).toBe("H3");
-  });
-});
-
-describe("tierLabel", () => {
-  it("maps each priority to its full label", () => {
-    expect(tierLabel("low")).toBe("Low");
-    expect(tierLabel("medium")).toBe("Medium");
-    expect(tierLabel("high")).toBe("High");
-  });
-});
 
 describe("stampFor", () => {
   it("uses the fixed per-signal table when signal is not generic, regardless of priority", () => {

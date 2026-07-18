@@ -5,7 +5,6 @@ import type { SlotState } from "../useSlotState";
 import { IdleView } from "./IdleView";
 import { Manifest } from "./Manifest";
 import { Stamp } from "./Stamp";
-import { TierCode } from "./TierCode";
 import { Track } from "./Track";
 
 type Pulse = "pulse-goal" | "pulse-red" | null;
@@ -89,7 +88,6 @@ export function StatusRailCard({ slot }: { slot: SlotState }) {
             transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
           >
             <div className="compact">
-              <TierCode priority={slot.priority} eventType={slot.eventType} />
               <div className="copy">
                 {slot.eventType === "news_item" ? (
                   <>

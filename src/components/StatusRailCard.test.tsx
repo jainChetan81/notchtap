@@ -188,7 +188,11 @@ describe("StatusRailCard", () => {
     expect(screen.getByText("5m ago").classList.contains("pill")).toBe(true);
     expect(screen.getByText("5m ago").classList.contains("age")).toBe(true);
     expect(container.querySelector(".rail-card.low.news-shade.cat-politics")).not.toBeNull();
-    expect(container.querySelector(".tier-code .lucide-newspaper")).not.toBeNull();
+    // plan 032 deleted the tier chip — priority reads from the CSS-only
+    // .compact::before accent edge (a pseudo-element, not assertable in
+    // jsdom), so the coverage here is absence: no chip markup, no code text.
+    expect(container.querySelector(".tier-code")).toBeNull();
+    expect(screen.queryByText("L1")).toBeNull();
     expect(screen.getByText("Wire").classList.contains("stamp")).toBe(true);
     expect(screen.getByText("Summary")).toBeTruthy();
     expect(screen.getByText("Source / Published")).toBeTruthy();

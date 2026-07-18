@@ -16,32 +16,6 @@ function assertNever(x: never): never {
   throw new Error(`unhandled case: ${JSON.stringify(x)}`);
 }
 
-export function tierCode(priority: Priority): "L1" | "M2" | "H3" {
-  switch (priority) {
-    case "low":
-      return "L1";
-    case "medium":
-      return "M2";
-    case "high":
-      return "H3";
-    default:
-      return assertNever(priority);
-  }
-}
-
-export function tierLabel(priority: Priority): "Low" | "Medium" | "High" {
-  switch (priority) {
-    case "low":
-      return "Low";
-    case "medium":
-      return "Medium";
-    case "high":
-      return "High";
-    default:
-      return assertNever(priority);
-  }
-}
-
 // Fixed per-signal text for anything with a real football signal — a
 // documented lookup table, never derived from parsing title/body text
 // (the cmux-notification-kind-sniffing this session already rejected).
