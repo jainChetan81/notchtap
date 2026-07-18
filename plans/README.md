@@ -96,7 +96,7 @@ plans are independent. P1s first.
 | 021 | Settings save polish: feed metadata, duplicate rejection, port pre-flight | P3 | M | — | DONE (`8c35f1e`, merged to master 2026-07-18; `/improve execute` → reviewed APPROVE; frontend gates green, rust structural-verified + macOS CI; file → `(done)`) |
 | 036 | Heartbeat lost-wakeup: register the `Notified` waiter under the queue lock (renumbered from 024 — that number stays with the in-flight proptest plan) | P1 | S | — | TODO |
 | 025 | ESPN streaming body cap + shared poller client/fetch helpers (`net.rs`) | P1 | M | — | TODO |
-| 026 | Docs/DX truth pass: seven invoke commands, deadline-heartbeat prose, biome-ci wording, `just setup` | P2 | S | — | TODO |
+| 026 | Docs/DX truth pass: seven invoke commands, deadline-heartbeat prose, biome-ci wording, `just setup` | P2 | S | — | DONE (cherry-picked to master `727be48`+`9ee8ec2`+`8157287` 2026-07-18; `/improve execute` → reviewed APPROVE after 1 revision (v3.6 heartbeat prose cited §4.4, fixed to §4.3); executor worktree branch `advisor/026-docs-dx-truth-pass` can be cleaned up) |
 | 027 | Appearance section follows Reset; App.tsx unlisten unmount-guard | P3 | S | — | TODO |
 | 028 | Shared Event test builder (rust) + shared listen-mock harness (frontend) | P3 | M | 036, 025 (soft) | TODO |
 | 029 | Pin CI actions to commit SHAs + dependabot for github-actions | P3 | S | — | TODO |
