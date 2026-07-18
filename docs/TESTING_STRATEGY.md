@@ -9,14 +9,14 @@ doc.
 
 ---
 
-## 0. status at a glance (2026-07-17) — done vs left
+## 0. status at a glance (2026-07-18) — done vs left
 
 **done — built, green, ci-gated** (counts live here and only here;
 other sections point back rather than repeating them):
 
 | suite | size | where |
 |---|---|---|
-| rust unit/integration | 251 tests — settings 45, queue 52, http 27, notifier 23, rss_poller 28, poller 16, event 16, config 17, presentation 11, lib 12, logging 4 | `cargo test` from `src-tauri/` |
+| rust unit/integration | 257 tests — settings 45, queue 53, http 32, notifier 23, rss_poller 28, poller 16, event 16, config 17, presentation 11, lib 12, logging 4 | `cargo test` from `src-tauri/` |
 | rust doc-tests | 3 — public `queue`/`event` apis | same `cargo test` run |
 | frontend | 62 tests — presentation tables 14, slot-state hook 16, StatusRailCard 14, settings form 13, App render 5 | `npx vitest run` |
 | ci (v4) | fmt, clippy `-D warnings` (`--locked`), cargo test (`--locked`), cargo-audit, npm audit, tsc, vitest, vite build, `sh -n` cli syntax check, swiftc compile check | every push + pr |
@@ -31,13 +31,16 @@ rss poller + status-rail news card suite (§4.12), and the v5.1
 appearance/test-notification additions (queue test-promotion,
 `send_test_notification`, `set_appearance`, AppearanceSection vitest)
 all landed 2026-07-17 — §4.12's manual live-feed check is the only
-piece still open, tracked in its own section.
+piece still open, tracked in its own section. the queue's `+1` above
+is the §9.1 generated-adversary property test (256 cases folded into
+one `#[test]`, not 256 separate tests); http's `+5` are §9.2's burst/
+boundary integration cases — both landed 2026-07-18, see §9.
 
 **left — each is a decision with an owner section, not a gap:**
 
 | item | status | where |
 |---|---|---|
-| deep testing work order (proptest invariants, http burst, poller fuzz, frontend timing fuzz) | **parked 2026-07-16** — un-park triggers in §8 | §9 (the full, implementation-ready plan) |
+| deep testing work order — poller fuzz, frontend timing fuzz | §9.1 (queue proptest) and §9.2 (http burst/boundary) **landed 2026-07-18**; §9.3/§9.4 remain **parked** — no new trigger for those two | §9 (the full, implementation-ready plan) |
 | ~~outbound connector tests~~ | **landed with v3 (telegram)** 2026-07-16 | §4.9 |
 | ~~single-slot rotating overlay tests~~ | **landed with v3.6** 2026-07-17 (branch `v3.6-rotating-overlay`, not yet merged) | §4.10 |
 | ~~v5 rss poller + news-card suite~~ | **landed 2026-07-17** (see §0) | §4.12 |
@@ -623,7 +626,12 @@ tracked here so "not done" is a decision with a trigger, not a gap:
   **trigger to un-park**: first queue regression the example cases
   miss, the next queue-semantics change (e.g. a priority lane), or the
   user asking for it. when picked up, §9 is the work order — don't
-  re-plan.
+  re-plan. **trigger fired 2026-07-18**: the queue's semantics changed
+  repeatedly since the park (v3.6 three priority tiers, v6
+  rotation-order tie-break, dismiss/skip, per-item expanded semantics),
+  and `8b216ee` already showed the example suite letting one gap
+  through. §9.1 (queue proptest) and §9.2 (http burst/boundary) are now
+  executed and landed; §9.3/§9.4 stay parked, scoped out of this pass.
 - ~~**v3 connector tests**~~ — landed with v3 (telegram, not
   twilio/whatsapp — that demotion is in `IMPLEMENTATION_PLAN.md` §3);
   see §4.9. the no-live-calls rule held: wiremock only.
@@ -634,30 +642,26 @@ tracked here so "not done" is a decision with a trigger, not a gap:
 
 ---
 
-## 9. deep testing work order — parked, implementation-ready
+## 9. deep testing work order — un-parked 2026-07-18, §9.1/§9.2 landed
 
-**status: parked 2026-07-16 — reviewed and accepted, deliberately not
-scheduled.** nothing in this section is implemented. un-park triggers
-are in §8. when picked up, follow §9.6's build order and review gates
-as written. (formerly the standalone `DEEP_TESTING_PLAN.md`, merged
-here 2026-07-16 so the testing story lives in one document.)
+**status: un-parked 2026-07-18.** the trigger in §8 fired (queue
+semantics changed repeatedly since the 2026-07-16 park — v3.6 three
+priority tiers, v6 rotation-order tie-break, dismiss/skip, per-item
+expanded semantics). §9.1 (queue proptest) and §9.2 (http burst/
+boundary) are now implemented and green — see their landed-markers
+below. §9.3 (poller fuzz) and §9.4 (frontend timing fuzz) stay parked,
+scoped out of this pass; §9.5/§9.6 are unchanged reference material.
 
 like `V3_6_TECHNICAL_SPEC.md`, this section is not locked: adjust freely
 as implementation surfaces friction; fold any *decision* changes back
 into §1–§8.
 
-**stale as of 2026-07-17 — retarget before un-parking**: §9.1's
-`Op`/invariant design below (`NotificationQueue`, `max_concurrent`,
-`visible().len()`, `expire_and_promote`) targets the pre-v3.6 queue
-shape, which no longer exists (`queue.rs` now holds `SingleSlotQueue`
-— see §4.10). the *properties* (cap, bound, exactly-once promotion,
-fifo, paused-ticks-silent, rejection-leaves-state-untouched,
-no-premature-rotation) still make sense conceptually, but the `Op`
-enum, field names, and the fifo-within-a-single-queue framing (I4)
-need reworking for three priority tiers, `tick`/rotation naming, and
-supersession before this is implementation-ready again. whoever
-un-parks §9 does that retarget pass first, as its own step before
-9.6's build order.
+**retargeted 2026-07-18** (was flagged stale 2026-07-17 against the
+pre-v3.6 `NotificationQueue`/`max_concurrent` shape): §9.1 below is
+rewritten against today's `SingleSlotQueue` — three priority-tier
+waiting lanes, `tick`/rotation naming, `Skip` as a distinct op from
+`Dismiss`, and topic supersession's extension cap. this retarget is
+itself the record of that pass; no separate stale-note remains.
 
 ### 9.0 what "deep" means here, and what it doesn't
 
@@ -676,110 +680,170 @@ explicitly **not** in this section (unchanged from §5):
 
 ### 9.1 queue property tests (rust, `proptest`) — the core
 
-**file**: `src-tauri/src/queue.rs`, new `#[cfg(test)] mod proptests`
-alongside the existing example-based `mod tests` (same module so it can
-keep using `expire_visible_for_test`).
+**landed 2026-07-18.** `src-tauri/src/queue.rs`, new
+`#[cfg(test)] mod proptest_queue` as a sibling of the existing
+example-based `mod tests` (same file, so it can reuse the private,
+`#[cfg(test)]`-gated `enqueue_at` simulated-clock entry point, plus
+direct field access to `visible`/`waiting`/`expanded` the same way
+`mod tests` already does).
 
 **dependency**: `proptest = "1"` under `[dev-dependencies]` in
 `src-tauri/Cargo.toml`. dev-only — no shipped-binary impact.
 
-**the operation model** — drive a `NotificationQueue` with a generated
-script of operations against a simulated clock (a `start: Instant` plus
-an accumulated `Duration` — never real sleeps):
+**the operation model** — drive a `SingleSlotQueue` with a generated
+script of operations against a simulated clock (a `now: Instant`
+advanced only by `Tick`, never a real sleep):
 
 ```rust
 enum Op {
-    Enqueue { ttl_secs: u64 },   // ttl in 1..=10
+    Enqueue { priority: Priority, rotation: RotKind, topic: Option<u8>, origin: SourceKind },
+    Tick(u64),          // advance_secs in 0..=12, then queue.tick(now)
+    Dismiss,             // dismiss_visible(now)
+    Skip,                 // skip_visible(now)
+    ToggleExpanded,
     Pause,
     Resume,
-    Advance { ms: u64 },          // 0..=3000, clock moves, no tick
-    Tick,                         // expire_and_promote(simulated now)
 }
+// RotKind::OneShot(1..=10) | RotKind::Recurring(1..=10)
 ```
 
-generator shape: `vec(any_op(), 0..120)` operations, with queue
-parameters themselves generated per case: `max_concurrent in 1..=5`,
-`max_queued in 1..=10`. small bounds on purpose — proptest shrinks
-failures toward minimal scripts, and small state spaces shrink better.
+this is the full state-mutating `pub fn` surface of `SingleSlotQueue`
+with two pre-cleared exceptions: `enqueue_test` (a test-only variant of
+`enqueue` used by `send_test_notification` — the production `/notify`
+op model doesn't need a distinct variant for it) and
+`slot_state_if_changed` (mutates `last_emitted`, but it's the *probe*
+for invariant 7, not an op — called every step, never generated).
+`with_rotation_order` is a per-case queue *parameter*, not a scripted
+op: the harness leaves it unset (empty), so same-tier tie-breaks
+degenerate to plain arrival-order FIFO — v6's rotation-order rank
+logic already has its own dedicated example tests
+(`rotation_order_breaks_same_tier_ties_ahead_of_arrival_order` et al.)
+and re-deriving rank-based tie-breaking here would just re-encode that
+logic rather than test against it independently.
 
-each `Enqueue` carries a fresh uuid; the harness records, per op, what
-the queue accepted vs rejected, and drains `take_promoted()` after
-*every* op (not just ticks — the enqueue fast-path promotes too).
+generator shape: `vec(any_op(), 0..50)` operations, with
+`max_queued_per_tier` itself generated per case, `1..=10`. small bounds
+on purpose — proptest shrinks failures toward minimal scripts, and
+small state spaces shrink better.
 
 **the invariants (checked after every single op)**:
 
-- **I1 — cap**: `visible().len() <= max_concurrent`, always.
-- **I2 — bound**: `waiting().len() <= max_queued`, always.
-- **I3 — exactly-once promotion**: no event id ever appears in the
-  drained `take_promoted` stream twice. at script end, run the drain
-  protocol (resume + advance past max ttl + tick, repeated until
-  empty); then every *accepted* id has appeared exactly once, every
-  *rejected* id never.
-- **I4 — fifo**: the concatenated promotion stream is exactly the
-  accepted-enqueue order (promotion never reorders; it's a prefix
-  relation at every step and equality at drain-end).
-- **I5 — paused ticks are silent**: a `Tick` executed while paused
-  yields an empty `take_promoted` drain.
-- **I6 — rejection leaves state untouched**: on `QueueError::QueueFull`,
-  `visible`/`waiting` lengths and contents (by id) are identical before
-  and after the failed call.
-- **I7 — no premature expiry**: an item never leaves `visible` before
-  its ttl has elapsed on the simulated clock (cross-check the removal
-  against `promoted_at + ttl <= now`).
+1. **at most one Visible item ever** — structurally guaranteed by
+   `visible: Option<QueueItem>`; asserted as documentation, not a
+   meaningful adversarial target on its own.
+2. **per-tier waiting cap, checked ONLY immediately after an `Enqueue`
+   that lands in `waiting`** — never after every op. three documented
+   bypasses legally exceed `max_queued_per_tier` and would false-fail
+   an always-on assertion: (a) the immediate-promote fast path (slot
+   empty, all tiers empty, not paused — cap never evaluated); (b)
+   Recurring requeue (`tick` rotation and `Skip` `push_back` with no
+   cap check); (c) cross-tier Topic supersede (relocates an existing
+   waiting item to a different tier's back with no cap check). the
+   harness distinguishes "landed in waiting as a new item" from "merged
+   into an existing item via supersede" by comparing total item count
+   (visible + all waiting) before/after the call — a merge leaves the
+   total unchanged, a genuine new item increases it by exactly one.
+3. **no premature rotation**: a `Tick` whose `advance_secs` doesn't
+   reach the visible item's `promoted_at + window + extension_secs`
+   must leave that exact item visible, unchanged. early removal only
+   ever happens via an explicit `Dismiss` or `Skip`.
+4. **promotion picks the highest non-empty tier, FIFO within it**:
+   whenever `Tick`/`Dismiss`/`Skip` causes a new item to become
+   visible, its id must equal the front of the highest-index non-empty
+   waiting tier as it stood immediately before promotion — including,
+   for `Tick`/`Skip`, a same-turn Recurring requeue landing back in its
+   own tier before promotion is evaluated.
+5. **pause gates promotion, not aging; nothing enqueued while paused is
+   lost** (count conservation): while paused, `Tick`/`Dismiss`/`Skip`
+   never promote (visible stays `None` after any rotation/removal).
+   the harness tracks `enqueued_accepted` (incremented once per
+   genuinely-new accepted item, per invariant 2's merge-vs-new
+   distinction) against `rotated_out_dropped` (a `Tick` ages out a
+   OneShot Visible item), `dismissed` (`Dismiss` had a Visible item —
+   Recurring or OneShot, `dismiss_visible` always drops), and
+   `skipped_oneshot_dropped` (`Skip` had a Visible *OneShot* item only —
+   a skipped Recurring item requeues, it is not a drop). asserted every
+   step: `enqueued_accepted == (visible?1:0) + total_waiting +
+   rotated_out_dropped + dismissed + skipped_oneshot_dropped`.
+6. **supersession never creates a second item** — covered by the same
+   conservation equation as invariant 5 (a merge never increments
+   `enqueued_accepted`). two *separate*, differently-scoped extension
+   caps: (i) a visible Topic supersede tops up remaining time bounded
+   by `MAX_EXTENSION_ON_SUPERSEDE_SECS` (`6`) — asserted every step,
+   whenever visible is `Some`, `extension_secs <= 6`; (ii) a cross-tier
+   waiting supersede is invariant 2(c)'s per-tier cap bypass and is
+   *not* bounded here — noted, not asserted.
+7. **`slot_state_if_changed` never returns two consecutive equal
+   states** — called once per op (the harness's one and only probe
+   site); a returned `Some` is compared against the last `Some` seen,
+   never against the immediately-preceding call if that one was `None`.
+8. **expanded resets on promotion**: immediately after any op promotes
+   a new item to visible, `expanded == (priority == Priority::High)`.
+9. **`next_deadline()` invariant**: whenever `Some`, it equals
+   `promoted_at + Duration::from_secs(rotation_window(expanded) +
+   extension_secs)` of the current visible item — asserted every step.
 
-I3 and I4 are the ones example-based tests can't honestly claim — they
-quantify over *all* interleavings of pause/resume/expiry windows,
-including the freed-slot-between-ticks window the fast-path guards
-against (`queue.rs` `can_promote_now`).
+invariants 3, 4, 5, and 9 are the ones example-based tests can't
+honestly claim — they quantify over *all* interleavings of
+pause/resume/dismiss/skip/rotation windows, not just the hand-picked
+sequences in `mod tests`.
 
 **expected size and cost**: one proptest
-(`#[test] fn queue_invariants_hold_under_any_op_script()`) with the
-default 256 cases, plus proptest's persisted-failure regression file
-(`src-tauri/proptest-regressions/`, committed — that's the point: a
-found counterexample becomes a permanent regression test). runtime
-target: well under 1s; all clock math is simulated.
+(`#[test] fn queue_invariants_hold_under_any_op_script()`) at
+`ProptestConfig::with_cases(256)`. runtime target: well under 1s; all
+clock math is simulated (`now: Instant` advanced only by `Tick`).
 
-**exit criteria**:
+**exit criteria** (all met at landing):
 
-- the property passes 256 cases locally and in ci
-- deliberately breaking the queue (e.g. inverting the
-  `waiting.is_empty()` fast-path guard, or letting promotion run while
-  paused) makes the property fail with a small shrunk script — verify
-  both mutations once, then revert. this is the "does the gate actually
-  gate" check, same discipline as v4 §4.4.
+- the property passes 256 cases locally, run twice to shake out flaky
+  generation
 - the existing example-based queue tests stay untouched and green —
-  the property *supplements* them (readable spec cases stay readable),
-  it does not replace them
+  the property *supplements* them, it does not replace them
+- zero production-code changes to `queue.rs` logic — tests only
 
 ### 9.2 http layer — burst and boundary integration cases
 
-**file**: `src-tauri/src/http.rs`, extending the existing `mod tests`.
-no new dependencies (tower `oneshot`, as everywhere in §4.3).
+**landed 2026-07-18.** `src-tauri/src/http.rs`, extending the existing
+`mod tests`. no new dependencies (tower `oneshot`, as everywhere in
+§4.3). retargeted from the pre-v3.6 `max_concurrent`/`max_queued`
+framing to today's single-slot-plus-per-tier-cap model: only one item
+is ever visible, so "burst accounting" means bursting one priority
+tier's `waiting` up to and past its `max_queued_per_tier` cap, not
+filling multiple concurrent visible slots.
 
-- **burst accounting**: with `max_concurrent = 3`, `max_queued = 50`,
-  fire 60 sequential posts at the router. assert exactly 53 succeed
-  (200) and 7 are rejected (429), and the queue ends at 3 visible + 50
-  waiting. this is the http-visible face of queue invariants I1/I2.
-- **paused burst accounting**: same, paused: 50× 202 then 10× 429,
-  nothing visible.
-- **boundary body sizes**: a body exactly at the 413 limit passes; one
-  byte over is rejected. (the limit exists and is tested today only
-  with a grossly oversized body — pin the exact boundary.)
-- **ttl clamping/normalization** at the handler: whatever the v1 spec
-  §7 says about absent/zero/absurd `ttlSecs` values gets one case each
-  (absent → `default_ttl` is presumably covered; add `0` and
-  `10_000_000` explicitly, asserting the documented behaviour — check
-  the spec first, and if the behaviour is *undocumented*, that's a spec
-  gap to fix in `archive/V1_TECHNICAL_SPEC.md` §7 before writing the
-  test — archived, but still the doc of record for v1's `ttlSecs`
-  behaviour).
+- **burst accounting**: with `max_queued_per_tier = 5`, fire 8
+  sequential same-tier posts at the router. the first fast-path-
+  promotes to visible; assert exactly 6 total succeed (200) — 1 visible
+  + 5 waiting — and 2 are rejected (429), matching invariant 2.
+- **paused burst accounting**: same tier cap, paused from the start (no
+  fast path — every push lands in `waiting`): assert exactly 5× 202
+  then 3× 429, nothing visible.
+- **boundary body sizes**: a body whose exact serialized length is the
+  64 KiB `DefaultBodyLimit` (`65536` bytes) is accepted; one byte over
+  is rejected with 413. (the limit existed already but was only tested
+  with a grossly oversized body — this pins the exact boundary.)
+- **ttl is wire-immutable, not clamped**: v1 spec §3 documents that
+  `/notify` never accepts a client-supplied ttl field at all — `NotifyRequest`
+  has no `ttlSecs` field, full stop; `ttl_secs` is always constructed
+  server-side from `Config::default_ttl` / `Config::cmux_ttl_secs`. this
+  is documented behaviour, not a spec gap, so there is no "clamp 0 /
+  clamp absurd value" case to write. what *is* worth pinning: an extra,
+  unrecognized `ttlSecs` field on the wire is silently ignored (no
+  `deny_unknown_fields` on `NotifyRequest`) and the configured default
+  still applies — asserted via `next_deadline()` landing at
+  `now + default_ttl`, not at the attempted wire value.
 
 true concurrency (simultaneous in-flight requests) is deliberately not
 simulated: the queue sits behind a mutex, so interleaving reduces to
 ordering — which §9.1 already covers exhaustively.
 
-**exit criteria**: each case above written and green; the existing http
-tests untouched.
+**exit criteria** (all met at landing): each case above written and
+green; the existing http tests untouched — no case above duplicated one
+already present (the pre-existing `full_queue_returns_429`,
+`full_queue_returns_429_while_paused`, and `oversized_body_returns_413`
+cover the *shape* of rejection with a minimal 1-2 request setup; the
+cases here specifically pin the multi-request boundary count and the
+exact byte-length edge, which those don't).
 
 ### 9.3 poller robustness — parse fuzz (rust, `proptest`)
 
