@@ -40,3 +40,4 @@ tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", rev = "18ffb9
 tower = { version = "0.5.3", features = ["util"] }
 tauri = { version = "2", features = ["tray-icon", "macos-private-api", "test"] }
 wiremock = "0.6"
+proptest = "1"

@@ -1416,3 +1416,454 @@ mod tests {
         );
     }
 }
+
+// ----------------------------------------------------------------------
+// §9.1 (docs/TESTING_STRATEGY.md) — generated-adversary property suite.
+// Supplements `mod tests` above; never replaces it. A sibling module (not
+// nested inside `mod tests`) so it can stay organized around its own
+// harness, while still reusing the same private, `#[cfg(test)]`-gated
+// surface (`enqueue_at`, direct `visible`/`waiting`/`expanded` field
+// access) that `mod tests` already relies on.
+// ----------------------------------------------------------------------
+#[cfg(test)]
+mod proptest_queue {
+    use super::*;
+    use crate::event::{EventMeta, EventPayload, EventSignal, EventType};
+    use proptest::prelude::*;
+    use uuid::Uuid;
+
+    // ------------------------------------------------------------------
+    // Op model (docs/TESTING_STRATEGY.md §9.1) — one variant per
+    // state-mutating `pub fn` on `SingleSlotQueue`, minus the two
+    // pre-cleared exceptions: `enqueue_test` (test-only /notify bypass,
+    // not part of the production op model) and `slot_state_if_changed`
+    // (the invariant-7 probe, called every step, never generated).
+    // `with_rotation_order` is a per-case queue parameter, not a scripted
+    // op — left unset so same-tier ties degenerate to arrival-order FIFO,
+    // which invariant 4 below checks directly.
+    // ------------------------------------------------------------------
+
+    #[derive(Debug, Clone, Copy)]
+    enum RotKind {
+        OneShot(u64),
+        Recurring(u64),
+    }
+
+    #[derive(Debug, Clone)]
+    struct EnqueueSpec {
+        priority: Priority,
+        rotation: RotKind,
+        topic: Option<u8>,
+        origin: SourceKind,
+    }
+
+    #[derive(Debug, Clone)]
+    enum Op {
+        Enqueue(EnqueueSpec),
+        Tick(u64),
+        Dismiss,
+        Skip,
+        ToggleExpanded,
+        Pause,
+        Resume,
+    }
+
+    fn arb_priority() -> impl Strategy<Value = Priority> {
+        prop_oneof![
+            Just(Priority::Low),
+            Just(Priority::Medium),
+            Just(Priority::High),
+        ]
+    }
+
+    fn arb_origin() -> impl Strategy<Value = SourceKind> {
+        prop_oneof![
+            Just(SourceKind::Football),
+            Just(SourceKind::News),
+            Just(SourceKind::Manual),
+            Just(SourceKind::Cmux),
+        ]
+    }
+
+    fn arb_rotation() -> impl Strategy<Value = RotKind> {
+        prop_oneof![
+            (1u64..=10).prop_map(RotKind::OneShot),
+            (1u64..=10).prop_map(RotKind::Recurring),
+        ]
+    }
+
+    // small closed set of topic tags (as Some(0..3)) plus None, so
+    // supersession (same-topic collisions) actually happens often enough
+    // in a 0..50-op script to exercise invariants 2(c) and 6.
+    fn arb_topic() -> impl Strategy<Value = Option<u8>> {
+        prop_oneof![Just(None), (0u8..3).prop_map(Some)]
+    }
+
+    fn arb_enqueue() -> impl Strategy<Value = EnqueueSpec> {
+        (arb_priority(), arb_rotation(), arb_topic(), arb_origin()).prop_map(
+            |(priority, rotation, topic, origin)| EnqueueSpec {
+                priority,
+                rotation,
+                topic,
+                origin,
+            },
+        )
+    }
+
+    fn arb_op() -> impl Strategy<Value = Op> {
+        prop_oneof![
+            3 => arb_enqueue().prop_map(Op::Enqueue),
+            2 => (0u64..=12).prop_map(Op::Tick),
+            1 => Just(Op::Dismiss),
+            1 => Just(Op::Skip),
+            1 => Just(Op::ToggleExpanded),
+            1 => Just(Op::Pause),
+            1 => Just(Op::Resume),
+        ]
+    }
+
+    fn build_event(spec: &EnqueueSpec) -> Event {
+        Event {
+            id: Uuid::new_v4(),
+            event_type: EventType::Generic,
+            priority: spec.priority,
+            rotation: match spec.rotation {
+                RotKind::OneShot(secs) => RotationSpec::OneShot { ttl_secs: secs },
+                RotKind::Recurring(secs) => RotationSpec::Recurring { display_secs: secs },
+            },
+            topic: spec.topic.map(|n| format!("topic-{n}")),
+            payload: EventPayload {
+                title: "t".to_string(),
+                body: "b".to_string(),
+            },
+            meta: EventMeta::default(),
+            signal: EventSignal::Generic,
+            origin: spec.origin,
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // harness — direct field access (this module is a descendant of the
+    // module `SingleSlotQueue` is defined in, same as `mod tests`).
+    // ------------------------------------------------------------------
+
+    fn snapshot_ids(q: &SingleSlotQueue) -> [Vec<Uuid>; 3] {
+        [
+            q.waiting[0].iter().map(|i| i.event.id).collect(),
+            q.waiting[1].iter().map(|i| i.event.id).collect(),
+            q.waiting[2].iter().map(|i| i.event.id).collect(),
+        ]
+    }
+
+    // Invariant 4: highest-index non-empty tier, front (FIFO) item.
+    fn highest_nonempty_front(snap: &[Vec<Uuid>; 3]) -> Option<Uuid> {
+        for tier in (0..3).rev() {
+            if let Some(&id) = snap[tier].first() {
+                return Some(id);
+            }
+        }
+        None
+    }
+
+    struct VisSnap {
+        id: Uuid,
+        tier: usize,
+        recurring: bool,
+        promoted_at: Instant,
+        window: u64,
+    }
+
+    fn vis_snapshot(q: &SingleSlotQueue) -> Option<VisSnap> {
+        q.visible.as_ref().map(|item| VisSnap {
+            id: item.event.id,
+            tier: item.event.priority as usize,
+            recurring: matches!(item.event.rotation, RotationSpec::Recurring { .. }),
+            promoted_at: item.promoted_at.expect("visible items have promoted_at"),
+            window: item.event.rotation_window(q.expanded) + item.extension_secs,
+        })
+    }
+
+    fn current_vis_id(q: &SingleSlotQueue) -> Option<Uuid> {
+        q.visible.as_ref().map(|i| i.event.id)
+    }
+
+    struct Harness {
+        q: SingleSlotQueue,
+        now: Instant,
+        max_queued_per_tier: usize,
+        // invariant 5/6 conservation counters
+        enqueued_accepted: u64,
+        rotated_out_dropped: u64,
+        dismissed: u64,
+        skipped_oneshot_dropped: u64,
+        // invariant 7 probe state
+        last_some_state: Option<SlotState>,
+    }
+
+    impl Harness {
+        fn new(max_queued_per_tier: usize) -> Self {
+            Self {
+                q: SingleSlotQueue::new(max_queued_per_tier),
+                now: Instant::now(),
+                max_queued_per_tier,
+                enqueued_accepted: 0,
+                rotated_out_dropped: 0,
+                dismissed: 0,
+                skipped_oneshot_dropped: 0,
+                last_some_state: None,
+            }
+        }
+
+        fn total_in_queue(&self) -> u64 {
+            (self.q.visible.is_some() as u64) + self.q.total_waiting() as u64
+        }
+
+        // Invariant 8, called at every detected promotion site.
+        fn assert_expanded_matches_priority_if_promoted(&self, promoted_id: Option<Uuid>) {
+            let Some(id) = promoted_id else { return };
+            if let SlotState::Showing {
+                priority, expanded, ..
+            } = self.q.current_slot_state()
+            {
+                assert_eq!(
+                    expanded,
+                    priority == Priority::High,
+                    "invariant 8: expanded must match priority immediately after promotion (id={id:?})"
+                );
+            }
+        }
+
+        fn apply(&mut self, op: &Op) {
+            match op {
+                Op::Enqueue(spec) => self.apply_enqueue(spec),
+                Op::Tick(secs) => self.apply_tick(*secs),
+                Op::Dismiss => self.apply_dismiss(),
+                Op::Skip => self.apply_skip(),
+                Op::ToggleExpanded => self.q.toggle_expanded(),
+                Op::Pause => self.q.pause(),
+                Op::Resume => self.q.resume(),
+            }
+            self.check_blanket_invariants();
+        }
+
+        fn apply_enqueue(&mut self, spec: &EnqueueSpec) {
+            let event = build_event(spec);
+            let event_id = event.id;
+            let tier = spec.priority as usize;
+            let before_total = self.total_in_queue();
+
+            let result = self.q.enqueue_at(event, self.now);
+
+            let Ok(()) = result else {
+                // Rejected (QueueFull): not part of the 9 documented
+                // invariants (no I6-style rejection-untouched check here
+                // by design — kept to the retargeted §9.1 list exactly).
+                return;
+            };
+            let after_total = self.total_in_queue();
+            if after_total <= before_total {
+                // Merged into an existing item via topic supersede — not
+                // a new item, invariant 2's cap never applies here.
+                return;
+            }
+            // A genuinely new item was accepted.
+            self.enqueued_accepted += 1;
+            let promoted = current_vis_id(&self.q) == Some(event_id);
+            if promoted {
+                self.assert_expanded_matches_priority_if_promoted(Some(event_id));
+            } else {
+                assert_eq!(
+                    self.q.waiting[tier].back().map(|i| i.event.id),
+                    Some(event_id),
+                    "a newly-accepted, non-promoted item must land at the back of its own tier"
+                );
+                assert!(
+                    self.q.waiting[tier].len() <= self.max_queued_per_tier,
+                    "invariant 2: per-tier waiting cap violated immediately after an Enqueue landing in waiting (tier={tier}, len={}, cap={})",
+                    self.q.waiting[tier].len(),
+                    self.max_queued_per_tier
+                );
+            }
+        }
+
+        fn apply_tick(&mut self, advance_secs: u64) {
+            self.now += Duration::from_secs(advance_secs);
+            let vis_before = vis_snapshot(&self.q);
+            let mut waiting_before = snapshot_ids(&self.q);
+            let paused = self.q.is_paused();
+
+            self.q.tick(self.now);
+
+            let rotated = match &vis_before {
+                Some(v) => self.now.duration_since(v.promoted_at).as_secs() >= v.window,
+                None => false,
+            };
+            let after_id = current_vis_id(&self.q);
+
+            if let Some(v) = &vis_before {
+                if !rotated {
+                    // invariant 3: no premature rotation.
+                    assert_eq!(
+                        after_id,
+                        Some(v.id),
+                        "invariant 3: visible item removed before its rotation window elapsed"
+                    );
+                    return;
+                }
+                if v.recurring {
+                    waiting_before[v.tier].push(v.id);
+                } else {
+                    self.rotated_out_dropped += 1;
+                }
+            }
+
+            if paused {
+                // invariant 5: a Tick while paused never promotes, even
+                // though the item above may have just aged out.
+                assert!(
+                    after_id.is_none(),
+                    "invariant 5: a Tick while paused must never promote"
+                );
+                return;
+            }
+
+            let predicted = highest_nonempty_front(&waiting_before);
+            assert_eq!(
+                after_id, predicted,
+                "invariant 4: tick promotion did not pick the highest-tier FIFO front"
+            );
+            self.assert_expanded_matches_priority_if_promoted(after_id);
+        }
+
+        fn apply_dismiss(&mut self) {
+            let vis_before = vis_snapshot(&self.q);
+            let waiting_before = snapshot_ids(&self.q);
+            let paused = self.q.is_paused();
+
+            self.q.dismiss_visible(self.now);
+
+            if vis_before.is_some() {
+                // dismiss_visible always drops the visible item outright,
+                // Recurring or OneShot alike (unlike Skip).
+                self.dismissed += 1;
+            }
+            let after_id = current_vis_id(&self.q);
+            if paused {
+                assert!(
+                    after_id.is_none(),
+                    "invariant 5: Dismiss while paused must never promote"
+                );
+                return;
+            }
+            let predicted = highest_nonempty_front(&waiting_before);
+            assert_eq!(
+                after_id, predicted,
+                "invariant 4: dismiss promotion did not pick the highest-tier FIFO front"
+            );
+            self.assert_expanded_matches_priority_if_promoted(after_id);
+        }
+
+        fn apply_skip(&mut self) {
+            let vis_before = vis_snapshot(&self.q);
+            let mut waiting_before = snapshot_ids(&self.q);
+            let paused = self.q.is_paused();
+
+            self.q.skip_visible(self.now);
+
+            if let Some(v) = &vis_before {
+                if v.recurring {
+                    waiting_before[v.tier].push(v.id);
+                } else {
+                    // only the OneShot arm of Skip is a drop (invariant 5).
+                    self.skipped_oneshot_dropped += 1;
+                }
+            }
+            let after_id = current_vis_id(&self.q);
+            if paused {
+                assert!(
+                    after_id.is_none(),
+                    "invariant 5: Skip while paused must never promote"
+                );
+                return;
+            }
+            let predicted = highest_nonempty_front(&waiting_before);
+            assert_eq!(
+                after_id, predicted,
+                "invariant 4: skip promotion did not pick the highest-tier FIFO front"
+            );
+            self.assert_expanded_matches_priority_if_promoted(after_id);
+        }
+
+        // Invariants 6(i), 9, 5/6-conservation, and 7 — cheap, always-sound
+        // checks that don't depend on which op just ran.
+        fn check_blanket_invariants(&mut self) {
+            // invariant 6(i): a visible topic-supersede top-up never
+            // exceeds the hard extension cap.
+            if let Some(item) = &self.q.visible {
+                assert!(
+                    item.extension_secs <= MAX_EXTENSION_ON_SUPERSEDE_SECS,
+                    "invariant 6(i): extension_secs {} exceeded the hard cap {}",
+                    item.extension_secs,
+                    MAX_EXTENSION_ON_SUPERSEDE_SECS
+                );
+            }
+
+            // invariant 9: next_deadline, when Some, is exactly
+            // promoted_at + window + extension.
+            match self.q.next_deadline() {
+                Some(deadline) => {
+                    let item = self
+                        .q
+                        .visible
+                        .as_ref()
+                        .expect("next_deadline Some implies a visible item");
+                    let promoted_at = item.promoted_at.expect("visible has promoted_at");
+                    let window = item.event.rotation_window(self.q.expanded) + item.extension_secs;
+                    assert_eq!(
+                        deadline,
+                        promoted_at + Duration::from_secs(window),
+                        "invariant 9: next_deadline mismatch"
+                    );
+                }
+                None => assert!(
+                    self.q.visible.is_none(),
+                    "invariant 9: next_deadline is None but a visible item exists"
+                ),
+            }
+
+            // invariants 5/6 conservation.
+            let total = self.total_in_queue();
+            assert_eq!(
+                self.enqueued_accepted,
+                total + self.rotated_out_dropped + self.dismissed + self.skipped_oneshot_dropped,
+                "invariant 5/6: enqueued-accepted count conservation violated"
+            );
+
+            // invariant 7: slot_state_if_changed never repeats a state.
+            if let Some(state) = self.q.slot_state_if_changed() {
+                if let Some(prev) = &self.last_some_state {
+                    assert_ne!(
+                        &state, prev,
+                        "invariant 7: slot_state_if_changed returned the same state twice in a row"
+                    );
+                }
+                self.last_some_state = Some(state);
+            }
+        }
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(256))]
+
+        #[test]
+        fn queue_invariants_hold_under_any_op_script(
+            max_queued_per_tier in 1usize..=10,
+            ops in proptest::collection::vec(arb_op(), 0..50),
+        ) {
+            let mut harness = Harness::new(max_queued_per_tier);
+            for op in &ops {
+                harness.apply(op);
+            }
+        }
+    }
+}
