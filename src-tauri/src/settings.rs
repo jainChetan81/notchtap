@@ -564,7 +564,9 @@ pub fn get_config(
 /// Serves Config::default() so the frontend never mirrors defaults
 /// (plan 020) — the "Reset to defaults" source of truth is config.rs.
 #[tauri::command]
-pub fn get_default_config(window: tauri::WebviewWindow) -> Result<Config, String> {
+pub fn get_default_config<R: tauri::Runtime>(
+    window: tauri::WebviewWindow<R>,
+) -> Result<Config, String> {
     ensure_settings_window(&window)?;
     Ok(Config::default())
 }
