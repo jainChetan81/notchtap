@@ -14,6 +14,8 @@ export function Manifest({
   category,
   publishedAtMs,
   hasLink,
+  subtitle,
+  details = [],
 }: {
   body: string;
   eventType: EventType;
@@ -22,6 +24,11 @@ export function Manifest({
   category?: string | null;
   publishedAtMs?: number | null;
   hasLink: boolean;
+  // plan 035 (Layout A): subtitle renders as its own manifest cell, and
+  // each detail pair as one more cell — plain text, never markdown (they
+  // originate in untrusted hook input). Only the generic branch shows them.
+  subtitle?: string | null;
+  details?: { label: string; value: string }[];
 }) {
   const newsPublished = publishedLabel(publishedAtMs ?? null, Date.now());
   const newsCategory = categoryLabel(category ?? null);
@@ -81,6 +88,18 @@ export function Manifest({
                   {hasLink ? "⌃⇧O read · ⌃⇧N collapse" : "⌃⇧N collapse"}
                 </div>
               </div>
+              {subtitle ? (
+                <div>
+                  <div className="detail-label">Subtitle</div>
+                  <div className="detail-value">{subtitle}</div>
+                </div>
+              ) : null}
+              {details.map((detail) => (
+                <div key={`${detail.label}:${detail.value}`}>
+                  <div className="detail-label">{detail.label}</div>
+                  <div className="detail-value">{detail.value}</div>
+                </div>
+              ))}
             </div>
           )}
         </motion.div>

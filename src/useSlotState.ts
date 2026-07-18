@@ -37,6 +37,11 @@ export type SlotState =
       category: string | null;
       publishedAtMs: number | null;
       link: string | null;
+      // rich-relay fields (plan 035) — mirror the rust SlotState::Showing.
+      // The manifest renders `subtitle` as its own cell and one cell per
+      // `details` pair; `details` is always an array (never null).
+      subtitle: string | null;
+      details: { label: string; value: string }[];
       // queue-slider position within the current batch (plan 033) — mirrors
       // the rust SlotState::Showing fields exactly.
       queueTotal: number;
@@ -90,8 +95,27 @@ function isValidSlotState(v: unknown): v is SlotState {
     (obj.category === null || typeof obj.category === "string") &&
     (obj.publishedAtMs === null || typeof obj.publishedAtMs === "number") &&
     (obj.link === null || typeof obj.link === "string") &&
+    (obj.subtitle === null || typeof obj.subtitle === "string") &&
+    isDetailArray(obj.details) &&
     isNonNegativeInteger(obj.queueTotal) &&
     isNonNegativeInteger(obj.queueDone)
+  );
+}
+
+// plan 035: `details` is an array of {label, value} string pairs. Like every
+// other field it's revalidated here even though the rust side is trusted —
+// the pairs originate in untrusted hook input, so a malformed `details`
+// (a non-array, or an item missing string label/value) falls back to empty.
+function isDetailArray(v: unknown): v is { label: string; value: string }[] {
+  return (
+    Array.isArray(v) &&
+    v.every((d) => {
+      if (typeof d !== "object" || d === null) {
+        return false;
+      }
+      const pair = d as Record<string, unknown>;
+      return typeof pair.label === "string" && typeof pair.value === "string";
+    })
   );
 }
 
