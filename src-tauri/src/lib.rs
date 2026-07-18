@@ -418,18 +418,7 @@ pub fn run() {
                     let current_state = eval_queue.blocking_lock().current_slot_state();
                     let state_json =
                         serde_json::to_string(&current_state).unwrap_or_else(|_| "null".into());
-                    // unlike presentation-mode's fixed enum, this payload is
-                    // arbitrary caller text (espn scoring-play strings, cmux
-                    // titles) — escape everything that's illegal or unsafe
-                    // to splice raw into eval'd script text: U+2028/U+2029
-                    // are legal in JSON strings but illegal raw in JS
-                    // source, and `<` closes the gap JSON encoding leaves
-                    // open (it doesn't escape `/`, so a literal "</script>"
-                    // in a title would otherwise break out of this context).
-                    let safe_json = state_json
-                        .replace('\u{2028}', "\\u2028")
-                        .replace('\u{2029}', "\\u2029")
-                        .replace('<', "\\u003c");
+                    let safe_json = escape_for_eval_splice(&state_json);
                     let _ = webview.eval(format!("window.__NOTCHTAP_SLOT_STATE__ = {safe_json};"));
                     emit_slot_state(&app_handle, current_state);
                 }
@@ -446,11 +435,9 @@ pub fn run() {
                         .appearance
                         .clone();
                     let payload = AppearanceChangedPayload::from(&appearance);
-                    let payload_json = serde_json::to_string(&payload)
-                        .unwrap_or_else(|_| "null".into())
-                        .replace('\u{2028}', "\\u2028")
-                        .replace('\u{2029}', "\\u2029")
-                        .replace('<', "\\u003c");
+                    let payload_json = escape_for_eval_splice(
+                        &serde_json::to_string(&payload).unwrap_or_else(|_| "null".into()),
+                    );
                     let _ =
                         webview.eval(format!("window.__NOTCHTAP_APPEARANCE__ = {payload_json};"));
                     let _ = webview.emit("appearance-changed", &payload);
@@ -506,6 +493,18 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running notchtap");
+}
+
+/// Makes a serde_json string safe to splice into eval'd JS source:
+/// payloads may carry arbitrary caller text (espn scoring-play strings,
+/// cmux titles). U+2028/U+2029 are legal in JSON but illegal raw in JS
+/// source, and `<` closes the gap JSON leaves (it doesn't escape `/`,
+/// so a literal "</script>" would otherwise break out of the script
+/// context).
+fn escape_for_eval_splice(json: &str) -> String {
+    json.replace('\u{2028}', "\\u2028")
+        .replace('\u{2029}', "\\u2029")
+        .replace('<', "\\u003c")
 }
 
 // v3.6 spec §7.2 + permanent-overlay pass: the window must overlap the menu
@@ -1121,5 +1120,51 @@ mod tests {
             rotated.is_ok(),
             "expected the item to rotate out via the deadline-based heartbeat within 3s"
         );
+    }
+
+    #[test]
+    fn script_close_tag_cannot_survive() {
+        let escaped = escape_for_eval_splice(r#"{"title":"x</script><script>"}"#);
+        assert!(
+            !escaped.contains('<'),
+            "no literal `<` may survive: {escaped}"
+        );
+        assert!(escaped.contains("\\u003c/script>\\u003cscript>"));
+    }
+
+    #[test]
+    fn line_separators_escaped() {
+        let input = "a\u{2028}b\u{2029}c";
+        let escaped = escape_for_eval_splice(input);
+        assert!(escaped.contains("\\u2028"));
+        assert!(escaped.contains("\\u2029"));
+        assert!(!escaped.contains('\u{2028}'));
+        assert!(!escaped.contains('\u{2029}'));
+    }
+
+    #[test]
+    fn round_trips_as_json() {
+        // all three hazards in the title: `</script>`, U+2028, U+2029.
+        let title = "goal </script> \u{2028}\u{2029}end";
+        let state = SlotState::Showing {
+            id: uuid::Uuid::new_v4(),
+            title: title.to_string(),
+            body: "b".to_string(),
+            event_type: EventType::Generic,
+            priority: Priority::Medium,
+            signal: EventSignal::Generic,
+            expanded: false,
+            source: None,
+            category: None,
+            published_at_ms: None,
+            link: None,
+        };
+        let escaped = escape_for_eval_splice(&serde_json::to_string(&state).unwrap());
+
+        // the escapes are valid JSON escapes, so the output is safe for JS
+        // AND still the same data: it parses, and the value is unchanged.
+        let parsed: serde_json::Value =
+            serde_json::from_str(&escaped).expect("escaped output must still parse as JSON");
+        assert_eq!(parsed["title"].as_str().unwrap(), title);
     }
 }
