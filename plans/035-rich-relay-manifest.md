@@ -5,8 +5,10 @@
 > If anything in "STOP conditions" occurs, stop and report. When done,
 > update this plan's status row in `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat d926977..HEAD -- notchtap src-tauri/src/http.rs src-tauri/src/event.rs src/components/Manifest.tsx`
-> On any change, re-verify the excerpts below; mismatch = STOP.
+> **Drift check (run first)**: `git diff --stat 339156a..HEAD -- notchtap src-tauri/src/event.rs src-tauri/src/queue.rs src-tauri/src/http.rs src-tauri/src/rss_poller.rs src-tauri/src/settings.rs src/useSlotState.ts src/components/StatusRailCard.tsx src/components/Manifest.tsx`
+> On any change, re-verify the excerpts below; mismatch = STOP. (Baseline
+> re-stamped d926977 → 339156a in the 2026-07-19 reconcile; the watch list
+> now also covers the files plan 033 touched.)
 
 ## Status
 
@@ -27,6 +29,24 @@
   + settings.rs:536, TS `SlotState` fields non-optional so the
   compiler-lists-fixtures claim holds); claude-hook contract re-verify
   STOP added (was cmux-only), git-status criterion added
+- **Reconciled**: 2026-07-19 at `339156a` (`/improve execute` pre-flight,
+  per closing-the-loop "don't hand a stale plan to an executor"). Plan 033
+  landed since `d926977` and rewrote the shared surfaces this plan extends;
+  every excerpt below was re-verified against `339156a`. Material changes:
+  (1) `SlotState::Showing` now carries two **required** fields
+  `queue_total`/`queue_done` (plan 033) that every full literal must set —
+  `subtitle`/`details` join them, not replace the four EventMeta mirrors;
+  (2) `src/components/StatusRailCard.tsx` **added to scope** — it is the
+  component that renders `<Manifest>` (`:149`) and must thread the two new
+  props (Manifest is *not* rendered from App.tsx); (3) line refs refreshed —
+  `current_slot_state` is `queue.rs:480-510` (Showing literal `:493-507`),
+  the three `EventMeta` literals are `rss_poller.rs:332` & `:812` +
+  `settings.rs:536`, `EventMeta` is `event.rs:127-132`, `NotifyRequest` is
+  `http.rs:110`; (4) both `.detail-value` CSS rules already exist
+  (`styles.css:410`, `preview-overlay.css:350`) — extend, don't duplicate;
+  (5) the generic Manifest Message cell now renders `renderInlineMarkdown`
+  (plan 032) — the append target (the generic `.manifest-inner` div) is
+  unchanged
 
 ## Decisions locked (operator, 2026-07-18)
 
@@ -56,17 +76,33 @@ operator wants the expanded card to show *what* is being asked
 exists only in the two hook payloads above — so the card gets a real
 information hierarchy instead of "Agent needs input" for everything.
 
-## Current state (verified at `d926977`)
+## Current state (re-verified at `339156a`, 2026-07-19)
 
-- `NotifyRequest` (`http.rs`) accepts `{title, body, priority?, signal,
-  source?}`; `EventMeta::default()` is set at the handler.
-- `EventMeta` (`event.rs:127-134`): `source/category/published_at_ms/link`,
-  all optional, presentation-only. `SlotState::Showing` mirrors them;
-  `queue.rs:385-402` (`current_slot_state`) is the single passthrough.
+- `NotifyRequest` (`http.rs:110`) accepts `{title, body, priority?, signal,
+  source?}` (title/body are `Option`, `signal` is `#[serde(default)]`); the
+  `/notify` handler builds `meta: EventMeta::default()` (`http.rs:179`).
+- `EventMeta` (`event.rs:127-132`): `source/category/published_at_ms/link`,
+  all optional, presentation-only; derives `Default` + `#[serde(default)]`.
+  Its three full literals are `rss_poller.rs:332` & `:812` + `settings.rs:536`.
+- `SlotState::Showing` (`event.rs:146-164`) mirrors those four **and** carries
+  two required plan-033 fields `queue_total: u32`/`queue_done: u32` (the enum
+  has no `Default`, so every full literal must list all fields).
+  `current_slot_state` (`queue.rs:480-510`, Showing literal `:493-507`) is the
+  single passthrough. The other full `SlotState::Showing { … }` literals the
+  compiler will flag: the two `event.rs` snapshot tests (`:277`, `:315`) and
+  two test literals (`queue.rs:1696`, `lib.rs:1281`).
 - CLI `notchtap`: flags only; `--subtitle` folds into the body as
-  `"<subtitle> — <body>"`; cmux auto-detect via `CMUX_NOTIFICATION_BODY`.
-- `Manifest.tsx` generic branch: two cells (Message, Source/Control);
-  news branch: three cells.
+  `"<subtitle> — <body>"` (`notchtap:83-85`); cmux auto-detect via
+  `CMUX_NOTIFICATION_BODY` (`:91`).
+- `Manifest.tsx` is rendered by `StatusRailCard.tsx:149`, which passes each
+  prop from `slot`. Generic branch (`Manifest.tsx:71-84`): two cells —
+  Message (now `renderInlineMarkdown(body)`, class `detail-value message`,
+  plan 032) and Source/Control. News branch: three cells (unchanged).
+- TS `SlotState` "showing" (`useSlotState.ts:27-44`) already has required
+  `queueTotal`/`queueDone`, validated by `isNonNegativeInteger`. New required
+  `subtitle`/`details` there make `tsc` list every inline showing fixture
+  (`App.test.tsx`, `useSlotState.test.ts`, `StatusRailCard.test.tsx`,
+  `SettingsApp.tsx` preview samples).
 - cmux hook JSON (verified against cmux.com/docs/notifications):
   `{notification:{title,subtitle,body}, context:{cwd,…}, effects:{…}}`
   on stdin; a hook must emit valid JSON on stdout or cmux falls back to
@@ -79,7 +115,7 @@ information hierarchy instead of "Agent needs input" for everything.
 |---|---|---|
 | Rust tests | `cargo test` from `src-tauri/` | all pass |
 | Frontend tests | `npx vitest run` | all pass |
-| CLI + hook syntax | `sh -n notchtap hooks/*.sh` | exit 0 |
+| CLI + hook syntax | `for f in notchtap hooks/notchtap-claude-hook.sh hooks/notchtap-cmux-hook.sh; do echo "== $f"; sh -n "$f" || echo "SYNTAX FAIL: $f"; done` | each file printed, no `SYNTAX FAIL` line (`sh -n f1 f2` only checks f1 — must loop) | 
 | Typecheck/build | `npx tsc --noEmit && npx vite build` | exit 0 |
 
 ## Scope
@@ -94,11 +130,22 @@ information hierarchy instead of "Agent needs input" for everything.
 - `src-tauri/src/http.rs` — request fields + `sanitize_details` caps (+ tests)
 - `notchtap` CLI — `--subtitle` as field, repeatable `--detail Label=Value`
 - `hooks/notchtap-claude-hook.sh`, `hooks/notchtap-cmux-hook.sh` (new)
-- `src/useSlotState.ts` validation; `src/components/Manifest.tsx` (variant A);
-  `src/styles.css` + `src/settings/preview-overlay.css`
-  (`.detail-value { overflow-wrap: anywhere; }`); tests — **every TS
-  `SlotState` fixture/preview-sample constructor gains
-  `subtitle`/`details`** (compiler-listed)
+- `src/useSlotState.ts` — `SlotState` "showing" gains required
+  `subtitle: string | null` + `details: {label,value}[]`, plus validation
+- `src/components/Manifest.tsx` (variant A) — new `subtitle`/`details` props
+- `src/components/StatusRailCard.tsx` — thread `subtitle={slot.subtitle}`
+  and `details={slot.details}` into `<Manifest>` (`:149`). **Without this the
+  new cells never reach the real render path** — and a test that renders a
+  bare `<Manifest subtitle=… details=…/>` would still pass, so it is not
+  evidence the feature works; test through `StatusRailCard`
+- `src/styles.css` + `src/settings/preview-overlay.css` — add
+  `overflow-wrap: anywhere;` to the **existing** `.detail-value` rules
+  (`styles.css:410`; `.appearance-preview .detail-value` at
+  `preview-overlay.css:350`); do NOT add a duplicate selector
+- tests — **every inline TS `SlotState` showing fixture / preview-sample
+  gains `subtitle`/`details`** (compiler-listed; the `as unknown as
+  SlotState` invalid-payload casts in `useSlotState.test.ts` stay untouched —
+  they exist to be rejected by the validator)
 - `docs/ARCHITECTURE.md` §7 cli-contract paragraph (subtitle amendment +
   hook paths), `docs/V3_6_TECHNICAL_SPEC.md` wire schema,
   `docs/TESTING_STRATEGY.md` §4.3 cases + §0 counts
@@ -121,12 +168,19 @@ information hierarchy instead of "Agent needs input" for everything.
 
 ### Step 1: Rust plumbing
 
-`DetailItem` (Serialize/Deserialize/PartialEq). `EventMeta` gains
-`subtitle: Option<String>`, `details: Vec<DetailItem>` (both
-`#[serde(default)]`-covered). `SlotState::Showing` gains the same two
-(camelCase: `subtitle`, `details`). `current_slot_state` passes them
-through. Update the two event.rs snapshot tests (`subtitle` null-or-string,
-`details` array). Queue test: an enqueued event's details appear in
+`DetailItem { label: String, value: String }` (Serialize/Deserialize/
+PartialEq). `EventMeta` gains `subtitle: Option<String>`,
+`details: Vec<DetailItem>` (both covered by its existing `#[serde(default)]`;
+its three full literals — `rss_poller.rs:332` & `:812`, `settings.rs:536` —
+each get `subtitle: None, details: Vec::new()`, compiler-flagged).
+`SlotState::Showing` gains the same two (camelCase on the wire: `subtitle`,
+`details`) **beside its existing required `queue_total`/`queue_done`** — so
+every full literal must list them: `current_slot_state` (the passthrough —
+copy from `item.event.meta`), the two `event.rs` snapshot tests (`:277`,
+`:315`), and the two test literals (`queue.rs:1696`, `lib.rs:1281`, where
+`None`/empty is fine). Update the two event.rs snapshot tests (`subtitle`
+null-or-string, `details` array — note they already assert
+`queueTotal`/`queueDone`). Queue test: an enqueued event's details appear in
 `current_slot_state`.
 
 ### Step 2: `/notify` schema + caps
@@ -134,7 +188,11 @@ through. Update the two event.rs snapshot tests (`subtitle` null-or-string,
 `NotifyRequest` gains `subtitle: Option<String>`,
 `details: Option<Vec<DetailItem>>`. `sanitize_details`: drop empty
 labels, take ≤ 8, truncate label/value (40/200 chars + `…`); subtitle ≤
-120. Empty-string subtitle → `None`. Tests: full round-trip (POST with
+120. Empty-string subtitle → `None`. Wire the sanitized values into the
+`/notify` handler's `EventMeta`: it currently builds `EventMeta::default()`
+at `http.rs:179` — set `subtitle`/`details` there (the other three
+`EventMeta::default()` sites, `:513`/`:673`/`:765`, are tests — leave them,
+`Default` now covers the new fields). Tests: full round-trip (POST with
 both fields → `current_slot_state` shows them), caps applied, absent
 fields → `None`/empty (back-compat).
 
@@ -169,14 +227,25 @@ present, backgrounded, `exit 0`.
 
 ### Step 5: Frontend
 
-`useSlotState.ts`: `subtitle` null-or-string; `details` an array whose
-items have string `label`/`value`. `Manifest.tsx` generic branch appends,
-after the two existing cells: a `Subtitle` cell when present, then one
-cell per detail pair (`detail-label` = label, `detail-value` = value).
-`.detail-value { overflow-wrap: anywhere; }` in both CSS files. Tests:
-validator cases; expanded generic card renders subtitle + detail cells;
-collapsed card renders neither; a `details: "nope"` payload falls back
-to empty.
+`useSlotState.ts`: add required `subtitle: string | null` +
+`details: {label,value}[]` to the `SlotState` "showing" type, and validate
+in `isValidSlotState` (`subtitle` null-or-string; `details` an array whose
+items are objects with string `label`/`value` — mirror the existing
+`isNonNegativeInteger` helper style). `Manifest.tsx`: add `subtitle` +
+`details` props; the generic branch appends, after the two existing cells,
+a `Subtitle` cell when present, then one cell per detail pair
+(`detail-label` = label, `detail-value` = value; render as plain text, not
+markdown — per locked layout A, and details come from untrusted hook input).
+**`StatusRailCard.tsx:149`: thread `subtitle={slot.subtitle}` and
+`details={slot.details}` into `<Manifest>`** — the render path runs through
+here; every inline showing fixture in the four test/preview files gains the
+two fields (tsc lists them). Add `overflow-wrap: anywhere;` to the existing
+`.detail-value` rule in `styles.css` (`:410`) and the
+`.appearance-preview .detail-value` rule in `preview-overlay.css` (`:350`) —
+no duplicate selectors. Tests (exercise the real path via `StatusRailCard`,
+not a bare `<Manifest>`): validator cases; expanded generic card renders
+subtitle + detail cells; collapsed card renders neither; a `details: "nope"`
+payload falls back to empty.
 
 ### Step 6: Docs
 
