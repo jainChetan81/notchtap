@@ -214,9 +214,9 @@
   display: -webkit-box;
   margin-top: 4px;
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.55);
-  font-size: 11px;
-  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 12px;
+  line-height: 1.35;
   white-space: normal;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -289,6 +289,12 @@
   color: rgba(255, 255, 255, 0.74);
   font-size: 11px;
   line-height: 1.45;
+}
+
+.appearance-preview .detail-value.message {
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .appearance-preview .idle-view {

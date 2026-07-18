@@ -260,9 +260,9 @@ body {
   display: -webkit-box;
   margin-top: 4px;
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.55);
-  font-size: 11px;
-  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 12px;
+  line-height: 1.35;
   white-space: normal;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
@@ -337,6 +337,14 @@ body {
   color: rgba(255, 255, 255, 0.74);
   font-size: 11px;
   line-height: 1.45;
+}
+
+/* the Message cell is the one manifest field that carries full prose —
+   it gets the same prominence treatment as the compact .body (plan 032). */
+.detail-value.message {
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .idle-view {

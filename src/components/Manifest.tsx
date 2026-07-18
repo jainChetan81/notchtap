@@ -70,7 +70,7 @@ export function Manifest({
             <div className="manifest-inner">
               <div>
                 <div className="detail-label">Message</div>
-                <div className="detail-value">{body}</div>
+                <div className="detail-value message">{body}</div>
               </div>
               <div>
                 <div className="detail-label">Source / Control</div>
