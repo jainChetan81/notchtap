@@ -17,17 +17,33 @@
   the same component — execute 023 FIRST if both are planned for the same
   session, then this plan's Step 1 wraps whatever 023 produced.
 - **Category**: perf
-- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `b43a7ca` 2026-07-18 (excerpts re-verified unchanged)
+- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed
+  to `b43a7ca` 2026-07-18 (excerpts re-verified unchanged);
+  **review-plan pass 2026-07-18**: code excerpts and CSS all re-verified
+  unchanged (zero drift `b43a7ca..HEAD` on the three in-scope files), but
+  the chunk-layout numbers in "Why this matters" / Step 1 were written
+  against a layout that no longer exists — today's two-entry build puts
+  lottie in a shared 679 KB `StatusRailCard-*.js` chunk loaded by BOTH
+  windows, with `main-*.js` a 2.6 KB stub. Premise and remedy unchanged
+  (the boot cost is real, and bigger than stated); all measurement
+  commands rewritten against the real layout. Also pinned the exact test
+  that needs async adjustment (one, not "check first").
 
 ## Why this matters
 
 Two measured idle costs in the permanent overlay webview:
 
-1. **lottie-web is statically bundled into the overlay's entry chunk**
-   (~250 KB of the 330 KB main chunk — verified by finding bodymovin
-   markers in `dist/assets/main-*.js`), parsed at every app boot and
-   resident forever, to support an animation that plays only when
-   `signal === "goal"`. `React.lazy` defers the cost to the first goal.
+1. **lottie-web is statically bundled into the boot-loaded chunk** —
+   re-measured 2026-07-18 against a fresh `dist/`: the two-entry build
+   (`index.html` + `settings.html`, see `vite.config.ts` rollupOptions)
+   hoists shared code into a chunk rollup names
+   `StatusRailCard-*.js` (679,093 bytes), which contains the bodymovin
+   markers and which BOTH `dist/index.html` and `dist/settings.html`
+   load at startup (`main-*.js` itself is only ~2.6 KB — do not measure
+   it). So lottie is parsed at every overlay boot AND every settings
+   open, resident forever, to support an animation that plays only when
+   `signal === "goal"`. `React.lazy` splits it into an async chunk
+   loaded on the first goal — both windows stop paying it at boot.
 2. **`.news-shade`'s drift animates `background-position`** — not a
    compositor-accelerated property, so WebKit repaints the card layer up
    to 60 fps for the whole time any news card is visible (with
@@ -52,7 +68,7 @@ export function GoalCelebration() {
 import + the conditional mount site with
 `rg -n "GoalCelebration" src/components/StatusRailCard.tsx`).
 
-`src/styles.css:340-349` + the reduced-motion override at 383-385:
+`src/styles.css:348-357` + the reduced-motion override at ~388-390:
 
 ```css
 .news-shade::before {
@@ -75,12 +91,18 @@ import + the conditional mount site with
 pseudo-element; the card has `isolation: isolate` (added by the goal-burst
 z-index fix — verify with `rg -n "isolation" src/styles.css`).
 
-Test context: `src/components/StatusRailCard.test.tsx` (14 tests) renders
-the card incl. the goal-signal path — read it before Step 1 to see how the
-goal state is driven; lazy-loading must not break those tests
-(vitest + Suspense: the test may need `await screen.findBy...` instead of
-sync queries for the lottie mount — only if a test actually asserts on the
-celebration's presence; check first).
+Test context: `src/components/StatusRailCard.test.tsx` (14 tests).
+Checked 2026-07-18 — exactly ONE test breaks under lazy loading:
+`it("applies pulse-goal and mounts the celebration on a goal signal")`
+(~line 92) asserts `container.querySelector(".goal-celebration")`
+synchronously right after `render()`, which returns null while the lazy
+chunk resolves — convert that assertion to an async wait
+(`await waitFor(...)` or `await screen.findBy...`-style, matching the
+file's existing testing-library idiom). The negative assertion in
+`it("applies pulse-red (without mounting the goal celebration) …")`
+(~line 109, expects `.goal-celebration` to be null) stays valid as-is —
+the lazy component is never rendered on that path. The two
+animation-end tests don't touch the celebration.
 
 ## Commands you will need
 
@@ -139,12 +161,19 @@ therefore resolves on the first goal, from local disk, no network. The CSS
 burst/overshoot on the card fires instantly regardless; a few frames of
 lottie delay on the very first goal is the accepted trade.)
 
-**Verify**: `npx vitest run` → all pass (adjust to `findBy*` only where a
-test asserts the celebration's mount — see Current state). Then
-`npx vite build` and check the split:
-`ls dist/assets/ | grep -i goal` (or a new chunk appears) AND the main
-chunk shrank: `wc -c dist/assets/main-*.js` — expect roughly 250 KB
-smaller than 330 KB. Quote both numbers in your report.
+**Verify**: `npx vitest run` → all pass (the one async-adjusted test —
+see Current state). Then `npx vite build` and check the split (do NOT
+measure `main-*.js` — it's a ~2.6 KB entry stub; the boot-loaded weight
+lives in the shared `StatusRailCard-*.js` chunk):
+1. `for f in dist/assets/*.js; do printf "%s: " "$f"; grep -c bodymovin "$f" || true; done`
+   → bodymovin markers appear in exactly ONE chunk, a NEW one (rollup
+   will name it `GoalCelebration-*.js` or similar), and that chunk is
+   referenced by NEITHER `dist/index.html` nor `dist/settings.html`
+   (`grep -o 'assets/[^"]*\.js' dist/index.html dist/settings.html` must
+   not list it — it loads only via dynamic import).
+2. `wc -c dist/assets/StatusRailCard-*.js` (or whatever the shared chunk
+   is now named) → expect roughly 250–300 KB smaller than the current
+   679,093 bytes. Quote before/after bytes in your report.
 
 ### Step 2: Transform-based shader drift
 
@@ -197,18 +226,22 @@ green, async-adjusted at most.
 ## Done criteria
 
 - [ ] `grep -c 'lazy(() => import' src/components/StatusRailCard.tsx` → 1
-- [ ] `grep -c "background-position" src/styles.css` → 0
+      (baseline today: 0)
+- [ ] `grep -c "background-position" src/styles.css` → 0 (baseline
+      today: 1 — the single `shade-drift` keyframes line)
 - [ ] `npx vitest run`, `npx tsc --noEmit`, `npx vite build` all exit 0
-- [ ] Main chunk size reduction reported (before/after bytes)
+- [ ] bodymovin in exactly one non-boot chunk (Step 1's check 1) and the
+      shared-chunk shrink reported (before/after bytes vs 679,093)
 - [ ] Visual check reported (done or handed to operator)
 - [ ] `plans/README.md` status row updated
 
 ## STOP conditions
 
-- The main chunk does NOT shrink after Step 1 (lottie got pulled into the
-  shared chunk anyway) — report the chunk layout; the fix may need the
-  JSON import moved inside the lazy module (it already is) or vite
-  `manualChunks`, which is out of scope.
+- After Step 1, bodymovin markers still appear in a chunk that
+  `dist/index.html` or `dist/settings.html` references (rollup pulled
+  lottie back into the shared chunk) — report the chunk layout; the fix
+  may need the JSON import moved inside the lazy module (it already is)
+  or vite `manualChunks`, which is out of scope.
 - A StatusRailCard test asserts synchronous celebration mount in a way
   `findBy*` can't fix cleanly — report rather than weakening the test.
 - Plan 023 landed first and restructured the celebration into pure CSS
