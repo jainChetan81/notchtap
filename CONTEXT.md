@@ -42,8 +42,10 @@ in `docs/ARCHITECTURE.md`.
   moves into the Slot. the engine's decision alone; the frontend never
   promotes.
 - **Engine** — the one module through which every change to the Slot
-  and the Waiting lines flows (plan 037 — planned; today its guarantees
-  are a convention spread across several code paths). only the Engine
+  and the Waiting lines flows (plan 037 — landed 2026-07-19 as
+  `src-tauri/src/engine.rs`: the queue, the wake, and the live-match
+  handle are private to it, so its guarantees are structural, not a
+  convention spread across code paths). only the Engine
   Promotes; a change applied through it can never miss a Rotation
   deadline or fail to publish the resulting Slot change to the overlay
   — by construction, not by discipline. accepted Events reach
