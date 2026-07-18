@@ -20,6 +20,11 @@
 - **Depends on**: none
 - **Category**: docs / dx
 - **Planned at**: commit `a58f115`, 2026-07-18
+- **Reviewed**: 2026-07-18 at `1add02e` (review-plan pass, two
+  concurrent sessions converging on the same findings) — drift check
+  clean, every excerpt re-verified against the live tree, verification
+  gates tightened (line-split "has six" grep, machine-checkable §17
+  check, generalized working-tree guard)
 
 ## Why this matters
 
@@ -72,12 +77,18 @@ files drifted — grep, don't trust raw numbers):
 3. `AGENTS.md:23` — same "six invoke commands total" sentence as
    CLAUDE.md:23 (the two files mirror each other; keep them mirrored).
 4. `AGENTS.md:176-178` — "the settings window … has six / invoke
-   commands, gated per-window."
+   commands, gated per-window." **Warning**: "six" and "invoke" are on
+   *different lines* here ("has six\ninvoke commands"), so a
+   single-line `grep "six invoke"` passes even if this spot is left
+   unfixed — the verify step greps `"has six"` separately for exactly
+   this reason.
 5. `docs/V5_TECHNICAL_SPEC.md:19` — "…a fourth tray item, six invoke
-   commands, config validation…". Note the same file's `build.rs`
-   snippet (~line 82) and command table (~line 123) already list all
-   seven — the intro line is the only stale spot; the file is
-   internally inconsistent.
+   commands, config validation…". Change ONLY "six invoke commands" →
+   "seven invoke commands"; "a fourth tray item" is about the tray, not
+   the command count — leave it. The same file's `build.rs` snippet
+   (~line 82) and command table (~line 123) already list all seven —
+   the intro line is the only stale spot; the file is internally
+   inconsistent.
 6. `docs/ARCHITECTURE.md:507` — "a second, separately-scoped webview
    with exactly four invoke commands". This sits inside an "amended
    2026-07-17 (v5, §17)" block. ARCHITECTURE.md is the locked-decisions
@@ -140,9 +151,14 @@ software.
 - `docs/V3_6_TECHNICAL_SPEC.md` lines 440/678/794 — already amended by
   plan 015.
 - `.github/workflows/ci.yml` — correct as-is.
-- The uncommitted working-tree changes another session may have in
-  `plans/022-unpark-deep-testing.md`, `prototype/status-rail.html`,
-  `src/settings/preview-overlay.css` — never revert or stage them.
+- Any pre-existing uncommitted or untracked working-tree changes.
+  Concurrent sessions share this repo's tree and the exact set drifts
+  (at plan-time it was `plans/022…`/`prototype/status-rail.html`/
+  `src/settings/preview-overlay.css`; at review-time it was
+  `CONTEXT.md`/`plans/README.md`/`plans/037-*` — do not trust either
+  list). Record `git status --short` BEFORE your first edit; whatever
+  it shows is another session's work — never revert, stage, or commit
+  it.
 
 ## Git workflow
 
@@ -181,7 +197,8 @@ software.
 
 **Verify**:
 `grep -rn "six invoke\|four invoke" CLAUDE.md AGENTS.md docs/V5_TECHNICAL_SPEC.md` → no matches;
-`grep -rn "four invoke" docs/ARCHITECTURE.md` → either no matches or only inside a sentence that also states seven;
+`grep -n "has six" AGENTS.md` → no matches (catches the line-split "has six\ninvoke commands" that the previous grep can't see);
+`grep -n "seven invoke" docs/ARCHITECTURE.md` → ≥1 match (in the §17 amendment; the historical "four" may remain in the same sentence);
 `grep -c get_default_config CLAUDE.md AGENTS.md` → ≥1 each.
 
 ### Step 2: Fix the v3.6 rotation-driver prose (item 7)
@@ -253,12 +270,13 @@ touched something you shouldn't have (you'll know from `git status`).
 Machine-checkable. ALL must hold:
 
 - [ ] `grep -rn "six invoke\|four invoke" CLAUDE.md AGENTS.md docs/V5_TECHNICAL_SPEC.md` → no matches
+- [ ] `grep -n "has six" AGENTS.md` → no matches (the count there is line-split; see Current state item 4)
 - [ ] `grep -c get_default_config CLAUDE.md` ≥ 1 and same for AGENTS.md
-- [ ] `docs/ARCHITECTURE.md` §17 amendment mentions the current count (seven) without deleting the historical "four" context
+- [ ] `grep -n "seven invoke" docs/ARCHITECTURE.md` → ≥1 match, and the §17 amendment still shows the historical "four" context (amend, don't overwrite)
 - [ ] `grep -n "250ms tick decides" docs/V3_6_TECHNICAL_SPEC.md` → no matches
 - [ ] `grep -n "biome ci" CLAUDE.md AGENTS.md` → ≥1 match each
 - [ ] `justfile` contains a `setup:` recipe running `npm ci`; `test-all` does NOT depend on it
-- [ ] `git status` shows modifications only to in-scope files (the pre-existing uncommitted changes to `plans/022…`, `prototype/status-rail.html`, `src/settings/preview-overlay.css` and untracked `testing/` belong to another session — leave them exactly as found, unstaged)
+- [ ] `git status --short` shows, beyond the pre-existing entries you recorded before your first edit (another session's work — untouched, unstaged), modifications ONLY to in-scope files
 - [ ] `plans/README.md` status row updated
 
 ## STOP conditions
@@ -282,3 +300,7 @@ Stop and report back (do not improvise) if:
   list)" to make future drift cheaper.
 - CLAUDE.md and AGENTS.md are mirrors; a reviewer should diff the two
   files' edited regions against each other.
+- Plans 032–035 (the status-rail redesign batch) will touch adjacent
+  regions of these same docs when they land — whoever lands second
+  reconciles textually rather than assuming a clean merge (see the
+  "026 vs 032–035" entry in `plans/README.md`'s dependency notes).
