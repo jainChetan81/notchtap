@@ -78,6 +78,11 @@ impl<R: tauri::Runtime> Engine<R> {
     /// queue time), locks, runs `f`, captures slot_state_if_changed,
     /// unlocks, notify_waiters, emits. Emit stays after unlock — the
     /// known deferred reordering (plans/README.md); now one site.
+    // Today every async mutation is an ingest (`accept`); `apply` is the
+    // door the next async mutation site must walk through — the seam only
+    // works if it exists before it's needed. Exercised by this module's
+    // tests.
+    #[allow(dead_code)]
     pub async fn apply<T>(&self, f: impl FnOnce(&mut SingleSlotQueue, Instant) -> T) -> T {
         let now = Instant::now();
         let (out, slot_change) = {
@@ -128,12 +133,12 @@ impl<R: tauri::Runtime> Engine<R> {
         f(&q)
     }
 
-    /// The one ingest path (replaces http's `enqueue_and_emit`, rss's
-    /// inline loop, AND espn's `enqueue_and_fan_out`): enqueue with the
+    /// The one ingest path (replaces http's old shared enqueue helper,
+    /// rss's inline loop, AND espn's old fan-out helper): enqueue with the
     /// mutate→wake→emit protocol, then Connector fan-out. The CONTEXT.md
     /// Connector rule is encoded HERE: an Event whose origin is
     /// SourceKind::News is never offered. QueueFull returns early — no
-    /// wake, no offer (`enqueue_and_emit`'s semantics): a malformed
+    /// wake, no offer (the old shared helper's semantics): a malformed
     /// `/notify` request never reaches this function at all (the
     /// title/body `MissingField` checks in `notify_handler` return a 400
     /// before an `Event` is even constructed), and every accepted event
@@ -344,7 +349,7 @@ mod tests {
 
     #[tokio::test]
     async fn apply_wakes_and_emits() {
-        // Generalized port of http.rs's enqueue_and_emit_wakes_the_heartbeat
+        // Generalized port of http.rs's old wake regression test
         // (plan 015 review follow-up): registering the waiter *before* the
         // call via `enable()` proves the wake fires — `notify_waiters()`
         // only wakes tasks already parked, it never queues a permit for a
@@ -389,7 +394,7 @@ mod tests {
         // The CONTEXT.md Connector rule, encoded in `accept`: every accepted
         // event is offered EXCEPT News-origin ones. First coverage of this
         // rule — before plan 037, a News test notification leaked to
-        // telegram via `enqueue_and_emit`'s offer-all loop.
+        // telegram via the old shared enqueue path's offer-all loop.
         let app = tauri::test::mock_app();
         let (connector, mut rx) = test_connector();
         let engine = Engine::new(
@@ -489,6 +494,45 @@ mod tests {
         assert!(
             rotated.is_ok(),
             "expected the idle-parked rotation loop to wake on accept and rotate the item out within 3s"
+        );
+    }
+
+    #[tokio::test]
+    async fn rotation_loop_rotates_out_via_deadline_sleep_not_polling() {
+        // plan 015, ported from lib.rs's
+        // heartbeat_rotates_out_via_deadline_sleep_not_polling: the rotation
+        // loop sleeps until the visible item's rotation deadline (or forever
+        // when idle) instead of polling a fixed 250ms interval — this proves
+        // the sleep still fires and rotates the item out once its window
+        // elapses, driven purely by the deadline (plus apply's wake after
+        // the enqueue, the same wake every mutation path performs).
+        let app = tauri::test::mock_app();
+        let engine = test_engine(&app);
+        engine.spawn_rotation();
+
+        let mut short_lived = event(Priority::Medium);
+        short_lived.rotation = RotationSpec::OneShot { ttl_secs: 1 };
+        engine
+            .apply(|q, now| q.enqueue(short_lived, now).unwrap())
+            .await;
+        assert!(matches!(
+            engine.read(|q| q.current_slot_state()).await,
+            SlotState::Showing { .. }
+        ));
+
+        let rotated = tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                if engine.read(|q| q.current_slot_state()).await == SlotState::Empty {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await;
+
+        assert!(
+            rotated.is_ok(),
+            "expected the item to rotate out via the deadline-based rotation loop within 3s"
         );
     }
 

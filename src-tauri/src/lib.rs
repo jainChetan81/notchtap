@@ -18,19 +18,16 @@ mod settings;
 mod status;
 
 use std::sync::{Arc, Mutex as StdMutex, Once, OnceLock};
-use std::time::{Duration, Instant};
 
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::webview::PageLoadEvent;
 use tauri::{ActivationPolicy, Manager};
-use tokio::sync::Mutex;
 
 use crate::config::Config;
-use crate::event::emit_slot_state;
+use crate::engine::Engine;
 use crate::queue::SingleSlotQueue;
 use crate::settings::AppearanceChangedPayload;
-use crate::status::{emit_status_state, status_state_if_changed, LiveMatchSummary, StatusState};
 
 #[cfg(target_os = "macos")]
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
@@ -114,16 +111,9 @@ pub fn run() {
         initial_queue.pause();
         tracing::info!("start_paused: launching with promotion paused");
     }
-    let queue = Arc::new(Mutex::new(initial_queue));
-    // plan 015: one Notify shared everywhere the queue Arc is shared — any
-    // mutation site wakes the heartbeat so it recomputes its next rotation
-    // deadline instead of polling on a fixed interval.
-    let wake = Arc::new(tokio::sync::Notify::new());
-    // plan 034: the live-match summary the espn poller refreshes at the end
-    // of each poll pass and the heartbeat reads for the status-state rail.
-    // std mutex — the critical section is one clone, never held across an
-    // await, and never held at the same time as the queue lock.
-    let live_match: Arc<StdMutex<Option<LiveMatchSummary>>> = Arc::new(StdMutex::new(None));
+    // plan 037: the bare queue moves into `setup`, where Engine::new takes
+    // it BY VALUE and creates the wake and live-match handle internally —
+    // after that, no code outside engine.rs can hold any of the three.
     let start_paused = config.start_paused;
     // v5 settings window reads the *booted* config via get_config —
     // managed as state in setup, after the fields below are cloned out.
@@ -170,24 +160,6 @@ pub fn run() {
         }
     }
     let connectors = Arc::new(connector_handles);
-    let page_load_connectors = connectors.clone();
-    let poller_connectors = connectors.clone();
-
-    let setup_queue = queue.clone();
-    let rss_queue = queue.clone();
-    let page_load_queue = queue.clone();
-    #[cfg(target_os = "macos")]
-    let hotkey_queue = queue.clone();
-    let setup_wake = wake.clone();
-    let espn_wake = wake.clone();
-    let rss_wake = wake.clone();
-    let http_wake = wake.clone();
-    let tray_wake = wake.clone();
-    #[cfg(target_os = "macos")]
-    let hotkey_wake = wake.clone();
-    let heartbeat_live = live_match.clone();
-    let espn_live = live_match.clone();
-    let page_load_live = live_match.clone();
     let server_once = Arc::new(Once::new());
 
     tauri::Builder::default()
@@ -207,15 +179,20 @@ pub fn run() {
         .setup(move |app| {
             app.set_activation_policy(ActivationPolicy::Accessory);
             app.manage(StdMutex::new(config_for_state));
-            // These are also cloned into the /notify handler and pollers,
-            // but publishing them as managed state lets the settings commands
-            // enqueue test notifications through the same queue/connectors.
-            app.manage(queue.clone());
-            // plan 015 (review follow-up): managed so send_test_notification
-            // can wake the heartbeat too — every enqueue_and_emit caller
-            // needs the same Notify the heartbeat itself waits on.
-            app.manage(wake.clone());
-            app.manage(connectors.clone());
+            // plan 037: the ONE Engine. By-value construction means `run()`
+            // holds no queue/wake/live binding after this line — a retained
+            // alias is a compile error, not a convention. Managed as state
+            // so the settings commands (send_test_notification) and the
+            // on_page_load/server_once closures below can reach the same
+            // Engine the rotation loop and pollers run on.
+            let engine = Engine::new(
+                initial_queue,
+                app.handle().clone(),
+                connectors.clone(),
+                espn_enabled,
+                rss_enabled,
+            );
+            app.manage(engine.clone());
 
             let window = app
                 .get_webview_window("main")
@@ -245,12 +222,7 @@ pub fn run() {
             apply_overlay_native_config(&window)?;
 
             position_window(&window, mode, cutout)?;
-            let pause_item = build_tray(
-                app.handle(),
-                setup_queue.clone(),
-                tray_wake.clone(),
-                start_paused,
-            )?;
+            let pause_item = build_tray(app.handle(), engine.clone(), start_paused)?;
 
             // v3.6 spec §7.1: manual expand toggle, rust-side only — the
             // frontend never calls the plugin's JS api (receive-only
@@ -258,8 +230,7 @@ pub fn run() {
             // is needed for this.
             #[cfg(target_os = "macos")]
             {
-                let hotkey_queue_for_handler = hotkey_queue.clone();
-                let hotkey_wake_for_handler = hotkey_wake.clone();
+                let engine_for_handler = engine.clone();
                 let pause_item_for_handler = pause_item.clone();
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
@@ -271,43 +242,26 @@ pub fn run() {
                                         EXPAND_TOGGLE_SHORTCUT.1,
                                     )
                                 {
-                                    toggle_manual_expand(
-                                        app,
-                                        &hotkey_queue_for_handler,
-                                        &hotkey_wake_for_handler,
-                                    );
+                                    toggle_manual_expand(&engine_for_handler);
                                 } else if *shortcut
                                     == Shortcut::new(OPEN_STORY_SHORTCUT.0, OPEN_STORY_SHORTCUT.1)
                                 {
-                                    open_current_story(app, &hotkey_queue_for_handler);
+                                    open_current_story(&engine_for_handler);
                                 } else if *shortcut
                                     == Shortcut::new(DISMISS_SHORTCUT.0, DISMISS_SHORTCUT.1)
                                 {
-                                    dismiss_current(
-                                        app,
-                                        &hotkey_queue_for_handler,
-                                        &hotkey_wake_for_handler,
-                                    );
+                                    dismiss_current(&engine_for_handler);
                                 } else if *shortcut
                                     == Shortcut::new(
                                         PAUSE_TOGGLE_SHORTCUT.0,
                                         PAUSE_TOGGLE_SHORTCUT.1,
                                     )
                                 {
-                                    toggle_pause(
-                                        app,
-                                        &hotkey_queue_for_handler,
-                                        &pause_item_for_handler,
-                                        &hotkey_wake_for_handler,
-                                    );
+                                    toggle_pause(&engine_for_handler, &pause_item_for_handler);
                                 } else if *shortcut
                                     == Shortcut::new(SKIP_SHORTCUT.0, SKIP_SHORTCUT.1)
                                 {
-                                    skip_current(
-                                        app,
-                                        &hotkey_queue_for_handler,
-                                        &hotkey_wake_for_handler,
-                                    );
+                                    skip_current(&engine_for_handler);
                                 } else if *shortcut
                                     == Shortcut::new(
                                         OPEN_SETTINGS_SHORTCUT.0,
@@ -351,14 +305,10 @@ pub fn run() {
             // ARCHITECTURE.md §17's "richer than a toggle lives in
             // Settings" rule). Each poller below simply doesn't spawn when
             // its `_enabled` flag is false.
-            spawn_heartbeat(
-                app.handle().clone(),
-                setup_queue.clone(),
-                setup_wake,
-                heartbeat_live,
-                espn_enabled,
-                rss_enabled,
-            );
+            // plan 037: the rotation loop (formerly spawn_heartbeat) lives
+            // inside the Engine — it is the consumer of the wake, so the
+            // wake never escapes engine.rs.
+            engine.spawn_rotation();
 
             // espn poller (v2 spec §3) — config-gated: `espn_enabled =
             // false` means it never spawns. first poll only baselines
@@ -366,22 +316,16 @@ pub fn run() {
             // anything a listener would have shown.
             if espn_enabled {
                 poller::spawn_espn_poller(
-                    app.handle().clone(),
-                    setup_queue,
-                    espn_wake,
-                    poller_connectors,
+                    engine.clone(),
                     espn_leagues,
                     espn_poll_secs,
                     espn_ttl_secs,
                     espn_priority,
-                    espn_live,
                 );
             }
             if rss_enabled {
                 rss_poller::spawn_rss_poller(
-                    app.handle().clone(),
-                    rss_queue,
-                    rss_wake,
+                    engine.clone(),
                     rss_feeds,
                     rss_poll_secs,
                     rss_ttl_secs,
@@ -399,11 +343,14 @@ pub fn run() {
             // this, the cli gets connection-refused — honest, not a silent
             // 200-drop.
             if payload.event() == PageLoadEvent::Finished && webview.label() == "main" {
-                let queue = page_load_queue.clone();
-                let eval_queue = page_load_queue.clone();
                 let app_handle = webview.app_handle().clone();
-                let connectors = page_load_connectors.clone();
-                let queue_wake = http_wake.clone();
+                // plan 037: retrieve the ONE Engine via managed state —
+                // this closure is built before `setup` runs, so it cannot
+                // capture the Engine; a second Engine::new here would
+                // create a second wake AND a second live-match handle no
+                // rotation loop waits on or writes to (the exact
+                // stall/desync class 015/036 fixed).
+                let engine = app_handle.state::<Engine>().inner().clone();
 
                 // slot-state is double-shielded against the
                 // listener-registration race (2026-07-17 review, this
@@ -411,36 +358,30 @@ pub fn run() {
                 // reads as *initial* state if it mounts after this moment;
                 // the emit reaches the listener if react mounted before it.
                 // one of the two always lands, and running on every page
-                // load (not once) covers reloads too. blocking_lock is
-                // safe here, same as the tray menu handler below: this
-                // callback runs off the tokio runtime, not on it.
+                // load (not once) covers reloads too — which is why the
+                // emit is UNCONDITIONAL (dedup deliberately bypassed).
+                // blocking_lock is safe here, same as the tray menu
+                // handler below: this callback runs off the tokio runtime,
+                // not on it.
                 {
-                    let current_state = eval_queue.blocking_lock().current_slot_state();
+                    let current_state = engine.emit_current_blocking();
                     let state_json =
                         serde_json::to_string(&current_state).unwrap_or_else(|_| "null".into());
                     let safe_json = escape_for_eval_splice(&state_json);
                     let _ = webview.eval(format!("window.__NOTCHTAP_SLOT_STATE__ = {safe_json};"));
-                    emit_slot_state(&app_handle, current_state);
                 }
 
                 // plan 034: the status rail gets the identical dual-path
                 // race shield — eval-planted global for late-mounting
                 // react, one emit for an already-registered listener, same
-                // escaping helper. Lock discipline: the live-match handle
-                // is read/cloned/dropped BEFORE the queue lock (nobody
-                // holds both at once), same as the heartbeat.
+                // escaping helper.
                 {
-                    let live_summary = page_load_live.lock().unwrap().clone();
-                    let current_status = {
-                        let q = eval_queue.blocking_lock();
-                        StatusState::snapshot(&q, live_summary, espn_enabled, rss_enabled)
-                    };
+                    let current_status = engine.emit_current_status_blocking();
                     let status_json =
                         serde_json::to_string(&current_status).unwrap_or_else(|_| "null".into());
                     let safe_json = escape_for_eval_splice(&status_json);
                     let _ =
                         webview.eval(format!("window.__NOTCHTAP_STATUS_STATE__ = {safe_json};"));
-                    emit_status_state(&app_handle, current_status);
                 }
 
                 // Double-shield the initial appearance values the same way as
@@ -482,14 +423,11 @@ pub fn run() {
                 server_once.call_once(move || {
                     let app_handle = app_handle.clone();
                     let state = http::AppState {
-                        queue,
-                        wake: queue_wake,
+                        engine: app_handle.state::<Engine>().inner().clone(),
                         default_ttl,
                         manual_default_priority,
                         cmux_priority,
                         cmux_ttl_secs,
-                        app_handle: app_handle.clone(),
-                        connectors,
                     };
                     tauri::async_runtime::spawn(async move {
                         let listener = match http::bind_listener(port).await {
@@ -621,40 +559,26 @@ fn position_window(
     }
 }
 
-fn toggle_pause<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-    queue: &Arc<Mutex<SingleSlotQueue>>,
-    pause_item: &MenuItem<R>,
-    wake: &Arc<tokio::sync::Notify>,
-) {
-    // menu events and global-shortcut handlers arrive on the main thread,
-    // outside the tokio runtime, so a blocking lock is safe here
-    debug_assert!(
-        tokio::runtime::Handle::try_current().is_err(),
-        "pause toggles must arrive off the tokio runtime; blocking_lock would deadlock"
-    );
-    let slot_change = {
-        let mut q = queue.blocking_lock();
+fn toggle_pause<R: tauri::Runtime>(engine: &Engine<R>, pause_item: &MenuItem<R>) {
+    // plan 037: the mutation goes through Engine::apply_blocking (which
+    // keeps the off-tokio-runtime debug_assert, wakes the rotation loop —
+    // plan 015: resume/pause may change the visible item's rotation
+    // deadline — and emits any slot-state change). The tray label stays
+    // at the caller, driven by the closure's return value: the Engine
+    // never touches menus.
+    let now_paused = engine.apply_blocking(|q, now| {
         if q.is_paused() {
             q.resume();
             // v3.6 spec §4.5: resume promotes immediately, not on the next
-            // heartbeat tick
-            q.tick(Instant::now());
-            let _ = pause_item.set_text("Pause");
-            q.slot_state_if_changed()
+            // rotation-loop pass
+            q.tick(now);
+            false
         } else {
             q.pause();
-            let _ = pause_item.set_text("Resume");
-            None
+            true
         }
-    };
-    // plan 015: resume (or pause) may change the visible item's rotation
-    // deadline — wake the heartbeat so it recomputes rather than waiting on
-    // whatever deadline it last slept toward.
-    wake.notify_waiters();
-    if let Some(state) = slot_change {
-        emit_slot_state(app, state);
-    }
+    });
+    let _ = pause_item.set_text(if now_paused { "Resume" } else { "Pause" });
 }
 
 /// v6: the tray is deliberately minimal — Pause/Resume, Settings…, Quit.
@@ -666,8 +590,7 @@ fn toggle_pause<R: tauri::Runtime>(
 /// items" rule, which this tray had not yet caught up to).
 fn build_tray<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
-    queue: Arc<Mutex<SingleSlotQueue>>,
-    wake: Arc<tokio::sync::Notify>,
+    engine: Engine<R>,
     start_paused: bool,
 ) -> tauri::Result<MenuItem<R>> {
     // v5 kill switch: a start_paused boot renders the toggle as "Resume"
@@ -687,7 +610,7 @@ fn build_tray<R: tauri::Runtime>(
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(move |app, event| match event.id().as_ref() {
-            "pause" => toggle_pause(app, &queue, &pause_item_for_handler, &wake),
+            "pause" => toggle_pause(&engine, &pause_item_for_handler),
             "settings" => open_settings_window(app),
             "quit" => app.exit(0),
             _ => {}
@@ -721,68 +644,6 @@ fn open_settings_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     }
 }
 
-fn spawn_heartbeat<R: tauri::Runtime>(
-    app: tauri::AppHandle<R>,
-    queue: Arc<Mutex<SingleSlotQueue>>,
-    wake: Arc<tokio::sync::Notify>,
-    live: Arc<StdMutex<Option<LiveMatchSummary>>>,
-    espn_enabled: bool,
-    rss_enabled: bool,
-) {
-    // Deadline-based (plan 015): sleeps until the visible item's rotation
-    // deadline (or forever when idle) and is woken by any queue mutation.
-    // Replaces the fixed 250ms tick — same observable behavior, ~0 idle
-    // wakeups. A small grace addition avoids sub-ms re-loops at the edge.
-    //
-    // plan 034: the heartbeat is also the SOLE status-state emitter.
-    // Every mutation already reaches it — plan 015's shared Notify is
-    // fired by `enqueue_and_emit` (all push paths), both pollers, and the
-    // hotkey/tray handlers — so each loop pass recomputes the StatusState
-    // under the same queue lock as the slot-state tick and emits only
-    // when it differs from the previous pass (`last_status`).
-    tauri::async_runtime::spawn(async move {
-        let mut last_status: Option<StatusState> = None;
-        loop {
-            // Arm the wake waiter *while holding the queue lock* (plan 036):
-            // every mutation site locks the queue before mutating and calls
-            // `notify_waiters()` after unlocking, so a waiter registered
-            // under the lock can never miss a mutation this iteration's
-            // `next_deadline()` didn't already see. Registering after the
-            // unlock (the original plan-015 shape) lost any wake that landed
-            // in the gap — fatal in the `None` branch, which parks with no
-            // fallback timer.
-            let notified = wake.notified();
-            tokio::pin!(notified);
-            let deadline = {
-                // plan 034 lock discipline: read/clone/drop the live-match
-                // handle BEFORE locking the queue — nobody holds both at
-                // the same time.
-                let live_summary = live.lock().unwrap().clone();
-                let mut q = queue.lock().await;
-                q.tick(Instant::now());
-                if let Some(state) = q.slot_state_if_changed() {
-                    emit_slot_state(&app, state);
-                }
-                let status = StatusState::snapshot(&q, live_summary, espn_enabled, rss_enabled);
-                if let Some(changed) = status_state_if_changed(&mut last_status, status) {
-                    emit_status_state(&app, changed);
-                }
-                notified.as_mut().enable();
-                q.next_deadline()
-            };
-            match deadline {
-                Some(at) => {
-                    tokio::select! {
-                        _ = tokio::time::sleep_until(tokio::time::Instant::from_std(at + Duration::from_millis(10))) => {}
-                        _ = notified.as_mut() => {}
-                    }
-                }
-                None => notified.await,
-            }
-        }
-    });
-}
-
 // v3.6 spec §7.1.1 + plan 033: with expand-all, every promotion starts
 // expanded, so the hotkey always flips — a press on an auto-expanded card
 // collapses it (render-only, and disarms the auto-retract); a press on a
@@ -791,56 +652,23 @@ fn spawn_heartbeat<R: tauri::Runtime>(
 // no-op guard is gone: there is no longer an "automatic for High" state
 // to protect, since automatic expansion is now universal.
 #[cfg(target_os = "macos")]
-fn toggle_manual_expand<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-    queue: &Arc<Mutex<SingleSlotQueue>>,
-    wake: &Arc<tokio::sync::Notify>,
-) {
-    let mut q = queue.blocking_lock();
-    q.toggle_expanded();
-    let slot_change = q.slot_state_if_changed();
-    drop(q);
-    // plan 015: expanded changes the rotation window, so the heartbeat's
-    // next deadline must be recomputed.
-    wake.notify_waiters();
-    if let Some(state) = slot_change {
-        emit_slot_state(app, state);
-    }
+fn toggle_manual_expand<R: tauri::Runtime>(engine: &Engine<R>) {
+    // plan 015: expanded changes the rotation window, so the rotation
+    // loop's next deadline must be recomputed — apply_blocking wakes it.
+    engine.apply_blocking(|q, _now| q.toggle_expanded());
 }
 
 #[cfg(target_os = "macos")]
-fn dismiss_current<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-    queue: &Arc<Mutex<SingleSlotQueue>>,
-    wake: &Arc<tokio::sync::Notify>,
-) {
-    let mut q = queue.blocking_lock();
-    q.dismiss_visible(Instant::now());
-    let slot_change = q.slot_state_if_changed();
-    drop(q);
-    wake.notify_waiters();
-    if let Some(state) = slot_change {
-        emit_slot_state(app, state);
-    }
+fn dismiss_current<R: tauri::Runtime>(engine: &Engine<R>) {
+    engine.apply_blocking(|q, now| q.dismiss_visible(now));
 }
 
 // ⌃⇧]: end the Visible item's turn as if its Rotation elapsed (Recurring
 // requeues, OneShot drops) — deliberately different from ⌃⇧X's dismiss,
 // which drops a Recurring item outright. See SingleSlotQueue::skip_visible.
 #[cfg(target_os = "macos")]
-fn skip_current<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-    queue: &Arc<Mutex<SingleSlotQueue>>,
-    wake: &Arc<tokio::sync::Notify>,
-) {
-    let mut q = queue.blocking_lock();
-    q.skip_visible(Instant::now());
-    let slot_change = q.slot_state_if_changed();
-    drop(q);
-    wake.notify_waiters();
-    if let Some(state) = slot_change {
-        emit_slot_state(app, state);
-    }
+fn skip_current<R: tauri::Runtime>(engine: &Engine<R>) {
+    engine.apply_blocking(|q, now| q.skip_visible(now));
 }
 
 /// Returns the normalized (parsed re-serialized) URL iff the link is a
@@ -857,17 +685,10 @@ fn openable_http_url(raw: &str) -> Option<String> {
 }
 
 #[cfg(target_os = "macos")]
-fn open_current_story<R: tauri::Runtime>(
-    _app: &tauri::AppHandle<R>,
-    queue: &Arc<Mutex<SingleSlotQueue>>,
-) {
-    let url = {
-        let q = queue.blocking_lock();
-        let Some(url) = q.current_link() else {
-            tracing::debug!("open story ignored: no visible article link");
-            return;
-        };
-        url.to_string()
+fn open_current_story<R: tauri::Runtime>(engine: &Engine<R>) {
+    let Some(url) = engine.read_blocking(|q| q.current_link().map(str::to_string)) else {
+        tracing::debug!("open story ignored: no visible article link");
+        return;
     };
 
     let Some(normalized) = openable_http_url(&url) else {
@@ -920,37 +741,35 @@ mod tests {
         }
     }
 
-    fn wake() -> Arc<tokio::sync::Notify> {
-        Arc::new(tokio::sync::Notify::new())
+    fn test_engine(app: &tauri::App<tauri::test::MockRuntime>) -> Engine<tauri::test::MockRuntime> {
+        Engine::new(
+            SingleSlotQueue::new(50),
+            app.handle().clone(),
+            Arc::new(Vec::new()),
+            false,
+            false,
+        )
     }
 
     #[test]
     fn toggle_manual_expand_collapses_an_auto_expanded_high_item() {
         let app = tauri::test::mock_app();
-        let mut inner = SingleSlotQueue::new(50);
-        // TODO(engine): routed through Engine in plan 037 step 5
-        inner
-            .enqueue(event(Priority::High), Instant::now())
-            .unwrap();
-        let queue = Arc::new(Mutex::new(inner));
+        let engine = test_engine(&app);
+        engine.apply_blocking(|q, now| q.enqueue(event(Priority::High), now).unwrap());
 
         // every promotion auto-expands (plan 033) — confirm that baseline
         // first, then prove the hotkey flips it: plan 008's High no-op
         // guard is deleted, so the press must collapse the card.
-        {
-            let q = queue.blocking_lock();
-            match q.current_slot_state() {
-                SlotState::Showing { expanded, .. } => {
-                    assert!(expanded, "High must auto-expand on promotion")
-                }
-                SlotState::Empty => panic!("expected Showing"),
+        match engine.read_blocking(|q| q.current_slot_state()) {
+            SlotState::Showing { expanded, .. } => {
+                assert!(expanded, "High must auto-expand on promotion")
             }
+            SlotState::Empty => panic!("expected Showing"),
         }
 
-        toggle_manual_expand(&app.handle().clone(), &queue, &wake());
+        toggle_manual_expand(&engine);
 
-        let q = queue.blocking_lock();
-        match q.current_slot_state() {
+        match engine.read_blocking(|q| q.current_slot_state()) {
             SlotState::Showing { expanded, .. } => {
                 assert!(!expanded, "hotkey must collapse an auto-expanded High item")
             }
@@ -961,32 +780,24 @@ mod tests {
     #[test]
     fn toggle_manual_expand_flips_expanded_for_non_high_priority() {
         let app = tauri::test::mock_app();
-        let mut inner = SingleSlotQueue::new(50);
-        // TODO(engine): routed through Engine in plan 037 step 5
-        inner
-            .enqueue(event(Priority::Medium), Instant::now())
-            .unwrap();
-        let queue = Arc::new(Mutex::new(inner));
+        let engine = test_engine(&app);
+        engine.apply_blocking(|q, now| q.enqueue(event(Priority::Medium), now).unwrap());
 
         // Medium auto-expands on promotion too (plan 033): the first press
         // collapses, the second re-expands.
-        toggle_manual_expand(&app.handle().clone(), &queue, &wake());
-        {
-            let q = queue.blocking_lock();
-            match q.current_slot_state() {
-                SlotState::Showing { expanded, .. } => {
-                    assert!(
-                        !expanded,
-                        "first press collapses an auto-expanded Medium item"
-                    )
-                }
-                SlotState::Empty => panic!("expected Showing"),
+        toggle_manual_expand(&engine);
+        match engine.read_blocking(|q| q.current_slot_state()) {
+            SlotState::Showing { expanded, .. } => {
+                assert!(
+                    !expanded,
+                    "first press collapses an auto-expanded Medium item"
+                )
             }
+            SlotState::Empty => panic!("expected Showing"),
         }
 
-        toggle_manual_expand(&app.handle().clone(), &queue, &wake());
-        let q = queue.blocking_lock();
-        match q.current_slot_state() {
+        toggle_manual_expand(&engine);
+        match engine.read_blocking(|q| q.current_slot_state()) {
             SlotState::Showing { expanded, .. } => assert!(expanded, "second press re-expands"),
             SlotState::Empty => panic!("expected Showing"),
         }
@@ -995,20 +806,15 @@ mod tests {
     #[test]
     fn dismiss_current_promotes_next_waiting_item() {
         let app = tauri::test::mock_app();
-        let mut inner = SingleSlotQueue::new(50);
-        // TODO(engine): routed through Engine in plan 037 step 5
-        inner
-            .enqueue(event(Priority::Medium), Instant::now())
-            .unwrap();
+        let engine = test_engine(&app);
+        engine.apply_blocking(|q, now| q.enqueue(event(Priority::Medium), now).unwrap());
         let next = event(Priority::Medium);
         let next_id = next.id;
-        inner.enqueue(next, Instant::now()).unwrap();
-        let queue = Arc::new(Mutex::new(inner));
+        engine.apply_blocking(|q, now| q.enqueue(next, now).unwrap());
 
-        dismiss_current(&app.handle().clone(), &queue, &wake());
+        dismiss_current(&engine);
 
-        let q = queue.blocking_lock();
-        match q.current_slot_state() {
+        match engine.read_blocking(|q| q.current_slot_state()) {
             SlotState::Showing { id, .. } => assert_eq!(id, next_id),
             SlotState::Empty => panic!("expected Showing"),
         }
@@ -1017,48 +823,52 @@ mod tests {
     #[test]
     fn dismiss_current_is_noop_when_slot_already_empty() {
         let app = tauri::test::mock_app();
-        let mut inner = SingleSlotQueue::new(50);
-        assert_eq!(inner.slot_state_if_changed(), Some(SlotState::Empty));
-        let queue = Arc::new(Mutex::new(inner));
+        let engine = test_engine(&app);
+        // consume the queue's initial Empty baseline (see the dismiss no-op
+        // assertion below) so the post-call state proves the handler
+        // changed nothing
+        engine.apply_blocking(|q, _now| {
+            assert_eq!(q.slot_state_if_changed(), Some(SlotState::Empty));
+        });
 
-        dismiss_current(&app.handle().clone(), &queue, &wake());
+        dismiss_current(&engine);
 
-        let mut q = queue.blocking_lock();
-        assert_eq!(q.current_slot_state(), SlotState::Empty);
-        assert!(q.slot_state_if_changed().is_none());
+        engine.apply_blocking(|q, _now| {
+            assert_eq!(q.current_slot_state(), SlotState::Empty);
+            assert!(q.slot_state_if_changed().is_none());
+        });
     }
 
     #[test]
     fn skip_current_requeues_recurring_and_promotes_next() {
         let app = tauri::test::mock_app();
-        let mut inner = SingleSlotQueue::new(50);
+        let engine = test_engine(&app);
         let mut recurring = event(Priority::Medium);
         recurring.rotation = RotationSpec::Recurring { display_secs: 8 };
         let recurring_id = recurring.id;
-        // TODO(engine): routed through Engine in plan 037 step 5
-        inner.enqueue(recurring, Instant::now()).unwrap();
+        engine.apply_blocking(|q, now| q.enqueue(recurring, now).unwrap());
         let next = event(Priority::Medium);
         let next_id = next.id;
-        inner.enqueue(next, Instant::now()).unwrap();
-        let queue = Arc::new(Mutex::new(inner));
+        engine.apply_blocking(|q, now| q.enqueue(next, now).unwrap());
 
-        skip_current(&app.handle().clone(), &queue, &wake());
+        skip_current(&engine);
 
-        let mut q = queue.blocking_lock();
-        match q.current_slot_state() {
-            SlotState::Showing { id, .. } => assert_eq!(id, next_id),
-            SlotState::Empty => panic!("expected Showing"),
-        }
-        // the skipped Recurring item survived — this is what distinguishes
-        // skip_current from dismiss_current (whose test proves the drop)
-        assert_eq!(q.total_waiting(), 1);
-        // and it comes back: skip the next item too and the recurring one
-        // promotes again
-        q.skip_visible(Instant::now());
-        match q.current_slot_state() {
-            SlotState::Showing { id, .. } => assert_eq!(id, recurring_id),
-            SlotState::Empty => panic!("expected recurring item to return"),
-        }
+        engine.apply_blocking(|q, now| {
+            match q.current_slot_state() {
+                SlotState::Showing { id, .. } => assert_eq!(id, next_id),
+                SlotState::Empty => panic!("expected Showing"),
+            }
+            // the skipped Recurring item survived — this is what distinguishes
+            // skip_current from dismiss_current (whose test proves the drop)
+            assert_eq!(q.total_waiting(), 1);
+            // and it comes back: skip the next item too and the recurring one
+            // promotes again
+            q.skip_visible(now);
+            match q.current_slot_state() {
+                SlotState::Showing { id, .. } => assert_eq!(id, recurring_id),
+                SlotState::Empty => panic!("expected recurring item to return"),
+            }
+        });
     }
 
     #[test]
@@ -1066,24 +876,23 @@ mod tests {
         let app = tauri::test::mock_app();
         let pause_item =
             MenuItem::with_id(app.handle(), "pause", "Pause", true, None::<&str>).unwrap();
-        let queue = Arc::new(Mutex::new(SingleSlotQueue::new(50)));
+        let engine = test_engine(&app);
 
-        toggle_pause(&app.handle().clone(), &queue, &pause_item, &wake());
+        toggle_pause(&engine, &pause_item);
         assert_eq!(pause_item.text().unwrap(), "Resume");
-        {
-            let mut q = queue.blocking_lock();
+        engine.apply_blocking(|q, now| {
             assert!(q.is_paused());
-            // TODO(engine): routed through Engine in plan 037 step 5
-            q.enqueue(event(Priority::Medium), Instant::now()).unwrap();
+            q.enqueue(event(Priority::Medium), now).unwrap();
             assert_eq!(q.current_slot_state(), SlotState::Empty);
-        }
+        });
 
-        toggle_pause(&app.handle().clone(), &queue, &pause_item, &wake());
+        toggle_pause(&engine, &pause_item);
         assert_eq!(pause_item.text().unwrap(), "Pause");
-        let q = queue.blocking_lock();
-        assert!(!q.is_paused());
-        assert!(matches!(q.current_slot_state(), SlotState::Showing { .. }));
-        assert_eq!(q.total_waiting(), 0);
+        engine.read_blocking(|q| {
+            assert!(!q.is_paused());
+            assert!(matches!(q.current_slot_state(), SlotState::Showing { .. }));
+            assert_eq!(q.total_waiting(), 0);
+        });
     }
 
     #[test]
@@ -1122,149 +931,19 @@ mod tests {
         // Empty slot → current_link() is None → early return before any
         // spawn. Proves the guard; the `open` subprocess stays unreached.
         let app = tauri::test::mock_app();
-        let mut inner = SingleSlotQueue::new(50);
+        let engine = test_engine(&app);
         // consume the queue's initial Empty baseline (see the dismiss no-op
         // test) so the post-call assertion proves the handler changed nothing
-        assert_eq!(inner.slot_state_if_changed(), Some(SlotState::Empty));
-        let queue = Arc::new(Mutex::new(inner));
+        engine.apply_blocking(|q, _now| {
+            assert_eq!(q.slot_state_if_changed(), Some(SlotState::Empty));
+        });
 
-        open_current_story(&app.handle().clone(), &queue);
+        open_current_story(&engine);
 
-        let mut q = queue.blocking_lock();
-        assert_eq!(q.current_slot_state(), SlotState::Empty);
-        assert!(q.slot_state_if_changed().is_none());
-    }
-
-    #[tokio::test]
-    async fn heartbeat_rotates_out_via_deadline_sleep_not_polling() {
-        // plan 015: the reworked heartbeat sleeps until the visible item's
-        // rotation deadline (or forever when idle) instead of polling a
-        // fixed 250ms interval — this proves the sleep still fires and
-        // rotates the item out once its window elapses, driven purely by
-        // the deadline (plus one `notify_waiters()` after the enqueue, the
-        // same wake every real mutation site now performs).
-        let app = tauri::test::mock_app();
-        let queue = Arc::new(Mutex::new(SingleSlotQueue::new(50)));
-        let heartbeat_wake = wake();
-
-        spawn_heartbeat(
-            app.handle().clone(),
-            queue.clone(),
-            heartbeat_wake.clone(),
-            Arc::new(StdMutex::new(None)),
-            false,
-            false,
-        );
-
-        let short_lived = Event {
-            id: uuid::Uuid::new_v4(),
-            event_type: EventType::Generic,
-            priority: Priority::Medium,
-            rotation: RotationSpec::OneShot { ttl_secs: 1 },
-            topic: None,
-            payload: EventPayload {
-                title: "t".to_string(),
-                body: "b".to_string(),
-            },
-            meta: EventMeta::default(),
-            signal: EventSignal::Generic,
-            origin: SourceKind::Manual,
-        };
-        {
-            let mut q = queue.lock().await;
-            // TODO(engine): routed through Engine in plan 037 step 5
-            q.enqueue(short_lived, Instant::now()).unwrap();
-            assert!(matches!(q.current_slot_state(), SlotState::Showing { .. }));
-        }
-        heartbeat_wake.notify_waiters();
-
-        let rotated = tokio::time::timeout(Duration::from_secs(3), async {
-            loop {
-                if queue.lock().await.current_slot_state() == SlotState::Empty {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(50)).await;
-            }
-        })
-        .await;
-
-        assert!(
-            rotated.is_ok(),
-            "expected the item to rotate out via the deadline-based heartbeat within 3s"
-        );
-    }
-
-    #[tokio::test]
-    async fn heartbeat_parked_idle_wakes_on_enqueue_and_rotates_out() {
-        // plan 036 regression: with the queue empty the heartbeat parks with
-        // no fallback timer, so an enqueue's `notify_waiters()` is its ONLY
-        // chance to learn about the new item. The original plan-015 shape
-        // registered the waiter *after* releasing the queue lock, so a wake
-        // landing in the unlock-to-park gap was lost and the card stuck past
-        // its rotation window; the waiter is now armed under the lock
-        // (`Notified::enable`). This exercises the fixed path end-to-end:
-        // idle-park → enqueue wakes → item rotates out on its deadline.
-        let app = tauri::test::mock_app();
-        let queue = Arc::new(Mutex::new(SingleSlotQueue::new(50)));
-        let heartbeat_wake = wake();
-
-        spawn_heartbeat(
-            app.handle().clone(),
-            queue.clone(),
-            heartbeat_wake.clone(),
-            Arc::new(StdMutex::new(None)),
-            false,
-            false,
-        );
-
-        // Give the heartbeat time to finish its first iteration and reach
-        // the idle park before the enqueue arrives.
-        tokio::time::sleep(Duration::from_millis(100)).await;
-
-        let short_lived = Event {
-            id: uuid::Uuid::new_v4(),
-            event_type: EventType::Generic,
-            priority: Priority::Medium,
-            rotation: RotationSpec::OneShot { ttl_secs: 1 },
-            topic: None,
-            payload: EventPayload {
-                title: "t".to_string(),
-                body: "b".to_string(),
-            },
-            meta: EventMeta::default(),
-            signal: EventSignal::Generic,
-            origin: SourceKind::Manual,
-        };
-        // The real shared enqueue path — it performs the wake itself.
-        crate::http::enqueue_and_emit(
-            &queue,
-            &heartbeat_wake,
-            &[],
-            &app.handle().clone(),
-            short_lived,
-            false,
-        )
-        .await
-        .unwrap();
-        assert!(matches!(
-            queue.lock().await.current_slot_state(),
-            SlotState::Showing { .. }
-        ));
-
-        let rotated = tokio::time::timeout(Duration::from_secs(3), async {
-            loop {
-                if queue.lock().await.current_slot_state() == SlotState::Empty {
-                    break;
-                }
-                tokio::time::sleep(Duration::from_millis(50)).await;
-            }
-        })
-        .await;
-
-        assert!(
-            rotated.is_ok(),
-            "expected the idle-parked heartbeat to wake on enqueue and rotate the item out within 3s"
-        );
+        engine.apply_blocking(|q, _now| {
+            assert_eq!(q.current_slot_state(), SlotState::Empty);
+            assert!(q.slot_state_if_changed().is_none());
+        });
     }
 
     #[test]

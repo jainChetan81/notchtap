@@ -1,18 +1,15 @@
 use std::collections::{HashSet, VecDeque};
-use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use reqwest::header::{IF_MODIFIED_SINCE, IF_NONE_MATCH};
-use tokio::sync::Mutex;
 use uuid::Uuid;
 
 use crate::config::RssFeedConfig;
+use crate::engine::Engine;
 use crate::event::{
-    emit_slot_state, Event, EventMeta, EventPayload, EventSignal, EventType, Priority,
-    RotationSpec, SourceKind,
+    Event, EventMeta, EventPayload, EventSignal, EventType, Priority, RotationSpec, SourceKind,
 };
 use crate::poller::Backoff;
-use crate::queue::SingleSlotQueue;
 
 const TITLE_MAX_CHARS: usize = 120;
 const BODY_MAX_CHARS: usize = 240;
@@ -422,13 +419,11 @@ async fn fetch_feed(
     Ok(Some(feed))
 }
 
-// same rationale as spawn_espn_poller: one handle per shipped phase,
-// struct-bundling tracked as tech-debt rather than lint-driven churn.
-#[allow(clippy::too_many_arguments)]
+// plan 037: ingest goes through `Engine::accept`, same as the espn
+// poller — rss's deliberately offer-less inline loop is subsumed by
+// accept's origin gate (News events are never offered to connectors).
 pub fn spawn_rss_poller(
-    app: tauri::AppHandle,
-    queue: Arc<Mutex<SingleSlotQueue>>,
-    wake: Arc<tokio::sync::Notify>,
+    engine: Engine,
     feeds: Vec<crate::config::RssFeedConfig>,
     poll_secs: u64,
     ttl_secs: u64,
@@ -487,19 +482,8 @@ pub fn spawn_rss_poller(
                 state.baseline = false;
 
                 for event in events {
-                    let slot_change = {
-                        let mut queue = queue.lock().await;
-                        // TODO(engine): routed through Engine::accept in plan 037 step 4
-                        if let Err(error) = queue.enqueue(event, std::time::Instant::now()) {
-                            tracing::warn!(feed = %feed_config.url, "rss event dropped: {error}");
-                        }
-                        queue.slot_state_if_changed()
-                    };
-                    // plan 015: wake the heartbeat after every enqueue
-                    // attempt, same rationale as the espn poller.
-                    wake.notify_waiters();
-                    if let Some(slot_state) = slot_change {
-                        emit_slot_state(&app, slot_state);
+                    if let Err(error) = engine.accept(event, false).await {
+                        tracing::warn!(feed = %feed_config.url, "rss event dropped: {error}");
                     }
                 }
             }

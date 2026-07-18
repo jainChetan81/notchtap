@@ -1,16 +1,13 @@
 use std::collections::HashMap;
-use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
-use tokio::sync::Mutex;
 use uuid::Uuid;
 
+use crate::engine::Engine;
 use crate::event::{
-    emit_slot_state, Event, EventMeta, EventPayload, EventSignal, EventType, Priority,
-    RotationSpec, SlotState, SourceKind,
+    Event, EventMeta, EventPayload, EventSignal, EventType, Priority, RotationSpec, SourceKind,
 };
-use crate::queue::SingleSlotQueue;
 use crate::status::LiveMatchSummary;
 
 // ---------------------------------------------------------------------------
@@ -546,53 +543,19 @@ async fn fetch_league(client: &reqwest::Client, league: &str) -> anyhow::Result<
     Ok(String::from_utf8(bytes)?)
 }
 
-/// Enqueues each event and offers the accepted ones to every connector —
-/// the poller-side twin of `http.rs`'s acceptance fan-out (plan §3:
-/// "every accepted event goes to every enabled connector, always" — with
-/// one recorded exception: rss/news events are overlay-only and never
-/// offered, `IMPLEMENTATION_PLAN.md` §4.6).
-/// Returns the promotions to emit. An earlier draft fanned out only from
-/// the http handler, silently excluding score events from outbound
-/// (caught in the 2026-07-16 v3 review).
-pub(crate) fn enqueue_and_fan_out(
-    queue: &mut SingleSlotQueue,
-    connectors: &[crate::notifier::ConnectorHandle],
-    events: Vec<Event>,
-    context: &str,
-) -> Option<SlotState> {
-    for event in events {
-        let accepted = event.clone();
-        // TODO(engine): routed through Engine::accept in plan 037 step 4
-        match queue.enqueue(event, std::time::Instant::now()) {
-            Ok(()) => {
-                for connector in connectors {
-                    connector.offer(&accepted);
-                }
-            }
-            Err(e) => tracing::warn!(context, "espn event dropped: {e}"),
-        }
-    }
-    // only one item can ever be visible now, so there's no batch of
-    // "promotions" to report — just whatever the final slot state is after
-    // this whole poll's events have been enqueued.
-    queue.slot_state_if_changed()
-}
-
-// 9 args trips clippy 1.97's too_many_arguments; the spawn signature grew
-// one handle per shipped phase (connectors v3, pause/active v5, live-match
-// handle plan 034) — bundling them into a struct is tracked as tech-debt,
-// not worth churning the call sites for a lint.
-#[allow(clippy::too_many_arguments)]
+/// plan 037: ingest goes through `Engine::accept` — the one shared path
+/// that enqueues with the mutate→wake→emit protocol and then fans
+/// accepted events out to every connector (plan §3: "every accepted
+/// event goes to every enabled connector, always" — with one recorded
+/// exception: rss/news events are overlay-only and never offered,
+/// `IMPLEMENTATION_PLAN.md` §4.6 — a rule `accept` encodes via the
+/// origin gate, so no per-caller flag is needed here).
 pub fn spawn_espn_poller(
-    app: tauri::AppHandle,
-    queue: Arc<Mutex<SingleSlotQueue>>,
-    wake: Arc<tokio::sync::Notify>,
-    connectors: Arc<Vec<crate::notifier::ConnectorHandle>>,
+    engine: Engine,
     leagues: Vec<String>,
     poll_secs: u64,
     ttl_secs: u64,
     priority: Priority,
-    live: Arc<StdMutex<Option<LiveMatchSummary>>>,
 ) {
     tauri::async_runtime::spawn(async move {
         let client = match crate::net::build_poll_client() {
@@ -642,40 +605,22 @@ pub fn spawn_espn_poller(
                     continue;
                 }
 
-                let slot_change = {
-                    let mut q = queue.lock().await;
-                    enqueue_and_fan_out(&mut q, &connectors, events, league)
-                };
-                // plan 015: wake the heartbeat regardless of whether the
-                // slot state changed — a same-tier enqueue behind the
-                // visible item doesn't change the current deadline, but
-                // this keeps the wake unconditional and simple to audit.
-                wake.notify_waiters();
-                if let Some(state) = slot_change {
-                    emit_slot_state(&app, state);
+                for event in events {
+                    if let Err(e) = engine.accept(event, false).await {
+                        tracing::warn!(league, "espn event dropped: {e}");
+                    }
                 }
             }
 
             // plan 034: refresh the idle rail's live-match chip once per
             // poll pass, over every watched league's snapshot — the single
-            // chokepoint where a tick ends. The heartbeat is the sole
+            // chokepoint where a tick ends. The rotation loop is the sole
             // status-state emitter; the poller's only status-side act is
-            // this write plus a wake when (and only when) the summary
-            // actually changed. Lock discipline: the queue lock above is
-            // already released — nobody holds both at once.
+            // this write, which wakes the loop when (and only when) the
+            // summary actually changed (plan 037: behind a narrow Engine
+            // method, no raw handles).
             let summary = live_match_summary(&snapshots);
-            let summary_changed = {
-                let mut guard = live.lock().unwrap();
-                if *guard == summary {
-                    false
-                } else {
-                    *guard = summary;
-                    true
-                }
-            };
-            if summary_changed {
-                wake.notify_waiters();
-            }
+            engine.update_live_match(summary);
         }
     });
 }
@@ -687,6 +632,8 @@ mod tests {
         EventMeta, EventPayload, EventSignal, EventType, Priority, RotationSpec, SlotState,
     };
     use crate::notifier::ConnectorHandle;
+    use crate::queue::SingleSlotQueue;
+    use std::sync::Arc;
 
     const USA: &str = include_str!("../tests/fixtures/scoreboard-usa.1.json");
     const UCL: &str = include_str!("../tests/fixtures/scoreboard-uefa.champions.json");
@@ -708,23 +655,30 @@ mod tests {
         }
     }
 
-    #[test]
-    fn poller_accepted_events_fan_out_and_rejected_do_not() {
+    #[tokio::test]
+    async fn poller_accepted_events_fan_out_and_rejected_do_not() {
         // regression for the 2026-07-16 v3 review finding: score events
         // must reach connectors the same as http pushes (plan §3). one
         // visible slot, no waiting room: first accepted, second rejected.
+        // plan 037: the fan-out path is Engine::accept now.
         let (tx, mut rx) = tokio::sync::mpsc::channel(8);
         let connector = ConnectorHandle::new("test", tx);
-        let mut q = SingleSlotQueue::new(0);
-
-        let slot_change = enqueue_and_fan_out(
-            &mut q,
-            &[connector],
-            vec![score_event("accepted"), score_event("rejected")],
-            "test.league",
+        let app = tauri::test::mock_app();
+        let engine = Engine::new(
+            SingleSlotQueue::new(0),
+            app.handle().clone(),
+            Arc::new(vec![connector]),
+            true,
+            true,
         );
 
-        match slot_change.expect("first event should have promoted") {
+        engine.accept(score_event("accepted"), false).await.unwrap();
+        engine
+            .accept(score_event("rejected"), false)
+            .await
+            .unwrap_err();
+
+        match engine.read(|q| q.current_slot_state()).await {
             SlotState::Showing { title, .. } => assert_eq!(title, "accepted"),
             SlotState::Empty => panic!("expected a Showing slot state"),
         }
