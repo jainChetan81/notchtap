@@ -5,7 +5,7 @@
 > If anything in "STOP conditions" occurs, stop and report. When done,
 > update this plan's status row in `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat d40445e..HEAD -- src-tauri/src/lib.rs`
+> **Drift check (run first)**: `git diff --stat b43a7ca..HEAD -- src-tauri/src/lib.rs`
 > On any change, compare the excerpt below; mismatch = STOP. NOTE: plan
 > 001 in this directory ("wire skip and open-settings hotkeys") also edits
 > lib.rs's shortcut area — if it landed first, the surrounding code may
@@ -18,7 +18,7 @@
 - **Risk**: LOW
 - **Depends on**: none
 - **Category**: bug / security / tests
-- **Planned at**: commit `d40445e`, 2026-07-17
+- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `b43a7ca` 2026-07-18 (excerpts re-verified unchanged)
 
 ## Why this matters
 
@@ -179,8 +179,19 @@ If the existing test module doesn't already cover "⌃⇧O with no visible
 link is a no-op", add one modeled on the existing no-op-style handler
 tests (drive the mock queue empty, call `open_current_story`, assert no
 panic and queue state unchanged — the spawn is unreachable without a
-link, so the test never launches anything). Update
-`docs/TESTING_STRATEGY.md` §0 lib count.
+link, so the test never launches anything).
+
+Update `docs/TESTING_STRATEGY.md` §0 (line ~19, the single line reading
+`225 tests — settings 38, queue 47, http 26, notifier 23, rss_poller 21,
+poller 19, event 17, config 17, presentation 11, lib (hotkey) 6`). This
+plan adds exactly **2** new `#[test]` functions, not 9 — this repo's
+table-driven convention (see `secret_field_deserializes_exactly_three_names`
+in `src/settings.rs`) is one `#[test]` fn with a `for` loop over cases,
+so Step 1's 7+ cases collapse into a single test function, plus Step 3's
+one no-op test. Move `lib (hotkey) 6` to `lib (hotkey) 8` AND the leading
+total `225` to `227` — both must move together, since this line is the
+only place these counts live (per this repo's `CLAUDE.md`) and the
+sub-counts must keep summing to the total.
 
 **Verify**: `cargo test` → all pass.
 
@@ -208,7 +219,9 @@ empty).
 - [ ] `grep -c "child.wait()" src-tauri/src/lib.rs` → 1
 - [ ] `cargo test` exits 0 with the new tests
 - [ ] clippy/fmt gates exit 0
-- [ ] `docs/TESTING_STRATEGY.md` §0 updated
+- [ ] `docs/TESTING_STRATEGY.md` §0 updated — `lib (hotkey)` sub-count is
+      6 + 2 = 8, and the line's leading total is 225 + 2 = 227 (both
+      moved together, not just the sub-count)
 - [ ] `plans/README.md` status row updated
 
 ## STOP conditions
