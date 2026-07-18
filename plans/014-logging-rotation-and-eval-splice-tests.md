@@ -5,7 +5,7 @@
 > If anything in "STOP conditions" occurs, stop and report. When done,
 > update this plan's status row in `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat b43a7ca..HEAD -- src-tauri/src/logging.rs src-tauri/src/lib.rs docs/TESTING_STRATEGY.md`
+> **Drift check (run first)**: `git diff --stat af9be44..HEAD -- src-tauri/src/logging.rs src-tauri/src/lib.rs docs/TESTING_STRATEGY.md`
 > On any change, compare excerpts below; mismatch = STOP.
 
 ## Status
@@ -15,7 +15,7 @@
 - **Risk**: LOW
 - **Depends on**: none (coordinates with plan 004's TESTING_STRATEGY edits — see Maintenance notes)
 - **Category**: tests
-- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `b43a7ca` 2026-07-18 (excerpts re-verified unchanged)
+- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `b43a7ca` 2026-07-18; **review-plan pass 2026-07-18 at `af9be44`** — `logging.rs` excerpts re-verified byte-identical; `lib.rs` excerpts refreshed (the splice moved to ~429-433 AND grew a second identical site at ~451-453, both now covered by Step 2); §0 count targets pinned (249→256); plan-004 conditional resolved (004 landed at `0749235` — this plan lands second)
 
 ## Why this matters
 
@@ -31,11 +31,17 @@ list and gets a test module in the same change"):
    the log — the artifact the docs call "the only tell" when the app
    misbehaves.
 2. **The eval-splice escaping in `lib.rs`** — three hand-rolled
-   replacements (U+2028, U+2029, `<`) protecting a `webview.eval(...)`
-   splice fed by external RSS/cmux text. The comment itself documents the
-   `</script>` breakout a missing replacement would reopen. Untested, and
-   not on §5.1's exemption list. Per the repo's §4.4 discipline the fix
-   is: extract the pure function, test it, leave the eval call thin.
+   replacements (U+2028, U+2029, `<`) protecting `webview.eval(...)`
+   splices. The comment itself documents the `</script>` breakout a
+   missing replacement would reopen. Untested, and not on §5.1's
+   exemption list. Per the repo's §4.4 discipline the fix is: extract
+   the pure function, test it, leave the eval calls thin. **The pattern
+   has already been hand-duplicated once**: v5.1's appearance hot-apply
+   added a second, identical three-replacement splice for
+   `window.__NOTCHTAP_APPEARANCE__` (lib.rs:451-453) alongside the
+   original slot-state one (lib.rs:429-433). Two live copies of a
+   security shield is exactly how they drift apart — both call sites
+   route through the extracted function in this plan.
 
 ## Current state
 
@@ -77,9 +83,14 @@ impl SizeRotatingAppender {
 `SizeRotatingAppender` is `struct` + `impl Write` (write → rotate_if_needed
 → write to file, size += written). Note: `new()` and the struct are
 currently private — tests inside the same file's `#[cfg(test)]` module can
-use them without visibility changes.
+use them without visibility changes. **Gotcha**: `new()` seeds `size`
+from the existing file's length (`logging.rs:68`,
+`let size = file.metadata()?.len();`) — every test MUST use a fresh,
+empty temp dir or the threshold arithmetic silently shifts.
 
-`src-tauri/src/lib.rs:337-346` — the splice shield (inside `on_page_load`):
+`src-tauri/src/lib.rs` — the splice shield, now at TWO call sites inside
+`on_page_load`. Site 1 (slot-state, ~lib.rs:429-433; its `</script>`
+comment block sits at 423-428):
 
 ```rust
 let safe_json = state_json
@@ -89,13 +100,30 @@ let safe_json = state_json
 let _ = webview.eval(format!("window.__NOTCHTAP_SLOT_STATE__ = {safe_json};"));
 ```
 
-(`state_json` is `serde_json::to_string(&current_state)` of a `SlotState`
-whose title/body carry arbitrary external text.)
+Site 2 (appearance, ~lib.rs:450-455 — same three replacements chained
+onto the serialize):
 
-Temp-dir test pattern to copy: `settings.rs`'s write-path tests use temp
-dirs (find them via `rg -n "tempfile\|TempDir\|std::env::temp_dir" src-tauri/src/settings.rs` and match whatever mechanism they use — the repo has no
-tempfile crate in dev-deps unless settings tests pull one; read first).
-Counts live ONLY in `docs/TESTING_STRATEGY.md` §0.
+```rust
+let payload_json = serde_json::to_string(&payload)
+    .unwrap_or_else(|_| "null".into())
+    .replace('\u{2028}', "\\u2028")
+    .replace('\u{2029}', "\\u2029")
+    .replace('<', "\\u003c");
+let _ =
+    webview.eval(format!("window.__NOTCHTAP_APPEARANCE__ = {payload_json};"));
+```
+
+(Site 1's `state_json` is `serde_json::to_string(&current_state)` of a
+`SlotState` whose title/body carry arbitrary external text; site 2's
+payload is config-derived appearance data — lower-risk, but it must use
+the same shield so the two never drift apart.)
+
+Temp-dir test pattern to copy — verified exemplar: `settings.rs:1195-1196`
+has `fn temp_dir() -> PathBuf { std::env::temp_dir().join(format!("notchtap-settings-test-{}", Uuid::new_v4())) }`;
+`uuid` (v4 feature) is already a main dependency (`Cargo.toml:26`).
+Copy that helper shape into `logging.rs`'s test module (rename the
+prefix to `notchtap-logtest-`). Counts live ONLY in
+`docs/TESTING_STRATEGY.md` §0.
 
 ## Commands you will need
 
@@ -119,7 +147,8 @@ Counts live ONLY in `docs/TESTING_STRATEGY.md` §0.
 **Out of scope**:
 - Changing rotation size/count, log paths, filters, or the double
   fmt-layer (a separate low-priority audit note).
-- The emit/eval mechanism itself or the `slot-state` event (plan 009).
+- The emit/eval mechanism itself or the `slot-state` event (plan 009,
+  DONE — this plan touches only the escaping, not what gets emitted).
 
 ## Git workflow
 
@@ -133,10 +162,12 @@ Counts live ONLY in `docs/TESTING_STRATEGY.md` §0.
 ### Step 1: Rotation tests
 
 Add `#[cfg(test)] mod tests` to `logging.rs`. Use a unique temp dir per
-test (`std::env::temp_dir().join(format!("notchtap-logtest-{}", uuid))` —
-`uuid` is a dependency; or match settings.rs's exact pattern). Drive the
-appender through `io::Write` with small sizes (e.g. `max_size = 100`,
-`max_files = 3`). Cases:
+test — copy the settings.rs helper shape (see Current state):
+`std::env::temp_dir().join(format!("notchtap-logtest-{}", Uuid::new_v4()))`
+(`use uuid::Uuid;` inside the test module). A fresh dir per test is
+mandatory, not hygiene: `new()` seeds `size` from any pre-existing file.
+Drive the appender through `io::Write` with small sizes (e.g.
+`max_size = 100`, `max_files = 3`). Cases:
 
 1. `no_rotation_below_threshold` — write 50 bytes twice (total 100, not
    `> 100`): one file, no `.1`.
@@ -159,7 +190,7 @@ appender through `io::Write` with small sizes (e.g. `max_size = 100`,
 
 **Verify**: `cargo test logging::` → 4 pass.
 
-### Step 2: Extract and test the splice escape
+### Step 2: Extract and test the splice escape (BOTH call sites)
 
 In `lib.rs`, hoist the three replacements into:
 
@@ -175,8 +206,13 @@ fn escape_for_eval_splice(json: &str) -> String {
 }
 ```
 
-Call it from `on_page_load` (behavior-identical: same three replacements,
-same order). Move the original inline comment onto the function. Tests
+Call it from BOTH `on_page_load` sites shown in Current state —
+site 1 becomes `let safe_json = escape_for_eval_splice(&state_json);`
+and site 2 becomes `let payload_json = escape_for_eval_splice(&serde_json::to_string(&payload).unwrap_or_else(|_| "null".into()));`
+(behavior-identical at each: same three replacements, same order).
+Move site 1's inline `</script>` comment (lib.rs:423-428) onto the
+function; site 2's "Double-shield …" comment refers to the global+emit
+pairing, not the escaping — leave it in place. Tests
 (pure, in lib.rs's test module — note that module is gated
 `#[cfg(all(test, target_os = "macos"))]`; these tests are platform-free
 but living there is fine):
@@ -197,8 +233,13 @@ but living there is fine):
 
 - `docs/TESTING_STRATEGY.md` §5.1: remove the `logging.rs` entry (or
   narrow it to "subscriber init only — the rotation engine is tested,
-  §0"), and if plan 004 hasn't landed, leave its other entries alone.
-- §0: logging +4, lib +3 (adjust to actuals).
+  §0"). Plan 004 has already landed, so its §5.1 edits are simply the
+  text you see — no reconciliation conditional applies. Optionally add
+  one clause to §5.1's `lib.rs` entry noting the eval-splice escaping
+  is now extracted + tested (the untested-by-design page-load
+  orchestration itself stays accurately listed).
+- §0: rust total 249→256; module breakdown gets a new `logging 4`
+  entry and `lib (hotkey) 9`→`lib 12`.
 
 **Verify**: `cargo test` green; `grep -n "no decision logic worth asserting" docs/TESTING_STRATEGY.md` → 0 hits.
 
@@ -211,8 +252,11 @@ in `presentation.rs` (escape cases).
 ## Done criteria
 
 - [ ] `grep -c "mod tests" src-tauri/src/logging.rs` → 1
-- [ ] `grep -c "escape_for_eval_splice" src-tauri/src/lib.rs` → ≥3
-- [ ] `cargo test` exits 0 with 7 new tests
+- [ ] `grep -c "escape_for_eval_splice" src-tauri/src/lib.rs` → ≥5
+      (fn def 1 + doc-comment mention + 2 call sites + test references;
+      the load-bearing part: exactly 2 call sites and ZERO remaining
+      inline `.replace('<', "\\\\u003c")` chains outside the fn)
+- [ ] `cargo test` exits 0 with 256 tests (249 baseline + 7 new)
 - [ ] clippy/fmt gates exit 0
 - [ ] TESTING_STRATEGY §5.1 + §0 updated
 - [ ] `plans/README.md` status row updated
@@ -228,10 +272,12 @@ in `presentation.rs` (escape cases).
 
 ## Maintenance notes
 
-- Plan 004 also edits TESTING_STRATEGY §5.1 (the lib.rs entry) — whoever
-  lands second reconciles; the edits are adjacent, not conflicting.
+- Plan 004 has landed (`0749235`); this plan's §5.1 edits apply on top
+  of its text directly — no second-lander reconciliation remains.
 - Reviewers: the escape function must keep exactly these three
   replacements; serde_json handles everything else. Adding a fourth is
-  fine; removing one needs the tests to fail first.
+  fine; removing one needs the tests to fail first. Any FUTURE eval
+  splice must route through `escape_for_eval_splice` — reject a third
+  hand-rolled copy on sight (that is how site 2 happened).
 - If the log path or rotation params ever become configurable, these
   tests already take them as parameters — extend, don't rewrite.

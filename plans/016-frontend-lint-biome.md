@@ -5,9 +5,9 @@
 > If anything in "STOP conditions" occurs, stop and report. When done,
 > update this plan's status row in `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat b43a7ca..HEAD -- package.json .github/workflows/ci.yml`
-> Coordinate with plan 007 (it also edits ci.yml's web job) — land in
-> either order; expect a trivial textual merge.
+> **Drift check (run first)**: `git diff --stat af9be44..HEAD -- package.json .github/workflows/ci.yml`
+> Coordinate with plan 007 (it also edits ci.yml's web job) — 007 is
+> already DONE and landed; add the biome step alongside its steps.
 
 ## Status
 
@@ -18,7 +18,7 @@
   `ubuntu-latest` with `npm audit` + `sh -n notchtap` steps; keep them and
   add the biome step alongside)
 - **Category**: dx
-- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `b43a7ca` 2026-07-18 (excerpts re-verified unchanged)
+- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `b43a7ca` 2026-07-18; **review-plan pass 2026-07-18 at `af9be44`** — drift since `b43a7ca` verified trivial (package.json: only the lottie-react removal from plan 023, scripts unchanged; ci.yml: unchanged). Config sketch updated to Biome v2 current keys (`linter.rules.preset`, deprecated `recommended` dropped) and the scope narrowed to TS/TSX only — `src/**` would also pull in the hand-tuned CSS files (see Step 1's CSS note). Vitest count pinned to 66.
 
 ## Why this matters
 
@@ -34,9 +34,11 @@ style). One tool — Biome — provides both with near-zero config.
 - No `.eslintrc*`, `eslint.config.*`, `biome.json`, `.prettierrc*`, or
   `.editorconfig` anywhere in the repo (verified).
 - `package.json` scripts: `dev`, `build`, `preview`, `tauri`,
-  `test: vitest run`.
-- CI web job (`.github/workflows/ci.yml`): `npm ci`, `npx tsc --noEmit`,
-  `npx vitest run`, `npx vite build`.
+  `test: vitest run` (verified unchanged at `af9be44`).
+- CI web job (`.github/workflows/ci.yml`, post-007): `npm ci`,
+  `npm audit --audit-level=high`, `npx tsc --noEmit`, `npx vitest run`,
+  `npx vite build`, `sh -n notchtap` — add the biome step after `npm ci`;
+  keep every existing step.
 - Frontend layout: `src/*.ts(x)`, `src/components/*.tsx`, `src/lib/*.ts`,
   `src/settings/*` — plus root `vite.config.ts`. `dist/` is build output
   (git-ignored); `node_modules/` present. Agent worktrees may exist under
@@ -58,9 +60,10 @@ style). One tool — Biome — provides both with near-zero config.
 - `package.json` + `package-lock.json` (dev-dependency + `lint` script)
 - `biome.json` (new, repo root)
 - `.github/workflows/ci.yml` (one step in the web job)
-- `src/**`, `vite.config.ts` — ONLY mechanical changes produced by
-  `biome check --write` / explicitly-listed rule fixes (see Step 2's
-  containment rule)
+- `src/**/*.ts`, `src/**/*.tsx`, `vite.config.ts` — ONLY mechanical
+  changes produced by `biome check --write` / explicitly-listed rule
+  fixes (see Step 2's containment rule). **Never `src/**/*.css`** — see
+  Step 1's CSS note.
 - `AGENTS.md` + `CLAUDE.md` commands section (one line documenting the
   lint command)
 - `plans/README.md` (status row)
@@ -85,21 +88,21 @@ style). One tool — Biome — provides both with near-zero config.
 ### Step 1: Install and configure
 
 `npm install --save-dev --save-exact @biomejs/biome`, then create
-`biome.json` at repo root (adjust the schema URL to the installed
-version — `npx biome --version`):
+`biome.json` at repo root (the `$schema` below is the local,
+version-independent form the Biome v2 docs recommend — no URL to adjust):
 
 ```json
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "files": {
-    "includes": ["src/**", "vite.config.ts"],
+    "includes": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"],
     "ignoreUnknown": true
   },
   "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2 },
   "linter": {
     "enabled": true,
     "rules": {
-      "recommended": true,
+      "preset": "recommended",
       "correctness": {
         "useExhaustiveDependencies": "error"
       }
@@ -109,12 +112,17 @@ version — `npx biome --version`):
 }
 ```
 
-(Biome's config format has evolved across majors — if `files.includes` is
-rejected, consult `npx biome check --help` / the generated schema and use
-the installed version's equivalent keys. The intent that must survive:
-only `src/**` + `vite.config.ts` are in scope; hooks exhaustive-deps is an
-error; 2-space/double-quote matches the existing code's prevailing style
-— verify by eyeballing `src/useSlotState.ts`.)
+(Keys verified against the Biome v2 configuration reference 2026-07-18:
+`files.includes` / `files.ignoreUnknown` are current; `linter.rules.preset:
+"recommended"` replaced the deprecated `linter.rules.recommended`;
+`useExhaustiveDependencies` lives in the `correctness` group. **CSS is
+deliberately out of scope**: `src/styles.css` and `src/settings/*.css` use
+hand-tuned compact one-line rules (e.g. the `.cat-*` category blocks)
+that any CSS formatter would explode into multi-line churn — the gate is
+for the TS/React side only, matching "Why this matters". If you believe
+CSS should be included, STOP and report rather than widening the glob.
+2-space/double-quote matches the existing code's prevailing style —
+verify by eyeballing `src/useSlotState.ts`.)
 
 Add to package.json scripts: `"lint": "biome check .",
 "lint:fix": "biome check --write ."`.
@@ -149,7 +157,7 @@ commands section (one line each).
 ## Test plan
 
 No new tests. The gate is: biome exit 0 + the full existing frontend
-suite (60 vitest tests) + tsc + vite build green after the churn commit.
+suite (66 vitest tests) + tsc + vite build green after the churn commit.
 
 ## Done criteria
 
@@ -174,8 +182,13 @@ suite (60 vitest tests) + tsc + vite build green after the churn commit.
 
 - Future agents: run `npx biome check --write .` before committing
   frontend changes; CI enforces it.
+- CSS was deliberately excluded from Biome's scope (hand-tuned compact
+  one-line rules in `styles.css` / `src/settings/*.css` would be
+  exploded by any CSS formatter). Enabling CSS later is its own
+  decision with a big one-time churn commit — do not widen the glob in
+  passing.
 - If the repo ever wants rust-style strictness parity, Biome's
   `noExplicitAny`/`noNonNullAssertion` rules are the next ratchet — off
   by default here to keep the initial diff small.
-- Plan 007 edits the same ci.yml web job (audit step, ubuntu runner) —
-  trivial merge either direction.
+- Plan 007 landed first in the same ci.yml web job (audit step, ubuntu
+  runner, `sh -n`) — the biome step goes alongside, after `npm ci`.
