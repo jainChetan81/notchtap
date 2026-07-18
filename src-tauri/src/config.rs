@@ -219,7 +219,7 @@ fn default_card_scale() -> f64 {
 }
 
 fn default_card_radius() -> f64 {
-    8.0
+    16.0
 }
 
 fn default_card_opacity() -> f64 {
@@ -357,7 +357,7 @@ mod tests {
             ]
         );
         assert_eq!(c.appearance.card_scale, 1.0);
-        assert_eq!(c.appearance.card_radius, 8.0);
+        assert_eq!(c.appearance.card_radius, 16.0);
         assert_eq!(c.appearance.card_opacity, 0.9);
     }
 
@@ -455,7 +455,7 @@ url = "https://example.com/without-meta"
 
         let partial = Config::parse("[appearance]\ncard_scale = 0.9\n").unwrap();
         assert_eq!(partial.appearance.card_scale, 0.9);
-        assert_eq!(partial.appearance.card_radius, 8.0);
+        assert_eq!(partial.appearance.card_radius, 16.0);
         assert_eq!(partial.appearance.card_opacity, 0.9);
     }
 

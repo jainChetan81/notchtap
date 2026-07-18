@@ -66,7 +66,7 @@ const rustConfigDefaults: Config = {
   cmux_ttl_secs: 8,
   rotation_order: ["football", "manual", "cmux", "news"],
   connectors: { telegram: { enabled: false } },
-  appearance: { card_scale: 1, card_radius: 8, card_opacity: 0.9 },
+  appearance: { card_scale: 1, card_radius: 16, card_opacity: 0.9 },
 };
 
 const unsetSecrets: SecretStatus = {
