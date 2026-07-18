@@ -5,10 +5,11 @@
 > If anything in "STOP conditions" occurs, stop and report. When done,
 > update this plan's status row in `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat b43a7ca..HEAD -- src/settings/SettingsApp.tsx src-tauri/src/settings.rs`
-> On any change, compare excerpts below; mismatch = STOP. The earlier
-> session's plan 002 (animation previews) also edits SettingsApp.tsx —
-> different regions; reconcile textually.
+> **Drift check (run first)**: `git diff --stat 73c03ef..HEAD -- src/settings/SettingsApp.tsx src-tauri/src/settings.rs`
+> On any change, compare excerpts below; mismatch = STOP. Plans 020
+> (get_default_config) and 015 (heartbeat) already landed in these files;
+> the excerpts below were refreshed against `73c03ef` to account for them,
+> so a clean drift result is expected from that baseline.
 
 ## Status
 
@@ -23,8 +24,13 @@
   is at ~1114 not 835, the save command at 587-602 not 438-452, validate
   at 35), fixed Step 3's snippet which read `state.inner().port` — the
   managed state is `StdMutex<Config>` (v5.1), so the pre-flight must use
-  the function's existing `booted` local; in-scope files have ZERO drift
-  `b43a7ca..HEAD` as of this pass.
+  the function's existing `booted` local; **reconcile pass 2026-07-18** at
+  `73c03ef` (after plans 020 + 015 landed): excerpt CONTENT re-verified
+  byte-identical (saveConfig's rebuild and `save_config_and_relaunch` were
+  untouched by 020/015 — 020 only restructured the load effect, 015 added
+  no wake to the relaunch path), only line refs moved — saveConfig now
+  ~1092 (was 1114), `submittedConfig` 1095-1101, `lines()` ~168, the save
+  command 595-610, the save-path mock ~187, settings `#[test]` count 39.
 
 ## Why this matters
 
@@ -48,8 +54,8 @@ Three sharp edges in the settings save flow:
 
 ## Current state
 
-`src/settings/SettingsApp.tsx:1117-1123` (inside `saveConfig`,
-~line 1114):
+`src/settings/SettingsApp.tsx:1095-1101` (inside `saveConfig`,
+~line 1092):
 
 ```tsx
 const submittedConfig: Config = {
@@ -61,7 +67,7 @@ const submittedConfig: Config = {
 };
 ```
 
-`lines()` (same file, ~line 201) splits/trims/filters the textarea.
+`lines()` (same file, ~line 168) splits/trims/filters the textarea.
 Note `config` here is the BOOTED config from `get_config` — so metadata
 matching is against pre-edit entries only. There is no UI to edit
 source/category; they come from the config file (hand-edit) or the
@@ -73,9 +79,9 @@ defaults; the form must simply not *destroy* them.
 in the same function. Port validation today (~lines 38-43): range only
 (`port < 1024` → error; u16 caps the top).
 
-The save command — `settings.rs:587-602`, quoted in full because Step 3
+The save command — `settings.rs:595-610`, quoted in full because Step 3
 edits it (note the managed state is `StdMutex<Config>` and a `booted`
-clone already exists):
+clone already exists at line 602):
 
 ```rust
 pub fn save_config_and_relaunch(
@@ -96,10 +102,10 @@ pub fn save_config_and_relaunch(
 }
 ```
 
-Conventions: settings rust tests are exhaustive per-rule (38 as of this
+Conventions: settings rust tests are exhaustive per-rule (39 as of this
 refresh, same file); frontend tests via mockIPC (`SettingsApp.test.tsx`
 — the `save_config_and_relaunch` payload-intercepting mock is at
-~line 150). Counts in `docs/TESTING_STRATEGY.md` §0 only.
+~line 187). Counts in `docs/TESTING_STRATEGY.md` §0 only.
 
 ## Commands you will need
 
@@ -200,7 +206,7 @@ rejected; two genuinely different feeds accepted.
 In `save_config_and_relaunch`, after `validate(&config)?` and before
 `write_config_atomic`, when the submitted port differs from the booted
 one. Use the `booted` local that ALREADY EXISTS in the function (line
-594's `let booted = state.inner().lock().unwrap().clone();`) — do NOT
+602's `let booted = state.inner().lock().unwrap().clone();`) — do NOT
 write `state.inner().port`; the managed state is `StdMutex<Config>`, so
 that doesn't compile:
 
@@ -244,8 +250,10 @@ the same delta; in the frontend row, bump `settings form` by the number
 of new `it()` blocks (Step 1 — likely 2) AND that row's leading total by
 the same delta. Sub-counts must keep summing to each total, and §0 is
 the only place counts live. Re-read the rows at execution time —
-concurrent plans move them (at this refresh: rust
-`232 tests — settings 38, …`; frontend `62 tests — … settings form 11 …`).
+concurrent plans move them (at this refresh, master `73c03ef`: rust
+`243 tests — settings 39, …`; frontend `64 tests — … settings form 11 …`;
+and plans 013/023 are merging in parallel, so re-read §0 right before
+editing and reconcile against whatever total is there then).
 
 **Verify**: `cargo test` (full) + `npx vitest run` green.
 
