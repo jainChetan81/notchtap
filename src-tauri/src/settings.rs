@@ -19,7 +19,7 @@ use tokio::sync::Mutex;
 
 use crate::config::{Appearance, Config};
 use crate::event::{
-    dispatch, Event, EventMeta, EventPayload, EventSignal, EventType, RotationSpec, SourceKind,
+    Event, EventMeta, EventPayload, EventSignal, EventType, RotationSpec, SourceKind,
 };
 use crate::http;
 use crate::notifier::ConnectorHandle;
@@ -681,7 +681,6 @@ pub async fn send_test_notification(
     ensure_settings_window(&window)?;
     let config = state.inner().lock().unwrap().clone();
     let event = build_test_event(&config, source);
-    dispatch(event.clone()).map_err(|e| e.to_string())?;
     let queue = queue.inner().clone();
     let wake = wake.inner().clone();
     let connectors = connectors.inner().clone();

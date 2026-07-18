@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::error::{EventError, QueueError};
 use crate::event::{
-    dispatch, emit_slot_state, Event, EventMeta, EventPayload, EventSignal, EventType, Priority,
+    emit_slot_state, Event, EventMeta, EventPayload, EventSignal, EventType, Priority,
     RotationSpec, SourceKind,
 };
 use crate::notifier::ConnectorHandle;
@@ -58,8 +58,9 @@ impl<R: tauri::Runtime> Clone for AppState<R> {
 }
 
 /// Shared enqueue path used by `/notify` and by `send_test_notification`:
-/// dispatch is the caller's responsibility (so malformed `/notify` requests
-/// can still return a 400 without entering the queue). Enqueues the event,
+/// a malformed `/notify` request never reaches this function at all — the
+/// title/body `MissingField` checks in `notify_handler` already return a
+/// 400 before an `Event` is even constructed. Enqueues the event,
 /// fans it out to connectors, emits any resulting slot-state change, and
 /// wakes the deadline-based heartbeat (plan 015) — routed through this one
 /// shared function rather than duplicated at each caller, so every caller
@@ -179,8 +180,6 @@ async fn notify_handler<R: tauri::Runtime>(
         signal: req.signal,
         origin,
     };
-
-    dispatch(event.clone()).map_err(HttpError::Event)?;
 
     enqueue_and_emit(
         &state.queue,

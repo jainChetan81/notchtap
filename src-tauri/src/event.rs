@@ -1,8 +1,6 @@
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
-use crate::error::EventError;
-
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Event {
     pub id: Uuid,
@@ -160,17 +158,6 @@ pub enum SlotState {
     },
 }
 
-pub fn dispatch(event: Event) -> Result<(), EventError> {
-    match event.event_type {
-        // `signal` is presentation-only (icon/animation selection) and
-        // doesn't participate in acceptance — nothing to match on here.
-        EventType::Generic
-        | EventType::ScoreUpdate
-        | EventType::MatchState
-        | EventType::NewsItem => Ok(()),
-    }
-}
-
 /// The one event channel into the overlay — the frontend listens for
 /// exactly this string (`src/useSlotState.ts`). Change both together.
 pub const SLOT_STATE_EVENT: &str = "slot-state";
@@ -189,28 +176,7 @@ pub fn emit_slot_state<R: tauri::Runtime>(app: &tauri::AppHandle<R>, state: Slot
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn generic_event() -> Event {
-        Event {
-            id: Uuid::new_v4(),
-            event_type: EventType::Generic,
-            priority: Priority::Medium,
-            rotation: RotationSpec::OneShot { ttl_secs: 8 },
-            topic: None,
-            payload: EventPayload {
-                title: "t".to_string(),
-                body: "b".to_string(),
-            },
-            meta: EventMeta::default(),
-            signal: EventSignal::Generic,
-            origin: SourceKind::Manual,
-        }
-    }
-
-    #[test]
-    fn generic_event_dispatches_ok() {
-        assert!(dispatch(generic_event()).is_ok());
-    }
+    use crate::error::EventError;
 
     #[test]
     fn slot_state_event_name_is_pinned() {
@@ -251,20 +217,6 @@ mod tests {
     fn news_item_serializes_snake_case() {
         let json = serde_json::to_value(EventType::NewsItem).unwrap();
         assert_eq!(json, "news_item");
-    }
-
-    #[test]
-    fn dispatch_accepts_all_variants() {
-        for event_type in [
-            EventType::Generic,
-            EventType::ScoreUpdate,
-            EventType::MatchState,
-            EventType::NewsItem,
-        ] {
-            let mut event = generic_event();
-            event.event_type = event_type;
-            assert!(dispatch(event).is_ok());
-        }
     }
 
     #[test]
