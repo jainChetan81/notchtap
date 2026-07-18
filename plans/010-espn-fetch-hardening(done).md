@@ -10,6 +10,7 @@
 
 ## Status
 
+- **State**: DONE (`4381de4`, merged to master 2026-07-18; Step 4 GUI smoke owed to operator)
 - **Priority**: P1
 - **Effort**: S
 - **Risk**: LOW
@@ -19,6 +20,29 @@
   `review-plan` against commit `b43a7ca`, 2026-07-18 — line numbers below
   updated; no excerpt content changed, drift was unrelated comment/lint
   churn, see Maintenance notes)
+
+## Post-execution note (`/improve execute`, 2026-07-18)
+
+Verified complete at HEAD `6a7fd5a` — no executor dispatch needed, the work
+was already merged. Commit `4381de4` ("poller: espn client gets rss's
+caps/redirect/ua posture + gzip for both", the exact message this plan
+prescribed) is an ancestor of HEAD. All done criteria re-checked against
+live code and pass:
+
+- `grep -c '"gzip"' src-tauri/Cargo.toml` → 1
+- `grep -c 'Client::new()' src-tauri/src/poller.rs` → 0
+- `grep -c 'MAX_SCOREBOARD_BYTES' src-tauri/src/poller.rs` → 3 (≥3)
+- `grep -c 'redirect::Policy::limited(3)' src-tauri/src/poller.rs` → 1
+
+The implementation matches the plan's shapes exactly: `fetch_league`
+(`poller.rs:535`) does the two-stage content-length + decompressed-byte cap
+against `MAX_SCOREBOARD_BYTES` (`poller.rs:463`); the ESPN client
+(`poller.rs:599`) carries the RSS posture — UA, `Policy::limited(3)`, 10 s
+timeout — with the builder `Result` logged via `tracing::error!` and the
+task returning on failure. Suite recorded green after 010 landed (`cargo
+test 242 + 3 doc-tests` at descendant `9326439`). Only outstanding item is
+**Step 4's manual GUI smoke**, which requires a Mac dev machine and stays
+owed to the operator — it cannot run in a headless environment.
 
 ## Why this matters
 
