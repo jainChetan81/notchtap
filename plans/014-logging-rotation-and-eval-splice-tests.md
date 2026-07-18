@@ -5,7 +5,7 @@
 > If anything in "STOP conditions" occurs, stop and report. When done,
 > update this plan's status row in `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat d40445e..HEAD -- src-tauri/src/logging.rs src-tauri/src/lib.rs docs/TESTING_STRATEGY.md`
+> **Drift check (run first)**: `git diff --stat b43a7ca..HEAD -- src-tauri/src/logging.rs src-tauri/src/lib.rs docs/TESTING_STRATEGY.md`
 > On any change, compare excerpts below; mismatch = STOP.
 
 ## Status
@@ -15,7 +15,7 @@
 - **Risk**: LOW
 - **Depends on**: none (coordinates with plan 004's TESTING_STRATEGY edits — see Maintenance notes)
 - **Category**: tests
-- **Planned at**: commit `d40445e`, 2026-07-17
+- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `b43a7ca` 2026-07-18 (excerpts re-verified unchanged)
 
 ## Why this matters
 

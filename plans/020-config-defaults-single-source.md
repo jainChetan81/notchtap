@@ -7,7 +7,7 @@
 > occurs, stop and report. When done, update this plan's status row in
 > `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat d40445e..HEAD -- src-tauri/src/settings.rs src-tauri/build.rs src-tauri/capabilities/settings.json src/settings/SettingsApp.tsx`
+> **Drift check (run first)**: `git diff --stat b43a7ca..HEAD -- src-tauri/src/settings.rs src-tauri/build.rs src-tauri/capabilities/settings.json src/settings/SettingsApp.tsx`
 > On any change, compare excerpts below; mismatch = STOP.
 
 ## Status
@@ -18,7 +18,18 @@
 - **Depends on**: none. NOTE: the earlier session's plan 002 (animation
   previews) also edits SettingsApp.tsx — reconcile textually if it landed.
 - **Category**: tech-debt
-- **Planned at**: commit `d40445e`, 2026-07-17
+- **Planned at**: commit `d40445e`, 2026-07-17; **refreshed 2026-07-18** at
+  `b43a7ca` (build.rs now has six commands — `send_test_notification` and
+  `set_appearance` landed via other plans; Config grew an `appearance`
+  field, which `get_default_config` will serve automatically; SettingsApp
+  line references updated); **review-plan pass 2026-07-18**: corrected
+  the `get_config` excerpt (managed state became `StdMutex<Config>` in
+  v5.1 — the earlier refresh missed it and it would have false-tripped
+  the drift STOP), recorded that a "Reset to defaults" frontend test
+  already exists (update, don't duplicate), fixed stale counts
+  ("four" commands → six, "9" frontend tests → 11). In-scope files have
+  ZERO drift `b43a7ca..HEAD` as of this pass — plans 010/011 landing
+  touched only poller/rss/docs files.
 
 ## Why this matters
 
@@ -28,20 +39,21 @@ settings frontend's hand-maintained mirror — which self-documents the
 problem:
 
 ```ts
-// src/settings/SettingsApp.tsx:61-63
+// src/settings/SettingsApp.tsx:71-73
 // Keep this synchronized with src-tauri/src/config.rs::Config::default.
 // This frontend mirror can drift when Rust defaults change, so update both together.
-export const DEFAULTS: Config = { … 30 lines … };
+export const DEFAULTS: Config = { … ~30 lines, incl. an appearance entry at line 101 … };
 ```
 
 Every new config field pays a three-file lockstep tax (the v6 fields each
-paid it), and drift fails soft (the "Reset to defaults" button silently
-applies stale values). Since `Config: Serialize + Default` already holds
-(the `get_config` command serializes it), a `get_default_config` command
-deletes the worst copy for ~15 lines of rust. The `min=`/`max=` props
-duplicating `validate` ranges are left in place — they're advisory UX,
-enforcement stays server-side; a bounds-map export is not worth the
-plumbing (recorded as rejected in the plans index).
+paid it, and the v5.1 `appearance` field just paid it again), and drift
+fails soft (the "Reset to defaults" button silently applies stale values).
+Since `Config: Serialize + Default` already holds (the `get_config`
+command serializes it), a `get_default_config` command deletes the worst
+copy for ~15 lines of rust. The `min=`/`max=` props duplicating `validate`
+ranges are left in place — they're advisory UX, enforcement stays
+server-side; a bounds-map export is not worth the plumbing (recorded as
+rejected in the plans index).
 
 ## Why this is security-relevant (read before coding)
 
@@ -57,7 +69,7 @@ unchanged. `AGENTS.md`'s ipc section states this rule; the contract is
 
 ## Current state
 
-`src-tauri/build.rs` (complete file):
+`src-tauri/build.rs` (complete file — six commands as of `b43a7ca`):
 
 ```rust
 fn main() {
@@ -69,39 +81,56 @@ fn main() {
             "get_secret_status",
             "save_config_and_relaunch",
             "set_secret",
+            "send_test_notification",
+            "set_appearance",
         ]),
     ))
     .expect("failed to run tauri-build");
 }
 ```
 
-`src-tauri/src/settings.rs:406-413` — the pattern to copy:
+`src-tauri/src/settings.rs:554-562` — the pattern to copy. Note the
+managed state is `StdMutex<Config>` (v5.1's `set_appearance` mutates it);
+`get_default_config` needs no state parameter at all, so it is simpler
+than this:
 
 ```rust
 #[tauri::command]
 pub fn get_config(
     window: tauri::WebviewWindow,
-    state: tauri::State<'_, Config>,
+    state: tauri::State<'_, StdMutex<Config>>,
 ) -> Result<Config, String> {
     ensure_settings_window(&window)?;
-    Ok(state.inner().clone())
+    let config = state.inner().lock().unwrap().clone();
+    Ok(config)
 }
 ```
 
-`ensure_settings_window` (same file, ~line 395) is the label gate; it has
-its own test (`ensure_settings_window_gates_on_the_window_label`).
-`capabilities/settings.json` grants the four existing
+`ensure_settings_window` (same file, ~line 433) is the label gate; it has
+its own test (`ensure_settings_window_gates_on_the_window_label`,
+~line 1289 — it builds real windows via `tauri::test::mock_app()` +
+`tauri::WebviewWindowBuilder` and asserts the `main` window is refused;
+copy that shape for the new command's gate assertion).
+`capabilities/settings.json` grants the six existing
 `allow-<command>` permissions to `windows: ["settings"]` — read it to
 copy the exact permission-string format. The `generate_handler![...]`
-list is in `src-tauri/src/lib.rs` (find with `rg -n "generate_handler"`).
+list is in `src-tauri/src/lib.rs` (~line 166).
 
 Frontend: `SettingsApp.tsx` uses `DEFAULTS` in `resetDefaults()`
-(`applyForm(DEFAULTS)`, line ~831) — find all uses with
+(`applyForm(DEFAULTS)`, line ~1110) — find all uses with
 `rg -n "DEFAULTS" src/settings/`. The invoke pattern to copy is wherever
 `invoke("get_config")` is called (top of the component's load effect).
-Frontend tests (`src/settings/SettingsApp.test.tsx`, 9 tests) mock IPC
-via `mockIPC` — read how `get_config` is mocked; `get_default_config`
-needs the same mock arm.
+Frontend tests (`src/settings/SettingsApp.test.tsx`, 11 tests as of this
+refresh) mock IPC via the shared `mockLoads()` helper (~line 42) —
+`get_default_config` needs an arm there next to `get_config`'s. NOTE: a
+"Reset to defaults" test ALREADY EXISTS —
+`it("Reset to defaults applies the Rust Config defaults mirror")`,
+~line 214, asserting concrete default values (port 9789, ttl 8, tier
+cap 50, unchecked start-paused, the rotation order) — Step 3 updates it
+rather than adding a duplicate. The neighboring
+`it("Reset restores the values returned by get_config")` (~line 201)
+covers the *other* footer button ("Reset", not "Reset to defaults") and
+needs no change.
 
 ## Commands you will need
 
@@ -153,17 +182,19 @@ pub fn get_default_config(window: tauri::WebviewWindow) -> Result<Config, String
 ```
 
 Add `"get_default_config"` to build.rs's commands array; add the
-corresponding `allow-get-default-config`-style permission to
+corresponding `allow-get-default-config` permission to
 `capabilities/settings.json` (copy the exact naming convention of the
-existing four — read the file; tauri autogenerates the permission from
+existing six — read the file; tauri autogenerates the permission from
 the command name); add the fn to `generate_handler![...]` in lib.rs.
 
-Add a rust test mirroring the existing command tests: the label gate
-rejects a non-settings window, and the returned value equals
-`Config::default()` (serialize both to `serde_json::Value` and compare —
-avoids requiring `PartialEq`).
+Add a rust test mirroring
+`ensure_settings_window_gates_on_the_window_label`: the label gate
+rejects a `main`-labeled window, and the settings-window call returns a
+value equal to `Config::default()` — `Config` already derives
+`PartialEq` (`config.rs:7`), so a direct
+`assert_eq!(returned, Config::default())` works; no serde detour needed.
 
-**Verify**: `cargo test` → all pass incl. the new test; `cargo clippy --all-targets -- -D warnings` → exit 0. `git diff --stat src-tauri/capabilities/default.json` → empty.
+**Verify**: `cargo test` → all pass incl. the new test; `cargo clippy --all-targets -- -D warnings` → exit 0. `git diff --stat src-tauri/capabilities/default.json` → empty (run this one from the repo root — from inside `src-tauri/` that path doesn't resolve and git errors with `fatal: ambiguous argument`).
 
 ### Step 2: ACL checklist (mandatory)
 
@@ -189,11 +220,18 @@ In `SettingsApp.tsx`:
   component's existing loading handling and copy it).
 - Fix any other `DEFAULTS` references the grep finds.
 
-In `SettingsApp.test.tsx`: add the `get_default_config` arm to the IPC
-mock (returning the same fixture object the tests use for `get_config`,
-or a distinct one if a test asserts reset semantics); if no test covers
-"Reset to defaults", add one: load the form with non-default values,
-click reset, assert a known field shows the mocked default.
+In `SettingsApp.test.tsx`: add the `get_default_config` arm to the
+shared `mockLoads()` helper (~line 42), returning a fixture that carries
+the Rust defaults — the existing reset test asserts concrete values
+(port 9789, ttl 8, tier cap 50), so the fixture must match them. Then
+UPDATE the existing
+`it("Reset to defaults applies the Rust Config defaults mirror")`
+(~line 214) — do NOT add a duplicate: it already loads non-default
+values (port `4321` fixture) and clicks "Reset to defaults". It should
+keep passing once the reset path reads the invoked defaults (the click
+may now need an `await`/`findBy` if the defaults arrive async — model on
+how the test's own `findByLabelText` calls already wait); rename it to
+drop the word "mirror" since the mirror is gone.
 
 **Verify**: `npx vitest run` → all pass incl. the reset test; `npx tsc --noEmit` → exit 0 (proves no dangling DEFAULTS references); `npx vite build` → exit 0.
 
@@ -201,7 +239,18 @@ click reset, assert a known field shows the mocked default.
 
 `docs/V5_TECHNICAL_SPEC.md` §2: add `get_default_config` to the command
 table (read-only, no side effects, settings-window-gated).
-`docs/TESTING_STRATEGY.md` §0: settings +1 (rust), frontend +1.
+
+`docs/TESTING_STRATEGY.md` §0: in the rust row, bump the `settings`
+sub-count by the number of new `#[test]` fns Step 1 actually added
+(likely 1 — one fn asserting both the gate and the value, per the repo's
+table-driven convention) AND move the row's leading total by the same
+delta — the sub-counts must keep summing to the total, and §0 is the
+only place counts live (per `CLAUDE.md`/`AGENTS.md`). The frontend row
+changes ONLY if you added a new `it()` block; Step 3 updates an existing
+test and adds a mock arm, which adds zero, so the frontend counts likely
+stay put. Re-read §0 at execution time before editing — concurrent
+plans move it (at this refresh it read `232 tests — settings 38, …` and
+`62 tests — … settings form 11 …`).
 
 **Verify**: full gates green.
 
@@ -216,16 +265,17 @@ build; hand to operator if not runnable.)
 
 ## Test plan
 
-- Rust: 1–2 tests (label gate + default-equality) modeled on the
-  existing settings command tests.
-- Frontend: 1 mock arm + 1 reset-to-defaults interaction test modeled on
-  the existing SettingsApp tests.
+- Rust: 1 test fn (label gate rejects `main` + returned value equals
+  `Config::default()`) modeled on
+  `ensure_settings_window_gates_on_the_window_label` (settings.rs ~1289).
+- Frontend: 1 mock arm in `mockLoads()` + UPDATE the existing
+  reset-to-defaults test (see Step 3) — no new `it()` expected.
 
 ## Done criteria
 
 - [ ] `grep -c "const DEFAULTS" src/settings/SettingsApp.tsx` → 0
 - [ ] Step 2's four-leg checklist reported complete
-- [ ] `git diff d40445e..HEAD -- src-tauri/capabilities/default.json` → empty
+- [ ] `git diff b43a7ca..HEAD -- src-tauri/capabilities/default.json` → empty
 - [ ] `cargo test`, clippy, fmt, `npx vitest run`, `npx tsc --noEmit`, `npx vite build` all exit 0
 - [ ] V5 spec §2 + TESTING_STRATEGY §0 updated
 - [ ] Manual ACL smoke reported

@@ -5,19 +5,22 @@
 > If anything in "STOP conditions" occurs, stop and report. When done,
 > update this plan's status row in `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat d40445e..HEAD -- src-tauri/src/lib.rs src-tauri/src/queue.rs src-tauri/src/http.rs src-tauri/src/poller.rs src-tauri/src/rss_poller.rs`
-> On any change, compare excerpts below; mismatch = STOP. If plan 008
-> (expanded semantics) landed, `promote_next` will differ slightly from
-> the excerpt — that specific difference is expected, not drift.
+> **Drift check (run first)**: `git diff --stat b43a7ca..HEAD -- src-tauri/src/lib.rs src-tauri/src/queue.rs src-tauri/src/http.rs src-tauri/src/poller.rs src-tauri/src/rss_poller.rs`
+> On any change, compare excerpts below; mismatch = STOP. Plan 008
+> (expanded semantics) HAS landed (`8ca01e3`, in the `b43a7ca` baseline):
+> `promote_next` now calls `set_expanded_for_promotion(item.event.priority)`
+> via a shared helper — that difference from the excerpt below is expected,
+> not drift.
 
 ## Status
 
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED — rotation/promotion timing is the core behavior; a wake-signal bug stalls promotion
-- **Depends on**: plans/008 (land first — both touch promotion), plans/009 (seam pin — recommended first)
+- **Depends on**: plans/009 (seam pin — land first); 008 is DONE and already
+  in this plan's baseline
 - **Category**: perf
-- **Planned at**: commit `d40445e`, 2026-07-17
+- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `b43a7ca` 2026-07-18 (excerpts re-verified unchanged)
 
 ## Why this matters
 

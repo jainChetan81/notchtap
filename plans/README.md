@@ -1,5 +1,23 @@
 # Implementation Plans
 
+**Reconciled 2026-07-18 at `b43a7ca` (advisor verify pass)**: plans
+001–008 + the two extra-session plans (004-test-notifications,
+005-appearance-config) were re-verified against HEAD — every claimed
+implementation found in code, suites green (`cargo test` 225 + 3
+doc-tests, `npx vitest run` 62). Two outstanding operator gates, neither
+blocking: plan 001's manual real-keypress check, and plan 007's first
+green CI run (workflow changes need a push). Plan 005's credential file
+(`~/.config/opencode/openrouter.key`) confirmed mode `0600`; the
+repo-root `opencode.json` holds only a `{file:…}` reference.
+All TODO plans (009–023) were drift-checked: every finding still present
+and every quoted code excerpt confirmed byte-identical — only line
+numbers shifted from the 001/008/appearance merges (queue.rs promote_next
+now ~206, open_current_story ~725, spawn_heartbeat ~655, saveConfig
+rebuild ~1117). Plan 020's excerpts were refreshed in place for the
+six-command build.rs. Plan 022's dependency (008) is now DONE — it is
+unblocked except for its own Step 0 decision gate. Plan 015 still waits
+on 009.
+
 Two `improve` sessions wrote the original plans against commit `d40445e`
 (2026-07-17). Plans 005 and 006 were cold-reviewed and refreshed against
 `b1981c9` later that day; their files contain the current baselines and gates.
@@ -27,19 +45,19 @@ plans are independent. P1s first.
 | 006 | Prevent telegram transport errors from logging the bot token | P1 | S | — | DONE |
 | 007 | Supply chain + CI: pin nspanel rev, `--locked`, audit scans, Linux web job, `sh -n` gate | P1 | S | — | DONE (2026-07-18, CI run pending push) |
 | 008 | Expanded semantics: auto-expand High, reset per item, idle no-op | P1 | S | — | DONE (`8ca01e3`, verified 2026-07-18 — rewritten from `b1981c9` to remove an unrelated plan-001 duplicate that leaked into that commit) |
-| 009 | Validate live `slot-state` payloads + pin the event-name seam | P1 | S | — | DONE (implemented directly 2026-07-18 from `3c5cb90`; vitest 62→64, `cargo test` 234→235, tsc/clippy/fmt/build clean; file → `(done)`) |
+| 009 | Validate live `slot-state` payloads + pin the event-name seam | P1 | S | — | DONE (`bb0f249`, implemented directly 2026-07-18 from `3c5cb90`; vitest 62→64, `cargo test` 234→235, tsc/clippy/fmt/build clean; file → `(done)`) |
 | 010 | ESPN fetch hardening: gzip, 1 MiB cap, redirect limit, UA | P1 | S | — | DONE (`4381de4`, merged to master 2026-07-18; Step 4 GUI smoke owed to operator) |
 | 011 | RSS robustness: `fetch_feed` wiremock tests, bounded entity decoder, streaming cap | P1 | M | — | DONE (`6b0bbc4`, merged to master 2026-07-18; `/improve execute` → reviewed APPROVE; file → `(done)`) |
 | 012 | Open-story hardening: reap child, `open -u` normalized URL, tested scheme gate | P2 | S | — | DONE (`b7f58fd`, implemented directly 2026-07-18 from `586c943`; `cargo test` 234 + 3 doc-tests, clippy/fmt clean; Step 4 GUI smoke batched to end-of-run; file → `(done)`) |
 | 013 | Boot-path config validation (warn-and-continue) | P2 | S | — | TODO |
 | 014 | Test the log-rotation engine + eval-splice escaping | P2 | S | — | TODO |
-| 015 | Deadline-based heartbeat (replace the 250 ms tick) | P2 | M | 008, 009 | TODO |
-| 016 | Frontend lint/format gate (Biome) | P2 | S | 007 (soft) | TODO |
+| 015 | Deadline-based heartbeat (replace the 250 ms tick) | P2 | M | 009 | TODO |
+| 016 | Frontend lint/format gate (Biome) | P2 | S | — | TODO |
 | 023 | Goal celebration visible (review-log ranked list + redesign) | P2 | M | — | TODO |
 | 018 | Overlay idle-cost cuts: lazy lottie, transform-based news shader | P2 | S | 023 (soft) | TODO |
-| 022 | Deep-testing un-park decision + §9.1/§9.2 execution | P2 | L | 008; decision gate | TODO |
-| 017 | Justfile (one-command local verification) | P3 | S | 007/016 (soft) | TODO |
-| 019 | Dead code removal: presentation channel, polling gates, no-op dispatch, scaffold | P3 | M | 004 (soft) | TODO |
+| 022 | Deep-testing un-park decision + §9.1/§9.2 execution | P2 | L | decision gate | TODO |
+| 017 | Justfile (one-command local verification) | P3 | S | 016 (soft) | TODO |
+| 019 | Dead code removal: presentation channel, polling gates, no-op dispatch, scaffold | P3 | M | — | TODO |
 | 020 | Config defaults single-source (`get_default_config` invoke) | P3 | M | — | TODO |
 | 021 | Settings save polish: feed metadata, duplicate rejection, port pre-flight | P3 | M | — | TODO |
 
@@ -79,16 +97,16 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - **004 first** — it corrects the project-state files every subsequent
   agent session reads. 014/017/019 touch some of the same doc lines;
   whoever lands second reconciles (noted in each plan).
-- **015 after 008 and 009** — 008 changes `promote_next` (015 quotes it);
+- **015 after 009** — 008 is DONE (015's baseline already includes it);
   009's seam pin should exist before the emit path is reworked.
-- **022 after 008** — the property-test model must encode 008's expanded
-  semantics; 022 also has a mandatory operator decision gate (execute vs
-  re-park) at Step 0.
+- **022 is blocked only by its Step 0 decision gate** — 008 is DONE; the
+  property-test model's expanded invariants are already written into the
+  plan. The operator must choose execute-§9 vs re-park.
 - **018 after 023** if both run — 023 may drop lottie entirely, mooting
   018's Step 1.
-- **007 / 016 / 017** all touch `.github/workflows/ci.yml` or mirror it —
-  any order, trivial textual merges; 017's recipes must mirror whatever
-  CI runs at execution time.
+- **016 / 017** touch `.github/workflows/ci.yml` or mirror it — 007
+  already landed there (`--locked`, audit scans, `ubuntu-latest`,
+  `sh -n`); both plans' texts account for it.
 - **012 vs 001** — both touch `lib.rs`'s shortcut area; textual-only
   interaction, reconcile by reading.
 - **020 / 021 vs 002** — all touch `SettingsApp.tsx` in different

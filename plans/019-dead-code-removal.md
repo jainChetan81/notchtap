@@ -5,7 +5,7 @@
 > This plan DELETES code; the STOP conditions are strict — when in doubt,
 > stop. When done, update this plan's status row in `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat d40445e..HEAD -- src/presentationMode.ts src/presentationMode.test.ts src-tauri/src/lib.rs src-tauri/src/poller.rs src-tauri/src/rss_poller.rs src-tauri/src/event.rs src-tauri/src/error.rs src-tauri/src/http.rs index.html`
+> **Drift check (run first)**: `git diff --stat b43a7ca..HEAD -- src/presentationMode.ts src/presentationMode.test.ts src-tauri/src/lib.rs src-tauri/src/poller.rs src-tauri/src/rss_poller.rs src-tauri/src/event.rs src-tauri/src/error.rs src-tauri/src/http.rs index.html`
 > On any change, re-verify each deletion target still matches the
 > evidence below (especially: still zero non-test references).
 
@@ -14,10 +14,10 @@
 - **Priority**: P3
 - **Effort**: M
 - **Risk**: MED — deletions; each sub-part has its own verify gate
-- **Depends on**: plan 004 (docs pass) recommended first — CONTEXT.md's
-  "Polling Pause" entry needs updating alongside part B
+- **Depends on**: none — 004 (docs pass) is DONE; read what it wrote in
+  CONTEXT.md before editing the "Polling Pause" entry in Part B
 - **Category**: tech-debt
-- **Planned at**: commit `d40445e`, 2026-07-17
+- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `b43a7ca` 2026-07-18 (excerpts re-verified unchanged); drift baseline refreshed to `b43a7ca` 2026-07-18 (excerpts re-verified unchanged)
 
 ## Why this matters
 
@@ -234,7 +234,7 @@ green after each part is the gate. Count integrity per Step E.
 - [ ] `rg -n "presentationMode|PresentationModePayload|PauseGate|fn dispatch|UnknownType" src src-tauri/src` → zero hits
 - [ ] `grep -c "Tauri + React" index.html` → 0
 - [ ] `cargo test`, clippy, fmt, `npx vitest run`, `npx tsc --noEmit`, `npx vite build` all exit 0
-- [ ] `git diff d40445e..HEAD -- src-tauri/capabilities/default.json` → empty (locked rule)
+- [ ] `git diff b43a7ca..HEAD -- src-tauri/capabilities/default.json` → empty (locked rule)
 - [ ] §0 counts reconciled; CONTEXT.md Polling Pause updated
 - [ ] `plans/README.md` status row updated
 

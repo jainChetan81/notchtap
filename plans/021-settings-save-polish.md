@@ -5,7 +5,7 @@
 > If anything in "STOP conditions" occurs, stop and report. When done,
 > update this plan's status row in `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat d40445e..HEAD -- src/settings/SettingsApp.tsx src-tauri/src/settings.rs`
+> **Drift check (run first)**: `git diff --stat b43a7ca..HEAD -- src/settings/SettingsApp.tsx src-tauri/src/settings.rs`
 > On any change, compare excerpts below; mismatch = STOP. The earlier
 > session's plan 002 (animation previews) also edits SettingsApp.tsx —
 > different regions; reconcile textually.
@@ -17,7 +17,14 @@
 - **Risk**: LOW–MED (the port pre-flight changes save-path behavior)
 - **Depends on**: none
 - **Category**: bug
-- **Planned at**: commit `d40445e`, 2026-07-17
+- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed
+  to `b43a7ca` 2026-07-18 (excerpts re-verified unchanged);
+  **review-plan pass 2026-07-18**: corrected stale line refs (saveConfig
+  is at ~1114 not 835, the save command at 587-602 not 438-452, validate
+  at 35), fixed Step 3's snippet which read `state.inner().port` — the
+  managed state is `StdMutex<Config>` (v5.1), so the pre-flight must use
+  the function's existing `booted` local; in-scope files have ZERO drift
+  `b43a7ca..HEAD` as of this pass.
 
 ## Why this matters
 
@@ -41,7 +48,8 @@ Three sharp edges in the settings save flow:
 
 ## Current state
 
-`src/settings/SettingsApp.tsx:835-844` (`saveConfig`):
+`src/settings/SettingsApp.tsx:1117-1123` (inside `saveConfig`,
+~line 1114):
 
 ```tsx
 const submittedConfig: Config = {
@@ -53,25 +61,45 @@ const submittedConfig: Config = {
 };
 ```
 
-`lines()` (same file, ~186-191) splits/trims/filters the textarea.
+`lines()` (same file, ~line 201) splits/trims/filters the textarea.
 Note `config` here is the BOOTED config from `get_config` — so metadata
 matching is against pre-edit entries only. There is no UI to edit
 source/category; they come from the config file (hand-edit) or the
 defaults; the form must simply not *destroy* them.
 
-`src-tauri/src/settings.rs:25+` — `validate()` returns
-`Result<(), Vec<String>>` with per-field messages; the rss_feeds rules
-(URL parse + scheme) live in the same function (find with
-`rg -n "rss_feeds" src-tauri/src/settings.rs`). The save command
-(`settings.rs:438-452`): gate → `pin_uneditable_fields` → `validate` →
-`write_config_atomic` → `app.restart()`.
-
-Port validation today (settings.rs:28-33): range only
+`src-tauri/src/settings.rs:35+` — `validate()` returns
+`Result<(), Vec<String>>` with per-field messages; the rss_feeds rule
+(full URL parse + scheme + host, `reqwest::Url::parse`, ~line 97) lives
+in the same function. Port validation today (~lines 38-43): range only
 (`port < 1024` → error; u16 caps the top).
 
-Conventions: settings rust tests are exhaustive per-rule (36 tests, same
-file); frontend tests via mockIPC (`SettingsApp.test.tsx`). Counts in
-`docs/TESTING_STRATEGY.md` §0 only.
+The save command — `settings.rs:587-602`, quoted in full because Step 3
+edits it (note the managed state is `StdMutex<Config>` and a `booted`
+clone already exists):
+
+```rust
+pub fn save_config_and_relaunch(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    state: tauri::State<'_, StdMutex<Config>>,
+    config: Config,
+) -> Result<(), Vec<String>> {
+    ensure_settings_window(&window).map_err(|e| vec![e])?;
+    let booted = state.inner().lock().unwrap().clone();
+    let config = pin_uneditable_fields(config, &booted);
+    validate(&config)?;
+    let dir = notchtap_config_dir().map_err(|e| vec![e])?;
+    write_config_atomic(&dir, &config)
+        .map_err(|e| vec![format!("could not write config.toml: {e}")])?;
+    tracing::info!("config saved from settings window — relaunching");
+    app.restart();
+}
+```
+
+Conventions: settings rust tests are exhaustive per-rule (38 as of this
+refresh, same file); frontend tests via mockIPC (`SettingsApp.test.tsx`
+— the `save_config_and_relaunch` payload-intercepting mock is at
+~line 150). Counts in `docs/TESTING_STRATEGY.md` §0 only.
 
 ## Commands you will need
 
@@ -171,10 +199,13 @@ rejected; two genuinely different feeds accepted.
 
 In `save_config_and_relaunch`, after `validate(&config)?` and before
 `write_config_atomic`, when the submitted port differs from the booted
-one (`state.inner().port`), attempt a throwaway bind:
+one. Use the `booted` local that ALREADY EXISTS in the function (line
+594's `let booted = state.inner().lock().unwrap().clone();`) — do NOT
+write `state.inner().port`; the managed state is `StdMutex<Config>`, so
+that doesn't compile:
 
 ```rust
-if config.port != state.inner().port {
+if config.port != booted.port {
     // Best-effort pre-flight (plan 021): the relaunched app exits(1) on a
     // taken port with no UI — catch the common collision before writing.
     // A race remains possible (port taken between check and relaunch);
@@ -206,7 +237,15 @@ matches the repo's decision/boundary split).
 
 ### Step 4: Counts
 
-`docs/TESTING_STRATEGY.md` §0: settings +N (rust), frontend +2.
+`docs/TESTING_STRATEGY.md` §0 (the two count rows in the "done" table):
+in the rust row, bump the `settings` sub-count by the number of new
+`#[test]` fns actually added (Steps 2–3) AND the row's leading total by
+the same delta; in the frontend row, bump `settings form` by the number
+of new `it()` blocks (Step 1 — likely 2) AND that row's leading total by
+the same delta. Sub-counts must keep summing to each total, and §0 is
+the only place counts live. Re-read the rows at execution time —
+concurrent plans move them (at this refresh: rust
+`232 tests — settings 38, …`; frontend `62 tests — … settings form 11 …`).
 
 **Verify**: `cargo test` (full) + `npx vitest run` green.
 

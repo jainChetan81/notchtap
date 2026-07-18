@@ -7,7 +7,7 @@
 > stop and report. When done, update this plan's status row in
 > `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat d40445e..HEAD -- docs/TESTING_STRATEGY.md src-tauri/src/queue.rs src-tauri/Cargo.toml`
+> **Drift check (run first)**: `git diff --stat b43a7ca..HEAD -- docs/TESTING_STRATEGY.md src-tauri/src/queue.rs src-tauri/Cargo.toml`
 > Also: if plans 008 (expanded semantics) or 015 (heartbeat/next_deadline)
 > landed, the queue's op-surface grew — INCLUDE their behaviors in the
 > §9.1 retarget (Step 2); that is expected drift, not a STOP.
@@ -18,10 +18,11 @@
 - **Effort**: L (Step 0 alone is S if the decision is "re-park")
 - **Risk**: LOW (dev-dependency + additive tests; the "risk" is proptest
   finding real bugs, which is the point)
-- **Depends on**: plans/008 (land first — it changes promotion semantics
-  the model must encode)
+- **Depends on**: none blocking — 008 is DONE (`8ca01e3`; the expanded
+  invariants in Step 2 already assume it); Step 0's operator decision gate
+  remains
 - **Category**: tests
-- **Planned at**: commit `d40445e`, 2026-07-17
+- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `b43a7ca` 2026-07-18 (excerpts re-verified unchanged)
 
 ## Why this matters
 

@@ -5,7 +5,7 @@
 > If anything in "STOP conditions" occurs, stop and report. When done,
 > update this plan's status row in `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat d40445e..HEAD -- src-tauri/src/config.rs src-tauri/src/settings.rs src-tauri/src/lib.rs`
+> **Drift check (run first)**: `git diff --stat b43a7ca..HEAD -- src-tauri/src/config.rs src-tauri/src/settings.rs src-tauri/src/lib.rs`
 > On any change, compare excerpts below; mismatch = STOP.
 
 ## Status
@@ -15,7 +15,7 @@
 - **Risk**: MED (changes boot behavior for existing bad configs — mitigated by warn-don't-die design below)
 - **Depends on**: none
 - **Category**: bug
-- **Planned at**: commit `d40445e`, 2026-07-17
+- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `b43a7ca` 2026-07-18 (excerpts re-verified unchanged)
 
 ## Why this matters
 
@@ -163,13 +163,20 @@ add one sentence: boot validates the loaded config with the settings
 window's `validate()` and logs each violation as a warning, continuing
 with the file's values; malformed TOML still fails fast.
 
-**Verify**: `grep -c "warn" docs/ARCHITECTURE.md` → ≥1 in §10's area (eyeball the diff).
+**Verify**: `grep -c "warn" docs/ARCHITECTURE.md` → ≥1 in §10's area (eyeball
+the diff). NOTE: this file already contains one unrelated "warn" at line
+~366 (nothing to do with §10), so a plain `grep -c "warn"` reads `1`
+*before* this step even runs — it cannot tell you whether your sentence
+landed. Use `grep -A3 "reads this file once at startup" docs/ARCHITECTURE.md`
+instead and confirm your new sentence appears in that context, or grep for
+a distinctive word from the sentence you actually wrote.
 
 ## Test plan
 
-- No new unit tests required (rules already covered by the settings 36);
-  the manual smoke in Step 2 is the wiring proof. If you do add a seam +
-  test, update §0.
+- No new unit tests required (rules already covered by the settings suite
+  — see `docs/TESTING_STRATEGY.md` §0 for the current count, it has moved
+  since this plan was written); the manual smoke in Step 2 is the wiring
+  proof. If you do add a seam + test, update §0.
 
 ## Done criteria
 

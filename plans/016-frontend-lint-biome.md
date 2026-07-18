@@ -5,7 +5,7 @@
 > If anything in "STOP conditions" occurs, stop and report. When done,
 > update this plan's status row in `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat d40445e..HEAD -- package.json .github/workflows/ci.yml`
+> **Drift check (run first)**: `git diff --stat b43a7ca..HEAD -- package.json .github/workflows/ci.yml`
 > Coordinate with plan 007 (it also edits ci.yml's web job) — land in
 > either order; expect a trivial textual merge.
 
@@ -14,9 +14,11 @@
 - **Priority**: P2
 - **Effort**: S
 - **Risk**: LOW (first run may flag existing code; fixes are mechanical — see Step 2's containment rule)
-- **Depends on**: none (007 recommended first to settle ci.yml)
+- **Depends on**: none — 007 is DONE (ci.yml's web job now runs on
+  `ubuntu-latest` with `npm audit` + `sh -n notchtap` steps; keep them and
+  add the biome step alongside)
 - **Category**: dx
-- **Planned at**: commit `d40445e`, 2026-07-17
+- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `b43a7ca` 2026-07-18 (excerpts re-verified unchanged)
 
 ## Why this matters
 

@@ -9,7 +9,7 @@
 > conditions" occurs, stop and report. When done, update this plan's
 > status row in `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat d40445e..HEAD -- src/styles.css src/components/GoalCelebration.tsx src/components/StatusRailCard.tsx src/assets/lottie/goal-celebration.json docs/review-logs/2026-07-17-goal-burst-bug.md`
+> **Drift check (run first)**: `git diff --stat b43a7ca..HEAD -- src/styles.css src/components/GoalCelebration.tsx src/components/StatusRailCard.tsx src/assets/lottie/goal-celebration.json docs/review-logs/2026-07-17-goal-burst-bug.md`
 > On any change, re-read the review log — it may have been updated with
 > findings from another session; reconcile before starting.
 
@@ -22,7 +22,16 @@
 - **Depends on**: none. Plan 018 (lazy lottie) touches the same
   component — do THIS plan first if both run in one session.
 - **Category**: bug / direction
-- **Planned at**: commit `d40445e`, 2026-07-17
+- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed
+  to `b43a7ca` 2026-07-18 (excerpts re-verified unchanged);
+  **review-plan pass 2026-07-18**: all cited facts re-verified against
+  live code (commit `5277c55` exists as described; lottie JSON is exactly
+  120×120 / 24 frames @ 30 fps / 6 layers; pulse wiring and CLI flags
+  match; zero drift `b43a7ca..HEAD` on all in-scope files). Added: the
+  reduce-motion current-state detail in Step 5 (CSS side already
+  suppressed at `styles.css:149-155`, lottie is NOT — it's JS-driven),
+  the conditional `TESTING_STRATEGY.md` §0 scope entry, and the named
+  test-block pointers in the Test plan.
 
 ## Why this matters
 
@@ -108,6 +117,12 @@ builds), or Safari → Develop → the notchtap webview.
   by the log's acceptance)
 - `docs/review-logs/2026-07-17-goal-burst-bug.md` (append the resolution —
   matches how this repo's review logs are used)
+- `docs/TESTING_STRATEGY.md` §0 — ONLY if Step 4 changes the number of
+  `it()` blocks in `StatusRailCard.test.tsx` (e.g. css-first deletes the
+  celebration-mount assertion): move the `StatusRailCard` sub-count AND
+  the frontend row's leading total by the same delta (§0 is the only
+  place counts live; re-read the row at execution time — concurrent
+  plans move it)
 - `plans/README.md` (status row)
 
 **Out of scope**:
@@ -173,21 +188,44 @@ shows the strobe; a plain high-priority push (no signal) shows NEITHER.
 
 ### Step 5: Record the decisions
 
-- `docs/ARCHITECTURE.md`: add the reduce-motion decision the log's
-  acceptance requires (e.g. "reduce-motion ON → burst and confetti are
-  suppressed, the card still pulses once / or deliberately nothing —"
-  whichever the operator picks). Wire the chosen behavior via the
-  existing `@media (prefers-reduced-motion: reduce)` pattern in
-  styles.css if not already covered.
+Current reduce-motion state (verified 2026-07-18 — read before deciding):
+`styles.css:149-155` ALREADY suppresses the CSS side under
+`@media (prefers-reduced-motion: reduce)` — `.rail-card.pulse-goal`,
+its `::after` burst, and `.rail-card.pulse-red` all get
+`animation: none`. But the lottie layer is NOT covered: it's JS-driven
+(`<Lottie … autoplay>`), so `animation: none` can't stop it — with
+reduce-motion ON today, the confetti would still play (if visible at
+all). So:
+
+- If the css-first direction won in Step 4, the existing media block
+  likely already implements "reduce-motion → nothing"; extend it to any
+  new keyframes you added, and the remaining work is documentation only.
+- If lottie stays, decide whether reduce-motion suppresses it too; if
+  yes, gate the `GoalCelebration` mount (e.g. a
+  `window.matchMedia("(prefers-reduced-motion: reduce)")` check, or CSS
+  `display: none` on `.goal-celebration` inside the existing media
+  block — the CSS route is simpler and matches the file's pattern).
+- `docs/ARCHITECTURE.md`: add the decision sentence the log's acceptance
+  requires (whatever the operator picks, including "deliberately
+  nothing").
 - Append the resolution (root cause, fix, redesign summary) to
   `docs/review-logs/2026-07-17-goal-burst-bug.md`.
 
-**Verify**: `grep -c "reduce" docs/ARCHITECTURE.md` → ≥1 new mention in the celebration context; review log updated.
+**Verify**: `grep -c "reduce" docs/ARCHITECTURE.md` → ≥1 (valid gate:
+the baseline count is 0 as of this review — the file currently contains
+no "reduce" at all, so any nonzero count is your new sentence); review
+log updated.
 
 ## Test plan
 
 - Existing `StatusRailCard.test.tsx` pulse-related tests stay green
-  (adjust only for deliberate wiring changes).
+  (adjust only for deliberate wiring changes). They live in the
+  `describe("goal/red-card pulse")` block (~line 91): pulse-goal +
+  celebration mount on a goal signal; pulse clears on `animationend`;
+  pulse-red WITHOUT the celebration mount on a red-card signal. If the
+  css-first direction drops the lottie, the two mount assertions change
+  deliberately — update them (and §0, see Scope), don't delete the
+  signal-keying coverage itself.
 - No new automated tests for the visuals — animation look is manual-only
   by recorded design (`docs/TESTING_STRATEGY.md` §5). The acceptance
   criteria in the review log are the manual test script; run them

@@ -5,7 +5,7 @@
 > If anything in "STOP conditions" occurs, stop and report. When done,
 > update this plan's status row in `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat d40445e..HEAD -- src/components/GoalCelebration.tsx src/components/StatusRailCard.tsx src/styles.css`
+> **Drift check (run first)**: `git diff --stat b43a7ca..HEAD -- src/components/GoalCelebration.tsx src/components/StatusRailCard.tsx src/styles.css`
 > On any change, compare excerpts below; mismatch = STOP.
 
 ## Status
@@ -17,7 +17,7 @@
   the same component — execute 023 FIRST if both are planned for the same
   session, then this plan's Step 1 wraps whatever 023 produced.
 - **Category**: perf
-- **Planned at**: commit `d40445e`, 2026-07-17
+- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `b43a7ca` 2026-07-18 (excerpts re-verified unchanged)
 
 ## Why this matters
 

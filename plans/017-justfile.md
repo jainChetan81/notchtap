@@ -5,7 +5,7 @@
 > If anything in "STOP conditions" occurs, stop and report. When done,
 > update this plan's status row in `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat d40445e..HEAD -- AGENTS.md CLAUDE.md package.json .github/workflows/ci.yml`
+> **Drift check (run first)**: `git diff --stat b43a7ca..HEAD -- AGENTS.md CLAUDE.md package.json .github/workflows/ci.yml`
 > (Read-only inputs; this plan creates a new file plus doc edits.)
 
 ## Status
@@ -13,10 +13,11 @@
 - **Priority**: P3
 - **Effort**: S
 - **Risk**: LOW
-- **Depends on**: none (if plans 007/016 have landed, mirror their added
-  gates in the recipes — see Step 1's note)
+- **Depends on**: none — 007 is DONE, so the recipes must include its gates
+  (`--locked` on cargo, `sh -n notchtap`); add biome to `check-web` only if
+  016 has landed (see Step 1's note)
 - **Category**: dx
-- **Planned at**: commit `d40445e`, 2026-07-17
+- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `b43a7ca` 2026-07-18 (excerpts re-verified unchanged)
 
 ## Why this matters
 
