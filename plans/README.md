@@ -30,7 +30,7 @@ plans are independent. P1s first.
 | 009 | Validate live `slot-state` payloads + pin the event-name seam | P1 | S | — | TODO |
 | 010 | ESPN fetch hardening: gzip, 1 MiB cap, redirect limit, UA | P1 | S | — | DONE (`4381de4`, merged to master 2026-07-18; Step 4 GUI smoke owed to operator) |
 | 011 | RSS robustness: `fetch_feed` wiremock tests, bounded entity decoder, streaming cap | P1 | M | — | DONE (`6b0bbc4`, merged to master 2026-07-18; `/improve execute` → reviewed APPROVE; file → `(done)`) |
-| 012 | Open-story hardening: reap child, `open -u` normalized URL, tested scheme gate | P2 | S | — | TODO |
+| 012 | Open-story hardening: reap child, `open -u` normalized URL, tested scheme gate | P2 | S | — | DONE (implemented directly 2026-07-18 from `586c943`; `cargo test` 234 + 3 doc-tests, clippy/fmt clean; Step 4 GUI smoke owed to operator) |
 | 013 | Boot-path config validation (warn-and-continue) | P2 | S | — | TODO |
 | 014 | Test the log-rotation engine + eval-splice escaping | P2 | S | — | TODO |
 | 015 | Deadline-based heartbeat (replace the 250 ms tick) | P2 | M | 008, 009 | TODO |

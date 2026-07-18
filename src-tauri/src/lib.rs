@@ -721,6 +721,19 @@ fn skip_current<R: tauri::Runtime>(app: &tauri::AppHandle<R>, queue: &Arc<Mutex<
     }
 }
 
+/// Returns the normalized (parsed re-serialized) URL iff the link is a
+/// well-formed http(s) URL — the ONLY thing ⌃⇧O will hand to `open`.
+/// Full parse, never a prefix check: `starts_with("http")` admits
+/// `httpx://` (the same trap the settings feed validation already fixed).
+#[cfg(target_os = "macos")]
+fn openable_http_url(raw: &str) -> Option<String> {
+    let parsed = reqwest::Url::parse(raw).ok()?;
+    match parsed.scheme() {
+        "http" | "https" => Some(parsed.to_string()),
+        _ => None,
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn open_current_story<R: tauri::Runtime>(
     _app: &tauri::AppHandle<R>,
@@ -735,16 +748,28 @@ fn open_current_story<R: tauri::Runtime>(
         url.to_string()
     };
 
-    let is_http = reqwest::Url::parse(&url)
-        .map(|parsed| parsed.scheme() == "http" || parsed.scheme() == "https")
-        .unwrap_or(false);
-    if !is_http {
+    let Some(normalized) = openable_http_url(&url) else {
         tracing::debug!(%url, "open story ignored: link is not a valid http(s) url");
         return;
-    }
+    };
 
-    if let Err(error) = std::process::Command::new("open").arg(&url).spawn() {
-        tracing::debug!(%error, %url, "open story command could not be spawned");
+    // -u forces URL interpretation (never a file-path fallback), and the
+    // argument is the parser's own serialization — what was validated is
+    // exactly what executes. The child is reaped off-thread: a dropped,
+    // un-waited Child is a zombie until this 24/7 process exits.
+    match std::process::Command::new("open")
+        .arg("-u")
+        .arg(&normalized)
+        .spawn()
+    {
+        Ok(mut child) => {
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+        }
+        Err(error) => {
+            tracing::debug!(%error, %normalized, "open story command could not be spawned");
+        }
     }
 }
 
@@ -910,5 +935,54 @@ mod tests {
         assert!(!q.is_paused());
         assert!(matches!(q.current_slot_state(), SlotState::Showing { .. }));
         assert_eq!(q.total_waiting(), 0);
+    }
+
+    #[test]
+    fn openable_http_url_accepts_only_normalized_http_urls() {
+        // Accepting cases: the returned string is always the parser's own
+        // normalized serialization, never the raw input (the tab/newline
+        // cases prove that — WHATWG strips those before serializing).
+        for raw in [
+            "https://example.com/a",
+            "http://example.com",
+            "  https://example.com  ",
+            "https://exa\tmple.com/pa\nth",
+        ] {
+            let expected = reqwest::Url::parse(raw).unwrap().to_string();
+            assert_eq!(
+                openable_http_url(raw),
+                Some(expected),
+                "should accept and normalize: {raw:?}"
+            );
+        }
+
+        // Rejecting cases: non-http(s) schemes and unparseable input.
+        // `httpx://` is the prefix trap `starts_with(\"http\")` would admit.
+        for raw in [
+            "httpx://example.com",
+            "file:///etc/hosts",
+            "javascript:alert(1)",
+            "notaurl",
+        ] {
+            assert_eq!(openable_http_url(raw), None, "should reject: {raw:?}");
+        }
+    }
+
+    #[test]
+    fn open_current_story_is_noop_without_visible_link() {
+        // Empty slot → current_link() is None → early return before any
+        // spawn. Proves the guard; the `open` subprocess stays unreached.
+        let app = tauri::test::mock_app();
+        let mut inner = SingleSlotQueue::new(50);
+        // consume the queue's initial Empty baseline (see the dismiss no-op
+        // test) so the post-call assertion proves the handler changed nothing
+        assert_eq!(inner.slot_state_if_changed(), Some(SlotState::Empty));
+        let queue = Arc::new(Mutex::new(inner));
+
+        open_current_story(&app.handle().clone(), &queue);
+
+        let mut q = queue.blocking_lock();
+        assert_eq!(q.current_slot_state(), SlotState::Empty);
+        assert!(q.slot_state_if_changed().is_none());
     }
 }
