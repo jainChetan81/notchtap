@@ -50,7 +50,26 @@ pub struct SingleSlotQueue {
     waiting: [VecDeque<QueueItem>; 3],
     max_queued_per_tier: usize,
     paused: bool,
+    /// Render state — what the visible card looks like. Set `true` at every
+    /// promotion (plan 033 expand-all), flipped by the auto-retract and by
+    /// manual toggles. Never consulted by rotation arithmetic.
     expanded: bool,
+    /// Rotation arithmetic — how long the turn is. `false` at every
+    /// promotion (auto-expansion is display-only and free); set `true`
+    /// only by a manual expand, sticky for the rest of the turn. This is
+    /// the flag every `rotation_window(...)` call reads.
+    window_expanded: bool,
+    /// Set at every promotion alongside `expanded`; the auto-retract fires
+    /// at half the base rotation window while armed. Any manual toggle
+    /// press disarms it.
+    auto_retract_armed: bool,
+    /// Queue-slider counters (plan 033 decision 4): a batch starts when an
+    /// event is accepted while the engine is fully idle; every accepted
+    /// enqueue increments `batch_total`, every completion (rotated out,
+    /// dismissed, skipped) increments `batch_done`, and draining back to
+    /// fully idle resets both. Supersession is neither.
+    batch_total: usize,
+    batch_done: usize,
     last_emitted: Option<SlotState>,
     /// Same-tier promotion tie-break, checked before arrival order — see
     /// `pop_highest_priority_waiting`. Empty by default: every origin ties,
@@ -67,6 +86,10 @@ impl SingleSlotQueue {
             max_queued_per_tier,
             paused: false,
             expanded: false,
+            window_expanded: false,
+            auto_retract_armed: false,
+            batch_total: 0,
+            batch_done: 0,
             last_emitted: None,
             rotation_order: Vec::new(),
         }
@@ -134,6 +157,15 @@ impl SingleSlotQueue {
         if !can_promote_now && self.waiting[tier].len() >= self.max_queued_per_tier {
             return Err(QueueError::QueueFull);
         }
+        // plan 033 decision 4: a batch starts when an event is accepted
+        // while the engine is fully idle — counters (re)zero at that
+        // moment. (Draining back to idle re-zeroes them too, so this is
+        // belt-and-braces for the exact start semantics.)
+        if self.visible.is_none() && self.all_tiers_empty() {
+            self.batch_total = 0;
+            self.batch_done = 0;
+        }
+        self.batch_total += 1;
         let mut item = QueueItem {
             event,
             enqueued_at: now,
@@ -142,7 +174,7 @@ impl SingleSlotQueue {
         };
         if can_promote_now {
             item.promoted_at = Some(now);
-            self.set_expanded_for_promotion(item.event.priority);
+            self.set_expanded_for_promotion();
             self.visible = Some(item);
         } else {
             self.waiting[tier].push_back(item);
@@ -185,18 +217,44 @@ impl SingleSlotQueue {
     // ------------------------------------------------------------------
 
     pub fn tick(&mut self, now: Instant) {
+        self.retract_if_elapsed(now);
         self.rotate_out_if_elapsed(now);
         self.promote_next(now);
+        self.reset_batch_if_idle();
+    }
+
+    /// plan 033: every promotion starts expanded (render-only — the turn
+    /// length is untouched) and auto-collapses at half the *base* window.
+    /// Runs before rotate/promote so a retract and a rotation due at the
+    /// same instant collapse-then-rotate in one tick, and so a freshly
+    /// promoted item's retract can never fire in its own promotion tick.
+    fn retract_if_elapsed(&mut self, now: Instant) {
+        if !(self.auto_retract_armed && self.expanded) {
+            return;
+        }
+        let Some(item) = &self.visible else { return };
+        let Some(promoted_at) = item.promoted_at else {
+            return;
+        };
+        // Duration math, not seconds truncation: a 1s base window retracts
+        // at 500ms, which `as_secs()` halving would round down to 0.
+        let retract_after = Duration::from_secs(item.event.rotation_window(false)) / 2;
+        if now.saturating_duration_since(promoted_at) < retract_after {
+            return;
+        }
+        self.expanded = false;
+        self.auto_retract_armed = false;
     }
 
     fn rotate_out_if_elapsed(&mut self, now: Instant) {
         let Some(item) = &self.visible else { return };
         let promoted_at = item.promoted_at.expect("visible items have promoted_at");
-        let window = item.event.rotation_window(self.expanded) + item.extension_secs;
+        let window = item.event.rotation_window(self.window_expanded) + item.extension_secs;
         if now.duration_since(promoted_at).as_secs() < window {
             return;
         }
         let item = self.visible.take().expect("checked Some above");
+        self.batch_done += 1;
         if let RotationSpec::Recurring { .. } = item.event.rotation {
             let tier = item.event.priority as usize;
             self.waiting[tier].push_back(item);
@@ -210,18 +268,22 @@ impl SingleSlotQueue {
         if let Some(mut item) = self.pop_highest_priority_waiting() {
             item.promoted_at = Some(now);
             item.extension_secs = 0;
-            self.set_expanded_for_promotion(item.event.priority);
+            self.set_expanded_for_promotion();
             self.visible = Some(item);
         }
     }
 
-    // Expanded is per-turn (CONTEXT.md "Expanded"): automatic for High,
-    // cleared for everything else — a leftover manual expand must not leak
-    // onto the next item. Called from both promotion sites (promote_next and
-    // enqueue_new's immediate-promote fast path) so neither can drift from
-    // the other.
-    fn set_expanded_for_promotion(&mut self, priority: Priority) {
-        self.expanded = priority == Priority::High;
+    // plan 033: every promotion starts expanded (render state), with the
+    // base rotation window (auto-expansion never extends the turn — the
+    // 3× window is manual-expand-only) and the auto-retract armed. The
+    // per-turn reset also means a leftover manual expand/window can never
+    // leak onto the next item. Called from both promotion sites
+    // (promote_next and enqueue_new's immediate-promote fast path) so
+    // neither can drift from the other.
+    fn set_expanded_for_promotion(&mut self) {
+        self.expanded = true;
+        self.window_expanded = false;
+        self.auto_retract_armed = true;
     }
 
     fn pop_highest_priority_waiting(&mut self) -> Option<QueueItem> {
@@ -275,7 +337,7 @@ impl SingleSlotQueue {
         let Some(promoted_at) = item.promoted_at else {
             return;
         };
-        let base_window = item.event.rotation_window(self.expanded);
+        let base_window = item.event.rotation_window(self.window_expanded);
         let effective_window = base_window + item.extension_secs;
         let elapsed = now.saturating_duration_since(promoted_at).as_secs();
         let remaining = effective_window.saturating_sub(elapsed);
@@ -309,8 +371,11 @@ impl SingleSlotQueue {
     /// requeued: "get rid of this" means gone, not "back after a lap
     /// through the other tiers."
     pub fn dismiss_visible(&mut self, now: Instant) {
-        self.visible = None;
+        if self.visible.take().is_some() {
+            self.batch_done += 1;
+        }
         self.promote_next(now);
+        self.reset_batch_if_idle();
     }
 
     /// Skip the Visible item: end its turn now, exactly as if its Rotation
@@ -325,12 +390,14 @@ impl SingleSlotQueue {
     /// Promotion, so neither needs touching here.
     pub fn skip_visible(&mut self, now: Instant) {
         if let Some(item) = self.visible.take() {
+            self.batch_done += 1;
             if let RotationSpec::Recurring { .. } = item.event.rotation {
                 let tier = item.event.priority as usize;
                 self.waiting[tier].push_back(item);
             }
         }
         self.promote_next(now);
+        self.reset_batch_if_idle();
     }
 
     pub fn current_priority(&self) -> Option<Priority> {
@@ -343,29 +410,57 @@ impl SingleSlotQueue {
             .and_then(|item| item.event.meta.link.as_deref())
     }
 
+    /// plan 033: with expand-all the hotkey always flips. Any press disarms
+    /// the auto-retract; collapse is render-only (the turn length never
+    /// changes on collapse); expand sets `window_expanded` — the manual 3×
+    /// extension, sticky for the rest of the turn.
     pub fn toggle_expanded(&mut self) {
         if self.visible.is_none() {
             return;
         }
+        self.auto_retract_armed = false;
         self.expanded = !self.expanded;
+        if self.expanded {
+            self.window_expanded = true;
+        }
     }
 
     pub fn total_waiting(&self) -> usize {
         self.waiting.iter().map(|t| t.len()).sum()
     }
 
-    /// The next Instant at which time alone changes state: the visible
-    /// item's rotation deadline (plan 015). `None` when nothing is
-    /// visible — promotion of waiting items is driven by mutations, which
-    /// wake the heartbeat directly, not by a deadline this method could
-    /// return. The deadline is returned regardless of `paused`: paused
-    /// items still age out (`rotate_out_if_elapsed` doesn't check
-    /// `paused`), Paused only disables `promote_next`.
+    /// plan 033 decision 4: fully idle (nothing visible, every tier empty)
+    /// resets the batch counters for the next batch. Checked after every
+    /// mutation that can drain the engine (tick, dismiss, skip); an
+    /// accepted enqueue can never *reach* idle, so its batch-start zeroing
+    /// lives in `enqueue_new` instead.
+    fn reset_batch_if_idle(&mut self) {
+        if self.visible.is_none() && self.all_tiers_empty() {
+            self.batch_total = 0;
+            self.batch_done = 0;
+        }
+    }
+
+    /// The next Instant at which time alone changes state: the earlier of
+    /// the visible item's auto-retract deadline (half the base window,
+    /// while armed — plan 033) and its rotation deadline (plan 015). `None`
+    /// when nothing is visible — promotion of waiting items is driven by
+    /// mutations, which wake the heartbeat directly, not by a deadline this
+    /// method could return. The deadline is returned regardless of
+    /// `paused`: paused items still age out (`rotate_out_if_elapsed`
+    /// doesn't check `paused`), Paused only disables `promote_next`.
     pub fn next_deadline(&self) -> Option<Instant> {
         let item = self.visible.as_ref()?;
         let promoted_at = item.promoted_at?;
-        let window = item.event.rotation_window(self.expanded) + item.extension_secs;
-        Some(promoted_at + Duration::from_secs(window))
+        let window = item.event.rotation_window(self.window_expanded) + item.extension_secs;
+        let rotation_deadline = promoted_at + Duration::from_secs(window);
+        if self.auto_retract_armed && self.expanded {
+            let retract_deadline =
+                promoted_at + Duration::from_secs(item.event.rotation_window(false)) / 2;
+            Some(retract_deadline.min(rotation_deadline))
+        } else {
+            Some(rotation_deadline)
+        }
     }
 
     // ------------------------------------------------------------------
@@ -385,19 +480,32 @@ impl SingleSlotQueue {
     pub fn current_slot_state(&self) -> SlotState {
         match &self.visible {
             None => SlotState::Empty,
-            Some(item) => SlotState::Showing {
-                id: item.event.id,
-                title: item.event.payload.title.clone(),
-                body: item.event.payload.body.clone(),
-                event_type: item.event.event_type.clone(),
-                priority: item.event.priority,
-                signal: item.event.signal,
-                expanded: self.expanded,
-                source: item.event.meta.source.clone(),
-                category: item.event.meta.category.clone(),
-                published_at_ms: item.event.meta.published_at_ms,
-                link: item.event.meta.link.clone(),
-            },
+            Some(item) => {
+                // Queue-slider position (plan 033): `total` never dips below
+                // 1 (a visible item is always at least its own segment) and
+                // `done` never reaches `total` while an item is visible
+                // (the current segment stays bright) — Recurring requeues
+                // can push `batch_done` past `batch_total`, hence the cap.
+                let queue_total = u32::try_from(self.batch_total.max(1)).unwrap_or(u32::MAX);
+                let queue_done = u32::try_from(self.batch_done)
+                    .unwrap_or(u32::MAX)
+                    .min(queue_total - 1);
+                SlotState::Showing {
+                    id: item.event.id,
+                    title: item.event.payload.title.clone(),
+                    body: item.event.payload.body.clone(),
+                    event_type: item.event.event_type.clone(),
+                    priority: item.event.priority,
+                    signal: item.event.signal,
+                    expanded: self.expanded,
+                    source: item.event.meta.source.clone(),
+                    category: item.event.meta.category.clone(),
+                    published_at_ms: item.event.meta.published_at_ms,
+                    link: item.event.meta.link.clone(),
+                    queue_total,
+                    queue_done,
+                }
+            }
         }
     }
 }
@@ -1213,71 +1321,95 @@ mod tests {
         q.enqueue(event("a", Priority::Medium, 8)).unwrap();
         q.slot_state_if_changed();
 
+        // plan 033: every promotion starts expanded, so the first press
+        // collapses — the point here is that a toggle emits, whichever
+        // way it flips.
         q.toggle_expanded();
         let change = q.slot_state_if_changed();
         assert!(change.is_some());
         match change.unwrap() {
-            SlotState::Showing { expanded, .. } => assert!(expanded),
+            SlotState::Showing { expanded, .. } => assert!(!expanded),
             SlotState::Empty => panic!("expected Showing"),
         }
     }
 
     #[test]
     fn expanded_increases_rotation_window() {
+        // plan 033: the 3× window is manual-expand-only. The promotion
+        // starts auto-expanded with the *base* window; the auto-retract
+        // collapses it at half that window, and a manual expand from
+        // there extends the turn 3×.
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(event("a", Priority::Medium, 3)).unwrap();
-        q.toggle_expanded();
-        q.tick(Instant::now());
-        q.slot_state_if_changed();
+        let t0 = Instant::now();
+        q.enqueue_at(event("a", Priority::Medium, 3), t0).unwrap();
 
-        let just_before = Instant::now() + Duration::from_secs(8);
+        // retract fires at 1.5s (half the 3s base); the item is still
+        // inside its base window at +2s.
+        q.tick(t0 + Duration::from_secs(2));
+        assert!(q.visible.is_some());
+        match q.current_slot_state() {
+            SlotState::Showing { expanded, .. } => {
+                assert!(!expanded, "auto-retract must have collapsed the card")
+            }
+            SlotState::Empty => panic!("expected Showing"),
+        }
+
+        q.toggle_expanded(); // manual expand: window becomes 3 × 3s = 9s
+
+        let just_before = t0 + Duration::from_secs(8);
         q.tick(just_before);
         assert!(q.visible.is_some(), "expanded window is 9s");
 
-        let at_deadline = Instant::now() + Duration::from_secs(10);
+        let at_deadline = t0 + Duration::from_secs(10);
         q.tick(at_deadline);
         assert!(q.visible.is_none());
     }
 
     // ------------------------------------------------------------------
-    // plan 008: expanded auto-expand for High, per-item reset, idle no-op
+    // plan 008's expanded-semantics cases, rewritten for plan 033:
+    // auto-expand for every priority, half-window auto-retract, manual-only
+    // window extension, per-item reset, idle no-op
     // ------------------------------------------------------------------
 
     #[test]
-    fn high_priority_immediate_enqueue_auto_expands() {
+    fn every_priority_auto_expands_on_immediate_enqueue() {
         // Exercises enqueue_new's can_promote_now fast path directly (no
         // tick()/promote_next involved) — the more common of the two
-        // promotion call sites in production (see plan 008).
-        let mut q = SingleSlotQueue::new(50);
-        q.enqueue(event("h", Priority::High, 8)).unwrap();
-        match q.current_slot_state() {
-            SlotState::Showing { expanded, .. } => {
-                assert!(
-                    expanded,
-                    "High priority must auto-expand on immediate promotion"
-                )
+        // promotion call sites in production. plan 033: expand-all, not
+        // plan 008's High-only.
+        for priority in [Priority::Low, Priority::Medium, Priority::High] {
+            let mut q = SingleSlotQueue::new(50);
+            q.enqueue(event("x", priority, 8)).unwrap();
+            match q.current_slot_state() {
+                SlotState::Showing { expanded, .. } => {
+                    assert!(
+                        expanded,
+                        "{priority:?} must auto-expand on immediate promotion"
+                    )
+                }
+                SlotState::Empty => panic!("expected Showing"),
             }
-            SlotState::Empty => panic!("expected Showing"),
         }
     }
 
     #[test]
-    fn high_priority_promoted_from_waiting_auto_expands() {
-        // A Medium item occupies the slot, so the High item queues behind
-        // it (higher-or-equal doesn't preempt). Ticking past the Medium
-        // item's window drives promote_next, not the enqueue fast path.
+    fn low_priority_promoted_from_waiting_auto_expands() {
+        // A Medium item occupies the slot, so the Low item queues behind
+        // it. Ticking past the Medium item's window drives promote_next,
+        // not the enqueue fast path — and the promotion must still start
+        // expanded (Low is the case plan 008 never auto-expanded).
         let mut q = SingleSlotQueue::new(50);
         q.enqueue(event("medium", Priority::Medium, 1)).unwrap();
-        q.enqueue(event("h", Priority::High, 8)).unwrap();
-        assert_eq!(waiting_titles(&q, Priority::High as usize), vec!["h"]);
+        q.enqueue(event("l", Priority::Low, 8)).unwrap();
+        assert_eq!(waiting_titles(&q, Priority::Low as usize), vec!["l"]);
 
         let later = Instant::now() + Duration::from_secs(2);
         q.tick(later);
 
-        assert_eq!(visible_title(&q), Some("h"));
+        assert_eq!(visible_title(&q), Some("l"));
         match q.current_slot_state() {
             SlotState::Showing { expanded, .. } => {
-                assert!(expanded, "High priority must auto-expand on promote_next")
+                assert!(expanded, "every priority must auto-expand on promote_next")
             }
             SlotState::Empty => panic!("expected Showing"),
         }
@@ -1285,8 +1417,16 @@ mod tests {
 
     #[test]
     fn expanded_resets_when_next_item_promotes() {
+        // plan 033 keeps plan 008's per-item reset, but the reset target
+        // flipped: the next item now starts *expanded* (with the base
+        // window and a freshly armed retract), never inheriting the
+        // previous item's manual expand/window.
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(event("a", Priority::Medium, 1)).unwrap();
+        let t0 = Instant::now();
+        q.enqueue_at(event("a", Priority::Medium, 1), t0).unwrap();
+        // let the auto-retract collapse "a" (at 0.5s, half its 1s base),
+        // then manually expand it — the only path to the 3× window.
+        q.tick(t0 + Duration::from_millis(600));
         q.toggle_expanded();
         match q.current_slot_state() {
             SlotState::Showing { expanded, .. } => assert!(expanded),
@@ -1295,34 +1435,50 @@ mod tests {
 
         q.enqueue(event("b", Priority::Medium, 8)).unwrap();
 
-        // "a" is expanded (9s window); ticking past its base 1s but before
-        // its expanded 3s window must not promote "b" yet.
-        let later = Instant::now() + Duration::from_secs(4);
+        // "a" is manually expanded (3s window); ticking past its base 1s
+        // but before its expanded 3s window must not promote "b" yet.
+        let later = t0 + Duration::from_secs(4);
         q.tick(later);
 
         assert_eq!(visible_title(&q), Some("b"));
         match q.current_slot_state() {
             SlotState::Showing { expanded, .. } => {
-                assert!(!expanded, "next item must start collapsed")
+                assert!(expanded, "next item must start expanded (plan 033)")
             }
             SlotState::Empty => panic!("expected Showing"),
         }
+        // ...and with the base window, not "a"'s leftover 3× extension:
+        // "b" (ttl 8) must rotate out at 8s, not 24s.
+        q.tick(later + Duration::from_secs(7));
+        assert!(q.visible.is_some(), "base window is 8s");
+        q.tick(later + Duration::from_secs(9));
+        assert!(q.visible.is_none(), "no inherited 3× window");
     }
 
     #[test]
-    fn auto_expanded_high_uses_expanded_rotation_window() {
-        // Mirrors expanded_increases_rotation_window's arithmetic, but the
-        // expansion here is automatic (High priority), not a manual toggle.
+    fn auto_expanded_item_keeps_base_rotation_window() {
+        // plan 008's auto_expanded_high_uses_expanded_rotation_window,
+        // rewritten: auto-expansion is display-only and free — the turn
+        // length stays the configured ttl even though the card promoted
+        // expanded.
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(event("h", Priority::High, 3)).unwrap();
+        let t0 = Instant::now();
+        q.enqueue_at(event("h", Priority::High, 3), t0).unwrap();
+        match q.current_slot_state() {
+            SlotState::Showing { expanded, .. } => assert!(expanded),
+            SlotState::Empty => panic!("expected Showing"),
+        }
 
-        let just_before = Instant::now() + Duration::from_secs(8);
+        let just_before = t0 + Duration::from_secs(2);
         q.tick(just_before);
-        assert!(q.visible.is_some(), "expanded window is 9s");
+        assert!(q.visible.is_some(), "base window is 3s");
 
-        let at_deadline = Instant::now() + Duration::from_secs(10);
+        let at_deadline = t0 + Duration::from_secs(4);
         q.tick(at_deadline);
-        assert!(q.visible.is_none());
+        assert!(
+            q.visible.is_none(),
+            "auto-expand must not extend the rotation window"
+        );
     }
 
     #[test]
@@ -1333,19 +1489,107 @@ mod tests {
         q.toggle_expanded(); // idle press must arm nothing
 
         q.enqueue(event("a", Priority::Medium, 8)).unwrap();
+        // the promotion auto-expands (plan 033) — that's the default, not
+        // a leak. What the idle press must not leak is the manual 3×
+        // window, and the retract must still come armed from the
+        // promotion itself.
+        assert!(q.expanded, "promotion auto-expands (plan 033)");
+        assert!(
+            !q.window_expanded,
+            "idle toggle must not leak the 3× window into the next promotion"
+        );
+        assert!(
+            q.auto_retract_armed,
+            "the retract is armed fresh at promotion"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // plan 033: auto-retract at half the base window
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn auto_retract_fires_at_half_the_base_window_and_emits() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue_at(event("a", Priority::Medium, 4), t0).unwrap();
+        q.slot_state_if_changed(); // consume the promotion emission
+
+        // just before half the 4s base window: still expanded, no emission
+        q.tick(t0 + Duration::from_millis(1900));
+        assert!(q.slot_state_if_changed().is_none());
+        match q.current_slot_state() {
+            SlotState::Showing { expanded, .. } => assert!(expanded),
+            SlotState::Empty => panic!("expected Showing"),
+        }
+
+        // past half: the retract fires, emits expanded:false, and the item
+        // stays visible to finish its turn compact
+        q.tick(t0 + Duration::from_millis(2100));
+        match q.slot_state_if_changed() {
+            Some(SlotState::Showing { expanded, .. }) => {
+                assert!(!expanded, "retract must collapse the render state")
+            }
+            other => panic!("expected a Showing collapse emission, got {other:?}"),
+        }
+        assert!(
+            q.visible.is_some(),
+            "retract is display-only — the item finishes its turn"
+        );
+        // the retract fires once: a later tick emits nothing more
+        q.tick(t0 + Duration::from_secs(3));
+        assert!(q.slot_state_if_changed().is_none());
+    }
+
+    #[test]
+    fn auto_retract_uses_subsecond_duration_math() {
+        // a 1s base window retracts at 500ms — seconds truncation
+        // (`as_secs()` halving) would round that to 0 and retract
+        // immediately.
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue_at(event("a", Priority::Medium, 1), t0).unwrap();
+
+        q.tick(t0 + Duration::from_millis(400));
         match q.current_slot_state() {
             SlotState::Showing { expanded, .. } => {
-                assert!(
-                    !expanded,
-                    "idle toggle must not leak into the next promotion"
-                )
+                assert!(expanded, "400ms < 500ms: too early to retract")
+            }
+            SlotState::Empty => panic!("expected Showing"),
+        }
+
+        q.tick(t0 + Duration::from_millis(600));
+        match q.current_slot_state() {
+            SlotState::Showing { expanded, .. } => {
+                assert!(!expanded, "600ms >= 500ms: retract must have fired")
             }
             SlotState::Empty => panic!("expected Showing"),
         }
     }
 
+    #[test]
+    fn manual_toggle_disarms_the_auto_retract() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue_at(event("a", Priority::Medium, 4), t0).unwrap();
+        q.slot_state_if_changed(); // consume the promotion emission
+
+        q.toggle_expanded(); // manual collapse, well before the retract moment
+        q.slot_state_if_changed(); // consume the collapse emission
+
+        // past half the base window: no auto-retract fires — the press
+        // disarmed it — and the turn length is untouched (collapse is
+        // render-only, so the item still rotates at 4s, not sooner).
+        q.tick(t0 + Duration::from_secs(3));
+        assert!(q.slot_state_if_changed().is_none());
+        match q.current_slot_state() {
+            SlotState::Showing { expanded, .. } => assert!(!expanded),
+            SlotState::Empty => panic!("expected Showing"),
+        }
+    }
+
     // ------------------------------------------------------------------
-    // plan 015: next_deadline
+    // plan 015: next_deadline (plan 033: min of armed retract + rotation)
     // ------------------------------------------------------------------
 
     #[test]
@@ -1355,10 +1599,29 @@ mod tests {
     }
 
     #[test]
-    fn next_deadline_matches_promoted_at_plus_window() {
+    fn next_deadline_prefers_an_armed_retract_over_rotation() {
         let mut q = SingleSlotQueue::new(50);
         let t0 = Instant::now();
         q.enqueue_at(event("a", Priority::Medium, 8), t0).unwrap();
+        let promoted_at = q.visible.as_ref().unwrap().promoted_at.unwrap();
+
+        // the armed auto-retract fires at half the 8s base window —
+        // earlier than the 8s rotation deadline, so it's what the
+        // heartbeat must wake for.
+        assert_eq!(
+            q.next_deadline(),
+            Some(promoted_at + Duration::from_secs(4))
+        );
+    }
+
+    #[test]
+    fn next_deadline_is_the_rotation_deadline_once_the_retract_has_fired() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue_at(event("a", Priority::Medium, 8), t0).unwrap();
+        // past half the base window: the retract fires and disarms, so the
+        // only deadline left is rotation.
+        q.tick(t0 + Duration::from_secs(5));
         let promoted_at = q.visible.as_ref().unwrap().promoted_at.unwrap();
 
         assert_eq!(
@@ -1372,6 +1635,10 @@ mod tests {
         let mut q = SingleSlotQueue::new(50);
         let t0 = Instant::now();
         q.enqueue_at(event("a", Priority::Medium, 8), t0).unwrap();
+        // plan 033: a promotion starts auto-expanded with the *base*
+        // window — a manual expand (the only 3× path) first needs the
+        // auto-retract to have collapsed the card.
+        q.tick(t0 + Duration::from_secs(5));
         q.toggle_expanded();
         let promoted_at = q.visible.as_ref().unwrap().promoted_at.unwrap();
 
@@ -1405,6 +1672,10 @@ mod tests {
         // visible_supersede_grants_extension_only_when_below_floor)
         q.enqueue_at(topic_event("a2", Priority::Medium, 1, "topic"), t0)
             .unwrap();
+        // past the retract moment (half of the 1s base): the retract
+        // deadline is spent, so the remaining deadline is rotation —
+        // which is where the extension shows up.
+        q.tick(t0 + Duration::from_millis(600));
         let visible = q.visible.as_ref().unwrap();
         let promoted_at = visible.promoted_at.unwrap();
         let extension_secs = visible.extension_secs;
@@ -1415,6 +1686,117 @@ mod tests {
             Some(promoted_at + Duration::from_secs(1 + extension_secs))
         );
     }
+
+    // ------------------------------------------------------------------
+    // plan 033: batch counters behind the queue slider (decision 4)
+    // ------------------------------------------------------------------
+
+    fn queue_progress(q: &SingleSlotQueue) -> (u32, u32) {
+        match q.current_slot_state() {
+            SlotState::Showing {
+                queue_total,
+                queue_done,
+                ..
+            } => (queue_total, queue_done),
+            SlotState::Empty => panic!("expected Showing"),
+        }
+    }
+
+    #[test]
+    fn batch_starts_at_first_accepted_enqueue_from_idle() {
+        let mut q = SingleSlotQueue::new(50);
+        q.enqueue(event("a", Priority::Medium, 8)).unwrap();
+        assert_eq!(queue_progress(&q), (1, 0));
+    }
+
+    #[test]
+    fn every_accepted_enqueue_increments_batch_total() {
+        let mut q = SingleSlotQueue::new(50);
+        q.enqueue(event("a", Priority::Medium, 8)).unwrap();
+        q.enqueue(event("b", Priority::Medium, 8)).unwrap();
+        q.enqueue(event("c", Priority::High, 8)).unwrap();
+        assert_eq!(queue_progress(&q), (3, 0));
+    }
+
+    #[test]
+    fn every_completion_increments_batch_done() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue_at(event("a", Priority::Medium, 1), t0).unwrap();
+        q.enqueue_at(event("b", Priority::Medium, 8), t0).unwrap();
+        q.enqueue_at(event("c", Priority::Medium, 8), t0).unwrap();
+
+        // rotation-out: a's 1s ttl elapses, b promotes
+        q.tick(t0 + Duration::from_secs(2));
+        assert_eq!(visible_title(&q), Some("b"));
+        assert_eq!(queue_progress(&q), (3, 1));
+
+        // dismiss: b drops, c promotes
+        q.dismiss_visible(t0 + Duration::from_secs(3));
+        assert_eq!(visible_title(&q), Some("c"));
+        assert_eq!(queue_progress(&q), (3, 2));
+
+        // skip: c drops, nothing waiting — the batch is drained
+        q.skip_visible(t0 + Duration::from_secs(4));
+        assert_eq!(q.current_slot_state(), SlotState::Empty);
+    }
+
+    #[test]
+    fn fully_idle_resets_the_batch_for_the_next_one() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue_at(event("a", Priority::Medium, 1), t0).unwrap();
+        q.enqueue_at(event("b", Priority::Medium, 1), t0).unwrap();
+
+        // drain the batch completely
+        q.tick(t0 + Duration::from_secs(2)); // a out, b promotes
+        q.tick(t0 + Duration::from_secs(4)); // b out, engine fully idle
+        assert_eq!(q.current_slot_state(), SlotState::Empty);
+        assert_eq!((q.batch_total, q.batch_done), (0, 0));
+
+        // the next batch counts from zero, not from the drained one
+        q.enqueue_at(event("c", Priority::Medium, 8), t0 + Duration::from_secs(5))
+            .unwrap();
+        assert_eq!(queue_progress(&q), (1, 0));
+    }
+
+    #[test]
+    fn supersession_is_neither_a_new_item_nor_a_completion() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue_at(topic_event("a", Priority::Medium, 8, "topic"), t0)
+            .unwrap();
+        q.enqueue_at(event("b", Priority::Medium, 8), t0).unwrap();
+        assert_eq!(queue_progress(&q), (2, 0));
+
+        // superseding the visible item merges content in place — the
+        // slider must not move in either direction
+        q.enqueue_at(topic_event("a-fresh", Priority::Medium, 8, "topic"), t0)
+            .unwrap();
+        assert_eq!(visible_title(&q), Some("a-fresh"));
+        assert_eq!(queue_progress(&q), (2, 0));
+    }
+
+    #[test]
+    fn batch_done_caps_at_total_minus_one_while_an_item_is_visible() {
+        // a Recurring item completes a turn every time it rotates out,
+        // but re-enters waiting — over a long batch its completions can
+        // outnumber the batch size. The current segment must stay lit:
+        // done caps at total - 1 while anything is visible.
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue_at(recurring_event("r", Priority::Medium, 1), t0)
+            .unwrap();
+        q.enqueue_at(event("b", Priority::Medium, 1), t0).unwrap();
+
+        q.tick(t0 + Duration::from_secs(2)); // r rotates out, requeues; b promotes
+        assert_eq!(visible_title(&q), Some("b"));
+        assert_eq!(queue_progress(&q), (2, 1));
+
+        q.tick(t0 + Duration::from_secs(4)); // b drops; r promotes again (2nd completion)
+        assert_eq!(visible_title(&q), Some("r"));
+        assert_eq!(queue_progress(&q), (2, 1), "done caps at total - 1");
+    }
 }
 
 // ----------------------------------------------------------------------
@@ -1422,8 +1804,9 @@ mod tests {
 // Supplements `mod tests` above; never replaces it. A sibling module (not
 // nested inside `mod tests`) so it can stay organized around its own
 // harness, while still reusing the same private, `#[cfg(test)]`-gated
-// surface (`enqueue_at`, direct `visible`/`waiting`/`expanded` field
-// access) that `mod tests` already relies on.
+// surface (`enqueue_at`, direct `visible`/`waiting`/`expanded`/
+// `window_expanded`/`auto_retract_armed` field access) that `mod tests`
+// already relies on.
 // ----------------------------------------------------------------------
 #[cfg(test)]
 mod proptest_queue {
@@ -1635,7 +2018,7 @@ mod proptest_queue {
             tier: item.event.priority as usize,
             recurring: matches!(item.event.rotation, RotationSpec::Recurring { .. }),
             promoted_at: item.promoted_at.expect("visible items have promoted_at"),
-            window: item.event.rotation_window(q.expanded) + item.extension_secs,
+            window: item.event.rotation_window(q.window_expanded) + item.extension_secs,
             origin: item.event.origin,
         })
     }
@@ -1679,16 +2062,12 @@ mod proptest_queue {
         }
 
         // Invariant 8, called at every detected promotion site.
-        fn assert_expanded_matches_priority_if_promoted(&self, promoted_id: Option<Uuid>) {
+        fn assert_expanded_at_promotion(&self, promoted_id: Option<Uuid>) {
             let Some(id) = promoted_id else { return };
-            if let SlotState::Showing {
-                priority, expanded, ..
-            } = self.q.current_slot_state()
-            {
-                assert_eq!(
+            if let SlotState::Showing { expanded, .. } = self.q.current_slot_state() {
+                assert!(
                     expanded,
-                    priority == Priority::High,
-                    "invariant 8: expanded must match priority immediately after promotion (id={id:?})"
+                    "invariant 8: every promotion starts expanded (id={id:?})"
                 );
             }
         }
@@ -1730,7 +2109,7 @@ mod proptest_queue {
             self.enqueued_accepted += 1;
             let promoted = current_vis_id(&self.q) == Some(event_id);
             if promoted {
-                self.assert_expanded_matches_priority_if_promoted(Some(event_id));
+                self.assert_expanded_at_promotion(Some(event_id));
             } else {
                 assert_eq!(
                     self.q.waiting[tier].back().map(|i| i.event.id),
@@ -1792,7 +2171,7 @@ mod proptest_queue {
                 after_id, predicted,
                 "invariant 4: tick promotion did not pick the highest-tier, best-rotation_order-rank, FIFO-tie front"
             );
-            self.assert_expanded_matches_priority_if_promoted(after_id);
+            self.assert_expanded_at_promotion(after_id);
         }
 
         fn apply_dismiss(&mut self) {
@@ -1820,7 +2199,7 @@ mod proptest_queue {
                 after_id, predicted,
                 "invariant 4: dismiss promotion did not pick the highest-tier, best-rotation_order-rank, FIFO-tie front"
             );
-            self.assert_expanded_matches_priority_if_promoted(after_id);
+            self.assert_expanded_at_promotion(after_id);
         }
 
         fn apply_skip(&mut self) {
@@ -1851,7 +2230,7 @@ mod proptest_queue {
                 after_id, predicted,
                 "invariant 4: skip promotion did not pick the highest-tier, best-rotation_order-rank, FIFO-tie front"
             );
-            self.assert_expanded_matches_priority_if_promoted(after_id);
+            self.assert_expanded_at_promotion(after_id);
         }
 
         // Invariants 6(i), 9, 5/6-conservation, and 7 — cheap, always-sound
@@ -1868,8 +2247,9 @@ mod proptest_queue {
                 );
             }
 
-            // invariant 9: next_deadline, when Some, is exactly
-            // promoted_at + window + extension.
+            // invariant 9: next_deadline, when Some, is exactly the earlier
+            // of the armed auto-retract deadline (half the base window) and
+            // the rotation deadline (promoted_at + window + extension).
             match self.q.next_deadline() {
                 Some(deadline) => {
                     let item = self
@@ -1878,12 +2258,19 @@ mod proptest_queue {
                         .as_ref()
                         .expect("next_deadline Some implies a visible item");
                     let promoted_at = item.promoted_at.expect("visible has promoted_at");
-                    let window = item.event.rotation_window(self.q.expanded) + item.extension_secs;
-                    assert_eq!(
-                        deadline,
-                        promoted_at + Duration::from_secs(window),
-                        "invariant 9: next_deadline mismatch"
-                    );
+                    let rotation_deadline = promoted_at
+                        + Duration::from_secs(
+                            item.event.rotation_window(self.q.window_expanded)
+                                + item.extension_secs,
+                        );
+                    let expected = if self.q.auto_retract_armed && self.q.expanded {
+                        let retract_deadline = promoted_at
+                            + Duration::from_secs(item.event.rotation_window(false)) / 2;
+                        retract_deadline.min(rotation_deadline)
+                    } else {
+                        rotation_deadline
+                    };
+                    assert_eq!(deadline, expected, "invariant 9: next_deadline mismatch");
                 }
                 None => assert!(
                     self.q.visible.is_none(),

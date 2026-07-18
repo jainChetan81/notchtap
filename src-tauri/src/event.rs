@@ -155,6 +155,12 @@ pub enum SlotState {
         category: Option<String>,
         published_at_ms: Option<i64>,
         link: Option<String>,
+        /// Queue-slider position within the current batch (plan 033):
+        /// `queue_total` is the batch size (never below 1 while Showing),
+        /// `queue_done` how many items completed (capped at
+        /// `queue_total - 1` so the current segment stays lit).
+        queue_total: u32,
+        queue_done: u32,
     },
 }
 
@@ -280,6 +286,8 @@ mod tests {
             category: Some("politics".to_string()),
             published_at_ms: Some(1_789_600_000_000),
             link: Some("https://example.com/story".to_string()),
+            queue_total: 5,
+            queue_done: 2,
         };
         let json = serde_json::to_value(&state).unwrap();
         assert_eq!(json["state"], "showing");
@@ -294,8 +302,11 @@ mod tests {
         assert_eq!(json["category"], "politics");
         assert_eq!(json["publishedAtMs"], 1_789_600_000_000_i64);
         assert_eq!(json["link"], "https://example.com/story");
+        assert_eq!(json["queueTotal"], 5);
+        assert_eq!(json["queueDone"], 2);
         assert!(json.get("event_type").is_none());
         assert!(json.get("published_at_ms").is_none());
+        assert!(json.get("queue_total").is_none());
         assert!(json.get("ttlSecs").is_none());
     }
 
@@ -313,6 +324,8 @@ mod tests {
             category: None,
             published_at_ms: None,
             link: None,
+            queue_total: 1,
+            queue_done: 0,
         };
 
         let json = serde_json::to_value(state).unwrap();
@@ -320,6 +333,8 @@ mod tests {
         assert!(json["category"].is_null());
         assert!(json["publishedAtMs"].is_null());
         assert!(json["link"].is_null());
+        assert_eq!(json["queueTotal"], 1);
+        assert_eq!(json["queueDone"], 0);
     }
 
     #[test]

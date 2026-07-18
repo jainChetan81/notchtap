@@ -881,8 +881,10 @@ mod tests {
         // all — `NotifyRequest` has no `ttlSecs` field. An extra,
         // unrecognized field is silently ignored (no
         // `#[serde(deny_unknown_fields)]`), and the server's configured
-        // `default_ttl` still applies. Verified via `next_deadline()`
-        // landing at ~now + default_ttl, not at the attempted wire value.
+        // `default_ttl` still applies. Verified via `next_deadline()`:
+        // plan 033 arms the auto-retract at promotion, so the earliest
+        // deadline is the retract at half the base window — ~now +
+        // default_ttl/2, not anywhere near the attempted wire value.
         let state = test_state(SingleSlotQueue::new(50)); // default_ttl: 8
         let before = std::time::Instant::now();
         let app = router(state.clone());
@@ -902,8 +904,8 @@ mod tests {
             .expect("a freshly-promoted item has a deadline");
         let elapsed_to_deadline = deadline.duration_since(before).as_secs();
         assert!(
-            (7..=9).contains(&elapsed_to_deadline),
-            "expected ~default_ttl (8s), got {elapsed_to_deadline}s — the wire ttlSecs value leaked through"
+            (3..=5).contains(&elapsed_to_deadline),
+            "expected ~default_ttl/2 (4s, the armed auto-retract), got {elapsed_to_deadline}s — the wire ttlSecs value leaked through"
         );
     }
 }

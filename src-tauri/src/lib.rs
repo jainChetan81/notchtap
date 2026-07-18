@@ -724,14 +724,13 @@ fn spawn_heartbeat<R: tauri::Runtime>(
     });
 }
 
-// v3.6 spec §7.1.1: the hotkey is a manual override for "everything else"
-// (§3.6's wording) — it's a no-op while the current slot is already
-// auto-expanded (High priority), not a forced-collapse of an automatic
-// expand. The auto-expand itself lives in queue.rs's
-// `set_expanded_for_promotion`, called from both promotion call sites
-// (`promote_next` and `enqueue_new`'s immediate-promote fast path) — by
-// the time this guard runs, a visible High item's `expanded` is already
-// `true`.
+// v3.6 spec §7.1.1 + plan 033: with expand-all, every promotion starts
+// expanded, so the hotkey always flips — a press on an auto-expanded card
+// collapses it (render-only, and disarms the auto-retract); a press on a
+// collapsed card expands it and extends its rotation window 3× (manual
+// expansion is the only kind that extends the turn). plan 008's High
+// no-op guard is gone: there is no longer an "automatic for High" state
+// to protect, since automatic expansion is now universal.
 #[cfg(target_os = "macos")]
 fn toggle_manual_expand<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
@@ -739,9 +738,6 @@ fn toggle_manual_expand<R: tauri::Runtime>(
     wake: &Arc<tokio::sync::Notify>,
 ) {
     let mut q = queue.blocking_lock();
-    if q.current_priority() == Some(crate::event::Priority::High) {
-        return;
-    }
     q.toggle_expanded();
     let slot_change = q.slot_state_if_changed();
     drop(q);
@@ -870,15 +866,15 @@ mod tests {
     }
 
     #[test]
-    fn toggle_manual_expand_is_a_noop_while_high_priority_is_visible() {
+    fn toggle_manual_expand_collapses_an_auto_expanded_high_item() {
         let app = tauri::test::mock_app();
         let mut inner = SingleSlotQueue::new(50);
         inner.enqueue(event(Priority::High)).unwrap();
         let queue = Arc::new(Mutex::new(inner));
 
-        // High auto-expands at promotion (queue.rs's
-        // set_expanded_for_promotion) — confirm that baseline first, then
-        // prove the hotkey doesn't collapse it.
+        // every promotion auto-expands (plan 033) — confirm that baseline
+        // first, then prove the hotkey flips it: plan 008's High no-op
+        // guard is deleted, so the press must collapse the card.
         {
             let q = queue.blocking_lock();
             match q.current_slot_state() {
@@ -894,10 +890,7 @@ mod tests {
         let q = queue.blocking_lock();
         match q.current_slot_state() {
             SlotState::Showing { expanded, .. } => {
-                assert!(
-                    expanded,
-                    "hotkey must not collapse an auto-expanded High item"
-                )
+                assert!(!expanded, "hotkey must collapse an auto-expanded High item")
             }
             SlotState::Empty => panic!("expected Showing"),
         }
@@ -910,11 +903,26 @@ mod tests {
         inner.enqueue(event(Priority::Medium)).unwrap();
         let queue = Arc::new(Mutex::new(inner));
 
+        // Medium auto-expands on promotion too (plan 033): the first press
+        // collapses, the second re-expands.
         toggle_manual_expand(&app.handle().clone(), &queue, &wake());
+        {
+            let q = queue.blocking_lock();
+            match q.current_slot_state() {
+                SlotState::Showing { expanded, .. } => {
+                    assert!(
+                        !expanded,
+                        "first press collapses an auto-expanded Medium item"
+                    )
+                }
+                SlotState::Empty => panic!("expected Showing"),
+            }
+        }
 
+        toggle_manual_expand(&app.handle().clone(), &queue, &wake());
         let q = queue.blocking_lock();
         match q.current_slot_state() {
-            SlotState::Showing { expanded, .. } => assert!(expanded, "Medium must toggle"),
+            SlotState::Showing { expanded, .. } => assert!(expanded, "second press re-expands"),
             SlotState::Empty => panic!("expected Showing"),
         }
     }
@@ -1210,6 +1218,8 @@ mod tests {
             category: None,
             published_at_ms: None,
             link: None,
+            queue_total: 1,
+            queue_done: 0,
         };
         let escaped = escape_for_eval_splice(&serde_json::to_string(&state).unwrap());
 
