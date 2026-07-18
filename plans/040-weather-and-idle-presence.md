@@ -11,8 +11,14 @@
 
 ## Status
 
-- **TODO** — filed 2026-07-19 from a live-session product discussion
-  (operator wants weather; operator noticed football has no idle presence).
+- **Part A DONE, Part B TODO** — filed 2026-07-19 from a live-session
+  product discussion (operator wants weather; operator noticed football
+  has no idle presence). **Part A landed the same session**: `IdleView.tsx`
+  now renders a bright `Football` chip when `football.enabled && !live`
+  (and dim `Football off` when disabled), upgrading to the live green-dot
+  chip at kickoff — mirrors the News chip. Frontend-only, applied via HMR
+  without restarting the poller; 2 new IdleView tests (rail 4→6, vitest
+  105→107). Part B (weather source) remains TODO.
 - **Priority**: P2
 - **Effort**: Part A (football chip) S · Part B (weather) M
 - **Risk**: LOW — additive. Part B is a new poller/source in the

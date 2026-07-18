@@ -58,6 +58,40 @@ describe("IdleView status rail", () => {
     expect(container.querySelector(".idle-view .time")).not.toBeNull();
   });
 
+  it("football armed but nothing live: bright Football chip, no live chip", () => {
+    const { container } = render(
+      <IdleView
+        status={{
+          paused: false,
+          waiting: 0,
+          football: { enabled: true, live: null },
+          news: { enabled: true },
+        }}
+      />,
+    );
+    expect(container.querySelector(".src-chip.live")).toBeNull();
+    const football = screen.getByText("Football");
+    expect(football).toBeTruthy();
+    expect(football.className).not.toContain("dim");
+  });
+
+  it("football disabled reads as a dimmed Football off chip", () => {
+    const { container } = render(
+      <IdleView
+        status={{
+          paused: false,
+          waiting: 0,
+          football: { enabled: false, live: null },
+          news: { enabled: true },
+        }}
+      />,
+    );
+    const dimmed = Array.from(container.querySelectorAll(".src-chip.dim")).map(
+      (el) => el.textContent,
+    );
+    expect(dimmed).toContain("Football off");
+  });
+
   it("news gate off reads as a dimmed News paused chip", () => {
     const { container } = render(
       <IdleView

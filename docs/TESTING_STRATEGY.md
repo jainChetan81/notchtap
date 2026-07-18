@@ -18,7 +18,7 @@ other sections point back rather than repeating them):
 |---|---|---|
 | rust unit/integration | 289 tests — settings 45, queue 64, http 37, notifier 23, rss_poller 28, poller 19, event 19, config 17, presentation 11, lib 13, status 5, logging 4, net 4 | `cargo test` from `src-tauri/` |
 | rust doc-tests | 3 — public `queue`/`event` apis | same `cargo test` run |
-| frontend | 105 tests — presentation tables 12, inline markdown 7, slot-state hook 22, status-state hook 14, StatusRailCard 21, IdleView rail 4, Track slider 6, settings form 14, App render 5 | `npx vitest run` |
+| frontend | 107 tests — presentation tables 12, inline markdown 7, slot-state hook 22, status-state hook 14, StatusRailCard 21, IdleView rail 6, Track slider 6, settings form 14, App render 5 | `npx vitest run` |
 | ci (v4) | fmt, clippy `-D warnings` (`--locked`), cargo test (`--locked`), cargo-audit, npm audit, tsc, vitest, vite build, `sh -n` cli syntax check, swiftc compile check | every push + pr |
 
 every example case listed in §4 for v1/v2/v3 components has a passing

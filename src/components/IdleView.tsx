@@ -16,10 +16,14 @@ export function IdleView({ status }: { status?: StatusState }) {
       <span className="time">{display}</span>
       {rail && (
         <span className="src-rail">
-          {live !== null && (
+          {live !== null ? (
             <span className="src-chip live">
               <span className="live-dot" aria-hidden="true" />
               {live.label} · {live.minute}
+            </span>
+          ) : (
+            <span className={`src-chip${status.football.enabled ? "" : " dim"}`}>
+              {status.football.enabled ? "Football" : "Football off"}
             </span>
           )}
           <span className={`src-chip${status.news.enabled ? "" : " dim"}`}>
