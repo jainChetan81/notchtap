@@ -927,7 +927,10 @@ mod tests {
     fn toggle_manual_expand_collapses_an_auto_expanded_high_item() {
         let app = tauri::test::mock_app();
         let mut inner = SingleSlotQueue::new(50);
-        inner.enqueue(event(Priority::High)).unwrap();
+        // TODO(engine): routed through Engine in plan 037 step 5
+        inner
+            .enqueue(event(Priority::High), Instant::now())
+            .unwrap();
         let queue = Arc::new(Mutex::new(inner));
 
         // every promotion auto-expands (plan 033) — confirm that baseline
@@ -958,7 +961,10 @@ mod tests {
     fn toggle_manual_expand_flips_expanded_for_non_high_priority() {
         let app = tauri::test::mock_app();
         let mut inner = SingleSlotQueue::new(50);
-        inner.enqueue(event(Priority::Medium)).unwrap();
+        // TODO(engine): routed through Engine in plan 037 step 5
+        inner
+            .enqueue(event(Priority::Medium), Instant::now())
+            .unwrap();
         let queue = Arc::new(Mutex::new(inner));
 
         // Medium auto-expands on promotion too (plan 033): the first press
@@ -989,10 +995,13 @@ mod tests {
     fn dismiss_current_promotes_next_waiting_item() {
         let app = tauri::test::mock_app();
         let mut inner = SingleSlotQueue::new(50);
-        inner.enqueue(event(Priority::Medium)).unwrap();
+        // TODO(engine): routed through Engine in plan 037 step 5
+        inner
+            .enqueue(event(Priority::Medium), Instant::now())
+            .unwrap();
         let next = event(Priority::Medium);
         let next_id = next.id;
-        inner.enqueue(next).unwrap();
+        inner.enqueue(next, Instant::now()).unwrap();
         let queue = Arc::new(Mutex::new(inner));
 
         dismiss_current(&app.handle().clone(), &queue, &wake());
@@ -1025,10 +1034,11 @@ mod tests {
         let mut recurring = event(Priority::Medium);
         recurring.rotation = RotationSpec::Recurring { display_secs: 8 };
         let recurring_id = recurring.id;
-        inner.enqueue(recurring).unwrap();
+        // TODO(engine): routed through Engine in plan 037 step 5
+        inner.enqueue(recurring, Instant::now()).unwrap();
         let next = event(Priority::Medium);
         let next_id = next.id;
-        inner.enqueue(next).unwrap();
+        inner.enqueue(next, Instant::now()).unwrap();
         let queue = Arc::new(Mutex::new(inner));
 
         skip_current(&app.handle().clone(), &queue, &wake());
@@ -1062,7 +1072,8 @@ mod tests {
         {
             let mut q = queue.blocking_lock();
             assert!(q.is_paused());
-            q.enqueue(event(Priority::Medium)).unwrap();
+            // TODO(engine): routed through Engine in plan 037 step 5
+            q.enqueue(event(Priority::Medium), Instant::now()).unwrap();
             assert_eq!(q.current_slot_state(), SlotState::Empty);
         }
 
@@ -1160,7 +1171,8 @@ mod tests {
         };
         {
             let mut q = queue.lock().await;
-            q.enqueue(short_lived).unwrap();
+            // TODO(engine): routed through Engine in plan 037 step 5
+            q.enqueue(short_lived, Instant::now()).unwrap();
             assert!(matches!(q.current_slot_state(), SlotState::Showing { .. }));
         }
         heartbeat_wake.notify_waiters();

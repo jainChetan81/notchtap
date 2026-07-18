@@ -9,6 +9,7 @@ use axum::{
 use serde::Deserialize;
 use serde_json::json;
 use std::sync::Arc;
+use std::time::Instant;
 use tokio::sync::Mutex;
 use uuid::Uuid;
 
@@ -77,10 +78,11 @@ pub async fn enqueue_and_emit<R: tauri::Runtime>(
     let to_offer = event.clone();
     let slot_change = {
         let mut q = queue.lock().await;
+        // TODO(engine): routed through Engine::accept in plan 037 step 3
         if bypass_pause_when_slot_empty {
-            q.enqueue_test(event)?;
+            q.enqueue_test(event, Instant::now())?;
         } else {
-            q.enqueue(event)?;
+            q.enqueue(event, Instant::now())?;
         }
         q.slot_state_if_changed()
     };
@@ -563,20 +565,23 @@ mod tests {
 
         let mut queue = SingleSlotQueue::new(50);
         queue
-            .enqueue(Event {
-                id: Uuid::new_v4(),
-                event_type: EventType::Generic,
-                priority: req.priority.unwrap_or(Priority::Medium),
-                rotation: RotationSpec::OneShot { ttl_secs: 8 },
-                topic: None,
-                payload: EventPayload {
-                    title: "t".into(),
-                    body: "b".into(),
+            .enqueue(
+                Event {
+                    id: Uuid::new_v4(),
+                    event_type: EventType::Generic,
+                    priority: req.priority.unwrap_or(Priority::Medium),
+                    rotation: RotationSpec::OneShot { ttl_secs: 8 },
+                    topic: None,
+                    payload: EventPayload {
+                        title: "t".into(),
+                        body: "b".into(),
+                    },
+                    meta: EventMeta::default(),
+                    signal: req.signal,
+                    origin: SourceKind::Manual,
                 },
-                meta: EventMeta::default(),
-                signal: req.signal,
-                origin: SourceKind::Manual,
-            })
+                Instant::now(),
+            )
             .unwrap();
         assert_eq!(queue.current_priority(), Some(Priority::Medium));
     }
@@ -723,20 +728,23 @@ mod tests {
 
         let req: NotifyRequest = serde_json::from_str(r#"{"title":"t","body":"b"}"#).unwrap();
         queue
-            .enqueue(Event {
-                id: Uuid::new_v4(),
-                event_type: EventType::Generic,
-                priority: req.priority.unwrap_or(Priority::Medium),
-                rotation: RotationSpec::OneShot { ttl_secs: 8 },
-                topic: None,
-                payload: EventPayload {
-                    title: "t".into(),
-                    body: "b".into(),
+            .enqueue(
+                Event {
+                    id: Uuid::new_v4(),
+                    event_type: EventType::Generic,
+                    priority: req.priority.unwrap_or(Priority::Medium),
+                    rotation: RotationSpec::OneShot { ttl_secs: 8 },
+                    topic: None,
+                    payload: EventPayload {
+                        title: "t".into(),
+                        body: "b".into(),
+                    },
+                    meta: EventMeta::default(),
+                    signal: req.signal,
+                    origin: SourceKind::Manual,
                 },
-                meta: EventMeta::default(),
-                signal: req.signal,
-                origin: SourceKind::Manual,
-            })
+                Instant::now(),
+            )
             .unwrap();
         match queue.current_slot_state() {
             crate::event::SlotState::Showing { signal, .. } => {

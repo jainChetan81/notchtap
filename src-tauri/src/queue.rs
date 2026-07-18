@@ -37,8 +37,8 @@ pub struct QueueItem {
 /// }
 ///
 /// let mut queue = SingleSlotQueue::new(50);
-/// queue.enqueue(event("a", Priority::Medium, 1)).unwrap();
-/// queue.enqueue(event("b", Priority::Medium, 8)).unwrap();
+/// queue.enqueue(event("a", Priority::Medium, 1), Instant::now()).unwrap();
+/// queue.enqueue(event("b", Priority::Medium, 8), Instant::now()).unwrap();
 /// assert!(queue.current_slot_state() != notchtap_lib::event::SlotState::Empty);
 ///
 /// // once the ttl elapses, the next tick rotates and promotes the waiting item
@@ -107,29 +107,27 @@ impl SingleSlotQueue {
     // enqueue / supersession
     // ------------------------------------------------------------------
 
-    pub fn enqueue(&mut self, event: Event) -> Result<(), QueueError> {
-        self.enqueue_with_options(event, Instant::now(), false)
+    /// Clock-agnostic (plan 037): `now` comes from the caller — the Engine
+    /// reads `Instant::now()` once per operation; tests pass a simulated
+    /// clock. No wall-clock read happens inside the queue.
+    pub fn enqueue(&mut self, event: Event, now: Instant) -> Result<(), QueueError> {
+        self.enqueue_with_options(event, now, false)
     }
 
     /// Test-enqueue variant: promotes into the visible slot even when the
     /// engine is paused, provided the slot is empty and no one is waiting.
     /// Real `/notify` pushes must never bypass pause, so the public `enqueue`
     /// path stays unchanged. Used by `send_test_notification`.
-    pub fn enqueue_test(&mut self, event: Event) -> Result<(), QueueError> {
-        self.enqueue_with_options(event, Instant::now(), true)
-    }
-
-    /// Deterministic, simulated-clock entry point used only by tests.
-    #[cfg(test)]
-    fn enqueue_at(&mut self, event: Event, now: Instant) -> Result<(), QueueError> {
-        self.enqueue_with_options(event, now, false)
+    pub fn enqueue_test(&mut self, event: Event, now: Instant) -> Result<(), QueueError> {
+        self.enqueue_with_options(event, now, true)
     }
 
     // `now`-parameterized core so tests can drive the supersede/top-up path
     // deterministically without real sleeps — `top_up_visible_remaining_time`
     // needs a consistent notion of "now" alongside `promoted_at`, the same
-    // way `tick()` already does. `enqueue` is the real entry point (always
-    // real wall-clock time in production); this is the shared internal path.
+    // way `tick()` already does. Both public entry points above take `now`
+    // at the interface (plan 037 — clock-agnostic queue); this is the shared
+    // internal path.
     fn enqueue_with_options(
         &mut self,
         event: Event,
@@ -615,7 +613,8 @@ mod tests {
     #[test]
     fn enqueue_one_is_visible_immediately() {
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(event("a", Priority::Medium, 8)).unwrap();
+        q.enqueue(event("a", Priority::Medium, 8), Instant::now())
+            .unwrap();
         assert_eq!(visible_title(&q), Some("a"));
         assert_eq!(q.total_waiting(), 0);
     }
@@ -626,7 +625,7 @@ mod tests {
         let mut story = event("story", Priority::Low, 8);
         story.meta.link = Some("https://example.com/story".to_string());
 
-        q.enqueue(story).unwrap();
+        q.enqueue(story, Instant::now()).unwrap();
 
         assert_eq!(q.current_link(), Some("https://example.com/story"));
     }
@@ -636,7 +635,8 @@ mod tests {
         let mut q = SingleSlotQueue::new(50);
         assert_eq!(q.current_link(), None);
 
-        q.enqueue(event("status", Priority::Medium, 8)).unwrap();
+        q.enqueue(event("status", Priority::Medium, 8), Instant::now())
+            .unwrap();
 
         assert_eq!(q.current_link(), None);
     }
@@ -644,8 +644,10 @@ mod tests {
     #[test]
     fn second_item_waits_when_slot_is_occupied() {
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(event("a", Priority::Medium, 8)).unwrap();
-        q.enqueue(event("b", Priority::Medium, 8)).unwrap();
+        q.enqueue(event("a", Priority::Medium, 8), Instant::now())
+            .unwrap();
+        q.enqueue(event("b", Priority::Medium, 8), Instant::now())
+            .unwrap();
         assert_eq!(visible_title(&q), Some("a"));
         assert_eq!(waiting_titles(&q, Priority::Medium as usize), vec!["b"]);
     }
@@ -653,8 +655,10 @@ mod tests {
     #[test]
     fn expired_item_is_removed_and_next_waiting_promoted() {
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(event("a", Priority::Medium, 1)).unwrap();
-        q.enqueue(event("b", Priority::Medium, 8)).unwrap();
+        q.enqueue(event("a", Priority::Medium, 1), Instant::now())
+            .unwrap();
+        q.enqueue(event("b", Priority::Medium, 8), Instant::now())
+            .unwrap();
         assert_eq!(visible_title(&q), Some("a"));
 
         let later = Instant::now() + Duration::from_secs(2);
@@ -678,9 +682,12 @@ mod tests {
         // only checks "is anything waiting", not tier order).
         let mut q = SingleSlotQueue::new(50);
         q.pause();
-        q.enqueue(event("low", Priority::Low, 8)).unwrap();
-        q.enqueue(event("medium", Priority::Medium, 8)).unwrap();
-        q.enqueue(event("high", Priority::High, 8)).unwrap();
+        q.enqueue(event("low", Priority::Low, 8), Instant::now())
+            .unwrap();
+        q.enqueue(event("medium", Priority::Medium, 8), Instant::now())
+            .unwrap();
+        q.enqueue(event("high", Priority::High, 8), Instant::now())
+            .unwrap();
         q.resume();
         q.tick(Instant::now());
         assert_eq!(visible_title(&q), Some("high"));
@@ -694,9 +701,12 @@ mod tests {
     #[test]
     fn fifo_within_tier() {
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(event("first", Priority::Medium, 1)).unwrap();
-        q.enqueue(event("second", Priority::Medium, 8)).unwrap();
-        q.enqueue(event("third", Priority::Medium, 8)).unwrap();
+        q.enqueue(event("first", Priority::Medium, 1), Instant::now())
+            .unwrap();
+        q.enqueue(event("second", Priority::Medium, 8), Instant::now())
+            .unwrap();
+        q.enqueue(event("third", Priority::Medium, 8), Instant::now())
+            .unwrap();
         q.tick(Instant::now() + Duration::from_secs(2));
         assert_eq!(visible_title(&q), Some("second"));
         assert_eq!(waiting_titles(&q, Priority::Medium as usize), vec!["third"]);
@@ -712,21 +722,20 @@ mod tests {
             SourceKind::News,
         ]);
         q.pause();
-        q.enqueue(event_from("news", Priority::Medium, 8, SourceKind::News))
-            .unwrap();
-        q.enqueue(event_from(
-            "manual",
-            Priority::Medium,
-            8,
-            SourceKind::Manual,
-        ))
+        q.enqueue(
+            event_from("news", Priority::Medium, 8, SourceKind::News),
+            Instant::now(),
+        )
         .unwrap();
-        q.enqueue(event_from(
-            "football",
-            Priority::Medium,
-            8,
-            SourceKind::Football,
-        ))
+        q.enqueue(
+            event_from("manual", Priority::Medium, 8, SourceKind::Manual),
+            Instant::now(),
+        )
+        .unwrap();
+        q.enqueue(
+            event_from("football", Priority::Medium, 8, SourceKind::Football),
+            Instant::now(),
+        )
         .unwrap();
         q.resume();
         q.tick(Instant::now());
@@ -743,14 +752,15 @@ mod tests {
         // same-tier items still promote in plain arrival order.
         let mut q = SingleSlotQueue::new(50);
         q.pause();
-        q.enqueue(event_from("news", Priority::Medium, 8, SourceKind::News))
-            .unwrap();
-        q.enqueue(event_from(
-            "football",
-            Priority::Medium,
-            8,
-            SourceKind::Football,
-        ))
+        q.enqueue(
+            event_from("news", Priority::Medium, 8, SourceKind::News),
+            Instant::now(),
+        )
+        .unwrap();
+        q.enqueue(
+            event_from("football", Priority::Medium, 8, SourceKind::Football),
+            Instant::now(),
+        )
         .unwrap();
         q.resume();
         q.tick(Instant::now());
@@ -768,14 +778,15 @@ mod tests {
             SourceKind::News,
         ]);
         q.pause();
-        q.enqueue(event_from("news-high", Priority::High, 8, SourceKind::News))
-            .unwrap();
-        q.enqueue(event_from(
-            "football-medium",
-            Priority::Medium,
-            8,
-            SourceKind::Football,
-        ))
+        q.enqueue(
+            event_from("news-high", Priority::High, 8, SourceKind::News),
+            Instant::now(),
+        )
+        .unwrap();
+        q.enqueue(
+            event_from("football-medium", Priority::Medium, 8, SourceKind::Football),
+            Instant::now(),
+        )
         .unwrap();
         q.resume();
         q.tick(Instant::now());
@@ -785,8 +796,10 @@ mod tests {
     #[test]
     fn high_enqueue_does_not_interrupt_currently_visible() {
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(event("a", Priority::Medium, 4)).unwrap();
-        q.enqueue(event("b", Priority::High, 2)).unwrap();
+        q.enqueue(event("a", Priority::Medium, 4), Instant::now())
+            .unwrap();
+        q.enqueue(event("b", Priority::High, 2), Instant::now())
+            .unwrap();
         assert_eq!(visible_title(&q), Some("a"));
         // tick before a's window elapses keeps a visible
         q.tick(Instant::now() + Duration::from_secs(2));
@@ -796,7 +809,8 @@ mod tests {
     #[test]
     fn oneshot_drops_forever() {
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(event("a", Priority::Medium, 1)).unwrap();
+        q.enqueue(event("a", Priority::Medium, 1), Instant::now())
+            .unwrap();
         q.tick(Instant::now() + Duration::from_secs(2));
         assert!(q.visible.is_none());
         assert_eq!(q.total_waiting(), 0);
@@ -805,9 +819,10 @@ mod tests {
     #[test]
     fn recurring_requeues_to_back_of_own_tier() {
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(recurring_event("a", Priority::Medium, 1))
+        q.enqueue(recurring_event("a", Priority::Medium, 1), Instant::now())
             .unwrap();
-        q.enqueue(event("b", Priority::Medium, 8)).unwrap();
+        q.enqueue(event("b", Priority::Medium, 8), Instant::now())
+            .unwrap();
         q.tick(Instant::now() + Duration::from_secs(2));
         assert_eq!(visible_title(&q), Some("b"));
         assert_eq!(waiting_titles(&q, Priority::Medium as usize), vec!["a"]);
@@ -816,10 +831,12 @@ mod tests {
     #[test]
     fn recurring_requeues_not_to_front_or_different_tier() {
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(recurring_event("recur", Priority::Low, 1))
+        q.enqueue(recurring_event("recur", Priority::Low, 1), Instant::now())
             .unwrap();
-        q.enqueue(event("low2", Priority::Low, 8)).unwrap();
-        q.enqueue(event("high", Priority::High, 8)).unwrap();
+        q.enqueue(event("low2", Priority::Low, 8), Instant::now())
+            .unwrap();
+        q.enqueue(event("high", Priority::High, 8), Instant::now())
+            .unwrap();
         q.tick(Instant::now() + Duration::from_secs(2));
         // high promotes first; recur requeued behind low2 in the Low tier
         assert_eq!(visible_title(&q), Some("high"));
@@ -836,15 +853,18 @@ mod tests {
     #[test]
     fn fast_path_never_jumps_waiting_items() {
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(event("a", Priority::Medium, 1)).unwrap();
-        q.enqueue(event("b", Priority::Low, 8)).unwrap();
+        q.enqueue(event("a", Priority::Medium, 1), Instant::now())
+            .unwrap();
+        q.enqueue(event("b", Priority::Low, 8), Instant::now())
+            .unwrap();
         // a expired but tick hasn't run; slot is free and Low tier has b waiting
         let later = Instant::now() + Duration::from_secs(2);
         // manually age out a without tick's promotion half
         q.rotate_out_if_elapsed(later);
         assert!(q.visible.is_none());
         // a new high push must not jump b
-        q.enqueue(event("c", Priority::High, 8)).unwrap();
+        q.enqueue(event("c", Priority::High, 8), Instant::now())
+            .unwrap();
         assert!(q.visible.is_none());
         assert_eq!(waiting_titles(&q, Priority::Low as usize), vec!["b"]);
         assert_eq!(waiting_titles(&q, Priority::High as usize), vec!["c"]);
@@ -859,9 +879,9 @@ mod tests {
 
     #[test]
     fn visible_supersede_updates_content_priority_rotation() {
-        // fully simulated clock via enqueue_at — no real sleeps, no
-        // dependence on the real Instant::now() the pub enqueue() wrapper
-        // would otherwise use internally for the top-up calculation.
+        // fully simulated clock — enqueue takes `now` at the interface
+        // (plan 037), so no real sleeps and no hidden wall-clock read
+        // inside the top-up calculation.
         let mut q = SingleSlotQueue::new(50);
         let t0 = Instant::now();
         let base = topic_event("old", Priority::Medium, 8, "topic");
@@ -876,9 +896,9 @@ mod tests {
             signal: EventSignal::Goal,
             ..base.clone()
         };
-        q.enqueue_at(base, t0).unwrap();
+        q.enqueue(base, t0).unwrap();
         let promoted_at = q.visible.as_ref().unwrap().promoted_at;
-        q.enqueue_at(fresh, t0 + Duration::from_millis(10)).unwrap();
+        q.enqueue(fresh, t0 + Duration::from_millis(10)).unwrap();
         let visible = q.visible.as_ref().unwrap();
         assert_eq!(visible.event.payload.title, "new");
         assert_eq!(visible.event.payload.body, "fresh body");
@@ -901,18 +921,18 @@ mod tests {
         // base window 10s: an immediate supersede has ~10s remaining, well
         // above the 2s floor — no extension granted.
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue_at(topic_event("a", Priority::Medium, 10, "topic"), t0)
+        q.enqueue(topic_event("a", Priority::Medium, 10, "topic"), t0)
             .unwrap();
-        q.enqueue_at(topic_event("a2", Priority::Medium, 10, "topic"), t0)
+        q.enqueue(topic_event("a2", Priority::Medium, 10, "topic"), t0)
             .unwrap();
         assert_eq!(q.visible.as_ref().unwrap().extension_secs, 0);
 
         // base window 1s: an immediate supersede already has only ~1s
         // remaining, below the 2s floor — extension granted to close the gap.
         let mut q2 = SingleSlotQueue::new(50);
-        q2.enqueue_at(topic_event("b", Priority::Medium, 1, "topic"), t0)
+        q2.enqueue(topic_event("b", Priority::Medium, 1, "topic"), t0)
             .unwrap();
-        q2.enqueue_at(topic_event("b2", Priority::Medium, 1, "topic"), t0)
+        q2.enqueue(topic_event("b2", Priority::Medium, 1, "topic"), t0)
             .unwrap();
         let extension = q2.visible.as_ref().unwrap().extension_secs;
         assert!(
@@ -930,13 +950,13 @@ mod tests {
         // exceed MAX_EXTENSION_ON_SUPERSEDE_SECS, however many land.
         let mut q = SingleSlotQueue::new(50);
         let base = Instant::now();
-        q.enqueue_at(topic_event("a0", Priority::Medium, 1, "topic"), base)
+        q.enqueue(topic_event("a0", Priority::Medium, 1, "topic"), base)
             .unwrap();
 
         for i in 1..=25 {
             let t = base + Duration::from_millis(i * 100);
             q.tick(t);
-            q.enqueue_at(
+            q.enqueue(
                 topic_event(&format!("a{i}"), Priority::Medium, 1, "topic"),
                 t,
             )
@@ -966,9 +986,9 @@ mod tests {
         let base = Instant::now();
         // 1s base window: an immediate supersede already has ~1s remaining,
         // below the 2s floor, so it's guaranteed to grant an extension.
-        q.enqueue_at(topic_event("a0", Priority::Medium, 1, "topic"), base)
+        q.enqueue(topic_event("a0", Priority::Medium, 1, "topic"), base)
             .unwrap();
-        q.enqueue_at(topic_event("a1", Priority::Medium, 1, "topic"), base)
+        q.enqueue(topic_event("a1", Priority::Medium, 1, "topic"), base)
             .unwrap();
         assert!(q.visible.as_ref().unwrap().extension_secs > 0);
 
@@ -977,7 +997,8 @@ mod tests {
         assert!(q.visible.is_none());
 
         // a fresh, unrelated promotion starts with extension_secs back at 0
-        q.enqueue(event("b", Priority::Medium, 8)).unwrap();
+        q.enqueue(event("b", Priority::Medium, 8), Instant::now())
+            .unwrap();
         assert_eq!(q.visible.as_ref().unwrap().extension_secs, 0);
         assert_eq!(q.visible.as_ref().unwrap().event.payload.title, "b");
         // the old topic item is gone entirely (OneShot dropped, not requeued)
@@ -995,15 +1016,24 @@ mod tests {
         // different code path (covered by the visible_supersede_* tests).
         let mut q = SingleSlotQueue::new(50);
         q.pause();
-        q.enqueue(topic_event("first", Priority::Medium, 8, "topic"))
-            .unwrap();
-        q.enqueue(topic_event("second", Priority::Medium, 8, "topic2"))
-            .unwrap();
+        q.enqueue(
+            topic_event("first", Priority::Medium, 8, "topic"),
+            Instant::now(),
+        )
+        .unwrap();
+        q.enqueue(
+            topic_event("second", Priority::Medium, 8, "topic2"),
+            Instant::now(),
+        )
+        .unwrap();
         assert_eq!(q.waiting[Priority::Medium as usize].len(), 2);
 
         // supersede "topic" (position 0) with fresh content, same priority
-        q.enqueue(topic_event("first-updated", Priority::Medium, 8, "topic"))
-            .unwrap();
+        q.enqueue(
+            topic_event("first-updated", Priority::Medium, 8, "topic"),
+            Instant::now(),
+        )
+        .unwrap();
 
         assert_eq!(q.waiting[Priority::Medium as usize].len(), 2);
         assert_eq!(
@@ -1020,13 +1050,21 @@ mod tests {
     fn cross_tier_supersede_moves_to_back_of_new_tier() {
         let mut q = SingleSlotQueue::new(50);
         q.pause();
-        q.enqueue(topic_event("topic", Priority::Low, 8, "topic"))
+        q.enqueue(
+            topic_event("topic", Priority::Low, 8, "topic"),
+            Instant::now(),
+        )
+        .unwrap();
+        q.enqueue(event("low", Priority::Low, 8), Instant::now())
             .unwrap();
-        q.enqueue(event("low", Priority::Low, 8)).unwrap();
-        q.enqueue(event("high", Priority::High, 8)).unwrap();
+        q.enqueue(event("high", Priority::High, 8), Instant::now())
+            .unwrap();
 
-        q.enqueue(topic_event("topic-upgraded", Priority::High, 8, "topic"))
-            .unwrap();
+        q.enqueue(
+            topic_event("topic-upgraded", Priority::High, 8, "topic"),
+            Instant::now(),
+        )
+        .unwrap();
 
         assert_eq!(q.waiting[Priority::Low as usize].len(), 1);
         assert_eq!(
@@ -1052,10 +1090,14 @@ mod tests {
     fn full_low_tier_rejects_low_but_accepts_high() {
         let mut q = SingleSlotQueue::new(1);
         q.pause();
-        q.enqueue(event("low1", Priority::Low, 8)).unwrap();
-        let low_err = q.enqueue(event("low2", Priority::Low, 8)).unwrap_err();
+        q.enqueue(event("low1", Priority::Low, 8), Instant::now())
+            .unwrap();
+        let low_err = q
+            .enqueue(event("low2", Priority::Low, 8), Instant::now())
+            .unwrap_err();
         assert!(matches!(low_err, QueueError::QueueFull));
-        q.enqueue(event("high1", Priority::High, 8)).unwrap();
+        q.enqueue(event("high1", Priority::High, 8), Instant::now())
+            .unwrap();
         assert_eq!(q.waiting[Priority::Low as usize].len(), 1);
         assert_eq!(q.waiting[Priority::High as usize].len(), 1);
     }
@@ -1068,7 +1110,8 @@ mod tests {
     fn pause_sends_enqueues_to_waiting_even_with_free_slot() {
         let mut q = SingleSlotQueue::new(50);
         q.pause();
-        q.enqueue(event("a", Priority::Medium, 8)).unwrap();
+        q.enqueue(event("a", Priority::Medium, 8), Instant::now())
+            .unwrap();
         assert!(q.visible.is_none());
         assert_eq!(waiting_titles(&q, Priority::Medium as usize), vec!["a"]);
     }
@@ -1076,8 +1119,10 @@ mod tests {
     #[test]
     fn pause_gates_promotion_but_not_rotation() {
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(event("a", Priority::Medium, 1)).unwrap();
-        q.enqueue(event("b", Priority::Medium, 8)).unwrap();
+        q.enqueue(event("a", Priority::Medium, 1), Instant::now())
+            .unwrap();
+        q.enqueue(event("b", Priority::Medium, 8), Instant::now())
+            .unwrap();
         q.pause();
 
         let later = Instant::now() + Duration::from_secs(2);
@@ -1091,7 +1136,8 @@ mod tests {
     fn test_enqueue_promotes_when_slot_empty_even_while_paused() {
         let mut q = SingleSlotQueue::new(50);
         q.pause();
-        q.enqueue_test(event("test", Priority::Medium, 8)).unwrap();
+        q.enqueue_test(event("test", Priority::Medium, 8), Instant::now())
+            .unwrap();
         assert_eq!(visible_title(&q), Some("test"));
         assert!(
             q.is_paused(),
@@ -1102,8 +1148,10 @@ mod tests {
     #[test]
     fn test_enqueue_waits_behind_a_visible_item() {
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(event("real", Priority::Medium, 8)).unwrap();
-        q.enqueue_test(event("test", Priority::Medium, 8)).unwrap();
+        q.enqueue(event("real", Priority::Medium, 8), Instant::now())
+            .unwrap();
+        q.enqueue_test(event("test", Priority::Medium, 8), Instant::now())
+            .unwrap();
         assert_eq!(visible_title(&q), Some("real"));
         assert_eq!(waiting_titles(&q, Priority::Medium as usize), vec!["test"]);
     }
@@ -1112,7 +1160,8 @@ mod tests {
     fn resume_then_tick_promotes_immediately() {
         let mut q = SingleSlotQueue::new(50);
         q.pause();
-        q.enqueue(event("a", Priority::Medium, 8)).unwrap();
+        q.enqueue(event("a", Priority::Medium, 8), Instant::now())
+            .unwrap();
         q.resume();
         q.tick(Instant::now());
         assert_eq!(visible_title(&q), Some("a"));
@@ -1123,17 +1172,23 @@ mod tests {
     fn queue_full_is_enforced_identically_while_paused() {
         let mut q = SingleSlotQueue::new(2);
         q.pause();
-        q.enqueue(event("a", Priority::Medium, 8)).unwrap();
-        q.enqueue(event("b", Priority::Medium, 8)).unwrap();
-        let err = q.enqueue(event("c", Priority::Medium, 8)).unwrap_err();
+        q.enqueue(event("a", Priority::Medium, 8), Instant::now())
+            .unwrap();
+        q.enqueue(event("b", Priority::Medium, 8), Instant::now())
+            .unwrap();
+        let err = q
+            .enqueue(event("c", Priority::Medium, 8), Instant::now())
+            .unwrap_err();
         assert!(matches!(err, QueueError::QueueFull));
     }
 
     #[test]
     fn dismiss_visible_clears_and_promotes_next_waiting() {
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(event("a", Priority::Medium, 8)).unwrap();
-        q.enqueue(event("b", Priority::Medium, 8)).unwrap();
+        q.enqueue(event("a", Priority::Medium, 8), Instant::now())
+            .unwrap();
+        q.enqueue(event("b", Priority::Medium, 8), Instant::now())
+            .unwrap();
 
         q.dismiss_visible(Instant::now());
 
@@ -1154,8 +1209,11 @@ mod tests {
     #[test]
     fn dismiss_visible_drops_recurring_item_rather_than_requeue() {
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(recurring_event("recur", Priority::Medium, 8))
-            .unwrap();
+        q.enqueue(
+            recurring_event("recur", Priority::Medium, 8),
+            Instant::now(),
+        )
+        .unwrap();
 
         q.dismiss_visible(Instant::now());
 
@@ -1166,8 +1224,10 @@ mod tests {
     #[test]
     fn dismiss_visible_respects_paused() {
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(event("a", Priority::Medium, 8)).unwrap();
-        q.enqueue(event("b", Priority::Medium, 8)).unwrap();
+        q.enqueue(event("a", Priority::Medium, 8), Instant::now())
+            .unwrap();
+        q.enqueue(event("b", Priority::Medium, 8), Instant::now())
+            .unwrap();
         q.pause();
 
         q.dismiss_visible(Instant::now());
@@ -1182,9 +1242,13 @@ mod tests {
         // item survives a skip (dismiss_visible_drops_recurring_item_rather_
         // than_requeue proves dismiss destroys it)
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(recurring_event("recur", Priority::Medium, 8))
+        q.enqueue(
+            recurring_event("recur", Priority::Medium, 8),
+            Instant::now(),
+        )
+        .unwrap();
+        q.enqueue(event("next", Priority::Medium, 8), Instant::now())
             .unwrap();
-        q.enqueue(event("next", Priority::Medium, 8)).unwrap();
 
         q.skip_visible(Instant::now());
 
@@ -1195,8 +1259,10 @@ mod tests {
     #[test]
     fn skip_visible_drops_oneshot_and_promotes_next() {
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(event("a", Priority::Medium, 8)).unwrap();
-        q.enqueue(event("b", Priority::Medium, 8)).unwrap();
+        q.enqueue(event("a", Priority::Medium, 8), Instant::now())
+            .unwrap();
+        q.enqueue(event("b", Priority::Medium, 8), Instant::now())
+            .unwrap();
 
         q.skip_visible(Instant::now());
 
@@ -1219,8 +1285,11 @@ mod tests {
         // paused: the recurring item still requeues, but nothing promotes
         // (Promotion is frozen — CONTEXT.md's Paused contract)
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(recurring_event("recur", Priority::Medium, 8))
-            .unwrap();
+        q.enqueue(
+            recurring_event("recur", Priority::Medium, 8),
+            Instant::now(),
+        )
+        .unwrap();
         q.pause();
 
         q.skip_visible(Instant::now());
@@ -1239,7 +1308,8 @@ mod tests {
         let mut q = SingleSlotQueue::new(50);
         let mut all_promoted: Vec<Uuid> = Vec::new();
 
-        q.enqueue(event("a", Priority::Medium, 1)).unwrap(); // fast-path promotes
+        q.enqueue(event("a", Priority::Medium, 1), Instant::now())
+            .unwrap(); // fast-path promotes
         if let Some(item) = q.visible.as_ref() {
             all_promoted.push(item.event.id);
         }
@@ -1249,9 +1319,12 @@ mod tests {
         q.tick(t1); // a ages out even while paused; nothing promotes (paused)
         assert!(q.visible.is_none());
 
-        q.enqueue(event("d", Priority::Medium, 1)).unwrap();
-        q.enqueue(event("e", Priority::Medium, 1)).unwrap();
-        q.enqueue(event("f", Priority::Medium, 1)).unwrap();
+        q.enqueue(event("d", Priority::Medium, 1), Instant::now())
+            .unwrap();
+        q.enqueue(event("e", Priority::Medium, 1), Instant::now())
+            .unwrap();
+        q.enqueue(event("f", Priority::Medium, 1), Instant::now())
+            .unwrap();
         assert!(q.visible.is_none(), "still paused: nothing promotes yet");
 
         q.resume();
@@ -1297,7 +1370,8 @@ mod tests {
     #[test]
     fn slot_state_change_guard_suppresses_identical_second_tick() {
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(event("a", Priority::Medium, 8)).unwrap();
+        q.enqueue(event("a", Priority::Medium, 8), Instant::now())
+            .unwrap();
         let first = q.slot_state_if_changed();
         assert!(first.is_some());
         let second = q.slot_state_if_changed();
@@ -1307,7 +1381,8 @@ mod tests {
     #[test]
     fn slot_state_emits_on_promotion_and_rotation_to_empty() {
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(event("a", Priority::Medium, 1)).unwrap();
+        q.enqueue(event("a", Priority::Medium, 1), Instant::now())
+            .unwrap();
         q.slot_state_if_changed();
 
         let later = Instant::now() + Duration::from_secs(2);
@@ -1320,7 +1395,8 @@ mod tests {
     #[test]
     fn slot_state_emits_on_expand_toggle() {
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(event("a", Priority::Medium, 8)).unwrap();
+        q.enqueue(event("a", Priority::Medium, 8), Instant::now())
+            .unwrap();
         q.slot_state_if_changed();
 
         // plan 033: every promotion starts expanded, so the first press
@@ -1343,7 +1419,7 @@ mod tests {
         // there extends the turn 3×.
         let mut q = SingleSlotQueue::new(50);
         let t0 = Instant::now();
-        q.enqueue_at(event("a", Priority::Medium, 3), t0).unwrap();
+        q.enqueue(event("a", Priority::Medium, 3), t0).unwrap();
 
         // retract fires at 1.5s (half the 3s base); the item is still
         // inside its base window at +2s.
@@ -1381,7 +1457,7 @@ mod tests {
         // plan 008's High-only.
         for priority in [Priority::Low, Priority::Medium, Priority::High] {
             let mut q = SingleSlotQueue::new(50);
-            q.enqueue(event("x", priority, 8)).unwrap();
+            q.enqueue(event("x", priority, 8), Instant::now()).unwrap();
             match q.current_slot_state() {
                 SlotState::Showing { expanded, .. } => {
                     assert!(
@@ -1401,8 +1477,10 @@ mod tests {
         // not the enqueue fast path — and the promotion must still start
         // expanded (Low is the case plan 008 never auto-expanded).
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(event("medium", Priority::Medium, 1)).unwrap();
-        q.enqueue(event("l", Priority::Low, 8)).unwrap();
+        q.enqueue(event("medium", Priority::Medium, 1), Instant::now())
+            .unwrap();
+        q.enqueue(event("l", Priority::Low, 8), Instant::now())
+            .unwrap();
         assert_eq!(waiting_titles(&q, Priority::Low as usize), vec!["l"]);
 
         let later = Instant::now() + Duration::from_secs(2);
@@ -1425,7 +1503,7 @@ mod tests {
         // previous item's manual expand/window.
         let mut q = SingleSlotQueue::new(50);
         let t0 = Instant::now();
-        q.enqueue_at(event("a", Priority::Medium, 1), t0).unwrap();
+        q.enqueue(event("a", Priority::Medium, 1), t0).unwrap();
         // let the auto-retract collapse "a" (at 0.5s, half its 1s base),
         // then manually expand it — the only path to the 3× window.
         q.tick(t0 + Duration::from_millis(600));
@@ -1435,7 +1513,8 @@ mod tests {
             SlotState::Empty => panic!("expected Showing"),
         }
 
-        q.enqueue(event("b", Priority::Medium, 8)).unwrap();
+        q.enqueue(event("b", Priority::Medium, 8), Instant::now())
+            .unwrap();
 
         // "a" is manually expanded (3s window); ticking past its base 1s
         // but before its expanded 3s window must not promote "b" yet.
@@ -1465,7 +1544,7 @@ mod tests {
         // expanded.
         let mut q = SingleSlotQueue::new(50);
         let t0 = Instant::now();
-        q.enqueue_at(event("h", Priority::High, 3), t0).unwrap();
+        q.enqueue(event("h", Priority::High, 3), t0).unwrap();
         match q.current_slot_state() {
             SlotState::Showing { expanded, .. } => assert!(expanded),
             SlotState::Empty => panic!("expected Showing"),
@@ -1490,7 +1569,8 @@ mod tests {
 
         q.toggle_expanded(); // idle press must arm nothing
 
-        q.enqueue(event("a", Priority::Medium, 8)).unwrap();
+        q.enqueue(event("a", Priority::Medium, 8), Instant::now())
+            .unwrap();
         // the promotion auto-expands (plan 033) — that's the default, not
         // a leak. What the idle press must not leak is the manual 3×
         // window, and the retract must still come armed from the
@@ -1514,7 +1594,7 @@ mod tests {
     fn auto_retract_fires_at_half_the_base_window_and_emits() {
         let mut q = SingleSlotQueue::new(50);
         let t0 = Instant::now();
-        q.enqueue_at(event("a", Priority::Medium, 4), t0).unwrap();
+        q.enqueue(event("a", Priority::Medium, 4), t0).unwrap();
         q.slot_state_if_changed(); // consume the promotion emission
 
         // just before half the 4s base window: still expanded, no emission
@@ -1550,7 +1630,7 @@ mod tests {
         // immediately.
         let mut q = SingleSlotQueue::new(50);
         let t0 = Instant::now();
-        q.enqueue_at(event("a", Priority::Medium, 1), t0).unwrap();
+        q.enqueue(event("a", Priority::Medium, 1), t0).unwrap();
 
         q.tick(t0 + Duration::from_millis(400));
         match q.current_slot_state() {
@@ -1573,7 +1653,7 @@ mod tests {
     fn manual_toggle_disarms_the_auto_retract() {
         let mut q = SingleSlotQueue::new(50);
         let t0 = Instant::now();
-        q.enqueue_at(event("a", Priority::Medium, 4), t0).unwrap();
+        q.enqueue(event("a", Priority::Medium, 4), t0).unwrap();
         q.slot_state_if_changed(); // consume the promotion emission
 
         q.toggle_expanded(); // manual collapse, well before the retract moment
@@ -1604,7 +1684,7 @@ mod tests {
     fn next_deadline_prefers_an_armed_retract_over_rotation() {
         let mut q = SingleSlotQueue::new(50);
         let t0 = Instant::now();
-        q.enqueue_at(event("a", Priority::Medium, 8), t0).unwrap();
+        q.enqueue(event("a", Priority::Medium, 8), t0).unwrap();
         let promoted_at = q.visible.as_ref().unwrap().promoted_at.unwrap();
 
         // the armed auto-retract fires at half the 8s base window —
@@ -1620,7 +1700,7 @@ mod tests {
     fn next_deadline_is_the_rotation_deadline_once_the_retract_has_fired() {
         let mut q = SingleSlotQueue::new(50);
         let t0 = Instant::now();
-        q.enqueue_at(event("a", Priority::Medium, 8), t0).unwrap();
+        q.enqueue(event("a", Priority::Medium, 8), t0).unwrap();
         // past half the base window: the retract fires and disarms, so the
         // only deadline left is rotation.
         q.tick(t0 + Duration::from_secs(5));
@@ -1636,7 +1716,7 @@ mod tests {
     fn next_deadline_uses_expanded_window() {
         let mut q = SingleSlotQueue::new(50);
         let t0 = Instant::now();
-        q.enqueue_at(event("a", Priority::Medium, 8), t0).unwrap();
+        q.enqueue(event("a", Priority::Medium, 8), t0).unwrap();
         // plan 033: a promotion starts auto-expanded with the *base*
         // window — a manual expand (the only 3× path) first needs the
         // auto-retract to have collapsed the card.
@@ -1655,7 +1735,7 @@ mod tests {
     fn next_deadline_is_some_while_paused() {
         let mut q = SingleSlotQueue::new(50);
         let t0 = Instant::now();
-        q.enqueue_at(event("a", Priority::Medium, 8), t0).unwrap();
+        q.enqueue(event("a", Priority::Medium, 8), t0).unwrap();
         q.pause();
 
         assert!(
@@ -1668,11 +1748,11 @@ mod tests {
     fn next_deadline_includes_supersede_extension() {
         let mut q = SingleSlotQueue::new(50);
         let t0 = Instant::now();
-        q.enqueue_at(topic_event("a", Priority::Medium, 1, "topic"), t0)
+        q.enqueue(topic_event("a", Priority::Medium, 1, "topic"), t0)
             .unwrap();
         // below the floor: this supersede grants a top-up (see
         // visible_supersede_grants_extension_only_when_below_floor)
-        q.enqueue_at(topic_event("a2", Priority::Medium, 1, "topic"), t0)
+        q.enqueue(topic_event("a2", Priority::Medium, 1, "topic"), t0)
             .unwrap();
         // past the retract moment (half of the 1s base): the retract
         // deadline is spent, so the remaining deadline is rotation —
@@ -1707,7 +1787,8 @@ mod tests {
     #[test]
     fn batch_starts_at_first_accepted_enqueue_from_idle() {
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(event("a", Priority::Medium, 8)).unwrap();
+        q.enqueue(event("a", Priority::Medium, 8), Instant::now())
+            .unwrap();
         assert_eq!(queue_progress(&q), (1, 0));
     }
 
@@ -1729,7 +1810,7 @@ mod tests {
                 value: "git push".to_string(),
             },
         ];
-        q.enqueue(ev).unwrap();
+        q.enqueue(ev, Instant::now()).unwrap();
         match q.current_slot_state() {
             SlotState::Showing {
                 subtitle, details, ..
@@ -1748,9 +1829,12 @@ mod tests {
     #[test]
     fn every_accepted_enqueue_increments_batch_total() {
         let mut q = SingleSlotQueue::new(50);
-        q.enqueue(event("a", Priority::Medium, 8)).unwrap();
-        q.enqueue(event("b", Priority::Medium, 8)).unwrap();
-        q.enqueue(event("c", Priority::High, 8)).unwrap();
+        q.enqueue(event("a", Priority::Medium, 8), Instant::now())
+            .unwrap();
+        q.enqueue(event("b", Priority::Medium, 8), Instant::now())
+            .unwrap();
+        q.enqueue(event("c", Priority::High, 8), Instant::now())
+            .unwrap();
         assert_eq!(queue_progress(&q), (3, 0));
     }
 
@@ -1758,9 +1842,9 @@ mod tests {
     fn every_completion_increments_batch_done() {
         let mut q = SingleSlotQueue::new(50);
         let t0 = Instant::now();
-        q.enqueue_at(event("a", Priority::Medium, 1), t0).unwrap();
-        q.enqueue_at(event("b", Priority::Medium, 8), t0).unwrap();
-        q.enqueue_at(event("c", Priority::Medium, 8), t0).unwrap();
+        q.enqueue(event("a", Priority::Medium, 1), t0).unwrap();
+        q.enqueue(event("b", Priority::Medium, 8), t0).unwrap();
+        q.enqueue(event("c", Priority::Medium, 8), t0).unwrap();
 
         // rotation-out: a's 1s ttl elapses, b promotes
         q.tick(t0 + Duration::from_secs(2));
@@ -1781,8 +1865,8 @@ mod tests {
     fn fully_idle_resets_the_batch_for_the_next_one() {
         let mut q = SingleSlotQueue::new(50);
         let t0 = Instant::now();
-        q.enqueue_at(event("a", Priority::Medium, 1), t0).unwrap();
-        q.enqueue_at(event("b", Priority::Medium, 1), t0).unwrap();
+        q.enqueue(event("a", Priority::Medium, 1), t0).unwrap();
+        q.enqueue(event("b", Priority::Medium, 1), t0).unwrap();
 
         // drain the batch completely
         q.tick(t0 + Duration::from_secs(2)); // a out, b promotes
@@ -1791,7 +1875,7 @@ mod tests {
         assert_eq!((q.batch_total, q.batch_done), (0, 0));
 
         // the next batch counts from zero, not from the drained one
-        q.enqueue_at(event("c", Priority::Medium, 8), t0 + Duration::from_secs(5))
+        q.enqueue(event("c", Priority::Medium, 8), t0 + Duration::from_secs(5))
             .unwrap();
         assert_eq!(queue_progress(&q), (1, 0));
     }
@@ -1800,14 +1884,14 @@ mod tests {
     fn supersession_is_neither_a_new_item_nor_a_completion() {
         let mut q = SingleSlotQueue::new(50);
         let t0 = Instant::now();
-        q.enqueue_at(topic_event("a", Priority::Medium, 8, "topic"), t0)
+        q.enqueue(topic_event("a", Priority::Medium, 8, "topic"), t0)
             .unwrap();
-        q.enqueue_at(event("b", Priority::Medium, 8), t0).unwrap();
+        q.enqueue(event("b", Priority::Medium, 8), t0).unwrap();
         assert_eq!(queue_progress(&q), (2, 0));
 
         // superseding the visible item merges content in place — the
         // slider must not move in either direction
-        q.enqueue_at(topic_event("a-fresh", Priority::Medium, 8, "topic"), t0)
+        q.enqueue(topic_event("a-fresh", Priority::Medium, 8, "topic"), t0)
             .unwrap();
         assert_eq!(visible_title(&q), Some("a-fresh"));
         assert_eq!(queue_progress(&q), (2, 0));
@@ -1821,9 +1905,9 @@ mod tests {
         // done caps at total - 1 while anything is visible.
         let mut q = SingleSlotQueue::new(50);
         let t0 = Instant::now();
-        q.enqueue_at(recurring_event("r", Priority::Medium, 1), t0)
+        q.enqueue(recurring_event("r", Priority::Medium, 1), t0)
             .unwrap();
-        q.enqueue_at(event("b", Priority::Medium, 1), t0).unwrap();
+        q.enqueue(event("b", Priority::Medium, 1), t0).unwrap();
 
         q.tick(t0 + Duration::from_secs(2)); // r rotates out, requeues; b promotes
         assert_eq!(visible_title(&q), Some("b"));
@@ -1840,7 +1924,7 @@ mod tests {
 // Supplements `mod tests` above; never replaces it. A sibling module (not
 // nested inside `mod tests`) so it can stay organized around its own
 // harness, while still reusing the same private, `#[cfg(test)]`-gated
-// surface (`enqueue_at`, direct `visible`/`waiting`/`expanded`/
+// surface (direct `visible`/`waiting`/`expanded`/
 // `window_expanded`/`auto_retract_armed` field access) that `mod tests`
 // already relies on.
 // ----------------------------------------------------------------------
@@ -2127,7 +2211,7 @@ mod proptest_queue {
             let tier = spec.priority as usize;
             let before_total = self.total_in_queue();
 
-            let result = self.q.enqueue_at(event, self.now);
+            let result = self.q.enqueue(event, self.now);
 
             let Ok(()) = result else {
                 // Rejected (QueueFull): not part of the 9 documented

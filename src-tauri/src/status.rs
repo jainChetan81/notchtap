@@ -195,7 +195,9 @@ mod tests {
     #[test]
     fn snapshot_reads_pause_and_waiting_from_the_queue() {
         let mut queue = SingleSlotQueue::new(50);
-        queue.enqueue(generic_event()).unwrap(); // unpaused: promotes
+        queue
+            .enqueue(generic_event(), std::time::Instant::now())
+            .unwrap(); // unpaused: promotes
         queue.pause();
 
         // one item visible, nothing waiting, paused, no live match
@@ -207,7 +209,9 @@ mod tests {
         assert!(!snap.news.enabled);
 
         // paused pushes buffer instead of promoting (v5 semantics)
-        queue.enqueue(generic_event()).unwrap();
+        queue
+            .enqueue(generic_event(), std::time::Instant::now())
+            .unwrap();
         assert_eq!(StatusState::snapshot(&queue, None, true, false).waiting, 1);
     }
 }

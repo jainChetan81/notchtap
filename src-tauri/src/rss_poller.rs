@@ -489,7 +489,8 @@ pub fn spawn_rss_poller(
                 for event in events {
                     let slot_change = {
                         let mut queue = queue.lock().await;
-                        if let Err(error) = queue.enqueue(event) {
+                        // TODO(engine): routed through Engine::accept in plan 037 step 4
+                        if let Err(error) = queue.enqueue(event, std::time::Instant::now()) {
                             tracing::warn!(feed = %feed_config.url, "rss event dropped: {error}");
                         }
                         queue.slot_state_if_changed()

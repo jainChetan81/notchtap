@@ -562,7 +562,8 @@ pub(crate) fn enqueue_and_fan_out(
 ) -> Option<SlotState> {
     for event in events {
         let accepted = event.clone();
-        match queue.enqueue(event) {
+        // TODO(engine): routed through Engine::accept in plan 037 step 4
+        match queue.enqueue(event, std::time::Instant::now()) {
             Ok(()) => {
                 for connector in connectors {
                     connector.offer(&accepted);
