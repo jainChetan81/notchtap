@@ -64,7 +64,7 @@ first-draft reasoning:
    timer armed at mount time cannot react to that after the fact.
    **fix**: rotation is decided in the rust core by `tick()`, full
    stop — driven since plan 015 by deadline-based wakeups
-   (`next_deadline` + a `tokio::sync::Notify`, see §4.4) rather than a
+   (`next_deadline` + a `tokio::sync::Notify`, see §4.3) rather than a
    fixed interval; the frontend holds no duration logic at all, just
    plays a fixed-length CSS transition whenever the pushed slot state
    changes. §5 covers this in full — it is the largest single behavior
@@ -105,7 +105,7 @@ first-draft reasoning:
    simpler to reason about than two. See §4.2. Review confirmed this
    is purely a latency optimization (worst case: one heartbeat wake of
    added delay under the deadline-based wakeup model, plan 015 — see
-   §4.4) and never changes final promotion ordering, since `tick()`
+   §4.3) and never changes final promotion ordering, since `tick()`
    still runs on every heartbeat wake regardless of whether the fast
    path ever fires — so its absence in any given case is harmless,
    just slower by one wake. (unchanged by review.)
