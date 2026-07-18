@@ -618,6 +618,7 @@ pub async fn send_test_notification(
     app: tauri::AppHandle,
     state: tauri::State<'_, StdMutex<Config>>,
     queue: tauri::State<'_, Arc<Mutex<SingleSlotQueue>>>,
+    wake: tauri::State<'_, Arc<tokio::sync::Notify>>,
     connectors: tauri::State<'_, Arc<Vec<ConnectorHandle>>>,
     source: SourceKind,
 ) -> Result<(), String> {
@@ -626,8 +627,13 @@ pub async fn send_test_notification(
     let event = build_test_event(&config, source);
     dispatch(event.clone()).map_err(|e| e.to_string())?;
     let queue = queue.inner().clone();
+    let wake = wake.inner().clone();
     let connectors = connectors.inner().clone();
-    http::enqueue_and_emit(&queue, connectors.as_slice(), &app, event, true)
+    // plan 015 (review follow-up): enqueue_and_emit itself wakes the
+    // deadline-based heartbeat now, so a test notification pushed from the
+    // Settings window rotates out on schedule instead of stalling forever
+    // while the heartbeat sleeps toward a deadline it never learns about.
+    http::enqueue_and_emit(&queue, &wake, connectors.as_slice(), &app, event, true)
         .await
         .map_err(|e| e.to_string())
 }

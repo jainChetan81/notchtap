@@ -60,9 +60,14 @@ impl<R: tauri::Runtime> Clone for AppState<R> {
 /// Shared enqueue path used by `/notify` and by `send_test_notification`:
 /// dispatch is the caller's responsibility (so malformed `/notify` requests
 /// can still return a 400 without entering the queue). Enqueues the event,
-/// fans it out to connectors, and emits any resulting slot-state change.
+/// fans it out to connectors, emits any resulting slot-state change, and
+/// wakes the deadline-based heartbeat (plan 015) — routed through this one
+/// shared function rather than duplicated at each caller, so every caller
+/// of this function wakes the heartbeat by construction; a mutation without
+/// a wake is structurally impossible to express here.
 pub async fn enqueue_and_emit<R: tauri::Runtime>(
     queue: &Arc<Mutex<SingleSlotQueue>>,
+    wake: &Arc<tokio::sync::Notify>,
     connectors: &[ConnectorHandle],
     app_handle: &tauri::AppHandle<R>,
     event: Event,
@@ -78,6 +83,7 @@ pub async fn enqueue_and_emit<R: tauri::Runtime>(
         }
         q.slot_state_if_changed()
     };
+    wake.notify_waiters();
     for connector in connectors {
         connector.offer(&to_offer);
     }
@@ -178,6 +184,7 @@ async fn notify_handler<R: tauri::Runtime>(
 
     enqueue_and_emit(
         &state.queue,
+        &state.wake,
         state.connectors.as_slice(),
         &state.app_handle,
         event,
@@ -185,11 +192,6 @@ async fn notify_handler<R: tauri::Runtime>(
     )
     .await
     .map_err(HttpError::Queue)?;
-
-    // plan 015: an accepted push may change the visible item's rotation
-    // deadline (fresh promotion, or none at all while the slot stays
-    // occupied) — wake the heartbeat so it recomputes either way.
-    state.wake.notify_waiters();
 
     let (paused, waiting_count) = {
         let q = state.queue.lock().await;
@@ -728,5 +730,50 @@ mod tests {
             .try_recv()
             .expect("paused-202 event must reach the connector");
         assert_eq!(event.payload.title, "t");
+    }
+
+    // --- plan 015 review follow-up: wake is routed through the shared fn ---
+
+    #[tokio::test]
+    async fn enqueue_and_emit_wakes_the_heartbeat() {
+        // Regression test for a review-caught gap: `enqueue_and_emit` is the
+        // one path shared by both `/notify` and `send_test_notification`
+        // (settings.rs), so testing the wake here — rather than at each
+        // caller — proves neither caller can omit it, matching the "a
+        // mutation without a wake is structurally impossible" design.
+        let queue = Arc::new(Mutex::new(SingleSlotQueue::new(50)));
+        let wake = Arc::new(tokio::sync::Notify::new());
+        let app = tauri::test::mock_app();
+
+        // register as a waiter *before* the call, via `enable()` (stable
+        // tokio API for pre-registering a `Notified` future without polling
+        // it to completion) — `notify_waiters()` only wakes tasks already
+        // parked, it never queues a permit for a future `.notified()` call.
+        let notified = wake.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+
+        let event = Event {
+            id: Uuid::new_v4(),
+            event_type: EventType::Generic,
+            priority: Priority::Medium,
+            rotation: RotationSpec::OneShot { ttl_secs: 8 },
+            topic: None,
+            payload: EventPayload {
+                title: "t".to_string(),
+                body: "b".to_string(),
+            },
+            meta: EventMeta::default(),
+            signal: EventSignal::Generic,
+            origin: SourceKind::Manual,
+        };
+
+        enqueue_and_emit(&queue, &wake, &[], &app.handle().clone(), event, false)
+            .await
+            .unwrap();
+
+        tokio::time::timeout(std::time::Duration::from_millis(200), notified)
+            .await
+            .expect("enqueue_and_emit must wake the heartbeat");
     }
 }

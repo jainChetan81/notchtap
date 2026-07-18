@@ -189,6 +189,10 @@ pub fn run() {
             // but publishing them as managed state lets the settings commands
             // enqueue test notifications through the same queue/connectors.
             app.manage(queue.clone());
+            // plan 015 (review follow-up): managed so send_test_notification
+            // can wake the heartbeat too — every enqueue_and_emit caller
+            // needs the same Notify the heartbeat itself waits on.
+            app.manage(wake.clone());
             app.manage(connectors.clone());
 
             let window = app
