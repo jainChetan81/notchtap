@@ -43,7 +43,7 @@ plans are independent. P1s first.
 |------|-------|----------|--------|------------|--------|
 | 005 | Verify relocated OpenRouter key + complete operator rotation | P1 | S | — | DONE |
 | 006 | Prevent telegram transport errors from logging the bot token | P1 | S | — | DONE |
-| 007 | Supply chain + CI: pin nspanel rev, `--locked`, audit scans, Linux web job, `sh -n` gate | P1 | S | — | DONE (2026-07-18, CI run pending push) |
+| 007 | Supply chain + CI: pin nspanel rev, `--locked`, audit scans, Linux web job, `sh -n` gate | P1 | S | — | DONE (2026-07-18; pending CI gate since satisfied — hardened workflow green on master across the day's pushes, latest at `7c84a02`) |
 | 008 | Expanded semantics: auto-expand High, reset per item, idle no-op | P1 | S | — | DONE (`8ca01e3`, verified 2026-07-18 — rewritten from `b1981c9` to remove an unrelated plan-001 duplicate that leaked into that commit) |
 | 009 | Validate live `slot-state` payloads + pin the event-name seam | P1 | S | — | DONE (`bb0f249`, implemented directly 2026-07-18 from `3c5cb90`; vitest 62→64, `cargo test` 234→235, tsc/clippy/fmt/build clean; file → `(done)`) |
 | 010 | ESPN fetch hardening: gzip, 1 MiB cap, redirect limit, UA | P1 | S | — | DONE (`4381de4`, merged to master 2026-07-18; Step 4 GUI smoke owed to operator) |
@@ -54,7 +54,7 @@ plans are independent. P1s first.
 | 015 | Deadline-based heartbeat (replace the 250 ms tick) | P2 | M | 009 (DONE) | DONE (`2cef7ad`, `/improve execute` → reviewed APPROVE after 1 revision (settings test-notif wake); cherry-picked to master 2026-07-18; `cargo test` 242 + 3 doc-tests; idle-CPU smoke batched to end-of-run; file → `(done)`) |
 | 016 | Frontend lint/format gate (Biome) | P2 | S | — | TODO |
 | 023 | Goal celebration visible (review-log ranked list + redesign) | P2 | M | — | DONE (CSS-first: dropped lottie for a layered-radial confetti burst + `::before` ring + overshoot on `.rail-card.pulse-goal`, removed `lottie-react`/JSON/`GoalCelebration.tsx`; reduce-motion ⇒ nothing in ARCHITECTURE.md §4; `vitest` 64 / `tsc` / `vite build` green; landed on `master` 2026-07-18. Live dev-machine eyeball — Steps 1–3 + acceptance, incl. the burst-readability judgement in the review log — owed to operator) |
-| 018 | Overlay idle-cost cut: transform-based news shader (rescoped 2026-07-18 — the lazy-lottie half went moot when 023 deleted lottie outright) | P2 | S | — | TODO |
+| 018 | Overlay idle-cost cut: transform-based news shader (rescoped 2026-07-18 — the lazy-lottie half went moot when 023 deleted lottie outright) | P2 | S | — | DONE (`7c84a02`, implemented directly 2026-07-18; verified same day — `background-position`→0/`translate3d`→2/`infinite`→1, cargo 249+3, vitest 66, tsc/build/clippy/fmt clean, CI green on master at the commit; file → `(done)`) |
 | 022 | Deep-testing un-park decision + §9.1/§9.2 execution | P2 | L | decision gate | TODO |
 | 017 | Justfile (one-command local verification) | P3 | S | 016 (soft) | TODO |
 | 019 | Dead code removal: presentation channel, polling gates, no-op dispatch, scaffold | P3 | M | — | TODO |
@@ -84,6 +84,7 @@ Completed in this session (2026-07-17), filed with a `(done)` suffix:
 - [`023-goal-celebration-visible(done).md`](./023-goal-celebration-visible(done).md) — CSS-first goal celebration: dropped `lottie-react` + the JSON asset + `GoalCelebration.tsx`, rebuilt the moment as a layered-radial confetti burst (`.rail-card::after`) + expanding `::before` ring + punchier `goal-overshoot`, keyed on the existing `pulse-goal` class (play-once, ~620ms, `signal === "goal"` only); reduce-motion ⇒ deliberately nothing, recorded in `docs/ARCHITECTURE.md` §4; landed on master 2026-07-18 (`vitest` 64, `tsc`/`vite build` green). Live dev-machine eyeball (Steps 1–3 + acceptance, incl. burst readability) owed to operator; moots plan 018's lazy-lottie step.
 - [`013-boot-config-validation(done).md`](./013-boot-config-validation(done).md) — boot now runs the loaded config through the settings window's `validate()` and logs each out-of-range value as a warning, continuing (malformed TOML still fails fast in `Config::load`) — the hand-edited config file gets the same range contract as the settings save path. Executed 2026-07-18 via `/improve execute`, reviewed APPROVE; rebased onto 023+020 and landed at `cd97ace` alongside a fix to 020's compile break (`8a5d674` — see below). All gates green (`cargo test` 243 + 3 doc-tests, clippy/fmt/tsc/vitest 64/build). Boot smoke (scratch-`HOME`, out-of-range config) owed to operator.
 - [`021-settings-save-polish(done).md`](./021-settings-save-polish(done).md) — settings save flow hardened: `saveConfig` now matches feeds by a normalized `feedKey` (strip fragment + trailing slash) so cosmetic URL edits keep their `source`/`category` while the *typed* URL is preserved; `validate()` rejects duplicate feeds (`feed_key`-normalized, `HashSet`); and `save_config_and_relaunch` runs an extracted `preflight_port` best-effort bind before writing so a colliding port is caught in-window instead of bricking the relaunch. Executed 2026-07-18 via `/improve execute`, reviewed APPROVE (executor correctly deviated from the literal Step-1 snippet, which would have discarded the user's typed URL), cherry-picked onto master `8c35f1e` (`vitest` 64→66 settings-form 11→13, `tsc`/`fmt` green; rust `settings` 39→45, total 243→249 — verified structurally on Linux then by macOS CI). Best-effort port pre-flight keeps its TOCTOU window by design (boot-time fail-fast is the backstop).
+- [`018-overlay-idle-cost-cuts(done).md`](./018-overlay-idle-cost-cuts(done).md) — `.news-shade::before` now drifts via a compositor-only `translate3d` on an oversized (`inset: -30%`) pseudo-element (+ `will-change: transform`) instead of animating `background-position` — WebKit no longer repaints the news card layer up to 60 fps while a news card is visible; gradients, z-order, and the reduced-motion override unchanged, clipping still guaranteed by `.rail-card`'s `overflow: hidden` (no new containment rules). Implemented directly 2026-07-18 at `7c84a02`; the plan file's own rescope (dropping the lazy-lottie half that 023 mooted) rides along in the same filing. Verified 2026-07-18: `background-position`→0, `translate3d`→2, `infinite`→1; `cargo test --locked` 249 + 3 doc-tests, `npx vitest run` 66, `tsc`/`vite build`/clippy/fmt clean, CI green on master at the commit. Live shader eyeball (paint-flashing, Step 2) owed to operator as with the sibling GUI smokes.
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -108,13 +109,11 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - **022 is blocked only by its Step 0 decision gate** — 008 is DONE; the
   property-test model's expanded invariants are already written into the
   plan. The operator must choose execute-§9 vs re-park.
-- **018 was rescoped 2026-07-18 (`review-plan` pass at `ede063a`)** —
-  023 (DONE) had already deleted lottie outright, mooting 018's
-  lazy-lottie half. The plan file now carries only the transform-based
-  news shader swap, with excerpts, line numbers, and the clipping
-  assumptions re-verified (news-shade sits on the `rail-card` element,
-  whose `overflow: hidden` contains the oversized layer). Ready to run
-  as written — no pre-run updates needed.
+- **018 is DONE (2026-07-18, `7c84a02`)** — it was rescoped earlier that
+  day (`review-plan` pass at `ede063a`) after 023 deleted lottie
+  outright, mooting the lazy-lottie half; only the transform-based news
+  shader swap remained, and it is now landed and verified (see the Done
+  section).
 - **016 / 017** touch `.github/workflows/ci.yml` or mirror it — 007
   already landed there (`--locked`, audit scans, `ubuntu-latest`,
   `sh -n`); both plans' texts account for it.
