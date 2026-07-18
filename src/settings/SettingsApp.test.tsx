@@ -33,6 +33,40 @@ const config: Config = {
   appearance: { card_scale: 1, card_radius: 8, card_opacity: 0.9 },
 };
 
+// Mirrors src-tauri/src/config.rs::Config::default() (served over IPC by
+// get_default_config, plan 020) — the fixture the "Reset to defaults" test
+// asserts concrete values against (port 9789, ttl 8, tier cap 50, ...).
+const rustConfigDefaults: Config = {
+  port: 9789,
+  default_ttl: 8,
+  max_queued_per_tier: 50,
+  detect_path: "/usr/local/bin/notchtap-detect",
+  start_paused: false,
+  espn_enabled: true,
+  espn_leagues: ["eng.1", "uefa.champions", "esp.1"],
+  espn_poll_secs: 30,
+  espn_priority: "high",
+  espn_ttl_secs: 8,
+  rss_enabled: false,
+  rss_feeds: [
+    {
+      url: "https://feeds.feedburner.com/ndtvnews-top-stories",
+      source: "NDTV",
+      category: null,
+    },
+  ],
+  rss_poll_secs: 60,
+  rss_priority: "low",
+  rss_ttl_secs: 10,
+  rss_max_per_poll: 10,
+  manual_default_priority: "medium",
+  cmux_priority: "high",
+  cmux_ttl_secs: 8,
+  rotation_order: ["football", "manual", "cmux", "news"],
+  connectors: { telegram: { enabled: false } },
+  appearance: { card_scale: 1, card_radius: 8, card_opacity: 0.9 },
+};
+
 const unsetSecrets: SecretStatus = {
   openrouter_api_key: null,
   telegram_bot_token: null,
@@ -43,6 +77,7 @@ function mockLoads(status: SecretStatus = unsetSecrets) {
   mockIPC((command) => {
     if (command === "get_config") return config;
     if (command === "get_secret_status") return status;
+    if (command === "get_default_config") return rustConfigDefaults;
   });
 }
 
@@ -113,6 +148,7 @@ describe("SettingsApp", () => {
     mockIPC((command, payload) => {
       if (command === "get_config") return config;
       if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
       if (command === "set_appearance") {
         setAppearance(payload);
         return null;
@@ -147,6 +183,7 @@ describe("SettingsApp", () => {
     mockIPC((command) => {
       if (command === "get_config") return config;
       if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
       if (command === "save_config_and_relaunch") {
         return Promise.reject([
           "port must be at least 1024",
@@ -168,6 +205,7 @@ describe("SettingsApp", () => {
     const setSecret = vi.fn();
     mockIPC((command, payload) => {
       if (command === "get_config") return config;
+      if (command === "get_default_config") return rustConfigDefaults;
       if (command === "get_secret_status") {
         statusReads += 1;
         return statusReads === 1
@@ -211,11 +249,19 @@ describe("SettingsApp", () => {
     expect((screen.getByLabelText("Start paused") as HTMLInputElement).checked).toBe(true);
   });
 
-  it("Reset to defaults applies the Rust Config defaults mirror", async () => {
+  it("Reset to defaults applies the defaults served by get_default_config", async () => {
     mockLoads();
     render(<SettingsApp />);
 
     await screen.findByDisplayValue("4321");
+    // get_default_config now resolves on its own microtask, separate from
+    // get_config/get_secret_status — wait for it to land (button enabled)
+    // before clicking, rather than assuming it's already there.
+    await waitFor(() => {
+      expect(
+        (screen.getByRole("button", { name: "Reset to defaults" }) as HTMLButtonElement).disabled,
+      ).toBe(false);
+    });
     fireEvent.click(screen.getByRole("button", { name: "Reset to defaults" }));
 
     expect((screen.getByLabelText("Listener port") as HTMLInputElement).value).toBe("9789");

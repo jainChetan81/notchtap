@@ -561,6 +561,14 @@ pub fn get_config(
     Ok(config)
 }
 
+/// Serves Config::default() so the frontend never mirrors defaults
+/// (plan 020) — the "Reset to defaults" source of truth is config.rs.
+#[tauri::command]
+pub fn get_default_config(window: tauri::WebviewWindow) -> Result<Config, String> {
+    ensure_settings_window(&window)?;
+    Ok(Config::default())
+}
+
 #[tauri::command]
 pub fn get_secret_status(window: tauri::WebviewWindow) -> Result<SecretStatus, String> {
     ensure_settings_window(&window)?;
@@ -1312,6 +1320,32 @@ mod tests {
         .unwrap();
         assert!(
             ensure_settings_window(&main).is_err(),
+            "the overlay window must be refused even if the acl were misconfigured"
+        );
+    }
+
+    #[test]
+    fn get_default_config_gates_on_window_label_and_returns_config_default() {
+        let app = tauri::test::mock_app();
+        let settings = tauri::WebviewWindowBuilder::new(
+            app.handle(),
+            "settings",
+            tauri::WebviewUrl::App("settings.html".into()),
+        )
+        .build()
+        .unwrap();
+        let returned = get_default_config(settings).unwrap();
+        assert_eq!(returned, Config::default());
+
+        let main = tauri::WebviewWindowBuilder::new(
+            app.handle(),
+            "main",
+            tauri::WebviewUrl::App("index.html".into()),
+        )
+        .build()
+        .unwrap();
+        assert!(
+            get_default_config(main).is_err(),
             "the overlay window must be refused even if the acl were misconfigured"
         );
     }

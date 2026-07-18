@@ -176,6 +176,7 @@ pub fn run() {
         // keeps them deniable to the overlay window (spec §2).
         .invoke_handler(tauri::generate_handler![
             settings::get_config,
+            settings::get_default_config,
             settings::get_secret_status,
             settings::save_config_and_relaunch,
             settings::set_secret,

@@ -68,39 +68,6 @@ export interface SecretStatus {
 type SecretField = keyof SecretStatus;
 type SectionId = "general" | "football" | "news" | "cmux" | "connectors" | "shortcuts" | "appearance";
 
-// Keep this synchronized with src-tauri/src/config.rs::Config::default.
-// This frontend mirror can drift when Rust defaults change, so update both together.
-export const DEFAULTS: Config = {
-  port: 9789,
-  default_ttl: 8,
-  max_queued_per_tier: 50,
-  detect_path: "/usr/local/bin/notchtap-detect",
-  start_paused: false,
-  espn_enabled: true,
-  espn_leagues: ["eng.1", "uefa.champions", "esp.1"],
-  espn_poll_secs: 30,
-  espn_priority: "high",
-  espn_ttl_secs: 8,
-  rss_enabled: false,
-  rss_feeds: [
-    {
-      url: "https://feeds.feedburner.com/ndtvnews-top-stories",
-      source: "NDTV",
-      category: null,
-    },
-  ],
-  rss_poll_secs: 60,
-  rss_priority: "low",
-  rss_ttl_secs: 10,
-  rss_max_per_poll: 10,
-  manual_default_priority: "medium",
-  cmux_priority: "high",
-  cmux_ttl_secs: 8,
-  rotation_order: ["football", "manual", "cmux", "news"],
-  connectors: { telegram: { enabled: false } },
-  appearance: { card_scale: 1, card_radius: 8, card_opacity: 0.9 },
-};
-
 const navigation: ReadonlyArray<{
   id: SectionId;
   label: string;
@@ -1061,6 +1028,7 @@ export function SettingsApp() {
   const [activeSection, setActiveSection] = useState<SectionId>("general");
   const [config, setConfig] = useState<Config | null>(null);
   const [lastLoadedConfig, setLastLoadedConfig] = useState<Config | null>(null);
+  const [defaults, setDefaults] = useState<Config | null>(null);
   const [secretStatus, setSecretStatus] = useState<SecretStatus | null>(null);
   const [espnLeaguesText, setEspnLeaguesText] = useState("");
   const [rssFeedsText, setRssFeedsText] = useState("");
@@ -1094,6 +1062,16 @@ export function SettingsApp() {
     }).catch((reason: unknown) => {
       if (active) setErrors(errorList(reason));
     });
+    // defaults are advisory (Reset-to-defaults only) — isolate their failure
+    // so it can never block the rest of the panel from loading; the button
+    // just stays disabled (see the footer's `disabled={!defaults || saving}`).
+    invoke<Config>("get_default_config")
+      .then((loadedDefaults) => {
+        if (active) setDefaults(copyConfig(loadedDefaults));
+      })
+      .catch(() => {
+        // leave defaults null — Reset to defaults stays disabled
+      });
     return () => {
       active = false;
     };
@@ -1108,7 +1086,7 @@ export function SettingsApp() {
   }
 
   function resetDefaults() {
-    applyForm(DEFAULTS);
+    if (defaults) applyForm(defaults);
   }
 
   async function saveConfig(event: FormEvent<HTMLFormElement>) {
@@ -1204,7 +1182,7 @@ export function SettingsApp() {
             <button className="footer-button" type="button" disabled={!lastLoadedConfig || saving} onClick={resetLoaded}>
               Reset
             </button>
-            <button className="footer-button" type="button" disabled={!config || saving} onClick={resetDefaults}>
+            <button className="footer-button" type="button" disabled={!defaults || saving} onClick={resetDefaults}>
               Reset to defaults
             </button>
           </footer>
