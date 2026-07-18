@@ -84,14 +84,24 @@ const NEWS: SlotState = {
 
 describe("StatusRailCard", () => {
   describe("goal/red-card pulse", () => {
-    // The celebration is pure CSS now (plan 023): the confetti burst +
-    // ring live on `.rail-card.pulse-goal`'s ::after/::before. So the
-    // signal-keying coverage is "the pulse class lands", and there is no
-    // separate `.goal-celebration` element to mount anymore.
-    it("applies pulse-goal (the CSS confetti burst, no mounted element) on a goal signal", () => {
+    // The celebration is plan 023's pure-CSS confetti burst + ring on
+    // `.rail-card.pulse-goal`'s ::after/::before PLUS plan 032's mounted
+    // three-ring ripple (.cele-ripple). Signal-keying coverage: the pulse
+    // class lands and the ripple mounts — goal-signal only.
+    it("applies pulse-goal (CSS burst + mounted three-ring ripple) on a goal signal", () => {
       const { container } = render(<StatusRailCard slot={GOAL} />);
       expect(container.querySelector(".rail-card.pulse-goal")).not.toBeNull();
-      expect(container.querySelector(".goal-celebration")).toBeNull();
+      expect(container.querySelectorAll(".cele-ripple span")).toHaveLength(3);
+    });
+
+    // The ripple rides the pulse state, so the same animationend that
+    // retires the burst unmounts the rings — no separate cleanup path.
+    it("unmounts the ripple when the goal pulse's animation ends", () => {
+      const { container } = render(<StatusRailCard slot={GOAL} />);
+      const card = container.querySelector(".rail-card") as HTMLElement;
+      expect(container.querySelector(".cele-ripple")).not.toBeNull();
+      fireAnimationEnd(card, "goal-overshoot");
+      expect(container.querySelector(".cele-ripple")).toBeNull();
     });
 
     // The pulse clears on the CSS animation's own animationend, not a
@@ -109,6 +119,7 @@ describe("StatusRailCard", () => {
       const { container } = render(<StatusRailCard slot={RED_CARD} />);
       expect(container.querySelector(".rail-card.pulse-red")).not.toBeNull();
       expect(container.querySelector(".rail-card.pulse-goal")).toBeNull();
+      expect(container.querySelector(".cele-ripple")).toBeNull();
     });
 
     it("clears pulse-red when its animation ends", () => {
@@ -144,6 +155,7 @@ describe("StatusRailCard", () => {
     const { container } = render(<StatusRailCard slot={CMUX_NEEDS_INPUT} />);
     expect(container.querySelector(".pulse-goal")).toBeNull();
     expect(container.querySelector(".pulse-red")).toBeNull();
+    expect(container.querySelector(".cele-ripple")).toBeNull();
   });
 
   it("renders the idle clock, not a card, when the slot is empty", () => {

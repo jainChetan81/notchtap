@@ -152,9 +152,19 @@ export function StatusRailCard({ slot }: { slot: SlotState }) {
           </motion.div>
         )}
       </AnimatePresence>
-      {/* The goal celebration is pure CSS now (plan 023): the confetti
-          burst + ring live on `.rail-card.pulse-goal`'s ::after/::before,
-          driven by the pulse state above — no separate element to mount. */}
+      {/* the goal celebration is plan 023's pure-CSS confetti burst +
+          ring on `.rail-card.pulse-goal`'s ::after/::before PLUS plan
+          032's ripple: three staggered concentric accent rings, mounted
+          only while the goal pulse is live and unmounted by the same
+          animationend path that clears the burst (goal-signal only,
+          one-shot — never keyed on priority). */}
+      {pulse === "pulse-goal" && (
+        <div className="cele-ripple" aria-hidden="true">
+          <span />
+          <span />
+          <span />
+        </div>
+      )}
     </div>
   );
 }
