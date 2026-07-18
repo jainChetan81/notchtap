@@ -93,11 +93,13 @@ records now, not active contracts (same status as `BLIND_REVIEW.md`/
   override via `--port` or `$NOTCHTAP_PORT`), for testing the
   queue/animation without a real event source. flags only — there is no
   positional form; the cli is a committed shell script at repo root
-
-consider adding a `justfile` (or `Makefile`) after scaffold with
-recipes: `dev`, `test-rust`, `test-web`, `test-all`, `build`, `push
-"title" "body"`. this prevents "oops i ran `vitest` from `src-tauri/`"
-errors.
+- `just test-all` — one-command local verification mirroring
+  `.github/workflows/ci.yml` exactly (see `justfile` at repo root for
+  the full recipe list: `dev`, `test-rust`, `check-rust`, `test-web`,
+  `check-web`, `audit-web`, `build-web`, `check-cli`, `check-swift`).
+  `just push "title" "body"` wraps the `./notchtap` cli call above.
+  `just` is not installed on the dev machine yet — `brew install just`
+  first.
 
 `cargo test` and `npx vitest run` should both be clean before any phase
 in `docs/IMPLEMENTATION_PLAN.md` is marked done — see that doc's §6 and
