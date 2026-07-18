@@ -30,6 +30,23 @@ use tauri::Manager;
 // validation (pure, unit-tested — spec §3)
 // ---------------------------------------------------------------------------
 
+/// Normalized match key for a feed url (plan 021 — mirrors the frontend's
+/// `feedKey` in `SettingsApp.tsx`): clear the fragment and trim a single
+/// trailing slash so a cosmetic variant (trailing "/", a `#anchor`) is
+/// recognized as the same feed for duplicate rejection. Falls back to the
+/// trimmed raw string on parse failure — malformed urls already get their
+/// own error from the per-feed parse check above, so this loop only needs
+/// "close enough" grouping for parse failures, not correctness.
+fn feed_key(url: &str) -> String {
+    match reqwest::Url::parse(url) {
+        Ok(mut parsed) => {
+            parsed.set_fragment(None);
+            parsed.to_string().trim_end_matches('/').to_string()
+        }
+        Err(_) => url.trim().to_string(),
+    }
+}
+
 /// Every rule violated contributes one human-readable message — the
 /// settings form renders the whole list, not just the first failure.
 pub fn validate(c: &Config) -> Result<(), Vec<String>> {
@@ -112,6 +129,17 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
     }
     if c.rss_enabled && c.rss_feeds.is_empty() {
         errors.push("rss_enabled is on but rss_feeds is empty — add a feed or disable".into());
+    }
+    {
+        // Duplicate feeds double the poll's network work per tick even
+        // though the SeenStore hides the duplicate notifications — reject
+        // rather than silently pay that cost (plan 021).
+        let mut seen_keys = std::collections::HashSet::new();
+        for feed in &c.rss_feeds {
+            if !seen_keys.insert(feed_key(&feed.url)) {
+                errors.push(format!("duplicate rss feed: {}", feed.url));
+            }
+        }
     }
 
     // rotation_order must be a permutation of all four SourceKind variants
@@ -942,6 +970,50 @@ mod tests {
         };
         assert!(validate(&c).is_err());
         c.rss_enabled = false;
+        assert!(validate(&c).is_ok());
+    }
+
+    #[test]
+    fn exact_duplicate_feed_rejected() {
+        let c = Config {
+            rss_feeds: vec![
+                "https://example.com/feed.xml".into(),
+                "https://example.com/feed.xml".into(),
+            ],
+            ..Config::default()
+        };
+        let errors = validate(&c).unwrap_err();
+        assert!(
+            errors.iter().any(|e| e.contains("duplicate rss feed")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn trailing_slash_variant_duplicate_feed_rejected() {
+        let c = Config {
+            rss_feeds: vec![
+                "https://example.com/feed.xml".into(),
+                "https://example.com/feed.xml/".into(),
+            ],
+            ..Config::default()
+        };
+        let errors = validate(&c).unwrap_err();
+        assert!(
+            errors.iter().any(|e| e.contains("duplicate rss feed")),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn genuinely_different_feeds_accepted() {
+        let c = Config {
+            rss_feeds: vec![
+                "https://example.com/world.xml".into(),
+                "https://example.com/tech.xml".into(),
+            ],
+            ..Config::default()
+        };
         assert!(validate(&c).is_ok());
     }
 

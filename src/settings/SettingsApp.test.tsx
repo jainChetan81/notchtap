@@ -332,6 +332,65 @@ describe("SettingsApp", () => {
     expect((screen.getByLabelText("Rotation seconds") as HTMLInputElement).value).toBe("16");
   });
 
+  it("preserves a feed's source/category when its url is edited by a trailing slash", async () => {
+    let savedConfig: Config | null = null;
+    mockIPC((command, payload) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "save_config_and_relaunch") {
+        savedConfig = (payload as { config: Config }).config;
+        return null;
+      }
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "News" }));
+    const feeds = await screen.findByLabelText("Feeds") as HTMLTextAreaElement;
+    expect(feeds.value).toBe("https://example.com/world.xml\nhttps://example.com/tech.xml");
+
+    fireEvent.change(feeds, {
+      target: { value: "https://example.com/world.xml/\nhttps://example.com/tech.xml" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save & Relaunch" }));
+
+    await waitFor(() => expect(savedConfig).not.toBeNull());
+    expect(savedConfig!.rss_feeds).toEqual([
+      { url: "https://example.com/world.xml/", source: "Example", category: "world" },
+      { url: "https://example.com/tech.xml", source: null, category: null },
+    ]);
+  });
+
+  it("resets a feed's source/category to null when its url is replaced with a different host", async () => {
+    let savedConfig: Config | null = null;
+    mockIPC((command, payload) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "save_config_and_relaunch") {
+        savedConfig = (payload as { config: Config }).config;
+        return null;
+      }
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "News" }));
+    const feeds = await screen.findByLabelText("Feeds") as HTMLTextAreaElement;
+
+    fireEvent.change(feeds, {
+      target: { value: "https://different.example/rss.xml\nhttps://example.com/tech.xml" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save & Relaunch" }));
+
+    await waitFor(() => expect(savedConfig).not.toBeNull());
+    expect(savedConfig!.rss_feeds).toEqual([
+      { url: "https://different.example/rss.xml", source: null, category: null },
+      { url: "https://example.com/tech.xml", source: null, category: null },
+    ]);
+  });
+
   it("rotation order loads in the saved order and reorders with edge-disabled buttons", async () => {
     mockLoads();
     render(<SettingsApp />);

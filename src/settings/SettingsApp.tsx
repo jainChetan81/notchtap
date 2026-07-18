@@ -172,6 +172,23 @@ function lines(value: string): string[] {
     .filter(Boolean);
 }
 
+// Normalized match key for the rss_feeds rebuild (plan 021): strips the
+// hash and a single trailing slash so a cosmetic edit (trailing "/", a
+// fragment) still matches the old entry and keeps its source/category.
+// A substantive change (different path/host) still resets metadata —
+// correct, it IS a different feed. Limitation: this can't distinguish
+// "same feed, meaningfully re-hosted" from "different feed" — that's
+// out of scope without a source/category editing UI (see plan notes).
+function feedKey(url: string): string {
+  try {
+    const u = new URL(url);
+    u.hash = "";
+    return u.href.replace(/\/$/, "");
+  } catch {
+    return url.trim();
+  }
+}
+
 function errorList(error: unknown): string[] {
   if (Array.isArray(error)) {
     return error.map(String);
@@ -1095,9 +1112,15 @@ export function SettingsApp() {
     const submittedConfig: Config = {
       ...config,
       espn_leagues: lines(espnLeaguesText),
-      rss_feeds: lines(rssFeedsText).map((url) =>
-        config.rss_feeds.find((feed) => feed.url === url) ?? { url, source: null, category: null },
-      ),
+      rss_feeds: lines(rssFeedsText).map((url) => {
+        // Match by normalized key, but keep the url the user actually typed
+        // — only source/category carry over from the old entry (plan 021:
+        // "the saved value stays what the user typed").
+        const match = config.rss_feeds.find((feed) => feedKey(feed.url) === feedKey(url));
+        return match
+          ? { url, source: match.source, category: match.category }
+          : { url, source: null, category: null };
+      }),
     };
     setSaving(true);
     setErrors([]);
