@@ -991,7 +991,7 @@ const PREVIEW_SAMPLES: ReadonlyArray<{
       state: "showing",
       id: "preview-cmux",
       title: "Agent needs input",
-      body: "Workspace command is waiting",
+      body: "run `git push origin master`?",
       eventType: "generic",
       priority: "high",
       signal: "generic",

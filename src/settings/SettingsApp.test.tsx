@@ -153,6 +153,13 @@ describe("SettingsApp", () => {
     expect(
       await screen.findByText("Parliament passes the landmark digital rights bill"),
     ).toBeTruthy();
+    // the cmux sample's body carries inline markdown (plan 032 step 6) —
+    // the command must render as <code> elements, not literal backticks.
+    // it shows twice on the expanded sample: compact .body + manifest
+    // Message cell both run renderInlineMarkdown.
+    const previewCommands = await screen.findAllByText("git push origin master");
+    expect(previewCommands.length).toBe(2);
+    expect(previewCommands.every((el) => el.tagName === "CODE")).toBe(true);
 
     const appearanceSection = screen
       .getByRole("heading", { level: 1, name: "Appearance" })
