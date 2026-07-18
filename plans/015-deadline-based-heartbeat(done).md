@@ -17,10 +17,24 @@
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED — rotation/promotion timing is the core behavior; a wake-signal bug stalls promotion
-- **Depends on**: plans/009 (seam pin — land first); 008 is DONE and already
-  in this plan's baseline
+- **Depends on**: plans/009 — SATISFIED: 009 landed as `bb0f249`
+  (2026-07-18, verified done); 008 is DONE and already in this plan's
+  baseline. No open dependencies remain.
 - **Category**: perf
-- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `b43a7ca` 2026-07-18 (excerpts re-verified unchanged)
+- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed
+  to `b43a7ca` 2026-07-18 (excerpts re-verified unchanged);
+  **review-plan pass 2026-07-18**: heavy drift since `b43a7ca` (plans
+  010/011/012 grew lib.rs/poller.rs/rss_poller.rs) but the
+  `spawn_heartbeat` excerpt is byte-identical (now at lib.rs:655, call
+  at 301) and the queue math unchanged (rotate window at queue.rs:192).
+  Three substantive fixes: (1) the wake design now MANDATES
+  `notify_one()` — `notify_waiters()` had a lost-wakeup race whose worst
+  case parks the heartbeat forever with a visible card; (2) the
+  mutation-site list gained `skip_current` (plan 001) and
+  `send_test_notification`-via-`enqueue_and_emit` (v5.1), both of which
+  postdate the original enumeration; (3) the spec's 250 ms mentions are
+  six lines across sections, not one line in §4.3. Paused-aging claim
+  verified correct against queue.rs:206-209 + the existing paused test.
 
 ## Why this matters
 
@@ -42,7 +56,8 @@ deadline* is recomputed after any mutation.
 
 ## Current state
 
-`src-tauri/src/lib.rs:597-614`:
+`src-tauri/src/lib.rs:655-672` (re-verified byte-identical 2026-07-18;
+only the line position moved as plans 001/012 grew the file):
 
 ```rust
 fn spawn_heartbeat(app: tauri::AppHandle, queue: Arc<Mutex<SingleSlotQueue>>) {
@@ -68,22 +83,37 @@ fn spawn_heartbeat(app: tauri::AppHandle, queue: Arc<Mutex<SingleSlotQueue>>) {
 `src-tauri/src/queue.rs` internals the new method needs (all existing):
 - `visible: Option<QueueItem>`; `QueueItem.promoted_at: Option<Instant>`,
   `extension_secs: u64`
-- rotation window math at `rotate_out_if_elapsed` (queue.rs:165-177):
+- rotation window math at `rotate_out_if_elapsed` (queue.rs:192-198):
   `let window = item.event.rotation_window(self.expanded) + item.extension_secs;`
   — deadline = `promoted_at + Duration::from_secs(window)`.
-- `paused: bool`; `total_waiting()`.
+- `paused: bool`; `total_waiting()`. Paused-aging is confirmed in code:
+  `promote_next` (queue.rs:206-209) early-returns when paused, while
+  `rotate_out_if_elapsed` has NO paused check — and the existing test
+  near queue.rs:961 ("a aged out even while paused; b was NOT promoted")
+  pins it. So `next_deadline` returning `Some(..)` while paused is
+  correct, as Step 1's doc-comment says.
 
 Mutation entry points that must wake the heartbeat (each already holds/
-takes the queue lock and already emits its own immediate change):
-- `src-tauri/src/http.rs` `/notify` handler (enqueue)
+takes the queue lock and already emits its own immediate change).
+Re-enumerated 2026-07-18 — this list is LONGER than the original audit's
+because plans 001 (skip hotkey) and v5.1 (test notifications) added
+mutation sites:
+- `src-tauri/src/http.rs` `enqueue_and_emit` (http.rs:60) — the shared
+  enqueue helper. Waking HERE (not in the `/notify` handler) covers BOTH
+  the `/notify` route and `settings.rs`'s `send_test_notification`
+  command (settings.rs ~620-630), which calls the same helper. Do not
+  add a separate wake in settings.rs — one wake in the helper is the
+  whole fix for both.
 - `src-tauri/src/poller.rs` `enqueue_and_fan_out` call-site in the espn
   loop; `src-tauri/src/rss_poller.rs` enqueue loop
-- `src-tauri/src/lib.rs`: `toggle_pause` (resume must recompute),
-  `dismiss_current`, `toggle_manual_expand` (expanded changes the
-  window), and the settings/tray paths that call these.
+- `src-tauri/src/lib.rs`: `toggle_pause` (~561 — resume must recompute),
+  `toggle_manual_expand` (~683 — expanded changes the window),
+  `dismiss_current` (~699), and `skip_current` (~715 — added by plan
+  001; requeues + promotes, definitely a mutation), plus the
+  settings/tray paths that call these (they go through the same fns).
 
 Wiring: `spawn_heartbeat(app.handle().clone(), setup_queue.clone())` is
-called once in `run()`'s setup (lib.rs:262). The queue is shared as
+called once in `run()`'s setup (lib.rs:301). The queue is shared as
 `Arc<Mutex<SingleSlotQueue>>` everywhere; a `tokio::sync::Notify` can ride
 alongside it (new `Arc<Notify>` created in setup and threaded to the same
 places the queue Arc already goes — every wake site already receives the
@@ -210,23 +240,39 @@ Create the `Notify` in `run()`'s setup next to `setup_queue`, pass it to
 
 ### Step 3: Wake on every mutation
 
-Add exactly one wake call after each mutation site listed in Current
-state (after the lock is released or just before — `Notify::notify_waiters()`
-is cheap and never blocks):
-- http.rs handler: after enqueue handling → `wake.notify_waiters();`
-  (thread the `Arc<Notify>` through `AppState` — add a field alongside
-  the queue).
+Use **`Notify::notify_one()`, NOT `notify_waiters()`** — this is
+correctness, not style. `notify_waiters()` wakes only tasks *currently
+awaiting* and stores nothing; `notify_one()` stores a permit when no
+task is waiting, so the heartbeat's next `notified().await` completes
+immediately. The heartbeat spends real time NOT awaiting (holding the
+lock, computing, emitting): a mutation landing in that window under
+`notify_waiters()` is silently lost. Worst case is severe: empty queue →
+heartbeat about to park in the `None` branch → an enqueue promotes an
+item and its lost wake means the heartbeat parks forever → the visible
+card NEVER rotates out. `notify_one()` closes this race completely (the
+heartbeat is the only waiter; multiple permits coalesce, which is fine —
+the loop re-reads all state each pass).
+
+Add exactly one `wake.notify_one();` after each mutation site listed in
+Current state (after the lock is released or just before — it's cheap
+and never blocks):
+- http.rs: inside `enqueue_and_emit` (http.rs:60), after the enqueue/
+  emit block — this single site covers both the `/notify` route and
+  settings' `send_test_notification` (thread the `Arc<Notify>` through
+  `AppState` for the route, and add a parameter to `enqueue_and_emit`
+  for the settings call — or simplest, add the `Arc<Notify>` parameter
+  to `enqueue_and_emit` itself and pass it at both call-sites).
 - poller.rs espn loop + rss_poller.rs loop: after their enqueue/emit
   block (add an `Arc<Notify>` parameter to both spawn fns, passed from
   `run()`).
-- lib.rs `toggle_pause`, `dismiss_current`, `toggle_manual_expand`:
-  after their queue mutation.
+- lib.rs `toggle_pause`, `toggle_manual_expand`, `dismiss_current`,
+  `skip_current`: after their queue mutation.
 
 A missed wake site = a stalled state until the next legitimate wake, so
-after wiring, grep-audit: every call of `q.enqueue`, `toggle_pause`,
-`dismiss_visible`, `toggle_expanded`, `apply_fresh_content`-via-enqueue
-outside queue.rs must have a wake nearby. List each site + its wake in
-your report.
+after wiring, grep-audit: every call of `q.enqueue`, `q.enqueue_test`,
+`toggle_pause`, `dismiss_visible`, `toggle_expanded`, skip/requeue, and
+`apply_fresh_content`-via-enqueue outside queue.rs must have a wake
+nearby. List each site + its wake in your report.
 
 **Verify**: `cargo test` → all pass. `cargo clippy --all-targets -- -D warnings && cargo fmt --check` → exit 0.
 
@@ -252,12 +298,25 @@ process shows ~0% CPU in Activity Monitor (vs the constant tick before).
 
 ### Step 5: Docs
 
-- `docs/V3_6_TECHNICAL_SPEC.md` §4.3: replace the "250ms heartbeat"
-  description with the deadline+wake design (one short paragraph).
-- `docs/TESTING_STRATEGY.md` §0: queue +5, plus the integration test's
-  home module +1.
+- `docs/V3_6_TECHNICAL_SPEC.md`: the 250 ms tick is referenced in SIX
+  places, not just §4.3 — as of this review: lines 65, 104, 108 (§1's
+  implementation-calls notes), §4.3 itself ("tick — rotate then promote,
+  one call", ~line 387 heading), and lines 662, 668, 776. Update §4.3
+  with the deadline+wake design (one short paragraph), then grep the
+  spec for `250` and rewrite each remaining line that describes the
+  *current* mechanism (most can just say "the heartbeat tick" or "the
+  next wake" without a number); leave any that are explicitly historical.
+- `src-tauri/src/lib.rs:656`'s comment ("250ms rotation heartbeat")
+  is replaced by Step 2's new comment — confirm no stale comment
+  survives.
+- `docs/TESTING_STRATEGY.md` §0: bump the `queue` sub-count by Step 1's
+  new tests (5) and the integration test's home module by 1, AND move
+  the row's leading total by the same combined delta — sub-counts must
+  keep summing to the total. Re-read the row at execution time
+  (concurrent plans move it; it read `235 tests — … queue 47 …` at this
+  review).
 
-**Verify**: `grep -rn "250ms\|250 ms" docs/V3_6_TECHNICAL_SPEC.md src-tauri/src/lib.rs` → no remaining claims that the heartbeat is 250 ms (historical mentions elsewhere in docs are fine — check context).
+**Verify**: `grep -rn "250ms\|250 ms" docs/V3_6_TECHNICAL_SPEC.md src-tauri/src/lib.rs` → no remaining claims that the heartbeat is 250 ms (historical mentions are fine — check context; the six lines above are the checklist).
 
 ## Test plan
 
@@ -269,9 +328,14 @@ process shows ~0% CPU in Activity Monitor (vs the constant tick before).
 
 ## Done criteria
 
-- [ ] `grep -c "interval(Duration::from_millis(250))" src-tauri/src/lib.rs` → 0
+- [ ] `grep -c "interval(Duration::from_millis(250))" src-tauri/src/lib.rs` → 0 (baseline today: 1)
 - [ ] `grep -c "next_deadline" src-tauri/src/queue.rs` → ≥2
-- [ ] `grep -c "notify_waiters\|notified()" src-tauri/src` → wake sites for http, both pollers, and the three lib handlers (list them in the report)
+- [ ] `grep -rn "notify_one" src-tauri/src/` → wake sites for
+      `enqueue_and_emit`, both pollers, and the FOUR lib handlers
+      (toggle_pause, toggle_manual_expand, dismiss_current,
+      skip_current) — list each in the report. (Note: plain
+      `grep -c … src-tauri/src` without `-r` errors on the directory.)
+- [ ] `grep -c "notify_waiters" src-tauri/src/lib.rs src-tauri/src/http.rs src-tauri/src/poller.rs src-tauri/src/rss_poller.rs` → 0 in every file (the lost-wakeup race — see Step 3)
 - [ ] `cargo test` exits 0 with the new tests
 - [ ] clippy/fmt gates exit 0
 - [ ] Spec §4.3 + §0 updated
