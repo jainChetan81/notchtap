@@ -391,27 +391,13 @@ pub fn run() {
                 let connectors = page_load_connectors.clone();
                 let queue_wake = http_wake.clone();
 
-                // mode delivery is double-shielded against the
-                // listener-registration race (2026-07-17 review): the eval
-                // plants a global that react reads as *initial* state if it
-                // mounts after this moment; the emit reaches the listener if
-                // react mounted before it. one of the two always lands, and
-                // running on every page load (not once) covers reloads too.
-                {
-                    use tauri::Emitter;
-                    let mode_str = match mode {
-                        presentation::Mode::Notch => "notch",
-                        presentation::Mode::Hud => "hud",
-                    };
-                    let _ = webview.eval(format!("window.__NOTCHTAP_MODE__ = '{mode_str}';"));
-                    let _ = webview.emit("presentation-mode", PresentationModePayload { mode });
-                }
-
-                // same double-shield, mirrored for `slot-state` (this
-                // migration's own fix): the transient-event race the
-                // presentation-mode shield above was already built for
-                // also affects slot-state, but was never applied there —
-                // an independent review caught this. blocking_lock is
+                // slot-state is double-shielded against the
+                // listener-registration race (2026-07-17 review, this
+                // migration's own fix): the eval plants a global that react
+                // reads as *initial* state if it mounts after this moment;
+                // the emit reaches the listener if react mounted before it.
+                // one of the two always lands, and running on every page
+                // load (not once) covers reloads too. blocking_lock is
                 // safe here, same as the tray menu handler below: this
                 // callback runs off the tokio runtime, not on it.
                 {
@@ -424,8 +410,8 @@ pub fn run() {
                 }
 
                 // Double-shield the initial appearance values the same way as
-                // presentation mode / slot state: a global for the React mount
-                // race, plus an emit for listeners already registered.
+                // slot state above: a global for the React mount race, plus
+                // an emit for listeners already registered.
                 {
                     use tauri::Emitter;
                     let appearance = app_handle
@@ -599,11 +585,6 @@ fn position_window(
     } else {
         position_top_center(window)
     }
-}
-
-#[derive(serde::Serialize, Clone)]
-struct PresentationModePayload {
-    mode: presentation::Mode,
 }
 
 fn toggle_pause<R: tauri::Runtime>(

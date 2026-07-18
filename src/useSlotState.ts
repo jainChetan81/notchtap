@@ -51,20 +51,20 @@ declare global {
 }
 
 // Double-shielded against the listener-registration race (2026-07-17
-// review — the same race presentationMode.ts was already built for was
-// never applied here): the rust core both sets
-// `window.__NOTCHTAP_SLOT_STATE__` via eval AND emits a `slot-state`
-// event, on every page load. If react mounts after page load, the
-// initial-state read below catches the global; if it mounts before, the
-// listener catches the emit. BOTH entry points run their payload through
-// `isValidSlotState` — the global via `initialSlotState`, every live
-// `slot-state` event via the `useSlotState` listener. Unlike
-// presentation-mode's fixed enum, this payload is arbitrary
-// rust-serialized JSON, so it's validated rather than trusted blindly on
-// either path — defense in depth, even though the rust side is itself
-// trusted. Checks every field of a "showing" payload, not just
-// the state tag: a well-tagged-but-incomplete object (e.g. missing
-// `signal`) must fall back to empty, not render with undefined fields.
+// review — the mode-delivery hook removed in plan 019 (see git history)
+// was already built for this same race, but the shield was never applied
+// here): the rust core both sets `window.__NOTCHTAP_SLOT_STATE__` via
+// eval AND emits a `slot-state` event, on every page load. If react
+// mounts after page load, the initial-state read below catches the
+// global; if it mounts before, the listener catches the emit. BOTH entry
+// points run their payload through `isValidSlotState` — the global via
+// `initialSlotState`, every live `slot-state` event via the
+// `useSlotState` listener. This payload is arbitrary rust-serialized
+// JSON, so it's validated rather than trusted blindly on either path —
+// defense in depth, even though the rust side is itself trusted. Checks
+// every field of a "showing" payload, not just the state tag: a
+// well-tagged-but-incomplete object (e.g. missing `signal`) must fall
+// back to empty, not render with undefined fields.
 function isValidSlotState(v: unknown): v is SlotState {
   if (typeof v !== "object" || v === null || !("state" in v)) {
     return false;

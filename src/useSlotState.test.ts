@@ -154,7 +154,7 @@ describe("useSlotState", () => {
     expect(() => unmount()).not.toThrow();
   });
 
-  // --- startup race shield (2026-07-17 review, mirrors presentationMode's) ---
+  // --- startup race shield (2026-07-17 review, mirrors the mode-delivery hook removed in plan 019 (see git history)) ---
 
   it("reads the eval-planted global as initial state (late-mount side of the race shield)", () => {
     window.__NOTCHTAP_SLOT_STATE__ = SHOWING_N1;
