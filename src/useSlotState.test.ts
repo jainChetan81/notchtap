@@ -125,6 +125,23 @@ describe("useSlotState", () => {
     expect(result.current).toEqual(news);
   });
 
+  it("ignores a well-tagged but incomplete showing payload delivered via the event", async () => {
+    const { result } = await renderReady();
+    emit(SHOWING_N1);
+    expect(result.current.state).toBe("showing");
+    // live event payloads must run through the same validator the global
+    // path uses — an incomplete object falls back to empty, not undefined
+    // fields (regression guard for the previously-unvalidated live path).
+    emit({ state: "showing", id: "x" } as unknown as SlotState);
+    expect(result.current).toEqual({ state: "empty" });
+  });
+
+  it("ignores a showing payload with an out-of-range enum delivered via the event", async () => {
+    const { result } = await renderReady();
+    emit({ ...SHOWING_N1, signal: "confetti" } as unknown as SlotState);
+    expect(result.current).toEqual({ state: "empty" });
+  });
+
   it("cleans up the listener on unmount", async () => {
     const { unmount } = await renderReady();
     expect(() => unmount()).not.toThrow();

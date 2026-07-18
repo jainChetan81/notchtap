@@ -56,10 +56,13 @@ declare global {
 // `window.__NOTCHTAP_SLOT_STATE__` via eval AND emits a `slot-state`
 // event, on every page load. If react mounts after page load, the
 // initial-state read below catches the global; if it mounts before, the
-// listener catches the emit. Unlike presentation-mode's fixed enum, this
-// payload is arbitrary rust-serialized JSON, so it's validated rather
-// than trusted blindly — defense in depth, even though the rust side is
-// itself trusted. Checks every field of a "showing" payload, not just
+// listener catches the emit. BOTH entry points run their payload through
+// `isValidSlotState` — the global via `initialSlotState`, every live
+// `slot-state` event via the `useSlotState` listener. Unlike
+// presentation-mode's fixed enum, this payload is arbitrary
+// rust-serialized JSON, so it's validated rather than trusted blindly on
+// either path — defense in depth, even though the rust side is itself
+// trusted. Checks every field of a "showing" payload, not just
 // the state tag: a well-tagged-but-incomplete object (e.g. missing
 // `signal`) must fall back to empty, not render with undefined fields.
 function isValidSlotState(v: unknown): v is SlotState {
@@ -97,13 +100,21 @@ export function useSlotState(): SlotState {
   useEffect(() => {
     let unlisten: UnlistenFn | undefined;
     let unmounted = false;
-    listen<SlotState>("slot-state", ({ payload }) => setSlot(payload)).then((fn) => {
-      if (unmounted) {
-        fn();
-      } else {
-        unlisten = fn;
-      }
-    });
+    listen<unknown>("slot-state", ({ payload }) =>
+      setSlot(isValidSlotState(payload) ? payload : { state: "empty" }),
+    )
+      .then((fn) => {
+        if (unmounted) {
+          fn();
+        } else {
+          unlisten = fn;
+        }
+      })
+      .catch((error) => {
+        // A dead listener means a permanently frozen overlay — make it loud
+        // in the webview console since the overlay can't write to the file log.
+        console.error("slot-state listener failed to register", error);
+      });
     return () => {
       unmounted = true;
       unlisten?.();

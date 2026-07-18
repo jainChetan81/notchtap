@@ -5,7 +5,7 @@
 > If anything in "STOP conditions" occurs, stop and report. When done,
 > update this plan's status row in `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat d40445e..HEAD -- src/useSlotState.ts src/useSlotState.test.ts src-tauri/src/event.rs src-tauri/src/http.rs`
+> **Drift check (run first)**: `git diff --stat b43a7ca..HEAD -- src/useSlotState.ts src/useSlotState.test.ts src-tauri/src/event.rs src-tauri/src/http.rs`
 > On any change, compare excerpts below; mismatch = STOP.
 
 ## Status
@@ -15,7 +15,7 @@
 - **Risk**: LOW
 - **Depends on**: none
 - **Category**: bug / tests
-- **Planned at**: commit `d40445e`, 2026-07-17
+- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `b43a7ca` 2026-07-18 (excerpts re-verified unchanged)
 
 ## Why this matters
 

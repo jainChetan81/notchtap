@@ -171,13 +171,17 @@ pub fn dispatch(event: Event) -> Result<(), EventError> {
     }
 }
 
+/// The one event channel into the overlay — the frontend listens for
+/// exactly this string (`src/useSlotState.ts`). Change both together.
+pub const SLOT_STATE_EVENT: &str = "slot-state";
+
 /// The single emit path (spec §5.1): one `slot-state` event whenever the
 /// displayed slot changes. Emit failure is logged, never propagated — by
 /// this point the queue state has already changed, so failing the caller
 /// would report a notification as lost when it may still display.
 pub fn emit_slot_state<R: tauri::Runtime>(app: &tauri::AppHandle<R>, state: SlotState) {
     use tauri::Emitter;
-    if let Err(e) = app.emit("slot-state", &state) {
+    if let Err(e) = app.emit(SLOT_STATE_EVENT, &state) {
         tracing::error!("failed to emit slot-state: {e}");
     }
 }
@@ -206,6 +210,15 @@ mod tests {
     #[test]
     fn generic_event_dispatches_ok() {
         assert!(dispatch(generic_event()).is_ok());
+    }
+
+    #[test]
+    fn slot_state_event_name_is_pinned() {
+        // The frontend listens for exactly this literal (src/useSlotState.ts).
+        // A rename on either side compiles clean and passes every other test,
+        // shipping an overlay that never updates — this pins the seam so a
+        // rename fails loudly and names the file that must change in lockstep.
+        assert_eq!(SLOT_STATE_EVENT, "slot-state");
     }
 
     #[test]
