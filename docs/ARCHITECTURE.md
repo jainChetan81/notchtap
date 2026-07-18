@@ -253,11 +253,16 @@ event source feeding the same v1 queue, no rework.
 directly. this is the baseline — always available, zero dependencies.
 
 **cli contract (locked)**: flags only, one form for humans and scripts
-alike — `notchtap --title <t> --body <b> [--subtitle <s>] [--port <p>]`.
-no positional form. a non-empty `--subtitle` is folded by the cli into
-the posted body as `"<subtitle> — <body>"` — the `/notify` wire schema
-stays exactly `{title, body}`; the server never learns "subtitle"
-exists. port resolution: `--port` flag → `$NOTCHTAP_PORT` env var →
+alike — `notchtap --title <t> --body <b> [--subtitle <s>] [--detail Label=Value]... [--port <p>]`.
+no positional form. as of plan 035, `--subtitle` is a first-class
+*optional* wire field — it is **no longer folded** into the body — and
+the `/notify` schema also accepts optional `details: [{label, value}]`
+pairs (each repeatable `--detail Label=Value` on the cli, split on the
+first `=`). both are display-only, capped/truncated server-side for the
+fixed overlay window, and never influence priority/rotation. existing
+callers are unaffected: `subtitle` was always optional and `details`
+defaults to absent, so an old `{title, body}` payload behaves
+byte-identically. port resolution: `--port` flag → `$NOTCHTAP_PORT` env var →
 `9789`. the cli is a shell script (`jq` + `curl`, see the technical
 spec §12) and never reads `config.toml` — if the server's port is ever
 changed in config, set `$NOTCHTAP_PORT` to match on that machine.
@@ -311,6 +316,27 @@ decision — see code.claude.com/docs/en/hooks if wanted later). for v1,
 this isn't needed — the goal is just knowing claude needs input, via
 one cli command. that's fully solved by the notification-command relay
 alone.
+
+**optional richer hook sources (plan 035)**: two committed hook scripts
+in `hooks/` give the overlay real structure beyond cmux's three plain
+strings. `hooks/notchtap-cmux-hook.sh` is a cmux *notification hook*
+(the stdin-JSON form, distinct from the notification-command above): it
+echoes cmux's json back **unchanged** first — so cmux's own
+banner/history/sound behaviour is untouched — then relays
+`title`/`body`/`subtitle` plus the workspace `cwd` as a `Project`
+detail. `hooks/notchtap-claude-hook.sh` is a claude code hook that maps
+`Notification`, `PermissionRequest` (both real, documented events;
+`tool_name`/`tool_input`/`cwd` become Tool / Command-or-File / Project
+detail cells), `Stop`, and `PostToolUse`(`Task`). both are
+**observational only**: they post to the cli in the background and exit
+0 without writing any decision to stdout — and per the hooks contract,
+staying silent means "no decision", so claude code's real permission
+prompt still shows. this is the same heads-up boundary as the relay
+above: the respond-back loop (clicking approve here to unblock the
+agent) stays out of scope and unchanged. the operator wires these in
+`~/.claude/settings.json` and cmux's `notifications.hooks`; each script
+does nothing and exits 0 when the `notchtap` cli is not on PATH, so it
+can never block a session.
 
 **v3**: outbound connectors sit here as additional sinks observing
 accepted events — telegram first (bot api: free, instant, no approval

@@ -16,9 +16,9 @@ other sections point back rather than repeating them):
 
 | suite | size | where |
 |---|---|---|
-| rust unit/integration | 280 tests — settings 45, queue 63, http 32, notifier 23, rss_poller 28, poller 19, event 16, config 17, presentation 11, lib 13, status 5, logging 4, net 4 | `cargo test` from `src-tauri/` |
+| rust unit/integration | 289 tests — settings 45, queue 64, http 37, notifier 23, rss_poller 28, poller 19, event 19, config 17, presentation 11, lib 13, status 5, logging 4, net 4 | `cargo test` from `src-tauri/` |
 | rust doc-tests | 3 — public `queue`/`event` apis | same `cargo test` run |
-| frontend | 97 tests — presentation tables 12, inline markdown 7, slot-state hook 18, status-state hook 14, StatusRailCard 18, IdleView rail 4, Track slider 6, settings form 13, App render 5 | `npx vitest run` |
+| frontend | 104 tests — presentation tables 12, inline markdown 7, slot-state hook 22, status-state hook 14, StatusRailCard 21, IdleView rail 4, Track slider 6, settings form 13, App render 5 | `npx vitest run` |
 | ci (v4) | fmt, clippy `-D warnings` (`--locked`), cargo test (`--locked`), cargo-audit, npm audit, tsc, vitest, vite build, `sh -n` cli syntax check, swiftc compile check | every push + pr |
 
 every example case listed in §4 for v1/v2/v3 components has a passing
@@ -194,6 +194,13 @@ list is §4.10; don't add new cases here.
   - queue paused → `202` with `{"status": "paused", "queued": <n>}`,
     event buffered into `waiting`, not dropped — and still `429` when
     full while paused
+  - **plan 035 rich relay**: POST with `subtitle` + `details` round-trips
+    into `current_slot_state` (subtitle string, details `{label,value}`
+    pairs); caps enforced server-side (9 pairs → 8; label/value truncated
+    with `…`; empty-label pairs dropped; empty subtitle → `None`); and a
+    payload with **neither** field yields `None`/empty — the byte-identical
+    back-compat guarantee. `sanitize_subtitle`/`sanitize_details` are also
+    unit-tested directly for the boundary numbers (120/40/200 chars)
 - burst accounting and exact 413/ttl boundaries: §9.2, parked
 
 ### 4.4 notch/hud mode decision (rust, `presentation.rs`) — ✅ done
