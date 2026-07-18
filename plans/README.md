@@ -28,7 +28,7 @@ plans are independent. P1s first.
 | 007 | Supply chain + CI: pin nspanel rev, `--locked`, audit scans, Linux web job, `sh -n` gate | P1 | S | — | DONE (2026-07-18, CI run pending push) |
 | 008 | Expanded semantics: auto-expand High, reset per item, idle no-op | P1 | S | — | DONE (`8ca01e3`, verified 2026-07-18 — rewritten from `b1981c9` to remove an unrelated plan-001 duplicate that leaked into that commit) |
 | 009 | Validate live `slot-state` payloads + pin the event-name seam | P1 | S | — | TODO |
-| 010 | ESPN fetch hardening: gzip, 1 MiB cap, redirect limit, UA | P1 | S | — | TODO |
+| 010 | ESPN fetch hardening: gzip, 1 MiB cap, redirect limit, UA | P1 | S | — | DONE (`4381de4`, merged to master 2026-07-18; Step 4 GUI smoke owed to operator) |
 | 011 | RSS robustness: `fetch_feed` wiremock tests, bounded entity decoder, streaming cap | P1 | M | — | TODO |
 | 012 | Open-story hardening: reap child, `open -u` normalized URL, tested scheme gate | P2 | S | — | TODO |
 | 013 | Boot-path config validation (warn-and-continue) | P2 | S | — | TODO |
