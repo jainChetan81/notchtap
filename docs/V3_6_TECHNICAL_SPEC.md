@@ -437,6 +437,20 @@ means "promotion frozen, already-visible item still finishes its
 natural rotation and exits" (§3.6: "paused semantics carry over
 unchanged").
 
+**driving `tick()` (plan 015 — supersedes the original 250ms heartbeat
+description below and in §5.1):** `lib.rs`'s heartbeat no longer polls
+`tick()` on a fixed interval. It calls `queue.next_deadline()` — the
+visible item's `promoted_at + rotation_window(expanded) +
+extension_secs`, or `None` when the slot is empty — and sleeps until
+that instant (plus a small grace), or forever if `None`. A
+`tokio::sync::Notify` shared with every mutation site (the `/notify`
+handler, both pollers, and the pause/dismiss/expand-toggle/skip
+handlers) wakes the sleep early whenever any of them runs, so the next
+loop iteration re-ticks and recomputes the deadline immediately rather
+than waiting out a stale sleep. Net effect: the same rotate-then-promote
+behavior as before, but with ~0 wakeups while the queue is idle instead
+of ~4/second.
+
 ### 4.4 supersession — topic-based merge at enqueue
 
 ```rust
@@ -659,14 +673,17 @@ the frontend's job shrinks to "render whatever `slot-state` last
 said," full stop.
 
 emission sites, replacing every current `emit_promoted` call:
-- the 250ms heartbeat (`lib.rs`'s `spawn_heartbeat`): after
-  `queue.tick(now)`, emit only if the slot state actually changed.
+- the heartbeat (`lib.rs`'s `spawn_heartbeat`): after `queue.tick(now)`,
+  emit only if the slot state actually changed. Plan 015 replaced the
+  original fixed-250ms-interval version of this loop with a
+  deadline-sleep-plus-wake design (§4.3); the emission behavior here is
+  unchanged by that.
 - the tray pause/resume handler (`lib.rs`'s `build_tray`): same, after
   calling `tick()`.
 - the http handler (`http.rs`): after `enqueue()`, same — an accepted
   push that fast-path-promotes immediately (empty queue) must show up
-  without waiting for the next 250ms tick, exactly like today's
-  promotion-on-enqueue case.
+  immediately, not wait for the heartbeat's next scheduled wakeup,
+  exactly like today's promotion-on-enqueue case.
 - the new hotkey handler (§7.1's `toggle_manual_expand`): emits
   immediately on every toggle — this is the primary reason emission
   moved off "once per promotion."
@@ -773,7 +790,9 @@ export function useSlotState(): SlotState {
 no timers, no `deadline`, no wall-clock sweep — that entire class of
 bug (§2.0's hardening fix, the sleep/throttling sweep) disappears
 because there is nothing client-scheduled left to go stale. rust's
-250ms tick is the only clock; the frontend purely reacts.
+`tick()` (driven by the deadline-sleeping heartbeat, §4.3 — no longer a
+fixed 250ms interval as of plan 015) is the only clock; the frontend
+purely reacts.
 
 `App.tsx` shrinks to:
 

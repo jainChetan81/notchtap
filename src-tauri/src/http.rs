@@ -24,6 +24,9 @@ use crate::queue::SingleSlotQueue;
 // (MockRuntime) while the app runs on the default Wry runtime
 pub struct AppState<R: tauri::Runtime = tauri::Wry> {
     pub queue: Arc<Mutex<SingleSlotQueue>>,
+    /// plan 015: wakes the deadline-based heartbeat after every enqueue so
+    /// it recomputes its next rotation deadline instead of polling.
+    pub wake: Arc<tokio::sync::Notify>,
     pub default_ttl: u64,
     /// v6: the `/notify` fallback when a request omits its own `priority`
     /// (`Config.manual_default_priority`, default `Medium`) — a request
@@ -43,6 +46,7 @@ impl<R: tauri::Runtime> Clone for AppState<R> {
     fn clone(&self) -> Self {
         Self {
             queue: self.queue.clone(),
+            wake: self.wake.clone(),
             default_ttl: self.default_ttl,
             manual_default_priority: self.manual_default_priority,
             cmux_priority: self.cmux_priority,
@@ -182,6 +186,11 @@ async fn notify_handler<R: tauri::Runtime>(
     .await
     .map_err(HttpError::Queue)?;
 
+    // plan 015: an accepted push may change the visible item's rotation
+    // deadline (fresh promotion, or none at all while the slot stays
+    // occupied) — wake the heartbeat so it recomputes either way.
+    state.wake.notify_waiters();
+
     let (paused, waiting_count) = {
         let q = state.queue.lock().await;
         (q.is_paused(), q.total_waiting())
@@ -239,6 +248,7 @@ mod tests {
         let app = tauri::test::mock_app();
         AppState {
             queue: Arc::new(Mutex::new(queue)),
+            wake: Arc::new(tokio::sync::Notify::new()),
             default_ttl: 8,
             manual_default_priority: Priority::Medium,
             cmux_priority: Priority::High,

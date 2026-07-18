@@ -1,5 +1,5 @@
 use std::collections::VecDeque;
-use std::time::Instant;
+use std::time::{Duration, Instant};
 
 use crate::error::QueueError;
 use crate::event::{Event, Priority, RotationSpec, SlotState, SourceKind};
@@ -352,6 +352,20 @@ impl SingleSlotQueue {
 
     pub fn total_waiting(&self) -> usize {
         self.waiting.iter().map(|t| t.len()).sum()
+    }
+
+    /// The next Instant at which time alone changes state: the visible
+    /// item's rotation deadline (plan 015). `None` when nothing is
+    /// visible — promotion of waiting items is driven by mutations, which
+    /// wake the heartbeat directly, not by a deadline this method could
+    /// return. The deadline is returned regardless of `paused`: paused
+    /// items still age out (`rotate_out_if_elapsed` doesn't check
+    /// `paused`), Paused only disables `promote_next`.
+    pub fn next_deadline(&self) -> Option<Instant> {
+        let item = self.visible.as_ref()?;
+        let promoted_at = item.promoted_at?;
+        let window = item.event.rotation_window(self.expanded) + item.extension_secs;
+        Some(promoted_at + Duration::from_secs(window))
     }
 
     // ------------------------------------------------------------------
@@ -1328,5 +1342,77 @@ mod tests {
             }
             SlotState::Empty => panic!("expected Showing"),
         }
+    }
+
+    // ------------------------------------------------------------------
+    // plan 015: next_deadline
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn next_deadline_is_none_on_empty_queue() {
+        let q = SingleSlotQueue::new(50);
+        assert!(q.next_deadline().is_none());
+    }
+
+    #[test]
+    fn next_deadline_matches_promoted_at_plus_window() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue_at(event("a", Priority::Medium, 8), t0).unwrap();
+        let promoted_at = q.visible.as_ref().unwrap().promoted_at.unwrap();
+
+        assert_eq!(
+            q.next_deadline(),
+            Some(promoted_at + Duration::from_secs(8))
+        );
+    }
+
+    #[test]
+    fn next_deadline_uses_expanded_window() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue_at(event("a", Priority::Medium, 8), t0).unwrap();
+        q.toggle_expanded();
+        let promoted_at = q.visible.as_ref().unwrap().promoted_at.unwrap();
+
+        // Medium's 8s base window becomes 24s expanded (EXPANDED_MULTIPLIER = 3)
+        assert_eq!(
+            q.next_deadline(),
+            Some(promoted_at + Duration::from_secs(24))
+        );
+    }
+
+    #[test]
+    fn next_deadline_is_some_while_paused() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue_at(event("a", Priority::Medium, 8), t0).unwrap();
+        q.pause();
+
+        assert!(
+            q.next_deadline().is_some(),
+            "a paused visible item must keep aging toward rotation"
+        );
+    }
+
+    #[test]
+    fn next_deadline_includes_supersede_extension() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue_at(topic_event("a", Priority::Medium, 1, "topic"), t0)
+            .unwrap();
+        // below the floor: this supersede grants a top-up (see
+        // visible_supersede_grants_extension_only_when_below_floor)
+        q.enqueue_at(topic_event("a2", Priority::Medium, 1, "topic"), t0)
+            .unwrap();
+        let visible = q.visible.as_ref().unwrap();
+        let promoted_at = visible.promoted_at.unwrap();
+        let extension_secs = visible.extension_secs;
+        assert!(extension_secs > 0, "expected a top-up to have been granted");
+
+        assert_eq!(
+            q.next_deadline(),
+            Some(promoted_at + Duration::from_secs(1 + extension_secs))
+        );
     }
 }

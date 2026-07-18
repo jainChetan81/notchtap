@@ -587,6 +587,7 @@ pub(crate) fn enqueue_and_fan_out(
 pub fn spawn_espn_poller(
     app: tauri::AppHandle,
     queue: Arc<Mutex<SingleSlotQueue>>,
+    wake: Arc<tokio::sync::Notify>,
     connectors: Arc<Vec<crate::notifier::ConnectorHandle>>,
     leagues: Vec<String>,
     poll_secs: u64,
@@ -662,6 +663,11 @@ pub fn spawn_espn_poller(
                     let mut q = queue.lock().await;
                     enqueue_and_fan_out(&mut q, &connectors, events, league)
                 };
+                // plan 015: wake the heartbeat regardless of whether the
+                // slot state changed — a same-tier enqueue behind the
+                // visible item doesn't change the current deadline, but
+                // this keeps the wake unconditional and simple to audit.
+                wake.notify_waiters();
                 if let Some(state) = slot_change {
                     emit_slot_state(&app, state);
                 }

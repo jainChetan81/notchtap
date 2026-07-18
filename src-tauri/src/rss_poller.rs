@@ -443,6 +443,7 @@ async fn fetch_feed(
 pub fn spawn_rss_poller(
     app: tauri::AppHandle,
     queue: Arc<Mutex<SingleSlotQueue>>,
+    wake: Arc<tokio::sync::Notify>,
     feeds: Vec<crate::config::RssFeedConfig>,
     poll_secs: u64,
     ttl_secs: u64,
@@ -525,6 +526,9 @@ pub fn spawn_rss_poller(
                         }
                         queue.slot_state_if_changed()
                     };
+                    // plan 015: wake the heartbeat after every enqueue
+                    // attempt, same rationale as the espn poller.
+                    wake.notify_waiters();
                     if let Some(slot_state) = slot_change {
                         emit_slot_state(&app, slot_state);
                     }

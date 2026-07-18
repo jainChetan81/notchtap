@@ -102,6 +102,10 @@ pub fn run() {
         tracing::info!("start_paused: launching with promotion paused");
     }
     let queue = Arc::new(Mutex::new(initial_queue));
+    // plan 015: one Notify shared everywhere the queue Arc is shared — any
+    // mutation site wakes the heartbeat so it recomputes its next rotation
+    // deadline instead of polling on a fixed interval.
+    let wake = Arc::new(tokio::sync::Notify::new());
     let start_paused = config.start_paused;
     // v5 settings window reads the *booted* config via get_config —
     // managed as state in setup, after the fields below are cloned out.
@@ -156,6 +160,13 @@ pub fn run() {
     let page_load_queue = queue.clone();
     #[cfg(target_os = "macos")]
     let hotkey_queue = queue.clone();
+    let setup_wake = wake.clone();
+    let espn_wake = wake.clone();
+    let rss_wake = wake.clone();
+    let http_wake = wake.clone();
+    let tray_wake = wake.clone();
+    #[cfg(target_os = "macos")]
+    let hotkey_wake = wake.clone();
     let server_once = Arc::new(Once::new());
 
     tauri::Builder::default()
@@ -208,7 +219,12 @@ pub fn run() {
             apply_overlay_native_config(&window)?;
 
             position_window(&window, mode, cutout)?;
-            let pause_item = build_tray(app.handle(), setup_queue.clone(), start_paused)?;
+            let pause_item = build_tray(
+                app.handle(),
+                setup_queue.clone(),
+                tray_wake.clone(),
+                start_paused,
+            )?;
 
             // v3.6 spec §7.1: manual expand toggle, rust-side only — the
             // frontend never calls the plugin's JS api (receive-only
@@ -217,6 +233,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             {
                 let hotkey_queue_for_handler = hotkey_queue.clone();
+                let hotkey_wake_for_handler = hotkey_wake.clone();
                 let pause_item_for_handler = pause_item.clone();
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
@@ -228,7 +245,11 @@ pub fn run() {
                                         EXPAND_TOGGLE_SHORTCUT.1,
                                     )
                                 {
-                                    toggle_manual_expand(app, &hotkey_queue_for_handler);
+                                    toggle_manual_expand(
+                                        app,
+                                        &hotkey_queue_for_handler,
+                                        &hotkey_wake_for_handler,
+                                    );
                                 } else if *shortcut
                                     == Shortcut::new(OPEN_STORY_SHORTCUT.0, OPEN_STORY_SHORTCUT.1)
                                 {
@@ -236,7 +257,11 @@ pub fn run() {
                                 } else if *shortcut
                                     == Shortcut::new(DISMISS_SHORTCUT.0, DISMISS_SHORTCUT.1)
                                 {
-                                    dismiss_current(app, &hotkey_queue_for_handler);
+                                    dismiss_current(
+                                        app,
+                                        &hotkey_queue_for_handler,
+                                        &hotkey_wake_for_handler,
+                                    );
                                 } else if *shortcut
                                     == Shortcut::new(
                                         PAUSE_TOGGLE_SHORTCUT.0,
@@ -247,11 +272,16 @@ pub fn run() {
                                         app,
                                         &hotkey_queue_for_handler,
                                         &pause_item_for_handler,
+                                        &hotkey_wake_for_handler,
                                     );
                                 } else if *shortcut
                                     == Shortcut::new(SKIP_SHORTCUT.0, SKIP_SHORTCUT.1)
                                 {
-                                    skip_current(app, &hotkey_queue_for_handler);
+                                    skip_current(
+                                        app,
+                                        &hotkey_queue_for_handler,
+                                        &hotkey_wake_for_handler,
+                                    );
                                 } else if *shortcut
                                     == Shortcut::new(
                                         OPEN_SETTINGS_SHORTCUT.0,
@@ -298,7 +328,7 @@ pub fn run() {
             // boot from Config and never flipped again.
             let espn_active = espn_enabled.then(|| Arc::new(AtomicBool::new(true)));
             let rss_active = rss_enabled.then(|| Arc::new(AtomicBool::new(true)));
-            spawn_heartbeat(app.handle().clone(), setup_queue.clone());
+            spawn_heartbeat(app.handle().clone(), setup_queue.clone(), setup_wake);
 
             // espn poller (v2 spec §3) — config-gated: `espn_enabled =
             // false` means it never spawns. first poll only baselines
@@ -308,6 +338,7 @@ pub fn run() {
                 poller::spawn_espn_poller(
                     app.handle().clone(),
                     setup_queue,
+                    espn_wake,
                     poller_connectors,
                     espn_leagues,
                     espn_poll_secs,
@@ -320,6 +351,7 @@ pub fn run() {
                 rss_poller::spawn_rss_poller(
                     app.handle().clone(),
                     rss_queue,
+                    rss_wake,
                     rss_feeds,
                     rss_poll_secs,
                     rss_ttl_secs,
@@ -342,6 +374,7 @@ pub fn run() {
                 let eval_queue = page_load_queue.clone();
                 let app_handle = webview.app_handle().clone();
                 let connectors = page_load_connectors.clone();
+                let queue_wake = http_wake.clone();
 
                 // mode delivery is double-shielded against the
                 // listener-registration race (2026-07-17 review): the eval
@@ -428,6 +461,7 @@ pub fn run() {
                     let app_handle = app_handle.clone();
                     let state = http::AppState {
                         queue,
+                        wake: queue_wake,
                         default_ttl,
                         manual_default_priority,
                         cmux_priority,
@@ -562,6 +596,7 @@ fn toggle_pause<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     queue: &Arc<Mutex<SingleSlotQueue>>,
     pause_item: &MenuItem<R>,
+    wake: &Arc<tokio::sync::Notify>,
 ) {
     // menu events and global-shortcut handlers arrive on the main thread,
     // outside the tokio runtime, so a blocking lock is safe here
@@ -584,6 +619,10 @@ fn toggle_pause<R: tauri::Runtime>(
             None
         }
     };
+    // plan 015: resume (or pause) may change the visible item's rotation
+    // deadline — wake the heartbeat so it recomputes rather than waiting on
+    // whatever deadline it last slept toward.
+    wake.notify_waiters();
     if let Some(state) = slot_change {
         emit_slot_state(app, state);
     }
@@ -599,6 +638,7 @@ fn toggle_pause<R: tauri::Runtime>(
 fn build_tray<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     queue: Arc<Mutex<SingleSlotQueue>>,
+    wake: Arc<tokio::sync::Notify>,
     start_paused: bool,
 ) -> tauri::Result<MenuItem<R>> {
     // v5 kill switch: a start_paused boot renders the toggle as "Resume"
@@ -618,7 +658,7 @@ fn build_tray<R: tauri::Runtime>(
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(move |app, event| match event.id().as_ref() {
-            "pause" => toggle_pause(app, &queue, &pause_item_for_handler),
+            "pause" => toggle_pause(app, &queue, &pause_item_for_handler, &wake),
             "settings" => open_settings_window(app),
             "quit" => app.exit(0),
             _ => {}
@@ -652,20 +692,33 @@ fn open_settings_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     }
 }
 
-fn spawn_heartbeat(app: tauri::AppHandle, queue: Arc<Mutex<SingleSlotQueue>>) {
-    // 250ms rotation heartbeat (v3.6 spec §4.3): rotation and promotion
-    // never depend on a new push arriving
+fn spawn_heartbeat<R: tauri::Runtime>(
+    app: tauri::AppHandle<R>,
+    queue: Arc<Mutex<SingleSlotQueue>>,
+    wake: Arc<tokio::sync::Notify>,
+) {
+    // Deadline-based (plan 015): sleeps until the visible item's rotation
+    // deadline (or forever when idle) and is woken by any queue mutation.
+    // Replaces the fixed 250ms tick — same observable behavior, ~0 idle
+    // wakeups. A small grace addition avoids sub-ms re-loops at the edge.
     tauri::async_runtime::spawn(async move {
-        let mut interval = tokio::time::interval(Duration::from_millis(250));
         loop {
-            interval.tick().await;
-            let slot_change = {
+            let deadline = {
                 let mut q = queue.lock().await;
                 q.tick(Instant::now());
-                q.slot_state_if_changed()
+                if let Some(state) = q.slot_state_if_changed() {
+                    emit_slot_state(&app, state);
+                }
+                q.next_deadline()
             };
-            if let Some(state) = slot_change {
-                emit_slot_state(&app, state);
+            match deadline {
+                Some(at) => {
+                    tokio::select! {
+                        _ = tokio::time::sleep_until(tokio::time::Instant::from_std(at + Duration::from_millis(10))) => {}
+                        _ = wake.notified() => {}
+                    }
+                }
+                None => wake.notified().await,
             }
         }
     });
@@ -683,14 +736,19 @@ fn spawn_heartbeat(app: tauri::AppHandle, queue: Arc<Mutex<SingleSlotQueue>>) {
 fn toggle_manual_expand<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     queue: &Arc<Mutex<SingleSlotQueue>>,
+    wake: &Arc<tokio::sync::Notify>,
 ) {
     let mut q = queue.blocking_lock();
     if q.current_priority() == Some(crate::event::Priority::High) {
         return;
     }
     q.toggle_expanded();
-    if let Some(state) = q.slot_state_if_changed() {
-        drop(q);
+    let slot_change = q.slot_state_if_changed();
+    drop(q);
+    // plan 015: expanded changes the rotation window, so the heartbeat's
+    // next deadline must be recomputed.
+    wake.notify_waiters();
+    if let Some(state) = slot_change {
         emit_slot_state(app, state);
     }
 }
@@ -699,11 +757,14 @@ fn toggle_manual_expand<R: tauri::Runtime>(
 fn dismiss_current<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     queue: &Arc<Mutex<SingleSlotQueue>>,
+    wake: &Arc<tokio::sync::Notify>,
 ) {
     let mut q = queue.blocking_lock();
     q.dismiss_visible(Instant::now());
-    if let Some(state) = q.slot_state_if_changed() {
-        drop(q);
+    let slot_change = q.slot_state_if_changed();
+    drop(q);
+    wake.notify_waiters();
+    if let Some(state) = slot_change {
         emit_slot_state(app, state);
     }
 }
@@ -712,11 +773,17 @@ fn dismiss_current<R: tauri::Runtime>(
 // requeues, OneShot drops) — deliberately different from ⌃⇧X's dismiss,
 // which drops a Recurring item outright. See SingleSlotQueue::skip_visible.
 #[cfg(target_os = "macos")]
-fn skip_current<R: tauri::Runtime>(app: &tauri::AppHandle<R>, queue: &Arc<Mutex<SingleSlotQueue>>) {
+fn skip_current<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    queue: &Arc<Mutex<SingleSlotQueue>>,
+    wake: &Arc<tokio::sync::Notify>,
+) {
     let mut q = queue.blocking_lock();
     q.skip_visible(Instant::now());
-    if let Some(state) = q.slot_state_if_changed() {
-        drop(q);
+    let slot_change = q.slot_state_if_changed();
+    drop(q);
+    wake.notify_waiters();
+    if let Some(state) = slot_change {
         emit_slot_state(app, state);
     }
 }
@@ -798,6 +865,10 @@ mod tests {
         }
     }
 
+    fn wake() -> Arc<tokio::sync::Notify> {
+        Arc::new(tokio::sync::Notify::new())
+    }
+
     #[test]
     fn toggle_manual_expand_is_a_noop_while_high_priority_is_visible() {
         let app = tauri::test::mock_app();
@@ -818,7 +889,7 @@ mod tests {
             }
         }
 
-        toggle_manual_expand(&app.handle().clone(), &queue);
+        toggle_manual_expand(&app.handle().clone(), &queue, &wake());
 
         let q = queue.blocking_lock();
         match q.current_slot_state() {
@@ -839,7 +910,7 @@ mod tests {
         inner.enqueue(event(Priority::Medium)).unwrap();
         let queue = Arc::new(Mutex::new(inner));
 
-        toggle_manual_expand(&app.handle().clone(), &queue);
+        toggle_manual_expand(&app.handle().clone(), &queue, &wake());
 
         let q = queue.blocking_lock();
         match q.current_slot_state() {
@@ -858,7 +929,7 @@ mod tests {
         inner.enqueue(next).unwrap();
         let queue = Arc::new(Mutex::new(inner));
 
-        dismiss_current(&app.handle().clone(), &queue);
+        dismiss_current(&app.handle().clone(), &queue, &wake());
 
         let q = queue.blocking_lock();
         match q.current_slot_state() {
@@ -874,7 +945,7 @@ mod tests {
         assert_eq!(inner.slot_state_if_changed(), Some(SlotState::Empty));
         let queue = Arc::new(Mutex::new(inner));
 
-        dismiss_current(&app.handle().clone(), &queue);
+        dismiss_current(&app.handle().clone(), &queue, &wake());
 
         let mut q = queue.blocking_lock();
         assert_eq!(q.current_slot_state(), SlotState::Empty);
@@ -894,7 +965,7 @@ mod tests {
         inner.enqueue(next).unwrap();
         let queue = Arc::new(Mutex::new(inner));
 
-        skip_current(&app.handle().clone(), &queue);
+        skip_current(&app.handle().clone(), &queue, &wake());
 
         let mut q = queue.blocking_lock();
         match q.current_slot_state() {
@@ -920,7 +991,7 @@ mod tests {
             MenuItem::with_id(app.handle(), "pause", "Pause", true, None::<&str>).unwrap();
         let queue = Arc::new(Mutex::new(SingleSlotQueue::new(50)));
 
-        toggle_pause(&app.handle().clone(), &queue, &pause_item);
+        toggle_pause(&app.handle().clone(), &queue, &pause_item, &wake());
         assert_eq!(pause_item.text().unwrap(), "Resume");
         {
             let mut q = queue.blocking_lock();
@@ -929,7 +1000,7 @@ mod tests {
             assert_eq!(q.current_slot_state(), SlotState::Empty);
         }
 
-        toggle_pause(&app.handle().clone(), &queue, &pause_item);
+        toggle_pause(&app.handle().clone(), &queue, &pause_item, &wake());
         assert_eq!(pause_item.text().unwrap(), "Pause");
         let q = queue.blocking_lock();
         assert!(!q.is_paused());
@@ -984,5 +1055,56 @@ mod tests {
         let mut q = queue.blocking_lock();
         assert_eq!(q.current_slot_state(), SlotState::Empty);
         assert!(q.slot_state_if_changed().is_none());
+    }
+
+    #[tokio::test]
+    async fn heartbeat_rotates_out_via_deadline_sleep_not_polling() {
+        // plan 015: the reworked heartbeat sleeps until the visible item's
+        // rotation deadline (or forever when idle) instead of polling a
+        // fixed 250ms interval — this proves the sleep still fires and
+        // rotates the item out once its window elapses, driven purely by
+        // the deadline (plus one `notify_waiters()` after the enqueue, the
+        // same wake every real mutation site now performs).
+        let app = tauri::test::mock_app();
+        let queue = Arc::new(Mutex::new(SingleSlotQueue::new(50)));
+        let heartbeat_wake = wake();
+
+        spawn_heartbeat(app.handle().clone(), queue.clone(), heartbeat_wake.clone());
+
+        let short_lived = Event {
+            id: uuid::Uuid::new_v4(),
+            event_type: EventType::Generic,
+            priority: Priority::Medium,
+            rotation: RotationSpec::OneShot { ttl_secs: 1 },
+            topic: None,
+            payload: EventPayload {
+                title: "t".to_string(),
+                body: "b".to_string(),
+            },
+            meta: EventMeta::default(),
+            signal: EventSignal::Generic,
+            origin: SourceKind::Manual,
+        };
+        {
+            let mut q = queue.lock().await;
+            q.enqueue(short_lived).unwrap();
+            assert!(matches!(q.current_slot_state(), SlotState::Showing { .. }));
+        }
+        heartbeat_wake.notify_waiters();
+
+        let rotated = tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                if queue.lock().await.current_slot_state() == SlotState::Empty {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await;
+
+        assert!(
+            rotated.is_ok(),
+            "expected the item to rotate out via the deadline-based heartbeat within 3s"
+        );
     }
 }
