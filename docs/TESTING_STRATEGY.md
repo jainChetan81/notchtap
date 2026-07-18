@@ -16,7 +16,7 @@ other sections point back rather than repeating them):
 
 | suite | size | where |
 |---|---|---|
-| rust unit/integration | 249 tests — settings 45, queue 52, http 27, notifier 23, rss_poller 28, poller 19, event 18, config 17, presentation 11, lib (hotkey) 9 | `cargo test` from `src-tauri/` |
+| rust unit/integration | 256 tests — settings 45, queue 52, http 27, notifier 23, rss_poller 28, poller 19, event 18, config 17, presentation 11, lib 12, logging 4 | `cargo test` from `src-tauri/` |
 | rust doc-tests | 3 — public `queue`/`event` apis | same `cargo test` run |
 | frontend | 66 tests — presentation tables 14, slot-state hook 16, StatusRailCard 14, settings form 13, App render 5, presentation mode 4 | `npx vitest run` |
 | ci (v4) | fmt, clippy `-D warnings` (`--locked`), cargo test (`--locked`), cargo-audit, npm audit, tsc, vitest, vite build, `sh -n` cli syntax check, swiftc compile check | every push + pr |
@@ -562,12 +562,16 @@ oversight:
 
 - **`lib.rs`** — partially tested: the pure hotkey handlers
   (`toggle_manual_expand`, `dismiss_current`, `toggle_pause`) have their
-  own suite, §4.10. the rest — window, tray construction, heartbeat
+  own suite, §4.10, and the eval-splice escaping is extracted as the
+  tested pure `escape_for_eval_splice` (all `webview.eval` json splices
+  route through it). the rest — window, tray construction, heartbeat
   spawn, page-load gate — stays untested by design: thin orchestration
   of native apis; §3's "don't test thin wrappers" rule. the logic it
   calls (queue, emit rule) is tested where it lives.
-- **`logging.rs`** — file-appender setup and rotation glue. filesystem
-  side effects, no decision logic worth asserting.
+- **`logging.rs`** — subscriber init + double fmt-layer glue only; the
+  size-rotation engine (threshold, cascade, reset) grew real decision
+  logic and so came off this list per the rule below — it has its own
+  temp-dir test module now (§0).
 - **`login_item.rs`** — `SMAppService` registration shim. only
   observable against a real macos session; manual checklist territory.
 - **`error.rs`** — `thiserror` declarations only; the variants are
