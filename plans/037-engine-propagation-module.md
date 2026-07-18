@@ -38,6 +38,22 @@
 
 ## Status
 
+> **BLOCKED 2026-07-19 — do not execute this plan as written.** Plans
+> 032–034 landed on master while an executor was mid-run from
+> `4ad4be5`, rewriting queue.rs/lib.rs/http.rs underneath it: 033
+> reversed the High-only auto-expand (invariant 8 below is stale and
+> the queue gained batch counters), the heartbeat now carries the
+> live-match handle + StatusState emission (plan 034 — `spawn_rotation`'s
+> port target changed shape), and 035's `/notify` contract changes are
+> still inbound. The design decisions (closure-based `apply`, private
+> queue+wake, `accept` with the News gate, Engine-owned clock,
+> rotation loop inside the Engine) remain operator-locked and valid.
+> A partial reference implementation (Steps 1–2 against the old base)
+> is preserved on branch `exec/037-engine`. **Next action: after 035
+> lands, run `/improve review-plan` on this file to retarget every
+> excerpt, the op model, and the invariant list at settled master —
+> then re-execute.**
+
 - **Priority**: P2
 - **Effort**: L
 - **Risk**: MEDIUM — a wide but mechanical refactor across every caller
