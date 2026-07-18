@@ -5,7 +5,7 @@
 > If anything in "STOP conditions" occurs, stop and report. When done,
 > update this plan's status row in `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat b43a7ca..HEAD -- src-tauri/src/config.rs src-tauri/src/settings.rs src-tauri/src/lib.rs`
+> **Drift check (run first)**: `git diff --stat 6a7fd5a..HEAD -- src-tauri/src/config.rs src-tauri/src/settings.rs src-tauri/src/lib.rs`
 > On any change, compare excerpts below; mismatch = STOP.
 
 ## Status
@@ -15,7 +15,7 @@
 - **Risk**: MED (changes boot behavior for existing bad configs — mitigated by warn-don't-die design below)
 - **Depends on**: none
 - **Category**: bug
-- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `b43a7ca` 2026-07-18 (excerpts re-verified unchanged)
+- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `6a7fd5a` 2026-07-18 (excerpts re-verified against live code — `Config::load` body unchanged, `validate` signature unchanged; only line numbers moved, updated below)
 
 ## Why this matters
 
@@ -44,7 +44,7 @@ fail-fast, that is a one-line change flagged in Maintenance notes.
 
 ## Current state
 
-`src-tauri/src/config.rs:227-243` — `Config::load()`:
+`src-tauri/src/config.rs:267-283` — `Config::load()`:
 
 ```rust
 pub fn load() -> anyhow::Result<Self> {
@@ -64,16 +64,25 @@ pub fn load() -> anyhow::Result<Self> {
 }
 ```
 
-`src-tauri/src/settings.rs:25+` — `pub fn validate(c: &Config) ->
+`src-tauri/src/settings.rs:35+` — `pub fn validate(c: &Config) ->
 Result<(), Vec<String>>`: per-field range checks (port ≥1024,
 default_ttl 1–3600, max_queued_per_tier 1–1000, espn_poll_secs 5–3600,
 league slug shape, rss feed URL parse, rotation_order permutation, etc.),
 returning the full message list. It is called today only from
-`save_config_and_relaunch` (`settings.rs:446`).
+`save_config_and_relaunch` (`settings.rs:596`).
 
-Call-site of `Config::load()`: `src-tauri/src/lib.rs`'s `run()` (early,
-before logging of mode / server bind — find it with
-`rg -n "Config::load" src-tauri/src`).
+Two other validators exist in `settings.rs` — neither changes this plan:
+`validate_appearance` is already called *inside* `validate()`
+(`settings.rs:137`), so the one boot call below covers appearance ranges
+too; `validate_secret_value` (`settings.rs:296`) guards the secrets write
+path and has no boot-time role. Do not add separate calls for either.
+
+Call-site of `Config::load()`: `src-tauri/src/lib.rs:79`, inside `run()`.
+Verified ordering as of the drift baseline: `logging::init_logging()` runs
+first (`lib.rs:70`), so warnings emitted right after the load already reach
+the file log. (If a future reorder moves config load before logging init,
+fall back to placing the validate call after logging init, operating on the
+already-loaded value.)
 
 Module-boundary note: `config.rs` must not import from `settings.rs` if
 that creates a cycle — check imports first (`settings.rs` already
@@ -120,9 +129,8 @@ for degraded-but-running conditions. Counts live ONLY in
 ### Step 1: Validate at the boot call-site
 
 In `lib.rs`'s `run()`, immediately after the successful `Config::load()`
-(and after logging init so the warnings reach the file log — check the
-current ordering; if config loads before logging init, place the validate
-call after logging init instead, operating on the already-loaded value):
+match (`lib.rs:79` at the drift baseline — logging init already precedes
+it, see Current state):
 
 ```rust
 // Boot-time contract parity with the settings window (plan 013): the
@@ -145,10 +153,24 @@ test is the *wiring* — that boot tolerates an invalid-range config. If
 `run()` is untestable directly (it is — tauri setup), add instead a small
 pure seam ONLY if one already suggests itself; otherwise rely on:
 1. the existing `settings::validate` suite (rules), and
-2. a manual smoke: set `default_ttl = 0` in a scratch config
-   (`~/.config/notchtap/config.toml` — BACK UP the real one first, restore
-   after), run `npm run tauri dev`, confirm the log shows the warn line
-   and the app still boots. Restore the config.
+2. a manual smoke **against a scratch HOME, never the real config**.
+   `Config::load()` resolves the path via `dirs::home_dir()`, which honors
+   `$HOME`, so:
+   ```sh
+   SCRATCH=$(mktemp -d)
+   mkdir -p "$SCRATCH/.config/notchtap"
+   printf 'default_ttl = 0\n' > "$SCRATCH/.config/notchtap/config.toml"
+   HOME="$SCRATCH" npm run tauri dev
+   ```
+   Confirm the console shows the warn line ("config.toml value out of
+   range") and the app still boots. Side effects (logs, disabled telegram
+   from missing secrets) land in the scratch HOME and are expected. Quit,
+   then `rm -rf "$SCRATCH"`. Caveat: if another notchtap instance already
+   holds port 9789, the smoke app exits with a bind error shortly *after*
+   boot — the warn line appearing before that is still a passing smoke;
+   don't misread the port conflict as a boot failure. Only a human
+   operator should ever exercise the variant that edits the real
+   `~/.config/notchtap/config.toml`.
 
 Document in your report which form you used. Do NOT build a test harness
 for `run()` — that's out of proportion (the repo's §5.1 records lib.rs
