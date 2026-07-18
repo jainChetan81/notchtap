@@ -1,5 +1,4 @@
 use std::collections::{HashSet, VecDeque};
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -12,7 +11,7 @@ use crate::event::{
     emit_slot_state, Event, EventMeta, EventPayload, EventSignal, EventType, Priority,
     RotationSpec, SourceKind,
 };
-use crate::poller::{Backoff, PauseGate};
+use crate::poller::Backoff;
 use crate::queue::SingleSlotQueue;
 
 const TITLE_MAX_CHARS: usize = 120;
@@ -449,7 +448,6 @@ pub fn spawn_rss_poller(
     ttl_secs: u64,
     max_per_poll: usize,
     priority: Priority,
-    active: Arc<AtomicBool>,
 ) {
     tauri::async_runtime::spawn(async move {
         let client = match reqwest::Client::builder()
@@ -466,23 +464,12 @@ pub fn spawn_rss_poller(
         };
         let mut states: Vec<FeedState> = feeds.iter().map(|_| FeedState::default()).collect();
         let mut seen = SeenStore::default();
-        let mut gate = PauseGate::new();
         let mut interval = tokio::time::interval(Duration::from_secs(poll_secs.max(15)));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         tracing::info!(?feeds, poll_secs, "rss poller started");
 
         loop {
             interval.tick().await;
-            let tick = gate.tick(active.load(Ordering::Relaxed));
-            if tick.rebaseline {
-                for state in &mut states {
-                    state.baseline = true;
-                }
-                tracing::info!("rss polling resumed from tray; re-baselining");
-            }
-            if !tick.poll {
-                continue;
-            }
 
             for (feed_config, state) in feeds.iter().zip(&mut states) {
                 let now = Instant::now();

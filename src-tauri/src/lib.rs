@@ -14,7 +14,6 @@ pub mod queue;
 mod rss_poller;
 mod settings;
 
-use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex as StdMutex, Once, OnceLock};
 use std::time::{Duration, Instant};
 
@@ -333,23 +332,20 @@ pub fn run() {
             if let Some(worker) = telegram_worker {
                 tauri::async_runtime::spawn(worker);
             }
-            // Poll-loop gate: true = polling. Lives here (not in the queue)
-            // because it gates network fetches, not promotion — pausing
-            // scores must not touch cmux/cli pushes. v6: no longer
-            // tray-toggleable (the tray's "Pause Football Scores"/"Pause
-            // News" items were redundant with the settings panel's
-            // espn_enabled/rss_enabled toggles, ARCHITECTURE.md §17's
-            // "richer than a toggle lives in Settings" rule) — set once at
-            // boot from Config and never flipped again.
-            let espn_active = espn_enabled.then(|| Arc::new(AtomicBool::new(true)));
-            let rss_active = rss_enabled.then(|| Arc::new(AtomicBool::new(true)));
+            // v6: polling is enabled/disabled once at boot from Config and
+            // never flipped again (no longer tray-toggleable — the tray's
+            // "Pause Football Scores"/"Pause News" items were redundant
+            // with the settings panel's espn_enabled/rss_enabled toggles,
+            // ARCHITECTURE.md §17's "richer than a toggle lives in
+            // Settings" rule). Each poller below simply doesn't spawn when
+            // its `_enabled` flag is false.
             spawn_heartbeat(app.handle().clone(), setup_queue.clone(), setup_wake);
 
             // espn poller (v2 spec §3) — config-gated: `espn_enabled =
             // false` means it never spawns. first poll only baselines
             // (silent), so starting before the webview loads can't drop
             // anything a listener would have shown.
-            if let Some(espn_active) = espn_active {
+            if espn_enabled {
                 poller::spawn_espn_poller(
                     app.handle().clone(),
                     setup_queue,
@@ -359,10 +355,9 @@ pub fn run() {
                     espn_poll_secs,
                     espn_ttl_secs,
                     espn_priority,
-                    espn_active,
                 );
             }
-            if let Some(rss_active) = rss_active {
+            if rss_enabled {
                 rss_poller::spawn_rss_poller(
                     app.handle().clone(),
                     rss_queue,
@@ -372,7 +367,6 @@ pub fn run() {
                     rss_ttl_secs,
                     rss_max_per_poll,
                     rss_priority,
-                    rss_active,
                 );
             }
 

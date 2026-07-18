@@ -69,14 +69,17 @@ in `docs/ARCHITECTURE.md`.
   formerly gated a 3-item cap. v5: the tray toggle stays session-only,
   but the persisted `start_paused` config flag — the **Kill Switch** —
   makes the app *launch* Paused.)
-- **Polling Pause** — a Poller-level state (per source) in which the
-  Poller stops checking its external service; no Events are produced
-  and changes during the pause are never seen. distinct from Paused:
-  Paused buffers and drops nothing, a Polling Pause observes nothing.
-  resuming re-baselines silently, like a first sighting. (v6: no
-  longer tray-toggleable — set once at boot from `espn_enabled`/
-  `rss_enabled`; per-source control lives entirely in the Settings
-  Window now.)
+- **Polling Pause** — historical: a Poller-level state (per source) in
+  which the Poller stopped checking its external service; no Events
+  were produced and changes during the pause were never seen. distinct
+  from Paused: Paused buffers and drops nothing, a Polling Pause
+  observed nothing. (v6: no longer tray-toggleable — set once at boot
+  from `espn_enabled`/`rss_enabled`; per-source control lives entirely
+  in the Settings Window now. 2026-07-18, plan 019: the runtime
+  pause/resume gate machinery — unreachable in production since v6
+  made this boot-only — was deleted; a source now either spawns at
+  boot or doesn't, and there is no live pause/resume or
+  re-baseline-on-resume left to describe.)
 - **Presentation Mode** — how the window anchors: **Notch** (over the
   macbook's notch cutout) or **HUD** (floating top-center, on
   notchless machines). decided at runtime, never at build time.

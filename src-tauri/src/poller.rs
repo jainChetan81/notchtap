@@ -1,5 +1,4 @@
 use std::collections::HashMap;
-use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
@@ -494,40 +493,6 @@ impl Backoff {
 }
 
 // ---------------------------------------------------------------------------
-// tray pause gate — pure per-tick decision for the fetch loop. the tray
-// flips a shared AtomicBool; the loop asks the gate what that means for
-// this tick. resuming re-baselines (snapshots cleared) so everything that
-// happened while paused stays silent — same rule as first sighting.
-// ---------------------------------------------------------------------------
-
-#[derive(Debug, PartialEq, Eq)]
-pub struct GateTick {
-    pub poll: bool,
-    pub rebaseline: bool,
-}
-
-#[derive(Debug)]
-pub struct PauseGate {
-    was_active: bool,
-}
-
-impl PauseGate {
-    pub fn new() -> Self {
-        // polling starts active; the tray flag also starts true
-        Self { was_active: true }
-    }
-
-    pub fn tick(&mut self, active: bool) -> GateTick {
-        let rebaseline = active && !self.was_active;
-        self.was_active = active;
-        GateTick {
-            poll: active,
-            rebaseline,
-        }
-    }
-}
-
-// ---------------------------------------------------------------------------
 // fetch loop — deliberately thin and untested (v2 spec §3): everything below
 // the "here is a response body" line is the tested surface above.
 // ---------------------------------------------------------------------------
@@ -593,7 +558,6 @@ pub fn spawn_espn_poller(
     poll_secs: u64,
     ttl_secs: u64,
     priority: Priority,
-    active: Arc<AtomicBool>,
 ) {
     tauri::async_runtime::spawn(async move {
         let client = match reqwest::Client::builder()
@@ -610,23 +574,12 @@ pub fn spawn_espn_poller(
         };
         let mut snapshots: HashMap<String, Snapshot> = HashMap::new();
         let mut backoffs: HashMap<String, Backoff> = HashMap::new();
-        let mut gate = PauseGate::new();
         let mut interval = tokio::time::interval(Duration::from_secs(poll_secs.max(5)));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         tracing::info!(?leagues, poll_secs, "espn poller started");
 
         loop {
             interval.tick().await;
-            let t = gate.tick(active.load(Ordering::Relaxed));
-            if t.rebaseline {
-                // scores moved while we weren't looking; next poll is a
-                // silent baseline, not a burst of stale notifications
-                snapshots.clear();
-                tracing::info!("espn polling resumed from tray; re-baselining");
-            }
-            if !t.poll {
-                continue;
-            }
             for league in &leagues {
                 let now = Instant::now();
                 let backoff = backoffs.entry(league.clone()).or_default();
@@ -959,54 +912,5 @@ mod tests {
         assert!(b.ready(t0));
         b.on_failure(t0);
         assert!(b.ready(t0 + Duration::from_secs(30))); // reset to base
-    }
-
-    #[test]
-    fn gate_polls_normally_while_active() {
-        let mut g = PauseGate::new();
-        for _ in 0..3 {
-            assert_eq!(
-                g.tick(true),
-                GateTick {
-                    poll: true,
-                    rebaseline: false
-                }
-            );
-        }
-    }
-
-    #[test]
-    fn gate_skips_every_tick_while_paused() {
-        let mut g = PauseGate::new();
-        for _ in 0..3 {
-            assert_eq!(
-                g.tick(false),
-                GateTick {
-                    poll: false,
-                    rebaseline: false
-                }
-            );
-        }
-    }
-
-    #[test]
-    fn gate_rebaselines_exactly_once_on_resume() {
-        let mut g = PauseGate::new();
-        g.tick(false);
-        assert_eq!(
-            g.tick(true),
-            GateTick {
-                poll: true,
-                rebaseline: true
-            }
-        );
-        // only the transition tick re-baselines, not every active tick
-        assert_eq!(
-            g.tick(true),
-            GateTick {
-                poll: true,
-                rebaseline: false
-            }
-        );
     }
 }
