@@ -19,6 +19,11 @@
 - **Depends on**: none (requires network access to resolve tag→SHA)
 - **Category**: security
 - **Planned at**: commit `a58f115`, 2026-07-18
+- **Reviewed**: 2026-07-18 at `4281d2c` (review-plan pass) — no drift
+  in ci.yml; all seven `uses:` lines confirmed at the quoted line
+  numbers (25/26/29/35/43/44/61), five distinct actions,
+  `.github/dependabot.yml` confirmed absent, comment convention
+  (ci.yml:13-14) confirmed. No content changes needed
 
 ## Why this matters
 

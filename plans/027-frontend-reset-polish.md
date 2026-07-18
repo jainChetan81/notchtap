@@ -25,6 +25,15 @@
   re-confirmed 62/62; Step 2's bug-pin check made stash-free, Step 3
   extended to mirror the `.catch` half of the pattern, working-tree
   guard generalized
+- **Reviewed again**: 2026-07-18 at `4281d2c` (second review-plan
+  pass) — drift check still clean (only the documented-benign
+  `TESTING_STRATEGY.md` diff), all excerpts re-verified, suite
+  re-confirmed 62/62. Step 2 rewritten around the existing
+  `"calls set_appearance with scale/radius/opacity, …"` test
+  (line ~167) as the verbatim mock+click pattern — both fixtures'
+  `card_scale` is 1, so the click path isn't just simpler, it's the
+  only way to create the pre-reset divergence — and the
+  wait-for-enabled guard from the line-~281 exemplar made explicit
 
 ## Why this matters
 
@@ -209,27 +218,36 @@ In `SettingsApp.test.tsx`, add one test modeled on
 (line ~281), e.g.
 `"Appearance controls re-seed from config after Reset to defaults"`:
 
-1. Serve a `get_config` fixture whose `appearance.card_scale` is `1`
-   (the existing shared fixture already does) and a
-   `get_default_config` fixture with `card_scale: 1` as well — so make
-   the *loaded* config non-default for the test: serve `get_config`
-   with `appearance: { card_scale: 1.15, ... }` or click a control
-   after render instead (simpler: render with the standard fixtures,
-   click the `Large` scale option, which sets local+config scale to
-   1.15 via `set_appearance`/`patchConfig` — `mockIPC` must stub
-   `set_appearance` to resolve).
-2. Open the Appearance tab, click `Large`, assert `Large` is the
-   selected segment. Verified markup (`SettingsApp.tsx:913`,
-   `SegmentedControl`): each option renders as a `<button>` with
-   `aria-pressed={value === option.value}` plus an `is-selected`
-   class when selected — assert via `aria-pressed` (e.g.
-   `getByRole("button", { name: "Large" }).getAttribute("aria-pressed")`
-   → `"true"`). Scope queries to the Appearance section with
-   `within(...)` the way the existing test at line ~157 does (the
-   sidebar also has an "Appearance" button).
+1. Make the form state non-default by clicking a control — both shared
+   fixtures (`config` at line ~35 and `rustConfigDefaults` at line ~69)
+   have `card_scale: 1`, so serving fixtures alone can't create the
+   pre-reset divergence; the click is the point. The existing test
+   `"calls set_appearance with scale/radius/opacity, not
+   card_scale/card_radius/card_opacity"` (line ~167) is the verbatim
+   pattern for this half: its `mockIPC` handler stubs `set_appearance`
+   (any resolved value works), it opens the Appearance tab via
+   `fireEvent.click(screen.getByRole("button", { name: "Appearance" }))`
+   + `await screen.findByRole("heading", { level: 1, name: "Appearance" })`,
+   grabs the control with
+   `await screen.findByRole("group", { name: "Scale" })`, and clicks
+   `within(scaleToggle).getByRole("button", { name: "Large" })` —
+   which sets local+config scale to 1.15 via
+   `set_appearance`/`patchConfig`.
+2. Assert `Large` is now the selected segment. Verified markup
+   (`SettingsApp.tsx:913`, `SegmentedControl`): each option renders as
+   a `<button>` with `aria-pressed={value === option.value}` plus an
+   `is-selected` class when selected — assert via `aria-pressed`
+   scoped to the group (e.g.
+   `within(scaleToggle).getByRole("button", { name: "Large" }).getAttribute("aria-pressed")`
+   → `"true"`). Always scope with `within(...)` — the sidebar also has
+   an "Appearance" button.
 3. Click `Reset to defaults`, and assert the scale segment shows
    `Medium` (the default `card_scale: 1`) again — this fails without
-   Step 1 and passes with it.
+   Step 1 and passes with it. Before clicking, wait for the button to
+   become enabled the way the line-~281 exemplar does (`waitFor` on
+   `.disabled === false` — `get_default_config` resolves on its own
+   microtask, and clicking a still-disabled button makes the test
+   silently assert against un-reset state).
 
 **Verify**: `npx vitest run` → all pass including the new test. Then
 confirm the test actually pins the bug WITHOUT touching git state

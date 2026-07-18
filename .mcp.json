@@ -1,0 +1,29 @@
+{
+  "mcpServers": {
+    "pal": {
+      "type": "http",
+      "url": "http://localhost:8010/pal-1ccebcf3e49bf4447afea5d6dba24d25/mcp"
+    },
+    "brightdata": {
+      "command": "node",
+      "args": [
+        "/Users/chetanjain/Desktop/code/mac-notification-nudge/mcp-servers/brightdata/brightdata-mcp-wrapper.js"
+      ],
+      "env": {
+        "API_TOKEN": "7505c9bf-f1b7-4c37-9df1-c4265421eba1",
+        "WEB_UNLOCKER_ZONE": "mcp_unlocker",
+        "BROWSER_ZONE": "mcp_browser"
+      }
+    },
+    "product-research-plugins": {
+      "command": "node",
+      "args": [
+        "/Users/chetanjain/Desktop/code/mac-notification-nudge/mcp-servers/product-research-plugins/server.js"
+      ],
+      "env": {
+        "BRIGHTDATA_API_KEY": "7505c9bf-f1b7-4c37-9df1-c4265421eba1",
+        "WEB_UNLOCKER_ZONE": "mcp_unlocker"
+      }
+    }
+  }
+}

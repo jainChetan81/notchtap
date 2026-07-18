@@ -22,6 +22,14 @@
   this first would force them to rebase over moved fixtures)
 - **Category**: tests / tech-debt
 - **Planned at**: commit `a58f115`, 2026-07-18
+- **Reviewed**: 2026-07-18 at `4281d2c` (review-plan pass) — Event
+  struct, both frontend harness excerpts, queue.rs helper cluster
+  (429–483) and beforeEach resets all re-verified verbatim. Known
+  drift folded in: plan 022's `mod proptest_queue` (queue.rs ~1429)
+  and http.rs burst tests landed after planning — the proptest
+  module's generated-values `build_event` is now explicitly out of
+  scope, and the drift-check hit on those two files documented as
+  expected, not a STOP
 
 ## Why this matters
 
@@ -83,6 +91,13 @@ one-file test change, not eight.
   `lib.rs` (~2 test literals), `notifier.rs` (~1 helper),
   `event.rs`/`rss_poller.rs`/`poller.rs` test modules (~1 each in
   tests).
+- **Known drift, already accounted for**: plan 022 (landed after this
+  plan was written) added `#[cfg(test)] mod proptest_queue` to
+  `queue.rs` (~line 1429) and burst tests to `http.rs` — the drift
+  check WILL show those two files changed; that alone is not a STOP.
+  The proptest module has its own `fn build_event(spec: &EnqueueSpec)`
+  (~line 1545): that is a *generated-values* mapper, not a
+  fixed-default fixture — see the exclusion in Scope.
 - **Production constructors are NOT fixtures**: `poller.rs::make_event`
   (~line 284, used by `diff_scoreboard`), the event construction in
   `rss_poller.rs::diff_feed` (~line 320), and the one in `http.rs`'s
@@ -159,6 +174,14 @@ done criterion.
   test's meaning would change, leave that site alone and note it.
 - `src/settings/SettingsApp.test.tsx` — it mocks IPC, not the event
   channel; different harness, out of scope.
+- `queue.rs`'s `mod proptest_queue` (~line 1429, from plan 022) —
+  its `build_event(spec: &EnqueueSpec)` (~line 1545) populates every
+  field from proptest-generated values; delegating it to a
+  fixed-default builder adds indirection without removing duplication,
+  and touching the property-suite semantics is exactly the kind of
+  silent meaning-change this plan forbids. Leave the whole module
+  alone; only the *example*-test helpers/literals in `mod tests` are
+  in scope.
 - `docs/TESTING_STRATEGY.md` — counts must not change; nothing to
   update.
 

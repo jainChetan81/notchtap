@@ -1,0 +1,16 @@
+{
+  "name": "brightdata",
+  "version": "1.0.0",
+  "description": "",
+  "main": "brightdata-mcp-wrapper.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "dependencies": {
+    "@brightdata/mcp": "^2.11.0"
+  }
+}

@@ -1,0 +1,15 @@
+{
+  "name": "product-research-plugins",
+  "version": "1.0.0",
+  "description": "wrapper mcp server exposing brightdata-plugin:price-comparison and brightdata-plugin:competitive-intel",
+  "main": "server.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "axios": "^1.18.1",
+    "fastmcp": "^3.35.0",
+    "zod": "^3.25.76"
+  }
+}

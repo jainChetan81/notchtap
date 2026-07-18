@@ -20,6 +20,15 @@
 - **Depends on**: none
 - **Category**: direction
 - **Planned at**: commit `a58f115`, 2026-07-18
+- **Reviewed**: 2026-07-18 at `4281d2c` (review-plan pass) — zero
+  drift in the four grounding files; every citation re-verified
+  (settings.rs:321-323 comment, EventMeta at event.rs:122-132,
+  `SlotState::Showing` at :144-158, poller.rs:516-520 overlay-only
+  comment, diff_feed :263 / spawn_rss_poller :442, StatusRailCard.tsx,
+  the rejected-findings accretion entry, ci.yml:13-14 no-live-network
+  rule); `docs/design/` confirmed absent; openrouter grep confirmed
+  storage-plumbing-only. STOP condition calibrated so the plumbing
+  hits don't trigger a spurious stop
 
 ## Why this matters
 
@@ -207,7 +216,14 @@ Stop and report back (do not improvise) if:
 
 - You find existing OpenRouter-consuming code (the "zero consumers"
   premise would be stale — re-grep `openrouter` case-insensitively
-  across `src-tauri/src/` first).
+  across `src-tauri/src/` first). Calibration so you don't STOP on
+  plumbing: at review time that grep hits only `settings.rs` (config
+  table, secret validation/status) and `notifier.rs` (secrets-file
+  parsing + its tests, e.g. the `[openrouter]`-only-file test with a
+  dummy `sk-or-x` fixture value). Those are the key's *storage*
+  plumbing and are expected. "Consumer" means code that reads the key
+  to make a request or references an OpenRouter endpoint — only that
+  triggers this STOP.
 - The maintainer's docs already contain a decision rejecting AI
   enrichment (search `docs/` + `plans/README.md` for it) — report the
   contradiction instead of writing the doc.
