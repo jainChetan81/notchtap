@@ -747,12 +747,18 @@ small state spaces shrink better.
    reach the visible item's `promoted_at + window + extension_secs`
    must leave that exact item visible, unchanged. early removal only
    ever happens via an explicit `Dismiss` or `Skip`.
-4. **promotion picks the highest non-empty tier, FIFO within it**:
-   whenever `Tick`/`Dismiss`/`Skip` causes a new item to become
-   visible, its id must equal the front of the highest-index non-empty
-   waiting tier as it stood immediately before promotion — including,
-   for `Tick`/`Skip`, a same-turn Recurring requeue landing back in its
-   own tier before promotion is evaluated.
+4. **promotion picks the highest non-empty tier, minimum
+   `rotation_order` rank within it, FIFO on a rank tie**: whenever
+   `Tick`/`Dismiss`/`Skip` causes a new item to become visible, its id
+   must equal the item of lowest `rotation_order` rank (ties broken by
+   earliest arrival) in the highest-index non-empty waiting tier as it
+   stood immediately before promotion — including, for `Tick`/`Skip`, a
+   same-turn Recurring requeue landing back in its own tier before
+   promotion is evaluated. `rotation_order` is now generated per case
+   (empty, a partial subset, or a full permutation of the four
+   `SourceKind` variants) rather than always left empty, and the
+   predictor mirrors production `best_index_in_tier` exactly — highest
+   tier, then minimum rank, then FIFO — instead of checking pure FIFO.
 5. **pause gates promotion, not aging; nothing enqueued while paused is
    lost** (count conservation): while paused, `Tick`/`Dismiss`/`Skip`
    never promote (visible stays `None` after any rotation/removal).

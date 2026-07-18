@@ -1439,8 +1439,10 @@ mod proptest_queue {
     // not part of the production op model) and `slot_state_if_changed`
     // (the invariant-7 probe, called every step, never generated).
     // `with_rotation_order` is a per-case queue parameter, not a scripted
-    // op — left unset so same-tier ties degenerate to arrival-order FIFO,
-    // which invariant 4 below checks directly.
+    // op — generated once per case by `arb_rotation_order()` below
+    // (empty, partial, or a full permutation), not scripted mid-run.
+    // Invariant 4 below checks the resulting minimum-rank/FIFO-tie
+    // promotion order directly.
     // ------------------------------------------------------------------
 
     #[derive(Debug, Clone, Copy)]
@@ -1490,6 +1492,24 @@ mod proptest_queue {
             (1u64..=10).prop_map(RotKind::OneShot),
             (1u64..=10).prop_map(RotKind::Recurring),
         ]
+    }
+
+    // Per-case rotation_order (docs/TESTING_STRATEGY.md §9.1 invariant 4):
+    // shuffle the four SourceKind variants, then truncate to a random
+    // 0..=4 length, so empty (pure FIFO), partial (some origins unlisted —
+    // rank falls back to rotation_order.len()), and full permutation
+    // orders are all reachable across cases.
+    fn arb_rotation_order() -> impl Strategy<Value = Vec<SourceKind>> {
+        let all = vec![
+            SourceKind::Football,
+            SourceKind::News,
+            SourceKind::Manual,
+            SourceKind::Cmux,
+        ];
+        (Just(all).prop_shuffle(), 0usize..=4).prop_map(|(mut v, len)| {
+            v.truncate(len);
+            v
+        })
     }
 
     // small closed set of topic tags (as Some(0..3)) plus None, so
@@ -1547,20 +1567,55 @@ mod proptest_queue {
     // module `SingleSlotQueue` is defined in, same as `mod tests`).
     // ------------------------------------------------------------------
 
-    fn snapshot_ids(q: &SingleSlotQueue) -> [Vec<Uuid>; 3] {
+    fn snapshot_waiting(q: &SingleSlotQueue) -> [Vec<(Uuid, SourceKind)>; 3] {
         [
-            q.waiting[0].iter().map(|i| i.event.id).collect(),
-            q.waiting[1].iter().map(|i| i.event.id).collect(),
-            q.waiting[2].iter().map(|i| i.event.id).collect(),
+            q.waiting[0]
+                .iter()
+                .map(|i| (i.event.id, i.event.origin))
+                .collect(),
+            q.waiting[1]
+                .iter()
+                .map(|i| (i.event.id, i.event.origin))
+                .collect(),
+            q.waiting[2]
+                .iter()
+                .map(|i| (i.event.id, i.event.origin))
+                .collect(),
         ]
     }
 
-    // Invariant 4: highest-index non-empty tier, front (FIFO) item.
-    fn highest_nonempty_front(snap: &[Vec<Uuid>; 3]) -> Option<Uuid> {
+    // Invariant 4: highest-index non-empty tier, then within that tier the
+    // item of minimum rotation_order rank (ties broken by lowest index —
+    // i.e. FIFO / earliest arrival). This is a self-contained mirror of
+    // production `SingleSlotQueue::best_index_in_tier` — same strict-`<`
+    // comparison, so a rank tie keeps the earliest (lowest-index) item,
+    // and an origin absent from rotation_order (or an empty order) ranks
+    // last via `unwrap_or(rotation_order.len())`.
+    fn predict_promoted(
+        snap: &[Vec<(Uuid, SourceKind)>; 3],
+        rotation_order: &[SourceKind],
+    ) -> Option<Uuid> {
+        let rank = |origin: SourceKind| {
+            rotation_order
+                .iter()
+                .position(|o| *o == origin)
+                .unwrap_or(rotation_order.len())
+        };
         for tier in (0..3).rev() {
-            if let Some(&id) = snap[tier].first() {
-                return Some(id);
+            let items = &snap[tier];
+            if items.is_empty() {
+                continue;
             }
+            let mut best = 0;
+            let mut best_rank = rank(items[0].1);
+            for (i, &(_, origin)) in items.iter().enumerate().skip(1) {
+                let r = rank(origin);
+                if r < best_rank {
+                    best = i;
+                    best_rank = r;
+                }
+            }
+            return Some(items[best].0);
         }
         None
     }
@@ -1571,6 +1626,7 @@ mod proptest_queue {
         recurring: bool,
         promoted_at: Instant,
         window: u64,
+        origin: SourceKind,
     }
 
     fn vis_snapshot(q: &SingleSlotQueue) -> Option<VisSnap> {
@@ -1580,6 +1636,7 @@ mod proptest_queue {
             recurring: matches!(item.event.rotation, RotationSpec::Recurring { .. }),
             promoted_at: item.promoted_at.expect("visible items have promoted_at"),
             window: item.event.rotation_window(q.expanded) + item.extension_secs,
+            origin: item.event.origin,
         })
     }
 
@@ -1591,6 +1648,7 @@ mod proptest_queue {
         q: SingleSlotQueue,
         now: Instant,
         max_queued_per_tier: usize,
+        rotation_order: Vec<SourceKind>,
         // invariant 5/6 conservation counters
         enqueued_accepted: u64,
         rotated_out_dropped: u64,
@@ -1601,11 +1659,13 @@ mod proptest_queue {
     }
 
     impl Harness {
-        fn new(max_queued_per_tier: usize) -> Self {
+        fn new(max_queued_per_tier: usize, rotation_order: Vec<SourceKind>) -> Self {
             Self {
-                q: SingleSlotQueue::new(max_queued_per_tier),
+                q: SingleSlotQueue::new(max_queued_per_tier)
+                    .with_rotation_order(rotation_order.clone()),
                 now: Instant::now(),
                 max_queued_per_tier,
+                rotation_order,
                 enqueued_accepted: 0,
                 rotated_out_dropped: 0,
                 dismissed: 0,
@@ -1689,7 +1749,7 @@ mod proptest_queue {
         fn apply_tick(&mut self, advance_secs: u64) {
             self.now += Duration::from_secs(advance_secs);
             let vis_before = vis_snapshot(&self.q);
-            let mut waiting_before = snapshot_ids(&self.q);
+            let mut waiting_before = snapshot_waiting(&self.q);
             let paused = self.q.is_paused();
 
             self.q.tick(self.now);
@@ -1711,7 +1771,7 @@ mod proptest_queue {
                     return;
                 }
                 if v.recurring {
-                    waiting_before[v.tier].push(v.id);
+                    waiting_before[v.tier].push((v.id, v.origin));
                 } else {
                     self.rotated_out_dropped += 1;
                 }
@@ -1727,17 +1787,17 @@ mod proptest_queue {
                 return;
             }
 
-            let predicted = highest_nonempty_front(&waiting_before);
+            let predicted = predict_promoted(&waiting_before, &self.rotation_order);
             assert_eq!(
                 after_id, predicted,
-                "invariant 4: tick promotion did not pick the highest-tier FIFO front"
+                "invariant 4: tick promotion did not pick the highest-tier, best-rotation_order-rank, FIFO-tie front"
             );
             self.assert_expanded_matches_priority_if_promoted(after_id);
         }
 
         fn apply_dismiss(&mut self) {
             let vis_before = vis_snapshot(&self.q);
-            let waiting_before = snapshot_ids(&self.q);
+            let waiting_before = snapshot_waiting(&self.q);
             let paused = self.q.is_paused();
 
             self.q.dismiss_visible(self.now);
@@ -1755,24 +1815,24 @@ mod proptest_queue {
                 );
                 return;
             }
-            let predicted = highest_nonempty_front(&waiting_before);
+            let predicted = predict_promoted(&waiting_before, &self.rotation_order);
             assert_eq!(
                 after_id, predicted,
-                "invariant 4: dismiss promotion did not pick the highest-tier FIFO front"
+                "invariant 4: dismiss promotion did not pick the highest-tier, best-rotation_order-rank, FIFO-tie front"
             );
             self.assert_expanded_matches_priority_if_promoted(after_id);
         }
 
         fn apply_skip(&mut self) {
             let vis_before = vis_snapshot(&self.q);
-            let mut waiting_before = snapshot_ids(&self.q);
+            let mut waiting_before = snapshot_waiting(&self.q);
             let paused = self.q.is_paused();
 
             self.q.skip_visible(self.now);
 
             if let Some(v) = &vis_before {
                 if v.recurring {
-                    waiting_before[v.tier].push(v.id);
+                    waiting_before[v.tier].push((v.id, v.origin));
                 } else {
                     // only the OneShot arm of Skip is a drop (invariant 5).
                     self.skipped_oneshot_dropped += 1;
@@ -1786,10 +1846,10 @@ mod proptest_queue {
                 );
                 return;
             }
-            let predicted = highest_nonempty_front(&waiting_before);
+            let predicted = predict_promoted(&waiting_before, &self.rotation_order);
             assert_eq!(
                 after_id, predicted,
-                "invariant 4: skip promotion did not pick the highest-tier FIFO front"
+                "invariant 4: skip promotion did not pick the highest-tier, best-rotation_order-rank, FIFO-tie front"
             );
             self.assert_expanded_matches_priority_if_promoted(after_id);
         }
@@ -1858,9 +1918,10 @@ mod proptest_queue {
         #[test]
         fn queue_invariants_hold_under_any_op_script(
             max_queued_per_tier in 1usize..=10,
+            rotation_order in arb_rotation_order(),
             ops in proptest::collection::vec(arb_op(), 0..50),
         ) {
-            let mut harness = Harness::new(max_queued_per_tier);
+            let mut harness = Harness::new(max_queued_per_tier, rotation_order);
             for op in &ops {
                 harness.apply(op);
             }
