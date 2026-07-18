@@ -35,6 +35,8 @@ const GOAL: SlotState = {
   category: null,
   publishedAtMs: null,
   link: null,
+  queueTotal: 3,
+  queueDone: 0,
 };
 
 const RED_CARD: SlotState = {
@@ -50,6 +52,8 @@ const RED_CARD: SlotState = {
   category: null,
   publishedAtMs: null,
   link: null,
+  queueTotal: 3,
+  queueDone: 1,
 };
 
 const CMUX_NEEDS_INPUT: SlotState = {
@@ -65,6 +69,8 @@ const CMUX_NEEDS_INPUT: SlotState = {
   category: null,
   publishedAtMs: null,
   link: null,
+  queueTotal: 1,
+  queueDone: 0,
 };
 
 const NEWS: SlotState = {
@@ -80,6 +86,8 @@ const NEWS: SlotState = {
   category: "politics",
   publishedAtMs: 2_000_000_000_000 - 5 * 60_000,
   link: "https://example.com/digital-rights",
+  queueTotal: 2,
+  queueDone: 1,
 };
 
 describe("StatusRailCard", () => {
@@ -259,5 +267,26 @@ describe("StatusRailCard", () => {
     expect(screen.getByText("Source / Control").nextElementSibling?.textContent).toContain(
       "⌃⇧O read · ⌃⇧N collapse",
     );
+  });
+
+  // plan 033: the track is now the queue slider — an enqueue while the
+  // card is visible re-renders the track (the rust core re-emits the slot
+  // state with new queueTotal/queueDone), but the card itself must not
+  // re-animate: the motion key is the item id, unchanged by a
+  // waiting-count change.
+  it("updates the queue slider on a waiting-count change without remounting the card", () => {
+    const { container, rerender } = render(<StatusRailCard slot={GOAL} />);
+    const trackBefore = container.querySelector(".track");
+    expect(trackBefore?.querySelectorAll("span")).toHaveLength(3);
+    expect(trackBefore?.querySelectorAll("span.cur")).toHaveLength(1);
+    expect(trackBefore?.querySelectorAll("span.done")).toHaveLength(0);
+
+    // same id, deeper queue — the track re-renders in place
+    rerender(<StatusRailCard slot={{ ...GOAL, queueTotal: 5, queueDone: 1 }} />);
+    const trackAfter = container.querySelector(".track");
+    expect(trackAfter).toBe(trackBefore);
+    expect(trackAfter?.querySelectorAll("span")).toHaveLength(5);
+    expect(trackAfter?.querySelectorAll("span.done")).toHaveLength(1);
+    expect(trackAfter?.querySelectorAll("span.cur")).toHaveLength(1);
   });
 });

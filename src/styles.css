@@ -354,16 +354,24 @@ body {
   left: 0;
   height: 4px;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(var(--queue-n, 3), 1fr);
   gap: 3px;
   padding: 0 3px;
 }
 
 .track span {
   background: rgba(255, 255, 255, 0.09);
+  transition: background 260ms ease;
 }
 
-.track span.lit {
+/* queue slider (plan 033): consumed segments read as a 30%-accent dim,
+   the current segment is full accent with the same soft glow the old
+   priority-load rail used. */
+.track span.done {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.track span.cur {
   background: var(--accent);
   box-shadow: 0 -3px 14px var(--accent-soft);
 }

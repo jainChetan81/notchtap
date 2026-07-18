@@ -37,6 +37,10 @@ export type SlotState =
       category: string | null;
       publishedAtMs: number | null;
       link: string | null;
+      // queue-slider position within the current batch (plan 033) — mirrors
+      // the rust SlotState::Showing fields exactly.
+      queueTotal: number;
+      queueDone: number;
     };
 
 declare global {
@@ -85,8 +89,17 @@ function isValidSlotState(v: unknown): v is SlotState {
     (obj.source === null || typeof obj.source === "string") &&
     (obj.category === null || typeof obj.category === "string") &&
     (obj.publishedAtMs === null || typeof obj.publishedAtMs === "number") &&
-    (obj.link === null || typeof obj.link === "string")
+    (obj.link === null || typeof obj.link === "string") &&
+    isNonNegativeInteger(obj.queueTotal) &&
+    isNonNegativeInteger(obj.queueDone)
   );
+}
+
+// plan 033: the slider does arithmetic on these (`floor(done * 10 / total)`)
+// — a fractional or negative value would render a nonsense segment, so the
+// validator rejects anything but non-negative integers.
+function isNonNegativeInteger(v: unknown): v is number {
+  return typeof v === "number" && Number.isInteger(v) && v >= 0;
 }
 
 function initialSlotState(): SlotState {

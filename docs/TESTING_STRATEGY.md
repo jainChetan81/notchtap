@@ -16,9 +16,9 @@ other sections point back rather than repeating them):
 
 | suite | size | where |
 |---|---|---|
-| rust unit/integration | 258 tests — settings 45, queue 53, http 32, notifier 23, rss_poller 28, poller 16, event 16, config 17, presentation 11, lib 13, logging 4 | `cargo test` from `src-tauri/` |
+| rust unit/integration | 268 tests — settings 45, queue 63, http 32, notifier 23, rss_poller 28, poller 16, event 16, config 17, presentation 11, lib 13, logging 4 | `cargo test` from `src-tauri/` |
 | rust doc-tests | 3 — public `queue`/`event` apis | same `cargo test` run |
-| frontend | 68 tests — presentation tables 12, inline markdown 7, slot-state hook 16, StatusRailCard 15, settings form 13, App render 5 | `npx vitest run` |
+| frontend | 77 tests — presentation tables 12, inline markdown 7, slot-state hook 18, StatusRailCard 16, Track slider 6, settings form 13, App render 5 | `npx vitest run` |
 | ci (v4) | fmt, clippy `-D warnings` (`--locked`), cargo test (`--locked`), cargo-audit, npm audit, tsc, vitest, vite build, `sh -n` cli syntax check, swiftc compile check | every push + pr |
 
 every example case listed in §4 for v1/v2/v3 components has a passing
@@ -34,7 +34,11 @@ all landed 2026-07-17 — §4.12's manual live-feed check is the only
 piece still open, tracked in its own section. the queue's `+1` above
 is the §9.1 generated-adversary property test (256 cases folded into
 one `#[test]`, not 256 separate tests); http's `+5` are §9.2's burst/
-boundary integration cases — both landed 2026-07-18, see §9.
+boundary integration cases — both landed 2026-07-18, see §9. plan 033
+landed the same day: the queue-slider batch counters, the Track slider
+suite, and the expand-all rewrite of plan 008's expanded-semantics
+cases (every promotion expanded, auto-retract at half the base window,
+manual-only 3× window — proptest invariants 8/9 re-pinned to match).
 
 **left — each is a decision with an owner section, not a gap:**
 

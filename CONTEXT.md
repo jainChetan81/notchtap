@@ -65,10 +65,13 @@ in `docs/ARCHITECTURE.md`.
   new one; a Visible supersede can grant a small, capped Rotation
   extension if remaining time was already low, but never mutates when
   it was first promoted.
-- **Expanded** — a Slot's optional grown state (v3.6): automatic for
-  `High`-priority Notifications, manual (global hotkey) for everything
-  else. never both triggers on the same item — the hotkey is a no-op
-  while an automatically-Expanded `High` item is Visible.
+- **Expanded** — a Slot's optional grown state (v3.6; plan 033 made it
+  universal): every Promotion starts Expanded, regardless of Priority,
+  and auto-collapses at half the base Rotation window — the grown first
+  half of the turn is display-only and never extends the Rotation. only
+  a manual expand (global hotkey) extends the Rotation window, and any
+  hotkey press disarms the auto-collapse — a press on an auto-Expanded
+  card collapses it.
 - **Paused** — engine state in which Promotion is disabled. pushes are
   still accepted and buffered into Waiting (caller is told the app is
   paused); an already-Visible Notification finishes its natural

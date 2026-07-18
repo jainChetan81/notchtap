@@ -966,6 +966,8 @@ const PREVIEW_SAMPLES: ReadonlyArray<{
       category: null,
       publishedAtMs: null,
       link: null,
+      queueTotal: 3,
+      queueDone: 0,
     },
   },
   {
@@ -983,6 +985,8 @@ const PREVIEW_SAMPLES: ReadonlyArray<{
       category: null,
       publishedAtMs: null,
       link: null,
+      queueTotal: 3,
+      queueDone: 1,
     },
   },
   {
@@ -1000,6 +1004,8 @@ const PREVIEW_SAMPLES: ReadonlyArray<{
       category: null,
       publishedAtMs: null,
       link: null,
+      queueTotal: 3,
+      queueDone: 2,
     },
   },
   {
@@ -1017,6 +1023,8 @@ const PREVIEW_SAMPLES: ReadonlyArray<{
       category: "politics",
       publishedAtMs: null,
       link: "https://example.com/digital-rights",
+      queueTotal: 1,
+      queueDone: 0,
     },
   },
 ];

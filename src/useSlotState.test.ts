@@ -34,6 +34,8 @@ const SHOWING_N1: SlotState = {
   category: null,
   publishedAtMs: null,
   link: null,
+  queueTotal: 1,
+  queueDone: 0,
 };
 
 describe("useSlotState", () => {
@@ -77,6 +79,8 @@ describe("useSlotState", () => {
       category: null,
       publishedAtMs: null,
       link: null,
+      queueTotal: 2,
+      queueDone: 0,
     });
     emit({
       state: "showing",
@@ -91,6 +95,8 @@ describe("useSlotState", () => {
       category: null,
       publishedAtMs: null,
       link: null,
+      queueTotal: 2,
+      queueDone: 1,
     });
     // must go straight from n1 to n2 — assert the final state only, since
     // there's no async gap between the two synchronous emits in this test
@@ -127,6 +133,8 @@ describe("useSlotState", () => {
       category: "politics",
       publishedAtMs: 1_768_579_920_000,
       link: "https://example.com/budget",
+      queueTotal: 1,
+      queueDone: 0,
     };
     emit(news);
     expect(result.current).toEqual(news);
@@ -206,6 +214,30 @@ describe("useSlotState", () => {
     expect(result.current).toEqual({ state: "empty" });
   });
 
+  // plan 033: the queue-slider fields ride the same payload — the slider
+  // does arithmetic on them, so the validator must reject anything but
+  // non-negative integers (missing, fractional, negative, wrong type).
+  it("accepts a showing payload with a queue-slider position", () => {
+    window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, queueTotal: 5, queueDone: 2 };
+    const { result } = renderHook(() => useSlotState());
+    expect(result.current).toMatchObject({ queueTotal: 5, queueDone: 2 });
+  });
+
+  it("ignores a showing payload with a missing, fractional, or negative queue-slider position", () => {
+    const { queueTotal: _total, queueDone: _done, ...missing } = SHOWING_N1;
+    window.__NOTCHTAP_SLOT_STATE__ = missing;
+    expect(renderHook(() => useSlotState()).result.current).toEqual({ state: "empty" });
+
+    window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, queueTotal: 2.5 };
+    expect(renderHook(() => useSlotState()).result.current).toEqual({ state: "empty" });
+
+    window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, queueDone: -1 };
+    expect(renderHook(() => useSlotState()).result.current).toEqual({ state: "empty" });
+
+    window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, queueTotal: "3" };
+    expect(renderHook(() => useSlotState()).result.current).toEqual({ state: "empty" });
+  });
+
   // Regression test: EVENT_TYPES must track the backend's EventType enum
   // (currently generic/score_update/match_state/news_item, event.rs) or a
   // real rss_poller.rs payload gets silently dropped to empty by the
@@ -224,6 +256,8 @@ describe("useSlotState", () => {
       category: "politics",
       publishedAtMs: 1_789_600_000_000,
       link: "https://example.com/headline",
+      queueTotal: 1,
+      queueDone: 0,
     };
     window.__NOTCHTAP_SLOT_STATE__ = news;
     const { result } = renderHook(() => useSlotState());
