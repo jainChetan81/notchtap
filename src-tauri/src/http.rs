@@ -775,4 +775,135 @@ mod tests {
             .await
             .expect("enqueue_and_emit must wake the heartbeat");
     }
+
+    // --- §9.2 (docs/TESTING_STRATEGY.md) — burst and boundary cases ---
+    //
+    // Retargeted from the pre-v3.6 max_concurrent/max_queued framing to
+    // today's single-slot-plus-per-tier-cap model: only one item is ever
+    // visible, so "burst" here means bursting one priority tier's
+    // `waiting` up to and past its `max_queued_per_tier` cap.
+
+    #[tokio::test]
+    async fn burst_to_tier_cap_boundary_accepts_exactly_cap_plus_one() {
+        // cap 5: the first push fast-path-promotes to visible (nothing
+        // waiting yet), the next 5 land in waiting up to the cap, and the
+        // remaining 2 have nowhere to go. 8 posts total: 6x 200, 2x 429.
+        let app = router(test_state(SingleSlotQueue::new(5)));
+        let mut accepted = 0;
+        let mut rejected = 0;
+        for i in 0..8 {
+            let response = app
+                .clone()
+                .oneshot(json_request(&format!(
+                    r#"{{"title":"t{i}","body":"b{i}"}}"#
+                )))
+                .await
+                .unwrap();
+            match response.status() {
+                StatusCode::OK => accepted += 1,
+                StatusCode::TOO_MANY_REQUESTS => rejected += 1,
+                other => panic!("unexpected status {other}"),
+            }
+        }
+        assert_eq!(accepted, 6, "1 visible + 5 waiting = 6 accepted");
+        assert_eq!(rejected, 2);
+    }
+
+    #[tokio::test]
+    async fn paused_burst_to_tier_cap_boundary_accepts_exactly_cap() {
+        // paused from the start: no fast path, every push goes straight to
+        // waiting. cap 5, 8 posts: 5x 202 then 3x 429, nothing visible.
+        let mut queue = SingleSlotQueue::new(5);
+        queue.pause();
+        let app = router(test_state(queue));
+        let mut accepted = 0;
+        let mut rejected = 0;
+        for i in 0..8 {
+            let response = app
+                .clone()
+                .oneshot(json_request(&format!(
+                    r#"{{"title":"t{i}","body":"b{i}"}}"#
+                )))
+                .await
+                .unwrap();
+            match response.status() {
+                StatusCode::ACCEPTED => accepted += 1,
+                StatusCode::TOO_MANY_REQUESTS => rejected += 1,
+                other => panic!("unexpected status {other}"),
+            }
+        }
+        assert_eq!(
+            accepted, 5,
+            "exactly the per-tier cap accepted while paused"
+        );
+        assert_eq!(rejected, 3);
+    }
+
+    #[tokio::test]
+    async fn boundary_body_size_exactly_at_limit_is_accepted() {
+        // pin the exact 64 KiB DefaultBodyLimit boundary, not just a
+        // grossly oversized body (oversized_body_returns_413 above).
+        let limit = 64 * 1024;
+        let overhead = r#"{"title":"t","body":""}"#.len();
+        let pad = limit - overhead;
+        let body = format!(r#"{{"title":"t","body":"{}"}}"#, "x".repeat(pad));
+        assert_eq!(
+            body.len(),
+            limit,
+            "test body must land exactly at the limit"
+        );
+
+        let app = router(test_state(SingleSlotQueue::new(50)));
+        let response = app.oneshot(json_request(&body)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn boundary_body_size_one_byte_over_limit_returns_413() {
+        let limit = 64 * 1024;
+        let overhead = r#"{"title":"t","body":""}"#.len();
+        let pad = limit - overhead + 1;
+        let body = format!(r#"{{"title":"t","body":"{}"}}"#, "x".repeat(pad));
+        assert_eq!(
+            body.len(),
+            limit + 1,
+            "test body must land exactly one byte past the limit"
+        );
+
+        let app = router(test_state(SingleSlotQueue::new(50)));
+        let response = app.oneshot(json_request(&body)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::PAYLOAD_TOO_LARGE);
+    }
+
+    #[tokio::test]
+    async fn ttl_field_on_wire_is_ignored_uses_configured_default() {
+        // v1 spec §3: `/notify` never accepts a client-supplied ttl at
+        // all — `NotifyRequest` has no `ttlSecs` field. An extra,
+        // unrecognized field is silently ignored (no
+        // `#[serde(deny_unknown_fields)]`), and the server's configured
+        // `default_ttl` still applies. Verified via `next_deadline()`
+        // landing at ~now + default_ttl, not at the attempted wire value.
+        let state = test_state(SingleSlotQueue::new(50)); // default_ttl: 8
+        let before = std::time::Instant::now();
+        let app = router(state.clone());
+        let response = app
+            .oneshot(json_request(
+                r#"{"title":"t","body":"b","ttlSecs":99999999}"#,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let deadline = state
+            .queue
+            .lock()
+            .await
+            .next_deadline()
+            .expect("a freshly-promoted item has a deadline");
+        let elapsed_to_deadline = deadline.duration_since(before).as_secs();
+        assert!(
+            (7..=9).contains(&elapsed_to_deadline),
+            "expected ~default_ttl (8s), got {elapsed_to_deadline}s — the wire ttlSecs value leaked through"
+        );
+    }
 }
