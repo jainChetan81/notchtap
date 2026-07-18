@@ -24,7 +24,17 @@
 - **Risk**: LOW
 - **Depends on**: none
 - **Category**: bug
-- **Planned at**: commit `a58f115`, 2026-07-18
+- **Planned at**: commit `a58f115`, 2026-07-18. **Review-plan pass
+  2026-07-18 (advisor, against `d926977` + filing)**: every excerpt
+  and the seven-site `notify_waiters()` list re-verified exact against
+  live code (the list is complete — no eighth caller exists);
+  `Cargo.lock` has tokio `1.52.3`, so the `Notified::enable` ≥1.16
+  STOP condition is expected to pass. Known benign drift: plan 022
+  landed after this plan was written — the drift check WILL show
+  `docs/TESTING_STRATEGY.md` movement and §0 now reads **257 + 3
+  doc-tests** (queue 53, http 32), not the 251 quoted below; that is
+  the expected 022 drift, NOT a STOP — `src-tauri/src/lib.rs` is
+  unchanged and Step 3's recount language governs the counts.
 
 ## Why this matters
 
@@ -126,7 +136,7 @@ only there.
 
 | Purpose | Command | Expected on success |
 |---------|---------|---------------------|
-| Rust tests | `cd src-tauri && cargo test --locked` | 251 + 3 doc-tests pass at baseline; more after this plan if tests are added |
+| Rust tests | `cd src-tauri && cargo test --locked` | 257 + 3 doc-tests pass at current HEAD (022 landed since planning; recount against §0, don't trust totals); more after this plan if tests are added |
 | Lint | `cd src-tauri && cargo clippy --locked --all-targets -- -D warnings` | exit 0 |
 | Format | `cd src-tauri && cargo fmt --check` | exit 0 |
 | Full local gate | `just test-all` (if `just` installed; else run the recipes from `justfile` manually) | all green |
@@ -302,6 +312,12 @@ Stop and report back (do not improvise) if:
 - Reviewer should scrutinize: that `enable()` is inside the lock block,
   and that the `select!` polls the pinned future rather than creating a
   second `notified()`.
+- **Plan 037 (engine propagation, filed 2026-07-18) depends on this
+  plan's exact shape**: it will later relocate this loop into a new
+  `engine.rs` preserving the `enable()`-under-lock structure, and its
+  dependency gate greps for `enable()` inside `spawn_heartbeat` to
+  prove 036 landed. Implement the loop as specified here (no renames,
+  no restructuring beyond the plan) so that gate stays meaningful.
 - Deferred out of this plan: the existing heartbeat test's real-clock
   polling loop (audit finding TEST-02) — a single wall-clock
   characterization test, accepted as-is; revisit only if it flakes in

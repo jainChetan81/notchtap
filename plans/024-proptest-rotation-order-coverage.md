@@ -77,7 +77,7 @@ rank = index of the item's `origin` in `rotation_order`, or
 → `pop_highest_priority_waiting` scans tiers High→Low and applies
 `best_index_in_tier` to the first non-empty tier.
 
-**The four current test helpers/structures to change** (all in
+**The five current test helpers/structures to change** (all in
 `mod proptest_queue`):
 
 1. `fn snapshot_ids(q: &SingleSlotQueue) -> [Vec<Uuid>; 3]` — captures only
@@ -92,6 +92,11 @@ rank = index of the item's `origin` in `rotation_order`, or
    predictor.
 4. The proptest body `fn queue_invariants_hold_under_any_op_script(...)` —
    must generate a `rotation_order` and pass it to `Harness::new`.
+5. `struct VisSnap` and `fn vis_snapshot` — the visible-item snapshot used
+   by the Recurring-requeue push in `apply_tick`/`apply_skip`. It captures
+   `id`/`tier`/`recurring`/`promoted_at`/`window` but **not** `origin`; it
+   must gain an `origin: SourceKind` field (from `item.event.origin`) so
+   the requeue can push the `(id, origin)` pair (Step 3).
 
 `SourceKind` has exactly four variants (find:
 `rg -n "enum SourceKind" -A6 src-tauri/src/event.rs`): `Football`, `News`,
@@ -115,7 +120,7 @@ The queue is built via the builder `SingleSlotQueue::new(cap)
 ## Scope
 
 **In scope** (edit ONLY inside `mod proptest_queue`, plus one docs note):
-- `src-tauri/src/queue.rs` — the four helpers/structs above, all within
+- `src-tauri/src/queue.rs` — the five helpers/structs above, all within
   `#[cfg(test)] mod proptest_queue`. TESTS ONLY.
 - `docs/TESTING_STRATEGY.md` — §9.1 invariant-4 line: note that
   `rotation_order` is now generated per case and the predictor checks
@@ -150,8 +155,10 @@ The queue is built via the builder `SingleSlotQueue::new(cap)
 Add a proptest strategy near `arb_origin` producing a `Vec<SourceKind>` that
 covers the full behavior space: empty (→ pure FIFO), a partial subset (some
 origins unlisted → rank == len), and a full permutation. A simple, correct
-approach: generate a shuffled prefix of the four variants. For example,
-generate an index permutation and truncate to a random length `0..=4`:
+approach: generate a shuffled prefix of the four variants — shuffle with
+proptest's own `prop_shuffle` combinator (in `proptest::prelude::*`, already
+imported at the top of `mod proptest_queue`), then truncate to a random
+length `0..=4`:
 
 ```rust
 fn arb_rotation_order() -> impl Strategy<Value = Vec<SourceKind>> {
@@ -161,23 +168,20 @@ fn arb_rotation_order() -> impl Strategy<Value = Vec<SourceKind>> {
         SourceKind::Manual,
         SourceKind::Cmux,
     ];
-    // Just(all) shuffled, then truncated to a random 0..=4 length so empty,
-    // partial (unlisted origins), and full orders are all reachable.
-    (Just(all), 0usize..=4).prop_perturb(|(mut v, len), mut rng| {
-        // Fisher–Yates via the proptest-provided rng (deterministic per case)
-        for i in (1..v.len()).rev() {
-            let j = rng.gen_range(0..=i);
-            v.swap(i, j);
-        }
+    // Shuffled, then truncated to a random 0..=4 length so empty, partial
+    // (unlisted origins), and full orders are all reachable.
+    (Just(all).prop_shuffle(), 0usize..=4).prop_map(|(mut v, len)| {
         v.truncate(len);
         v
     })
 }
 ```
 
-If `prop_perturb`/`rng.gen_range` is awkward with the proptest version in
-`Cargo.toml`, an equally acceptable alternative is
-`proptest::sample::subsequence(all_vec, 0..=4)` combined with a shuffle, or
+**Do NOT add a `rand` dev-dependency** to reach `gen_range`-style manual
+shuffling — the dev-dependencies are `proptest = "1"` only, `Cargo.toml`/
+`Cargo.lock` are out of scope, and the plan's `--locked` verification
+commands would fail on a lockfile change. If `prop_shuffle` turns out to be
+unavailable in the resolved proptest version, the acceptable fallback is
 `prop_oneof!` over a handful of hand-listed orders **that must include: the
 empty vec, at least one partial (e.g. `vec![Cmux]`), and at least one full
 permutation with a non-identity order (e.g. `vec![Cmux, Manual, News,
@@ -219,12 +223,24 @@ replace the current best on a *strictly smaller* rank).
 
 The three call sites of `highest_nonempty_front` are the invariant-4
 assertions in `apply_tick`, `apply_dismiss`, and `apply_skip` (find:
-`rg -n "highest_nonempty_front" src-tauri/src/queue.rs`). Each already builds
-a `waiting_before` snapshot and, for a rotated/removed Recurring item,
-`push`es that item's id back into its tier's snapshot before predicting —
-you MUST preserve that requeue step, and it must push the `(id, origin)` pair
-now, at the correct position. Since a Recurring requeue goes to the **back**
-of its tier (`push_back`), pushing to the end of the snapshot vec is correct.
+`rg -n "highest_nonempty_front" src-tauri/src/queue.rs`). All three build a
+`waiting_before` snapshot, but only `apply_tick` and `apply_skip` push a
+rotated/skipped Recurring item's id back into its tier's snapshot before
+predicting — `apply_dismiss` never does (dismiss drops Recurring items
+outright, and its snapshot is deliberately non-`mut`; leave that as is).
+You MUST preserve the requeue step in tick and skip, and it must push the
+`(id, origin)` pair now. The origin comes from the visible-item snapshot:
+extend `struct VisSnap`/`fn vis_snapshot` with an `origin: SourceKind`
+field from `item.event.origin` (Current state item 5), making the push
+`waiting_before[v.tier].push((v.id, v.origin))`. Since a Recurring requeue
+goes to the **back** of its tier (`push_back` in both the tick rotation
+path and `skip_visible`), pushing to the end of the snapshot vec is correct.
+
+While here, update the three invariant-4 assertion **messages** (currently
+"… did not pick the highest-tier FIFO front") to describe the new rule,
+e.g. "… did not pick the highest-tier, best-rotation_order-rank, FIFO-tie
+front" — a failure message describing the old rule would mislead whoever
+debugs it later.
 
 **Verify**:
 - `cargo test --locked queue_invariants_hold_under_any_op_script` → 1 passed;

@@ -15,7 +15,19 @@
 - **Risk**: MED (first *second* event channel into the overlay — the
   receive-only rule is preserved, but the race-shield discipline of
   slot-state must be duplicated exactly)
-- **Depends on**: none (soft: 032 for the idle CSS region)
+- **Depends on**: **036 — land it first** (functional, not just
+  ordering: Step 3's whole design premise is "the heartbeat is the sole
+  emitter because every mutation's `notify_waiters()` reaches it" —
+  and plan 036 exists precisely because the current heartbeat loop can
+  LOSE those notifications (waiter registered after the lock is
+  released). On the unfixed loop, a status change can go unemitted
+  until the next unrelated wake. 036 is P1/S and independent — do it
+  first); soft: 032 for the idle CSS region
+- **Reviewed**: 2026-07-18 at `1add02e` (review-plan pass) — all
+  excerpts re-verified (poller snapshot ownership, both
+  `spawn_heartbeat` sites at lib.rs:342/:1061, capabilities content,
+  IdleView clock-only); 036 promoted to a functional dependency,
+  git-status criterion added
 - **Category**: engine/ui
 - **Planned at**: commit `d926977`, 2026-07-18, prototype rev-3 session
   (idle demos: "all clear", "football live", "news paused · 2 queued").
@@ -65,6 +77,10 @@ and how many items sit behind the empty slot.
 - `queue.rs` — `total_waiting()` (:353-355) and `is_paused()` exist.
 - Frontend channel discipline to copy: `useSlotState.ts` (validator +
   global-seed + listener + dead-listener console.error).
+- `capabilities/default.json` grants `core:event:allow-listen`
+  name-agnostically — the new channel needs **no** capability edit; the
+  byte-identical requirement in Done criteria is satisfiable (verified
+  at planning time, 2026-07-18).
 
 ## Commands you will need
 
@@ -139,10 +155,30 @@ the summary; a full-time fixture clears it).
 
 ### Step 3: Wire the emissions + seed
 
-Recompute-and-emit-if-changed at three triggers: heartbeat wake,
-`enqueue_and_emit`, poller tick (after the summary write). Page-load seed:
-`window.__NOTCHTAP_STATUS_STATE__ = {safe_json}` beside the slot-state
-eval, same escaping helper.
+**Precondition**: plan 036's lost-wakeup fix must already be in
+`spawn_heartbeat` (its waiter registered under the queue lock /
+`Notified` created before the deadline read — see
+`plans/036-heartbeat-lost-wakeup.md`). If `lib.rs` still has the
+plan-015 loop shape 036 describes as buggy, STOP and execute 036 first
+— this step's sole-emitter design is unsound on the racy loop.
+
+The heartbeat is the **sole emitter** — no second change-guard anywhere:
+every mutation already reaches it, because plan 015's shared `Notify` is
+fired by `enqueue_and_emit` (all push paths), the pollers, and the
+hotkey/tray handlers. Each loop pass recomputes the `StatusState` under
+the same queue lock as the slot-state tick and emits only when it differs
+from the previous one (a `last_status` local in the heartbeat task).
+The poller's only status-side act is writing the live-match handle after
+each tick and calling `wake.notify_waiters()` when (and only when) the
+summary actually changed. Lock discipline: nobody holds the live handle
+and the queue lock at the same time — read/clone/drop the handle, then
+lock the queue.
+Page-load seed: `window.__NOTCHTAP_STATUS_STATE__ = {safe_json}` beside
+the slot-state eval, same `escape_for_eval_splice` helper, plus one
+`emit_status_state` (the dual-path race shield, exactly as slot-state).
+Both `spawn_heartbeat` call sites take the new args (live handle,
+`espn_enabled`, `rss_enabled`): the production spawn (lib.rs:342) and
+the heartbeat test (lib.rs:1061).
 
 ### Step 4: Frontend
 
@@ -173,6 +209,10 @@ IdleView chip rendering for the three demo states.
 - [ ] `STATUS_STATE_EVENT` pinned by a rust test
 - [ ] `rg "escape_for_eval_splice" src-tauri/src/lib.rs` shows the new seed
       site using the helper
+- [ ] `git status --short` shows, beyond whatever was already dirty
+      before your first edit (concurrent sessions share this checkout —
+      snapshot it first, never revert/stage/commit those paths),
+      modifications ONLY to in-scope files
 - [ ] Manual: idle shows "all clear" with `espn_enabled=false`; a live
       fixture poll shows the match chip; `plans/README.md` row updated
 

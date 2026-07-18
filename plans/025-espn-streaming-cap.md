@@ -19,7 +19,17 @@
 - **Risk**: LOW
 - **Depends on**: none
 - **Category**: security
-- **Planned at**: commit `a58f115`, 2026-07-18
+- **Planned at**: commit `a58f115`, 2026-07-18. **Review-plan pass
+  2026-07-18 (advisor, against `d926977` + filing)**: every code
+  excerpt re-verified byte-identical against live code (`fetch_league`,
+  the rss streaming block, both client builders, the lib.rs module
+  ordering, the `rss_poller.rs:439-441` tech-debt comment). Known
+  benign drift: plan 022 landed after this plan was written — the
+  drift check WILL show `docs/TESTING_STRATEGY.md` movement and §0 now
+  reads **257 + 3 doc-tests**, not the 251 quoted below; that is the
+  expected 022 drift, NOT a STOP (`poller.rs`/`rss_poller.rs`/`lib.rs`
+  are unchanged since `a58f115`). Step 4's recount language governs
+  the counts.
 
 ## Why this matters
 
@@ -124,7 +134,7 @@ and only there. Naming: never reference third-party app names — use
 
 | Purpose | Command | Expected on success |
 |---------|---------|---------------------|
-| Rust tests | `cd src-tauri && cargo test --locked` | all pass (251 + 3 doc-tests at planning time, plus this plan's new tests) |
+| Rust tests | `cd src-tauri && cargo test --locked` | all pass (257 + 3 doc-tests at current HEAD — 022 landed since planning; recount against §0 — plus this plan's new tests) |
 | One module | `cd src-tauri && cargo test --locked net::` | new helper tests pass |
 | Lint | `cd src-tauri && cargo clippy --locked --all-targets -- -D warnings` | exit 0 |
 | Format | `cd src-tauri && cargo fmt --check` | exit 0 |
@@ -204,7 +214,12 @@ pub(crate) async fn read_body_capped(
 ```
 
 The error string must render as `response body exceeds 1 MiB` for a
-1 MiB cap — the existing rss test asserts `.contains("1 MiB")`.
+1 MiB cap — the existing rss test asserts `.contains("1 MiB")`. Note:
+with a sub-MiB test cap (Step 2 uses `1024`) the same format renders
+`response body exceeds 0 MiB`. That is acceptable in test fixtures —
+do NOT "fix" the message format to make small caps read nicely; only
+the 1 MiB rendering is contractual, and reformatting risks breaking
+the rss test's `.contains("1 MiB")` assertion.
 
 Add `mod net;` to the module list at the top of `src-tauri/src/lib.rs`
 (alphabetical position: after `mod logging;` / `mod login_item;`,
@@ -341,3 +356,9 @@ Stop and report back (do not improvise) if:
   wiring a full `fetch_league` wiremock test (its URL is hardcoded to
   the real host — parameterizing the base URL for tests was judged not
   worth the plumbing while `read_body_capped` covers the risky part).
+- **Plan 037 (engine propagation, filed 2026-07-18) hard-depends on
+  this plan landing first** — its dependency gate checks this plan's
+  `plans/README.md` row reads DONE. 037 later migrates the pollers'
+  enqueue/emit tails and spawn signatures onto an `Engine` handle; it
+  does not touch `net.rs` or the fetch paths this plan creates, so no
+  coordination beyond ordering is needed.

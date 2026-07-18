@@ -13,7 +13,17 @@
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MED (touches rotation/expanded semantics — the suite must stay green)
-- **Depends on**: 032 (both touch the compact DOM/CSS region)
+- **Depends on**: 032 (both touch the compact DOM/CSS region);
+  036 (soft, but land it first — it fixes the plan-015 heartbeat's
+  lost-wakeup race in `lib.rs`, and this plan's retract emission +
+  disarm hotkey ride that same wake mechanism; executing 033 first
+  means rebasing over 036's rewritten wait loop and debugging retract
+  tests against a known-racy heartbeat)
+- **Reviewed**: 2026-07-18 at `1add02e` (review-plan pass) — excerpts
+  re-verified (incl. that the expand assignment lives in the single
+  `set_expanded_for_promotion` helper, which Step 2's no-arg-setter
+  instruction already matches); invariant-9 rewrite added to Step 2,
+  036 ordering surfaced, git-status criterion added
 - **Category**: queue/ui
 - **Planned at**: commit `d926977`, 2026-07-18, prototype rev-3 session.
   The rev-2 draft omitted to assign the auto-expand lifecycle to any group;
@@ -30,9 +40,13 @@
 3. **Every promotion starts expanded, regardless of priority** ("it expands
    regardless of priority, then retracts, then moves on"). This reverses
    plan 008's High-only auto-expand (008's per-item reset and idle no-op
-   stay). Retraction: at `promoted_at + base_window` (the un-multiplied
-   ttl) the card auto-collapses and finishes its (expanded-window) rotation
-   compact. A manual ⌃⇧N press on the item disarms the auto-retract.
+   stay). **Total turn length is unchanged**: the item's rotation window
+   stays its configured ttl — auto-expansion is display-only and *free*.
+   The card auto-collapses at **half the base window** and finishes its
+   turn compact (operator decision 2026-07-18, over the alternative of
+   giving every item the 3× expanded window). The 3× window rule becomes
+   **manual-expand-only**: a ⌃⇧N press that expands an item extends its
+   window exactly as today (and any press disarms the auto-retract).
 4. **Batch semantics** (exact, pin them in tests): a batch starts when an
    event is accepted while the engine is fully idle (nothing visible,
    every tier empty) — `batch_done = 0`, `batch_total = 0`. Every accepted
@@ -82,10 +96,13 @@ payload, so they ship together.
 - `src-tauri/src/event.rs` — `SlotState::Showing` gains
   `queue_total: u32, queue_done: u32`; snapshot test update
 - `src-tauri/src/lib.rs` — heartbeat handles the retract wake (plan 015's
-  `next_deadline` path), dismiss/skip increment `batch_done`
+  `next_deadline` path); `toggle_manual_expand`'s High no-op guard is
+  deleted (hotkey always flips under expand-all)
 - `src/components/Track.tsx`, `src/components/StatusRailCard.tsx`,
   `src/styles.css`, `src/settings/preview-overlay.css` (mirror)
-- `src/useSlotState.ts` validation; frontend tests
+- `src/useSlotState.ts` validation; frontend tests; **every TS
+  `SlotState` constructor/fixture/preview sample gains
+  `queueTotal`/`queueDone`** (the compiler lists them all)
 - `docs/TESTING_STRATEGY.md` §0 counts; `CONTEXT.md` Expanded entry gains
   the auto-retract sentence
 
@@ -118,20 +135,65 @@ Reset both when the engine is fully idle (check after every mutation:
 Tests: the four decision-4 semantics (start/increment/complete/reset),
 plus supersession-not-a-completion.
 
-### Step 2: Auto-expand-all + retract
+### Step 2: Auto-expand-all + retract (window/render decoupling)
 
-`queue.rs:224` and the fast-path site: `expanded = true` (drop the
-`Priority::High` comparison). Add `auto_retract_armed: bool` (set at
-promotion, cleared by any `toggle_expanded` call). `next_deadline`
-returns the *earlier* of the retract deadline (`promoted_at + base_window`)
-when armed-and-expanded, and the rotation deadline; the heartbeat on a
-retract wake clears `expanded` + the arm and emits. Rotation window is
-unchanged (`base * EXPANDED_MULTIPLIER` while expanded — the retracted
-tail simply finishes it compact).
+**The trap to avoid**: `rotate_out_if_elapsed` currently computes the
+window from the render flag (`rotation_window(self.expanded)`). If the
+retract simply flipped `expanded` to `false`, the window would shrink
+from under the visible item and it would rotate out *at the retract
+moment* — the "finishes its turn compact" half of the lifecycle would
+never exist. So expansion splits into two flags:
 
-Tests: every priority auto-expands; retract fires at base window and
-emits; hotkey press disarms; per-item reset still holds; idle no-op
-toggle still holds (plan 008 suite updated, not deleted).
+- `expanded: bool` — **render state** (what the card looks like). Set
+  `true` at every promotion; flipped `false` by the auto-retract and by
+  manual toggles.
+- `window_expanded: bool` — **rotation arithmetic** (how long the turn
+  is). Set `false` at every promotion (auto-expand never extends); set
+  `true` only by a manual expand, and sticky for the rest of the turn.
+  `rotation_window(window_expanded)` replaces every current
+  `rotation_window(expanded)` call (rotation-out, supersede top-up,
+  `next_deadline`) — including the proptest harness's `vis_snapshot`
+  window math in the same file.
+
+Then: `queue.rs:224`'s setter becomes no-arg (`expanded=true,
+window_expanded=false, auto_retract_armed=true` — drop the
+`Priority::High` comparison at both promotion sites). `tick` gains
+`retract_if_elapsed` *before* rotate/promote: when armed-and-expanded and
+`now >= promoted_at + base_window / 2` (`Duration` math, not seconds
+truncation), clear `expanded` + the arm. `next_deadline` returns the
+earlier of that retract deadline and the rotation deadline; the plan-015
+heartbeat already wakes there and `slot_state_if_changed` emits the
+collapse. `toggle_expanded` becomes: any press disarms the retract;
+collapse is render-only; expand sets `window_expanded=true` (manual
+extension, sticky). `lib.rs:731-733`'s `toggle_manual_expand` High no-op
+guard is deleted — with expand-all the hotkey must always flip (a press
+on an auto-expanded card collapses it).
+
+Tests: every priority auto-expands; retract fires at half the base window
+and emits (slot-state `expanded: false`, item still visible); hotkey
+press disarms; manual expand extends the window 3×; per-item reset still
+holds; idle no-op toggle still holds. The plan-008 example cases are
+*rewritten*, not deleted — specifically
+`expanded_resets_when_next_item_promotes` (the next item now starts
+**expanded**), `auto_expanded_high_uses_expanded_rotation_window`
+(auto-expand no longer extends the window; manual-only), the
+`next_deadline_*` cases (an armed retract is the earlier deadline), and
+the proptest suite's invariant 8 (`expanded == (priority==High)` at
+promotion, asserted at `queue.rs:1630-1631`, becomes
+`expanded == true`) — plan 022's property harness lives in the same
+file and reads the same flags.
+
+**Invariant 9 must be rewritten too** (verified at review, `1add02e` —
+the plan-time draft missed it): the harness asserts
+`next_deadline == promoted_at + rotation_window(q.expanded) + extension`
+at `queue.rs:1821-1826`, and `vis_snapshot` computes the same window at
+`:1582`. Under this plan both are wrong twice over: the window flag
+becomes `window_expanded`, and `next_deadline` becomes
+`min(retract_deadline_if_armed, rotation_deadline)` — so an armed
+retract makes the old equality fail. Rewrite invariant 9 to model the
+min-of-two-deadlines rule (and retarget both harness sites to
+`window_expanded`); do not weaken it to a `<=` — the exact deadline is
+the property being pinned.
 
 ### Step 3: Track component + validation
 
@@ -165,6 +227,10 @@ Expanded entry + TESTING_STRATEGY §0.
 - [ ] `queueTotal`/`queueDone` in the slot-state snapshot test
 - [ ] plan 008's expanded-semantics tests pass in their expand-all form
 - [ ] 5-push manual check: slider advances, expand→retract→rotate observed
+- [ ] `git status --short` shows, beyond whatever was already dirty
+      before your first edit (concurrent sessions share this checkout —
+      snapshot it first, never revert/stage/commit those paths),
+      modifications ONLY to in-scope files
 - [ ] `plans/README.md` row updated
 
 ## STOP conditions

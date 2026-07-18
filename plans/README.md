@@ -34,6 +34,23 @@ ceiling; **every** promotion starts expanded with a mid-rotation
 auto-retract (reverses plan 008's High-only); the `/notify` subtitle-fold
 contract is amended (035). Recommended order: 032 → 033 → 034 → 035.
 
+**Architecture-review session (2026-07-18, planned at `d926977`)**: an
+`improve-codebase-architecture` run over the commit-history hot spots
+(rust core + frontend, two parallel explore agents). Five deepening
+candidates were reported; the operator selected the mutate→wake→emit
+protocol deepening and locked its design in a grilling session
+(closure-based `apply`, queue+wake private to the module, `accept` with
+the News-origin Connector gate, Engine-owned clock, the name "Engine",
+sequencing after 036/025). Filed as plan 037; CONTEXT.md gained the
+**Engine** term at filing. One filing-time correction to the grilled
+sketch, forced by 036's waiter-under-lock shape: the rotation loop
+moves *inside* the Engine (`spawn_rotation`) rather than calling
+`apply`, which would self-wake and spin — details in the plan's Design
+block. Remaining candidates (poll-loop driver, stylesheet
+triplication, typed settings IPC client, second-Connector cost map)
+are recorded in the session report only — re-raise via a future
+`improve` run if wanted.
+
 **Reconciled 2026-07-18 at `b43a7ca` (advisor verify pass)**: plans
 001–008 + the two extra-session plans (004-test-notifications,
 005-appearance-config) were re-verified against HEAD — every claimed
@@ -102,11 +119,12 @@ plans are independent. P1s first.
 | 029 | Pin CI actions to commit SHAs + dependabot for github-actions | P3 | S | — | TODO |
 | 030 | SPIKE: OpenRouter news enrichment design doc (`docs/design/`) | P2 | M | — | TODO |
 | 031 | SPIKE: live-match scoreboard Topic card design doc (`docs/design/`) | P2 | M | — | TODO |
-| 024 | Proptest rotation_order coverage (invariant 4 rank tie-break) | P3 | S | 022 (DONE) | IN PROGRESS — follow-up from 022's review (property suite tested FIFO tie-break only). Planned at `d926977`; `/improve execute` dispatched (tests-only: generate per-case `rotation_order`, rank-aware invariant-4 predictor mirroring `best_index_in_tier`, Step 4 inversion check to prove non-vacuous). |
+| 024 | Proptest rotation_order coverage (invariant 4 rank tie-break) | P3 | S | 022 (DONE) | DONE (in worktree; not merged) — `/improve execute` → reviewed **APPROVE** 2026-07-18. Commit `cee5249` on branch `worktree-agent-a5c6c7d45300b8492` (parented on `d926977`). Reviewer re-verified independently: scope clean (only `queue.rs` +97/−30 and `docs/TESTING_STRATEGY.md`, all hunks inside `#[cfg(test)] mod proptest_queue` @1439+, production `best_index_in_tier` untouched, no Cargo.lock/README change); `predict_promoted` mirrors production strict-`<` min-rank/FIFO exactly (not left in Step 4's inverted state); property suite **5/5** (~0.34s, no `proptest-regressions` file); full suite **257 + 3 doc-tests, 0 failed** (§0 unchanged); clippy `--locked --all-targets -D warnings` + `fmt --check` exit 0. Executor used `prop_shuffle` (proptest 1.11.0). Two in-scope judgment calls approved: corrected a now-false "left unset" comment in the module; **deferred** a matching stale line in §9.1's "operation model" para (TESTING_STRATEGY.md:717, still says harness "leaves it unset") — tiny follow-up. **Operator action: merge branch to master.** Env note: executor deleted a sibling worktree's regenerable `target/` cache under a disk-full crisis — source intact, see run notes. |
 | 032 | Status Rail visual refresh: chip removal + accent edge, rounded default (16px), body prominence, inline-markdown body, celebration A+B ripple | P2 | M | — | TODO |
 | 033 | Queue slider track (batch counters, slot-state `queueTotal`/`queueDone`) + auto-expand-all lifecycle with mid-rotation retract | P2 | M | 032 | TODO |
 | 034 | Idle source-status rail: `status-state` channel, poller live-match surface, IdleView redesign | P2 | M | — (soft 032) | TODO |
 | 035 | Rich relay manifest: `/notify` `subtitle`/`details[]`, CLI `--detail`, claude-code + cmux hook scripts, manifest layout A | P2 | M | — | TODO |
+| 037 | The Engine: one propagation module for every Slot mutation (`apply`/`read`/`accept`, private queue+wake, clock-agnostic queue, rotation loop inside) | P2 | L | 036, 025 (hard); 024 (soft); 033/035 reconcile | TODO |
 
 ## Done
 
@@ -182,7 +200,11 @@ Third audit session (036, 025–031):
 
 - **036 first among these** — it fixes a shipped P1 regression (plan
   015's lost wakeup); its heartbeat loop is also touched by nothing
-  else here, so it lands cleanly.
+  else here, so it lands cleanly. (Review-plan pass 2026-07-18: 036
+  also comes before the rev-3 batch's 033 and 034 — 033's auto-retract
+  rides the heartbeat wake, and 034's status channel makes the
+  heartbeat the sole emitter, a design that is unsound while the
+  lost-wakeup race exists. Both plans now carry the dependency.)
 - **028 after 036 and 025 (soft)** — both add rust tests; landing the
   fixture consolidation first would force them to rebase over moved
   fixtures. 028 should also re-inventory after the 022/024-proptest
@@ -202,6 +224,19 @@ Third audit session (036, 025–031):
 - **030/031 are spikes**: deliverable is a design doc in
   `docs/design/`, zero production code. The *features* stay undecided
   until the operator reads the docs.
+
+Architecture-review session (037):
+
+- **037 strictly after 036 and 025** — it rewrites the heartbeat loop
+  036 fixes (preserving `enable`-under-lock inside the Engine) and the
+  poller call paths 025 reshapes; running it earlier forces double
+  rebases of a P1 bug fix. It also mechanically edits the proptest
+  harness — if 024 is still in flight, coordinate before dispatch.
+  033/035 change queue/http production surfaces: whoever lands second
+  reconciles textually (the 004/014/017/019 precedent). 037 subsumes
+  neither the emit-after-unlock reordering (still deferred — but after
+  037 it is a one-site fix) nor the rejected lib.rs file-split finding
+  (see the plan's "Why this matters" for the distinction).
 
 ## Findings considered and rejected
 

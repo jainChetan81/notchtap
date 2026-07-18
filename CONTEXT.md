@@ -41,6 +41,14 @@ in `docs/ARCHITECTURE.md`.
 - **Promotion** — the moment the highest-priority Waiting Notification
   moves into the Slot. the engine's decision alone; the frontend never
   promotes.
+- **Engine** — the one module through which every change to the Slot
+  and the Waiting lines flows (plan 037 — planned; today its guarantees
+  are a convention spread across several code paths). only the Engine
+  Promotes; a change applied through it can never miss a Rotation
+  deadline or fail to publish the resulting Slot change to the overlay
+  — by construction, not by discipline. accepted Events reach
+  Connectors through it, and it enforces the Connector rule that News
+  never leaves the machine (see **Connector**).
 - **Rotation** — how long a Notification stays Visible, measured from
   Promotion (not from arrival); replaces the old TTL concept (v3.6).
   extended (see **Expanded**) while the Slot is grown. config file keys

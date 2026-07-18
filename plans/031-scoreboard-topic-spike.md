@@ -19,6 +19,12 @@
 - **Depends on**: none
 - **Category**: direction
 - **Planned at**: commit `a58f115`, 2026-07-18
+- **Reviewed**: 2026-07-18 at `1add02e` (review-plan pass) — all queue.rs
+  / poller.rs / spec citations re-verified exact; STOP grep fixed (zsh
+  quoting + expected benign hits enumerated, incl. a lib.rs test
+  construction the plan-time premise missed); CONTEXT.md cites updated
+  for the Engine-term addition; locked plans 033 (expand-all) and 037
+  (Engine) folded into the design inputs
 
 ## Why this matters
 
@@ -55,18 +61,25 @@ pretend the current behavior is a bug.
   - Tests exercising all of it: the only `topic: Some(...)` /
     `Recurring` constructions in the tree (`queue.rs` tests ~451, 469,
     765).
-- The vocabulary (`CONTEXT.md` — use these terms verbatim in the doc):
-  - **Recurring** (line 49): "a Rotation kind that requeues to the back
+- The vocabulary (`CONTEXT.md` — use these terms verbatim in the doc;
+  line numbers below are from the 2026-07-18 review-time tree, which
+  includes the newly added **Engine** entry at ~:44 — grep for the bold
+  term rather than trusting offsets):
+  - **Recurring** (~line 57): "a Rotation kind that requeues to the back
     of its own Priority tier's Waiting line after its turn … bounded by
     supersession or the underlying state naturally ending, not a
     clock."
-  - **Topic** (line 54): "the supersession identity carried by a
+  - **Topic** (~line 62): "the supersession identity carried by a
     Recurring Event … a fresh Event sharing a Topic updates the
     existing Notification in place — Waiting or Visible — rather than
     adding a new one; a Visible supersede can grant a small, capped
     Rotation extension if remaining time was already low, but never
     mutates when it was first promoted."
-  - **Score Update** / **Match State** (lines 113-118).
+  - **Score Update** / **Match State** (~lines 121-123).
+  - **Engine** (~line 44, added with plan 037's filing): plan 037 will
+    re-house the enqueue/tick/emit paths inside one module — the design
+    doc should use the Engine term for the mutation path and note that
+    the eventual build lands on whichever side of 037 has shipped.
 - The producer that would adopt it, `src-tauri/src/poller.rs`:
   - `make_event` (~line 284) hardcodes `topic: None` with the "in this
     pass" comment (lines 302-306) and `RotationSpec::OneShot`.
@@ -83,10 +96,19 @@ pretend the current behavior is a bug.
     connectors observe acceptance, `CONTEXT.md` Connector definition —
     but verify how the return value of `enqueue` interacts with the
     supersede path and say so explicitly).
-- Adjacent behaviors the design must compose with (all shipped):
-  - Auto-expand on High promotion (plan 008; espn default priority is
-    High) — a Recurring card re-promoting each cycle would re-expand
-    every turn; is that desirable?
+- Adjacent behaviors the design must compose with:
+  - Expand semantics are **about to change**: shipped today is plan
+    008's High-only auto-expand (espn default priority is High), but
+    the operator has locked plan 033 (planned, not yet built), under
+    which EVERY promotion starts expanded and auto-retracts at half
+    the base window, with manual expand alone extending the window.
+    Model the Recurring card against the 033 semantics (re-expand +
+    retract every single cycle for 90+ minutes), with 008 as the
+    fallback if 033 hasn't landed by build time.
+  - Plan 033's queue-slider batch counters treat a Recurring requeue
+    as *not* a completion (its maintenance note defers the rule to
+    this spike's producer) — a cycling match card could pin the batch
+    open and make the slider read oddly; the doc must take a position.
   - Rotation-order tie-break by origin (v6) and per-source priority.
   - The deadline heartbeat (plan 015 / plan 036) — supersession of a
     Visible item can change its effective deadline via the extension;
@@ -157,9 +179,14 @@ read their assertions — they are the machinery's real spec.
    state naturally ending" and define the ending (full-time →
    what removes the Recurring item? `diff_scoreboard` eviction alone
    doesn't dequeue — trace what would).
-4. **Tier interplay**: espn priority default High + auto-expand on
-   promotion (plan 008) + Recurring requeue = an expanded card
-   re-promoting repeatedly; per-source priority (v6) mitigations.
+4. **Tier interplay**: espn priority default High + expand-on-promotion
+   + Recurring requeue = an expanded card re-promoting repeatedly.
+   Model this under plan 033's locked expand-all/auto-retract semantics
+   (every cycle: expand → retract at half-window → rotate), with plan
+   008's High-only rule as the fallback if 033 hasn't landed; per-source
+   priority (v6) mitigations. Include the queue-slider question: 033's
+   batch counters don't count a Recurring requeue as a completion —
+   state what the slider should read while a match card cycles.
 5. **Connector semantics**: what telegram receives under supersession
    (every delta? only fresh cards?) — trace `enqueue_and_fan_out`'s
    accepted-set logic and state the answer with line refs.
@@ -205,8 +232,17 @@ N/A — docs-only spike.
 
 Stop and report back (do not improvise) if:
 
-- A production producer already sets `topic:`/`Recurring` (premise
-  stale — re-grep first: `grep -rn "topic: Some\|Recurring" src-tauri/src --include=*.rs` outside `queue.rs` tests).
+- A production producer already sets `topic:`/`Recurring`. Re-grep
+  first — with the pattern QUOTED (`--include=*.rs` unquoted
+  glob-errors in zsh, the dev-machine shell):
+  `grep -rn "topic: Some\|RotationSpec::Recurring" src-tauri/src --include='*.rs'`.
+  Expected benign hits (verified 2026-07-18 at `1add02e`): the enum
+  definition in `event.rs`, test constructions in `queue.rs` (example
+  suite ~:451/:765 plus the plan-022 proptest harness ~:1449-1532) and
+  `lib.rs:949` (the skip-visible test), and `poller.rs:305`'s comment.
+  STOP only if a hit is a *non-test* construction in a producer
+  (poller/rss_poller/http/settings production code) — that's the
+  stale-premise case.
 - You find a recorded *rejection* (not deferral) of this feature in
   `docs/` or `plans/README.md`.
 - Understanding a lifecycle seems to require changing code to see what
@@ -220,3 +256,9 @@ Stop and report back (do not improvise) if:
 - This doc and plan 030's enrichment doc both touch `EventMeta`/card
   presentation ambitions — whoever builds second should re-read the
   first's decisions.
+- Plan 037 (Engine) rewrites the enqueue/tick/emit paths this design
+  cites; the doc's `file:line` grounding is stamped to its research
+  commit, but the eventual *build* plan must re-ground against the
+  Engine module if 037 has landed by then (the semantics carry over —
+  supersession and Recurring requeue become Engine-internal, not
+  redesigned).

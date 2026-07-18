@@ -20,6 +20,11 @@
 - **Depends on**: none
 - **Category**: bug (cosmetic) + consistency
 - **Planned at**: commit `a58f115`, 2026-07-18
+- **Reviewed**: 2026-07-18 at `1add02e` (review-plan pass) — every
+  excerpt re-verified against the live tree; `npx vitest run`
+  re-confirmed 62/62; Step 2's bug-pin check made stash-free, Step 3
+  extended to mirror the `.catch` half of the pattern, working-tree
+  guard generalized
 
 ## Why this matters
 
@@ -127,9 +132,15 @@ Two small frontend correctness gaps, both confirmed by reading:
   (see the test at line ~136). The segmented controls render option
   buttons labeled `Small`/`Medium`/`Large` (scale) and
   `Square`/`Soft`/`Round` (radius) — see `SettingsApp.tsx:1080-1098`.
-- Frontend gates: `npx vitest run` (62 tests at planning time),
-  `npx tsc --noEmit`, `npx biome ci .`, `npx vite build`. Counts live
-  in `docs/TESTING_STRATEGY.md` §0 only.
+- Frontend gates: `npx vitest run` (62 tests at planning time;
+  re-confirmed 62/62 at review time, `1add02e`), `npx tsc --noEmit`,
+  `npx biome ci .`, `npx vite build`. Counts live in
+  `docs/TESTING_STRATEGY.md` §0 only. Known benign drift: the drift
+  check WILL show `docs/TESTING_STRATEGY.md` changed since `a58f115`
+  (the plan-022 deep-testing merge rewrote other sections of that
+  file); §0's frontend row still reads 62 and matches the live suite,
+  so that diff alone is NOT a STOP — Step 4 recounts from actual
+  output regardless.
 
 ## Commands you will need
 
@@ -155,8 +166,11 @@ Two small frontend correctness gaps, both confirmed by reading:
   control change) — that is a deeper design question, deliberately not
   addressed here; this plan only makes the *form display* consistent.
 - `src/useSlotState.ts` — already correct; it is the pattern source.
-- `src/settings/preview-overlay.css` and `prototype/status-rail.html` —
-  another session has uncommitted work there; do not touch or stage.
+- Any pre-existing uncommitted or untracked working-tree changes —
+  concurrent sessions share this checkout and the dirty set varies day
+  to day (do not trust any hardcoded list of paths). Record
+  `git status --short` BEFORE your first edit; whatever it shows is
+  another session's work — never revert, stage, or commit it.
 - Lifting scale/radius/opacity fully into `SettingsApp` state — the
   remount approach below is deliberately chosen to avoid re-render
   churn on every slider/segment interaction.
@@ -205,29 +219,41 @@ In `SettingsApp.test.tsx`, add one test modeled on
    1.15 via `set_appearance`/`patchConfig` — `mockIPC` must stub
    `set_appearance` to resolve).
 2. Open the Appearance tab, click `Large`, assert `Large` is the
-   selected segment (use the same selected-state assertion style as
-   the existing SegmentedControl tests if present; otherwise assert
-   via the option button's `aria-pressed`/class — inspect
-   `SegmentedControl`'s markup in `SettingsApp.tsx` and match what it
-   renders).
+   selected segment. Verified markup (`SettingsApp.tsx:913`,
+   `SegmentedControl`): each option renders as a `<button>` with
+   `aria-pressed={value === option.value}` plus an `is-selected`
+   class when selected — assert via `aria-pressed` (e.g.
+   `getByRole("button", { name: "Large" }).getAttribute("aria-pressed")`
+   → `"true"`). Scope queries to the Appearance section with
+   `within(...)` the way the existing test at line ~157 does (the
+   sidebar also has an "Appearance" button).
 3. Click `Reset to defaults`, and assert the scale segment shows
    `Medium` (the default `card_scale: 1`) again — this fails without
    Step 1 and passes with it.
 
-**Verify**: `npx vitest run` → all pass including the new test; then
-temporarily confirm the test actually pins the bug by reverting Step
-1's `key` (e.g. `git stash push src/settings/SettingsApp.tsx` — run —
-`git stash pop`): the new test must FAIL without the fix. (Skip this
-confirmation if stash juggling risks the other session's uncommitted
-files; a simple manual re-check that the assertion targets the
-segment's selected state is acceptable.)
+**Verify**: `npx vitest run` → all pass including the new test. Then
+confirm the test actually pins the bug WITHOUT touching git state
+(concurrent sessions share this tree — no `git stash`): temporarily
+edit the render site's `key={formGeneration}` to `key={0}`, run
+`npx vitest run -t "Appearance"` → the new test must FAIL; restore
+`key={formGeneration}` and run again → passes.
 
 ### Step 3: Mirror the unlisten guard in `App.tsx`
 
 Apply the `useSlotState.ts` pattern to the `appearance-changed`
-listener: add `let unmounted = false;`, in `.then` call `fn()`
-immediately when `unmounted`, else assign; set `unmounted = true` in
-cleanup. Keep the effect's existing seed logic
+listener — BOTH halves of it: add `let unmounted = false;`, in `.then`
+call `fn()` immediately when `unmounted`, else assign; set
+`unmounted = true` in cleanup; and also mirror the `.catch` (plan 009
+added it to `useSlotState` — a silently dead listener here means
+appearance changes never live-apply to the overlay):
+
+```tsx
+.catch((error) => {
+  console.error("appearance-changed listener failed to register", error);
+});
+```
+
+Keep the effect's existing seed logic
 (`window.__NOTCHTAP_APPEARANCE__`) untouched. No new test — the
 existing `App.test.tsx` listen-mock resolves synchronously, so the race
 isn't observable there; the value is pattern consistency (and the
@@ -258,10 +284,10 @@ Machine-checkable. ALL must hold:
 - [ ] `npx tsc --noEmit` exits 0
 - [ ] `npx biome ci .` exits 0
 - [ ] `npx vite build` exits 0
-- [ ] `grep -n "unmounted" src/App.tsx` → guard present in the appearance effect
+- [ ] `grep -n "unmounted" src/App.tsx` → guard present in the appearance effect; `grep -n "failed to register" src/App.tsx` → the `.catch` mirror present
 - [ ] `grep -n "formGeneration" src/settings/SettingsApp.tsx` → state + `key` usage present
 - [ ] `docs/TESTING_STRATEGY.md` §0 matches actual counts
-- [ ] `git status` clean except in-scope files and the other session's pre-existing changes (untouched)
+- [ ] `git status --short` shows, beyond the entries you recorded before your first edit (other sessions' work — untouched, unstaged), modifications ONLY to in-scope files
 - [ ] `plans/README.md` status row updated
 
 ## STOP conditions

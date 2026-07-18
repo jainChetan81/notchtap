@@ -20,6 +20,13 @@
 - **Planned at**: commit `d926977`, 2026-07-18, from the prototype's
   section-5 design review. Layout variant **A (detail cells)** chosen by
   the operator over B (full-width rows) and C (terminal block).
+- **Reviewed**: 2026-07-18 at `1add02e` (review-plan pass) — repo-side
+  excerpts all re-verified (NotifyRequest shape, CLI fold at
+  `notchtap:4-6`/:83, Manifest 2-cell generic / 3-cell news branches,
+  exactly three exhaustive `EventMeta` literals at rss_poller.rs:332/:834
+  + settings.rs:536, TS `SlotState` fields non-optional so the
+  compiler-lists-fixtures claim holds); claude-hook contract re-verify
+  STOP added (was cmux-only), git-status criterion added
 
 ## Decisions locked (operator, 2026-07-18)
 
@@ -81,12 +88,17 @@ information hierarchy instead of "Agent needs input" for everything.
 - `src-tauri/src/event.rs` — `DetailItem { label, value }`,
   `EventMeta.subtitle/details`, `SlotState` fields, snapshot tests
 - `src-tauri/src/queue.rs` — passthrough in `current_slot_state` (+ test)
+- `src-tauri/src/rss_poller.rs`, `src-tauri/src/settings.rs` — the three
+  exhaustive `EventMeta{…}` literals (2 rss, 1 test-notification) gain
+  the new fields (the compiler lists them; those events leave them empty)
 - `src-tauri/src/http.rs` — request fields + `sanitize_details` caps (+ tests)
 - `notchtap` CLI — `--subtitle` as field, repeatable `--detail Label=Value`
 - `hooks/notchtap-claude-hook.sh`, `hooks/notchtap-cmux-hook.sh` (new)
 - `src/useSlotState.ts` validation; `src/components/Manifest.tsx` (variant A);
   `src/styles.css` + `src/settings/preview-overlay.css`
-  (`.detail-value { overflow-wrap: anywhere; }`); tests
+  (`.detail-value { overflow-wrap: anywhere; }`); tests — **every TS
+  `SlotState` fixture/preview-sample constructor gains
+  `subtitle`/`details`** (compiler-listed)
 - `docs/ARCHITECTURE.md` §7 cli-contract paragraph (subtitle amendment +
   hook paths), `docs/V3_6_TECHNICAL_SPEC.md` wire schema,
   `docs/TESTING_STRATEGY.md` §4.3 cases + §0 counts
@@ -199,6 +211,10 @@ Both scripts must be on PATH-resolvable absolute paths in the configs.
 - [ ] Both hooks `sh -n`-clean, exit 0 without notchtap on PATH
 - [ ] `cargo test`, `npx vitest run`, `npx tsc --noEmit`,
       `npx vite build` green
+- [ ] `git status --short` shows, beyond whatever was already dirty
+      before your first edit (concurrent sessions share this checkout —
+      snapshot it first, never revert/stage/commit those paths),
+      modifications ONLY to in-scope files
 - [ ] `plans/README.md` row updated
 
 ## STOP conditions
@@ -208,6 +224,16 @@ Both scripts must be on PATH-resolvable absolute paths in the configs.
 - cmux's hook contract drifted from the documented stdin-JSON/stdout-JSON
   shape — re-verify against cmux.com/docs/notifications before writing
   the script
+- The Claude Code hook contract gets the same treatment (added at
+  review — the plan-time draft guarded only cmux): before writing
+  `notchtap-claude-hook.sh`, verify the event names this plan maps
+  (`Notification`, `PermissionRequest`, `Stop`, `PostToolUse`) and the
+  payload fields (`hook_event_name`, `tool_name`, `tool_input`, `message`,
+  `cwd`) against the official Claude Code hooks docs
+  (docs.anthropic.com → Claude Code → hooks). In particular, if
+  `PermissionRequest` is not a documented hook event in the installed
+  version, map permission prompts via the `Notification` event's
+  message instead — report the substitution, don't invent fields.
 - A third party asks for `details` to influence priority/rotation —
   details are display-only, forever; stop
 
@@ -218,3 +244,7 @@ Both scripts must be on PATH-resolvable absolute paths in the configs.
 - Telegram deliberately never learns about `details` — if a connector
   ever wants them, that's a formatting decision for that connector's own
   plan, not a given.
+- The `justfile`'s `check-cli` recipe and CI's `sh -n` gate cover only
+  `notchtap` today; extending them to `hooks/*.sh` is a sensible
+  follow-up but out of this plan's scope — note it in the completion
+  report rather than editing `justfile`/`ci.yml` here.

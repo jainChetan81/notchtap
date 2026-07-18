@@ -18,6 +18,9 @@
 - **Planned at**: commit `d926977`, 2026-07-18, from the `prototype/status-rail.html`
   rev-3 review session. First of the four-plan status-rail redesign block
   (032–035); the only fully frontend-side one.
+- **Reviewed**: 2026-07-18 at `1add02e` (review-plan pass) — excerpts
+  re-verified; PREVIEW_SAMPLES cite corrected, expected-drift note added,
+  git-status criterion added
 
 ## Decisions locked (operator, 2026-07-18)
 
@@ -60,9 +63,13 @@ so this lands first and derisks the three plumbing plans behind it.
   `[currentId, currentSignal]` with `PULSE_END_ANIMATION` cleanup.
 - `default_card_radius()` is `8.0` (`src-tauri/src/config.rs:221`).
 - `src/settings/preview-overlay.css` is the scoped mirror of `styles.css`
-  (currently in sync — drift fix landed in the working tree this session).
+  (in sync — the drift fix was committed at `1add02e`). **Expected
+  drift-check hit**: `git diff --stat d926977..HEAD` shows an 8-line
+  change to `preview-overlay.css`; that IS the sync fix, verified at
+  review time — not a STOP. Any *other* file in the drift output is.
 - Settings preview samples live in `PREVIEW_SAMPLES`
-  (`src/settings/SettingsApp.tsx:867-936`).
+  (`src/settings/SettingsApp.tsx:950`, rendered at :1122 — corrected at
+  review; the plan-time cite of 867-936 was wrong).
 
 ## Commands you will need
 
@@ -204,6 +211,10 @@ One `PREVIEW_SAMPLES` entry (the cmux one) gains a markdown body
 - [ ] Goal pulse mounts the 3-span ripple; reduced-motion CSS covers it
 - [ ] `npx vitest run`, `npx tsc --noEmit`, `npx biome ci .`,
       `npx vite build`, `cargo test` all green
+- [ ] `git status --short` shows, beyond whatever was already dirty
+      before your first edit (concurrent sessions share this checkout —
+      snapshot it first, never revert/stage/commit those paths),
+      modifications ONLY to in-scope files
 - [ ] `plans/README.md` row updated
 
 ## STOP conditions
