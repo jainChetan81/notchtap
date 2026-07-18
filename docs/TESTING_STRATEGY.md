@@ -16,7 +16,7 @@ other sections point back rather than repeating them):
 
 | suite | size | where |
 |---|---|---|
-| rust unit/integration | 289 tests — settings 45, queue 64, http 37, notifier 23, rss_poller 28, poller 19, event 19, config 17, presentation 11, lib 13, status 5, logging 4, net 4 | `cargo test` from `src-tauri/` |
+| rust unit/integration | 295 tests — settings 45, queue 64, http 36, notifier 23, rss_poller 28, poller 19, event 19, config 17, presentation 11, lib 11, engine 9, status 5, logging 4, net 4 | `cargo test` from `src-tauri/` |
 | rust doc-tests | 3 — public `queue`/`event` apis | same `cargo test` run |
 | frontend | 107 tests — presentation tables 12, inline markdown 7, slot-state hook 22, status-state hook 14, StatusRailCard 21, IdleView rail 6, Track slider 6, settings form 14, App render 5 | `npx vitest run` |
 | ci (v4) | fmt, clippy `-D warnings` (`--locked`), cargo test (`--locked`), cargo-audit, npm audit, tsc, vitest, vite build, `sh -n` cli syntax check, swiftc compile check | every push + pr |
@@ -44,7 +44,14 @@ plan 034 landed the idle source-status rail the same day too: the
 fixture-driven live-match summary (populated/cleared, no live network),
 and the status-state hook + IdleView chip vitest suites; its manual
 checks (idle "all clear" with espn off, a live fixture poll showing the
-match chip) are operator-owed, same as §4.12's.
+match chip) are operator-owed, same as §4.12's. plan 037 landed the
+Engine (`src-tauri/src/engine.rs`) on 2026-07-19: every queue mutation
+now flows through one module (`apply`/`apply_blocking`/`accept`), the
+queue's enqueue interface is clock-agnostic (`now: Instant` at every
+entry point, `enqueue_at` deleted), the rotation loop moved inside as
+`spawn_rotation`, and the protocol's own tests live in the new `engine`
+row — http's wake regression test and lib's two heartbeat tests moved
+there (moved, not lost), which is why http/lib each shrank.
 
 **left — each is a decision with an owner section, not a gap:**
 
@@ -699,10 +706,11 @@ explicitly **not** in this section (unchanged from §5):
 
 **landed 2026-07-18.** `src-tauri/src/queue.rs`, new
 `#[cfg(test)] mod proptest_queue` as a sibling of the existing
-example-based `mod tests` (same file, so it can reuse the private,
-`#[cfg(test)]`-gated `enqueue_at` simulated-clock entry point, plus
-direct field access to `visible`/`waiting`/`expanded` the same way
-`mod tests` already does).
+example-based `mod tests` (same file, so it can reuse the private
+field access to `visible`/`waiting`/`expanded` the same way
+`mod tests` already does; since plan 037 the queue is clock-agnostic —
+`enqueue(event, now)` takes the simulated clock at the public
+interface, which is what the harness's `apply_enqueue` drives).
 
 **dependency**: `proptest = "1"` under `[dev-dependencies]` in
 `src-tauri/Cargo.toml`. dev-only — no shipped-binary impact.

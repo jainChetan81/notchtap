@@ -8,25 +8,22 @@ use axum::{
 };
 use serde::Deserialize;
 use serde_json::json;
-use std::sync::Arc;
-use tokio::sync::Mutex;
 use uuid::Uuid;
 
+use crate::engine::Engine;
 use crate::error::{EventError, QueueError};
 use crate::event::{
-    emit_slot_state, DetailItem, Event, EventMeta, EventPayload, EventSignal, EventType, Priority,
-    RotationSpec, SourceKind,
+    DetailItem, Event, EventMeta, EventPayload, EventSignal, EventType, Priority, RotationSpec,
+    SourceKind,
 };
-use crate::notifier::ConnectorHandle;
-use crate::queue::SingleSlotQueue;
 
 // generic over the tauri runtime so tests can use tauri::test::mock_app()
 // (MockRuntime) while the app runs on the default Wry runtime
 pub struct AppState<R: tauri::Runtime = tauri::Wry> {
-    pub queue: Arc<Mutex<SingleSlotQueue>>,
-    /// plan 015: wakes the deadline-based heartbeat after every enqueue so
-    /// it recomputes its next rotation deadline instead of polling.
-    pub wake: Arc<tokio::sync::Notify>,
+    /// plan 037: the one propagation module — ingest goes through
+    /// `Engine::accept`, the paused/waiting response reads through
+    /// `Engine::read`.
+    pub engine: Engine<R>,
     pub default_ttl: u64,
     /// v6: the `/notify` fallback when a request omits its own `priority`
     /// (`Config.manual_default_priority`, default `Medium`) — a request
@@ -38,60 +35,18 @@ pub struct AppState<R: tauri::Runtime = tauri::Wry> {
     /// v6.1: rotation window for a cmux-originated request, mirroring
     /// `default_ttl`'s role for a plain manual one.
     pub cmux_ttl_secs: u64,
-    pub app_handle: tauri::AppHandle<R>,
-    pub connectors: Arc<Vec<ConnectorHandle>>,
 }
 
 impl<R: tauri::Runtime> Clone for AppState<R> {
     fn clone(&self) -> Self {
         Self {
-            queue: self.queue.clone(),
-            wake: self.wake.clone(),
+            engine: self.engine.clone(),
             default_ttl: self.default_ttl,
             manual_default_priority: self.manual_default_priority,
             cmux_priority: self.cmux_priority,
             cmux_ttl_secs: self.cmux_ttl_secs,
-            app_handle: self.app_handle.clone(),
-            connectors: self.connectors.clone(),
         }
     }
-}
-
-/// Shared enqueue path used by `/notify` and by `send_test_notification`:
-/// a malformed `/notify` request never reaches this function at all — the
-/// title/body `MissingField` checks in `notify_handler` already return a
-/// 400 before an `Event` is even constructed. Enqueues the event,
-/// fans it out to connectors, emits any resulting slot-state change, and
-/// wakes the deadline-based heartbeat (plan 015) — routed through this one
-/// shared function rather than duplicated at each caller, so every caller
-/// of this function wakes the heartbeat by construction; a mutation without
-/// a wake is structurally impossible to express here.
-pub async fn enqueue_and_emit<R: tauri::Runtime>(
-    queue: &Arc<Mutex<SingleSlotQueue>>,
-    wake: &Arc<tokio::sync::Notify>,
-    connectors: &[ConnectorHandle],
-    app_handle: &tauri::AppHandle<R>,
-    event: Event,
-    bypass_pause_when_slot_empty: bool,
-) -> Result<(), QueueError> {
-    let to_offer = event.clone();
-    let slot_change = {
-        let mut q = queue.lock().await;
-        if bypass_pause_when_slot_empty {
-            q.enqueue_test(event)?;
-        } else {
-            q.enqueue(event)?;
-        }
-        q.slot_state_if_changed()
-    };
-    wake.notify_waiters();
-    for connector in connectors {
-        connector.offer(&to_offer);
-    }
-    if let Some(state) = slot_change {
-        emit_slot_state(app_handle, state);
-    }
-    Ok(())
 }
 
 /// The one origin a `/notify` caller may self-declare (v6.1) — a closed,
@@ -244,21 +199,16 @@ async fn notify_handler<R: tauri::Runtime>(
         origin,
     };
 
-    enqueue_and_emit(
-        &state.queue,
-        &state.wake,
-        state.connectors.as_slice(),
-        &state.app_handle,
-        event,
-        false,
-    )
-    .await
-    .map_err(HttpError::Queue)?;
+    state
+        .engine
+        .accept(event, false)
+        .await
+        .map_err(HttpError::Queue)?;
 
-    let (paused, waiting_count) = {
-        let q = state.queue.lock().await;
-        (q.is_paused(), q.total_waiting())
-    };
+    let (paused, waiting_count) = state
+        .engine
+        .read(|q| (q.is_paused(), q.total_waiting()))
+        .await;
 
     let response = if paused {
         (
@@ -298,7 +248,11 @@ impl IntoResponse for HttpError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::notifier::ConnectorHandle;
+    use crate::queue::SingleSlotQueue;
     use axum::http::Request;
+    use std::sync::Arc;
+    use std::time::Instant;
     use tower::ServiceExt;
 
     fn test_state(queue: SingleSlotQueue) -> AppState<tauri::test::MockRuntime> {
@@ -311,14 +265,17 @@ mod tests {
     ) -> AppState<tauri::test::MockRuntime> {
         let app = tauri::test::mock_app();
         AppState {
-            queue: Arc::new(Mutex::new(queue)),
-            wake: Arc::new(tokio::sync::Notify::new()),
+            engine: Engine::new(
+                queue,
+                app.handle().clone(),
+                Arc::new(connectors),
+                true,
+                true,
+            ),
             default_ttl: 8,
             manual_default_priority: Priority::Medium,
             cmux_priority: Priority::High,
             cmux_ttl_secs: 8,
-            app_handle: app.handle().clone(),
-            connectors: Arc::new(connectors),
         }
     }
 
@@ -563,20 +520,23 @@ mod tests {
 
         let mut queue = SingleSlotQueue::new(50);
         queue
-            .enqueue(Event {
-                id: Uuid::new_v4(),
-                event_type: EventType::Generic,
-                priority: req.priority.unwrap_or(Priority::Medium),
-                rotation: RotationSpec::OneShot { ttl_secs: 8 },
-                topic: None,
-                payload: EventPayload {
-                    title: "t".into(),
-                    body: "b".into(),
+            .enqueue(
+                Event {
+                    id: Uuid::new_v4(),
+                    event_type: EventType::Generic,
+                    priority: req.priority.unwrap_or(Priority::Medium),
+                    rotation: RotationSpec::OneShot { ttl_secs: 8 },
+                    topic: None,
+                    payload: EventPayload {
+                        title: "t".into(),
+                        body: "b".into(),
+                    },
+                    meta: EventMeta::default(),
+                    signal: req.signal,
+                    origin: SourceKind::Manual,
                 },
-                meta: EventMeta::default(),
-                signal: req.signal,
-                origin: SourceKind::Manual,
-            })
+                Instant::now(),
+            )
             .unwrap();
         assert_eq!(queue.current_priority(), Some(Priority::Medium));
     }
@@ -594,7 +554,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
-            state.queue.lock().await.current_priority(),
+            state.engine.read(|q| q.current_priority()).await,
             Some(Priority::Low)
         );
     }
@@ -612,7 +572,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
-            state.queue.lock().await.current_priority(),
+            state.engine.read(|q| q.current_priority()).await,
             Some(Priority::High)
         );
     }
@@ -631,7 +591,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
-            state.queue.lock().await.current_priority(),
+            state.engine.read(|q| q.current_priority()).await,
             Some(Priority::High)
         );
     }
@@ -648,7 +608,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
-            state.queue.lock().await.current_priority(),
+            state.engine.read(|q| q.current_priority()).await,
             Some(Priority::Low)
         );
     }
@@ -665,7 +625,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
         assert_eq!(
-            state.queue.lock().await.current_priority(),
+            state.engine.read(|q| q.current_priority()).await,
             Some(Priority::Low)
         );
     }
@@ -723,20 +683,23 @@ mod tests {
 
         let req: NotifyRequest = serde_json::from_str(r#"{"title":"t","body":"b"}"#).unwrap();
         queue
-            .enqueue(Event {
-                id: Uuid::new_v4(),
-                event_type: EventType::Generic,
-                priority: req.priority.unwrap_or(Priority::Medium),
-                rotation: RotationSpec::OneShot { ttl_secs: 8 },
-                topic: None,
-                payload: EventPayload {
-                    title: "t".into(),
-                    body: "b".into(),
+            .enqueue(
+                Event {
+                    id: Uuid::new_v4(),
+                    event_type: EventType::Generic,
+                    priority: req.priority.unwrap_or(Priority::Medium),
+                    rotation: RotationSpec::OneShot { ttl_secs: 8 },
+                    topic: None,
+                    payload: EventPayload {
+                        title: "t".into(),
+                        body: "b".into(),
+                    },
+                    meta: EventMeta::default(),
+                    signal: req.signal,
+                    origin: SourceKind::Manual,
                 },
-                meta: EventMeta::default(),
-                signal: req.signal,
-                origin: SourceKind::Manual,
-            })
+                Instant::now(),
+            )
             .unwrap();
         match queue.current_slot_state() {
             crate::event::SlotState::Showing { signal, .. } => {
@@ -792,51 +755,6 @@ mod tests {
             .try_recv()
             .expect("paused-202 event must reach the connector");
         assert_eq!(event.payload.title, "t");
-    }
-
-    // --- plan 015 review follow-up: wake is routed through the shared fn ---
-
-    #[tokio::test]
-    async fn enqueue_and_emit_wakes_the_heartbeat() {
-        // Regression test for a review-caught gap: `enqueue_and_emit` is the
-        // one path shared by both `/notify` and `send_test_notification`
-        // (settings.rs), so testing the wake here — rather than at each
-        // caller — proves neither caller can omit it, matching the "a
-        // mutation without a wake is structurally impossible" design.
-        let queue = Arc::new(Mutex::new(SingleSlotQueue::new(50)));
-        let wake = Arc::new(tokio::sync::Notify::new());
-        let app = tauri::test::mock_app();
-
-        // register as a waiter *before* the call, via `enable()` (stable
-        // tokio API for pre-registering a `Notified` future without polling
-        // it to completion) — `notify_waiters()` only wakes tasks already
-        // parked, it never queues a permit for a future `.notified()` call.
-        let notified = wake.notified();
-        tokio::pin!(notified);
-        notified.as_mut().enable();
-
-        let event = Event {
-            id: Uuid::new_v4(),
-            event_type: EventType::Generic,
-            priority: Priority::Medium,
-            rotation: RotationSpec::OneShot { ttl_secs: 8 },
-            topic: None,
-            payload: EventPayload {
-                title: "t".to_string(),
-                body: "b".to_string(),
-            },
-            meta: EventMeta::default(),
-            signal: EventSignal::Generic,
-            origin: SourceKind::Manual,
-        };
-
-        enqueue_and_emit(&queue, &wake, &[], &app.handle().clone(), event, false)
-            .await
-            .unwrap();
-
-        tokio::time::timeout(std::time::Duration::from_millis(200), notified)
-            .await
-            .expect("enqueue_and_emit must wake the heartbeat");
     }
 
     // --- §9.2 (docs/TESTING_STRATEGY.md) — burst and boundary cases ---
@@ -960,10 +878,9 @@ mod tests {
         assert_eq!(response.status(), StatusCode::OK);
 
         let deadline = state
-            .queue
-            .lock()
+            .engine
+            .read(|q| q.next_deadline())
             .await
-            .next_deadline()
             .expect("a freshly-promoted item has a deadline");
         let elapsed_to_deadline = deadline.duration_since(before).as_secs();
         assert!(
@@ -1042,7 +959,7 @@ mod tests {
 
         // bind first so the MutexGuard drops at the semicolon, not at the
         // end of the match (which would outlive `state`).
-        let slot = state.queue.lock().await.current_slot_state();
+        let slot = state.engine.read(|q| q.current_slot_state()).await;
         match slot {
             crate::event::SlotState::Showing {
                 subtitle, details, ..
@@ -1070,7 +987,7 @@ mod tests {
         let response = app.oneshot(json_request(&body)).await.unwrap();
         assert_eq!(response.status(), StatusCode::OK);
 
-        let slot = state.queue.lock().await.current_slot_state();
+        let slot = state.engine.read(|q| q.current_slot_state()).await;
         match slot {
             crate::event::SlotState::Showing { details, .. } => {
                 assert_eq!(details.len(), 8, "9 pairs on the wire must cap to 8");
@@ -1091,7 +1008,7 @@ mod tests {
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
 
-        let slot = state.queue.lock().await.current_slot_state();
+        let slot = state.engine.read(|q| q.current_slot_state()).await;
         match slot {
             crate::event::SlotState::Showing {
                 subtitle, details, ..

@@ -11,19 +11,16 @@
 //! a bricked boot given `Config::load`'s fail-fast rule.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex as StdMutex};
+use std::sync::Mutex as StdMutex;
 
 use chrono::Local;
 use serde::{Deserialize, Serialize};
-use tokio::sync::Mutex;
 
 use crate::config::{Appearance, Config};
+use crate::engine::Engine;
 use crate::event::{
     Event, EventMeta, EventPayload, EventSignal, EventType, RotationSpec, SourceKind,
 };
-use crate::http;
-use crate::notifier::ConnectorHandle;
-use crate::queue::SingleSlotQueue;
 use tauri::Manager;
 
 // ---------------------------------------------------------------------------
@@ -673,26 +670,18 @@ pub fn set_secret(
 #[tauri::command]
 pub async fn send_test_notification(
     window: tauri::WebviewWindow,
-    app: tauri::AppHandle,
     state: tauri::State<'_, StdMutex<Config>>,
-    queue: tauri::State<'_, Arc<Mutex<SingleSlotQueue>>>,
-    wake: tauri::State<'_, Arc<tokio::sync::Notify>>,
-    connectors: tauri::State<'_, Arc<Vec<ConnectorHandle>>>,
+    engine: tauri::State<'_, Engine>,
     source: SourceKind,
 ) -> Result<(), String> {
     ensure_settings_window(&window)?;
     let config = state.inner().lock().unwrap().clone();
     let event = build_test_event(&config, source);
-    let queue = queue.inner().clone();
-    let wake = wake.inner().clone();
-    let connectors = connectors.inner().clone();
-    // plan 015 (review follow-up): enqueue_and_emit itself wakes the
-    // deadline-based heartbeat now, so a test notification pushed from the
-    // Settings window rotates out on schedule instead of stalling forever
-    // while the heartbeat sleeps toward a deadline it never learns about.
-    http::enqueue_and_emit(&queue, &wake, connectors.as_slice(), &app, event, true)
-        .await
-        .map_err(|e| e.to_string())
+    // plan 037: Engine::accept performs the enqueue with the one
+    // mutate→wake→emit protocol (a test notification pushed from the
+    // Settings window rotates out on schedule — plan 015's review
+    // follow-up — by construction now, not convention).
+    engine.accept(event, true).await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
