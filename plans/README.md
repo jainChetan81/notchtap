@@ -53,7 +53,7 @@ plans are independent. P1s first.
 | 014 | Test the log-rotation engine + eval-splice escaping | P2 | S | — | TODO |
 | 015 | Deadline-based heartbeat (replace the 250 ms tick) | P2 | M | 009 (DONE) | DONE (`2cef7ad`, `/improve execute` → reviewed APPROVE after 1 revision (settings test-notif wake); cherry-picked to master 2026-07-18; `cargo test` 242 + 3 doc-tests; idle-CPU smoke batched to end-of-run; file → `(done)`) |
 | 016 | Frontend lint/format gate (Biome) | P2 | S | — | TODO |
-| 023 | Goal celebration visible (review-log ranked list + redesign) | P2 | M | — | TODO |
+| 023 | Goal celebration visible (review-log ranked list + redesign) | P2 | M | — | DONE (CSS-first: dropped lottie for a layered-radial confetti burst + `::before` ring + overshoot on `.rail-card.pulse-goal`, removed `lottie-react`/JSON/`GoalCelebration.tsx`; reduce-motion ⇒ nothing in ARCHITECTURE.md §4; `vitest` 64 / `tsc` / `vite build` green; landed on `master` 2026-07-18. Live dev-machine eyeball — Steps 1–3 + acceptance, incl. the burst-readability judgement in the review log — owed to operator) |
 | 018 | Overlay idle-cost cuts: lazy lottie, transform-based news shader | P2 | S | 023 (soft) | TODO |
 | 022 | Deep-testing un-park decision + §9.1/§9.2 execution | P2 | L | decision gate | TODO |
 | 017 | Justfile (one-command local verification) | P3 | S | 016 (soft) | TODO |
@@ -81,6 +81,7 @@ Completed in this session (2026-07-17), filed with a `(done)` suffix:
 - [`010-espn-fetch-hardening(done).md`](./010-espn-fetch-hardening(done).md) — ESPN poller gets the RSS client posture (UA, `Policy::limited(3)`, 10 s timeout) plus a two-stage 1 MiB response cap and gzip for both pollers; merged to master `4381de4` 2026-07-18. Verified complete via `/improve execute` 2026-07-18 (no dispatch needed — already merged; all done criteria re-checked green at HEAD). Step 4 manual GUI smoke owed to operator (needs a Mac dev machine).
 - [`015-deadline-based-heartbeat(done).md`](./015-deadline-based-heartbeat(done).md) — replaced the 250 ms polling heartbeat with deadline-based wakeups: `SingleSlotQueue::next_deadline`, a `spawn_heartbeat` that sleeps to the visible item's rotation deadline (or forever when idle) woken by an `Arc<Notify>`, and every queue-mutation site wakes it — the wake lives inside the shared `enqueue_and_emit` (covering `/notify` + Settings test-notifications by construction), both pollers, and the four lib handlers; executed via `/improve execute`, reviewed APPROVE after one revision (review caught that Settings test-notifications would never auto-dismiss without the wake), cherry-picked to master `2cef7ad` (`cargo test` 242 + 3 doc-tests: queue 47→52, http 26→27, lib 8→9). Idle-CPU smoke batched to end-of-run.
 - [`020-config-defaults-single-source(done).md`](./020-config-defaults-single-source(done).md) — seventh settings command `get_default_config` returns `Config::default()`, deleting the hand-maintained frontend `DEFAULTS` mirror; the "Reset to defaults" button now reads the rust source of truth, with the advisory fetch isolated from the critical panel load. Executed 2026-07-18 via `/improve execute`, reviewed APPROVE after 1 REVISE, merged to master `9774930` (frontend gates green — vitest 64/64, tsc, vite build; `cargo fmt` clean; `settings` 38→39, total 242→243). `cargo test`/`cargo clippy` deferred to macOS CI — Linux can't compile the `smappservice-rs`→`objc2` dependency (CI runs the rust job on `macos-latest`).
+- [`023-goal-celebration-visible(done).md`](./023-goal-celebration-visible(done).md) — CSS-first goal celebration: dropped `lottie-react` + the JSON asset + `GoalCelebration.tsx`, rebuilt the moment as a layered-radial confetti burst (`.rail-card::after`) + expanding `::before` ring + punchier `goal-overshoot`, keyed on the existing `pulse-goal` class (play-once, ~620ms, `signal === "goal"` only); reduce-motion ⇒ deliberately nothing, recorded in `docs/ARCHITECTURE.md` §4; landed on master 2026-07-18 (`vitest` 64, `tsc`/`vite build` green). Live dev-machine eyeball (Steps 1–3 + acceptance, incl. burst readability) owed to operator; moots plan 018's lazy-lottie step.
 
 Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJECTED (with one-line rationale)
 
@@ -105,8 +106,11 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - **022 is blocked only by its Step 0 decision gate** — 008 is DONE; the
   property-test model's expanded invariants are already written into the
   plan. The operator must choose execute-§9 vs re-park.
-- **018 after 023** if both run — 023 may drop lottie entirely, mooting
-  018's Step 1.
+- **018's lazy-lottie step is now moot** — 023 (DONE, landed on master
+  2026-07-18) dropped `lottie-react` and the `goal-celebration.json`
+  asset entirely in favour of a pure-CSS goal burst, so there is no
+  lottie left to lazy-load. 018's remaining scope is just the
+  transform-based news shader; update its Step 1 before running it.
 - **016 / 017** touch `.github/workflows/ci.yml` or mirror it — 007
   already landed there (`--locked`, audit scans, `ubuntu-latest`,
   `sh -n`); both plans' texts account for it.

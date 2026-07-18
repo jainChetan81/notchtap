@@ -15,6 +15,18 @@
 
 ## Status
 
+- **DONE** (2026-07-18): CSS-first direction taken — dropped `lottie-react`
+  + the JSON asset + `GoalCelebration.tsx`, replaced the goal moment with a
+  layered-radial confetti burst (`.rail-card::after`), an expanding
+  `::before` ring, and a punchier `goal-overshoot`, all keyed on the
+  existing `pulse-goal` class (play-once, ~620ms, `signal === "goal"`
+  only). Red-card strobe and signal-less behaviour unchanged. Reduce-motion
+  ⇒ deliberately nothing, recorded in `docs/ARCHITECTURE.md` §4. Gates:
+  `vitest` 64 / `tsc --noEmit` / `vite build` all green. Landed on `master`.
+  **Owed to the operator** (headless executor cannot run them): the live
+  cold-start eyeball on the dev machine (Steps 1–3 + acceptance) and the
+  macbook notch check — including the readability judgement noted at the
+  foot of the review log. Plan 018's lazy-lottie step is now moot.
 - **Priority**: P2
 - **Effort**: M (S if hypothesis 1 — stale HMR — explains everything)
 - **Risk**: LOW (presentation layer only; the signal wire path is

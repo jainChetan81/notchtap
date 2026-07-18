@@ -6,7 +6,6 @@ import { Stamp } from "./Stamp";
 import { Track } from "./Track";
 import { Manifest } from "./Manifest";
 import { IdleView } from "./IdleView";
-import { GoalCelebration } from "./GoalCelebration";
 import { ageLabel, categoryClass, categoryLabel } from "../lib/presentation";
 
 type Pulse = "pulse-goal" | "pulse-red" | null;
@@ -150,7 +149,9 @@ export function StatusRailCard({ slot }: { slot: SlotState }) {
           </motion.div>
         )}
       </AnimatePresence>
-      {showing && slot.signal === "goal" && <GoalCelebration />}
+      {/* The goal celebration is pure CSS now (plan 023): the confetti
+          burst + ring live on `.rail-card.pulse-goal`'s ::after/::before,
+          driven by the pulse state above — no separate element to mount. */}
     </div>
   );
 }

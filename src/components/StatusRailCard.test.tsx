@@ -3,11 +3,6 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { StatusRailCard } from "./StatusRailCard";
 import type { SlotState } from "../useSlotState";
 
-// lottie-web touches HTMLCanvasElement.getContext at import time, which
-// jsdom doesn't implement — stub the player rather than pull in the
-// native `canvas` package just for tests.
-vi.mock("lottie-react", () => ({ default: () => null }));
-
 // this project's vitest config doesn't set `test.globals`, so RTL's
 // auto-cleanup (which hooks a global `afterEach`) never registers —
 // without this, DOM from one test's render leaks into the next and
@@ -89,10 +84,14 @@ const NEWS: SlotState = {
 
 describe("StatusRailCard", () => {
   describe("goal/red-card pulse", () => {
-    it("applies pulse-goal and mounts the celebration on a goal signal", () => {
+    // The celebration is pure CSS now (plan 023): the confetti burst +
+    // ring live on `.rail-card.pulse-goal`'s ::after/::before. So the
+    // signal-keying coverage is "the pulse class lands", and there is no
+    // separate `.goal-celebration` element to mount anymore.
+    it("applies pulse-goal (the CSS confetti burst, no mounted element) on a goal signal", () => {
       const { container } = render(<StatusRailCard slot={GOAL} />);
       expect(container.querySelector(".rail-card.pulse-goal")).not.toBeNull();
-      expect(container.querySelector(".goal-celebration")).not.toBeNull();
+      expect(container.querySelector(".goal-celebration")).toBeNull();
     });
 
     // The pulse clears on the CSS animation's own animationend, not a
@@ -106,10 +105,10 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".pulse-goal")).toBeNull();
     });
 
-    it("applies pulse-red (without mounting the goal celebration) on a red-card signal", () => {
+    it("applies pulse-red (and never the goal burst) on a red-card signal", () => {
       const { container } = render(<StatusRailCard slot={RED_CARD} />);
       expect(container.querySelector(".rail-card.pulse-red")).not.toBeNull();
-      expect(container.querySelector(".goal-celebration")).toBeNull();
+      expect(container.querySelector(".rail-card.pulse-goal")).toBeNull();
     });
 
     it("clears pulse-red when its animation ends", () => {
@@ -141,11 +140,10 @@ describe("StatusRailCard", () => {
   // The actual reason EventSignal exists: a High-priority alert from a
   // non-football source (cmux) must never be mistaken for a goal just
   // because both happen to be High priority.
-  it("never plays the goal celebration or a pulse for a High-priority generic signal", () => {
+  it("never plays a goal or red-card pulse for a High-priority generic signal", () => {
     const { container } = render(<StatusRailCard slot={CMUX_NEEDS_INPUT} />);
     expect(container.querySelector(".pulse-goal")).toBeNull();
     expect(container.querySelector(".pulse-red")).toBeNull();
-    expect(container.querySelector(".goal-celebration")).toBeNull();
   });
 
   it("renders the idle clock, not a card, when the slot is empty", () => {

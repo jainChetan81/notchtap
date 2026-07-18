@@ -3,8 +3,6 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { SettingsApp, type Config, type SecretStatus } from "./SettingsApp";
 
-vi.mock("lottie-react", () => ({ default: () => null }));
-
 const config: Config = {
   port: 4321,
   default_ttl: 14,

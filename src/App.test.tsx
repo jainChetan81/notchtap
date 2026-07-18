@@ -13,9 +13,6 @@ vi.mock("@tauri-apps/api/event", () => ({
   }),
 }));
 
-// see StatusRailCard.test.tsx for why lottie-react is stubbed
-vi.mock("lottie-react", () => ({ default: () => null }));
-
 function emit(payload: SlotState) {
   act(() => {
     handlers.forEach((handler) => handler({ payload }));

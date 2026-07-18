@@ -157,6 +157,23 @@ stylesheet into the component layer. the migration gets its own
 spec/plan entry when it stabilizes; §16's addendum records the
 decision trail.
 
+**reduce-motion fallback (decided 2026-07-18, plan 023).** the two
+signature moments — the goal confetti burst + overshoot + ring
+(`.rail-card.pulse-goal`) and the red-card strobe (`.rail-card.pulse-red`)
+— are **suppressed entirely under `prefers-reduced-motion: reduce`**:
+the fallback is *deliberately nothing*, not a static substitute. the
+card, its priority accent, stamp, and copy still render and still
+announce via the `aria-live` region; only the celebratory animation is
+withheld. this is implemented purely in the stylesheet
+(`@media (prefers-reduced-motion: reduce) { … animation: none }` in
+`src/styles.css`, mirrored in `src/settings/preview-overlay.css`), which
+is why the goal celebration is authored as CSS (`::after`/`::before`
+pseudo-elements) rather than a JS-driven lottie player — a css rule can
+be turned off by the media query, an autoplaying player cannot. the
+`motion` components elsewhere are covered separately by
+`<MotionConfig reducedMotion="user">` in `App.tsx`; these two plain-CSS
+pulses need (and have) their own override.
+
 ---
 
 ## 5. cross-device behaviour

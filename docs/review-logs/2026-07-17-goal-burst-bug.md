@@ -63,3 +63,59 @@ on a machine with reduce-motion OFF: goal push shows burst + overshoot
 strobe; with reduce-motion ON: whatever fallback the product decision
 picks (including deliberately nothing) is documented in
 `docs/ARCHITECTURE.md`.
+
+## resolution (2026-07-18, plan 023 — CSS-first redesign)
+
+Worked hypothesis 0 ("under-designed even when it works") as the primary
+fix rather than chasing the invisible-lottie suppressor, because the
+CSS-first direction **eliminates the whole failure class** the ranked
+list was probing:
+
+- **Root cause of "nothing visible" was over-determined, not a single
+  bug.** The z-index fix (`5277c55`) was real and necessary, but on top
+  of it the lottie layer added its own uncertain mount/autoplay path
+  (hypotheses 2–4), and the asset itself was too small/short to read on
+  a dark 400px card even when correctly stacked (hypothesis 0). Any one
+  of these could leave "just the card". Rather than bisect them live on
+  the dev machine, the redesign removes them all at once.
+- **Fix: dropped lottie entirely; the celebration is now pure CSS.** The
+  confetti is a layered-radial-gradient spray on `.rail-card::after`
+  (warm core + six offset colour sparks + outer coral glow, `inset:
+  -60px`), an expanding hoop on `.rail-card.pulse-goal::before`, and the
+  existing scale overshoot on the card — all driven by the `pulse-goal`
+  class the `StatusRailCard` state machine already applies for ~620ms,
+  play-once, keyed on `signal === "goal"` only. No element mounts, so
+  there is no mount/autoplay path left to fail; no negative z-index, so
+  the opaque-background trap can't recur.
+- **Removed:** `lottie-react` (dependency + lockfile), the
+  `goal-celebration.json` asset, and `GoalCelebration.tsx`. This also
+  makes plan 018's lazy-lottie step moot (noted in `plans/README.md`).
+- **Red-card strobe** (`pulse-red`) is untouched and still fires; a
+  signal-less High-priority push (e.g. cmux "needs input") plays
+  neither pulse — covered by `StatusRailCard.test.tsx`.
+- **Reduce-motion:** the existing `@media (prefers-reduced-motion:
+  reduce)` block now also covers the new `::before` ring; the decision —
+  reduce-motion ⇒ *deliberately nothing* (card still renders + announces)
+  — is recorded in `docs/ARCHITECTURE.md` §4.
+- **Gates:** `npx vitest run` (64 pass), `npx tsc --noEmit`, and
+  `npx vite build` all green.
+
+**Still owed by the operator (headless executor cannot do these):** the
+live cold-start eyeball on the mac mini per the acceptance script above —
+goal push shows an unmissable ~620ms burst + overshoot + ring; red-card
+push shows the strobe; signal-less push shows neither — plus the macbook
+notch-mode check on the standing hardware checklist.
+
+One thing to judge in that eyeball (raised by the post-merge code
+review): the `::after` confetti paints *above* the card content
+(non-news content has no `z-index`, so the last-painted pseudo wins), and
+the redesigned spray has a near-opaque warm core (`rgba(255,224,130,0.95)`
+at the burst peak) — so the GOAL title/body may wash out for the ~200ms
+peak. If it reads badly, the smallest fix is to lift the content above
+the burst during the pulse (mirror the news pattern:
+`.rail-card.pulse-goal .compact, .rail-card.pulse-goal .manifest {
+position: relative; z-index: 1; }`), which leaves the confetti blooming
+behind readable text. A cheap follow-up noticed alongside it: the
+seven-gradient `background` lives on the base `.rail-card::after`, so
+every card rasterizes it at `opacity: 0`; moving it onto
+`.rail-card.pulse-goal::after` confines the cost to actual goal moments.

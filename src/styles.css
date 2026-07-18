@@ -65,26 +65,41 @@ body {
   --accent-soft: rgba(255, 107, 87, 0.28);
 }
 
-/* signature moment #1 — Goal: one celebratory burst over the card
-   surface, plus a quick scale overshoot on the card itself. plays once,
-   never loops (this sits in a persistent overlay). keyed by
-   <StatusRailCard> off slot.signal, never slot.priority.
+/* signature moment #1 — Goal: a bright confetti-spray burst over the
+   card surface, an expanding ring, plus a quick scale overshoot on the
+   card itself. plays once, never loops (this sits in a persistent
+   overlay). keyed by <StatusRailCard> off slot.signal, never
+   slot.priority.
+   pure CSS — no lottie, nothing to fetch or lazy-load (2026-07-18,
+   plan 023): the confetti is built from layered radial gradients on
+   ::after and an expanding ::before ring, so the whole moment is
+   self-contained and can't fail to mount.
    z-index 0, NOT -1 (2026-07-17 live smoke): the card background is
    opaque, so a negative-z layer paints behind it — rendered but
-   invisible. content sits at z-index 1, effects at 0, background below.
+   invisible. effects at 0 (over the surface, briefly), background below.
    `isolation` pins the stacking context so 0/-1 mean the card, not the
    page. */
 .rail-card {
   isolation: isolate;
 }
 
+/* the confetti spray: a warm core, six offset color sparks, and an
+   outer coral glow, all in one layered background so a single ::after
+   reads as a full particle field on the dark 400px card. */
 .rail-card::after {
   content: "";
   position: absolute;
-  inset: -40px;
+  inset: -60px;
   z-index: 0;
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(255, 107, 87, 0.5), transparent 70%);
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 224, 130, 0.95), transparent 40%),
+    radial-gradient(circle at 22% 32%, rgba(255, 107, 87, 0.9), transparent 12%),
+    radial-gradient(circle at 78% 30%, rgba(120, 224, 200, 0.85), transparent 12%),
+    radial-gradient(circle at 30% 74%, rgba(124, 157, 245, 0.85), transparent 12%),
+    radial-gradient(circle at 72% 72%, rgba(255, 196, 106, 0.9), transparent 12%),
+    radial-gradient(circle at 50% 16%, rgba(255, 255, 255, 0.9), transparent 10%),
+    radial-gradient(circle at 50% 50%, rgba(255, 107, 87, 0.55), transparent 68%);
   opacity: 0;
   pointer-events: none;
 }
@@ -97,12 +112,34 @@ body {
   animation: goal-burst 620ms ease-out;
 }
 
+/* the expanding ring — a thin bright hoop that shoots out from the
+   card centre. ::before only becomes a box under .pulse-goal, so news
+   cards (which own .news-shade::before) are never touched. */
+.rail-card.pulse-goal::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+  z-index: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 224, 130, 0.9);
+  opacity: 0;
+  pointer-events: none;
+  animation: goal-ring 620ms ease-out;
+}
+
 @keyframes goal-overshoot {
   0% {
     transform: scale(1);
   }
-  35% {
-    transform: scale(1.045);
+  30% {
+    transform: scale(1.06);
+  }
+  55% {
+    transform: scale(0.995);
   }
   100% {
     transform: scale(1);
@@ -112,15 +149,33 @@ body {
 @keyframes goal-burst {
   0% {
     opacity: 0;
-    transform: scale(0.6);
+    transform: scale(0.5) rotate(-8deg);
   }
-  40% {
-    opacity: 0.9;
-    transform: scale(1.15);
+  35% {
+    opacity: 1;
+    transform: scale(1.15) rotate(0deg);
+  }
+  70% {
+    opacity: 0.85;
+    transform: scale(1.4) rotate(4deg);
   }
   100% {
     opacity: 0;
-    transform: scale(1.5);
+    transform: scale(1.7) rotate(6deg);
+  }
+}
+
+@keyframes goal-ring {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  25% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(6);
   }
 }
 
@@ -148,6 +203,7 @@ body {
    they need this override in their own right. */
 @media (prefers-reduced-motion: reduce) {
   .rail-card.pulse-goal,
+  .rail-card.pulse-goal::before,
   .rail-card.pulse-goal::after,
   .rail-card.pulse-red {
     animation: none;
@@ -328,13 +384,6 @@ body {
   border-radius: 50%;
   background: #b6f5e5;
   box-shadow: 0 0 10px rgba(182, 245, 229, 0.75);
-}
-
-.goal-celebration {
-  position: absolute;
-  inset: -30px;
-  z-index: 0;
-  pointer-events: none;
 }
 
 /* ==== news card v5: category system (shader + masthead + pills) ==== */
