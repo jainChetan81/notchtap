@@ -62,11 +62,13 @@ first-draft reasoning:
    item's effective duration to change *while it's showing* (manual
    hotkey expand → "longer while expanded" — plan §3.6). A client-side
    timer armed at mount time cannot react to that after the fact.
-   **fix**: the 250ms tick decides rotation, full stop; the frontend
-   holds no duration logic at all, just plays a fixed-length CSS
-   transition whenever the pushed slot state changes. §5 covers this
-   in full — it is the largest single behavior change in this spec.
-   (unchanged by review — no issue found.)
+   **fix**: rotation is decided in the rust core by `tick()`, full
+   stop — driven since plan 015 by deadline-based wakeups
+   (`next_deadline` + a `tokio::sync::Notify`, see §4.4) rather than a
+   fixed interval; the frontend holds no duration logic at all, just
+   plays a fixed-length CSS transition whenever the pushed slot state
+   changes. §5 covers this in full — it is the largest single behavior
+   change in this spec. (unchanged by review — no issue found.)
 2. **supersede-while-visible grants a capped extension when remaining
    time is low, rather than resetting the clock, leaving it fully
    untouched, or granting unbounded top-ups.** a `Recurring` item's
@@ -101,11 +103,12 @@ first-draft reasoning:
    depend on *when* things arrived relative to tick(), not just
    priority. One promotion code path (`tick()`'s pop-highest) is
    simpler to reason about than two. See §4.2. Review confirmed this
-   is purely a latency optimization (worst case: one 250ms tick of
-   added delay) and never changes final promotion ordering, since
-   `tick()` runs unconditionally and periodically regardless of
-   whether the fast path ever fires — so its absence in any given case
-   is harmless, just slower by up to 250ms. (unchanged by review.)
+   is purely a latency optimization (worst case: one heartbeat wake of
+   added delay under the deadline-based wakeup model, plan 015 — see
+   §4.4) and never changes final promotion ordering, since `tick()`
+   still runs on every heartbeat wake regardless of whether the fast
+   path ever fires — so its absence in any given case is harmless,
+   just slower by one wake. (unchanged by review.)
 4. **a priority-changing supersede moves the item to the back of its
    new tier; a same-priority supersede never moves position.** the
    first draft let a topic's `priority` field change in place while

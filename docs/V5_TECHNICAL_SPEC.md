@@ -16,7 +16,7 @@ the tray, backed by the app's **first frontend→rust invoke surface** —
 scoped to that window alone.
 
 - **in**: a second webview window (`settings` label), a fourth tray
-  item, six invoke commands, config validation + atomic write +
+  item, seven invoke commands, config validation + atomic write +
   relaunch, a secrets write path (openrouter api key now, telegram
   folded in), a persisted `start_paused` kill switch, the `build.rs`
   command-acl opt-in that keeps the overlay receive-only, an

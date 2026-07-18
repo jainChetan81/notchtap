@@ -20,10 +20,12 @@ panel) is **done** — the invoke commands, config/secrets write paths,
 cheatsheet) are all built and tested as of 2026-07-17. the same day,
 `efa1bd2` (v5.1 appearance hot-apply + per-source test notifications)
 added two more invoke commands — `send_test_notification` and
-`set_appearance`, six invoke commands total — an Appearance section
+`set_appearance` (six commands at the time) — an Appearance section
 with card-shape presets, and per-source test-notification buttons. v6
 (commits `e1f1998`, `a693cf2`) added per-source priority, rotation-order
-tie-break, and cmux origin naming. decisions in `docs/ARCHITECTURE.md`
+tie-break, and cmux origin naming. plan 020 (`9774930`, 2026-07-18)
+added a seventh invoke command, `get_default_config` — seven invoke
+commands total as of that date. decisions in `docs/ARCHITECTURE.md`
 §17, plan in `docs/IMPLEMENTATION_PLAN.md` §4.5/§4.6, contract in
 `docs/V5_TECHNICAL_SPEC.md`. the tauri/rust/web project lives at repo
 root alongside
@@ -80,7 +82,9 @@ records now, not active contracts (same status as `BLIND_REVIEW.md`/
 - `npm run tauri dev` — run the app in dev mode
 - `npx tsc --noEmit` — typecheck the frontend
 - `npx vite build` — build the frontend
-- `npx biome check .` — frontend lint + format gate (biome; `npm run lint:fix` auto-applies)
+- `npx biome check .` — frontend lint + format, local dev command
+  (`npm run lint:fix` auto-applies); the enforcing gate CI and
+  `just check-web` run is `npx biome ci .`
 - `cargo build` (run from `src-tauri/`) — build the rust core; requires
   the rust toolchain (`rustup`) on the target mac
 - `cargo test` (run from `src-tauri/`) — rust unit + integration tests
@@ -95,8 +99,10 @@ records now, not active contracts (same status as `BLIND_REVIEW.md`/
   positional form; the cli is a committed shell script at repo root
 - `just test-all` — one-command local verification mirroring
   `.github/workflows/ci.yml` exactly (see `justfile` at repo root for
-  the full recipe list: `dev`, `test-rust`, `check-rust`, `test-web`,
-  `check-web`, `audit-web`, `build-web`, `check-cli`, `check-swift`).
+  the full recipe list: `setup`, `dev`, `test-rust`, `check-rust`,
+  `test-web`, `check-web`, `audit-web`, `build-web`, `check-cli`,
+  `check-swift`). on a fresh clone, run `just setup` (`npm ci`) first —
+  `test-all` does not install web deps for you.
   `just push "title" "body"` wraps the `./notchtap` cli call above.
   `just` is not installed on the dev machine yet — `brew install just`
   first.
@@ -174,7 +180,7 @@ the rust core sends it.
 **v5 amendment (rust side built 2026-07-17)**: the receive-only
 rule above now applies to the *overlay* window (`main`), permanently.
 the settings window (`settings` label, `src-tauri/src/settings.rs`)
-has six
+has seven
 invoke commands, gated per-window. critical tauri v2 gotcha: app-
 defined commands are allowed to **every** window by
 default — the gate only exists with the `tauri_build::AppManifest::

@@ -512,6 +512,14 @@ every window, which would silently void this section). one-way data
 flow into the overlay remains the rule that keeps v3-style untrusted
 content safe.
 
+**amended 2026-07-18**: the settings window's invoke-command count grew
+past the four quoted above — v5.1 (`efa1bd2`) added `send_test_notification`
+and `set_appearance` (six), and plan 020 (`9774930`) added
+`get_default_config` — seven invoke commands total as of that date. the
+mechanism described above (the `build.rs` opt-in gating a per-window
+acl) is unchanged; only the count grew. `src-tauri/build.rs` and
+`V5_TECHNICAL_SPEC.md` §2 remain the authoritative list.
+
 this boundary matters if the app ever processes untrusted content (e.g.,
 whatsapp messages from unknown senders in v3). establishing the
 one-way data flow in v1 means v3 doesn't accidentally open a hole.
