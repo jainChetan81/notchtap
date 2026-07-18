@@ -13,6 +13,7 @@ mod presentation;
 pub mod queue;
 mod rss_poller;
 mod settings;
+mod status;
 
 use std::sync::{Arc, Mutex as StdMutex, Once, OnceLock};
 use std::time::{Duration, Instant};
@@ -27,6 +28,7 @@ use crate::config::Config;
 use crate::event::emit_slot_state;
 use crate::queue::SingleSlotQueue;
 use crate::settings::AppearanceChangedPayload;
+use crate::status::{emit_status_state, status_state_if_changed, LiveMatchSummary, StatusState};
 
 #[cfg(target_os = "macos")]
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
@@ -115,6 +117,11 @@ pub fn run() {
     // mutation site wakes the heartbeat so it recomputes its next rotation
     // deadline instead of polling on a fixed interval.
     let wake = Arc::new(tokio::sync::Notify::new());
+    // plan 034: the live-match summary the espn poller refreshes at the end
+    // of each poll pass and the heartbeat reads for the status-state rail.
+    // std mutex — the critical section is one clone, never held across an
+    // await, and never held at the same time as the queue lock.
+    let live_match: Arc<StdMutex<Option<LiveMatchSummary>>> = Arc::new(StdMutex::new(None));
     let start_paused = config.start_paused;
     // v5 settings window reads the *booted* config via get_config —
     // managed as state in setup, after the fields below are cloned out.
@@ -176,6 +183,9 @@ pub fn run() {
     let tray_wake = wake.clone();
     #[cfg(target_os = "macos")]
     let hotkey_wake = wake.clone();
+    let heartbeat_live = live_match.clone();
+    let espn_live = live_match.clone();
+    let page_load_live = live_match.clone();
     let server_once = Arc::new(Once::new());
 
     tauri::Builder::default()
@@ -339,7 +349,14 @@ pub fn run() {
             // ARCHITECTURE.md §17's "richer than a toggle lives in
             // Settings" rule). Each poller below simply doesn't spawn when
             // its `_enabled` flag is false.
-            spawn_heartbeat(app.handle().clone(), setup_queue.clone(), setup_wake);
+            spawn_heartbeat(
+                app.handle().clone(),
+                setup_queue.clone(),
+                setup_wake,
+                heartbeat_live,
+                espn_enabled,
+                rss_enabled,
+            );
 
             // espn poller (v2 spec §3) — config-gated: `espn_enabled =
             // false` means it never spawns. first poll only baselines
@@ -355,6 +372,7 @@ pub fn run() {
                     espn_poll_secs,
                     espn_ttl_secs,
                     espn_priority,
+                    espn_live,
                 );
             }
             if rss_enabled {
@@ -401,6 +419,26 @@ pub fn run() {
                     let safe_json = escape_for_eval_splice(&state_json);
                     let _ = webview.eval(format!("window.__NOTCHTAP_SLOT_STATE__ = {safe_json};"));
                     emit_slot_state(&app_handle, current_state);
+                }
+
+                // plan 034: the status rail gets the identical dual-path
+                // race shield — eval-planted global for late-mounting
+                // react, one emit for an already-registered listener, same
+                // escaping helper. Lock discipline: the live-match handle
+                // is read/cloned/dropped BEFORE the queue lock (nobody
+                // holds both at once), same as the heartbeat.
+                {
+                    let live_summary = page_load_live.lock().unwrap().clone();
+                    let current_status = {
+                        let q = eval_queue.blocking_lock();
+                        StatusState::snapshot(&q, live_summary, espn_enabled, rss_enabled)
+                    };
+                    let status_json =
+                        serde_json::to_string(&current_status).unwrap_or_else(|_| "null".into());
+                    let safe_json = escape_for_eval_splice(&status_json);
+                    let _ =
+                        webview.eval(format!("window.__NOTCHTAP_STATUS_STATE__ = {safe_json};"));
+                    emit_status_state(&app_handle, current_status);
                 }
 
                 // Double-shield the initial appearance values the same way as
@@ -685,12 +723,23 @@ fn spawn_heartbeat<R: tauri::Runtime>(
     app: tauri::AppHandle<R>,
     queue: Arc<Mutex<SingleSlotQueue>>,
     wake: Arc<tokio::sync::Notify>,
+    live: Arc<StdMutex<Option<LiveMatchSummary>>>,
+    espn_enabled: bool,
+    rss_enabled: bool,
 ) {
     // Deadline-based (plan 015): sleeps until the visible item's rotation
     // deadline (or forever when idle) and is woken by any queue mutation.
     // Replaces the fixed 250ms tick — same observable behavior, ~0 idle
     // wakeups. A small grace addition avoids sub-ms re-loops at the edge.
+    //
+    // plan 034: the heartbeat is also the SOLE status-state emitter.
+    // Every mutation already reaches it — plan 015's shared Notify is
+    // fired by `enqueue_and_emit` (all push paths), both pollers, and the
+    // hotkey/tray handlers — so each loop pass recomputes the StatusState
+    // under the same queue lock as the slot-state tick and emits only
+    // when it differs from the previous pass (`last_status`).
     tauri::async_runtime::spawn(async move {
+        let mut last_status: Option<StatusState> = None;
         loop {
             // Arm the wake waiter *while holding the queue lock* (plan 036):
             // every mutation site locks the queue before mutating and calls
@@ -703,10 +752,18 @@ fn spawn_heartbeat<R: tauri::Runtime>(
             let notified = wake.notified();
             tokio::pin!(notified);
             let deadline = {
+                // plan 034 lock discipline: read/clone/drop the live-match
+                // handle BEFORE locking the queue — nobody holds both at
+                // the same time.
+                let live_summary = live.lock().unwrap().clone();
                 let mut q = queue.lock().await;
                 q.tick(Instant::now());
                 if let Some(state) = q.slot_state_if_changed() {
                     emit_slot_state(&app, state);
+                }
+                let status = StatusState::snapshot(&q, live_summary, espn_enabled, rss_enabled);
+                if let Some(changed) = status_state_if_changed(&mut last_status, status) {
+                    emit_status_state(&app, changed);
                 }
                 notified.as_mut().enable();
                 q.next_deadline()
@@ -1077,7 +1134,14 @@ mod tests {
         let queue = Arc::new(Mutex::new(SingleSlotQueue::new(50)));
         let heartbeat_wake = wake();
 
-        spawn_heartbeat(app.handle().clone(), queue.clone(), heartbeat_wake.clone());
+        spawn_heartbeat(
+            app.handle().clone(),
+            queue.clone(),
+            heartbeat_wake.clone(),
+            Arc::new(StdMutex::new(None)),
+            false,
+            false,
+        );
 
         let short_lived = Event {
             id: uuid::Uuid::new_v4(),
@@ -1130,7 +1194,14 @@ mod tests {
         let queue = Arc::new(Mutex::new(SingleSlotQueue::new(50)));
         let heartbeat_wake = wake();
 
-        spawn_heartbeat(app.handle().clone(), queue.clone(), heartbeat_wake.clone());
+        spawn_heartbeat(
+            app.handle().clone(),
+            queue.clone(),
+            heartbeat_wake.clone(),
+            Arc::new(StdMutex::new(None)),
+            false,
+            false,
+        );
 
         // Give the heartbeat time to finish its first iteration and reach
         // the idle park before the enqueue arrives.

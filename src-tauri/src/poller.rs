@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::sync::Arc;
+use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
@@ -11,6 +11,7 @@ use crate::event::{
     RotationSpec, SlotState, SourceKind,
 };
 use crate::queue::SingleSlotQueue;
+use crate::status::LiveMatchSummary;
 
 // ---------------------------------------------------------------------------
 // scoreboard wire shape — minimal, tolerant structs for the fields the diff
@@ -37,6 +38,10 @@ pub struct SbEvent {
 pub struct SbStatus {
     #[serde(rename = "type")]
     pub status_type: SbStatusType,
+    // espn's own clock text ("45'", "120'") — the idle rail's live chip
+    // shows it verbatim as the match minute (plan 034).
+    #[serde(rename = "displayClock", default)]
+    pub display_clock: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -131,6 +136,12 @@ pub struct MatchSnapshot {
     pub away_score: u32,
     pub state: String,
     pub status_name: String,
+    /// espn's displayClock at last sighting ("45'"). Tracked here (not
+    /// read off the raw feed) so the idle rail's live chip survives the
+    /// absent-poll carry-forward below instead of flickering off during a
+    /// transient feed blip. Never diffed — clock advance alone emits no
+    /// queue event.
+    pub display_clock: String,
     pub cards: usize,
     /// consecutive polls this match has been absent from its league's
     /// feed. reset to 0 whenever it appears; evicted at
@@ -248,6 +259,7 @@ fn view(event: &SbEvent) -> MatchView<'_> {
             away_score,
             state: event.status.status_type.state.clone(),
             status_name: event.status.status_type.name.clone(),
+            display_clock: event.status.display_clock.clone(),
             cards,
             missed_polls: 0,
         },
@@ -452,6 +464,34 @@ pub fn diff_scoreboard(
     (out, next)
 }
 
+/// plan 034: the idle rail's live-match chip, computed over the poll
+/// loop's whole snapshot map (every watched league). The first in-play
+/// match wins — deterministic (league slug, then match id) because
+/// HashMap iteration order is not; a second simultaneous live match is
+/// deliberately out of scope (plan 034's STOP list: multi-live layout is
+/// an operator decision, not a guess). `None` when nothing is in-play.
+pub fn live_match_summary(snapshots: &HashMap<String, Snapshot>) -> Option<LiveMatchSummary> {
+    let mut leagues: Vec<(&String, &Snapshot)> = snapshots.iter().collect();
+    leagues.sort_by(|a, b| a.0.cmp(b.0));
+    for (_league, snapshot) in leagues {
+        let mut matches: Vec<(&String, &MatchSnapshot)> = snapshot.iter().collect();
+        matches.sort_by(|a, b| a.0.cmp(b.0));
+        if let Some((_id, m)) = matches.into_iter().find(|(_, m)| m.state == "in") {
+            return Some(LiveMatchSummary {
+                // "Home X–Y Away" (plan 034 step 2) — deliberately NOT
+                // matchup()'s away-first, league-tagged orientation: the
+                // rail chip is a glanceable readout, not an alert title.
+                label: format!(
+                    "{} {}–{} {}",
+                    m.home_abbrev, m.home_score, m.away_score, m.away_abbrev
+                ),
+                minute: m.display_clock.clone(),
+            });
+        }
+    }
+    None
+}
+
 // ---------------------------------------------------------------------------
 // per-league backoff (v2 spec §3): 30s → 60s → 120s → … cap 300s, reset on
 // that league's first success. pure state machine, unit-tested directly.
@@ -544,10 +584,10 @@ pub(crate) fn enqueue_and_fan_out(
     queue.slot_state_if_changed()
 }
 
-// 8 args trips clippy 1.97's too_many_arguments; the spawn signature grew
-// one handle per shipped phase (connectors v3, pause/active v5) — bundling
-// them into a struct is tracked as tech-debt, not worth churning the call
-// sites for a lint.
+// 9 args trips clippy 1.97's too_many_arguments; the spawn signature grew
+// one handle per shipped phase (connectors v3, pause/active v5, live-match
+// handle plan 034) — bundling them into a struct is tracked as tech-debt,
+// not worth churning the call sites for a lint.
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_espn_poller(
     app: tauri::AppHandle,
@@ -558,6 +598,7 @@ pub fn spawn_espn_poller(
     poll_secs: u64,
     ttl_secs: u64,
     priority: Priority,
+    live: Arc<StdMutex<Option<LiveMatchSummary>>>,
 ) {
     tauri::async_runtime::spawn(async move {
         let client = match reqwest::Client::builder()
@@ -624,6 +665,27 @@ pub fn spawn_espn_poller(
                 if let Some(state) = slot_change {
                     emit_slot_state(&app, state);
                 }
+            }
+
+            // plan 034: refresh the idle rail's live-match chip once per
+            // poll pass, over every watched league's snapshot — the single
+            // chokepoint where a tick ends. The heartbeat is the sole
+            // status-state emitter; the poller's only status-side act is
+            // this write plus a wake when (and only when) the summary
+            // actually changed. Lock discipline: the queue lock above is
+            // already released — nobody holds both at once.
+            let summary = live_match_summary(&snapshots);
+            let summary_changed = {
+                let mut guard = live.lock().unwrap();
+                if *guard == summary {
+                    false
+                } else {
+                    *guard = summary;
+                    true
+                }
+            };
+            if summary_changed {
+                wake.notify_waiters();
             }
         }
     });
@@ -715,6 +777,48 @@ mod tests {
 
         let (snap_ucl, _) = baseline(UCL);
         assert!(snap_ucl.is_empty()); // the one UCL game is already final
+    }
+
+    #[test]
+    fn live_summary_is_none_when_nothing_is_in_play() {
+        // all four USA-fixture matches are "pre" — no chip
+        let (snap, _) = baseline(USA);
+        let mut snapshots = HashMap::new();
+        snapshots.insert("usa.1".to_string(), snap);
+        assert_eq!(live_match_summary(&snapshots), None);
+    }
+
+    #[test]
+    fn live_summary_populates_from_an_in_play_fixture_match() {
+        let (snap, mut sb) = baseline(USA);
+        sb.events[0].status.status_type.state = "in".to_string();
+        sb.events[0].status.display_clock = "45'".to_string();
+        let (_, next) = diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High);
+
+        let mut snapshots = HashMap::new();
+        snapshots.insert("usa.1".to_string(), next);
+        // MTL is home, TOR away (real_fixture_parses) — the chip label is
+        // "Home X–Y Away", the minute espn's displayClock verbatim.
+        assert_eq!(
+            live_match_summary(&snapshots),
+            Some(LiveMatchSummary {
+                label: "MTL 0–0 TOR".to_string(),
+                minute: "45'".to_string(),
+            })
+        );
+    }
+
+    #[test]
+    fn live_summary_clears_when_the_match_goes_full_time() {
+        let (mut snap, mut sb) = baseline(USA);
+        snap.get_mut("761659").unwrap().state = "in".to_string();
+        sb.events[0].status.status_type.state = "post".to_string();
+        let (_, next) = diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High);
+
+        let mut snapshots = HashMap::new();
+        snapshots.insert("usa.1".to_string(), next);
+        // full-time evicts the only in-play match — chip off
+        assert_eq!(live_match_summary(&snapshots), None);
     }
 
     #[test]
