@@ -5,7 +5,7 @@
 > If anything in "STOP conditions" occurs, stop and report. When done,
 > update this plan's status row in `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat cd64e19..HEAD -- AGENTS.md CLAUDE.md package.json .github/workflows/ci.yml`
+> **Drift check (run first)**: `git diff --stat 4af5e8e..HEAD -- AGENTS.md CLAUDE.md package.json .github/workflows/ci.yml`
 > (Read-only inputs; this plan creates a new file plus doc edits.)
 
 ## Status
@@ -13,12 +13,12 @@
 - **Priority**: P3
 - **Effort**: S
 - **Risk**: LOW
-- **Depends on**: none — 007 is DONE (its `--locked` cargo gates and
-  `sh -n notchtap` are baked into the sample below, not conditional).
-  016 (biome) was IN FLIGHT at review time: check ci.yml for a biome
-  step at execution time and mirror it in `check-web` if present
+- **Depends on**: none — both 007 and 016 are DONE. Their gates
+  (`--locked` cargo from 007; `sh -n notchtap`; `npx biome ci .` from
+  016) are all baked into the sample below unconditionally — no
+  execution-time judgment call remains
 - **Category**: dx
-- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `b43a7ca` 2026-07-18; **review-plan pass 2026-07-18 at `cd64e19`** — drift verified trivial (package.json: only 023's lottie removal; AGENTS.md:96 / CLAUDE.md:98 "consider adding" paragraphs confirmed in place; ci.yml unchanged since 007). Sample justfile corrected to mirror CI exactly: `--locked` baked in (007 already landed — the plan's conditional was stale), `audit-web` + `check-swift` recipes added (they're CI gates the sample had omitted), `just -n` fallback row fixed to name a real recipe. **Pass 3 same day, also at `cd64e19`** — re-verified ci.yml gate list, AGENTS.md:96/CLAUDE.md:98 (line refs corrected from stale ~76–80), 016 still TODO/no biome step in ci.yml, `"tauri"` script present in package.json; added: `just`-absent fact (confirmed on this machine) with named manual-fallback commands, cargo PATH-prefix quirk, stage-by-name git guidance for the shared working tree, red-baseline STOP condition, grep exit-code clarification in Step 3's verify, and a brew-install note requirement for the doc edits.
+- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `b43a7ca` 2026-07-18; **review-plan pass 2026-07-18 at `cd64e19`** — drift verified trivial (package.json: only 023's lottie removal; AGENTS.md:96 / CLAUDE.md:98 "consider adding" paragraphs confirmed in place; ci.yml unchanged since 007). Sample justfile corrected to mirror CI exactly: `--locked` baked in (007 already landed — the plan's conditional was stale), `audit-web` + `check-swift` recipes added (they're CI gates the sample had omitted), `just -n` fallback row fixed to name a real recipe. **Pass 3 same day, also at `cd64e19`** — re-verified ci.yml gate list, AGENTS.md:96/CLAUDE.md:98 (line refs corrected from stale ~76–80), 016 still TODO/no biome step in ci.yml, `"tauri"` script present in package.json; added: `just`-absent fact (confirmed on this machine) with named manual-fallback commands, cargo PATH-prefix quirk, stage-by-name git guidance for the shared working tree, red-baseline STOP condition, grep exit-code clarification in Step 3's verify, and a brew-install note requirement for the doc edits. **Pass 4 (execute pre-dispatch reconcile) 2026-07-18 at `4af5e8e`** — plan 016 (biome) landed + committed since pass 3: ci.yml web job now runs `npx biome ci .` (line 49, before `npm audit`/`tsc`); AGENTS.md:83 + CLAUDE.md:85 gained an `npx biome check .` command line; the "consider adding" paragraphs remain (AGENTS.md:97 / CLAUDE.md:99). Reconciled: baked `npx biome ci .` into `check-web` unconditionally (removed the 016 conditional), refreshed drift baseline to `4af5e8e`, updated Depends-on. Full CI web-job order to mirror: `biome ci` → `npm audit` → `tsc` → `vitest` → `vite build` → `sh -n`.
 
 ## Why this matters
 
@@ -113,8 +113,9 @@ check-rust:
 test-web:
     npx vitest run
 
+# lint/format + typecheck (biome from plan 016, then tsc — CI order)
 check-web:
-    npx tsc --noEmit
+    npx biome ci . && npx tsc --noEmit
 
 audit-web:
     npm audit --audit-level=high
@@ -146,10 +147,10 @@ already mirrors CI as of 2026-07-18 (`--locked` from 007, `sh -n`,
 cargo-audit` — if the binary exists on your machine, add an
 `audit-rust: cargo audit` recipe to `test-all` and note it in your
 report; otherwise skip it and say so) and **`npm ci`** (local dev uses
-the existing `node_modules`). **If plan 016 (biome) has landed by
-execution time** — check `.github/workflows/ci.yml` for an
-`npx biome ci .` step — add `npx biome ci .` to `check-web`; if ci.yml
-has no biome step, leave `check-web` as written.
+the existing `node_modules`). Plan 016 (biome) has already landed —
+`npx biome ci .` is baked into `check-web` above, matching ci.yml's
+web job (biome runs first, before `npm audit` and `tsc`). No
+execution-time conditional remains; the sample is CI-exact as written.
 
 **Verify**: if `just` is installed: `just --list` shows all recipes and `just check-cli` exits 0. If not installed (the expected case — see Current state): verify manually by running, by hand from the stated directory, at minimum `sh -n notchtap` (repo root), `cd src-tauri && cargo test --locked`, and `npx vitest run` (repo root) — each exit 0; state in your report that `just` itself was unavailable so the recipes were hand-verified.
 
@@ -205,9 +206,10 @@ None — the justfile is itself a test runner; Step 2 is the proof.
 
 - The justfile mirrors CI — every future CI step addition gets a matching
   recipe edit (reviewers: check both files move together).
-- Plan 016 (biome) also edits AGENTS.md/CLAUDE.md (adds one lint line to
-  each commands section) and adds the ci.yml biome step — same two doc
-  files, different regions; whoever lands second reconciles textually,
-  and if 016 landed first, `check-web` gains the biome line per Step 1.
+- Plan 016 (biome) already landed: it added the `npx biome check .`
+  command line to AGENTS.md:83 / CLAUDE.md:85 and the `npx biome ci .`
+  ci.yml step. This plan's `check-web` mirrors that. The doc edits in
+  Step 3 touch a different region (the "consider adding" paragraph +
+  commands list), so no textual conflict with 016's lines.
 - Plan 004 has landed; its AGENTS/CLAUDE edits are simply the text you
   see — no reconciliation conditional remains.
