@@ -45,16 +45,15 @@ not about a bug being found.
   records it as a "direction surfaced ... not selected for plans" that
   became this spike plan (031) and its sibling (030) — deferred, not
   killed.
-- Plan 037 (the Engine — `plans/037-engine-propagation-module.md`) is
-  filed but its own header records dependency gates that haven't been
-  satisfied; it has not landed. `CONTEXT.md:44-51`'s **Engine** entry
-  agrees: "today its guarantees are a convention spread across several
-  code paths." This design is written against *today's* code paths
-  (`queue.rs`, `poller.rs`); if 037 lands first, the eventual build plan
-  re-grounds against the Engine module, but the semantics below (topic
-  identity, rotation kind, supersede/requeue behavior) carry over
-  unchanged — 037 is a propagation-mechanism refactor, not a semantics
-  change.
+- Plan 037 (the Engine — `plans/037-engine-propagation-module(done).md`)
+  has since landed (merged 2026-07-19 as `src-tauri/src/engine.rs`):
+  every Slot mutation now flows through the Engine, and `CONTEXT.md`'s
+  **Engine** entry describes the guarantee as structural, not a
+  convention. This design was written against the pre-037 code paths
+  (`queue.rs`, `poller.rs`); the eventual build plan re-grounds against
+  the Engine module, but the semantics below (topic identity, rotation
+  kind, supersede/requeue behavior) carry over unchanged — 037 was a
+  propagation-mechanism refactor, not a semantics change.
 
 ---
 
