@@ -6,7 +6,7 @@
 > in "STOP conditions" occurs, stop and report. When done, update this
 > plan's status row in `plans/README.md`.
 >
-> **Drift check (run first)**: `git diff --stat d40445e..HEAD -- src-tauri/src/rss_poller.rs`
+> **Drift check (run first)**: `git diff --stat b43a7ca..HEAD -- src-tauri/src/rss_poller.rs`
 > On any change, compare excerpts below; mismatch = STOP.
 
 ## Status
@@ -16,7 +16,7 @@
 - **Risk**: LOW
 - **Depends on**: none (010 touches a different file's client; no conflict)
 - **Category**: bug / tests
-- **Planned at**: commit `d40445e`, 2026-07-17
+- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `b43a7ca` 2026-07-18 (excerpts re-verified unchanged)
 
 ## Why this matters
 
@@ -234,10 +234,31 @@ Add unit tests (plain `#[test]`, pure functions):
   the output content — e.g. starts with `&&&` and has ≤240 chars — not on
   wall time; the bounded lookahead + prefix make it structurally linear).
 - `entities_still_decode_at_boundaries` — `"&amp;"`, `"&#x1F600;"`-class
-  cases if `decode_entity` supports them (read it first), an `&` with the
-  `;` exactly 10 chars away (not decoded — emitted literally), and an
+  cases if `decode_entity` supports them (read it first), plus a real
+  boundary pair (not a mislabeled one — see below), and an
   existing-behavior case copied from the current tests to prove no
   regression.
+
+  **On the boundary case, work out the arithmetic, don't eyeball it.**
+  With `window_end = (index + 1 + MAX_ENTITY_LEN).min(chars.len())` and a
+  search over `chars[index + 1..window_end]`, the slice holds exactly
+  `MAX_ENTITY_LEN` characters — i.e. the entity text (between `&` and
+  `;`, exclusive of both) can be **up to 10 chars long and still be
+  found**; 11+ chars pushes the `;` outside the window. A naive "put `;`
+  10 chars after `&`" case actually lands *inside* the window (found),
+  the opposite of what "not decoded" implies — so don't write that case
+  literally as described above; if you do, it will contradict the very
+  code in Step 2(a) and you'll waste a cycle chasing a phantom bug.
+  Also note: an unrecognized entity name is emitted literally regardless
+  of whether it was found within the window or truncated away, so a case
+  using gibberish text doesn't exercise the cutoff at all — you need a
+  name `decode_entity` actually recognizes for the boundary to matter.
+  Numeric entities tolerate leading zeros, so pad one to hit an exact
+  length: `"&#x0001F600;"` (entity text `#x0001F600`, 10 chars) must
+  still decode to `'\u{1F600}'` (the grinning-face emoji), while
+  `"&#x00001F600;"` (entity text `#x00001F600`, 11 chars) must NOT decode
+  and must emit the literal `&#x00001F600;` text unchanged — that pair is
+  the one that actually fails if `MAX_ENTITY_LEN`'s bound regresses.
 
 **Verify**: `cargo test rss_poller::` → all pass, including every pre-existing sanitize/fixture test (behavior-identical for real input is the requirement).
 
@@ -265,11 +286,20 @@ still pass unchanged (same observable contract).
 
 ### Step 4: Docs
 
-`docs/TESTING_STRATEGY.md`: bump §0's rss_poller count by the tests
-added; in §4.12, replace the "conditional-GET … http mechanics reuse
-§4.7's 'fetch loop stays thin' boundary" sentence with one stating
-`fetch_feed`'s decision surface (304 / validator ordering / size cap) is
-now wiremock-tested, and only the spawn loop remains thin-by-design.
+`docs/TESTING_STRATEGY.md` §0 (line ~19) is a single line: `225 tests —
+settings 38, queue 47, http 26, notifier 23, rss_poller 21, poller 19,
+event 17, config 17, presentation 11, lib (hotkey) 6`. Bump BOTH the
+`rss_poller N` sub-count by the number of tests actually added in Steps 1
+and 2, AND the leading total (`225`) by the same delta — the sub-counts
+must keep summing to the total, since this line is the only place these
+counts live (per this repo's `CLAUDE.md`).
+
+In §4.12 (~line 530), replace the "conditional-GET … http mechanics
+reuse §4.7's 'fetch loop stays thin' boundary" clause (it's the second
+half of the "untested by design" bullet, after the shader/reduced-motion
+clause — leave that first half alone) with one stating `fetch_feed`'s
+decision surface (304 / validator ordering / size cap) is now
+wiremock-tested, and only the spawn loop remains thin-by-design.
 
 **Verify**: `cargo test` still green.
 
@@ -284,12 +314,17 @@ changed where it shouldn't).
 ## Done criteria
 
 - [ ] `cargo test` exits 0; new tests present
-      (`cargo test rss_poller:: 2>&1 | grep -c "test result"` shows the module ran; count ≥ 28)
+      (`cargo test rss_poller:: 2>&1 | grep -oE '[0-9]+ passed' | head -1` →
+      the number is ≥ 28. Do NOT use `grep -c "test result"` for this — that
+      counts summary-line occurrences, one per compiled test binary, which
+      is 2 today regardless of how many tests exist inside rss_poller, and
+      will never read as a test count.)
 - [ ] `grep -c "MAX_ENTITY_LEN" src-tauri/src/rss_poller.rs` → ≥2
 - [ ] `grep -c "chunk()" src-tauri/src/rss_poller.rs` → ≥1
 - [ ] `grep -c "response.bytes().await" src-tauri/src/rss_poller.rs` → 0
 - [ ] clippy/fmt gates exit 0
-- [ ] `docs/TESTING_STRATEGY.md` §0 + §4.12 updated
+- [ ] `docs/TESTING_STRATEGY.md` §0 + §4.12 updated — §0's `rss_poller N`
+      sub-count and its leading total both moved by the same delta
 - [ ] `plans/README.md` status row updated
 
 ## STOP conditions
