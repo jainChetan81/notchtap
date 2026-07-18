@@ -1,5 +1,5 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import type { SlotState } from "./useSlotState";
 
@@ -15,7 +15,9 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 function emit(payload: SlotState) {
   act(() => {
-    handlers.forEach((handler) => handler({ payload }));
+    handlers.forEach((handler) => {
+      handler({ payload });
+    });
   });
 }
 

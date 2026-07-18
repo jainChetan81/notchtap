@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { SettingsApp, type Config, type SecretStatus } from "./SettingsApp";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { type Config, type SecretStatus, SettingsApp } from "./SettingsApp";
 
 const config: Config = {
   port: 4321,
@@ -16,7 +16,11 @@ const config: Config = {
   espn_ttl_secs: 22,
   rss_enabled: true,
   rss_feeds: [
-    { url: "https://example.com/world.xml", source: "Example", category: "world" },
+    {
+      url: "https://example.com/world.xml",
+      source: "Example",
+      category: "world",
+    },
     { url: "https://example.com/tech.xml", source: null, category: null },
   ],
   rss_poll_secs: 90,
@@ -97,7 +101,9 @@ describe("SettingsApp", () => {
     expect(screen.getByRole("button", { name: "Connectors & Keys" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Shortcuts" })).toBeTruthy();
 
-    const appearance = screen.getByRole("button", { name: "Appearance" }) as HTMLButtonElement;
+    const appearance = screen.getByRole("button", {
+      name: "Appearance",
+    }) as HTMLButtonElement;
     expect(appearance.disabled).toBe(false);
 
     fireEvent.click(screen.getByRole("button", { name: "Football" }));
@@ -110,12 +116,19 @@ describe("SettingsApp", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Cmux" })).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Connectors & Keys" }));
-    expect(await screen.findByRole("heading", { level: 1, name: "Connectors & Keys" })).toBeTruthy();
+    expect(
+      await screen.findByRole("heading", {
+        level: 1,
+        name: "Connectors & Keys",
+      }),
+    ).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Shortcuts" }));
     expect(await screen.findByRole("heading", { level: 1, name: "Shortcuts" })).toBeTruthy();
     expect(await screen.findByText("Expand or collapse the slot (manual)")).toBeTruthy();
-    const shortcutTable = screen.getByRole("table", { name: "Keyboard shortcuts" });
+    const shortcutTable = screen.getByRole("table", {
+      name: "Keyboard shortcuts",
+    });
     expect(within(shortcutTable).getAllByText("active")).toHaveLength(6);
     expect(screen.queryAllByText("planned · not implemented")).toHaveLength(0);
   });
@@ -125,7 +138,9 @@ describe("SettingsApp", () => {
     render(<SettingsApp />);
 
     await screen.findByRole("heading", { level: 1, name: "General" });
-    const appearanceButton = screen.getByRole("button", { name: "Appearance" }) as HTMLButtonElement;
+    const appearanceButton = screen.getByRole("button", {
+      name: "Appearance",
+    }) as HTMLButtonElement;
     expect(appearanceButton.disabled).toBe(false);
 
     fireEvent.click(appearanceButton);
@@ -135,10 +150,18 @@ describe("SettingsApp", () => {
     expect(await screen.findByText("Generic alert (High priority, cmux)")).toBeTruthy();
     expect(await screen.findByText("News headline (Low priority)")).toBeTruthy();
     expect(await screen.findByText("GOAL")).toBeTruthy();
-    expect(await screen.findByText("Parliament passes the landmark digital rights bill")).toBeTruthy();
+    expect(
+      await screen.findByText("Parliament passes the landmark digital rights bill"),
+    ).toBeTruthy();
 
-    const appearanceSection = screen.getByRole("heading", { level: 1, name: "Appearance" }).closest("form") as HTMLElement;
-    expect(within(appearanceSection).getByRole("button", { name: "Send test notification" })).toBeTruthy();
+    const appearanceSection = screen
+      .getByRole("heading", { level: 1, name: "Appearance" })
+      .closest("form") as HTMLElement;
+    expect(
+      within(appearanceSection).getByRole("button", {
+        name: "Send test notification",
+      }),
+    ).toBeTruthy();
   });
 
   it("calls set_appearance with scale/radius/opacity, not card_scale/card_radius/card_opacity", async () => {
@@ -162,7 +185,11 @@ describe("SettingsApp", () => {
     fireEvent.click(within(scaleToggle).getByRole("button", { name: "Large" }));
 
     await waitFor(() => {
-      expect(setAppearance).toHaveBeenCalledWith({ scale: 1.15, radius: 8, opacity: 0.9 });
+      expect(setAppearance).toHaveBeenCalledWith({
+        scale: 1.15,
+        radius: 8,
+        opacity: 0.9,
+      });
     });
   });
 
@@ -174,7 +201,11 @@ describe("SettingsApp", () => {
     expect(screen.getByDisplayValue("14")).toBeTruthy();
     expect(screen.getByDisplayValue("75")).toBeTruthy();
     expect((screen.getByLabelText("Start paused") as HTMLInputElement).checked).toBe(true);
-    expect(screen.getByText("Waiting items promote high → medium → low. Priority chooses the next turn; it never interrupts the visible item.")).toBeTruthy();
+    expect(
+      screen.getByText(
+        "Waiting items promote high → medium → low. Priority chooses the next turn; it never interrupts the visible item.",
+      ),
+    ).toBeTruthy();
   });
 
   it("renders every save rejection message", async () => {
@@ -220,7 +251,7 @@ describe("SettingsApp", () => {
     await screen.findByRole("heading", { level: 1, name: "General" });
     fireEvent.click(screen.getByRole("button", { name: "Connectors & Keys" }));
 
-    const input = await screen.findByLabelText("OpenRouter API key") as HTMLInputElement;
+    const input = (await screen.findByLabelText("OpenRouter API key")) as HTMLInputElement;
     fireEvent.change(input, { target: { value: "sk-or-secret-9xyz" } });
     fireEvent.click(screen.getByRole("button", { name: "Save OpenRouter API key" }));
 
@@ -238,7 +269,7 @@ describe("SettingsApp", () => {
     mockLoads();
     render(<SettingsApp />);
 
-    const port = await screen.findByLabelText("Listener port") as HTMLInputElement;
+    const port = (await screen.findByLabelText("Listener port")) as HTMLInputElement;
     fireEvent.change(port, { target: { value: "5555" } });
     expect(port.value).toBe("5555");
 
@@ -257,14 +288,20 @@ describe("SettingsApp", () => {
     // before clicking, rather than assuming it's already there.
     await waitFor(() => {
       expect(
-        (screen.getByRole("button", { name: "Reset to defaults" }) as HTMLButtonElement).disabled,
+        (
+          screen.getByRole("button", {
+            name: "Reset to defaults",
+          }) as HTMLButtonElement
+        ).disabled,
       ).toBe(false);
     });
     fireEvent.click(screen.getByRole("button", { name: "Reset to defaults" }));
 
     expect((screen.getByLabelText("Listener port") as HTMLInputElement).value).toBe("9789");
     expect((screen.getByLabelText("Rotation seconds") as HTMLInputElement).value).toBe("8");
-    expect((screen.getByLabelText("Queue cap per priority tier") as HTMLInputElement).value).toBe("50");
+    expect((screen.getByLabelText("Queue cap per priority tier") as HTMLInputElement).value).toBe(
+      "50",
+    );
     expect((screen.getByLabelText("Start paused") as HTMLInputElement).checked).toBe(false);
     expect(selectedPriorityLabel(screen.getByLabelText("Manual push priority"))).toBe("Medium");
     expect(rotationOrderRowNames()).toEqual([
@@ -275,7 +312,9 @@ describe("SettingsApp", () => {
     ]);
 
     fireEvent.click(screen.getByRole("button", { name: "Football" }));
-    expect((await screen.findByLabelText("Enable ESPN scores") as HTMLInputElement).checked).toBe(true);
+    expect(((await screen.findByLabelText("Enable ESPN scores")) as HTMLInputElement).checked).toBe(
+      true,
+    );
     expect((screen.getByLabelText("Leagues") as HTMLTextAreaElement).value).toBe(
       "eng.1\nuefa.champions\nesp.1",
     );
@@ -347,17 +386,24 @@ describe("SettingsApp", () => {
 
     await screen.findByRole("heading", { level: 1, name: "General" });
     fireEvent.click(screen.getByRole("button", { name: "News" }));
-    const feeds = await screen.findByLabelText("Feeds") as HTMLTextAreaElement;
+    const feeds = (await screen.findByLabelText("Feeds")) as HTMLTextAreaElement;
     expect(feeds.value).toBe("https://example.com/world.xml\nhttps://example.com/tech.xml");
 
     fireEvent.change(feeds, {
-      target: { value: "https://example.com/world.xml/\nhttps://example.com/tech.xml" },
+      target: {
+        value: "https://example.com/world.xml/\nhttps://example.com/tech.xml",
+      },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save & Relaunch" }));
 
     await waitFor(() => expect(savedConfig).not.toBeNull());
+    // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above; the suggested ?. fix breaks tsc (CFA narrows savedConfig to null → never).
     expect(savedConfig!.rss_feeds).toEqual([
-      { url: "https://example.com/world.xml/", source: "Example", category: "world" },
+      {
+        url: "https://example.com/world.xml/",
+        source: "Example",
+        category: "world",
+      },
       { url: "https://example.com/tech.xml", source: null, category: null },
     ]);
   });
@@ -377,16 +423,23 @@ describe("SettingsApp", () => {
 
     await screen.findByRole("heading", { level: 1, name: "General" });
     fireEvent.click(screen.getByRole("button", { name: "News" }));
-    const feeds = await screen.findByLabelText("Feeds") as HTMLTextAreaElement;
+    const feeds = (await screen.findByLabelText("Feeds")) as HTMLTextAreaElement;
 
     fireEvent.change(feeds, {
-      target: { value: "https://different.example/rss.xml\nhttps://example.com/tech.xml" },
+      target: {
+        value: "https://different.example/rss.xml\nhttps://example.com/tech.xml",
+      },
     });
     fireEvent.click(screen.getByRole("button", { name: "Save & Relaunch" }));
 
     await waitFor(() => expect(savedConfig).not.toBeNull());
+    // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above; the suggested ?. fix breaks tsc (CFA narrows savedConfig to null → never).
     expect(savedConfig!.rss_feeds).toEqual([
-      { url: "https://different.example/rss.xml", source: null, category: null },
+      {
+        url: "https://different.example/rss.xml",
+        source: null,
+        category: null,
+      },
       { url: "https://example.com/tech.xml", source: null, category: null },
     ]);
   });
@@ -406,16 +459,32 @@ describe("SettingsApp", () => {
     const rows = screen.getAllByRole("listitem");
     const [newsRow, cmuxRow, manualRow, footballRow] = rows;
     expect(
-      (within(newsRow).getByRole("button", { name: /earlier/ }) as HTMLButtonElement).disabled,
+      (
+        within(newsRow).getByRole("button", {
+          name: /earlier/,
+        }) as HTMLButtonElement
+      ).disabled,
     ).toBe(true);
     expect(
-      (within(footballRow).getByRole("button", { name: /later/ }) as HTMLButtonElement).disabled,
+      (
+        within(footballRow).getByRole("button", {
+          name: /later/,
+        }) as HTMLButtonElement
+      ).disabled,
     ).toBe(true);
     expect(
-      (within(manualRow).getByRole("button", { name: /earlier/ }) as HTMLButtonElement).disabled,
+      (
+        within(manualRow).getByRole("button", {
+          name: /earlier/,
+        }) as HTMLButtonElement
+      ).disabled,
     ).toBe(false);
     expect(
-      (within(cmuxRow).getByRole("button", { name: /earlier/ }) as HTMLButtonElement).disabled,
+      (
+        within(cmuxRow).getByRole("button", {
+          name: /earlier/,
+        }) as HTMLButtonElement
+      ).disabled,
     ).toBe(false);
 
     fireEvent.click(within(manualRow).getByRole("button", { name: /earlier/ }));

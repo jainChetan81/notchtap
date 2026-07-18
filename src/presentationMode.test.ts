@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { PresentationMode } from "./presentationMode";
 import { usePresentationMode } from "./presentationMode";
 
@@ -36,7 +36,9 @@ describe("usePresentationMode", () => {
       await Promise.resolve(); // let listen() resolve and register
     });
     act(() => {
-      handlers.forEach((h) => h({ payload: { mode: "notch" } }));
+      handlers.forEach((h) => {
+        h({ payload: { mode: "notch" } });
+      });
     });
     expect(result.current).toBe("notch");
   });

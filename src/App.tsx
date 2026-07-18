@@ -1,8 +1,8 @@
-import { useEffect } from "react";
-import { MotionConfig } from "motion/react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { useSlotState } from "./useSlotState";
+import { MotionConfig } from "motion/react";
+import { useEffect } from "react";
 import { StatusRailCard } from "./components/StatusRailCard";
+import { useSlotState } from "./useSlotState";
 import "./styles.css";
 
 function applyAppearance(scale: number, radius: number, opacity: number) {
@@ -22,9 +22,12 @@ function App() {
     }
 
     let unlisten: UnlistenFn | undefined;
-    listen<{ scale: number; radius: number; opacity: number }>("appearance-changed", ({ payload }) => {
-      applyAppearance(payload.scale, payload.radius, payload.opacity);
-    }).then((fn) => {
+    listen<{ scale: number; radius: number; opacity: number }>(
+      "appearance-changed",
+      ({ payload }) => {
+        applyAppearance(payload.scale, payload.radius, payload.opacity);
+      },
+    ).then((fn) => {
       unlisten = fn;
     });
     return () => {

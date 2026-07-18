@@ -1,5 +1,5 @@
-import { describe, it, expect, vi, beforeEach } from "vitest";
-import { renderHook, act } from "@testing-library/react";
+import { act, renderHook } from "@testing-library/react";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { SlotState } from "./useSlotState";
 import { useSlotState } from "./useSlotState";
 
@@ -15,7 +15,9 @@ vi.mock("@tauri-apps/api/event", () => ({
 
 function emit(payload: SlotState) {
   act(() => {
-    handlers.forEach((h) => h({ payload }));
+    handlers.forEach((h) => {
+      h({ payload });
+    });
   });
 }
 
@@ -94,7 +96,12 @@ describe("useSlotState", () => {
     // there's no async gap between the two synchronous emits in this test
     // to observe an intermediate frame at, but a snapshot check on id is
     // the meaningful assertion either way
-    expect(result.current).toMatchObject({ id: "n2", expanded: true, priority: "high", signal: "goal" });
+    expect(result.current).toMatchObject({
+      id: "n2",
+      expanded: true,
+      priority: "high",
+      signal: "goal",
+    });
   });
 
   it("goes back to empty when rust emits an empty slot-state", async () => {

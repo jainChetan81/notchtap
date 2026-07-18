@@ -1,12 +1,12 @@
-import { useEffect, useState } from "react";
 import { AnimatePresence, motion } from "motion/react";
-import type { SlotState } from "../useSlotState";
-import { TierCode } from "./TierCode";
-import { Stamp } from "./Stamp";
-import { Track } from "./Track";
-import { Manifest } from "./Manifest";
-import { IdleView } from "./IdleView";
+import { useEffect, useState } from "react";
 import { ageLabel, categoryClass, categoryLabel } from "../lib/presentation";
+import type { SlotState } from "../useSlotState";
+import { IdleView } from "./IdleView";
+import { Manifest } from "./Manifest";
+import { Stamp } from "./Stamp";
+import { TierCode } from "./TierCode";
+import { Track } from "./Track";
 
 type Pulse = "pulse-goal" | "pulse-red" | null;
 
@@ -33,6 +33,7 @@ export function StatusRailCard({ slot }: { slot: SlotState }) {
   // "needs input" alert (signal: "generic") must never play the goal
   // celebration. Not keyed on `expanded` either, so toggling the manual
   // hotkey on an already-visible item doesn't replay the burst.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: currentId is the deliberate re-trigger key documented above — a new item with the same signal must replay the pulse; dropping it would change that behavior.
   useEffect(() => {
     if (currentSignal === "goal") {
       setPulse("pulse-goal");
@@ -104,7 +105,10 @@ export function StatusRailCard({ slot }: { slot: SlotState }) {
                             className="pill category"
                             initial={{ opacity: 0, y: 3 }}
                             animate={{ opacity: 1, y: 0 }}
-                            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
+                            transition={{
+                              duration: 0.22,
+                              ease: [0.22, 1, 0.36, 1],
+                            }}
                           >
                             {newsCategory}
                           </motion.span>

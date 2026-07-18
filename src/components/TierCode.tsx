@@ -1,5 +1,5 @@
-import { Newspaper, SignalLow, SignalMedium, SignalHigh } from "lucide-react";
-import { tierCode, tierLabel, type EventType, type Priority } from "../lib/presentation";
+import { Newspaper, SignalHigh, SignalLow, SignalMedium } from "lucide-react";
+import { type EventType, type Priority, tierCode, tierLabel } from "../lib/presentation";
 
 // The Lucide icon is the review's requested non-color priority cue —
 // deliberately a *second*, independent signal alongside the code text

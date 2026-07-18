@@ -1,16 +1,16 @@
-import { useEffect, useState, type CSSProperties, type FormEvent, type ReactNode } from "react";
 import { invoke } from "@tauri-apps/api/core";
-import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import {
   Command,
   KeyRound,
+  type LucideIcon,
   Newspaper,
   Palette,
   SlidersHorizontal,
   Terminal,
   Trophy,
-  type LucideIcon,
 } from "lucide-react";
+import { AnimatePresence, MotionConfig, motion } from "motion/react";
+import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useState } from "react";
 import { StatusRailCard } from "../components/StatusRailCard";
 import type { SlotState } from "../useSlotState";
 import "./preview-overlay.css";
@@ -66,7 +66,14 @@ export interface SecretStatus {
 }
 
 type SecretField = keyof SecretStatus;
-type SectionId = "general" | "football" | "news" | "cmux" | "connectors" | "shortcuts" | "appearance";
+type SectionId =
+  | "general"
+  | "football"
+  | "news"
+  | "cmux"
+  | "connectors"
+  | "shortcuts"
+  | "appearance";
 
 const navigation: ReadonlyArray<{
   id: SectionId;
@@ -147,9 +154,17 @@ const secretRows: ReadonlyArray<{
 ];
 
 const shortcuts = [
-  { keys: "⌃⇧N", action: "Expand or collapse the slot (manual)", status: "active" },
+  {
+    keys: "⌃⇧N",
+    action: "Expand or collapse the slot (manual)",
+    status: "active",
+  },
   { keys: "⌃⇧O", action: "Open the current story's link", status: "active" },
-  { keys: "⌃⇧X", action: "Dismiss the visible notification now", status: "active" },
+  {
+    keys: "⌃⇧X",
+    action: "Dismiss the visible notification now",
+    status: "active",
+  },
   { keys: "⌃⇧P", action: "Pause or resume promotion", status: "active" },
   { keys: "⌃⇧]", action: "Skip to the next waiting item", status: "active" },
   { keys: "⌃⇧,", action: "Open settings", status: "active" },
@@ -196,7 +211,11 @@ function errorList(error: unknown): string[] {
   return [typeof error === "string" ? error : "settings could not be saved"];
 }
 
-function SettingsGroup({ title, description, children }: {
+function SettingsGroup({
+  title,
+  description,
+  children,
+}: {
   title: string;
   description?: string;
   children: ReactNode;
@@ -212,7 +231,12 @@ function SettingsGroup({ title, description, children }: {
   );
 }
 
-function Switch({ id, label, checked, onChange }: {
+function Switch({
+  id,
+  label,
+  checked,
+  onChange,
+}: {
   id: string;
   label: string;
   checked: boolean;
@@ -235,7 +259,9 @@ function Switch({ id, label, checked, onChange }: {
 function ControlCopy({ htmlFor, name, help }: { htmlFor: string; name: string; help: string }) {
   return (
     <div className="control-copy">
-      <label className="control-name" htmlFor={htmlFor}>{name}</label>
+      <label className="control-name" htmlFor={htmlFor}>
+        {name}
+      </label>
       <span className="control-help">{help}</span>
     </div>
   );
@@ -325,6 +351,7 @@ function PriorityToggle({
   return (
     <div className="control-row">
       <ControlCopy htmlFor={id} name={name} help={help} />
+      {/* biome-ignore lint/a11y/useSemanticElements: role="group" is queried by tests (findByRole("group")) and styled via .priority-toggle; migrating to <fieldset> is a separate a11y-markup task with visual-regression risk, not a mechanical lint fix. */}
       <div className="priority-toggle" id={id} role="group" aria-label={name}>
         {PRIORITY_LEVELS.map((level) => (
           <button
@@ -364,8 +391,10 @@ function RotationOrderList({
   }
 
   return (
+    // biome-ignore lint/a11y/useSemanticElements: role="list" is queried by tests and styled via .rotation-order-list; migrating to <ul>/<ol> is a separate a11y-markup task with visual-regression risk, not a mechanical lint fix.
     <div className="rotation-order-list" role="list" aria-label="Rotation order">
       {order.map((source, index) => (
+        // biome-ignore lint/a11y/useSemanticElements: role="listitem" is queried by tests (getAllByRole("listitem")) and styled via .rotation-order-row; migrating to <li> is a separate a11y-markup task, not a mechanical lint fix.
         <div className="rotation-order-row" role="listitem" key={source}>
           <span className="rotation-order-rank">{index + 1}</span>
           <span className="rotation-order-name">{SOURCE_LABELS[source]}</span>
@@ -437,7 +466,11 @@ function ErrorPanel({ errors }: { errors: string[] }) {
           exit={{ opacity: 0, y: -3 }}
         >
           <div className="error-title">Config rejected</div>
-          <ul>{errors.map((error) => <li key={error}>{error}</li>)}</ul>
+          <ul>
+            {errors.map((error) => (
+              <li key={error}>{error}</li>
+            ))}
+          </ul>
         </motion.div>
       ) : null}
     </AnimatePresence>
@@ -480,7 +513,9 @@ function SecretRow({
   return (
     <div className="secret-row">
       <div className="secret-meta">
-        <label className="secret-label" htmlFor={id}>{label}</label>
+        <label className="secret-label" htmlFor={id}>
+          {label}
+        </label>
         <span className={`status-chip${status ? " is-set" : ""}`} aria-live="polite">
           {status ?? "unset"}
         </span>
@@ -505,12 +540,19 @@ function SecretRow({
           {saving ? "Saving…" : "Save"}
         </button>
       </div>
-      {error ? <div className="secret-error" role="alert">{error}</div> : null}
+      {error ? (
+        <div className="secret-error" role="alert">
+          {error}
+        </div>
+      ) : null}
     </div>
   );
 }
 
-function GeneralSection({ config, patchConfig }: {
+function GeneralSection({
+  config,
+  patchConfig,
+}: {
   config: Config;
   patchConfig: (patch: Partial<Config>) => void;
 }) {
@@ -682,9 +724,36 @@ function NewsSection({
         caption="one feed URL per line"
         onChange={setFeedsText}
       />
-      <NumberControl id="rss-poll-secs" name="Poll interval" help="How often configured feeds are checked." value={config.rss_poll_secs} min={5} max={3600} unit="SEC" onChange={(rss_poll_secs) => patchConfig({ rss_poll_secs })} />
-      <NumberControl id="rss-ttl-secs" name="Headline rotation" help="How long each headline occupies the slot." value={config.rss_ttl_secs} min={1} max={3600} unit="SEC" onChange={(rss_ttl_secs) => patchConfig({ rss_ttl_secs })} />
-      <NumberControl id="rss-max-per-poll" name="Maximum per poll" help="New headlines accepted from a single poll pass." value={config.rss_max_per_poll} min={1} max={100} unit="ITEMS" onChange={(rss_max_per_poll) => patchConfig({ rss_max_per_poll })} />
+      <NumberControl
+        id="rss-poll-secs"
+        name="Poll interval"
+        help="How often configured feeds are checked."
+        value={config.rss_poll_secs}
+        min={5}
+        max={3600}
+        unit="SEC"
+        onChange={(rss_poll_secs) => patchConfig({ rss_poll_secs })}
+      />
+      <NumberControl
+        id="rss-ttl-secs"
+        name="Headline rotation"
+        help="How long each headline occupies the slot."
+        value={config.rss_ttl_secs}
+        min={1}
+        max={3600}
+        unit="SEC"
+        onChange={(rss_ttl_secs) => patchConfig({ rss_ttl_secs })}
+      />
+      <NumberControl
+        id="rss-max-per-poll"
+        name="Maximum per poll"
+        help="New headlines accepted from a single poll pass."
+        value={config.rss_max_per_poll}
+        min={1}
+        max={100}
+        unit="ITEMS"
+        onChange={(rss_max_per_poll) => patchConfig({ rss_max_per_poll })}
+      />
       <PriorityToggle
         id="rss-priority"
         name="Priority"
@@ -701,7 +770,10 @@ function NewsSection({
   );
 }
 
-function CmuxSection({ config, patchConfig }: {
+function CmuxSection({
+  config,
+  patchConfig,
+}: {
   config: Config;
   patchConfig: (patch: Partial<Config>) => void;
 }) {
@@ -780,12 +852,24 @@ function ConnectorsSection({
 
 function ShortcutsSection() {
   return (
-    <SettingsGroup title="Global shortcuts" description="These work while notchtap is running, regardless of which app has focus.">
+    <SettingsGroup
+      title="Global shortcuts"
+      description="These work while notchtap is running, regardless of which app has focus."
+    >
+      {/* biome-ignore lint/a11y/useSemanticElements: role="table" is queried by tests (getByRole("table")) and styled via .shortcut-table; migrating to a semantic table element is a separate a11y-markup task with visual-regression risk, not a mechanical lint fix. */}
       <div className="shortcut-table" role="table" aria-label="Keyboard shortcuts">
         {shortcuts.map((shortcut) => (
+          // biome-ignore lint/a11y/useFocusableInteractive: display-only cheatsheet row — not meant to be keyboard-focusable; the interactive-role markup here is part of the role="table" cheatsheet, a separate a11y-markup task.
+          // biome-ignore lint/a11y/useSemanticElements: role="row" is part of the role="table" cheatsheet markup styled via .shortcut-row; migrating to <tr> is a separate a11y-markup task, not a mechanical lint fix.
           <div className="shortcut-row" role="row" key={shortcut.action}>
+            {/* biome-ignore lint/a11y/noInteractiveElementToNoninteractiveRole: the kbd is display-only (shortcut keys), part of the role="table" cheatsheet markup — separate a11y-markup task. */}
+            {/* biome-ignore lint/a11y/useSemanticElements: role="cell" is part of the role="table" cheatsheet markup; migrating to <td> is a separate a11y-markup task, not a mechanical lint fix. */}
             <kbd role="cell">{shortcut.keys}</kbd>
-            <span className="shortcut-action" role="cell">{shortcut.action}</span>
+            {/* biome-ignore lint/a11y/useSemanticElements: role="cell" is part of the role="table" cheatsheet markup; migrating to <td> is a separate a11y-markup task, not a mechanical lint fix. */}
+            <span className="shortcut-action" role="cell">
+              {shortcut.action}
+            </span>
+            {/* biome-ignore lint/a11y/useSemanticElements: role="cell" is part of the role="table" cheatsheet markup; migrating to <td> is a separate a11y-markup task, not a mechanical lint fix. */}
             <span className={`shortcut-status ${shortcut.status}`} role="cell">
               {shortcut.status === "active" ? "active" : "planned · not implemented"}
             </span>
@@ -809,21 +893,13 @@ function TestButton({ source }: { source: TestSource }) {
   }
 
   return (
-    <button
-      type="button"
-      className="secondary-button test-button"
-      onClick={() => void send()}
-    >
+    <button type="button" className="secondary-button test-button" onClick={() => void send()}>
       Send test notification
     </button>
   );
 }
 
-function TestButtonRow({ name, help, source }: {
-  name: string;
-  help: string;
-  source: TestSource;
-}) {
+function TestButtonRow({ name, help, source }: { name: string; help: string; source: TestSource }) {
   return (
     <div className="control-row">
       <ControlCopy htmlFor={name.replace(/\s+/g, "-")} name={name} help={help} />
@@ -834,7 +910,12 @@ function TestButtonRow({ name, help, source }: {
 
 type SegmentedOption = { label: string; value: number };
 
-function SegmentedControl({ label, options, value, onChange }: {
+function SegmentedControl({
+  label,
+  options,
+  value,
+  onChange,
+}: {
   label: string;
   options: SegmentedOption[];
   value: number;
@@ -843,8 +924,10 @@ function SegmentedControl({ label, options, value, onChange }: {
   return (
     <div className="control-row">
       <div className="control-copy">
+        {/* biome-ignore lint/a11y/noLabelWithoutControl: this label names a button group, not a form control — the group below carries aria-label={label}; rewiring htmlFor/id is a separate a11y-markup task. */}
         <label className="control-name">{label}</label>
       </div>
+      {/* biome-ignore lint/a11y/useSemanticElements: role="group" is styled via .segmented-control; migrating to <fieldset> is a separate a11y-markup task with visual-regression risk, not a mechanical lint fix. */}
       <div className="segmented-control" role="group" aria-label={label}>
         {options.map((option) => (
           <button
@@ -864,7 +947,10 @@ function SegmentedControl({ label, options, value, onChange }: {
 
 type ShowingSlotState = Extract<SlotState, { state: "showing" }>;
 
-const PREVIEW_SAMPLES: ReadonlyArray<{ label: string; slot: ShowingSlotState }> = [
+const PREVIEW_SAMPLES: ReadonlyArray<{
+  label: string;
+  slot: ShowingSlotState;
+}> = [
   {
     label: "Goal (High priority, football)",
     slot: {
@@ -935,7 +1021,10 @@ const PREVIEW_SAMPLES: ReadonlyArray<{ label: string; slot: ShowingSlotState }> 
   },
 ];
 
-function AppearanceSection({ config, patchConfig }: {
+function AppearanceSection({
+  config,
+  patchConfig,
+}: {
   config: Config;
   patchConfig: (patch: Partial<Config>) => void;
 }) {
@@ -984,7 +1073,10 @@ function AppearanceSection({ config, patchConfig }: {
 
   return (
     <div className="section-stack">
-      <SettingsGroup title="Card shape" description="Adjust the overlay card size, corner radius, and opacity. Changes apply immediately.">
+      <SettingsGroup
+        title="Card shape"
+        description="Adjust the overlay card size, corner radius, and opacity. Changes apply immediately."
+      >
         <SegmentedControl
           label="Scale"
           options={[
@@ -1064,21 +1156,21 @@ export function SettingsApp() {
     setSecretStatus(await invoke<SecretStatus>("get_secret_status"));
   }
 
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only config loader — applyForm is re-created every render, so adding it would re-invoke get_config on every render.
   useEffect(() => {
     let active = true;
-    Promise.all([
-      invoke<Config>("get_config"),
-      invoke<SecretStatus>("get_secret_status"),
-    ]).then(([loadedConfig, loadedStatus]) => {
-      if (active) {
-        const loaded = copyConfig(loadedConfig);
-        setLastLoadedConfig(loaded);
-        applyForm(loaded);
-        setSecretStatus(loadedStatus);
-      }
-    }).catch((reason: unknown) => {
-      if (active) setErrors(errorList(reason));
-    });
+    Promise.all([invoke<Config>("get_config"), invoke<SecretStatus>("get_secret_status")])
+      .then(([loadedConfig, loadedStatus]) => {
+        if (active) {
+          const loaded = copyConfig(loadedConfig);
+          setLastLoadedConfig(loaded);
+          applyForm(loaded);
+          setSecretStatus(loadedStatus);
+        }
+      })
+      .catch((reason: unknown) => {
+        if (active) setErrors(errorList(reason));
+      });
     // defaults are advisory (Reset-to-defaults only) — isolate their failure
     // so it can never block the rest of the panel from loading; the button
     // just stays disabled (see the footer's `disabled={!defaults || saving}`).
@@ -1095,7 +1187,7 @@ export function SettingsApp() {
   }, []);
 
   function patchConfig(patch: Partial<Config>) {
-    setConfig((current) => current ? { ...current, ...patch } : current);
+    setConfig((current) => (current ? { ...current, ...patch } : current));
   }
 
   function resetLoaded() {
@@ -1165,7 +1257,12 @@ export function SettingsApp() {
 
         <div className="settings-pane">
           {config ? (
-            <form id="settings-form" className="settings-form" noValidate onSubmit={(event) => void saveConfig(event)}>
+            <form
+              id="settings-form"
+              className="settings-form"
+              noValidate
+              onSubmit={(event) => void saveConfig(event)}
+            >
               <header className="content-header">
                 <div className="section-index">Settings / {currentSection.index}</div>
                 <h1 id="section-title">{currentSection.title}</h1>
@@ -1183,29 +1280,73 @@ export function SettingsApp() {
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: -2 }}
                   >
-                    {activeSection === "general" ? <GeneralSection config={config} patchConfig={patchConfig} /> : null}
-                    {activeSection === "football" ? <FootballSection config={config} leaguesText={espnLeaguesText} patchConfig={patchConfig} setLeaguesText={setEspnLeaguesText} /> : null}
-                    {activeSection === "news" ? <NewsSection config={config} feedsText={rssFeedsText} patchConfig={patchConfig} setFeedsText={setRssFeedsText} /> : null}
-                    {activeSection === "cmux" ? <CmuxSection config={config} patchConfig={patchConfig} /> : null}
-                    {activeSection === "connectors" ? <ConnectorsSection config={config} secretStatus={secretStatus} patchConfig={patchConfig} refreshSecretStatus={refreshSecretStatus} /> : null}
+                    {activeSection === "general" ? (
+                      <GeneralSection config={config} patchConfig={patchConfig} />
+                    ) : null}
+                    {activeSection === "football" ? (
+                      <FootballSection
+                        config={config}
+                        leaguesText={espnLeaguesText}
+                        patchConfig={patchConfig}
+                        setLeaguesText={setEspnLeaguesText}
+                      />
+                    ) : null}
+                    {activeSection === "news" ? (
+                      <NewsSection
+                        config={config}
+                        feedsText={rssFeedsText}
+                        patchConfig={patchConfig}
+                        setFeedsText={setRssFeedsText}
+                      />
+                    ) : null}
+                    {activeSection === "cmux" ? (
+                      <CmuxSection config={config} patchConfig={patchConfig} />
+                    ) : null}
+                    {activeSection === "connectors" ? (
+                      <ConnectorsSection
+                        config={config}
+                        secretStatus={secretStatus}
+                        patchConfig={patchConfig}
+                        refreshSecretStatus={refreshSecretStatus}
+                      />
+                    ) : null}
                     {activeSection === "shortcuts" ? <ShortcutsSection /> : null}
-                    {activeSection === "appearance" ? <AppearanceSection config={config} patchConfig={patchConfig} /> : null}
+                    {activeSection === "appearance" ? (
+                      <AppearanceSection config={config} patchConfig={patchConfig} />
+                    ) : null}
                   </motion.div>
                 </AnimatePresence>
               </div>
             </form>
           ) : (
-            <div className="loading-state" role="status">Loading settings…</div>
+            <div className="loading-state" role="status">
+              Loading settings…
+            </div>
           )}
 
           <footer className="settings-footer">
-            <button className="primary-button" type="submit" form="settings-form" disabled={!config || saving}>
+            <button
+              className="primary-button"
+              type="submit"
+              form="settings-form"
+              disabled={!config || saving}
+            >
               {saving ? "Relaunching…" : "Save & Relaunch"}
             </button>
-            <button className="footer-button" type="button" disabled={!lastLoadedConfig || saving} onClick={resetLoaded}>
+            <button
+              className="footer-button"
+              type="button"
+              disabled={!lastLoadedConfig || saving}
+              onClick={resetLoaded}
+            >
               Reset
             </button>
-            <button className="footer-button" type="button" disabled={!defaults || saving} onClick={resetDefaults}>
+            <button
+              className="footer-button"
+              type="button"
+              disabled={!defaults || saving}
+              onClick={resetDefaults}
+            >
               Reset to defaults
             </button>
           </footer>

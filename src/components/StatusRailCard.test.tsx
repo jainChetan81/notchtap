@@ -1,7 +1,7 @@
-import { afterEach, describe, expect, it, vi } from "vitest";
 import { act, cleanup, render, screen } from "@testing-library/react";
-import { StatusRailCard } from "./StatusRailCard";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SlotState } from "../useSlotState";
+import { StatusRailCard } from "./StatusRailCard";
 
 // this project's vitest config doesn't set `test.globals`, so RTL's
 // auto-cleanup (which hooks a global `afterEach`) never registers —
@@ -233,7 +233,10 @@ describe("StatusRailCard", () => {
   it("shows the read and collapse controls in a non-news manifest with a link", () => {
     render(
       <StatusRailCard
-        slot={{ ...CMUX_NEEDS_INPUT, link: "https://example.com/local-notification" }}
+        slot={{
+          ...CMUX_NEEDS_INPUT,
+          link: "https://example.com/local-notification",
+        }}
       />,
     );
 

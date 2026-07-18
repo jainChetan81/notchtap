@@ -1,4 +1,4 @@
-import { stampFor, type Priority, type EventSignal, type EventType } from "../lib/presentation";
+import { type EventSignal, type EventType, type Priority, stampFor } from "../lib/presentation";
 
 export function Stamp({
   priority,

@@ -1,10 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import {
-  categoryLabel,
-  publishedLabel,
-  sourceLabelFor,
-  type EventType,
-} from "../lib/presentation";
+import { categoryLabel, type EventType, publishedLabel, sourceLabelFor } from "../lib/presentation";
 
 // The hardcoded "⌃⇧N" hint mirrors EXPAND_TOGGLE_SHORTCUT in lib.rs (a
 // hardcoded rust constant itself, since v3.6 spec §7.1 explicitly defers

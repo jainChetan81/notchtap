@@ -1,5 +1,5 @@
-import { useEffect, useState } from "react";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { useEffect, useState } from "react";
 
 const EVENT_SIGNALS = [
   "generic",
