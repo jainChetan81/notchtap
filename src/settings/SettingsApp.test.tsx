@@ -329,6 +329,42 @@ describe("SettingsApp", () => {
     expect(selectedPriorityLabel(screen.getByLabelText("Priority"))).toBe("High");
   });
 
+  it("Appearance controls re-seed from config after Reset to defaults", async () => {
+    mockIPC((command) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "set_appearance") return null;
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
+    await screen.findByRole("heading", { level: 1, name: "Appearance" });
+
+    const scaleToggle = await screen.findByRole("group", { name: "Scale" });
+    fireEvent.click(within(scaleToggle).getByRole("button", { name: "Large" }));
+    await waitFor(() => {
+      expect(
+        within(scaleToggle).getByRole("button", { name: "Large" }).getAttribute("aria-pressed"),
+      ).toBe("true");
+    });
+
+    // get_default_config resolves on its own microtask — wait for the button
+    // to enable before clicking, or the reset asserts against un-reset state.
+    await waitFor(() => {
+      expect(
+        (screen.getByRole("button", { name: "Reset to defaults" }) as HTMLButtonElement).disabled,
+      ).toBe(false);
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Reset to defaults" }));
+
+    const resetScaleToggle = await screen.findByRole("group", { name: "Scale" });
+    expect(
+      within(resetScaleToggle).getByRole("button", { name: "Medium" }).getAttribute("aria-pressed"),
+    ).toBe("true");
+  });
+
   function rotationOrderRowNames() {
     return screen
       .getAllByRole("listitem")

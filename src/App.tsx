@@ -24,15 +24,25 @@ function App() {
     }
 
     let unlisten: UnlistenFn | undefined;
+    let unmounted = false;
     listen<{ scale: number; radius: number; opacity: number }>(
       "appearance-changed",
       ({ payload }) => {
         applyAppearance(payload.scale, payload.radius, payload.opacity);
       },
-    ).then((fn) => {
-      unlisten = fn;
-    });
+    )
+      .then((fn) => {
+        if (unmounted) {
+          fn();
+        } else {
+          unlisten = fn;
+        }
+      })
+      .catch((error) => {
+        console.error("appearance-changed listener failed to register", error);
+      });
     return () => {
+      unmounted = true;
       unlisten?.();
     };
   }, []);

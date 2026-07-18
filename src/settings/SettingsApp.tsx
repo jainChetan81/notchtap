@@ -1151,6 +1151,7 @@ export function SettingsApp() {
   const [rssFeedsText, setRssFeedsText] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
+  const [formGeneration, setFormGeneration] = useState(0);
 
   function applyForm(nextConfig: Config) {
     const next = copyConfig(nextConfig);
@@ -1158,6 +1159,7 @@ export function SettingsApp() {
     setEspnLeaguesText(next.espn_leagues.join("\n"));
     setRssFeedsText(next.rss_feeds.map((feed) => feed.url).join("\n"));
     setErrors([]);
+    setFormGeneration((n) => n + 1);
   }
 
   async function refreshSecretStatus() {
@@ -1320,7 +1322,14 @@ export function SettingsApp() {
                     ) : null}
                     {activeSection === "shortcuts" ? <ShortcutsSection /> : null}
                     {activeSection === "appearance" ? (
-                      <AppearanceSection config={config} patchConfig={patchConfig} />
+                      // keyed on formGeneration so Reset/Reset-to-defaults remounts the
+                      // section — its controls seed local state from config.appearance at
+                      // mount and would otherwise show stale values (plan 027)
+                      <AppearanceSection
+                        key={formGeneration}
+                        config={config}
+                        patchConfig={patchConfig}
+                      />
                     ) : null}
                   </motion.div>
                 </AnimatePresence>
