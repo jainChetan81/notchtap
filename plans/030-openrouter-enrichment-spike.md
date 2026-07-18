@@ -29,6 +29,26 @@
   rule); `docs/design/` confirmed absent; openrouter grep confirmed
   storage-plumbing-only. STOP condition calibrated so the plumbing
   hits don't trigger a spurious stop
+- **Re-reviewed**: 2026-07-19 at `7430b4b` — drift check now hits
+  `event.rs` only (+15, from plan 033): `SlotState::Showing` moved to
+  :146-163 and gained `queue_total`/`queue_done` wire fields — a
+  worked example of the exact wire extension this spike designs (see
+  Current state). The overlay-only comment moved to
+  poller.rs:556-560 (plan 034 shifted the file). All other citations
+  re-verified in place (settings.rs "waits for the first ai feature"
+  now at :322, EventMeta at :122-132, diff_feed :263 /
+  spawn_rss_poller :442, `docs/design/` still absent, openrouter grep
+  still settings.rs + notifier.rs only). Plan 025 LANDED during this
+  reconcile (`920d4e4`, master `12eaefe`): `src-tauri/src/net.rs` now
+  exists with `pub(crate) fn build_poll_client()` and
+  `read_body_capped` — so the doc's HTTP-posture section should build
+  on `net::build_poll_client` (exactly as this plan's grounding
+  predicted), while noting its 10 s polling timeout is likely wrong
+  for an LLM call and the enrichment path wants its own budget. Also
+  new since planning: `useStatusState.ts` /
+  `status-state` is a SECOND overlay channel (plan 034) — the doc's
+  placement section may cite it as precedent for adding an emission,
+  but enrichment rides `slot-state`, not `status-state`
 
 ## Why this matters
 
@@ -84,9 +104,14 @@ before any build effort is spent.
 - The insertion pipeline: `rss_poller.rs::diff_feed` (~line 263) builds
   `NewsItem` events (pure, well-tested); `spawn_rss_poller`
   (~line 442) fetches, diffs, then enqueues via the shared path which
-  emits `SlotState` (whose `Showing` variant at `event.rs:144-158`
+  emits `SlotState` (whose `Showing` variant at `event.rs:146-163`
   carries the meta fields to the frontend — new enriched fields would
-  need to ride the same wire).
+  need to ride the same wire). **Worked example to study**: plan 033
+  (landed) added `queue_total`/`queue_done` to `Showing` end-to-end —
+  rust variant fields (`event.rs:157-163`) → `isValidSlotState`
+  guard in `src/useSlotState.ts:72` → card rendering. The design
+  doc's data-shape section should reference that change as the
+  template for how enrichment fields would land.
 - Relevant repo rules the design must honor:
   - `CONTEXT.md` vocabulary (Promotion, Rotation, Waiting/Visible) —
     use these terms in the doc.
@@ -95,8 +120,9 @@ before any build effort is spent.
     exact ARCHITECTURE/IMPLEMENTATION_PLAN edits it would require, not
     make them.
   - rss/news events are overlay-only, never offered to connectors
-    (`poller.rs:516-520` comment, `IMPLEMENTATION_PLAN.md` §4.6) — an
-    enriched summary therefore never leaves the overlay either.
+    (`poller.rs:556-560` comment as of `7430b4b`,
+    `IMPLEMENTATION_PLAN.md` §4.6) — an enriched summary therefore
+    never leaves the overlay either.
   - HTTP posture: `net::build_poll_client` if plan 025 has landed,
     else the pollers' inline builder — but note its 10 s poll timeout
     may be wrong for an LLM call; the doc should pick its own budget.

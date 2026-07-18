@@ -24,6 +24,9 @@
   numbers (25/26/29/35/43/44/61), five distinct actions,
   `.github/dependabot.yml` confirmed absent, comment convention
   (ci.yml:13-14) confirmed. No content changes needed
+- **Re-reviewed**: 2026-07-19 at `7430b4b` — drift check still empty
+  (ci.yml byte-identical since `a58f115`); all seven `uses:` lines and
+  the dependabot.yml absence re-confirmed. No content changes needed
 
 ## Why this matters
 
