@@ -121,3 +121,94 @@ impl Write for SizeRotatingAppender {
         self.inner.lock().unwrap().file.flush()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use uuid::Uuid;
+
+    // a fresh, unique dir per test is mandatory, not hygiene: `new()`
+    // seeds `size` from any pre-existing file's length, which would
+    // silently shift the threshold arithmetic.
+    fn temp_dir() -> PathBuf {
+        std::env::temp_dir().join(format!("notchtap-logtest-{}", Uuid::new_v4()))
+    }
+
+    #[test]
+    fn no_rotation_below_threshold() {
+        let dir = temp_dir();
+        let mut app = SizeRotatingAppender::new(&dir, "notchtap.log", 100, 3).unwrap();
+
+        app.write_all(&[b'a'; 50]).unwrap();
+        app.write_all(&[b'b'; 50]).unwrap();
+        app.flush().unwrap();
+
+        // 100 total bytes is not `> 100` — no rotation, single file.
+        assert_eq!(fs::read(dir.join("notchtap.log")).unwrap().len(), 100);
+        assert!(!dir.join("notchtap.log.1").exists());
+    }
+
+    #[test]
+    fn rotation_at_threshold_creates_backup_and_resets() {
+        let dir = temp_dir();
+        let mut app = SizeRotatingAppender::new(&dir, "notchtap.log", 100, 3).unwrap();
+
+        app.write_all(&[b'a'; 60]).unwrap();
+        // 60 + 60 > 100 with size 60 > 0: rotation happens before this
+        // write, so the live file restarts with only the second write.
+        app.write_all(&[b'b'; 60]).unwrap();
+        app.flush().unwrap();
+
+        assert_eq!(fs::read(dir.join("notchtap.log")).unwrap(), vec![b'b'; 60]);
+        assert_eq!(
+            fs::read(dir.join("notchtap.log.1")).unwrap(),
+            vec![b'a'; 60]
+        );
+        assert!(!dir.join("notchtap.log.2").exists());
+    }
+
+    #[test]
+    fn cascade_caps_at_max_files() {
+        let dir = temp_dir();
+        let mut app = SizeRotatingAppender::new(&dir, "notchtap.log", 100, 3).unwrap();
+
+        // five 60-byte writes → four rotations.
+        for fill in *b"12345" {
+            app.write_all(&[fill; 60]).unwrap();
+        }
+        app.flush().unwrap();
+
+        // rotate_locked's loop (i = 2, then 1) only ever renames up to
+        // .3, so retention is current + exactly 3 backups: the oldest
+        // ('1') is overwritten by the rename onto .3 and no .4 exists.
+        assert_eq!(fs::read(dir.join("notchtap.log")).unwrap(), vec![b'5'; 60]);
+        assert_eq!(
+            fs::read(dir.join("notchtap.log.1")).unwrap(),
+            vec![b'4'; 60]
+        );
+        assert_eq!(
+            fs::read(dir.join("notchtap.log.2")).unwrap(),
+            vec![b'3'; 60]
+        );
+        assert_eq!(
+            fs::read(dir.join("notchtap.log.3")).unwrap(),
+            vec![b'2'; 60]
+        );
+        assert!(!dir.join("notchtap.log.4").exists());
+    }
+
+    #[test]
+    fn empty_current_file_never_rotates() {
+        let dir = temp_dir();
+        let mut app = SizeRotatingAppender::new(&dir, "notchtap.log", 100, 3).unwrap();
+
+        // size is 0 going in, so the `inner.size > 0` guard skips
+        // rotation even though this single write exceeds max_size — the
+        // oversized line lands whole in the current file.
+        app.write_all(&[b'x'; 150]).unwrap();
+        app.flush().unwrap();
+
+        assert_eq!(fs::read(dir.join("notchtap.log")).unwrap().len(), 150);
+        assert!(!dir.join("notchtap.log.1").exists());
+    }
+}
