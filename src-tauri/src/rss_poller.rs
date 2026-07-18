@@ -927,4 +927,146 @@ mod tests {
         )
         .is_empty());
     }
+
+    // --- wiremock: fetch_feed's decision surface (304 / validator
+    // ordering / size cap). no live rss fetch, ever. ---
+
+    mod fetch_feed_tests {
+        use super::*;
+        use wiremock::matchers::{header, header_regex, method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        const VALID_FEED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Test News</title>
+    <link>https://example.com</link>
+    <description>Fixture feed</description>
+    <item><guid>a</guid><title>First</title><link>https://example.com/a</link></item>
+  </channel>
+</rss>"#;
+
+        fn client() -> reqwest::Client {
+            reqwest::Client::new()
+        }
+
+        #[tokio::test]
+        async fn not_modified_returns_none_and_preserves_state() {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/feed"))
+                .respond_with(ResponseTemplate::new(304))
+                .mount(&server)
+                .await;
+
+            let mut state = FeedState::default();
+            let url = format!("{}/feed", server.uri());
+            let result = fetch_feed(&client(), &url, &mut state).await.unwrap();
+
+            assert!(result.is_none());
+            assert_eq!(state.etag, None);
+            assert_eq!(state.last_modified, None);
+        }
+
+        #[tokio::test]
+        async fn validators_not_persisted_on_parse_failure() {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/feed"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .insert_header("ETag", "\"abc123\"")
+                        .insert_header("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT")
+                        .set_body_raw("not xml", "text/xml"),
+                )
+                .mount(&server)
+                .await;
+
+            let mut state = FeedState::default();
+            let url = format!("{}/feed", server.uri());
+            let result = fetch_feed(&client(), &url, &mut state).await;
+
+            assert!(result.is_err());
+            // the bug-guard: a failed parse must NOT persist validators, or
+            // the next poll would 304 forever and silently never retry.
+            assert_eq!(state.etag, None);
+            assert_eq!(state.last_modified, None);
+        }
+
+        #[tokio::test]
+        async fn validators_persisted_on_success() {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/feed"))
+                .respond_with(
+                    ResponseTemplate::new(200)
+                        .insert_header("ETag", "\"abc123\"")
+                        .insert_header("Last-Modified", "Wed, 21 Oct 2015 07:28:00 GMT")
+                        .set_body_raw(VALID_FEED, "application/rss+xml"),
+                )
+                .mount(&server)
+                .await;
+
+            let mut state = FeedState::default();
+            let url = format!("{}/feed", server.uri());
+            let result = fetch_feed(&client(), &url, &mut state).await.unwrap();
+
+            assert!(result.is_some());
+            assert_eq!(state.etag.as_deref(), Some("\"abc123\""));
+            assert_eq!(
+                state.last_modified.as_deref(),
+                Some("Wed, 21 Oct 2015 07:28:00 GMT")
+            );
+        }
+
+        #[tokio::test]
+        async fn oversized_content_length_rejected() {
+            let server = MockServer::start().await;
+            let big_body = vec![b'x'; MAX_FEED_BYTES + 1];
+            Mock::given(method("GET"))
+                .and(path("/feed"))
+                .respond_with(ResponseTemplate::new(200).set_body_bytes(big_body))
+                .mount(&server)
+                .await;
+
+            let mut state = FeedState::default();
+            let url = format!("{}/feed", server.uri());
+            let error = fetch_feed(&client(), &url, &mut state).await.unwrap_err();
+
+            assert!(error.to_string().contains("1 MiB"));
+            assert_eq!(state.etag, None);
+            assert_eq!(state.last_modified, None);
+        }
+
+        #[tokio::test]
+        async fn conditional_headers_sent_when_state_has_validators() {
+            let server = MockServer::start().await;
+            // `header()` splits comma-separated header values by design (for
+            // multi-value headers like cache-control), which mismatches an
+            // HTTP-date's internal comma. `header_regex` compares the raw
+            // value instead.
+            Mock::given(method("GET"))
+                .and(path("/feed"))
+                .and(header("If-None-Match", "\"etag-value\""))
+                .and(header_regex(
+                    "If-Modified-Since",
+                    "^Wed, 21 Oct 2015 07:28:00 GMT$",
+                ))
+                .respond_with(ResponseTemplate::new(304))
+                .mount(&server)
+                .await;
+
+            let mut state = FeedState {
+                etag: Some("\"etag-value\"".to_string()),
+                last_modified: Some("Wed, 21 Oct 2015 07:28:00 GMT".to_string()),
+                ..FeedState::default()
+            };
+            let url = format!("{}/feed", server.uri());
+            let result = fetch_feed(&client(), &url, &mut state).await.unwrap();
+
+            // no `.and(header(..))` matcher registered without validators, so
+            // a match here proves the request actually carried both headers.
+            assert!(result.is_none());
+        }
+    }
 }
