@@ -1,4 +1,5 @@
 mod config;
+mod engine;
 // queue, event, and error are `pub` so their doc-tests can exercise the
 // real public api (doc-tests link against the lib crate from outside);
 // nothing else consumes this crate as a library.
