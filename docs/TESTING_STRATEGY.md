@@ -16,7 +16,7 @@ other sections point back rather than repeating them):
 
 | suite | size | where |
 |---|---|---|
-| rust unit/integration | 257 tests — settings 45, queue 53, http 32, notifier 23, rss_poller 28, poller 16, event 16, config 17, presentation 11, lib 12, logging 4 | `cargo test` from `src-tauri/` |
+| rust unit/integration | 258 tests — settings 45, queue 53, http 32, notifier 23, rss_poller 28, poller 16, event 16, config 17, presentation 11, lib 13, logging 4 | `cargo test` from `src-tauri/` |
 | rust doc-tests | 3 — public `queue`/`event` apis | same `cargo test` run |
 | frontend | 62 tests — presentation tables 14, slot-state hook 16, StatusRailCard 14, settings form 13, App render 5 | `npx vitest run` |
 | ci (v4) | fmt, clippy `-D warnings` (`--locked`), cargo test (`--locked`), cargo-audit, npm audit, tsc, vitest, vite build, `sh -n` cli syntax check, swiftc compile check | every push + pr |

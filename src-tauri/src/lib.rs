@@ -692,22 +692,33 @@ fn spawn_heartbeat<R: tauri::Runtime>(
     // wakeups. A small grace addition avoids sub-ms re-loops at the edge.
     tauri::async_runtime::spawn(async move {
         loop {
+            // Arm the wake waiter *while holding the queue lock* (plan 036):
+            // every mutation site locks the queue before mutating and calls
+            // `notify_waiters()` after unlocking, so a waiter registered
+            // under the lock can never miss a mutation this iteration's
+            // `next_deadline()` didn't already see. Registering after the
+            // unlock (the original plan-015 shape) lost any wake that landed
+            // in the gap — fatal in the `None` branch, which parks with no
+            // fallback timer.
+            let notified = wake.notified();
+            tokio::pin!(notified);
             let deadline = {
                 let mut q = queue.lock().await;
                 q.tick(Instant::now());
                 if let Some(state) = q.slot_state_if_changed() {
                     emit_slot_state(&app, state);
                 }
+                notified.as_mut().enable();
                 q.next_deadline()
             };
             match deadline {
                 Some(at) => {
                     tokio::select! {
                         _ = tokio::time::sleep_until(tokio::time::Instant::from_std(at + Duration::from_millis(10))) => {}
-                        _ = wake.notified() => {}
+                        _ = notified.as_mut() => {}
                     }
                 }
-                None => wake.notified().await,
+                None => notified.await,
             }
         }
     });
@@ -1094,6 +1105,72 @@ mod tests {
         assert!(
             rotated.is_ok(),
             "expected the item to rotate out via the deadline-based heartbeat within 3s"
+        );
+    }
+
+    #[tokio::test]
+    async fn heartbeat_parked_idle_wakes_on_enqueue_and_rotates_out() {
+        // plan 036 regression: with the queue empty the heartbeat parks with
+        // no fallback timer, so an enqueue's `notify_waiters()` is its ONLY
+        // chance to learn about the new item. The original plan-015 shape
+        // registered the waiter *after* releasing the queue lock, so a wake
+        // landing in the unlock-to-park gap was lost and the card stuck past
+        // its rotation window; the waiter is now armed under the lock
+        // (`Notified::enable`). This exercises the fixed path end-to-end:
+        // idle-park → enqueue wakes → item rotates out on its deadline.
+        let app = tauri::test::mock_app();
+        let queue = Arc::new(Mutex::new(SingleSlotQueue::new(50)));
+        let heartbeat_wake = wake();
+
+        spawn_heartbeat(app.handle().clone(), queue.clone(), heartbeat_wake.clone());
+
+        // Give the heartbeat time to finish its first iteration and reach
+        // the idle park before the enqueue arrives.
+        tokio::time::sleep(Duration::from_millis(100)).await;
+
+        let short_lived = Event {
+            id: uuid::Uuid::new_v4(),
+            event_type: EventType::Generic,
+            priority: Priority::Medium,
+            rotation: RotationSpec::OneShot { ttl_secs: 1 },
+            topic: None,
+            payload: EventPayload {
+                title: "t".to_string(),
+                body: "b".to_string(),
+            },
+            meta: EventMeta::default(),
+            signal: EventSignal::Generic,
+            origin: SourceKind::Manual,
+        };
+        // The real shared enqueue path — it performs the wake itself.
+        crate::http::enqueue_and_emit(
+            &queue,
+            &heartbeat_wake,
+            &[],
+            &app.handle().clone(),
+            short_lived,
+            false,
+        )
+        .await
+        .unwrap();
+        assert!(matches!(
+            queue.lock().await.current_slot_state(),
+            SlotState::Showing { .. }
+        ));
+
+        let rotated = tokio::time::timeout(Duration::from_secs(3), async {
+            loop {
+                if queue.lock().await.current_slot_state() == SlotState::Empty {
+                    break;
+                }
+                tokio::time::sleep(Duration::from_millis(50)).await;
+            }
+        })
+        .await;
+
+        assert!(
+            rotated.is_ok(),
+            "expected the idle-parked heartbeat to wake on enqueue and rotate the item out within 3s"
         );
     }
 
