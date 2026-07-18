@@ -3,6 +3,7 @@ import { MotionConfig } from "motion/react";
 import { useEffect } from "react";
 import { StatusRailCard } from "./components/StatusRailCard";
 import { useSlotState } from "./useSlotState";
+import { useStatusState } from "./useStatusState";
 import "./styles.css";
 
 function applyAppearance(scale: number, radius: number, opacity: number) {
@@ -14,6 +15,7 @@ function applyAppearance(scale: number, radius: number, opacity: number) {
 
 function App() {
   const slot = useSlotState();
+  const status = useStatusState();
 
   useEffect(() => {
     const seed = window.__NOTCHTAP_APPEARANCE__;
@@ -37,7 +39,7 @@ function App() {
 
   return (
     <MotionConfig reducedMotion="user">
-      <StatusRailCard slot={slot} />
+      <StatusRailCard slot={slot} status={status} />
     </MotionConfig>
   );
 }

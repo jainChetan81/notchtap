@@ -1,6 +1,7 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SlotState } from "../useSlotState";
+import type { StatusState } from "../useStatusState";
 import { StatusRailCard } from "./StatusRailCard";
 
 // this project's vitest config doesn't set `test.globals`, so RTL's
@@ -171,6 +172,48 @@ describe("StatusRailCard", () => {
     expect(container.querySelector(".rail-card.idle")).not.toBeNull();
     expect(container.querySelector(".idle-view")).not.toBeNull();
     expect(screen.queryByText("GOAL")).toBeNull();
+  });
+
+  // plan 034: the widened idle card (`.rail-card.idle.status`) applies
+  // only while the status rail actually has chips — an active status with
+  // every gate off and an empty queue keeps the narrow plain-clock card.
+  it("widens the idle card only while the status rail is active", () => {
+    const active: StatusState = {
+      paused: false,
+      waiting: 0,
+      football: { enabled: false, live: null },
+      news: { enabled: true },
+    };
+    const inactive: StatusState = {
+      paused: false,
+      waiting: 0,
+      football: { enabled: false, live: null },
+      news: { enabled: false },
+    };
+
+    const { container, rerender } = render(
+      <StatusRailCard slot={{ state: "empty" }} status={active} />,
+    );
+    expect(container.querySelector(".rail-card.idle.status")).not.toBeNull();
+
+    rerender(<StatusRailCard slot={{ state: "empty" }} status={inactive} />);
+    expect(container.querySelector(".rail-card.idle")).not.toBeNull();
+    expect(container.querySelector(".rail-card.idle.status")).toBeNull();
+
+    // no status prop at all (settings preview, older hosts): narrow card
+    rerender(<StatusRailCard slot={{ state: "empty" }} />);
+    expect(container.querySelector(".rail-card.idle.status")).toBeNull();
+  });
+
+  it("never carries the status width class onto a showing card", () => {
+    const active: StatusState = {
+      paused: false,
+      waiting: 1,
+      football: { enabled: true, live: { label: "MTL 0–0 TOR", minute: "12'" } },
+      news: { enabled: true },
+    };
+    const { container } = render(<StatusRailCard slot={GOAL} status={active} />);
+    expect(container.querySelector(".rail-card.status")).toBeNull();
   });
 
   // The idle clock re-renders every 30s (useClock) — a live region there

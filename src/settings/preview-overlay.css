@@ -33,6 +33,10 @@
   border-radius: 0 0 var(--card-radius) var(--card-radius);
 }
 
+.appearance-preview .rail-card.idle.status {
+  width: calc(460px * var(--card-scale));
+}
+
 .appearance-preview .rail-card.low {
   --accent: #aab3bd;
   --accent-soft: rgba(170, 179, 189, 0.2);
@@ -391,6 +395,47 @@
   box-shadow: 0 0 10px rgba(182, 245, 229, 0.75);
 }
 
+.appearance-preview .src-rail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.appearance-preview .src-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.62);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.appearance-preview .src-chip.dim {
+  color: rgba(255, 255, 255, 0.34);
+}
+
+.appearance-preview .src-chip.live {
+  color: #7fe08d;
+  background: rgba(127, 224, 141, 0.1);
+  border-color: rgba(127, 224, 141, 0.28);
+}
+
+.appearance-preview .src-chip .live-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #7fe08d;
+  box-shadow: 0 0 6px rgba(127, 224, 141, 0.9);
+  animation: live-dot-pulse 1.6s ease-in-out infinite;
+}
+
 .appearance-preview .cat-politics { --cat: #7c9df5; --cat-deep: rgba(124,157,245,0.16); --cat-pill: rgba(124,157,245,0.14); }
 .appearance-preview .cat-tech     { --cat: #5fd4e8; --cat-deep: rgba(95,212,232,0.15);  --cat-pill: rgba(95,212,232,0.13); }
 .appearance-preview .cat-sports   { --cat: #7fe08d; --cat-deep: rgba(127,224,141,0.15); --cat-pill: rgba(127,224,141,0.13); }
@@ -494,6 +539,19 @@
 @media (prefers-reduced-motion: reduce) {
   .appearance-preview .news-shade::before {
     animation: none;
+  }
+  .appearance-preview .src-chip .live-dot {
+    animation: none;
+  }
+}
+
+@keyframes live-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
   }
 }
 

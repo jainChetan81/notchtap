@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { renderInlineMarkdown } from "../lib/markdown";
 import { ageLabel, categoryClass, categoryLabel } from "../lib/presentation";
 import type { SlotState } from "../useSlotState";
+import { type StatusState, statusRailActive } from "../useStatusState";
 import { IdleView } from "./IdleView";
 import { Manifest } from "./Manifest";
 import { Stamp } from "./Stamp";
@@ -18,7 +19,7 @@ const PULSE_END_ANIMATION: Record<NonNullable<Pulse>, string> = {
   "pulse-red": "red-alert",
 };
 
-export function StatusRailCard({ slot }: { slot: SlotState }) {
+export function StatusRailCard({ slot, status }: { slot: SlotState; status?: StatusState }) {
   const showing = slot.state === "showing";
   const currentId = showing ? slot.id : null;
   const currentSignal = showing ? slot.signal : null;
@@ -51,9 +52,14 @@ export function StatusRailCard({ slot }: { slot: SlotState }) {
   }
 
   const expanded = showing && slot.expanded;
+  // plan 034: the idle card widens only while the status rail has chips
+  // to show — the plain clock idle keeps its narrow width. `status` is
+  // optional: the settings preview renders the card without one.
+  const statusRail = !showing && status !== undefined && statusRailActive(status);
   const cardClass = [
     "rail-card",
     showing ? slot.priority : "idle",
+    statusRail && "status",
     expanded && "expanded",
     pulse,
     news && "news-shade",
@@ -78,7 +84,7 @@ export function StatusRailCard({ slot }: { slot: SlotState }) {
             exit={{ opacity: 0 }}
             transition={{ duration: 0.22 }}
           >
-            <IdleView />
+            <IdleView status={status} />
           </motion.div>
         ) : (
           <motion.div

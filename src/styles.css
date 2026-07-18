@@ -45,6 +45,13 @@ body {
   border-radius: 0 0 var(--card-radius) var(--card-radius);
 }
 
+/* plan 034: the idle card widens only while the status rail has chips to
+   show (live match / news gate / queue depth) — the plain clock idle
+   keeps the 270px above. */
+.rail-card.idle.status {
+  width: calc(460px * var(--card-scale));
+}
+
 /* priority accent — a single named color per tier, consumed by the
    compact row's accent edge (.compact::before), the stamp pill, and the
    track rail. deliberately NOT signal-driven
@@ -450,6 +457,60 @@ body {
   box-shadow: 0 0 10px rgba(182, 245, 229, 0.75);
 }
 
+/* ==== idle status rail (plan 034): live match / news gate / queue depth
+   chips beside the clock. same pill vocabulary as .pill (monospace, 8px,
+   uppercase) so the rail reads as part of the same design system. ==== */
+.src-rail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.src-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.62);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.src-chip.dim {
+  color: rgba(255, 255, 255, 0.34);
+}
+
+.src-chip.live {
+  color: #7fe08d;
+  background: rgba(127, 224, 141, 0.1);
+  border-color: rgba(127, 224, 141, 0.28);
+}
+
+.src-chip .live-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #7fe08d;
+  box-shadow: 0 0 6px rgba(127, 224, 141, 0.9);
+  animation: live-dot-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes live-dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
 /* ==== news card v5: category system (shader + masthead + pills) ==== */
 .cat-politics { --cat: #7c9df5; --cat-deep: rgba(124,157,245,0.16); --cat-pill: rgba(124,157,245,0.14); }
 .cat-tech     { --cat: #5fd4e8; --cat-deep: rgba(95,212,232,0.15);  --cat-pill: rgba(95,212,232,0.13); }
@@ -504,4 +565,5 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .news-shade::before { animation: none; }
+  .src-chip .live-dot { animation: none; }
 }

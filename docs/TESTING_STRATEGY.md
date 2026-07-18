@@ -16,9 +16,9 @@ other sections point back rather than repeating them):
 
 | suite | size | where |
 |---|---|---|
-| rust unit/integration | 268 tests — settings 45, queue 63, http 32, notifier 23, rss_poller 28, poller 16, event 16, config 17, presentation 11, lib 13, logging 4 | `cargo test` from `src-tauri/` |
+| rust unit/integration | 276 tests — settings 45, queue 63, http 32, notifier 23, rss_poller 28, poller 19, event 16, config 17, presentation 11, lib 13, status 5, logging 4 | `cargo test` from `src-tauri/` |
 | rust doc-tests | 3 — public `queue`/`event` apis | same `cargo test` run |
-| frontend | 77 tests — presentation tables 12, inline markdown 7, slot-state hook 18, StatusRailCard 16, Track slider 6, settings form 13, App render 5 | `npx vitest run` |
+| frontend | 97 tests — presentation tables 12, inline markdown 7, slot-state hook 18, status-state hook 14, StatusRailCard 18, IdleView rail 4, Track slider 6, settings form 13, App render 5 | `npx vitest run` |
 | ci (v4) | fmt, clippy `-D warnings` (`--locked`), cargo test (`--locked`), cargo-audit, npm audit, tsc, vitest, vite build, `sh -n` cli syntax check, swiftc compile check | every push + pr |
 
 every example case listed in §4 for v1/v2/v3 components has a passing
@@ -39,6 +39,12 @@ landed the same day: the queue-slider batch counters, the Track slider
 suite, and the expand-all rewrite of plan 008's expanded-semantics
 cases (every promotion expanded, auto-retract at half the base window,
 manual-only 3× window — proptest invariants 8/9 re-pinned to match).
+plan 034 landed the idle source-status rail the same day too: the
+`status.rs` serialization/change-guard/event-pin cases, the poller's
+fixture-driven live-match summary (populated/cleared, no live network),
+and the status-state hook + IdleView chip vitest suites; its manual
+checks (idle "all clear" with espn off, a live fixture poll showing the
+match chip) are operator-owed, same as §4.12's.
 
 **left — each is a decision with an owner section, not a gap:**
 
