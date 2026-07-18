@@ -16,7 +16,7 @@ other sections point back rather than repeating them):
 
 | suite | size | where |
 |---|---|---|
-| rust unit/integration | 225 tests — settings 38, queue 47, http 26, notifier 23, rss_poller 21, poller 19, event 17, config 17, presentation 11, lib (hotkey) 6 | `cargo test` from `src-tauri/` |
+| rust unit/integration | 232 tests — settings 38, queue 47, http 26, notifier 23, rss_poller 28, poller 19, event 17, config 17, presentation 11, lib (hotkey) 6 | `cargo test` from `src-tauri/` |
 | rust doc-tests | 3 — public `queue`/`event` apis | same `cargo test` run |
 | frontend | 62 tests — presentation tables 14, slot-state hook 14, StatusRailCard 14, settings form 11, App render 5, presentation mode 4 | `npx vitest run` |
 | ci (v4) | fmt, clippy `-D warnings` (`--locked`), cargo test (`--locked`), cargo-audit, npm audit, tsc, vitest, vite build, `sh -n` cli syntax check, swiftc compile check | every push + pr |
@@ -527,8 +527,11 @@ poller and the frontend render path only.
   3-column layout
 - **untested by design** (extends §5.1): the category-hued gradient
   shader's visual output and reduced-motion behaviour — same
-  eyeball-only reasoning as §4.6; conditional-GET (etag/last-modified)
-  http mechanics reuse §4.7's "fetch loop stays thin" boundary
+  eyeball-only reasoning as §4.6; `fetch_feed`'s decision surface (304
+  short-circuit, validator-persist-only-after-success ordering, the
+  content-length/streamed size cap) is wiremock-tested (`rss_poller.rs`'s
+  `fetch_feed_tests`), so only the spawn loop itself stays thin-by-design,
+  same as §4.7's espn poller
 - **manual, not yet run**: `rss_enabled = true` against the live ndtv
   feed — first-poll silence, masthead/shader/pill rendering, the news
   manifest hotkey, a `High`-priority push preempting a queued headline;
