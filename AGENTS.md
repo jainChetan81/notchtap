@@ -80,6 +80,7 @@ records now, not active contracts (same status as `BLIND_REVIEW.md`/
 - `npm run tauri dev` — run the app in dev mode
 - `npx tsc --noEmit` — typecheck the frontend
 - `npx vite build` — build the frontend
+- `npx biome check .` — frontend lint + format gate (biome; `npm run lint:fix` auto-applies)
 - `cargo build` (run from `src-tauri/`) — build the rust core; requires
   the rust toolchain (`rustup`) on the target mac
 - `cargo test` (run from `src-tauri/`) — rust unit + integration tests
