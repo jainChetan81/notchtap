@@ -334,6 +334,9 @@ pub fn diff_feed(
                 category,
                 published_at_ms: published,
                 link: link.map(str::to_string),
+                // plan 035: rss items carry no subtitle/details.
+                subtitle: None,
+                details: Vec::new(),
             },
             origin: SourceKind::News,
         };
@@ -814,6 +817,8 @@ mod tests {
                 category: Some("tech".to_string()),
                 published_at_ms: Some(1_704_067_200_000),
                 link: Some(entry_link),
+                subtitle: None,
+                details: Vec::new(),
             }
         );
     }
