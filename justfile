@@ -1,8 +1,15 @@
 # notchtap task runner — mirrors .github/workflows/ci.yml exactly.
 # `just test-all` before calling any phase done (IMPLEMENTATION_PLAN.md §6).
+# fresh clones: run `just setup` first — CI's web job runs the equivalent
+# `npm ci` before its own gates; `test-all` does not do this for you.
 
 default:
     @just --list
+
+# one-time / after-pull: install web deps (rust toolchain via rustup is
+# a prerequisite, not installed here)
+setup:
+    npm ci
 
 # run the app in dev mode
 dev:
