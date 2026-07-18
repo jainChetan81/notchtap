@@ -1,4 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
+import { renderInlineMarkdown } from "../lib/markdown";
 import { categoryLabel, type EventType, publishedLabel, sourceLabelFor } from "../lib/presentation";
 
 // The hardcoded "⌃⇧N" hint mirrors EXPAND_TOGGLE_SHORTCUT in lib.rs (a
@@ -70,7 +71,7 @@ export function Manifest({
             <div className="manifest-inner">
               <div>
                 <div className="detail-label">Message</div>
-                <div className="detail-value message">{body}</div>
+                <div className="detail-value message">{renderInlineMarkdown(body)}</div>
               </div>
               <div>
                 <div className="detail-label">Source / Control</div>

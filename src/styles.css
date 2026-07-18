@@ -268,6 +268,16 @@ body {
   -webkit-line-clamp: 2;
 }
 
+/* inline-markdown code spans (plan 032): rendered by
+   lib/markdown.tsx in .body and the manifest's .detail-value cells. */
+.body code,
+.detail-value code {
+  padding: 1px 5px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--accent);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+
 .stamp {
   align-self: center;
   padding: 4px 6px;

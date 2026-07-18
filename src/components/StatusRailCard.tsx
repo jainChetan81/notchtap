@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
+import { renderInlineMarkdown } from "../lib/markdown";
 import { ageLabel, categoryClass, categoryLabel } from "../lib/presentation";
 import type { SlotState } from "../useSlotState";
 import { IdleView } from "./IdleView";
@@ -131,7 +132,7 @@ export function StatusRailCard({ slot }: { slot: SlotState }) {
                 ) : (
                   <>
                     <div className="title">{slot.title}</div>
-                    <div className="body">{slot.body}</div>
+                    <div className="body">{renderInlineMarkdown(slot.body)}</div>
                   </>
                 )}
               </div>

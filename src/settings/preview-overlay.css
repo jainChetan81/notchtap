@@ -222,6 +222,14 @@
   -webkit-line-clamp: 2;
 }
 
+.appearance-preview .body code,
+.appearance-preview .detail-value code {
+  padding: 1px 5px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--accent);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+
 .appearance-preview .stamp {
   align-self: center;
   padding: 4px 6px;
