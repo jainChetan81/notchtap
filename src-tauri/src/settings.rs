@@ -618,6 +618,23 @@ pub fn pin_uneditable_fields(mut submitted: Config, booted: &Config) -> Config {
     submitted
 }
 
+/// Best-effort pre-flight (plan 021): the relaunched app `exit(1)`s on a
+/// taken port with no UI — catch the common collision before writing. A
+/// race remains possible (port taken between check and relaunch); this
+/// narrows the window, it doesn't close it — accepted. The `new != booted`
+/// guard matters: the app itself holds the booted port, so binding it
+/// would false-positive against our own listener.
+pub fn preflight_port(new: u16, booted: u16) -> Result<(), String> {
+    if new != booted {
+        if let Err(e) = std::net::TcpListener::bind(("127.0.0.1", new)) {
+            return Err(format!(
+                "port {new} is not bindable right now ({e}) — pick another or free it first"
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Validate → atomic write → relaunch. The `Err` arm carries the whole
 /// per-field message list for the form; on success the process is gone
 /// before a reply could matter.
@@ -632,6 +649,7 @@ pub fn save_config_and_relaunch(
     let booted = state.inner().lock().unwrap().clone();
     let config = pin_uneditable_fields(config, &booted);
     validate(&config)?;
+    preflight_port(config.port, booted.port).map_err(|e| vec![e])?;
     let dir = notchtap_config_dir().map_err(|e| vec![e])?;
     write_config_atomic(&dir, &config)
         .map_err(|e| vec![format!("could not write config.toml: {e}")])?;
@@ -1371,6 +1389,39 @@ mod tests {
             "detect_path must not be ipc-editable"
         );
         assert_eq!(pinned.port, 9999, "editable fields must pass through");
+    }
+
+    #[test]
+    fn preflight_port_never_trips_when_the_submitted_port_is_unchanged() {
+        // Bind an ephemeral port ourselves and make it BOTH the booted and
+        // submitted value — this simulates the app's own listener already
+        // holding the booted port. The `new != booted` guard must skip the
+        // bind attempt entirely, so this must pass even though the port is
+        // held right now.
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = listener.local_addr().unwrap().port();
+        assert!(preflight_port(port, port).is_ok());
+    }
+
+    #[test]
+    fn preflight_port_rejects_a_port_held_by_a_live_listener() {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let held_port = listener.local_addr().unwrap().port();
+        // distinct booted port (ephemeral ports are always well above 1)
+        // so the `new != booted` guard doesn't skip the check
+        let booted_port = held_port - 1;
+        let err = preflight_port(held_port, booted_port).unwrap_err();
+        assert!(err.contains(held_port.to_string().as_str()), "{err:?}");
+    }
+
+    #[test]
+    fn preflight_port_accepts_a_free_port() {
+        // Bind-then-drop to get a free ephemeral port number, then confirm
+        // preflight can still bind it (it dropped the listener already).
+        let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let free_port = probe.local_addr().unwrap().port();
+        drop(probe);
+        assert!(preflight_port(free_port, free_port.wrapping_add(1)).is_ok());
     }
 
     #[test]
