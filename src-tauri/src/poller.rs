@@ -534,23 +534,16 @@ impl Backoff {
 
 // ---------------------------------------------------------------------------
 // fetch loop — deliberately thin and untested (v2 spec §3): everything below
-// the "here is a response body" line is the tested surface above.
+// the "here is a response body" line is the tested surface above. the capped
+// body read is no longer inline here — it's the shared, wiremock-tested
+// helper in `net.rs` (plan 025), which both pollers now call.
 // ---------------------------------------------------------------------------
 
 async fn fetch_league(client: &reqwest::Client, league: &str) -> anyhow::Result<String> {
     let url = format!("https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/scoreboard");
     let response = client.get(&url).send().await?.error_for_status()?;
-    if response
-        .content_length()
-        .is_some_and(|length| length > MAX_SCOREBOARD_BYTES as u64)
-    {
-        anyhow::bail!("scoreboard response exceeds 1 MiB");
-    }
-    let bytes = response.bytes().await?;
-    if bytes.len() > MAX_SCOREBOARD_BYTES {
-        anyhow::bail!("scoreboard response exceeds 1 MiB");
-    }
-    Ok(String::from_utf8(bytes.to_vec())?)
+    let bytes = crate::net::read_body_capped(response, MAX_SCOREBOARD_BYTES).await?;
+    Ok(String::from_utf8(bytes)?)
 }
 
 /// Enqueues each event and offers the accepted ones to every connector —
@@ -601,12 +594,7 @@ pub fn spawn_espn_poller(
     live: Arc<StdMutex<Option<LiveMatchSummary>>>,
 ) {
     tauri::async_runtime::spawn(async move {
-        let client = match reqwest::Client::builder()
-            .user_agent("notchtap/0.1 (+https://github.com/jainChetan81/notchtap)")
-            .redirect(reqwest::redirect::Policy::limited(3))
-            .timeout(Duration::from_secs(10))
-            .build()
-        {
+        let client = match crate::net::build_poll_client() {
             Ok(client) => client,
             Err(error) => {
                 tracing::error!("espn poller could not build http client: {error}");

@@ -389,7 +389,7 @@ async fn fetch_feed(
         request = request.header(IF_MODIFIED_SINCE, last_modified);
     }
 
-    let mut response = request.send().await?;
+    let response = request.send().await?;
     if response.status() == reqwest::StatusCode::NOT_MODIFIED {
         return Ok(None);
     }
@@ -411,24 +411,7 @@ async fn fetch_feed(
         .and_then(|value| value.to_str().ok())
         .map(str::to_string);
 
-    if response
-        .content_length()
-        .is_some_and(|length| length > MAX_FEED_BYTES as u64)
-    {
-        anyhow::bail!("response body exceeds 1 MiB");
-    }
-
-    // Stream and bail as soon as the running total exceeds the cap, instead
-    // of buffering the whole body first — a chunked response with no
-    // Content-Length would otherwise let a misbehaving feed balloon memory
-    // far past 1 MiB before the size check ever runs.
-    let mut body: Vec<u8> = Vec::with_capacity(64 * 1024);
-    while let Some(chunk) = response.chunk().await? {
-        if body.len() + chunk.len() > MAX_FEED_BYTES {
-            anyhow::bail!("response body exceeds 1 MiB");
-        }
-        body.extend_from_slice(&chunk);
-    }
+    let body = crate::net::read_body_capped(response, MAX_FEED_BYTES).await?;
 
     let feed = feed_rs::parser::parse(&body[..])?;
     state.etag = etag;
@@ -450,12 +433,7 @@ pub fn spawn_rss_poller(
     priority: Priority,
 ) {
     tauri::async_runtime::spawn(async move {
-        let client = match reqwest::Client::builder()
-            .user_agent("notchtap/0.1 (+https://github.com/jainChetan81/notchtap)")
-            .redirect(reqwest::redirect::Policy::limited(3))
-            .timeout(Duration::from_secs(10))
-            .build()
-        {
+        let client = match crate::net::build_poll_client() {
             Ok(client) => client,
             Err(error) => {
                 tracing::error!("rss poller could not build http client: {error}");

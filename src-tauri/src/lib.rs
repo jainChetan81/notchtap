@@ -7,6 +7,7 @@ pub mod event;
 mod http;
 mod logging;
 mod login_item;
+mod net;
 mod notifier;
 mod poller;
 mod presentation;
