@@ -14,7 +14,7 @@ use uuid::Uuid;
 
 use crate::error::{EventError, QueueError};
 use crate::event::{
-    emit_slot_state, Event, EventMeta, EventPayload, EventSignal, EventType, Priority,
+    emit_slot_state, DetailItem, Event, EventMeta, EventPayload, EventSignal, EventType, Priority,
     RotationSpec, SourceKind,
 };
 use crate::notifier::ConnectorHandle;
@@ -119,6 +119,60 @@ struct NotifyRequest {
     #[serde(default)]
     signal: EventSignal,
     source: Option<RequestSource>,
+    // plan 035: a first-class optional subtitle (no longer folded into the
+    // body CLI-side) and optional label/value detail pairs. Both are
+    // `Option` — a missing field deserializes to `None` (serde special-cases
+    // `Option`), so old payloads that set neither stay byte-identical. Both
+    // are capped/sanitized (see `sanitize_subtitle`/`sanitize_details`)
+    // before they reach `EventMeta`, since `details` is untrusted hook input.
+    subtitle: Option<String>,
+    details: Option<Vec<DetailItem>>,
+}
+
+/// Display-safety caps for the plan-035 rich-relay fields (decision 4):
+/// the manifest lives in a fixed 500×300 window, so subtitle/detail text
+/// is bounded here — the server is the trust boundary. The hooks truncate
+/// earlier as a courtesy, never as the guarantee; if the window ever
+/// grows, revisit these numbers, not the mechanism.
+const SUBTITLE_MAX_CHARS: usize = 120;
+const DETAILS_MAX_PAIRS: usize = 8;
+const DETAIL_LABEL_MAX_CHARS: usize = 40;
+const DETAIL_VALUE_MAX_CHARS: usize = 200;
+
+/// Truncates to at most `max_chars` characters (not bytes — never splits a
+/// UTF-8 codepoint), appending an ellipsis only when truncation happened.
+fn truncate_with_ellipsis(s: &str, max_chars: usize) -> String {
+    if s.chars().count() <= max_chars {
+        s.to_string()
+    } else {
+        let mut out: String = s.chars().take(max_chars).collect();
+        out.push('…');
+        out
+    }
+}
+
+/// An empty subtitle collapses to `None`; anything longer than the cap is
+/// truncated with an ellipsis.
+fn sanitize_subtitle(subtitle: Option<String>) -> Option<String> {
+    subtitle
+        .filter(|s| !s.is_empty())
+        .map(|s| truncate_with_ellipsis(&s, SUBTITLE_MAX_CHARS))
+}
+
+/// Drops pairs with an empty label, keeps at most `DETAILS_MAX_PAIRS`
+/// (dropping happens first, so the cap counts only non-empty-label pairs),
+/// and truncates each label/value to its cap.
+fn sanitize_details(details: Option<Vec<DetailItem>>) -> Vec<DetailItem> {
+    details
+        .unwrap_or_default()
+        .into_iter()
+        .filter(|d| !d.label.is_empty())
+        .take(DETAILS_MAX_PAIRS)
+        .map(|d| DetailItem {
+            label: truncate_with_ellipsis(&d.label, DETAIL_LABEL_MAX_CHARS),
+            value: truncate_with_ellipsis(&d.value, DETAIL_VALUE_MAX_CHARS),
+        })
+        .collect()
 }
 
 pub fn router<R: tauri::Runtime>(state: AppState<R>) -> Router {
@@ -169,6 +223,15 @@ async fn notify_handler<R: tauri::Runtime>(
         ),
     };
 
+    // plan 035: subtitle/details are the only meta a `/notify` caller may
+    // set (source/category/published/link stay poller-only); both are
+    // sanitized/capped here — this is the trust boundary for hook input.
+    let meta = EventMeta {
+        subtitle: sanitize_subtitle(req.subtitle),
+        details: sanitize_details(req.details),
+        ..EventMeta::default()
+    };
+
     let event = Event {
         id: Uuid::new_v4(),
         event_type: EventType::Generic,
@@ -176,7 +239,7 @@ async fn notify_handler<R: tauri::Runtime>(
         rotation: RotationSpec::OneShot { ttl_secs },
         topic: None,
         payload: EventPayload { title, body },
-        meta: EventMeta::default(),
+        meta,
         signal: req.signal,
         origin,
     };
@@ -907,5 +970,136 @@ mod tests {
             (3..=5).contains(&elapsed_to_deadline),
             "expected ~default_ttl/2 (4s, the armed auto-retract), got {elapsed_to_deadline}s — the wire ttlSecs value leaked through"
         );
+    }
+
+    // --- plan 035: rich-relay subtitle/details wire fields + caps ---
+
+    #[test]
+    fn sanitize_subtitle_empties_and_caps() {
+        assert_eq!(sanitize_subtitle(None), None);
+        assert_eq!(sanitize_subtitle(Some(String::new())), None); // empty -> None
+        assert_eq!(
+            sanitize_subtitle(Some("short".to_string())),
+            Some("short".to_string())
+        );
+        // 121 chars -> 120 kept + an ellipsis (121 total)
+        let capped = sanitize_subtitle(Some("x".repeat(121))).unwrap();
+        assert_eq!(capped.chars().count(), 121);
+        assert!(capped.ends_with('…'));
+        assert_eq!(capped.chars().filter(|c| *c == 'x').count(), 120);
+    }
+
+    #[test]
+    fn sanitize_details_enforces_caps() {
+        // 9 non-empty-label pairs -> capped to 8
+        let nine: Vec<DetailItem> = (0..9)
+            .map(|i| DetailItem {
+                label: format!("L{i}"),
+                value: format!("v{i}"),
+            })
+            .collect();
+        assert_eq!(sanitize_details(Some(nine)).len(), 8);
+
+        // empty-label pairs dropped before the count cap applies
+        let with_empty = vec![
+            DetailItem {
+                label: String::new(),
+                value: "dropped".to_string(),
+            },
+            DetailItem {
+                label: "Kept".to_string(),
+                value: "v".to_string(),
+            },
+        ];
+        let kept = sanitize_details(Some(with_empty));
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].label, "Kept");
+
+        // label > 40 and value > 200 chars each truncated with an ellipsis
+        let big = sanitize_details(Some(vec![DetailItem {
+            label: "L".repeat(50),
+            value: "v".repeat(500),
+        }]));
+        assert_eq!(big[0].label.chars().count(), 41); // 40 + '…'
+        assert!(big[0].label.ends_with('…'));
+        assert_eq!(big[0].value.chars().count(), 201); // 200 + '…'
+        assert!(big[0].value.ends_with('…'));
+
+        assert!(sanitize_details(None).is_empty()); // absent -> empty
+    }
+
+    #[tokio::test]
+    async fn notify_round_trips_subtitle_and_details_into_slot_state() {
+        let state = test_state(SingleSlotQueue::new(50));
+        let app = router(state.clone());
+        let response = app
+            .oneshot(json_request(
+                r#"{"title":"t","body":"b","subtitle":"Permission request","details":[{"label":"Tool","value":"Bash"},{"label":"Command","value":"git push"}]}"#,
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        // bind first so the MutexGuard drops at the semicolon, not at the
+        // end of the match (which would outlive `state`).
+        let slot = state.queue.lock().await.current_slot_state();
+        match slot {
+            crate::event::SlotState::Showing {
+                subtitle, details, ..
+            } => {
+                assert_eq!(subtitle.as_deref(), Some("Permission request"));
+                assert_eq!(details.len(), 2);
+                assert_eq!(details[0].label, "Tool");
+                assert_eq!(details[0].value, "Bash");
+                assert_eq!(details[1].label, "Command");
+                assert_eq!(details[1].value, "git push");
+            }
+            other => panic!("expected Showing, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn notify_caps_details_server_side_to_eight() {
+        let state = test_state(SingleSlotQueue::new(50));
+        let app = router(state.clone());
+        let pairs = (0..9)
+            .map(|i| format!(r#"{{"label":"L{i}","value":"v{i}"}}"#))
+            .collect::<Vec<_>>()
+            .join(",");
+        let body = format!(r#"{{"title":"t","body":"b","details":[{pairs}]}}"#);
+        let response = app.oneshot(json_request(&body)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let slot = state.queue.lock().await.current_slot_state();
+        match slot {
+            crate::event::SlotState::Showing { details, .. } => {
+                assert_eq!(details.len(), 8, "9 pairs on the wire must cap to 8");
+            }
+            other => panic!("expected Showing, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn notify_without_subtitle_or_details_leaves_them_empty() {
+        // back-compat: an old payload (neither field) yields None/empty,
+        // byte-identical to pre-plan-035 behavior.
+        let state = test_state(SingleSlotQueue::new(50));
+        let app = router(state.clone());
+        let response = app
+            .oneshot(json_request(r#"{"title":"t","body":"b"}"#))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let slot = state.queue.lock().await.current_slot_state();
+        match slot {
+            crate::event::SlotState::Showing {
+                subtitle, details, ..
+            } => {
+                assert_eq!(subtitle, None);
+                assert!(details.is_empty());
+            }
+            other => panic!("expected Showing, got {other:?}"),
+        }
     }
 }

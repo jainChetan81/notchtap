@@ -502,6 +502,8 @@ impl SingleSlotQueue {
                     category: item.event.meta.category.clone(),
                     published_at_ms: item.event.meta.published_at_ms,
                     link: item.event.meta.link.clone(),
+                    subtitle: item.event.meta.subtitle.clone(),
+                    details: item.event.meta.details.clone(),
                     queue_total,
                     queue_done,
                 }
@@ -530,7 +532,7 @@ const MAX_EXTENSION_ON_SUPERSEDE_SECS: u64 = 6;
 mod tests {
     use super::*;
     use crate::error::QueueError;
-    use crate::event::{EventMeta, EventPayload, EventSignal, EventType};
+    use crate::event::{DetailItem, EventMeta, EventPayload, EventSignal, EventType};
     use std::time::Duration;
     use uuid::Uuid;
 
@@ -1707,6 +1709,40 @@ mod tests {
         let mut q = SingleSlotQueue::new(50);
         q.enqueue(event("a", Priority::Medium, 8)).unwrap();
         assert_eq!(queue_progress(&q), (1, 0));
+    }
+
+    // plan 035: the rich-relay fields ride on EventMeta, so a visible
+    // item's subtitle/details must surface in current_slot_state — the one
+    // passthrough the frontend renders as manifest cells.
+    #[test]
+    fn current_slot_state_carries_subtitle_and_details_from_event_meta() {
+        let mut q = SingleSlotQueue::new(50);
+        let mut ev = event("a", Priority::High, 8);
+        ev.meta.subtitle = Some("Permission request".to_string());
+        ev.meta.details = vec![
+            DetailItem {
+                label: "Tool".to_string(),
+                value: "Bash".to_string(),
+            },
+            DetailItem {
+                label: "Command".to_string(),
+                value: "git push".to_string(),
+            },
+        ];
+        q.enqueue(ev).unwrap();
+        match q.current_slot_state() {
+            SlotState::Showing {
+                subtitle, details, ..
+            } => {
+                assert_eq!(subtitle.as_deref(), Some("Permission request"));
+                assert_eq!(details.len(), 2);
+                assert_eq!(details[0].label, "Tool");
+                assert_eq!(details[0].value, "Bash");
+                assert_eq!(details[1].label, "Command");
+                assert_eq!(details[1].value, "git push");
+            }
+            SlotState::Empty => panic!("expected Showing"),
+        }
     }
 
     #[test]

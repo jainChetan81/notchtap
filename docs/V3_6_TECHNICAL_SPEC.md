@@ -230,7 +230,7 @@ default for one-shot pushes (cli, cmux relay), which have no notion of
 "the same thing happening again."
 
 wire (`/notify`) request shape, `http.rs`'s `NotifyRequest`
-(`src-tauri/src/http.rs:98–111`, current as of v6.1):
+(`src-tauri/src/http.rs`, current as of plan 035):
 
 ```rust
 #[derive(Deserialize)]
@@ -241,6 +241,11 @@ struct NotifyRequest {
     #[serde(default)]
     signal: EventSignal,
     source: Option<RequestSource>,
+    // plan 035: display-only rich-relay fields, both optional. A missing
+    // field deserializes to None (serde special-cases Option), so an old
+    // {title, body} payload is byte-identical.
+    subtitle: Option<String>,
+    details: Option<Vec<DetailItem>>, // DetailItem { label, value }
 }
 ```
 
@@ -255,9 +260,24 @@ http schema narrow while satisfying "every source feeds this one
 queue" (§3.6) without opening `Recurring`/`topic` to untrusted/external
 input in this pass.
 
-the outbound `SlotState::Showing` wire (`src-tauri/src/event.rs:146–160`)
-also carries a v5.1 `link: Option<String>` field — the target for the
-⌃⇧O open-story hotkey on news items; absent for non-news sources.
+`subtitle` and `details` (plan 035) are the only *display* metadata a
+`/notify` caller may set — `source`/`category`/`published`/`link` stay
+poller-only. both are sanitized/capped server-side before they reach
+`EventMeta` (the trust boundary, since `details` originates in untrusted
+hook input): `subtitle` ≤ 120 chars (empty string → `None`); `details`
+≤ 8 pairs with empty-label pairs dropped first, each label ≤ 40 and
+value ≤ 200 chars, all truncated with a `…`. absent → `None`/empty, so
+old payloads are unchanged. a `DetailItem` is `{label, value}` — its own
+field names on the wire, not camelCased. these caps exist because the
+card lives in a fixed 500×300 window; if that ever grows, revisit the
+numbers, not the mechanism.
+
+the outbound `SlotState::Showing` wire (`src-tauri/src/event.rs`) also
+carries the v5.1 `link: Option<String>` field — the target for the ⌃⇧O
+open-story hotkey on news items; absent for non-news sources — and,
+since plan 035, `subtitle` + `details` mirrored from `EventMeta`: the
+manifest renders `subtitle` as its own cell and one cell per `details`
+pair (Layout A), plain text (details are untrusted), generic branch only.
 
 ### 3.4 default priority per source
 

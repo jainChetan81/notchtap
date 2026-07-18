@@ -1,9 +1,13 @@
 #!/bin/sh
 # notchtap — cli push for the notchtap notification engine (spec §12).
 # flags only, no positional form:
-#   notchtap --title <title> --body <body> [--subtitle <s>] [--priority low|medium|high] [--signal <s>] [--source cmux] [--port <p>]
-# a non-empty --subtitle folds into the posted body as "<subtitle> — <body>";
-# the server never sees a subtitle field. --priority, --signal, and --source
+#   notchtap --title <title> --body <body> [--subtitle <s>] [--detail Label=Value]... [--priority low|medium|high] [--signal <s>] [--source cmux] [--port <p>]
+# --subtitle and --detail are first-class wire fields (plan 035): --subtitle
+# posts as its own optional field (it no longer folds into the body), and each
+# repeatable --detail Label=Value adds a {label,value} pair to a details array
+# (max 8; the value may itself contain '=' — the split is on the FIRST '='; the
+# label must be non-empty). the server caps/truncates both for display safety.
+# --priority, --signal, and --source
 # fold into the posted json as-is; when omitted, the field is left off the
 # payload entirely and the server's own default applies — v3.6 spec §6:
 # there is exactly one place "what does unspecified mean" lives, not two
@@ -25,7 +29,7 @@
 set -u
 
 usage() {
-  echo "usage: notchtap --title <title> --body <body> [--subtitle <s>] [--priority low|medium|high] [--signal <s>] [--source cmux] [--port <p>]" >&2
+  echo "usage: notchtap --title <title> --body <body> [--subtitle <s>] [--detail Label=Value]... [--priority low|medium|high] [--signal <s>] [--source cmux] [--port <p>]" >&2
   exit 2
 }
 
@@ -36,6 +40,12 @@ priority=""
 signal=""
 source=""
 port="${NOTCHTAP_PORT:-9789}"
+# details accumulates as a JSON array; each --detail appends one {label,value}
+# pair via jq (safe escaping), capped at 8 (the server caps too — this is the
+# earlier, courtesy cap decision 4 mentions).
+details="[]"
+detail_count=0
+DETAIL_MAX=8
 
 while [ $# -gt 0 ]; do
   case "$1" in
@@ -48,6 +58,21 @@ while [ $# -gt 0 ]; do
     --subtitle)
       [ $# -ge 2 ] || usage
       subtitle="$2"; shift 2 ;;
+    --detail)
+      [ $# -ge 2 ] || usage
+      # must contain '=', split on the FIRST one so the value may hold '='.
+      case "$2" in
+        *=*) ;;
+        *) usage ;;
+      esac
+      label="${2%%=*}"
+      value="${2#*=}"
+      [ -n "$label" ] || usage
+      detail_count=$((detail_count + 1))
+      [ "$detail_count" -le "$DETAIL_MAX" ] || usage
+      details=$(jq -cn --argjson acc "$details" --arg l "$label" --arg v "$value" \
+        '$acc + [{label: $l, value: $v}]') || exit 1
+      shift 2 ;;
     --priority)
       [ $# -ge 2 ] || usage
       case "$2" in
@@ -80,9 +105,8 @@ done
 [ -n "$title" ] || usage
 [ -n "$body" ] || usage
 
-if [ -n "$subtitle" ]; then
-  body="$subtitle — $body"
-fi
+# plan 035: --subtitle no longer folds into the body — it posts as its own
+# wire field below (the manifest renders it as a dedicated cell).
 
 # auto-detect a cmux-relayed push: only cmux's notification command sets
 # this env var, so its presence means "cmux invoked us" without cmux's own
@@ -93,13 +117,18 @@ if [ -z "$source" ] && [ -n "${CMUX_NOTIFICATION_BODY+x}" ]; then
 fi
 
 # jq -n --arg gives safe escaping for quotes/newlines in relayed bodies.
-# priority/signal/source are merged in only when set, so an unspecified
-# field is genuinely absent from the wire (not sent as an empty string) —
-# the server's own default is the single source of truth for "unspecified".
+# subtitle/priority/signal/source are merged in only when set, so an
+# unspecified field is genuinely absent from the wire (not sent as an empty
+# string) — the server's own default is the single source of truth for
+# "unspecified". details is merged only when non-empty (plan 035); it is
+# already a JSON array built safely via jq per --detail above.
 payload=$(jq -n \
-  --arg title "$title" --arg body "$body" \
+  --arg title "$title" --arg body "$body" --arg subtitle "$subtitle" \
   --arg priority "$priority" --arg signal "$signal" --arg source "$source" \
+  --argjson details "$details" \
   '{title: $title, body: $body}
+   + (if $subtitle != "" then {subtitle: $subtitle} else {} end)
+   + (if ($details | length) > 0 then {details: $details} else {} end)
    + (if $priority != "" then {priority: $priority} else {} end)
    + (if $signal != "" then {signal: $signal} else {} end)
    + (if $source != "" then {source: $source} else {} end)') || exit 1

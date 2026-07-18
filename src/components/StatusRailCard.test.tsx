@@ -36,6 +36,8 @@ const GOAL: SlotState = {
   category: null,
   publishedAtMs: null,
   link: null,
+  subtitle: null,
+  details: [],
   queueTotal: 3,
   queueDone: 0,
 };
@@ -53,6 +55,8 @@ const RED_CARD: SlotState = {
   category: null,
   publishedAtMs: null,
   link: null,
+  subtitle: null,
+  details: [],
   queueTotal: 3,
   queueDone: 1,
 };
@@ -70,6 +74,8 @@ const CMUX_NEEDS_INPUT: SlotState = {
   category: null,
   publishedAtMs: null,
   link: null,
+  subtitle: null,
+  details: [],
   queueTotal: 1,
   queueDone: 0,
 };
@@ -87,8 +93,35 @@ const NEWS: SlotState = {
   category: "politics",
   publishedAtMs: 2_000_000_000_000 - 5 * 60_000,
   link: "https://example.com/digital-rights",
+  subtitle: null,
+  details: [],
   queueTotal: 2,
   queueDone: 1,
+};
+
+// plan 035: a generic (cmux/claude-relay) card carrying a subtitle and
+// detail pairs — the manifest renders each as its own cell (Layout A).
+const CMUX_RICH: SlotState = {
+  state: "showing",
+  id: "n5",
+  title: "Claude Code needs input",
+  body: "A permission prompt is waiting",
+  eventType: "generic",
+  priority: "high",
+  signal: "generic",
+  expanded: true,
+  source: null,
+  category: null,
+  publishedAtMs: null,
+  link: null,
+  subtitle: "Permission request",
+  details: [
+    { label: "Tool", value: "Bash" },
+    { label: "Command", value: "git push origin master" },
+    { label: "Project", value: "/Users/x/proj" },
+  ],
+  queueTotal: 1,
+  queueDone: 0,
 };
 
 describe("StatusRailCard", () => {
@@ -310,6 +343,45 @@ describe("StatusRailCard", () => {
     expect(screen.getByText("Source / Control").nextElementSibling?.textContent).toContain(
       "⌃⇧O read · ⌃⇧N collapse",
     );
+  });
+
+  // plan 035 (Layout A): subtitle and each detail pair render as ordinary
+  // manifest cells in the generic branch — exercised through StatusRailCard,
+  // the real render path, not a bare <Manifest>.
+  it("renders the subtitle and each detail pair as manifest cells when expanded", () => {
+    render(<StatusRailCard slot={CMUX_RICH} />);
+
+    expect(screen.getByText("Subtitle")).toBeTruthy();
+    expect(screen.getByText("Permission request")).toBeTruthy();
+    expect(screen.getByText("Tool")).toBeTruthy();
+    expect(screen.getByText("Bash")).toBeTruthy();
+    expect(screen.getByText("Command")).toBeTruthy();
+    // detail values are plain text (not markdown) — the literal string shows.
+    expect(screen.getByText("git push origin master")).toBeTruthy();
+    expect(screen.getByText("Project")).toBeTruthy();
+    expect(screen.getByText("/Users/x/proj")).toBeTruthy();
+  });
+
+  it("renders neither subtitle nor detail cells when collapsed", () => {
+    render(<StatusRailCard slot={{ ...CMUX_RICH, expanded: false }} />);
+
+    expect(screen.queryByText("Subtitle")).toBeNull();
+    expect(screen.queryByText("Permission request")).toBeNull();
+    expect(screen.queryByText("Tool")).toBeNull();
+    expect(screen.queryByText("Bash")).toBeNull();
+    expect(screen.queryByText("Project")).toBeNull();
+  });
+
+  it("renders a detail value that contains an '=' verbatim (first-'=' split is CLI-side only)", () => {
+    render(
+      <StatusRailCard
+        slot={{
+          ...CMUX_RICH,
+          details: [{ label: "Command", value: "FOO=bar make build" }],
+        }}
+      />,
+    );
+    expect(screen.getByText("FOO=bar make build")).toBeTruthy();
   });
 
   // plan 033: the track is now the queue slider — an enqueue while the

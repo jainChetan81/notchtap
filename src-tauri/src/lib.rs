@@ -1290,6 +1290,8 @@ mod tests {
             category: None,
             published_at_ms: None,
             link: None,
+            subtitle: None,
+            details: Vec::new(),
             queue_total: 1,
             queue_done: 0,
         };

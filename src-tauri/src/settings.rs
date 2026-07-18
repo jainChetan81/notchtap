@@ -538,6 +538,8 @@ fn build_test_event(config: &Config, source: SourceKind) -> Event {
                 category: Some("preview".into()),
                 published_at_ms: Some(now_ms),
                 link: None,
+                subtitle: None,
+                details: Vec::new(),
             },
             signal: EventSignal::Generic,
             origin: SourceKind::News,

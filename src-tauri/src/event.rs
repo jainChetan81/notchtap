@@ -119,9 +119,22 @@ pub struct EventPayload {
     pub body: String,
 }
 
-/// News-source metadata (v5): populated only by the rss poller; every
-/// other source leaves it default. Presentation-only — never consulted
-/// by queue/rotation/priority logic.
+/// A single label/value pair rendered as one manifest cell (plan 035).
+/// Display-only, like the rest of [`EventMeta`] — never consulted by
+/// queue/rotation/priority logic. `details` come from untrusted hook
+/// input, so the `/notify` handler caps label/value length (and the
+/// pair count) before they land here.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct DetailItem {
+    pub label: String,
+    pub value: String,
+}
+
+/// News-source metadata (v5) plus the rich-relay fields (plan 035:
+/// `subtitle`/`details`): the rss poller populates source/category/
+/// published/link, and `/notify` callers populate subtitle/details;
+/// every other source leaves them default. Presentation-only — never
+/// consulted by queue/rotation/priority logic.
 #[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct EventMeta {
@@ -129,6 +142,11 @@ pub struct EventMeta {
     pub category: Option<String>,
     pub published_at_ms: Option<i64>,
     pub link: Option<String>,
+    /// A first-class optional subtitle (plan 035): the CLI's `--subtitle`
+    /// used to fold into the body CLI-side; it is now its own wire field.
+    pub subtitle: Option<String>,
+    /// Label/value detail pairs (plan 035), capped server-side.
+    pub details: Vec<DetailItem>,
 }
 
 /// The rust-authoritative slot state pushed to the frontend whenever it
@@ -138,6 +156,13 @@ pub struct EventMeta {
 // struct-variant field names need `rename_all_fields` too, or `event_type`
 // would serialize as-is instead of `eventType` (caught by
 // slot_state_showing_serializes_camel_case_and_tag's own assertion).
+// `Showing` is inherently large (it mirrors the whole wire payload) while
+// `Empty` is a trivial sentinel — the asymmetry clippy's large_enum_variant
+// flags is by design. Boxing wouldn't help honestly here: this enum is
+// short-lived (built per emit, serialized, dropped), never stored in bulk,
+// and boxing a field would only muddy the serde wire shape. Since plan 035
+// added subtitle/details it crossed the 200-byte threshold, so allow it.
+#[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase", rename_all_fields = "camelCase")]
 #[serde(tag = "state")]
@@ -155,6 +180,11 @@ pub enum SlotState {
         category: Option<String>,
         published_at_ms: Option<i64>,
         link: Option<String>,
+        /// Rich-relay fields (plan 035), mirrored from `EventMeta` — the
+        /// manifest renders `subtitle` as its own cell and one cell per
+        /// `details` pair. Display-only, camelCase on the wire.
+        subtitle: Option<String>,
+        details: Vec<DetailItem>,
         /// Queue-slider position within the current batch (plan 033):
         /// `queue_total` is the batch size (never below 1 while Showing),
         /// `queue_done` how many items completed (capped at
@@ -286,6 +316,17 @@ mod tests {
             category: Some("politics".to_string()),
             published_at_ms: Some(1_789_600_000_000),
             link: Some("https://example.com/story".to_string()),
+            subtitle: Some("Permission request".to_string()),
+            details: vec![
+                DetailItem {
+                    label: "Tool".to_string(),
+                    value: "Bash".to_string(),
+                },
+                DetailItem {
+                    label: "Command".to_string(),
+                    value: "git push".to_string(),
+                },
+            ],
             queue_total: 5,
             queue_done: 2,
         };
@@ -302,6 +343,13 @@ mod tests {
         assert_eq!(json["category"], "politics");
         assert_eq!(json["publishedAtMs"], 1_789_600_000_000_i64);
         assert_eq!(json["link"], "https://example.com/story");
+        // plan 035: subtitle is a first-class string field; details is an
+        // array of {label, value} pairs (own field names, not camelCased).
+        assert_eq!(json["subtitle"], "Permission request");
+        assert_eq!(json["details"][0]["label"], "Tool");
+        assert_eq!(json["details"][0]["value"], "Bash");
+        assert_eq!(json["details"][1]["label"], "Command");
+        assert_eq!(json["details"][1]["value"], "git push");
         assert_eq!(json["queueTotal"], 5);
         assert_eq!(json["queueDone"], 2);
         assert!(json.get("event_type").is_none());
@@ -324,6 +372,8 @@ mod tests {
             category: None,
             published_at_ms: None,
             link: None,
+            subtitle: None,
+            details: Vec::new(),
             queue_total: 1,
             queue_done: 0,
         };
@@ -333,8 +383,51 @@ mod tests {
         assert!(json["category"].is_null());
         assert!(json["publishedAtMs"].is_null());
         assert!(json["link"].is_null());
+        // plan 035: absent subtitle serializes null; absent details is an
+        // empty array (never null/absent), so the frontend can map over it.
+        assert!(json["subtitle"].is_null());
+        assert_eq!(json["details"], serde_json::json!([]));
         assert_eq!(json["queueTotal"], 1);
         assert_eq!(json["queueDone"], 0);
+    }
+
+    #[test]
+    fn detail_item_round_trips_with_own_field_names() {
+        // plan 035: DetailItem fields are `label`/`value` on the wire (no
+        // camelCase rename — the frontend reads exactly these keys).
+        let item = DetailItem {
+            label: "Command".to_string(),
+            value: "git push origin master".to_string(),
+        };
+        let json = serde_json::to_value(&item).unwrap();
+        assert_eq!(
+            json,
+            serde_json::json!({"label": "Command", "value": "git push origin master"})
+        );
+        let parsed: DetailItem = serde_json::from_value(json).unwrap();
+        assert_eq!(parsed, item);
+    }
+
+    #[test]
+    fn event_meta_default_has_no_subtitle_and_empty_details() {
+        // back-compat: every non-relay source leaves the plan-035 fields at
+        // their default (None / empty), covered by EventMeta's derived Default.
+        let meta = EventMeta::default();
+        assert_eq!(meta.subtitle, None);
+        assert!(meta.details.is_empty());
+    }
+
+    #[test]
+    fn event_meta_deserializes_subtitle_and_details_from_wire() {
+        let meta: EventMeta = serde_json::from_value(serde_json::json!({
+            "subtitle": "Permission request",
+            "details": [{"label": "Tool", "value": "Bash"}]
+        }))
+        .unwrap();
+        assert_eq!(meta.subtitle.as_deref(), Some("Permission request"));
+        assert_eq!(meta.details.len(), 1);
+        assert_eq!(meta.details[0].label, "Tool");
+        assert_eq!(meta.details[0].value, "Bash");
     }
 
     #[test]

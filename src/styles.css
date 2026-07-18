@@ -411,6 +411,9 @@ body {
   color: rgba(255, 255, 255, 0.74);
   font-size: 11px;
   line-height: 1.45;
+  /* plan 035: detail values (e.g. a long command or file path from a hook)
+     must wrap inside the fixed 500x300 window instead of overflowing. */
+  overflow-wrap: anywhere;
 }
 
 /* the Message cell is the one manifest field that carries full prose —

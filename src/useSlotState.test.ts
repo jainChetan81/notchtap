@@ -34,6 +34,8 @@ const SHOWING_N1: SlotState = {
   category: null,
   publishedAtMs: null,
   link: null,
+  subtitle: null,
+  details: [],
   queueTotal: 1,
   queueDone: 0,
 };
@@ -79,6 +81,8 @@ describe("useSlotState", () => {
       category: null,
       publishedAtMs: null,
       link: null,
+      subtitle: null,
+      details: [],
       queueTotal: 2,
       queueDone: 0,
     });
@@ -95,6 +99,8 @@ describe("useSlotState", () => {
       category: null,
       publishedAtMs: null,
       link: null,
+      subtitle: null,
+      details: [],
       queueTotal: 2,
       queueDone: 1,
     });
@@ -133,6 +139,8 @@ describe("useSlotState", () => {
       category: "politics",
       publishedAtMs: 1_768_579_920_000,
       link: "https://example.com/budget",
+      subtitle: null,
+      details: [],
       queueTotal: 1,
       queueDone: 0,
     };
@@ -238,6 +246,40 @@ describe("useSlotState", () => {
     expect(renderHook(() => useSlotState()).result.current).toEqual({ state: "empty" });
   });
 
+  // plan 035: subtitle is null-or-string, details an array of {label, value}
+  // string pairs — the pairs come from untrusted hook input, so a malformed
+  // details (non-array, or an item missing a string label/value) is rejected.
+  it("accepts a showing payload carrying a subtitle and detail pairs", () => {
+    window.__NOTCHTAP_SLOT_STATE__ = {
+      ...SHOWING_N1,
+      subtitle: "Permission request",
+      details: [{ label: "Tool", value: "Bash" }],
+    };
+    const { result } = renderHook(() => useSlotState());
+    expect(result.current).toMatchObject({
+      subtitle: "Permission request",
+      details: [{ label: "Tool", value: "Bash" }],
+    });
+  });
+
+  it("ignores a showing payload whose details is not an array", () => {
+    window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, details: "nope" };
+    expect(renderHook(() => useSlotState()).result.current).toEqual({ state: "empty" });
+  });
+
+  it("ignores a showing payload whose detail item lacks a string label or value", () => {
+    window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, details: [{ label: "Tool" }] };
+    expect(renderHook(() => useSlotState()).result.current).toEqual({ state: "empty" });
+
+    window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, details: [{ label: 1, value: 2 }] };
+    expect(renderHook(() => useSlotState()).result.current).toEqual({ state: "empty" });
+  });
+
+  it("ignores a showing payload whose subtitle is neither null nor a string", () => {
+    window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, subtitle: 42 };
+    expect(renderHook(() => useSlotState()).result.current).toEqual({ state: "empty" });
+  });
+
   // Regression test: EVENT_TYPES must track the backend's EventType enum
   // (currently generic/score_update/match_state/news_item, event.rs) or a
   // real rss_poller.rs payload gets silently dropped to empty by the
@@ -256,6 +298,8 @@ describe("useSlotState", () => {
       category: "politics",
       publishedAtMs: 1_789_600_000_000,
       link: "https://example.com/headline",
+      subtitle: null,
+      details: [],
       queueTotal: 1,
       queueDone: 0,
     };

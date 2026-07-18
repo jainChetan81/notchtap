@@ -52,6 +52,8 @@ describe("App", () => {
       category: null,
       publishedAtMs: null,
       link: null,
+      subtitle: null,
+      details: [],
       queueTotal: 1,
       queueDone: 0,
     });
@@ -75,6 +77,8 @@ describe("App", () => {
       category: null,
       publishedAtMs: null,
       link: null,
+      subtitle: null,
+      details: [],
       queueTotal: 1,
       queueDone: 0,
     });
@@ -97,6 +101,8 @@ describe("App", () => {
       category: null,
       publishedAtMs: null,
       link: null,
+      subtitle: null,
+      details: [],
       queueTotal: 1,
       queueDone: 0,
     });
@@ -124,6 +130,8 @@ describe("App", () => {
       category: null,
       publishedAtMs: null,
       link: null,
+      subtitle: null,
+      details: [],
       queueTotal: 1,
       queueDone: 0,
     });

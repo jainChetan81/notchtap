@@ -154,6 +154,8 @@ export function StatusRailCard({ slot, status }: { slot: SlotState; status?: Sta
               category={slot.category}
               publishedAtMs={slot.publishedAtMs}
               hasLink={slot.link !== null}
+              subtitle={slot.subtitle}
+              details={slot.details}
             />
           </motion.div>
         )}

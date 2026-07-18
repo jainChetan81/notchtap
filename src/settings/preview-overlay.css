@@ -351,6 +351,8 @@
   color: rgba(255, 255, 255, 0.74);
   font-size: 11px;
   line-height: 1.45;
+  /* plan 035: mirror styles.css — long detail values wrap, never overflow. */
+  overflow-wrap: anywhere;
 }
 
 .appearance-preview .detail-value.message {
