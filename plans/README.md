@@ -54,7 +54,7 @@ plans are independent. P1s first.
 | 015 | Deadline-based heartbeat (replace the 250 ms tick) | P2 | M | 009 (DONE) | DONE (`2cef7ad`, `/improve execute` → reviewed APPROVE after 1 revision (settings test-notif wake); cherry-picked to master 2026-07-18; `cargo test` 242 + 3 doc-tests; idle-CPU smoke batched to end-of-run; file → `(done)`) |
 | 016 | Frontend lint/format gate (Biome) | P2 | S | — | TODO |
 | 023 | Goal celebration visible (review-log ranked list + redesign) | P2 | M | — | DONE (CSS-first: dropped lottie for a layered-radial confetti burst + `::before` ring + overshoot on `.rail-card.pulse-goal`, removed `lottie-react`/JSON/`GoalCelebration.tsx`; reduce-motion ⇒ nothing in ARCHITECTURE.md §4; `vitest` 64 / `tsc` / `vite build` green; landed on `master` 2026-07-18. Live dev-machine eyeball — Steps 1–3 + acceptance, incl. the burst-readability judgement in the review log — owed to operator) |
-| 018 | Overlay idle-cost cuts: lazy lottie, transform-based news shader | P2 | S | 023 (soft) | TODO |
+| 018 | Overlay idle-cost cut: transform-based news shader (rescoped 2026-07-18 — the lazy-lottie half went moot when 023 deleted lottie outright) | P2 | S | — | TODO |
 | 022 | Deep-testing un-park decision + §9.1/§9.2 execution | P2 | L | decision gate | TODO |
 | 017 | Justfile (one-command local verification) | P3 | S | 016 (soft) | TODO |
 | 019 | Dead code removal: presentation channel, polling gates, no-op dispatch, scaffold | P3 | M | — | TODO |
@@ -108,11 +108,13 @@ Status values: TODO | IN PROGRESS | DONE | BLOCKED (with one-line reason) | REJE
 - **022 is blocked only by its Step 0 decision gate** — 008 is DONE; the
   property-test model's expanded invariants are already written into the
   plan. The operator must choose execute-§9 vs re-park.
-- **018's lazy-lottie step is now moot** — 023 (DONE, landed on master
-  2026-07-18) dropped `lottie-react` and the `goal-celebration.json`
-  asset entirely in favour of a pure-CSS goal burst, so there is no
-  lottie left to lazy-load. 018's remaining scope is just the
-  transform-based news shader; update its Step 1 before running it.
+- **018 was rescoped 2026-07-18 (`review-plan` pass at `ede063a`)** —
+  023 (DONE) had already deleted lottie outright, mooting 018's
+  lazy-lottie half. The plan file now carries only the transform-based
+  news shader swap, with excerpts, line numbers, and the clipping
+  assumptions re-verified (news-shade sits on the `rail-card` element,
+  whose `overflow: hidden` contains the oversized layer). Ready to run
+  as written — no pre-run updates needed.
 - **016 / 017** touch `.github/workflows/ci.yml` or mirror it — 007
   already landed there (`--locked`, audit scans, `ubuntu-latest`,
   `sh -n`); both plans' texts account for it.
