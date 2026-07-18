@@ -395,15 +395,18 @@ body {
 .cat-generic  { --cat: #aab3bd; --cat-deep: rgba(170,179,189,0.10); --cat-pill: rgba(170,179,189,0.10); }
 
 .news-shade::before {
-  content: ""; position: absolute; inset: 0; z-index: 0;
+  content: ""; position: absolute; inset: -30% -30% -30% -30%; z-index: 0;
   background:
     radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%),
     linear-gradient(135deg, var(--cat-deep) 0%, transparent 46%);
-  background-size: 200% 200%;
   animation: shade-drift 12s ease-in-out infinite alternate;
   pointer-events: none;
+  will-change: transform;
 }
-@keyframes shade-drift { from { background-position: 0% 0%; } to { background-position: 60% 40%; } }
+@keyframes shade-drift {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(-8%, -6%, 0); }
+}
 
 .news-shade .compact,
 .news-shade .manifest { position: relative; z-index: 1; }
