@@ -161,6 +161,10 @@ fn decode_entity(entity: &str) -> Option<char> {
     }
 }
 
+// Longest entity text `decode_entity` recognizes is a numeric form like
+// `#x10FFFF` (8 chars); 10 leaves slack without reopening the O(n^2) scan.
+const MAX_ENTITY_LEN: usize = 10;
+
 fn decode_entities(text: &str) -> String {
     let chars: Vec<char> = text.chars().collect();
     let mut out = String::with_capacity(text.len());
@@ -168,7 +172,16 @@ fn decode_entities(text: &str) -> String {
 
     while index < chars.len() {
         if chars[index] == '&' {
-            if let Some(relative_end) = chars[index + 1..].iter().position(|ch| *ch == ';') {
+            // The window must hold up to MAX_ENTITY_LEN entity chars PLUS
+            // the terminating `;` itself, hence +2 (not +1): an entity of
+            // exactly MAX_ENTITY_LEN chars has its `;` at relative offset
+            // MAX_ENTITY_LEN, which needs a window of MAX_ENTITY_LEN + 1
+            // elements past the `&` to be visible to `.position()`.
+            let window_end = (index + 2 + MAX_ENTITY_LEN).min(chars.len());
+            if let Some(relative_end) = chars[index + 1..window_end]
+                .iter()
+                .position(|ch| *ch == ';')
+            {
                 let end = index + 1 + relative_end;
                 let entity: String = chars[index + 1..end].iter().collect();
                 if let Some(decoded) = decode_entity(&entity) {
@@ -186,7 +199,11 @@ fn decode_entities(text: &str) -> String {
 }
 
 fn sanitize(text: &str, max_chars: usize) -> String {
-    let decoded = decode_entities(&strip_html_tags(text));
+    // Output is truncated to max_chars below; stripping/decoding never
+    // lengthens text, so a bounded prefix is behavior-identical and keeps
+    // hostile multi-hundred-KB fields from costing full-length passes.
+    let bounded: String = text.chars().take(max_chars * 8).collect();
+    let decoded = decode_entities(&strip_html_tags(&bounded));
     let mut collapsed = String::with_capacity(decoded.len());
     let mut pending_space = false;
 
@@ -373,7 +390,7 @@ async fn fetch_feed(
         request = request.header(IF_MODIFIED_SINCE, last_modified);
     }
 
-    let response = request.send().await?;
+    let mut response = request.send().await?;
     if response.status() == reqwest::StatusCode::NOT_MODIFIED {
         return Ok(None);
     }
@@ -401,12 +418,20 @@ async fn fetch_feed(
     {
         anyhow::bail!("response body exceeds 1 MiB");
     }
-    let bytes = response.bytes().await?;
-    if bytes.len() > MAX_FEED_BYTES {
-        anyhow::bail!("response body exceeds 1 MiB");
+
+    // Stream and bail as soon as the running total exceeds the cap, instead
+    // of buffering the whole body first — a chunked response with no
+    // Content-Length would otherwise let a misbehaving feed balloon memory
+    // far past 1 MiB before the size check ever runs.
+    let mut body: Vec<u8> = Vec::with_capacity(64 * 1024);
+    while let Some(chunk) = response.chunk().await? {
+        if body.len() + chunk.len() > MAX_FEED_BYTES {
+            anyhow::bail!("response body exceeds 1 MiB");
+        }
+        body.extend_from_slice(&chunk);
     }
 
-    let feed = feed_rs::parser::parse(&bytes[..])?;
+    let feed = feed_rs::parser::parse(&body[..])?;
     state.etag = etag;
     state.last_modified = last_modified;
     Ok(Some(feed))
@@ -632,6 +657,40 @@ mod tests {
     fn sanitize_truncates_multibyte_text_on_a_char_boundary() {
         assert_eq!(sanitize("éclair", 2), "éc…");
         assert_eq!(sanitize("📰news", 1), "📰…");
+    }
+
+    #[test]
+    fn ampersand_flood_without_semicolons_is_linear() {
+        // Hostile input: no ';' anywhere, so the pre-cap decoder would
+        // rescan the remainder of the string for every '&'. The bounded
+        // window + bounded sanitize prefix make this structurally linear
+        // rather than O(n^2) — this test asserts on output content (not
+        // wall time), but it would still hang the old implementation.
+        let flood = "&".repeat(100_000);
+        let result = sanitize(&flood, 240);
+        assert!(result.starts_with("&&&"));
+        // truncated output is max_chars plus a single trailing ellipsis char
+        assert!(result.chars().count() <= 241);
+    }
+
+    #[test]
+    fn entities_still_decode_at_boundaries() {
+        // ordinary named entity, unaffected by the window bound
+        assert_eq!(sanitize("&amp;", 10), "&");
+
+        // entity text exactly MAX_ENTITY_LEN (10) chars — "#x0001F600" —
+        // still fits the search window and must decode to the
+        // grinning-face emoji U+1F600.
+        assert_eq!(sanitize("&#x0001F600;", 10), "\u{1F600}");
+
+        // one char longer (11, "#x00001F600") pushes the ';' outside the
+        // window: the literal text must pass through unchanged. This is
+        // the pair that actually fails if the window arithmetic regresses.
+        assert_eq!(sanitize("&#x00001F600;", 20), "&#x00001F600;");
+
+        // existing-behavior regression guard, copied from
+        // sanitize_decodes_numeric_entities_and_collapses_whitespace.
+        assert_eq!(sanitize("A&#39;B &#x1F4F0;", 100), "A'B 📰");
     }
 
     #[test]
