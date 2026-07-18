@@ -566,11 +566,23 @@ dedicated settings-window widget today despite being user-configurable
 since v6 — so there's precedent for shipping the flag alone and adding
 UI later only if the opt-in proves worth surfacing.
 
-## 10. Open questions for the maintainer
+## 10. Open questions for the maintainer — RESOLVED 2026-07-19
 
-(This section is deliberately recommendation-free — these are
-questions the design surfaced but cannot resolve on its own; §§1–7 and
-9 carry the doc's actual recommendations.)
+All four were resolved by the maintainer on 2026-07-19; each
+**Decision:** below is locked and inherited by the build plan(s).
+Summary: build the single updating card **opt-in** (`espn_live_card`,
+default `false`); **defer** the multi-match case to a later pass (reuse
+today's tier sharing); **reuse** the existing 8s `ttl_secs` for dwell;
+and land the §4 `batch_done` counter fix **as its own small plan
+first**, before the card build.
+
+This splits the work into two plans: (A) a small, isolated `batch_done`
+correctness fix (lands first), then (B) the opt-in live-match card,
+single-match-scoped, reusing `ttl_secs`.
+
+(The questions below were deliberately recommendation-free — §§1–7 and
+9 carry the doc's design recommendations; these four were the
+maintainer's to call.)
 
 1. **Is "one live card per match" actually the wanted texture, or is
    today's burst-of-deltas the preferred one?** This design assumes
@@ -580,6 +592,11 @@ questions the design surfaced but cannot resolve on its own; §§1–7 and
    single cycling card trades away. Recommend a short manual A/B on
    real hardware (flag on vs. off) before committing to this as the new
    default anywhere.
+
+   **Decision (2026-07-19): Build it, opt-in.** Ship the single updating
+   card behind `espn_live_card` (default `false`), leaving today's burst
+   as the default — the A/B is then a flag toggle on real hardware, at
+   zero risk to current behavior.
 2. **Does a `Recurring` card monopolizing rotation slots fight the news
    cards (`rss_poller.rs`, default `Low` priority) or cmux items during
    a busy multi-match Saturday?** §4 addresses the single-match case
@@ -589,6 +606,12 @@ questions the design surfaced but cannot resolve on its own; §§1–7 and
    need its own pass (do all live matches share the tier and rely on
    rotation-order/arrival FIFO among themselves, same as today's
    multi-match burst already does?).
+
+   **Decision (2026-07-19): Defer.** The first build targets single-match
+   correctness; multiple live matches each get their own `Recurring`
+   Topic and share the tier via rotation-order/FIFO exactly as today's
+   multi-match burst already does. Explicit multi-match arbitration is a
+   later pass, taken up only if it proves annoying in practice.
 3. **Is `display_secs = espn_ttl_secs` (today's `ttl_secs`, default 8s)
    the right cycle length for a `Recurring` card, or should live cards
    get their own, longer, config knob** — separate from the `ttl_secs`
@@ -597,8 +620,19 @@ questions the design surfaced but cannot resolve on its own; §§1–7 and
    alert's (a brief interruption)? This design reused the existing
    field for minimal scope; a build plan should confirm that's still
    right rather than inheriting it by default.
+
+   **Decision (2026-07-19): Reuse `ttl_secs`.** The live card uses the
+   existing 8s `espn_ttl_secs` for dwell — minimal scope, no new knob. A
+   dedicated `live_card_secs` is deferred; add it only if 8s feels wrong
+   once the card is running.
 4. **Should the queue-slider fix (§4's `batch_done` change) ship as
    part of this feature, or land as its own small, separately-reviewed
    plan first**, given it's a real (if currently inert-in-production)
    discrepancy from plan 033's stated intent that this design merely
    surfaced rather than caused?
+
+   **Decision (2026-07-19): Land it first, separately.** The `batch_done`
+   fix (`queue.rs:257`) ships as its own small, independently-reviewed
+   plan before the card build — it's isolated, and the card build depends
+   on it being correct anyway (a cycling `Recurring` card would otherwise
+   pin the 033 queue-slider near "complete").
