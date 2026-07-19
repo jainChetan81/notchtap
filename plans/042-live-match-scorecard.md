@@ -11,14 +11,16 @@
 > overlay frontend. `git status` clean for `poller.rs`/`src/components/`
 > before starting.
 >
-> **Drift check (run first)**: `git diff --stat 088531d..HEAD --
+> **Drift check (run first)**: `git diff --stat 60c7624..HEAD --
 > src-tauri/src/poller.rs src-tauri/src/event.rs src-tauri/src/lib.rs
 > src-tauri/src/engine.rs src/components/Manifest.tsx
-> src/components/StatusRailCard.tsx`. `088531d` is this pass's baseline
-> (2026-07-20) — every citation was re-verified against live code at
-> that commit. This plan's citations have already drifted once before
-> (5-19 lines, when 039/041 landed between two prior review-plan
-> passes) — re-verify with `rg`, don't trust line numbers blindly.
+> src/components/StatusRailCard.tsx`. `60c7624` is this pass's baseline
+> (2026-07-20, after plan 040's weather work landed at `d3ab88c` and
+> shifted several `event.rs` line numbers — already corrected below) —
+> every citation was re-verified against live code at that commit.
+> This plan's citations have drifted twice before (5-19 lines when
+> 039/041 landed; a further 12 lines in `event.rs` when 040 landed) —
+> re-verify with `rg`, don't trust line numbers blindly.
 
 ## Status
 
@@ -80,6 +82,37 @@
   Scope around Option B only (Option A/C material moved to a "Rejected
   alternatives" note for the record, not deleted) and added concrete
   numbered Steps, which this plan never had before.
+- **Review-plan pass 3 (2026-07-20)**, checking the Option B Scope/Steps
+  content the `/grill-me` update above produced (own read plus a
+  fresh-context subagent cold-read, cross-checked): found a critical
+  gap and four smaller ones, all now fixed directly in Scope/Steps
+  below. (a) Scope never addressed `poller.rs:491`'s
+  `if v.snap.cards > old.cards {` — the actual gate deciding whether a
+  card `MatchState` event fires — which would fail to compile once
+  `cards: usize` is replaced by per-side fields; fixed with a
+  `total_cards()` helper used at that call site. (b) two existing
+  tests (`poller.rs:952`, `977`) mutate `.cards` directly and will not
+  compile either; now called out explicitly. (c) the proposed
+  `SbTeamRef` struct duplicated the existing `SbTeam` struct for no
+  reason — ESPN's detail-level team object is just `{"id": "..."}`, so
+  reusing `SbTeam` (with an added `id`) works and avoids the
+  duplication. (d) "cross-reference... to bucket the count" undersold
+  the counting-logic change as a lookup when it's a fold/loop rewrite
+  of the existing aggregate-count closure. (e) "the `diff_scoreboard`
+  call sites" was vague — there are exactly 5 (`poller.rs:446, 458,
+  469, 480, 498`), all under one `topic` computed once per match
+  (`poller.rs:428`) and reused across all 5 — so `meta` should be built
+  once per match (gated on `topic.is_some()`), not recomputed or
+  re-decided per branch. A second fresh-context subagent then
+  independently confirmed all five fixes above against live code
+  exactly (line numbers, the `total_cards()` gate, the two tests, the
+  5 call sites) and caught one more: (f) "attach `event.meta` after
+  `make_event` returns" was ambiguous to the point of not compiling as
+  literally written, since `out.push(make_event(...))` pushes inline
+  with no bound variable to mutate afterward — now pinned to an
+  explicit bind-then-mutate-then-push code shape in Scope/Step 2. Also
+  found `event.rs:129-131` should read `129-132` (off-by-one on the
+  struct's closing brace, cosmetic) — fixed.
 
 ## Problem
 
@@ -99,8 +132,11 @@ for per-side card counts (today's `cards: usize` on `MatchSnapshot` is
 a single total across both teams and both colors — see "Per-side card
 counts" below) — and none of this structured data reaches the wire
 today regardless: `Event`'s payload is `{ title: String, body: String }`
-only (`event.rs:117-120`); `SlotState::Showing` has no score/clock
-fields (`event.rs:169-194`). The gap is real presentation-model work,
+only (`event.rs:129-132` at last check — drifted from `117-120` when
+plan 040's weather work landed `d3ab88c`, re-verify with `rg -n "struct
+EventPayload"`); `SlotState::Showing` has no score/clock fields
+(`event.rs:181-207` at last check, drifted from `169-194` for the same
+reason). The gap is real presentation-model work,
 but it's not purely a frontend gap either — some of it is a wire-payload
 gap the original filing's framing ("the gap is the presentation model,
 not the data") slightly understates.
@@ -174,14 +210,22 @@ parses any team ID** (`SbTeam` only has `abbreviation: String`,
 `poller.rs:75-78` at last check; `SbDetail` has no `team` field at all,
 `poller.rs:81-103` at last check — it does now have `own_goal`/
 `red_card` structural booleans from plans 041/pre-existing, following
-that exact pattern for `team.id` is the right shape to copy). Getting
-"yellow/red counts per side" requires:
-add an `id: String` field to `SbTeam` (populated on both the
-competitor-level and, via a new `team: Option<SbTeamRef>` field, the
-detail-level), then cross-reference each card detail's team id against
-the home/away competitor ids to bucket the count. This is small, but
-it's new parsing work common to every option — not something any
-option gets "for free" from data that already flows through.
+that exact pattern for `team.id` is the right shape to copy). Getting "yellow/red counts per side" requires: add an `id: String`
+field to `SbTeam` (`poller.rs:75-78`) — reused as-is for the
+detail-level `team` field too (`SbDetail.team: Option<SbTeam>`, not a
+new struct; ESPN's detail-level team object is just `{"id": "..."}`,
+so the unused `abbreviation` field simply defaults to empty via the
+existing `#[serde(default)]`) — then cross-reference each card
+detail's team id against the home/away competitor ids to bucket the
+count. This is small, but it's new parsing work common to every
+option — not something any option gets "for free" from data that
+already flows through. **Also not free** (found on the following
+review-plan pass, after Option B's Scope was first drafted): the
+per-side rewrite displaces `poller.rs:491`'s
+`if v.snap.cards > old.cards` comparison — the actual gate deciding
+whether a card `MatchState` event fires — and breaks two existing
+tests that mutate `.cards` directly (`poller.rs:952`, `977`); see
+Scope/Steps for how these are handled.
 
 ## Re-verified after 039 landed (review-plan pass 2, 2026-07-20)
 
@@ -273,7 +317,7 @@ Four decisions, in dependency order:
 `poller.rs:308-320`, e.g. `"UCL: ARS 1–1 PSG"`), so the only genuinely
 new information the collapsed view needs is **Clock** and **per-side
 Cards** — not a third "Score" cell. `SlotState` has no `topic`/
-`rotation` field (`event.rs:169-194`), so the frontend can't directly
+`rotation` field (`event.rs:181-207` at last check), so the frontend can't directly
 tell "this is the live-match card" from a one-shot card — but it
 doesn't need to: the presence of a populated `details` array on a
 `score_update` card is naturally that signal, since only this plan's
@@ -281,39 +325,92 @@ producer path will ever populate it.
 
 **In scope**:
 - `src-tauri/src/poller.rs`:
-  - Add `id: String` to `SbTeam` (`poller.rs:75-78` at last check) and
-    a new `team: Option<SbTeamRef>` field to `SbDetail`
-    (`poller.rs:81-103` at last check) — mirrors exactly how
-    `own_goal`/`red_card` already read structural ESPN fields instead
-    of guessing from text (`poller.rs:94-98`). `SbTeamRef` is a new,
-    minimal struct: just `{ id: String }`, same shape as the existing
-    `SbTeam`/`SbAthlete` "just the fields we use" pattern.
+  - Add `id: String` to `SbTeam` (`poller.rs:75-78` at last check,
+    `#[serde(default)]` like its existing `abbreviation` field) and a
+    new `team: Option<SbTeam>` field to `SbDetail` (`poller.rs:81-103`
+    at last check) — **reuse `SbTeam`, don't invent a new `SbTeamRef`
+    struct**: ESPN's detail-level team object is just `{"id": "..."}`,
+    so the unused `abbreviation` field on that reuse simply defaults to
+    empty via the existing `#[serde(default)]`. This mirrors exactly
+    how `own_goal`/`red_card` already read structural ESPN fields
+    instead of guessing from text (`poller.rs:94-98`).
   - `MatchSnapshot` (`poller.rs:134-154`) gains `home_cards: (u32, u32)`
     /`away_cards: (u32, u32)` (yellow, red) — or two pairs, whichever
     reads cleaner in review — replacing the single aggregate `cards:
-    usize` (`poller.rs:147`) at the point of use; cross-reference each
-    card detail's `team.id` against the competitor-level `team.id`
-    (also newly parsed) to bucket yellow/red per side. The existing
-    aggregate-count closure (`poller.rs:232-241` at last check) is
-    the thing to replace, not add alongside — don't leave two card-
-    counting code paths that can drift apart.
+    usize` field (`poller.rs:147`) entirely. Cross-reference each card
+    detail's `team.id` against the competitor-level `team.id` (also
+    newly parsed, during the same competitor loop that already builds
+    `home_abbrev`/`away_abbrev`, `poller.rs:206-230`) to bucket each
+    card by side AND color — this replaces the existing aggregate-count
+    closure (`poller.rs:232-241` at last check,
+    `details.iter().filter(|d| ...text.contains("Card")).count()`)
+    with a small fold/loop over `details`, not a lookup against
+    already-bucketed data; don't leave two card-counting code paths
+    that can drift apart.
+  - **`poller.rs:491`'s `if v.snap.cards > old.cards {` is the actual
+    gate deciding whether a card `MatchState` event fires at all** —
+    removing the aggregate `cards` field breaks this comparison at
+    compile time if it isn't addressed. Add a small helper (e.g. `fn
+    total_cards(&self) -> u32` on `MatchSnapshot`, summing all four new
+    counters) and use `v.snap.total_cards() > old.total_cards()` in its
+    place — do not keep a redundant `cards: usize` field alongside the
+    per-side ones just to dodge this call site; that reintroduces the
+    exact "two counting paths that can drift apart" problem called out
+    above.
+  - Two existing tests mutate `.cards` directly and will not compile
+    once it's removed: `new_card_emits_match_state_with_detail`
+    (`poller.rs:947`, the mutation at `poller.rs:952`) and
+    `red_card_emits_red_card_signal` (`poller.rs:969`, the mutation at
+    `poller.rs:977`). Update both to mutate the equivalent per-side
+    counter instead (whichever side/color the fixture's baseline
+    snapshot needs decremented to make the "new card" comparison true).
   - `make_event` (`poller.rs:351-359`) is already at clippy's 7-arg
     ceiling (its sibling `CardTopic` enum's own doc comment says so
     explicitly, `poller.rs:322-324`) — do NOT add an 8th param. Build
     `meta: EventMeta { details: vec![...], ..EventMeta::default() }`
-    at the `diff_scoreboard` call sites instead and attach it to the
-    `Event` `make_event` returns (`event.meta = meta;` after the call),
-    the same "build outside, attach after" shape already flagged in
-    "Re-verified after 039 landed" above.
-  - Populate `meta.details` with exactly two cells, only on the
-    `CardTopic::Live` and `CardTopic::FullTime` branches (never
-    `CardTopic::Off` — flag-disabled behavior must stay byte-identical,
-    per the existing regression-pin tests): `{label: "Clock", value:
-    display_clock}` always; `{label: "Cards", value: "<away_abbrev>
-    <awayY>Y<awayR>R · <home_abbrev> <homeY>Y<homeR>R"}` — but OMIT the
-    Cards cell entirely when both sides have zero cards, to avoid
-    showing "0Y 0R · 0Y 0R" clutter on a clean match. No `subtitle` —
-    unused by this feature, leave it `None`.
+    once per match, then attach it at each of the 5 call sites by
+    binding the return value before pushing, e.g.:
+    ```rust
+    let mut event = make_event(
+        EventType::ScoreUpdate, title.clone(), body, ttl_secs,
+        EventSignal::Goal, priority, card_topic(&topic, false),
+    );
+    event.meta = meta.clone();
+    out.push(event);
+    ```
+    replacing today's inline `out.push(make_event(...));` shape at all
+    5 sites — `out.push(make_event(...))` pushes the value with no
+    bound variable, so mutating "after the call" requires this
+    3-statement shape (or `out.last_mut().unwrap().meta = ...` right
+    after the push), not a bare assignment after an inline push. The
+    same "build outside, attach after" idea was already flagged in
+    "Re-verified after 039 landed" above; this pins down the exact
+    code shape.
+  - **Build `meta` once per match, not once per call site.** `topic`
+    (`poller.rs:428`, `let topic = espn_live_card.then(|| ...)`) is
+    computed exactly once per match per poll and reused across all 5
+    `make_event` calls in that match's block (`poller.rs:446` score,
+    `458` kickoff, `469` halftime, `480` full-time, `498` card) via
+    `card_topic(&topic, ..)` — so `topic.is_some()` is the same value
+    for every event this match might push this poll. Compute `meta`
+    once, right after `title` is built (`poller.rs:439`), gated on
+    `topic.is_some()` (empty/default `meta` when `topic` is `None`,
+    i.e. flag off), and attach the same value to every
+    `out.push(make_event(...))` call that actually fires for this
+    match in this iteration — a poll can push more than one event per
+    match (e.g. a goal and full-time in the same pass, see the
+    existing `goal_and_full_time_in_one_poll_emit_in_order` test), and
+    all of them should carry the scorecard meta when the flag is on.
+    Do not gate meta-attachment on `CardTopic::Live` vs
+    `CardTopic::FullTime` per branch — `topic.is_some()` already
+    captures the same condition uniformly, and computing it once avoids
+    5 duplicate branches making the same decision slightly differently.
+  - Populate `meta.details` with exactly two cells: `{label: "Clock",
+    value: display_clock}` always; `{label: "Cards", value:
+    "<away_abbrev> <awayY>Y<awayR>R · <home_abbrev> <homeY>Y<homeR>R"}`
+    — but OMIT the Cards cell entirely when both sides have zero cards,
+    to avoid showing "0Y 0R · 0Y 0R" clutter on a clean match. No
+    `subtitle` — unused by this feature, leave it `None`.
 - Frontend, `src/components/StatusRailCard.tsx`: the collapsed
   (non-expanded) `.compact` branch (`:138-143` at last check) currently
   renders only `title`/`body` for non-news cards — `slot.details`/
@@ -348,32 +445,52 @@ producer path will ever populate it.
 
 ### Step 1: per-side card parsing
 
-Add `SbTeamRef { id: String }`, the new `team: Option<SbTeamRef>` field
-on `SbDetail`, and `id: String` on `SbTeam` (Scope above for exact
-locations). Thread `team.id` through `view()`'s card-counting closure
-to replace the aggregate `cards: usize` with per-side yellow/red
-counts on `MatchSnapshot`. Add a fixture-driven test asserting the UCL
-fixture's real cards attribute to the correct side (cross-check: which
-team scored/committed each card in the raw fixture JSON, assert the
-count lands on that side, not the other).
+Add `id: String` on `SbTeam`, and reuse `SbTeam` (not a new struct) for
+a new `team: Option<SbTeam>` field on `SbDetail` (Scope above for exact
+locations and why). Thread `team.id` through `view()`'s card-counting
+logic — rewrite the aggregate-count closure (`poller.rs:232-241`) into
+a fold/loop that buckets by side and color into `MatchSnapshot`'s new
+`home_cards: (u32, u32)`/`away_cards: (u32, u32)` fields, removing the
+old `cards: usize` field entirely. Add a `total_cards()` helper on
+`MatchSnapshot` and use it at `poller.rs:491`
+(`if v.snap.cards > old.cards {` today) in place of the removed field —
+this is the event-emission gate for card `MatchState` events and will
+not compile if skipped. Update the two existing tests that mutate
+`.cards` directly: `new_card_emits_match_state_with_detail`
+(`poller.rs:947`, mutation at `952`) and `red_card_emits_red_card_signal`
+(`poller.rs:969`, mutation at `977`) — mutate the equivalent per-side
+counter instead. Add a fixture-driven test asserting the UCL fixture's
+real cards attribute to the correct side (cross-check: which team
+scored/committed each card in the raw fixture JSON, assert the count
+lands on that side, not the other).
 
 **Verify**: `cargo test --locked poller::` → all pass, including the
-new per-side test.
+new per-side test and the two updated existing tests.
 
 ### Step 2: `meta.details` on the live-match event
 
-Build `meta` at the `diff_scoreboard` call sites and attach it after
-`make_event` returns (Scope above — do not add an 8th param to
-`make_event`). Populate the two cells (`Clock`, `Cards`) on
-`CardTopic::Live`/`CardTopic::FullTime` only; leave `meta` at
-`EventMeta::default()` on `CardTopic::Off`, unchanged from today. Add
-tests: (a) flag-off regression pin — `meta.details` stays empty,
-byte-identical to pre-039 behavior; (b) flag-on, mid-match — `Clock`
-and `Cards` cells present with correct per-side values; (c) flag-on,
-zero cards so far — `Cards` cell absent, `Clock` still present.
+Build `meta` once per match — right after `title` is built
+(`poller.rs:439`), gated on `topic.is_some()` (`topic` is computed once
+per match at `poller.rs:428` and reused by all 5 `make_event` calls in
+that match's block: `poller.rs:446` score, `458` kickoff, `469`
+halftime, `480` full-time, `498` card) — and attach the same `meta` to
+every event actually pushed for that match this poll, using the
+bind-before-push shape from Scope above at each of the 5 call sites
+(`let mut event = make_event(...); event.meta = meta.clone();
+out.push(event);` — not a bare assignment after an inline
+`out.push(make_event(...))`, which doesn't compile). Leave `meta` at
+`EventMeta::default()` when `topic` is
+`None` (flag off), unchanged from today. Add tests: (a) flag-off
+regression pin — `meta.details` stays empty, byte-identical to pre-039
+behavior; (b) flag-on, mid-match — `Clock` and `Cards` cells present
+with correct per-side values; (c) flag-on, zero cards so far — `Cards`
+cell absent, `Clock` still present; (d) flag-on, a poll that pushes two
+events for the same match (goal + full-time, mirroring
+`goal_and_full_time_in_one_poll_emit_in_order`) — both events carry the
+same `meta`.
 
 **Verify**: `cargo test --locked poller::` → all pass, including the
-three new cases; `cargo test --locked` (full) → all pass, totals match
+four new cases; `cargo test --locked` (full) → all pass, totals match
 `docs/TESTING_STRATEGY.md` §0.
 
 ### Step 3: frontend — read `details` in the collapsed view
@@ -419,12 +536,17 @@ vitest run` totals match §0.
 - The `poller.rs`/`event.rs`/frontend citations in this plan don't
   match live code when you check them → STOP and reconcile before
   building, don't guess. This plan's citations have already drifted
-  once before (5-19 lines, when 039/041 landed between two earlier
-  review-plan passes) — re-verify with `rg`.
+  twice before (5-19 lines when 039/041 landed; a further 12 lines in
+  `event.rs` when 040 landed) — re-verify with `rg`.
 - The per-side card count doesn't match the raw fixture JSON on manual
   inspection → STOP; a `team.id` cross-reference bug here would silently
   misattribute cards to the wrong team, which is worse than the
   aggregate count this replaces.
+- `v.snap.total_cards() > old.total_cards()` fires on a different set
+  of transitions than today's `v.snap.cards > old.cards` did on the
+  same fixture data → STOP; this is the line deciding whether a card
+  `MatchState` event fires at all, and a mismatch here is a silent
+  behavior regression, not just a refactor.
 
 ## Rejected alternatives (Options A and C — kept for the record, not deleted)
 
