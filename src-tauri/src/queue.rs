@@ -66,8 +66,10 @@ pub struct SingleSlotQueue {
     /// Queue-slider counters (plan 033 decision 4): a batch starts when an
     /// event is accepted while the engine is fully idle; every accepted
     /// enqueue increments `batch_total`, every completion (rotated out,
-    /// dismissed, skipped) increments `batch_done`, and draining back to
-    /// fully idle resets both. Supersession is neither.
+    /// dismissed, skipped) increments `batch_done` — except a `Recurring`
+    /// rotation-out or skip, which requeues rather than leaves and so does
+    /// not count — and draining back to fully idle resets both.
+    /// Supersession is neither.
     batch_total: usize,
     batch_done: usize,
     last_emitted: Option<SlotState>,
@@ -252,10 +254,11 @@ impl SingleSlotQueue {
             return;
         }
         let item = self.visible.take().expect("checked Some above");
-        self.batch_done += 1;
         if let RotationSpec::Recurring { .. } = item.event.rotation {
             let tier = item.event.priority as usize;
             self.waiting[tier].push_back(item);
+        } else {
+            self.batch_done += 1;
         }
     }
 
@@ -388,10 +391,11 @@ impl SingleSlotQueue {
     /// Promotion, so neither needs touching here.
     pub fn skip_visible(&mut self, now: Instant) {
         if let Some(item) = self.visible.take() {
-            self.batch_done += 1;
             if let RotationSpec::Recurring { .. } = item.event.rotation {
                 let tier = item.event.priority as usize;
                 self.waiting[tier].push_back(item);
+            } else {
+                self.batch_done += 1;
             }
         }
         self.promote_next(now);
@@ -482,8 +486,9 @@ impl SingleSlotQueue {
                 // Queue-slider position (plan 033): `total` never dips below
                 // 1 (a visible item is always at least its own segment) and
                 // `done` never reaches `total` while an item is visible
-                // (the current segment stays bright) — Recurring requeues
-                // can push `batch_done` past `batch_total`, hence the cap.
+                // (the current segment stays bright) — defensive: no known
+                // path pushes `batch_done` past `batch_total`; the cap stays
+                // as cheap insurance against a future double-count.
                 let queue_total = u32::try_from(self.batch_total.max(1)).unwrap_or(u32::MAX);
                 let queue_done = u32::try_from(self.batch_done)
                     .unwrap_or(u32::MAX)
@@ -1899,10 +1904,10 @@ mod tests {
 
     #[test]
     fn batch_done_caps_at_total_minus_one_while_an_item_is_visible() {
-        // a Recurring item completes a turn every time it rotates out,
-        // but re-enters waiting — over a long batch its completions can
-        // outnumber the batch size. The current segment must stay lit:
-        // done caps at total - 1 while anything is visible.
+        // A Recurring rotation-out requeues rather than leaves, so it does
+        // not advance `batch_done`; only a real completion (a OneShot
+        // leaving) does. `done` still never reaches `total` while an item
+        // is visible — the current segment stays lit.
         let mut q = SingleSlotQueue::new(50);
         let t0 = Instant::now();
         q.enqueue(recurring_event("r", Priority::Medium, 1), t0)
@@ -1911,11 +1916,45 @@ mod tests {
 
         q.tick(t0 + Duration::from_secs(2)); // r rotates out, requeues; b promotes
         assert_eq!(visible_title(&q), Some("b"));
-        assert_eq!(queue_progress(&q), (2, 1));
+        assert_eq!(queue_progress(&q), (2, 0));
 
-        q.tick(t0 + Duration::from_secs(4)); // b drops; r promotes again (2nd completion)
+        q.tick(t0 + Duration::from_secs(4)); // b completes; r promotes again
         assert_eq!(visible_title(&q), Some("r"));
-        assert_eq!(queue_progress(&q), (2, 1), "done caps at total - 1");
+        assert_eq!(queue_progress(&q), (2, 1));
+    }
+
+    #[test]
+    fn recurring_requeue_via_tick_or_skip_does_not_advance_batch_done() {
+        // A visible Recurring item that rotates out (tick) or is skipped
+        // requeues to the back of its own tier without advancing
+        // `batch_done`; a sibling OneShot completion still does.
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue(recurring_event("r", Priority::Medium, 1), t0)
+            .unwrap();
+        q.enqueue(event("b", Priority::Medium, 8), t0).unwrap();
+        q.enqueue(event("c", Priority::Medium, 8), t0).unwrap();
+
+        // natural rotation-out: r requeues to the back of its tier, not done
+        q.tick(t0 + Duration::from_secs(2));
+        assert_eq!(visible_title(&q), Some("b"));
+        assert_eq!(waiting_titles(&q, Priority::Medium as usize), ["c", "r"]);
+        assert_eq!(queue_progress(&q), (3, 0));
+
+        // skip: b is OneShot and leaves for good — a real completion
+        q.skip_visible(t0 + Duration::from_secs(3));
+        assert_eq!(visible_title(&q), Some("c"));
+        assert_eq!(queue_progress(&q), (3, 1));
+
+        // skip: c is OneShot — done; r (still waiting) promotes
+        q.skip_visible(t0 + Duration::from_secs(4));
+        assert_eq!(visible_title(&q), Some("r"));
+        assert_eq!(queue_progress(&q), (3, 2));
+
+        // skip the Recurring r: it requeues again, still not done
+        q.skip_visible(t0 + Duration::from_secs(5));
+        assert_eq!(visible_title(&q), Some("r"));
+        assert_eq!(queue_progress(&q), (3, 2));
     }
 }
 
