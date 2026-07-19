@@ -19,13 +19,49 @@
 - **Effort**: S
 - **Risk**: LOW — every change in this plan adds a test; no production
   code in `poller.rs`, `weather_poller.rs`, or `engine.rs` is modified.
-- **Depends on**: none (independent of plan 044 — that plan changes a
-  different condition in the same file, `poller.rs`, but a different
-  function region; run `git status` before starting to confirm 044
-  hasn't left `poller.rs` mid-edit, and re-run this plan's drift check
-  after 044 lands if both are executed)
+- **Depends on**: none (independent of plan 044, which has now landed —
+  `5c1ca36` — cleanly, not mid-edit; it changed a different condition in
+  the same file, `poller.rs`, but a different function region and
+  doesn't conflict with this plan's Step 1. Its landing did shift two of
+  this plan's own line-number citations, corrected in the review-plan
+  pass note above — always re-run this plan's own drift check rather
+  than trusting any citation, this plan's or otherwise)
 - **Category**: tests
 - **Planned at**: commit `f2cbae6`, 2026-07-19
+- **Review-plan pass (2026-07-20)**: independently hand-traced every
+  proposed test's compilation and runtime behavior against live code
+  (not just the citations) — confirmed all four tests would compile
+  and pass exactly as predicted: Step 1's drop-test relies on
+  `SbTeam`'s two fields being `pub` (confirmed) and the bucketing
+  loop's `if let Some((yellows, reds)) = side { ... } ` producing no
+  side effect on the `None` arm (confirmed, read directly); Step 2's
+  three boundary tests were traced through `diff_weather`'s full body
+  (`weather_poller.rs:143-196`) line by line — with
+  `WeatherAlertState::default()` as `prev`, all three `>=`/`<=`
+  comparisons evaluate true at the exact literal threshold values with
+  no floating-point-precision risk (the test sets the same literal the
+  threshold constant holds, not a computed value), each fires exactly
+  one event (the other two conditions are unaffected by fixtures that
+  mutate only one axis), and all three `payload.title` strings ("High
+  temperature", "Low temperature", "Rain expected soon") were
+  confirmed byte-exact against the existing passing tests. Also caught
+  live, mid-review: **plan 044 landed while this pass was running**
+  (`5c1ca36`, poller.rs 30→31 tests), which shifted two of this plan's
+  own citations — corrected below: `ucl_fixture_cards_bucket_per_side_
+  and_color` moved from `poller.rs:1100` to `poller.rs:1123` (a new
+  test landed between it and `red_card_emits_red_card_signal`, which
+  stayed at `1068`), and the drift-check header's premise ("if these
+  files changed... re-read before adapting") was itself exercised for
+  real, not hypothetically — this is a live demonstration that the
+  drift check is load-bearing, not boilerplate, on this actively-worked
+  repo. Separately, plan 048's `engine.rs` refactor (named-struct
+  signature for `StatusState::snapshot`) shifted the two real-timer
+  test citations from `engine.rs:496,536` to `engine.rs:501,541` — also
+  corrected below. Step 3's target text in `plans/README.md` was
+  independently confirmed to still contain the exact stale wording this
+  plan describes (`heartbeat_rotates_out_via_deadline_sleep_not_polling`,
+  no mention of the `engine.rs` port or the sibling test) — the fix is
+  still needed, unchanged by any concurrent landing.
 
 ## Why this matters
 
@@ -118,8 +154,12 @@ pub struct SbDetail {
 ```
 
 The one existing test covering this bucketing,
-`ucl_fixture_cards_bucket_per_side_and_color` (`poller.rs:1100-1112`),
-exercises only the happy path against the real fixture:
+`ucl_fixture_cards_bucket_per_side_and_color` (`poller.rs:1123-1135` as
+of `5c1ca36` — plan 044 landed a new test between it and
+`red_card_emits_red_card_signal` mid-review, shifting it from its
+original `1100-1112`; re-locate by name with `rg`, don't trust either
+number blindly), exercises only the happy path against the real
+fixture:
 
 ```rust
 #[test]
@@ -191,7 +231,10 @@ fn fixture_with_temp(temp: f64) -> OpenMeteoResponse {
 
 ### 3. `engine.rs` — the ported real-timer tests
 
-`src-tauri/src/engine.rs:496,536`:
+`src-tauri/src/engine.rs:501,541` (shifted from the original `496,536`
+by plan 048's named-struct refactor of `StatusState::snapshot`, which
+touched `engine.rs` between when this plan was written and this
+review-plan pass — re-locate by name with `rg` if it's moved again):
 
 ```rust
 async fn rotation_loop_parked_idle_wakes_on_accept() {
@@ -260,7 +303,8 @@ exists at that name or in `lib.rs`.
 
 In `src-tauri/src/poller.rs`'s `#[cfg(test)] mod tests`, add a test
 modeled on `ucl_fixture_cards_bucket_per_side_and_color`
-(`poller.rs:1100`) and on `red_card_emits_red_card_signal`'s technique
+(`poller.rs:1123` at last check, re-locate by name — see "Current
+state" above) and on `red_card_emits_red_card_signal`'s technique
 for hand-mutating a fixture's card detail (search for how that test
 locates `.details.last_mut()` and sets `red_card`/`detail_type.text`,
 around `poller.rs:1082-1091` — reuse the same mutation style):
