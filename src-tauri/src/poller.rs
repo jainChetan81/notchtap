@@ -91,6 +91,11 @@ pub struct SbDetail {
     // out of the composed detail_type.text.
     #[serde(rename = "redCard", default)]
     pub red_card: bool,
+    // structural own-goal signal, exactly like `red_card` above — read
+    // directly instead of guessing at whatever free-text label ESPN uses
+    // for an own goal (unverified; no checked-in fixture has one).
+    #[serde(rename = "ownGoal", default)]
+    pub own_goal: bool,
     #[serde(default)]
     pub clock: Option<SbClock>,
     #[serde(rename = "athletesInvolved", default)]
@@ -156,7 +161,7 @@ const ABSENT_POLLS_BEFORE_EVICTION: usize = 10;
 struct MatchView<'a> {
     id: &'a str,
     snap: MatchSnapshot,
-    last_scoring_play: Option<String>, // "K. Havertz 6'"
+    last_scoring_play: Option<String>, // "Goal — K. Havertz 6'"
     last_card: Option<String>,         // "Yellow Card — B. Saka 54'"
     // only meaningful when last_card.is_some(); structural, from espn's
     // own redCard boolean, not derived from last_card's display text.
@@ -175,6 +180,20 @@ fn detail_line(d: &SbDetail) -> String {
         .map(|c| c.display_value.clone())
         .unwrap_or_default();
     format!("{who} {clock}").trim().to_string()
+}
+
+// shared "{kind} — {line}" formatting for the card and scoring-play
+// extractions in `view()` below, so the two sites can't drift. a scoring
+// play can arrive with no detail_type label (a case `last_card` can't
+// hit — its search filters on the label), so an empty `kind` must fall
+// back to the bare line rather than produce a stray leading "— ...".
+fn labeled_detail_line(kind: &str, d: &SbDetail) -> String {
+    let line = detail_line(d);
+    match (kind.is_empty(), line.is_empty()) {
+        (true, _) => line,
+        (false, true) => kind.to_string(),
+        (false, false) => format!("{kind} — {line}"),
+    }
 }
 
 fn view(event: &SbEvent) -> MatchView<'_> {
@@ -224,7 +243,21 @@ fn view(event: &SbEvent) -> MatchView<'_> {
         .iter()
         .rev()
         .find(|d| d.scoring_play)
-        .map(detail_line)
+        .map(|d| {
+            // own_goal checked FIRST and short-circuits the text lookup —
+            // the own-goal label never depends on ESPN's (unverified)
+            // own-goal text string; every other case passes ESPN's own
+            // label ("Goal", "Penalty - Scored") through verbatim.
+            let kind = if d.own_goal {
+                "Own Goal".to_string()
+            } else {
+                d.detail_type
+                    .as_ref()
+                    .map(|t| t.text.clone())
+                    .unwrap_or_default()
+            };
+            labeled_detail_line(&kind, d)
+        })
         .filter(|s| !s.is_empty());
     let last_card_detail = details.iter().rev().find(|d| {
         d.detail_type
@@ -238,12 +271,7 @@ fn view(event: &SbEvent) -> MatchView<'_> {
             .as_ref()
             .map(|t| t.text.clone())
             .unwrap_or_default();
-        let line = detail_line(d);
-        if line.is_empty() {
-            kind
-        } else {
-            format!("{kind} — {line}")
-        }
+        labeled_detail_line(&kind, d)
     });
     let last_card_is_red = last_card_detail.map(|d| d.red_card).unwrap_or(false);
 
@@ -967,6 +995,79 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert!(matches!(events[0].event_type, EventType::MatchState));
         assert_eq!(events[0].signal, EventSignal::RedCard);
+    }
+
+    #[test]
+    fn goal_body_names_the_event() {
+        // the ucl fixture's match is already `post` on first sighting, so
+        // hand-build a synthetic prev snapshot the way
+        // red_card_emits_red_card_signal does. details is truncated to
+        // just the index-0 "Goal" entry — the untouched fixture's last
+        // scoring play is a shootout "Penalty - Scored", and
+        // `.rev().find()` would land on that instead.
+        let sb = parse_scoreboard(UCL).unwrap();
+        let mut v_snap = view(&sb.events[0]).snap;
+        v_snap.state = "in".to_string();
+        v_snap.home_score -= 1; // "one goal ago"
+        let mut snap = Snapshot::new();
+        snap.insert(sb.events[0].id.clone(), v_snap);
+
+        let mut live = parse_scoreboard(UCL).unwrap();
+        live.events[0].status.status_type.state = "in".to_string();
+        live.events[0].competitions[0].details.truncate(1); // keep only the "Goal" entry
+
+        let (events, _) = diff_scoreboard(&snap, &live, 8, "uefa.champions", Priority::High, false);
+        assert_eq!(events.len(), 1);
+        assert!(matches!(events[0].event_type, EventType::ScoreUpdate));
+        assert!(events[0].payload.body.starts_with("Goal — "));
+    }
+
+    #[test]
+    fn penalty_body_names_the_event() {
+        // same shape as goal_body_names_the_event, but no truncation: the
+        // last scoring-play entry in the untouched fixture already IS
+        // "Penalty - Scored" (the shootout).
+        let sb = parse_scoreboard(UCL).unwrap();
+        let mut v_snap = view(&sb.events[0]).snap;
+        v_snap.state = "in".to_string();
+        v_snap.home_score -= 1;
+        let mut snap = Snapshot::new();
+        snap.insert(sb.events[0].id.clone(), v_snap);
+
+        let mut live = parse_scoreboard(UCL).unwrap();
+        live.events[0].status.status_type.state = "in".to_string();
+
+        let (events, _) = diff_scoreboard(&snap, &live, 8, "uefa.champions", Priority::High, false);
+        assert_eq!(events.len(), 1);
+        assert!(events[0].payload.body.starts_with("Penalty - Scored — "));
+    }
+
+    #[test]
+    fn own_goal_body_derived_from_structural_flag() {
+        // no fixture has an own goal, so synthesize one by setting the
+        // structural boolean — same technique as
+        // red_card_emits_red_card_signal. detail_type.text is deliberately
+        // left untouched to prove the label comes from `own_goal`, not
+        // from whatever text happens to still be there.
+        let sb = parse_scoreboard(UCL).unwrap();
+        let mut v_snap = view(&sb.events[0]).snap;
+        v_snap.state = "in".to_string();
+        v_snap.home_score -= 1;
+        let mut snap = Snapshot::new();
+        snap.insert(sb.events[0].id.clone(), v_snap);
+
+        let mut live = parse_scoreboard(UCL).unwrap();
+        live.events[0].status.status_type.state = "in".to_string();
+        let last_detail = live.events[0].competitions[0]
+            .details
+            .last_mut()
+            .expect("fixture has at least one detail");
+        last_detail.scoring_play = true;
+        last_detail.own_goal = true;
+
+        let (events, _) = diff_scoreboard(&snap, &live, 8, "uefa.champions", Priority::High, false);
+        assert_eq!(events.len(), 1);
+        assert!(events[0].payload.body.starts_with("Own Goal — "));
     }
 
     #[test]
