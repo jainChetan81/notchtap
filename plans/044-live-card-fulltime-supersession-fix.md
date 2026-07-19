@@ -63,7 +63,7 @@ behind a phantom occupant of the single Slot.
           ttl_secs,
           EventSignal::Fulltime,
           priority,
-          card_topic(&topic, true),   // true => CardTopic::FullTime => OneShot
+          card_topic(&topic, true),
       );
       event.meta = meta.clone();
       out.push(event);
@@ -85,12 +85,20 @@ behind a phantom occupant of the single Slot.
           ttl_secs,
           signal,
           priority,
-          card_topic(&topic, false),  // false => CardTopic::Live => Recurring
+          card_topic(&topic, false),
       );
       event.meta = meta.clone();
       out.push(event);
   }
   ```
+
+  (This excerpt is byte-identical to the live file at `f2cbae6` — the
+  only difference from the raw source is that the two
+  `card_topic(&topic, true/false)` call sites carry no inline comment in
+  the file itself; the mapping — `card_topic(&topic, true)` produces
+  `CardTopic::FullTime` → `RotationSpec::OneShot`, `card_topic(&topic,
+  false)` produces `CardTopic::Live` → `RotationSpec::Recurring` — is
+  explained in prose just below instead, not quoted as a code comment.)
 
   `final_now` is defined earlier in the same function: `let final_now =
   v.snap.state == "post";` (line 474).
@@ -205,32 +213,67 @@ warnings.
 ### Step 2: Add the regression test
 
 Add a test proving the exact bug scenario: a match records a card and
-goes final in the same poll, with `espn_live_card = true`. Model it on
+goes final in the same poll, with `espn_live_card = true`.
+
+**Do not use the `USA` fixture for this test.** The plan's original
+draft suggested modeling the poll-sequence harness on
 `live_card_on_goal_and_full_time_in_one_poll_share_meta`
-(`poller.rs:1329`) for the harness shape (`baseline(USA)`,
-`diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High, true)`) and on
-whatever existing test constructs a card-detail mutation (search for how
-`ucl_fixture_cards_bucket_per_side_and_color`, `poller.rs:1100`, or the
-red/yellow card tests build a `details` entry with a `"Card"`-containing
-`detail_type.text` and a `team` reference — reuse that construction, not
-a fresh one).
+(`poller.rs:1329`, which uses `baseline(USA)`) while reusing the
+card-detail-construction technique from `red_card_emits_red_card_signal`/
+`ucl_fixture_cards_bucket_per_side_and_color` (which mutate an
+already-populated `UCL`-fixture detail via `.details.last_mut()`). That
+combination does not work: `src-tauri/tests/fixtures/scoreboard-usa.1.json`
+has zero `details` entries for every event (confirmed by parsing the raw
+JSON), so `.last_mut()` returns `None` and `.expect(...)` panics.
+`SbDetail` also does not derive `Default` (unlike `SbTeam`/`SbDetailType`,
+which do) — confirmed at `poller.rs:85`, `#[derive(Debug, Deserialize)]`
+only — so there is no `..Default::default()` shortcut to hand-construct
+one either.
 
-Assert:
-- Starting from a match `state == "in"` with the card already absent
-  from `old.total_cards()`, apply a poll where the fetched snapshot both
-  (a) adds a new card detail for one side and (b) has
-  `status.status_type.state == "post"`.
-- `diff_scoreboard` returns exactly **one** `MatchState` event for this
-  match (the full-time one), not two.
-- The full-time event's `payload.body == "full-time"` (the card is not
-  silently swallowed as a *body* change — it remains represented only in
-  `meta`).
-- The full-time event's `meta.details` contains a `"Cards"`-labeled
-  entry reflecting the new card count (proving the card isn't lost, just
-  not separately emitted).
+Instead, reuse `red_card_emits_red_card_signal`'s exact technique
+(`poller.rs:1068-1097`) end to end, on the `UCL` fixture, which is
+already `state == "post"` with 6 real card details (2 home yellow, 4
+away yellow — the same ground truth
+`ucl_fixture_cards_bucket_per_side_and_color`, `poller.rs:1100`, pins).
+Build a synthetic **old** state that's the fixture's real final state
+minus one card, with `state` forced back to `"in"` — then diff against
+the **unmodified** parsed `UCL` scoreboard (no mutation needed on it at
+all, since it's already final with the full real card set):
 
-Name it something like
-`card_recorded_same_poll_as_fulltime_does_not_emit_separately_and_stays_in_meta`.
+```rust
+#[test]
+fn card_recorded_same_poll_as_fulltime_does_not_emit_separately_and_stays_in_meta() {
+    let live = parse_scoreboard(UCL).unwrap();
+    let mut old_view = view(&live.events[0]).snap;
+    old_view.state = "in".to_string();
+    old_view.home_cards.0 -= 1; // one home yellow "not yet recorded" in `old`
+    let mut snap = Snapshot::new();
+    snap.insert(live.events[0].id.clone(), old_view);
+
+    let (events, _) = diff_scoreboard(&snap, &live, 8, "uefa.champions", Priority::High, true);
+
+    assert_eq!(
+        events.len(),
+        1,
+        "a card recorded the same poll as full-time must not emit as a separate event"
+    );
+    assert_eq!(events[0].payload.body, "full-time");
+    assert!(
+        events[0].meta.details.iter().any(|d| d.label == "Cards"),
+        "the card must still be reflected in the full-time event's meta"
+    );
+}
+```
+
+Why this reproduces the bug precisely: `old_view.state = "in"` makes
+`final_now && old.state != "post"` true (full-time fires); `live`'s real
+card count (6) is greater than `old`'s manufactured count (5, after the
+`-= 1`), so pre-fix the card branch would also fire — reproducing "both
+fire in the same poll" — and post-fix (Step 1's `&& !final_now` gate)
+the card branch is correctly suppressed, leaving exactly the one
+full-time event with the card already reflected in its `meta.details`
+"Cards" line (built from `v.snap.home_cards`/`away_cards`, i.e. the
+*current*/`live` counts, not `old`'s).
 
 **Verify**: `cargo test --locked poller::` (from `src-tauri/`) → all
 pass, including the new test, and
@@ -240,6 +283,11 @@ pass, including the new test, and
 them — confirm by running them explicitly if you want extra confidence:
 `cargo test --locked goal_and_full_time_in_one_poll_emit_in_order` and
 `cargo test --locked live_card_on_goal_and_full_time_in_one_poll_share_meta`).
+Also re-run `red_card_emits_red_card_signal` explicitly — the new test
+uses the same UCL-fixture-mutation technique on the same match, so
+confirm the two don't interfere (they're independent `#[test]` functions
+with their own local `snap`/`live` bindings, so they shouldn't, but
+verify rather than assume).
 
 ### Step 3: Full suite + lint + docs
 
@@ -257,15 +305,16 @@ written against poller 30 / total 326+3, per the doc as of `f2cbae6`).
 ## Test plan
 
 - New test: `card_recorded_same_poll_as_fulltime_does_not_emit_separately_and_stays_in_meta`
-  in `src-tauri/src/poller.rs`'s `#[cfg(test)] mod tests`, modeled on
-  `live_card_on_goal_and_full_time_in_one_poll_share_meta` (line 1329)
-  for the poll-sequence harness and on the existing card-detail tests
-  for constructing a card mutation. Covers the exact regression this
-  plan fixes.
-- Existing tests to re-run explicitly as a safety net (both currently
+  in `src-tauri/src/poller.rs`'s `#[cfg(test)] mod tests`, built on the
+  `UCL` fixture using `red_card_emits_red_card_signal`'s (line 1068)
+  synthetic-old-state technique — see Step 2 for the exact code. Covers
+  the exact regression this plan fixes.
+- Existing tests to re-run explicitly as a safety net (all currently
   green, must stay green): `goal_and_full_time_in_one_poll_emit_in_order`,
   `live_card_on_goal_and_full_time_in_one_poll_share_meta`,
-  `ucl_fixture_cards_bucket_per_side_and_color`.
+  `ucl_fixture_cards_bucket_per_side_and_color`,
+  `red_card_emits_red_card_signal` (the last one shares a fixture and
+  technique with the new test — confirm it still passes unmodified).
 - Verification: `cargo test --locked` (from `src-tauri/`) → all pass,
   including the new test.
 
@@ -278,8 +327,12 @@ Machine-checkable. ALL must hold:
       passes
 - [ ] `cargo fmt --check && cargo clippy --locked --all-targets -- -D warnings`
       exits 0
-- [ ] `rg -n "v.snap.total_cards\(\) > old.total_cards\(\)" src-tauri/src/poller.rs`
-      shows the condition now includes `&& !final_now`
+- [ ] `rg -n "total_cards\(\) > old.total_cards\(\) && !final_now" src-tauri/src/poller.rs`
+      shows exactly 1 match (note: a bare `rg -n "v.snap.total_cards\(\)
+      > old.total_cards\(\)"`, without the trailing `&& !final_now`, is
+      NOT a valid done-check — it matches the pre-fix line too, since
+      it's a substring match that doesn't require the new condition to
+      be present; don't use it to confirm this step)
 - [ ] No files outside the in-scope list are modified (`git status`)
 - [ ] `docs/TESTING_STRATEGY.md` §0 counts reconciled against a live
       `cargo test --locked` run
