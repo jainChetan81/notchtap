@@ -583,7 +583,7 @@ pub fn diff_scoreboard(
                     out.push(event);
                 }
 
-                if v.snap.total_cards() > old.total_cards() {
+                if v.snap.total_cards() > old.total_cards() && !final_now {
                     let body = v.last_card.clone().unwrap_or_else(|| "card".to_string());
                     let signal = if v.last_card_is_red {
                         EventSignal::RedCard
@@ -1094,6 +1094,29 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert!(matches!(events[0].event_type, EventType::MatchState));
         assert_eq!(events[0].signal, EventSignal::RedCard);
+    }
+
+    #[test]
+    fn card_recorded_same_poll_as_fulltime_does_not_emit_separately_and_stays_in_meta() {
+        let live = parse_scoreboard(UCL).unwrap();
+        let mut old_view = view(&live.events[0]).snap;
+        old_view.state = "in".to_string();
+        old_view.home_cards.0 -= 1; // one home yellow "not yet recorded" in `old`
+        let mut snap = Snapshot::new();
+        snap.insert(live.events[0].id.clone(), old_view);
+
+        let (events, _) = diff_scoreboard(&snap, &live, 8, "uefa.champions", Priority::High, true);
+
+        assert_eq!(
+            events.len(),
+            1,
+            "a card recorded the same poll as full-time must not emit as a separate event"
+        );
+        assert_eq!(events[0].payload.body, "full-time");
+        assert!(
+            events[0].meta.details.iter().any(|d| d.label == "Cards"),
+            "the card must still be reflected in the full-time event's meta"
+        );
     }
 
     #[test]
