@@ -23,16 +23,44 @@
 
 - **Priority**: P2
 - **Effort**: S–M
-- **Risk**: MED — 39 upstream commits sit between the current pin and
-  the proposed target, including a rename and a macro-signature change;
-  a naive bump can hit a compile break that needs a source-level fixup,
-  not just a lockfile change.
+- **Risk**: MED — confirmed (not just suspected) compile break at the
+  one call site this app uses: `to_panel()` and `set_style_mask()` both
+  changed signature between the pinned rev and the target rev (see
+  "Confirmed breaking changes" below). The fix pattern is known and
+  small, but it requires adopting the crate's `tauri_panel!` macro (new
+  surface this app doesn't use today) and a manual runtime-equivalence
+  check, not just a lockfile change.
 - **Depends on**: none
 - **Category**: dependency
 - **Planned at**: commit `f2cbae6`, 2026-07-19 — dependency facts below
   verified live against `github.com/ahkohd/tauri-nspanel` on that date;
   **re-verify the target rev is still current before executing**, since
   upstream may have moved further by execution time.
+- **Review-plan pass (2026-07-20)**: independently re-verified this
+  plan's dependency claims against a live fetch of the upstream repo
+  (`git ls-remote`, `gh api .../compare/...`, and direct file reads of
+  both revs' `src/lib.rs`) rather than trusting the prior research.
+  Two corrections, both folded into "Current state"/Step 0/Step 2 below:
+  (1) **"the ONLY call into `tauri_nspanel`" was wrong** — `lib.rs:178`
+  (`.plugin(tauri_nspanel::init())`) is a second, real call site the
+  plan never mentioned or accounted for; confirmed its signature is
+  unchanged between the two revs, so it's not a risk, but the plan's own
+  claim didn't match what its own suggested `grep -rn` would show.
+  (2) **the "may hit a compile break" framing was too hedged** — a
+  direct signature diff of both revs confirms `to_panel()` and
+  `set_style_mask()` (the two symbols this app actually calls) BOTH
+  changed in ways this app's exact call shape will not compile against;
+  this is not a maybe, and the concrete before/after + a working fix
+  pattern from the upstream repo's own examples are now inlined below
+  so the executor doesn't have to rediscover them from scratch. The
+  target rev (`a3122e894383aa068ec5365a42994e3ac94ba1b6`) and the
+  39-commits-ahead count were both re-confirmed exactly correct — no
+  drift there. Also checked and confirmed a non-issue: the new crate
+  requires `tauri = "2.8.5"` with the `macos-private-api` feature; this
+  app already pins `tauri = "2"` (resolved `2.11.5` in `Cargo.lock`,
+  satisfies `^2.8.5`) with `macos-private-api` already enabled
+  (`Cargo.toml:16,41`) — no knock-on tauri-version or feature-flag
+  change needed.
 
 ## Why this matters
 
@@ -95,14 +123,98 @@ concrete action instead of deferring a third time.
   }
   ```
 
-  This is the ONLY call into `tauri_nspanel` in the whole codebase
-  (confirm with `grep -rn "tauri_nspanel\|nspanel" src-tauri/src`) — the
-  surface a rename or macro change could hit is small and localized.
+  **Correction (review-plan pass, 2026-07-20): this is NOT the only call
+  into `tauri_nspanel`.** `grep -rn "tauri_nspanel\|nspanel" src-tauri/src`
+  actually returns a second real hit: `lib.rs:178`,
+  `.plugin(tauri_nspanel::init())`, the plugin registration in the
+  `tauri::Builder` chain (confirmed by direct read — it is NOT inside
+  the `#[cfg(target_os = "macos")]` block quoted above, it's earlier in
+  the same `run()` function). This app is macOS-only by build target
+  (per `CLAUDE.md`: rust CI runs on `macos-latest` only, and
+  `tauri-nspanel` is a macOS-only Cargo dependency), so `init()` being
+  unconditional is fine and not itself a bug — but the plan's own claim
+  that lines 222-231 are "the ONLY call" doesn't match what its own
+  suggested grep shows, and `init()` was never checked for a signature
+  change. It has now been checked (see "Confirmed breaking changes"
+  below): `init()`'s signature (`pub fn init<R: Runtime>() ->
+  TauriPlugin<R>`) is byte-identical between the pinned rev and the
+  target rev — confirmed safe, but for a reason the original plan never
+  established.
 
 - Proposed target: `github.com/ahkohd/tauri-nspanel`'s `v2.1` branch tip,
-  `a3122e894383aa068ec5365a42994e3ac94ba1b6` — **re-verify this is still
-  the branch tip at execution time** (Step 1), since it may have moved
-  since 2026-07-19.
+  `a3122e894383aa068ec5365a42994e3ac94ba1b6` — re-confirmed exactly
+  correct via `git ls-remote https://github.com/ahkohd/tauri-nspanel
+  refs/heads/v2.1` on 2026-07-20 (review-plan pass); **still re-verify
+  this is the branch tip at execution time** (Step 1), since it may move
+  further before the plan is actually run.
+
+### Confirmed breaking changes (review-plan pass, 2026-07-20 — verified via `gh api repos/ahkohd/tauri-nspanel/contents/src/lib.rs?ref=<rev>` at both revs)
+
+Both symbols this app calls in the 222-231 block changed shape. This is
+not speculative — it's a direct diff of the crate's own `src/lib.rs` at
+the pinned rev vs. the target rev:
+
+- **`to_panel()` gained a required generic type parameter and changed
+  its return type.** Pinned rev: `fn to_panel(&self) -> tauri::Result<
+  ShareId<RawNSPanel>>` (no type parameter). Target rev: `fn
+  to_panel<P: FromWindow<R> + 'static>(&self) -> tauri::Result<
+  PanelHandle<R>>` — `P` cannot be inferred from context (it doesn't
+  appear in the return type, which is `PanelHandle<R> = Arc<dyn
+  Panel<R>>` regardless of `P`), so a bare `window.to_panel()` (this
+  app's exact current call, `lib.rs:226`) will not compile. Every
+  current usage in the upstream repo's own examples defines a minimal
+  panel type via the crate's `tauri_panel!` macro first, then passes it
+  explicitly: `examples/basic/src-tauri/src/main.rs` (target rev) does
+  ```rust
+  use tauri_nspanel::{tauri_panel, WebviewWindowExt};
+
+  tauri_panel! {
+      panel!(Panel {
+          config: {
+              can_become_key_window: true,
+              can_become_main_window: false
+          }
+      })
+  }
+  // ...
+  let panel = window.to_panel::<Panel>().unwrap();
+  ```
+  This app's minimal equivalent needs a `panel!` config matching its
+  existing intent (nonactivating, borderless, never key/main window —
+  see the `set_style_mask` note below for how that intent is currently
+  expressed) — the exact `config:` fields to set are a judgment call for
+  whoever executes this plan; the upstream examples directory
+  (`examples/basic/`, `examples/hover_activate/`,
+  `examples/panel_style_mask.rs`, all at the target rev) is the
+  reference to work from, not a blank-page reinvention.
+- **`set_style_mask()` changed its parameter type from a raw integer to
+  a typed bitflags value.** Pinned rev (on `RawNSPanel`, in
+  `src/raw_nspanel.rs`): `pub fn set_style_mask(&self, style_mask:
+  i32)`. Target rev (on the `Panel<R>` trait, in `src/lib.rs`): `fn
+  set_style_mask(&self, style_mask: objc2_app_kit::NSWindowStyleMask)`
+  — this app's exact current call, `panel.set_style_mask(1 << 7)`
+  (`lib.rs:230`), passes a bare integer and will not compile. The
+  needed replacement constant is confirmed to exist:
+  `objc2_app_kit::NSWindowStyleMask::NonactivatingPanel` (verified
+  against `objc2-app-kit` 0.3.2's own docs — this app already pins
+  exactly that version, `Cargo.toml:36`, with the `NSWindow` feature
+  enabled, and already imports `objc2_app_kit` types the same way in
+  `apply_overlay_native_config`, e.g.
+  `NSWindowCollectionBehavior::CanJoinAllSpaces` at `lib.rs:528` — same
+  crate, same PascalCase bitflags-constant convention). The likely
+  replacement is `panel.set_style_mask(objc2_app_kit::NSWindowStyleMask
+  ::NonactivatingPanel);`, but confirm at execution time that this
+  produces the exact same runtime behavior as today's `1 << 7` (a
+  borderless window with only the nonactivating-panel bit set, no
+  titled/closable/resizable bits) — don't assume equivalence without
+  checking, since the crate's `config:`-block-driven macro path might
+  express some of this intent differently than a raw `set_style_mask`
+  call.
+- **Net effect on this plan's Step 2**: `cargo build --locked` failing
+  at these two symbols is the *expected* outcome of Step 2, not a
+  contingency — treat the "if it fails, fix it" framing there as "when
+  it fails, fix it using the pattern above," while still honoring the
+  STOP condition for any failure *outside* these two symbols.
 
 ## Commands you will need
 
@@ -157,19 +269,28 @@ this plan was written and when it's executed.
    If it has moved, use the new tip instead — the goal is "current
    `v2.1` tip," not this specific SHA.
 2. Read the commit list between the pinned rev
-   (`18ffb9a201fbf6fedfaa382fd4b92315ea30ab1a`) and your target tip.
-   Specifically check for: a rename of `WebviewWindowExt`/`to_panel`/
-   `set_style_mask` (the three symbols this app calls), or a
-   macro/signature change to any of them. At the time this plan was
-   written, the intervening history included commits titled
-   `rename method` and `feat: support snake_case config in panel!
-   macro` — confirm whether either affects the three symbols this app
-   actually uses (it may not; `panel!` is a different, unused macro
-   path).
+   (`18ffb9a201fbf6fedfaa382fd4b92315ea30ab1a`) and your target tip (if
+   your target tip is still `a3122e894383aa068ec5365a42994e3ac94ba1b6`,
+   this has already been done for you — see "Confirmed breaking
+   changes" in Current state above; skip straight to confirming your
+   target tip hasn't moved, then proceed to Step 1). If your target tip
+   HAS moved past `a3122e894383aa068ec5365a42994e3ac94ba1b6`, re-do this
+   check for the additional commits: specifically look for any further
+   change to `to_panel()`/`set_style_mask()`/`WebviewWindowExt`/`init()`
+   beyond what's already documented above (those four symbols are the
+   ones this app calls). The commits titled `rename method` and `feat:
+   support snake_case config in panel! macro` (both present in the
+   already-reviewed range) were checked and confirmed NOT to affect this
+   app: `rename method` only renames an internal macro-local helper
+   function private to the crate's own `src/panel.rs`, and the
+   `panel!`/`snake_case config` work is part of the `tauri_panel!` macro
+   path this app doesn't use today (though the fix below adopts it).
 
-**Verify**: you can state the exact target rev and whether any of the
-three call-site symbols renamed. If you cannot reach the network to do
-this, STOP (see STOP conditions) — do not guess at a rev.
+**Verify**: you can state the exact target rev and confirm (or, if the
+tip moved, re-derive) which of this app's four call-site symbols
+(`init`, `WebviewWindowExt`, `to_panel`, `set_style_mask`) changed. If
+you cannot reach the network to do this, STOP (see STOP conditions) —
+do not guess at a rev.
 
 ### Step 1: Bump the pin
 
@@ -189,13 +310,26 @@ consistent with `cargo build --locked`.
 rev in both the `source` line and the trailing `#`-fragment; `cargo
 build --locked` → exit 0.
 
-If `cargo build --locked` fails with a compile error localized to
-`lib.rs:222-231`'s three symbols, fix the call site to match the new
-API (rename/signature change) — this is the one case where touching
-`lib.rs` beyond that block is in scope, but keep the fix as small as the
-actual API change requires. If the failure is anywhere else (a
-transitive dependency conflict, an unrelated crate), STOP — that's a
-sign the bump has a wider blast radius than this plan scoped for.
+**Expect `cargo build --locked` to fail here** — this is the confirmed,
+not hypothetical, outcome (see "Confirmed breaking changes" in Current
+state above): `to_panel()` needs an explicit type parameter now, and
+`set_style_mask()` needs a typed `objc2_app_kit::NSWindowStyleMask`
+argument instead of a raw integer. Fix the call site using the pattern
+already laid out above (a `tauri_panel!`-defined minimal panel type,
+`window.to_panel::<ThatType>()`, and
+`panel.set_style_mask(objc2_app_kit::NSWindowStyleMask::NonactivatingPanel)`
+in place of `1 << 7`) — this is the one case where touching `lib.rs`
+beyond the 222-231 block is in scope (the `tauri_panel!` macro
+invocation needs to live somewhere in the file, e.g. near the top
+alongside other `use`/type declarations), but keep the fix as small as
+the actual API change requires: don't adopt anything from the new
+crate's richer surface (event handlers, corner radius, transparency,
+`PanelBuilder`) beyond what's needed to compile and preserve today's
+exact behavior (borderless, nonactivating, never key/main window). If
+the failure is anywhere else — not one of the two named symbols, or a
+transitive dependency conflict, or an unrelated crate — STOP; that's a
+sign the bump has a wider blast radius than this plan (and this
+review-plan pass's confirmed diff) scoped for.
 
 ### Step 3: Full verification gate
 
@@ -224,11 +358,15 @@ hardware-only gap.
 ## Test plan
 
 No new automated tests are appropriate here — this is a dependency
-version bump with no behavior change to notchtap's own code (unless
-Step 2 required a call-site fix, in which case the existing test suite,
-which exercises `apply_overlay_native_config` and window setup only
-indirectly via integration-style tests, is the safety net; do not invent
-a new unit test for a third-party crate's internals).
+version bump with no *intended* behavior change to notchtap's own code,
+even though Step 2's call-site fix (confirmed needed — see "Confirmed
+breaking changes") touches real code. The existing test suite, which
+exercises `apply_overlay_native_config` and window setup only
+indirectly via integration-style tests, is the safety net; do not
+invent a new unit test for a third-party crate's internals — the manual
+smoke check in Step 4 is what actually verifies the panel still behaves
+correctly, since none of the existing automated tests can observe
+`NSPanel` conversion behavior on a real window.
 
 - Verification: `cargo test --locked` (from `src-tauri/`) → all pass, no
   count change from before this plan.
@@ -256,9 +394,10 @@ Stop and report back (do not improvise) if:
 - You cannot reach the network to confirm the current `v2.1` tip (Step
   0) — do not guess at a rev or proceed with the plan's original one
   without re-confirming it's still current.
-- `cargo build --locked` fails anywhere other than the three named
-  call-site symbols in `lib.rs:222-231` — a wider break means the bump's
-  blast radius is larger than this plan scoped for.
+- `cargo build --locked` fails anywhere other than the two named
+  call-site symbols in `lib.rs:222-231` (`to_panel`/`set_style_mask` —
+  see "Confirmed breaking changes" in Current state) — a wider break
+  means the bump's blast radius is larger than this plan scoped for.
 - The upstream repository shows evidence of being effectively abandoned
   or the `v2.1` branch itself looks unstable/experimental (e.g. marked
   WIP, or its own CI is red) rather than a maintained successor to `v2`
@@ -286,9 +425,12 @@ Stop and report back (do not improvise) if:
   updated (not just the `Cargo.toml` rev, leaving a stale lock), that no
   unrelated dependency shifted in `Cargo.lock` (a plain `cargo update -p
   tauri-nspanel` should only touch that crate's entry and its own
-  transitive deps, not the whole tree), and that if a call-site fix was
-  needed, it's the minimal change the new API requires — not a
-  refactor of the surrounding window-setup code.
+  transitive deps, not the whole tree), and that the call-site fix
+  (confirmed needed — see "Confirmed breaking changes" in Current
+  state) is the minimal change the new API requires: a `tauri_panel!`
+  macro block sized to this app's actual needs, not an adoption of the
+  new crate's richer surface (event handlers, `PanelBuilder`, corner
+  radius, transparency) this app has no use for.
 - Future maintenance: re-check this dependency's health again at the
   next deliberate native-window-behavior change (the same cadence
   `plans/README.md` already recommended for `smappservice-rs`), rather
