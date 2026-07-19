@@ -21,6 +21,31 @@
 - **Depends on**: none
 - **Category**: bug
 - **Planned at**: commit `f2cbae6`, 2026-07-19
+- **Review-plan pass (2026-07-20)**, run at HEAD `28c3d27` (zero drift on
+  `poller.rs` since `f2cbae6` — `git diff --stat f2cbae6..HEAD --
+  src-tauri/src/poller.rs` empty): independently re-verified every claim
+  in this plan against live code (own read, plus a fresh-context
+  subagent cold-read), specifically checking the two things most likely
+  to be wrong in a plan like this — (1) that `queue.rs`'s Topic
+  supersession really is an unconditional last-applied-wins with no
+  priority/timestamp tiebreak (`apply_fresh_content`,
+  `existing.rotation = fresh.rotation;` unconditional — confirmed), and
+  (2) that the new test in Step 2 actually compiles and reproduces the
+  bug by hand-tracing every field/method it touches against live struct
+  definitions (confirmed: `home_cards.0 -= 1` on the UCL fixture's real
+  `(2, 0)` doesn't underflow, `final_now && old.state != "post"` and the
+  card condition both evaluate true pre-fix as claimed, exactly one
+  event survives post-fix with the Cards cell intact in `meta.details`).
+  Also independently confirmed the "out of scope: other emission sites
+  unaffected" claim structurally, not just by trusting the plan: kickoff
+  and full-time can't co-occur (mutually exclusive `state` values), and
+  goal/kickoff/half-time are all emitted *before* full-time in code
+  order, so any of them co-occurring with full-time already has
+  full-time applied last (already covered green by
+  `goal_and_full_time_in_one_poll_emit_in_order`/
+  `live_card_on_goal_and_full_time_in_one_poll_share_meta`) — card is
+  structurally the only site with this hazard. Zero issues found; no
+  changes made to this plan. Ready to execute as written.
 
 ## Why this matters
 
