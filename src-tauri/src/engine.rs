@@ -17,7 +17,8 @@ use crate::event::{emit_slot_state, Event, SlotState, SourceKind};
 use crate::notifier::ConnectorHandle;
 use crate::queue::SingleSlotQueue;
 use crate::status::{
-    emit_status_state, status_state_if_changed, LiveMatchSummary, StatusState, WeatherSummary,
+    emit_status_state, status_state_if_changed, LiveMatchSummary, StatusInputs, StatusState,
+    WeatherSummary,
 };
 
 /// Owns the queue, the heartbeat wake, the app handle, the Connectors,
@@ -276,11 +277,13 @@ impl<R: tauri::Runtime> Engine<R> {
                     }
                     let status = StatusState::snapshot(
                         &q,
-                        live_summary,
-                        espn_enabled,
-                        rss_enabled,
-                        weather_summary,
-                        weather_enabled,
+                        StatusInputs {
+                            live: live_summary,
+                            espn_enabled,
+                            rss_enabled,
+                            weather: weather_summary,
+                            weather_enabled,
+                        },
                     );
                     if let Some(changed) = status_state_if_changed(&mut last_status, status) {
                         emit_status_state(&app, changed);
@@ -330,11 +333,13 @@ impl<R: tauri::Runtime> Engine<R> {
             let q = self.queue.blocking_lock();
             StatusState::snapshot(
                 &q,
-                live_summary,
-                self.espn_enabled,
-                self.rss_enabled,
-                weather_summary,
-                self.weather_enabled,
+                StatusInputs {
+                    live: live_summary,
+                    espn_enabled: self.espn_enabled,
+                    rss_enabled: self.rss_enabled,
+                    weather: weather_summary,
+                    weather_enabled: self.weather_enabled,
+                },
             )
         };
         emit_status_state(&self.app, state.clone());

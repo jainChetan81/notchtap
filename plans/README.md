@@ -159,7 +159,7 @@ plans are independent. P1s first.
 | 045 | Bump the stale `tauri-nspanel` git pin (13mo/39 commits behind, missing crash/segfault fixes) | P2 | S–M | — | TODO |
 | 046 | Docs truth pass: CLAUDE.md/AGENTS.md project-state through plan 042, stale V3_6 spec citation, README source-count/justfile gaps, TESTING_STRATEGY count fix, IMPLEMENTATION_PLAN §6 checklist rows | P2 | S | — | TODO |
 | 047 | Test-only backfill: poller.rs card team-id-mismatch case, weather_poller.rs threshold-boundary cases, real-timer-test accepted-finding note fix | P2 | S | — (soft: re-run drift check if 044 lands first, same file) | TODO |
-| 048 | Harden `StatusState::snapshot`'s 6-arg positional bool/Option signature into named construction | P3 | S | — | TODO |
+| 048 | Harden `StatusState::snapshot`'s 6-arg positional bool/Option signature into named construction | P3 | S | — | DONE (2026-07-19; delegated to kimi in a scratch clone, independently re-verified — `StatusInputs` named-field struct in `status.rs`, all five call sites updated, `cargo test` 326+3 unchanged, fmt/clippy clean) |
 | 049 | SPIKE: per-source config consolidation design doc (`docs/design/`) — ends the config.rs/settings.rs/SettingsApp.tsx lockstep duplication four plans (013/020/021/040) each re-derived | P3 | M | — | TODO |
 | 050 | SPIKE: read-only `GET /status` HTTP endpoint design doc (`docs/design/`) | P3 | S–M | — | TODO |
 | 051 | SPIKE: Manual/Cmux `link` wire field design doc (`docs/design/`) — unlocks ⌃⇧O outside News | P3 | S | — | TODO |

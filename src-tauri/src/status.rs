@@ -75,31 +75,37 @@ pub struct WeatherStatus {
     pub current: Option<WeatherSummary>,
 }
 
+/// Named-field inputs for [`StatusState::snapshot`] — replaces five
+/// positional bool/Option arguments (three same-typed `bool`s, two
+/// same-shaped `Option`s) that a future call-site edit could transpose
+/// without a compile error. Construct with field names, not
+/// positionally, at every call site.
+pub struct StatusInputs {
+    pub live: Option<LiveMatchSummary>,
+    pub espn_enabled: bool,
+    pub rss_enabled: bool,
+    pub weather: Option<WeatherSummary>,
+    pub weather_enabled: bool,
+}
+
 impl StatusState {
     /// Recomputed from the live handles on every heartbeat pass; cheap
     /// (two queue reads + a clone) so the change-guard below is what keeps
     /// the channel silent at steady state, not any caching here.
-    pub fn snapshot(
-        queue: &SingleSlotQueue,
-        live: Option<LiveMatchSummary>,
-        espn_enabled: bool,
-        rss_enabled: bool,
-        weather: Option<WeatherSummary>,
-        weather_enabled: bool,
-    ) -> Self {
+    pub fn snapshot(queue: &SingleSlotQueue, inputs: StatusInputs) -> Self {
         Self {
             paused: queue.is_paused(),
             waiting: queue.total_waiting(),
             football: FootballStatus {
-                enabled: espn_enabled,
-                live,
+                enabled: inputs.espn_enabled,
+                live: inputs.live,
             },
             news: NewsStatus {
-                enabled: rss_enabled,
+                enabled: inputs.rss_enabled,
             },
             weather: WeatherStatus {
-                enabled: weather_enabled,
-                current: weather,
+                enabled: inputs.weather_enabled,
+                current: inputs.weather,
             },
         }
     }
@@ -241,7 +247,16 @@ mod tests {
         queue.pause();
 
         // one item visible, nothing waiting, paused, no live match
-        let snap = StatusState::snapshot(&queue, None, true, false, None, false);
+        let snap = StatusState::snapshot(
+            &queue,
+            StatusInputs {
+                live: None,
+                espn_enabled: true,
+                rss_enabled: false,
+                weather: None,
+                weather_enabled: false,
+            },
+        );
         assert!(snap.paused);
         assert_eq!(snap.waiting, 0);
         assert!(snap.football.enabled);
@@ -255,7 +270,17 @@ mod tests {
             .enqueue(generic_event(), std::time::Instant::now())
             .unwrap();
         assert_eq!(
-            StatusState::snapshot(&queue, None, true, false, None, false).waiting,
+            StatusState::snapshot(
+                &queue,
+                StatusInputs {
+                    live: None,
+                    espn_enabled: true,
+                    rss_enabled: false,
+                    weather: None,
+                    weather_enabled: false,
+                },
+            )
+            .waiting,
             1
         );
     }
@@ -263,7 +288,16 @@ mod tests {
     #[test]
     fn snapshot_carries_weather_summary_and_gate() {
         let queue = SingleSlotQueue::new(50);
-        let snap = StatusState::snapshot(&queue, None, true, false, Some(weather_summary()), true);
+        let snap = StatusState::snapshot(
+            &queue,
+            StatusInputs {
+                live: None,
+                espn_enabled: true,
+                rss_enabled: false,
+                weather: Some(weather_summary()),
+                weather_enabled: true,
+            },
+        );
         assert!(snap.weather.enabled);
         assert_eq!(snap.weather.current, Some(weather_summary()));
     }
