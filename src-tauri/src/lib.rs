@@ -722,25 +722,11 @@ fn open_current_story<R: tauri::Runtime>(engine: &Engine<R>) {
 mod tests {
     use super::*;
     use crate::event::{
-        Event, EventMeta, EventPayload, EventSignal, EventType, Priority, RotationSpec, SlotState,
-        SourceKind,
+        test_fixtures, Event, EventSignal, EventType, Priority, RotationSpec, SlotState,
     };
 
     fn event(priority: Priority) -> Event {
-        Event {
-            id: uuid::Uuid::new_v4(),
-            event_type: EventType::Generic,
-            priority,
-            rotation: RotationSpec::OneShot { ttl_secs: 8 },
-            topic: None,
-            payload: EventPayload {
-                title: "t".to_string(),
-                body: "b".to_string(),
-            },
-            meta: EventMeta::default(),
-            signal: EventSignal::Generic,
-            origin: SourceKind::Manual,
-        }
+        test_fixtures::with_priority(test_fixtures::event("t"), priority)
     }
 
     fn test_engine(app: &tauri::App<tauri::test::MockRuntime>) -> Engine<tauri::test::MockRuntime> {

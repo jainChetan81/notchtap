@@ -1,25 +1,12 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { emitTo, listen, resetHandlers } from "./test-support/tauriEventMock";
 import type { SlotState } from "./useSlotState";
 import { useSlotState } from "./useSlotState";
 
-type Handler = (event: { payload: SlotState }) => void;
-const handlers: Handler[] = [];
+vi.mock("@tauri-apps/api/event", () => import("./test-support/tauriEventMock"));
 
-vi.mock("@tauri-apps/api/event", () => ({
-  listen: vi.fn((_name: string, handler: Handler) => {
-    handlers.push(handler);
-    return Promise.resolve(() => {});
-  }),
-}));
-
-function emit(payload: SlotState) {
-  act(() => {
-    handlers.forEach((h) => {
-      h({ payload });
-    });
-  });
-}
+const emit = (payload: SlotState) => act(() => emitTo("slot-state", payload));
 
 const SHOWING_N1: SlotState = {
   state: "showing",
@@ -42,7 +29,8 @@ const SHOWING_N1: SlotState = {
 
 describe("useSlotState", () => {
   beforeEach(() => {
-    handlers.length = 0;
+    resetHandlers();
+    listen.mockClear();
     delete window.__NOTCHTAP_SLOT_STATE__;
   });
 
@@ -51,7 +39,7 @@ describe("useSlotState", () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(handlers.length).toBeGreaterThan(0);
+    expect(listen).toHaveBeenCalled();
     return rendered;
   }
 

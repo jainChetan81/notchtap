@@ -711,9 +711,7 @@ pub fn spawn_espn_poller(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event::{
-        EventMeta, EventPayload, EventSignal, EventType, Priority, RotationSpec, SlotState,
-    };
+    use crate::event::{test_fixtures, EventType, Priority, SlotState};
     use crate::notifier::ConnectorHandle;
     use crate::queue::SingleSlotQueue;
     use std::sync::Arc;
@@ -722,20 +720,19 @@ mod tests {
     const UCL: &str = include_str!("../tests/fixtures/scoreboard-uefa.champions.json");
 
     fn score_event(title: &str) -> Event {
-        Event {
-            id: uuid::Uuid::new_v4(),
-            event_type: EventType::ScoreUpdate,
-            priority: Priority::High,
-            rotation: RotationSpec::OneShot { ttl_secs: 8 },
-            topic: None,
-            payload: EventPayload {
-                title: title.to_string(),
-                body: "body".to_string(),
-            },
-            meta: EventMeta::default(),
-            signal: EventSignal::Goal,
-            origin: SourceKind::Football,
-        }
+        test_fixtures::with_origin(
+            test_fixtures::with_signal(
+                test_fixtures::with_priority(
+                    test_fixtures::with_event_type(
+                        test_fixtures::event(title),
+                        EventType::ScoreUpdate,
+                    ),
+                    Priority::High,
+                ),
+                EventSignal::Goal,
+            ),
+            SourceKind::Football,
+        )
     }
 
     #[tokio::test]

@@ -294,25 +294,15 @@ async fn send_once(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event::{EventMeta, EventPayload, EventSignal, Priority, RotationSpec, SourceKind};
+    use crate::event::test_fixtures;
     use std::sync::{Arc, Mutex};
     use uuid::Uuid;
 
     fn event(event_type: EventType, title: &str, body: &str) -> Event {
-        Event {
-            id: Uuid::new_v4(),
-            event_type,
-            priority: Priority::Medium,
-            rotation: RotationSpec::OneShot { ttl_secs: 8 },
-            topic: None,
-            payload: EventPayload {
-                title: title.to_string(),
-                body: body.to_string(),
-            },
-            meta: EventMeta::default(),
-            signal: EventSignal::Generic,
-            origin: SourceKind::Manual,
-        }
+        test_fixtures::with_body(
+            test_fixtures::with_event_type(test_fixtures::event(title), event_type),
+            body,
+        )
     }
 
     // --- retry policy: every arm ---

@@ -299,27 +299,12 @@ impl<R: tauri::Runtime> Engine<R> {
 mod tests {
     use super::*;
     use crate::error::QueueError;
-    use crate::event::{
-        EventMeta, EventPayload, EventSignal, EventType, Priority, RotationSpec, SLOT_STATE_EVENT,
-    };
+    use crate::event::{test_fixtures, Priority, RotationSpec, SLOT_STATE_EVENT};
     use crate::status::STATUS_STATE_EVENT;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn event(priority: Priority) -> Event {
-        Event {
-            id: uuid::Uuid::new_v4(),
-            event_type: EventType::Generic,
-            priority,
-            rotation: RotationSpec::OneShot { ttl_secs: 8 },
-            topic: None,
-            payload: EventPayload {
-                title: "t".to_string(),
-                body: "b".to_string(),
-            },
-            meta: EventMeta::default(),
-            signal: EventSignal::Generic,
-            origin: SourceKind::Manual,
-        }
+        test_fixtures::with_priority(test_fixtures::event("t"), priority)
     }
 
     fn live_summary(minute: &str) -> LiveMatchSummary {

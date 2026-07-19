@@ -535,69 +535,33 @@ const MAX_EXTENSION_ON_SUPERSEDE_SECS: u64 = 6;
 mod tests {
     use super::*;
     use crate::error::QueueError;
-    use crate::event::{DetailItem, EventMeta, EventPayload, EventSignal, EventType};
+    use crate::event::{test_fixtures, DetailItem, EventMeta, EventPayload, EventSignal};
     use std::time::Duration;
     use uuid::Uuid;
 
     fn event(title: &str, priority: Priority, ttl_secs: u64) -> Event {
-        Event {
-            id: Uuid::new_v4(),
-            event_type: EventType::Generic,
-            priority,
-            rotation: RotationSpec::OneShot { ttl_secs },
-            topic: None,
-            payload: EventPayload {
-                title: title.to_string(),
-                body: "body".to_string(),
-            },
-            meta: EventMeta::default(),
-            signal: EventSignal::Generic,
-            origin: SourceKind::Manual,
-        }
+        test_fixtures::with_rotation(
+            test_fixtures::with_priority(test_fixtures::event(title), priority),
+            RotationSpec::OneShot { ttl_secs },
+        )
     }
 
     fn recurring_event(title: &str, priority: Priority, display_secs: u64) -> Event {
-        Event {
-            id: Uuid::new_v4(),
-            event_type: EventType::Generic,
-            priority,
-            rotation: RotationSpec::Recurring { display_secs },
-            topic: None,
-            payload: EventPayload {
-                title: title.to_string(),
-                body: "body".to_string(),
-            },
-            meta: EventMeta::default(),
-            signal: EventSignal::Generic,
-            origin: SourceKind::Manual,
-        }
+        test_fixtures::with_rotation(
+            test_fixtures::with_priority(test_fixtures::event(title), priority),
+            RotationSpec::Recurring { display_secs },
+        )
     }
 
     fn topic_event(title: &str, priority: Priority, ttl_secs: u64, topic: &str) -> Event {
-        Event {
-            id: Uuid::new_v4(),
-            event_type: EventType::Generic,
-            priority,
-            rotation: RotationSpec::OneShot { ttl_secs },
-            topic: Some(topic.to_string()),
-            payload: EventPayload {
-                title: title.to_string(),
-                body: "body".to_string(),
-            },
-            meta: EventMeta::default(),
-            signal: EventSignal::Generic,
-            origin: SourceKind::Manual,
-        }
+        test_fixtures::with_topic(event(title, priority, ttl_secs), topic)
     }
 
     /// Same as `event()` but from a specific origin — for tie-break tests
     /// only; every other test relies on every helper sharing one origin so
     /// rank-based selection degenerates to pre-v6 arrival-order FIFO.
     fn event_from(title: &str, priority: Priority, ttl_secs: u64, origin: SourceKind) -> Event {
-        Event {
-            origin,
-            ..event(title, priority, ttl_secs)
-        }
+        test_fixtures::with_origin(event(title, priority, ttl_secs), origin)
     }
 
     fn visible_title(q: &SingleSlotQueue) -> Option<&str> {

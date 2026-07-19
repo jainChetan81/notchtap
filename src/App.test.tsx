@@ -1,29 +1,16 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import { emitTo, resetHandlers } from "./test-support/tauriEventMock";
 import type { SlotState } from "./useSlotState";
 
-type Handler = (event: { payload: SlotState }) => void;
-const handlers: Handler[] = [];
+vi.mock("@tauri-apps/api/event", () => import("./test-support/tauriEventMock"));
 
-vi.mock("@tauri-apps/api/event", () => ({
-  listen: vi.fn((_name: string, handler: Handler) => {
-    handlers.push(handler);
-    return Promise.resolve(() => {});
-  }),
-}));
-
-function emit(payload: SlotState) {
-  act(() => {
-    handlers.forEach((handler) => {
-      handler({ payload });
-    });
-  });
-}
+const emit = (payload: SlotState) => act(() => emitTo("slot-state", payload));
 
 describe("App", () => {
   beforeEach(() => {
-    handlers.length = 0;
+    resetHandlers();
   });
 
   // this project's vitest config doesn't set `test.globals`, so RTL's

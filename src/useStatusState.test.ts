@@ -1,25 +1,13 @@
 import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import { emitTo, listen, resetHandlers } from "./test-support/tauriEventMock";
 import type { StatusState } from "./useStatusState";
 import { statusRailActive, useStatusState } from "./useStatusState";
 
-type Handler = (event: { payload: unknown }) => void;
-const handlers: Handler[] = [];
+vi.mock("@tauri-apps/api/event", () => import("./test-support/tauriEventMock"));
 
-vi.mock("@tauri-apps/api/event", () => ({
-  listen: vi.fn((_name: string, handler: Handler) => {
-    handlers.push(handler);
-    return Promise.resolve(() => {});
-  }),
-}));
-
-function emit(payload: unknown) {
-  act(() => {
-    handlers.forEach((h) => {
-      h({ payload });
-    });
-  });
-}
+// deliberately keeps `unknown` — this file exercises malformed payloads
+const emit = (payload: unknown) => act(() => emitTo("status-state", payload));
 
 const FALLBACK: StatusState = {
   paused: false,
@@ -37,7 +25,8 @@ const LIVE: StatusState = {
 
 describe("useStatusState", () => {
   beforeEach(() => {
-    handlers.length = 0;
+    resetHandlers();
+    listen.mockClear();
     delete window.__NOTCHTAP_STATUS_STATE__;
   });
 
@@ -46,7 +35,7 @@ describe("useStatusState", () => {
     await act(async () => {
       await Promise.resolve();
     });
-    expect(handlers.length).toBeGreaterThan(0);
+    expect(listen).toHaveBeenCalled();
     return rendered;
   }
 

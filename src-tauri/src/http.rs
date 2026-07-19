@@ -248,6 +248,7 @@ impl IntoResponse for HttpError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::event::test_fixtures;
     use crate::notifier::ConnectorHandle;
     use crate::queue::SingleSlotQueue;
     use axum::http::Request;
@@ -521,20 +522,13 @@ mod tests {
         let mut queue = SingleSlotQueue::new(50);
         queue
             .enqueue(
-                Event {
-                    id: Uuid::new_v4(),
-                    event_type: EventType::Generic,
-                    priority: req.priority.unwrap_or(Priority::Medium),
-                    rotation: RotationSpec::OneShot { ttl_secs: 8 },
-                    topic: None,
-                    payload: EventPayload {
-                        title: "t".into(),
-                        body: "b".into(),
-                    },
-                    meta: EventMeta::default(),
-                    signal: req.signal,
-                    origin: SourceKind::Manual,
-                },
+                test_fixtures::with_signal(
+                    test_fixtures::with_priority(
+                        test_fixtures::event("t"),
+                        req.priority.unwrap_or(Priority::Medium),
+                    ),
+                    req.signal,
+                ),
                 Instant::now(),
             )
             .unwrap();
@@ -684,20 +678,13 @@ mod tests {
         let req: NotifyRequest = serde_json::from_str(r#"{"title":"t","body":"b"}"#).unwrap();
         queue
             .enqueue(
-                Event {
-                    id: Uuid::new_v4(),
-                    event_type: EventType::Generic,
-                    priority: req.priority.unwrap_or(Priority::Medium),
-                    rotation: RotationSpec::OneShot { ttl_secs: 8 },
-                    topic: None,
-                    payload: EventPayload {
-                        title: "t".into(),
-                        body: "b".into(),
-                    },
-                    meta: EventMeta::default(),
-                    signal: req.signal,
-                    origin: SourceKind::Manual,
-                },
+                test_fixtures::with_signal(
+                    test_fixtures::with_priority(
+                        test_fixtures::event("t"),
+                        req.priority.unwrap_or(Priority::Medium),
+                    ),
+                    req.signal,
+                ),
                 Instant::now(),
             )
             .unwrap();

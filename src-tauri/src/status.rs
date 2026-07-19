@@ -104,9 +104,7 @@ pub fn emit_status_state<R: tauri::Runtime>(app: &tauri::AppHandle<R>, state: St
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::event::{
-        Event, EventMeta, EventPayload, EventSignal, EventType, Priority, RotationSpec, SourceKind,
-    };
+    use crate::event::{test_fixtures, Event};
 
     fn live_summary() -> LiveMatchSummary {
         LiveMatchSummary {
@@ -176,20 +174,7 @@ mod tests {
     }
 
     fn generic_event() -> Event {
-        Event {
-            id: uuid::Uuid::new_v4(),
-            event_type: EventType::Generic,
-            priority: Priority::Medium,
-            rotation: RotationSpec::OneShot { ttl_secs: 8 },
-            topic: None,
-            payload: EventPayload {
-                title: "t".to_string(),
-                body: "b".to_string(),
-            },
-            meta: EventMeta::default(),
-            signal: EventSignal::Generic,
-            origin: SourceKind::Manual,
-        }
+        test_fixtures::event("t")
     }
 
     #[test]

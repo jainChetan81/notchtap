@@ -438,20 +438,10 @@ mod tests {
 
     #[test]
     fn rotation_window_doubles_when_expanded() {
-        let event = Event {
-            id: Uuid::new_v4(),
-            event_type: EventType::Generic,
-            priority: Priority::Medium,
-            rotation: RotationSpec::OneShot { ttl_secs: 4 },
-            topic: None,
-            payload: EventPayload {
-                title: "t".to_string(),
-                body: "b".to_string(),
-            },
-            meta: EventMeta::default(),
-            signal: EventSignal::Generic,
-            origin: SourceKind::Manual,
-        };
+        let event = test_fixtures::with_rotation(
+            test_fixtures::event("t"),
+            RotationSpec::OneShot { ttl_secs: 4 },
+        );
         assert_eq!(event.rotation_window(false), 4);
         assert_eq!(event.rotation_window(true), 12);
     }
@@ -461,4 +451,67 @@ mod tests {
         let err = EventError::MissingField("title");
         assert_eq!(err.to_string(), "missing required field: title");
     }
+}
+
+/// Shared test fixture builder (plan 028): the ONE place tests build
+/// `Event`s, so a new field is a one-file test change. Production code
+/// must never use this — `#[cfg(test)]` enforces it.
+#[cfg(test)]
+pub(crate) mod test_fixtures {
+    use super::*;
+
+    pub(crate) fn event(title: &str) -> Event {
+        Event {
+            id: Uuid::new_v4(),
+            event_type: EventType::Generic,
+            priority: Priority::Medium,
+            rotation: RotationSpec::OneShot { ttl_secs: 8 },
+            topic: None,
+            payload: EventPayload {
+                title: title.to_string(),
+                body: "body".to_string(),
+            },
+            meta: EventMeta::default(),
+            signal: EventSignal::Generic,
+            origin: SourceKind::Manual,
+        }
+    }
+
+    pub(crate) fn with_priority(mut e: Event, priority: Priority) -> Event {
+        e.priority = priority;
+        e
+    }
+
+    pub(crate) fn with_rotation(mut e: Event, rotation: RotationSpec) -> Event {
+        e.rotation = rotation;
+        e
+    }
+
+    pub(crate) fn with_topic(mut e: Event, topic: &str) -> Event {
+        e.topic = Some(topic.to_string());
+        e
+    }
+
+    pub(crate) fn with_origin(mut e: Event, origin: SourceKind) -> Event {
+        e.origin = origin;
+        e
+    }
+
+    pub(crate) fn with_event_type(mut e: Event, event_type: EventType) -> Event {
+        e.event_type = event_type;
+        e
+    }
+
+    pub(crate) fn with_signal(mut e: Event, signal: EventSignal) -> Event {
+        e.signal = signal;
+        e
+    }
+
+    pub(crate) fn with_body(mut e: Event, body: &str) -> Event {
+        e.payload.body = body.to_string();
+        e
+    }
+
+    // add more with_* combinators ONLY if the sweep actually needs one that
+    // isn't here — no speculative API beyond what the sweep below uses.
 }
