@@ -111,7 +111,7 @@ copy-paste.
 | Purpose | Command | Expected on success |
 |---|---|---|
 | Read-only exploration | `grep`, `Read`, `rg` | — |
-| Count the actual duplication | `rg -c "^pub fn default_" src-tauri/src/config.rs` | a number, cited in the doc |
+| Count the actual duplication | `rg -c "^fn default_" src-tauri/src/config.rs` | a number, cited in the doc (34 at `f2cbae6`; these are private free functions, not `pub` — the `pub fn` variant of this command returns 0) |
 | Confirm nothing changed | `git status` at the end | only the new doc + `plans/README.md` row |
 
 ## Scope

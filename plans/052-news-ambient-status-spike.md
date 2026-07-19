@@ -110,10 +110,15 @@ doesn't accidentally grow into the deferred feature by scope creep.
   change the way `update_weather` reusing an already-computed
   `WeatherSummary` was.
 
-- `NewsItem`'s existing wire fields (title/source/category/
-  publishedAtMs — confirm exact field names via `rg -n "struct
-  NewsItem"` in `event.rs`) are the candidate content for whatever
-  ambient value is chosen.
+- `NewsItem` is not a struct — it's the `EventType::NewsItem` tag
+  (`event.rs:56`; confirm with `rg -n "EventType::NewsItem"`, not `rg -n
+  "struct NewsItem"`, which matches nothing). The candidate content
+  fields for whatever ambient value is chosen are split across two
+  structs on the `Event` itself: `EventPayload.title` (`event.rs:129-132`)
+  and `EventMeta.source`/`EventMeta.category`/`EventMeta.published_at_ms`
+  (`event.rs:152-156`) — see `rss_poller.rs:318-333`'s `Event { ... }`
+  construction for where all of these are populated together for a
+  fresh news item.
 
 ## Commands you will need
 

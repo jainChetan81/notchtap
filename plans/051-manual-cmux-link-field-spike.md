@@ -124,7 +124,7 @@ this repo already runs plans 030/031/053 for exactly this class of
 | Purpose | Command | Expected on success |
 |---|---|---|
 | Read-only exploration | `grep`, `Read`, `rg` | — |
-| Confirm today's only `meta.link` producer | `grep -rn "meta.link\s*=\|\.link:" src-tauri/src` | only `rss_poller.rs` sets it in production code |
+| Confirm today's only `meta.link` producer | `grep -rn "link: link\.map\|link: Some(" src-tauri/src/*.rs` | hits in `rss_poller.rs:333` (production, inside the `EventMeta { ... }` struct literal in `diff_feed_events`) plus `rss_poller.rs:804` and `event.rs:331` (both inside `#[cfg(test)] mod tests`) — confirm `rss_poller.rs:333` is the only non-test hit. (The plan's original pattern, `"meta.link\s*=\|\.link:"`, does not match this struct-literal field syntax and instead only catches a `queue.rs` test fixture's direct-field-mutation `story.meta.link = ...` — it does not find the real producer at all.) |
 | Confirm nothing changed | `git status` at the end | only the new doc + `plans/README.md` row |
 
 ## Scope
