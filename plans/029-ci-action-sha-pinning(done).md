@@ -27,6 +27,16 @@
 - **Re-reviewed**: 2026-07-19 at `7430b4b` — drift check still empty
   (ci.yml byte-identical since `a58f115`); all seven `uses:` lines and
   the dependabot.yml absence re-confirmed. No content changes needed
+- **Re-reviewed**: 2026-07-19 at `dfce5e2` — drift check still empty.
+  This pass live-tested Step 1's resolver commands against the real
+  repos and found a genuine ambiguity: `git ls-remote <repo> v4` for
+  BOTH `actions/checkout` and `actions/setup-node` returns two lines
+  (a `refs/heads/releases/v4` branch AND `refs/tags/v4`) with
+  *different* SHAs for checkout specifically
+  (`11d5960a...` branch vs. `34e114876b...` tag, confirmed live). Step
+  1 and the commands table below are corrected to make the `refs/tags/`
+  line mandatory, not incidental — see the updated "Expected" column
+  and Step 1 body.
 
 ## Why this matters
 
@@ -69,8 +79,8 @@ that style.
 
 | Purpose | Command | Expected on success |
 |---------|---------|---------------------|
-| Resolve a tag to a SHA | `git ls-remote https://github.com/actions/checkout v4` (and each repo/ref) | prints `<sha>\trefs/tags/v4` |
-| Alternative resolver | `gh api repos/actions/checkout/git/ref/tags/v4 --jq .object.sha` | prints the SHA (deref annotated tags: if `.object.type` is `tag`, follow with `gh api repos/<r>/git/tags/<sha> --jq .object.sha`) |
+| Resolve a tag to a SHA | `git ls-remote https://github.com/actions/checkout v4` (and each repo/ref) | **may print MORE THAN ONE line** — `actions/checkout` and `actions/setup-node` also have a `refs/heads/releases/v4` branch that matches the bare pattern `v4`, with a SHA that DIFFERS from the tag's (verified live, 2026-07-19). Use ONLY the line whose ref is exactly `refs/tags/<ref>`; never the `refs/heads/...` line, even if it appears first |
+| Preferred resolver (unambiguous) | `gh api repos/actions/checkout/git/ref/tags/v4 --jq .object.sha` | prints exactly the tag's SHA, no branch-collision risk — prefer this over `git ls-remote` for any action whose ref is a tag (deref annotated tags: if `.object.type` is `tag`, follow with `gh api repos/<r>/git/tags/<sha> --jq .object.sha`) |
 | YAML sanity | `python3 -c "import yaml,sys; yaml.safe_load(open('.github/workflows/ci.yml'))"` | exit 0 (if PyYAML missing, use `npx --yes yaml lint` or report) |
 | Full local gate (unchanged by this plan) | `just test-all` | all green |
 
@@ -102,17 +112,33 @@ that style.
 
 ### Step 1: Resolve each ref to a full commit SHA
 
-For each of: `actions/checkout@v4`, `dtolnay/rust-toolchain@stable`,
+For the four TAG-based actions — `actions/checkout@v4`,
 `Swatinem/rust-cache@v2`, `rustsec/audit-check@v2.0.0`,
-`actions/setup-node@v4` — resolve the ref via `git ls-remote` (tags may
-be annotated: `git ls-remote` may show both `refs/tags/v4` and
-`refs/tags/v4^{}`; use the `^{}` peeled SHA when present). For
-`dtolnay/rust-toolchain@stable`, resolve the `stable` *branch* head:
+`actions/setup-node@v4` — prefer the unambiguous resolver:
+`gh api repos/<owner>/<repo>/git/ref/tags/<tag> --jq .object.sha`
+(deref if `.object.type` is `tag`: follow with
+`gh api repos/<owner>/<repo>/git/tags/<sha> --jq .object.sha`).
+
+If you use `git ls-remote https://github.com/<owner>/<repo> <tag>`
+instead, know that **it can return more than one line** — verified
+live: `actions/checkout` and `actions/setup-node` both also have a
+`refs/heads/releases/<tag>` branch matching the same bare pattern, and
+for `actions/checkout` that branch's SHA (`11d5960a...`) DIFFERS from
+the tag's SHA (`34e114876b...`). You MUST use only the line whose ref
+is exactly `refs/tags/<tag>` (or its peeled `refs/tags/<tag>^{}` line,
+when both appear — use the peeled one). Never use a `refs/heads/...`
+line for these four actions.
+
+For `dtolnay/rust-toolchain@stable`, resolve the `stable` *branch* head
+instead (this one is a branch on purpose, per "Why this matters"):
 `git ls-remote https://github.com/dtolnay/rust-toolchain refs/heads/stable`.
 
 Record each `(action, human ref, sha)` triple.
 
-**Verify**: five 40-hex-char SHAs recorded; each command exited 0.
+**Verify**: five 40-hex-char SHAs recorded; each command exited 0; for
+the four tag-based actions, confirm the SHA you recorded matches a
+`refs/tags/` (not `refs/heads/`) line if you resolved it via
+`git ls-remote`.
 
 ### Step 2: Rewrite the `uses:` lines
 
@@ -172,6 +198,10 @@ Stop and report back (do not improvise) if:
   circumstances.
 - A resolved SHA looks wrong (ls-remote returns nothing for the ref) —
   the upstream may have restructured tags; report what you found.
+- `git ls-remote` returns more than one line for a tag-based action and
+  you cannot confidently identify the `refs/tags/` line (e.g. neither
+  line is labeled that way) — switch to the `gh api .../git/ref/tags/`
+  resolver instead of guessing.
 - You are tempted to "also" bump an action's major version — pin the
   version currently in use; upgrades are Dependabot's job later.
 

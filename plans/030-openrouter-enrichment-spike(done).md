@@ -7,9 +7,12 @@
 > `plans/README.md` — unless a reviewer dispatched you and told you they
 > maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat a58f115..HEAD -- src-tauri/src/rss_poller.rs src-tauri/src/settings.rs src-tauri/src/notifier.rs src-tauri/src/event.rs`
+> **Drift check (run first)**: `git diff --stat a58f115..HEAD -- src-tauri/src/rss_poller.rs src-tauri/src/settings.rs src-tauri/src/notifier.rs src-tauri/src/event.rs src-tauri/src/poller.rs`
 > Drift here doesn't block a spike — but read the drifted regions before
-> quoting them in the design doc.
+> quoting them in the design doc. `poller.rs` was added to this list
+> during the 2026-07-20 review-plan pass — it's cited below (the
+> overlay-only comment) and had drifted by 347/149 lines without being
+> in the original check.
 
 ## Status
 
@@ -48,7 +51,43 @@
   new since planning: `useStatusState.ts` /
   `status-state` is a SECOND overlay channel (plan 034) — the doc's
   placement section may cite it as precedent for adding an emission,
-  but enrichment rides `slot-state`, not `status-state`
+  but enrichment rides `slot-state`, not `status-state`.
+- **Re-reviewed 2026-07-20 at `f391d07`**: drift check (now including
+  `poller.rs`, see above) hit all four original files plus poller.rs.
+  Line numbers repointed: `settings.rs`'s "waits for the first ai
+  feature" comment is now at :319-320 (was :322); `EventMeta` is
+  now at :140-150 (was :122-132); `SlotState::Showing` is now at
+  :171-194 (was :146-163); `rss_poller.rs`'s `diff_feed`/
+  `spawn_rss_poller` are now at :260/:425 (was :263/:442);
+  `poller.rs`'s overlay-only comment is now at :625 (was :556-560,
+  a 65-line drift the old drift-check command would have missed
+  entirely since `poller.rs` wasn't in it); `useSlotState.ts`'s
+  `isValidSlotState` is now at :77 (was :72). `notifier.rs`:179-180
+  (mode check) unchanged. The openrouter-consumer STOP-condition grep
+  was re-run: still only `settings.rs` (storage plumbing) and
+  `notifier.rs` (secrets-file parsing/tests) — no real consumer,
+  calibration still holds.
+
+  **More significant**: `EventMeta` itself grew since the last review —
+  plan 035 ("rich-relay") landed and added `subtitle: Option<String>`
+  and `details: Vec<DetailItem>` directly to `EventMeta` (confirmed at
+  `event.rs:145-149`), mirrored onto `SlotState::Showing`. This makes
+  the plan's framing **"Enrichment IS that second meta-carrying
+  source"** (and the matching `plans/README.md` rejected-finding,
+  "revisit at a second meta-carrying source") stale: a second (and
+  arguably third, counting the original news fields as the first)
+  extension has already happened, by a different feature, using flat
+  fields directly on `EventMeta` rather than a nested sub-struct. This
+  is now materially better precedent for Decision Point #4 (data
+  shape) than the plan's existing "worked example" — plan 033's
+  `queue_total`/`queue_done` never touched `EventMeta` at all, it only
+  added fields straight to `SlotState::Showing` (a queue-position
+  concern, not presentation metadata), so it only demonstrates the
+  wire-extension mechanics, not the actual EventMeta-shape question the
+  design doc has to answer. Corrected in Step 1/Step 2 below: the doc
+  must study plan 035's `EventMeta` extension as the primary precedent
+  for point 4, and should explicitly say whether it follows that
+  precedent (flat optional fields) or deviates (nested struct) and why.
 
 ## Why this matters
 
@@ -64,9 +103,9 @@ concrete, reviewable design — call shape, placement, failure semantics,
 config surface, privacy note — so the maintainer can approve or kill it
 before any build effort is spent.
 
-## Current state (grounding — quote-verified at `a58f115`)
+## Current state (grounding — quote-verified at `f391d07`, 2026-07-20)
 
-- The inert key: `src-tauri/src/settings.rs:321-323` —
+- The inert key: `src-tauri/src/settings.rs:319-320` —
 
   ```rust
   /// Secret values are validated for shape only (spec §4): non-empty, no
@@ -77,41 +116,55 @@ before any build effort is spent.
   Full plumbing exists and is tested: config table (`OpenRouterTable`,
   ~`settings.rs:238-266`), get/set/status commands, masked display,
   0600 secrets file at `~/.config/notchtap/secrets.toml` (see
-  `notifier.rs:179-182` for the mode check and the telegram loader as
+  `notifier.rs:179-180` for the mode check and the telegram loader as
   the pattern for reading a secret at boot). **Never print or read the
   actual key value during this spike.**
-- The enrichment target: `src-tauri/src/event.rs:122-132` —
+- The enrichment target: `src-tauri/src/event.rs:140-150` —
 
   ```rust
-  /// News-source metadata (v5): populated only by the rss poller; every
-  /// other source leaves it default. Presentation-only — never consulted
-  /// by queue/rotation/priority logic.
   pub struct EventMeta {
       pub source: Option<String>,
       pub category: Option<String>,
       pub published_at_ms: Option<i64>,
       pub link: Option<String>,
+      /// A first-class optional subtitle (plan 035): the CLI's `--subtitle`
+      /// used to fold into the body CLI-side; it is now its own wire field.
+      pub subtitle: Option<String>,
+      /// Label/value detail pairs (plan 035), capped server-side.
+      pub details: Vec<DetailItem>,
   }
   ```
 
-  The "presentation-only, never consulted by queue logic" contract is a
-  recorded decision (also in `plans/README.md`'s rejected-findings:
-  "EventMeta all-`Option` news fields — documented accretion; revisit
-  at a second meta-carrying source"). **Enrichment IS that second
-  meta-carrying source** — the design doc must address whether fields
-  are added to `EventMeta` or nested (e.g. an `enrichment: Option<...>`
-  sub-struct), and must keep the presentation-only contract.
-- The insertion pipeline: `rss_poller.rs::diff_feed` (~line 263) builds
+  The struct's doc comment states the "presentation-only, never
+  consulted by queue/rotation/priority logic" contract — a recorded
+  decision (also in `plans/README.md`'s rejected-findings: "EventMeta
+  all-`Option` news fields — documented accretion; revisit at a second
+  meta-carrying source"). **That "second meta-carrying source" already
+  happened**: plan 035 ("rich-relay") landed `subtitle`/`details` as
+  flat fields directly on `EventMeta`, not a nested sub-struct — this
+  is the design doc's most directly relevant precedent for whether
+  enrichment fields go flat-on-`EventMeta` or nested (e.g. an
+  `enrichment: Option<...>` sub-struct), and it must say whether it
+  follows that precedent or deviates, and why. It must also keep the
+  presentation-only contract intact.
+- The insertion pipeline: `rss_poller.rs::diff_feed` (line 260) builds
   `NewsItem` events (pure, well-tested); `spawn_rss_poller`
-  (~line 442) fetches, diffs, then enqueues via the shared path which
-  emits `SlotState` (whose `Showing` variant at `event.rs:146-163`
-  carries the meta fields to the frontend — new enriched fields would
-  need to ride the same wire). **Worked example to study**: plan 033
-  (landed) added `queue_total`/`queue_done` to `Showing` end-to-end —
-  rust variant fields (`event.rs:157-163`) → `isValidSlotState`
-  guard in `src/useSlotState.ts:72` → card rendering. The design
-  doc's data-shape section should reference that change as the
-  template for how enrichment fields would land.
+  (line 425) fetches, diffs, then enqueues via the shared path which
+  emits `SlotState` (whose `Showing` variant at `event.rs:171-194`
+  carries the meta fields to the frontend, including `subtitle`/
+  `details` — new enriched fields would need to ride the same wire).
+  **Worked examples to study, in order of relevance**: (1) plan 035
+  added `subtitle`/`details` straight onto `EventMeta` itself (see
+  above) — the closer precedent for the data-shape decision; (2) plan
+  033 added `queue_total`/`queue_done` to `Showing` end-to-end without
+  touching `EventMeta` at all (a queue-position concern, not
+  presentation metadata) — still useful as a second, independent
+  example of the wire-extension *mechanics* (rust variant fields
+  (`event.rs:188-193`) → `isValidSlotState` guard in
+  `src/useSlotState.ts:77` → card rendering), just not of the
+  `EventMeta`-shape question itself. The design doc's data-shape
+  section should reference both, but lean on (1) for the actual
+  recommendation.
 - Relevant repo rules the design must honor:
   - `CONTEXT.md` vocabulary (Promotion, Rotation, Waiting/Visible) —
     use these terms in the doc.
@@ -120,9 +173,10 @@ before any build effort is spent.
     exact ARCHITECTURE/IMPLEMENTATION_PLAN edits it would require, not
     make them.
   - rss/news events are overlay-only, never offered to connectors
-    (`poller.rs:556-560` comment as of `7430b4b`,
-    `IMPLEMENTATION_PLAN.md` §4.6) — an enriched summary therefore
-    never leaves the overlay either.
+    (`poller.rs:625` comment as of `f391d07` — this file drifted 65
+    lines since the comment was last cited and is now in the drift
+    check, see top of file; `IMPLEMENTATION_PLAN.md` §4.6) — an
+    enriched summary therefore never leaves the overlay either.
   - HTTP posture: `net::build_poll_client` if plan 025 has landed,
     else the pollers' inline builder — but note its 10 s poll timeout
     may be wrong for an LLM call; the doc should pick its own budget.
@@ -191,7 +245,13 @@ with the reason**:
    timeout must be invisible (card ships exactly as today). Where the
    best-effort boundary lives in code terms.
 4. **Data shape**: `EventMeta` extension vs nested struct; what the
-   `SlotState::Showing` wire adds; frontend validation impact.
+   `SlotState::Showing` wire adds; frontend validation impact. Study
+   plan 035's `subtitle`/`details` addition to `EventMeta` first (flat
+   fields, see "Current state" above) — it's the closer precedent to
+   this exact question than plan 033's `queue_total`/`queue_done` (which
+   never touched `EventMeta`). State explicitly whether the
+   recommendation follows plan 035's flat-field precedent or deviates
+   to a nested struct, and why.
 5. **Config & secrets**: config keys (`[openrouter] enabled`, model,
    maybe per-source opt-out), loaded how (mirror the telegram boot
    pattern); behavior when key absent (feature silently off — matches
