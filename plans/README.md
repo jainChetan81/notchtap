@@ -1,5 +1,44 @@
 # Implementation Plans
 
+**Fifth audit session (2026-07-20, planned at `f6c2f46`)** — a `deep`-
+invocation `/improve` run (explicit operator request), all nine
+categories, 9 parallel audit subagents (one per category). Scoped
+deliberately at recon time to avoid re-treading the four prior sessions'
+ground: agents were briefed with the full `plans/README.md` rejected-
+findings history and instructed to skip anything already covered.
+Headline finding: a real, currently-shippable correctness bug in the
+opt-in ESPN live-match scorecard (plans 039-042) — `queue.rs`'s
+`apply_fresh_content`, the sole merge function every Topic-supersede path
+routes through, copies `payload`/`priority`/`rotation`/`signal` but never
+`meta`, so a live match's collapsed card's Clock/Cards detail lines
+(added in plan 042) freeze at their first-event values and never update
+again for the rest of the match — found independently by the tech-debt
+and correctness audit agents, then verified directly (plan 064). Second
+headline finding: a live-looking BrightData API token hardcoded and
+committed to git at `mcp-servers/brightdata/mcp-config.json` (duplicated
+in `mcp-servers/mcp-config-all.json`), tracked since `7430b4b` — outside
+the notchtap app itself (local agent-tooling config sharing this repo),
+but a real, git-history-level credential exposure (plan 065). Twelve
+other findings plus two grounded direction options were selected by the
+operator and filed as plans 064-077 below; every finding was independently
+re-verified against live code by the advisor (not just the reporting
+subagent) before being written up, per this repo's standard practice.
+One dependency-audit item was *closed*, not opened: `smappservice-rs`'s
+upstream health (carried as "needs network" across three prior sessions)
+was checked live via GitHub's API — dormant 14 months, but single narrow
+call site (`login_item.rs`), low blast radius, no action needed; the
+"Findings considered and rejected" entry below is updated accordingly
+rather than re-flagged a fourth time. One low-value finding
+(`.editorconfig`/`.vscode/settings.json` absence) was surfaced but not
+planned — see the rejected-findings section. Housekeeping note, not a
+finding: `plans/_to_delete/` is untracked cruft (a superseded duplicate
+of plan 058 plus a `README.md.bak`) left from a prior session's
+renumbering — flagged for the operator to clean up manually, not touched
+by this session (outside this skill's write scope). Suites at HEAD:
+`cargo test --locked` 332 + 3 doc-tests, `npx vitest run` 112 — both
+independently re-counted live (not transcribed), matching what plan 071
+now records in `docs/TESTING_STRATEGY.md` §0.
+
 **Operator-requested filing (2026-07-20, filed at `f58ced2`)**: plan 058
 (`notchtap run`, a long-command finisher) was filed directly from an
 operator conversation, not from an audit or spike session — same
@@ -195,6 +234,20 @@ plans are independent. P1s first.
 | 061 | Add the Settings/control-panel window to `DESIGN.html` | P3 | S–M | — | TODO — ready to execute directly (no decision needed, unlike 054-060). `DESIGN.html` currently documents only the overlay card; the Settings window (8 sidebar sections, its own already-good kbd styling) has zero coverage. |
 | 062 | SPIKE: bridge phone notifications into notchtap | P3 | M (spike) | — | TODO — `/notify` is hardcoded loopback-only by design (`http.rs:141-144`, pinned by a test) and nothing captures phone notifications today. Android is the realistic capture path (`NotificationListenerService`); iOS has no public API for it. Recommended shape: a local relay process on the same Mac, not widening the network boundary. |
 | 063 | SPIKE: idle status rail (460px) overlaps other apps' menu bar icons in notch mode | P1 | S (decision) | — | TODO — filed from an operator screenshot on the MacBook: the widened idle rail visibly sits on top of (and clips) real menu-bar icons from other apps. Root cause: `.rail-card.idle.status`'s 460px width is hardcoded, with zero awareness of the actual notch width `presentation.rs`'s `CutoutGeometry` already knows on the rust side but never surfaces to the frontend. No universal safe width exists (menu-bar icon layout isn't a queryable API) — needs a real decision, sibling to plan 060's HUD-mode version of the same "no notch/HUD awareness" gap. |
+| 064 | Topic-supersede stops dropping `meta` — ESPN live-match Clock/Cards freeze after the first event | P1 | S–M | — | TODO — fifth audit session headline finding, verified directly against live code: `queue.rs`'s `apply_fresh_content` (the sole merge function every Topic-supersede path routes through) copies `payload`/`priority`/`rotation`/`signal` but never `meta`, so plan 042's Clock/Cards detail lines freeze at their first-event values for the rest of a live match. |
+| 065 | Rotate + de-commit the hardcoded BrightData API token | P1 | S | — | TODO — a live-looking token committed to git at `mcp-servers/brightdata/mcp-config.json` (duplicated in `mcp-servers/mcp-config-all.json`), tracked since `7430b4b`. Outside the notchtap app itself (local agent-tooling config sharing this repo) but a real credential exposure. Plan's Step 0 requires explicit operator rotation acknowledgment before proceeding — mechanical de-commit alone does not close this finding. |
+| 066 | `cmux_ttl_secs` missing from `settings::validate` — a saved `0` rotates cmux cards out instantly | P1 | S | — | TODO — the one ttl field of four with no range check; cmux is the connector confirmed live-wired on the dev machine per prior session notes. |
+| 067 | `rotation_order` self-heal (`fb4acce`) doesn't dedupe pre-existing duplicates | P2 | S | — | TODO — a duplicate-plus-missing array heals to 6 entries and still fails `validate`'s 5-permutation check forever, reproducing the exact lockout `fb4acce` was built to prevent via a different root cause. Latent (hand-edited-TOML-only), verified live during the audit. |
+| 068 | `build_test_event`/`send_test_notification` — zero test coverage | P2 | S–M | — | TODO — backs every Settings per-source test-notification button; confirmed via grep, zero rust or frontend coverage. Plan's Step 1 is read-first — if it turns up a real per-branch bug, STOP rather than folding a fix into a coverage plan. |
+| 069 | Memoize `renderInlineMarkdown` — unmemoized re-tokenization on every unrelated re-render | P3 | S | — | TODO — `StatusRailCard.tsx:141`/`Manifest.tsx:89`; pure perf optimization, no behavior change expected. |
+| 070 | Add tracing to the `/notify` → `Engine::accept` ingest pipeline | P2 | S | — | TODO — zero `tracing::` calls across the one ingest choke point every source routes through (per plan 037); `docs/ARCHITECTURE.md` §11 promises exactly this kind of log visibility. |
+| 071 | Docs truth pass #5: project-state narrative (044/045/047/048/`fb4acce`), TESTING_STRATEGY §0 count, README table, justfile note, AGENTS.md kuma gap | P2 | S | none structurally — but land LAST among 064/066/067/068 (its Step 3 re-derives test counts live) | TODO — bundles 5 small drift items in this repo's established truth-pass pattern (004/026/046). |
+| 072 | Cross-tier Topic supersede skips the `max_queued_per_tier` cap check | P3 | S | 064 (soft — same file region) | TODO — latent/defensive; no producer varies priority per Topic today, so unreachable in production. Plan's Step 0 is a product decision (reject-on-full vs. evict) with a recommended default — STOP if not confident. |
+| 073 | Decide whether to generalize the ambient status side-channel before News becomes its third copy | P3 | S (investigate) – M (if generalizing) | none — informs the still-open 052 build decision | TODO — investigate/decide-scoped, not a build plan; football+weather already hand-duplicate a 5-touch-point pattern in `engine.rs`/`status.rs`, and the pending 052 spike proposes a third near-identical copy. |
+| 074 | Test `weather_poller.rs`'s rain-lookahead minute-rounding/day-rollover boundary | P3 | S | — | TODO — fails safe today (unpinned, not broken); 3 new boundary tests. |
+| 075 | SPIKE: trial-bump the frontend toolchain (TypeScript 7 / Vite 8 / Vitest 4) in an isolated worktree | P3 | S (spike) | — | TODO — TS7/Vite8/Vitest4 all underwent coordinated major rewrites in the ~3 months since the last dependency verdict ("current-generation for 2026"); not EOL, but the gap compounds. Trial-only, isolated worktree, never merges `package.json` directly. |
+| 076 | Direction: surface Telegram connector delivery health in the Settings window | P2 | S–M | — | TODO — Telegram is the app's only outbound connector; delivery health is structurally invisible end to end today (fire-and-forget fan-out, no boot validation, the "test" button doesn't confirm actual delivery). Grounded direction finding, not a bug. |
+| 077 | Direction: read-only "recent log lines" panel in the Settings window | P2 | S | soft: 070 (more worth reading if it lands first) | TODO — `docs/ARCHITECTURE.md` §11 explicitly promises "when something breaks, the user needs a log to read... set this up in v1" — the write side (plan 014) is built and tested; nothing reads it back anywhere. Grounded direction finding. |
 
 ## Done
 
@@ -350,6 +403,21 @@ Fourth audit session (044-053):
 
 ## Findings considered and rejected
 
+From the fifth audit session (2026-07-20) — recorded so they aren't
+re-audited:
+
+- **No `.editorconfig` / `.vscode/settings.json`**: real gap (CI-enforced
+  Biome/rustfmt cover correctness regardless, so this is convenience-only)
+  but collides with this repo's own documented minimalism precedent
+  (pre-commit hooks explicitly rejected as unnecessary machinery given
+  CI + justfile already cover the ground). Not planned; revisit only if
+  a contributor other than the current operator actually hits friction
+  from it.
+- **`smappservice-rs` / `tauri-nspanel` upstream health**: see the
+  updated entry above (this section, "deep session" list) — CLOSED this
+  session, moved out of "twice-deferred" limbo with a live-checked
+  verdict.
+
 From the deep session (2026-07-17) — recorded so they aren't re-audited:
 
 - **queue.rs / settings.rs / SettingsApp.tsx size**: mostly tests or
@@ -406,7 +474,14 @@ place — the supersession machinery currently has zero production
 producers) and **a "what did I miss" history surface**. All grounded;
 re-raise with `improve next` when wanted. *(Third-session update: the
 first two are now spike plans 030/031; the history surface remains
-unplanned — weakest grounding, needs a persistence decision.)*
+unplanned — weakest grounding, needs a persistence decision.)* *(Fifth-
+session update: two more grounded direction findings surfaced — Telegram
+connector delivery health being structurally invisible (now plan 076)
+and no in-app read path for the rotating log file despite
+`docs/ARCHITECTURE.md` §11 promising one (now plan 077). The fifth
+session's direction agent explicitly considered and declined to re-raise
+Telegram fan-out becoming Topic-aware — already a rejected alternative
+in `docs/design/scoreboard-topic-card.md`.)*
 
 From the third audit session (2026-07-18) — recorded so they aren't
 re-audited:
@@ -437,12 +512,71 @@ re-audited:
   the audit (and that session has since filed plans 032–035 around it);
   any hygiene verdict would have fought live work.
 - **Upstream health of `tauri-nspanel` (git-rev pin) / `smappservice-rs`
-  (0.1.x)**: still unchecked (needs network) — carried forward from the
-  deep session, now twice-deferred; fold into the next deliberate
-  dependency bump rather than a standalone plan.
+  (0.1.x)**: **CLOSED, fifth session (2026-07-20)** — both checked live.
+  `tauri-nspanel`'s pinned rev (`a3122e894383aa068ec5365a42994e3ac94ba1b6`,
+  from plan 045) is confirmed current: `git ls-remote` against upstream's
+  `v2.1` branch shows the tip unchanged since the bump. `smappservice-rs`
+  (`github.com/gethopp/smappservice-rs`) is dormant — `pushed_at`
+  ~14 months before this check, 0 open issues, not archived — but its
+  blast radius is small: one optional login-item convenience feature
+  behind a single call site (`login_item.rs`, 25 lines, called once from
+  `lib.rs`). Verdict: no action needed; revisit only if a future macOS
+  SDK bump breaks `login_item.rs`'s build. This closes a gap carried
+  across three prior sessions — do not re-flag as "needs network" again.
 - **Slot-state emit-after-unlock reordering**: re-examined; still no
   new failure mode beyond the known reordering, still symptom-free —
   remains deferred per the note above.
+
+Fifth audit session (064-077):
+
+- **064 and 065 are the two P1s, independent of each other and of
+  everything else in this batch** — land in either order.
+- **072 after 064 (soft)** — both touch `queue.rs`'s
+  `apply_fresh_content`/`supersede_if_topic_matches` region; landing 064
+  first avoids a rebase, but 072 doesn't functionally depend on 064 (it
+  fixes a different gap in the same neighborhood).
+- **066, 067, 068, 074 are independent, low-risk, no-coordination-needed
+  plans** — small, single-file fixes/coverage additions in `settings.rs`/
+  `config.rs`/`weather_poller.rs` respectively; land in any order.
+- **071 (docs truth pass) should land LAST among 064/066/067/068** — its
+  Step 3 re-derives `docs/TESTING_STRATEGY.md` §0's test counts live, and
+  064/066/067/068 each add tests that shift those counts. Landing 071
+  first just means whoever lands 064/066/067/068 afterward should update
+  the count themselves (each of those plans' own done-criteria already
+  say so).
+- **073 informs the still-open plan 052** (SPIKE: News ambient idle-rail
+  status, already DONE as a design doc, still open as a build decision)
+  — read 073's recommendation before dispatching a build for 052; 073's
+  own maintenance notes say to update 052's scope with the outcome.
+- **075 (frontend toolchain spike) and 069 (markdown memoization) are
+  fully independent of the rest of this batch** — no file overlap with
+  anything else here.
+- **076 and 077 (the two direction-derived plans) are independent of
+  each other** — a soft note only: 077's maintenance section suggests
+  076's health line could share a "Diagnostics" settings section with
+  077's log panel if both land, but neither plan requires the other.
+- **065's Step 0 is a hard gate** — do not treat the mechanical
+  de-commit as closing the finding without an explicit operator
+  rotation acknowledgment; see the plan itself.
+
+## What was not audited (fifth session, 2026-07-20)
+
+The Swift `notchtap-detect` source beyond structure (unchanged since the
+deep session's own not-audited note); full git-history secret scanning
+beyond the one credential the security agent's targeted sweep found
+(plan 065) — a systematic history-wide scan (e.g. `trufflehog`/`gitleaks`
+over the full log) was not run; live/hardware behaviour (notch geometry,
+animation look, the manual GUI smokes several already-DONE plans still
+owe the operator) — unchanged, manual-checklist territory by design;
+exhaustive assert-quality reads of every test file (sampled, not
+exhaustive, consistent with prior sessions); `docs/archive/` and
+`docs/review-logs/` (explicitly out of scope — historical/changelog
+artifacts, not sources of truth, per this doc's own framing at the top
+of the repo's `CLAUDE.md`); the Kimi delegation plan at
+`docs/plans/2026-07-16-kimi-v1-delegation-plan.md` (unrelated one-off,
+not part of this skill's `plans/` index). `plans/_to_delete/`'s contents
+were noted (see the session summary at the top of this file) but not
+read in detail or cleaned up — outside this skill's write scope.
 
 ## What was not audited (deep session)
 
