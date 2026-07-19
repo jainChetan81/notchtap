@@ -64,7 +64,6 @@ export function renderInlineMarkdown(text: string): ReactNode {
     // biome-ignore lint/suspicious/noArrayIndexKey: the line/segment positions are the stable identity here — the input is derived text that never reorders between renders.
     <Fragment key={`line-${lineIndex}`}>
       {tokenizeLine(line).map((segment, segmentIndex) => {
-        // biome-ignore lint/suspicious/noArrayIndexKey: same derivation as above — a token's position in a derived string is its identity.
         const key = `seg-${lineIndex}-${segmentIndex}`;
         switch (segment.kind) {
           case "code":

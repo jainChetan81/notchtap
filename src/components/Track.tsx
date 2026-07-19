@@ -17,6 +17,7 @@ export function Track({ total, done }: { total: number; done: number }) {
       style={{ "--queue-n": n } as React.CSSProperties}
     >
       {Array.from({ length: n }, (_, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: the segments are anonymous positional slots (0..n), not identified data — the index is the only identity there is, and the sequence is always rendered fresh, never reordered or spliced.
         <span key={i} className={i < current ? "done" : i === current ? "cur" : undefined} />
       ))}
     </div>

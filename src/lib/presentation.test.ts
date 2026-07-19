@@ -1,11 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  ageLabel,
-  categoryClass,
-  publishedLabel,
-  sourceLabelFor,
-  stampFor,
-} from "./presentation";
+import { ageLabel, categoryClass, publishedLabel, sourceLabelFor, stampFor } from "./presentation";
 
 describe("stampFor", () => {
   it("uses the fixed per-signal table when signal is not generic, regardless of priority", () => {

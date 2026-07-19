@@ -128,7 +128,8 @@ const sectionCopy: Record<SectionId, { index: string; title: string; description
   weather: {
     index: "05",
     title: "Weather",
-    description: "Show ambient conditions in the idle rail and alert on rain and temperature thresholds.",
+    description:
+      "Show ambient conditions in the idle rail and alert on rain and temperature thresholds.",
   },
   connectors: {
     index: "06",
