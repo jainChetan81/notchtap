@@ -3,17 +3,16 @@
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>notchtap — Status Rail design-system showcase (rev 2)</title>
+<title>notchtap — SHIPPED Status Rail mirror (89850b6)</title>
 <style>
 /* ============================================================
-   PART 1 — verbatim copy of src/styles.css (the shipped overlay CSS)
-   untouched — PART 1.5 below layers the PROPOSED changes on top so
-   the diff between shipped and proposed stays visible.
+   PART 1 — verbatim copy of src/styles.css @ 89850b6 (SHIPPED)
+   the only edits: html/body page chrome lives in PART 2 instead
    ============================================================ */
 :root {
   --card-scale: 1;
-  --card-radius: 8px;
-  --card-opacity: 0.9; /* shipped runtime default (config.rs) */
+  --card-radius: 16px; /* shipped runtime default (plan 032: 8 -> 16) */
+  --card-opacity: 0.9;
 }
 
 .rail-card {
@@ -40,6 +39,10 @@
 .rail-card.idle {
   width: calc(270px * var(--card-scale));
   border-radius: 0 0 var(--card-radius) var(--card-radius);
+}
+
+.rail-card.idle.status {
+  width: calc(460px * var(--card-scale));
 }
 
 .rail-card.low {
@@ -87,7 +90,6 @@
   animation: goal-burst 620ms ease-out;
 }
 
-/* SHIPPED (plan 023): confetti-spray ::after + this expanding ::before ring */
 .rail-card.pulse-goal::before {
   content: "";
   position: absolute;
@@ -124,6 +126,35 @@
   100% { opacity: 0; transform: scale(6); }
 }
 
+/* goal celebration part B (plan 032): three staggered accent rings */
+.cele-ripple {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.cele-ripple span {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.4);
+  animation: ripple-out 720ms ease-out forwards;
+}
+
+.cele-ripple span:nth-child(2) { animation-delay: 140ms; }
+.cele-ripple span:nth-child(3) { animation-delay: 280ms; }
+
+@keyframes ripple-out {
+  0% { opacity: 0.85; transform: translate(-50%, -50%) scale(0.4); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(9); }
+}
+
 .rail-card.pulse-red {
   animation: red-alert 460ms steps(1, end) 2;
 }
@@ -144,7 +175,8 @@
   .rail-card.pulse-goal,
   .rail-card.pulse-goal::before,
   .rail-card.pulse-goal::after,
-  .rail-card.pulse-red {
+  .rail-card.pulse-red,
+  .cele-ripple span {
     animation: none;
   }
 }
@@ -153,9 +185,9 @@
   position: relative;
   box-sizing: border-box;
   min-height: 74px;
-  padding: 12px 18px 14px;
+  padding: 12px 18px 14px 20px;
   display: grid;
-  grid-template-columns: 64px minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: 12px;
 }
@@ -164,29 +196,17 @@
   min-height: 82px;
 }
 
-.tier-code {
-  align-self: stretch;
-  display: grid;
-  justify-items: start;
-  align-content: center;
-  gap: 2px;
-  border-right: 1px solid rgba(255, 255, 255, 0.11);
-  color: var(--accent);
-}
-
-.tier-code svg { color: var(--accent); }
-
-.tier-code .code {
-  font: 750 22px/0.9 "Arial Narrow", "SF Pro Display", sans-serif;
-  letter-spacing: -0.04em;
-}
-
-.tier-code .tier-label {
-  margin-top: 3px;
-  color: rgba(255, 255, 255, 0.4);
-  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
+/* plan 032: priority reads from this 3px accent edge (chip deleted) */
+.compact::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent-soft);
 }
 
 .copy { min-width: 0; }
@@ -206,12 +226,21 @@
   display: -webkit-box;
   margin-top: 4px;
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.55);
-  font-size: 11px;
-  line-height: 1.3;
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 12px;
+  line-height: 1.35;
   white-space: normal;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+/* plan 032: inline-markdown code spans */
+.body code,
+.detail-value code {
+  padding: 1px 5px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--accent);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
 }
 
 .stamp {
@@ -234,6 +263,7 @@
   text-transform: uppercase;
 }
 
+/* plan 033: queue slider */
 .track {
   position: absolute;
   right: 0;
@@ -241,14 +271,21 @@
   left: 0;
   height: 4px;
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(var(--queue-n, 3), 1fr);
   gap: 3px;
   padding: 0 3px;
 }
 
-.track span { background: rgba(255, 255, 255, 0.09); }
+.track span {
+  background: rgba(255, 255, 255, 0.09);
+  transition: background 260ms ease;
+}
 
-.track span.lit {
+.track span.done {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+.track span.cur {
   background: var(--accent);
   box-shadow: 0 -3px 14px var(--accent-soft);
 }
@@ -279,6 +316,13 @@
   color: rgba(255, 255, 255, 0.74);
   font-size: 11px;
   line-height: 1.45;
+  overflow-wrap: anywhere; /* plan 035 */
+}
+
+.detail-value.message {
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 12px;
+  line-height: 1.5;
 }
 
 .idle-view {
@@ -317,7 +361,52 @@
   box-shadow: 0 0 10px rgba(182, 245, 229, 0.75);
 }
 
-/* ==== news card v5: category system (shader + masthead + pills) ==== */
+/* plan 034: idle status rail chips */
+.src-rail {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.src-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.62);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.src-chip.dim { color: rgba(255, 255, 255, 0.34); }
+
+.src-chip.live {
+  color: #7fe08d;
+  background: rgba(127, 224, 141, 0.1);
+  border-color: rgba(127, 224, 141, 0.28);
+}
+
+.src-chip .live-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: #7fe08d;
+  box-shadow: 0 0 6px rgba(127, 224, 141, 0.9);
+  animation: live-dot-pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes live-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+/* ==== news card v5: category system ==== */
 .cat-politics { --cat: #7c9df5; --cat-deep: rgba(124,157,245,0.16); --cat-pill: rgba(124,157,245,0.14); }
 .cat-tech     { --cat: #5fd4e8; --cat-deep: rgba(95,212,232,0.15);  --cat-pill: rgba(95,212,232,0.13); }
 .cat-sports   { --cat: #7fe08d; --cat-deep: rgba(127,224,141,0.15); --cat-pill: rgba(127,224,141,0.13); }
@@ -371,188 +460,8 @@
 
 @media (prefers-reduced-motion: reduce) {
   .news-shade::before { animation: none; }
+  .src-chip .live-dot { animation: none; }
 }
-
-/* ============================================================
-   PART 1.5 — PROPOSED CHANGES (rev 2, this review round)
-   1. rounded corners by default (--card-radius: 16px)
-   2. tier chip (L1/M2/H3 + label) removed — accent color only,
-      carried by a 3px accent edge + stamp + track
-   3. track = QUEUE indicator, not priority load: one segment per
-      queued item, done items dim-lit, current item bright —
-      advances like an automated slider as the queue rotates
-   ============================================================ */
-:root { --card-radius: 16px; }
-
-/* 2 — tier chip gone; copy takes the full left side */
-.compact {
-  grid-template-columns: minmax(0, 1fr) auto;
-  padding-left: 20px;
-}
-.compact::before { /* accent edge: the only remaining priority mark besides stamp/track */
-  content: "";
-  position: absolute;
-  left: 0; top: 12px; bottom: 12px;
-  width: 3px;
-  border-radius: 0 2px 2px 0;
-  background: var(--accent);
-  box-shadow: 0 0 12px var(--accent-soft);
-}
-
-/* 3 — queue track */
-.track { grid-template-columns: repeat(var(--queue-n, 3), 1fr); }
-.track span {
-  transition: background 260ms cubic-bezier(0.22, 1, 0.36, 1), box-shadow 260ms ease;
-}
-.track span.done { background: color-mix(in srgb, var(--accent) 30%, rgba(255,255,255,0.06)); }
-.track span.cur {
-  background: var(--accent);
-  box-shadow: 0 -3px 14px var(--accent-soft);
-}
-
-/* ============================================================
-   PART 1.6 — CELEBRATION CANDIDATES (new one-shot animations,
-   same register as pulse-goal: play once at promotion, never loop)
-   ============================================================ */
-
-/* B · ripple — concentric accent rings from card center */
-.cele-ripple { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
-.cele-ripple span {
-  position: absolute; left: 50%; top: 50%;
-  width: 22px; height: 22px;
-  border: 2px solid var(--accent);
-  border-radius: 50%;
-  opacity: 0;
-  transform: translate(-50%, -50%) scale(0.4);
-}
-.cele-ripple.play span { animation: ripple-out 720ms ease-out forwards; }
-.cele-ripple.play span:nth-child(2) { animation-delay: 140ms; }
-.cele-ripple.play span:nth-child(3) { animation-delay: 280ms; }
-@keyframes ripple-out {
-  0%   { opacity: 0.85; transform: translate(-50%, -50%) scale(0.4); }
-  100% { opacity: 0;    transform: translate(-50%, -50%) scale(9); }
-}
-
-/* C · shimmer — one diagonal light sweep across the card face */
-.cele-shimmer { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
-.cele-shimmer::before {
-  content: "";
-  position: absolute; top: -30%; bottom: -30%;
-  width: 34%; left: -60%;
-  transform: skewX(-18deg);
-  background: linear-gradient(90deg,
-    transparent,
-    rgba(255, 255, 255, 0.10),
-    color-mix(in srgb, var(--accent) 28%, transparent),
-    rgba(255, 255, 255, 0.10),
-    transparent);
-}
-.cele-shimmer.play::before { animation: shimmer-sweep 640ms cubic-bezier(0.22, 1, 0.36, 1) forwards; }
-@keyframes shimmer-sweep { from { left: -60%; } to { left: 130%; } }
-
-/* D · tada — scale + micro-rotation wiggle on the card itself */
-.rail-card.pulse-tada { animation: tada 700ms cubic-bezier(0.22, 1, 0.36, 1); }
-@keyframes tada {
-  0%   { transform: scale(1)    rotate(0); }
-  15%  { transform: scale(0.97) rotate(-0.6deg); }
-  35%  { transform: scale(1.05) rotate(0.8deg); }
-  55%  { transform: scale(1.03) rotate(-0.5deg); }
-  75%  { transform: scale(1.01) rotate(0.3deg); }
-  100% { transform: scale(1)    rotate(0); }
-}
-
-/* E · confetti rain — particles fall from the top edge across the width */
-.cele-rain { position: absolute; inset: 0; z-index: 0; overflow: hidden; pointer-events: none; }
-.cele-rain span {
-  position: absolute; top: -10px;
-  width: 4px; height: 9px; border-radius: 1px;
-  opacity: 0;
-}
-.cele-rain.play span { animation: rain-fall 900ms ease-in forwards; animation-delay: var(--d, 0ms); }
-@keyframes rain-fall {
-  0%   { opacity: 1; transform: translateY(0) rotate(0); }
-  100% { opacity: 0; transform: translateY(120px) rotate(220deg); }
-}
-
-/* A' · goal confetti layer (prototype-only stand-in particles; the shipped
-   celebration above is plan 023's pure-CSS burst + ring) */
-.goal-celebration {
-  position: absolute;
-  inset: -30px;
-  z-index: 0;
-  pointer-events: none;
-}
-.goal-celebration .cf {
-  position: absolute; left: 50%; top: 50%;
-  width: 6px; height: 6px; border-radius: 1px; opacity: 0;
-}
-.goal-celebration.play .cf { animation: cf-fly 850ms ease-out forwards; animation-delay: var(--d, 0ms); }
-@keyframes cf-fly {
-  0%   { opacity: 0; transform: translate(0, 0) rotate(0) scale(0.6); }
-  12%  { opacity: 1; }
-  55%  { opacity: 1; transform: translate(var(--fx), var(--fy)) rotate(var(--fr)) scale(1); }
-  100% { opacity: 0; transform: translate(var(--fx), calc(var(--fy) + 48px)) rotate(calc(var(--fr) * 1.6)) scale(0.9); }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .cele-ripple.play span,
-  .cele-shimmer.play::before,
-  .rail-card.pulse-tada,
-  .cele-rain.play span,
-  .goal-celebration.play .cf { animation: none; }
-}
-
-/* ============================================================
-   PART 1.7 — PROPOSED CHANGES (rev 3, this review round)
-   1. body/message more prominent (weight + contrast + size)
-   2. inline markdown in body + expanded message (`code`, **bold**,
-      *italic*, line breaks) so cmux/CLI text reads as written
-   3. idle rail shows SOURCE STATUS (football live w/ score+minute,
-      news on/paused, N queued) instead of clock-only
-   ============================================================ */
-
-/* 1 + 2 — body prominence + inline markdown marks */
-.body {
-  color: rgba(255, 255, 255, 0.74);
-  font-size: 12px;
-  line-height: 1.35;
-}
-.body code, .detail-value code {
-  font: 600 11px/1.4 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  padding: 1px 5px;
-  border-radius: 4px;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--accent);
-}
-.body strong, .detail-value strong { color: #fff; font-weight: 720; }
-.body em, .detail-value em { font-style: italic; color: rgba(255, 255, 255, 0.9); }
-.detail-value.message {
-  color: rgba(255, 255, 255, 0.84);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-/* 3 — idle source-status rail */
-.rail-card.idle.status { width: calc(460px * var(--card-scale)); }
-.idle-view.status { min-height: 40px; gap: 14px; }
-.src-rail { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; overflow: hidden; }
-.src-chip {
-  display: inline-flex; align-items: center; gap: 6px; white-space: nowrap;
-  font: 700 9px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  letter-spacing: 0.1em; text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.62);
-}
-.src-chip .src-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255, 255, 255, 0.4); }
-.src-chip.live { color: #7fe08d; }
-.src-chip.live .src-dot { background: #7fe08d; box-shadow: 0 0 8px #7fe08d; animation: live-pulse 1.4s ease-in-out infinite; }
-@keyframes live-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
-.src-chip.paused { color: rgba(255, 255, 255, 0.34); }
-.src-chip.paused .src-dot { background: rgba(255, 255, 255, 0.28); box-shadow: none; }
-.src-chip.next { color: #55d6bd; }
-.src-chip.next .src-dot { background: #55d6bd; box-shadow: 0 0 8px rgba(85,214,189,0.6); }
-.src-chip.clear { color: rgba(255, 255, 255, 0.34); }
-.src-chip + .src-chip::before { content: "·"; margin-right: 10px; color: rgba(255, 255, 255, 0.2); }
-@media (prefers-reduced-motion: reduce) { .src-chip.live .src-dot { animation: none; } }
 
 /* ============================================================
    PART 2 — showcase-only chrome (NOT part of the design system)
@@ -569,9 +478,9 @@ body {
 h1 { font-size: 20px; font-weight: 700; margin: 0 0 4px; }
 h2 {
   font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em;
-  color: #8b95a3; margin: 56px 0 16px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 24px;
+  color: #8b95a3; margin: 48px 0 14px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 22px;
 }
-p.note { font-size: 12px; color: #8b95a3; margin: 4px 0 24px; max-width: 760px; line-height: 1.5; }
+p.note { font-size: 12px; color: #8b95a3; margin: 4px 0 20px; max-width: 780px; line-height: 1.55; }
 p.note b { color: #c3ccd6; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(540px, 1fr)); gap: 20px; }
 .frame {
@@ -590,14 +499,14 @@ p.note b { color: #c3ccd6; }
 .frame .label .meta { color: #5b6572; font-weight: 400; text-align: right; }
 .screen {
   position: relative;
-  min-height: 190px;
-  padding: 0 0 28px;
+  min-height: 180px;
+  padding: 0 0 26px;
   background:
     radial-gradient(120% 90% at 20% 10%, #3d4f6b 0%, transparent 55%),
     radial-gradient(110% 100% at 85% 90%, #55365e 0%, transparent 60%),
     linear-gradient(160deg, #2a3245 0%, #1b2130 60%, #232c3d 100%);
 }
-.screen.tall { min-height: 250px; }
+.screen.tall { min-height: 240px; }
 .window { width: 500px; margin: 0 auto; }
 .controls { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 14px; border-top: 1px solid rgba(255,255,255,0.07); }
 button.ctl {
@@ -625,8 +534,6 @@ button.ctl.active { background: #3b4757; border-color: #5b7089; }
   letter-spacing: 0.12em; text-transform: uppercase;
   color: #7c8796;
 }
-
-/* motion/react replicas — 220ms, ease [0.22,1,0.36,1], mode="wait" */
 .motion-wrapper { transition: opacity 220ms cubic-bezier(0.22,1,0.36,1), transform 220ms cubic-bezier(0.22,1,0.36,1); }
 .motion-wrapper.m-exit { opacity: 0; transform: translateY(-4px); }
 .motion-wrapper.m-enter-from { opacity: 0; transform: translateY(-4px); }
@@ -634,58 +541,15 @@ button.ctl.active { background: #3b4757; border-color: #5b7089; }
 .pill.p-hidden { opacity: 0; transform: translateY(3px); }
 .pill.age { transition-delay: 70ms; }
 .manifest.m-animating { transition: height 240ms cubic-bezier(0.22,1,0.36,1), opacity 240ms cubic-bezier(0.22,1,0.36,1); }
-
-/* ============================================================
-   PART 3 — DESIGN REVIEW: rich cmux manifest (proposed, NOT shipped)
-   the expanded manifest gains a Subtitle cell + label/value detail
-   cells fed by the claude-code / cmux hook relays. three layout
-   variants below; values wrap anywhere so long commands/paths fit.
-   ============================================================ */
-.design-024 .detail-value { overflow-wrap: anywhere; }
-.design-024 .variant-b .detail-cell { grid-column: 1 / -1; }
-.design-024 .variant-c .detail-block {
-  grid-column: 1 / -1;
-  margin-top: 2px;
-  padding: 8px 10px;
-  border-radius: 6px;
-  background: rgba(255, 255, 255, 0.05);
-  font: 560 9px/1.7 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  color: rgba(255, 255, 255, 0.72);
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-.design-024 .variant-c .detail-block b {
-  color: var(--accent);
-  font-weight: 700;
-  font-size: 7.5px;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-.wire-json {
-  margin: 0 14px 12px;
-  padding: 9px 11px;
-  border: 1px solid rgba(255,255,255,0.08);
-  border-radius: 6px;
-  background: #10141b;
-  color: #8fa3bd;
-  font: 500 9.5px/1.65 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
 </style>
 </head>
 <body>
 
-<h1>notchtap · Status Rail — showcase rev 2 (proposed changes)</h1>
+<h1>notchtap · Status Rail — SHIPPED UI mirror <span style="color:#5b6572;font-weight:400">@ 89850b6</span></h1>
 <p class="note">
-  To answer the variant question directly: there is <b>one card component</b>, not multiple variants.
-  Everything on this page is that single card in different <b>states</b> (idle / compact / expanded) and
-  <b>skins</b> (3 priority accents, 6 news categories, per-signal stamps). What changed in this rev:
-  <b>rounded corners by default</b> (Round 16px), <b>tier chip (L1/Low) deleted</b> — priority now reads from the
-  accent edge + stamp + track color only, <b>track repurposed as a queue slider</b> (one segment per queued item,
-  advancing automatically), <b>auto-expand lifecycle for every item</b> (expand on show → retract → rotate on),
-  and <b>five celebration candidates</b> to judge. Opacity: yes, three shipped presets — Glass 0.7 / Default 0.9 /
-  Solid 1.0 — in the bar below; Default stays selected.
+  This page mirrors the <b>currently shipped</b> overlay — <code>src/styles.css</code> is copied verbatim
+  above and the DOM matches <code>StatusRailCard.tsx</code> / <code>Track.tsx</code> / <code>Manifest.tsx</code> /
+  <code>IdleView.tsx</code> exactly. Review the changes here; nothing on this page is a proposal anymore.
 </p>
 
 <div class="appearance-bar" id="appearance-bar">
@@ -700,7 +564,7 @@ button.ctl.active { background: #3b4757; border-color: #5b7089; }
     <div class="seg" data-var="--card-radius">
       <button class="ctl" data-val="0px">Square</button>
       <button class="ctl" data-val="8px">Soft</button>
-      <button class="ctl active" data-val="16px">Round</button>
+      <button class="ctl active" data-val="16px">Round (new default)</button>
     </div>
   </div>
   <div class="group"><span>Opacity</span>
@@ -712,16 +576,15 @@ button.ctl.active { background: #3b4757; border-color: #5b7089; }
   </div>
 </div>
 
-<h2>0 · Full lifecycle — auto-expand, retract, queue slider</h2>
+<h2>0 · The new lifecycle — every item enters expanded, retracts at half, slider advances</h2>
 <p class="note">
-  The proposed flow, end to end: item promotes <b>already expanded</b> (regardless of priority) → holds →
-  <b>retracts</b> to compact → holds → rotates to the next queued item, or drains to idle when the queue is empty.
-  The bottom track is the queue slider: 5 segments for 5 queued items — dim = consumed, bright = current.
-  Hold durations here are stand-ins (2.2s expanded / 1.6s compact) since the real timer is already configurable.
+  Plan 033: every promotion starts <b>expanded</b> regardless of priority, auto-retracts at <b>half its
+  rotation window</b>, then rotates on — total turn length unchanged from before. The track is now a
+  <b>queue slider</b> (batch semantics): dim = consumed, bright = current.
 </p>
 <div class="grid">
   <div class="frame">
-    <div class="label">queue of 5 → idle <span class="meta">enter expanded 220ms · retract 320/240ms · slider advances</span></div>
+    <div class="label">queue of 5 → idle <span class="meta">enter expanded · retract at ½ · rotate</span></div>
     <div class="screen tall"><div class="window" id="life-mount"></div></div>
     <div class="controls">
       <button class="ctl" id="life-run">Run queue (5 items)</button>
@@ -730,41 +593,50 @@ button.ctl.active { background: #3b4757; border-color: #5b7089; }
   </div>
 </div>
 
-<h2>1 · Celebration candidates — pick one (or a combo)</h2>
+<h2>1 · Celebrations (shipped) — goal = burst + ring + ripple, red-card strobe</h2>
 <p class="note">
-  <b>A</b> is the shipped goal celebration rechecked: 620ms scale overshoot + radial burst + confetti
-  (confetti reworked — bigger particles, fly-out then gravity fall; still a CSS stand-in for the Lottie comp).
-  <b>B–E</b> are new candidates in the same register (one-shot at promotion, never looping, accent-aware —
-  they pick up each tier's color automatically). The red-card strobe is unchanged, shown last for contrast.
+  Plan 023's confetti burst + expanding ring, <b>plus</b> plan 032's three staggered accent ripples
+  (your A+B pick). Red-card keeps its hard two-step strobe. Replay each.
 </p>
 <div class="grid" id="celebrations"></div>
 
-<h2>2 · Priority skins — color only, chip deleted</h2>
-<p class="note">The L1/M2/H3 chip is gone. Priority now reads from: the 3px <b>accent edge</b> on the left, the <b>stamp</b>, and the queue track's lit color. Same card, three accents.</p>
+<h2>2 · Priority — the chip is gone, the accent edge carries it</h2>
+<p class="note">
+  Plan 032: L1/M2/H3 deleted. Priority now reads from the <b>3px accent edge</b> on the left,
+  the stamp, and the slider's lit colour. Body copy is brighter/larger (0.74 alpha, 12px).
+</p>
 <div class="grid" id="tiers"></div>
 
-<h2>3 · Expanded state (500px, manifest)</h2>
-<p class="note">Width morph 320ms + manifest height/opacity 240ms. Toggle to judge. In the proposed flow this state plays automatically on every promotion (section 0); the manual ⌃⇧N toggle still exists on top.</p>
+<h2>3 · Expanded manifests — markdown bodies, subtitle + detail cells</h2>
+<p class="note">
+  Bodies render inline markdown (`` `code` `` in accent mono, <b>**bold**</b>, <i>*italic*</i>, line breaks)
+  in both the compact body and the brighter Message cell. Plan 035: the cmux/Claude-Code manifest gains a
+  <b>Subtitle</b> cell and label/value <b>detail cells</b> (plain text, never markdown).
+</p>
 <div class="grid" id="expanded"></div>
 
-<h2>4 · News cards (RSS) — all six categories</h2>
-<p class="note">Unchanged apart from the chip removal and queue track. Masthead + 13px headline + pills + the 12s <code>shade-drift</code> tint.</p>
+<h2>4 · News cards — unchanged skins, new chrome</h2>
+<p class="note">Same six category shaders, masthead, and pills — sitting in the new chip-less compact row with the queue slider.</p>
 <div class="grid" id="news"></div>
 
-<h2>5 · Design review — rich cmux cards (proposed, not shipped)</h2>
+<h2>5 · Idle — clock-only vs the status rail</h2>
 <p class="note">
-  Where the data comes from: a <b>Claude Code hook</b> (PermissionRequest / Notification / Stop —
-  real fields: <code>tool_name</code>, <code>tool_input</code>, <code>cwd</code>) and a <b>cmux
-  notification hook</b> (workspace title, subtitle, <code>cwd</code>). The compact card is
-  unchanged — the richness lives only in the expanded manifest, as a <b>Subtitle</b> cell plus
-  label/value <b>detail cells</b>. Judge the three layouts on the same permission card
-  (A / B / C), then the error + cmux-waiting examples in the recommended layout. Wire JSON the
-  hook POSTs is shown under the first card.
+  Plan 034: when football/news is on, a match is live, items are queued, or the engine is paused,
+  the idle card widens to <b>460px</b> and shows status chips (pulsing live dot, News gate, queue depth).
+  When there's nothing to report it stays the plain 270px clock.
 </p>
-<div class="grid" id="cmux-rich"></div>
+<div class="grid" id="idle-states"></div>
+
+<h2>6 · Queue slider edge cases</h2>
+<p class="note">
+  Segment count caps at <b>10</b>; beyond that the index maps proportionally (shown: 8 of 25).
+  Known filed follow-up: plan 038 — skipping a <i>Recurring</i> item currently counts it as "done"
+  (over-advances the slider by one); fix is planned, not yet shipped.
+</p>
+<div class="grid" id="slider-states"></div>
 
 <script>
-/* stamp table — mirror of lib/presentation.ts */
+/* ---------- helpers mirroring lib/presentation.ts + Track.tsx + markdown.tsx ---------- */
 function stamp(cfg) {
   const bySignal = { goal: "Live", kickoff: "Live", halftime: "Break", yellow_card: "Card", fulltime: "Final", red_card: "Off" };
   if (cfg.signal && bySignal[cfg.signal]) return bySignal[cfg.signal];
@@ -778,51 +650,41 @@ function sourceText(cfg) {
 }
 function esc(s) { return s.replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
 function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
-/* rev 3 — lightweight inline markdown for body/message text */
+
+/* renderInlineMarkdown (lib/markdown.tsx) — same token order: code, bold, italic; escape-first */
 function mdInline(s) {
   if (!s) return "";
-  let t = esc(s);
-  t = t.replace(/`([^`]+)`/g, (m, c) => `<code>${c}</code>`);
-  t = t.replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>");
-  t = t.replace(/(^|[^*])\*([^*\n]+)\*/g, "$1<em>$2</em>");
-  t = t.replace(/\n/g, "<br/>");
-  return t;
-}
-/* rev 3 — idle rail that reports source status, not just the clock */
-function renderIdleStatus(st) {
-  const el = document.createElement("div");
-  el.className = "rail-card idle status";
-  const chips = [];
-  if (st.football) chips.push(`<span class="src-chip live"><span class="src-dot"></span>${esc(st.football)}</span>`);
-  if (st.news) chips.push(`<span class="src-chip ${st.news.paused ? "paused" : ""}"><span class="src-dot"></span>${esc(st.news.label)}${st.news.paused ? " paused" : ""}</span>`);
-  chips.push(st.queued > 0
-    ? `<span class="src-chip next"><span class="src-dot"></span>${st.queued} queued</span>`
-    : `<span class="src-chip clear">clear</span>`);
-  el.innerHTML = `
-    <div class="motion-wrapper">
-      <div class="idle-view status">
-        <span class="time">${esc(st.time)}</span>
-        <span class="src-rail">${chips.join("")}</span>
-      </div>
-    </div>`;
-  return el;
+  return esc(s).split(/\r\n|\r|\n/).map(line =>
+    line
+      .replace(/`([^`]+)`/g, (m, c) => `<code>${c}</code>`)
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+  ).join("<br/>");
 }
 
-/* ---------- card renderer — proposed DOM: no tier-code, queue track ---------- */
+/* Track.tsx segment math, verbatim */
+const MAX_SEGMENTS = 10;
+function trackHtml(total, done) {
+  const n = Math.min(Math.max(total, 1), MAX_SEGMENTS);
+  const current = total > MAX_SEGMENTS ? Math.floor((done * MAX_SEGMENTS) / total) : done;
+  return Array.from({ length: n }, (_, i) =>
+    `<span class="${i < current ? "done" : i === current ? "cur" : ""}"></span>`).join("");
+}
+
+/* ---------- card renderer — mirrors StatusRailCard.tsx DOM ---------- */
 function renderCard(cfg) {
   const el = document.createElement("div");
   const cls = ["rail-card", cfg.priority];
   if (cfg.expanded) cls.push("expanded");
   if (cfg.news) cls.push("news-shade", "cat-" + cfg.news.category);
-  if (cfg.manifestVariant) cls.push("design-024", cfg.manifestVariant);
   el.className = cls.join(" ");
   el.setAttribute("role", "status");
   el.setAttribute("aria-live", "polite");
 
-  const q = cfg.queue || { count: 3, index: 0 };
-  el.style.setProperty("--queue-n", q.count);
-  const track = Array.from({ length: q.count }, (_, i) =>
-    `<span class="${i < q.index ? "done" : i === q.index ? "cur" : ""}"></span>`).join("");
+  const q = cfg.queue || { total: 1, done: 0 };
+  const track = trackHtml(q.total, q.done);
+  const n = Math.min(Math.max(q.total, 1), MAX_SEGMENTS);
+  el.style.setProperty("--queue-n", n);
 
   let copy;
   if (cfg.news) {
@@ -851,20 +713,16 @@ function renderCard(cfg) {
     } else {
       const ctl = cfg.link ? "⌃⇧O read · ⌃⇧N collapse" : "⌃⇧N collapse";
       const subtitleCell = cfg.subtitle
-        ? `<div class="detail-cell"><div class="detail-label">Subtitle</div><div class="detail-value">${esc(cfg.subtitle)}</div></div>`
+        ? `<div><div class="detail-label">Subtitle</div><div class="detail-value">${esc(cfg.subtitle)}</div></div>`
         : "";
-      const dets = cfg.details || [];
-      const detailCells = dets.map((d) =>
-        `<div class="detail-cell"><div class="detail-label">${esc(d.label)}</div><div class="detail-value">${esc(d.value)}</div></div>`).join("");
-      const detailBlock = dets.length
-        ? `<div class="detail-block">${dets.map((d) => `<b>${esc(d.label)}</b>  ${esc(d.value)}`).join("\n")}</div>`
-        : "";
+      const detailCells = (cfg.details || []).map((d) =>
+        `<div><div class="detail-label">${esc(d.label)}</div><div class="detail-value">${esc(d.value)}</div></div>`).join("");
       manifest = `
         <div class="manifest"><div class="manifest-inner">
           <div><div class="detail-label">Message</div><div class="detail-value message">${mdInline(cfg.body || cfg.title)}</div></div>
           <div><div class="detail-label">Source / Control</div><div class="detail-value">${esc(sourceText(cfg))}<br/>${ctl}</div></div>
           ${subtitleCell}
-          ${cfg.manifestVariant === "variant-c" ? detailBlock : detailCells}
+          ${detailCells}
         </div></div>`;
     }
   }
@@ -882,139 +740,105 @@ function renderCard(cfg) {
   return el;
 }
 
-function renderIdle() {
+/* ---------- idle renderer — mirrors IdleView.tsx ---------- */
+function renderIdle(status) {
   const el = document.createElement("div");
-  el.className = "rail-card idle";
+  const active = status &&
+    (status.football.enabled || status.news.enabled || status.football.live !== null || status.waiting > 0 || status.paused);
+  el.className = "rail-card idle" + (active ? " status" : "");
   const fmt = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   const now = new Date();
   const dayPct = ((now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds()) / 86400 * 100).toFixed(1);
+  let rail = "";
+  if (active) {
+    const chips = [];
+    if (status.football.live) {
+      chips.push(`<span class="src-chip live"><span class="live-dot"></span>${esc(status.football.live.label)} · ${esc(status.football.live.minute)}</span>`);
+    }
+    chips.push(`<span class="src-chip${status.news.enabled ? "" : " dim"}">${status.news.enabled ? "News" : "News paused"}</span>`);
+    chips.push(`<span class="src-chip">${status.waiting > 0 ? status.waiting + " queued" : "clear"}</span>`);
+    rail = `<span class="src-rail">${chips.join("")}</span>`;
+  }
   el.innerHTML = `
     <div class="motion-wrapper">
       <div class="idle-view">
         <span class="time">${fmt.format(now)}</span>
+        ${rail}
         <span class="timeline" style="--day-progress: ${dayPct}%" aria-hidden="true"></span>
       </div>
     </div>`;
   return el;
 }
 
-function frame(parent, cfg, labelHtml, metaHtml, opts = {}) {
+function frame(parent, node, labelHtml, metaHtml, opts = {}) {
   const f = document.createElement("div");
   f.className = "frame";
   f.innerHTML = `<div class="label">${labelHtml} <span class="meta">${metaHtml}</span></div>
     <div class="screen${opts.tall ? " tall" : ""}"><div class="window"></div></div>`;
-  const card = cfg ? renderCard(cfg) : renderIdle();
-  f.querySelector(".window").appendChild(card);
+  f.querySelector(".window").appendChild(node);
   if (opts.controls) {
     const c = document.createElement("div");
     c.className = "controls";
     f.appendChild(c);
-    opts.controls(c, card, f);
+    opts.controls(c, node, f);
   }
   parent.appendChild(f);
-  return card;
+  return node;
 }
 
-/* one-shot animation helper: add class, remove on animationend(name) */
-function pulse(card, cls, keyframeName) {
+function pulse(card, cls, keyframeName, withRipple) {
   card.classList.remove(cls);
+  card.querySelectorAll(".cele-ripple").forEach(n => n.remove());
   void card.offsetWidth;
   card.classList.add(cls);
+  if (withRipple) {
+    const r = document.createElement("div");
+    r.className = "cele-ripple";
+    r.setAttribute("aria-hidden", "true");
+    r.innerHTML = "<span></span><span></span><span></span>";
+    card.appendChild(r);
+  }
   card.addEventListener("animationend", function h(e) {
-    if (e.animationName === keyframeName) { card.classList.remove(cls); card.removeEventListener("animationend", h); }
+    if (e.animationName === keyframeName) {
+      card.classList.remove(cls);
+      card.querySelectorAll(".cele-ripple").forEach(n => n.remove());
+      card.removeEventListener("animationend", h);
+    }
   });
 }
-/* one-shot layer helper: mount an effect layer, play, remove after ms */
-function layer(card, cls, ms, build) {
-  card.querySelectorAll("." + cls.split(" ")[0]).forEach(n => n.remove());
-  const d = document.createElement("div");
-  d.className = cls;
-  d.setAttribute("aria-hidden", "true");
-  if (build) build(d);
-  card.appendChild(d);
-  void d.offsetWidth;
-  d.classList.add("play");
-  setTimeout(() => d.remove(), ms);
-}
-
-const CONFETTI_COLORS = ["#ff6b57", "#f0c46a", "#55d6bd", "#7c9df5", "#7fe08d", "#c99df0"];
-
-const CELEBRATIONS = {
-  "A · goal (shipped, confetti reworked)": (card) => {
-    pulse(card, "pulse-goal", "goal-overshoot");
-    layer(card, "goal-celebration", 1300, (d) => {
-      CONFETTI_COLORS.concat(CONFETTI_COLORS).forEach((col, i) => {
-        const s = document.createElement("span");
-        s.className = "cf";
-        const ang = (i / 12) * Math.PI * 2 + 0.35;
-        s.style.background = col;
-        s.style.setProperty("--fx", Math.round(Math.cos(ang) * (60 + (i % 4) * 12)) + "px");
-        s.style.setProperty("--fy", Math.round(Math.sin(ang) * (28 + (i % 3) * 8) - 14) + "px");
-        s.style.setProperty("--fr", (140 + i * 47) + "deg");
-        s.style.setProperty("--d", (i % 4) * 40 + "ms");
-        d.appendChild(s);
-      });
-    });
-  },
-  "B · ripple": (card) => {
-    pulse(card, "pulse-goal", "goal-overshoot"); // keep the overshoot, swap the effect
-    layer(card, "cele-ripple", 1100, (d) => { d.innerHTML = "<span></span><span></span><span></span>"; });
-  },
-  "C · shimmer": (card) => {
-    layer(card, "cele-shimmer", 800);
-  },
-  "D · tada": (card) => {
-    pulse(card, "pulse-tada", "tada");
-  },
-  "E · confetti rain": (card) => {
-    layer(card, "cele-rain", 1500, (d) => {
-      for (let i = 0; i < 14; i++) {
-        const s = document.createElement("span");
-        s.style.background = CONFETTI_COLORS[i % CONFETTI_COLORS.length];
-        s.style.left = (4 + (i * 6.8) % 92) + "%";
-        s.style.setProperty("--d", ((i * 53) % 320) + "ms");
-        d.appendChild(s);
-      }
-    });
-  },
-};
 
 /* ---------- 1 · celebrations ---------- */
 const celebrations = document.getElementById("celebrations");
-Object.entries(CELEBRATIONS).forEach(([name, fire]) => {
-  const cfg = { priority: "high", eventType: "score_update", signal: "goal", title: "GOAL", body: "Arsenal 2-0", queue: { count: 5, index: 1 } };
-  frame(celebrations, cfg, name, "one-shot at promotion", {
+frame(celebrations, renderCard({ priority: "high", eventType: "score_update", signal: "goal", title: "GOAL", body: "Arsenal 2-0", queue: { total: 5, done: 1 } }),
+  "goal · burst + ring + ripple (A+B)", "620ms overshoot · 720ms ripple ×3", {
     controls: (c, card) => {
       const btn = document.createElement("button");
-      btn.className = "ctl"; btn.textContent = "Replay";
-      btn.onclick = () => fire(card);
+      btn.className = "ctl"; btn.textContent = "Replay goal celebration";
+      btn.onclick = () => pulse(card, "pulse-goal", "goal-overshoot", true);
       c.appendChild(btn);
-      // autoplay once so the page isn't static on load
-      setTimeout(() => fire(card), 600 + celebrations.children.length * 350);
+      setTimeout(() => pulse(card, "pulse-goal", "goal-overshoot", true), 700);
     }
   });
-});
-/* red-card strobe, unchanged, for contrast */
-frame(celebrations, { priority: "high", eventType: "match_state", signal: "red_card", title: "Red Card", body: "Chelsea down to 10", queue: { count: 5, index: 3 } },
-  "red_card strobe (unchanged)", "red-alert 460ms steps(1,end) ×2", {
+frame(celebrations, renderCard({ priority: "high", eventType: "match_state", signal: "red_card", title: "Red Card", body: "Chelsea down to 10", queue: { total: 5, done: 3 } }),
+  "red_card · strobe (unchanged)", "red-alert 460ms steps(1,end) ×2", {
     controls: (c, card) => {
       const btn = document.createElement("button");
-      btn.className = "ctl"; btn.textContent = "Replay";
-      btn.onclick = () => pulse(card, "pulse-red", "red-alert");
+      btn.className = "ctl"; btn.textContent = "Replay red-card strobe";
+      btn.onclick = () => pulse(card, "pulse-red", "red-alert", false);
       c.appendChild(btn);
     }
   });
 
-/* ---------- 2 · tiers (chip-less) ---------- */
+/* ---------- 2 · tiers ---------- */
 const tiers = document.getElementById("tiers");
-frame(tiers, { priority: "low", eventType: "generic", title: "Build finished", body: "cargo build completed in 42s", queue: { count: 5, index: 0 } },
-  "low", "accent #aab3bd · edge + stamp + track only");
-frame(tiers, { priority: "medium", eventType: "generic", title: "Task complete", body: "vitest run — 128 passed", queue: { count: 5, index: 2 } },
+frame(tiers, renderCard({ priority: "low", eventType: "generic", title: "Build finished", body: "`cargo build` completed in **42s**", queue: { total: 5, done: 0 } }),
+  "low", "accent #aab3bd");
+frame(tiers, renderCard({ priority: "medium", eventType: "generic", title: "Task complete", body: "`vitest run` — *128 passed*", queue: { total: 5, done: 2 } }),
   "medium", "accent #55d6bd");
-frame(tiers, { priority: "high", eventType: "generic", title: "Agent needs input", body: "Workspace command is waiting", queue: { count: 5, index: 4 } },
+frame(tiers, renderCard({ priority: "high", eventType: "generic", title: "Agent needs input", body: "Workspace command is waiting", queue: { total: 5, done: 4 } }),
   "high", "accent #ff6b57");
 
-/* ---------- 3 · expanded with toggle ---------- */
+/* ---------- 3 · expanded manifests ---------- */
 function attachExpandToggle(controls, card, cfgFactory) {
   let expanded = true;
   const btn = document.createElement("button");
@@ -1026,7 +850,6 @@ function attachExpandToggle(controls, card, cfgFactory) {
   };
   controls.appendChild(btn);
 }
-/* expand/collapse on the SAME element so width transitions; manifest height animated */
 function swapExpansion(card, cfg, expanding) {
   const next = renderCard(cfg);
   if (expanding) {
@@ -1047,7 +870,7 @@ function swapExpansion(card, cfg, expanding) {
     }
   } else {
     const manifest = card.querySelector(".manifest");
-    card.className = next.className; // width 500→400 starts now
+    card.className = next.className;
     if (manifest) {
       manifest.classList.add("m-animating");
       manifest.style.height = manifest.scrollHeight + "px";
@@ -1064,14 +887,25 @@ function swapExpansion(card, cfg, expanding) {
 
 const expandedGrid = document.getElementById("expanded");
 {
-  const cfgF = (exp) => ({ priority: "high", eventType: "generic", title: "Agent needs input", body: "Workspace command is waiting", expanded: exp, queue: { count: 5, index: 1 } });
-  frame(expandedGrid, cfgF(true), "generic · expanded", "manifest 1fr 1fr",
-    { tall: true, controls: (c, card) => attachExpandToggle(c, card, cfgF) });
+  const cfgF = (exp) => ({ priority: "high", eventType: "generic", title: "Agent needs input", body: "Run `git push origin master`?\nTool: **Bash** — *reply in cmux*", expanded: exp, queue: { total: 3, done: 0 } });
+  frame(expandedGrid, renderCard(cfgF(true)), "generic · markdown body", "code/bold/italic + line break", { tall: true, controls: (c, card) => attachExpandToggle(c, card, cfgF) });
 }
 {
-  const cfgF = (exp) => ({ priority: "low", eventType: "news_item", title: "Parliament passes the landmark digital rights bill", body: "The bill introduces sweeping data-protection duties for platforms and a new privacy regulator.", expanded: exp, link: true, queue: { count: 5, index: 3 }, news: { source: "NDTV", category: "politics", age: "42m ago", published: "13:32" } });
-  frame(expandedGrid, cfgF(true), "news · expanded", "manifest 1.5fr 1fr 1fr",
-    { tall: true, controls: (c, card) => attachExpandToggle(c, card, cfgF) });
+  const cfgF = (exp) => ({
+    priority: "high", eventType: "generic", title: "Claude Code", body: "Permission requested: Bash",
+    subtitle: "Permission request",
+    details: [
+      { label: "Tool", value: "Bash" },
+      { label: "Command", value: "git push origin master" },
+      { label: "Project", value: "~/Desktop/code/mac-notification-nudge" },
+    ],
+    expanded: exp, queue: { total: 3, done: 1 },
+  });
+  frame(expandedGrid, renderCard(cfgF(true)), "cmux/claude hook · subtitle + details", "Layout A — plain-text cells", { tall: true, controls: (c, card) => attachExpandToggle(c, card, cfgF) });
+}
+{
+  const cfgF = (exp) => ({ priority: "low", eventType: "news_item", title: "Parliament passes the landmark digital rights bill", body: "The bill introduces sweeping data-protection duties for platforms and a new privacy regulator.", expanded: exp, link: true, queue: { total: 3, done: 2 }, news: { source: "NDTV", category: "politics", age: "42m ago", published: "13:32" } });
+  frame(expandedGrid, renderCard(cfgF(true)), "news · expanded", "manifest 1.5fr 1fr 1fr", { tall: true, controls: (c, card) => attachExpandToggle(c, card, cfgF) });
 }
 
 /* ---------- 4 · news categories ---------- */
@@ -1086,7 +920,7 @@ const NEWS_SAMPLES = [
 ];
 NEWS_SAMPLES.forEach(([category, source, title, age], i) => {
   const card = frame(news,
-    { priority: "low", eventType: "news_item", title, queue: { count: 5, index: i % 5 }, news: { source, category, age } },
+    renderCard({ priority: "low", eventType: "news_item", title, queue: { total: 5, done: i % 5 }, news: { source, category, age } }),
     "cat-" + category, "shade-drift 12s");
   card.querySelectorAll(".pill").forEach(p => p.classList.add("p-hidden"));
   requestAnimationFrame(() => requestAnimationFrame(() => {
@@ -1094,18 +928,46 @@ NEWS_SAMPLES.forEach(([category, source, title, age], i) => {
   }));
 });
 
-/* ---------- 0 · lifecycle: enter expanded → retract → advance ---------- */
+/* ---------- 5 · idle states ---------- */
+const idleStates = document.getElementById("idle-states");
+const INACTIVE = { paused: false, waiting: 0, football: { enabled: false, live: null }, news: { enabled: false } };
+frame(idleStates, renderIdle(INACTIVE), "plain clock · 270px", "nothing enabled, nothing queued — rail hidden");
+frame(idleStates, renderIdle({ paused: false, waiting: 0, football: { enabled: true, live: null }, news: { enabled: true } }),
+  "news on · all quiet", "News chip + clear · 460px");
+frame(idleStates, renderIdle({ paused: false, waiting: 0, football: { enabled: true, live: { label: "ARS 2–0 CHE", minute: "Halftime" } }, news: { enabled: true } }),
+  "football live", "pulsing live dot · ARS 2–0 CHE · Halftime");
+frame(idleStates, renderIdle({ paused: false, waiting: 0, football: { enabled: true, live: null }, news: { enabled: false } }),
+  "news paused", "dimmed News paused chip");
+frame(idleStates, renderIdle({ paused: false, waiting: 2, football: { enabled: true, live: null }, news: { enabled: true } }),
+  "2 queued", "waiting depth while slot is empty");
+frame(idleStates, renderIdle({ paused: true, waiting: 3, football: { enabled: true, live: null }, news: { enabled: true } }),
+  "engine paused · 3 queued", "paused buffers, promotion frozen");
+
+/* ---------- 6 · slider edge cases ---------- */
+const sliderStates = document.getElementById("slider-states");
+frame(sliderStates, renderCard({ priority: "medium", eventType: "generic", title: "Single item", body: "batch of one", queue: { total: 1, done: 0 } }),
+  "1 segment", "min(1)");
+frame(sliderStates, renderCard({ priority: "medium", eventType: "generic", title: "Third of five", body: "mid-batch", queue: { total: 5, done: 2 } }),
+  "5 segments · #3 lit", "2 dimmed behind it");
+frame(sliderStates, renderCard({ priority: "high", eventType: "generic", title: "Cap reached", body: "batch of 10", queue: { total: 10, done: 9 } }),
+  "10 segments · last lit", "the ceiling");
+frame(sliderStates, renderCard({ priority: "high", eventType: "generic", title: "Huge batch", body: "25 items deep", queue: { total: 25, done: 7 } }),
+  "25 items → 10 segments", "index maps proportionally: floor(7×10/25)=2");
+
+/* ---------- 0 · lifecycle ---------- */
 const LIFE_QUEUE = [
   { priority: "high", eventType: "generic", title: "Agent needs input", body: "Workspace command is waiting" },
   { priority: "high", eventType: "score_update", signal: "goal", title: "GOAL", body: "Arsenal 2-0", celebrate: true },
   { priority: "low", eventType: "news_item", title: "Open-weights model tops the coding benchmark leaderboard", body: "The release ships permissive weights and a 1M-token context window.", link: true, news: { source: "The Verge", category: "tech", age: "<1m ago", published: "14:02" } },
-  { priority: "medium", eventType: "generic", title: "Task complete", body: "vitest run — 128 passed" },
+  { priority: "medium", eventType: "generic", title: "Task complete", body: "`vitest run` — **128 passed**" },
   { priority: "low", eventType: "news_item", title: "Summit ends with a joint statement on maritime security", body: "Delegates agreed to a joint patrol framework starting next quarter.", link: true, news: { source: "BBC", category: "world", age: "1h ago", published: "13:10" } },
 ];
-const HOLD_EXPANDED = 2200, HOLD_COMPACT = 1600, SWAP = 230;
+/* base ttl 8s → expanded 4s, compact 4s (retract at half), then rotate */
+const HOLD_EXPANDED = 2400, HOLD_COMPACT = 2400, SWAP = 230;
 
 const lifeMount = document.getElementById("life-mount");
-let lifeCard = renderIdle();
+const LIFE_IDLE = { paused: false, waiting: 0, football: { enabled: true, live: null }, news: { enabled: true } };
+let lifeCard = renderIdle(LIFE_IDLE);
 lifeMount.appendChild(lifeCard);
 let lifeTimers = [], lifeRunning = false;
 
@@ -1128,19 +990,19 @@ function lifeSwap(makeNext, after) {
 
 function lifeStep(i) {
   if (!lifeRunning) return;
-  if (i >= LIFE_QUEUE.length) { lifeSwap(renderIdle); lifeRunning = false; return; }
+  if (i >= LIFE_QUEUE.length) { lifeSwap(() => renderIdle(LIFE_IDLE)); lifeRunning = false; return; }
   const item = LIFE_QUEUE[i];
-  const q = { count: LIFE_QUEUE.length, index: i };
+  const q = { total: LIFE_QUEUE.length, done: i };
   // 1 — promote, ALREADY expanded, regardless of priority
   lifeSwap(() => renderCard({ ...item, expanded: true, queue: q }), () => {
-    if (item.celebrate) later(() => CELEBRATIONS["A · goal (shipped, confetti reworked)"](lifeCard), 260);
+    if (item.celebrate) later(() => pulse(lifeCard, "pulse-goal", "goal-overshoot", true), 260);
   });
-  // 2 — retract to compact
+  // 2 — retract at half the rotation window
   later(() => {
     if (!lifeRunning) return;
     swapExpansion(lifeCard, { ...item, expanded: false, queue: q }, false);
   }, SWAP + HOLD_EXPANDED);
-  // 3 — move on
+  // 3 — rotate on
   later(() => lifeStep(i + 1), SWAP + HOLD_EXPANDED + HOLD_COMPACT);
 }
 
@@ -1152,7 +1014,7 @@ document.getElementById("life-run").onclick = () => {
 document.getElementById("life-stop").onclick = () => {
   lifeTimers.forEach(clearTimeout); lifeTimers = [];
   lifeRunning = false;
-  lifeSwap(renderIdle);
+  lifeSwap(() => renderIdle(LIFE_IDLE));
 };
 
 /* ---------- appearance bar ---------- */
@@ -1166,140 +1028,6 @@ document.querySelectorAll("#appearance-bar .seg").forEach(seg => {
     };
   });
 });
-
-/* ---------- 5 · design review: rich cmux cards ---------- */
-const rich = document.getElementById("cmux-rich");
-
-const PERMISSION_CARD = {
-  priority: "high", eventType: "generic",
-  title: "Claude Code",
-  body: "Permission requested: Bash",
-  subtitle: "Permission request",
-  details: [
-    { label: "Tool", value: "Bash" },
-    { label: "Command", value: "git push origin master" },
-    { label: "Project", value: "~/Desktop/code/mac-notification-nudge" },
-  ],
-  expanded: true, queue: { count: 3, index: 0 },
-};
-
-const PERMISSION_WIRE = `POST /notify — what the claude-code hook sends
-{
-  "title": "Claude Code",
-  "body": "Permission requested: Bash",
-  "priority": "high",
-  "source": "cmux",
-  "subtitle": "Permission request",
-  "details": [
-    { "label": "Tool",    "value": "Bash" },
-    { "label": "Command", "value": "git push origin master" },
-    { "label": "Project", "value": "~/Desktop/code/mac-notification-nudge" }
-  ]
-}`;
-
-function richFrame(cfg, label, meta, wire) {
-  const f = document.createElement("div");
-  f.className = "frame";
-  f.innerHTML = `<div class="label">${label} <span class="meta">${meta}</span></div>
-    <div class="screen tall"><div class="window"></div></div>`;
-  f.querySelector(".window").appendChild(renderCard(cfg));
-  if (wire) {
-    const pre = document.createElement("pre");
-    pre.className = "wire-json";
-    pre.textContent = wire;
-    f.appendChild(pre);
-  }
-  rich.appendChild(f);
-}
-
-richFrame(
-  { ...PERMISSION_CARD, manifestVariant: "variant-a" },
-  "A · detail cells (recommended)",
-  "reuses the existing manifest cells — zero new visual language",
-  PERMISSION_WIRE
-);
-richFrame(
-  { ...PERMISSION_CARD, manifestVariant: "variant-b" },
-  "B · full-width rows",
-  "each detail spans the whole manifest — airier, taller card"
-);
-richFrame(
-  { ...PERMISSION_CARD, manifestVariant: "variant-c" },
-  "C · terminal block",
-  "one mono block — densest, most 'log-like'"
-);
-richFrame(
-  {
-    priority: "high", eventType: "generic",
-    title: "Claude Code", body: "Command failed (exit 1)",
-    subtitle: "Error",
-    details: [
-      { label: "Tool", value: "Bash" },
-      { label: "Command", value: "npm test" },
-      { label: "Project", value: "~/Desktop/code/notchtap" },
-    ],
-    expanded: true, queue: { count: 3, index: 1 }, manifestVariant: "variant-a",
-  },
-  "error card · layout A",
-  "PostToolUse / errorOccurred hook"
-);
-richFrame(
-  {
-    priority: "high", eventType: "generic",
-    title: "Codex", body: "Agent needs input",
-    subtitle: "Waiting",
-    details: [{ label: "Project", value: "~/Desktop/code/mac-notification-nudge" }],
-    expanded: true, queue: { count: 3, index: 2 }, manifestVariant: "variant-a",
-  },
-  "cmux waiting · layout A",
-  "cmux notifications.hooks JSON — workspace name as title"
-);
-
-/* ---------- 6 · body rendering: markdown / cmux ---------- */
-(function () {
-  const h = document.createElement("h2");
-  h.textContent = "6 · Body rendering — markdown / cmux (proposed)";
-  const note = document.createElement("p");
-  note.className = "note";
-  note.innerHTML = "Bodies now render lightweight inline markdown: <code>`code`</code> as monospace, <b>**bold**</b>, <i>*italic*</i>, and line breaks — so a cmux/CLI message with a path, a command, or emphasis reads the way it was written instead of as flat grey text. Body contrast + size bumped too.";
-  const grid = document.createElement("div");
-  grid.className = "grid";
-  document.body.appendChild(h); document.body.appendChild(note); document.body.appendChild(grid);
-  const S = [
-    { priority: "high", title: "Agent needs input", body: "run `git push origin master`? tool: **Bash**", queue: { count: 3, index: 0 } },
-    { priority: "medium", title: "Build finished", body: "`cargo build` completed in **42s** — *0 warnings*", queue: { count: 3, index: 1 } },
-    { priority: "low", title: "Deploy note", body: "edited `src/lib.rs`\nnext: *retry* in 5m", queue: { count: 3, index: 2 } },
-  ];
-  S.forEach((cfg) => {
-    const f = document.createElement("div"); f.className = "frame";
-    f.innerHTML = `<div class="label">${cfg.title} <span class="meta">markdown body</span></div><div class="screen"><div class="window"></div></div>`;
-    f.querySelector(".window").appendChild(renderCard(cfg));
-    grid.appendChild(f);
-  });
-})();
-
-/* ---------- 7 · idle: source status ---------- */
-(function () {
-  const h = document.createElement("h2");
-  h.textContent = "7 · Idle — source status (proposed)";
-  const note = document.createElement("p");
-  note.className = "note";
-  note.innerHTML = "The idle rail should report the <b>state of the world at a glance</b>: a live match with score + minute, whether news polling is on or paused, and how many items are queued behind the empty slot — so you know what is happening and what is next. Replaces the clock-only idle.";
-  const grid = document.createElement("div");
-  grid.className = "grid";
-  document.body.appendChild(h); document.body.appendChild(note); document.body.appendChild(grid);
-  const IDLE = [
-    ["all clear", { time: "Sat 14:20", news: { label: "News", paused: false }, queued: 0 }],
-    ["football live", { time: "Sat 20:47", football: "Arsenal 2–0 · 45'", news: { label: "News" }, queued: 0 }],
-    ["news paused · 2 queued", { time: "Sat 09:05", news: { label: "News", paused: true }, queued: 2 }],
-  ];
-  IDLE.forEach(([label, st]) => {
-    const f = document.createElement("div"); f.className = "frame";
-    f.innerHTML = `<div class="label">idle · ${label} <span class="meta">source status rail</span></div><div class="screen"><div class="window"></div></div>`;
-    f.querySelector(".window").appendChild(renderIdleStatus(st));
-    grid.appendChild(f);
-  });
-})();
 </script>
 </body>
 </html>

@@ -1,0 +1,900 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>notchtap · DESIGN — the design system reference</title>
+<style>
+/* ============================================================
+   PAGE CHROME (documentation styles — not part of the system)
+   ============================================================ */
+* { box-sizing: border-box; }
+html, body { margin: 0; padding: 0; }
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background: #101318;
+  color: #e8ecf1;
+  padding: 48px 40px 140px;
+}
+.page { max-width: 980px; margin: 0 auto; }
+h1 { font-size: 22px; font-weight: 700; margin: 0 0 6px; }
+h2 {
+  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em;
+  color: #8b95a3; margin: 64px 0 16px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 26px;
+}
+h2 .num { color: #4a515c; margin-right: 10px; }
+p.note { font-size: 12.5px; color: #8b95a3; margin: 4px 0 22px; max-width: 760px; line-height: 1.6; }
+p.note b { color: #c3ccd6; }
+code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 0.92em; color: #9fc3e8; }
+.sync-stamp {
+  display: inline-block; margin: 10px 0 0; padding: 6px 10px;
+  border: 1px solid rgba(255,255,255,0.12); border-radius: 6px;
+  background: #171b22; color: #7c95ad;
+  font: 600 10px/1.5 ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+.sync-stamp b { color: #b8d4ea; font-weight: 700; }
+.swatches { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+.swatch { border: 1px solid rgba(255,255,255,0.09); border-radius: 10px; overflow: hidden; background: #171b22; }
+.swatch .chip { height: 56px; }
+.swatch .meta { padding: 9px 11px; font: 600 10px/1.6 ui-monospace, "SFMono-Regular", Menlo, monospace; color: #9aa5b4; }
+.swatch .meta .name { color: #e8ecf1; font-weight: 700; }
+.swatch .meta .use { color: #5b6572; font-weight: 400; }
+table.spec { width: 100%; border-collapse: collapse; font-size: 11.5px; }
+table.spec th {
+  text-align: left; padding: 7px 10px; color: #5b6572;
+  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  border-bottom: 1px solid rgba(255,255,255,0.1);
+}
+table.spec td { padding: 9px 10px; border-bottom: 1px solid rgba(255,255,255,0.06); color: #c3ccd6; vertical-align: middle; }
+table.spec td.mono { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 10px; color: #8fa3bd; }
+.type-row { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; padding: 12px 2px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.type-row .spec-text { flex: none; max-width: 300px; text-align: right; color: #5b6572; font: 500 9.5px/1.5 ui-monospace, "SFMono-Regular", Menlo, monospace; }
+.frame {
+  border: 1px solid rgba(255,255,255,0.09); border-radius: 12px; overflow: hidden;
+  background: #171b22; margin-bottom: 18px;
+}
+.frame .label {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 9px 14px;
+  font: 600 11px/1.3 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color: #9aa5b4; border-bottom: 1px solid rgba(255,255,255,0.07);
+}
+.frame .label .meta { color: #5b6572; font-weight: 400; text-align: right; }
+.screen {
+  position: relative; min-height: 150px; padding: 0 0 24px;
+  background:
+    radial-gradient(120% 90% at 20% 10%, #3d4f6b 0%, transparent 55%),
+    radial-gradient(110% 100% at 85% 90%, #55365e 0%, transparent 60%),
+    linear-gradient(160deg, #2a3245 0%, #1b2130 60%, #232c3d 100%);
+}
+.screen.tall { min-height: 220px; }
+.window { width: 500px; margin: 0 auto; }
+.controls { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 14px; border-top: 1px solid rgba(255,255,255,0.07); }
+button.ctl {
+  appearance: none; cursor: pointer;
+  background: #232a35; color: #dfe5ec;
+  border: 1px solid rgba(255,255,255,0.12); border-radius: 6px;
+  font: 600 11px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  padding: 7px 12px;
+}
+button.ctl:hover { background: #2c3542; }
+button.ctl.active { background: #3b4757; border-color: #5b7089; }
+.seg { display: flex; border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; overflow: hidden; }
+.seg button.ctl { border: none; border-radius: 0; }
+.seg button.ctl + button.ctl { border-left: 1px solid rgba(255,255,255,0.12); }
+.preset-bar { display: flex; flex-wrap: wrap; gap: 18px; align-items: center; margin: 0 0 14px; }
+.preset-bar .group { display: flex; align-items: center; gap: 8px; }
+.preset-bar .group > span {
+  font: 700 9px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.12em; text-transform: uppercase; color: #7c8796;
+}
+.laws { counter-reset: law; margin: 0; padding: 0; list-style: none; }
+.laws li {
+  counter-increment: law; position: relative; padding: 13px 14px 13px 46px;
+  border: 1px solid rgba(255,255,255,0.08); border-radius: 10px;
+  background: #171b22; margin-bottom: 10px; font-size: 12px; color: #b9c2cc; line-height: 1.55;
+}
+.laws li::before {
+  content: counter(law); position: absolute; left: 14px; top: 13px;
+  width: 20px; height: 20px; border-radius: 6px; display: grid; place-items: center;
+  background: #232a35; color: #8fa3bd; font: 700 10px/1 ui-monospace, Menlo, monospace;
+}
+.laws li b { color: #e8ecf1; }
+.motion-wrapper { transition: opacity 220ms cubic-bezier(0.22,1,0.36,1), transform 220ms cubic-bezier(0.22,1,0.36,1); }
+.manifest.m-animating { transition: height 240ms cubic-bezier(0.22,1,0.36,1), opacity 240ms cubic-bezier(0.22,1,0.36,1); }
+
+/* ============================================================
+   SHIPPED OVERLAY CSS — synced from src/styles.css @ 89850b6
+   (2026-07-19). When the design changes: edit src/styles.css,
+   mirror src/settings/preview-overlay.css, then replace this block.
+   Only the :root defaults differ (runtime config defaults shown).
+   ============================================================ */
+:root {
+  --card-scale: 1;
+  --card-radius: 16px; /* shipped runtime default (plan 032) */
+  --card-opacity: 0.9; /* shipped runtime default */
+}
+
+.rail-card {
+  box-sizing: border-box;
+  position: relative;
+  width: calc(400px * var(--card-scale));
+  margin: 0 auto;
+  overflow: hidden;
+  border-radius: 0 0 var(--card-radius) var(--card-radius);
+  background: rgba(5, 6, 7, var(--card-opacity));
+  color: #f5f7fa;
+  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+  transition:
+    width 320ms cubic-bezier(0.22, 1, 0.36, 1),
+    border-radius 320ms ease,
+    background 180ms ease;
+}
+
+.rail-card.expanded { width: calc(500px * var(--card-scale)); }
+.rail-card.idle { width: calc(270px * var(--card-scale)); }
+.rail-card.idle.status { width: calc(460px * var(--card-scale)); }
+
+.rail-card.low    { --accent: #aab3bd; --accent-soft: rgba(170, 179, 189, 0.2); }
+.rail-card.medium { --accent: #55d6bd; --accent-soft: rgba(85, 214, 189, 0.24); }
+.rail-card.high   { --accent: #ff6b57; --accent-soft: rgba(255, 107, 87, 0.28); }
+
+.rail-card { isolation: isolate; }
+
+.rail-card::after {
+  content: "";
+  position: absolute;
+  inset: -60px;
+  z-index: 0;
+  border-radius: 50%;
+  background:
+    radial-gradient(circle at 50% 50%, rgba(255, 224, 130, 0.95), transparent 40%),
+    radial-gradient(circle at 22% 32%, rgba(255, 107, 87, 0.9), transparent 12%),
+    radial-gradient(circle at 78% 30%, rgba(120, 224, 200, 0.85), transparent 12%),
+    radial-gradient(circle at 30% 74%, rgba(124, 157, 245, 0.85), transparent 12%),
+    radial-gradient(circle at 72% 72%, rgba(255, 196, 106, 0.9), transparent 12%),
+    radial-gradient(circle at 50% 16%, rgba(255, 255, 255, 0.9), transparent 10%),
+    radial-gradient(circle at 50% 50%, rgba(255, 107, 87, 0.55), transparent 68%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.rail-card.pulse-goal { animation: goal-overshoot 620ms cubic-bezier(0.22, 1, 0.36, 1); }
+.rail-card.pulse-goal::after { animation: goal-burst 620ms ease-out; }
+
+.rail-card.pulse-goal::before {
+  content: "";
+  position: absolute;
+  top: 50%; left: 50%;
+  width: 40px; height: 40px;
+  margin: -20px 0 0 -20px;
+  z-index: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 224, 130, 0.9);
+  opacity: 0;
+  pointer-events: none;
+  animation: goal-ring 620ms ease-out;
+}
+
+@keyframes goal-overshoot {
+  0% { transform: scale(1); }
+  30% { transform: scale(1.06); }
+  55% { transform: scale(0.995); }
+  100% { transform: scale(1); }
+}
+@keyframes goal-burst {
+  0% { opacity: 0; transform: scale(0.5) rotate(-8deg); }
+  35% { opacity: 1; transform: scale(1.15) rotate(0deg); }
+  70% { opacity: 0.85; transform: scale(1.4) rotate(4deg); }
+  100% { opacity: 0; transform: scale(1.7) rotate(6deg); }
+}
+@keyframes goal-ring {
+  0% { opacity: 0; transform: scale(0.3); }
+  25% { opacity: 0.9; }
+  100% { opacity: 0; transform: scale(6); }
+}
+
+.cele-ripple { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.cele-ripple span {
+  position: absolute; left: 50%; top: 50%;
+  width: 22px; height: 22px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.4);
+  animation: ripple-out 720ms ease-out forwards;
+}
+.cele-ripple span:nth-child(2) { animation-delay: 140ms; }
+.cele-ripple span:nth-child(3) { animation-delay: 280ms; }
+@keyframes ripple-out {
+  0% { opacity: 0.85; transform: translate(-50%, -50%) scale(0.4); }
+  100% { opacity: 0; transform: translate(-50%, -50%) scale(9); }
+}
+
+.rail-card.pulse-red { animation: red-alert 460ms steps(1, end) 2; }
+@keyframes red-alert {
+  0%, 100% { box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32); }
+  50% {
+    box-shadow:
+      0 14px 32px rgba(0, 0, 0, 0.32),
+      0 0 0 2px #ff6b57,
+      0 0 26px 4px rgba(255, 107, 87, 0.65);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .rail-card.pulse-goal,
+  .rail-card.pulse-goal::before,
+  .rail-card.pulse-goal::after,
+  .rail-card.pulse-red,
+  .cele-ripple span { animation: none; }
+}
+
+.compact {
+  position: relative;
+  box-sizing: border-box;
+  min-height: 74px;
+  padding: 12px 18px 14px 20px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+}
+.expanded .compact { min-height: 82px; }
+
+.compact::before {
+  content: "";
+  position: absolute;
+  left: 0; top: 12px; bottom: 12px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent-soft);
+}
+
+.copy { min-width: 0; }
+
+.title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 680;
+  line-height: 1.2;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.body {
+  display: -webkit-box;
+  margin-top: 4px;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 12px;
+  line-height: 1.35;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.body code,
+.detail-value code {
+  padding: 1px 5px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--accent);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+
+.stamp {
+  align-self: center;
+  padding: 4px 6px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.compact-hint {
+  position: absolute;
+  right: 18px; bottom: 8px;
+  color: rgba(255, 255, 255, 0.4);
+  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.track {
+  position: absolute;
+  right: 0; bottom: 0; left: 0;
+  height: 4px;
+  display: grid;
+  grid-template-columns: repeat(var(--queue-n, 3), 1fr);
+  gap: 3px;
+  padding: 0 3px;
+}
+.track span { background: rgba(255, 255, 255, 0.09); transition: background 260ms ease; }
+.track span.done { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+.track span.cur { background: var(--accent); box-shadow: 0 -3px 14px var(--accent-soft); }
+
+.manifest {
+  overflow: hidden;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent);
+}
+.manifest-inner {
+  box-sizing: border-box;
+  padding: 14px 18px 18px;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+}
+.detail-label {
+  margin-bottom: 5px;
+  color: var(--accent);
+  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+.detail-value {
+  color: rgba(255, 255, 255, 0.74);
+  font-size: 11px;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+.detail-value.message {
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.idle-view {
+  box-sizing: border-box;
+  min-height: 38px;
+  padding: 0 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 11px;
+}
+.idle-view .time {
+  font: 720 12px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.idle-view .timeline { position: relative; flex: 1; height: 1px; background: rgba(255, 255, 255, 0.14); }
+.idle-view .timeline::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: var(--day-progress, 50%);
+  width: 5px; height: 5px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: #b6f5e5;
+  box-shadow: 0 0 10px rgba(182, 245, 229, 0.75);
+}
+
+.src-rail { display: flex; align-items: center; gap: 6px; min-width: 0; }
+.src-chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 7px;
+  border-radius: 999px;
+  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.1em; text-transform: uppercase;
+  white-space: nowrap;
+  color: rgba(255, 255, 255, 0.62);
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+.src-chip.dim { color: rgba(255, 255, 255, 0.34); }
+.src-chip.live {
+  color: #7fe08d;
+  background: rgba(127, 224, 141, 0.1);
+  border-color: rgba(127, 224, 141, 0.28);
+}
+.src-chip .live-dot {
+  width: 4px; height: 4px; border-radius: 50%;
+  background: #7fe08d;
+  box-shadow: 0 0 6px rgba(127, 224, 141, 0.9);
+  animation: live-dot-pulse 1.6s ease-in-out infinite;
+}
+@keyframes live-dot-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+
+.cat-politics { --cat: #7c9df5; --cat-deep: rgba(124,157,245,0.16); --cat-pill: rgba(124,157,245,0.14); }
+.cat-tech     { --cat: #5fd4e8; --cat-deep: rgba(95,212,232,0.15);  --cat-pill: rgba(95,212,232,0.13); }
+.cat-sports   { --cat: #7fe08d; --cat-deep: rgba(127,224,141,0.15); --cat-pill: rgba(127,224,141,0.13); }
+.cat-business { --cat: #f0c46a; --cat-deep: rgba(240,196,106,0.15); --cat-pill: rgba(240,196,106,0.13); }
+.cat-world    { --cat: #c99df0; --cat-deep: rgba(201,157,240,0.15); --cat-pill: rgba(201,157,240,0.13); }
+.cat-generic  { --cat: #aab3bd; --cat-deep: rgba(170,179,189,0.10); --cat-pill: rgba(170,179,189,0.10); }
+
+.news-shade::before {
+  content: ""; position: absolute; inset: -30% -30% -30% -30%; z-index: 0;
+  background:
+    radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%),
+    linear-gradient(135deg, var(--cat-deep) 0%, transparent 46%);
+  animation: shade-drift 12s ease-in-out infinite alternate;
+  pointer-events: none;
+  will-change: transform;
+}
+@keyframes shade-drift {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(-8%, -6%, 0); }
+}
+.news-shade .compact,
+.news-shade .manifest { position: relative; z-index: 1; }
+
+.masthead {
+  display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
+  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.38);
+}
+.masthead::after { content: ""; flex: 1; height: 1px; background: rgba(255,255,255,0.12); }
+.masthead .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--cat); box-shadow: 0 0 6px var(--cat); }
+
+.title.headline {
+  white-space: normal;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  font-size: 13px; line-height: 1.3;
+}
+.pills { display: flex; gap: 5px; margin-top: 6px; }
+.pill {
+  padding: 3px 7px; border-radius: 999px;
+  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.1em; text-transform: uppercase;
+}
+.pill.category { color: var(--cat); background: var(--cat-pill); border: 1px solid color-mix(in srgb, var(--cat) 35%, transparent); }
+.pill.age { color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); }
+
+.manifest-inner.news { grid-template-columns: 1.5fr 1fr 1fr; }
+.manifest-inner.news .detail-label { color: var(--cat); }
+
+@media (prefers-reduced-motion: reduce) {
+  .news-shade::before { animation: none; }
+  .src-chip .live-dot { animation: none; }
+}
+</style>
+</head>
+<body>
+<div class="page">
+
+<h1>notchtap · DESIGN</h1>
+<p class="note">
+  The single reference for the Status Rail design system: tokens, type, components, motion, and the
+  laws that hold it together — everything rendered live, nothing described second-hand.
+  Canonical sources in code: <code>src/styles.css</code> (styles), <code>src/lib/presentation.ts</code>
+  (label tables), <code>src/lib/markdown.tsx</code> (inline markdown), <code>src/components/</code> (structure).
+  The app-mirror for judging <i>changes</i> stays at <code>prototype/status-rail.html</code>; this page is the system itself.
+</p>
+<span class="sync-stamp">synced from <b>src/styles.css @ 89850b6</b> · 2026-07-19 · re-sync the marked CSS block when the design changes</span>
+
+<h2><span class="num">01</span>Color</h2>
+<p class="note">Two palettes that never mix: <b>priority accents</b> (edge, stamp, slider — one per tier) and
+<b>news category hues</b> (masthead dot, pill, shader, manifest labels). Surface is always near-black at
+<code>--card-opacity</code>; the card hangs flush from the screen top, so only the bottom corners round.</p>
+
+<h2 style="margin-top:26px">priority accents</h2>
+<div class="swatches">
+  <div class="swatch"><div class="chip" style="background:#aab3bd"></div><div class="meta"><span class="name">low</span> · #aab3bd<br/><span class="use">edge / stamp / slider · soft rgba(170,179,189,0.2)</span></div></div>
+  <div class="swatch"><div class="chip" style="background:#55d6bd"></div><div class="meta"><span class="name">medium</span> · #55d6bd<br/><span class="use">edge / stamp / slider · soft rgba(85,214,189,0.24)</span></div></div>
+  <div class="swatch"><div class="chip" style="background:#ff6b57"></div><div class="meta"><span class="name">high</span> · #ff6b57<br/><span class="use">edge / stamp / slider · soft rgba(255,107,87,0.28)</span></div></div>
+</div>
+
+<h2 style="margin-top:26px">news categories</h2>
+<div class="swatches">
+  <div class="swatch"><div class="chip" style="background:#7c9df5"></div><div class="meta"><span class="name">politics</span> · #7c9df5<br/><span class="use">deep 0.16 · pill 0.14 alpha</span></div></div>
+  <div class="swatch"><div class="chip" style="background:#5fd4e8"></div><div class="meta"><span class="name">tech</span> · #5fd4e8<br/><span class="use">deep 0.15 · pill 0.13</span></div></div>
+  <div class="swatch"><div class="chip" style="background:#7fe08d"></div><div class="meta"><span class="name">sports</span> · #7fe08d<br/><span class="use">also the idle "live" dot</span></div></div>
+  <div class="swatch"><div class="chip" style="background:#f0c46a"></div><div class="meta"><span class="name">business</span> · #f0c46a</div></div>
+  <div class="swatch"><div class="chip" style="background:#c99df0"></div><div class="meta"><span class="name">world</span> · #c99df0</div></div>
+  <div class="swatch"><div class="chip" style="background:#aab3bd"></div><div class="meta"><span class="name">generic</span> · #aab3bd<br/><span class="use">shared with low's accent</span></div></div>
+</div>
+
+<h2 style="margin-top:26px">surface &amp; text</h2>
+<div class="swatches">
+  <div class="swatch"><div class="chip" style="background:rgba(5,6,7,0.9)"></div><div class="meta"><span class="name">card</span> · rgba(5,6,7,--card-opacity)<br/><span class="use">shadow 0 14px 32px rgba(0,0,0,0.32)</span></div></div>
+  <div class="swatch"><div class="chip" style="background:#f5f7fa"></div><div class="meta"><span class="name">text</span> · #f5f7fa</div></div>
+  <div class="swatch"><div class="chip" style="background:rgba(255,255,255,0.55)"></div><div class="meta"><span class="name">secondary</span> · 0.55–0.74 alpha<br/><span class="use">body 0.74 · detail 0.74 · masthead 0.38</span></div></div>
+  <div class="swatch"><div class="chip" style="background:rgba(255,255,255,0.1)"></div><div class="meta"><span class="name">hairlines</span> · 0.09–0.14 alpha<br/><span class="use">borders, dividers, unlit track</span></div></div>
+</div>
+
+<h2 style="margin-top:26px">appearance presets (hot-applied, settings)</h2>
+<div class="preset-bar" id="appearance-bar">
+  <div class="group"><span>Scale</span>
+    <div class="seg" data-var="--card-scale">
+      <button class="ctl" data-val="0.85">Small 0.85</button>
+      <button class="ctl active" data-val="1">Medium 1.0</button>
+      <button class="ctl" data-val="1.15">Large 1.15</button>
+    </div>
+  </div>
+  <div class="group"><span>Radius</span>
+    <div class="seg" data-var="--card-radius">
+      <button class="ctl" data-val="0px">Square 0</button>
+      <button class="ctl" data-val="8px">Soft 8</button>
+      <button class="ctl active" data-val="16px">Round 16 (default)</button>
+    </div>
+  </div>
+  <div class="group"><span>Opacity</span>
+    <div class="seg" data-var="--card-opacity">
+      <button class="ctl" data-val="0.7">Glass 0.7</button>
+      <button class="ctl active" data-val="0.9">Default 0.9</button>
+      <button class="ctl" data-val="1">Solid 1.0</button>
+    </div>
+  </div>
+</div>
+<div class="frame">
+  <div class="label">preset playground <span class="meta">applies to every card on this page</span></div>
+  <div class="screen"><div class="window" id="preset-mount"></div></div>
+</div>
+
+<h2><span class="num">02</span>Type</h2>
+<p class="note">Two voices: <b>SF Pro</b> for prose (title/body/headline) and <b>ui-monospace</b> for
+metadata (stamps, labels, clocks, chips). Metadata is always 8px/700/uppercase with wide tracking.</p>
+
+<div class="type-row"><div class="title" style="-webkit-line-clamp:unset">Card title — agent needs input</div><div class="spec-text">.title · 14px / 680 / 1.2 · 2-line clamp</div></div>
+<div class="type-row"><div class="body" style="-webkit-line-clamp:unset">Body copy — workspace command is waiting</div><div class="spec-text">.body · 12px / 1.35 · rgba(255,255,255,0.74)</div></div>
+<div class="type-row"><div class="title headline" style="-webkit-line-clamp:unset">News headline — parliament passes the bill</div><div class="spec-text">.title.headline · 13px / 1.3 · clamp 2</div></div>
+<div class="type-row"><span class="stamp" style="--accent:#ff6b57">NOW</span><div class="spec-text">.stamp · mono 8px / 700 / ls .12em · border = accent</div></div>
+<div class="type-row"><div class="detail-label" style="--accent:#55d6bd;margin:0">Detail label</div><div class="spec-text">.detail-label · mono 8px / ls .14em · accent</div></div>
+<div class="type-row"><div class="detail-value">Detail value — source, control hints, metadata</div><div class="spec-text">.detail-value · 11px / 1.45 · 0.74 alpha · wrap anywhere</div></div>
+<div class="type-row"><div class="detail-value message">Message cell — the manifest's prose field, slightly louder</div><div class="spec-text">.detail-value.message · 12px / 1.5 · 0.84 alpha</div></div>
+<div class="type-row"><span style="font:720 12px/1 ui-monospace,Menlo,monospace;letter-spacing:0.04em">Sun, Jul 19, 02:14 PM</span><div class="spec-text">idle clock · mono 12px / 720 / ls .04em</div></div>
+<div class="type-row"><span class="pill category" style="--cat:#7c9df5;--cat-pill:rgba(124,157,245,0.14)">Politics</span><div class="spec-text">.pill · mono 8px / ls .1em · radius 999</div></div>
+<div class="type-row"><div class="body">Inline markdown: <code>git push origin master</code> and <strong>bold</strong> and <em>italic</em></div><div class="spec-text">.body code · mono on 0.08 bg · accent color</div></div>
+
+<h2><span class="num">03</span>Components</h2>
+<p class="note">One card component, four states: <b>compact</b> (400px), <b>expanded</b> (500px + manifest),
+<b>idle</b> (270px clock / 460px status rail). Anatomy of the compact row below; every part has exactly one job.</p>
+
+<table class="spec">
+  <tr><th style="width:130px">part</th><th>job</th><th style="width:260px">notes</th></tr>
+  <tr><td class="mono">.compact::before</td><td>3px accent edge — the priority mark</td><td class="mono">replaces the deleted L1/M2/H3 chip (plan 032)</td></tr>
+  <tr><td class="mono">.copy .title</td><td>what happened, 2-line clamp</td><td class="mono">14px/680</td></tr>
+  <tr><td class="mono">.copy .body</td><td>detail, inline markdown, clamp 2</td><td class="mono">`code` **bold** *italic* \n only</td></tr>
+  <tr><td class="mono">.stamp</td><td>status word, signal- or priority-driven</td><td class="mono">see stamp table below</td></tr>
+  <tr><td class="mono">.compact-hint</td><td>⌃⇧N affordance when collapsed</td><td class="mono">removed while expanded</td></tr>
+  <tr><td class="mono">.track</td><td>queue slider — batch progress</td><td class="mono">dim=done · bright=current · cap 10</td></tr>
+  <tr><td class="mono">.manifest</td><td>expanded detail grid (2-col, news 3-col)</td><td class="mono">height 240ms + width 320ms together</td></tr>
+  <tr><td class="mono">.src-chip</td><td>idle status: live match / news gate / depth</td><td class="mono">rail widens idle to 460px when active</td></tr>
+</table>
+
+<h2 style="margin-top:26px">the stamp table (lib/presentation.ts)</h2>
+<table class="spec">
+  <tr><th>signal / source</th><th>stamp</th><th>signal / source</th><th>stamp</th></tr>
+  <tr><td class="mono">goal · kickoff</td><td>Live</td><td class="mono">halftime</td><td>Break</td></tr>
+  <tr><td class="mono">yellow_card</td><td>Card</td><td class="mono">fulltime</td><td>Final</td></tr>
+  <tr><td class="mono">red_card</td><td>Off</td><td class="mono">news_item</td><td>Wire</td></tr>
+  <tr><td class="mono">generic · low</td><td>Live</td><td class="mono">generic · medium</td><td>Done</td></tr>
+  <tr><td class="mono">generic · high</td><td>Now</td><td class="mono">unknown → rejected at deserialization</td><td>—</td></tr>
+</table>
+
+<h2 style="margin-top:26px">compact · the three tiers</h2>
+<div class="grid" id="tiers" style="display:grid;grid-template-columns:1fr;gap:0"></div>
+
+<h2 style="margin-top:26px">expanded · generic, cmux-hook, news</h2>
+<div id="expanded"></div>
+
+<h2 style="margin-top:26px">idle · clock and status rail</h2>
+<div id="idle"></div>
+
+<h2><span class="num">04</span>Motion</h2>
+<p class="note">One signature easing — <code>cubic-bezier(0.22, 1, 0.36, 1)</code> — on everything that moves.
+Celebrations are one-shot, signal-keyed, and suppressed entirely under <code>prefers-reduced-motion</code>
+(the fallback is deliberately nothing; content still announces via <code>aria-live</code>).
+Any <b>looping</b> animation must be compositor-only (transform/opacity) — plan 018's rule after the
+60fps background-position repaint was killed.</p>
+
+<table class="spec">
+  <tr><th>name</th><th>duration</th><th>easing</th><th>where</th><th></th></tr>
+  <tr><td class="mono">content swap</td><td class="mono">220ms</td><td class="mono">signature</td><td>item enter/exit, fade + 4px rise</td><td></td></tr>
+  <tr><td class="mono">width morph</td><td class="mono">320ms</td><td class="mono">signature</td><td>idle 270 / compact 400 / expanded 500 / status 460</td><td></td></tr>
+  <tr><td class="mono">manifest</td><td class="mono">240ms</td><td class="mono">signature</td><td>height + opacity on expand</td><td><button class="ctl" id="replay-expand">Replay</button></td></tr>
+  <tr><td class="mono">track transition</td><td class="mono">260ms</td><td class="mono">ease</td><td>slider segment fill as the queue advances</td><td><button class="ctl" id="replay-track">Replay</button></td></tr>
+  <tr><td class="mono">goal celebration</td><td class="mono">620ms</td><td class="mono">signature + ease-out</td><td>overshoot + confetti burst + ring + 3× ripple (720ms)</td><td><button class="ctl" id="replay-goal">Replay</button></td></tr>
+  <tr><td class="mono">red-card strobe</td><td class="mono">460ms ×2</td><td class="mono">steps(1,end)</td><td>hard two-pulse alert glow</td><td><button class="ctl" id="replay-red">Replay</button></td></tr>
+  <tr><td class="mono">news pills</td><td class="mono">220ms +70ms</td><td class="mono">signature</td><td>category pill, then age pill staggered</td><td><button class="ctl" id="replay-pills">Replay</button></td></tr>
+  <tr><td class="mono">shade-drift</td><td class="mono">12s alternate</td><td class="mono">ease-in-out</td><td>news shader, translate3d — always running</td><td></td></tr>
+  <tr><td class="mono">live-dot pulse</td><td class="mono">1.6s</td><td class="mono">ease-in-out</td><td>idle live-match dot — always running</td><td></td></tr>
+  <tr><td class="mono">lifecycle</td><td class="mono">expand → retract ½ → rotate</td><td class="mono">—</td><td>every promotion, regardless of priority</td><td><button class="ctl" id="replay-life">Run</button></td></tr>
+</table>
+
+<div class="frame" style="margin-top:16px">
+  <div class="label">motion playground <span class="meta">the replay buttons above target these cards</span></div>
+  <div class="screen tall"><div class="window" id="motion-mount"></div></div>
+</div>
+
+<h2><span class="num">05</span>Laws</h2>
+<p class="note">The rules that keep the system coherent. Breaking one is a decision, not an accident — bring it up first.</p>
+<ol class="laws">
+  <li><b>The overlay is receive-only, forever.</b> It listens for <code>slot-state</code>, <code>status-state</code>, and <code>appearance-changed</code>; it never invokes commands. The settings window is the only invoke surface.</li>
+  <li><b>Priority is color, never a chip.</b> Three cues, same accent: the 3px edge, the stamp border/text, the slider's lit segments. No text codes.</li>
+  <li><b>One easing, one register.</b> <code>cubic-bezier(0.22,1,0.36,1)</code> everywhere; celebrations are one-shot and signal-keyed — never priority-keyed, never looping.</li>
+  <li><b>Markdown is inline and escaped.</b> <code>code</code>/<strong>bold</strong>/<em>italic</em>/line-breaks, React-node tokenizer, no <code>dangerouslySetInnerHTML</code>. Hook-supplied <code>details</code> are plain text, never markdown.</li>
+  <li><b>Looping animations are compositor-only.</b> transform and opacity only (plan 018). No background-*, box-shadow, filter, or layout animation on an infinite loop.</li>
+  <li><b>Reduced motion ⇒ silence, not substitutes.</b> Celebrations suppress entirely; the card, accent, stamp, and copy still render and announce.</li>
+  <li><b>The settings preview mirrors the overlay CSS.</b> <code>src/settings/preview-overlay.css</code> is a scoped copy of <code>src/styles.css</code> — change one, change both, in the same commit.</li>
+  <li><b>Stamps are a lookup table, never parsing.</b> Signal/priority/eventType drive the stamp via <code>lib/presentation.ts</code>; we never regex titles or bodies to decide what to show.</li>
+</ol>
+
+<p class="note" style="margin-top:40px;color:#5b6572">
+  notchtap DESIGN · edit path: <code>src/styles.css</code> → <code>src/settings/preview-overlay.css</code> → this file's marked block →
+  <code>prototype/status-rail.html</code> if the change is reviewable.
+</p>
+
+</div>
+
+<script>
+/* ---------- shared renderers (same structure as src/components/*) ---------- */
+function stamp(cfg) {
+  const bySignal = { goal: "Live", kickoff: "Live", halftime: "Break", yellow_card: "Card", fulltime: "Final", red_card: "Off" };
+  if (cfg.signal && bySignal[cfg.signal]) return bySignal[cfg.signal];
+  if (cfg.news) return "Wire";
+  return { low: "Live", medium: "Done", high: "Now" }[cfg.priority];
+}
+function sourceText(cfg) {
+  if (cfg.news) return cfg.news.source;
+  if (cfg.eventType === "score_update" || cfg.eventType === "match_state") return "ESPN · football";
+  return "cmux / CLI · local";
+}
+function esc(s) { return s.replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
+function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+function mdInline(s) {
+  if (!s) return "";
+  return esc(s).split(/\r\n|\r|\n/).map(line =>
+    line.replace(/`([^`]+)`/g, (m, c) => `<code>${c}</code>`)
+        .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+        .replace(/\*([^*]+)\*/g, "<em>$1</em>")
+  ).join("<br/>");
+}
+const MAX_SEGMENTS = 10;
+function trackHtml(total, done) {
+  const n = Math.min(Math.max(total, 1), MAX_SEGMENTS);
+  const current = total > MAX_SEGMENTS ? Math.floor((done * MAX_SEGMENTS) / total) : done;
+  return Array.from({ length: n }, (_, i) =>
+    `<span class="${i < current ? "done" : i === current ? "cur" : ""}"></span>`).join("");
+}
+
+function renderCard(cfg) {
+  const el = document.createElement("div");
+  const cls = ["rail-card", cfg.priority];
+  if (cfg.expanded) cls.push("expanded");
+  if (cfg.news) cls.push("news-shade", "cat-" + cfg.news.category);
+  el.className = cls.join(" ");
+  el.setAttribute("role", "status");
+  const q = cfg.queue || { total: 1, done: 0 };
+  el.style.setProperty("--queue-n", Math.min(Math.max(q.total, 1), MAX_SEGMENTS));
+
+  let copy;
+  if (cfg.news) {
+    copy = `
+      <div class="masthead"><span class="dot"></span>${esc(cfg.news.source)}</div>
+      <div class="title headline">${esc(cfg.title)}</div>
+      <div class="pills">
+        <span class="pill category">${esc(cap(cfg.news.category))}</span>
+        <span class="pill age">${esc(cfg.news.age)}</span>
+      </div>`;
+  } else {
+    copy = `
+      <div class="title">${esc(cfg.title)}</div>
+      ${cfg.body ? `<div class="body">${mdInline(cfg.body)}</div>` : ""}`;
+  }
+
+  let manifest = "";
+  if (cfg.expanded) {
+    if (cfg.news) {
+      manifest = `
+        <div class="manifest"><div class="manifest-inner news">
+          <div><div class="detail-label">Summary</div><div class="detail-value">${esc(cfg.body || cfg.title)}</div></div>
+          <div><div class="detail-label">Source / Published</div><div class="detail-value">${esc(cfg.news.source)}<br/>${esc(cfg.news.published || "09:41")}</div></div>
+          <div><div class="detail-label">Category / Control</div><div class="detail-value">${esc(cap(cfg.news.category))}<br/>⌃⇧O read · ⌃⇧N collapse</div></div>
+        </div></div>`;
+    } else {
+      const ctl = cfg.link ? "⌃⇧O read · ⌃⇧N collapse" : "⌃⇧N collapse";
+      const subtitleCell = cfg.subtitle
+        ? `<div><div class="detail-label">Subtitle</div><div class="detail-value">${esc(cfg.subtitle)}</div></div>` : "";
+      const detailCells = (cfg.details || []).map((d) =>
+        `<div><div class="detail-label">${esc(d.label)}</div><div class="detail-value">${esc(d.value)}</div></div>`).join("");
+      manifest = `
+        <div class="manifest"><div class="manifest-inner">
+          <div><div class="detail-label">Message</div><div class="detail-value message">${mdInline(cfg.body || cfg.title)}</div></div>
+          <div><div class="detail-label">Source / Control</div><div class="detail-value">${esc(sourceText(cfg))}<br/>${ctl}</div></div>
+          ${subtitleCell}${detailCells}
+        </div></div>`;
+    }
+  }
+
+  el.innerHTML = `
+    <div class="motion-wrapper">
+      <div class="compact">
+        <div class="copy">${copy}</div>
+        <div class="stamp">${stamp(cfg)}</div>
+        ${cfg.expanded ? "" : '<div class="compact-hint">⌃⇧N more</div>'}
+        <div class="track" aria-hidden="true">${trackHtml(q.total, q.done)}</div>
+      </div>
+      ${manifest}
+    </div>`;
+  return el;
+}
+
+function renderIdle(status) {
+  const el = document.createElement("div");
+  const active = status &&
+    (status.football.enabled || status.news.enabled || status.football.live !== null || status.waiting > 0 || status.paused);
+  el.className = "rail-card idle" + (active ? " status" : "");
+  const fmt = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+  const now = new Date();
+  const dayPct = ((now.getHours()*3600 + now.getMinutes()*60 + now.getSeconds()) / 86400 * 100).toFixed(1);
+  let rail = "";
+  if (active) {
+    const chips = [];
+    if (status.football.live) chips.push(`<span class="src-chip live"><span class="live-dot"></span>${esc(status.football.live.label)} · ${esc(status.football.live.minute)}</span>`);
+    chips.push(`<span class="src-chip${status.news.enabled ? "" : " dim"}">${status.news.enabled ? "News" : "News paused"}</span>`);
+    chips.push(`<span class="src-chip">${status.waiting > 0 ? status.waiting + " queued" : "clear"}</span>`);
+    rail = `<span class="src-rail">${chips.join("")}</span>`;
+  }
+  el.innerHTML = `
+    <div class="motion-wrapper">
+      <div class="idle-view">
+        <span class="time">${fmt.format(now)}</span>
+        ${rail}
+        <span class="timeline" style="--day-progress: ${dayPct}%" aria-hidden="true"></span>
+      </div>
+    </div>`;
+  return el;
+}
+
+function frame(parent, node, labelHtml, metaHtml, tall) {
+  const f = document.createElement("div");
+  f.className = "frame";
+  f.innerHTML = `<div class="label">${labelHtml} <span class="meta">${metaHtml}</span></div>
+    <div class="screen${tall ? " tall" : ""}"><div class="window"></div></div>`;
+  f.querySelector(".window").appendChild(node);
+  parent.appendChild(f);
+  return node;
+}
+
+function pulse(card, cls, keyframeName, withRipple) {
+  card.classList.remove(cls);
+  card.querySelectorAll(".cele-ripple").forEach(n => n.remove());
+  void card.offsetWidth;
+  card.classList.add(cls);
+  if (withRipple) {
+    const r = document.createElement("div");
+    r.className = "cele-ripple";
+    r.setAttribute("aria-hidden", "true");
+    r.innerHTML = "<span></span><span></span><span></span>";
+    card.appendChild(r);
+  }
+  card.addEventListener("animationend", function h(e) {
+    if (e.animationName === keyframeName) {
+      card.classList.remove(cls);
+      card.querySelectorAll(".cele-ripple").forEach(n => n.remove());
+      card.removeEventListener("animationend", h);
+    }
+  });
+}
+
+function swapExpansion(card, cfg, expanding) {
+  const next = renderCard(cfg);
+  if (expanding) {
+    card.className = next.className;
+    card.replaceChildren(...next.children);
+    const manifest = card.querySelector(".manifest");
+    if (manifest) {
+      manifest.classList.add("m-animating");
+      manifest.style.height = "0px"; manifest.style.opacity = "0";
+      requestAnimationFrame(() => {
+        manifest.style.height = manifest.scrollHeight + "px";
+        manifest.style.opacity = "1";
+        manifest.addEventListener("transitionend", () => {
+          manifest.style.height = ""; manifest.style.opacity = "";
+          manifest.classList.remove("m-animating");
+        }, { once: true });
+      });
+    }
+  } else {
+    const manifest = card.querySelector(".manifest");
+    card.className = next.className;
+    if (manifest) {
+      manifest.classList.add("m-animating");
+      manifest.style.height = manifest.scrollHeight + "px";
+      void manifest.offsetHeight;
+      manifest.style.height = "0px"; manifest.style.opacity = "0";
+      manifest.addEventListener("transitionend", () => {
+        card.replaceChildren(...next.children);
+      }, { once: true });
+    } else {
+      card.replaceChildren(...next.children);
+    }
+  }
+}
+
+/* ---------- 01 · preset playground ---------- */
+document.getElementById("preset-mount").appendChild(
+  renderCard({ priority: "medium", eventType: "generic", title: "Appearance presets", body: "Scale, radius, and opacity apply to every card on this page — `Round 16` is the shipped default.", queue: { total: 1, done: 0 } })
+);
+document.querySelectorAll("#appearance-bar .seg").forEach(seg => {
+  const cssVar = seg.dataset.var;
+  seg.querySelectorAll("button").forEach(btn => {
+    btn.onclick = () => {
+      seg.querySelectorAll("button").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      document.documentElement.style.setProperty(cssVar, btn.dataset.val);
+    };
+  });
+});
+
+/* ---------- 03 · components ---------- */
+const tiers = document.getElementById("tiers");
+frame(tiers, renderCard({ priority: "low", eventType: "generic", title: "Build finished", body: "`cargo build` completed in **42s**", queue: { total: 5, done: 0 } }), "low · #aab3bd", "stamp Live");
+frame(tiers, renderCard({ priority: "medium", eventType: "generic", title: "Task complete", body: "`vitest run` — *128 passed*", queue: { total: 5, done: 2 } }), "medium · #55d6bd", "stamp Done");
+frame(tiers, renderCard({ priority: "high", eventType: "generic", title: "Agent needs input", body: "Workspace command is waiting", queue: { total: 5, done: 4 } }), "high · #ff6b57", "stamp Now");
+
+const expanded = document.getElementById("expanded");
+frame(expanded, renderCard({ priority: "high", eventType: "generic", title: "Agent needs input", body: "Run `git push origin master`?\nTool: **Bash** — *reply in cmux*", expanded: true, queue: { total: 3, done: 0 } }),
+  "generic · markdown body + message cell", "layout 1fr 1fr", true);
+frame(expanded, renderCard({
+  priority: "high", eventType: "generic", title: "Claude Code", body: "Permission requested: Bash",
+  subtitle: "Permission request",
+  details: [
+    { label: "Tool", value: "Bash" },
+    { label: "Command", value: "git push origin master" },
+    { label: "Project", value: "~/Desktop/code/mac-notification-nudge" },
+  ], expanded: true, queue: { total: 3, done: 1 },
+}), "hook relay · subtitle + detail cells", "Layout A — plain text, never markdown", true);
+frame(expanded, renderCard({ priority: "low", eventType: "news_item", title: "Parliament passes the landmark digital rights bill", body: "The bill introduces sweeping data-protection duties for platforms and a new privacy regulator.", expanded: true, link: true, queue: { total: 3, done: 2 }, news: { source: "NDTV", category: "politics", age: "42m ago", published: "13:32" } }),
+  "news · expanded manifest", "1.5fr 1fr 1fr · cat-tinted labels", true);
+
+const idle = document.getElementById("idle");
+frame(idle, renderIdle(null), "idle · clock only", "270px — rail inactive");
+frame(idle, renderIdle({ paused: false, waiting: 0, football: { enabled: true, live: { label: "ARS 2–0 CHE", minute: "Halftime" } }, news: { enabled: true } }),
+  "idle · status rail", "460px — live match, news on, clear");
+
+/* ---------- 04 · motion playground ---------- */
+const motionMount = document.getElementById("motion-mount");
+let motionCard = renderCard({ priority: "high", eventType: "score_update", signal: "goal", title: "GOAL", body: "Arsenal 2-0", queue: { total: 5, done: 1 } });
+motionMount.appendChild(motionCard);
+
+document.getElementById("replay-goal").onclick = () => pulse(motionCard, "pulse-goal", "goal-overshoot", true);
+document.getElementById("replay-red").onclick = () => pulse(motionCard, "pulse-red", "red-alert", false);
+document.getElementById("replay-pills").onclick = () => {
+  const card = renderCard({ priority: "low", eventType: "news_item", title: "Open-weights model tops the coding benchmark leaderboard", queue: { total: 5, done: 2 }, news: { source: "The Verge", category: "tech", age: "<1m ago" } });
+  motionMount.replaceChildren(card);
+  motionCard = card;
+  card.querySelectorAll(".pill").forEach(p => { p.style.opacity = "0"; p.style.transform = "translateY(3px)"; p.style.transition = "opacity 220ms cubic-bezier(0.22,1,0.36,1), transform 220ms cubic-bezier(0.22,1,0.36,1)"; });
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    card.querySelectorAll(".pill").forEach((p, i) => { p.style.transitionDelay = (i === 1 ? "70ms" : "0ms"); p.style.opacity = "1"; p.style.transform = "translateY(0)"; });
+  }));
+};
+document.getElementById("replay-expand").onclick = () => {
+  const cfg = { priority: "high", eventType: "generic", title: "Agent needs input", body: "Workspace command is waiting", expanded: true, queue: { total: 5, done: 2 } };
+  swapExpansion(motionCard, { ...cfg, expanded: !motionCard.classList.contains("expanded") }, !motionCard.classList.contains("expanded"));
+};
+document.getElementById("replay-track").onclick = () => {
+  let done = 0;
+  const total = 5;
+  const step = () => {
+    motionCard.style.setProperty("--queue-n", Math.min(Math.max(total,1),MAX_SEGMENTS));
+    motionCard.querySelector(".track").innerHTML = trackHtml(total, done);
+    done += 1;
+    if (done < total) setTimeout(step, 700);
+  };
+  step();
+};
+document.getElementById("replay-life").onclick = () => {
+  const item = { priority: "medium", eventType: "generic", title: "Task complete", body: "`vitest run` — **128 passed**" };
+  const q = { total: 3, done: 1 };
+  const expandedCard = renderCard({ ...item, expanded: true, queue: q });
+  motionMount.replaceChildren(expandedCard);
+  motionCard = expandedCard;
+  setTimeout(() => swapExpansion(motionCard, { ...item, expanded: false, queue: q }, false), 1600);
+};
+</script>
+</body>
+</html>

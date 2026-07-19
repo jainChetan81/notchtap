@@ -33,3 +33,6 @@ opencode.json
 
 # agent tooling, not app code
 .agents/
+
+# throwaway exploratory captures (live-API research, screenshots, etc.)
+research/
