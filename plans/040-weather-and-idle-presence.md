@@ -39,11 +39,9 @@
   didn't anticipate, since it predates 037.
 - **Depends on**: none for the architecture (037 is landed, not a
   blocker). **Provider is now RESOLVED** (Open-Meteo — see "Provider
-  decision" below). **Three defaults are still open**, deferred to a
-  separate design-doc session (not this one): `weather_poll_secs`'s
-  default, `SourceKind::Weather`'s position in `default_rotation_order`,
-  and the exact rain-probability/temp threshold numbers. Step 0 still
-  gates on these — see "Design decisions" below.
+  decision" below). **All defaults are now resolved too** (grilled
+  2026-07-20, session 2 — see "Design decisions" §8 below). Step 0 is
+  no longer a gate; nothing blocks execution.
 - **Review-plan pass (2026-07-19, at `15df3cc`)**: verified Part A DONE
   against live code and test counts (see Status above). For Part B:
   corrected "settings.rs + Config" — the struct is in `config.rs`
@@ -56,29 +54,51 @@
   code (`status.rs`, `event.rs`, `config.rs`, `net.rs`,
   `useStatusState.ts`, `IdleView.tsx`); wrote concrete numbered Steps
   (none existed before, same gap as 039's original filing).
-- **Grilled 2026-07-20 (`/grill-me`, operator)**: eight decisions
-  resolved — see "Provider decision" and "Design decisions" below for
-  the full record. Three numeric/positional defaults deliberately left
-  open for a later design-doc session (see Status line above and
-  "Design decisions" §7).
-- **Review-plan pass 2 (2026-07-20, at `e7adfb0`)**, run right after the
-  grilling session and after 039/041 both landed and rewrote large
-  parts of `poller.rs`/`config.rs`/`lib.rs`: repointed three drifted
-  line citations; closed the units-threading gap the grilling session
-  settled the config field for but not the data flow (see "Design
-  decisions" §3 — `weather_poller.rs` now specified to request the unit
-  directly from Open-Meteo and carry pre-formatted display strings,
-  plus a WMO-code → condition-word mapping neither this plan nor the
-  codebase had anywhere); a fresh-context subagent cold-read then found
-  two verified compile/validation breaks a naive `SourceKind::Weather`
-  addition causes (`build_test_event`'s exhaustive match,
-  `expected_sources`'s hardcoded 4-variant permutation check — both
-  confirmed by direct read, not just claimed), a step-ordering bug
-  (`WeatherSummary` referenced in Step 2 before Step 3 defined it —
-  reordered), and the full 9-call-site fan-out for `Engine::new` /
-  4-call-site fan-out for `StatusState::snapshot` that the original
-  "Re-grounded against the Engine" section described only at the
-  definition site, not the call sites.
+- **Grilled 2026-07-20, session 1 (`/grill-me`, operator)**: eight
+  decisions resolved — see "Provider decision" and "Design decisions"
+  below for the full record. Three numeric/positional defaults
+  deliberately left open for a later session (see "Design decisions"
+  §7 at the time).
+- **Review-plan pass 2 (2026-07-20, at `e7adfb0`)**, run right after
+  session 1 and after 039/041 both landed and rewrote large parts of
+  `poller.rs`/`config.rs`/`lib.rs`: repointed three drifted line
+  citations; closed the units-threading gap session 1 settled the
+  config field for but not the data flow (see "Design decisions" §3 —
+  `weather_poller.rs` now specified to request the unit directly from
+  Open-Meteo and carry pre-formatted display strings, plus a WMO-code →
+  condition-word mapping neither this plan nor the codebase had
+  anywhere); a fresh-context subagent cold-read then found two verified
+  compile/validation breaks a naive `SourceKind::Weather` addition
+  causes (`build_test_event`'s exhaustive match, `expected_sources`'s
+  hardcoded 4-variant permutation check — both confirmed by direct
+  read, not just claimed), a step-ordering bug (`WeatherSummary`
+  referenced in Step 2 before Step 3 defined it — reordered), and the
+  full 9-call-site fan-out for `Engine::new` / 4-call-site fan-out for
+  `StatusState::snapshot` that the original "Re-grounded against the
+  Engine" section described only at the definition site, not the call
+  sites.
+- **Grilled 2026-07-20, session 2 (`/grill-me`, operator)**: the three
+  deferred defaults resolved — `weather_poll_secs` = 900 (15 min,
+  matching the original filing's own example, now with reasoning: long
+  enough to be a good API citizen given Open-Meteo's own forecast data
+  doesn't update much faster than that, short enough that a rain
+  warning still has real lead time); rain-incoming alert = 30-minute
+  lookahead (2× the poll interval, so consecutive polls have
+  overlapping coverage with no gaps) at a 60% probability threshold;
+  temperature thresholds calibrated for the operator's actual climate
+  (Bangalore) rather than a generic default — 36°C hot (a few degrees
+  above Bangalore's normal ~33-35°C summer ceiling, so it fires on
+  genuinely unusual heat, not routine April afternoons) and 14°C cold
+  (at the edge of Bangalore's typical ~14-16°C winter low, so it
+  catches the season's chillier mornings rather than an arbitrary
+  freezing line the city almost never reaches); `default_rotation_order`
+  = `[Football, Manual, Weather, Cmux, News]` (Weather and Manual are
+  the only two Medium-priority sources — the only pair rotation_order
+  actually tie-breaks between, since rotation_order never overrides
+  Priority itself — Manual wins by default, same as every other
+  rotation_order entry this is just a shipped default, fully
+  reorderable per-machine from Settings). **Step 0 is resolved — no
+  remaining gate.**
 
 ## Motivation
 
@@ -217,15 +237,51 @@ Seven decisions resolved via `/grill-me`, in dependency order:
    "Re-grounded against the Engine" below; the operator signed off on
    mirroring `live`/`update_live_match` exactly, no alternative design
    considered necessary.
+8. **The three previously-deferred defaults, resolved in session 2
+   (2026-07-20)**:
+   - `weather_poll_secs` **= 900** (15 min) — matches the original
+     filing's own example default; confirmed sensible against
+     `espn_poll_secs = 30` / `rss_poll_secs = 60` (`config.rs:154-156,
+     214-216` at last check) as precedent for "how time-sensitive is
+     this source," and against Open-Meteo's own forecast data not
+     updating materially faster than ~15 min anyway (polling tighter
+     buys no fresher data, only spends more requests).
+   - Rain-incoming alert: **`weather_rain_lookahead_mins` = 30**,
+     **`weather_rain_threshold_pct` = 60**. The lookahead is 2× the
+     poll interval deliberately — guarantees overlapping coverage
+     between consecutive polls (no gap where a rain event could be
+     missed) and gives more real lead time than a bare 15 minutes
+     would. 60% keeps the alert meaningful under the "not spammy cards"
+     goal (decision §4) — high enough to skip coin-flip forecasts,
+     not so high it only fires on near-certainties.
+   - Temperature thresholds: **`weather_temp_hot_c` = 36.0**,
+     **`weather_temp_cold_c` = 14.0** — calibrated for the operator's
+     actual climate (Bangalore: ~900m elevation keeps it mild by
+     Indian standards, typical summer max ~33-35°C, typical winter min
+     ~14-16°C, record low only ~7-8°C), not a generic global default.
+     A generic pair like 35°C/0°C would be nearly useless here — 35°C
+     is an ordinary summer afternoon (would fire constantly) and 0°C
+     would almost never trigger at all (Bangalore rarely approaches
+     freezing). These are still just the shipped `Default` — any
+     operator with a different climate changes them in Settings.
+   - `default_rotation_order` **= `[Football, Manual, Weather, Cmux,
+     News]`** — reasoning: `rotation_order` only tie-breaks WITHIN a
+     priority tier, never overrides `Priority` itself (documented rule,
+     `config.rs`'s own comment above `default_rotation_order`). With
+     Football/Cmux = High, Manual/Weather = Medium, News = Low
+     (`config.rs:158-185` at last check for the existing four; Weather
+     = Medium per decision §6 above), **Manual and Weather are the
+     only pair this position setting actually decides** — Football,
+     Cmux, and News never compete with Weather for the tie-break
+     regardless of list order, since they're in different tiers.
+     Manual wins: a deliberate push (human or agent-triggered) beats
+     an automated ambient alert when both are waiting at once. Like
+     every other `rotation_order` entry, this is just the shipped
+     default — fully reorderable per-machine from Settings.
 
-**Deliberately left open, for a separate design-doc session (not this
-one)**: `weather_poll_secs`'s default value, `SourceKind::Weather`'s
-position in `default_rotation_order` relative to
-Football/Manual/Cmux/News, and the exact threshold numbers (rain
-probability % + lookahead window in minutes; hot/cold temperature
-cutoffs in Celsius). Step 0 below still gates on these — `config.rs`'s
-`Default` impl can't be written without real numbers, even though
-they're all operator-tunable via Settings after the fact.
+**Step 0 is resolved — all defaults above are final** (pending, as
+always, operator override via Settings after the fact). The gate
+described below no longer blocks anything.
 
 ## Two verified breaks a naive `SourceKind::Weather` addition causes (this review-plan pass)
 
@@ -371,22 +427,23 @@ it, don't invent a second mechanism:
 - `src-tauri/src/event.rs` — add `Weather` to `SourceKind`
   (`event.rs:72-77`, `#[serde(rename_all = "snake_case")]` already on
   the enum, so `"weather"` round-trips for free).
-- `src-tauri/src/config.rs` — per "Design decisions" above:
-  `weather_enabled: bool` (default `false`); `weather_lat: f64` /
-  `weather_lon: f64` (no geocoding, no location-string field);
-  `weather_units: Units` (new small enum, `Celsius`/`Fahrenheit`,
-  default `Celsius`, following the `Priority` enum's existing
-  config-field pattern); `weather_poll_secs: u64` (default TBD — open,
-  see "Design decisions" §deferred); `weather_rain_threshold_pct: u8` +
-  `weather_rain_lookahead_mins: u16` (defaults TBD); `weather_temp_hot_c`
-  / `weather_temp_cold_c: f64` (defaults TBD, always stored in Celsius
-  regardless of `weather_units` — that field is display-only);
-  `weather_priority: Priority` (default `Medium`, resolved). Add
+- `src-tauri/src/config.rs` — per "Design decisions" above, all values
+  now final: `weather_enabled: bool` (default `false`); `weather_lat:
+  f64` / `weather_lon: f64` (no geocoding, no location-string field, no
+  default beyond `0.0` — this is a required-in-practice field the
+  operator sets, same as any lat/lon has to be); `weather_units: Units`
+  (new small enum, `Celsius`/`Fahrenheit`, default `Celsius`, following
+  the `Priority` enum's existing config-field pattern);
+  `weather_poll_secs: u64` (default **900**); `weather_rain_threshold_pct:
+  u8` (default **60**) + `weather_rain_lookahead_mins: u16` (default
+  **30**); `weather_temp_hot_c: f64` (default **36.0**) /
+  `weather_temp_cold_c: f64` (default **14.0**, always stored in
+  Celsius regardless of `weather_units` — that field is display-only);
+  `weather_priority: Priority` (default `Medium`). Add
   `SourceKind::Weather` to `default_rotation_order()`
   (`config.rs:190+` at last check — drifted since 039 added
-  `espn_live_card`; locate with
-  `rg -n "fn default_rotation_order"`) at a position — still open,
-  see "Design decisions" §deferred.
+  `espn_live_card`; locate with `rg -n "fn default_rotation_order"`)
+  **right after `Manual`**: `[Football, Manual, Weather, Cmux, News]`.
 - `src-tauri/src/settings.rs` — three separate, unrelated edits, don't
   conflate them:
   1. `validate()` (`settings.rs:49-90` pattern) gains range checks,
@@ -395,12 +452,11 @@ it, don't invent a second mechanism:
      `weather_temp_hot_c > weather_temp_cold_c` (a cross-field check,
      not a single-field range — no existing exemplar for this shape in
      `validate()`, write it as its own `if` block after the per-field
-     checks). `weather_poll_secs`'s range: mirror `espn_poll_secs`'s
-     `5..=3600` (`settings.rs:70-75` pattern) — the exact DEFAULT is
-     still open (Step 0), but the acceptable RANGE isn't a Step-0
-     unknown and can be specified now. `weather_rain_lookahead_mins`:
-     pick a sane range once Step 0's default is known (e.g. it should
-     comfortably contain whatever default gets chosen).
+     checks). `weather_poll_secs`: mirror `espn_poll_secs`'s `5..=3600`
+     (`settings.rs:70-75` pattern) — comfortably contains the resolved
+     default of 900. `weather_rain_lookahead_mins`: `5..=120` — comfortably
+     contains the resolved default of 30 while still ruling out
+     nonsensical values (a 1-minute or 24-hour lookahead).
   2. **`build_test_event`'s exhaustive match needs a `SourceKind::Weather`
      arm** — see "Two verified breaks" above; this is a compile-breaking
      fix, not optional polish.
@@ -510,37 +566,23 @@ it, don't invent a second mechanism:
 
 ## Steps
 
-### Step 0: remaining defaults gate
+### Step 0: (resolved — no longer a gate)
 
-Provider, location input, units, alert scope, re-fire semantics, and
-`weather_priority` are all resolved (see "Design decisions" above) —
-Step 0 is no longer a provider-choice gate. What's STILL open, and
-must be resolved (in the deferred design-doc session) before writing
-`config.rs`'s `Default` impl: `weather_poll_secs`'s default value,
-`SourceKind::Weather`'s position in `default_rotation_order`, and the
-exact rain-probability/lookahead/temp-threshold numbers. STOP here
-until those three are picked — do not guess reasonable-sounding
-numbers and proceed; they're operator-tunable later, but Step 1 needs
-literal values to compile against now.
-
-(This gate is real for Step 1 specifically, since `config.rs`'s
-`Default` impl needs literal values. It's looser than it looks for
-Steps 2-3: `Engine`/`status.rs` plumbing doesn't reference any of the
-three deferred numbers at all, and Step 3's edge-trigger STATE MACHINE
-logic doesn't either — only its fixture TESTS need some concrete
-threshold to construct test data against. If the three numbers are
-taking a while to land, Steps 2 and most of Step 3 can reasonably start
-once Step 1's other fields are in, using placeholder test-only values
-for anything Step 3's fixtures need — just don't let a placeholder
-leak into `config.rs`'s actual `Default` impl.)
+Every decision this step used to block on is now resolved — provider,
+location input, units, alert scope, re-fire semantics, `weather_priority`,
+`weather_poll_secs`, the rain-alert numbers, the temperature thresholds,
+and the `default_rotation_order` position are all final (see "Design
+decisions" above, especially §8). There is nothing left to STOP on
+here; proceed directly to Step 1. (Left as a numbered step, not
+deleted, so the plan's step numbering stays stable against anything
+that references "Step 1"/"Step 2" etc. elsewhere in this file or in
+commit messages.)
 
 ### Step 1: `SourceKind::Weather` + config surface
 
 Add the enum variant (`event.rs:72-77`) and the config fields
-(`config.rs`, per Scope above — `weather_lat`/`weather_lon`/
-`weather_units`/`weather_priority` are fully specified now;
-`weather_poll_secs` and the threshold fields need Step 0's remaining
-defaults), including `default_rotation_order`'s new entry and
+(`config.rs`, per Scope above — every field's default is fully
+specified now, including `default_rotation_order`'s new entry), and
 `settings::validate`'s new range checks.
 
 **Verify**: `cargo test --locked config:: event::` → all pass.
@@ -643,8 +685,6 @@ vitest run` totals match §0.
 
 ## STOP conditions
 
-- Step 0's three remaining defaults (poll interval, rotation-order
-  position, threshold numbers) are unresolved → STOP, do not guess.
 - Any change would touch `capabilities/default.json` or add a
   `#[tauri::command]` → STOP (receive-only / command-ACL guarantee).
 - `StatusState::snapshot`'s new 6-arg signature trips
@@ -662,13 +702,11 @@ vitest run` totals match §0.
   changes; it only adds a producer + an Engine-owned ambient handle +
   a status field + a chip, following the football precedent throughout.
 - **Future enhancement, explicitly not this plan** (floated during
-  `/grill-me` 2026-07-20, deliberately deferred): a weather-reactive
-  background treatment for the idle card — background color shifting
-  with conditions, and/or a weather SVG/illustration. Worth a follow-up
-  plan once the plain-text v1 has shipped and the operator has lived
-  with it; this plan ships text-only per "Design decisions" §2.
-- **Deferred to a separate design-doc session** (not part of this
-  plan's `/grill-me` pass): `weather_poll_secs`'s default,
-  `SourceKind::Weather`'s `default_rotation_order` position, and the
-  exact rain/temp threshold numbers. See "Design decisions" (deferred
-  list) and Step 0.
+  `/grill-me` session 1, 2026-07-20, deliberately deferred): a
+  weather-reactive background treatment for the idle card — background
+  color shifting with conditions, and/or a weather SVG/illustration.
+  Worth a follow-up plan once the plain-text v1 has shipped and the
+  operator has lived with it; this plan ships text-only per "Design
+  decisions" §2.
+- All decisions are resolved as of `/grill-me` session 2 (2026-07-20)
+  — see "Design decisions" §8. This plan is fully ready to execute.
