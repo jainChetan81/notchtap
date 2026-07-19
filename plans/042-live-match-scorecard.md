@@ -1,34 +1,43 @@
-# Plan 042: live-match scorecard presentation (bigger, persistent while playing)
+# Plan 042: live-match scorecard presentation (richer collapsed card, Option B)
 
-> **Executor instructions**: This plan carries an **unresolved maintainer
-> decision** (slot behavior, below) — do NOT execute until it's chosen.
-> This review-plan pass did NOT make that decision (it's explicitly the
-> maintainer's call) — it grounded each option's real cost against live
-> code so the decision can be made with evidence instead of estimates.
-> When it is chosen, run every gate and update the `plans/README.md` row.
+> **Executor instructions**: Follow this plan step by step. Run every
+> verification command and confirm the expected result before moving
+> on. If anything in "STOP conditions" occurs, stop and report — do not
+> improvise. When done, update this plan's status row in
+> `plans/README.md`.
 >
-> **Coordination**: builds on **039** (the consolidated live-match card)
-> and touches `poller.rs` (037's territory) + the overlay frontend.
-> Sequence AFTER 037 (DONE, merged `6b53c32`) + **039 (DONE 2026-07-19,
-> confirmed via `plans/README.md`'s row and directly against landed
-> `poller.rs`)** — its live-match Topic/`Recurring` shape is now real,
-> landed code, not a forward reference; this review-plan pass
-> (2026-07-20) re-verified every citation below against it and found
-> real drift (see "Re-verified after 039 landed" below) beyond what a
-> prior pass caught. `git status` clean for `poller.rs` before starting.
+> **Coordination**: builds on **039** (the consolidated live-match card,
+> DONE, merged) and touches `poller.rs` (037's territory, DONE) + the
+> overlay frontend. `git status` clean for `poller.rs`/`src/components/`
+> before starting.
+>
+> **Drift check (run first)**: `git diff --stat 088531d..HEAD --
+> src-tauri/src/poller.rs src-tauri/src/event.rs src-tauri/src/lib.rs
+> src-tauri/src/engine.rs src/components/Manifest.tsx
+> src/components/StatusRailCard.tsx`. `088531d` is this pass's baseline
+> (2026-07-20) — every citation was re-verified against live code at
+> that commit. This plan's citations have already drifted once before
+> (5-19 lines, when 039/041 landed between two prior review-plan
+> passes) — re-verify with `rg`, don't trust line numbers blindly.
 
 ## Status
 
-- **BLOCKED on a maintainer decision only** (see Open decision) — 039 is
-  no longer a blocker, it landed 2026-07-19. Filed 2026-07-19 from
-  live-session feedback watching ENG–FRA: "why is the nudge that small?
-  while a match runs it should be bigger, a scorecard — countries,
-  score, time, yellow cards — even collapsed."
-- **Priority**: P2 · **Effort**: M–L (depends on decision — this pass
-  narrows the range per option, see below) · **Risk**: MED (challenges
-  the single-slot rotation model, for Option A/C only).
-- **Depends on**: 039 (hard — extends the live-match card; **DONE**),
-  037 (DONE). Nothing left to wait on except the maintainer's pick.
+- **UNBLOCKED — ready to execute.** Filed 2026-07-19 from live-session
+  feedback watching ENG–FRA: "why is the nudge that small? while a
+  match runs it should be bigger, a scorecard — countries, score, time,
+  yellow cards — even collapsed."
+- **Priority**: P2 · **Effort**: S–M (narrowed from M–L once Option B
+  was picked — no window resize, no Engine pin mechanism, no hotkey
+  trigger) · **Risk**: LOW (Option B never touches the rotation model;
+  the MED risk the original filing carried was specific to Option A/C,
+  which are no longer in scope).
+- **Depends on**: 039 (DONE), 037 (DONE). Nothing left to wait on.
+- **Decision (`/grill-me`, 2026-07-20)**: **Option B — never pin.** The
+  scorecard stays a normal rotating card; the existing priority system
+  (football defaults to `High`) already keeps it well-represented in
+  rotation without a bespoke pin mechanism duplicating that job. Three
+  follow-on shape decisions resolved in the same session — see
+  "Decision" below for the full record with reasoning.
 - **Review-plan pass 1 (2026-07-20)**: did not resolve the Option A/B/C
   decision. Grounded each option against live code instead: (1) found
   `EventMeta.details`/`subtitle` (plan 035's rich-relay wire fields)
@@ -65,6 +74,12 @@
   own doc comment, deliberately engineered around by 039), so Scope's
   "clock just needs threading into `meta.details`" undersold what that
   threading actually requires.
+- **`/grill-me` (2026-07-20)**: resolved the Option A/B/C decision
+  (Option B — never pin) plus three follow-on shape questions (flags,
+  per-side card split, redesign scope) — see "Decision" below. Rewrote
+  Scope around Option B only (Option A/C material moved to a "Rejected
+  alternatives" note for the record, not deleted) and added concrete
+  numbered Steps, which this plan never had before.
 
 ## Problem
 
@@ -209,107 +224,234 @@ Whichever of the three fits a pin mechanism better is a real design
 call for whoever builds Option A/C — but the seam already exists either
 way; it isn't a gap.
 
-## Open decision (maintainer — REQUIRED before build)
+## Decision (`/grill-me`, 2026-07-20 — RESOLVED)
 
-How does the live scorecard behave in the single slot?
-- **Option A — "match mode" (pin + enlarge)**: while a match is live, the
-  scorecard pins the slot and the window grows to a scoreboard footprint;
-  news/cmux queue behind it (or show in a secondary strip). Most
-  scoreboard-like; biggest change to the rotation model. **Grounded cost
-  (this pass)**: genuinely new window-resize + re-anchor capability (see
-  above) on top of the shared collapsed-rendering and per-side-count
-  work every option needs.
-- **Option B — richer rotating card**: stays a normal rotating card
-  (shares the slot, still rotates), but its **collapsed** layout is
-  redesigned into a fuller scorecard (flags, big score, clock, card
-  counts). Smaller change; not always-on. **Grounded cost (this pass)**:
-  no window/rotation-model changes, no new wire fields (reuses
-  `details`/`subtitle`) — the bulk of the work is a new collapsed-state
-  frontend layout plus the shared per-side-count parsing, plus the
-  `make_event` bundling wrinkle from "Re-verified after 039 landed"
-  above (small, internal, disclosed — not a wire change, but not truly
-  zero-touch on `poller.rs` either).
-- **Option C — hybrid**: rotating by default, but a hotkey/priority
-  "expand to match mode" pins it on demand. **Grounded cost (this
-  pass)**: inherits Option A's window-resize work (still needed for the
-  pinned "match mode" state) plus a new hotkey/priority trigger — the
-  most total scope of the three, not a middle ground on cost even
-  though it reads as one.
+Four decisions, in dependency order:
 
-(Recommend deciding via a short real-hardware look, per the original
-filing — this pass's grounding is meant to inform that look, not
-replace it. 039 is landed now, so that look can happen whenever the
-maintainer is ready, not gated on 039 shipping first.)
+1. **Option B — never pin.** The scorecard behaves like every other
+   card: it shares the single slot and rotates normally. No window
+   resize, no Engine-level pin mechanism, no hotkey trigger. Reasoning:
+   rereading the original complaint — "it should be bigger... readable
+   even when collapsed" — that's about the card's own layout richness,
+   not about whether it stays glued to the slot. The existing priority
+   system already gives football events precedence in rotation
+   (`espn_priority` defaults to `High`, `config.rs`), so a bespoke pin
+   mechanism would mostly duplicate a job the app already does. Cost
+   and risk both drop sharply versus Option A/C: no dynamic window
+   resize (a genuinely new capability, see "Grounded findings" above),
+   no Engine-adjacent pin design question, no new hotkey.
+2. **No flags/country icons.** Team abbreviations are already parsed
+   and already shown in the card title (`matchup()`,
+   `poller.rs:308-320` at last check — e.g. `"UCL: ARS 1–1 PSG"`);
+   render them bigger/more prominent in the new layout instead of
+   adding flag glyphs. Reasoning: this codebase has zero emoji/icon
+   glyphs anywhere (confirmed during the 041 review) — flags would be
+   the first. They'd also only make sense for international matches
+   (the triggering ENG–FRA example); most of what's actually polled is
+   club football (UCL, EPL, La Liga, MLS), which has no national flag
+   to show at all, only club crests the ESPN feed doesn't carry.
+3. **Cards split per side** (`ARS 1Y · PSG 0Y`), not a bare aggregate
+   total. The aggregate (`MatchSnapshot.cards: usize`) already exists
+   with zero new parsing; a per-side split needs new `team.id` parsing
+   on `SbTeam`/`SbDetail` (see "Per-side card counts" above). Worth the
+   small added cost: "yellow cards" was specifically named in the
+   original complaint, and a bare total ("2 cards") doesn't tell you
+   who's picking them up.
+4. **Minimal layout tweak, not a full scoreboard redesign.** Keep
+   today's `title`/`body` largely as-is (the title already carries the
+   matchup), add compact new lines for clock + per-side cards. A full
+   scoreboard-style component (team names either side, big centered
+   score) is explicitly deferred — the operator wants to see the
+   minimal version live (or review a prototype) before committing to a
+   bigger frontend build. **Do not build the full redesign as part of
+   this plan** — that's a distinct, later plan once the minimal version
+   has been lived with.
 
-## Scope (indicative — finalize after the decision; 039 already landed)
+## Scope
 
-**Common to every option** (grounded this pass, not option-dependent):
-- `src-tauri/src/poller.rs` — `SbTeam`/`SbDetail` gain team-id parsing
-  (see "Per-side card counts" above); `MatchSnapshot`/`MatchView` gain
-  per-side yellow/red counts instead of (or alongside) the aggregate
-  `cards: usize`; clock is already tracked (`display_clock`,
-  `poller.rs:146` at last check) and needs threading into
-  `meta.details`/`subtitle` on the live-match event — NOT a one-line
-  addition, see "Re-verified after 039 landed" above for why
-  `make_event`'s existing 7-arg ceiling makes this a small bundling
-  task, not a trivial param add.
-- Country/flag mapping from league + team — no existing code for this;
-  new, small, presentation-only lookup.
-- Populate the live-match `Recurring` event's `meta.details`/`subtitle`
-  with the score/clock/card cells (reusing plan 035's wire mechanism,
-  see "Grounded findings" above) — no new `Event`/`SlotState` field.
-- Overlay frontend — a new collapsed-state layout that reads
-  `subtitle`/`details` (today gated to expanded-only,
-  `Manifest.tsx:38`) for the live-match card specifically. Flags/large
-  score/clock/card-count rendering.
-- Tests: poller per-side-count tests (fixture-driven, mirroring
-  `poller.rs`'s existing card-count tests); frontend collapsed-layout
-  render tests.
+**Grounded this pass**: title already carries the score (`matchup()`,
+`poller.rs:308-320`, e.g. `"UCL: ARS 1–1 PSG"`), so the only genuinely
+new information the collapsed view needs is **Clock** and **per-side
+Cards** — not a third "Score" cell. `SlotState` has no `topic`/
+`rotation` field (`event.rs:169-194`), so the frontend can't directly
+tell "this is the live-match card" from a one-shot card — but it
+doesn't need to: the presence of a populated `details` array on a
+`score_update` card is naturally that signal, since only this plan's
+producer path will ever populate it.
 
-**Option A/C only**:
-- Overlay window dynamic resize + `position_window`'s cutout-anchor
-  math re-run after resize (`lib.rs:528-562` at last check — locate
-  with `rg -n "fn position_window"`) — genuinely new capability, see
-  "Grounded findings" above.
-- Slot-pinning logic — how a pinned match-mode card interacts with the
-  `Engine`'s rotation and where news/cmux go while pinned. This is a
-  real Engine-adjacent design question, not just UI — read `engine.rs`'s
-  current `apply`/`apply_blocking`/`accept`/`update_live_match` shapes
-  before proposing a pin mechanism (all four exist and are the real
-  candidates — see "Re-verified after 039 landed" above, which found
-  `apply` specifically is a currently-unused, pre-built seam for exactly
-  this kind of new async mutation site), since "the Engine is the one
-  module through which every Slot mutation flows" (its own doc comment,
-  `engine.rs:1-8`) means a pin that bypasses normal rotation needs to
-  either go through the Engine too or explain why it's a deliberate
-  exception.
-- Option C additionally: a hotkey/priority trigger — follow the
-  existing hotkey pattern (`lib.rs`'s `EXPAND_TOGGLE_SHORTCUT` and
-  friends, `toggle_manual_expand`) as the exemplar shape, not a new
-  mechanism.
+**In scope**:
+- `src-tauri/src/poller.rs`:
+  - Add `id: String` to `SbTeam` (`poller.rs:75-78` at last check) and
+    a new `team: Option<SbTeamRef>` field to `SbDetail`
+    (`poller.rs:81-103` at last check) — mirrors exactly how
+    `own_goal`/`red_card` already read structural ESPN fields instead
+    of guessing from text (`poller.rs:94-98`). `SbTeamRef` is a new,
+    minimal struct: just `{ id: String }`, same shape as the existing
+    `SbTeam`/`SbAthlete` "just the fields we use" pattern.
+  - `MatchSnapshot` (`poller.rs:134-154`) gains `home_cards: (u32, u32)`
+    /`away_cards: (u32, u32)` (yellow, red) — or two pairs, whichever
+    reads cleaner in review — replacing the single aggregate `cards:
+    usize` (`poller.rs:147`) at the point of use; cross-reference each
+    card detail's `team.id` against the competitor-level `team.id`
+    (also newly parsed) to bucket yellow/red per side. The existing
+    aggregate-count closure (`poller.rs:232-241` at last check) is
+    the thing to replace, not add alongside — don't leave two card-
+    counting code paths that can drift apart.
+  - `make_event` (`poller.rs:351-359`) is already at clippy's 7-arg
+    ceiling (its sibling `CardTopic` enum's own doc comment says so
+    explicitly, `poller.rs:322-324`) — do NOT add an 8th param. Build
+    `meta: EventMeta { details: vec![...], ..EventMeta::default() }`
+    at the `diff_scoreboard` call sites instead and attach it to the
+    `Event` `make_event` returns (`event.meta = meta;` after the call),
+    the same "build outside, attach after" shape already flagged in
+    "Re-verified after 039 landed" above.
+  - Populate `meta.details` with exactly two cells, only on the
+    `CardTopic::Live` and `CardTopic::FullTime` branches (never
+    `CardTopic::Off` — flag-disabled behavior must stay byte-identical,
+    per the existing regression-pin tests): `{label: "Clock", value:
+    display_clock}` always; `{label: "Cards", value: "<away_abbrev>
+    <awayY>Y<awayR>R · <home_abbrev> <homeY>Y<homeR>R"}` — but OMIT the
+    Cards cell entirely when both sides have zero cards, to avoid
+    showing "0Y 0R · 0Y 0R" clutter on a clean match. No `subtitle` —
+    unused by this feature, leave it `None`.
+- Frontend, `src/components/StatusRailCard.tsx`: the collapsed
+  (non-expanded) `.compact` branch (`:138-143` at last check) currently
+  renders only `title`/`body` for non-news cards — `slot.details`/
+  `slot.subtitle` are passed to `<Manifest>` (`:149-158`) but NEVER
+  read in the compact view itself. Add a new conditional block, inside
+  the same non-news branch, rendering one line per `details` entry
+  (label: value) directly below `body` — gated on `slot.details.length
+  > 0` (naturally true only for a live-match card with `espn_live_card`
+  on, per the poller-side gating above; false for every other card
+  today, so this is additive, not a behavior change for existing
+  cards). This is the "minimal tweak" — reuse `Manifest.tsx`'s own
+  `detail-label`/`detail-value` CSS classes for visual consistency with
+  the expanded view rather than inventing new styling.
+- Tests: poller per-side-card-count tests (fixture-driven, mirroring
+  the existing card-count tests, using the UCL fixture's real cards);
+  poller tests confirming `meta.details` is populated on Live/FullTime
+  and absent on Off (the flag-off regression pin — must stay
+  byte-identical to pre-existing behavior); frontend render test for
+  the new compact-view details line, following `StatusRailCard.test.tsx`'s
+  existing pattern.
+
+## Commands you will need
+
+| Purpose | Command | Expected on success |
+|---|---|---|
+| Rust suite | `cd src-tauri && cargo test --locked` | all pass; recount against §0 |
+| Gates | `cargo clippy --locked --all-targets -- -D warnings && cargo fmt --check` | exit 0 |
+| Frontend tests | `npx vitest run` | all pass |
+| Frontend gates | `npx biome ci . && npx tsc --noEmit && npx vite build` | exit 0 |
+
+## Steps
+
+### Step 1: per-side card parsing
+
+Add `SbTeamRef { id: String }`, the new `team: Option<SbTeamRef>` field
+on `SbDetail`, and `id: String` on `SbTeam` (Scope above for exact
+locations). Thread `team.id` through `view()`'s card-counting closure
+to replace the aggregate `cards: usize` with per-side yellow/red
+counts on `MatchSnapshot`. Add a fixture-driven test asserting the UCL
+fixture's real cards attribute to the correct side (cross-check: which
+team scored/committed each card in the raw fixture JSON, assert the
+count lands on that side, not the other).
+
+**Verify**: `cargo test --locked poller::` → all pass, including the
+new per-side test.
+
+### Step 2: `meta.details` on the live-match event
+
+Build `meta` at the `diff_scoreboard` call sites and attach it after
+`make_event` returns (Scope above — do not add an 8th param to
+`make_event`). Populate the two cells (`Clock`, `Cards`) on
+`CardTopic::Live`/`CardTopic::FullTime` only; leave `meta` at
+`EventMeta::default()` on `CardTopic::Off`, unchanged from today. Add
+tests: (a) flag-off regression pin — `meta.details` stays empty,
+byte-identical to pre-039 behavior; (b) flag-on, mid-match — `Clock`
+and `Cards` cells present with correct per-side values; (c) flag-on,
+zero cards so far — `Cards` cell absent, `Clock` still present.
+
+**Verify**: `cargo test --locked poller::` → all pass, including the
+three new cases; `cargo test --locked` (full) → all pass, totals match
+`docs/TESTING_STRATEGY.md` §0.
+
+### Step 3: frontend — read `details` in the collapsed view
+
+In `StatusRailCard.tsx`'s non-news compact branch, add the new
+conditional block per Scope above — one line per `details` entry,
+reusing `Manifest.tsx`'s `detail-label`/`detail-value` classes, gated
+on `slot.details.length > 0`. Add a render test in
+`StatusRailCard.test.tsx` covering: a card with `details` populated
+shows the new lines in the COLLAPSED state (not just expanded); a card
+with empty `details` (every other card type today) renders unchanged
+from current behavior.
+
+**Verify**: `npx vitest run && npx tsc --noEmit && npx biome ci .` →
+all pass/exit 0.
+
+### Step 4: docs + status
+
+Update `docs/TESTING_STRATEGY.md` §0 for the new rust + frontend test
+counts. Flip this plan's `plans/README.md` row to DONE.
+
+**Verify**: `cargo test --locked 2>&1 | grep "test result"` and `npx
+vitest run` totals match §0.
+
+## Done criteria
+
+- [ ] `cd src-tauri && cargo test --locked` exits 0; totals match §0
+- [ ] `cargo clippy --locked --all-targets -- -D warnings && cargo fmt --check` exit 0
+- [ ] `npx vitest run && npx tsc --noEmit && npx biome ci .` all pass/exit 0
+- [ ] Flag-off regression: `meta.details` empty when `espn_live_card=false` — byte-identical to pre-039 behavior
+- [ ] A live match's collapsed card shows Clock + per-side Cards (when any exist) without needing to expand
+- [ ] `git diff -- src-tauri/capabilities/default.json src-tauri/capabilities/settings.json` byte-identical (Option B touches neither — confirms no scope creep toward A/C)
+- [ ] `docs/TESTING_STRATEGY.md` §0 updated
+- [ ] `plans/README.md` status row updated
 
 ## STOP conditions
 
-- Decision not made → STOP. Do not default to any option or start
-  building a "safe subset" without the maintainer's pick — the three
-  options genuinely diverge in `poller.rs`/frontend/Engine surface, per
-  the grounded costs above, not just in visual polish.
-- Option A/C would touch `capabilities/default.json` or the
-  receive-only guarantee → STOP.
-- The `poller.rs`/`lib.rs`/`engine.rs` citations in this plan don't
+- Any change would touch `capabilities/default.json`, add a
+  `#[tauri::command]`, resize the overlay window, or add a hotkey →
+  STOP and report. None of these belong to Option B — if a step seems
+  to need one, that's a sign of scope creep toward Option A/C, not
+  something to build around.
+- The `poller.rs`/`event.rs`/frontend citations in this plan don't
   match live code when you check them → STOP and reconcile before
-  building, don't guess. 039 is landed (confirmed, not a live
-  blocker), but this plan's citations have already drifted once since
-  039 shipped (poller.rs lines by 5-19 lines, see "Re-verified after
-  039 landed" above) — more time passing means more drift is likely,
-  not a reason to skip the check.
+  building, don't guess. This plan's citations have already drifted
+  once before (5-19 lines, when 039/041 landed between two earlier
+  review-plan passes) — re-verify with `rg`.
+- The per-side card count doesn't match the raw fixture JSON on manual
+  inspection → STOP; a `team.id` cross-reference bug here would silently
+  misattribute cards to the wrong team, which is worse than the
+  aggregate count this replaces.
+
+## Rejected alternatives (Options A and C — kept for the record, not deleted)
+
+The full grounded-cost analysis for Options A ("match mode," pin +
+enlarge the window) and C (hybrid, hotkey-pinned) from the review-plan
+pass is preserved above in "Grounded findings" and "Re-verified after
+039 landed" — that reasoning isn't reproduced here. Short version of
+why they were rejected in favor of Option B: both require genuinely
+new window-resize/re-anchor capability that doesn't exist anywhere in
+the codebase today, plus (Option A) an Engine-adjacent pin-mechanism
+design question about where news/cmux go while pinned, plus (Option C)
+a new hotkey trigger on top of all of Option A's cost. Option B answers
+the operator's actual complaint (bigger, readable-when-collapsed
+scorecard) at a fraction of the engineering risk, by reusing the
+existing priority system instead of building a parallel pin mechanism.
+If, after living with Option B, key moments are still being missed
+because the card rotates away at the wrong second, that's a concrete,
+evidence-backed case for revisiting Option C later — a better position
+to make that call from than committing to it speculatively now.
 
 ## Notes
 
 - Independent of event *coverage* (plan 043) — this is about how the
   score/clock/cards are *shown*, not about detecting more event types.
-- The per-side card-count parsing work (see "Grounded findings" above)
-  is small enough that it could reasonably land as its own tiny
-  preparatory plan ahead of whichever option is chosen, the same way
-  038 landed ahead of 039 — flag this to the maintainer as an option,
-  not a requirement; this plan doesn't mandate splitting it out.
+- **Deferred, explicitly not this plan** (per the `/grill-me` decision
+  above): a full scoreboard-style visual redesign (team names either
+  side, big centered score) and flag/country icons. Both are real
+  follow-up candidates once the operator has watched the minimal
+  version live or reviewed a prototype — this plan intentionally ships
+  the smaller, lower-risk version first.
