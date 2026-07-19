@@ -291,6 +291,35 @@ fn matchup(league: &str, s: &MatchSnapshot) -> String {
     )
 }
 
+/// plan 039: how one match's event lands in the Slot, bundled into a
+/// single parameter so `make_event` stays under clippy's 7-arg
+/// `too_many_arguments` threshold.
+enum CardTopic {
+    /// `espn_live_card` off: today's one-shot, topicless burst —
+    /// `topic: None`, `OneShot`, byte-for-byte the pre-039 behavior.
+    Off,
+    /// flag on, non-final event: shared per-match Topic, `Recurring`
+    /// rotation — kickoff/goal/card/half-time supersede each other in
+    /// the single Slot as one updating card.
+    Live(String),
+    /// flag on, full-time event: the *same* Topic but `OneShot` —
+    /// superseding the visible Recurring card copies this rotation onto
+    /// it, so the card retires via the ordinary one-shot path with no
+    /// bespoke teardown.
+    FullTime(String),
+}
+
+/// Maps `diff_scoreboard`'s per-match `topic` (Some only when
+/// `espn_live_card` is on) plus the is-this-the-full-time-branch flag
+/// onto a [`CardTopic`].
+fn card_topic(topic: &Option<String>, is_full_time: bool) -> CardTopic {
+    match (topic, is_full_time) {
+        (Some(t), false) => CardTopic::Live(t.clone()),
+        (Some(t), true) => CardTopic::FullTime(t.clone()),
+        (None, _) => CardTopic::Off,
+    }
+}
+
 fn make_event(
     event_type: EventType,
     title: String,
@@ -298,7 +327,18 @@ fn make_event(
     ttl_secs: u64,
     signal: EventSignal,
     priority: Priority,
+    card: CardTopic,
 ) -> Event {
+    let (rotation, topic) = match card {
+        CardTopic::Off => (RotationSpec::OneShot { ttl_secs }, None),
+        CardTopic::Live(topic) => (
+            RotationSpec::Recurring {
+                display_secs: ttl_secs,
+            },
+            Some(topic),
+        ),
+        CardTopic::FullTime(topic) => (RotationSpec::OneShot { ttl_secs }, Some(topic)),
+    };
     Event {
         id: Uuid::new_v4(),
         event_type,
@@ -307,12 +347,8 @@ fn make_event(
         // `signal` is presentation-only (icon/animation selection) and
         // deliberately doesn't affect this.
         priority,
-        rotation: RotationSpec::OneShot { ttl_secs },
-        // the poller has its own per-match dedup/eviction via Snapshot /
-        // missed_polls already; it doesn't need the queue's topic
-        // supersession mechanism in this pass (spec §3.4: no source here
-        // constructs Recurring, and topic is a Recurring-adjacent concern).
-        topic: None,
+        rotation,
+        topic,
         payload: EventPayload { title, body },
         meta: EventMeta::default(),
         signal,
@@ -349,6 +385,7 @@ pub fn diff_scoreboard(
     ttl_secs: u64,
     league: &str,
     priority: Priority,
+    espn_live_card: bool,
 ) -> (Vec<Event>, Snapshot) {
     let mut out = Vec::new();
     let mut next = Snapshot::new();
@@ -356,6 +393,11 @@ pub fn diff_scoreboard(
     for sb_event in &fetched.events {
         let v = view(sb_event);
         let final_now = v.snap.state == "post";
+        // plan 039: opt-in live-match card — one Topic per match so the
+        // single Slot shows a single updating card per live match instead
+        // of a burst of one-shots. `None` when the flag is off (zero
+        // behavior change).
+        let topic = espn_live_card.then(|| format!("espn:{league}:{}", v.id));
 
         match prev.get(v.id) {
             None => {
@@ -380,6 +422,7 @@ pub fn diff_scoreboard(
                         ttl_secs,
                         EventSignal::Goal,
                         priority,
+                        card_topic(&topic, false),
                     ));
                 }
 
@@ -391,6 +434,7 @@ pub fn diff_scoreboard(
                         ttl_secs,
                         EventSignal::Kickoff,
                         priority,
+                        card_topic(&topic, false),
                     ));
                 }
                 if v.snap.status_name == "STATUS_HALFTIME" && old.status_name != "STATUS_HALFTIME" {
@@ -401,6 +445,7 @@ pub fn diff_scoreboard(
                         ttl_secs,
                         EventSignal::Halftime,
                         priority,
+                        card_topic(&topic, false),
                     ));
                 }
                 if final_now && old.state != "post" {
@@ -411,6 +456,7 @@ pub fn diff_scoreboard(
                         ttl_secs,
                         EventSignal::Fulltime,
                         priority,
+                        card_topic(&topic, true),
                     ));
                 }
 
@@ -428,6 +474,7 @@ pub fn diff_scoreboard(
                         ttl_secs,
                         signal,
                         priority,
+                        card_topic(&topic, false),
                     ));
                 }
 
@@ -556,6 +603,7 @@ pub fn spawn_espn_poller(
     poll_secs: u64,
     ttl_secs: u64,
     priority: Priority,
+    espn_live_card: bool,
 ) {
     tauri::async_runtime::spawn(async move {
         let client = match crate::net::build_poll_client() {
@@ -599,7 +647,14 @@ pub fn spawn_espn_poller(
                 };
 
                 let prev = snapshots.entry(league.clone()).or_default();
-                let (events, next) = diff_scoreboard(prev, &scoreboard, ttl_secs, league, priority);
+                let (events, next) = diff_scoreboard(
+                    prev,
+                    &scoreboard,
+                    ttl_secs,
+                    league,
+                    priority,
+                    espn_live_card,
+                );
                 snapshots.insert(league.clone(), next);
                 if events.is_empty() {
                     continue;
@@ -689,7 +744,8 @@ mod tests {
 
     fn baseline(fixture: &str) -> (Snapshot, Scoreboard) {
         let sb = parse_scoreboard(fixture).unwrap();
-        let (events, snap) = diff_scoreboard(&Snapshot::new(), &sb, 8, "usa.1", Priority::High);
+        let (events, snap) =
+            diff_scoreboard(&Snapshot::new(), &sb, 8, "usa.1", Priority::High, false);
         assert!(events.is_empty(), "first sighting must be silent");
         (snap, sb)
     }
@@ -736,7 +792,7 @@ mod tests {
         let (snap, mut sb) = baseline(USA);
         sb.events[0].status.status_type.state = "in".to_string();
         sb.events[0].status.display_clock = "45'".to_string();
-        let (_, next) = diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High);
+        let (_, next) = diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High, false);
 
         let mut snapshots = HashMap::new();
         snapshots.insert("usa.1".to_string(), next);
@@ -756,7 +812,7 @@ mod tests {
         let (mut snap, mut sb) = baseline(USA);
         snap.get_mut("761659").unwrap().state = "in".to_string();
         sb.events[0].status.status_type.state = "post".to_string();
-        let (_, next) = diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High);
+        let (_, next) = diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High, false);
 
         let mut snapshots = HashMap::new();
         snapshots.insert("usa.1".to_string(), next);
@@ -768,7 +824,7 @@ mod tests {
     fn score_delta_emits_one_score_update_and_nothing_for_unchanged() {
         let (snap, mut sb) = baseline(USA);
         sb.events[0].competitions[0].competitors[0].score = Some("1".to_string());
-        let (events, next) = diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High);
+        let (events, next) = diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High, false);
         assert_eq!(events.len(), 1);
         assert!(matches!(events[0].event_type, EventType::ScoreUpdate));
         assert_eq!(events[0].payload.title, "usa.1: TOR 0–1 MTL");
@@ -782,7 +838,7 @@ mod tests {
     fn state_transitions_emit_match_state() {
         let (snap, mut sb) = baseline(USA);
         sb.events[0].status.status_type.state = "in".to_string();
-        let (events, _) = diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High);
+        let (events, _) = diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High, false);
         assert_eq!(events.len(), 1);
         assert!(matches!(events[0].event_type, EventType::MatchState));
         assert_eq!(events[0].payload.body, "kickoff");
@@ -795,7 +851,7 @@ mod tests {
         snap.get_mut("761659").unwrap().state = "in".to_string();
         sb.events[0].status.status_type.state = "in".to_string();
         sb.events[0].status.status_type.name = "STATUS_HALFTIME".to_string();
-        let (events, _) = diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High);
+        let (events, _) = diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High, false);
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].payload.body, "half-time");
         assert_eq!(events[0].signal, EventSignal::Halftime);
@@ -806,7 +862,7 @@ mod tests {
         let (mut snap, mut sb) = baseline(USA);
         snap.get_mut("761659").unwrap().state = "in".to_string();
         sb.events[0].status.status_type.state = "post".to_string();
-        let (events, next) = diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High);
+        let (events, next) = diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High, false);
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].payload.body, "full-time");
         assert_eq!(events[0].signal, EventSignal::Fulltime);
@@ -820,7 +876,7 @@ mod tests {
         // must not drop live matches
         let (snap, mut sb) = baseline(USA);
         sb.events.remove(0);
-        let (events, next) = diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High);
+        let (events, next) = diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High, false);
         assert!(events.is_empty());
         assert_eq!(next.len(), 4); // still tracked
         assert_eq!(next.get("761659").unwrap().missed_polls, 1);
@@ -832,14 +888,14 @@ mod tests {
 
         // poll 1: entire feed transiently empty — everything carried
         let empty = parse_scoreboard("{}").unwrap();
-        let (events, carried) = diff_scoreboard(&snap, &empty, 8, "usa.1", Priority::High);
+        let (events, carried) = diff_scoreboard(&snap, &empty, 8, "usa.1", Priority::High, false);
         assert!(events.is_empty());
         assert_eq!(carried.len(), 4);
 
         // poll 2: feed back, one match scored during the blip
         let mut back = sb;
         back.events[0].competitions[0].competitors[0].score = Some("1".to_string());
-        let (events, next) = diff_scoreboard(&carried, &back, 8, "usa.1", Priority::High);
+        let (events, next) = diff_scoreboard(&carried, &back, 8, "usa.1", Priority::High, false);
         assert_eq!(events.len(), 1);
         assert!(matches!(events[0].event_type, EventType::ScoreUpdate));
         assert_eq!(next.get("761659").unwrap().missed_polls, 0); // reset
@@ -850,13 +906,13 @@ mod tests {
         let (mut snap, _) = baseline(USA);
         let empty = parse_scoreboard("{}").unwrap();
         for i in 1..ABSENT_POLLS_BEFORE_EVICTION {
-            let (events, next) = diff_scoreboard(&snap, &empty, 8, "usa.1", Priority::High);
+            let (events, next) = diff_scoreboard(&snap, &empty, 8, "usa.1", Priority::High, false);
             assert!(events.is_empty());
             assert_eq!(next.len(), 4, "still carried at miss {i}");
             snap = next;
         }
         // the miss that reaches the threshold evicts, silently
-        let (events, next) = diff_scoreboard(&snap, &empty, 8, "usa.1", Priority::High);
+        let (events, next) = diff_scoreboard(&snap, &empty, 8, "usa.1", Priority::High, false);
         assert!(events.is_empty());
         assert!(next.is_empty());
     }
@@ -874,7 +930,7 @@ mod tests {
         let mut live = parse_scoreboard(UCL).unwrap();
         live.events[0].status.status_type.state = "in".to_string();
 
-        let (events, _) = diff_scoreboard(&snap, &live, 8, "uefa.champions", Priority::High);
+        let (events, _) = diff_scoreboard(&snap, &live, 8, "uefa.champions", Priority::High, false);
         assert_eq!(events.len(), 1);
         assert!(matches!(events[0].event_type, EventType::MatchState));
         assert!(events[0].payload.body.contains("Card"));
@@ -907,7 +963,7 @@ mod tests {
             t.text = "Red Card".to_string();
         }
 
-        let (events, _) = diff_scoreboard(&snap, &live, 8, "uefa.champions", Priority::High);
+        let (events, _) = diff_scoreboard(&snap, &live, 8, "uefa.champions", Priority::High, false);
         assert_eq!(events.len(), 1);
         assert!(matches!(events[0].event_type, EventType::MatchState));
         assert_eq!(events[0].signal, EventSignal::RedCard);
@@ -919,10 +975,110 @@ mod tests {
         snap.get_mut("761659").unwrap().state = "in".to_string();
         sb.events[0].competitions[0].competitors[0].score = Some("1".to_string());
         sb.events[0].status.status_type.state = "post".to_string();
-        let (events, _) = diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High);
+        let (events, _) = diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High, false);
         assert_eq!(events.len(), 2);
         assert!(matches!(events[0].event_type, EventType::ScoreUpdate));
         assert_eq!(events[1].payload.body, "full-time");
+    }
+
+    // plan 039: opt-in live-match card — one Topic per match
+    // (`espn:{league}:{match_id}`), `Recurring` while in play, `OneShot`
+    // full-time on the same Topic.
+
+    /// Builds the kickoff → goal → full-time event sequence for the USA
+    /// fixture's first match (761659) under a given `espn_live_card` flag.
+    fn live_cycle_events(espn_live_card: bool) -> Vec<Event> {
+        let (mut snap, mut sb) = baseline(USA);
+        let mut out = Vec::new();
+
+        // poll 1: pre → in (kickoff)
+        sb.events[0].status.status_type.state = "in".to_string();
+        let (events, next) =
+            diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High, espn_live_card);
+        out.extend(events);
+        snap = next;
+
+        // poll 2: goal while in play
+        sb.events[0].competitions[0].competitors[0].score = Some("1".to_string());
+        let (events, next) =
+            diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High, espn_live_card);
+        out.extend(events);
+        snap = next;
+
+        // poll 3: in → post (full-time)
+        sb.events[0].status.status_type.state = "post".to_string();
+        let (events, _) = diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High, espn_live_card);
+        out.extend(events);
+
+        out
+    }
+
+    #[test]
+    fn live_card_off_keeps_one_shot_topicless_events() {
+        // regression pin, not new behavior: `espn_live_card` defaults off,
+        // and off must remain byte-for-byte today's burst of one-shot,
+        // topicless cards.
+        let events = live_cycle_events(false);
+        assert_eq!(events.len(), 3);
+        assert_eq!(events[0].payload.body, "kickoff");
+        assert_eq!(events[1].payload.body, "goal");
+        assert_eq!(events[2].payload.body, "full-time");
+        for event in &events {
+            assert_eq!(event.topic, None);
+            assert_eq!(event.rotation, RotationSpec::OneShot { ttl_secs: 8 });
+        }
+    }
+
+    #[test]
+    fn live_card_on_shares_one_topic_with_recurring_until_full_time() {
+        let events = live_cycle_events(true);
+        assert_eq!(events.len(), 3);
+        let topic = "espn:usa.1:761659";
+        // every non-final event rides the shared Topic as Recurring, so
+        // kickoff/goal supersede each other in the single Slot.
+        for event in &events[..2] {
+            assert_eq!(event.topic.as_deref(), Some(topic));
+            assert_eq!(event.rotation, RotationSpec::Recurring { display_secs: 8 });
+        }
+        // full-time retires the card: OneShot on the *same* Topic — the
+        // supersede copies this rotation onto the visible item, so it
+        // rotates out via the ordinary one-shot path, no bespoke teardown.
+        assert_eq!(events[2].payload.body, "full-time");
+        assert_eq!(events[2].topic.as_deref(), Some(topic));
+        assert_eq!(events[2].rotation, RotationSpec::OneShot { ttl_secs: 8 });
+    }
+
+    #[tokio::test]
+    async fn live_card_cycle_collapses_to_one_slot_and_still_fans_out() {
+        // end-to-end: the flag-on sequence through a real Engine +
+        // SingleSlotQueue must collapse to one Slot occupant (topic
+        // supersession), while every delta still reaches connectors
+        // (fan-out survives supersession under Engine::accept).
+        let (tx, mut rx) = tokio::sync::mpsc::channel(8);
+        let connector = ConnectorHandle::new("test", tx);
+        let app = tauri::test::mock_app();
+        let engine = Engine::new(
+            SingleSlotQueue::new(0),
+            app.handle().clone(),
+            Arc::new(vec![connector]),
+            true,
+            true,
+        );
+
+        for event in live_cycle_events(true) {
+            engine.accept(event, false).await.unwrap();
+        }
+
+        // one consolidated card showing the latest state, not three items
+        match engine.read(|q| q.current_slot_state()).await {
+            SlotState::Showing { body, .. } => assert_eq!(body, "full-time"),
+            SlotState::Empty => panic!("expected a Showing slot state"),
+        }
+        for expected in ["kickoff", "goal", "full-time"] {
+            let fanned = rx.try_recv().expect("every event must fan out");
+            assert_eq!(fanned.payload.body, expected);
+        }
+        assert!(rx.try_recv().is_err(), "no extra events may fan out");
     }
 
     #[test]
@@ -930,7 +1086,8 @@ mod tests {
         assert!(parse_scoreboard("{not json").is_err());
         let sb = parse_scoreboard("{}").unwrap();
         assert!(sb.events.is_empty());
-        let (events, snap) = diff_scoreboard(&Snapshot::new(), &sb, 8, "usa.1", Priority::High);
+        let (events, snap) =
+            diff_scoreboard(&Snapshot::new(), &sb, 8, "usa.1", Priority::High, false);
         assert!(events.is_empty());
         assert!(snap.is_empty());
     }

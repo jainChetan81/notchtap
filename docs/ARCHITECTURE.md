@@ -651,3 +651,38 @@ unchanged and permanent). code-level contract in
   `v5-news-backend` merge landed rss config): news on/off + feeds +
   poll interval + ttl + max-per-poll (`rss_*` fields) join the panel —
   "i decide when to poll news" was the panel's founding ask.
+
+---
+
+## 18. espn live-match card (locked 2026-07-19, plan 039)
+
+the queue's Topic-supersession / `RotationSpec::Recurring` machinery
+gets its first producer: the espn poller. governing design:
+`docs/design/scoreboard-topic-card.md` (plan 031 spike, approved).
+
+- **opt-in, default off**: new config flag `espn_live_card` (default
+  `false`). off remains byte-for-byte today's behavior — a burst of
+  one-shot, topicless cards per match. on flips one live match into a
+  single updating card.
+- **topic identity**: `espn:{league}:{match_id}` (espn's own event id).
+  every event for one match shares it, so kickoff/goal/card/half-time
+  supersede each other in the single Slot instead of queueing as
+  separate items.
+- **rotation**: `Recurring { display_secs: espn_ttl_secs }` while in
+  play (reuses the existing ttl — no new dwell knob); the full-time
+  event is emitted `OneShot` on the *same* Topic, so supersession flips
+  the visible card's rotation in place and it retires via the ordinary
+  one-shot path — no bespoke teardown.
+- **connector semantics unchanged**: every delta still fans out to
+  every enabled connector even though the overlay shows one
+  consolidated card (`Engine::accept` clones before enqueue, and the
+  offer loop runs regardless of merge-vs-promote).
+- **multi-match deferred**: scope is single-match correctness. multiple
+  concurrent live matches each get their own Topic and share the tier
+  via rotation-order/FIFO exactly as today's multi-match burst already
+  does — no special arbitration.
+- no `engine.rs`/`queue.rs` change was needed: `Engine::accept` is
+  Topic/Rotation-agnostic by construction; all supersession and
+  `Recurring`-requeue logic already lived in `queue.rs`, unit- and
+  proptest-covered. this plan is that machinery's first caller, not a
+  change to it.

@@ -9,14 +9,14 @@ doc.
 
 ---
 
-## 0. status at a glance (2026-07-18) — done vs left
+## 0. status at a glance (2026-07-19) — done vs left
 
 **done — built, green, ci-gated** (counts live here and only here;
 other sections point back rather than repeating them):
 
 | suite | size | where |
 |---|---|---|
-| rust unit/integration | 296 tests — settings 45, queue 65, http 36, notifier 23, rss_poller 28, poller 19, event 19, config 17, presentation 11, lib 11, engine 9, status 5, logging 4, net 4 | `cargo test` from `src-tauri/` |
+| rust unit/integration | 299 tests — settings 45, queue 65, http 36, notifier 23, rss_poller 28, poller 22, event 19, config 17, presentation 11, lib 11, engine 9, status 5, logging 4, net 4 | `cargo test` from `src-tauri/` |
 | rust doc-tests | 3 — public `queue`/`event` apis | same `cargo test` run |
 | frontend | 107 tests — presentation tables 12, inline markdown 7, slot-state hook 22, status-state hook 14, StatusRailCard 21, IdleView rail 6, Track slider 6, settings form 14, App render 5 | `npx vitest run` |
 | ci (v4) | fmt, clippy `-D warnings` (`--locked`), cargo test (`--locked`), cargo-audit, npm audit, tsc, vitest, vite build, `sh -n` cli syntax check, swiftc compile check | every push + pr |
@@ -51,7 +51,12 @@ queue's enqueue interface is clock-agnostic (`now: Instant` at every
 entry point, `enqueue_at` deleted), the rotation loop moved inside as
 `spawn_rotation`, and the protocol's own tests live in the new `engine`
 row — http's wake regression test and lib's two heartbeat tests moved
-there (moved, not lost), which is why http/lib each shrank.
+there (moved, not lost), which is why http/lib each shrank. plan 039
+landed the opt-in espn live-match card the same day: the poller's three
+new cases (flag-off regression pin, flag-on Topic/rotation shape,
+flag-on end-to-end queue collapse + connector fan-out) — poller 19→22,
+rust 296→299; frontend unchanged (fixture field additions only, no new
+vitest cases).
 
 **left — each is a decision with an owner section, not a gap:**
 

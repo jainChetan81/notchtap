@@ -41,6 +41,7 @@ export interface Config {
   espn_poll_secs: number;
   espn_priority: PriorityLevel;
   espn_ttl_secs: number;
+  espn_live_card: boolean;
   rss_enabled: boolean;
   rss_feeds: RssFeedConfig[];
   rss_poll_secs: number;
@@ -678,6 +679,14 @@ function FootballSection({
         max={3600}
         unit="SEC"
         onChange={(espn_ttl_secs) => patchConfig({ espn_ttl_secs })}
+      />
+      <ToggleControl
+        id="espn-live-card"
+        name="Live match card"
+        help="Show one live match as a single updating card instead of a burst of one-shot cards."
+        label="Consolidate live match updates"
+        checked={config.espn_live_card}
+        onChange={(espn_live_card) => patchConfig({ espn_live_card })}
       />
       <PriorityToggle
         id="espn-priority"

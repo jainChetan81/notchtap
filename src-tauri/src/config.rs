@@ -23,6 +23,11 @@ pub struct Config {
     /// v6: previously football silently reused `default_ttl` — now has its
     /// own rotation window like `rss_ttl_secs` already does for news.
     pub espn_ttl_secs: u64,
+    /// plan 039: opt-in live-match card. default false — today's
+    /// burst-of-one-shot-cards stays the default; when on, one live match
+    /// collapses to a single updating card (Topic `espn:{league}:{match_id}`,
+    /// `Recurring` while in play, `OneShot` full-time on the same Topic).
+    pub espn_live_card: bool,
     /// default false — news is opt-in per machine; ambient sources must
     /// not default on top of the app's primary agent-notification purpose.
     pub rss_enabled: bool,
@@ -158,6 +163,10 @@ fn default_espn_ttl_secs() -> u64 {
     8
 }
 
+fn default_espn_live_card() -> bool {
+    false
+}
+
 fn default_rss_enabled() -> bool {
     false
 }
@@ -247,6 +256,7 @@ impl Default for Config {
             espn_poll_secs: default_espn_poll_secs(),
             espn_priority: default_espn_priority(),
             espn_ttl_secs: default_espn_ttl_secs(),
+            espn_live_card: default_espn_live_card(),
             rss_enabled: default_rss_enabled(),
             rss_feeds: default_rss_feeds(),
             rss_poll_secs: default_rss_poll_secs(),

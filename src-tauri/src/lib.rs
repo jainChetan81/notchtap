@@ -125,6 +125,7 @@ pub fn run() {
     let espn_poll_secs = config.espn_poll_secs;
     let espn_priority = config.espn_priority;
     let espn_ttl_secs = config.espn_ttl_secs;
+    let espn_live_card = config.espn_live_card;
     let rss_enabled = config.rss_enabled;
     let rss_feeds = config.rss_feeds.clone();
     let rss_poll_secs = config.rss_poll_secs;
@@ -321,6 +322,7 @@ pub fn run() {
                     espn_poll_secs,
                     espn_ttl_secs,
                     espn_priority,
+                    espn_live_card,
                 );
             }
             if rss_enabled {

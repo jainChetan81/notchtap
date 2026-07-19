@@ -301,8 +301,17 @@ became "configurable, defaulting to this."
 | espn poller: `MatchState` (kickoff/half/full-time, cards) | `espn_priority` (`High`) | same field, both event kinds share one per-source default |
 | rss poller | `rss_priority` (`Low`) | `Config::default_rss_priority` — added with the news-poller phase, not present in the original v3.6 pass |
 
-no source in this pass constructs `Recurring` — that's the "mechanism
-must exist, no content yet" requirement (§3.6), still true. `Low` is
+~~no source in this pass constructs `Recurring`~~ — **amended
+2026-07-19 (plan 039):** the espn poller is now the first `Recurring`/
+Topic producer, behind the opt-in config flag `espn_live_card`
+(default `false`, `Config::default_espn_live_card`; no
+`settings::validate` rule — a plain bool). when on, each live match's
+events carry `topic: Some("espn:{league}:{match_id}")` and ride
+`Recurring { display_secs: espn_ttl_secs }` while in play, so
+kickoff/goal/card/half-time supersede into one updating card; the
+full-time event is emitted `OneShot` on the same Topic, retiring the
+card via the ordinary one-shot path. when off (the default), the
+poller emits `topic: None` one-shots exactly as before. `Low` is
 now live (the rss poller's default), no longer test-only.
 
 ### 3.5 wire-out payload (`notification-promoted` → replaced by `slot-state`)
