@@ -391,6 +391,23 @@ impl Config {
                 config.cmux_ttl_secs = config.default_ttl;
             }
         }
+        // heal a `rotation_order` written before a `SourceKind` variant
+        // existed (e.g. an install from before plan 040 Part B added
+        // `weather`): `settings::validate` requires a permutation of all
+        // five variants, but the settings UI's rotation-order list is a
+        // fixed reorder-only widget (it just renders whatever's already in
+        // the array) with no way for the user to add a missing one back —
+        // so a stale array fails validation on every save, permanently,
+        // with no in-UI escape hatch short of "Reset to defaults" (which
+        // also discards every other customized setting). Append whatever's
+        // missing, preserving the file's existing relative order for
+        // everything it already had; this self-heals for any future
+        // newly-added source too, not just this one.
+        for source in default_rotation_order() {
+            if !config.rotation_order.contains(&source) {
+                config.rotation_order.push(source);
+            }
+        }
         Ok(config)
     }
 }
@@ -640,6 +657,28 @@ url = "https://example.com/without-meta"
 
     #[test]
     fn rotation_order_is_overridable() {
+        let c = Config::parse(
+            "rotation_order = [\"news\", \"football\", \"cmux\", \"manual\", \"weather\"]\n",
+        )
+        .unwrap();
+        assert_eq!(
+            c.rotation_order,
+            [
+                SourceKind::News,
+                SourceKind::Football,
+                SourceKind::Cmux,
+                SourceKind::Manual,
+                SourceKind::Weather,
+            ]
+        );
+    }
+
+    #[test]
+    fn rotation_order_missing_a_source_is_healed_by_appending_it() {
+        // a config written before `weather` existed (e.g. pre-plan-040):
+        // the settings UI's rotation-order list can't add a missing source
+        // back on its own, so `Config::parse` must heal it at load time or
+        // every save attempt fails `validate`'s permutation check forever.
         let c = Config::parse("rotation_order = [\"news\", \"football\", \"cmux\", \"manual\"]\n")
             .unwrap();
         assert_eq!(
@@ -648,7 +687,8 @@ url = "https://example.com/without-meta"
                 SourceKind::News,
                 SourceKind::Football,
                 SourceKind::Cmux,
-                SourceKind::Manual
+                SourceKind::Manual,
+                SourceKind::Weather,
             ]
         );
     }

@@ -1164,6 +1164,7 @@ mod tests {
                 crate::event::SourceKind::Manual,
                 crate::event::SourceKind::Cmux,
                 crate::event::SourceKind::Football,
+                crate::event::SourceKind::Weather,
             ],
             connectors: crate::config::Connectors {
                 telegram: crate::config::TelegramToggle { enabled: true },
