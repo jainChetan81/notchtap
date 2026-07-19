@@ -16,9 +16,9 @@ other sections point back rather than repeating them):
 
 | suite | size | where |
 |---|---|---|
-| rust unit/integration | 321 tests — settings 46, queue 65, http 36, notifier 23, rss_poller 28, poller 25, event 19, config 19, weather_poller 13, presentation 11, lib 11, engine 10, status 7, logging 4, net 4 | `cargo test` from `src-tauri/` |
+| rust unit/integration | 326 tests — settings 46, queue 65, http 36, notifier 23, rss_poller 28, poller 30, event 19, config 19, weather_poller 13, presentation 11, lib 11, engine 10, status 7, logging 4, net 4 | `cargo test` from `src-tauri/` |
 | rust doc-tests | 3 — public `queue`/`event` apis | same `cargo test` run |
-| frontend | 110 tests — presentation tables 12, inline markdown 7, slot-state hook 22, status-state hook 15, StatusRailCard 21, IdleView rail 8, Track slider 6, settings form 14, App render 5 | `npx vitest run` |
+| frontend | 112 tests — presentation tables 12, inline markdown 7, slot-state hook 22, status-state hook 15, StatusRailCard 23, IdleView rail 8, Track slider 6, settings form 14, App render 5 | `npx vitest run` |
 | ci (v4) | fmt, clippy `-D warnings` (`--locked`), cargo test (`--locked`), cargo-audit, npm audit, tsc, vitest, vite build, `sh -n` cli syntax check, swiftc compile check | every push + pr |
 
 every example case listed in §4 for v1/v2/v3 components has a passing
@@ -67,7 +67,13 @@ settings surface (weather fields, validate ranges, the 5-source
 rotation-order permutation) — rust 302→321; frontend 107→110 (weather
 chip in IdleView, the status-state validator's weather branch, fixture
 updates). the outer spawn loop's live HTTP call is operator-verified,
-same as every other poller.
+same as every other poller. plan 042 landed the live-match scorecard
+presentation the same day: per-side (yellow, red) card bucketing in the
+poller (`MatchSnapshot.home_cards`/`away_cards` replacing the aggregate
+`cards`, gated on the structural `team.id` cross-reference), Clock +
+per-side Cards `meta.details` cells on flag-on match events, and the
+collapsed StatusRailCard detail lines — poller 25→30, rust 321→326;
+StatusRailCard 21→23, frontend 110→112.
 
 **left — each is a decision with an owner section, not a gap:**
 

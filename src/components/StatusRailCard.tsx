@@ -139,6 +139,20 @@ export function StatusRailCard({ slot, status }: { slot: SlotState; status?: Sta
                   <>
                     <div className="title">{slot.title}</div>
                     <div className="body">{renderInlineMarkdown(slot.body)}</div>
+                    {/* plan 042: collapsed scorecard cells (Clock, per-side
+                        Cards) — only a live-match card with `espn_live_card`
+                        on populates `details`, so every other card renders
+                        exactly as before. Same detail-label/detail-value
+                        classes as the expanded Manifest view; collapsed-only,
+                        so the pairs never render twice when expanded. */}
+                    {!expanded &&
+                      slot.details.length > 0 &&
+                      slot.details.map((detail) => (
+                        <div key={`${detail.label}:${detail.value}`}>
+                          <div className="detail-label">{detail.label}</div>
+                          <div className="detail-value">{detail.value}</div>
+                        </div>
+                      ))}
                   </>
                 )}
               </div>

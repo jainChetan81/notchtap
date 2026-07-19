@@ -6,7 +6,8 @@ use uuid::Uuid;
 
 use crate::engine::Engine;
 use crate::event::{
-    Event, EventMeta, EventPayload, EventSignal, EventType, Priority, RotationSpec, SourceKind,
+    DetailItem, Event, EventMeta, EventPayload, EventSignal, EventType, Priority, RotationSpec,
+    SourceKind,
 };
 use crate::status::LiveMatchSummary;
 
@@ -73,6 +74,10 @@ pub struct SbCompetitor {
 
 #[derive(Debug, Deserialize, Default)]
 pub struct SbTeam {
+    // plan 042: per-side card bucketing cross-references card details'
+    // `team.id` against this competitor-level id.
+    #[serde(default)]
+    pub id: String,
     #[serde(default)]
     pub abbreviation: String,
 }
@@ -100,6 +105,12 @@ pub struct SbDetail {
     pub clock: Option<SbClock>,
     #[serde(rename = "athletesInvolved", default)]
     pub athletes: Vec<SbAthlete>,
+    // espn's detail-level team object is just `{"id": "..."}` — reuse
+    // SbTeam (no new struct): `abbreviation` simply defaults to empty.
+    // structural side attribution, same discipline as `red_card`/
+    // `own_goal` above (plan 042).
+    #[serde(default)]
+    pub team: Option<SbTeam>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -144,13 +155,27 @@ pub struct MatchSnapshot {
     /// transient feed blip. Never diffed — clock advance alone emits no
     /// queue event.
     pub display_clock: String,
-    pub cards: usize,
+    /// per-side (yellow, red) card counts, bucketed by cross-referencing
+    /// each card detail's `team.id` against the competitors' team ids
+    /// (plan 042 — replaces the single aggregate `cards: usize`; the
+    /// collapsed scorecard shows the split, not a bare total).
+    pub home_cards: (u32, u32),
+    pub away_cards: (u32, u32),
     /// consecutive polls this match has been absent from its league's
     /// feed. reset to 0 whenever it appears; evicted at
     /// ABSENT_POLLS_BEFORE_EVICTION (review fix, 2026-07-16: a
     /// transient empty-but-valid espn response must not silently drop
     /// live matches and lose their in-window events).
     pub missed_polls: usize,
+}
+
+impl MatchSnapshot {
+    /// sum of all four per-side counters — the card event-emission
+    /// gate's comparison value (plan 042: fires on exactly the
+    /// transitions the old aggregate `cards > old.cards` did).
+    pub fn total_cards(&self) -> u32 {
+        self.home_cards.0 + self.home_cards.1 + self.away_cards.0 + self.away_cards.1
+    }
 }
 
 /// ~5 minutes at the default 30s cadence — long enough to ride out a
@@ -200,6 +225,8 @@ fn view(event: &SbEvent) -> MatchView<'_> {
     let comp = event.competitions.first();
     let mut home_abbrev = String::new();
     let mut away_abbrev = String::new();
+    let mut home_id = String::new();
+    let mut away_id = String::new();
     let mut home_score = 0u32;
     let mut away_score = 0u32;
 
@@ -210,6 +237,7 @@ fn view(event: &SbEvent) -> MatchView<'_> {
                 .as_ref()
                 .map(|t| t.abbreviation.clone())
                 .unwrap_or_default();
+            let id = c.team.as_ref().map(|t| t.id.clone()).unwrap_or_default();
             let score = c
                 .score
                 .as_deref()
@@ -218,10 +246,12 @@ fn view(event: &SbEvent) -> MatchView<'_> {
             match c.home_away.as_str() {
                 "home" => {
                     home_abbrev = abbrev;
+                    home_id = id;
                     home_score = score;
                 }
                 "away" => {
                     away_abbrev = abbrev;
+                    away_id = id;
                     away_score = score;
                 }
                 _ => {}
@@ -230,15 +260,35 @@ fn view(event: &SbEvent) -> MatchView<'_> {
     }
 
     let details = comp.map(|c| c.details.as_slice()).unwrap_or(&[]);
-    let cards = details
-        .iter()
-        .filter(|d| {
-            d.detail_type
-                .as_ref()
-                .map(|t| t.text.contains("Card"))
-                .unwrap_or(false)
-        })
-        .count();
+    // per-side (yellow, red) bucketing (plan 042 — replaces the old
+    // aggregate count): cross-reference each card detail's own `team.id`
+    // against the competitor ids above — structural, same discipline as
+    // `red_card`/`own_goal`. a card whose team id matches neither side
+    // is not counted (no verified payload does this).
+    let mut home_cards = (0u32, 0u32);
+    let mut away_cards = (0u32, 0u32);
+    for d in details.iter().filter(|d| {
+        d.detail_type
+            .as_ref()
+            .map(|t| t.text.contains("Card"))
+            .unwrap_or(false)
+    }) {
+        let team_id = d.team.as_ref().map(|t| t.id.as_str()).unwrap_or("");
+        let side = if !team_id.is_empty() && team_id == home_id {
+            Some(&mut home_cards)
+        } else if !team_id.is_empty() && team_id == away_id {
+            Some(&mut away_cards)
+        } else {
+            None
+        };
+        if let Some((yellows, reds)) = side {
+            if d.red_card {
+                *reds += 1;
+            } else {
+                *yellows += 1;
+            }
+        }
+    }
     let last_scoring_play = details
         .iter()
         .rev()
@@ -285,7 +335,8 @@ fn view(event: &SbEvent) -> MatchView<'_> {
             state: event.status.status_type.state.clone(),
             status_name: event.status.status_type.name.clone(),
             display_clock: event.status.display_clock.clone(),
-            cards,
+            home_cards,
+            away_cards,
             missed_polls: 0,
         },
         last_scoring_play,
@@ -437,13 +488,49 @@ pub fn diff_scoreboard(
             }
             Some(old) => {
                 let title = matchup(league, &v.snap);
+                // plan 042: collapsed-scorecard cells, built once per
+                // match and attached unchanged to every event this poll
+                // pushes for it (a single poll can push goal + full-time
+                // together). `topic.is_some()` is the same value for all
+                // of them, so this stays default (byte-identical to
+                // pre-039) exactly when the live-card flag is off.
+                let meta = if topic.is_some() {
+                    let mut details = vec![DetailItem {
+                        label: "Clock".to_string(),
+                        value: v.snap.display_clock.clone(),
+                    }];
+                    let (home_y, home_r) = v.snap.home_cards;
+                    let (away_y, away_r) = v.snap.away_cards;
+                    // omit the cell on a clean match rather than show
+                    // "0Y0R · 0Y0R" clutter
+                    if home_y + home_r + away_y + away_r > 0 {
+                        details.push(DetailItem {
+                            label: "Cards".to_string(),
+                            value: format!(
+                                "{} {}Y{}R · {} {}Y{}R",
+                                v.snap.away_abbrev,
+                                away_y,
+                                away_r,
+                                v.snap.home_abbrev,
+                                home_y,
+                                home_r
+                            ),
+                        });
+                    }
+                    EventMeta {
+                        details,
+                        ..EventMeta::default()
+                    }
+                } else {
+                    EventMeta::default()
+                };
 
                 if v.snap.home_score != old.home_score || v.snap.away_score != old.away_score {
                     let body = v
                         .last_scoring_play
                         .clone()
                         .unwrap_or_else(|| "goal".to_string());
-                    out.push(make_event(
+                    let mut event = make_event(
                         EventType::ScoreUpdate,
                         title.clone(),
                         body,
@@ -451,11 +538,13 @@ pub fn diff_scoreboard(
                         EventSignal::Goal,
                         priority,
                         card_topic(&topic, false),
-                    ));
+                    );
+                    event.meta = meta.clone();
+                    out.push(event);
                 }
 
                 if old.state == "pre" && v.snap.state == "in" {
-                    out.push(make_event(
+                    let mut event = make_event(
                         EventType::MatchState,
                         title.clone(),
                         "kickoff".to_string(),
@@ -463,10 +552,12 @@ pub fn diff_scoreboard(
                         EventSignal::Kickoff,
                         priority,
                         card_topic(&topic, false),
-                    ));
+                    );
+                    event.meta = meta.clone();
+                    out.push(event);
                 }
                 if v.snap.status_name == "STATUS_HALFTIME" && old.status_name != "STATUS_HALFTIME" {
-                    out.push(make_event(
+                    let mut event = make_event(
                         EventType::MatchState,
                         title.clone(),
                         "half-time".to_string(),
@@ -474,10 +565,12 @@ pub fn diff_scoreboard(
                         EventSignal::Halftime,
                         priority,
                         card_topic(&topic, false),
-                    ));
+                    );
+                    event.meta = meta.clone();
+                    out.push(event);
                 }
                 if final_now && old.state != "post" {
-                    out.push(make_event(
+                    let mut event = make_event(
                         EventType::MatchState,
                         title.clone(),
                         "full-time".to_string(),
@@ -485,17 +578,19 @@ pub fn diff_scoreboard(
                         EventSignal::Fulltime,
                         priority,
                         card_topic(&topic, true),
-                    ));
+                    );
+                    event.meta = meta.clone();
+                    out.push(event);
                 }
 
-                if v.snap.cards > old.cards {
+                if v.snap.total_cards() > old.total_cards() {
                     let body = v.last_card.clone().unwrap_or_else(|| "card".to_string());
                     let signal = if v.last_card_is_red {
                         EventSignal::RedCard
                     } else {
                         EventSignal::YellowCard
                     };
-                    out.push(make_event(
+                    let mut event = make_event(
                         EventType::MatchState,
                         title,
                         body,
@@ -503,7 +598,9 @@ pub fn diff_scoreboard(
                         signal,
                         priority,
                         card_topic(&topic, false),
-                    ));
+                    );
+                    event.meta = meta.clone();
+                    out.push(event);
                 }
 
                 if !final_now {
@@ -946,10 +1043,12 @@ mod tests {
     #[test]
     fn new_card_emits_match_state_with_detail() {
         let sb = parse_scoreboard(UCL).unwrap();
-        // pretend we saw this match live with one fewer card
+        // pretend we saw this match live with one fewer card — the
+        // fixture's last card is a home (PSG) yellow, so "one card ago"
+        // is home (1, 0) instead of (2, 0)
         let mut v_snap = view(&sb.events[0]).snap;
         v_snap.state = "in".to_string();
-        v_snap.cards -= 1;
+        v_snap.home_cards.0 -= 1;
         let mut snap = Snapshot::new();
         snap.insert(sb.events[0].id.clone(), v_snap);
 
@@ -974,7 +1073,9 @@ mod tests {
         let sb = parse_scoreboard(UCL).unwrap();
         let mut v_snap = view(&sb.events[0]).snap;
         v_snap.state = "in".to_string();
-        v_snap.cards -= 1;
+        // the mutation below turns the fixture's last (home) yellow into
+        // a red — the "one card ago" state is one fewer home yellow
+        v_snap.home_cards.0 -= 1;
         let mut snap = Snapshot::new();
         snap.insert(sb.events[0].id.clone(), v_snap);
 
@@ -993,6 +1094,21 @@ mod tests {
         assert_eq!(events.len(), 1);
         assert!(matches!(events[0].event_type, EventType::MatchState));
         assert_eq!(events[0].signal, EventSignal::RedCard);
+    }
+
+    #[test]
+    fn ucl_fixture_cards_bucket_per_side_and_color() {
+        // plan 042 ground truth, verified directly against the raw
+        // fixture json: 6 yellows, 0 reds — home PSG (team.id 160) 2Y,
+        // away ARS (team.id 359) 4Y. if these numbers come out different,
+        // the `team.id` cross-reference is misattributing cards.
+        let sb = parse_scoreboard(UCL).unwrap();
+        let snap = view(&sb.events[0]).snap;
+        assert_eq!(snap.home_abbrev, "PSG");
+        assert_eq!(snap.away_abbrev, "ARS");
+        assert_eq!(snap.home_cards, (2, 0));
+        assert_eq!(snap.away_cards, (4, 0));
+        assert_eq!(snap.total_cards(), 6);
     }
 
     #[test]
@@ -1145,6 +1261,84 @@ mod tests {
         assert_eq!(events[2].payload.body, "full-time");
         assert_eq!(events[2].topic.as_deref(), Some(topic));
         assert_eq!(events[2].rotation, RotationSpec::OneShot { ttl_secs: 8 });
+    }
+
+    // plan 042: collapsed-scorecard meta.details — Clock always (flag
+    // on), per-side Cards only when any exist; flag off stays default.
+
+    #[test]
+    fn live_card_off_keeps_meta_default() {
+        // regression pin: with the flag off, meta is byte-identical to
+        // pre-039 behavior — fully default, empty details.
+        let events = live_cycle_events(false);
+        assert_eq!(events.len(), 3);
+        for event in &events {
+            assert_eq!(event.meta, EventMeta::default());
+        }
+    }
+
+    #[test]
+    fn live_card_on_attaches_clock_and_per_side_cards() {
+        // same "one home yellow ago" setup as
+        // new_card_emits_match_state_with_detail, flag on.
+        let sb = parse_scoreboard(UCL).unwrap();
+        let mut v_snap = view(&sb.events[0]).snap;
+        v_snap.state = "in".to_string();
+        v_snap.home_cards.0 -= 1;
+        let mut snap = Snapshot::new();
+        snap.insert(sb.events[0].id.clone(), v_snap);
+
+        let mut live = parse_scoreboard(UCL).unwrap();
+        live.events[0].status.status_type.state = "in".to_string();
+
+        let (events, _) = diff_scoreboard(&snap, &live, 8, "uefa.champions", Priority::High, true);
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].meta.details,
+            vec![
+                DetailItem {
+                    label: "Clock".to_string(),
+                    value: "120'".to_string(),
+                },
+                DetailItem {
+                    label: "Cards".to_string(),
+                    value: "ARS 4Y0R · PSG 2Y0R".to_string(),
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn live_card_on_clean_match_omits_cards_cell() {
+        // the USA fixture carries no card details — Clock must still be
+        // there, Cards omitted rather than "0Y0R · 0Y0R".
+        let (snap, mut sb) = baseline(USA);
+        sb.events[0].status.status_type.state = "in".to_string(); // kickoff
+        let (events, _) = diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High, true);
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].meta.details,
+            vec![DetailItem {
+                label: "Clock".to_string(),
+                value: "0'".to_string(),
+            }]
+        );
+    }
+
+    #[test]
+    fn live_card_on_goal_and_full_time_in_one_poll_share_meta() {
+        // mirrors goal_and_full_time_in_one_poll_emit_in_order with the
+        // flag on: both events pushed this poll carry the same meta.
+        let (mut snap, mut sb) = baseline(USA);
+        snap.get_mut("761659").unwrap().state = "in".to_string();
+        sb.events[0].competitions[0].competitors[0].score = Some("1".to_string());
+        sb.events[0].status.status_type.state = "post".to_string();
+        let (events, _) = diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High, true);
+        assert_eq!(events.len(), 2);
+        assert!(matches!(events[0].event_type, EventType::ScoreUpdate));
+        assert_eq!(events[1].payload.body, "full-time");
+        assert_eq!(events[0].meta.details.len(), 1); // Clock only — clean match
+        assert_eq!(events[0].meta, events[1].meta);
     }
 
     #[tokio::test]

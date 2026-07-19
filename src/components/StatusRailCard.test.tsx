@@ -80,6 +80,30 @@ const CMUX_NEEDS_INPUT: SlotState = {
   queueDone: 0,
 };
 
+// plan 042: a live-match card — the rust core attaches Clock + per-side
+// Cards detail pairs when `espn_live_card` is on.
+const LIVE_MATCH: SlotState = {
+  state: "showing",
+  id: "match-1",
+  title: "UCL: ARS 1–1 PSG",
+  body: "Yellow Card — B. Saka 54'",
+  eventType: "match_state",
+  priority: "high",
+  signal: "yellow_card",
+  expanded: false,
+  source: null,
+  category: null,
+  publishedAtMs: null,
+  link: null,
+  subtitle: null,
+  details: [
+    { label: "Clock", value: "54'" },
+    { label: "Cards", value: "ARS 4Y0R · PSG 2Y0R" },
+  ],
+  queueTotal: 1,
+  queueDone: 0,
+};
+
 const NEWS: SlotState = {
   state: "showing",
   id: "news-1",
@@ -365,14 +389,39 @@ describe("StatusRailCard", () => {
     expect(screen.getByText("/Users/x/proj")).toBeTruthy();
   });
 
-  it("renders neither subtitle nor detail cells when collapsed", () => {
+  // plan 042 changed the collapsed contract: detail pairs now render below
+  // the body (a live-match card's Clock/Cards must be readable without
+  // expanding). the subtitle stays expanded-only.
+  it("hides the subtitle but shows detail pairs when collapsed", () => {
     render(<StatusRailCard slot={{ ...CMUX_RICH, expanded: false }} />);
 
     expect(screen.queryByText("Subtitle")).toBeNull();
     expect(screen.queryByText("Permission request")).toBeNull();
-    expect(screen.queryByText("Tool")).toBeNull();
-    expect(screen.queryByText("Bash")).toBeNull();
-    expect(screen.queryByText("Project")).toBeNull();
+    expect(screen.getByText("Tool")).toBeTruthy();
+    expect(screen.getByText("Bash")).toBeTruthy();
+    expect(screen.getByText("Project")).toBeTruthy();
+  });
+
+  // plan 042: the whole point — Clock + per-side Cards readable without
+  // expanding.
+  it("renders Clock and per-side Cards in the collapsed view for a live-match card", () => {
+    render(<StatusRailCard slot={LIVE_MATCH} />);
+
+    expect(screen.getByText("Clock")).toBeTruthy();
+    expect(screen.getByText("54'")).toBeTruthy();
+    expect(screen.getByText("Cards")).toBeTruthy();
+    expect(screen.getByText("ARS 4Y0R · PSG 2Y0R")).toBeTruthy();
+  });
+
+  it("renders no detail lines when collapsed with empty details (unchanged behavior)", () => {
+    const { container } = render(
+      <StatusRailCard slot={{ ...GOAL, expanded: false, details: [] }} />,
+    );
+
+    expect(screen.getByText("GOAL")).toBeTruthy();
+    expect(screen.getByText("Arsenal 2-0")).toBeTruthy();
+    expect(container.querySelector(".detail-label")).toBeNull();
+    expect(container.querySelector(".detail-value")).toBeNull();
   });
 
   it("renders a detail value that contains an '=' verbatim (first-'=' split is CLI-side only)", () => {
