@@ -10,14 +10,39 @@
 
 ## Status
 
-- **Priority**: Feature (operator-requested, filed directly — not from an
+- **Priority**: P3 (operator-requested, filed directly — not from an
   audit or spike session; same precedent as
-  `004-test-notifications(done).md` / `005-appearance-config(done).md`)
+  `004-test-notifications(done).md` / `005-appearance-config(done).md`.
+  **Review-plan correction**: the field previously held "Feature," not a
+  P-value — every other plan in this repo uses P1/P2/P3 here, and
+  `plans/README.md`'s own dependency notes rely on that being sortable;
+  fixed to P3, matching this plan's own low urgency/low risk profile.
+  Same correction applied to `plans/README.md`'s status row.)
 - **Effort**: S
 - **Risk**: LOW
 - **Depends on**: none
 - **Category**: feature
 - **Planned at**: commit `f58ced2`, 2026-07-20
+- **Review-plan pass (2026-07-20)**: verified live against `notchtap`
+  (zero drift since `f58ced2`) and `http.rs`'s `NotifyRequest`
+  (`priority`/`details` confirmed real optional wire fields — no
+  server-side change needed, claim accurate). Traced the proposed Step 1
+  shell logic under `set -u` semantics and found two real gaps, both
+  fixed in Step 1 below: (1) every one of `run`'s own flag-validation
+  failures called the shared top-level `usage()`, which only prints the
+  `--title`/`--body` flags-mode message — a typo in `notchtap run
+  --min-secs` would show the user an error describing a completely
+  different command mode; (2) `--min-secs` was the one `run` flag with
+  no input validation (contrast `--priority-success`/`--priority-failure`,
+  which both `case`-validate), so a non-numeric value would crash with a
+  shell arithmetic error inside `[ ... -lt ... ]` instead of a clean
+  `usage` exit. Two narrower, non-blocking observations folded into
+  Maintenance notes instead of fixed: a literal `cd` as the wrapped
+  command could break the `"$0"` self-invocation if `$0` is a relative
+  path (narrow — most wrapped commands are build tools, not shell
+  builtins); Ctrl-C during the wrapped command likely kills the whole
+  script before the completion push fires (probably fine — being at the
+  terminal to press Ctrl-C means you don't need the "it's done" nudge).
 
 ## Why this matters
 
@@ -141,6 +166,11 @@ from the flags-only push mode).
 # a failure always pushes regardless of duration — a fast failure is
 # exactly the "did something break while I looked away" case a slow one
 # isn't.
+run_usage() {
+  echo "usage: notchtap run [--label <name>] [--min-secs <n>] [--priority-success low|medium|high] [--priority-failure low|medium|high] [--port <p>] -- <command...>" >&2
+  exit 2
+}
+
 if [ "${1:-}" = "run" ]; then
   shift
   run_label=""
@@ -152,29 +182,35 @@ if [ "${1:-}" = "run" ]; then
   while [ $# -gt 0 ]; do
     case "$1" in
       --label)
-        [ $# -ge 2 ] || usage
+        [ $# -ge 2 ] || run_usage
         run_label="$2"; shift 2 ;;
       --min-secs)
-        [ $# -ge 2 ] || usage
+        [ $# -ge 2 ] || run_usage
+        # must be a non-negative integer — it feeds a `[ -lt ]` numeric
+        # comparison below, which errors out on non-numeric input rather
+        # than failing cleanly.
+        case "$2" in
+          ''|*[!0-9]*) run_usage ;;
+        esac
         run_min_secs="$2"; shift 2 ;;
       --priority-success)
-        [ $# -ge 2 ] || usage
-        case "$2" in low|medium|high) run_priority_success="$2" ;; *) usage ;; esac
+        [ $# -ge 2 ] || run_usage
+        case "$2" in low|medium|high) run_priority_success="$2" ;; *) run_usage ;; esac
         shift 2 ;;
       --priority-failure)
-        [ $# -ge 2 ] || usage
-        case "$2" in low|medium|high) run_priority_failure="$2" ;; *) usage ;; esac
+        [ $# -ge 2 ] || run_usage
+        case "$2" in low|medium|high) run_priority_failure="$2" ;; *) run_usage ;; esac
         shift 2 ;;
       --port)
-        [ $# -ge 2 ] || usage
+        [ $# -ge 2 ] || run_usage
         run_port="$2"; shift 2 ;;
       --)
         shift; break ;;
       *)
-        usage ;;
+        run_usage ;;
     esac
   done
-  [ $# -ge 1 ] || usage   # at least one token must follow --
+  [ $# -ge 1 ] || run_usage   # at least one token must follow --
 
   [ -n "$run_label" ] || run_label="$*"
 
@@ -244,6 +280,11 @@ With `npm run tauri dev` running:
 6. `notchtap run -- false && echo should-not-print` → `should-not-print`
    never prints (confirms the wrapped exit code propagates through a
    `&&` chain correctly)
+7. `notchtap run --min-secs abc -- true` → exits 2, stderr shows the
+   `run`-specific usage line (mentions `--label`/`--min-secs`/etc.), NOT
+   the top-level `--title`/`--body` usage line — this is the
+   review-plan-pass fix: before it, any `run`-mode flag mistake printed
+   the wrong command's usage text
 
 ### Step 4: `plans/README.md`
 
@@ -263,10 +304,12 @@ the established pattern, not a new exception).
 
 - [ ] `grep -c '"run"' notchtap` → ≥1 (the dispatch condition)
 - [ ] `sh -n notchtap` exits 0
-- [ ] Step 3's six manual cases all behave as described (operator-owed)
+- [ ] Step 3's seven manual cases all behave as described (operator-owed)
 - [ ] the wrapped command's own exit code is what `notchtap run` returns
       in every case, including notify-server-down (case 5) and a `&&`
       chain (case 6)
+- [ ] a bad `run`-mode flag (case 7) prints `run`'s own usage text, not
+      the top-level flags-mode usage text
 - [ ] README.md gains the one-line `notchtap run` mention
 - [ ] `plans/README.md` status row updated
 
@@ -284,6 +327,24 @@ the established pattern, not a new exception).
 
 ## Maintenance notes
 
+- **Two narrow edge cases identified in review, not fixed (accepted as-is)**:
+  (1) if the wrapped command is a literal shell builtin like `cd`
+  (e.g. `notchtap run -- cd /somewhere`, unusual but possible) rather
+  than an external command, it runs in the script's own shell — a `cd`
+  would change the script's CWD, and if `$0` is a relative path (e.g.
+  invoked as `./notchtap`), the later `"$0"` self-invocation could then
+  fail to find the script or find the wrong file. Realistic wrapped
+  commands are build/test tools, not raw shell builtins, so this is low
+  likelihood — revisit only if it's ever actually hit. (2) Ctrl-C during
+  the wrapped command likely delivers SIGINT to the whole foreground
+  process group (script included, since it's not run in its own process
+  group), killing `notchtap run` before it reaches the completion-push
+  code — so a manually-interrupted command never gets a push. This
+  arguably doesn't matter (being at the terminal to press Ctrl-C means
+  you're already watching, so the "it's done" nudge isn't needed), but
+  it's worth knowing this isn't the same as "a failure always pushes" —
+  that guarantee only covers the wrapped command exiting non-zero on its
+  own, not the script itself being killed.
 - Any future "notify on completion" wrapper should reuse this same
   self-invocation pattern (`"$0" --title ... --detail ...`) rather than
   duplicating the jq/curl push logic a second time.

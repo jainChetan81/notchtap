@@ -30,6 +30,9 @@ branches at runtime.
   saving relaunches the app — there's no hot-reload
 - renders as a slick, animated overlay — notch-cutout-aware on the
   MacBook, floating HUD on the Mac mini
+- wraps long-running commands and pushes a completion card when they
+  finish: `notchtap run -- pnpm build` (skips the push for fast,
+  successful runs; a failure always pushes)
 
 ### global hotkeys
 

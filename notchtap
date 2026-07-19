@@ -2,6 +2,8 @@
 # notchtap — cli push for the notchtap notification engine (spec §12).
 # flags only, no positional form:
 #   notchtap --title <title> --body <body> [--subtitle <s>] [--detail Label=Value]... [--priority low|medium|high] [--signal <s>] [--source cmux] [--port <p>]
+# second, distinct mode — the one exception to "flags only": `notchtap run`
+# wraps a command and pushes a completion notification (see below).
 # --subtitle and --detail are first-class wire fields (plan 035): --subtitle
 # posts as its own optional field (it no longer folds into the body), and each
 # repeatable --detail Label=Value adds a {label,value} pair to a details array
@@ -32,6 +34,99 @@ usage() {
   echo "usage: notchtap --title <title> --body <body> [--subtitle <s>] [--detail Label=Value]... [--priority low|medium|high] [--signal <s>] [--source cmux] [--port <p>]" >&2
   exit 2
 }
+
+# notchtap run — the one deliberate exception to "flags only": wraps a
+# command, times it, and pushes a completion notification via a
+# self-invocation of this same script's flags path below (zero
+# duplicated push logic, so the two modes can never drift apart).
+#   notchtap run [--label <name>] [--min-secs <n>]
+#     [--priority-success low|medium|high] [--priority-failure low|medium|high]
+#     [--port <p>] -- <command...>
+# exit code is ALWAYS the wrapped command's own — a failed push never
+# changes it (best-effort only; a push failure warns to stderr).
+# a fast, successful run is suppressed below --min-secs (default 15s);
+# a failure always pushes regardless of duration — a fast failure is
+# exactly the "did something break while I looked away" case a slow one
+# isn't.
+run_usage() {
+  echo "usage: notchtap run [--label <name>] [--min-secs <n>] [--priority-success low|medium|high] [--priority-failure low|medium|high] [--port <p>] -- <command...>" >&2
+  exit 2
+}
+
+if [ "${1:-}" = "run" ]; then
+  shift
+  run_label=""
+  run_min_secs=15
+  run_priority_success="medium"
+  run_priority_failure="high"
+  run_port="${NOTCHTAP_PORT:-9789}"
+
+  while [ $# -gt 0 ]; do
+    case "$1" in
+      --label)
+        [ $# -ge 2 ] || run_usage
+        run_label="$2"; shift 2 ;;
+      --min-secs)
+        [ $# -ge 2 ] || run_usage
+        # must be a non-negative integer — it feeds a `[ -lt ]` numeric
+        # comparison below, which errors out on non-numeric input rather
+        # than failing cleanly.
+        case "$2" in
+          ''|*[!0-9]*) run_usage ;;
+        esac
+        run_min_secs="$2"; shift 2 ;;
+      --priority-success)
+        [ $# -ge 2 ] || run_usage
+        case "$2" in low|medium|high) run_priority_success="$2" ;; *) run_usage ;; esac
+        shift 2 ;;
+      --priority-failure)
+        [ $# -ge 2 ] || run_usage
+        case "$2" in low|medium|high) run_priority_failure="$2" ;; *) run_usage ;; esac
+        shift 2 ;;
+      --port)
+        [ $# -ge 2 ] || run_usage
+        run_port="$2"; shift 2 ;;
+      --)
+        shift; break ;;
+      *)
+        run_usage ;;
+    esac
+  done
+  [ $# -ge 1 ] || run_usage   # at least one token must follow --
+
+  [ -n "$run_label" ] || run_label="$*"
+
+  run_start=$(date +%s)
+  "$@"
+  run_status=$?
+  run_end=$(date +%s)
+  run_elapsed=$((run_end - run_start))
+
+  if [ "$run_status" -eq 0 ] && [ "$run_elapsed" -lt "$run_min_secs" ]; then
+    exit "$run_status"
+  fi
+
+  if [ "$run_elapsed" -ge 60 ]; then
+    run_dur="$((run_elapsed / 60))m $((run_elapsed % 60))s"
+  else
+    run_dur="${run_elapsed}s"
+  fi
+
+  if [ "$run_status" -eq 0 ]; then
+    run_title="Command finished"
+    run_priority="$run_priority_success"
+  else
+    run_title="Command failed"
+    run_priority="$run_priority_failure"
+  fi
+
+  "$0" --title "$run_title" --body "$run_label" \
+    --detail "Exit=$run_status" --detail "Duration=$run_dur" \
+    --priority "$run_priority" --port "$run_port" \
+    || echo "notchtap run: push failed (command's own exit code is still authoritative)" >&2
+
+  exit "$run_status"
+fi
 
 title=""
 body=""
