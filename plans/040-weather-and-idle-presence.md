@@ -33,9 +33,12 @@
   "Re-grounded against the Engine" below) that the original filing
   didn't anticipate, since it predates 037.
 - **Depends on**: none for the architecture (037 is landed, not a
-  blocker). **Operator decision required before Step 1**: the weather
-  provider (see "Provider decision" below) — this plan cannot specify
-  the exact fetch shape until that's picked.
+  blocker). **Provider is now RESOLVED** (Open-Meteo — see "Provider
+  decision" below). **Three defaults are still open**, deferred to a
+  separate design-doc session (not this one): `weather_poll_secs`'s
+  default, `SourceKind::Weather`'s position in `default_rotation_order`,
+  and the exact rain-probability/temp threshold numbers. Step 0 still
+  gates on these — see "Design decisions" below.
 - **Review-plan pass (2026-07-19, at `15df3cc`)**: verified Part A DONE
   against live code and test counts (see Status above). For Part B:
   corrected "settings.rs + Config" — the struct is in `config.rs`
@@ -48,6 +51,11 @@
   code (`status.rs`, `event.rs`, `config.rs`, `net.rs`,
   `useStatusState.ts`, `IdleView.tsx`); wrote concrete numbered Steps
   (none existed before, same gap as 039's original filing).
+- **Grilled 2026-07-20 (`/grill-me`, operator)**: eight decisions
+  resolved — see "Provider decision" and "Design decisions" below for
+  the full record. Three numeric/positional defaults deliberately left
+  open for a later design-doc session (see Status line above and
+  "Design decisions" §7).
 
 ## Motivation
 
@@ -69,20 +77,97 @@ No action. `IdleView.tsx:24-28`:
 matches the plan's design exactly, gated the same way the live-chip
 branch is (`live !== null` at `IdleView.tsx:19`).
 
-## Provider decision (operator — REQUIRED before Step 1)
+## Provider decision (RESOLVED 2026-07-20 — Open-Meteo)
 
 The original filing named "Open-Meteo (no key, lat/lon in, JSON out)"
 as an example, flagged for confirmation, not a locked choice. This
-review-plan pass did not independently verify Open-Meteo's terms (no
-tool access to confirm current ToS) — that verification, and the final
-provider pick, is still an operator decision. Whatever is chosen must
-be keyless or low-friction (the `net.rs` client posture — 10s timeout,
-3 redirects, capped body — assumes a plain public JSON endpoint, not
-an OAuth/API-key flow; a keyed provider would need its own secrets
-handling, mirroring `notifier.rs`'s telegram-secret pattern, which is
-meaningfully more scope than this plan currently sizes for). **Do not
-proceed past this gate without the operator confirming**: provider,
-its terms, and whether it needs a secret.
+review-plan pass verified it live (fetched Open-Meteo's actual docs,
+not just trusting the name) and the operator confirmed it during
+`/grill-me`:
+
+- **Keyless, no rate limit documented** for non-commercial use — their
+  own docs: "Only required to commercial use to access reserved API
+  resources for customers." Fits `net.rs`'s existing client posture
+  (10s timeout, 3 redirects, capped body — a plain public JSON
+  endpoint, no OAuth/secret handling needed, so `notifier.rs`'s
+  telegram-secret pattern is NOT needed here).
+- **Forecast endpoint**: `GET
+  https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=...`
+  — current-conditions fields include temperature, precipitation,
+  weather code (WMO 0–99), wind. Covers the ambient chip.
+- **Short-term precipitation**: `&minutely_15=precipitation` (native
+  for North America/Central Europe, interpolated elsewhere) or
+  `&hourly=precipitation_probability` — covers the "rain incoming"
+  threshold alert (see "Design decisions" below).
+- **No severe-weather-warnings feed** — confirmed: Open-Meteo delivers
+  only numeric data and WMO codes, no human-authored storm/flood
+  warning text. This ruled out "severe weather warnings" as originally
+  imagined in the Motivation section — see "Design decisions" §3.
+- A free, keyless **geocoding endpoint** also exists
+  (`https://geocoding-api.open-meteo.com/v1/search?name=...`) but is
+  explicitly NOT used by this plan — see "Design decisions" §1.
+
+## Design decisions (grilled 2026-07-20, operator)
+
+Seven decisions resolved via `/grill-me`, in dependency order:
+
+1. **Location input: raw `lat`/`lon` config fields only — no
+   geocoding, no city-name lookup.** Open-Meteo's geocoding endpoint
+   (above) is real and free, but adding it means a second live API
+   dependency, a settings-UI disambiguation flow (0 or multiple
+   matches), and a new failure mode independent of the weather poll
+   itself. This is a single-user desktop app — the operator looks up
+   their own coordinates once. `Config` gets `weather_lat: f64` /
+   `weather_lon: f64`, plain numbers, no resolution step. (A
+   "resolve from city name" settings-UI convenience button is a
+   plausible cheap follow-up plan later, not in this one.)
+2. **Ambient chip format: plain text, no icons/emoji** (e.g. `"12°
+   Rain"`), matching the existing chip vocabulary exactly (`Football`/
+   `News paused`/`Live`/`Card`/`Off` — confirmed zero emoji/icon glyphs
+   anywhere in this codebase during the 041 review). A background-
+   color-shift / weather-SVG visual treatment was floated but
+   deliberately deferred — see "Notes" below, not built in this plan.
+3. **Units: configurable (`weather_units: Celsius | Fahrenheit` on
+   `Config`, mirroring `Priority`'s existing enum-config pattern),
+   default `Celsius`.**
+4. **Threshold alerts for v1: rain-incoming + temperature threshold
+   only.** The original filing's third category, "severe weather
+   warnings," isn't buildable as imagined — Open-Meteo has no warnings
+   feed (see "Provider decision" above); the only way to approximate
+   "severe" would be a WMO-thunderstorm-code threshold, which is
+   deliberately deferred, not built now. Don't add it speculatively.
+5. **Alert re-fire semantics: edge-triggered, not level-triggered.**
+   A threshold alert fires once on crossing INTO alert territory, stays
+   silent while the condition holds, and only re-arms after it clears
+   and re-crosses. A level-triggered design (re-firing every poll while
+   e.g. rain continues) would directly violate the plan's own "not
+   spammy cards" goal — a 2-hour rain spell at the default poll
+   interval would otherwise produce a card every cycle. **Implication
+   for `weather_poller.rs`**: it needs to track "already fired for this
+   occurrence" state per alert type — the same shape `poller.rs`'s
+   `Snapshot` already carries forward to avoid re-emitting a kickoff/
+   half-time event every poll. This is new state the original filing's
+   "diff → emit" framing didn't call out explicitly; Step 3 below
+   should build it in from the start, not bolt it on after discovering
+   spam in testing.
+6. **`weather_priority` default: `Medium`.** Bracketed by existing
+   precedent — `default_espn_priority() -> Priority::High` (live sports
+   = urgent) and `default_rss_priority() -> Priority::Low` (news =
+   ambient), both `config.rs:158-176`. Weather alerts are more
+   actionable than a news headline but less urgent than a live goal.
+7. **Engine plumbing: confirmed as originally proposed** — see
+   "Re-grounded against the Engine" below; the operator signed off on
+   mirroring `live`/`update_live_match` exactly, no alternative design
+   considered necessary.
+
+**Deliberately left open, for a separate design-doc session (not this
+one)**: `weather_poll_secs`'s default value, `SourceKind::Weather`'s
+position in `default_rotation_order` relative to
+Football/Manual/Cmux/News, and the exact threshold numbers (rain
+probability % + lookahead window in minutes; hot/cold temperature
+cutoffs in Celsius). Step 0 below still gates on these — `config.rs`'s
+`Default` impl can't be written without real numbers, even though
+they're all operator-tunable via Settings after the fact.
 
 ## Re-grounded against the Engine (this review-plan pass)
 
@@ -142,12 +227,20 @@ it, don't invent a second mechanism:
 - `src-tauri/src/event.rs` — add `Weather` to `SourceKind`
   (`event.rs:72-77`, `#[serde(rename_all = "snake_case")]` already on
   the enum, so `"weather"` round-trips for free).
-- `src-tauri/src/config.rs` — `weather_enabled: bool` (default `false`),
-  location field(s), `weather_poll_secs`, `weather_alert_*` thresholds,
-  `weather_priority: Priority`. Add `SourceKind::Weather` to
-  `default_rotation_order()` (`config.rs:181-194`) at whatever position
-  the operator wants it prioritized relative to
-  Football/Manual/Cmux/News.
+- `src-tauri/src/config.rs` — per "Design decisions" above:
+  `weather_enabled: bool` (default `false`); `weather_lat: f64` /
+  `weather_lon: f64` (no geocoding, no location-string field);
+  `weather_units: Units` (new small enum, `Celsius`/`Fahrenheit`,
+  default `Celsius`, following the `Priority` enum's existing
+  config-field pattern); `weather_poll_secs: u64` (default TBD — open,
+  see "Design decisions" §deferred); `weather_rain_threshold_pct: u8` +
+  `weather_rain_lookahead_mins: u16` (defaults TBD); `weather_temp_hot_c`
+  / `weather_temp_cold_c: f64` (defaults TBD, always stored in Celsius
+  regardless of `weather_units` — that field is display-only);
+  `weather_priority: Priority` (default `Medium`, resolved). Add
+  `SourceKind::Weather` to `default_rotation_order()`
+  (`config.rs:181-194`) at a position — still open, see "Design
+  decisions" §deferred.
 - `src-tauri/src/settings.rs` — `validate()` (`settings.rs:49-90`
   pattern) gains range checks for the new numeric fields, following the
   existing `espn_poll_secs`/`espn_ttl_secs` checks as the exemplar. No
@@ -163,7 +256,14 @@ it, don't invent a second mechanism:
   tested, no live network — same discipline as `poller.rs`'s
   `diff_scoreboard`/`rss_poller.rs`'s `diff_feed`), calling
   `engine.update_weather(...)` every pass and `engine.accept(event,
-  false)` only for threshold-crossing events.
+  false)` only for threshold-crossing events. **Per "Design decisions"
+  §5 (edge-triggered alerts)**: this pure diff function needs to carry
+  forward "already fired" state per alert type (rain, hot, cold) across
+  polls — a small struct alongside the parsed response, mirroring how
+  `poller.rs`'s `Snapshot` is threaded through `diff_scoreboard` calls
+  to avoid re-emitting kickoff/half-time every pass. An alert transitions
+  fired→armed only when the underlying condition clears (drops back
+  under threshold), not just because a poll returned a value.
 - `src-tauri/src/engine.rs` — the `weather`/`weather_enabled` field +
   `update_weather` method + `Engine::new` signature + `spawn_rotation`/
   `emit_current_status_blocking` wiring, per "Re-grounded against the
@@ -186,8 +286,10 @@ it, don't invent a second mechanism:
 - `src/components/IdleView.tsx` — a weather chip, following the
   News/Football chip pattern at `IdleView.tsx:24-31` (dim when
   disabled, otherwise showing `current` if present).
-- `src/settings/SettingsApp.tsx` — the config UI (toggle + location +
-  poll interval), following the ESPN group's pattern
+- `src/settings/SettingsApp.tsx` — the config UI: enable toggle, `lat`/
+  `lon` number fields (no city-name/geocoding input — see "Design
+  decisions" §1), a units toggle (Celsius/Fahrenheit), poll interval,
+  and the threshold fields, following the ESPN group's pattern
   (`SettingsApp.tsx:645-661`, established during the 039 review).
 - `docs/TESTING_STRATEGY.md` §0, `docs/ARCHITECTURE.md` (new source +
   the ambient-vs-card design split).
@@ -195,10 +297,16 @@ it, don't invent a second mechanism:
 **Out of scope**:
 - Any `#[tauri::command]` addition or `capabilities/*.json` change
   (STOP condition, unchanged from the original filing).
-- A keyed/OAuth weather provider's secret storage (out of scope unless
-  the operator's provider choice requires it — if so, this plan's
-  effort estimate is stale and needs revisiting before Step 1, not
-  silently absorbed).
+- A keyed/OAuth weather provider's secret storage — moot now that
+  Open-Meteo is confirmed keyless (see "Provider decision" above).
+- Geocoding / city-name location input (decided against, "Design
+  decisions" §1) — `lat`/`lon` only.
+- A weather-reactive background-color or SVG treatment for the idle
+  card (floated during `/grill-me`, deliberately deferred — see
+  "Notes") — this plan ships the plain-text chip only.
+- A thunderstorm-WMO-code-derived "severe weather" alert ("Design
+  decisions" §4) — only rain-incoming and temperature-threshold alerts
+  ship in this plan.
 - Any change to the football/news pollers or the Topic/Recurring
   machinery (039's territory) — this plan's producer is independent.
 
@@ -213,17 +321,27 @@ it, don't invent a second mechanism:
 
 ## Steps
 
-### Step 0: provider decision gate
+### Step 0: remaining defaults gate
 
-STOP here until the operator has confirmed the provider per "Provider
-decision" above. Do not guess an API shape and build against it
-speculatively — the poll/parse code in Step 3 is provider-specific.
+Provider, location input, units, alert scope, re-fire semantics, and
+`weather_priority` are all resolved (see "Design decisions" above) —
+Step 0 is no longer a provider-choice gate. What's STILL open, and
+must be resolved (in the deferred design-doc session) before writing
+`config.rs`'s `Default` impl: `weather_poll_secs`'s default value,
+`SourceKind::Weather`'s position in `default_rotation_order`, and the
+exact rain-probability/lookahead/temp-threshold numbers. STOP here
+until those three are picked — do not guess reasonable-sounding
+numbers and proceed; they're operator-tunable later, but Step 1 needs
+literal values to compile against now.
 
 ### Step 1: `SourceKind::Weather` + config surface
 
 Add the enum variant (`event.rs:72-77`) and the config fields
-(`config.rs`, per Scope above), including `default_rotation_order`'s
-new entry and `settings::validate`'s new range checks.
+(`config.rs`, per Scope above — `weather_lat`/`weather_lon`/
+`weather_units`/`weather_priority` are fully specified now;
+`weather_poll_secs` and the threshold fields need Step 0's remaining
+defaults), including `default_rotation_order`'s new entry and
+`settings::validate`'s new range checks.
 
 **Verify**: `cargo test --locked config:: event::` → all pass.
 
@@ -246,9 +364,16 @@ Add `WeatherStatus`/`WeatherSummary` to `status.rs` and thread through
 pure diff/parse function fixture-tested against a captured real
 response (same discipline as the ESPN/RSS fixtures under
 `src-tauri/tests/fixtures/`), `spawn_weather_poller` wired the same way
-`spawn_espn_poller`/`spawn_rss_poller` are (`lib.rs:317-333`).
+`spawn_espn_poller`/`spawn_rss_poller` are (`lib.rs:317-333`). Build the
+edge-triggered alert state (Scope's `weather_poller.rs` bullet, "Design
+decisions" §5) into the diff function from the start — write the
+fixture tests to explicitly cover: threshold not crossed → no event;
+crossed → one event; still crossed on the next poll → no second event;
+clears then re-crosses → a second event. All four cases, not just the
+happy "it fires" path.
 
-**Verify**: `cargo test --locked status:: weather_poller::` → all pass.
+**Verify**: `cargo test --locked status:: weather_poller::` → all pass,
+including the four edge-trigger cases above.
 
 ### Step 4: wire into `lib.rs`
 
@@ -284,15 +409,14 @@ vitest run` totals match §0.
 | Ambient chip | weather enabled → idle chip shows current conditions; disabled → no chip, byte-identical behavior | pass |
 | Threshold alert | a threshold-crossing weather event enqueues a card via `accept`; plain conditions never do | pass |
 | Ambient ≠ card | `rg -n "SourceKind::Weather" src-tauri/src/weather_poller.rs` shows it used ONLY on the `accept()` path, never on the `update_weather()` path (the ambient write takes a plain `WeatherSummary`, not an `Event`) | pass |
+| Edge-triggered alerts | the four cases in Step 3 (no-cross/first-cross/holds/re-cross) all pass, specifically confirming a sustained threshold breach produces exactly ONE card, not one per poll | pass |
 | Receive-only intact | `git diff -- src-tauri/capabilities/default.json src-tauri/capabilities/settings.json` | byte-identical |
 | Validator complete | `rg -n "weather" src/useStatusState.ts` hits the type, the fallback, AND `isValidStatusState` — not just the first two | pass |
 
 ## STOP conditions
 
-- Step 0's provider decision is unresolved → STOP, do not speculate.
-- The chosen weather provider needs an API key or has terms
-  incompatible with polling → STOP and surface the provider choice to
-  the operator (this changes the effort estimate).
+- Step 0's three remaining defaults (poll interval, rotation-order
+  position, threshold numbers) are unresolved → STOP, do not guess.
 - Any change would touch `capabilities/default.json` or add a
   `#[tauri::command]` → STOP (receive-only / command-ACL guarantee).
 - `StatusState::snapshot`'s new 6-arg signature trips
@@ -309,3 +433,14 @@ vitest run` totals match §0.
 - Part B is independent of the sports-card work (037/039) — no queue
   changes; it only adds a producer + an Engine-owned ambient handle +
   a status field + a chip, following the football precedent throughout.
+- **Future enhancement, explicitly not this plan** (floated during
+  `/grill-me` 2026-07-20, deliberately deferred): a weather-reactive
+  background treatment for the idle card — background color shifting
+  with conditions, and/or a weather SVG/illustration. Worth a follow-up
+  plan once the plain-text v1 has shipped and the operator has lived
+  with it; this plan ships text-only per "Design decisions" §2.
+- **Deferred to a separate design-doc session** (not part of this
+  plan's `/grill-me` pass): `weather_poll_secs`'s default,
+  `SourceKind::Weather`'s `default_rotation_order` position, and the
+  exact rain/temp threshold numbers. See "Design decisions" (deferred
+  list) and Step 0.
