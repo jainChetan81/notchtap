@@ -17,7 +17,13 @@
 > `version = "2.0.1"` at that same rev. If the pin has already moved,
 > re-derive the target rev (Step 1) instead of assuming this plan's
 > numbers still apply — dependency history moves independently of this
-> repo.
+> repo. **Also run** `sed -n '222,231p' src-tauri/src/lib.rs` and confirm
+> it byte-matches the block quoted in "Current state" below — Step 2's
+> fix pattern is written against that exact shape (line numbers and all),
+> and `lib.rs` is one of the most actively-touched files in this repo, so
+> unlike the dependency pin it can drift on its own schedule. On a
+> mismatch, treat it as a STOP condition per the template's standard
+> drift-check rule, not something to improvise around.
 
 ## Status
 
@@ -61,6 +67,33 @@
   satisfies `^2.8.5`) with `macos-private-api` already enabled
   (`Cargo.toml:16,41`) — no knock-on tauri-version or feature-flag
   change needed.
+- **Review-plan pass (2026-07-19, third pass)**: independently
+  re-verified this plan live, from scratch, rather than trusting either
+  prior pass's summary. `git ls-remote` against the upstream repo
+  confirms `v2` is still exactly `18ffb9a...` (matches this repo's pin —
+  zero drift) and `v2.1` is still exactly
+  `a3122e894383aa068ec5365a42994e3ac94ba1b6` (matches this plan's
+  target — unchanged since the prior pass), and no branch or tag newer
+  than `v2.1` exists upstream. Repo health re-confirmed via `gh api
+  repos/ahkohd/tauri-nspanel`: not archived, `pushed_at` as recently as
+  2026-07-10 (some branch other than `v2.1` itself, which hasn't moved,
+  but proof the repo isn't dormant), 409 stars, 11 open issues — no
+  abandonment signal, the STOP condition on upstream health does not
+  trigger. Both breaking-change diffs (`to_panel`/`set_style_mask`/
+  `init`) were re-read directly from the crate's raw `src/lib.rs` and
+  `src/raw_nspanel.rs` at both revs via `gh api .../contents/...?ref=
+  <sha>` — byte-for-byte match to what this plan already states; no
+  correction needed there. Two new findings, folded into "Confirmed
+  breaking changes" and Step 2 below: (1) the
+  `NSWindowStyleMask::NonactivatingPanel` replacement value is now
+  **proven**, not just doc-referenced — this machine's own local cargo
+  registry cache has `objc2-app-kit` 0.3.2's real generated source
+  (`objc2-app-kit-0.3.2/src/generated/NSWindow.rs:54`: `const
+  NonactivatingPanel = 1<<7;`), confirming bit-for-bit equivalence with
+  today's `1 << 7` — the "confirm at execution time" hedge on that
+  specific swap can be dropped. (2) the plan's "existing intent... never
+  key/main window" framing is **not actually true of today's
+  behavior** — see the correction below.
 
 ## Why this matters
 
@@ -179,14 +212,39 @@ the pinned rev vs. the target rev:
   // ...
   let panel = window.to_panel::<Panel>().unwrap();
   ```
-  This app's minimal equivalent needs a `panel!` config matching its
-  existing intent (nonactivating, borderless, never key/main window —
-  see the `set_style_mask` note below for how that intent is currently
-  expressed) — the exact `config:` fields to set are a judgment call for
-  whoever executes this plan; the upstream examples directory
-  (`examples/basic/`, `examples/hover_activate/`,
-  `examples/panel_style_mask.rs`, all at the target rev) is the
-  reference to work from, not a blank-page reinvention.
+  **Correction (review-plan pass, 2026-07-19, third pass): this app's
+  "existing intent" is NOT "never key/main window" — that framing was
+  never actually verified against the pinned crate's real behavior, and
+  it's wrong.** Direct read of the pinned rev's
+  `src/raw_nspanel.rs:47-49` shows `RawNSPanel`'s `canBecomeKeyWindow`
+  override is hardcoded unconditionally: `extern "C" fn
+  can_become_key_window(_: &Object, _: Sel) -> BOOL { YES }` — every
+  panel this crate creates CAN become a key window, full stop, with no
+  per-instance opt-out exposed at this pinned rev. `grep -n
+  "becomes_key\|set_style_mask\|to_panel\|nspanel" src-tauri/src/lib.rs`
+  confirms this app never calls the crate's
+  `set_becomes_key_only_if_needed` (the one API that could have
+  suppressed this) — so today's actual, verified behavior is "the panel
+  CAN become key," not "never." `can_become_main_window: false` is a
+  separate, uncontested case: `RawNSPanel` doesn't override
+  `canBecomeMainWindow` at all in the pinned rev, so it inherits
+  `NSPanel`'s own AppKit default of `NO` — `false` here is a correct
+  behavior-preserving choice. **For `can_become_key_window`, set it to
+  `true`** to match today's actual (if likely accidental) behavior — do
+  NOT set it to `false` on the assumption that "matches nonactivating
+  intent," since that would be a real behavior change (a panel that
+  currently CAN become key would stop being able to), not a bump-only
+  change. If the operator wants the panel to genuinely never become key
+  (arguably the more correct behavior for a nonactivating overlay that
+  should never take keyboard focus), that's a legitimate improvement —
+  but it's a scope decision for a different plan, not something to slip
+  in silently under a dependency-bump plan's "matches existing intent"
+  banner. The exact remaining `config:` fields (beyond these two
+  resolved ones) are a judgment call for whoever executes this plan; the
+  upstream examples directory (`examples/basic/`,
+  `examples/hover_activate/`, `examples/panel_style_mask.rs`, all at the
+  target rev) is the reference to work from, not a blank-page
+  reinvention.
 - **`set_style_mask()` changed its parameter type from a raw integer to
   a typed bitflags value.** Pinned rev (on `RawNSPanel`, in
   `src/raw_nspanel.rs`): `pub fn set_style_mask(&self, style_mask:
@@ -201,15 +259,20 @@ the pinned rev vs. the target rev:
   enabled, and already imports `objc2_app_kit` types the same way in
   `apply_overlay_native_config`, e.g.
   `NSWindowCollectionBehavior::CanJoinAllSpaces` at `lib.rs:528` — same
-  crate, same PascalCase bitflags-constant convention). The likely
+  crate, same PascalCase bitflags-constant convention). **Confirmed, not
+  just likely (review-plan pass, 2026-07-19, third pass): the
   replacement is `panel.set_style_mask(objc2_app_kit::NSWindowStyleMask
-  ::NonactivatingPanel);`, but confirm at execution time that this
-  produces the exact same runtime behavior as today's `1 << 7` (a
-  borderless window with only the nonactivating-panel bit set, no
-  titled/closable/resizable bits) — don't assume equivalence without
-  checking, since the crate's `config:`-block-driven macro path might
-  express some of this intent differently than a raw `set_style_mask`
-  call.
+  ::NonactivatingPanel);`.** This machine's own local cargo registry
+  cache has `objc2-app-kit` 0.3.2's real generated source
+  (`~/.cargo/registry/src/index.crates.io-*/objc2-app-kit-0.3.2/src/
+  generated/NSWindow.rs:54`): `const NonactivatingPanel = 1<<7;` — the
+  bitflags constant's raw value is bit-for-bit identical to today's
+  `1 << 7`, proven from the crate's own generated bindings rather than
+  inferred from docs. The `set_style_mask` swap itself is a verified
+  no-op on runtime behavior; the only real behavior-preservation
+  question in this fix is the `can_become_key_window` config field
+  addressed above, which `set_style_mask` alone never touched either
+  before or after this bump.
 - **Net effect on this plan's Step 2**: `cargo build --locked` failing
   at these two symbols is the *expected* outcome of Step 2, not a
   contingency — treat the "if it fails, fix it" framing there as "when
@@ -325,11 +388,13 @@ alongside other `use`/type declarations), but keep the fix as small as
 the actual API change requires: don't adopt anything from the new
 crate's richer surface (event handlers, corner radius, transparency,
 `PanelBuilder`) beyond what's needed to compile and preserve today's
-exact behavior (borderless, nonactivating, never key/main window). If
-the failure is anywhere else — not one of the two named symbols, or a
-transitive dependency conflict, or an unrelated crate — STOP; that's a
-sign the bump has a wider blast radius than this plan (and this
-review-plan pass's confirmed diff) scoped for.
+exact behavior — borderless, nonactivating style mask, `can_become_key_
+window: true` (matches the pinned rev's hardcoded `YES`, see the
+correction above — do NOT set this to `false`), `can_become_main_
+window: false`. If the failure is anywhere else — not one of the two
+named symbols, or a transitive dependency conflict, or an unrelated
+crate — STOP; that's a sign the bump has a wider blast radius than this
+plan (and this review-plan pass's confirmed diff) scoped for.
 
 ### Step 3: Full verification gate
 
@@ -431,6 +496,15 @@ Stop and report back (do not improvise) if:
   macro block sized to this app's actual needs, not an adoption of the
   new crate's richer surface (event handlers, `PanelBuilder`, corner
   radius, transparency) this app has no use for.
+- **A reviewer should specifically check `can_become_key_window` is set
+  to `true`, not `false`, in the executor's `panel!` macro block** (see
+  the review-plan-pass correction in "Confirmed breaking changes" —
+  `RawNSPanel::canBecomeKeyWindow` is hardcoded `YES` at the pinned rev,
+  so `true` is the behavior-preserving choice; `false` would be an
+  unreviewed behavior change riding along on a dependency bump). If the
+  executor chose `false`, that's not necessarily wrong, but it must be
+  called out explicitly in their report as an intentional behavior
+  change, not treated as bump-only.
 - Future maintenance: re-check this dependency's health again at the
   next deliberate native-window-behavior change (the same cadence
   `plans/README.md` already recommended for `smappservice-rs`), rather
