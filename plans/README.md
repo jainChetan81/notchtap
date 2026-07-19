@@ -1,5 +1,23 @@
 # Implementation Plans
 
+**Operator-requested filing (2026-07-20, filed at `f58ced2`)**: plan 058
+(`notchtap run`, a long-command finisher) was filed directly from an
+operator conversation, not from an audit or spike session — same
+precedent as `004-test-notifications(done).md` /
+`005-appearance-config(done).md`. Filed alongside a triage of four other
+candidate sources the operator considered and explicitly declined for
+now: a GitHub watcher and a calendar connector (both rejected on
+config/auth weight — a stored PAT and repo list for the former, OAuth
+with a 7-day refresh-token expiry under Google's unverified-app testing
+status for the latter), a Kharcha connector (no notchtap-side work
+exists to do — gated entirely on Kharcha itself emitting events; the
+generic `/notify` + `details[]` wire contract already covers whatever
+it would send), and a macOS Focus/quiet-hours sync (rejected outright,
+not just deferred — Focus/DND state has no public documented API, every
+sync implementation reads an undocumented plist that Apple has broken
+across OS versions before; the existing ⌃⇧P pause and quitting the app
+already cover the use case without that risk).
+
 **Fourth audit session (2026-07-19, planned at `f2cbae6`)**: a standard
 `improve` run, scoped deliberately against the newest/least-audited
 surface rather than repeating the three prior full sweeps — the
@@ -167,6 +185,15 @@ plans are independent. P1s first.
 | 051 | SPIKE: Manual/Cmux `link` wire field design doc (`docs/design/`) — unlocks ⌃⇧O outside News | P3 | S | — | DONE — design doc at `docs/design/manual-cmux-link-field.md` (researched at `f2cbae6`, 2026-07-19; docs-only spike, zero source changes). Spine: reopen plan 035's "link stays poller-only" closure (no recorded rationale found anywhere); add optional `link` to `NotifyRequest` with http(s)-only sanitize-and-drop (mirroring `sanitize_subtitle`); zero frontend work — the ⌃⇧O affordance already keys off the existing `hasLink` prop. |
 | 052 | SPIKE: News ambient idle-rail status design doc (`docs/design/`) — mirrors Football/Weather's live-value chip | P3 | M | — | DONE — design doc at `docs/design/news-ambient-status.md` (researched at `f2cbae6`, 2026-07-19; docs-only spike, zero source changes). Spine: two-field `NewsSummary { headline, source }` captured once per poll tick from the last accepted event, held in a new `Engine` companion `Arc<Mutex<…>>` mirroring `update_weather` (`SeenStore` keeps only opaque dedup keys — no read-out possible, so new state is required); deferred history-surface feature explicitly out of bounds. |
 | 053 | SPIKE: generalize Topic supersession to Manual/Cmux design doc (`docs/design/`) — reopens the closed-by-design wire-schema rule | P3 | L (build, if approved) | — | DONE — design doc at `docs/design/manual-cmux-topic-supersession.md` (researched at `f2cbae6`, 2026-07-19; docs-only spike, zero source changes; `cargo test --locked queue::` → 65 passed). Spine: accept caller-supplied `topic` on `/notify`, sanitized/capped and server-namespaced with the resolved origin (`manual:`/`cmux:`) so callers can't collide with internal `espn:` topics; `OneShot`-with-Topic only (wire `rotation` set stays closed); connectors still fan out every distinct message; build estimate L. |
+| 058 | `notchtap run` — long-command finisher: wraps a command, pushes a completion card (exit code + duration) when it's done, suppressed for fast successful runs | Feature | S | — | TODO — filed 2026-07-20 directly from operator conversation. CLI-only (script self-invokes its own flags path for the push); zero Rust/settings/config.toml surface — deliberate, per the operator's stated preference to keep this feature free of new config. |
+| 054 | SPIKE: app icon/branding — `src-tauri/icons/` is still the Tauri scaffold default | P3 | S (once direction chosen) | — | TODO — needs an operator visual-identity decision (Step 0) before any artwork is generated. |
+| 055 | SPIKE: should pause get a visible in-card control? | P3 | S | — | TODO — pause already exists (hotkey ⌃⇧P + tray + boot checkbox); the open question is only in-card discoverability, and the direct route (a clickable button) breaks the documented "overlay is receive-only, forever" law — needs an explicit decision, not a quiet exception. |
+| 056 | SPIKE: richer live-match scorecard visual (flags, bigger score, icon events) | P3 | M | 042 (DONE) | TODO — operator disliked the current text-label scorecard; reference image (broadcast-style graphic) doesn't fit the 400px card as-is, needs re-derivation at this card's size budget, not a literal scale-down. |
+| 057 | SPIKE: evaluate a paid sports API (e.g. Sportmonks) as an ESPN alternative | P3 | M (spike) | — | TODO — ESPN's endpoint is undocumented/best-effort and is the reason plan 043 is currently gated; no paid provider has ever been evaluated in this repo (zero mentions anywhere). Needs a real trial-account comparison, not a marketing-page decision. |
+| 059 | SPIKE: persist and browse past notifications (history) | P3 | M (spike) | — | TODO — currently fully ephemeral, confirmed (no history/log view exists anywhere). Real privacy tradeoff to resolve first: this app already carries sensitive cmux/hook payloads through the queue that have only ever been ephemeral by construction. |
+| 060 | SPIKE: overlay card visually merges with whatever's behind it in HUD mode | P2 | S (decision) | — | TODO — filed from an operator screenshot (idle chip row flush against Chrome's tab strip). A naive universal CSS fix risks regressing the deliberately-tuned notch-mode flush-top look, which can't be verified on this notchless dev machine — needs either mode-aware plumbing (frontend has zero notch/HUD awareness today) or an explicit accepted-risk call. |
+| 061 | Add the Settings/control-panel window to `DESIGN.html` | P3 | S–M | — | TODO — ready to execute directly (no decision needed, unlike 054-060). `DESIGN.html` currently documents only the overlay card; the Settings window (8 sidebar sections, its own already-good kbd styling) has zero coverage. |
+| 062 | SPIKE: bridge phone notifications into notchtap | P3 | M (spike) | — | TODO — `/notify` is hardcoded loopback-only by design (`http.rs:141-144`, pinned by a test) and nothing captures phone notifications today. Android is the realistic capture path (`NotificationListenerService`); iOS has no public API for it. Recommended shape: a local relay process on the same Mac, not widening the network boundary. |
 
 ## Done
 
