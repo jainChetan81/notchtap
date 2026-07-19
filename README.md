@@ -15,9 +15,11 @@ branches at runtime.
 - runs permanently as a menu-bar app (no dock icon)
 - a **single visible slot**: at most one notification on screen at a
   time, permanently rotating — not a stacked queue
-- accepts pushes from four sources: the `notchtap` cli, cmux's
+- accepts pushes from five sources: the `notchtap` cli, cmux's
   notification relay (including claude code "agent needs input"
-  alerts), an ESPN live-football poller, and an rss news poller
+  alerts), an ESPN live-football poller, an rss news poller, and an
+  Open-Meteo weather poller (ambient idle-rail chip plus
+  rain/temperature threshold alerts)
 - each source has a configurable Priority (`Low`/`Medium`/`High`);
   within a tier, a configurable Rotation Order breaks ties ahead of
   plain arrival order
@@ -69,6 +71,11 @@ npx vitest run          # from repo root
 # trigger a notification manually (flags only — no positional form)
 notchtap --title "hello" --body "world"
 ```
+
+or use the [`justfile`](justfile): `just setup` installs web deps on a
+fresh clone, and `just test-all` runs every check CI runs (fmt, clippy,
+tests, audits, tsc, vitest, vite build, cli + swift checks) in one
+command — `brew install just` first.
 
 ## setup
 

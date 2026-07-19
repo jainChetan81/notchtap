@@ -705,11 +705,13 @@ the frontend's job shrinks to "render whatever `slot-state` last
 said," full stop.
 
 emission sites, replacing every current `emit_promoted` call:
-- the heartbeat (`lib.rs`'s `spawn_heartbeat`): after `queue.tick(now)`,
-  emit only if the slot state actually changed. Plan 015 replaced the
-  original fixed-250ms-interval version of this loop with a
-  deadline-sleep-plus-wake design (§4.3); the emission behavior here is
-  unchanged by that.
+- the rotation loop (`engine.rs`'s `Engine::spawn_rotation` — moved
+  here from `lib.rs`'s `spawn_heartbeat` by plan 037's Engine
+  refactor): after `queue.tick(now)`, emit only if the slot state
+  actually changed. Plan 015 replaced the original fixed-250ms-interval
+  version of this loop with a deadline-sleep-plus-wake design (§4.3);
+  the emission behavior here is unchanged by either that or the plan
+  037 relocation.
 - the tray pause/resume handler (`lib.rs`'s `build_tray`): same, after
   calling `tick()`.
 - the http handler (`http.rs`): after `enqueue()`, same — an accepted

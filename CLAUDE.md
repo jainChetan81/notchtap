@@ -35,6 +35,24 @@ current counts live in `docs/TESTING_STRATEGY.md` §0 and only there.
 an uptime kuma → notchtap webhook integration recipe (docs only, no
 source changes) landed 2026-07-17 at `docs/recipes/kuma-webhook.md` —
 verified working end-to-end against kuma v2.4.0.
+later landings the paragraph above predates: plan 037 (`6b53c32`)
+introduced the Engine (`src-tauri/src/engine.rs`) — one propagation
+module every Slot mutation now flows through
+(`apply`/`apply_blocking`/`read`/`accept`/`update_live_match`),
+replacing the deleted `lib.rs` functions
+`spawn_heartbeat`/`enqueue_and_emit`/`enqueue_and_fan_out`; every
+ingest path (http, settings test notifications, both pollers) now
+routes through `Engine::accept`, which also enforces the
+news-never-to-telegram Connector rule structurally. plan 040 added the
+weather source — a fifth `SourceKind` (`Weather`), an Open-Meteo
+poller (`src-tauri/src/weather_poller.rs`) with an ambient idle-rail
+chip and edge-triggered rain-incoming/hot/cold threshold alert cards,
+opt-in via `weather_enabled` (default `false`). plans 039/041/042
+added the opt-in (`espn_live_card`, default `false`) espn live-match
+scoreboard card — one single-updating card per live match via Topic
+supersession (`espn:{league}:{match_id}`), with per-side card counts
+and a Clock detail line in its collapsed presentation, and scoring
+plays labeled with espn's own event-type text (goal/penalty/own-goal).
 remaining open work: the manual checklist rows in
 `docs/IMPLEMENTATION_PLAN.md` §6, and whatever `plans/` holds.
 

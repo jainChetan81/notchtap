@@ -801,6 +801,14 @@ v3.6's rewritten queue/frontend — see `TESTING_STRATEGY.md` §4.10.
 - [ ] v5: `invoke("get_config")` from the *main* window's devtools
       console is denied — verifies the command acl actually gates
       (once, same discipline as v4's break-the-ci check)
+- [ ] weather (plan 040, `weather_enabled = true` with real coordinates
+      configured): the idle-rail ambient chip shows current conditions,
+      and a real rain-incoming/hot/cold threshold crossing produces
+      exactly one alert card (edge-triggered — not repeated every poll)
+- [ ] live-match card (plans 039/042, `espn_live_card = true` during an
+      actual live match): the card updates in place through
+      kickoff/goals/cards rather than stacking separate cards, and it
+      retires (does not keep cycling) after full-time
 
 ---
 
