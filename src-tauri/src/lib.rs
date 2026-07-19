@@ -33,6 +33,21 @@ use crate::settings::AppearanceChangedPayload;
 #[cfg(target_os = "macos")]
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
+// plan 045: tauri-nspanel v2.1's to_panel() requires an explicit panel
+// type. can_become_key_window: true preserves the pinned rev's behavior
+// (RawNSPanel hardcoded canBecomeKeyWindow -> YES); can_become_main_window:
+// false matches NSPanel's AppKit default, which the pinned rev never
+// overrode.
+#[cfg(target_os = "macos")]
+tauri_nspanel::tauri_panel! {
+    panel!(OverlayPanel {
+        config: {
+            can_become_key_window: true,
+            can_become_main_window: false
+        }
+    })
+}
+
 // placeholder combo — v3.6 spec §7.1 explicitly defers "exact global hotkey
 // combination" as an open detail; isolated to one constant.
 #[cfg(target_os = "macos")]
@@ -223,11 +238,11 @@ pub fn run() {
             {
                 use tauri_nspanel::WebviewWindowExt as _;
                 let panel = window
-                    .to_panel()
+                    .to_panel::<OverlayPanel>()
                     .map_err(|e| format!("nspanel conversion failed: {e:?}"))?;
                 // NSWindowStyleMaskNonactivatingPanel (1 << 7); the window
                 // is borderless (mask 0), so the panel bit is the whole mask.
-                panel.set_style_mask(1 << 7);
+                panel.set_style_mask(objc2_app_kit::NSWindowStyleMask::NonactivatingPanel);
             }
 
             // v3.6 spec §7.2: survive Spaces switches and fullscreen apps.
