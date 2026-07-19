@@ -1,0 +1,8 @@
+# keeps the sha-pinned actions in ci.yml current (plan 029) — dependabot
+# updates the pin and the trailing version comment together.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: monthly
