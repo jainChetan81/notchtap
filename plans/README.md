@@ -1,5 +1,29 @@
 # Implementation Plans
 
+**Fourth audit session (2026-07-19, planned at `f2cbae6`)**: a standard
+`improve` run, scoped deliberately against the newest/least-audited
+surface rather than repeating the three prior full sweeps — the
+weather poller (plan 040), the ESPN live-match card/scorecard/event-copy
+work (plans 039/041/042), and the Engine (plan 037), plus two questions
+twice-deferred for "needs network" (dependency health) and docs drift
+since the last truth pass. Four parallel audit agents (correctness+
+security on the newest modules, tests+tech-debt+dependencies, docs+DX,
+direction); every tabled finding re-verified against the code by the
+advisor, including an independent live re-fetch of the `tauri-nspanel`
+upstream repo to confirm the dependency-health finding. Suites at HEAD:
+326 rust tests + 3 doc-tests, 112 frontend (per `docs/TESTING_STRATEGY.md`
+§0 — plan 046 below corrects a one-test drift in that count). Headline
+finding: a same-poll ordering bug in the ESPN live-match card's Topic
+supersession (plan 044) that permanently un-retires a finished match's
+card if a booking is recorded the same poll the match ends — the first
+bug found in the Topic-supersession machinery since it got its first
+producer. The operator selected all 13 findings plus all 4 direction
+options; plans 044-053 below. Not audited this pass: `queue.rs`,
+`settings.rs`, `http.rs`, `rss_poller.rs`, and everything else already
+covered by plans 004-038 (re-auditing them would have mostly reproduced
+existing plan rows) — see each finding's plan for the exact scoping
+rationale.
+
 **Third audit session (2026-07-18, planned at `a58f115`)**: a standard
 `improve` run scoped to the ~30 commits landed since the deep audit's
 `d40445e` baseline (the executed plans 009–023 themselves were the
@@ -131,6 +155,16 @@ plans are independent. P1s first.
 | 041 | ESPN event-card copy — label scoring plays with ESPN's own event-type text (goal/penalty/own-goal), matching how cards already self-describe | P3 | S | none (037 landed; 039 coordination is same-file-touch only) | DONE — landed 2026-07-19: `last_scoring_play` now prefixes the body with ESPN's own `detail_type.text` via a shared `labeled_detail_line` helper used by both card and scoring-play extractions, plus a structural `own_goal: bool` on `SbDetail` (parsed from ESPN's `ownGoal` boolean, same pattern as `red_card`) that short-circuits to an "Own Goal" label; three new poller tests (goal, penalty, synthesized own-goal), poller 22→25. Originally filed 2026-07-19 from operator feedback watching ENG–FRA live. Review-plan pass 1 (2026-07-19): found the fix is narrower than the original filing assumed — cards already self-describe (`last_card` already prefixes with ESPN's own `detail_type.text`); only the scoring-play path (`last_scoring_play`) discards that same field, and goals are `EventType::ScoreUpdate`, not `MatchState` as originally scoped. A fresh-context subagent cold-read then caught a fixture-ordering bug (`last_scoring_play` picks the LAST matching detail — the untouched UCL fixture yields "Penalty - Scored", not "Goal") and a false premise that `baseline(UCL)` works (that fixture is already final on first sighting, returns an empty snapshot) — Step 2 rewritten with verified working test code. Review-plan pass 2 (2026-07-20): reading the raw ESPN fixture JSON directly found structural `ownGoal`/`penaltyKick` booleans on every scoring-play detail, sitting unparsed right next to `redCard` (which already uses this exact technique). Eliminated the "documented best-guess" own-goal label entirely — Step 1 now adds `own_goal: bool` and derives the label from that structural fact, not from guessed text. Dropped the original filing's emoji prefixes (zero precedent anywhere in the codebase), flagged as a confirm-with-operator choice. |
 | 042 | Live-match scorecard presentation (richer collapsed card, Option B — never pin) | P2 | S–M | 039 (DONE), 037 (DONE) | DONE (2026-07-19 — executed exactly as written: per-side (yellow, red) card bucketing via the structural `team.id` cross-reference (`home_cards`/`away_cards` replacing aggregate `cards`, `total_cards()` at the emission gate), Clock + per-side Cards `meta.details` built once per match and attached at all 5 `make_event` sites, collapsed StatusRailCard detail lines reusing `detail-label`/`detail-value`; rust 321→326 (poller 25→30), frontend 110→112 (StatusRailCard 21→23), clippy/fmt/tsc clean; left uncommitted per the plan's git workflow — operator reviews/commits separately). Pre-execution decision history: `/grill-me` (2026-07-20) resolved the Option A/B/C decision (Option B — never pin, no window resize/pin/hotkey) plus 3 shape decisions (no flags, cards split per side, minimal layout tweak not a full redesign); Scope/Steps rewritten around Option B. Review-plan pass 3 (2026-07-20, own read + fresh-context subagent cold-read, cross-checked) found and fixed a critical gap (`poller.rs:491`'s card-event-emission gate would fail to compile against the new per-side fields, no `total_cards()` helper existed to replace it), two breaking tests left unmentioned, a duplicate-struct design issue (`SbTeamRef` vs reusing `SbTeam`), an undersold counting-logic rewrite, and an ambiguous/non-compiling "attach meta after `make_event` returns" instruction (now a pinned bind-then-mutate-then-push code shape) — all fixed directly in the plan file. Also re-verified against `d3ab88c` (plan 040 landing since the prior pass), which shifted two `event.rs` citations by 12 lines — corrected. |
 | 043 | Richer live-match event coverage (fouls, offside, disallowed goals, subs) via ESPN's per-match play-by-play endpoint | P3 | M–L (contingent on Step 0) | 037 (DONE), 039 (soft, unblocked) | TODO, gated on a new Step 0 — review-plan pass 2026-07-20 fetched ESPN's real `summary?event={id}` endpoint for two actual matches (one finished, one upcoming) to check whether it contains the play-by-play/commentary timeline this plan's entire approach assumes exists. It did not, in either sample — no `commentary`/`keyEvents` key in either response. Neither sample was a genuinely live match though, so this doesn't disprove the premise (commentary may only populate during live play) — added a hard Step 0 requiring confirmation against a real live match before any fetch/parse code is written, with an explicit STOP path if the data turns out not to be there at all. Corrected coordination language (037 landed, no longer a wait; 039 unblocked). |
+| 044 | Fix a same-poll card un-retiring a just-finished live-match card (Topic supersession ordering bug in `diff_scoreboard`) | P1 | S | — | TODO |
+| 045 | Bump the stale `tauri-nspanel` git pin (13mo/39 commits behind, missing crash/segfault fixes) | P2 | S–M | — | TODO |
+| 046 | Docs truth pass: CLAUDE.md/AGENTS.md project-state through plan 042, stale V3_6 spec citation, README source-count/justfile gaps, TESTING_STRATEGY count fix, IMPLEMENTATION_PLAN §6 checklist rows | P2 | S | — | TODO |
+| 047 | Test-only backfill: poller.rs card team-id-mismatch case, weather_poller.rs threshold-boundary cases, real-timer-test accepted-finding note fix | P2 | S | — (soft: re-run drift check if 044 lands first, same file) | TODO |
+| 048 | Harden `StatusState::snapshot`'s 6-arg positional bool/Option signature into named construction | P3 | S | — | TODO |
+| 049 | SPIKE: per-source config consolidation design doc (`docs/design/`) — ends the config.rs/settings.rs/SettingsApp.tsx lockstep duplication four plans (013/020/021/040) each re-derived | P3 | M | — | TODO |
+| 050 | SPIKE: read-only `GET /status` HTTP endpoint design doc (`docs/design/`) | P3 | S–M | — | TODO |
+| 051 | SPIKE: Manual/Cmux `link` wire field design doc (`docs/design/`) — unlocks ⌃⇧O outside News | P3 | S | — | TODO |
+| 052 | SPIKE: News ambient idle-rail status design doc (`docs/design/`) — mirrors Football/Weather's live-value chip | P3 | M | — | TODO |
+| 053 | SPIKE: generalize Topic supersession to Manual/Cmux design doc (`docs/design/`) — reopens the closed-by-design wire-schema rule | P3 | L (build, if approved) | — | TODO |
 
 ## Done
 
@@ -251,6 +285,38 @@ Architecture-review session (037):
   neither the emit-after-unlock reordering (still deferred — but after
   037 it is a one-site fix) nor the rejected lib.rs file-split finding
   (see the plan's "Why this matters" for the distinction).
+
+Fourth audit session (044-053):
+
+- **044 first** — it's the one P1 bug in this batch (a shipped opt-in
+  feature can get stuck permanently cycling) and is independent of
+  everything else here; land it before the others so its fix is the
+  baseline the rest are drift-checked against.
+- **047 vs 044** — both touch `poller.rs`, different regions (044 fixes
+  the card/full-time emission condition; 047 adds a test in the
+  `#[cfg(test)]` module). Soft dependency only: run 047's drift check
+  again if 044 already landed, but neither blocks the other.
+- **045 (tauri-nspanel bump) requires network + the macOS dev machine**
+  — same operator-owed class as plan 007's/029's first-green-CI-run
+  gates. Do not attempt on a Linux sandbox; `tauri-nspanel` is a
+  `target_os = "macos"`-only dependency.
+- **046, 048** are independent, low-risk, no-coordination-needed plans —
+  land in any order relative to the rest of this batch.
+- **049/050/051/052/053 are spikes**: deliverable is a design doc in
+  `docs/design/`, zero production code, same discipline as plans
+  030/031. The *features* stay undecided until the operator reads the
+  docs. 051 and 053 both touch `/notify`'s currently-closed wire-schema
+  fields (`link` and `topic` respectively) — whoever's build lands
+  first (if either is approved) should note in their own plan/PR that
+  the other closed field still exists. 050 and 052 both touch
+  `status.rs`/`StatusState` — same reconcile-by-reading precedent as
+  every other same-file-touching pair in this doc.
+- **053 is the highest-risk spike in this batch** — it's the only one
+  proposing to reopen a rule (`event.rs:15-19`) stated as deliberately
+  closed, not merely unexercised (contrast with 049/050/052, which
+  propose net-new surface rather than reopening a closed one). Read its
+  own "Why this matters" section before deciding whether to select the
+  eventual build.
 
 ## Findings considered and rejected
 
