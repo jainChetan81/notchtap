@@ -7,14 +7,13 @@
 > `plans/README.md`.
 >
 > **Dependency gate (hard — STOP if unmet)**:
-> 1. `plans/README.md` row for **038** reads DONE. (037 already does —
->    merged to master at `6b53c32`; this review-plan pass re-grounded
->    every Engine-facing detail below against that landed code, see
->    "Re-grounded against the Engine" below. 038 is what's still
->    missing: without it, a `Recurring` live card — this plan's first
->    real producer of one — hits the pre-existing `batch_done` bug the
->    design spike surfaced, pinning the 033 queue-slider near "complete"
->    while the match is still cycling.)
+> 1. `plans/README.md` rows for **037** and **038** read DONE. (Both do
+>    as of 2026-07-20 — 037 merged at `6b53c32`, 038 landed `090a440`
+>    guarding both `batch_done` requeue arms; re-verify
+>    `rg -n "batch_done \+= 1" src-tauri/src/queue.rs` shows the
+>    increment sitting in an `else` branch on both the
+>    `rotate_out_if_elapsed` and `skip_visible` sites, not unconditional,
+>    before treating this gate as satisfied.)
 > 2. `git status` clean for `src-tauri/src/poller.rs`,
 >    `src-tauri/src/config.rs`, `src-tauri/src/settings.rs`,
 >    `src-tauri/src/queue.rs`, `src/settings/SettingsApp.tsx` — STOP if
@@ -32,9 +31,10 @@
 
 ## Status
 
-- **BLOCKED — gated on 038.** 037 landed (`6b53c32`) and this plan's
-  Engine-facing risk is now resolved by direct evidence (see below), not
-  just "the machinery should work." The only remaining blocker is 038.
+- **UNBLOCKED — 037 and 038 are both DONE.** Ready to execute. (Corrected
+  2026-07-20: 038 landed at `090a440` since this plan's last review-plan
+  pass; the dependency gate above is now satisfiable — re-run it to
+  confirm, don't assume.)
 - **Priority**: P2
 - **Effort**: M
 - **Risk**: MEDIUM — first production user of the queue's
@@ -42,21 +42,23 @@
   producers today, and now independently confirmed to work correctly
   through `Engine::accept` — see below). Opt-in default-off contains
   the blast radius.
-- **Depends on**: **038 (hard, TODO)**. **037 (done — DONE at
-  `6b53c32`)**: no further coordination needed. Soft: inherits the
-  Topic-identity + rotation-kind from the 031 design doc verbatim.
+- **Depends on**: **038 (hard, DONE at `090a440`)**, **037 (hard, DONE
+  at `6b53c32`)**. Soft: inherits the Topic-identity + rotation-kind
+  from the 031 design doc verbatim.
 - **Planned at**: commit `882cdb6`, 2026-07-19. Design spike:
   `docs/design/scoreboard-topic-card.md` (plan 031, reviewed APPROVE).
-  **Review-plan pass (this one, 2026-07-19)**, run after 037 landed:
-  re-grounded every "confirm against the Engine" placeholder in the
-  original filing against the actual `engine.rs`/`poller.rs`/`config.rs`
-  code, resolved the plan's one open STOP-condition risk with evidence
-  (see below), corrected the Config-surface section (the struct lives
-  in `config.rs`, not `settings.rs`), added the frontend TS interface +
-  test-fixture sites the original Scope missed, and wrote concrete
-  numbered Steps (the original filing had none — Design spine + Scope
-  only). Still BLOCKED: 038 hasn't landed, so this plan is grounded and
-  ready but not yet dispatchable.
+  **Review-plan pass (2026-07-19)**, run after 037 landed: re-grounded
+  every "confirm against the Engine" placeholder in the original filing
+  against the actual `engine.rs`/`poller.rs`/`config.rs` code, resolved
+  the plan's one open STOP-condition risk with evidence (see below),
+  corrected the Config-surface section (the struct lives in `config.rs`,
+  not `settings.rs`), added the frontend TS interface + test-fixture
+  sites the original Scope missed, and wrote concrete numbered Steps
+  (the original filing had none — Design spine + Scope only).
+  **Status correction (2026-07-20)**: 038 landed; the dependency gate is
+  now satisfiable. Re-run the drift check above (baseline `882cdb6`)
+  before executing — `queue.rs`/`config.rs`/`settings.rs` may have
+  moved further since.
 
 ## Re-grounded against the Engine (this review-plan pass)
 

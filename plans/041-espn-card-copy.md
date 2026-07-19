@@ -27,7 +27,7 @@
   no `EventSignal`/wire/schema change — verified below).
 - **Depends on**: none (037 already landed; 039 coordination is
   same-file-touch only, not a hard dependency — see gate above).
-- **Review-plan pass (2026-07-19)**: the original filing assumed the
+- **Review-plan pass 1 (2026-07-19)**: the original filing assumed the
   fix was uniformly mechanical across goal/penalty/own-goal/red-card.
   Reading the actual parsing code found it isn't: cards are **already**
   self-describing (`last_card` already prefixes with ESPN's own
@@ -36,10 +36,24 @@
   The real fix is narrower and more specific than the original Scope
   implied; this pass also found real fixture text ("Goal", "Penalty -
   Scored") to test against, found zero fixture coverage for "own goal"
-  (with a precedent for synthesizing it), corrected `MatchState` →
-  `ScoreUpdate` in the Scope description (goals are `ScoreUpdate`, not
-  `MatchState`), and flagged the plan's emoji proposal as a style
-  choice with zero precedent elsewhere in the codebase, not a given.
+  (planned as a synthesized test with a documented-best-guess label at
+  the time), corrected `MatchState` → `ScoreUpdate` in the Scope
+  description (goals are `ScoreUpdate`, not `MatchState`), and flagged
+  the plan's emoji proposal as a style choice with zero precedent
+  elsewhere in the codebase, not a given. A fresh-context subagent
+  cold-read then caught a fixture-ordering bug in the Goal/Penalty test
+  plan and a false premise that `baseline(UCL)` works — both fixed,
+  with verified working test code (committed `15df3cc`).
+- **Review-plan pass 2 (2026-07-20)**: reading the raw ESPN fixture JSON
+  directly (not just the parsed Rust structs) found `ownGoal` and
+  `penaltyKick` boolean fields on every scoring-play detail — structural
+  signals `SbDetail` doesn't currently parse, sitting right next to
+  `redCard` (which IS already parsed, for the exact same reason: "avoids
+  text-matching... out of the composed detail_type.text",
+  `poller.rs:90-91`). This eliminates the "documented best-guess" own-
+  goal label entirely: Step 1 now adds `own_goal: bool` and derives the
+  own-goal label from that structural fact, not from guessed text — see
+  "Fixture evidence" and Step 2's own-goal test below, both rewritten.
 
 ## Problem
 
@@ -66,10 +80,13 @@ this differently:
   maps it through `detail_line()` (`poller.rs:166-178`) alone — which
   returns ONLY `"{athlete} {clock}"`, never touching
   `d.detail_type.text`. That field — which for a goal carries ESPN's
-  own label ("Goal", "Penalty - Scored", presumably "Goal - Own Goal")
-  — is read here (`d.detail_type` is in scope) and discarded. **This is
-  the entire bug**: the data needed is already being parsed, just not
-  kept.
+  own label ("Goal", "Penalty - Scored") — is read here
+  (`d.detail_type` is in scope) and discarded. **This is the entire
+  bug**: the data needed is already being parsed, just not kept. (Own
+  goals get a different, more robust fix — see "Fixture evidence"
+  below: ESPN's feed carries a structural `ownGoal` boolean, not just
+  free text, and this plan derives the label from that fact directly
+  rather than depending on text.)
 - **Goals are `EventType::ScoreUpdate`, not `MatchState`.** The
   original filing's Scope header said "the `MatchState` → event
   title/body formatting" — that's the wrong `EventType` for the
@@ -92,18 +109,34 @@ against the five checked-in fixtures:
   as-is; see Step 2 for the exact mechanics and why (`last_scoring_play`
   picks the *last* matching detail, which in the untouched fixture is
   a penalty, not the goal).
-- **No fixture contains an own-goal or a real red card.** For red
-  cards, `poller.rs:886-914`'s `red_card_emits_red_card_signal` already
-  establishes the precedent for this exact situation: "none of the
-  checked-in fixtures contain a real red card, so this synthesizes one
-  by mutating a detail's structural booleans" — it clones the UCL
-  fixture, sets `last_detail.red_card = true` and
-  `last_detail.detail_type.text = "Red Card"` by hand. Step 2 follows
-  this same pattern for an own-goal test case, using `"Goal - Own Goal"`
-  as a documented best-guess for ESPN's real label (this plan's
-  evidence stops at "no fixture has one" — it does not independently
-  confirm ESPN's exact own-goal string, and Step 2 says explicitly not
-  to spend effort trying to verify it further).
+- **No fixture contains an own-goal or a real red card — but ESPN's raw
+  feed structurally distinguishes own-goals, so this plan no longer
+  needs to guess text for that case.** Reading the raw fixture JSON
+  directly (`python3 -c "import json; ..."` against
+  `scoreboard-uefa.champions.json`) found each scoring-play detail
+  carries `"ownGoal": false` and `"penaltyKick": true/false` booleans
+  alongside `"redCard"` — ESPN's own structural signal, exactly
+  analogous to the `red_card` boolean `SbDetail` already parses
+  (`poller.rs:92-93`). Verified: all 8 `"Penalty - Scored"` details in
+  the fixture have `penaltyKick: true`; none have `ownGoal: true`
+  (confirming, structurally, that this fixture indeed contains no real
+  own-goal — not just that the text label is absent). **Neither
+  `ownGoal` nor `penaltyKick` is currently parsed on `SbDetail`** — Step
+  1 adds `own_goal: bool` (`#[serde(rename = "ownGoal", default)]`,
+  same pattern as `red_card`). This lets the own-goal label be derived
+  from a structural fact instead of guessed free text: when
+  `d.own_goal` is true, use a fixed `"Own Goal"` label regardless of
+  whatever `detail_type.text` says — deterministic, not a best-guess.
+  (`penalty_kick` is available the same way but isn't needed: ESPN's
+  own `detail_type.text` already reads `"Penalty - Scored"` for that
+  case, confirmed directly against the fixture — parsing it is optional
+  future-proofing, not required by this plan; Step 1 does not add it.)
+  For red cards, `poller.rs:886-914`'s `red_card_emits_red_card_signal`
+  established the precedent for synthesizing test data this way first:
+  "none of the checked-in fixtures contain a real red card, so this
+  synthesizes one by mutating a detail's structural booleans" — Step 2
+  follows the same technique for the own-goal test, now with the same
+  confidence red cards already have (a structural boolean, not text).
 
 ## Deliberate scope narrowing (this review-plan pass)
 
@@ -224,6 +257,31 @@ fn labeled_detail_line(kind: &str, d: &SbDetail) -> String {
 }
 ```
 
+**Add the `own_goal` structural field and derive the own-goal label from
+it, not from text.** In `SbDetail` (`poller.rs:81-98`), add a field
+right alongside `red_card` — same rename pattern, same rationale:
+
+```rust
+// structural own-goal signal, exactly like `red_card` above — read
+// directly instead of guessing at whatever free-text label ESPN uses
+// for an own goal (unverified; no checked-in fixture has one).
+#[serde(rename = "ownGoal", default)]
+pub own_goal: bool,
+```
+
+Then in `last_scoring_play`'s construction (`poller.rs:223-228`),
+compute `kind` as: `"Own Goal"` when `d.own_goal` is true, else
+`d.detail_type.as_ref().map(|t| t.text.clone()).unwrap_or_default()`
+(ESPN's own label, verbatim, for every other case — `"Goal"`,
+`"Penalty - Scored"`, or anything ESPN adds later) — THEN pass that
+`kind` into `labeled_detail_line`. `own_goal` is checked FIRST and
+short-circuits the text lookup entirely, so the own-goal case never
+depends on knowing ESPN's real own-goal text string. Do not add a
+`penalty_kick` field — it exists on the raw feed the same way, but
+isn't needed: `detail_type.text` already reads `"Penalty - Scored"` for
+that case (confirmed against the fixture), so parsing the boolean too
+would be redundant, not more correct.
+
 **Verify**: `cargo build --locked` (from `src-tauri/`) → exit 0.
 
 ### Step 2: tests
@@ -302,13 +360,15 @@ penalty.
    detail's structural fields by hand: same `prev`-construction as
    above, then on `live`, pick `details.last_mut()` (or any single
    entry — index doesn't matter once you're overwriting it) and set
-   `scoring_play = true` and `detail_type` text to
-   `"Goal - Own Goal"`. **This exact string is a documented best-guess,
-   not a confirmed ESPN value** (no source available to this plan
-   confirms it) — use it as-is, do not spend effort trying to verify it
-   externally, and note the assumption in the commit message. This is
-   the expected, planned outcome for this test, not a fallback for a
-   failure case.
+   `scoring_play = true` and `own_goal = true` (the new field from
+   Step 1). **Do NOT set `detail_type.text`** — the whole point of
+   deriving the label from `own_goal` structurally is that the text
+   field is irrelevant for this case; leave it as whatever the fixture
+   already has, to prove the label truly comes from the boolean, not
+   from text that happens to still be lying around from a copy-paste.
+   The expected body is `"Own Goal — {athlete} {clock}"`, a fixed
+   string this plan controls directly — no guessing, no ESPN-text
+   dependency.
    ```rust
    let sb = parse_scoreboard(UCL).unwrap();
    let mut v_snap = view(&sb.events[0]).snap;
@@ -324,13 +384,11 @@ penalty.
        .last_mut()
        .expect("fixture has at least one detail");
    last_detail.scoring_play = true;
-   if let Some(t) = last_detail.detail_type.as_mut() {
-       t.text = "Goal - Own Goal".to_string();
-   }
+   last_detail.own_goal = true;
 
    let (events, _) = diff_scoreboard(&snap, &live, 8, "uefa.champions", Priority::High);
    assert_eq!(events.len(), 1);
-   assert!(events[0].payload.body.starts_with("Goal - Own Goal — "));
+   assert!(events[0].payload.body.starts_with("Own Goal — "));
    ```
 
 **Verify**: `cargo test --locked poller::` → all pass, including the
@@ -378,9 +436,9 @@ match §0 exactly.
 
 ## STOP conditions
 
-(Note: the own-goal label is deliberately NOT a STOP condition — Step
-2.3 already tells you exactly what string to use and why; use it
-without further verification.)
+(Note: the own-goal label is deliberately NOT a STOP condition or a
+guess — Step 1 derives it from ESPN's structural `ownGoal` boolean, not
+from text, so there is nothing to verify externally.)
 
 - `poller.rs` dirty in the working tree at start → STOP and coordinate.
 - The shared-helper refactor changes `red_card_emits_red_card_signal`'s
