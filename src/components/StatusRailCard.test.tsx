@@ -341,7 +341,10 @@ describe("StatusRailCard", () => {
     );
 
     expect(screen.getByText("RSS")).toBeTruthy();
-    expect(screen.getByText("⌃⇧N more").classList.contains("compact-hint")).toBe(true);
+    // hotkey key-cap styling: the hint's "⌃⇧N" is now a <kbd> child, so
+    // its text is split across elements — match on the container's
+    // normalized textContent rather than an exact getByText.
+    expect(container.querySelector(".compact-hint")?.textContent).toBe("⌃⇧N more");
     expect(screen.queryByText("⌃⇧N collapse")).toBeNull();
     expect(container.querySelector(".pill.category")).toBeNull();
     expect(container.querySelector(".pill.age")).toBeNull();

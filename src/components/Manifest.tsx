@@ -70,7 +70,15 @@ export function Manifest({
                       <br />
                     </>
                   )}
-                  {hasLink ? "⌃⇧O read · ⌃⇧N collapse" : "⌃⇧N collapse"}
+                  {hasLink ? (
+                    <>
+                      <kbd>⌃⇧O</kbd> read · <kbd>⌃⇧N</kbd> collapse
+                    </>
+                  ) : (
+                    <>
+                      <kbd>⌃⇧N</kbd> collapse
+                    </>
+                  )}
                 </div>
               </div>
             </div>
@@ -85,7 +93,15 @@ export function Manifest({
                 <div className="detail-value">
                   {sourceLabelFor(eventType)}
                   <br />
-                  {hasLink ? "⌃⇧O read · ⌃⇧N collapse" : "⌃⇧N collapse"}
+                  {hasLink ? (
+                    <>
+                      <kbd>⌃⇧O</kbd> read · <kbd>⌃⇧N</kbd> collapse
+                    </>
+                  ) : (
+                    <>
+                      <kbd>⌃⇧N</kbd> collapse
+                    </>
+                  )}
                 </div>
               </div>
               {subtitle ? (

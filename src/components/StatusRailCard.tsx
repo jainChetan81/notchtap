@@ -157,7 +157,11 @@ export function StatusRailCard({ slot, status }: { slot: SlotState; status?: Sta
                 )}
               </div>
               <Stamp priority={slot.priority} signal={slot.signal} eventType={slot.eventType} />
-              {!expanded && <div className="compact-hint">⌃⇧N more</div>}
+              {!expanded && (
+                <div className="compact-hint">
+                  <kbd>⌃⇧N</kbd> more
+                </div>
+              )}
               <Track total={slot.queueTotal} done={slot.queueDone} />
             </div>
             <Manifest
