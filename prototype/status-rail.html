@@ -630,10 +630,19 @@ button.ctl.active { background: #3b4757; border-color: #5b7089; }
 <h2>6 · Queue slider edge cases</h2>
 <p class="note">
   Segment count caps at <b>10</b>; beyond that the index maps proportionally (shown: 8 of 25).
-  Known filed follow-up: plan 038 — skipping a <i>Recurring</i> item currently counts it as "done"
-  (over-advances the slider by one); fix is planned, not yet shipped.
+  Plan 038 (shipped): skipping/rotating out a <i>Recurring</i> item no longer counts as "done" —
+  both requeue arms are guarded, so a cycling live-match card can't over-advance the slider.
 </p>
 <div class="grid" id="slider-states"></div>
+
+<h2>7 · Live-match scorecard (plan 042) — collapsed Clock + per-side Cards</h2>
+<p class="note">
+  Opt-in (<code>espn_live_card</code>) — a live match's collapsed card gains Clock and per-side
+  Cards detail cells, same <code>detail-label</code>/<code>detail-value</code> classes as the
+  expanded manifest, rendered inline under the body instead of behind ⌃⇧N. Option B: the card is
+  never pinned open — it still rotates and collapses like any other item.
+</p>
+<div class="grid" id="live-match"></div>
 
 <script>
 /* ---------- helpers mirroring lib/presentation.ts + Track.tsx + markdown.tsx ---------- */
@@ -727,10 +736,20 @@ function renderCard(cfg) {
     }
   }
 
+  // plan 042: collapsed scorecard cells (Clock, per-side Cards) — only a
+  // live-match card with `espn_live_card` on populates `details`, so every
+  // other card renders exactly as before. Same detail-label/detail-value
+  // classes as the expanded manifest; collapsed-only (mirrors
+  // src/components/StatusRailCard.tsx).
+  const collapsedDetails = (!cfg.expanded && !cfg.news && cfg.details)
+    ? cfg.details.map((d) =>
+        `<div><div class="detail-label">${esc(d.label)}</div><div class="detail-value">${esc(d.value)}</div></div>`).join("")
+    : "";
+
   el.innerHTML = `
     <div class="motion-wrapper">
       <div class="compact">
-        <div class="copy">${copy}</div>
+        <div class="copy">${copy}${collapsedDetails}</div>
         <div class="stamp">${stamp(cfg)}</div>
         ${cfg.expanded ? "" : '<div class="compact-hint">⌃⇧N more</div>'}
         <div class="track" aria-hidden="true">${track}</div>
@@ -744,7 +763,7 @@ function renderCard(cfg) {
 function renderIdle(status) {
   const el = document.createElement("div");
   const active = status &&
-    (status.football.enabled || status.news.enabled || status.football.live !== null || status.waiting > 0 || status.paused);
+    (status.football.enabled || status.news.enabled || status.weather.enabled || status.football.live !== null || status.waiting > 0 || status.paused);
   el.className = "rail-card idle" + (active ? " status" : "");
   const fmt = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
   const now = new Date();
@@ -754,8 +773,16 @@ function renderIdle(status) {
     const chips = [];
     if (status.football.live) {
       chips.push(`<span class="src-chip live"><span class="live-dot"></span>${esc(status.football.live.label)} · ${esc(status.football.live.minute)}</span>`);
+    } else {
+      chips.push(`<span class="src-chip${status.football.enabled ? "" : " dim"}">${status.football.enabled ? "Football" : "Football off"}</span>`);
     }
     chips.push(`<span class="src-chip${status.news.enabled ? "" : " dim"}">${status.news.enabled ? "News" : "News paused"}</span>`);
+    // plan 040 Part B: weather chip — same src-chip pattern as football/news.
+    chips.push(`<span class="src-chip${status.weather.enabled ? "" : " dim"}">${
+      status.weather.current
+        ? `${esc(status.weather.current.tempDisplay)} ${esc(status.weather.current.condition)}`
+        : status.weather.enabled ? "Weather" : "Weather off"
+    }</span>`);
     chips.push(`<span class="src-chip">${status.waiting > 0 ? status.waiting + " queued" : "clear"}</span>`);
     rail = `<span class="src-rail">${chips.join("")}</span>`;
   }
@@ -930,17 +957,22 @@ NEWS_SAMPLES.forEach(([category, source, title, age], i) => {
 
 /* ---------- 5 · idle states ---------- */
 const idleStates = document.getElementById("idle-states");
-const INACTIVE = { paused: false, waiting: 0, football: { enabled: false, live: null }, news: { enabled: false } };
+const WEATHER_OFF = { enabled: false, current: null };
+const WEATHER_ON_NO_POLL = { enabled: true, current: null };
+const WEATHER_READING = { enabled: true, current: { tempDisplay: "72°F", condition: "Cloudy" } };
+const INACTIVE = { paused: false, waiting: 0, football: { enabled: false, live: null }, news: { enabled: false }, weather: WEATHER_OFF };
 frame(idleStates, renderIdle(INACTIVE), "plain clock · 270px", "nothing enabled, nothing queued — rail hidden");
-frame(idleStates, renderIdle({ paused: false, waiting: 0, football: { enabled: true, live: null }, news: { enabled: true } }),
-  "news on · all quiet", "News chip + clear · 460px");
-frame(idleStates, renderIdle({ paused: false, waiting: 0, football: { enabled: true, live: { label: "ARS 2–0 CHE", minute: "Halftime" } }, news: { enabled: true } }),
+frame(idleStates, renderIdle({ paused: false, waiting: 0, football: { enabled: true, live: null }, news: { enabled: true }, weather: WEATHER_READING }),
+  "all sources on · all quiet", "Football + News + Weather reading + clear · 460px");
+frame(idleStates, renderIdle({ paused: false, waiting: 0, football: { enabled: true, live: { label: "ARS 2–0 CHE", minute: "Halftime" } }, news: { enabled: true }, weather: WEATHER_READING }),
   "football live", "pulsing live dot · ARS 2–0 CHE · Halftime");
-frame(idleStates, renderIdle({ paused: false, waiting: 0, football: { enabled: true, live: null }, news: { enabled: false } }),
-  "news paused", "dimmed News paused chip");
-frame(idleStates, renderIdle({ paused: false, waiting: 2, football: { enabled: true, live: null }, news: { enabled: true } }),
+frame(idleStates, renderIdle({ paused: false, waiting: 0, football: { enabled: true, live: null }, news: { enabled: false }, weather: WEATHER_ON_NO_POLL }),
+  "news paused · weather awaiting first poll", "dimmed News paused chip · plain \"Weather\" label until Open-Meteo lands");
+frame(idleStates, renderIdle({ paused: false, waiting: 0, football: { enabled: false, live: null }, news: { enabled: true }, weather: WEATHER_OFF }),
+  "football off · weather off", "dimmed \"off\" chips on both — plan 040 Part B");
+frame(idleStates, renderIdle({ paused: false, waiting: 2, football: { enabled: true, live: null }, news: { enabled: true }, weather: WEATHER_READING }),
   "2 queued", "waiting depth while slot is empty");
-frame(idleStates, renderIdle({ paused: true, waiting: 3, football: { enabled: true, live: null }, news: { enabled: true } }),
+frame(idleStates, renderIdle({ paused: true, waiting: 3, football: { enabled: true, live: null }, news: { enabled: true }, weather: WEATHER_READING }),
   "engine paused · 3 queued", "paused buffers, promotion frozen");
 
 /* ---------- 6 · slider edge cases ---------- */
@@ -954,6 +986,33 @@ frame(sliderStates, renderCard({ priority: "high", eventType: "generic", title: 
 frame(sliderStates, renderCard({ priority: "high", eventType: "generic", title: "Huge batch", body: "25 items deep", queue: { total: 25, done: 7 } }),
   "25 items → 10 segments", "index maps proportionally: floor(7×10/25)=2");
 
+/* ---------- 7 · live-match scorecard ---------- */
+const liveMatch = document.getElementById("live-match");
+frame(liveMatch, renderCard({
+  priority: "low", eventType: "score_update", signal: "kickoff", title: "ARS 0–0 CHE", body: "12' · Kickoff",
+  details: [
+    { label: "Clock", value: "12'" },
+    { label: "Home Cards", value: "—" },
+    { label: "Away Cards", value: "—" },
+  ], queue: { total: 1, done: 0 },
+}), "kickoff · no cards yet", "Clock cell always present, Cards cells show — when empty");
+frame(liveMatch, renderCard({
+  priority: "low", eventType: "score_update", signal: "goal", title: "ARS 2–0 CHE", body: "58' · Saka (assist Ødegaard)",
+  details: [
+    { label: "Clock", value: "58'" },
+    { label: "Home Cards", value: "🟨" },
+    { label: "Away Cards", value: "🟨🟨🟥" },
+  ], queue: { total: 1, done: 0 },
+}), "mid-match · cards on both sides", "per-side bucketing via team.id, not aggregate count");
+frame(liveMatch, renderCard({
+  priority: "low", eventType: "match_state", signal: "fulltime", title: "ARS 2–0 CHE", body: "FT",
+  details: [
+    { label: "Clock", value: "FT" },
+    { label: "Home Cards", value: "🟨" },
+    { label: "Away Cards", value: "🟨🟨🟥" },
+  ], queue: { total: 1, done: 0 },
+}), "full-time", "same Topic, OneShot retires the card (plan 044 fixed a same-poll un-retire bug here)");
+
 /* ---------- 0 · lifecycle ---------- */
 const LIFE_QUEUE = [
   { priority: "high", eventType: "generic", title: "Agent needs input", body: "Workspace command is waiting" },
@@ -966,7 +1025,7 @@ const LIFE_QUEUE = [
 const HOLD_EXPANDED = 2400, HOLD_COMPACT = 2400, SWAP = 230;
 
 const lifeMount = document.getElementById("life-mount");
-const LIFE_IDLE = { paused: false, waiting: 0, football: { enabled: true, live: null }, news: { enabled: true } };
+const LIFE_IDLE = { paused: false, waiting: 0, football: { enabled: true, live: null }, news: { enabled: true }, weather: WEATHER_READING };
 let lifeCard = renderIdle(LIFE_IDLE);
 lifeMount.appendChild(lifeCard);
 let lifeTimers = [], lifeRunning = false;
