@@ -22,6 +22,34 @@
 - **Depends on**: none
 - **Category**: docs
 - **Planned at**: commit `f2cbae6`, 2026-07-19
+- **Review-plan pass (2026-07-20)**: independently re-verified all six
+  sub-findings against live content (not just grep, but actually running
+  `cargo test --locked` where a count claim was involved). Five of six
+  confirmed accurate and still needing the fix as described. **One is
+  wrong and must NOT be executed as originally written — sub-finding 4
+  (notifier count).** `docs/TESTING_STRATEGY.md`'s "notifier 23" is
+  actually CORRECT, not stale: `cargo test --locked notifier:: --
+  --list` authoritatively reports 23 tests, matching the doc exactly.
+  The plan's own suggested verification command,
+  `grep -c '#\[test\]\|#\[tokio::test\]' src-tauri/src/notifier.rs`,
+  undercounts by exactly 1 (reports 22) because it misses the
+  parameterized-attribute variant at `notifier.rs:601`,
+  `#[tokio::test(flavor = "current_thread")]` — that line doesn't match
+  a bare `#\[tokio::test\]` pattern. Executing the original Step 4 would
+  have "corrected" the doc from accurate (23) to wrong (22) — the
+  opposite of this plan's purpose. Separately (and independently of this
+  bug), `poller`'s sub-count in the same row already self-corrected from
+  30 to 31 between this plan's baseline and this review pass, because
+  plan 044 landed live during the session — the full row is now
+  byte-accurate at current HEAD (`cd src-tauri && cargo test --locked`
+  reports exactly 327, and the row's fifteen sub-counts sum to exactly
+  327). Step 4 has been rewritten below: it no longer claims a specific
+  number is wrong, and it replaces the flawed grep-based verification
+  method with `cargo test --locked <module>:: -- --list | tail -3`
+  (authoritative, immune to attribute-syntax variants) for whichever
+  counts genuinely need re-checking at execution time. Minor citation
+  fix also applied: sub-finding 3's `README.md:19-20` is actually
+  `README.md:18-20` (confirmed by direct read).
 
 ## Why this matters
 
@@ -40,9 +68,13 @@ source (plan 040), or the ESPN live-match scoreboard card (plans
 039/041/042) — 22+ shipped plans across three full audit/design
 sessions the paragraph is silent on. The rest are smaller but real:
 a working spec citing a deleted function, a stale "four sources" claim,
-an off-by-one test count, missing manual-checklist rows for two shipped
-opt-in features, and a one-command CI-mirror tool (`justfile`) with zero
-discoverability from the human-facing `README.md`.
+missing manual-checklist rows for two shipped opt-in features, and a
+one-command CI-mirror tool (`justfile`) with zero discoverability from
+the human-facing `README.md`. (A sixth suspected gap — an off-by-one
+test count — turned out, on review-plan verification, to be a false
+positive from a flawed grep pattern; see "Current state" §4 and Step 4
+below for the correction. The test-count row needs periodic
+re-verification as a standing practice, just not a one-time fix here.)
 
 ## Current state
 
@@ -101,7 +133,7 @@ matches. Plan 037 moved this loop into `src-tauri/src/engine.rs` as
 `// plan 037: the rotation loop (formerly spawn_heartbeat) lives //
 inside the Engine`.
 
-### 3. `README.md:19-20` — "four sources", now five
+### 3. `README.md:18-20` — "four sources", now five
 
 ```
 - accepts pushes from four sources: the `notchtap` cli, cmux's
@@ -115,17 +147,31 @@ inside the Engine`.
 and hot/cold alert cards through the same `Engine::accept` path as the
 other four.
 
-### 4. `docs/TESTING_STRATEGY.md:19` — rust test count off by one
+### 4. `docs/TESTING_STRATEGY.md:19` — CORRECTION (review-plan pass): this sub-finding is false, do not act on the original text
 
-```
-| rust unit/integration | 326 tests — settings 46, queue 65, http 36, notifier 23, rss_poller 28, poller 30, event 19, config 19, weather_poller 13, presentation 11, lib 11, engine 10, status 7, logging 4, net 4 | `cargo test` from `src-tauri/` |
-```
+**The original claim below is WRONG — do not execute it.** It said
+"notifier 23 is stale, should be 22," derived from
+`grep -c '#\[test\]\|#\[tokio::test\]' src-tauri/src/notifier.rs`. That
+grep pattern undercounts: `notifier.rs:601` has
+`#[tokio::test(flavor = "current_thread")]`, a parameterized variant
+that doesn't match a bare `#\[tokio::test\]` pattern. The authoritative
+count — `cargo test --locked notifier:: -- --list` from `src-tauri/` —
+reports **23 tests**, matching the doc exactly. Do not change `notifier`
+from 23 to 22.
 
-`notifier 23` is stale — `src-tauri/src/notifier.rs` has 22
-`#[test]`/`#[tokio::test]` functions as of `f2cbae6` (recount, don't
-trust this number either — it may have drifted further by execution
-time). Every other sub-count in this row was independently spot-checked
-and found accurate at the time this plan was written.
+Separately, and unrelated to that bug: `poller`'s sub-count in this same
+row has already self-corrected from 30 to 31 since this plan's `f2cbae6`
+baseline, because plan 044 landed independently. As of this review-plan
+pass, the entire row is byte-accurate: `cd src-tauri && cargo test
+--locked` reports exactly 327 tests, and the row's fifteen listed
+sub-counts (46+65+36+23+28+31+19+19+13+11+11+10+7+4+4) sum to exactly
+327.
+
+**Net effect: as of this review-plan pass, no edit to this line is
+needed at all.** Step 4 below is rewritten to verify-and-recount at
+execution time (numbers may drift again before the plan runs) using the
+authoritative `cargo test --locked <module>:: -- --list` method instead
+of the flawed grep, rather than to blindly apply the original "fix."
 
 ### 5. `docs/IMPLEMENTATION_PLAN.md` §6 — no manual-checklist rows for two shipped opt-in features
 
@@ -156,7 +202,8 @@ instead.
 
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Rust test recount | `cd src-tauri && cargo test --locked 2>&1 \| tail -20` | prints the real per-module and total counts to reconcile §0 against |
+| Rust test recount (total) | `cd src-tauri && cargo test --locked 2>&1 \| grep "^test result"` | first line's passed-count is the real total to reconcile §0 against |
+| Rust test recount (per-module) | `cd src-tauri && cargo test --locked <module>:: -- --list \| tail -3` | "N tests, 0 benchmarks" is that module's real sub-count — do NOT use `grep -c '#\[test\]\|#\[tokio::test\]'`, it misses parameterized attribute variants (see Current state §4) |
 | Confirm `spawn_heartbeat` is gone | `grep -rn "fn spawn_heartbeat" src-tauri/src/` | no matches |
 | Confirm `SourceKind` has 5 variants | `grep -n "pub enum SourceKind" -A 6 src-tauri/src/event.rs` | shows `Football, News, Manual, Cmux, Weather` |
 | Confirm no "just" in README | `grep -in "just" README.md` | no matches (before your edit) |
@@ -286,20 +333,37 @@ either no matches, or a match that explicitly frames it as historical
 **Verify**: `grep -in "five sources" README.md` → 1 match.
 `grep -in "just" README.md` → at least 2 matches (the new mentions).
 
-### Step 4: Fix `docs/TESTING_STRATEGY.md` §0's test count
+### Step 4: Verify `docs/TESTING_STRATEGY.md` §0's test count is still accurate
 
-Recount `notifier.rs`'s actual test count
-(`grep -c '#\[test\]\|#\[tokio::test\]' src-tauri/src/notifier.rs` from
-repo root, or run the full `cargo test --locked` from `src-tauri/` and
-read its summary line) and correct both the `notifier` sub-count and the
-row's total at `docs/TESTING_STRATEGY.md:19` to match. Do not trust the
-number quoted in this plan (22) without re-running the count yourself —
-recount, don't trust, per this doc's own stated discipline.
+**Do NOT use `grep -c '#\[test\]\|#\[tokio::test\]'` for this step —
+it undercounts.** It misses parameterized attribute variants like
+`#[tokio::test(flavor = "current_thread")]` (present in `notifier.rs` at
+last check), which is exactly how the original draft of this plan
+mis-derived a false "notifier is stale" finding — see the correction in
+"Current state" §4 above. Use the test runner itself instead, which is
+immune to attribute-syntax variations:
 
-**Verify**: the `notifier` sub-count in the §0 table matches
-`grep -c '#\[test\]\|#\[tokio::test\]' src-tauri/src/notifier.rs`'s
-output exactly, and the row's total matches a live `cargo test --locked`
-run's reported test count.
+1. Run `cd src-tauri && cargo test --locked 2>&1 | grep "^test result"`
+   — the FIRST line's passed-count is the true rust unit/integration
+   total (the later lines are the doc-tests and other targets — read
+   the full output if it's ambiguous which line is which).
+2. For any individual module's sub-count, run
+   `cargo test --locked <module>:: -- --list | tail -3` (e.g.
+   `cargo test --locked notifier:: -- --list | tail -3`) and read the
+   "N tests, 0 benchmarks" line.
+3. Compare every sub-count and the total in `docs/TESTING_STRATEGY.md:19`
+   against these authoritative numbers. As of this plan's last
+   review-plan pass (2026-07-20) the row was already fully accurate
+   (327 total, all fifteen sub-counts correct) — if it still is at your
+   execution time, this step is a no-op: confirm it, note "already
+   accurate" in your report, and move on. If any count HAS drifted by
+   execution time (expected — plans land continuously in this repo),
+   correct only the sub-counts and total that actually differ from the
+   live `cargo test`/`-- --list` output.
+
+**Verify**: every sub-count in the §0 row matches its module's live
+`cargo test --locked <module>:: -- --list` count, and the row's total
+matches the live full-suite `cargo test --locked` passed-count exactly.
 
 ### Step 5: Add two rows to `docs/IMPLEMENTATION_PLAN.md` §6's manual checklist
 
@@ -337,9 +401,11 @@ Machine-checkable. ALL must hold:
       live (non-historical) citation
 - [ ] `grep -in "five sources" README.md` → 1 match
 - [ ] `grep -in "just" README.md` → ≥ 2 matches
-- [ ] `docs/TESTING_STRATEGY.md`'s `notifier` sub-count matches a live
-      `grep -c '#\[test\]\|#\[tokio::test\]' src-tauri/src/notifier.rs`
-      count, and the row total matches a live `cargo test --locked` run
+- [ ] Every sub-count in `docs/TESTING_STRATEGY.md`'s §0 row matches a
+      live `cargo test --locked <module>:: -- --list` count for that
+      module (NOT a `grep -c '#\[test\]\|#\[tokio::test\]'` count — see
+      Step 4), and the row's total matches a live full-suite
+      `cargo test --locked` run's passed-count
 - [ ] `grep -in "weather_enabled\|espn_live_card" docs/IMPLEMENTATION_PLAN.md`
       → at least one match each
 - [ ] No files outside the in-scope list are modified (`git status`)
@@ -351,10 +417,13 @@ Stop and report back (do not improvise) if:
 
 - Any of the six "current state" excerpts above don't match the live
   file content — the docs have drifted further since `f2cbae6`; re-read
-  the live text and adapt, but if the underlying claim (e.g. "notifier
-  count is off by one") turns out to already be fixed, just skip that
-  sub-step and note it in your report rather than re-doing already-done
-  work.
+  the live text and adapt, but if the underlying claim turns out to
+  already be true/fixed (e.g. a test-count sub-row that already matches
+  a live `cargo test --locked` recount — sub-finding 4 was already found
+  to be in exactly this state during the review-plan pass, see Current
+  state §4), just skip that sub-step and note it in your report rather
+  than re-doing already-done work or, worse, "fixing" something that was
+  never actually broken.
 - You find yourself wanting to change source code to make a doc's claim
   true, rather than changing the doc to match the code — that's a sign
   the "finding" was actually a real behavior gap, not a docs gap; report
@@ -384,7 +453,11 @@ Stop and report back (do not improvise) if:
   reads as a natural continuation of the existing paragraph's voice (not
   a jarringly different style), that the V3_6 spec citation fix doesn't
   accidentally imply the emission behavior itself changed (it didn't —
-  only its location), and that the test-count fix in Step 4 was actually
-  recounted live rather than just incrementing/decrementing the number
-  quoted in this plan by one (which itself may be stale by execution
-  time).
+  only its location), and that Step 4 was actually re-verified live via
+  `cargo test --locked <module>:: -- --list` rather than trusting either
+  this plan's numbers or a source-grep count — grep-based test counting
+  is not just "may drift," it demonstrably undercounts today whenever a
+  parameterized test attribute (`#[tokio::test(flavor = "...")]` etc.)
+  is used anywhere in the counted module; this repo should treat
+  `cargo test`'s own reported counts as the only source of truth for
+  `TESTING_STRATEGY.md` §0 going forward, never a grep proxy.
