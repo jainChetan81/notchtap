@@ -29,6 +29,13 @@ export function IdleView({ status }: { status?: StatusState }) {
           <span className={`src-chip${status.news.enabled ? "" : " dim"}`}>
             {status.news.enabled ? "News" : "News paused"}
           </span>
+          <span className={`src-chip${status.weather.enabled ? "" : " dim"}`}>
+            {status.weather.current !== null
+              ? `${status.weather.current.tempDisplay} ${status.weather.current.condition}`
+              : status.weather.enabled
+                ? "Weather"
+                : "Weather off"}
+          </span>
           <span className="src-chip">
             {status.waiting > 0 ? `${status.waiting} queued` : "clear"}
           </span>

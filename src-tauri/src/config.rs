@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::event::{Priority, SourceKind};
+use crate::event::{Priority, SourceKind, Units};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -60,8 +60,27 @@ pub struct Config {
     /// indistinguishable from any other manual `/notify` caller, so it
     /// silently used `default_ttl`.
     pub cmux_ttl_secs: u64,
+    /// plan 040 Part B: weather source (Open-Meteo, keyless). default
+    /// false — ambient sources are opt-in per machine, same rule as rss.
+    pub weather_enabled: bool,
+    /// Raw coordinates the operator sets once — no geocoding, no
+    /// city-name lookup, no second API dependency.
+    pub weather_lat: f64,
+    pub weather_lon: f64,
+    /// Display units only: Open-Meteo converts server-side via its
+    /// `temperature_unit` query param; alert thresholds below are always
+    /// stored/compared in Celsius regardless of this field.
+    pub weather_units: Units,
+    pub weather_poll_secs: u64,
+    pub weather_rain_threshold_pct: u8,
+    pub weather_rain_lookahead_mins: u16,
+    pub weather_temp_hot_c: f64,
+    pub weather_temp_cold_c: f64,
+    /// Medium by default: bracketed by espn (High — live sports is
+    /// urgent) and rss (Low — news is ambient).
+    pub weather_priority: Priority,
     /// v6/v6.1: same-tier promotion tie-break, checked before arrival
-    /// order. Must be a permutation of all four `SourceKind` variants —
+    /// order. Must be a permutation of all five `SourceKind` variants —
     /// enforced by `settings::validate`.
     pub rotation_order: Vec<SourceKind>,
     pub connectors: Connectors,
@@ -187,6 +206,46 @@ fn default_cmux_ttl_secs() -> u64 {
     8
 }
 
+fn default_weather_enabled() -> bool {
+    false
+}
+
+fn default_weather_lat() -> f64 {
+    0.0
+}
+
+fn default_weather_lon() -> f64 {
+    0.0
+}
+
+fn default_weather_units() -> Units {
+    Units::Celsius
+}
+
+fn default_weather_poll_secs() -> u64 {
+    900
+}
+
+fn default_weather_rain_threshold_pct() -> u8 {
+    60
+}
+
+fn default_weather_rain_lookahead_mins() -> u16 {
+    30
+}
+
+fn default_weather_temp_hot_c() -> f64 {
+    36.0
+}
+
+fn default_weather_temp_cold_c() -> f64 {
+    14.0
+}
+
+fn default_weather_priority() -> Priority {
+    Priority::Medium
+}
+
 fn default_rotation_order() -> Vec<SourceKind> {
     // v6.1 review fix: Manual ranks ahead of Cmux — at default priorities
     // (Football/Cmux both High, Manual Medium, News Low) this never
@@ -195,9 +254,13 @@ fn default_rotation_order() -> Vec<SourceKind> {
     // install already running both should see the pre-existing, more
     // established Manual path win any such tie by default, not the
     // newer Cmux origin.
+    // plan 040 Part B: Weather sits right after Manual — it shares
+    // Manual's Medium tier by default, and the more established Manual
+    // path wins that tie.
     vec![
         SourceKind::Football,
         SourceKind::Manual,
+        SourceKind::Weather,
         SourceKind::Cmux,
         SourceKind::News,
     ]
@@ -266,6 +329,16 @@ impl Default for Config {
             manual_default_priority: default_manual_default_priority(),
             cmux_priority: default_cmux_priority(),
             cmux_ttl_secs: default_cmux_ttl_secs(),
+            weather_enabled: default_weather_enabled(),
+            weather_lat: default_weather_lat(),
+            weather_lon: default_weather_lon(),
+            weather_units: default_weather_units(),
+            weather_poll_secs: default_weather_poll_secs(),
+            weather_rain_threshold_pct: default_weather_rain_threshold_pct(),
+            weather_rain_lookahead_mins: default_weather_rain_lookahead_mins(),
+            weather_temp_hot_c: default_weather_temp_hot_c(),
+            weather_temp_cold_c: default_weather_temp_cold_c(),
+            weather_priority: default_weather_priority(),
             rotation_order: default_rotation_order(),
             connectors: Connectors::default(),
             appearance: default_appearance(),
@@ -357,11 +430,22 @@ mod tests {
         assert_eq!(c.manual_default_priority, Priority::Medium);
         assert_eq!(c.cmux_priority, Priority::High);
         assert_eq!(c.cmux_ttl_secs, 8);
+        assert!(!c.weather_enabled);
+        assert_eq!(c.weather_lat, 0.0);
+        assert_eq!(c.weather_lon, 0.0);
+        assert_eq!(c.weather_units, Units::Celsius);
+        assert_eq!(c.weather_poll_secs, 900);
+        assert_eq!(c.weather_rain_threshold_pct, 60);
+        assert_eq!(c.weather_rain_lookahead_mins, 30);
+        assert_eq!(c.weather_temp_hot_c, 36.0);
+        assert_eq!(c.weather_temp_cold_c, 14.0);
+        assert_eq!(c.weather_priority, Priority::Medium);
         assert_eq!(
             c.rotation_order,
             [
                 SourceKind::Football,
                 SourceKind::Manual,
+                SourceKind::Weather,
                 SourceKind::Cmux,
                 SourceKind::News
             ]
@@ -529,6 +613,29 @@ url = "https://example.com/without-meta"
         assert_eq!(c.default_ttl, 8);
         assert_eq!(c.espn_ttl_secs, 8);
         assert_eq!(c.cmux_ttl_secs, 8);
+    }
+
+    #[test]
+    fn weather_fields_are_overridable() {
+        let c = Config::parse(
+            "weather_enabled = true\nweather_lat = 12.97\nweather_lon = 77.59\nweather_units = \"fahrenheit\"\nweather_poll_secs = 300\nweather_rain_threshold_pct = 80\nweather_rain_lookahead_mins = 60\nweather_temp_hot_c = 40.0\nweather_temp_cold_c = 10.0\nweather_priority = \"high\"\n",
+        )
+        .unwrap();
+        assert!(c.weather_enabled);
+        assert_eq!(c.weather_lat, 12.97);
+        assert_eq!(c.weather_lon, 77.59);
+        assert_eq!(c.weather_units, Units::Fahrenheit);
+        assert_eq!(c.weather_poll_secs, 300);
+        assert_eq!(c.weather_rain_threshold_pct, 80);
+        assert_eq!(c.weather_rain_lookahead_mins, 60);
+        assert_eq!(c.weather_temp_hot_c, 40.0);
+        assert_eq!(c.weather_temp_cold_c, 10.0);
+        assert_eq!(c.weather_priority, Priority::High);
+    }
+
+    #[test]
+    fn unknown_units_string_is_a_parse_error() {
+        assert!(Config::parse("weather_units = \"kelvin\"").is_err());
     }
 
     #[test]

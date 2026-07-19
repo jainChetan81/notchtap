@@ -686,3 +686,47 @@ gets its first producer: the espn poller. governing design:
   `Recurring`-requeue logic already lived in `queue.rs`, unit- and
   proptest-covered. this plan is that machinery's first caller, not a
   change to it.
+
+## 19. weather source (locked 2026-07-19, plan 040 Part B)
+
+a fifth `SourceKind` (`Weather`) and a new poller
+(`src-tauri/src/weather_poller.rs`) against Open-Meteo — keyless, no
+auth, no secrets handling, same `net.rs` client posture as the other
+pollers. opt-in, default off (`weather_enabled = false`), same rule as
+rss: ambient sources must not default on top of the app's primary
+agent-notification purpose.
+
+- **location is raw `weather_lat`/`weather_lon` config numbers** — no
+  geocoding, no city-name lookup, no second API dependency.
+- **ambient vs card is the football split, reused.** current conditions
+  are *not* an `Event`: the poller hands an already-display-formatted
+  `WeatherSummary` ("27°" + "Cloudy") to `engine.update_weather`, which
+  folds it into the idle rail's `StatusState` exactly like the
+  live-match summary (compare-then-store, wake only on change).
+  threshold alerts are ordinary `accept()`-routed one-shot cards with
+  `origin: SourceKind::Weather`. the two mechanisms never conflate
+  "current conditions" with "a card."
+- **units are display-only.** the poller requests the operator's unit
+  (`weather_units`, default Celsius) directly from Open-Meteo via its
+  `temperature_unit` query param — no client-side conversion for
+  display. alert thresholds (`weather_temp_hot_c` = 36.0,
+  `weather_temp_cold_c` = 14.0) are always stored and compared in
+  Celsius regardless.
+- **alerts are rain-incoming + temperature threshold only** — Open-Meteo
+  has no severe-weather-warnings feed, so no third category exists.
+  rain lookahead is hourly-resolution data: the "30-minute lookahead"
+  reads the hourly entry closest to poll-time+30min, rounded to the
+  nearest hour.
+- **alert re-fire is edge-triggered, not level-triggered**: an alert
+  fires once on crossing into alert territory, stays silent while the
+  condition holds, and re-arms only after it clears — the poller carries
+  per-alert "already fired" state across polls, the same shape
+  `poller.rs`'s `Snapshot` uses for kickoff/half-time.
+- **defaults**: `weather_poll_secs` = 900, rain = 30-min lookahead @
+  60% probability, `weather_priority` = Medium (bracketed by espn High
+  and rss Low), rotation-order slot right after Manual:
+  `[Football, Manual, Weather, Cmux, News]`.
+- **no new ipc**: `get_config`/`get_default_config` serialize the whole
+  `Config`; the overlay stays receive-only. settings window gains a
+  Weather section and a per-source test-notification button (the
+  existing `send_test_notification` command, no new `#[tauri::command]`).

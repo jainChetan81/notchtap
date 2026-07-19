@@ -750,6 +750,7 @@ mod tests {
             Arc::new(vec![connector]),
             true,
             true,
+            false,
         );
 
         engine.accept(score_event("accepted"), false).await.unwrap();
@@ -1161,6 +1162,7 @@ mod tests {
             Arc::new(vec![connector]),
             true,
             true,
+            false,
         );
 
         for event in live_cycle_events(true) {

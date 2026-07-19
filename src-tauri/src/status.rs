@@ -23,6 +23,7 @@ pub struct StatusState {
     pub waiting: usize,
     pub football: FootballStatus,
     pub news: NewsStatus,
+    pub weather: WeatherStatus,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -42,6 +43,19 @@ pub struct LiveMatchSummary {
     pub minute: String,
 }
 
+/// plan 040 Part B: the ambient weather chip's data, carried already
+/// display-formatted by the poller — `temp_display` "27°" (units applied
+/// server-side by Open-Meteo via its `temperature_unit` query param) and
+/// `condition` the WMO-code word ("Cloudy"). The frontend concatenates
+/// them (`{tempDisplay} {condition}`), same shape as football's
+/// `{live.label} · {live.minute}`.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeatherSummary {
+    pub temp_display: String,
+    pub condition: String,
+}
+
 /// "News paused" in the idle rail means `enabled == false`: the polling
 /// gates are boot-config since v6, so there is no runtime poll pause to
 /// report beyond the gate itself.
@@ -49,6 +63,16 @@ pub struct LiveMatchSummary {
 #[serde(rename_all = "camelCase")]
 pub struct NewsStatus {
     pub enabled: bool,
+}
+
+/// plan 040 Part B: mirrors `FootballStatus` exactly — `enabled` is the
+/// boot-config gate (`Config.weather_enabled`), `current` is `None`
+/// until the first successful poll (serializes as `null`).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct WeatherStatus {
+    pub enabled: bool,
+    pub current: Option<WeatherSummary>,
 }
 
 impl StatusState {
@@ -60,6 +84,8 @@ impl StatusState {
         live: Option<LiveMatchSummary>,
         espn_enabled: bool,
         rss_enabled: bool,
+        weather: Option<WeatherSummary>,
+        weather_enabled: bool,
     ) -> Self {
         Self {
             paused: queue.is_paused(),
@@ -70,6 +96,10 @@ impl StatusState {
             },
             news: NewsStatus {
                 enabled: rss_enabled,
+            },
+            weather: WeatherStatus {
+                enabled: weather_enabled,
+                current: weather,
             },
         }
     }
@@ -122,6 +152,17 @@ mod tests {
                 live,
             },
             news: NewsStatus { enabled: true },
+            weather: WeatherStatus {
+                enabled: false,
+                current: None,
+            },
+        }
+    }
+
+    fn weather_summary() -> WeatherSummary {
+        WeatherSummary {
+            temp_display: "27°".to_string(),
+            condition: "Cloudy".to_string(),
         }
     }
 
@@ -149,6 +190,20 @@ mod tests {
     fn serializes_live_as_null_when_nothing_in_play() {
         let json = serde_json::to_value(status(None)).unwrap();
         assert!(json["football"]["live"].is_null());
+        assert!(json["weather"]["current"].is_null());
+    }
+
+    #[test]
+    fn serializes_weather_summary_camel_case() {
+        let mut s = status(None);
+        s.weather = WeatherStatus {
+            enabled: true,
+            current: Some(weather_summary()),
+        };
+        let json = serde_json::to_value(s).unwrap();
+        assert_eq!(json["weather"]["enabled"], true);
+        assert_eq!(json["weather"]["current"]["tempDisplay"], "27°");
+        assert_eq!(json["weather"]["current"]["condition"], "Cloudy");
     }
 
     #[test]
@@ -186,17 +241,30 @@ mod tests {
         queue.pause();
 
         // one item visible, nothing waiting, paused, no live match
-        let snap = StatusState::snapshot(&queue, None, true, false);
+        let snap = StatusState::snapshot(&queue, None, true, false, None, false);
         assert!(snap.paused);
         assert_eq!(snap.waiting, 0);
         assert!(snap.football.enabled);
         assert_eq!(snap.football.live, None);
         assert!(!snap.news.enabled);
+        assert!(!snap.weather.enabled);
+        assert_eq!(snap.weather.current, None);
 
         // paused pushes buffer instead of promoting (v5 semantics)
         queue
             .enqueue(generic_event(), std::time::Instant::now())
             .unwrap();
-        assert_eq!(StatusState::snapshot(&queue, None, true, false).waiting, 1);
+        assert_eq!(
+            StatusState::snapshot(&queue, None, true, false, None, false).waiting,
+            1
+        );
+    }
+
+    #[test]
+    fn snapshot_carries_weather_summary_and_gate() {
+        let queue = SingleSlotQueue::new(50);
+        let snap = StatusState::snapshot(&queue, None, true, false, Some(weather_summary()), true);
+        assert!(snap.weather.enabled);
+        assert_eq!(snap.weather.current, Some(weather_summary()));
     }
 }

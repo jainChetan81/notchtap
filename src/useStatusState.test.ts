@@ -14,6 +14,7 @@ const FALLBACK: StatusState = {
   waiting: 0,
   football: { enabled: false, live: null },
   news: { enabled: false },
+  weather: { enabled: false, current: null },
 };
 
 const LIVE: StatusState = {
@@ -21,6 +22,7 @@ const LIVE: StatusState = {
   waiting: 3,
   football: { enabled: true, live: { label: "Arsenal 2–0 Chelsea", minute: "45'" } },
   news: { enabled: true },
+  weather: { enabled: false, current: null },
 };
 
 describe("useStatusState", () => {
@@ -134,12 +136,31 @@ describe("useStatusState", () => {
     expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
   });
 
+  it("ignores a payload with a missing weather gate or a malformed weather summary", () => {
+    const { weather: _weather, ...missingWeather } = LIVE;
+    window.__NOTCHTAP_STATUS_STATE__ = missingWeather;
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
+
+    window.__NOTCHTAP_STATUS_STATE__ = {
+      ...LIVE,
+      weather: { enabled: "yes", current: null },
+    };
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
+
+    window.__NOTCHTAP_STATUS_STATE__ = {
+      ...LIVE,
+      weather: { enabled: true, current: { tempDisplay: 27, condition: "Cloudy" } },
+    };
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
+  });
+
   it("accepts the live=null all-clear shape rust sends when nothing is in-play", () => {
     const allClear: StatusState = {
       paused: false,
       waiting: 0,
       football: { enabled: false, live: null },
       news: { enabled: true },
+      weather: { enabled: false, current: null },
     };
     window.__NOTCHTAP_STATUS_STATE__ = allClear;
     const { result } = renderHook(() => useStatusState());
@@ -168,6 +189,7 @@ describe("statusRailActive", () => {
         waiting: 0,
         football: { enabled: false, live: null },
         news: { enabled: true },
+        weather: { enabled: false, current: null },
       }),
     ).toBe(true);
     expect(
@@ -176,6 +198,14 @@ describe("statusRailActive", () => {
         waiting: 2,
         football: { enabled: false, live: null },
         news: { enabled: false },
+        weather: { enabled: false, current: null },
+      }),
+    ).toBe(true);
+    // a weather gate on (or a current reading) must show the rail too
+    expect(
+      statusRailActive({
+        ...FALLBACK,
+        weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy" } },
       }),
     ).toBe(true);
     expect(statusRailActive({ ...FALLBACK, paused: true })).toBe(true);

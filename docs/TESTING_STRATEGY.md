@@ -16,9 +16,9 @@ other sections point back rather than repeating them):
 
 | suite | size | where |
 |---|---|---|
-| rust unit/integration | 302 tests — settings 45, queue 65, http 36, notifier 23, rss_poller 28, poller 25, event 19, config 17, presentation 11, lib 11, engine 9, status 5, logging 4, net 4 | `cargo test` from `src-tauri/` |
+| rust unit/integration | 321 tests — settings 46, queue 65, http 36, notifier 23, rss_poller 28, poller 25, event 19, config 19, weather_poller 13, presentation 11, lib 11, engine 10, status 7, logging 4, net 4 | `cargo test` from `src-tauri/` |
 | rust doc-tests | 3 — public `queue`/`event` apis | same `cargo test` run |
-| frontend | 107 tests — presentation tables 12, inline markdown 7, slot-state hook 22, status-state hook 14, StatusRailCard 21, IdleView rail 6, Track slider 6, settings form 14, App render 5 | `npx vitest run` |
+| frontend | 110 tests — presentation tables 12, inline markdown 7, slot-state hook 22, status-state hook 15, StatusRailCard 21, IdleView rail 8, Track slider 6, settings form 14, App render 5 | `npx vitest run` |
 | ci (v4) | fmt, clippy `-D warnings` (`--locked`), cargo test (`--locked`), cargo-audit, npm audit, tsc, vitest, vite build, `sh -n` cli syntax check, swiftc compile check | every push + pr |
 
 every example case listed in §4 for v1/v2/v3 components has a passing
@@ -56,7 +56,18 @@ landed the opt-in espn live-match card the same day: the poller's three
 new cases (flag-off regression pin, flag-on Topic/rotation shape,
 flag-on end-to-end queue collapse + connector fan-out) — poller 19→22,
 rust 296→299; frontend unchanged (fixture field additions only, no new
-vitest cases).
+vitest cases). plan 040 Part B landed the weather source the same day:
+the `weather_poller.rs` fixture suite (ambient summary, all four
+edge-trigger cases for rain/hot/cold, the WMO-code mapping, the
+nearest-hour rain lookahead) against a captured Open-Meteo response
+(`tests/fixtures/open-meteo-bangalore.json`, no live network), the
+engine's `update_weather` wake-only-on-change twin, the status.rs
+`WeatherSummary`/`WeatherStatus` serialization cases, and the config/
+settings surface (weather fields, validate ranges, the 5-source
+rotation-order permutation) — rust 302→321; frontend 107→110 (weather
+chip in IdleView, the status-state validator's weather branch, fixture
+updates). the outer spawn loop's live HTTP call is operator-verified,
+same as every other poller.
 
 **left — each is a decision with an owner section, not a gap:**
 

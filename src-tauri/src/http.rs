@@ -272,6 +272,7 @@ mod tests {
                 Arc::new(connectors),
                 true,
                 true,
+                false,
             ),
             default_ttl: 8,
             manual_default_priority: Priority::Medium,

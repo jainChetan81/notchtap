@@ -64,6 +64,17 @@ pub enum Priority {
     High,
 }
 
+/// Temperature display units for the weather source (plan 040 Part B).
+/// Display-only: Open-Meteo does the conversion server-side via its
+/// `temperature_unit` query param; alert thresholds are always stored
+/// and compared in Celsius regardless of this value.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum Units {
+    Celsius,
+    Fahrenheit,
+}
+
 /// The source that produced an [`Event`] (v6: `Config.rotation_order`
 /// tie-break). A closed set, same rigor as [`EventType`]/[`EventSignal`] —
 /// unknown values are rejected at deserialization, never silently coerced.
@@ -74,6 +85,7 @@ pub enum SourceKind {
     News,
     Manual,
     Cmux,
+    Weather,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -267,6 +279,7 @@ mod tests {
             (SourceKind::News, "news"),
             (SourceKind::Manual, "manual"),
             (SourceKind::Cmux, "cmux"),
+            (SourceKind::Weather, "weather"),
         ] {
             assert_eq!(serde_json::to_value(kind).unwrap(), wire);
             let parsed: SourceKind = serde_json::from_str(&format!("\"{wire}\"")).unwrap();

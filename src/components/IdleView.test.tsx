@@ -16,6 +16,7 @@ const LIVE_EVENING: StatusState = {
   waiting: 3,
   football: { enabled: true, live: { label: "Arsenal 2–0 Chelsea", minute: "45'" } },
   news: { enabled: true },
+  weather: { enabled: false, current: null },
 };
 
 const ALL_CLEAR: StatusState = {
@@ -23,6 +24,7 @@ const ALL_CLEAR: StatusState = {
   waiting: 0,
   football: { enabled: false, live: null },
   news: { enabled: true },
+  weather: { enabled: false, current: null },
 };
 
 const EVERYTHING_OFF: StatusState = {
@@ -30,6 +32,7 @@ const EVERYTHING_OFF: StatusState = {
   waiting: 0,
   football: { enabled: false, live: null },
   news: { enabled: false },
+  weather: { enabled: false, current: null },
 };
 
 describe("IdleView status rail", () => {
@@ -66,6 +69,7 @@ describe("IdleView status rail", () => {
           waiting: 0,
           football: { enabled: true, live: null },
           news: { enabled: true },
+          weather: { enabled: false, current: null },
         }}
       />,
     );
@@ -83,6 +87,7 @@ describe("IdleView status rail", () => {
           waiting: 0,
           football: { enabled: false, live: null },
           news: { enabled: true },
+          weather: { enabled: false, current: null },
         }}
       />,
     );
@@ -100,10 +105,47 @@ describe("IdleView status rail", () => {
           waiting: 0,
           football: { enabled: true, live: null },
           news: { enabled: false },
+          weather: { enabled: false, current: null },
         }}
       />,
     );
     const dimmed = container.querySelector(".src-chip.dim");
     expect(dimmed?.textContent).toBe("News paused");
+  });
+
+  it("weather enabled with a reading shows the conditions chip", () => {
+    const { container } = render(
+      <IdleView
+        status={{
+          paused: false,
+          waiting: 0,
+          football: { enabled: false, live: null },
+          news: { enabled: false },
+          weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy" } },
+        }}
+      />,
+    );
+    const chip = screen.getByText("27° Cloudy");
+    expect(chip).toBeTruthy();
+    expect(chip.className).not.toContain("dim");
+    expect(container.querySelector(".src-chip.live")).toBeNull();
+  });
+
+  it("weather disabled reads as a dimmed Weather off chip", () => {
+    const { container } = render(
+      <IdleView
+        status={{
+          paused: false,
+          waiting: 0,
+          football: { enabled: false, live: null },
+          news: { enabled: true },
+          weather: { enabled: false, current: null },
+        }}
+      />,
+    );
+    const dimmed = Array.from(container.querySelectorAll(".src-chip.dim")).map(
+      (el) => el.textContent,
+    );
+    expect(dimmed).toContain("Weather off");
   });
 });

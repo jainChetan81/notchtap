@@ -31,7 +31,17 @@ const config: Config = {
   manual_default_priority: "low",
   cmux_priority: "medium",
   cmux_ttl_secs: 16,
-  rotation_order: ["news", "cmux", "manual", "football"],
+  weather_enabled: true,
+  weather_lat: 12.97,
+  weather_lon: 77.59,
+  weather_units: "celsius",
+  weather_poll_secs: 900,
+  weather_rain_threshold_pct: 60,
+  weather_rain_lookahead_mins: 30,
+  weather_temp_hot_c: 36,
+  weather_temp_cold_c: 14,
+  weather_priority: "medium",
+  rotation_order: ["news", "cmux", "manual", "weather", "football"],
   connectors: { telegram: { enabled: true } },
   appearance: { card_scale: 1, card_radius: 8, card_opacity: 0.9 },
 };
@@ -66,7 +76,17 @@ const rustConfigDefaults: Config = {
   manual_default_priority: "medium",
   cmux_priority: "high",
   cmux_ttl_secs: 8,
-  rotation_order: ["football", "manual", "cmux", "news"],
+  weather_enabled: false,
+  weather_lat: 0,
+  weather_lon: 0,
+  weather_units: "celsius",
+  weather_poll_secs: 900,
+  weather_rain_threshold_pct: 60,
+  weather_rain_lookahead_mins: 30,
+  weather_temp_hot_c: 36,
+  weather_temp_cold_c: 14,
+  weather_priority: "medium",
+  rotation_order: ["football", "manual", "weather", "cmux", "news"],
   connectors: { telegram: { enabled: false } },
   appearance: { card_scale: 1, card_radius: 16, card_opacity: 0.9 },
 };
@@ -316,6 +336,7 @@ describe("SettingsApp", () => {
     expect(rotationOrderRowNames()).toEqual([
       "Football",
       "Manual / CLI push",
+      "Weather",
       "Cmux (agent relay)",
       "News",
     ]);
@@ -498,11 +519,12 @@ describe("SettingsApp", () => {
       "News",
       "Cmux (agent relay)",
       "Manual / CLI push",
+      "Weather",
       "Football",
     ]);
 
     const rows = screen.getAllByRole("listitem");
-    const [newsRow, cmuxRow, manualRow, footballRow] = rows;
+    const [newsRow, cmuxRow, manualRow, , footballRow] = rows;
     expect(
       (
         within(newsRow).getByRole("button", {
@@ -537,6 +559,7 @@ describe("SettingsApp", () => {
       "News",
       "Manual / CLI push",
       "Cmux (agent relay)",
+      "Weather",
       "Football",
     ]);
   });

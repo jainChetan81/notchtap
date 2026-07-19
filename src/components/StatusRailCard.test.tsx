@@ -216,12 +216,14 @@ describe("StatusRailCard", () => {
       waiting: 0,
       football: { enabled: false, live: null },
       news: { enabled: true },
+      weather: { enabled: false, current: null },
     };
     const inactive: StatusState = {
       paused: false,
       waiting: 0,
       football: { enabled: false, live: null },
       news: { enabled: false },
+      weather: { enabled: false, current: null },
     };
 
     const { container, rerender } = render(
@@ -244,6 +246,7 @@ describe("StatusRailCard", () => {
       waiting: 1,
       football: { enabled: true, live: { label: "MTL 0–0 TOR", minute: "12'" } },
       news: { enabled: true },
+      weather: { enabled: false, current: null },
     };
     const { container } = render(<StatusRailCard slot={GOAL} status={active} />);
     expect(container.querySelector(".rail-card.status")).toBeNull();

@@ -127,6 +127,45 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
     if c.rss_enabled && c.rss_feeds.is_empty() {
         errors.push("rss_enabled is on but rss_feeds is empty — add a feed or disable".into());
     }
+
+    if !(-90.0..=90.0).contains(&c.weather_lat) {
+        errors.push(format!(
+            "weather_lat must be -90.0–90.0 (got {})",
+            c.weather_lat
+        ));
+    }
+    if !(-180.0..=180.0).contains(&c.weather_lon) {
+        errors.push(format!(
+            "weather_lon must be -180.0–180.0 (got {})",
+            c.weather_lon
+        ));
+    }
+    if !(5..=3600).contains(&c.weather_poll_secs) {
+        errors.push(format!(
+            "weather_poll_secs must be 5–3600 (got {})",
+            c.weather_poll_secs
+        ));
+    }
+    if c.weather_rain_threshold_pct > 100 {
+        errors.push(format!(
+            "weather_rain_threshold_pct must be 0–100 (got {})",
+            c.weather_rain_threshold_pct
+        ));
+    }
+    if !(5..=120).contains(&c.weather_rain_lookahead_mins) {
+        errors.push(format!(
+            "weather_rain_lookahead_mins must be 5–120 (got {})",
+            c.weather_rain_lookahead_mins
+        ));
+    }
+    // cross-field check: the hot threshold must sit strictly above the
+    // cold one, or the temp alert would fire on every poll.
+    if c.weather_temp_hot_c <= c.weather_temp_cold_c {
+        errors.push(format!(
+            "weather_temp_hot_c must be greater than weather_temp_cold_c (got {} <= {})",
+            c.weather_temp_hot_c, c.weather_temp_cold_c
+        ));
+    }
     {
         // Duplicate feeds double the poll's network work per tick even
         // though the SeenStore hides the duplicate notifications — reject
@@ -139,12 +178,13 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
         }
     }
 
-    // rotation_order must be a permutation of all four SourceKind variants
-    // — the ui is a fixed 4-row reorder list, never add/remove, so any
+    // rotation_order must be a permutation of all five SourceKind variants
+    // — the ui is a fixed 5-row reorder list, never add/remove, so any
     // other shape means the ipc caller bypassed it.
     let expected_sources = [
         crate::event::SourceKind::Football,
         crate::event::SourceKind::Manual,
+        crate::event::SourceKind::Weather,
         crate::event::SourceKind::News,
         crate::event::SourceKind::Cmux,
     ];
@@ -154,7 +194,7 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
             .all(|source| c.rotation_order.contains(source));
     if !is_permutation {
         errors.push(
-            "rotation_order must contain each of football, manual, news, and cmux exactly once"
+            "rotation_order must contain each of football, manual, weather, news, and cmux exactly once"
                 .into(),
         );
     }
@@ -573,6 +613,22 @@ fn build_test_event(config: &Config, source: SourceKind) -> Event {
             signal: EventSignal::Generic,
             origin: SourceKind::Manual,
         },
+        SourceKind::Weather => Event {
+            id: uuid::Uuid::new_v4(),
+            event_type: EventType::Generic,
+            priority: config.weather_priority,
+            rotation: RotationSpec::OneShot {
+                ttl_secs: config.default_ttl,
+            },
+            topic: None,
+            payload: EventPayload {
+                title: "Test weather alert".into(),
+                body: timestamp_body(),
+            },
+            meta: EventMeta::default(),
+            signal: EventSignal::Generic,
+            origin: SourceKind::Weather,
+        },
     }
 }
 
@@ -792,11 +848,12 @@ mod tests {
         };
         assert!(validate(&c).is_err());
 
-        // duplicate entry (still length 4, but News is missing)
+        // duplicate entry (still length 5, but News is missing)
         c.rotation_order = vec![
             SourceKind::Football,
             SourceKind::Football,
             SourceKind::Manual,
+            SourceKind::Weather,
             SourceKind::Cmux,
         ];
         assert!(validate(&c).is_err());
@@ -806,6 +863,7 @@ mod tests {
             SourceKind::News,
             SourceKind::Football,
             SourceKind::Cmux,
+            SourceKind::Weather,
             SourceKind::Manual,
         ];
         assert!(validate(&c).is_ok());
@@ -822,6 +880,41 @@ mod tests {
         assert!(validate(&c).is_ok());
         c.espn_poll_secs = 3601;
         assert!(validate(&c).is_err());
+    }
+
+    #[test]
+    fn weather_field_ranges_validate() {
+        let mut c = Config {
+            weather_lat: 91.0,
+            ..Config::default()
+        };
+        assert!(validate(&c).is_err());
+        c.weather_lat = -90.0;
+        assert!(validate(&c).is_ok());
+        c.weather_lon = 181.0;
+        assert!(validate(&c).is_err());
+        c.weather_lon = -180.0;
+        assert!(validate(&c).is_ok());
+        c.weather_poll_secs = 4;
+        assert!(validate(&c).is_err());
+        c.weather_poll_secs = 900;
+        assert!(validate(&c).is_ok());
+        c.weather_rain_threshold_pct = 101;
+        assert!(validate(&c).is_err());
+        c.weather_rain_threshold_pct = 100;
+        assert!(validate(&c).is_ok());
+        c.weather_rain_lookahead_mins = 4;
+        assert!(validate(&c).is_err());
+        c.weather_rain_lookahead_mins = 121;
+        assert!(validate(&c).is_err());
+        c.weather_rain_lookahead_mins = 30;
+        assert!(validate(&c).is_ok());
+        // cross-field: hot must sit strictly above cold
+        c.weather_temp_hot_c = 14.0;
+        c.weather_temp_cold_c = 14.0;
+        assert!(validate(&c).is_err());
+        c.weather_temp_hot_c = 36.0;
+        assert!(validate(&c).is_ok());
     }
 
     #[test]

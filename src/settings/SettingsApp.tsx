@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
+  CloudSun,
   Command,
   KeyRound,
   type LucideIcon,
@@ -22,7 +23,8 @@ export interface RssFeedConfig {
 }
 
 export type PriorityLevel = "low" | "medium" | "high";
-export type SourceKind = "football" | "manual" | "news" | "cmux";
+export type SourceKind = "football" | "manual" | "news" | "cmux" | "weather";
+export type Units = "celsius" | "fahrenheit";
 
 export interface AppearanceConfig {
   card_scale: number;
@@ -51,6 +53,16 @@ export interface Config {
   manual_default_priority: PriorityLevel;
   cmux_priority: PriorityLevel;
   cmux_ttl_secs: number;
+  weather_enabled: boolean;
+  weather_lat: number;
+  weather_lon: number;
+  weather_units: Units;
+  weather_poll_secs: number;
+  weather_rain_threshold_pct: number;
+  weather_rain_lookahead_mins: number;
+  weather_temp_hot_c: number;
+  weather_temp_cold_c: number;
+  weather_priority: PriorityLevel;
   rotation_order: SourceKind[];
   connectors: {
     telegram: {
@@ -72,6 +84,7 @@ type SectionId =
   | "football"
   | "news"
   | "cmux"
+  | "weather"
   | "connectors"
   | "shortcuts"
   | "appearance";
@@ -85,6 +98,7 @@ const navigation: ReadonlyArray<{
   { id: "football", label: "Football", icon: Trophy },
   { id: "news", label: "News", icon: Newspaper },
   { id: "cmux", label: "Cmux", icon: Terminal },
+  { id: "weather", label: "Weather", icon: CloudSun },
   { id: "connectors", label: "Connectors & Keys", icon: KeyRound },
   { id: "shortcuts", label: "Shortcuts", icon: Command },
   { id: "appearance", label: "Appearance", icon: Palette },
@@ -111,18 +125,23 @@ const sectionCopy: Record<SectionId, { index: string; title: string; description
     title: "Cmux",
     description: "Set the priority and rotation time for notifications relayed by cmux.",
   },
-  connectors: {
+  weather: {
     index: "05",
+    title: "Weather",
+    description: "Show ambient conditions in the idle rail and alert on rain and temperature thresholds.",
+  },
+  connectors: {
+    index: "06",
     title: "Connectors & Keys",
     description: "Configure outbound Telegram delivery and write-only credentials.",
   },
   shortcuts: {
-    index: "06",
+    index: "07",
     title: "Shortcuts",
     description: "A reference for the global controls available while notchtap runs.",
   },
   appearance: {
-    index: "07",
+    index: "08",
     title: "Appearance",
     description: "Preview the overlay's shape and animations, and send live test notifications.",
   },
@@ -370,11 +389,55 @@ function PriorityToggle({
   );
 }
 
+const UNITS_LABELS: Record<Units, string> = {
+  celsius: "Celsius",
+  fahrenheit: "Fahrenheit",
+};
+const UNITS_OPTIONS: Units[] = ["celsius", "fahrenheit"];
+
+// plan 040 Part B: the two-button sibling of PriorityToggle for weather
+// display units — same role="group" button-row shape keyed off
+// `value === unit`.
+function UnitsToggle({
+  id,
+  name,
+  help,
+  value,
+  onChange,
+}: {
+  id: string;
+  name: string;
+  help: string;
+  value: Units;
+  onChange: (value: Units) => void;
+}) {
+  return (
+    <div className="control-row">
+      <ControlCopy htmlFor={id} name={name} help={help} />
+      {/* biome-ignore lint/a11y/useSemanticElements: same role="group" shape as PriorityToggle (styled via .priority-toggle); migrating to <fieldset> is a separate a11y-markup task with visual-regression risk, not a mechanical lint fix. */}
+      <div className="priority-toggle" id={id} role="group" aria-label={name}>
+        {UNITS_OPTIONS.map((unit) => (
+          <button
+            key={unit}
+            type="button"
+            className={`priority-toggle-button${value === unit ? " is-selected" : ""}`}
+            aria-pressed={value === unit}
+            onClick={() => onChange(unit)}
+          >
+            {UNITS_LABELS[unit]}
+          </button>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 const SOURCE_LABELS: Record<SourceKind, string> = {
   football: "Football",
   cmux: "Cmux (agent relay)",
   manual: "Manual / CLI push",
   news: "News",
+  weather: "Weather",
 };
 
 function RotationOrderList({
@@ -817,6 +880,117 @@ function CmuxSection({
   );
 }
 
+function WeatherSection({
+  config,
+  patchConfig,
+}: {
+  config: Config;
+  patchConfig: (patch: Partial<Config>) => void;
+}) {
+  return (
+    <SettingsGroup
+      title="Weather"
+      description="Keyless Open-Meteo polling — set your coordinates once. The idle rail shows current conditions; rain and temperature thresholds send alert cards."
+    >
+      <ToggleControl
+        id="weather-enabled"
+        name="Weather"
+        help="Poll Open-Meteo for current conditions and threshold alerts."
+        label="Enable weather"
+        checked={config.weather_enabled}
+        onChange={(weather_enabled) => patchConfig({ weather_enabled })}
+      />
+      <NumberControl
+        id="weather-lat"
+        name="Latitude"
+        help="Decimal degrees, e.g. 12.97 for Bangalore."
+        value={config.weather_lat}
+        min={-90}
+        max={90}
+        onChange={(weather_lat) => patchConfig({ weather_lat })}
+      />
+      <NumberControl
+        id="weather-lon"
+        name="Longitude"
+        help="Decimal degrees, e.g. 77.59 for Bangalore."
+        value={config.weather_lon}
+        min={-180}
+        max={180}
+        onChange={(weather_lon) => patchConfig({ weather_lon })}
+      />
+      <UnitsToggle
+        id="weather-units"
+        name="Units"
+        help="Display units for the idle chip. Alert thresholds below are always in Celsius."
+        value={config.weather_units}
+        onChange={(weather_units) => patchConfig({ weather_units })}
+      />
+      <NumberControl
+        id="weather-poll-secs"
+        name="Poll interval"
+        help="How often conditions are refreshed."
+        value={config.weather_poll_secs}
+        min={5}
+        max={3600}
+        unit="SEC"
+        onChange={(weather_poll_secs) => patchConfig({ weather_poll_secs })}
+      />
+      <NumberControl
+        id="weather-rain-threshold-pct"
+        name="Rain threshold"
+        help="Alert when the chance of rain reaches this."
+        value={config.weather_rain_threshold_pct}
+        min={0}
+        max={100}
+        unit="%"
+        onChange={(weather_rain_threshold_pct) => patchConfig({ weather_rain_threshold_pct })}
+      />
+      <NumberControl
+        id="weather-rain-lookahead-mins"
+        name="Rain lookahead"
+        help="How far ahead the rain check looks."
+        value={config.weather_rain_lookahead_mins}
+        min={5}
+        max={120}
+        unit="MIN"
+        onChange={(weather_rain_lookahead_mins) => patchConfig({ weather_rain_lookahead_mins })}
+      />
+      <NumberControl
+        id="weather-temp-hot-c"
+        name="Hot threshold"
+        help="Alert when the temperature reaches this, always in Celsius."
+        value={config.weather_temp_hot_c}
+        min={-50}
+        max={60}
+        unit="°C"
+        onChange={(weather_temp_hot_c) => patchConfig({ weather_temp_hot_c })}
+      />
+      <NumberControl
+        id="weather-temp-cold-c"
+        name="Cold threshold"
+        help="Alert when the temperature drops to this, always in Celsius."
+        value={config.weather_temp_cold_c}
+        min={-50}
+        max={60}
+        unit="°C"
+        onChange={(weather_temp_cold_c) => patchConfig({ weather_temp_cold_c })}
+      />
+      <PriorityToggle
+        id="weather-priority"
+        name="Priority"
+        help="Which tier a waiting weather alert promotes in."
+        value={config.weather_priority}
+        onChange={(weather_priority) => patchConfig({ weather_priority })}
+      />
+      <TestButtonRow
+        name="Test weather notification"
+        help="Send a one-off weather alert to the overlay."
+        source="weather"
+      />
+    </SettingsGroup>
+  );
+}
+
 function ConnectorsSection({
   config,
   secretStatus,
@@ -889,7 +1063,7 @@ function ShortcutsSection() {
   );
 }
 
-type TestSource = "football" | "news" | "cmux" | "manual";
+type TestSource = "football" | "news" | "cmux" | "manual" | "weather";
 
 function TestButton({ source }: { source: TestSource }) {
   async function send() {
@@ -1330,6 +1504,9 @@ export function SettingsApp() {
                     ) : null}
                     {activeSection === "cmux" ? (
                       <CmuxSection config={config} patchConfig={patchConfig} />
+                    ) : null}
+                    {activeSection === "weather" ? (
+                      <WeatherSection config={config} patchConfig={patchConfig} />
                     ) : null}
                     {activeSection === "connectors" ? (
                       <ConnectorsSection

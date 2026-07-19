@@ -1990,6 +1990,7 @@ mod proptest_queue {
             Just(SourceKind::News),
             Just(SourceKind::Manual),
             Just(SourceKind::Cmux),
+            Just(SourceKind::Weather),
         ]
     }
 
@@ -2011,8 +2012,9 @@ mod proptest_queue {
             SourceKind::News,
             SourceKind::Manual,
             SourceKind::Cmux,
+            SourceKind::Weather,
         ];
-        (Just(all).prop_shuffle(), 0usize..=4).prop_map(|(mut v, len)| {
+        (Just(all).prop_shuffle(), 0usize..=5).prop_map(|(mut v, len)| {
             v.truncate(len);
             v
         })

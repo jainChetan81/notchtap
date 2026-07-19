@@ -16,6 +16,7 @@ pub mod queue;
 mod rss_poller;
 mod settings;
 mod status;
+mod weather_poller;
 
 use std::sync::{Arc, Mutex as StdMutex, Once, OnceLock};
 
@@ -135,6 +136,16 @@ pub fn run() {
     let manual_default_priority = config.manual_default_priority;
     let cmux_priority = config.cmux_priority;
     let cmux_ttl_secs = config.cmux_ttl_secs;
+    let weather_enabled = config.weather_enabled;
+    let weather_lat = config.weather_lat;
+    let weather_lon = config.weather_lon;
+    let weather_units = config.weather_units;
+    let weather_poll_secs = config.weather_poll_secs;
+    let weather_rain_threshold_pct = config.weather_rain_threshold_pct;
+    let weather_rain_lookahead_mins = config.weather_rain_lookahead_mins;
+    let weather_temp_hot_c = config.weather_temp_hot_c;
+    let weather_temp_cold_c = config.weather_temp_cold_c;
+    let weather_priority = config.weather_priority;
 
     // v3 outbound connectors: built here (channel needs no runtime), the
     // worker future is spawned in setup once the runtime exists. missing
@@ -192,6 +203,7 @@ pub fn run() {
                 connectors.clone(),
                 espn_enabled,
                 rss_enabled,
+                weather_enabled,
             );
             app.manage(engine.clone());
 
@@ -333,6 +345,24 @@ pub fn run() {
                     rss_ttl_secs,
                     rss_max_per_poll,
                     rss_priority,
+                );
+            }
+
+            // weather poller (plan 040 Part B) — config-gated the same
+            // way: `weather_enabled = false` (the default) means it never
+            // spawns and the idle rail shows no weather chip.
+            if weather_enabled {
+                weather_poller::spawn_weather_poller(
+                    engine.clone(),
+                    weather_lat,
+                    weather_lon,
+                    weather_units,
+                    weather_poll_secs,
+                    weather_rain_threshold_pct,
+                    weather_rain_lookahead_mins,
+                    weather_temp_hot_c,
+                    weather_temp_cold_c,
+                    weather_priority,
                 );
             }
 
@@ -734,6 +764,7 @@ mod tests {
             SingleSlotQueue::new(50),
             app.handle().clone(),
             Arc::new(Vec::new()),
+            false,
             false,
             false,
         )

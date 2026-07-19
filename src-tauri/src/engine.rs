@@ -16,7 +16,9 @@ use crate::error::QueueError;
 use crate::event::{emit_slot_state, Event, SlotState, SourceKind};
 use crate::notifier::ConnectorHandle;
 use crate::queue::SingleSlotQueue;
-use crate::status::{emit_status_state, status_state_if_changed, LiveMatchSummary, StatusState};
+use crate::status::{
+    emit_status_state, status_state_if_changed, LiveMatchSummary, StatusState, WeatherSummary,
+};
 
 /// Owns the queue, the heartbeat wake, the app handle, the Connectors,
 /// and (plan 034's territory, folded into plan 037) the live-match handle
@@ -30,8 +32,10 @@ pub struct Engine<R: tauri::Runtime = tauri::Wry> {
     app: tauri::AppHandle<R>,
     connectors: Arc<Vec<ConnectorHandle>>,
     live: Arc<StdMutex<Option<LiveMatchSummary>>>,
+    weather: Arc<StdMutex<Option<WeatherSummary>>>,
     espn_enabled: bool,
     rss_enabled: bool,
+    weather_enabled: bool,
 }
 
 // Clone by hand (Arc clones + AppHandle clone + bool copies), like
@@ -44,8 +48,10 @@ impl<R: tauri::Runtime> Clone for Engine<R> {
             app: self.app.clone(),
             connectors: self.connectors.clone(),
             live: self.live.clone(),
+            weather: self.weather.clone(),
             espn_enabled: self.espn_enabled,
             rss_enabled: self.rss_enabled,
+            weather_enabled: self.weather_enabled,
         }
     }
 }
@@ -61,6 +67,7 @@ impl<R: tauri::Runtime> Engine<R> {
         connectors: Arc<Vec<ConnectorHandle>>,
         espn_enabled: bool,
         rss_enabled: bool,
+        weather_enabled: bool,
     ) -> Self {
         Self {
             queue: Arc::new(Mutex::new(queue)),
@@ -68,8 +75,10 @@ impl<R: tauri::Runtime> Engine<R> {
             app,
             connectors,
             live: Arc::new(StdMutex::new(None)),
+            weather: Arc::new(StdMutex::new(None)),
             espn_enabled,
             rss_enabled,
+            weather_enabled,
         }
     }
 
@@ -198,6 +207,26 @@ impl<R: tauri::Runtime> Engine<R> {
         }
     }
 
+    /// The weather twin of `update_live_match` (plan 040 Part B): the
+    /// ambient weather summary the weather poller folds into the idle
+    /// rail. Same compare-then-store-then-wake-only-on-change shape, same
+    /// lock discipline — the handle is written independently of the queue
+    /// lock, nobody holds both at the same time.
+    pub fn update_weather(&self, summary: Option<WeatherSummary>) {
+        let changed = {
+            let mut guard = self.weather.lock().unwrap();
+            if *guard == summary {
+                false
+            } else {
+                *guard = summary;
+                true
+            }
+        };
+        if changed {
+            self.wake.notify_waiters();
+        }
+    }
+
     /// The rotation loop (formerly lib.rs spawn_heartbeat), moved inside
     /// the Engine so `wake` never escapes. It is the *consumer* of the
     /// wake, not a producer, so it gets its own private loop (lock →
@@ -220,8 +249,10 @@ impl<R: tauri::Runtime> Engine<R> {
         let queue = self.queue.clone();
         let wake = self.wake.clone();
         let live = self.live.clone();
+        let weather = self.weather.clone();
         let espn_enabled = self.espn_enabled;
         let rss_enabled = self.rss_enabled;
+        let weather_enabled = self.weather_enabled;
         tauri::async_runtime::spawn(async move {
             let mut last_status: Option<StatusState> = None;
             loop {
@@ -237,12 +268,20 @@ impl<R: tauri::Runtime> Engine<R> {
                     // live-match handle BEFORE locking the queue — nobody
                     // holds both at the same time.
                     let live_summary = live.lock().unwrap().clone();
+                    let weather_summary = weather.lock().unwrap().clone();
                     let mut q = queue.lock().await;
                     q.tick(Instant::now());
                     if let Some(state) = q.slot_state_if_changed() {
                         emit_slot_state(&app, state);
                     }
-                    let status = StatusState::snapshot(&q, live_summary, espn_enabled, rss_enabled);
+                    let status = StatusState::snapshot(
+                        &q,
+                        live_summary,
+                        espn_enabled,
+                        rss_enabled,
+                        weather_summary,
+                        weather_enabled,
+                    );
                     if let Some(changed) = status_state_if_changed(&mut last_status, status) {
                         emit_status_state(&app, changed);
                     }
@@ -286,9 +325,17 @@ impl<R: tauri::Runtime> Engine<R> {
     /// as the rotation loop.
     pub fn emit_current_status_blocking(&self) -> StatusState {
         let live_summary = self.live.lock().unwrap().clone();
+        let weather_summary = self.weather.lock().unwrap().clone();
         let state = {
             let q = self.queue.blocking_lock();
-            StatusState::snapshot(&q, live_summary, self.espn_enabled, self.rss_enabled)
+            StatusState::snapshot(
+                &q,
+                live_summary,
+                self.espn_enabled,
+                self.rss_enabled,
+                weather_summary,
+                self.weather_enabled,
+            )
         };
         emit_status_state(&self.app, state.clone());
         state
@@ -321,6 +368,7 @@ mod tests {
             Arc::new(Vec::new()),
             true,
             true,
+            false,
         )
     }
 
@@ -388,6 +436,7 @@ mod tests {
             Arc::new(vec![connector]),
             true,
             true,
+            false,
         );
 
         engine.accept(event(Priority::Medium), false).await.unwrap();
@@ -415,6 +464,7 @@ mod tests {
             Arc::new(vec![connector]),
             true,
             true,
+            false,
         );
 
         // fill the Medium tier: first promotes into the visible slot,
@@ -566,6 +616,7 @@ mod tests {
             Arc::new(Vec::new()),
             true,
             false,
+            false,
         );
         engine.update_live_match(Some(live_summary("45'")));
 
@@ -621,6 +672,48 @@ mod tests {
         tokio::pin!(notified);
         notified.as_mut().enable();
         engine.update_live_match(Some(live_summary("60'")));
+        tokio::time::timeout(Duration::from_millis(200), notified)
+            .await
+            .expect("a changed summary must wake again");
+    }
+
+    fn weather_summary(temp: &str) -> WeatherSummary {
+        WeatherSummary {
+            temp_display: temp.to_string(),
+            condition: "Cloudy".to_string(),
+        }
+    }
+
+    #[tokio::test]
+    async fn update_weather_wakes_only_on_change() {
+        // The weather twin of update_live_match_wakes_only_on_change
+        // (plan 040 Part B): store-on-change wakes; re-store does not.
+        let app = tauri::test::mock_app();
+        let engine = test_engine(&app);
+
+        let notified = engine.wake.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+        engine.update_weather(Some(weather_summary("27°")));
+        tokio::time::timeout(Duration::from_millis(200), notified)
+            .await
+            .expect("a new weather summary must wake the rotation loop");
+
+        let notified = engine.wake.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+        engine.update_weather(Some(weather_summary("27°")));
+        assert!(
+            tokio::time::timeout(Duration::from_millis(100), notified)
+                .await
+                .is_err(),
+            "an unchanged summary must not wake"
+        );
+
+        let notified = engine.wake.notified();
+        tokio::pin!(notified);
+        notified.as_mut().enable();
+        engine.update_weather(Some(weather_summary("28°")));
         tokio::time::timeout(Duration::from_millis(200), notified)
             .await
             .expect("a changed summary must wake again");

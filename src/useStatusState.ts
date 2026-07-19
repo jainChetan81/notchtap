@@ -11,11 +11,20 @@ export type LiveMatchSummary = {
   minute: string;
 };
 
+// plan 040 Part B: the ambient weather chip's data, already display-
+// formatted rust-side ("27°" + "Cloudy") — the chip concatenates them,
+// same shape as football's `{live.label} · {live.minute}`.
+export type WeatherSummary = {
+  tempDisplay: string;
+  condition: string;
+};
+
 export type StatusState = {
   paused: boolean;
   waiting: number;
   football: { enabled: boolean; live: LiveMatchSummary | null };
   news: { enabled: boolean };
+  weather: { enabled: boolean; current: WeatherSummary | null };
 };
 
 declare global {
@@ -32,6 +41,7 @@ const FALLBACK_STATUS: StatusState = {
   waiting: 0,
   football: { enabled: false, live: null },
   news: { enabled: false },
+  weather: { enabled: false, current: null },
 };
 
 // same rule as the slot-state queue-slider fields (plan 033): the rail
@@ -49,6 +59,14 @@ function isValidLiveMatch(v: unknown): v is LiveMatchSummary {
   return typeof obj.label === "string" && typeof obj.minute === "string";
 }
 
+function isValidWeatherSummary(v: unknown): v is WeatherSummary {
+  if (typeof v !== "object" || v === null) {
+    return false;
+  }
+  const obj = v as Record<string, unknown>;
+  return typeof obj.tempDisplay === "string" && typeof obj.condition === "string";
+}
+
 // Every field checked, not just the top level: a well-shaped-but-partial
 // payload (e.g. football missing `enabled`) must fall back, not render
 // with undefined fields — same defense-in-depth as isValidSlotState.
@@ -63,14 +81,20 @@ function isValidStatusState(v: unknown): v is StatusState {
   if (typeof obj.news !== "object" || obj.news === null) {
     return false;
   }
+  if (typeof obj.weather !== "object" || obj.weather === null) {
+    return false;
+  }
   const football = obj.football as Record<string, unknown>;
   const news = obj.news as Record<string, unknown>;
+  const weather = obj.weather as Record<string, unknown>;
   return (
     typeof obj.paused === "boolean" &&
     isNonNegativeInteger(obj.waiting) &&
     typeof football.enabled === "boolean" &&
     (football.live === null || isValidLiveMatch(football.live)) &&
-    typeof news.enabled === "boolean"
+    typeof news.enabled === "boolean" &&
+    typeof weather.enabled === "boolean" &&
+    (weather.current === null || isValidWeatherSummary(weather.current))
   );
 }
 
@@ -84,6 +108,8 @@ export function statusRailActive(status: StatusState): boolean {
     status.football.enabled ||
     status.news.enabled ||
     status.football.live !== null ||
+    status.weather.enabled ||
+    status.weather.current !== null ||
     status.waiting > 0 ||
     status.paused
   );
