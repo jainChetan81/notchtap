@@ -1135,6 +1135,38 @@ mod tests {
     }
 
     #[test]
+    fn card_with_unrecognized_team_id_is_dropped_not_misattributed() {
+        let mut sb = parse_scoreboard(UCL).unwrap();
+        let baseline_total = view(&sb.events[0]).snap.total_cards();
+
+        // mutate the last card detail's team.id to a value that matches
+        // neither PSG ("160") nor ARS ("359")
+        let comp = &mut sb.events[0].competitions[0];
+        let last_detail = comp
+            .details
+            .iter_mut()
+            .rev()
+            .find(|d| {
+                d.detail_type
+                    .as_ref()
+                    .map(|t| t.text.contains("Card"))
+                    .unwrap_or(false)
+            })
+            .expect("fixture has at least one card detail");
+        last_detail.team = Some(SbTeam {
+            id: "999999".to_string(),
+            abbreviation: String::new(),
+        });
+
+        let snap = view(&sb.events[0]).snap;
+        // the mutated card is dropped, not misattributed to either side —
+        // total_cards() is exactly one less than baseline (the mutated
+        // detail no longer counts for anyone), not equal to baseline
+        // (which would mean it landed somewhere by accident)
+        assert_eq!(snap.total_cards(), baseline_total - 1);
+    }
+
+    #[test]
     fn goal_body_names_the_event() {
         // the ucl fixture's match is already `post` on first sighting, so
         // hand-build a synthetic prev snapshot the way

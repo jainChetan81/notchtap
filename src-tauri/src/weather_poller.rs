@@ -488,6 +488,36 @@ mod tests {
         assert_eq!(events[0].payload.title, "Low temperature");
     }
 
+    // --- inclusive-threshold boundaries: the comparisons are `>=`/`<=`,
+    // so the exact threshold value itself must fire (plan 047) ---
+
+    #[test]
+    fn hot_boundary_at_exactly_threshold_fires() {
+        let at_threshold = fixture_with_temp(36.0);
+        let (_, events, fired) = diff(&at_threshold, WeatherAlertState::default());
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].payload.title, "High temperature");
+        assert!(fired.hot_fired);
+    }
+
+    #[test]
+    fn cold_boundary_at_exactly_threshold_fires() {
+        let at_threshold = fixture_with_temp(14.0);
+        let (_, events, fired) = diff(&at_threshold, WeatherAlertState::default());
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].payload.title, "Low temperature");
+        assert!(fired.cold_fired);
+    }
+
+    #[test]
+    fn rain_boundary_at_exactly_threshold_fires() {
+        let at_threshold = fixture_with_rain_probability(60);
+        let (_, events, state) = diff(&at_threshold, WeatherAlertState::default());
+        assert_eq!(events.len(), 1);
+        assert_eq!(events[0].payload.title, "Rain expected soon");
+        assert!(state.rain_fired);
+    }
+
     #[test]
     fn fahrenheit_display_still_compares_thresholds_in_celsius() {
         // 100°F == 37.8°C — over the 36°C hot threshold even though the
