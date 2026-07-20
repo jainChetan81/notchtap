@@ -14,11 +14,16 @@
 > update the status row for this plan in `plans/README.md` — unless a
 > reviewer dispatched you and told you they maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat 71e54a7..HEAD -- src/components/StatusRailCard.tsx src/components/Manifest.tsx src/styles.css src/lib/presentation.ts src/settings/preview-overlay.css prototype/news-card.html`
+> **Drift check (run first)**: `git diff --stat 4fb3af9..HEAD -- src/components/StatusRailCard.tsx src/components/Manifest.tsx src/styles.css src/lib/presentation.ts src/settings/preview-overlay.css prototype/news-card.html`
 > Any diff in the five source files means line refs below have shifted —
 > re-read before editing. Any diff in `prototype/news-card.html` is a
 > STOP condition (see below): the prototype is the approved design of
 > record, and if it changed, what was approved may have changed too.
+> (Baseline re-stamped `9a954b0` → `4fb3af9` on 2026-07-20 when plan 063
+> merged: its styles.css additions shifted every styles.css ref below by
+> exactly +24 — all refreshed and re-verified by direct read. Component,
+> presentation.ts, preview-overlay.css, prototype, and test-file refs
+> were unaffected and re-verified unchanged.)
 
 ## Status
 
@@ -33,15 +38,25 @@
   mechanics, not against the pre-063 rail. Plan 079 item 7 is the locked
   decision this implements.
 - **Category**: direction (locked) → build
-- **Planned at**: commit `71e54a7`, 2026-07-20
+- **Planned at**: commit `9a954b0`, 2026-07-20 (reviewed same date:
+  drift baseline corrected, `.manifest-block`/`.manifest-label` added to
+  Step 3, separator/hint markup pinned, publishedAtMs-null case fixed).
+  **Reconciled 2026-07-20 against `4fb3af9`** (plan 063 merged to
+  master): all `styles.css` refs refreshed +24, the test-file scope note
+  corrected (lines 358-365 are the generic branch, not news), and the
+  063-shipped STOP condition marked satisfied.
+- **Executed**: 2026-07-21, worktree `exec/080-news-card-display`; `/improve execute` reviewed **APPROVE**. Vitest 122→124; all four frontend gates green.
 
 ## Why this matters
 
 Plan 079 item 7 is locked and the mockup is complete
 (`prototype/news-card.html`, embedded live in `prototype/notch-states.html`
-§5). Today's news card hides one piece of wire metadata it already
-carries — `publishedAtMs` arrives in every news payload and
-`publishedLabel` already formats it, but only the *expanded* 3-column
+§5). Today's news card hides one piece of wire metadata it usually
+carries — `publishedAtMs` arrives on every news payload whose feed
+entry has a published/updated date (it is `None` when the entry has
+neither — `rss_poller.rs:308-312` computes an `Option` and passes it
+straight through — so null is a REAL case the render must tolerate),
+and `publishedLabel` already formats it, but only the *expanded* 3-column
 manifest shows it, squeezed into a side column. The approved design
 puts `published 18:34` directly on the compact card and gives the
 expanded summary its full width back (the 3-column grid's two side
@@ -63,13 +78,13 @@ the prototype→implementation pipeline (prototype classes → `styles.css`
   is needed — the compact card just has to call it.
 - `src/components/Manifest.tsx:46-84` — the expanded news branch: a
   3-column `.manifest-inner.news` grid (Summary / Source·Published /
-  Category·Control). `src/styles.css:685-686` sets
+  Category·Control). `src/styles.css:709-710` sets
   `.manifest-inner.news { grid-template-columns: 1.5fr 1fr 1fr; }` and
   tints its `.detail-label` with `var(--cat)`.
 - `src/styles.css` news tokens (all carry over untouched): `.cat-*`
-  custom properties 611-617, `.news-shade` 619-634, `.masthead`
-  636-643, `.title.headline` 645-649, `.pills`/`.pill.category`/
-  `.pill.age` 651-658, `pill-enter` animation 660-676.
+  custom properties 636-641, `.news-shade` 643-658, `.masthead`
+  660-667, `.title.headline` 669-673, `.pills`/`.pill.category`/
+  `.pill.age` 675-682, `pill-enter` animation 684-700.
 - The approved design, `prototype/news-card.html`:
   - Compact (lines 57-90, example at 202-209): identical to shipped,
     plus `.pub-meta` — `published 18:34` tucked at the RIGHT end of the
@@ -109,13 +124,15 @@ the prototype→implementation pipeline (prototype classes → `styles.css`
   style).
 - `src/styles.css` — add `.pub-meta`, `.manifest-meta`, and any classes
   the new expanded layout needs; remove or repurpose the
-  `.manifest-inner.news` grid rule (styles.css:685) once nothing renders
+  `.manifest-inner.news` grid rule (styles.css:709) once nothing renders
   it.
 - `src/settings/preview-overlay.css` — mirror every one of those CSS
   changes, SAME commit (DESIGN.html Law #7, restated in
   `plans/frontend-ui-consolidated.html`'s constraints).
-- `src/components/StatusRailCard.test.tsx` / `Manifest`-adjacent vitest
-  assertions — update minimally, add the new coverage.
+- `src/components/StatusRailCard.test.tsx` — the ONLY test file
+  involved; the Manifest assertions live inside it too (currently the
+  old-column-label queries at lines 320-324 and 358-365). Update
+  minimally, add the new coverage.
 
 **Out of scope**:
 - The generic (non-news) card branch and the generic manifest layout —
@@ -144,14 +161,12 @@ as the last child of the `.pills` row:
 ```
 
 Match the prototype exactly: the meta sits at the right end of the row
-(`margin-left: auto` in CSS), quiet uppercase mono, no pill chrome. If
-both category and age are null the pills row doesn't render today
-(`StatusRailCard.tsx:114`); publishedAtMs is set on every rss_poller
-item, but keep the same null-guard discipline — the meta renders only
-when the row renders, and the row's condition stays as-is (category or
-age present) OR gains `|| renderedNewsPublished !== null` if you find a
-real payload where it matters; note which you chose and why in the
-completion report.
+(`margin-left: auto` in CSS), quiet uppercase mono, no pill chrome. The
+pills row renders today only when category or age is present
+(`StatusRailCard.tsx:114`). Keep that row condition EXACTLY as-is — do
+not add `|| renderedNewsPublished !== null`: `ageLabel` and
+`publishedLabel` both derive from the same `publishedAtMs` and are null
+together, so the extra disjunct is provably redundant.
 
 **Verify**: `npx vitest run` → all pass (no new test yet — Step 4 adds
 it; this step must not break existing assertions).
@@ -159,17 +174,25 @@ it; this step must not break existing assertions).
 ### Step 2: Expanded news manifest — full-width summary + inline meta
 
 Rewrite `Manifest.tsx`'s `eventType === "news_item"` branch
-(`Manifest.tsx:46-84`) to the prototype's structure: a
-`.manifest-label` SUMMARY, the full-width `.manifest-text` body (plain
-text, NOT markdown — news bodies stay un-marked-down exactly as today,
-`Manifest.tsx:50`), one `.manifest-meta` row —
-`<b>{source ?? "RSS"}</b> · published {publishedLabel(...)} · {categoryLabel(...)}`
-with each segment guarded the way the current columns are (published
-and category render only when non-null, `Manifest.tsx:56-71`), and a
-`.manifest-footer` with the same `⌃⇧O read · ⌃⇧N collapse` /
-`⌃⇧N collapse` conditional on `hasLink` that exists today. The
-`.manifest-inner.news` wrapper and its three `detail-label`/
-`detail-value` cells go away entirely.
+(`Manifest.tsx:46-84`) to the prototype's structure. The
+`.manifest-inner.news` grid wrapper and its three `detail-label`/
+`detail-value` cells go away entirely; the replacement wrapper is
+`.manifest-block` (prototype news-card.html line 96 — padding +
+border-top), containing: a `.manifest-label` SUMMARY, the full-width
+`.manifest-text` body (plain text, NOT markdown — news bodies stay
+un-marked-down exactly as today, `Manifest.tsx:50`), one
+`.manifest-meta` row, and a `.manifest-footer`. The meta row's
+separators are `<span class="sep">·</span>` elements (prototype line
+306), rendered ONLY between present segments — source (`<b>{source ??
+"RSS"}</b>`), `published {publishedLabel(...)}`, and
+`{categoryLabel(...)}` are each guarded the way the current columns are
+(published and category render only when non-null,
+`Manifest.tsx:56-71`), and a separator renders only when the segments
+on both sides of it rendered. The footer keeps TODAY's markup — the
+`<kbd>⌃⇧O</kbd> read · <kbd>⌃⇧N</kbd> collapse` kbd elements from
+`Manifest.tsx:75` wrapped in a `.manifest-hint` span (the prototype
+uses plain text; the shipped kbd styling wins) — with the same
+`hasLink` conditional (`Manifest.tsx:73-81`).
 
 **Verify**: `npx vitest run` → all pass; `npx tsc --noEmit` → exit 0
 (the branch drops its `newsPublished`/`newsCategory` column usage —
@@ -178,28 +201,34 @@ leave no unused locals).
 ### Step 3: styles.css + preview-overlay.css mirror (same commit)
 
 Add to `src/styles.css`, next to the existing news block (611-686):
-`.pub-meta` (prototype line 84 verbatim), `.manifest-meta` +
+`.manifest-block` (prototype line 96 verbatim — padding + border-top),
+`.manifest-label` (prototype line 97 verbatim — base rule AND its
+`var(--cat)` color, which is how the removed `.manifest-inner.news
+.detail-label` tint stays alive), `.pub-meta` (prototype line 84
+verbatim), `.manifest-meta` +
 `.manifest-meta b` + `.manifest-meta .sep`, `.manifest-footer` +
 `.manifest-hint` (prototype lines 99-106), and `.manifest-text` if the
 generic manifest's `.detail-value.message` styling doesn't already
 cover it — check before adding a duplicate. Remove the
 `.manifest-inner.news` rules at styles.css:685-686 (nothing renders
-that class after Step 2) — but keep `.manifest-inner.news
-.detail-label`'s `var(--cat)` tint idea alive on the new
-`.manifest-label` (the prototype colors it `var(--cat)`, prototype
-line 97). Then mirror EVERY added/removed rule in
+that class after Step 2). Then mirror EVERY added/removed rule in
 `src/settings/preview-overlay.css` under its `.appearance-preview`
-scoping, in the same commit. Add `prefers-reduced-motion` handling only
+scoping, in the same commit — note the preview currently mirrors
+`.manifest-inner.news` (preview-overlay.css:552-556), so the removal
+mirrors too. Add `prefers-reduced-motion` handling only
 if a new animation is introduced (none should be — this plan adds no
 animations).
 
-**Verify**: `npx vite build` → exit 0; eyeball-grep that every new
-class name in `styles.css` also appears in `preview-overlay.css`
-(`grep -o '\.pub-meta\|\.manifest-meta\|\.manifest-footer\|\.manifest-hint\|\.manifest-label\|\.manifest-text' src/settings/preview-overlay.css | sort -u`).
+**Verify**: `npx vite build` → exit 0; mirror grep —
+`grep -o '\.pub-meta\|\.manifest-block\|\.manifest-label\|\.manifest-meta\|\.manifest-footer\|\.manifest-hint' src/settings/preview-overlay.css | sort -u`
+→ every class you actually added to `styles.css` appears (sync this
+list with your final add-list; `.manifest-text` is only in it if you
+added it).
 
 ### Step 4: Tests + full gate
 
-**Verify**:
+Write the new/updated vitest assertions from the Test plan below first,
+then run the gate.
 - `npx vitest run` → all pass, including the new/updated assertions
   from the Test plan below.
 - `npx tsc --noEmit` → exit 0.
@@ -252,8 +281,10 @@ visual look stays manual:
   card's baseline; landing the news card first risks a rebase against
   moving width rules. Confirm 063's status row before starting.
 - A payload-shape surprise: a real news item where `publishedAtMs` is
-  null but the compact card still needs the meta (or vice versa) —
-  don't invent fallback formatting; present the case to the operator.
+  null but the compact card still needs the meta — don't invent
+  fallback formatting; present the case to the operator. (The reverse
+  — published present but age absent — cannot happen: both labels
+  derive from the same `publishedAtMs`.)
 
 ## Maintenance notes
 

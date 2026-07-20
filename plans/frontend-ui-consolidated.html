@@ -74,7 +74,7 @@
     <div class="proto-head">
       <div>
         <div class="proto-title">news-card — shipped look + meta + cmux lifecycle</div>
-        <div class="proto-desc">Compact = shipped card verbatim + published-time meta; expanded = full-width summary + inline meta; full lifecycle demo. <b>Mockup complete, awaiting implementation.</b></div>
+        <div class="proto-desc">Compact = shipped card verbatim + published-time meta; expanded = full-width summary + inline meta; full lifecycle demo. <b>Implemented via plan 080.</b></div>
       </div>
       <a href="../prototype/news-card.html" target="_blank">open full page ↗</a>
     </div>
@@ -119,7 +119,7 @@
     <li><span class="badge done">✓</span><div><div class="item-title">Card shape (079 item 1)</div><div class="item-note">Permanent notch cutout, 3-block build, square inner corners, rounded outer ends only, pure #000, unconditional across notch/HUD modes. Mocked in notch-states.</div></div></li>
     <li><span class="badge done">✓</span><div><div class="item-title">Idle state, 3 sub-states (079)</div><div class="item-note">Collapsed (bare notch) → idle (time + 3 status dots) → expanded-on-hover (flat weather-mood background). Operator-confirmed, hover mocked.</div></div></li>
     <li><span class="badge done">✓</span><div><div class="item-title">General compact card + manifest (079 items 19/8)</div><div class="item-note">Closed via the cmux full-flow build: chip-based source, title+chip / subtitle+time rows, full-width expanded message, auto-expand → auto-retract at half → rotate out, hover + ⌃⇧N toggle, .track carried through. The standard template for every card type.</div></div></li>
-    <li><span class="badge done">✓</span><div><div class="item-title">News card (079 item 7)</div><div class="item-note">Compact = shipped card + published-time meta; expanded = full-width summary + inline meta row (3-column manifest dies); cmux lifecycle. Mockup complete at prototype/news-card.html — implementation not started.</div></div></li>
+    <li><span class="badge done">✓</span><div><div class="item-title">News card (079 item 7)</div><div class="item-note">Compact = shipped card + published-time meta; expanded = full-width summary + inline meta row (3-column manifest dies); cmux lifecycle. Implemented via plan 080 (worktree <code>exec/080-news-card-display</code>); manual visual smoke check still operator-owed.</div></div></li>
     <li><span class="badge done">✓</span><div><div class="item-title">Team identification (079 item 3)</div><div class="item-note">Real club crests via ESPN's existing team.logo; rust fetches+embeds bytes, text-abbrev fallback (what the football mockup draws).</div></div></li>
     <li><span class="badge done">✓</span><div><div class="item-title">Data source (079 item 15)</div><div class="item-note">ESPN stays. Plan 057 (paid API evaluation) closed.</div></div></li>
     <li><span class="badge done">✓</span><div><div class="item-title">Green reserved for "live"</div><div class="item-note">#7fe08d means live-now only — idle football dot, LIVE pill, goal icons.</div></div></li>
@@ -204,7 +204,7 @@
 
   <h2>Implementation plans (filed 2026-07-20)</h2>
   <ul class="items">
-    <li><span class="badge open">080</span><div><div class="item-title">News card implementation — P1, M</div><div class="item-note">Compact + published meta, full-width expanded summary. Depends on 063 shipping first.</div></div></li>
+    <li><span class="badge done">✓</span><div><div class="item-title">News card implementation — P1, M</div><div class="item-note">Done (plan 080): compact + published meta, full-width expanded summary, mirror law satisfied. Vitest 122→124; all gates green. Manual visual smoke operator-owed.</div></div></li>
     <li><span class="badge open">081</span><div><div class="item-title">TTL progress bar — P2, M</div><div class="item-note">Wire: ttl_ms + remaining_ms; frontend rAF bar. Hover-pause half gated by 086.</div></div></li>
     <li><span class="badge open">082</span><div><div class="item-title">Weather art implementation — P2, S–M</div><div class="item-note">Meteocons → src/assets + NOTICE, condition→art table, day/night over the wire, alert-card application.</div></div></li>
     <li><span class="badge open">083</span><div><div class="item-title">Football backend — P2, M–L</div><div class="item-note">Structured EspnMeta wire block → crests (cache + serving route w/ capability tension flagged) → espn_rich_events (6a fallback + dedup). Gates 084.</div></div></li>
@@ -216,7 +216,7 @@
 
   <h2>Next moves, suggested order</h2>
   <ul class="items">
-    <li><span class="badge open">1</span><div><div class="item-title">Plan pass on 063, then dispatch 080</div><div class="item-note">063's fix is locked but lacks Steps/Test-plan; then the news card is the first build.</div></div></li>
+    <li><span class="badge open">1</span><div><div class="item-title">Dispatch 081 — TTL progress bar</div><div class="item-note">080 ships first; now the next buildable slice is the rAF-driven TTL bar at the bottom of every rotating card (hover-pause half gated by 086). 063 code is already merged.</div></div></li>
     <li><span class="badge open">2</span><div><div class="item-title">Dispatch 086 in parallel</div><div class="item-note">The hover spike unblocks the most later value; it's investigate-scoped and cheap.</div></div></li>
     <li><span class="badge open">3</span><div><div class="item-title">083 → 084 for football</div><div class="item-note">Backend first (wire fields, crests, 6a), display second.</div></div></li>
     <li><span class="badge open">4</span><div><div class="item-title">Small mockups still missing</div><div class="item-note">Pause indicator chip (11), staleness pills (14), timeline's new home (18) — small additions to notch-states.html when ready.</div></div></li>

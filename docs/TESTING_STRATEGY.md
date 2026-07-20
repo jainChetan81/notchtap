@@ -9,7 +9,7 @@ doc.
 
 ---
 
-## 0. status at a glance (2026-07-19) — done vs left
+## 0. status at a glance (2026-07-21) — done vs left
 
 **done — built, green, ci-gated** (counts live here and only here;
 other sections point back rather than repeating them):
@@ -18,7 +18,7 @@ other sections point back rather than repeating them):
 |---|---|---|
 | rust unit/integration | 331 tests — settings 46, queue 65, http 36, notifier 23, rss_poller 28, poller 32, event 19, config 19, weather_poller 16, presentation 11, lib 11, engine 10, status 7, logging 4, net 4 | `cargo test` from `src-tauri/` |
 | rust doc-tests | 3 — public `queue`/`event` apis | same `cargo test` run |
-| frontend | 112 tests — presentation tables 12, inline markdown 7, slot-state hook 22, status-state hook 15, StatusRailCard 23, IdleView rail 8, Track slider 6, settings form 14, App render 5 | `npx vitest run` |
+| frontend | 124 tests — presentation tables 12, presentation facts 4, inline markdown 7, useDelayedSwap hook 3, slot-state hook 22, status-state hook 15, StatusRailCard 26 (+2 with plan 080), IdleView rail 8, Track slider 6, settings form 16, App render 5 | `npx vitest run` |
 | ci (v4) | fmt, clippy `-D warnings` (`--locked`), cargo test (`--locked`), cargo-audit, npm audit, tsc, vitest, vite build, `sh -n` cli syntax check, swiftc compile check | every push + pr |
 
 every example case listed in §4 for v1/v2/v3 components has a passing
