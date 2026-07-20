@@ -526,6 +526,7 @@ fn apply_fresh_content(existing: &mut Event, fresh: &Event) {
     existing.priority = fresh.priority;
     existing.rotation = fresh.rotation;
     existing.signal = fresh.signal;
+    existing.meta = fresh.meta.clone();
 }
 
 const MIN_REMAINING_ON_SUPERSEDE_SECS: u64 = 2;
@@ -884,6 +885,29 @@ mod tests {
     }
 
     #[test]
+    fn visible_supersede_updates_meta() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        let base = topic_event("old", Priority::Medium, 8, "topic");
+        let fresh = Event {
+            meta: EventMeta {
+                details: vec![DetailItem {
+                    label: "Clock".to_string(),
+                    value: "45'".to_string(),
+                }],
+                ..EventMeta::default()
+            },
+            ..base.clone()
+        };
+        q.enqueue(base, t0).unwrap();
+        q.enqueue(fresh, t0 + Duration::from_millis(10)).unwrap();
+        let visible = q.visible.as_ref().unwrap();
+        assert_eq!(visible.event.meta.details.len(), 1);
+        assert_eq!(visible.event.meta.details[0].label, "Clock");
+        assert_eq!(visible.event.meta.details[0].value, "45'");
+    }
+
+    #[test]
     fn visible_supersede_grants_extension_only_when_below_floor() {
         let t0 = Instant::now();
 
@@ -1016,6 +1040,48 @@ mod tests {
     }
 
     #[test]
+    fn same_tier_waiting_supersede_updates_meta() {
+        let mut q = SingleSlotQueue::new(50);
+        q.pause();
+        q.enqueue(
+            topic_event("first", Priority::Medium, 8, "topic"),
+            Instant::now(),
+        )
+        .unwrap();
+        q.enqueue(
+            topic_event("second", Priority::Medium, 8, "topic2"),
+            Instant::now(),
+        )
+        .unwrap();
+
+        let fresh = Event {
+            meta: EventMeta {
+                details: vec![DetailItem {
+                    label: "Clock".to_string(),
+                    value: "45'".to_string(),
+                }],
+                ..EventMeta::default()
+            },
+            ..topic_event("first-updated", Priority::Medium, 8, "topic")
+        };
+        q.enqueue(fresh, Instant::now()).unwrap();
+
+        assert_eq!(q.waiting[Priority::Medium as usize].len(), 2);
+        assert_eq!(
+            q.waiting[Priority::Medium as usize][0]
+                .event
+                .meta
+                .details
+                .len(),
+            1
+        );
+        assert_eq!(
+            q.waiting[Priority::Medium as usize][0].event.meta.details[0].label,
+            "Clock"
+        );
+    }
+
+    #[test]
     fn cross_tier_supersede_moves_to_back_of_new_tier() {
         let mut q = SingleSlotQueue::new(50);
         q.pause();
@@ -1049,6 +1115,38 @@ mod tests {
             q.waiting[Priority::High as usize][1].event.payload.title,
             "topic-upgraded"
         );
+    }
+
+    #[test]
+    fn cross_tier_supersede_updates_meta() {
+        let mut q = SingleSlotQueue::new(50);
+        q.pause();
+        q.enqueue(
+            topic_event("topic", Priority::Low, 8, "topic"),
+            Instant::now(),
+        )
+        .unwrap();
+        q.enqueue(event("low", Priority::Low, 8), Instant::now())
+            .unwrap();
+        q.enqueue(event("high", Priority::High, 8), Instant::now())
+            .unwrap();
+
+        let fresh = Event {
+            meta: EventMeta {
+                details: vec![DetailItem {
+                    label: "Clock".to_string(),
+                    value: "45'".to_string(),
+                }],
+                ..EventMeta::default()
+            },
+            ..topic_event("topic-upgraded", Priority::High, 8, "topic")
+        };
+        q.enqueue(fresh, Instant::now()).unwrap();
+
+        assert_eq!(q.waiting[Priority::High as usize].len(), 2);
+        let moved = &q.waiting[Priority::High as usize][1];
+        assert_eq!(moved.event.meta.details.len(), 1);
+        assert_eq!(moved.event.meta.details[0].label, "Clock");
     }
 
     // ------------------------------------------------------------------
