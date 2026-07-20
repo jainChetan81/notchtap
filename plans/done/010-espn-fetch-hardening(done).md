@@ -1,0 +1,283 @@
+# Plan 010: Harden the ESPN fetch path — gzip, size cap, redirect limit, shared client settings
+
+> **Executor instructions**: Follow this plan step by step. Run every
+> verification command and confirm the expected result before moving on.
+> If anything in "STOP conditions" occurs, stop and report. When done,
+> update this plan's status row in `plans/README.md`.
+>
+> **Drift check (run first)**: `git diff --stat b43a7ca..HEAD -- src-tauri/src/poller.rs src-tauri/src/rss_poller.rs src-tauri/Cargo.toml`
+> On any change, compare excerpts below; mismatch = STOP.
+
+## Status
+
+- **State**: DONE (`4381de4`, merged to master 2026-07-18; Step 4 GUI smoke owed to operator)
+- **Priority**: P1
+- **Effort**: S
+- **Risk**: LOW
+- **Depends on**: none
+- **Category**: perf / security
+- **Planned at**: commit `d40445e`, 2026-07-17; drift baseline refreshed to `b43a7ca` 2026-07-18 (excerpts re-verified unchanged) (re-baselined by
+  `review-plan` against commit `b43a7ca`, 2026-07-18 — line numbers below
+  updated; no excerpt content changed, drift was unrelated comment/lint
+  churn, see Maintenance notes)
+
+## Post-execution note (`/improve execute`, 2026-07-18)
+
+Verified complete at HEAD `6a7fd5a` — no executor dispatch needed, the work
+was already merged. Commit `4381de4` ("poller: espn client gets rss's
+caps/redirect/ua posture + gzip for both", the exact message this plan
+prescribed) is an ancestor of HEAD. All done criteria re-checked against
+live code and pass:
+
+- `grep -c '"gzip"' src-tauri/Cargo.toml` → 1
+- `grep -c 'Client::new()' src-tauri/src/poller.rs` → 0
+- `grep -c 'MAX_SCOREBOARD_BYTES' src-tauri/src/poller.rs` → 3 (≥3)
+- `grep -c 'redirect::Policy::limited(3)' src-tauri/src/poller.rs` → 1
+
+The implementation matches the plan's shapes exactly: `fetch_league`
+(`poller.rs:535`) does the two-stage content-length + decompressed-byte cap
+against `MAX_SCOREBOARD_BYTES` (`poller.rs:463`); the ESPN client
+(`poller.rs:599`) carries the RSS posture — UA, `Policy::limited(3)`, 10 s
+timeout — with the builder `Result` logged via `tracing::error!` and the
+task returning on failure. Suite recorded green after 010 landed (`cargo
+test 242 + 3 doc-tests` at descendant `9326439`). Only outstanding item is
+**Step 4's manual GUI smoke**, which requires a Mac dev machine and stays
+owed to the operator — it cannot run in a headless environment.
+
+## Why this matters
+
+The ESPN poller fetches 3 leagues every 30 s, 24/7 — ~8,640 requests/day.
+Real fixture bodies are 13–53 KB per league, and because reqwest is built
+without the `gzip` feature it sends no `Accept-Encoding`, so responses
+arrive uncompressed: on the order of 100–450 MB/day of JSON on a machine
+that is idle almost all of that time. Worse, the fetch uses a default
+`reqwest::Client::new()` (up to 10 redirects, no UA) and buffers the whole
+body with `.text()` unbounded — the one HTTP path in the app with no size
+ceiling. Its RSS twin already implements the exact posture to copy:
+1 MiB cap, ≤3 redirects, UA, 10 s timeout. This plan applies that posture
+to ESPN and turns on gzip for both.
+
+Deliberately OUT of this plan: adaptive poll cadence (stretching the
+interval when no match is live) — a bigger behavior change; see
+Maintenance notes.
+
+## Current state
+
+`src-tauri/Cargo.toml:30`:
+
+```toml
+reqwest = { version = "0.13.4", features = ["json"] }
+```
+
+`src-tauri/src/poller.rs:534-545`:
+
+```rust
+async fn fetch_league(client: &reqwest::Client, league: &str) -> anyhow::Result<String> {
+    let url = format!("https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/scoreboard");
+    let body = client
+        .get(&url)
+        .timeout(Duration::from_secs(10))
+        .send()
+        .await?
+        .error_for_status()?
+        .text()
+        .await?;
+    Ok(body)
+}
+```
+
+`src-tauri/src/poller.rs:594` (inside `spawn_espn_poller`):
+`let client = reqwest::Client::new();`
+
+The pattern to copy — `src-tauri/src/rss_poller.rs:429-434`:
+
+```rust
+let client = match reqwest::Client::builder()
+    .user_agent("notchtap/0.1 (+https://github.com/jainChetan81/notchtap)")
+    .redirect(reqwest::redirect::Policy::limited(3))
+    .timeout(Duration::from_secs(10))
+    .build()
+```
+
+and the two-stage byte cap — `rss_poller.rs:398-407` (content_length
+check, then `bytes()`, then `len` check against
+`MAX_FEED_BYTES = 1024 * 1024`).
+
+Also relevant: the poller's fetch loop is deliberately thin and untested
+(`poller.rs:529-532` comment: "everything below the 'here is a response
+body' line is the tested surface above") — this plan keeps `fetch_league`
+thin; no tests are required for the fetch function itself, per that
+recorded boundary. The parse/delta functions consume a `&str` body and are
+already fixture-tested; nothing about them changes.
+
+## Commands you will need
+
+| Purpose | Command | Expected on success |
+|---|---|---|
+| Rust tests | `cargo test` (from `src-tauri/`) | all pass |
+| Build resolves | `cargo build --locked` (from `src-tauri/`) — use plain `cargo build` if plan 007 hasn't landed | exit 0 |
+| Gates | `cargo clippy --all-targets -- -D warnings && cargo fmt --check` (from `src-tauri/`) | exit 0 |
+
+## Scope
+
+**In scope**:
+- `src-tauri/Cargo.toml` (reqwest features) — note this WILL change
+  `Cargo.lock` (adds gzip's decompression dep); that lockfile change is
+  expected and must be committed
+- `src-tauri/Cargo.lock` (auto-generated by Step 1's `cargo build`; commit
+  it alongside `Cargo.toml`)
+- `src-tauri/src/poller.rs` (`fetch_league`, the client construction in
+  `spawn_espn_poller`)
+- `src-tauri/src/rss_poller.rs` — no code change required (gzip is
+  client-automatic once the feature is on); read-only sanity check
+- `plans/README.md` (status row)
+
+**Out of scope**:
+- Poll cadence/interval logic, `Backoff`, `PauseGate` — untouched.
+- The parse/delta/fixture-test surface (`diff_scoreboard` etc.).
+- `notifier.rs`'s client — telegram payloads are tiny; leave it.
+- Adaptive scheduling (see Maintenance notes).
+
+## Git workflow
+
+- Current branch; commit style: `poller: espn client gets rss's caps/redirect/ua posture + gzip for both`.
+- Do NOT push.
+
+## Steps
+
+### Step 1: Enable gzip in reqwest
+
+`src-tauri/Cargo.toml:30` →
+
+```toml
+reqwest = { version = "0.13.4", features = ["json", "gzip"] }
+```
+
+reqwest then sends `Accept-Encoding: gzip` and transparently decompresses;
+per reqwest's own docs, when a response is actually gzip-encoded it strips
+both `Content-Encoding` and `Content-Length` from the header set before
+your code sees them, so `content_length()` returns `None` on any gzip'd
+response — which is why Step 3's cap can't rely on it alone and always
+re-checks the decompressed byte count after `.bytes()`.
+
+**Verify**: `cargo build` from `src-tauri/` → exit 0. Then, still from
+`src-tauri/`, `git diff --stat Cargo.lock` → shows additions (expected).
+(Running `git diff --stat src-tauri/Cargo.lock` from inside `src-tauri/`
+fails with `fatal: ambiguous argument` — there is no nested `src-tauri/`
+directory from that cwd. Use the repo-root form, `git diff --stat
+src-tauri/Cargo.lock`, only if you `cd` back to the repo root first.)
+
+### Step 2: Give the ESPN poller the RSS client posture
+
+In `spawn_espn_poller` (`poller.rs:594`, inside the `tauri::async_runtime::spawn`
+block), replace `reqwest::Client::new()` with the builder form copied from
+`rss_poller.rs:429-434` (same UA string, `Policy::limited(3)`, 10 s
+timeout). Handle the builder `Result` the same way rss does (log
+`tracing::error!` and return from the spawned task on failure). The
+per-request `.timeout(...)` inside `fetch_league` becomes redundant once
+the client has it — remove it.
+
+**Verify**: `cargo test` → all pass (fetch loop is untested; compile + existing suites are the gate). `cargo clippy --all-targets -- -D warnings` → exit 0.
+
+### Step 3: Cap the ESPN response size
+
+Add a module-level `const MAX_SCOREBOARD_BYTES: usize = 1024 * 1024;` in
+`poller.rs` and rewrite `fetch_league` to the two-stage cap, mirroring
+`fetch_feed`:
+
+```rust
+async fn fetch_league(client: &reqwest::Client, league: &str) -> anyhow::Result<String> {
+    let url = format!("https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/scoreboard");
+    let response = client.get(&url).send().await?.error_for_status()?;
+    if response
+        .content_length()
+        .is_some_and(|length| length > MAX_SCOREBOARD_BYTES as u64)
+    {
+        anyhow::bail!("scoreboard response exceeds 1 MiB");
+    }
+    let bytes = response.bytes().await?;
+    if bytes.len() > MAX_SCOREBOARD_BYTES {
+        anyhow::bail!("scoreboard response exceeds 1 MiB");
+    }
+    Ok(String::from_utf8(bytes.to_vec())?)
+}
+```
+
+(Real scoreboards are ≤53 KB — 1 MiB is 20× headroom. A tripped cap flows
+into the existing per-league backoff via the loop's `on_failure` arm, same
+as any fetch error.)
+
+**Verify**: `cargo test` → all pass. `cargo fmt --check` → exit 0.
+
+### Step 4: One manual smoke (operator or dev machine)
+
+Run `npm run tauri dev` briefly with `espn_enabled = true` (the default)
+and confirm the log shows normal poll behavior (no new warnings from the
+espn poller across 2–3 ticks). This is the only runtime proof that ESPN's
+CDN behaves under the new client settings (it serves gzip and doesn't need
+>3 redirects — both overwhelmingly likely).
+
+**Verify**: log lines `espn poller started` and no repeated `espn fetch failed`-style warnings over ~2 minutes.
+
+## Test plan
+
+No new unit tests — `fetch_league` sits below the repo's recorded
+"fetch loop stays thin and untested" boundary (`poller.rs:529-532`,
+`docs/TESTING_STRATEGY.md` §4.7), and this plan keeps it thin. The
+verification is compile + full suite + the Step 4 smoke. (If the
+maintainer later wants the boundary tightened, plan 011 shows the
+wiremock pattern used for the RSS twin.)
+
+## Done criteria
+
+- [ ] `grep -c '"gzip"' src-tauri/Cargo.toml` → 1
+- [ ] `grep -c 'Client::new()' src-tauri/src/poller.rs` → 0
+- [ ] `grep -c 'MAX_SCOREBOARD_BYTES' src-tauri/src/poller.rs` → ≥3
+- [ ] `grep -c 'redirect::Policy::limited(3)' src-tauri/src/poller.rs` → 1
+- [ ] `cargo test` exits 0; clippy/fmt gates exit 0
+- [ ] Step 4 smoke reported (done, or explicitly handed to operator)
+- [ ] `git status` shows changes only in the Scope section's in-scope
+      files (`Cargo.toml`, `Cargo.lock`, `poller.rs`, `plans/README.md`)
+- [ ] `plans/README.md` status row updated
+
+## STOP conditions
+
+- The reqwest 0.13 feature for gzip is named differently (check
+  `~/.cargo/registry/src/*/reqwest-0.13.4/Cargo.toml` `[features]`) —
+  report instead of guessing.
+- Step 4's smoke shows repeated espn fetch failures under the new client
+  — revert locally and report (would indicate the CDN dislikes the UA or
+  redirect ceiling, which the audit judged very unlikely).
+- Anything in this plan seems to require touching `diff_scoreboard` or
+  the fixtures.
+
+## Maintenance notes
+
+- **2026-07-18 `review-plan` re-baseline**: between `d40445e` and `b43a7ca`
+  the three in-scope files picked up unrelated drift — a `chrono`
+  dependency line, the `tauri-nspanel` git ref moving from `branch = "v2"`
+  to a pinned `rev`, and three `#[allow(clippy::too_many_arguments)]` +
+  comment additions (one of them directly above `spawn_espn_poller`,
+  which is why its line number moved from 587 to 594). None of it touched
+  the quoted excerpts' content, so the plan's approach and code shapes
+  are still valid; only `file:line` references above were corrected. If
+  you're executing this plan and the drift check now shows *further*
+  changes past `b43a7ca`, that's new drift — treat per the drift-check
+  instructions at the top, don't assume it's this same benign set.
+- **Verified against the live `reqwest` 0.13.4 source** (not guessed):
+  `[features] gzip = ["tower-http/decompression-gzip"]` exists, and its
+  doc comment on `ClientBuilder::gzip` confirms "If the `gzip` feature is
+  turned on, the default option is enabled" — so Step 1 needs no explicit
+  `.gzip(true)` builder call. This resolves STOP condition 1 below in
+  advance; it's kept as a defensive check only in case of a future
+  reqwest major-version bump changing the feature name again.
+- **Deferred follow-up (bigger win, more risk)**: adaptive cadence — a
+  pure `next_poll_delay(scoreboard) -> Duration` that stretches the
+  interval (5–15 min) when no match is live/imminent and the nearest
+  kickoff is far off, fixture-tested like `diff_scoreboard`, driving the
+  loop with `sleep(delay)`. Cuts request count ~10× on top of this plan's
+  byte cut. Needs the kickoff-time field parsed + tests; wrong "nothing
+  live" decisions delay goal alerts, hence kept out of this S plan.
+- If a third poller ever lands, extract the shared client-builder into a
+  helper (the audit flagged espn/rss loop-skeleton duplication; the
+  recorded verdict is "consolidate when source #3 arrives").
