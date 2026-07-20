@@ -549,12 +549,63 @@
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
 
-.appearance-preview .manifest-inner.news {
-  grid-template-columns: 1.5fr 1fr 1fr;
+.appearance-preview .pub-meta {
+  margin-left: auto;
+  font: 600 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.32);
+  white-space: nowrap;
 }
 
-.appearance-preview .manifest-inner.news .detail-label {
+.appearance-preview .manifest-block {
+  padding: 12px 16px 13px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.appearance-preview .manifest-label {
+  font: 700 8.5px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
   color: var(--cat);
+  margin-bottom: 7px;
+}
+
+.appearance-preview .manifest-text {
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.85);
+}
+
+.appearance-preview .manifest-meta {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  font: 600 9.5px/1.5 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+.appearance-preview .manifest-meta b {
+  color: rgba(255, 255, 255, 0.7);
+  font-weight: 700;
+}
+
+.appearance-preview .manifest-meta .sep {
+  color: rgba(255, 255, 255, 0.18);
+}
+
+.appearance-preview .manifest-footer {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+}
+
+.appearance-preview .manifest-hint {
+  font: 700 9px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.4);
 }
 
 @media (prefers-reduced-motion: reduce) {

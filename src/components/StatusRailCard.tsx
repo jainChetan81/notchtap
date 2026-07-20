@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { renderInlineMarkdown } from "../lib/markdown";
-import { ageLabel, categoryClass, categoryLabel } from "../lib/presentation";
+import { ageLabel, categoryClass, categoryLabel, publishedLabel } from "../lib/presentation";
 import { useDelayedSwap } from "../useDelayedSwap";
 import type { SlotState } from "../useSlotState";
 import { type StatusState, statusRailActive } from "../useStatusState";
@@ -79,6 +79,9 @@ export function StatusRailCard({ slot, status }: { slot: SlotState; status?: Sta
   const renderedNews = renderedShowing && renderedSlot.eventType === "news_item";
   const renderedNewsCategory = renderedNews ? categoryLabel(renderedSlot.category) : null;
   const renderedNewsAge = renderedNews ? ageLabel(renderedSlot.publishedAtMs, Date.now()) : null;
+  const renderedNewsPublished = renderedNews
+    ? publishedLabel(renderedSlot.publishedAtMs, Date.now())
+    : null;
 
   // plan 069 (folded into 078): memoized on the rendered slot so unrelated
   // re-renders don't re-tokenize the markdown.
@@ -118,6 +121,9 @@ export function StatusRailCard({ slot, status }: { slot: SlotState; status?: Sta
                         )}
                         {renderedNewsAge !== null && (
                           <span className="pill age">{renderedNewsAge}</span>
+                        )}
+                        {renderedNewsPublished !== null && (
+                          <span className="pub-meta">published {renderedNewsPublished}</span>
                         )}
                       </div>
                     )}

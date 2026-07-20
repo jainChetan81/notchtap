@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { Fragment, useMemo } from "react";
 import { renderInlineMarkdown } from "../lib/markdown";
 import { categoryLabel, type EventType, publishedLabel, sourceLabelFor } from "../lib/presentation";
 
@@ -32,6 +32,12 @@ export function Manifest({
 }) {
   const newsPublished = publishedLabel(publishedAtMs ?? null, Date.now());
   const newsCategory = categoryLabel(category ?? null);
+  const metaSegments = [
+    <b key="src">{source ?? "RSS"}</b>,
+    ...(newsPublished !== null ? [<span key="pub">published {newsPublished}</span>] : []),
+    ...(newsCategory !== null ? [<span key="cat">{newsCategory}</span>] : []),
+  ];
+
   // plan 069 (folded into 078): memoized on `body` so unrelated re-renders
   // don't re-tokenize the markdown.
   const messageContent = useMemo(() => renderInlineMarkdown(body), [body]);
@@ -44,32 +50,19 @@ export function Manifest({
     <div className={`manifest-wrap${expanded ? " expanded" : ""}`} aria-hidden={!expanded}>
       <div className="manifest">
         {eventType === "news_item" ? (
-          <div className="manifest-inner news">
-            <div>
-              <div className="detail-label">Summary</div>
-              <div className="detail-value">{body}</div>
+          <div className="manifest-block">
+            <div className="manifest-label">Summary</div>
+            <div className="manifest-text">{body}</div>
+            <div className="manifest-meta">
+              {metaSegments.map((segment, index) => (
+                <Fragment key={segment.key}>
+                  {index > 0 && <span className="sep">·</span>}
+                  {segment}
+                </Fragment>
+              ))}
             </div>
-            <div>
-              <div className="detail-label">Source / Published</div>
-              <div className="detail-value">
-                {source ?? "RSS"}
-                {newsPublished !== null && (
-                  <>
-                    <br />
-                    {newsPublished}
-                  </>
-                )}
-              </div>
-            </div>
-            <div>
-              <div className="detail-label">Category / Control</div>
-              <div className="detail-value">
-                {newsCategory !== null && (
-                  <>
-                    {newsCategory}
-                    <br />
-                  </>
-                )}
+            <div className="manifest-footer">
+              <span className="manifest-hint">
                 {hasLink ? (
                   <>
                     <kbd>⌃⇧O</kbd> read · <kbd>⌃⇧N</kbd> collapse
@@ -79,7 +72,7 @@ export function Manifest({
                     <kbd>⌃⇧N</kbd> collapse
                   </>
                 )}
-              </div>
+              </span>
             </div>
           </div>
         ) : (

@@ -299,11 +299,11 @@ describe("StatusRailCard", () => {
     expect(screen.getAllByText("Arsenal 2-0").length).toBe(2);
   });
 
-  it("renders the news masthead, headline, category, age, and category shader classes", () => {
+  it("renders the news masthead, headline, category, age, published time, and category shader classes", () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(2_000_000_000_000);
     const { container } = render(<StatusRailCard slot={NEWS} />);
 
-    expect(screen.getByText("NDTV")).toBeTruthy();
+    expect(container.querySelector(".masthead")?.textContent).toContain("NDTV");
     expect(screen.queryByText("NDTV · Wire")).toBeNull();
     expect(screen.getByText(NEWS.title).classList.contains("title")).toBe(true);
     expect(screen.getByText(NEWS.title).classList.contains("headline")).toBe(true);
@@ -317,16 +317,19 @@ describe("StatusRailCard", () => {
     expect(container.querySelector(".tier-code")).toBeNull();
     expect(screen.queryByText("L1")).toBeNull();
     expect(screen.getByText("Wire").classList.contains("stamp")).toBe(true);
-    expect(screen.getByText("Summary")).toBeTruthy();
-    expect(screen.getByText("Source / Published")).toBeTruthy();
-    expect(screen.getByText("Category / Control").nextElementSibling?.textContent).toContain(
+    expect(screen.getByText("Summary").classList.contains("manifest-label")).toBe(true);
+    expect(container.querySelector(".manifest-inner.news")).toBeNull();
+    expect(container.querySelector(".manifest-meta")?.textContent).toContain("NDTV");
+    expect(container.querySelector(".manifest-meta")?.textContent).toContain("published 08:58");
+    expect(container.querySelector(".manifest-meta")?.textContent).toContain("Politics");
+    expect(container.querySelector(".manifest-footer")?.textContent).toContain(
       "⌃⇧O read · ⌃⇧N collapse",
     );
 
     now.mockRestore();
   });
 
-  it("omits category and age pills when news metadata is null", () => {
+  it("omits category, age, and published-time meta when all news metadata is null", () => {
     const { container } = render(
       <StatusRailCard
         slot={{
@@ -341,9 +344,9 @@ describe("StatusRailCard", () => {
     );
 
     // plan 078: the manifest stays mounted (aria-hidden) when collapsed, so
-    // "RSS" also appears in its Source/Published cell — assert on the
-    // masthead specifically, and on the collapsed mechanism for the
-    // collapse control that used to be absent from the DOM entirely.
+    // "RSS" also appears in its meta row — assert on the masthead
+    // specifically, and on the collapsed mechanism for the collapse control
+    // that used to be absent from the DOM entirely.
     expect(container.querySelector(".masthead")?.textContent).toContain("RSS");
     // hotkey key-cap styling: the hint's "⌃⇧N" is now a <kbd> child, so
     // its text is split across elements — match on the container's
@@ -352,7 +355,46 @@ describe("StatusRailCard", () => {
     expect(container.querySelector(".manifest-wrap")?.getAttribute("aria-hidden")).toBe("true");
     expect(container.querySelector(".pill.category")).toBeNull();
     expect(container.querySelector(".pill.age")).toBeNull();
+    expect(container.querySelector(".pub-meta")).toBeNull();
     expect(container.querySelector(".rail-card.news-shade.cat-generic")).not.toBeNull();
+  });
+
+  it("renders the published-time meta in the compact news card when publishedAtMs is set", () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(2_000_000_000_000);
+    const { container } = render(<StatusRailCard slot={{ ...NEWS, expanded: false }} />);
+
+    const pubMeta = container.querySelector(".pub-meta");
+    expect(pubMeta).not.toBeNull();
+    expect(pubMeta?.textContent).toBe("published 08:58");
+    // the meta is the last child of the pills row, pushed right by auto margin
+    const pills = container.querySelector(".pills");
+    expect(pills?.lastElementChild?.classList.contains("pub-meta")).toBe(true);
+
+    now.mockRestore();
+  });
+
+  it("renders the expanded news manifest as a full-width summary with an inline meta row", () => {
+    const now = vi.spyOn(Date, "now").mockReturnValue(2_000_000_000_000);
+    const { container } = render(<StatusRailCard slot={{ ...NEWS, link: null }} />);
+
+    expect(container.querySelector(".manifest-inner.news")).toBeNull();
+    expect(container.querySelector(".manifest-block")).not.toBeNull();
+    expect(screen.getByText("Summary").classList.contains("manifest-label")).toBe(true);
+    expect(screen.getByText(NEWS.body).classList.contains("manifest-text")).toBe(true);
+
+    const meta = container.querySelector(".manifest-meta") as HTMLElement;
+    expect(meta).not.toBeNull();
+    expect(within(meta).getByText("NDTV")?.tagName).toBe("B");
+    expect(meta.textContent).toContain("published 08:58");
+    expect(meta.textContent).toContain("Politics");
+    expect(meta.textContent?.split("·").length).toBeGreaterThanOrEqual(2);
+
+    const footer = container.querySelector(".manifest-footer") as HTMLElement;
+    expect(footer).not.toBeNull();
+    expect(footer.textContent).toContain("⌃⇧N collapse");
+    expect(footer.textContent).not.toContain("⌃⇧O read");
+
+    now.mockRestore();
   });
 
   it("shows only the collapse control in an expanded manifest without a link", () => {
