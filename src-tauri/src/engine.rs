@@ -180,11 +180,16 @@ impl<R: tauri::Runtime> Engine<R> {
         let now = Instant::now();
         let slot_change = {
             let mut q = self.queue.lock().await;
-            if bypass_pause_when_slot_empty {
-                q.enqueue_test(event, now)?;
+            let enqueue_result = if bypass_pause_when_slot_empty {
+                q.enqueue_test(event, now)
             } else {
-                q.enqueue(event, now)?;
+                q.enqueue(event, now)
+            };
+            if let Err(ref e) = enqueue_result {
+                tracing::warn!(id = %to_offer.id, origin = ?to_offer.origin, error = ?e, "accept: enqueue rejected");
             }
+            enqueue_result?;
+            tracing::debug!(id = %to_offer.id, origin = ?to_offer.origin, priority = ?to_offer.priority, "accept: enqueued");
             q.slot_state_if_changed()
         };
         self.wake.notify_waiters();

@@ -278,7 +278,7 @@ async fn send_with_policy(client: &reqwest::Client, cfg: &WorkerConfig, event: &
                     attempt += 1;
                 }
                 RetryDecision::Drop => {
-                    tracing::warn!(?kind, attempt, title = %event.payload.title,
+                    tracing::warn!(?kind, attempt, id = %event.id, title = %event.payload.title,
                         "telegram send dropped after failure");
                     // a drop is a failed delivery: bump the counter but
                     // leave last_success at the last time it actually worked

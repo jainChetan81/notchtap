@@ -154,20 +154,25 @@ async fn notify_handler<R: tauri::Runtime>(
         .and_then(|v| v.to_str().ok())
         .unwrap_or("");
     if !content_type.starts_with("application/json") {
+        tracing::warn!(%content_type, "notify: rejected — content-type must be application/json");
         return Err(HttpError::BadRequest(
             "content-type must be application/json",
         ));
     }
 
-    let req: NotifyRequest =
-        serde_json::from_slice(&body).map_err(|_| HttpError::BadRequest("malformed json"))?;
+    let req: NotifyRequest = serde_json::from_slice(&body).map_err(|e| {
+        tracing::warn!(error = %e, "notify: rejected — malformed json");
+        HttpError::BadRequest("malformed json")
+    })?;
 
-    let title = req
-        .title
-        .ok_or(HttpError::Event(EventError::MissingField("title")))?;
-    let body = req
-        .body
-        .ok_or(HttpError::Event(EventError::MissingField("body")))?;
+    let title = req.title.ok_or_else(|| {
+        tracing::warn!(field = "title", "notify: rejected — missing field");
+        HttpError::Event(EventError::MissingField("title"))
+    })?;
+    let body = req.body.ok_or_else(|| {
+        tracing::warn!(field = "body", "notify: rejected — missing field");
+        HttpError::Event(EventError::MissingField("body"))
+    })?;
 
     let (origin, default_priority, ttl_secs) = match req.source {
         Some(RequestSource::Cmux) => (SourceKind::Cmux, state.cmux_priority, state.cmux_ttl_secs),
