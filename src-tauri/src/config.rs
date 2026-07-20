@@ -399,10 +399,28 @@ impl Config {
         // the array) with no way for the user to add a missing one back —
         // so a stale array fails validation on every save, permanently,
         // with no in-UI escape hatch short of "Reset to defaults" (which
-        // also discards every other customized setting). Append whatever's
-        // missing, preserving the file's existing relative order for
-        // everything it already had; this self-heals for any future
-        // newly-added source too, not just this one.
+        // also discards every other customized setting). Dedupe any
+        // pre-existing duplicate entries first (keeping the first
+        // occurrence) — a duplicate-plus-missing array would otherwise
+        // grow past five elements and fail the same permutation check.
+        // Append whatever's missing, preserving the file's existing
+        // relative order for everything it already had; this self-heals
+        // for any future newly-added source too, not just this one.
+        // dedupe first (keep first occurrence — a malformed hand-edited config
+        // might repeat a source; without this, a duplicate-plus-missing array
+        // would grow past 5 elements and fail `validate`'s permutation check
+        // forever, the same lockout this heal exists to prevent). `SourceKind`
+        // doesn't derive `Hash`, so this tracks "seen" sources in a small `Vec`
+        // rather than a `HashSet` — negligible at this size.
+        let mut seen: Vec<SourceKind> = Vec::new();
+        config.rotation_order.retain(|s| {
+            if seen.contains(s) {
+                false
+            } else {
+                seen.push(*s);
+                true
+            }
+        });
         for source in default_rotation_order() {
             if !config.rotation_order.contains(&source) {
                 config.rotation_order.push(source);
@@ -691,6 +709,37 @@ url = "https://example.com/without-meta"
                 SourceKind::Weather,
             ]
         );
+    }
+
+    #[test]
+    fn rotation_order_with_duplicate_and_missing_sources_heals_to_exactly_five() {
+        // a malformed config: `football` appears twice, `news` and `cmux`
+        // are both missing entirely. The heal must both dedupe the
+        // duplicate AND append the two missing sources, landing at exactly
+        // 5 unique entries — not 6, which would still fail `validate`'s
+        // permutation check.
+        let c = Config::parse(
+            "rotation_order = [\"football\", \"football\", \"manual\", \"weather\"]\n",
+        )
+        .unwrap();
+        assert_eq!(c.rotation_order.len(), 5);
+        let mut sorted = c.rotation_order.clone();
+        sorted.sort_by_key(|s| format!("{s:?}"));
+        let mut expected = vec![
+            SourceKind::Football,
+            SourceKind::Manual,
+            SourceKind::Weather,
+            SourceKind::News,
+            SourceKind::Cmux,
+        ];
+        expected.sort_by_key(|s| format!("{s:?}"));
+        assert_eq!(sorted, expected);
+        // first-occurrence order preserved for what the file already had:
+        // football (deduped to one), manual, weather stay in that relative
+        // order; only the appended news/cmux go at the end.
+        assert_eq!(c.rotation_order[0], SourceKind::Football);
+        assert_eq!(c.rotation_order[1], SourceKind::Manual);
+        assert_eq!(c.rotation_order[2], SourceKind::Weather);
     }
 
     #[test]
