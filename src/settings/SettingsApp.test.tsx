@@ -582,4 +582,25 @@ describe("SettingsApp", () => {
 
     expect(await screen.findByText("Last delivered: 2 min ago")).toBeTruthy();
   });
+
+  it("Diagnostics section renders the lines returned by get_recent_log_lines", async () => {
+    // same advisory-fetch shape as the connector-health test above: the
+    // fetch fires on section-open and resolves on its own microtask.
+    mockIPC((command) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "get_recent_log_lines") {
+        return ["INFO notchtap: boot complete", "WARN notchtap: queue full"];
+      }
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "Diagnostics" }));
+
+    expect(await screen.findByRole("heading", { level: 1, name: "Diagnostics" })).toBeTruthy();
+    expect(await screen.findByText(/INFO notchtap: boot complete/)).toBeTruthy();
+    expect(screen.getByText(/WARN notchtap: queue full/)).toBeTruthy();
+  });
 });

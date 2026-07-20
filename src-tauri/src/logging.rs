@@ -32,6 +32,26 @@ fn log_dir() -> anyhow::Result<PathBuf> {
     Ok(dir)
 }
 
+/// Read the last `n` lines of the active log file (`{log_dir}/notchtap.log`;
+/// rotated backups stay out of scope, plan 077). Full-file read plus a
+/// tail-slice — the 10MB rotation cap already bounds the worst-case file
+/// size, so a seek-from-end tail reader would be complexity without payoff
+/// at this size. A file that doesn't exist yet (fresh install, nothing
+/// logged) reads as an empty Vec, not an error.
+pub fn read_recent_lines(n: usize) -> anyhow::Result<Vec<String>> {
+    read_recent_lines_from(&log_dir()?.join("notchtap.log"), n)
+}
+
+fn read_recent_lines_from(path: &Path, n: usize) -> anyhow::Result<Vec<String>> {
+    let contents = match fs::read_to_string(path) {
+        Ok(contents) => contents,
+        Err(e) if e.kind() == io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(e) => return Err(e.into()),
+    };
+    let lines: Vec<String> = contents.lines().map(str::to_string).collect();
+    Ok(lines[lines.len().saturating_sub(n)..].to_vec())
+}
+
 fn log_filter() -> EnvFilter {
     if cfg!(debug_assertions) {
         EnvFilter::new("debug")
@@ -210,5 +230,52 @@ mod tests {
 
         assert_eq!(fs::read(dir.join("notchtap.log")).unwrap().len(), 150);
         assert!(!dir.join("notchtap.log.1").exists());
+    }
+
+    #[test]
+    fn read_recent_lines_empty_file_returns_empty_vec() {
+        let dir = temp_dir();
+        let path = dir.join("notchtap.log");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(&path, "").unwrap();
+
+        assert_eq!(
+            read_recent_lines_from(&path, 200).unwrap(),
+            Vec::<String>::new()
+        );
+        // a missing file (fresh install, nothing logged yet) reads the
+        // same way — empty, not an error.
+        fs::remove_file(&path).unwrap();
+        assert_eq!(
+            read_recent_lines_from(&path, 200).unwrap(),
+            Vec::<String>::new()
+        );
+    }
+
+    #[test]
+    fn read_recent_lines_fewer_lines_than_n_returns_all() {
+        let dir = temp_dir();
+        let path = dir.join("notchtap.log");
+        fs::create_dir_all(&dir).unwrap();
+        fs::write(&path, "one\ntwo\nthree\n").unwrap();
+
+        assert_eq!(
+            read_recent_lines_from(&path, 200).unwrap(),
+            vec!["one", "two", "three"]
+        );
+    }
+
+    #[test]
+    fn read_recent_lines_more_lines_than_n_returns_only_last_n() {
+        let dir = temp_dir();
+        let path = dir.join("notchtap.log");
+        fs::create_dir_all(&dir).unwrap();
+        let all: Vec<String> = (1..=10).map(|i| format!("line {i}")).collect();
+        fs::write(&path, all.join("\n")).unwrap();
+
+        assert_eq!(
+            read_recent_lines_from(&path, 3).unwrap(),
+            vec!["line 8", "line 9", "line 10"]
+        );
     }
 }

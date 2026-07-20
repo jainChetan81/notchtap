@@ -203,6 +203,7 @@ pub fn run() {
             settings::get_config,
             settings::get_connector_health,
             settings::get_default_config,
+            settings::get_recent_log_lines,
             settings::get_secret_status,
             settings::save_config_and_relaunch,
             settings::set_secret,

@@ -779,6 +779,16 @@ pub async fn get_connector_health(
 }
 
 #[tauri::command]
+pub async fn get_recent_log_lines(window: tauri::WebviewWindow) -> Result<Vec<String>, String> {
+    ensure_settings_window(&window)?;
+    // plan 077: no content-based redaction layer here on purpose —
+    // notifier.rs's token redaction (plan 006, `e.without_url()`) already
+    // keeps secrets out of the log file itself, so the file is safe to
+    // surface read-only in the settings window.
+    crate::logging::read_recent_lines(200).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
 pub fn set_appearance(
     window: tauri::WebviewWindow,
     app: tauri::AppHandle,

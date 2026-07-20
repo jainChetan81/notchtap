@@ -9,6 +9,7 @@ fn main() {
             "get_config",
             "get_connector_health",
             "get_default_config",
+            "get_recent_log_lines",
             "get_secret_status",
             "save_config_and_relaunch",
             "set_secret",

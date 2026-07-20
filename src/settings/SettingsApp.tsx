@@ -6,6 +6,7 @@ import {
   type LucideIcon,
   Newspaper,
   Palette,
+  ScrollText,
   SlidersHorizontal,
   Terminal,
   Trophy,
@@ -96,7 +97,8 @@ type SectionId =
   | "weather"
   | "connectors"
   | "shortcuts"
-  | "appearance";
+  | "appearance"
+  | "diagnostics";
 
 const navigation: ReadonlyArray<{
   id: SectionId;
@@ -111,6 +113,7 @@ const navigation: ReadonlyArray<{
   { id: "connectors", label: "Connectors & Keys", icon: KeyRound },
   { id: "shortcuts", label: "Shortcuts", icon: Command },
   { id: "appearance", label: "Appearance", icon: Palette },
+  { id: "diagnostics", label: "Diagnostics", icon: ScrollText },
 ];
 
 const sectionCopy: Record<SectionId, { index: string; title: string; description: string }> = {
@@ -154,6 +157,11 @@ const sectionCopy: Record<SectionId, { index: string; title: string; description
     index: "08",
     title: "Appearance",
     description: "Preview the overlay's shape and animations, and send live test notifications.",
+  },
+  diagnostics: {
+    index: "09",
+    title: "Diagnostics",
+    description: "Read the app's recent log lines without leaving settings.",
   },
 };
 
@@ -1103,6 +1111,76 @@ function ShortcutsSection() {
 
 type TestSource = "football" | "news" | "cmux" | "manual" | "weather";
 
+// plan 077: read-only tail of the active log file. Fetched on section-open
+// (this component mounts only while the Diagnostics section is active), not
+// on app load — the same advisory, isolated-from-panel-load pattern as
+// get_default_config / get_connector_health. No live tail; the Refresh
+// button re-invokes manually.
+function DiagnosticsSection() {
+  const [logLines, setLogLines] = useState<string[] | null>(null);
+
+  function refresh() {
+    invoke<string[]>("get_recent_log_lines")
+      .then((fetched) => setLogLines(fetched))
+      .catch(() => {
+        // advisory fetch — a failed read leaves the previous lines shown
+      });
+  }
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only fetch on section-open — refresh is re-created every render, so adding it would re-invoke get_recent_log_lines on every render.
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  const logText =
+    logLines === null
+      ? "Loading…"
+      : logLines.length === 0
+        ? "No log lines yet."
+        : logLines.join("\n");
+
+  return (
+    <SettingsGroup
+      title="Recent log lines"
+      description="The last 200 lines of ~/Library/Logs/notchtap/notchtap.log. Read-only; rotated backups are available via Console.app."
+    >
+      <pre
+        style={{
+          margin: 0,
+          padding: "12px",
+          maxHeight: "320px",
+          overflow: "auto",
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-all",
+          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
+          fontSize: "11px",
+          lineHeight: 1.5,
+          background: "rgba(0, 0, 0, 0.25)",
+          borderRadius: "8px",
+          userSelect: "text",
+        }}
+      >
+        {logText}
+      </pre>
+      <div className="control-row">
+        <ControlCopy
+          htmlFor="refresh-log-lines"
+          name="Refresh"
+          help="Re-read the log file. New lines appear as the app writes them."
+        />
+        <button
+          id="refresh-log-lines"
+          type="button"
+          className="secondary-button test-button"
+          onClick={refresh}
+        >
+          Refresh
+        </button>
+      </div>
+    </SettingsGroup>
+  );
+}
+
 function TestButton({ source }: { source: TestSource }) {
   async function send() {
     try {
@@ -1580,6 +1658,7 @@ export function SettingsApp() {
                       />
                     ) : null}
                     {activeSection === "shortcuts" ? <ShortcutsSection /> : null}
+                    {activeSection === "diagnostics" ? <DiagnosticsSection /> : null}
                     {activeSection === "appearance" ? (
                       // keyed on formGeneration so Reset/Reset-to-defaults remounts the
                       // section — its controls seed local state from config.appearance at
