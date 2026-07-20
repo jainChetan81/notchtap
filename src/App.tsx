@@ -1,6 +1,7 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useEffect } from "react";
 import { StatusRailCard } from "./components/StatusRailCard";
+import { presentationFacts } from "./lib/presentationFacts";
 import { useSlotState } from "./useSlotState";
 import { useStatusState } from "./useStatusState";
 import "./styles.css";
@@ -15,6 +16,16 @@ function applyAppearance(scale: number, radius: number, opacity: number) {
 function App() {
   const slot = useSlotState();
   const status = useStatusState();
+
+  // plan 063: expose the boot-time presentation facts to CSS — the mode
+  // gates the notch-only width clamp, the cutout width feeds it.
+  useEffect(() => {
+    const { mode, cutoutWidth } = presentationFacts();
+    document.documentElement.dataset.notchtapMode = mode;
+    if (cutoutWidth !== null) {
+      document.documentElement.style.setProperty("--notchtap-cutout-width", `${cutoutWidth}px`);
+    }
+  }, []);
 
   useEffect(() => {
     const seed = window.__NOTCHTAP_APPEARANCE__;

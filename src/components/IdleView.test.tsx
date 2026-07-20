@@ -43,6 +43,11 @@ describe("IdleView status rail", () => {
     expect(liveChip?.textContent).toContain("Arsenal 2–0 Chelsea");
     expect(liveChip?.textContent).toContain("45'");
     expect(liveChip?.querySelector(".live-dot")).not.toBeNull();
+    // plan 063: the joined label sits in its own span so CSS can
+    // ellipsis-truncate it when the capped card can't fit the full text.
+    const liveLabel = liveChip?.querySelector(".live-label");
+    expect(liveLabel).not.toBeNull();
+    expect(liveLabel?.textContent).toBe("Arsenal 2–0 Chelsea · 45'");
     expect(screen.getByText("News")).toBeTruthy();
     expect(screen.getByText("3 queued")).toBeTruthy();
   });

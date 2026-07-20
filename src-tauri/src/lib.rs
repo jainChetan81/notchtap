@@ -459,6 +459,20 @@ pub fn run() {
                     let _ = webview.emit("appearance-changed", &payload);
                 }
 
+                // plan 063: presentation facts for the frontend — the mode boolean and
+                // the numeric cutout width, one eval, same page-load site as the other
+                // boot facts. plan 060 will consume __NOTCHTAP_MODE__ when it lands.
+                {
+                    let mode_str = match mode {
+                        presentation::Mode::Notch => "notch",
+                        presentation::Mode::Hud => "hud",
+                    };
+                    let width_json = cutout_width_js_value(cutout);
+                    let _ = webview.eval(format!(
+                        "window.__NOTCHTAP_MODE__ = \"{mode_str}\"; window.__NOTCHTAP_CUTOUT_WIDTH__ = {width_json};"
+                    ));
+                }
+
                 // re-assert level/collection-behavior/position now that the
                 // window is shown — tao's show path resets them (see
                 // apply_overlay_native_config).
@@ -573,6 +587,18 @@ fn position_top_center(window: &tauri::WebviewWindow) -> tauri::Result<()> {
         window.set_position(tauri::PhysicalPosition::new(x, 0))?;
     }
     Ok(())
+}
+
+// plan 063: the cutout width as a JS literal for the page-load eval splice
+// — a positive JSON number when the shim reported a cutout, `null`
+// otherwise (hud mode, or an older/zero-width report). `width <= 0.0`
+// cannot occur here: `presentation::DetectOutput::cutout()` normalizes it
+// to `None` upstream.
+fn cutout_width_js_value(cutout: Option<presentation::CutoutGeometry>) -> String {
+    match cutout {
+        Some(c) => format!("{}", c.width),
+        None => "null".into(),
+    }
 }
 
 // notch-morph nudge (plan §3.5): anchor to the reported cutout when we have
@@ -780,6 +806,21 @@ mod tests {
 
     fn event(priority: Priority) -> Event {
         test_fixtures::with_priority(test_fixtures::event("t"), priority)
+    }
+
+    #[test]
+    fn cutout_width_js_value_renders_the_number_when_a_cutout_was_reported() {
+        let cutout = presentation::CutoutGeometry {
+            left_x: 480.5,
+            right_x: 799.5,
+            width: 319.0,
+        };
+        assert_eq!(cutout_width_js_value(Some(cutout)), "319");
+    }
+
+    #[test]
+    fn cutout_width_js_value_renders_null_without_a_cutout() {
+        assert_eq!(cutout_width_js_value(None), "null");
     }
 
     fn test_engine(app: &tauri::App<tauri::test::MockRuntime>) -> Engine<tauri::test::MockRuntime> {

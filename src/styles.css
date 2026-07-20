@@ -52,6 +52,15 @@ body {
   width: calc(460px * var(--card-scale));
 }
 
+/* plan 063: in notch mode the idle status rail caps at exactly the
+   physical cutout width, zero outward margin — menu-bar icons live
+   outside that span. 270px does double duty: fallback when the cutout
+   width never arrived, and absolute floor for very narrow notches.
+   460px ceiling: never wider than today's HUD width. */
+:root[data-notchtap-mode="notch"] .rail-card.idle.status {
+  width: calc(clamp(270px, var(--notchtap-cutout-width, 270px), 460px) * var(--card-scale));
+}
+
 /* priority accent — a single named color per tier, consumed by the
    compact row's accent edge (.compact::before), the stamp pill, and the
    track rail. deliberately NOT signal-driven
@@ -560,7 +569,8 @@ body {
 .src-rail {
   display: flex;
   align-items: center;
-  gap: 6px;
+  flex-wrap: wrap;
+  gap: 4px 6px;
   min-width: 0;
 }
 
@@ -587,6 +597,20 @@ body {
   color: #7fe08d;
   background: rgba(127, 224, 141, 0.1);
   border-color: rgba(127, 224, 141, 0.28);
+  /* plan 063: the live-match chip is the only chip with unbounded text
+     (real team names) — it may shrink and ellipsis; every other chip
+     keeps its natural width. Locked: truncate, never wrap internally. */
+  max-width: 100%;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+
+.src-chip .live-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .src-chip .live-dot {

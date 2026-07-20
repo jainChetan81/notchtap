@@ -19,7 +19,9 @@ export function IdleView({ status }: { status?: StatusState }) {
           {live !== null ? (
             <span className="src-chip live">
               <span className="live-dot" aria-hidden="true" />
-              {live.label} · {live.minute}
+              <span className="live-label">
+                {live.label} · {live.minute}
+              </span>
             </span>
           ) : (
             <span className={`src-chip${status.football.enabled ? "" : " dim"}`}>
