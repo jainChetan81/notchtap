@@ -5,7 +5,8 @@
 //! blocks (bounded channel, drop + warn when full).
 
 use std::path::{Path, PathBuf};
-use std::time::Duration;
+use std::sync::{Arc, Mutex as StdMutex};
+use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 use tokio::sync::mpsc;
@@ -196,14 +197,35 @@ pub struct WorkerConfig {
     pub api_base: String,
     pub secrets: TelegramSecrets,
     pub retry_delay: Duration,
+    pub health: Arc<StdMutex<ConnectorHealth>>,
+}
+
+/// Delivery health for the telegram connector (plan 076): written by the
+/// worker on every send attempt, read by the settings window via Engine's
+/// `telegram_health()` accessor. `Instant` stays internal — the
+/// wire-serializable conversion happens at the DTO boundary in
+/// settings.rs (`status.rs` has no existing Instant-to-wire precedent).
+/// `std::sync::Mutex`, mirroring engine.rs's `live`/`weather` precedent —
+/// the lock is never held across an `.await`.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct ConnectorHealth {
+    /// every attempt, success or failure
+    pub last_attempt: Option<Instant>,
+    /// the last time delivery actually worked — drops never touch this
+    pub last_success: Option<Instant>,
+    pub consecutive_failures: u32,
 }
 
 /// Builds the telegram connector: returns the handle for the http state
-/// and the worker future for the caller to spawn on its runtime.
+/// and the worker future for the caller to spawn on its runtime. The
+/// caller constructs the health `Arc` and passes the same clone to
+/// `Engine::new`, so the worker's writes are what the settings window
+/// reads.
 pub fn telegram_connector(
     secrets: TelegramSecrets,
     api_base: String,
     retry_delay: Duration,
+    health: Arc<StdMutex<ConnectorHealth>>,
 ) -> (
     ConnectorHandle,
     impl std::future::Future<Output = ()> + Send,
@@ -213,6 +235,7 @@ pub fn telegram_connector(
         api_base,
         secrets,
         retry_delay,
+        health,
     };
     (ConnectorHandle::new("telegram", tx), run_worker(rx, cfg))
 }
@@ -235,8 +258,14 @@ async fn send_with_policy(client: &reqwest::Client, cfg: &WorkerConfig, event: &
     let mut attempt: u32 = 0;
     let mut plain = false;
     loop {
+        cfg.health.lock().unwrap().last_attempt = Some(Instant::now());
         match send_once(client, cfg, event, plain).await {
-            Ok(()) => return,
+            Ok(()) => {
+                let mut health = cfg.health.lock().unwrap();
+                health.last_success = Some(Instant::now());
+                health.consecutive_failures = 0;
+                return;
+            }
             Err(kind) => match on_send_failure(attempt, kind, cfg.retry_delay) {
                 RetryDecision::RetryAfter(delay) => {
                     tracing::warn!(?kind, attempt, "telegram send failed — retrying");
@@ -251,6 +280,9 @@ async fn send_with_policy(client: &reqwest::Client, cfg: &WorkerConfig, event: &
                 RetryDecision::Drop => {
                     tracing::warn!(?kind, attempt, title = %event.payload.title,
                         "telegram send dropped after failure");
+                    // a drop is a failed delivery: bump the counter but
+                    // leave last_success at the last time it actually worked
+                    cfg.health.lock().unwrap().consecutive_failures += 1;
                     return;
                 }
             },
@@ -508,6 +540,7 @@ mod tests {
                     chat_id: "42".to_string(),
                 },
                 retry_delay: Duration::from_millis(10),
+                health: Arc::new(StdMutex::new(ConnectorHealth::default())),
             }
         }
 
@@ -584,6 +617,78 @@ mod tests {
             send_with_policy(&client(), &cfg, &event(EventType::Generic, "t", "b")).await;
         }
 
+        // --- connector health (plan 076): the worker's state transitions ---
+
+        #[tokio::test]
+        async fn success_records_attempt_and_success_and_resets_failures() {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/bottok/sendMessage"))
+                .respond_with(ResponseTemplate::new(200))
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let cfg = test_cfg(server.uri());
+            cfg.health.lock().unwrap().consecutive_failures = 2;
+            send_with_policy(&client(), &cfg, &event(EventType::Generic, "t", "b")).await;
+
+            let health = *cfg.health.lock().unwrap();
+            assert!(health.last_attempt.is_some());
+            assert!(health.last_success.is_some());
+            assert_eq!(health.consecutive_failures, 0);
+        }
+
+        #[tokio::test]
+        async fn drop_increments_failures_and_leaves_last_success_untouched() {
+            let server = MockServer::start().await;
+            Mock::given(method("POST"))
+                .and(path("/bottok/sendMessage"))
+                .respond_with(ResponseTemplate::new(401)) // fatal: drops without retry
+                .expect(1)
+                .mount(&server)
+                .await;
+
+            let cfg = test_cfg(server.uri());
+            send_with_policy(&client(), &cfg, &event(EventType::Generic, "t", "b")).await;
+
+            let health = *cfg.health.lock().unwrap();
+            assert!(health.last_attempt.is_some());
+            assert_eq!(health.consecutive_failures, 1);
+            assert!(
+                health.last_success.is_none(),
+                "a drop must not masquerade as the last working delivery"
+            );
+        }
+
+        #[tokio::test]
+        async fn success_after_drops_resets_the_failure_counter() {
+            let server = MockServer::start().await;
+            // mounted first so it matches first (same ordering rule
+            // bad_request_resends_exactly_once_as_plain relies on): both
+            // attempts of the first send get 500 — retry, then drop.
+            Mock::given(method("POST"))
+                .and(path("/bottok/sendMessage"))
+                .respond_with(ResponseTemplate::new(500))
+                .up_to_n_times(2)
+                .mount(&server)
+                .await;
+            Mock::given(method("POST"))
+                .and(path("/bottok/sendMessage"))
+                .respond_with(ResponseTemplate::new(200))
+                .mount(&server)
+                .await;
+
+            let cfg = test_cfg(server.uri());
+            send_with_policy(&client(), &cfg, &event(EventType::Generic, "t", "b")).await;
+            assert_eq!(cfg.health.lock().unwrap().consecutive_failures, 1);
+
+            send_with_policy(&client(), &cfg, &event(EventType::Generic, "t", "b")).await;
+            let health = *cfg.health.lock().unwrap();
+            assert_eq!(health.consecutive_failures, 0);
+            assert!(health.last_success.is_some());
+        }
+
         #[tokio::test]
         async fn unauthorized_drops_without_retry() {
             let server = MockServer::start().await;
@@ -614,6 +719,7 @@ mod tests {
                     chat_id: "42".to_string(),
                 },
                 retry_delay: Duration::from_millis(10),
+                health: Arc::new(StdMutex::new(ConnectorHealth::default())),
             };
 
             let client = reqwest::Client::builder()

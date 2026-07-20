@@ -168,6 +168,10 @@ pub fn run() {
     // the app runs overlay-only (v3 spec §4).
     let mut connector_handles = Vec::new();
     let mut telegram_worker = None;
+    // plan 076: the connector-health Arc exists even when the connector is
+    // disabled — Engine::new requires a value either way, and for a
+    // disabled connector the accessor reads as "no deliveries yet".
+    let telegram_health = Arc::new(StdMutex::new(notifier::ConnectorHealth::default()));
     if config.connectors.telegram.enabled {
         match notifier::default_secrets_path() {
             Some(path) => match notifier::load_secrets(&path) {
@@ -176,6 +180,7 @@ pub fn run() {
                         secrets,
                         notifier::TELEGRAM_API_BASE.to_string(),
                         notifier::RETRY_DELAY,
+                        telegram_health.clone(),
                     );
                     connector_handles.push(handle);
                     telegram_worker = Some(worker);
@@ -196,6 +201,7 @@ pub fn run() {
         // keeps them deniable to the overlay window (spec §2).
         .invoke_handler(tauri::generate_handler![
             settings::get_config,
+            settings::get_connector_health,
             settings::get_default_config,
             settings::get_secret_status,
             settings::save_config_and_relaunch,
@@ -216,6 +222,7 @@ pub fn run() {
                 initial_queue,
                 app.handle().clone(),
                 connectors.clone(),
+                telegram_health.clone(),
                 espn_enabled,
                 rss_enabled,
                 weather_enabled,
@@ -779,6 +786,7 @@ mod tests {
             SingleSlotQueue::new(50),
             app.handle().clone(),
             Arc::new(Vec::new()),
+            Arc::new(StdMutex::new(notifier::ConnectorHealth::default())),
             false,
             false,
             false,

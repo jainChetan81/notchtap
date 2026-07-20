@@ -14,7 +14,7 @@ use tokio::sync::Mutex;
 
 use crate::error::QueueError;
 use crate::event::{emit_slot_state, Event, SlotState, SourceKind};
-use crate::notifier::ConnectorHandle;
+use crate::notifier::{ConnectorHandle, ConnectorHealth};
 use crate::queue::SingleSlotQueue;
 use crate::status::{
     emit_status_state, status_state_if_changed, LiveMatchSummary, StatusInputs, StatusState,
@@ -32,6 +32,7 @@ pub struct Engine<R: tauri::Runtime = tauri::Wry> {
     wake: Arc<tokio::sync::Notify>,
     app: tauri::AppHandle<R>,
     connectors: Arc<Vec<ConnectorHandle>>,
+    telegram_health: Arc<StdMutex<ConnectorHealth>>,
     live: Arc<StdMutex<Option<LiveMatchSummary>>>,
     weather: Arc<StdMutex<Option<WeatherSummary>>>,
     espn_enabled: bool,
@@ -48,6 +49,7 @@ impl<R: tauri::Runtime> Clone for Engine<R> {
             wake: self.wake.clone(),
             app: self.app.clone(),
             connectors: self.connectors.clone(),
+            telegram_health: self.telegram_health.clone(),
             live: self.live.clone(),
             weather: self.weather.clone(),
             espn_enabled: self.espn_enabled,
@@ -66,6 +68,7 @@ impl<R: tauri::Runtime> Engine<R> {
         queue: SingleSlotQueue,
         app: tauri::AppHandle<R>,
         connectors: Arc<Vec<ConnectorHandle>>,
+        telegram_health: Arc<StdMutex<ConnectorHealth>>,
         espn_enabled: bool,
         rss_enabled: bool,
         weather_enabled: bool,
@@ -75,12 +78,24 @@ impl<R: tauri::Runtime> Engine<R> {
             wake: Arc::new(tokio::sync::Notify::new()),
             app,
             connectors,
+            telegram_health,
             live: Arc::new(StdMutex::new(None)),
             weather: Arc::new(StdMutex::new(None)),
             espn_enabled,
             rss_enabled,
             weather_enabled,
         }
+    }
+
+    /// Read accessor for the telegram connector's delivery health
+    /// (plan 076): the notifier worker writes through the shared `Arc`,
+    /// the settings window's `get_connector_health` command reads it
+    /// here. Unlike `live`/`weather` the `Arc` is passed in — the worker
+    /// lives outside `Engine` and needs a writable clone (same shape as
+    /// `connectors`). Clones the guarded value out; `ConnectorHealth` is
+    /// `Copy`.
+    pub fn telegram_health(&self) -> ConnectorHealth {
+        *self.telegram_health.lock().unwrap()
     }
 
     /// Propagating mutation — async callers (http, settings, pollers).
@@ -371,6 +386,7 @@ mod tests {
             SingleSlotQueue::new(50),
             app.handle().clone(),
             Arc::new(Vec::new()),
+            Arc::new(StdMutex::new(ConnectorHealth::default())),
             true,
             true,
             false,
@@ -439,6 +455,7 @@ mod tests {
             SingleSlotQueue::new(50),
             app.handle().clone(),
             Arc::new(vec![connector]),
+            Arc::new(StdMutex::new(ConnectorHealth::default())),
             true,
             true,
             false,
@@ -467,6 +484,7 @@ mod tests {
             SingleSlotQueue::new(1),
             app.handle().clone(),
             Arc::new(vec![connector]),
+            Arc::new(StdMutex::new(ConnectorHealth::default())),
             true,
             true,
             false,
@@ -619,6 +637,7 @@ mod tests {
             SingleSlotQueue::new(50),
             app.handle().clone(),
             Arc::new(Vec::new()),
+            Arc::new(StdMutex::new(ConnectorHealth::default())),
             true,
             false,
             false,

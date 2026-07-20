@@ -563,4 +563,23 @@ describe("SettingsApp", () => {
       "Football",
     ]);
   });
+
+  it("renders the Telegram delivery-health line from get_connector_health", async () => {
+    // same mock-and-assert shape as the SecretStatus-fetch tests above:
+    // the health fetch is advisory and resolves on its own microtask.
+    mockIPC((command) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "get_connector_health") {
+        return { lastAttemptMs: 1000, lastSuccessMs: 120000, consecutiveFailures: 0 };
+      }
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "Connectors & Keys" }));
+
+    expect(await screen.findByText("Last delivered: 2 min ago")).toBeTruthy();
+  });
 });

@@ -249,7 +249,7 @@ impl IntoResponse for HttpError {
 mod tests {
     use super::*;
     use crate::event::test_fixtures;
-    use crate::notifier::ConnectorHandle;
+    use crate::notifier::{ConnectorHandle, ConnectorHealth};
     use crate::queue::SingleSlotQueue;
     use axum::http::Request;
     use std::sync::Arc;
@@ -270,6 +270,7 @@ mod tests {
                 queue,
                 app.handle().clone(),
                 Arc::new(connectors),
+                Arc::new(std::sync::Mutex::new(ConnectorHealth::default())),
                 true,
                 true,
                 false,

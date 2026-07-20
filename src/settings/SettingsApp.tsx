@@ -78,6 +78,15 @@ export interface SecretStatus {
   telegram_chat_id: string | null;
 }
 
+// Wire shape of get_connector_health (plan 076) — mirrors
+// ConnectorHealthDto in src-tauri/src/settings.rs: elapsed-ms timestamps,
+// not instants.
+export interface ConnectorHealthDto {
+  lastAttemptMs: number | null;
+  lastSuccessMs: number | null;
+  consecutiveFailures: number;
+}
+
 type SecretField = keyof SecretStatus;
 type SectionId =
   | "general"
@@ -992,14 +1001,41 @@ function WeatherSection({
   );
 }
 
+function formatDeliveryAgo(ms: number): string {
+  const minutes = Math.floor(ms / 60000);
+  if (minutes < 1) return "just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  return `${Math.floor(hours / 24)} d ago`;
+}
+
+// Read-only delivery-health line for the Telegram connector (plan 076) —
+// advisory, like the SecretStatus fetch: a failed/unknown fetch renders
+// nothing rather than an error.
+function ConnectorHealthLine({ health }: { health: ConnectorHealthDto | null }) {
+  if (!health) return null;
+  let text: string;
+  if (health.consecutiveFailures > 0) {
+    text = `${health.consecutiveFailures} consecutive failure${health.consecutiveFailures === 1 ? "" : "s"} — check your bot token`;
+  } else if (health.lastSuccessMs !== null) {
+    text = `Last delivered: ${formatDeliveryAgo(health.lastSuccessMs)}`;
+  } else {
+    text = "No deliveries yet.";
+  }
+  return <div className="relaunch-note">{text}</div>;
+}
+
 function ConnectorsSection({
   config,
   secretStatus,
+  connectorHealth,
   patchConfig,
   refreshSecretStatus,
 }: {
   config: Config;
   secretStatus: SecretStatus | null;
+  connectorHealth: ConnectorHealthDto | null;
   patchConfig: (patch: Partial<Config>) => void;
   refreshSecretStatus: () => Promise<void>;
 }) {
@@ -1015,6 +1051,7 @@ function ConnectorsSection({
           onChange={(enabled) => patchConfig({ connectors: { telegram: { enabled } } })}
         />
         <div className="relaunch-note">Config change · applied after relaunch</div>
+        <ConnectorHealthLine health={connectorHealth} />
       </SettingsGroup>
 
       <SettingsGroup
@@ -1341,6 +1378,7 @@ export function SettingsApp() {
   const [lastLoadedConfig, setLastLoadedConfig] = useState<Config | null>(null);
   const [defaults, setDefaults] = useState<Config | null>(null);
   const [secretStatus, setSecretStatus] = useState<SecretStatus | null>(null);
+  const [connectorHealth, setConnectorHealth] = useState<ConnectorHealthDto | null>(null);
   const [espnLeaguesText, setEspnLeaguesText] = useState("");
   const [rssFeedsText, setRssFeedsText] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
@@ -1387,6 +1425,29 @@ export function SettingsApp() {
       });
     return () => {
       active = false;
+    };
+  }, []);
+
+  // Connector health is advisory like get_default_config — fetched on its
+  // own, isolated from the critical panel load, and refreshed on a light
+  // polling interval so a run of drops surfaces without a window reopen.
+  // A failed or unknown fetch leaves the line hidden rather than erroring.
+  useEffect(() => {
+    let active = true;
+    const fetchHealth = () => {
+      invoke<ConnectorHealthDto>("get_connector_health")
+        .then((health) => {
+          if (active && health) setConnectorHealth(health);
+        })
+        .catch(() => {
+          // leave health null — the Telegram section just shows no line
+        });
+    };
+    fetchHealth();
+    const interval = setInterval(fetchHealth, 5000);
+    return () => {
+      active = false;
+      clearInterval(interval);
     };
   }, []);
 
@@ -1513,6 +1574,7 @@ export function SettingsApp() {
                       <ConnectorsSection
                         config={config}
                         secretStatus={secretStatus}
+                        connectorHealth={connectorHealth}
                         patchConfig={patchConfig}
                         refreshSecretStatus={refreshSecretStatus}
                       />

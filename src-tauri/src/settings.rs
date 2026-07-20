@@ -314,6 +314,22 @@ pub struct SecretStatus {
     pub telegram_chat_id: Option<String>,
 }
 
+/// Wire shape for the telegram connector's delivery health (plan 076).
+/// `ConnectorHealth` keeps `Instant`s internal; this DTO converts them to
+/// elapsed-milliseconds-since-now at the boundary (`status.rs` has no
+/// existing Instant-to-wire precedent to mirror — its only `Instant`
+/// uses are in tests). camelCase on the wire, matching status.rs's
+/// convention.
+#[derive(Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ConnectorHealthDto {
+    /// ms since the last send attempt, success or failure
+    pub last_attempt_ms: Option<i64>,
+    /// ms since the last confirmed delivery
+    pub last_success_ms: Option<i64>,
+    pub consecutive_failures: u32,
+}
+
 // ---------------------------------------------------------------------------
 // pure merge + status (unit-tested against in-memory docs)
 // ---------------------------------------------------------------------------
@@ -738,6 +754,22 @@ pub async fn send_test_notification(
     // Settings window rotates out on schedule — plan 015's review
     // follow-up — by construction now, not convention).
     engine.accept(event, true).await.map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn get_connector_health(
+    window: tauri::WebviewWindow,
+    engine: tauri::State<'_, Engine>,
+) -> Result<ConnectorHealthDto, String> {
+    ensure_settings_window(&window)?;
+    let health = engine.telegram_health();
+    let elapsed_ms =
+        |t: std::time::Instant| i64::try_from(t.elapsed().as_millis()).unwrap_or(i64::MAX);
+    Ok(ConnectorHealthDto {
+        last_attempt_ms: health.last_attempt.map(elapsed_ms),
+        last_success_ms: health.last_success.map(elapsed_ms),
+        consecutive_failures: health.consecutive_failures,
+    })
 }
 
 #[tauri::command]
