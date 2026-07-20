@@ -1,0 +1,290 @@
+<!doctype html>
+<!-- Control panel (Settings window) mockup — today's 9-section window including the newest additions: Telegram connector health line (plan 076) and the Diagnostics log viewer (plan 077), which DESIGN.html §06 predates. Visual tokens mirror src/settings/settings.css (--window #050607, --accent #0a84ff, tiny SF Pro Text + ui-monospace). Static: sidebar + the two newest panes; the other seven sections are unchanged since DESIGN.html §06 and noted as such. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>control panel — 9 sections, with connector health + diagnostics</title>
+<style>
+  :root {
+    --bg: #101318; --ink: #e8ecf1; --dim: #8b95a3; --rule: rgba(255,255,255,0.09); --green: #7fe08d;
+    /* settings.css tokens */
+    --window: #050607; --sidebar: #090a0c; --surface: #0d0f12; --surface-raised: #111318;
+    --text: #f1f2f4; --text-secondary: #a2a6ad; --text-muted: #70757d;
+    --divider: #202329; --divider-soft: #17191e; --accent: #0a84ff; --accent-soft: rgba(10,132,255,0.14);
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; padding: 44px 24px 100px; }
+  main { max-width: 860px; margin: 0 auto; }
+  h1 { font-size: 21px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .lede { color: var(--dim); font-size: 13px; line-height: 1.6; max-width: 66ch; margin: 0 0 8px; }
+  .note { font-size: 11.5px; color: var(--dim); border-left: 2px solid var(--rule); padding-left: 10px; margin: 0 0 32px; max-width: 64ch; line-height: 1.6; }
+  code { font-family: ui-monospace, Menlo, monospace; color: #9fc3e8; }
+  section { margin-bottom: 44px; padding-top: 24px; border-top: 1px solid var(--rule); }
+  h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); margin: 0 0 4px; }
+  .section-sub { font-size: 12px; color: var(--dim); margin: 0 0 16px; max-width: 62ch; line-height: 1.5; }
+  .rig-label { font: 700 10px/1 ui-monospace, monospace; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); margin: 0 0 8px; }
+
+  /* ==== window chrome, mirroring settings.css ==== */
+  .window { display: grid; grid-template-columns: 140px minmax(0,1fr); min-height: 480px; background: var(--window); border-radius: 12px; overflow: hidden; box-shadow: 0 1px 0 rgba(255,255,255,0.07) inset, 0 24px 48px rgba(0,0,0,0.5); border: 1px solid var(--divider-soft); }
+  .sidebar { background: var(--sidebar); border-right: 1px solid var(--divider-soft); display: flex; flex-direction: column; padding: 14px 8px 10px; }
+  .brand { display: flex; align-items: center; gap: 7px; padding: 2px 8px 14px; font: 650 12px/1 -apple-system, sans-serif; color: var(--text); }
+  .brand-slot { width: 14px; height: 9px; border-radius: 3px; background: #000; border: 1px solid var(--divider); }
+  .nav { display: flex; flex-direction: column; gap: 1px; flex: 1; }
+  .nav-item { position: relative; display: flex; align-items: center; gap: 7px; padding: 6px 8px; border-radius: 6px; font-size: 10.5px; font-weight: 550; color: var(--text-secondary); }
+  .nav-item .idx { font: 600 7.5px/1 ui-monospace, monospace; color: var(--text-muted); width: 14px; }
+  .nav-item.active { background: var(--accent-soft); color: var(--text); }
+  .nav-item.active::before { content: ""; position: absolute; left: 0; top: 5px; bottom: 5px; width: 2px; border-radius: 1px; background: var(--accent); }
+  .sidebar-meta { padding: 10px 8px 0; border-top: 1px solid var(--divider-soft); font: 600 7.5px/1 ui-monospace, monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+
+  .pane { display: flex; flex-direction: column; min-width: 0; }
+  .pane-scroll { flex: 1; padding: 20px 22px 24px; overflow: hidden; }
+  .pane-kicker { font: 600 8px/1 ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); }
+  .pane h1.pane-title { font-size: 19px; font-weight: 650; margin: 6px 0 4px; color: var(--text); letter-spacing: 0; }
+  .pane-desc { font-size: 10px; color: var(--text-secondary); line-height: 1.5; margin: 0 0 18px; max-width: 58ch; }
+
+  .settings-group { background: var(--surface); border: 1px solid var(--divider-soft); border-radius: 8px; margin-bottom: 14px; overflow: hidden; }
+  .group-heading { padding: 10px 14px 8px; font-size: 11px; font-weight: 640; color: var(--text); border-bottom: 1px solid var(--divider-soft); }
+  .group-desc { font-size: 8.5px; font-weight: 400; color: var(--text-muted); margin-top: 2px; }
+  .control-row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 12px; min-height: 46px; padding: 8px 14px; }
+  .control-row + .control-row { border-top: 1px solid var(--divider-soft); }
+  .control-name { font-size: 10px; font-weight: 590; color: var(--text); }
+  .control-help { font-size: 8.5px; color: var(--text-muted); margin-top: 2px; line-height: 1.45; }
+  .relaunch-note { font: 600 7.5px/1.6 ui-monospace, monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+  .health-ok { color: #7dc98a; }
+  .health-bad { color: #d6a1a5; }
+
+  .switch { width: 32px; height: 19px; border-radius: 999px; background: #60656d; position: relative; flex: none; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; }
+  .switch.on { background: #60656d; }
+  .switch.on::after { left: 15px; }
+
+  .secret-row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 12px; min-height: 46px; padding: 8px 14px; }
+  .secret-row + .secret-row { border-top: 1px solid var(--divider-soft); }
+  .status-chip { display: inline-block; margin-left: 6px; padding: 2px 6px; border-radius: 999px; font: 600 7.5px/1 ui-monospace, monospace; letter-spacing: 0.06em; color: var(--text-muted); background: var(--surface-raised); border: 1px solid var(--divider); }
+  .status-chip.is-set { color: var(--text-secondary); }
+  .secret-controls { display: flex; gap: 6px; align-items: center; }
+  .secret-input { width: 150px; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--divider); background: var(--surface-raised); color: var(--text); font: 400 10px/1 ui-monospace, monospace; }
+  .secondary-button { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--divider); background: var(--surface-raised); color: var(--text-secondary); font: 590 9.5px/1 -apple-system, sans-serif; }
+  .secondary-button:disabled { opacity: 0.4; }
+
+  .log-view { margin: 0; max-height: 300px; overflow: auto; padding: 12px; background: rgba(0,0,0,0.25); border-radius: 8px; font: 400 10px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-secondary); user-select: text; white-space: pre-wrap; }
+  .log-view .ts { color: var(--text-muted); }
+  .log-view .lvl-err { color: #d6a1a5; }
+  .log-view .lvl-info { color: #8fb8e8; }
+
+  .settings-footer { display: flex; align-items: center; gap: 8px; padding: 12px 22px; border-top: 1px solid var(--divider-soft); background: var(--window); }
+  .primary-button { padding: 7px 14px; border-radius: 7px; border: none; background: var(--accent); color: #fff; font: 590 10.5px/1 -apple-system, sans-serif; }
+  .footer-button { padding: 7px 12px; border-radius: 7px; border: 1px solid var(--divider); background: transparent; color: var(--text-secondary); font: 590 10.5px/1 -apple-system, sans-serif; }
+  .footer-button:disabled { opacity: 0.4; }
+  .footer-spacer { flex: 1; font: 600 7.5px/1 ui-monospace, monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); text-align: right; }
+
+  .variants { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
+  .variant-card { background: var(--surface); border: 1px solid var(--divider-soft); border-radius: 8px; padding: 10px 12px; }
+  .variant-title { font: 600 7.5px/1 ui-monospace, monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+
+  footer.page-foot { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 11.5px; color: var(--dim); line-height: 1.6; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Control panel — the 9-section window, current state</h1>
+  <p class="lede">
+    The Settings window as it exists <b>today</b>, including the two
+    additions DESIGN.html §06 predates: the Telegram
+    <b>connector health</b> line (plan 076) and the
+    <b>Diagnostics</b> log viewer (plan 077). Sections 01–05, 07 and 08
+    are unchanged since DESIGN.html's control-panel section — only the
+    two new surfaces are drawn out here, plus the sidebar so the
+    section order is on record.
+  </p>
+  <p class="note">
+    Tokens mirror <code>src/settings/settings.css</code>: window
+    <code>#050607</code>, sidebar <code>#090a0c</code>, accent
+    <code>#0a84ff</code> (system blue, used sparingly — Save is the
+    only accent fill in the window), tiny SF Pro Text with ui-monospace
+    for numbers and chips. Sidebar order and labels are verbatim from
+    <code>SettingsApp.tsx</code>.
+  </p>
+
+  <section>
+    <h2>06 — Connectors &amp; Keys, with health line</h2>
+    <p class="section-sub">
+      The Telegram group now answers "is it actually working?" in one
+      read-only line under the enable toggle — polled every 5s via
+      <code>get_connector_health</code>, hidden entirely if the fetch
+      fails. All three states drawn below.
+    </p>
+    <div class="rig-label">Connectors &amp; Keys pane — health: delivering</div>
+    <div class="window">
+      <div class="sidebar">
+        <div class="brand"><span class="brand-slot"></span>notchtap</div>
+        <div class="nav">
+          <div class="nav-item"><span class="idx">01</span>General</div>
+          <div class="nav-item"><span class="idx">02</span>Football</div>
+          <div class="nav-item"><span class="idx">03</span>News</div>
+          <div class="nav-item"><span class="idx">04</span>Cmux</div>
+          <div class="nav-item"><span class="idx">05</span>Weather</div>
+          <div class="nav-item active"><span class="idx">06</span>Connectors &amp; Keys</div>
+          <div class="nav-item"><span class="idx">07</span>Shortcuts</div>
+          <div class="nav-item"><span class="idx">08</span>Appearance</div>
+          <div class="nav-item"><span class="idx">09</span>Diagnostics</div>
+        </div>
+        <div class="sidebar-meta">settings / v5</div>
+      </div>
+      <div class="pane">
+        <div class="pane-scroll">
+          <span class="pane-kicker">Settings / 06</span>
+          <h1 class="pane-title">Connectors &amp; Keys</h1>
+          <p class="pane-desc">Outbound connectors and their write-only credentials. Keys are never read back across IPC — you can only replace them.</p>
+
+          <div class="settings-group">
+            <div class="group-heading">Telegram<div class="group-desc">Forward accepted events to a Telegram chat.</div></div>
+            <div class="control-row">
+              <div>
+                <div class="control-name">Enable connector</div>
+                <div class="control-help">Forward every accepted event after Save &amp; Relaunch.</div>
+              </div>
+              <span class="switch on"></span>
+            </div>
+            <div class="control-row">
+              <div>
+                <span class="relaunch-note">Config change · applied after relaunch</span><br>
+                <span class="relaunch-note health-ok">Last delivered: 2 min ago</span>
+              </div>
+            </div>
+          </div>
+
+          <div class="settings-group">
+            <div class="group-heading">Write-only keys<div class="group-desc">Values never come back across IPC.</div></div>
+            <div class="secret-row">
+              <div><span class="control-name">OpenRouter API key</span><span class="status-chip">unset</span></div>
+              <div class="secret-controls"><input class="secret-input" type="password" placeholder="Enter a new key"><button class="secondary-button" disabled>Save</button></div>
+            </div>
+            <div class="secret-row">
+              <div><span class="control-name">Telegram bot token</span><span class="status-chip is-set">…9f3a</span></div>
+              <div class="secret-controls"><input class="secret-input" type="password" placeholder="Enter a replacement token"><button class="secondary-button" disabled>Save</button></div>
+            </div>
+            <div class="secret-row">
+              <div><span class="control-name">Telegram chat ID</span><span class="status-chip is-set">…4217</span></div>
+              <div class="secret-controls"><input class="secret-input" type="password" placeholder="Enter a new chat ID"><button class="secondary-button" disabled>Save</button></div>
+            </div>
+          </div>
+        </div>
+        <div class="settings-footer">
+          <button class="primary-button">Save &amp; Relaunch</button>
+          <button class="footer-button">Reset</button>
+          <button class="footer-button">Reset to defaults</button>
+          <span class="footer-spacer">write-only · receive-only overlay</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="rig-label" style="margin-top:22px;">The three health states, side by side</div>
+    <div class="variants">
+      <div class="variant-card">
+        <div class="variant-title">Failing</div>
+        <span class="relaunch-note">Config change · applied after relaunch</span><br>
+        <span class="relaunch-note health-bad">3 consecutive failures — check your bot token</span>
+      </div>
+      <div class="variant-card">
+        <div class="variant-title">Delivering</div>
+        <span class="relaunch-note">Config change · applied after relaunch</span><br>
+        <span class="relaunch-note health-ok">Last delivered: 2 min ago</span>
+      </div>
+      <div class="variant-card">
+        <div class="variant-title">Never sent</div>
+        <span class="relaunch-note">Config change · applied after relaunch</span><br>
+        <span class="relaunch-note">No deliveries yet.</span>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>09 — Diagnostics</h2>
+    <p class="section-sub">
+      The newest sidebar section (plan 077): a read-only tail of the
+      active log file — last 200 lines of
+      <code>~/Library/Logs/notchtap/notchtap.log</code>, fetched when the
+      section opens, manual Refresh, no live tail. Tokens are already
+      redacted at write time by the notifier.
+    </p>
+    <div class="rig-label">Diagnostics pane</div>
+    <div class="window">
+      <div class="sidebar">
+        <div class="brand"><span class="brand-slot"></span>notchtap</div>
+        <div class="nav">
+          <div class="nav-item"><span class="idx">01</span>General</div>
+          <div class="nav-item"><span class="idx">02</span>Football</div>
+          <div class="nav-item"><span class="idx">03</span>News</div>
+          <div class="nav-item"><span class="idx">04</span>Cmux</div>
+          <div class="nav-item"><span class="idx">05</span>Weather</div>
+          <div class="nav-item"><span class="idx">06</span>Connectors &amp; Keys</div>
+          <div class="nav-item"><span class="idx">07</span>Shortcuts</div>
+          <div class="nav-item"><span class="idx">08</span>Appearance</div>
+          <div class="nav-item active"><span class="idx">09</span>Diagnostics</div>
+        </div>
+        <div class="sidebar-meta">settings / v5</div>
+      </div>
+      <div class="pane">
+        <div class="pane-scroll">
+          <span class="pane-kicker">Settings / 09</span>
+          <h1 class="pane-title">Diagnostics</h1>
+          <p class="pane-desc">The last 200 lines of ~/Library/Logs/notchtap/notchtap.log. Read-only; rotated backups are available via Console.app.</p>
+
+          <div class="settings-group">
+            <div class="group-heading">Recent log lines</div>
+            <div style="padding:12px 14px;">
+              <pre class="log-view"><span class="ts">2026-07-20T14:28:11Z</span> <span class="lvl-info">INFO</span> engine: accepted event src=rss priority=low topic=none
+<span class="ts">2026-07-20T14:28:11Z</span> <span class="lvl-info">INFO</span> engine: promoted id=01J…e4 tier=low slot=visible
+<span class="ts">2026-07-20T14:28:14Z</span> <span class="lvl-info">INFO</span> espn_poller: match 6849211 score 2-1 clock 78'
+<span class="ts">2026-07-20T14:28:14Z</span> <span class="lvl-info">INFO</span> engine: accepted event src=espn priority=high topic=espn:uefa.champions:6849211
+<span class="ts">2026-07-20T14:28:14Z</span> <span class="lvl-info">INFO</span> engine: superseded topic=espn:uefa.champions:6849211
+<span class="ts">2026-07-20T14:28:15Z</span> <span class="lvl-info">INFO</span> notifier: telegram delivered in 412ms
+<span class="ts">2026-07-20T14:29:02Z</span> <span class="lvl-err">WARN</span> weather_poller: open-meteo 502, retrying next interval</pre>
+              <div class="control-row" style="border-top:none; padding-left:0; padding-right:0; min-height:38px;">
+                <div class="control-help">Fetched on section open — no live tail.</div>
+                <button class="secondary-button">Refresh</button>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="settings-footer">
+          <button class="primary-button">Save &amp; Relaunch</button>
+          <button class="footer-button">Reset</button>
+          <button class="footer-button">Reset to defaults</button>
+          <span class="footer-spacer">write-only · receive-only overlay</span>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Sections not re-drawn here</h2>
+    <p class="section-sub">
+      01 General (engine / rotation &amp; priority / rotation-order
+      list), 02 Football, 03 News, 04 Cmux, 05 Weather — all form
+      sections using the same toggle / number-field-with-unit /
+      priority-toggle controls; 07 Shortcuts (6-row cheatsheet with
+      raised kbd caps, all <code>active</code>); 08 Appearance (card
+      shape segmented controls + live preview rendering the real
+      StatusRailCard, plus per-source test buttons). These are
+      documented in DESIGN.html §06 and unchanged. One watch-out for
+      whoever touches card visuals next: the Appearance preview renders
+      the real <code>StatusRailCard</code> through
+      <code>src/settings/preview-overlay.css</code>, a scoped mirror of
+      <code>src/styles.css</code> — any 079 card change must update
+      both in the same commit (DESIGN.html Law #7).
+    </p>
+  </section>
+
+  <footer class="page-foot">
+    Open control-panel items on record: plan 059 (notification history —
+    would add a 10th sidebar section, privacy decision unresolved, P3
+    spike), plan 068 (test-notification coverage — Rust tests only, no
+    UI), plan 071 (docs truth pass — test counts). Everything else
+    settings-related is shipped.
+  </footer>
+</main>
+</body>
+</html>

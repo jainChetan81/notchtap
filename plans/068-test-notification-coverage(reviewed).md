@@ -8,9 +8,14 @@
 > maintain the index.
 >
 > **Drift check (run first)**: `git diff --stat f6c2f46..HEAD -- src-tauri/src/settings.rs`
-> If the file changed since this plan was written, compare the "Current
-> state" excerpt against the live code before proceeding; on a mismatch,
-> treat it as a STOP condition.
+> **This WILL show changes** — plans 066 (`cmux_ttl_secs` validation) and
+> 076 (Telegram connector health: `ConnectorHealthDto`/
+> `get_connector_health`) have both landed since planning, both inserted
+> *before* `build_test_event` in the file. That's expected and already
+> accounted for in the citations below (564/749, not the original
+> 542/727) — not a STOP condition on its own. Only treat this as a STOP
+> condition if `build_test_event`'s or `send_test_notification`'s own
+> content differs from what's quoted below, not just their line numbers.
 
 ## Status
 
@@ -35,6 +40,13 @@
   would hunt for a field that doesn't exist. Step 2 is corrected below
   with the verified real field names for all 5 branches, so nothing is
   left to guess.
+- **Second review-plan pass (2026-07-20, same day)**: re-verified drift
+  — plans 066 and 076 landed *after* the first pass (which had correctly
+  found zero drift at the time), shifting `build_test_event` from
+  `settings.rs:542` to `:564` and `send_test_notification` from `:727-741`
+  to `:749-763`. Confirmed both functions' actual content is still
+  byte-identical to what this plan already quotes — pure line-number
+  drift, not a content change. Fixed both citations below.
 
 ## Why this matters
 
@@ -60,7 +72,7 @@ button in the Settings window and eyeballing the result.
 
 ## Current state
 
-- `src-tauri/src/settings.rs:542-...` — `build_test_event`, a
+- `src-tauri/src/settings.rs:564-...` — `build_test_event`, a
   `match source { ... }` over `SourceKind` (Football shown; read the full
   function yourself — it has one arm per `SourceKind` variant, so 5
   branches total after plan 040 added `Weather`):
@@ -89,7 +101,7 @@ button in the Settings window and eyeballing the result.
   }
   ```
 
-- `src-tauri/src/settings.rs:727-741` — `send_test_notification`, the
+- `src-tauri/src/settings.rs:749-763` — `send_test_notification`, the
   command that calls it:
 
   ```rust

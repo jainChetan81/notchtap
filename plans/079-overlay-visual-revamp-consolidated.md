@@ -1,4 +1,4 @@
-# Plan 079: Full overlay-card visual revamp — consolidated decision session (supersedes 043, 054, 055, 056, 060)
+# Plan 079: Full overlay-card visual revamp — consolidated decision session (supersedes 043, 054, 055, 056, 057, 060)
 
 > **Executor instructions**: This is a pure decision-gathering plan — no
 > code changes described anywhere in this file, **except** the confirmed
@@ -7,8 +7,8 @@
 > execute any *display* work here until every item in "Decision needed"
 > below has been resolved by the operator in a dedicated `/grilling`
 > session against this file. This plan supersedes plans 043, 054, 055,
-> 056, and 060 — do not execute those files separately; their content is
-> folded into the topic list below.
+> 056, 057, and 060 — do not execute those files separately; their
+> content is folded into the topic list below.
 
 ## Status
 
@@ -27,6 +27,16 @@
   retention decision, not a visual one; if it's ever built, its browse
   view would want this plan's visual language)
 - **Category**: direction
+
+## Data-source context folded in from plan 057
+
+Plan 057 ("evaluate a paid sports API, e.g. Sportmonks, as an ESPN
+alternative") is superseded into this file too — not because it's a
+visual decision itself, but because several topics below (3, 4, 6, 13)
+assume ESPN as the data source, and ESPN's endpoint is undocumented/
+best-effort (the same fact that's why plan 043 needed a fallback chain,
+not a single request). No paid provider has ever been evaluated in this
+repo. See item 15.
 
 ## Why this matters
 
@@ -93,21 +103,124 @@ These came up during today's conversation and don't need to be re-asked:
   **ready to execute independently** of any display decision below — see
   item 6a.
 
-## Decision needed (operator) — full topic list for the dedicated session
+## Running decision record (updated live as this session's `/grilling` continues)
 
-1. **Card shape/positioning**: keep today's flush-hanging, rounded-
-   bottom-only shape (`position_window`'s deliberate `y: 0.0` anchor,
-   `lib.rs`) or switch to floating-with-a-gap, fully-rounded (the
-   reference image) — the bigger of the two, since it touches every
-   card state's shared `.rail-card` base class and the one window-
-   positioning line the code comments call out as deliberate.
+- **Item 1 (card shape) — LOCKED, 2026-07-20, superseded twice more since
+  the paragraph below was first written (kept for history; see the final
+  shape after it)**: neither original option. A continuous/attached
+  shape: a "neck" (the real notch in notch mode; a synthetic app-drawn
+  cap in HUD mode, matching fill, zero gap) flows directly into the card
+  body below, rounded-bottom only — same family as today's shape, just
+  composed with a neck in *both* modes now. Reference: confirmed via
+  search that real macOS notch-utility apps
+  ([Boring Notch](https://theboring.name/),
+  [NotchNook](https://www.macworld.com/article/2406934/notfhnook-macbook-dynamic-island-widgets-files-tray.html))
+  do exactly this — neither draws literally under the physical notch
+  (macOS reserves that pixel region), they extend a matching black shape
+  continuously outward from it instead. An initial "floating with a
+  gap" version was tried and explicitly rejected — the gap read as
+  disconnected ("hanging").
+  - **Final shape (2026-07-20, after two more operator-photo rounds)**:
+    the notch's own rectangle is a **permanent cutout** — never touched
+    by app content in any state, not even the neck concept above. Built
+    as three plain blocks (not clip-path, which silently clips
+    overflowing children like the clock pill first tried): `.flank-left`
+    / `.flank-right` sit either side of the cutout at the notch's own
+    height, `.below-block` (when present) carries everything under that
+    row, full width. Rounding is minimal and precise: the cutout's own
+    base corners stay perfectly **square** (a plain sharp bite, per a
+    real-photo correction — rounding the cutout's corners independently
+    of the flanking blocks' corners left a visible gap where the two
+    curves didn't meet); rounding exists **only** at the two true outer
+    ends of the whole visible shape (whichever block is actually at the
+    bottom — the flank blocks in the idle state, `.below-block` when one
+    exists). Card fill is pure `#000`, matching the real hardware notch
+    exactly (confirmed via a real macOS photo — not a semi-transparent
+    near-black). This shape is unconditional across both modes now — no
+    remaining notch-mode/HUD-mode branch in the mockup at all.
+  - **New idle content (supersedes item 2's original framing)**: not
+    day+time+text-pills. Just the time on one flanking side, three
+    status dots (Football=green/News=red/Weather=yellow, glow when
+    active, dim flat when disabled) on the other — operator-confirmed as
+    "nailed." The original idle-view's day-progress **timeline slider**
+    (`.idle-view .timeline`, `styles.css`) has no home in this new layout
+    yet — open, see item 18 below.
+  - **Three states, not one**: collapsed (bare cutout, no card at all —
+    the future hide-when-idle resting state, item 17), idle (time+dots,
+    above), and expanded-on-hover — which itself dropped a first attempt
+    at dense per-source status rows (too slow to parse) in favor of a
+    simple flat weather-mood background scene (three example moods
+    built: rainy night, overcast rain, sunny — CSS gradients + blob
+    shapes, static per operator instruction, real SVG/image art to come
+    later, explicitly not Lottie for now) with just temp+condition
+    overlaid.
+  - **Scope check against `DESIGN.html`'s real component table (§03),
+    2026-07-20**: everything above only covers the **idle state** and
+    **one specific card** (the live-match scorecard, crests+score+clock
+    pill in the flanking row). The general **compact card** used for
+    every other notification — `.compact::before` (the 3px priority
+    accent edge), `.stamp` (status word), `.compact-hint` (⌃⇧N hint),
+    `.track` (queue-progress slider) — and the entire **expanded**
+    `.manifest` view have **not** been touched by the new shape at all.
+    Added as items 18-19 below so this doesn't get lost.
+- **Item 3 (team identification) — LOCKED, 2026-07-20**: real club
+  crests, not flags or text badges. Checked a real ESPN fixture
+  (`src-tauri/tests/fixtures/scoreboard-esp.1.json`): flags don't apply
+  semantically since this app's 3 configured leagues (`league_label` in
+  `poller.rs`) are all club competitions, not national teams. ESPN's
+  response for every one of those leagues already includes a direct
+  `team.logo` URL — no new data source needed, just parsing one more
+  field already present in a response already being fetched. Rust still
+  needs to fetch-and-embed that URL (frontend has no network access);
+  the *discovery* cost, not the plumbing cost, is what dropped to zero.
+- **Item 15 (data source) — LOCKED, 2026-07-20**: stick with ESPN. Plan
+  057's evaluation is closed, not deferred further.
+- **New reference target**: NotchNook's interaction language (hover-to-
+  expand from a minimal idle state, now-playing-style layout) is now the
+  explicit visual/interaction reference for the rest of this session —
+  not to replace notchtap (NotchNook has no plugin/API story for custom
+  notification sources — searched, found none — so it can't ingest the
+  `/notify` endpoint, ESPN scores, RSS news, weather, Telegram, or the
+  cmux relay that's this app's actual reason for existing), but its
+  *shell* conventions are worth matching much more closely than the
+  first two mockup rounds did.
+
+## Effort triage (2026-07-20, operator asked for a build-cost breakdown before continuing)
+
+Grouped by actual implementation cost, not decision complexity — a few
+"easy to decide" items (e.g. item 17) are among the biggest to build:
+
+- **Small — CSS/component restyle only, no new plumbing**: item 1 (card
+  shape, locked above), item 2 (idle typography), item 5's pure layout
+  (bigger score element, clock pill, gradient edge — assuming the data
+  behind it already exists), item 10 (bottom-row pills), item 11 (pause
+  indicator), item 14 (staleness tweaks).
+- **Medium — real but bounded new backend work**: item 3 (real crests —
+  rust gets the `team.logo` URL for free per the lock above, but still
+  needs to fetch the image bytes, embed them since the frontend has no
+  network access, decide caching so the same team's logo isn't refetched
+  every poll, and a text-abbreviation fallback if the fetch fails), item
+  4 (live-match wire shape — a small rust type change), item 6 (event
+  icon set — a handful of new icon assets + mapping logic).
+- **Big — flagged explicitly, not to be casually folded into a restyle
+  pass**: item 16 (now-playing/media controls) is the bigger of the two
+  big items — macOS has no public API for this, so it needs a new Swift
+  helper subprocess (same architectural pattern as `notchtap-detect`,
+  `docs/ARCHITECTURE.md` §5) talking to the undocumented `MediaRemote`
+  framework, comparable in scope to building the ESPN poller was. Item
+  17 (hide-when-idle/reveal-on-hover) is a real interaction-model change
+  (hover detection, window resize-on-hover, reconciling with "does a
+  High-priority alert still force itself visible while hidden") — not a
+  style question.
+- **Operator direction (2026-07-20)**: proceed with prototyping the
+  small/medium items now (continuous notch shape, crest-based
+  scorecard, typography). Items 16 and 17 are deferred as their own
+  future build efforts, not kept in the active mockup-iteration loop.
+
+## Decision needed (operator) — remaining topics for the dedicated session
+
 2. Idle clock/day-row typography scale (bold time, day-of-week
    treatment).
-3. **Team identification** across every surface that shows a team: text
-   abbreviation badges (today's session direction), flags (plan 056's
-   original proposal), real crest images (needs new rust plumbing +
-   licensing call), or keep today's plain text. One decision, applied
-   everywhere teams appear.
 4. Live-match wire shape: confirm structured fields (league, home/away
    abbrev, home/away score, minute) over one joined string, once 043's
    real data shape is available to design against.
@@ -154,24 +267,83 @@ These came up during today's conversation and don't need to be re-asked:
 14. Staleness/age indicators — confirm whether today's shipped
     `ageLabel`/pill treatment (plan 032) extends into the new visual
     language as-is or needs its own restyle pass.
+15. ~~**Data source**~~ — **LOCKED**, see running decision record above.
+16. **Now-playing / media controls** — a genuinely new source type
+    (alongside Football/News/Weather/Cmux today), directly inspired by
+    NotchNook. Real caveat before committing: macOS has no public,
+    documented API for system-wide now-playing metadata — NotchNook and
+    similar apps lean on the undocumented, semi-private `MediaRemote`
+    framework. Buildable, but worth deciding with that dependency risk
+    named up front, not discovered mid-build.
+17. **Hide-when-idle, reveal-on-hover** — not a visual decision, a real
+    interaction-model change. Today's overlay is explicitly architected
+    as a "permanent rotating overlay" (`CLAUDE.md`'s v3.6 description) —
+    always visible, no idle-hide state. Switching to hover-to-reveal
+    means deciding whether that permanence guarantee still holds, and if
+    not, what replaces it (e.g. does a High-priority alert still force
+    itself visible even while "hidden"?) — needs its own explicit
+    decision, not an assumption that it comes free with a restyle.
+    - **Bigger than previously scoped (found 2026-07-20, checking the
+      real code while exploring hover mockups)**: `apply_overlay_native_config`
+      (`src-tauri/src/lib.rs:530-540`) calls
+      `window.set_ignore_cursor_events(true)` **unconditionally, on the
+      entire window** — not scoped to the notch area, everywhere. The
+      comment explains why: without it, the window (which sits flush
+      over the real menu bar) swallows clicks meant for other apps'
+      menu-bar icons underneath it (the exact 2026-07-17 bug this line
+      fixed). Net effect: **no hover or mouse interaction works
+      anywhere on the real shipped window today**, not just over the
+      notch's dead zone — this is deliberate, not an oversight. Any
+      hover-to-reveal design (including the state-model demo built this
+      session) needs real re-engineering to make live: almost certainly
+      tracking actual cursor position and toggling
+      `ignore_cursor_events` on/off dynamically only while the cursor is
+      within the card's current rendered bounds, or the original
+      icon-swallowing bug comes back. This is additive to, not a
+      replacement for, the effort-triage note above — item 17 is bigger
+      than "big," it touches this specific native-config function
+      directly.
+18. **Timeline/day-progress slider** — today's idle view has a thin
+    horizontal line with a moving dot showing progress through the day
+    (`.idle-view .timeline`, `styles.css`). The new time+dots idle layout
+    dropped it entirely with nowhere obvious for it to live. Decide:
+    bring it back (where?), fold it into the expanded state instead, or
+    drop it for good.
+19. **The general compact card + expanded manifest view** — everything
+    built so far covers only idle and the live-match scorecard. The
+    accent edge (`.compact::before`, priority color), the stamp word
+    (`.stamp`), the `⌃⇧N` hint (`.compact-hint`), the queue-progress
+    slider (`.track`), and the entire expanded `.manifest` detail grid
+    all still use today's pre-redesign visual language and haven't been
+    reconciled with the new notch-cutout shape at all. This is the
+    biggest remaining gap — most notifications a user actually sees
+    (not live matches) go through this path, not the one path that's
+    been mocked up.
 
 ## Recommendation
 
-Run one dedicated `/grilling` session against this file covering all 14
-topics above, in the same style as today's plan 063 session (one
-decision at a time, recommendation-first, facts looked up rather than
-asked). Produce a single locked decision record before any execution
-plan gets written — do not start building any one surface (e.g. just the
-scorecard) ahead of the others, since several topics (team ID, asset
-sourcing, bottom-row shape) are shared decisions that apply across
-multiple cards and would need re-litigating per-surface otherwise.
+Run one dedicated `/grilling` session against this file covering the
+remaining topics (2, 4-14, 16-19 — items 1/3/15 are already locked, see
+above), in the same style as today's plan 063 session (one decision at a
+time, recommendation-first, facts looked up rather than asked). Produce
+a single locked decision record before any execution plan gets written —
+do not start building any one surface (e.g. just the scorecard) ahead of
+the others, since several topics (asset sourcing, bottom-row shape) are
+shared decisions that apply across multiple cards and would need
+re-litigating per-surface otherwise. Item 17 (hide-when-idle) is worth
+resolving early, since a "yes" answer changes the baseline every other
+item's mockups get built against. Item 19 (the general compact card +
+manifest view) is the single biggest remaining gap by user-facing
+impact — most real notifications go through that path, not the
+live-match path that's been the focus of the mockups so far.
 
 ## Maintenance notes
 
-- Plans 043, 054, 055, 056, 060 are marked `SUPERSEDED by 079` in
+- Plans 043, 054, 055, 056, 057, 060 are marked `SUPERSEDED by 079` in
   `plans/README.md` — their content is fully represented in this file
   (043's confirmed backend research lives in the Session-0 record and
-  item 6a above); do not execute those files separately.
+  item 6a above; 057's evaluation question lives in item 15); do not
+  execute those files separately.
 - Plan 059 is **not** superseded — persisting/browsing notification
   history is a privacy/retention decision first; only its eventual
   browse-view styling would draw on this plan.

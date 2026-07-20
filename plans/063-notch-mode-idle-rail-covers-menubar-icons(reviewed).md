@@ -1,21 +1,34 @@
-# Plan 063: SPIKE — idle status rail (460px) overlaps other apps' menu bar icons in notch mode
+# Plan 063: idle status rail (460px) overlaps other apps' menu bar icons in notch mode
 
-> **Executor instructions**: Decision spike. Do not ship a guessed width
-> without operator sign-off — the whole point of this plan is that no
-> width is safe for every notch size / menu-bar icon count combination.
+> **Executor instructions**: The decision is **locked** (see "Grilling
+> session resolved" below, 2026-07-20) — do not re-litigate Options 1-3
+> in "Decision needed"; that section and "Recommendation" right after it
+> are **superseded**, kept only as background context for why the locked
+> decision looks the way it does. Read "Grilling session resolved" as
+> the authoritative scope. **This plan does not yet have a Steps/Scope/
+> Test-plan/Done-criteria section** — see the third review-plan pass note
+> in Status below for what's still missing before this is fully
+> execution-ready; don't treat the absence of those sections as
+> permission to improvise the implementation shape yourself.
 
 ## Status
 
 - **Priority**: P1 — this actively obscures other apps' functional menu
   bar icons on real hardware, not a cosmetic nit.
-- **Effort**: S (decision) / S (build, once decided)
+- **Effort**: M (build) — decision is locked (was "S decision / S build,
+  once decided" while still a spike; the locked mechanic — flex-wrap
+  layout change, new rust→frontend plumbing for two facts, ellipsis
+  truncation, shared-channel coordination with plan 060 — is bigger than
+  the original "S build" estimate assumed a simple width cap would be)
 - **Risk**: MED — same notch-mode-needs-hardware-verification caution as
   plan 060, but here the current behavior is already confirmed broken
   (operator screenshot on the MacBook), not just theoretically risky.
 - **Depends on**: none (sibling to plan 060 — that one covers the
-  notchless/HUD-mode top-spacing collision; this one is the
-  notch-mode-specific menu-bar-icon overlap, a different failure mode of
-  the same underlying "one CSS width for every screen" gap)
+  notchless/HUD-mode top-spacing collision and consumes this plan's
+  `__NOTCHTAP_MODE__` channel once it lands; this plan ships first).
+  Plan 079 (overlay visual revamp) explicitly depends on *this* plan
+  shipping first — its own "current state" baseline is this plan's
+  shipped result, not a redo.
 - **Category**: bug / direction
 - **Planned at**: commit `40b4b0e`, 2026-07-19 — filed from an operator
   screenshot on the MacBook (real notch hardware): the idle rail's chip
@@ -54,6 +67,52 @@
   plan), so whoever builds 060 first knows a second consumer of the same
   mode-plumbing is coming and can build one shared channel instead of
   two single-purpose ones.
+- **Second review-plan pass (2026-07-20, same day)**: re-verified drift
+  after further concurrent landings elsewhere in the repo (plan 076).
+  This plan's actual citations are unaffected: `styles.css`,
+  `presentation.rs`, and `tauri.conf.json` (its primary evidence) show
+  zero diff since planning; `lib.rs:590-600` (the monitor-bounds
+  fallback comment, the one `lib.rs` citation this plan makes) is still
+  byte-identical despite `lib.rs` gaining +8 lines elsewhere from plan
+  076 — all five insertion points land either before or after the cited
+  range in a way that doesn't shift it. Also cross-checked the shared
+  `window.__NOTCHTAP_MODE__`/`__NOTCHTAP_CUTOUT_WIDTH__` channel naming
+  against plan 060's copy — still exactly consistent, no divergence. No
+  new issues found this pass; the plan is unchanged from the first pass.
+- **Third review-plan pass (2026-07-20, same day)**: substantial change
+  since the second pass — a concurrent `/grilling` session added the
+  "Grilling session resolved" section below, locking a real decision
+  (a hybrid mechanic none of the original 3 options fully described:
+  `flex-wrap` on `.src-rail` instead of a single-row width cap,
+  zero-margin `CutoutGeometry.width` as the notch-mode cap, ellipsis
+  truncation for the live-match chip, no visual restyle) and filing a
+  new sibling, plan 079. This left the file self-contradictory: the
+  banner still said "decision spike," the Status block still said
+  "S (decision)," and "Decision needed"/"Recommendation" below still
+  presented the 3 options as open — while the locked section below them
+  said the decision was already made and described a mechanic the
+  options never listed. Fixed: banner and Status updated to reflect the
+  locked state; "Decision needed"/"Recommendation" marked superseded
+  below. Verified the locked decision's own technical claims directly:
+  `.src-rail` (`styles.css:488-493`) confirmed to have no `flex-wrap`
+  today (real, needed work, not already-present); `.rail-card`
+  (`styles.css:22-36`) confirmed to have no fixed height (auto-sizes to
+  content, supporting the "grows downward" claim); plan 079 confirmed to
+  reference this plan correctly and bidirectionally. Found one small
+  imprecision, fixed in place below: the claim that 270px covers both
+  "`notchtap-detect` fails" and "reports `width: 0`" as if they were two
+  cases — they're the same case. `presentation.rs`'s `cutout()`
+  (`presentation.rs:52-63`) already normalizes `cutout_width <= 0.0` to
+  `None` before this plan's code would ever see it, so there is no
+  `Some(CutoutGeometry { width: 0.0, .. })` to additionally handle.
+  **Biggest remaining gap, not fixed this pass**: the locked decision has
+  no Scope/Steps/Test-plan/Done-criteria section at all — it reads as a
+  design decision, not yet an executable plan. Flagged prominently in
+  the banner rather than drafted here, since specifying it properly
+  (exact wrap-height CSS, the precise eval-splice code shape, IdleView.tsx's
+  exact chip-rendering structure) is real, substantial work in its own
+  right — recommend a follow-up `plan` pass (not another `review-plan`
+  pass) to write those sections before this is handed to an executor.
 
 ## Why this matters
 
@@ -91,7 +150,14 @@ that's a real usability regression, not a style preference.
   `resizable: false`); card width is a CSS-only concern layered inside
   that fixed canvas via `margin: 0 auto`.
 
-## Decision needed (operator)
+## Decision needed (operator) — SUPERSEDED, kept for background only
+
+> The three options below were superseded by the `/grilling` session
+> recorded in "Grilling session resolved" further down — that section
+> locked a hybrid mechanic none of these three fully describe. Read this
+> section only to understand *why* the locked decision looks the way it
+> does (e.g. why wrapping beat a pure width cap); do not implement any
+> of Options 1-3 as written.
 
 All three options below are notch-mode-specific behavior — none of them
 is a pure CSS-only change. The frontend has **zero** notch-vs-HUD mode
@@ -145,7 +211,7 @@ scope. Whichever option is picked, decide explicitly whether the
 live-match chip needs its own truncation/ellipsis handling — don't
 assume the fixed labels' typical lengths represent the worst case.
 
-## Recommendation
+## Recommendation — SUPERSEDED, kept for background only
 
 Option 1 is the most correct long-term fix (uses the information the
 app already has, degrades gracefully across different MacBook notch
@@ -192,11 +258,15 @@ mechanic none of the three original options described:
   was only useful when trying to cram a full row of chips into one
   line, which wrapping makes unnecessary.)
 - **270px does double duty**: it's both (a) the fallback width when
-  `CutoutGeometry` is unavailable (`notchtap-detect` fails or reports
-  `width: 0`), and (b) an absolute floor — even a real, very narrow
-  notch's exact width never shrinks the card below 270px. One constant,
-  two jobs; wrapping means being conservative here costs nothing but an
-  extra row.
+  `CutoutGeometry` is unavailable, and (b) an absolute floor — even a
+  real, very narrow notch's exact width never shrinks the card below
+  270px. One constant, two jobs; wrapping means being conservative here
+  costs nothing but an extra row. (Precision check, third review-plan
+  pass: "unavailable" is the *only* case (a) needs to handle — a report
+  of `width: 0` is not a second, separate scenario. `presentation.rs`'s
+  `DetectOutput::cutout()` already normalizes any `cutout_width <= 0.0`
+  to `None` before this plan's code ever sees it — `Some(CutoutGeometry
+  { width: 0.0, .. })` cannot occur.)
 - **Live-match chip truncation**: the live chip stays today's single
   joined label string (no wire-shape change in this plan — that's
   deferred to plan 079). When it alone is wider than the capped card,
@@ -235,10 +305,12 @@ mechanic none of the three original options described:
   review-plan pass (2026-07-20)**: `window.__NOTCHTAP_MODE__ = "notch" |
   "hud"`, delivered via the existing `.on_page_load` eval-splice call
   site (`lib.rs:393-457`) alongside `__NOTCHTAP_SLOT_STATE__`/
-  `__NOTCHTAP_APPEARANCE__` — if this plan's Option 1 is picked and 060
-  hasn't landed yet, extend that same eval call with
-  `window.__NOTCHTAP_CUTOUT_WIDTH__ = <number>;` rather than inventing a
-  second channel; see plan 060 for the full rationale.
+  `__NOTCHTAP_APPEARANCE__`. Per the "Grilling session resolved" section
+  below, this plan builds **both** `__NOTCHTAP_MODE__` and
+  `__NOTCHTAP_CUTOUT_WIDTH__` unconditionally (the locked decision needs
+  the numeric cutout width, not just the mode boolean) — extend that
+  same eval call with both, rather than inventing a second channel; see
+  plan 060 for the full rationale on the mode-boolean half.
 - Whoever builds this needs a real MacBook smoke-check with a realistic
   menu-bar icon load (not a nearly-empty menu bar) before calling it
   done — same discipline plan 060 and the hardware-only checks in

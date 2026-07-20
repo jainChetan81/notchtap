@@ -1,0 +1,560 @@
+<!doctype html>
+<!-- Football / live-match card mockup v3 for plan 079 items 3/4/5/6 + plan 043 (item 6a). OPERATOR MODEL (2026-07-20): football is a STICKY medium-priority presence (~T-30 before kickoff → full-time). Resting = idle rail, green dot; hover = compact scorecard (no full-expand). HIGH-LEVEL EVENTS force the card open briefly: goals, penalties, own goals, yellow/red cards — plus plan 043's richer feed (fouls, offsides, VAR checks, substitutions) once item 6a's summary→plays fallback lands. Goal/yellow/red get celebrations (green glow / amber ring / red strobe); 043's informational events (foul/offside/VAR/sub) expand quietly. Paused football → hover falls back to weather. Higher-priority items preempt; football returns. No queue track. Crests = locked text-abbrev fallback until rust fetches team.logo. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>football card — sticky presence + event-driven expansion</title>
+<style>
+  :root { --bg: #101318; --ink: #e8ecf1; --dim: #8b95a3; --rule: rgba(255,255,255,0.09); --accent: #7fe08d; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; padding: 44px 24px 100px; }
+  main { max-width: 780px; margin: 0 auto; }
+  h1 { font-size: 21px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .lede { color: var(--dim); font-size: 13px; line-height: 1.6; max-width: 66ch; margin: 0 0 8px; }
+  .note { font-size: 11.5px; color: var(--dim); border-left: 2px solid var(--rule); padding-left: 10px; margin: 0 0 32px; max-width: 64ch; line-height: 1.6; }
+  code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; color: #9fc3e8; }
+  section { margin-bottom: 44px; padding-top: 24px; border-top: 1px solid var(--rule); }
+  h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); margin: 0 0 4px; }
+  .section-sub { font-size: 12px; color: var(--dim); margin: 0 0 16px; max-width: 62ch; line-height: 1.5; }
+  .rig-label { font: 700 10px/1 ui-monospace, monospace; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); margin: 0 0 8px; }
+
+  .rig { position: relative; background: #05060a; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 16px 32px rgba(0,0,0,0.4); }
+  .menubar { position: relative; height: 26px; background: #1c1d20; }
+  .hw-notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: 26px; width: 150px; background: #000; z-index: 2; }
+  .stage { position: relative; min-height: 90px; background: repeating-linear-gradient(45deg, #08090c 0 2px, #0c0d10 2px 4px); }
+  .rig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
+  .rig-grid .rig { min-width: 0; }
+
+  .card-wrap { position: absolute; top: 0; left: 50%; transform: translateX(-50%); z-index: 5; width: var(--cw); }
+  .flank-left, .flank-right { position: absolute; top: 0; width: calc((var(--cw) - var(--nw)) / 2); height: var(--nh); background: #000; color: #f5f7fa; display: flex; align-items: center; }
+  .flank-left { left: 0; padding-left: 16px; }
+  .flank-right { right: 0; padding-right: 16px; justify-content: flex-end; }
+  .time-only { font: 800 15px/1 ui-monospace, monospace; color: #f5f7fa; }
+  .below-block { position: absolute; top: var(--nh); left: 0; width: 100%; background: #000; box-shadow: 0 14px 28px rgba(0,0,0,0.5); border-bottom-left-radius: 14px; border-bottom-right-radius: 14px; overflow: hidden; }
+
+  .status-dots { display: flex; align-items: center; gap: 8px; flex: none; }
+  .status-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .status-dot.football { background: #3ddc70; }
+  .status-dot.news { background: #ff5c5c; }
+  .status-dot.weather { background: #f0c46a; }
+  .status-dot.dim { opacity: 0.22; }
+  @keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+  /* ==== the compact scorecard — resting presentation ==== */
+  .notif-block { padding: 12px 16px 13px; }
+  .sc-head { display: flex; align-items: center; gap: 8px; }
+  .league-chip { flex: none; padding: 3px 7px; border-radius: 999px; font: 700 8px/1 ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); }
+  .live-pill { flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 999px; font: 700 8px/1 ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: #7fe08d; background: rgba(127,224,141,0.12); border: 1px solid rgba(127,224,141,0.35); }
+  .live-pill .live-dot { width: 5px; height: 5px; border-radius: 50%; background: #7fe08d; box-shadow: 0 0 6px rgba(127,224,141,0.9); animation: live-dot-pulse 1.6s ease-in-out infinite; }
+  @keyframes live-dot-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .live-pill.break { color: #f0c46a; background: rgba(240,196,106,0.12); border-color: rgba(240,196,106,0.35); }
+  .live-pill.break .live-dot { background: #f0c46a; box-shadow: 0 0 6px rgba(240,196,106,0.9); animation: none; }
+  .live-pill.final { color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.12); }
+  .live-pill.final .live-dot { display: none; }
+  .live-pill.soon { color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.14); }
+  .live-pill.soon .live-dot { display: none; }
+  .clock-pill { margin-left: auto; flex: none; font: 800 10px/1 ui-monospace, monospace; color: rgba(255,255,255,0.75); padding: 3px 7px; border-radius: 999px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); }
+
+  .score-row { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 10px; }
+  .side { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 64px; }
+  .crest { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font: 800 9px/1 ui-monospace, monospace; letter-spacing: 0.03em; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.16); color: #f5f7fa; }
+  .side-name { font: 700 8px/1 ui-monospace, monospace; letter-spacing: 0.08em; color: rgba(255,255,255,0.45); text-transform: uppercase; }
+  .score { font: 800 24px/1 ui-monospace, monospace; color: #f5f7fa; letter-spacing: 0.02em; }
+  .score .dash { color: rgba(255,255,255,0.3); margin: 0 2px; }
+  .score.vs { font-size: 13px; color: rgba(255,255,255,0.4); }
+
+  .event-line { display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 9px; font-size: 11px; color: rgba(255,255,255,0.7); }
+  .cards-line { margin-top: 6px; text-align: center; font: 600 9px/1 ui-monospace, monospace; letter-spacing: 0.06em; color: rgba(255,255,255,0.38); }
+
+  /* ==== event icon set (item 6 + plan 043 events): CSS shapes, no emoji.
+     goal = filled green ball · penalty = green ring · own goal = hollow
+     grey ball · yellow/red = slips · foul = whistle triangle · offside =
+     flag · VAR = monitor · substitution = up/down triangles ==== */
+  .ev-ico { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .ev-ico.goal { background: #7fe08d; box-shadow: 0 0 6px rgba(127,224,141,0.7); }
+  .ev-ico.pen { background: transparent; border: 2px solid #7fe08d; width: 7px; height: 7px; }
+  .ev-ico.og { background: transparent; border: 2px solid rgba(255,255,255,0.4); width: 7px; height: 7px; }
+  .ev-ico.yc, .ev-ico.rc { width: 7px; height: 10px; border-radius: 1.5px; }
+  .ev-ico.yc { background: #f0c46a; }
+  .ev-ico.rc { background: #ff6b57; }
+  .ev-ico.foul { width: 0; height: 0; border-radius: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 8px solid rgba(255,255,255,0.55); }
+  .ev-ico.off { position: relative; width: 3px; height: 12px; border-radius: 0; background: rgba(255,255,255,0.5); }
+  .ev-ico.off::after { content: ""; position: absolute; top: 0; left: 3px; width: 7px; height: 5px; background: #f0c46a; border-radius: 0 2px 2px 0; }
+  .ev-ico.var { width: 11px; height: 8px; border-radius: 2px; background: transparent; border: 1.5px solid #7c9df5; }
+  .ev-ico.sub { position: relative; width: 12px; height: 11px; border-radius: 0; background: transparent; }
+  .ev-ico.sub::before { content: ""; position: absolute; left: 0; top: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-bottom: 5px solid #7fe08d; }
+  .ev-ico.sub::after { content: ""; position: absolute; right: 0; bottom: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #ff6b57; }
+
+  /* event-tinted event lines for the big three */
+  .event-line.tint-goal { color: #7fe08d; font-weight: 600; }
+  .event-line.tint-yc { color: #f0c46a; font-weight: 600; }
+  .event-line.tint-rc { color: #ff6b57; font-weight: 600; }
+
+  /* weather peek */
+  .wx-block { position: relative; }
+  .wx-sunny { background: linear-gradient(180deg, #163149 0%, #0e2436 100%); }
+  .wx-sunny .wx-sun { position: absolute; top: -18px; right: 16px; width: 46px; height: 46px; border-radius: 50%; background: radial-gradient(circle, #f0c46a 0%, rgba(240,196,106,0.5) 45%, transparent 72%); }
+  .wx-sunny .wx-cloud-soft { position: absolute; top: 6px; left: 10px; width: 38px; height: 16px; border-radius: 999px; background: rgba(255,255,255,0.14); }
+  .wx-scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0.05), rgba(0,0,0,0.55) 75%); z-index: 1; }
+  .wx-content { position: relative; z-index: 2; display: flex; align-items: flex-end; justify-content: space-between; height: 100%; padding: 10px 16px 14px; }
+  .wx-temp { font: 800 20px/1 ui-monospace, monospace; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,0.4); }
+  .wx-cond { font: 700 9.5px/1.4 -apple-system, sans-serif; letter-spacing: 0.04em; text-transform: uppercase; color: rgba(255,255,255,0.75); }
+
+  /* ==== interaction model (demo rig) ==== */
+  .peek { height: 0; min-height: 0; opacity: 0; overflow: hidden; transition: height 260ms cubic-bezier(0.22,1,0.36,1), opacity 200ms cubic-bezier(0.22,1,0.36,1); }
+  .fb-rig .flank-left { border-bottom-left-radius: 14px; }
+  .fb-rig .flank-right { border-bottom-right-radius: 14px; }
+  .fb-rig[data-fb="off"]:hover .wx-peek,
+  .fb-rig[data-fb="paused"]:hover .wx-peek { height: 78px; opacity: 1; }
+  .fb-rig[data-fb="live"]:hover .fb-peek { height: 172px; opacity: 1; }
+  .fb-rig[data-fb]:hover .flank-left { border-bottom-left-radius: 0; }
+  .fb-rig[data-fb]:hover .flank-right { border-bottom-right-radius: 0; }
+  .fb-rig[data-fb="showing"] .fb-peek { height: 172px; opacity: 1; }
+  .fb-rig[data-fb="showing"] .flank-left,
+  .fb-rig[data-fb="showing"] .flank-right { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+  .fb-rig[data-fb="live"] .status-dot.football,
+  .fb-rig[data-fb="showing"] .status-dot.football { box-shadow: 0 0 7px 1px #3ddc70; animation: dot-pulse 1.8s ease-in-out infinite; }
+  .fb-rig[data-fb="paused"] .status-dot.football { opacity: 0.22; }
+
+  /* celebrations: goal = green glow+ring · yellow = amber ring · red =
+     two-pulse coral strobe (echoes src/styles.css pulse-red) · 043's
+     informational events expand quietly, no celebration */
+  .fb-rig.cele-goal .fb-peek { animation: goal-glow 900ms ease-out 1; }
+  .fb-rig.cele-goal::after { content: ""; position: absolute; inset: -6px; border-radius: 18px; pointer-events: none; border: 2px solid rgba(127,224,141,0.7); animation: cele-ring 900ms ease-out 1 forwards; }
+  @keyframes goal-glow { 0% { box-shadow: 0 0 0 rgba(127,224,141,0); } 30% { box-shadow: 0 0 34px rgba(127,224,141,0.45); } 100% { box-shadow: 0 14px 28px rgba(0,0,0,0.5); } }
+  @keyframes cele-ring { from { opacity: 1; transform: scale(0.98); } to { opacity: 0; transform: scale(1.12); } }
+  .fb-rig.cele-yc::after { content: ""; position: absolute; inset: -6px; border-radius: 18px; pointer-events: none; border: 2px solid rgba(240,196,106,0.65); animation: cele-ring 700ms ease-out 1 forwards; }
+  .fb-rig.cele-rc .fb-peek { animation: red-strobe 900ms ease-out 1; }
+  @keyframes red-strobe { 0%, 45% { box-shadow: 0 0 30px rgba(255,107,87,0.55); } 20%, 70% { box-shadow: 0 0 4px rgba(255,107,87,0.1); } 100% { box-shadow: 0 14px 28px rgba(0,0,0,0.5); } }
+
+  .controls { display: flex; gap: 8px; justify-content: center; margin-top: 16px; flex-wrap: wrap; }
+  button { font: 700 10px/1 ui-monospace, monospace; letter-spacing: 0.06em; text-transform: uppercase; padding: 9px 14px; border-radius: 8px; border: 1px solid var(--rule); background: #171b22; color: var(--ink); cursor: pointer; }
+  button:hover:not(:disabled) { border-color: rgba(127,224,141,0.4); color: var(--accent); }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+  .controls-label { width: 100%; text-align: center; font: 700 8.5px/1 ui-monospace, monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); margin-top: 4px; }
+  .status-line { text-align: center; font-size: 11.5px; color: var(--dim); margin-top: 12px; min-height: 32px; }
+  .status-line b { color: #7fe08d; }
+
+  footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 11.5px; color: var(--dim); line-height: 1.6; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Football card — sticky presence, event-driven expansion</h1>
+  <p class="lede">
+    Sticky medium-priority resident from ~30 min before kickoff to
+    full-time: resting = idle rail with the green dot, <b>hover reveals
+    the compact scorecard</b>, no full-expand. What forces the card open
+    is a <b>high-level event</b> — goals, penalties, own goals, yellow
+    and red cards get celebrations; plan 043's richer feed
+    (<b>fouls, offsides, VAR checks, substitutions</b>, via item 6a's
+    <code>summary</code>→<code>plays</code> fallback) expands the card
+    quietly. Then it settles back to the rail. Paused football → hover
+    falls back to weather; higher-priority items preempt, football
+    returns.
+  </p>
+  <p class="note">
+    Event icon set below is the item-6 proposal — CSS shapes, no emoji:
+    goal (filled ball), penalty (ring), own goal (hollow), yellow/red
+    (slips), foul (triangle), offside (flag), VAR (monitor), substitution
+    (up/down). Goal/yellow/red tint their event line and celebrate;
+    043's informational events stay neutral.
+  </p>
+
+  <section>
+    <h2>Event states — every expansion trigger</h2>
+    <p class="section-sub">The card as it appears when each event forces it open. Big three first (celebrating), then 043's informational events (quiet).</p>
+    <div class="rig-grid">
+      <div>
+        <div class="rig-label">Goal — green celebration</div>
+        <div class="rig">
+          <div class="menubar"></div><div class="hw-notch" style="width:150px;"></div>
+          <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
+            <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
+            <div class="below-block"><div class="notif-block">
+              <div class="sc-head"><span class="league-chip">UCL</span><span class="live-pill"><span class="live-dot"></span>Live</span><span class="clock-pill">78'</span></div>
+              <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score">2<span class="dash">–</span>1</span><div class="side"><span class="crest">PSG</span></div></div>
+              <div class="event-line tint-goal"><span class="ev-ico goal"></span>Goal — K. Havertz 78'</div>
+            </div></div>
+          </div>
+          <div class="stage" style="min-height:170px;"></div>
+        </div>
+      </div>
+      <div>
+        <div class="rig-label">Penalty scored — green ring</div>
+        <div class="rig">
+          <div class="menubar"></div><div class="hw-notch" style="width:150px;"></div>
+          <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
+            <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
+            <div class="below-block"><div class="notif-block">
+              <div class="sc-head"><span class="league-chip">EPL</span><span class="live-pill"><span class="live-dot"></span>Live</span><span class="clock-pill">44'</span></div>
+              <div class="score-row"><div class="side"><span class="crest">MCI</span></div><span class="score">1<span class="dash">–</span>1</span><div class="side"><span class="crest">LIV</span></div></div>
+              <div class="event-line tint-goal"><span class="ev-ico pen"></span>Penalty - Scored — Mohamed Salah 44'</div>
+            </div></div>
+          </div>
+          <div class="stage" style="min-height:170px;"></div>
+        </div>
+      </div>
+      <div>
+        <div class="rig-label">Own goal — hollow ball</div>
+        <div class="rig">
+          <div class="menubar"></div><div class="hw-notch" style="width:150px;"></div>
+          <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
+            <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
+            <div class="below-block"><div class="notif-block">
+              <div class="sc-head"><span class="league-chip">UCL</span><span class="live-pill"><span class="live-dot"></span>Live</span><span class="clock-pill">12'</span></div>
+              <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score">0<span class="dash">–</span>1</span><div class="side"><span class="crest">PSG</span></div></div>
+              <div class="event-line"><span class="ev-ico og"></span>Own Goal — W. Saliba 12'</div>
+            </div></div>
+          </div>
+          <div class="stage" style="min-height:170px;"></div>
+        </div>
+      </div>
+      <div>
+        <div class="rig-label">Yellow card — amber ring</div>
+        <div class="rig">
+          <div class="menubar"></div><div class="hw-notch" style="width:150px;"></div>
+          <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
+            <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
+            <div class="below-block"><div class="notif-block">
+              <div class="sc-head"><span class="league-chip">UCL</span><span class="live-pill"><span class="live-dot"></span>Live</span><span class="clock-pill">54'</span></div>
+              <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score">1<span class="dash">–</span>1</span><div class="side"><span class="crest">PSG</span></div></div>
+              <div class="event-line tint-yc"><span class="ev-ico yc"></span>Yellow Card — B. Saka 54'</div>
+              <div class="cards-line">ARS 1Y0R · PSG 2Y0R</div>
+            </div></div>
+          </div>
+          <div class="stage" style="min-height:180px;"></div>
+        </div>
+      </div>
+      <div>
+        <div class="rig-label">Red card — coral strobe</div>
+        <div class="rig">
+          <div class="menubar"></div><div class="hw-notch" style="width:150px;"></div>
+          <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
+            <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
+            <div class="below-block"><div class="notif-block">
+              <div class="sc-head"><span class="league-chip">UCL</span><span class="live-pill"><span class="live-dot"></span>Live</span><span class="clock-pill">71'</span></div>
+              <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score">1<span class="dash">–</span>1</span><div class="side"><span class="crest">PSG</span></div></div>
+              <div class="event-line tint-rc"><span class="ev-ico rc"></span>Red Card — M. Dembélé 71'</div>
+              <div class="cards-line">ARS 1Y0R · PSG 2Y1R</div>
+            </div></div>
+          </div>
+          <div class="stage" style="min-height:180px;"></div>
+        </div>
+      </div>
+      <div>
+        <div class="rig-label">Foul — quiet (plan 043)</div>
+        <div class="rig">
+          <div class="menubar"></div><div class="hw-notch" style="width:150px;"></div>
+          <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
+            <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
+            <div class="below-block"><div class="notif-block">
+              <div class="sc-head"><span class="league-chip">UCL</span><span class="live-pill"><span class="live-dot"></span>Live</span><span class="clock-pill">62'</span></div>
+              <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score">1<span class="dash">–</span>1</span><div class="side"><span class="crest">PSG</span></div></div>
+              <div class="event-line"><span class="ev-ico foul"></span>Foul — D. Rice 62'</div>
+            </div></div>
+          </div>
+          <div class="stage" style="min-height:170px;"></div>
+        </div>
+      </div>
+      <div>
+        <div class="rig-label">Offside — quiet (plan 043)</div>
+        <div class="rig">
+          <div class="menubar"></div><div class="hw-notch" style="width:150px;"></div>
+          <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
+            <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
+            <div class="below-block"><div class="notif-block">
+              <div class="sc-head"><span class="league-chip">UCL</span><span class="live-pill"><span class="live-dot"></span>Live</span><span class="clock-pill">55'</span></div>
+              <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score">1<span class="dash">–</span>1</span><div class="side"><span class="crest">PSG</span></div></div>
+              <div class="event-line"><span class="ev-ico off"></span>Offside — K. Mbappé 55'</div>
+            </div></div>
+          </div>
+          <div class="stage" style="min-height:170px;"></div>
+        </div>
+      </div>
+      <div>
+        <div class="rig-label">VAR check — quiet (plan 043)</div>
+        <div class="rig">
+          <div class="menubar"></div><div class="hw-notch" style="width:150px;"></div>
+          <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
+            <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
+            <div class="below-block"><div class="notif-block">
+              <div class="sc-head"><span class="league-chip">UCL</span><span class="live-pill"><span class="live-dot"></span>Live</span><span class="clock-pill">67'</span></div>
+              <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score">1<span class="dash">–</span>1</span><div class="side"><span class="crest">PSG</span></div></div>
+              <div class="event-line"><span class="ev-ico var"></span>VAR check — possible penalty 67'</div>
+            </div></div>
+          </div>
+          <div class="stage" style="min-height:170px;"></div>
+        </div>
+      </div>
+      <div>
+        <div class="rig-label">Substitution — quiet (plan 043)</div>
+        <div class="rig">
+          <div class="menubar"></div><div class="hw-notch" style="width:150px;"></div>
+          <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
+            <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
+            <div class="below-block"><div class="notif-block">
+              <div class="sc-head"><span class="league-chip">UCL</span><span class="live-pill"><span class="live-dot"></span>Live</span><span class="clock-pill">70'</span></div>
+              <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score">1<span class="dash">–</span>1</span><div class="side"><span class="crest">PSG</span></div></div>
+              <div class="event-line"><span class="ev-ico sub"></span>Substitution — L. Trossard for G. Martinelli 70'</div>
+            </div></div>
+          </div>
+          <div class="stage" style="min-height:170px;"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Match states — resting compact</h2>
+    <p class="section-sub">What hover reveals when no event is forcing the card: pre-match, half-time, full-time.</p>
+    <div class="rig-grid">
+      <div>
+        <div class="rig-label">Pre-match — T-30</div>
+        <div class="rig">
+          <div class="menubar"></div><div class="hw-notch" style="width:150px;"></div>
+          <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
+            <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
+            <div class="below-block"><div class="notif-block">
+              <div class="sc-head"><span class="league-chip">UCL</span><span class="live-pill soon">Soon</span><span class="clock-pill">15:00</span></div>
+              <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score vs">vs</span><div class="side"><span class="crest">PSG</span></div></div>
+              <div class="event-line">Kickoff in 28 min — Emirates Stadium</div>
+            </div></div>
+          </div>
+          <div class="stage" style="min-height:160px;"></div>
+        </div>
+      </div>
+      <div>
+        <div class="rig-label">Half-time</div>
+        <div class="rig">
+          <div class="menubar"></div><div class="hw-notch" style="width:150px;"></div>
+          <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
+            <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
+            <div class="below-block"><div class="notif-block">
+              <div class="sc-head"><span class="league-chip">EPL</span><span class="live-pill break"><span class="live-dot"></span>Break</span><span class="clock-pill">HT</span></div>
+              <div class="score-row"><div class="side"><span class="crest">MCI</span></div><span class="score">1<span class="dash">–</span>1</span><div class="side"><span class="crest">LIV</span></div></div>
+              <div class="event-line">Half-time at the Etihad</div>
+            </div></div>
+          </div>
+          <div class="stage" style="min-height:160px;"></div>
+        </div>
+      </div>
+      <div>
+        <div class="rig-label">Full-time — then it retires</div>
+        <div class="rig">
+          <div class="menubar"></div><div class="hw-notch" style="width:150px;"></div>
+          <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
+            <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
+            <div class="below-block"><div class="notif-block">
+              <div class="sc-head"><span class="league-chip">La Liga</span><span class="live-pill final">Final</span><span class="clock-pill">FT</span></div>
+              <div class="score-row"><div class="side"><span class="crest">RMA</span></div><span class="score">3<span class="dash">–</span>0</span><div class="side"><span class="crest">SEV</span></div></div>
+              <div class="event-line"><span class="ev-ico goal"></span>Goal — Vinícius Júnior 89'</div>
+            </div></div>
+          </div>
+          <div class="stage" style="min-height:170px;"></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Interaction model — live demo</h2>
+    <p class="section-sub">
+      <b>Hover the rail at every step.</b> "Match approaching" makes
+      football present — hover shows the compact scorecard. Fire any
+      event: the big three celebrate, 043's events open quietly; the
+      card settles back to the rail after 4s. "High-priority push"
+      preempts; "Pause football" falls back to weather on hover;
+      "Full-time" retires it.
+    </p>
+    <div class="rig-label">Try the whole arc</div>
+    <div class="rig" style="position:relative;">
+      <div class="menubar"></div>
+      <div class="stage" style="min-height:320px;">
+        <div class="card-wrap fb-rig" id="fb-rig" data-fb="off" style="--cw:360px; --nw:150px; --nh:26px;">
+          <div class="flank-left"><span class="time-only">14:32</span></div>
+          <div class="flank-right">
+            <div class="status-dots">
+              <span class="status-dot football" id="fb-dot"></span>
+              <span class="status-dot news dim"></span>
+              <span class="status-dot weather"></span>
+            </div>
+          </div>
+          <div class="below-block wx-block wx-sunny wx-peek peek">
+            <div class="wx-sun"></div>
+            <div class="wx-cloud-soft"></div>
+            <div class="wx-scrim"></div>
+            <div class="wx-content">
+              <span class="wx-cond">Clear · Bangalore</span>
+              <span class="wx-temp">28°</span>
+            </div>
+          </div>
+          <div class="below-block fb-peek peek">
+            <div class="notif-block">
+              <div class="sc-head">
+                <span class="league-chip">UCL</span>
+                <span class="live-pill" id="fb-pill"><span class="live-dot"></span>Live</span>
+                <span class="clock-pill" id="fb-clock">78'</span>
+              </div>
+              <div class="score-row">
+                <div class="side"><span class="crest">ARS</span><span class="side-name">Arsenal</span></div>
+                <span class="score" id="fb-score">1<span class="dash">–</span>1</span>
+                <div class="side"><span class="crest">PSG</span><span class="side-name">Paris</span></div>
+              </div>
+              <div class="event-line" id="fb-event"><span class="ev-ico goal"></span>Goal — K. Havertz 78'</div>
+              <div class="cards-line" id="fb-cards">ARS 0Y1R · PSG 2Y0R</div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="controls">
+        <span class="controls-label">Match</span>
+        <button id="btn-approach" onclick="fbApproach()">Match approaching (T-30)</button>
+        <button id="btn-preempt" onclick="fbPreempt()" disabled>High-priority push</button>
+        <button id="btn-pause" onclick="fbPause()" disabled>Pause football</button>
+        <button id="btn-ft" onclick="fbFullTime()" disabled>Full-time</button>
+        <span class="controls-label">Events — big three celebrate, 043 opens quietly</span>
+        <button class="ev-btn" data-ev="goal" onclick="fbEvent('goal')" disabled>Goal</button>
+        <button class="ev-btn" data-ev="pen" onclick="fbEvent('pen')" disabled>Penalty</button>
+        <button class="ev-btn" data-ev="og" onclick="fbEvent('og')" disabled>Own goal</button>
+        <button class="ev-btn" data-ev="yc" onclick="fbEvent('yc')" disabled>Yellow</button>
+        <button class="ev-btn" data-ev="rc" onclick="fbEvent('rc')" disabled>Red</button>
+        <button class="ev-btn" data-ev="foul" onclick="fbEvent('foul')" disabled>Foul</button>
+        <button class="ev-btn" data-ev="off" onclick="fbEvent('off')" disabled>Offside</button>
+        <button class="ev-btn" data-ev="var" onclick="fbEvent('var')" disabled>VAR</button>
+        <button class="ev-btn" data-ev="sub" onclick="fbEvent('sub')" disabled>Sub</button>
+      </div>
+      <p class="status-line" id="fb-status">No match today. <b>Hover the rail</b> — you get the weather peek. Click "Match approaching" to bring football in.</p>
+    </div>
+  </section>
+
+  <footer>
+    Model locked with the operator (2026-07-20): sticky medium-priority
+    presence; hover = compact only; expansion is event-driven — goal /
+    penalty / own-goal / yellow / red celebrate, plan 043's fouls /
+    offsides / VAR / subs expand quietly; paused → weather peek;
+    preemptible, returns; no queue track. Plan 043 is looped in as the
+    data source for the four new event types (item 6a backend:
+    <code>summary</code> → <code>/competitions/{id}/plays</code>
+    fallback, confirmed against a live World Cup final). Still open:
+    item 4 wire shape (structured fields assumed here), crest
+    fetch/cache/embed (item 3 backend), real crest art, which 043
+    events are card-worthy vs scorecard-only, and per-event dwell time
+    before settling back to the rail.
+  </footer>
+</main>
+
+<script>
+  const rig = document.getElementById('fb-rig');
+  const status = document.getElementById('fb-status');
+  const score = document.getElementById('fb-score');
+  const clock = document.getElementById('fb-clock');
+  const eventLine = document.getElementById('fb-event');
+  const cardsLine = document.getElementById('fb-cards');
+  const btns = {
+    approach: document.getElementById('btn-approach'),
+    preempt: document.getElementById('btn-preempt'),
+    pause: document.getElementById('btn-pause'),
+    ft: document.getElementById('btn-ft'),
+  };
+  const evBtns = Array.from(document.querySelectorAll('.ev-btn'));
+  let paused = false, showTimer = null;
+
+  const EVENTS = {
+    goal: { ico: 'goal', tint: 'tint-goal', text: 'Goal — K. Havertz 78\'',  clock: "78'", glow: 'cele-goal', score: '2<span class="dash">–</span>1', cards: 'ARS 0Y1R · PSG 2Y0R',
+            msg: '<b>Goal!</b> Green celebration — settles back to the rail in 4s. Football itself <b>stays</b>.' },
+    pen:  { ico: 'pen',  tint: 'tint-goal', text: 'Penalty - Scored — Mohamed Salah 44\'', clock: "44'", glow: 'cele-goal', score: '1<span class="dash">–</span>1', cards: 'ARS 0Y1R · PSG 2Y0R',
+            msg: '<b>Penalty scored.</b> Counts as a goal — same green celebration.' },
+    og:   { ico: 'og',   tint: '',          text: 'Own Goal — W. Saliba 12\'', clock: "12'", glow: '', score: '0<span class="dash">–</span>1', cards: 'ARS 0Y1R · PSG 2Y0R',
+            msg: '<b>Own goal.</b> Score updates, no celebration — hollow-ball icon.' },
+    yc:   { ico: 'yc',   tint: 'tint-yc',   text: 'Yellow Card — B. Saka 54\'', clock: "54'", glow: 'cele-yc', score: '1<span class="dash">–</span>1', cards: 'ARS 1Y1R · PSG 2Y0R',
+            msg: '<b>Yellow card.</b> Amber ring — the per-side cards line ticks up.' },
+    rc:   { ico: 'rc',   tint: 'tint-rc',   text: 'Red Card — M. Dembélé 71\'', clock: "71'", glow: 'cele-rc', score: '1<span class="dash">–</span>1', cards: 'ARS 1Y1R · PSG 2Y1R',
+            msg: '<b>Red card.</b> Coral strobe — echoes the shipped pulse-red.' },
+    foul: { ico: 'foul', tint: '',          text: 'Foul — D. Rice 62\'', clock: "62'", glow: '', score: '1<span class="dash">–</span>1', cards: 'ARS 1Y1R · PSG 2Y0R',
+            msg: '<b>Foul</b> (plan 043 data) — opens quietly, no celebration.' },
+    off:  { ico: 'off',  tint: '',          text: 'Offside — K. Mbappé 55\'', clock: "55'", glow: '', score: '1<span class="dash">–</span>1', cards: 'ARS 1Y1R · PSG 2Y0R',
+            msg: '<b>Offside</b> (plan 043 data) — opens quietly.' },
+    var:  { ico: 'var',  tint: '',          text: 'VAR check — possible penalty 67\'', clock: "67'", glow: '', score: '1<span class="dash">–</span>1', cards: 'ARS 1Y1R · PSG 2Y0R',
+            msg: '<b>VAR check</b> (plan 043 data) — opens quietly. The decision, when it comes, arrives as its own event.' },
+    sub:  { ico: 'sub',  tint: '',          text: 'Substitution — L. Trossard for G. Martinelli 70\'', clock: "70'", glow: '', score: '1<span class="dash">–</span>1', cards: 'ARS 1Y1R · PSG 2Y0R',
+            msg: '<b>Substitution</b> (plan 043 data) — opens quietly.' },
+  };
+
+  function setFb(phase, msg) {
+    rig.setAttribute('data-fb', phase);
+    status.innerHTML = msg;
+  }
+  function setButtons(state) {
+    btns.approach.disabled = state !== 'off';
+    btns.preempt.disabled = state === 'off';
+    btns.pause.disabled = state === 'off';
+    btns.pause.textContent = paused ? 'Resume football' : 'Pause football';
+    btns.ft.disabled = state === 'off';
+    evBtns.forEach(b => b.disabled = state === 'off' || paused);
+  }
+
+  function fbApproach() {
+    paused = false;
+    setButtons('live');
+    setFb('live', 'Football is <b>present</b>. Resting = rail — <b>hover it</b> for the compact scorecard. Fire any event below.');
+  }
+
+  function fbEvent(kind) {
+    const ev = EVENTS[kind];
+    clearTimeout(showTimer);
+    score.innerHTML = ev.score;
+    clock.textContent = ev.clock;
+    cardsLine.textContent = ev.cards;
+    eventLine.className = 'event-line' + (ev.tint ? ' ' + ev.tint : '');
+    eventLine.innerHTML = '<span class="ev-ico ' + ev.ico + '"></span>' + ev.text;
+    rig.classList.remove('cele-goal', 'cele-yc', 'cele-rc');
+    void rig.offsetWidth;
+    if (ev.glow) rig.classList.add(ev.glow);
+    setButtons('live');
+    setFb('showing', ev.msg);
+    showTimer = setTimeout(() => {
+      setFb('live', 'Back to resting rail — still live, still sticky. <b>Hover</b> to see the current state.');
+    }, 4000);
+  }
+
+  function fbPreempt() {
+    clearTimeout(showTimer);
+    setFb('off', '<b>Preempted</b> — a higher-priority item owns the slot. Hover shows weather, not football. It comes back…');
+    setButtons('off');
+    setTimeout(() => {
+      if (rig.getAttribute('data-fb') === 'off' && !paused) {
+        setButtons('live');
+        setFb('live', 'The high-priority item rotated out — <b>football is back</b>. It never lost its place.');
+      }
+    }, 4000);
+  }
+
+  function fbPause() {
+    paused = !paused;
+    setButtons('live');
+    if (paused) {
+      setFb('paused', 'Football <b>paused</b> — dot dimmed. <b>Hover</b>: weather peek again.');
+    } else {
+      setFb('live', 'Football <b>resumed</b> — hover shows the scorecard again.');
+    }
+  }
+
+  function fbFullTime() {
+    clearTimeout(showTimer);
+    paused = false;
+    rig.classList.remove('cele-goal', 'cele-yc', 'cele-rc');
+    score.innerHTML = '1<span class="dash">–</span>1';
+    clock.textContent = "78'";
+    cardsLine.textContent = 'ARS 0Y1R · PSG 2Y0R';
+    eventLine.className = 'event-line';
+    eventLine.innerHTML = '<span class="ev-ico goal"></span>Goal — K. Havertz 78\'';
+    setButtons('off');
+    setFb('off', '<b>Full-time.</b> Result shows once as a normal rotation item, then football retires — back to plain idle. Hover: weather.');
+  }
+
+  setButtons('off');
+</script>
+</body>
+</html>

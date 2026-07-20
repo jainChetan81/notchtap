@@ -1,0 +1,238 @@
+<!doctype html>
+<!-- Weather-art gallery: Meteocons static fill SVGs (MIT, vendored in
+     prototype/assets/weather/) on CSS-gradient mood backdrops. Companion
+     to notch-states.html — same .below-block wx-block card shape, real
+     condition glyphs instead of the CSS blob stand-ins. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Weather art — condition set (Meteocons + CSS moods)</title>
+<style>
+  :root { --bg: #101318; --ink: #e8ecf1; --dim: #8b95a3; --rule: rgba(255,255,255,0.09); --accent: #7fe08d; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; padding: 44px 24px 100px; }
+  main { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 21px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .lede { color: var(--dim); font-size: 13px; line-height: 1.6; max-width: 66ch; margin: 0 0 36px; }
+  code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; color: #9fc3e8; }
+  section { margin-bottom: 44px; padding-top: 24px; border-top: 1px solid var(--rule); }
+  h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); margin: 0 0 4px; }
+  .section-sub { font-size: 12px; color: var(--dim); margin: 0 0 18px; max-width: 62ch; line-height: 1.5; }
+  .rig-label { font: 700 10px/1 ui-monospace, monospace; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); margin: 0 0 8px; }
+
+  .card-grid { display: flex; flex-wrap: wrap; gap: 22px; }
+
+  /* --- weather card: same shape as .below-block in notch-states.html —
+     320px wide, black base, square top (it would dock under the notch
+     flanks), 14px bottom rounding, mood gradient painted over the black. --- */
+  .wx-card {
+    position: relative; width: 320px; min-height: 92px; overflow: hidden;
+    background: #000; color: #f5f7fa; box-shadow: 0 14px 28px rgba(0,0,0,0.5);
+    border-bottom-left-radius: 14px; border-bottom-right-radius: 14px;
+    padding: 10px 16px 14px;
+  }
+  .wx-icon {
+    position: absolute; top: 10px; right: 14px; width: 48px; height: 48px; z-index: 2;
+    filter: drop-shadow(0 2px 6px rgba(0,0,0,0.45));
+  }
+  .wx-scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0.05), rgba(0,0,0,0.55) 75%); z-index: 1; }
+  .wx-content { position: relative; z-index: 2; display: flex; align-items: flex-end; justify-content: space-between; height: 100%; min-height: 68px; }
+  .wx-temp { font: 800 20px/1 ui-monospace, monospace; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,0.4); }
+  .wx-cond { font: 700 9.5px/1.4 -apple-system, sans-serif; letter-spacing: 0.04em; text-transform: uppercase; color: rgba(255,255,255,0.75); }
+
+  .wx-rain-streaks { position: absolute; inset: 0; background-image: repeating-linear-gradient(115deg, rgba(180,210,255,0.16) 0px, rgba(180,210,255,0.16) 1px, transparent 1px, transparent 10px); }
+  .wx-snow-dots { position: absolute; inset: 0; background-image: radial-gradient(circle, rgba(255,255,255,0.35) 1px, transparent 1.6px); background-size: 22px 22px; }
+
+  /* --- mood gradients, dark palette. First three adapted verbatim from
+     notch-states.html, the rest extend the same idea per condition. --- */
+  .wx-clear-day          { background: linear-gradient(180deg, #163149 0%, #0e2436 100%); }
+  .wx-clear-night        { background: linear-gradient(180deg, #0d1226 0%, #070a16 100%); }
+  .wx-partly-cloudy-day  { background: linear-gradient(180deg, #1a3a52 0%, #122b3d 100%); }
+  .wx-partly-cloudy-night{ background: linear-gradient(180deg, #141a33 0%, #0c1022 100%); }
+  .wx-overcast           { background: linear-gradient(180deg, #232a33 0%, #161b21 100%); }
+  .wx-rain               { background: linear-gradient(180deg, #2b3d4d 0%, #1b2731 100%); }
+  .wx-rainy-night        { background: linear-gradient(180deg, #171b35 0%, #262c52 55%, #12142a 100%); }
+  .wx-thunderstorm       { background: linear-gradient(180deg, #1d1430 0%, #110a1e 100%); }
+  .wx-snow               { background: linear-gradient(180deg, #26313f 0%, #18212b 100%); }
+  .wx-fog                { background: linear-gradient(180deg, #2a2f36 0%, #1a1e24 100%); }
+
+  footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 11.5px; color: var(--dim); line-height: 1.6; max-width: 72ch; }
+</style>
+
+<main>
+  <h1>Weather art — condition set (Meteocons + CSS moods)</h1>
+  <p class="lede">
+    The decision: <b>Meteocons</b> static fill SVGs (MIT license, by Bas
+    Milius) vendored locally as condition glyphs, on top of purpose-built
+    CSS-gradient backdrops keyed to condition + day/night. This replaces
+    the CSS-only blob stand-ins (the <code>.wx-sun</code>/<code>.wx-cloud</code>
+    divs) in <code>notch-states.html</code> — the gradients stay, they
+    carry the atmosphere; the glyph now reads the condition at a glance.
+    Card shape is the locked <code>.below-block</code> weather block:
+    320px, black base, 14px bottom rounding, scrim + condition/temp row.
+  </p>
+
+  <section>
+    <h2>Day</h2>
+    <p class="section-sub">Backdrops keyed to daytime — deep teals and slate blues, never bright. Glyph sits top-right, 48px, soft drop shadow.</p>
+    <div class="card-grid">
+
+      <div>
+        <div class="rig-label">Clear day — clear-day.svg</div>
+        <div class="wx-card wx-clear-day">
+          <img class="wx-icon" src="assets/weather/clear-day.svg" alt="Clear day">
+          <div class="wx-scrim"></div>
+          <div class="wx-content">
+            <span class="wx-cond">Clear · Bangalore</span>
+            <span class="wx-temp">28°</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="rig-label">Partly cloudy day — partly-cloudy-day.svg</div>
+        <div class="wx-card wx-partly-cloudy-day">
+          <img class="wx-icon" src="assets/weather/partly-cloudy-day.svg" alt="Partly cloudy day">
+          <div class="wx-scrim"></div>
+          <div class="wx-content">
+            <span class="wx-cond">Partly cloudy · Bangalore</span>
+            <span class="wx-temp">27°</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="rig-label">Overcast — overcast.svg</div>
+        <div class="wx-card wx-overcast">
+          <img class="wx-icon" src="assets/weather/overcast.svg" alt="Overcast">
+          <div class="wx-scrim"></div>
+          <div class="wx-content">
+            <span class="wx-cond">Overcast · Bangalore</span>
+            <span class="wx-temp">24°</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="rig-label">Rain (day) — rain.svg</div>
+        <div class="wx-card wx-rain">
+          <img class="wx-icon" src="assets/weather/rain.svg" alt="Rain">
+          <div class="wx-rain-streaks"></div>
+          <div class="wx-scrim"></div>
+          <div class="wx-content">
+            <span class="wx-cond">Rain · Bangalore</span>
+            <span class="wx-temp">19°</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>Night</h2>
+    <p class="section-sub">Same conditions after sundown — indigo/near-black variants of the day moods. Day/night is keyed off location time, which the app already has.</p>
+    <div class="card-grid">
+
+      <div>
+        <div class="rig-label">Clear night — clear-night.svg</div>
+        <div class="wx-card wx-clear-night">
+          <img class="wx-icon" src="assets/weather/clear-night.svg" alt="Clear night">
+          <div class="wx-scrim"></div>
+          <div class="wx-content">
+            <span class="wx-cond">Clear · Bangalore</span>
+            <span class="wx-temp">22°</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="rig-label">Partly cloudy night — partly-cloudy-night.svg</div>
+        <div class="wx-card wx-partly-cloudy-night">
+          <img class="wx-icon" src="assets/weather/partly-cloudy-night.svg" alt="Partly cloudy night">
+          <div class="wx-scrim"></div>
+          <div class="wx-content">
+            <span class="wx-cond">Partly cloudy · Bangalore</span>
+            <span class="wx-temp">23°</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="rig-label">Rainy night — rain.svg</div>
+        <div class="wx-card wx-rainy-night">
+          <img class="wx-icon" src="assets/weather/rain.svg" alt="Rain at night">
+          <div class="wx-rain-streaks"></div>
+          <div class="wx-scrim"></div>
+          <div class="wx-content">
+            <span class="wx-cond">Light rain · Bangalore</span>
+            <span class="wx-temp">21°</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>Severe / other</h2>
+    <p class="section-sub">Alert-tier conditions — these are also the ones the weather poller edge-triggers on (rain incoming, thresholds), so the card may surface unprompted.</p>
+    <div class="card-grid">
+
+      <div>
+        <div class="rig-label">Thunderstorm — thunderstorms.svg</div>
+        <div class="wx-card wx-thunderstorm">
+          <img class="wx-icon" src="assets/weather/thunderstorms.svg" alt="Thunderstorm">
+          <div class="wx-rain-streaks"></div>
+          <div class="wx-scrim"></div>
+          <div class="wx-content">
+            <span class="wx-cond">Thunderstorm · Bangalore</span>
+            <span class="wx-temp">20°</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="rig-label">Snow — snow.svg</div>
+        <div class="wx-card wx-snow">
+          <img class="wx-icon" src="assets/weather/snow.svg" alt="Snow">
+          <div class="wx-snow-dots"></div>
+          <div class="wx-scrim"></div>
+          <div class="wx-content">
+            <span class="wx-cond">Snow · Shimla</span>
+            <span class="wx-temp">-2°</span>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="rig-label">Fog — fog.svg</div>
+        <div class="wx-card wx-fog">
+          <img class="wx-icon" src="assets/weather/fog.svg" alt="Fog">
+          <div class="wx-scrim"></div>
+          <div class="wx-content">
+            <span class="wx-cond">Fog · Bangalore</span>
+            <span class="wx-temp">16°</span>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <footer>
+    <b>License:</b> glyphs are Meteocons, MIT license, by Bas Milius —
+    <code>github.com/basmilius/weather-icons</code>. Vendored copies live
+    in <code>prototype/assets/weather/</code> (12 files; the gallery uses
+    10 — <code>extreme-rain</code>, <code>wind</code>, and
+    <code>hail</code> are pulled but unassigned, spare buckets for later).
+    When these move into <code>src/assets/</code> for the real overlay,
+    add a NOTICE / attribution line alongside them. The gradient moods
+    are ours — no third-party art. Day/night variants are keyed off
+    location time, which the app already has from the weather poller's
+    coordinates; the condition → (glyph, mood class) mapping should live
+    as a plain data table, same as the v2 animation table.
+  </footer>
+</main>
+</html>

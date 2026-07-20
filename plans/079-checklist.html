@@ -1,0 +1,69 @@
+<!doctype html>
+<!-- Source: Claude artifact 94e5dfa6-fb6d-404b-b8b4-a9213932a4e5 ("plan 079 — visual revamp checklist"), extracted 2026-07-20. Living tracker — update when an item moves status, keep in sync with plans/079-overlay-visual-revamp-consolidated.md. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>plan 079 — visual revamp checklist</title>
+<style>
+  :root { --bg: #101318; --panel: #171b22; --ink: #e8ecf1; --dim: #8b95a3; --rule: rgba(255,255,255,0.09); --accent: #7fe08d; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; padding: 44px 24px 100px; }
+  main { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 21px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .lede { color: var(--dim); font-size: 13px; line-height: 1.6; max-width: 66ch; margin: 0 0 32px; }
+  code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; color: #9fc3e8; font-size: 0.92em; }
+  h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); margin: 40px 0 12px; border-top: 1px solid var(--rule); padding-top: 22px; }
+  ul { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  li { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 8px; background: var(--panel); border: 1px solid var(--rule); font-size: 13px; line-height: 1.5; }
+  .badge { flex: none; width: 20px; height: 20px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font: 800 11px/1 ui-monospace, monospace; margin-top: 1px; }
+  .badge.done { background: rgba(127,224,141,0.15); color: var(--accent); border: 1px solid rgba(127,224,141,0.4); }
+  .badge.partial { background: rgba(240,196,106,0.15); color: #f0c46a; border: 1px solid rgba(240,196,106,0.4); }
+  .badge.open { background: rgba(255,255,255,0.05); color: var(--dim); border: 1px solid var(--rule); }
+  .item-title { font-weight: 700; color: #fff; }
+  .item-note { color: var(--dim); margin-top: 2px; }
+  .legend { display: flex; gap: 18px; font-size: 11.5px; color: var(--dim); margin-bottom: 20px; }
+  .legend span { display: inline-flex; align-items: center; gap: 6px; }
+</style>
+<main>
+  <h1>Plan 079 checklist — where we are</h1>
+  <p class="lede">Reference list, kept in sync with <code>plans/079-overlay-visual-revamp-consolidated.md</code>. Update this file whenever an item moves status.</p>
+  <div class="legend">
+    <span><span class="badge done" style="width:14px;height:14px;font-size:8px;">✓</span> locked/mocked</span>
+    <span><span class="badge partial" style="width:14px;height:14px;font-size:8px;">~</span> partial</span>
+    <span><span class="badge open" style="width:14px;height:14px;font-size:8px;">○</span> untouched</span>
+  </div>
+
+  <h2>Locked (decided + mocked)</h2>
+  <ul>
+    <li><span class="badge done">✓</span><div><div class="item-title">Card shape</div><div class="item-note">Permanent notch cutout, 3-block build, square inner corners, rounded outer ends only, pure #000 matching real hardware, unconditional across modes.</div></div></li>
+    <li><span class="badge done">✓</span><div><div class="item-title">Team identification</div><div class="item-note">Real club crests via ESPN's existing <code>team.logo</code> field.</div></div></li>
+    <li><span class="badge done">✓</span><div><div class="item-title">Data source</div><div class="item-note">Staying on ESPN — plan 057 evaluation closed.</div></div></li>
+    <li><span class="badge done">✓</span><div><div class="item-title">Idle state (3 sub-states)</div><div class="item-note">Collapsed (bare notch) → idle (time + status dots) → expanded-on-hover (flat weather-mood background). Operator-confirmed.</div></div></li>
+    <li><span class="badge done">✓</span><div><div class="item-title">General compact card + expanded manifest</div><div class="item-note">Was the single biggest gap — now closed via the cmux full-flow build: chip-based source (yellowish, replaces plain "cmux / CLI · local"), title+chip / subtitle+time header rows, full-width expanded message (no more half-empty source column), real compact↔expanded lifecycle (auto-expand → auto-retract at half window → compact → rotate out), hover and <code>⌃⇧N</code> both able to toggle compact↔expanded regardless of priority. <code>.track</code> queue-slider carried through both states. This is now the standard template for every other card type.</div></div></li>
+    <li><span class="badge done">✓</span><div><div class="item-title">Cmux-relayed notification</div><div class="item-note">Closed — see above, cmux was the worked example for the general template.</div></div></li>
+    <li><span class="badge done">✓</span><div><div class="item-title">News card presentation</div><div class="item-note">Mocked at <code>prototype/news-card.html</code> (2026-07-20): compact = shipped card + published-time meta in the pills row; expanded = full-width summary + one inline meta row (the 3-column manifest dies); runs the shared cmux lifecycle with <code>⌃⇧O read</code> for linked items. Operator-approved. Implementation not started.</div></div></li>
+  </ul>
+
+  <h2>Partial</h2>
+  <ul>
+    <li><span class="badge partial">~</span><div><div class="item-title">Weather background art</div><div class="item-note">3 CSS-approximated moods built (rainy night / rain / sunny). Still open: full condition bucket list, real SVG/image assets (not CSS gradients).</div></div></li>
+    <li><span class="badge partial">~</span><div><div class="item-title">Score prominence / event display</div><div class="item-note">Mockup proposed at <code>prototype/football-card.html</code> (2026-07-20): centered crest–score–crest row (item 5), CSS-shape event icon set (item 6), crest fallback circles pending real <code>team.logo</code> fetch (item 3). Awaits operator sign-off; wire shape (item 4) still undecided.</div></div></li>
+  </ul>
+
+  <h2>Open</h2>
+  <ul>
+    <li><span class="badge open">○</span><div><div class="item-title">News card implementation</div><div class="item-note">Mockup approved (see Locked) — remaining work is building it in <code>StatusRailCard.tsx</code>/<code>Manifest.tsx</code> + the <code>preview-overlay.css</code> mirror, not more design.</div></div></li>
+    <li><span class="badge open">○</span><div><div class="item-title">Timeline / day-progress slider</div><div class="item-note">Had a home in the old idle view; dropped in the redesign, not yet placed anywhere new.</div></div></li>
+    <li><span class="badge open">○</span><div><div class="item-title">In-card pause indicator</div><div class="item-note">Static only — receive-only law, not a button.</div></div></li>
+    <li><span class="badge open">○</span><div><div class="item-title">Staleness / age indicators</div></div></li>
+    <li><span class="badge open">○</span><div><div class="item-title">Now-playing / media controls</div><div class="item-note">Concept only so far, no actual mockup. Real caveat: undocumented <code>MediaRemote</code> framework dependency.</div></div></li>
+    <li><span class="badge open">○</span><div><div class="item-title">App icon / branding</div><div class="item-note">Different surface, lower priority.</div></div></li>
+  </ul>
+
+  <h2>Bigger/deferred (not part of the mockup loop)</h2>
+  <ul>
+    <li><span class="badge open">○</span><div><div class="item-title">Hide-when-idle / reveal-on-hover</div><div class="item-note">Real interaction-model change (hover detection, window resize), not a style question.</div></div></li>
+  </ul>
+</main>
+</html>

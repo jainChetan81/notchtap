@@ -1,0 +1,565 @@
+<!doctype html>
+<!-- Source: Claude artifact 4bbff819-d3d4-48c4-9934-2e1b3641632a ("notch states — collapsed / idle / expanded"), extracted 2026-07-20. Locked design reference for plan 079. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>notch states — collapsed / idle / expanded</title>
+<style>
+  :root { --bg: #101318; --ink: #e8ecf1; --dim: #8b95a3; --rule: rgba(255,255,255,0.09); --accent: #7fe08d; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; padding: 44px 24px 100px; }
+  main { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 21px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .lede { color: var(--dim); font-size: 13px; line-height: 1.6; max-width: 66ch; margin: 0 0 8px; }
+  .note { font-size: 11.5px; color: var(--dim); border-left: 2px solid var(--rule); padding-left: 10px; margin: 0 0 36px; max-width: 64ch; line-height: 1.6; }
+  code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; color: #9fc3e8; }
+  section { margin-bottom: 44px; padding-top: 24px; border-top: 1px solid var(--rule); }
+  h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); margin: 0 0 4px; }
+  .section-sub { font-size: 12px; color: var(--dim); margin: 0 0 14px; max-width: 62ch; line-height: 1.5; }
+  .rig-label { font: 700 10px/1 ui-monospace, monospace; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); margin: 0 0 8px; }
+  .tag { display: inline-block; font: 700 8.5px/1 ui-monospace, monospace; letter-spacing: 0.05em; text-transform: uppercase; padding: 2px 6px; border-radius: 999px; margin-left: 6px; color: var(--accent); background: rgba(127,224,141,0.12); border: 1px solid rgba(127,224,141,0.3); }
+
+  .rig { position: relative; background: #05060a; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 16px 32px rgba(0,0,0,0.4); }
+  .menubar { position: relative; height: 26px; background: #1c1d20; }
+  /* square by default — when flank-left/flank-right sit either side
+     (idle/expanded states), THEY already round the seam with their own
+     inner corner; rounding .hw-notch's corners too would double up and
+     leave a tiny gap where the two independent curves don't quite meet.
+     .hw-notch.solo (collapsed state only, nothing beside it) is the one
+     case that needs its own rounding. */
+  .hw-notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: 26px; width: 150px; background: #000; z-index: 2; }
+  .hw-notch.solo { border-bottom-left-radius: 10px; border-bottom-right-radius: 10px; }
+  .stage { position: relative; min-height: 90px; background: repeating-linear-gradient(45deg, #08090c 0 2px, #0c0d10 2px 4px); }
+
+  /* three-block shape instead of clip-path — plain border-radius works
+     normally this way. .card-wrap sizes the whole assembly (--cw wide);
+     .flank-left/.flank-right sit either side of the permanent notch
+     cutout at the notch's own height (--nh); .below-block (when present)
+     carries everything underneath, full width. rounding: ONLY the two
+     true outer ends of the whole assembly round — nowhere else. The
+     notch cutout's own inner corners (where flank-left/flank-right meet
+     it) stay perfectly square, plain strip with a sharp rectangular
+     bite. Outer rounding lives on .flank-left/.flank-right themselves
+     when there's no below-block (idle), or on .below-block when there
+     is (expanded/promoted) — whichever one is the actual bottom edge. */
+  .card-wrap { position: absolute; top: 0; left: 50%; transform: translateX(-50%); z-index: 5; width: var(--cw); }
+  .flank-left, .flank-right {
+    position: absolute; top: 0; width: calc((var(--cw) - var(--nw)) / 2); height: var(--nh);
+    background: #000; color: #f5f7fa; display: flex; align-items: center;
+  }
+  .flank-left { left: 0; padding-left: 16px; }
+  .flank-right { right: 0; padding-right: 16px; justify-content: flex-end; }
+  .flank-left.bottom-edge { border-bottom-left-radius: 14px; }
+  .flank-right.bottom-edge { border-bottom-right-radius: 14px; }
+  .below-block {
+    position: absolute; top: var(--nh); left: 0; width: 100%;
+    background: #000; color: #f5f7fa; box-shadow: 0 14px 28px rgba(0,0,0,0.5);
+    border-bottom-left-radius: 14px; border-bottom-right-radius: 14px;
+    padding: 10px 16px 14px;
+  }
+
+  .idle-flank { display: flex; align-items: center; justify-content: space-between; height: 100%; width: 100%; }
+  .time-only { font: 800 15px/1 ui-monospace, "SFMono-Regular", Menlo, monospace; letter-spacing: 0.02em; color: #f5f7fa; white-space: nowrap; }
+  .status-dots { display: flex; align-items: center; gap: 8px; flex: none; }
+  .status-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .status-dot.football { background: #3ddc70; }
+  .status-dot.news { background: #ff5c5c; }
+  .status-dot.weather { background: #f0c46a; }
+  .status-dot.active { box-shadow: 0 0 7px 1px currentColor; animation: dot-pulse 1.8s ease-in-out infinite; }
+  .status-dot.football.active { color: #3ddc70; }
+  .status-dot.news.active { color: #ff5c5c; }
+  .status-dot.weather.active { color: #f0c46a; }
+  .status-dot.dim { opacity: 0.22; box-shadow: none; animation: none; }
+  @keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+
+  /* --- expanded (hover) content: each status dot grows into a full
+     labeled row (name, status text, polling timer) --- */
+  .detail-rows { display: flex; flex-direction: column; gap: 9px; margin-top: 2px; }
+  .detail-row { display: flex; align-items: center; gap: 9px; font-size: 11px; }
+  .detail-row .status-dot { width: 8px; height: 8px; }
+  .detail-name { font: 800 10.5px/1 -apple-system, sans-serif; letter-spacing: 0.03em; color: #f5f7fa; width: 60px; flex: none; }
+  .detail-status { color: rgba(255,255,255,0.55); flex: 1; }
+  .detail-status b { color: rgba(255,255,255,0.85); font-weight: 700; }
+  .detail-timer { font: 600 9.5px/1 ui-monospace, monospace; color: rgba(255,255,255,0.4); flex: none; white-space: nowrap; }
+  .divider { height: 1px; background: rgba(255,255,255,0.08); margin: 10px 0; }
+
+  /* --- weather-mood backgrounds for the expanded state — flat, simple,
+     CSS-only approximations of the reference images, recolored into the
+     dark palette instead of their original bright tones. content sits
+     on top via a dark scrim gradient for legibility. --- */
+  .wx-block { position: relative; overflow: hidden; min-height: 78px; }
+  .wx-scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0.05), rgba(0,0,0,0.55) 75%); z-index: 1; }
+  .wx-content { position: relative; z-index: 2; display: flex; align-items: flex-end; justify-content: space-between; height: 100%; }
+  .wx-temp { font: 800 20px/1 ui-monospace, monospace; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,0.4); }
+  .wx-cond { font: 700 9.5px/1.4 -apple-system, sans-serif; letter-spacing: 0.04em; text-transform: uppercase; color: rgba(255,255,255,0.75); }
+
+  .wx-rainy-night { background: linear-gradient(180deg, #171b35 0%, #262c52 55%, #12142a 100%); }
+  .wx-rainy-night .wx-glow { position: absolute; top: -20px; left: 14px; width: 60px; height: 60px; border-radius: 50%; background: radial-gradient(circle, rgba(240,196,106,0.35), transparent 70%); }
+  .wx-rain-streaks { position: absolute; inset: 0; background-image: repeating-linear-gradient(115deg, rgba(180,210,255,0.16) 0px, rgba(180,210,255,0.16) 1px, transparent 1px, transparent 10px); }
+
+  .wx-rain { background: linear-gradient(180deg, #2b3d4d 0%, #1b2731 100%); }
+  .wx-rain .wx-cloud { position: absolute; border-radius: 50%; background: radial-gradient(circle, rgba(190,200,210,0.5), rgba(190,200,210,0.15) 70%); }
+  .wx-rain .c1 { width: 46px; height: 26px; top: -10px; left: 8px; }
+  .wx-rain .c2 { width: 60px; height: 32px; top: -14px; left: 40px; }
+  .wx-rain .c3 { width: 40px; height: 24px; top: -8px; right: 10px; }
+
+  .wx-sunny { background: linear-gradient(180deg, #163149 0%, #0e2436 100%); }
+  .wx-sunny .wx-sun { position: absolute; top: -18px; right: 16px; width: 46px; height: 46px; border-radius: 50%; background: radial-gradient(circle, #f0c46a 0%, rgba(240,196,106,0.5) 45%, transparent 72%); }
+  .wx-sunny .wx-cloud-soft { position: absolute; top: 6px; left: 10px; width: 38px; height: 16px; border-radius: 999px; background: rgba(255,255,255,0.14); }
+
+  /* --- idle hover → weather peek: any .card-wrap.peekable (and the
+     section-4 flow card while data-phase="idle") carries a hidden
+     .wx-peek below-block that grows open while the pointer is over the
+     card. height transition (not max-height) because .wx-block's own
+     min-height would fight max-height:0. While the peek is open the
+     flanks are no longer the bottom edge, so their idle rounding must
+     go square — same double-curve rule as compact/expanded below. --- */
+  .wx-peek { height: 0; min-height: 0; opacity: 0; overflow: hidden; transition: height 260ms cubic-bezier(0.22,1,0.36,1), opacity 200ms cubic-bezier(0.22,1,0.36,1); }
+  .peekable:hover .wx-peek { height: 78px; opacity: 1; }
+  .peekable:hover .flank-left.bottom-edge { border-bottom-left-radius: 0; }
+  .peekable:hover .flank-right.bottom-edge { border-bottom-right-radius: 0; }
+  .flow-card[data-phase="idle"]:hover .wx-peek { height: 78px; opacity: 1; }
+  .flow-card[data-phase="idle"]:hover .flank-left { border-bottom-left-radius: 0; }
+  .flow-card[data-phase="idle"]:hover .flank-right { border-bottom-right-radius: 0; }
+
+  /* --- section 4: cmux notification, full interactive flow --- */
+  .limit-line { position: absolute; top: 300px; left: 0; right: 0; border-top: 1px dashed rgba(240,196,106,0.5); z-index: 8; }
+  .limit-line span { position: absolute; right: 8px; top: 2px; font: 700 8px/1 ui-monospace, monospace; color: #f0c46a; background: #05060a; padding: 2px 5px; border-radius: 3px; }
+
+  /* flank-left/right size off the --cw custom property (calc((var(--cw)
+     - var(--nw))/2)), so overriding just `width` here isn't enough — the
+     inline style sets --cw:260px directly (max specificity for that
+     property), so redefining it on phase change needs !important too or
+     the flanks would stay sized for 260px while the card itself grows
+     to 400px, leaving visible gaps on both sides. */
+  .flow-card { transition: width 320ms cubic-bezier(0.22,1,0.36,1); }
+  .flow-card[data-phase="expanded"], .flow-card[data-phase="compact"] { --cw: 400px !important; width: 400px !important; }
+  /* flank corners are the true bottom edge ONLY in idle (nothing below
+     them) — round them there; once notif-body-wrap exists beneath them
+     in compact/expanded, THAT element owns the bottom rounding instead,
+     so the flanks must go square or we get the same double-curve gap
+     bug fixed earlier in this session. */
+  .flow-card[data-phase="idle"] .flank-left { border-bottom-left-radius: 14px; }
+  .flow-card[data-phase="idle"] .flank-right { border-bottom-right-radius: 14px; }
+  .flow-card .priority-dot { width: 8px; height: 8px; border-radius: 50%; background: #ff6b57; box-shadow: 0 0 7px 1px rgba(255,107,87,0.35); margin-left: 8px; display: none; }
+  .flow-card .stamp-word { font: 800 10px/1 ui-monospace, monospace; letter-spacing: 0.1em; color: #ff6b57; display: none; }
+  .flow-card[data-phase="expanded"] .priority-dot, .flow-card[data-phase="compact"] .priority-dot,
+  .flow-card[data-phase="expanded"] .stamp-word, .flow-card[data-phase="compact"] .stamp-word { display: inline-block; }
+  .flow-card[data-phase="expanded"] .status-dots, .flow-card[data-phase="compact"] .status-dots { display: none; }
+
+  .notif-body-wrap { display: none; background: #000; }
+  .ttl-bar { height: 2px; background: rgba(255,255,255,0.08); }
+  .ttl-fill { height: 100%; width: 100%; background: #ff6b57; transition: none; }
+  .flow-card[data-phase="expanded"] .notif-body-wrap, .flow-card[data-phase="compact"] .notif-body-wrap { display: block; }
+  .flow-card[data-phase="compact"] .notif-body-wrap { border-bottom-left-radius: 14px; border-bottom-right-radius: 14px; }
+  .flow-card[data-phase="compact"]:hover .notif-body-wrap { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
+  .notif-block { padding: 10px 16px 16px; }
+  .notif-header-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+  .notif-title { font: 700 13px/1.25 -apple-system, sans-serif; color: #f5f7fa; }
+  .chip-row { display: flex; align-items: center; gap: 6px; flex: none; }
+  .chip { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px; font: 700 8px/1 ui-monospace, monospace; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+  .chip-source { background: rgba(240,196,106,0.14); color: #f0c46a; border: 1px solid rgba(240,196,106,0.35); }
+  .notif-subtitle-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 3px; }
+  .notif-subtitle { font-size: 10.5px; color: rgba(255,255,255,0.45); font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .notif-time-inline { font: 700 10px/1 ui-monospace, monospace; color: rgba(255,255,255,0.35); flex: none; }
+  .notif-body { margin-top: 8px; font-size: 11.5px; line-height: 1.35; color: rgba(255,255,255,0.7); display: -webkit-box; overflow: hidden; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .notif-track { margin-top: 10px; height: 3px; display: grid; grid-template-columns: repeat(3,1fr); gap: 3px; }
+  .notif-track span { background: rgba(255,255,255,0.09); border-radius: 2px; }
+  .notif-track span.done { background: color-mix(in srgb, #ff6b57 30%, transparent); }
+  .notif-track span.cur { background: #ff6b57; box-shadow: 0 -2px 8px rgba(255,107,87,0.35); }
+
+  .manifest-wrap { max-height: 0; opacity: 0; overflow: hidden; background: #000; border-top: 1px solid rgba(255,255,255,0.1); border-bottom-left-radius: 14px; border-bottom-right-radius: 14px; transition: max-height 320ms cubic-bezier(0.22,1,0.36,1), opacity 220ms cubic-bezier(0.22,1,0.36,1); }
+  .flow-card[data-phase="expanded"] .manifest-wrap { max-height: 500px; opacity: 1; }
+  .flow-card[data-phase="compact"]:hover .manifest-wrap { max-height: 500px; opacity: 1; }
+  .manifest-block { padding: 12px 16px 14px; }
+  .manifest-label { font: 700 8.5px/1 ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: #ff6b57; margin-bottom: 7px; }
+  .manifest-text { font-size: 12px; line-height: 1.5; color: rgba(255,255,255,0.85); }
+  .manifest-text code { padding: 1px 5px; background: rgba(255,255,255,0.08); color: #ff6b57; font-family: ui-monospace, monospace; font-size: 0.88em; }
+  .manifest-footer { margin-top: 10px; display: flex; justify-content: flex-end; }
+  .manifest-hint { font: 700 9px/1 ui-monospace, monospace; letter-spacing: 0.06em; color: rgba(255,255,255,0.4); }
+
+  .controls { display: flex; gap: 10px; justify-content: center; margin-top: 16px; }
+  button { font: 700 10px/1 ui-monospace, monospace; letter-spacing: 0.06em; text-transform: uppercase; padding: 9px 16px; border-radius: 8px; border: 1px solid var(--rule); background: #171b22; color: var(--ink); cursor: pointer; }
+  button:hover:not(:disabled) { border-color: rgba(127,224,141,0.4); color: var(--accent); }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+  .status-line { text-align: center; font-size: 11.5px; color: var(--dim); margin-top: 12px; min-height: 32px; }
+  .status-line b { color: #f0c46a; }
+
+  footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 11.5px; color: var(--dim); line-height: 1.6; }
+</style>
+
+<main>
+  <h1>Three states: collapsed → idle → expanded on hover</h1>
+  <p class="lede">
+    One unified design now — same permanent notch cutout, same pure
+    black, same shape, on both the MacBook and the Mac mini. No more
+    separate notch-mode/HUD-mode sections; showing it once.
+  </p>
+
+  <section>
+    <h2>1 — collapsed (fully idle, no card at all)</h2>
+    <p class="section-sub">Indistinguishable from a bare real notch — nothing rendered beyond the cutout itself. This is the resting state before anything expands.</p>
+    <div class="rig-label">Bare notch</div>
+    <div class="rig">
+      <div class="menubar"></div>
+      <div class="hw-notch solo" style="width:150px;"></div>
+      <div class="stage" style="min-height:70px;"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>2 — idle (the one we just nailed)</h2>
+    <p class="section-sub">Time on one side, three status dots on the other — a quick glance, nothing more. <b>Hover the card</b> — the weather peek grows open underneath.</p>
+    <div class="rig-label">Idle rail — hover it</div>
+    <div class="rig">
+      <div class="menubar"></div>
+      <div class="hw-notch" style="width:150px;"></div>
+      <div class="card-wrap peekable" style="--cw:320px; --nw:150px; --nh:26px;">
+        <div class="flank-left bottom-edge">
+          <span class="time-only">14:32</span>
+        </div>
+        <div class="flank-right bottom-edge">
+          <div class="status-dots">
+            <span class="status-dot football active"></span>
+            <span class="status-dot news active"></span>
+            <span class="status-dot weather dim"></span>
+          </div>
+        </div>
+        <div class="below-block wx-block wx-sunny wx-peek">
+          <div class="wx-sun"></div>
+          <div class="wx-cloud-soft"></div>
+          <div class="wx-scrim"></div>
+          <div class="wx-content">
+            <span class="wx-cond">Clear · Bangalore</span>
+            <span class="wx-temp">28°</span>
+          </div>
+        </div>
+      </div>
+      <div class="stage" style="min-height:90px;"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>3 — expanded (hover), take two</h2>
+    <p class="section-sub">
+      Pulled the dense status rows — too much to parse at a glance.
+      Instead: a simple flat weather-mood scene as the background,
+      recolored into our dark palette (not the bright originals), with
+      just the temp + condition sitting on top. Three moods, same layout.
+    </p>
+    <div class="rig-label">Rainy night</div>
+    <div class="rig">
+      <div class="menubar"></div>
+      <div class="hw-notch" style="width:150px;"></div>
+      <div class="card-wrap" style="--cw:320px; --nw:150px; --nh:26px;">
+        <div class="flank-left">
+          <span class="time-only">14:32</span>
+        </div>
+        <div class="flank-right">
+          <div class="status-dots">
+            <span class="status-dot football active"></span>
+            <span class="status-dot news active"></span>
+            <span class="status-dot weather active"></span>
+          </div>
+        </div>
+        <div class="below-block wx-block wx-rainy-night">
+          <div class="wx-glow"></div>
+          <div class="wx-rain-streaks"></div>
+          <div class="wx-scrim"></div>
+          <div class="wx-content">
+            <span class="wx-cond">Light rain · Bangalore</span>
+            <span class="wx-temp">21°</span>
+          </div>
+        </div>
+      </div>
+      <div class="stage" style="min-height:90px;"></div>
+    </div>
+
+    <div class="rig-label" style="margin-top:24px;">Rain (overcast)</div>
+    <div class="rig">
+      <div class="menubar"></div>
+      <div class="hw-notch" style="width:150px;"></div>
+      <div class="card-wrap" style="--cw:320px; --nw:150px; --nh:26px;">
+        <div class="flank-left">
+          <span class="time-only">14:32</span>
+        </div>
+        <div class="flank-right">
+          <div class="status-dots">
+            <span class="status-dot football active"></span>
+            <span class="status-dot news active"></span>
+            <span class="status-dot weather active"></span>
+          </div>
+        </div>
+        <div class="below-block wx-block wx-rain">
+          <div class="wx-cloud c1"></div>
+          <div class="wx-cloud c2"></div>
+          <div class="wx-cloud c3"></div>
+          <div class="wx-rain-streaks"></div>
+          <div class="wx-scrim"></div>
+          <div class="wx-content">
+            <span class="wx-cond">Rain · Bangalore</span>
+            <span class="wx-temp">19°</span>
+          </div>
+        </div>
+      </div>
+      <div class="stage" style="min-height:90px;"></div>
+    </div>
+
+    <div class="rig-label" style="margin-top:24px;">Sunny</div>
+    <div class="rig">
+      <div class="menubar"></div>
+      <div class="hw-notch" style="width:150px;"></div>
+      <div class="card-wrap" style="--cw:320px; --nw:150px; --nh:26px;">
+        <div class="flank-left">
+          <span class="time-only">14:32</span>
+        </div>
+        <div class="flank-right">
+          <div class="status-dots">
+            <span class="status-dot football active"></span>
+            <span class="status-dot news active"></span>
+            <span class="status-dot weather active"></span>
+          </div>
+        </div>
+        <div class="below-block wx-block wx-sunny">
+          <div class="wx-sun"></div>
+          <div class="wx-cloud-soft"></div>
+          <div class="wx-scrim"></div>
+          <div class="wx-content">
+            <span class="wx-cond">Clear · Bangalore</span>
+            <span class="wx-temp">28°</span>
+          </div>
+        </div>
+      </div>
+      <div class="stage" style="min-height:90px;"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>4 — cmux notification, full flow</h2>
+    <p class="section-sub">
+      Start idle (hover it — weather peek). Click "Notification arrives"
+      — it auto-expands (full manifest), auto-retracts to compact
+      halfway through, then rotates back to idle. Hover the card at any
+      point in that lifecycle to see what happens; "Toggle (⌃⇧N)" is the
+      real hotkey, always available once a notification is showing.
+      Source is a colored chip (CMUX, yellowish) next to the title
+      instead of plain text — no more ambiguous "local" wording. Subtitle
+      sits next to the title/chip row, alongside time when there's room.
+      In the expanded manifest, message/subject gets the full width — no
+      more pairing it with a half-empty source column.
+    </p>
+    <div class="rig-label">Live demo — try the whole sequence</div>
+    <div class="rig" style="position:relative;">
+      <div class="menubar"></div>
+      <div class="stage" style="min-height:340px;">
+        <div class="limit-line"><span>300px — real window height ends here</span></div>
+        <div class="card-wrap flow-card" id="flow-card" data-phase="idle" style="--cw:260px; --nw:150px; --nh:26px;">
+          <div class="flank-left">
+            <span class="time-only">14:32</span>
+            <span class="priority-dot"></span>
+          </div>
+          <div class="flank-right">
+            <div class="status-dots">
+              <span class="status-dot football active"></span>
+              <span class="status-dot news active"></span>
+              <span class="status-dot weather dim"></span>
+            </div>
+            <span class="stamp-word">NOW</span>
+          </div>
+          <div class="below-block wx-block wx-sunny wx-peek">
+            <div class="wx-sun"></div>
+            <div class="wx-cloud-soft"></div>
+            <div class="wx-scrim"></div>
+            <div class="wx-content">
+              <span class="wx-cond">Clear · Bangalore</span>
+              <span class="wx-temp">28°</span>
+            </div>
+          </div>
+          <div class="notif-body-wrap">
+            <div class="notif-block">
+              <div class="notif-header-row">
+                <span class="notif-title">Claude Code</span>
+                <div class="chip-row"><span class="chip chip-source">CMUX</span></div>
+              </div>
+              <div class="notif-subtitle-row">
+                <span class="notif-subtitle">Completed in mac-notification-nudge</span>
+                <span class="notif-time-inline">14:32</span>
+              </div>
+              <div class="notif-body">Sure — here's something genuinely complicated from this repo: notchtap's cross-device presentation logic collapses two structurally distinct failure modes…</div>
+              <div class="notif-track"><span class="done"></span><span class="cur"></span><span></span></div>
+            </div>
+            <div class="ttl-bar"><div class="ttl-fill" id="ttl-fill"></div></div>
+          </div>
+          <div class="manifest-wrap">
+            <div class="manifest-block">
+              <div class="manifest-label">MESSAGE</div>
+              <div class="manifest-text">Sure — here's something genuinely complicated from this repo: notchtap's cross-device presentation logic collapses two structurally distinct failure modes (<code>notchtap-detect</code> subprocess exit failure, …)</div>
+              <div class="manifest-footer"><span class="manifest-hint">⌃⇧N collapse</span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="controls">
+        <button id="flow-fire" onclick="flowFire()">Notification arrives</button>
+        <button id="flow-toggle" onclick="flowToggle()" disabled>Toggle (⌃⇧N)</button>
+      </div>
+      <p class="status-line" id="flow-status">Idle. Hover the card to peek the weather, or click "Notification arrives" to start.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>5 — news card, same template</h2>
+    <p class="section-sub">
+      Locked and operator-approved: compact = the shipped card verbatim
+      (masthead, WIRE stamp, pills, news-shade, track) plus published-time
+      meta; expanded = full-width summary + one inline meta row; runs the
+      cmux lifecycle above. Embedded live from
+      <code>prototype/news-card.html</code> so there is one source of truth.
+    </p>
+    <iframe src="news-card.html" style="width:100%; height:1500px; border:1px solid var(--rule); border-radius:10px; background:var(--bg);" loading="lazy"></iframe>
+  </section>
+
+  <section>
+    <h2>6 — option: native-notch resting state (hide-when-idle)</h2>
+    <p class="section-sub">
+      A config option, not a new design: everything works exactly as
+      above, but the resting state is the <b>bare native notch</b>
+      (section 1) instead of the time+dots rail. Promotions, event
+      expansions, hover reveals, and rotate-out all behave the same —
+      the card simply returns to invisible-native when there's nothing
+      to say, instead of to the rail. Hovering the bare notch still
+      opens the weather peek / football compact, so nothing is
+      discoverable-only-by-accident: the rail is ambience, the bare
+      notch is for people who want the screen back.
+    </p>
+    <div class="rig-label">Resting: bare notch (option on) vs idle rail (option off, default)</div>
+    <div class="rig">
+      <div class="menubar"></div>
+      <div class="hw-notch solo" style="width:150px;"></div>
+      <div class="stage" style="min-height:70px;"></div>
+    </div>
+    <p class="section-sub" style="margin-top:14px;">
+      Engineering note: this is the cheap half of plan 079 item 17. It
+      needs no hover detection (resting state is a render choice), only
+      a config flag read by the overlay. The expensive half — revealing
+      the rail/card on hover when nothing is showing — is the same
+      cursor-tracking work every other hover needs.
+    </p>
+  </section>
+
+  <footer>
+    Polish pass: rounded the collapsed/bare-notch state's own bottom
+    corners too, matching the cutout's rounding in the idle/expanded
+    states — one consistent rounded language across all three, not just
+    the ones with content. Also dropped the animated rain-fall motion —
+    static only for now, since you'll bring in real SVG/image art per
+    condition (not Lottie, at least for the moment) rather than
+    CSS-animated stand-ins. These three are still rough CSS
+    approximations (gradients + a few blob shapes), not final art —
+    matching your "just experiments for now" framing. If the mood/
+    direction reads right, the next step would be an actual small
+    illustration/SVG per condition rather than
+    CSS-gradient stand-ins, plus deciding the condition bucket list
+    (day/night variants, snow, fog, etc.) — that's the open-ended item 9
+    scope from plan 079. Note: the hover *trigger* itself (mouse-enter
+    detection, resize animation) is still separate interaction-model
+    work — item 17 — not shown or implied as free here.
+  </footer>
+</main>
+
+<script>
+  const flowCard = document.getElementById('flow-card');
+  const flowFireBtn = document.getElementById('flow-fire');
+  const flowToggleBtn = document.getElementById('flow-toggle');
+  const flowStatus = document.getElementById('flow-status');
+  const ttlFill = document.getElementById('ttl-fill');
+  let flowRetractTimer = null, flowRotateTimer = null;
+  const FLOW_RETRACT_MS = 3000, FLOW_ROTATE_MS = 6000;
+
+  // Pausable timeout: { id, remaining, dueAt, fn }. Pause stores how much is
+  // left and clears the native timer; resume re-arms it with what's left.
+  // The TTL bar is driven by the same remaining-time clock.
+  function makePausableTimer(ms, fn) {
+    return { id: null, remaining: ms, dueAt: 0, fn };
+  }
+  function timerStart(t) {
+    t.dueAt = Date.now() + t.remaining;
+    t.id = setTimeout(() => { t.id = null; t.remaining = 0; t.fn(); }, t.remaining);
+  }
+  function timerPause(t) {
+    if (t === null || t.id === null) return;
+    clearTimeout(t.id);
+    t.id = null;
+    t.remaining = Math.max(0, t.dueAt - Date.now());
+  }
+  function timerResume(t) {
+    if (t === null || t.id !== null || t.remaining <= 0) return;
+    timerStart(t);
+  }
+  function timerCancel(t) {
+    if (t === null) return;
+    clearTimeout(t.id);
+    t.id = null;
+    t.remaining = 0;
+  }
+  function timerRemaining(t) {
+    if (t === null) return 0;
+    return t.id === null ? t.remaining : Math.max(0, t.dueAt - Date.now());
+  }
+
+  function flowSetPhase(phase, msg) {
+    flowCard.setAttribute('data-phase', phase);
+    flowStatus.innerHTML = msg;
+  }
+
+  function flowFire() {
+    timerCancel(flowRetractTimer); timerCancel(flowRotateTimer);
+    flowFireBtn.disabled = true;
+    flowToggleBtn.disabled = false;
+    flowSetPhase('expanded', '<b>Expanded</b> — auto-retracts to compact in 3s.');
+    flowRetractTimer = makePausableTimer(FLOW_RETRACT_MS, () => {
+      flowSetPhase('compact', '<b>Compact</b> (auto-retracted) — rotates out in 3 more seconds. Hover the card, or press toggle.');
+    });
+    flowRotateTimer = makePausableTimer(FLOW_ROTATE_MS, () => {
+      timerCancel(flowRetractTimer);
+      flowRotateTimer = null;
+      flowSetPhase('idle', 'Rotated out — back to <b>idle</b>. Fire another notification to run it again.');
+      flowFireBtn.disabled = false;
+      flowToggleBtn.disabled = true;
+    });
+    timerStart(flowRetractTimer);
+    timerStart(flowRotateTimer);
+  }
+
+  function flowToggle() {
+    const current = flowCard.getAttribute('data-phase');
+    if (current === 'idle') return;
+    timerCancel(flowRetractTimer);
+    if (current === 'expanded') {
+      flowSetPhase('compact', 'Manually collapsed via <b>⌃⇧N</b> — auto-retract cancelled, stays compact until it rotates out.');
+    } else {
+      flowSetPhase('expanded', 'Manually re-expanded via <b>⌃⇧N</b>.');
+    }
+  }
+
+  // Hover pauses the lifecycle (and the bar); leaving resumes where it stopped.
+  flowCard.addEventListener('mouseenter', () => {
+    timerPause(flowRetractTimer);
+    timerPause(flowRotateTimer);
+  });
+  flowCard.addEventListener('mouseleave', () => {
+    timerResume(flowRetractTimer);
+    timerResume(flowRotateTimer);
+  });
+
+  // Bar tracks the rotate window: 100% → 0 over FLOW_ROTATE_MS, frozen while
+  // paused, back to 100% once the card rotates out to idle.
+  function ttlTick() {
+    const remaining = flowRotateTimer === null ? FLOW_ROTATE_MS : timerRemaining(flowRotateTimer);
+    ttlFill.style.width = (remaining / FLOW_ROTATE_MS * 100) + '%';
+    requestAnimationFrame(ttlTick);
+  }
+  requestAnimationFrame(ttlTick);
+</script>
+</html>

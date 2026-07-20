@@ -1,0 +1,226 @@
+<!doctype html>
+<!-- Consolidated frontend/UI reference: every UI plan in plans/ distilled into one page — the prototypes, the locked design decisions, the open questions, and the plan inventory. Generated 2026-07-20. Sources: plans/079-overlay-visual-revamp-consolidated.md, plans/079-checklist.html, plans/README.md, plans/done/*, plans/suspended/*, prototype/*.html. Update this page whenever a plan moves status or a prototype changes. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>frontend UI — consolidated plans, prototypes, decisions</title>
+<style>
+  :root { --bg: #101318; --panel: #171b22; --ink: #e8ecf1; --dim: #8b95a3; --rule: rgba(255,255,255,0.09); --accent: #7fe08d; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; padding: 44px 24px 100px; }
+  main { max-width: 900px; margin: 0 auto; }
+  h1 { font-size: 21px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .lede { color: var(--dim); font-size: 13px; line-height: 1.6; max-width: 68ch; margin: 0 0 8px; }
+  code { font-family: ui-monospace, Menlo, monospace; color: #9fc3e8; font-size: 0.92em; }
+  a { color: #9fc3e8; }
+  h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); margin: 44px 0 12px; border-top: 1px solid var(--rule); padding-top: 22px; }
+  h3 { font-size: 13px; font-weight: 700; color: var(--ink); margin: 24px 0 8px; }
+  .sub { font-size: 12px; color: var(--dim); margin: 0 0 14px; max-width: 66ch; line-height: 1.55; }
+
+  .badge { display: inline-flex; align-items: center; justify-content: center; flex: none; min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; font: 800 10px/1 ui-monospace, monospace; }
+  .badge.done { background: rgba(127,224,141,0.15); color: var(--accent); border: 1px solid rgba(127,224,141,0.4); }
+  .badge.partial { background: rgba(240,196,106,0.15); color: #f0c46a; border: 1px solid rgba(240,196,106,0.4); }
+  .badge.open { background: rgba(255,255,255,0.05); color: var(--dim); border: 1px solid var(--rule); }
+  .badge.deferred { background: rgba(201,157,240,0.12); color: #c99df0; border: 1px solid rgba(201,157,240,0.35); }
+
+  ul.items { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+  ul.items li { display: flex; align-items: flex-start; gap: 10px; padding: 10px 12px; border-radius: 8px; background: var(--panel); border: 1px solid var(--rule); font-size: 13px; line-height: 1.5; }
+  .item-title { font-weight: 700; color: #fff; }
+  .item-note { color: var(--dim); margin-top: 2px; font-size: 12px; }
+
+  .proto { border: 1px solid var(--rule); border-radius: 10px; overflow: hidden; margin-bottom: 28px; background: var(--panel); }
+  .proto-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; padding: 10px 14px; border-bottom: 1px solid var(--rule); }
+  .proto-title { font-weight: 700; font-size: 13px; }
+  .proto-desc { color: var(--dim); font-size: 11.5px; margin-top: 2px; }
+  .proto-head a { font: 700 10px/1 ui-monospace, monospace; letter-spacing: 0.06em; text-transform: uppercase; white-space: nowrap; }
+  .proto iframe { display: block; width: 100%; height: 640px; border: 0; background: #101318; }
+
+  table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  th { text-align: left; font: 700 9px/1 ui-monospace, monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); padding: 6px 10px; border-bottom: 1px solid var(--rule); }
+  td { padding: 8px 10px; border-bottom: 1px solid rgba(255,255,255,0.05); vertical-align: top; line-height: 1.5; }
+  td.st { white-space: nowrap; }
+
+  .constraint { border-left: 2px solid #f0c46a; background: rgba(240,196,106,0.06); padding: 10px 12px; border-radius: 0 8px 8px 0; font-size: 12.5px; color: var(--dim); line-height: 1.55; margin-bottom: 10px; }
+  .constraint b { color: #f0c46a; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Frontend UI — everything in one place</h1>
+  <p class="lede">
+    Consolidation of every UI/frontend plan in <code>plans/</code>: the
+    live prototypes, the locked design decisions, the open questions,
+    and the full plan inventory. Generated 2026-07-20. Read this page
+    first; drill into individual plan files only when you need the full
+    text.
+  </p>
+
+  <h2>The prototypes</h2>
+  <p class="sub">Live HTML mockups, all served from <code>prototype/</code>. The first two are the locked foundation; the rest build on them.</p>
+
+  <div class="proto">
+    <div class="proto-head">
+      <div>
+        <div class="proto-title">notch-states — the locked template</div>
+        <div class="proto-desc">Card shape (permanent cutout, 3 blocks), collapsed / idle / expanded, weather-mood backgrounds, cmux full lifecycle demo. <b>Locked.</b></div>
+      </div>
+      <a href="../prototype/notch-states.html" target="_blank">open full page ↗</a>
+    </div>
+    <iframe src="../prototype/notch-states.html" loading="lazy"></iframe>
+  </div>
+
+  <div class="proto">
+    <div class="proto-head">
+      <div>
+        <div class="proto-title">news-card — shipped look + meta + cmux lifecycle</div>
+        <div class="proto-desc">Compact = shipped card verbatim + published-time meta; expanded = full-width summary + inline meta; full lifecycle demo. <b>Mockup complete, awaiting implementation.</b></div>
+      </div>
+      <a href="../prototype/news-card.html" target="_blank">open full page ↗</a>
+    </div>
+    <iframe src="../prototype/news-card.html" loading="lazy"></iframe>
+  </div>
+
+  <div class="proto">
+    <div class="proto-head">
+      <div>
+        <div class="proto-title">football-card — sticky presence, event-driven expansion</div>
+        <div class="proto-desc">Operator model: present ~T-30 → full-time, hover = compact only, expansion is EVENT-driven (goal/pen/OG/yellow/red celebrate; 043's foul/offside/VAR/sub open quietly), paused → weather peek, preemptible, no queue track. All 9 event states mocked. <b>Items 4/5/6 proposal + 043 looped in.</b></div>
+      </div>
+      <a href="../prototype/football-card.html" target="_blank">open full page ↗</a>
+    </div>
+    <iframe src="../prototype/football-card.html" loading="lazy"></iframe>
+  </div>
+
+  <div class="proto">
+    <div class="proto-head">
+      <div>
+        <div class="proto-title">weather-art — 10-condition set (Meteocons + CSS moods)</div>
+        <div class="proto-desc">Item 9 proposal: vendored Meteocons static SVGs (MIT) + purpose-built CSS gradient backdrops, day/night/severe sections. Replaces the CSS blob stand-ins. <b>Awaiting operator sign-off.</b></div>
+      </div>
+      <a href="../prototype/weather-art.html" target="_blank">open full page ↗</a>
+    </div>
+    <iframe src="../prototype/weather-art.html" loading="lazy"></iframe>
+  </div>
+
+  <div class="proto">
+    <div class="proto-head">
+      <div>
+        <div class="proto-title">control-panel — the 9-section Settings window</div>
+        <div class="proto-desc">Today's window incl. Telegram connector health (076) + Diagnostics log viewer (077). <b>Documents shipped state; supersedes DESIGN.html §06 where stale.</b></div>
+      </div>
+      <a href="../prototype/control-panel.html" target="_blank">open full page ↗</a>
+    </div>
+    <iframe src="../prototype/control-panel.html" loading="lazy"></iframe>
+  </div>
+
+  <h2>Locked decisions</h2>
+  <ul class="items">
+    <li><span class="badge done">✓</span><div><div class="item-title">Card shape (079 item 1)</div><div class="item-note">Permanent notch cutout, 3-block build, square inner corners, rounded outer ends only, pure #000, unconditional across notch/HUD modes. Mocked in notch-states.</div></div></li>
+    <li><span class="badge done">✓</span><div><div class="item-title">Idle state, 3 sub-states (079)</div><div class="item-note">Collapsed (bare notch) → idle (time + 3 status dots) → expanded-on-hover (flat weather-mood background). Operator-confirmed, hover mocked.</div></div></li>
+    <li><span class="badge done">✓</span><div><div class="item-title">General compact card + manifest (079 items 19/8)</div><div class="item-note">Closed via the cmux full-flow build: chip-based source, title+chip / subtitle+time rows, full-width expanded message, auto-expand → auto-retract at half → rotate out, hover + ⌃⇧N toggle, .track carried through. The standard template for every card type.</div></div></li>
+    <li><span class="badge done">✓</span><div><div class="item-title">News card (079 item 7)</div><div class="item-note">Compact = shipped card + published-time meta; expanded = full-width summary + inline meta row (3-column manifest dies); cmux lifecycle. Mockup complete at prototype/news-card.html — implementation not started.</div></div></li>
+    <li><span class="badge done">✓</span><div><div class="item-title">Team identification (079 item 3)</div><div class="item-note">Real club crests via ESPN's existing team.logo; rust fetches+embeds bytes, text-abbrev fallback (what the football mockup draws).</div></div></li>
+    <li><span class="badge done">✓</span><div><div class="item-title">Data source (079 item 15)</div><div class="item-note">ESPN stays. Plan 057 (paid API evaluation) closed.</div></div></li>
+    <li><span class="badge done">✓</span><div><div class="item-title">Green reserved for "live"</div><div class="item-note">#7fe08d means live-now only — idle football dot, LIVE pill, goal icons.</div></div></li>
+    <li><span class="badge done">✓</span><div><div class="item-title">Overlay stays receive-only</div><div class="item-note">Pause indicator, if any, is a static chip — never a button (plan 055 option B).</div></div></li>
+    <li><span class="badge done">✓</span><div><div class="item-title">TTL progress bar + hover-pause (2026-07-20)</div><div class="item-note">Every rotating card carries a thin progress bar showing time until rotate-out; hovering the card pauses bar AND lifecycle timers, unhover resumes. Implemented in both lifecycle demos (notch-states §4, news-card).</div></div></li>
+    <li><span class="badge done">✓</span><div><div class="item-title">Weather art direction (079 item 9, 2026-07-20)</div><div class="item-note">Meteocons static SVGs (MIT, vendored in prototype/assets/weather/) + CSS gradient mood backdrops keyed to condition + day/night. 10-condition gallery at prototype/weather-art.html. Replaces CSS blob stand-ins.</div></div></li>
+    <li><span class="badge done">✓</span><div><div class="item-title">Icon sourcing (2026-07-20)</div><div class="item-note">Lucide (ISC, existing dep) for generic UI glyphs; Fluent sport-soccer (MIT) + game-icons.net whistle/flag (CC BY 3.0 → NOTICE file) for event icons; Meteocons (MIT) for weather; crests = ESPN CDN team.logo runtime-cached by Rust (never committed). No SF Symbols exports (license forbids).</div></div></li>
+    <li><span class="badge done">✓</span><div><div class="item-title">Hide-when-idle option (079 item 17, cheap half)</div><div class="item-note">Config flag: resting state = bare native notch instead of the rail; everything else identical. Notch-states §6. The expensive half (hover-reveal when nothing shows) remains deferred with the cursor-tracking work.</div></div></li>
+  </ul>
+
+  <h2>Open questions</h2>
+  <ul class="items">
+    <li><span class="badge partial">~</span><div><div class="item-title">Football card details (079 items 4/5/6)</div><div class="item-note">Mockup at prototype/football-card.html. Operator-locked 2026-07-20: sticky medium-priority presence (~T-30 → full-time), hover reveals compact, NO full-expand, no queue track, paused → weather peek, preemptible by higher tiers. Still open: wire shape (4), crest fetch + item 6a backend, real crest art, whether goals force the card visible.</div></div></li>
+    <li><span class="badge partial">~</span><div><div class="item-title">Weather background art (079 item 9)</div><div class="item-note">Direction locked 2026-07-20 (Meteocons + CSS moods, gallery at prototype/weather-art.html). Open: operator sign-off on the 10 pairings, spare buckets (wind/hail/extreme-rain) assignment, moving assets to src/assets/ + NOTICE.</div></div></li>
+    <li><span class="badge open">○</span><div><div class="item-title">Idle typography scale (079 item 2)</div><div class="item-note">Shown incidentally in mockups, never explicitly decided.</div></div></li>
+    <li><span class="badge open">○</span><div><div class="item-title">Bottom-row pills across card states (079 item 10)</div><div class="item-note">Same — incidentally shown, undecided.</div></div></li>
+    <li><span class="badge open">○</span><div><div class="item-title">In-card pause indicator (079 item 11 / 055)</div><div class="item-note">Static only per receive-only law. No mockup yet.</div></div></li>
+    <li><span class="badge open">○</span><div><div class="item-title">Staleness / age indicators (079 item 14)</div><div class="item-note">Shipped age pills carried into news mockup; "needs its own restyle?" undecided.</div></div></li>
+    <li><span class="badge open">○</span><div><div class="item-title">Timeline / day-progress slider (079 item 18)</div><div class="item-note">Dropped from the new idle, no new home anywhere.</div></div></li>
+    <li><span class="badge open">○</span><div><div class="item-title">News ambient idle-rail summary (052)</div><div class="item-note">Spike done, build decision open, gated by 073 (ambient status channel).</div></div></li>
+    <li><span class="badge open">○</span><div><div class="item-title">App icon / branding (079 item 12 / 054) + asset licensing (13)</div><div class="item-note">Still Tauri scaffold defaults; mark direction + palette + artwork source all open.</div></div></li>
+    <li><span class="badge partial">~</span><div><div class="item-title">Now-playing / media controls (079 item 16)</div><div class="item-note">Research done 2026-07-20: macOS 15.4 BROKE direct MediaRemote for third parties; no public API exists (FB17228659 open). Working path = media-control CLI / mediaremote-adapter (BSD-3, perl-loophole), stream JSON → new SourceKind → idle chip; ~1 day + fallback design. Needs go/no-go on the fragility risk.</div></div></li>
+    <li><span class="badge partial">~</span><div><div class="item-title">Hide-when-idle / reveal-on-hover (079 item 17)</div><div class="item-note">Cheap half locked 2026-07-20: config flag for bare-notch resting state (notch-states §6). Expensive half (hover-reveal of rail/card when nothing shows) stays deferred — same cursor-tracking blocker as all hover.</div></div></li>
+    <li><span class="badge open">○</span><div><div class="item-title">Notification history in Settings (059)</div><div class="item-note">Would add a 10th sidebar section; privacy decision unresolved; P3 spike.</div></div></li>
+  </ul>
+
+  <h2>Engineering constraints to remember</h2>
+  <div class="constraint"><b>No hover exists on the real window today.</b> <code>apply_overlay_native_config</code> (src-tauri/src/lib.rs:530-540) sets <code>set_ignore_cursor_events(true)</code> on the whole overlay. Every hover interaction in these prototypes needs that re-engineered (dynamic cursor tracking) before it can ship.</div>
+  <div class="constraint"><b>Appearance preview mirror law.</b> The Settings Appearance section renders the real StatusRailCard through <code>src/settings/preview-overlay.css</code>, a scoped mirror of <code>src/styles.css</code>. Any card change must update both files in the same commit (DESIGN.html Law #7).</div>
+  <div class="constraint"><b>063 idle-rail wrap ships before 079.</b> Locked: flex-wrap on .src-rail, notch-mode width cap = cutout width, 270px floor, live-chip ellipsis, no visual restyle. Missing Steps/Test-plan sections; MacBook smoke-check owed.</div>
+  <div class="constraint"><b>DESIGN.html is stale in two places:</b> it shows 8 settings sections (Diagnostics/077 and Telegram health/076 are missing — trust prototype/control-panel.html), and its live-match Cards cells use 🟨/🟥 glyphs while shipped rust emits the "0Y1R · 2Y0R" text form.</div>
+  <div class="constraint"><b>Research caution:</b> <code>research/043-worldcup-final-verification/kimi-worldcup-final-api-UNRELIABLE-discard.md</code> is a fabricated run kept only as a cautionary artifact — never cite it.</div>
+
+  <h2>Research findings</h2>
+  <p class="sub">Full write-ups behind the locked decisions:</p>
+  <ul class="items">
+    <li><span class="badge done">doc</span><div><div class="item-title"><a href="../research/2026-07-20-now-playing-mediaremote.md">Now-playing / MediaRemote (2026-07-20)</a></div><div class="item-note">macOS 15.4 broke direct MediaRemote; no public API; working path = media-control CLI / mediaremote-adapter (BSD-3); ~1 day + mandatory fallback design; how to inspect it yourself (media-control get, Control Center — never a browser).</div></div></li>
+    <li><span class="badge done">doc</span><div><div class="item-title"><a href="../research/2026-07-20-icon-artwork-sourcing.md">Icon &amp; artwork sourcing (2026-07-20)</a></div><div class="item-note">Lucide (ISC) for UI, Fluent + game-icons.net (MIT / CC BY 3.0) for soccer events, Meteocons (MIT) for weather, ESPN CDN for crests (runtime cache, never commit), no SF Symbols exports, Iconify offline rules.</div></div></li>
+    <li><span class="badge done">doc</span><div><div class="item-title"><a href="../research/043-worldcup-final-verification/">ESPN richer match events (plan 043)</a></div><div class="item-note">Verified against a live World Cup final: summary commentary/keyEvents exist and grow monotonically but the endpoint is flaky → fallback chain to core API /competitions/{id}/plays (confirmed working). Feeds football card item 6a. Caution: the file marked UNRELIABLE-discard in that folder is a fabricated run — never cite it.</div></div></li>
+  </ul>
+
+  <h2>Plan inventory</h2>
+  <h3>Active</h3>
+  <table>
+    <tr><th>Plan</th><th>Status</th><th>Gist</th></tr>
+    <tr><td><code>079-overlay-visual-revamp-consolidated</code></td><td class="st"><span class="badge partial">~</span></td><td>Master visual redesign. Locked items mocked in the 4 prototypes above; open items listed above. Supersedes 043/054/055/056/057/060.</td></tr>
+    <tr><td><code>063-notch-mode-idle-rail-covers-menubar-icons</code></td><td class="st"><span class="badge partial">~</span></td><td>P1 bug, fix locked (wrap + cutout-width cap). Ships before 079; not execution-ready.</td></tr>
+    <tr><td><code>075-frontend-toolchain-major-bump-spike</code></td><td class="st"><span class="badge open">○</span></td><td>TS 7 / Vite 8 / Vitest 4 trial in a worktree; go/no-go report. Toolchain, not visual.</td></tr>
+    <tr><td><code>059-notification-history</code></td><td class="st"><span class="badge open">○</span></td><td>P3 spike; 10th settings section for persisted history; privacy decision unresolved.</td></tr>
+    <tr><td><code>068-test-notification-coverage</code></td><td class="st"><span class="badge open">○</span></td><td>Rust tests for build_test_event/send_test_notification. No UI.</td></tr>
+    <tr><td><code>071-docs-truth-pass-5</code></td><td class="st"><span class="badge open">○</span></td><td>Docs sync (test counts etc.); lands after 064/066/067/068.</td></tr>
+  </table>
+
+  <h3>Suspended (all superseded by 079 except 069)</h3>
+  <table>
+    <tr><th>Plan</th><th>Folded into</th></tr>
+    <tr><td><code>060-hud-mode-card-top-treatment</code></td><td>079 item 1 (unconditional shape)</td></tr>
+    <tr><td><code>056-live-match-scorecard-visual-redesign</code></td><td>079 items 3/5/6 → prototype/football-card.html</td></tr>
+    <tr><td><code>055-in-card-pause-control</code></td><td>079 item 11 (static indicator only)</td></tr>
+    <tr><td><code>054-app-icon-and-branding</code></td><td>079 item 12</td></tr>
+    <tr><td><code>043-richer-match-events</code></td><td>079 item 6a (backend) + 6 (display)</td></tr>
+    <tr><td><code>057-paid-sports-api-evaluation</code></td><td>Closed by 079 item 15 (stay on ESPN)</td></tr>
+    <tr><td><code>069-memoize-inline-markdown</code></td><td>Folded into 078 (done)</td></tr>
+  </table>
+
+  <h3>Done — what the current UI already ships</h3>
+  <table>
+    <tr><th>Plan</th><th>Shipped</th></tr>
+    <tr><td><code>032-status-rail-visual-refresh</code></td><td>Current visual language: 3px priority edge, inline markdown, goal celebration.</td></tr>
+    <tr><td><code>033-queue-slider-and-expand-all</code></td><td>The lifecycle every prototype demos: auto-expand → retract at half → rotate out; queue slider.</td></tr>
+    <tr><td><code>034-idle-source-status-rail</code></td><td>status-state channel, idle source chips (→ 063's width bug).</td></tr>
+    <tr><td><code>035-rich-relay-manifest</code></td><td>subtitle/details wire fields; the 3-column manifest news now replaces.</td></tr>
+    <tr><td><code>039/041/042 espn live card</code></td><td>Opt-in live-match card, Topic supersession, ESPN event labels, collapsed scorecard. Never-pin locked; no-flags superseded by crests.</td></tr>
+    <tr><td><code>040-weather-and-idle-presence</code></td><td>Weather source, ambient chip, rain/hot/cold alerts.</td></tr>
+    <tr><td><code>052-news-ambient-status-spike</code></td><td>Design only; build undecided (gated by 073).</td></tr>
+    <tr><td><code>061-design-doc-control-panel-coverage</code></td><td>DESIGN.html §06 (now partly stale — see constraints).</td></tr>
+    <tr><td><code>076-telegram-connector-health-visibility</code></td><td>Health line in Connectors — mocked in control-panel.html.</td></tr>
+    <tr><td><code>077-in-app-log-viewer</code></td><td>Diagnostics section — mocked in control-panel.html.</td></tr>
+    <tr><td><code>078-drop-motion-from-overlay-bundle</code></td><td>motion → CSS transitions + useDelayedSwap (−38% gzip).</td></tr>
+    <tr><td><code>001/002/004/005/008/018/021/023/027</code></td><td>Hotkeys, settings appearance/test buttons, auto-expand-high (superseded by 033), idle cost cuts, save polish, goal celebration, reset polish.</td></tr>
+  </table>
+
+  <h2>Implementation plans (filed 2026-07-20)</h2>
+  <ul class="items">
+    <li><span class="badge open">080</span><div><div class="item-title">News card implementation — P1, M</div><div class="item-note">Compact + published meta, full-width expanded summary. Depends on 063 shipping first.</div></div></li>
+    <li><span class="badge open">081</span><div><div class="item-title">TTL progress bar — P2, M</div><div class="item-note">Wire: ttl_ms + remaining_ms; frontend rAF bar. Hover-pause half gated by 086.</div></div></li>
+    <li><span class="badge open">082</span><div><div class="item-title">Weather art implementation — P2, S–M</div><div class="item-note">Meteocons → src/assets + NOTICE, condition→art table, day/night over the wire, alert-card application.</div></div></li>
+    <li><span class="badge open">083</span><div><div class="item-title">Football backend — P2, M–L</div><div class="item-note">Structured EspnMeta wire block → crests (cache + serving route w/ capability tension flagged) → espn_rich_events (6a fallback + dedup). Gates 084.</div></div></li>
+    <li><span class="badge open">084</span><div><div class="item-title">Football card display — P2, M</div><div class="item-note">Compact scorecard, event-driven celebrations, sticky presence. Depends 083 + 080.</div></div></li>
+    <li><span class="badge open">085</span><div><div class="item-title">Hide-when-idle option — P3, S</div><div class="item-note">resting_state rail|notch config + General toggle. Anytime after 080.</div></div></li>
+    <li><span class="badge open">086</span><div><div class="item-title">Hover / cursor-tracking spike — P2, S</div><div class="item-note">Decide-scoped. Gates hover-halves of 081/082/084 + idle expanded-on-hover. Can run parallel-early.</div></div></li>
+  </ul>
+  <p class="sub"><b>Sequencing:</b> 063 (locked, needs plan pass) → 080 → 081 → 082 → 083 → 084 → 085 anytime → 086 parallel-early.</p>
+
+  <h2>Next moves, suggested order</h2>
+  <ul class="items">
+    <li><span class="badge open">1</span><div><div class="item-title">Plan pass on 063, then dispatch 080</div><div class="item-note">063's fix is locked but lacks Steps/Test-plan; then the news card is the first build.</div></div></li>
+    <li><span class="badge open">2</span><div><div class="item-title">Dispatch 086 in parallel</div><div class="item-note">The hover spike unblocks the most later value; it's investigate-scoped and cheap.</div></div></li>
+    <li><span class="badge open">3</span><div><div class="item-title">083 → 084 for football</div><div class="item-note">Backend first (wire fields, crests, 6a), display second.</div></div></li>
+    <li><span class="badge open">4</span><div><div class="item-title">Small mockups still missing</div><div class="item-note">Pause indicator chip (11), staleness pills (14), timeline's new home (18) — small additions to notch-states.html when ready.</div></div></li>
+  </ul>
+</main>
+</body>
+</html>

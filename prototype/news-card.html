@@ -1,0 +1,497 @@
+<!doctype html>
+<!-- News card v2 mockup: compact keeps the SHIPPED card's exact visual language (screenshot-faithful: masthead, WIRE stamp, headline, category+age pills, news-shade glow, track, MORE hint — real .cat-* tokens from src/styles.css) with ONE addition: published-time meta on the compact card. Expanded drops the 3-column manifest for full-width summary + inline meta. Lifecycle follows the cmux template from prototype/notch-states.html: auto-expand on arrival → auto-retract to compact halfway → rotate out, hover toggles, ⌃⇧N always available. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>news card — shipped look, meta + cmux lifecycle</title>
+<style>
+  :root { --bg: #101318; --ink: #e8ecf1; --dim: #8b95a3; --rule: rgba(255,255,255,0.09); --accent: #7fe08d; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; padding: 44px 24px 100px; }
+  main { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 21px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .lede { color: var(--dim); font-size: 13px; line-height: 1.6; max-width: 66ch; margin: 0 0 8px; }
+  .note { font-size: 11.5px; color: var(--dim); border-left: 2px solid var(--rule); padding-left: 10px; margin: 0 0 32px; max-width: 64ch; line-height: 1.6; }
+  code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; color: #9fc3e8; }
+  section { margin-bottom: 44px; padding-top: 24px; border-top: 1px solid var(--rule); }
+  h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); margin: 0 0 4px; }
+  .section-sub { font-size: 12px; color: var(--dim); margin: 0 0 16px; max-width: 62ch; line-height: 1.5; }
+  .rig-label { font: 700 10px/1 ui-monospace, monospace; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); margin: 0 0 8px; }
+
+  .rig { position: relative; background: #05060a; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 16px 32px rgba(0,0,0,0.4); }
+  .menubar { position: relative; height: 26px; background: #1c1d20; }
+  .hw-notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: 26px; width: 150px; background: #000; z-index: 2; }
+  .stage { position: relative; min-height: 90px; background: repeating-linear-gradient(45deg, #08090c 0 2px, #0c0d10 2px 4px); }
+
+  .card-wrap { position: absolute; top: 0; left: 50%; transform: translateX(-50%); z-index: 5; width: var(--cw); }
+  .flank-left, .flank-right { position: absolute; top: 0; width: calc((var(--cw) - var(--nw)) / 2); height: var(--nh); background: #000; color: #f5f7fa; display: flex; align-items: center; }
+  .flank-left { left: 0; padding-left: 16px; }
+  .flank-right { right: 0; padding-right: 16px; justify-content: flex-end; }
+  .time-only { font: 800 15px/1 ui-monospace, monospace; color: #f5f7fa; }
+  .below-block { position: absolute; top: var(--nh); left: 0; width: 100%; background: #000; box-shadow: 0 14px 28px rgba(0,0,0,0.5); border-bottom-left-radius: 14px; border-bottom-right-radius: 14px; overflow: hidden; }
+
+  /* ==== real category tokens, verbatim from src/styles.css .cat-* ==== */
+  .cat-politics { --cat: #7c9df5; --cat-deep: rgba(124,157,245,0.16); --cat-pill: rgba(124,157,245,0.14); }
+  .cat-tech     { --cat: #5fd4e8; --cat-deep: rgba(95,212,232,0.15);  --cat-pill: rgba(95,212,232,0.13); }
+  .cat-sports   { --cat: #7fe08d; --cat-deep: rgba(127,224,141,0.15); --cat-pill: rgba(127,224,141,0.13); }
+  .cat-business { --cat: #f0c46a; --cat-deep: rgba(240,196,106,0.15); --cat-pill: rgba(240,196,106,0.13); }
+  .cat-world    { --cat: #c99df0; --cat-deep: rgba(201,157,240,0.15); --cat-pill: rgba(201,157,240,0.13); }
+
+  /* the shipped news-shade: category-tinted corner glow drifting over black */
+  .news-shade { position: relative; }
+  .news-shade::before {
+    content: ""; position: absolute; inset: -30%; z-index: 0;
+    background:
+      radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%),
+      linear-gradient(135deg, var(--cat-deep) 0%, transparent 46%);
+    animation: shade-drift 12s ease-in-out infinite alternate;
+    pointer-events: none;
+  }
+  @keyframes shade-drift {
+    from { transform: translate3d(0, 0, 0); }
+    to   { transform: translate3d(-8%, -6%, 0); }
+  }
+  .news-shade > * { position: relative; z-index: 1; }
+
+  /* ==== compact: the SHIPPED layout, screenshot-faithful. One addition:
+     .pub-meta — published-time meta tucked at the right end of the pills
+     row, styled like a quiet third pill so it reads as part of the same
+     system. ==== */
+  .notif-block { padding: 12px 16px 12px; }
+  .masthead-row { display: flex; align-items: center; gap: 10px; }
+  .masthead {
+    display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0;
+    font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+    letter-spacing: 0.14em; text-transform: uppercase;
+    color: rgba(255, 255, 255, 0.38);
+  }
+  .masthead::after { content: ""; flex: 1; height: 1px; background: rgba(255,255,255,0.12); }
+  .masthead .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--cat); box-shadow: 0 0 6px var(--cat); flex: none; }
+  .stamp-box {
+    flex: none; padding: 4px 7px; border: 1px solid rgba(255,255,255,0.45); border-radius: 2px;
+    font: 700 8px/1 ui-monospace, monospace; letter-spacing: 0.14em; text-transform: uppercase;
+    color: rgba(255,255,255,0.75);
+  }
+  .headline {
+    margin-top: 5px; font: 700 13px/1.3 -apple-system, sans-serif; color: #f5f7fa;
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .pills { display: flex; align-items: center; gap: 5px; margin-top: 8px; }
+  .pill { padding: 3px 7px; border-radius: 999px; font: 700 8px/1 ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; }
+  .pill.category { color: var(--cat); background: var(--cat-pill); border: 1px solid color-mix(in srgb, var(--cat) 35%, transparent); }
+  .pill.age { color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); }
+  .pub-meta { margin-left: auto; font: 600 8px/1 ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.32); white-space: nowrap; }
+  .card-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
+  .track { flex: 1; max-width: 140px; height: 3px; display: flex; gap: 3px; }
+  .track span { flex: 1; background: rgba(255,255,255,0.09); border-radius: 2px; }
+  .track span.done { background: color-mix(in srgb, var(--cat) 30%, transparent); }
+  .track span.cur { background: var(--cat); box-shadow: 0 -2px 8px var(--cat-pill); }
+  .more-hint { font: 700 8.5px/1 ui-monospace, monospace; letter-spacing: 0.08em; color: rgba(255,255,255,0.4); }
+
+  /* ==== expanded: full-width summary + one inline meta row (replaces
+     the shipped 3-column Summary / Source+Published / Category+Control
+     grid with its half-empty columns). Control hints in the footer,
+     where the cmux template puts them. ==== */
+  .manifest-block { padding: 12px 16px 13px; border-top: 1px solid rgba(255,255,255,0.1); }
+  .manifest-label { font: 700 8.5px/1 ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--cat); margin-bottom: 7px; }
+  .manifest-text { font-size: 12px; line-height: 1.5; color: rgba(255,255,255,0.85); }
+  .manifest-meta {
+    margin-top: 10px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
+    font: 600 9.5px/1.5 ui-monospace, monospace; color: rgba(255,255,255,0.4);
+  }
+  .manifest-meta b { color: rgba(255,255,255,0.7); font-weight: 700; }
+  .manifest-meta .sep { color: rgba(255,255,255,0.18); }
+  .manifest-footer { margin-top: 10px; display: flex; justify-content: flex-end; }
+  .manifest-hint { font: 700 9px/1 ui-monospace, monospace; letter-spacing: 0.06em; color: rgba(255,255,255,0.4); }
+
+  /* ==== section 3: full cmux lifecycle demo, mechanics copied from
+     prototype/notch-states.html section 4 — idle → (fire) expanded →
+     auto-retract to compact at half → rotate out. Hover expands a
+     compact card; ⌃⇧N toggles. ==== */
+  .limit-line { position: absolute; top: 300px; left: 0; right: 0; border-top: 1px dashed rgba(240,196,106,0.5); z-index: 8; }
+  .limit-line span { position: absolute; right: 8px; top: 2px; font: 700 8px/1 ui-monospace, monospace; color: #f0c46a; background: #05060a; padding: 2px 5px; border-radius: 3px; }
+
+  .status-dots { display: flex; align-items: center; gap: 8px; flex: none; }
+  .status-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .status-dot.football { background: #3ddc70; }
+  .status-dot.news { background: #ff5c5c; }
+  .status-dot.weather { background: #f0c46a; }
+  .status-dot.dim { opacity: 0.22; }
+
+  .wx-peek { height: 0; min-height: 0; opacity: 0; overflow: hidden; transition: height 260ms cubic-bezier(0.22,1,0.36,1), opacity 200ms cubic-bezier(0.22,1,0.36,1); }
+  .wx-block { position: relative; }
+  .wx-sunny { background: linear-gradient(180deg, #163149 0%, #0e2436 100%); }
+  .wx-sunny .wx-sun { position: absolute; top: -18px; right: 16px; width: 46px; height: 46px; border-radius: 50%; background: radial-gradient(circle, #f0c46a 0%, rgba(240,196,106,0.5) 45%, transparent 72%); }
+  .wx-sunny .wx-cloud-soft { position: absolute; top: 6px; left: 10px; width: 38px; height: 16px; border-radius: 999px; background: rgba(255,255,255,0.14); }
+  .wx-scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0.05), rgba(0,0,0,0.55) 75%); z-index: 1; }
+  .wx-content { position: relative; z-index: 2; display: flex; align-items: flex-end; justify-content: space-between; height: 100%; padding: 10px 16px 14px; }
+  .wx-temp { font: 800 20px/1 ui-monospace, monospace; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,0.4); }
+  .wx-cond { font: 700 9.5px/1.4 -apple-system, sans-serif; letter-spacing: 0.04em; text-transform: uppercase; color: rgba(255,255,255,0.75); }
+
+  .flow-card { transition: width 320ms cubic-bezier(0.22,1,0.36,1); }
+  .flow-card[data-phase="expanded"], .flow-card[data-phase="compact"] { --cw: 400px !important; width: 400px !important; }
+  .flow-card[data-phase="idle"] .flank-left { border-bottom-left-radius: 14px; }
+  .flow-card[data-phase="idle"] .flank-right { border-bottom-right-radius: 14px; }
+  .flow-card[data-phase="idle"]:hover .wx-peek { height: 78px; opacity: 1; }
+  .flow-card[data-phase="idle"]:hover .flank-left { border-bottom-left-radius: 0; }
+  .flow-card[data-phase="idle"]:hover .flank-right { border-bottom-right-radius: 0; }
+  .flow-card .stamp-word { font: 800 10px/1 ui-monospace, monospace; letter-spacing: 0.1em; color: var(--cat); display: none; }
+  .flow-card[data-phase="expanded"] .stamp-word, .flow-card[data-phase="compact"] .stamp-word { display: inline-block; }
+  .flow-card[data-phase="expanded"] .status-dots, .flow-card[data-phase="compact"] .status-dots { display: none; }
+
+  .flow-card .card-body { display: none; position: absolute; top: var(--nh); left: 0; width: 100%; background: #000; box-shadow: 0 14px 28px rgba(0,0,0,0.5); border-bottom-left-radius: 14px; border-bottom-right-radius: 14px; overflow: hidden; }
+  .ttl-bar { height: 2px; background: rgba(255,255,255,0.08); }
+  .ttl-fill { height: 100%; width: 100%; background: var(--cat); transition: none; }
+  .flow-card[data-phase="expanded"] .card-body, .flow-card[data-phase="compact"] .card-body { display: block; }
+  .flow-card .manifest-wrap { max-height: 0; opacity: 0; overflow: hidden; transition: max-height 320ms cubic-bezier(0.22,1,0.36,1), opacity 220ms cubic-bezier(0.22,1,0.36,1); }
+  .flow-card[data-phase="expanded"] .manifest-wrap { max-height: 400px; opacity: 1; }
+  .flow-card[data-phase="compact"]:hover .manifest-wrap { max-height: 400px; opacity: 1; }
+  .flow-card[data-phase="compact"]:hover .more-hint { visibility: hidden; }
+
+  .controls { display: flex; gap: 10px; justify-content: center; margin-top: 16px; }
+  button { font: 700 10px/1 ui-monospace, monospace; letter-spacing: 0.06em; text-transform: uppercase; padding: 9px 16px; border-radius: 8px; border: 1px solid var(--rule); background: #171b22; color: var(--ink); cursor: pointer; }
+  button:hover:not(:disabled) { border-color: rgba(127,224,141,0.4); color: var(--accent); }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+  .status-line { text-align: center; font-size: 11.5px; color: var(--dim); margin-top: 12px; min-height: 32px; }
+  .status-line b { color: #f0c46a; }
+
+  footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 11.5px; color: var(--dim); line-height: 1.6; }
+</style>
+</head>
+<body>
+<main>
+  <h1>News card — shipped look + meta, cmux lifecycle</h1>
+  <p class="lede">
+    The compact card is the <b>shipped</b> news card, screenshot-faithful
+    — masthead (category dot + source + hairline), headline,
+    <code>WIRE</code> stamp, category + age pills, news-shade glow, track
+    slider, <code>⌃⇧N MORE</code> hint. One addition: <b>published-time
+    meta</b> at the right end of the pills row. The expanded state drops
+    the cramped 3-column manifest for a full-width summary + one inline
+    meta row. And the card now runs the <b>cmux lifecycle</b> from
+    <code>prototype/notch-states.html</code>: auto-expand on arrival,
+    auto-retract to compact halfway through the window, rotate out —
+    hover and <code>⌃⇧N</code> toggle compact↔expanded at any point.
+  </p>
+  <p class="note">
+    Design tokens (<code>.cat-*</code>, masthead, pills, news-shade) are
+    copied verbatim from <code>src/styles.css</code>; lifecycle mechanics
+    are copied from the notch-states cmux demo, so this page shows the
+    news card as a pure content-swap on the shared template.
+  </p>
+
+  <section>
+    <h2>Compact — shipped card + published-time meta</h2>
+    <p class="section-sub">Identical to what's implemented today, plus <code>published 18:34</code> at the right of the pills row — the one piece of wire metadata the compact card was hiding.</p>
+
+    <div class="rig-label">Tech — The Verge</div>
+    <div class="rig">
+      <div class="menubar"></div>
+      <div class="hw-notch" style="width:150px;"></div>
+      <div class="card-wrap cat-tech" style="--cw:340px; --nw:150px; --nh:26px;">
+        <div class="flank-left"><span class="time-only">14:32</span></div>
+        <div class="flank-right"></div>
+        <div class="below-block news-shade">
+          <div class="notif-block">
+            <div class="masthead-row">
+              <span class="masthead"><span class="dot"></span>The Verge</span>
+              <span class="stamp-box">Wire</span>
+            </div>
+            <div class="headline">Open-weights model tops the coding benchmark leaderboard</div>
+            <div class="pills">
+              <span class="pill category">Tech</span><span class="pill age">&lt;1m ago</span>
+              <span class="pub-meta">published 14:31</span>
+            </div>
+            <div class="card-foot">
+              <div class="track"><span class="done"></span><span class="cur"></span><span></span><span></span></div>
+              <span class="more-hint">⌃⇧N more</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="stage" style="min-height:180px;"></div>
+    </div>
+
+    <div class="rig-label" style="margin-top:22px;">Sports — ESPN</div>
+    <div class="rig">
+      <div class="menubar"></div>
+      <div class="hw-notch" style="width:150px;"></div>
+      <div class="card-wrap cat-sports" style="--cw:340px; --nw:150px; --nh:26px;">
+        <div class="flank-left"><span class="time-only">14:32</span></div>
+        <div class="flank-right"></div>
+        <div class="below-block news-shade">
+          <div class="notif-block">
+            <div class="masthead-row">
+              <span class="masthead"><span class="dot"></span>ESPN</span>
+              <span class="stamp-box">Wire</span>
+            </div>
+            <div class="headline">City complete injury-time comeback against Arsenal</div>
+            <div class="pills">
+              <span class="pill category">Sports</span><span class="pill age">3m ago</span>
+              <span class="pub-meta">published 14:29</span>
+            </div>
+            <div class="card-foot">
+              <div class="track"><span class="done"></span><span class="done"></span><span class="cur"></span><span></span></div>
+              <span class="more-hint">⌃⇧N more</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="stage" style="min-height:180px;"></div>
+    </div>
+
+    <div class="rig-label" style="margin-top:22px;">Business — Reuters</div>
+    <div class="rig">
+      <div class="menubar"></div>
+      <div class="hw-notch" style="width:150px;"></div>
+      <div class="card-wrap cat-business" style="--cw:340px; --nw:150px; --nh:26px;">
+        <div class="flank-left"><span class="time-only">14:32</span></div>
+        <div class="flank-right"></div>
+        <div class="below-block news-shade">
+          <div class="notif-block">
+            <div class="masthead-row">
+              <span class="masthead"><span class="dot"></span>Reuters</span>
+              <span class="stamp-box">Wire</span>
+            </div>
+            <div class="headline">Central bank holds rates, signals cuts later this year</div>
+            <div class="pills">
+              <span class="pill category">Business</span><span class="pill age">18m ago</span>
+              <span class="pub-meta">published 18:34</span>
+            </div>
+            <div class="card-foot">
+              <div class="track"><span class="done"></span><span class="cur"></span><span></span></div>
+              <span class="more-hint">⌃⇧N more</span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="stage" style="min-height:180px;"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Expanded — full-width summary + inline meta</h2>
+    <p class="section-sub">
+      The shipped 3-column manifest (<code>SUMMARY</code> /
+      <code>SOURCE · PUBLISHED</code> / <code>CATEGORY · CONTROL</code>)
+      gives the summary half the width it needs and leaves two columns
+      mostly empty. Here the summary takes the full width — same as the
+      cmux template's full-width message — and the side columns collapse
+      into one inline meta row.
+    </p>
+    <div class="rig-label">Politics — NDTV, expanded</div>
+    <div class="rig">
+      <div class="menubar"></div>
+      <div class="hw-notch" style="width:150px;"></div>
+      <div class="card-wrap cat-politics" style="--cw:400px; --nw:150px; --nh:26px;">
+        <div class="flank-left"><span class="time-only">14:32</span></div>
+        <div class="flank-right"></div>
+        <div class="below-block news-shade">
+          <div class="notif-block">
+            <div class="masthead-row">
+              <span class="masthead"><span class="dot"></span>NDTV</span>
+              <span class="stamp-box">Wire</span>
+            </div>
+            <div class="headline">"A Time Bomb": Residents Fear Ghazipur-Like Landfill In Faridabad</div>
+            <div class="pills">
+              <span class="pill category">Politics</span><span class="pill age">45m ago</span>
+              <span class="pub-meta">published 18:34</span>
+            </div>
+          </div>
+          <div class="manifest-block">
+            <div class="manifest-label">Summary</div>
+            <div class="manifest-text">The biggest fear that clouds the minds of the citizens is whether this would mark the inauguration of Faridabad's version of a Ghazipur landfill — the mountain of waste that became a symbol of unchecked urban neglect.</div>
+            <div class="manifest-meta">
+              <b>NDTV</b><span class="sep">·</span>published 18:34<span class="sep">·</span>Politics
+            </div>
+            <div class="manifest-footer"><span class="manifest-hint">⌃⇧O read · ⌃⇧N collapse</span></div>
+          </div>
+        </div>
+      </div>
+      <div class="stage" style="min-height:330px;"></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Full lifecycle — the cmux timing, live</h2>
+    <p class="section-sub">
+      Exact mechanics of the notch-states cmux demo, news content
+      swapped in. Start idle (hover — weather peek). Click
+      "Notification arrives" — the card auto-expands (full manifest),
+      auto-retracts to compact halfway through, then rotates back to
+      idle. Hover a compact card to re-expand it; "Toggle (⌃⇧N)" does
+      the same by hotkey. <code>⌃⇧O read</code> appears in the expanded
+      footer because this item has a link.
+    </p>
+    <div class="rig-label">Live demo — try the whole sequence</div>
+    <div class="rig" style="position:relative;">
+      <div class="menubar"></div>
+      <div class="stage" style="min-height:430px;">
+        <div class="limit-line"><span>300px — real window height ends here</span></div>
+        <div class="card-wrap flow-card cat-tech" id="flow-card" data-phase="idle" style="--cw:260px; --nw:150px; --nh:26px;">
+          <div class="flank-left">
+            <span class="time-only">14:32</span>
+          </div>
+          <div class="flank-right">
+            <div class="status-dots">
+              <span class="status-dot football dim"></span>
+              <span class="status-dot news"></span>
+              <span class="status-dot weather dim"></span>
+            </div>
+            <span class="stamp-word">WIRE</span>
+          </div>
+          <div class="below-block wx-block wx-sunny wx-peek">
+            <div class="wx-sun"></div>
+            <div class="wx-cloud-soft"></div>
+            <div class="wx-scrim"></div>
+            <div class="wx-content">
+              <span class="wx-cond">Clear · Bangalore</span>
+              <span class="wx-temp">28°</span>
+            </div>
+          </div>
+          <div class="card-body news-shade">
+            <div class="notif-block">
+              <div class="masthead-row">
+                <span class="masthead"><span class="dot"></span>The Verge</span>
+                <span class="stamp-box">Wire</span>
+              </div>
+              <div class="headline">Apple ships on-device model update for Xcode's autocomplete</div>
+              <div class="pills">
+                <span class="pill category">Tech</span><span class="pill age">12m ago</span>
+                <span class="pub-meta">published 14:20</span>
+              </div>
+              <div class="card-foot">
+                <div class="track"><span class="done"></span><span class="cur"></span><span></span><span></span></div>
+                <span class="more-hint">⌃⇧N more</span>
+              </div>
+            </div>
+            <div class="manifest-wrap">
+              <div class="manifest-block">
+                <div class="manifest-label">Summary</div>
+                <div class="manifest-text">The update ships silently via macOS Sequoia's model-catalog service, no Xcode update required — developers report faster suggestions in large Swift files, and the model itself appears to be a smaller distillation rather than a full replacement of the existing completion engine.</div>
+                <div class="manifest-meta">
+                  <b>The Verge</b><span class="sep">·</span>published 14:20<span class="sep">·</span>Tech
+                </div>
+                <div class="manifest-footer"><span class="manifest-hint">⌃⇧O read · ⌃⇧N collapse</span></div>
+              </div>
+            </div>
+            <div class="ttl-bar"><div class="ttl-fill" id="ttl-fill"></div></div>
+          </div>
+        </div>
+      </div>
+      <div class="controls">
+        <button id="flow-fire" onclick="flowFire()">Notification arrives</button>
+        <button id="flow-toggle" onclick="flowToggle()" disabled>Toggle (⌃⇧N)</button>
+      </div>
+      <p class="status-line" id="flow-status">Idle. Hover the card to peek the weather, or click "Notification arrives" to start.</p>
+    </div>
+  </section>
+
+  <footer>
+    Net diff against the shipped card: (1) compact gains the
+    published-time meta in the pills row; (2) the expanded manifest
+    loses its 3-column grid — full-width summary + inline meta row
+    instead; (3) the card runs the shared cmux lifecycle (auto-expand →
+    auto-retract at half → rotate out, hover/⌃⇧N toggle). Everything
+    visual — masthead, WIRE stamp, pills, news-shade, track, headline
+    type — carries over untouched.
+  </footer>
+</main>
+
+<script>
+  const flowCard = document.getElementById('flow-card');
+  const flowFireBtn = document.getElementById('flow-fire');
+  const flowToggleBtn = document.getElementById('flow-toggle');
+  const flowStatus = document.getElementById('flow-status');
+  const ttlFill = document.getElementById('ttl-fill');
+  let flowRetractTimer = null, flowRotateTimer = null;
+  const FLOW_RETRACT_MS = 3000, FLOW_ROTATE_MS = 6000;
+
+  // Pausable timeout: { id, remaining, dueAt, fn }. Pause stores how much is
+  // left and clears the native timer; resume re-arms it with what's left.
+  // The TTL bar is driven by the same remaining-time clock.
+  function makePausableTimer(ms, fn) {
+    return { id: null, remaining: ms, dueAt: 0, fn };
+  }
+  function timerStart(t) {
+    t.dueAt = Date.now() + t.remaining;
+    t.id = setTimeout(() => { t.id = null; t.remaining = 0; t.fn(); }, t.remaining);
+  }
+  function timerPause(t) {
+    if (t === null || t.id === null) return;
+    clearTimeout(t.id);
+    t.id = null;
+    t.remaining = Math.max(0, t.dueAt - Date.now());
+  }
+  function timerResume(t) {
+    if (t === null || t.id !== null || t.remaining <= 0) return;
+    timerStart(t);
+  }
+  function timerCancel(t) {
+    if (t === null) return;
+    clearTimeout(t.id);
+    t.id = null;
+    t.remaining = 0;
+  }
+  function timerRemaining(t) {
+    if (t === null) return 0;
+    return t.id === null ? t.remaining : Math.max(0, t.dueAt - Date.now());
+  }
+
+  function flowSetPhase(phase, msg) {
+    flowCard.setAttribute('data-phase', phase);
+    flowStatus.innerHTML = msg;
+  }
+
+  function flowFire() {
+    timerCancel(flowRetractTimer); timerCancel(flowRotateTimer);
+    flowFireBtn.disabled = true;
+    flowToggleBtn.disabled = false;
+    flowSetPhase('expanded', '<b>Expanded</b> — auto-retracts to compact in 3s.');
+    flowRetractTimer = makePausableTimer(FLOW_RETRACT_MS, () => {
+      flowSetPhase('compact', '<b>Compact</b> (auto-retracted) — rotates out in 3 more seconds. Hover the card, or press toggle.');
+    });
+    flowRotateTimer = makePausableTimer(FLOW_ROTATE_MS, () => {
+      timerCancel(flowRetractTimer);
+      flowRotateTimer = null;
+      flowSetPhase('idle', 'Rotated out — back to <b>idle</b>. Fire another notification to run it again.');
+      flowFireBtn.disabled = false;
+      flowToggleBtn.disabled = true;
+    });
+    timerStart(flowRetractTimer);
+    timerStart(flowRotateTimer);
+  }
+
+  function flowToggle() {
+    const current = flowCard.getAttribute('data-phase');
+    if (current === 'idle') return;
+    timerCancel(flowRetractTimer);
+    if (current === 'expanded') {
+      flowSetPhase('compact', 'Manually collapsed via <b>⌃⇧N</b> — auto-retract cancelled, stays compact until it rotates out.');
+    } else {
+      flowSetPhase('expanded', 'Manually re-expanded via <b>⌃⇧N</b>.');
+    }
+  }
+
+  // Hover pauses the lifecycle (and the bar); leaving resumes where it stopped.
+  flowCard.addEventListener('mouseenter', () => {
+    timerPause(flowRetractTimer);
+    timerPause(flowRotateTimer);
+  });
+  flowCard.addEventListener('mouseleave', () => {
+    timerResume(flowRetractTimer);
+    timerResume(flowRotateTimer);
+  });
+
+  // Bar tracks the rotate window: 100% → 0 over FLOW_ROTATE_MS, frozen while
+  // paused, back to 100% once the card rotates out to idle.
+  function ttlTick() {
+    const remaining = flowRotateTimer === null ? FLOW_ROTATE_MS : timerRemaining(flowRotateTimer);
+    ttlFill.style.width = (remaining / FLOW_ROTATE_MS * 100) + '%';
+    requestAnimationFrame(ttlTick);
+  }
+  requestAnimationFrame(ttlTick);
+</script>
+</body>
+</html>
