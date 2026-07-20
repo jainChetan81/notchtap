@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from "motion/react";
+import { useMemo } from "react";
 import { renderInlineMarkdown } from "../lib/markdown";
 import { categoryLabel, type EventType, publishedLabel, sourceLabelFor } from "../lib/presentation";
 
@@ -32,94 +32,93 @@ export function Manifest({
 }) {
   const newsPublished = publishedLabel(publishedAtMs ?? null, Date.now());
   const newsCategory = categoryLabel(category ?? null);
+  // plan 069 (folded into 078): memoized on `body` so unrelated re-renders
+  // don't re-tokenize the markdown.
+  const messageContent = useMemo(() => renderInlineMarkdown(body), [body]);
 
   return (
-    <AnimatePresence initial={false}>
-      {expanded && (
-        <motion.div
-          className="manifest"
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: "auto", opacity: 1 }}
-          exit={{ height: 0, opacity: 0 }}
-          transition={{ duration: 0.24, ease: [0.22, 1, 0.36, 1] }}
-        >
-          {eventType === "news_item" ? (
-            <div className="manifest-inner news">
-              <div>
-                <div className="detail-label">Summary</div>
-                <div className="detail-value">{body}</div>
-              </div>
-              <div>
-                <div className="detail-label">Source / Published</div>
-                <div className="detail-value">
-                  {source ?? "RSS"}
-                  {newsPublished !== null && (
-                    <>
-                      <br />
-                      {newsPublished}
-                    </>
-                  )}
-                </div>
-              </div>
-              <div>
-                <div className="detail-label">Category / Control</div>
-                <div className="detail-value">
-                  {newsCategory !== null && (
-                    <>
-                      {newsCategory}
-                      <br />
-                    </>
-                  )}
-                  {hasLink ? (
-                    <>
-                      <kbd>⌃⇧O</kbd> read · <kbd>⌃⇧N</kbd> collapse
-                    </>
-                  ) : (
-                    <>
-                      <kbd>⌃⇧N</kbd> collapse
-                    </>
-                  )}
-                </div>
+    // plan 078: expand/collapse is now a CSS grid-template-rows 0fr→1fr
+    // transition (styles.css) — the content stays mounted at all times, so
+    // collapsed content needs aria-hidden to stay out of the accessibility
+    // tree (AnimatePresence used to remove it from the DOM entirely).
+    <div className={`manifest-wrap${expanded ? " expanded" : ""}`} aria-hidden={!expanded}>
+      <div className="manifest">
+        {eventType === "news_item" ? (
+          <div className="manifest-inner news">
+            <div>
+              <div className="detail-label">Summary</div>
+              <div className="detail-value">{body}</div>
+            </div>
+            <div>
+              <div className="detail-label">Source / Published</div>
+              <div className="detail-value">
+                {source ?? "RSS"}
+                {newsPublished !== null && (
+                  <>
+                    <br />
+                    {newsPublished}
+                  </>
+                )}
               </div>
             </div>
-          ) : (
-            <div className="manifest-inner">
-              <div>
-                <div className="detail-label">Message</div>
-                <div className="detail-value message">{renderInlineMarkdown(body)}</div>
+            <div>
+              <div className="detail-label">Category / Control</div>
+              <div className="detail-value">
+                {newsCategory !== null && (
+                  <>
+                    {newsCategory}
+                    <br />
+                  </>
+                )}
+                {hasLink ? (
+                  <>
+                    <kbd>⌃⇧O</kbd> read · <kbd>⌃⇧N</kbd> collapse
+                  </>
+                ) : (
+                  <>
+                    <kbd>⌃⇧N</kbd> collapse
+                  </>
+                )}
               </div>
-              <div>
-                <div className="detail-label">Source / Control</div>
-                <div className="detail-value">
-                  {sourceLabelFor(eventType)}
-                  <br />
-                  {hasLink ? (
-                    <>
-                      <kbd>⌃⇧O</kbd> read · <kbd>⌃⇧N</kbd> collapse
-                    </>
-                  ) : (
-                    <>
-                      <kbd>⌃⇧N</kbd> collapse
-                    </>
-                  )}
-                </div>
-              </div>
-              {subtitle ? (
-                <div>
-                  <div className="detail-label">Subtitle</div>
-                  <div className="detail-value">{subtitle}</div>
-                </div>
-              ) : null}
-              {details.map((detail) => (
-                <div key={`${detail.label}:${detail.value}`}>
-                  <div className="detail-label">{detail.label}</div>
-                  <div className="detail-value">{detail.value}</div>
-                </div>
-              ))}
             </div>
-          )}
-        </motion.div>
-      )}
-    </AnimatePresence>
+          </div>
+        ) : (
+          <div className="manifest-inner">
+            <div>
+              <div className="detail-label">Message</div>
+              <div className="detail-value message">{messageContent}</div>
+            </div>
+            <div>
+              <div className="detail-label">Source / Control</div>
+              <div className="detail-value">
+                {sourceLabelFor(eventType)}
+                <br />
+                {hasLink ? (
+                  <>
+                    <kbd>⌃⇧O</kbd> read · <kbd>⌃⇧N</kbd> collapse
+                  </>
+                ) : (
+                  <>
+                    <kbd>⌃⇧N</kbd> collapse
+                  </>
+                )}
+              </div>
+            </div>
+            {subtitle ? (
+              <div>
+                <div className="detail-label">Subtitle</div>
+                <div className="detail-value">{subtitle}</div>
+              </div>
+            ) : null}
+            {details.map((detail) => (
+              <div key={`${detail.label}:${detail.value}`}>
+                <div className="detail-label">{detail.label}</div>
+                <div className="detail-value">{detail.value}</div>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
 }

@@ -1,5 +1,4 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { MotionConfig } from "motion/react";
 import { useEffect } from "react";
 import { StatusRailCard } from "./components/StatusRailCard";
 import { useSlotState } from "./useSlotState";
@@ -47,11 +46,7 @@ function App() {
     };
   }, []);
 
-  return (
-    <MotionConfig reducedMotion="user">
-      <StatusRailCard slot={slot} status={status} />
-    </MotionConfig>
-  );
+  return <StatusRailCard slot={slot} status={status} />;
 }
 
 export default App;

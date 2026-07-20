@@ -255,14 +255,59 @@ body {
   }
 }
 
-/* the two pulses above are plain CSS, not `motion` components, so
-   <MotionConfig reducedMotion="user"> (App.tsx) does not cover them —
-   they need this override in their own right. */
+/* the two pulses above are plain CSS and were never covered by any
+   reduced-motion mechanism — they need this override in their own right. */
 @media (prefers-reduced-motion: reduce) {
   .rail-card.pulse-goal,
   .rail-card.pulse-goal::before,
   .rail-card.pulse-goal::after,
   .rail-card.pulse-red {
+    animation: none;
+  }
+}
+
+/* plan 078: the idle/showing swap, formerly AnimatePresence/motion.div —
+   keyframes mirror the old motion values exactly (220ms,
+   cubic-bezier(0.22, 1, 0.36, 1), opacity ± translateY(-4px) for showing,
+   opacity-only for idle). `.card-content` gets a fresh DOM node (and so
+   replays the enter animation) only when the swap key changes; the
+   useDelayedSwap hook (useDelayedSwap.ts) adds `.swap-exit` for the
+   duration of the exit. */
+.card-content {
+  animation: card-enter-showing 220ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.card-content.idle {
+  animation: card-enter-idle 220ms ease-out;
+}
+.card-content.swap-exit {
+  animation: card-exit-showing 220ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+}
+.card-content.idle.swap-exit {
+  animation: card-exit-idle 220ms ease-out forwards;
+}
+
+@keyframes card-enter-showing {
+  from { opacity: 0; transform: translateY(-4px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+@keyframes card-exit-showing {
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-4px); }
+}
+@keyframes card-enter-idle {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes card-exit-idle {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-content,
+  .card-content.idle,
+  .card-content.swap-exit,
+  .card-content.idle.swap-exit {
     animation: none;
   }
 }
@@ -405,8 +450,35 @@ body {
   box-shadow: 0 -3px 14px var(--accent-soft);
 }
 
-/* height/opacity are animated inline by motion.div (Manifest.tsx) — this
-   only supplies the static box treatment, not a max-height transition. */
+/* plan 078: expand/collapse is a grid-template-rows 0fr→1fr transition
+   (the standard animatable-"auto"-height technique, no JS measuring) —
+   the manifest content stays mounted at all times, at zero height when
+   collapsed, so no re-mount/re-tokenize on every toggle. The wrapper
+   carries aria-hidden when collapsed (Manifest.tsx) to replace the DOM
+   removal AnimatePresence used to provide. */
+.manifest-wrap {
+  display: grid;
+  grid-template-rows: 0fr;
+  opacity: 0;
+  transition:
+    grid-template-rows 240ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+.manifest-wrap.expanded {
+  grid-template-rows: 1fr;
+  opacity: 1;
+}
+.manifest-wrap > .manifest {
+  overflow: hidden;
+  min-height: 0;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .manifest-wrap {
+    transition: none;
+  }
+}
+
 .manifest {
   overflow: hidden;
   border-top: 1px solid rgba(255, 255, 255, 0.1);
@@ -584,6 +656,31 @@ body {
 }
 .pill.category { color: var(--cat); background: var(--cat-pill); border: 1px solid color-mix(in srgb, var(--cat) 35%, transparent); }
 .pill.age { color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); }
+
+/* plan 078: the two news pills' enter animations, formerly motion.span
+   (enter-only even then — they were never wrapped in an AnimatePresence,
+   so they had no exit to replicate). `both` fill-mode keeps the pill at
+   its `from` state before the delayed animation starts, matching
+   motion's `initial` prop. */
+.pill.category,
+.pill.age {
+  animation: pill-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+.pill.age {
+  animation-delay: 70ms;
+}
+
+@keyframes pill-enter {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .pill.category,
+  .pill.age {
+    animation: none;
+  }
+}
 
 .manifest-inner.news { grid-template-columns: 1.5fr 1fr 1fr; }
 .manifest-inner.news .detail-label { color: var(--cat); }

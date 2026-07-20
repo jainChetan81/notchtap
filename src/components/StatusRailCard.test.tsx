@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { SlotState } from "../useSlotState";
 import type { StatusState } from "../useStatusState";
@@ -340,12 +340,16 @@ describe("StatusRailCard", () => {
       />,
     );
 
-    expect(screen.getByText("RSS")).toBeTruthy();
+    // plan 078: the manifest stays mounted (aria-hidden) when collapsed, so
+    // "RSS" also appears in its Source/Published cell — assert on the
+    // masthead specifically, and on the collapsed mechanism for the
+    // collapse control that used to be absent from the DOM entirely.
+    expect(container.querySelector(".masthead")?.textContent).toContain("RSS");
     // hotkey key-cap styling: the hint's "⌃⇧N" is now a <kbd> child, so
     // its text is split across elements — match on the container's
     // normalized textContent rather than an exact getByText.
     expect(container.querySelector(".compact-hint")?.textContent).toBe("⌃⇧N more");
-    expect(screen.queryByText("⌃⇧N collapse")).toBeNull();
+    expect(container.querySelector(".manifest-wrap")?.getAttribute("aria-hidden")).toBe("true");
     expect(container.querySelector(".pill.category")).toBeNull();
     expect(container.querySelector(".pill.age")).toBeNull();
     expect(container.querySelector(".rail-card.news-shade.cat-generic")).not.toBeNull();
@@ -395,25 +399,47 @@ describe("StatusRailCard", () => {
   // plan 042 changed the collapsed contract: detail pairs now render below
   // the body (a live-match card's Clock/Cards must be readable without
   // expanding). the subtitle stays expanded-only.
+  // plan 078: the manifest stays mounted (aria-hidden, zero-height) when
+  // collapsed, so "subtitle hidden" is now asserted via the wrapper's
+  // aria-hidden, and the detail-pair assertions are scoped to the compact
+  // view (the manifest cells carry the same text).
   it("hides the subtitle but shows detail pairs when collapsed", () => {
-    render(<StatusRailCard slot={{ ...CMUX_RICH, expanded: false }} />);
+    const { container } = render(<StatusRailCard slot={{ ...CMUX_RICH, expanded: false }} />);
 
-    expect(screen.queryByText("Subtitle")).toBeNull();
-    expect(screen.queryByText("Permission request")).toBeNull();
-    expect(screen.getByText("Tool")).toBeTruthy();
-    expect(screen.getByText("Bash")).toBeTruthy();
-    expect(screen.getByText("Project")).toBeTruthy();
+    const wrap = container.querySelector(".manifest-wrap") as HTMLElement;
+    expect(wrap.getAttribute("aria-hidden")).toBe("true");
+    expect(within(wrap).getByText("Subtitle")).toBeTruthy();
+    const compact = container.querySelector(".compact") as HTMLElement;
+    expect(within(compact).queryByText("Subtitle")).toBeNull();
+    expect(within(compact).getByText("Tool")).toBeTruthy();
+    expect(within(compact).getByText("Bash")).toBeTruthy();
+    expect(within(compact).getByText("Project")).toBeTruthy();
+  });
+
+  // plan 078 (Step 6): the collapsed manifest's aria-hidden replaces the
+  // DOM removal AnimatePresence used to provide — collapsed content must
+  // stay out of the accessibility tree, expanded content must not.
+  it("carries aria-hidden on the manifest wrapper only while collapsed", () => {
+    const { container, rerender } = render(
+      <StatusRailCard slot={{ ...CMUX_RICH, expanded: false }} />,
+    );
+    expect(container.querySelector(".manifest-wrap")?.getAttribute("aria-hidden")).toBe("true");
+
+    rerender(<StatusRailCard slot={CMUX_RICH} />);
+    expect(container.querySelector(".manifest-wrap")?.getAttribute("aria-hidden")).toBe("false");
   });
 
   // plan 042: the whole point — Clock + per-side Cards readable without
-  // expanding.
+  // expanding. (Scoped to the compact view: plan 078 keeps the collapsed
+  // manifest mounted, so its cells carry the same labels.)
   it("renders Clock and per-side Cards in the collapsed view for a live-match card", () => {
-    render(<StatusRailCard slot={LIVE_MATCH} />);
+    const { container } = render(<StatusRailCard slot={LIVE_MATCH} />);
+    const compact = container.querySelector(".compact") as HTMLElement;
 
-    expect(screen.getByText("Clock")).toBeTruthy();
-    expect(screen.getByText("54'")).toBeTruthy();
-    expect(screen.getByText("Cards")).toBeTruthy();
-    expect(screen.getByText("ARS 4Y0R · PSG 2Y0R")).toBeTruthy();
+    expect(within(compact).getByText("Clock")).toBeTruthy();
+    expect(within(compact).getByText("54'")).toBeTruthy();
+    expect(within(compact).getByText("Cards")).toBeTruthy();
+    expect(within(compact).getByText("ARS 4Y0R · PSG 2Y0R")).toBeTruthy();
   });
 
   it("renders no detail lines when collapsed with empty details (unchanged behavior)", () => {
@@ -422,9 +448,13 @@ describe("StatusRailCard", () => {
     );
 
     expect(screen.getByText("GOAL")).toBeTruthy();
-    expect(screen.getByText("Arsenal 2-0")).toBeTruthy();
-    expect(container.querySelector(".detail-label")).toBeNull();
-    expect(container.querySelector(".detail-value")).toBeNull();
+    // plan 078: body text also renders in the mounted-but-collapsed
+    // manifest's Message cell — the "no detail lines" contract is about
+    // the compact view, so assert there.
+    const compact = container.querySelector(".compact") as HTMLElement;
+    expect(within(compact).getByText("Arsenal 2-0")).toBeTruthy();
+    expect(compact.querySelector(".detail-label")).toBeNull();
+    expect(compact.querySelector(".detail-value")).toBeNull();
   });
 
   it("renders a detail value that contains an '=' verbatim (first-'=' split is CLI-side only)", () => {

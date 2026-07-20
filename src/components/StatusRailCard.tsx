@@ -1,7 +1,7 @@
-import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { renderInlineMarkdown } from "../lib/markdown";
 import { ageLabel, categoryClass, categoryLabel } from "../lib/presentation";
+import { useDelayedSwap } from "../useDelayedSwap";
 import type { SlotState } from "../useSlotState";
 import { type StatusState, statusRailActive } from "../useStatusState";
 import { IdleView } from "./IdleView";
@@ -24,8 +24,6 @@ export function StatusRailCard({ slot, status }: { slot: SlotState; status?: Sta
   const currentId = showing ? slot.id : null;
   const currentSignal = showing ? slot.signal : null;
   const news = showing && slot.eventType === "news_item";
-  const newsCategory = news ? categoryLabel(slot.category) : null;
-  const newsAge = news ? ageLabel(slot.publishedAtMs, Date.now()) : null;
 
   const [pulse, setPulse] = useState<Pulse>(null);
 
@@ -68,6 +66,27 @@ export function StatusRailCard({ slot, status }: { slot: SlotState; status?: Sta
     .filter(Boolean)
     .join(" ");
 
+  // plan 078: the idle/showing swap (formerly AnimatePresence mode="wait")
+  // freezes the outgoing item via useDelayedSwap while the CSS exit
+  // animation runs, then swaps content and key together. Everything that
+  // was inside the old swapped motion.div reads from `renderedSlot`;
+  // only cardClass (outer div) and the pulse celebration stay on live
+  // slot/status, exactly as they did before.
+  const swapKey = showing ? slot.id : "idle";
+  const { value: renderedSlot, exiting } = useDelayedSwap(slot, swapKey, 220);
+  const renderedShowing = renderedSlot.state === "showing";
+  const renderedExpanded = renderedShowing && renderedSlot.expanded;
+  const renderedNews = renderedShowing && renderedSlot.eventType === "news_item";
+  const renderedNewsCategory = renderedNews ? categoryLabel(renderedSlot.category) : null;
+  const renderedNewsAge = renderedNews ? ageLabel(renderedSlot.publishedAtMs, Date.now()) : null;
+
+  // plan 069 (folded into 078): memoized on the rendered slot so unrelated
+  // re-renders don't re-tokenize the markdown.
+  const bodyContent = useMemo(
+    () => renderInlineMarkdown(renderedSlot.state === "showing" ? renderedSlot.body : ""),
+    [renderedSlot],
+  );
+
   return (
     <div
       className={cardClass}
@@ -75,79 +94,47 @@ export function StatusRailCard({ slot, status }: { slot: SlotState; status?: Sta
       aria-live={showing ? "polite" : undefined}
       onAnimationEnd={clearPulseWhenItsAnimationEnds}
     >
-      <AnimatePresence mode="wait" initial={false}>
-        {!showing ? (
-          <motion.div
-            key="idle"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            transition={{ duration: 0.22 }}
-          >
-            <IdleView status={status} />
-          </motion.div>
+      <div
+        key={swapKey}
+        className={`card-content${!renderedShowing ? " idle" : ""}${exiting ? " swap-exit" : ""}`}
+      >
+        {!renderedShowing ? (
+          <IdleView status={status} />
         ) : (
-          <motion.div
-            key={slot.id}
-            initial={{ opacity: 0, y: -4 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -4 }}
-            transition={{ duration: 0.22, ease: [0.22, 1, 0.36, 1] }}
-          >
+          <>
             <div className="compact">
               <div className="copy">
-                {slot.eventType === "news_item" ? (
+                {renderedNews ? (
                   <>
                     <div className="masthead">
                       <span className="dot" />
-                      {slot.source ?? "RSS"}
+                      {renderedSlot.source ?? "RSS"}
                     </div>
-                    <div className="title headline">{slot.title}</div>
-                    {(newsCategory !== null || newsAge !== null) && (
+                    <div className="title headline">{renderedSlot.title}</div>
+                    {(renderedNewsCategory !== null || renderedNewsAge !== null) && (
                       <div className="pills">
-                        {newsCategory !== null && (
-                          <motion.span
-                            className="pill category"
-                            initial={{ opacity: 0, y: 3 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{
-                              duration: 0.22,
-                              ease: [0.22, 1, 0.36, 1],
-                            }}
-                          >
-                            {newsCategory}
-                          </motion.span>
+                        {renderedNewsCategory !== null && (
+                          <span className="pill category">{renderedNewsCategory}</span>
                         )}
-                        {newsAge !== null && (
-                          <motion.span
-                            className="pill age"
-                            initial={{ opacity: 0, y: 3 }}
-                            animate={{ opacity: 1, y: 0 }}
-                            transition={{
-                              duration: 0.22,
-                              delay: 0.07,
-                              ease: [0.22, 1, 0.36, 1],
-                            }}
-                          >
-                            {newsAge}
-                          </motion.span>
+                        {renderedNewsAge !== null && (
+                          <span className="pill age">{renderedNewsAge}</span>
                         )}
                       </div>
                     )}
                   </>
                 ) : (
                   <>
-                    <div className="title">{slot.title}</div>
-                    <div className="body">{renderInlineMarkdown(slot.body)}</div>
+                    <div className="title">{renderedSlot.title}</div>
+                    <div className="body">{bodyContent}</div>
                     {/* plan 042: collapsed scorecard cells (Clock, per-side
                         Cards) — only a live-match card with `espn_live_card`
                         on populates `details`, so every other card renders
                         exactly as before. Same detail-label/detail-value
                         classes as the expanded Manifest view; collapsed-only,
                         so the pairs never render twice when expanded. */}
-                    {!expanded &&
-                      slot.details.length > 0 &&
-                      slot.details.map((detail) => (
+                    {!renderedExpanded &&
+                      renderedSlot.details.length > 0 &&
+                      renderedSlot.details.map((detail) => (
                         <div key={`${detail.label}:${detail.value}`}>
                           <div className="detail-label">{detail.label}</div>
                           <div className="detail-value">{detail.value}</div>
@@ -156,28 +143,32 @@ export function StatusRailCard({ slot, status }: { slot: SlotState; status?: Sta
                   </>
                 )}
               </div>
-              <Stamp priority={slot.priority} signal={slot.signal} eventType={slot.eventType} />
-              {!expanded && (
+              <Stamp
+                priority={renderedSlot.priority}
+                signal={renderedSlot.signal}
+                eventType={renderedSlot.eventType}
+              />
+              {!renderedExpanded && (
                 <div className="compact-hint">
                   <kbd>⌃⇧N</kbd> more
                 </div>
               )}
-              <Track total={slot.queueTotal} done={slot.queueDone} />
+              <Track total={renderedSlot.queueTotal} done={renderedSlot.queueDone} />
             </div>
             <Manifest
-              body={slot.body}
-              eventType={slot.eventType}
-              expanded={expanded}
-              source={slot.source}
-              category={slot.category}
-              publishedAtMs={slot.publishedAtMs}
-              hasLink={slot.link !== null}
-              subtitle={slot.subtitle}
-              details={slot.details}
+              body={renderedSlot.body}
+              eventType={renderedSlot.eventType}
+              expanded={renderedExpanded}
+              source={renderedSlot.source}
+              category={renderedSlot.category}
+              publishedAtMs={renderedSlot.publishedAtMs}
+              hasLink={renderedSlot.link !== null}
+              subtitle={renderedSlot.subtitle}
+              details={renderedSlot.details}
             />
-          </motion.div>
+          </>
         )}
-      </AnimatePresence>
+      </div>
       {/* the goal celebration is plan 023's pure-CSS confetti burst +
           ring on `.rail-card.pulse-goal`'s ::after/::before PLUS plan
           032's ripple: three staggered concentric accent rings, mounted

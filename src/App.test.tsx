@@ -45,7 +45,10 @@ describe("App", () => {
       queueDone: 0,
     });
     expect(await screen.findByText("GOAL")).toBeTruthy();
-    expect(screen.getByText("1-0")).toBeTruthy();
+    // plan 078: the collapsed manifest stays mounted (aria-hidden), so the
+    // body text also appears in its Message cell — assert on the compact
+    // view's copy specifically.
+    expect(container.querySelector(".compact .body")?.textContent).toBe("1-0");
     expect(container.querySelector(".rail-card.high")).not.toBeNull();
   });
 
