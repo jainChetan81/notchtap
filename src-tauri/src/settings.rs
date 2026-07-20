@@ -79,6 +79,12 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
             c.espn_ttl_secs
         ));
     }
+    if !(1..=3600).contains(&c.cmux_ttl_secs) {
+        errors.push(format!(
+            "cmux_ttl_secs must be 1–3600 seconds (got {})",
+            c.cmux_ttl_secs
+        ));
+    }
     for league in &c.espn_leagues {
         if league.is_empty() || league.chars().any(char::is_whitespace) {
             errors.push(format!(
@@ -866,6 +872,21 @@ mod tests {
         c.espn_ttl_secs = 3600;
         assert!(validate(&c).is_ok());
         c.espn_ttl_secs = 3601;
+        assert!(validate(&c).is_err());
+    }
+
+    #[test]
+    fn cmux_ttl_boundaries() {
+        let mut c = Config {
+            cmux_ttl_secs: 0,
+            ..Config::default()
+        };
+        assert!(validate(&c).is_err());
+        c.cmux_ttl_secs = 1;
+        assert!(validate(&c).is_ok());
+        c.cmux_ttl_secs = 3600;
+        assert!(validate(&c).is_ok());
+        c.cmux_ttl_secs = 3601;
         assert!(validate(&c).is_err());
     }
 
