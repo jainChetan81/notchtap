@@ -20,6 +20,34 @@
 - **Depends on**: none
 - **Category**: bug
 - **Planned at**: commit `f6c2f46`, 2026-07-20
+- **Review-plan pass (2026-07-20)**: own read (re-verified against HEAD
+  `1579ff1` — `settings.rs` drifted +32 lines since planning, from plan
+  076 landing a `ConnectorHealthDto`/`get_connector_health` addition
+  between this plan's two citations; `validate()` at lines 49-105 itself
+  is byte-identical/unaffected, and the plan's own "approximate —
+  re-locate via grep" hedge on the exemplar-test citation correctly
+  handled the drift when re-run) + a required fresh-context subagent
+  cold-read (authored in-session, so the skill mandates it). Found and
+  fixed a real, substantive gap both independently converged on: the
+  "Current state" section's exemplar snippet was a paraphrase, not the
+  real code, and the paraphrase was wrong in two ways — (1) it implied
+  the rejection case asserts the error message "mentions
+  `espn_ttl_secs`"; the real test only asserts `is_err()`/`is_ok()`,
+  never message content. (2) It implied 2-3 separate test functions
+  ("accept at X", "reject at Y"); the real, byte-verified convention —
+  consistent across all 8 numeric-range fields in this file
+  (`ttl_boundaries`, `queue_cap_boundaries`, `espn_ttl_boundaries`,
+  `rss_ttl_boundaries`, etc.) — is **one** combined `<field>_boundaries`
+  test per field, covering all four boundary values (reject-at-0,
+  accept-at-1, accept-at-max, reject-at-max+1) via progressive mutation
+  of a single `Config`. Steps 2/3, Test plan, and Done criteria are
+  rewritten below to match the verified real pattern instead of the
+  earlier guess. Also fixed: the exemplar's approximate line citation
+  (858-870, not 822-838) and Step 2's verify command, which the
+  cold-read confirmed empirically does NOT scope to just new tests as
+  its phrasing implied (`cargo test settings:: -- <name>` runs all 46
+  settings tests regardless of the suffix — cargo/libtest's pre-`--` and
+  post-`--` filters behave as a union, not an intersection).
 
 ## Why this matters
 
@@ -92,28 +120,44 @@ user-facing gap on a real, actively-used path, not a theoretical one.
   before writing the fix — at planning time this returns zero matches
   inside `validate()`.
 
-- `src-tauri/src/settings.rs:822-838` (approximate — re-locate via
-  `grep -n "espn_ttl_secs = 3600\|espn_ttl_secs = 3601" src-tauri/src/settings.rs`)
-  — the exemplar test pattern for a boundary-tested ttl field, to copy
-  for `cmux_ttl_secs`:
+- `src-tauri/src/settings.rs:858-870` (approximate — file has already
+  drifted once since this plan was planned; re-locate via
+  `grep -n "espn_ttl_secs = 3600\|espn_ttl_secs = 3601" src-tauri/src/settings.rs`
+  if it's moved again) — `espn_ttl_boundaries`, the real exemplar test
+  (reproduced verbatim, not paraphrased — copy this shape exactly):
 
   ```rust
-  c.espn_ttl_secs = 3600;
-  // ... assert validate(&c).is_ok()
-  c.espn_ttl_secs = 3601;
-  // ... assert validate(&c) rejects, error mentions "espn_ttl_secs"
+  #[test]
+  fn espn_ttl_boundaries() {
+      let mut c = Config {
+          espn_ttl_secs: 0,
+          ..Config::default()
+      };
+      assert!(validate(&c).is_err());
+      c.espn_ttl_secs = 1;
+      assert!(validate(&c).is_ok());
+      c.espn_ttl_secs = 3600;
+      assert!(validate(&c).is_ok());
+      c.espn_ttl_secs = 3601;
+      assert!(validate(&c).is_err());
+  }
   ```
 
-  Read the full test (both the accept-at-boundary and reject-past-boundary
-  halves, plus whatever `0` boundary test exists for a sibling field) and
-  mirror its exact structure — same `Config::default()` base, same
-  assertion style.
+  This is **one** test function covering all four boundary values via
+  progressive mutation of a single `Config` — not separate accept/reject
+  tests, and no assertion ever checks error-*message* content, only
+  `is_ok()`/`is_err()`. Confirmed this is the established convention, not
+  a one-off: every other numeric-range field in this file follows the
+  identical `<field>_boundaries` shape — `ttl_boundaries` (`default_ttl`,
+  line 828), `queue_cap_boundaries` (`max_queued_per_tier`, line 843),
+  `rss_ttl_boundaries` (line 1040), and others. `cmux_ttl_secs` gets the
+  same treatment: one `cmux_ttl_boundaries` test, not multiple.
 
 ## Commands you will need
 
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Rust tests, scoped | `cd src-tauri && cargo test --locked settings::` | all pass, including the new tests |
+| Rust tests, scoped | `cd src-tauri && cargo test --locked settings::` | all pass, including the new `cmux_ttl_boundaries` test |
 | Full suite | `cd src-tauri && cargo test --locked` | all pass |
 | Clippy | `cd src-tauri && cargo clippy --locked --all-targets -- -D warnings` | exit 0 |
 | Format | `cd src-tauri && cargo fmt --check` | exit 0 |
@@ -157,44 +201,74 @@ if !(1..=3600).contains(&c.cmux_ttl_secs) {
 
 **Verify**: `cd src-tauri && cargo build` → exit 0.
 
-### Step 2: Add boundary tests
+### Step 2: Add one boundary test
 
-Add two tests in `settings.rs`'s `mod tests`, modeled exactly on the
-`espn_ttl_secs` boundary tests you read in "Current state" above — same
-structure, swap the field name:
+Add `cmux_ttl_boundaries` to `settings.rs`'s `mod tests`, an exact copy
+of `espn_ttl_boundaries` (shown in full in "Current state") with the
+field name swapped — one test, four assertions, no error-message
+checking:
 
-- Accept at `3600`, reject at `3601` (upper boundary)
-- Reject at `0` (lower boundary) — check whether the existing
-  `espn_ttl_secs` tests already cover a `0` case; if so, mirror that
-  exact test too, if not, add one anyway since `1..=3600` excludes `0`
-  and this is the most likely real-world mistake (an empty/cleared input
-  field parsing as `0`).
+```rust
+#[test]
+fn cmux_ttl_boundaries() {
+    let mut c = Config {
+        cmux_ttl_secs: 0,
+        ..Config::default()
+    };
+    assert!(validate(&c).is_err());
+    c.cmux_ttl_secs = 1;
+    assert!(validate(&c).is_ok());
+    c.cmux_ttl_secs = 3600;
+    assert!(validate(&c).is_ok());
+    c.cmux_ttl_secs = 3601;
+    assert!(validate(&c).is_err());
+}
+```
 
-**Verify**: `cd src-tauri && cargo test --locked settings:: -- cmux_ttl_secs` (adjust the filter to your actual test names) → new tests pass.
+Place it next to `espn_ttl_boundaries` in `mod tests`, matching where
+Step 1 placed the `validate()` check relative to `espn_ttl_secs`'s.
+
+**Verify**: `cd src-tauri && cargo test --locked settings::` → all 46+
+settings tests pass, including the new `cmux_ttl_boundaries` (confirm it
+appears in the output as `ok`). Note: a narrower-looking filter like
+`cargo test --locked settings:: -- cmux_ttl_boundaries` will NOT
+actually scope to just this test — verified empirically that cargo/
+libtest's pre-`--` and post-`--` filters union rather than intersect, so
+`settings::` alone already pulls in the entire module regardless of what
+follows `--`. Don't rely on filtering to isolate the new test; just
+confirm it's present and green in the full `settings::` run.
 
 ### Step 3: Full suite + lint
 
 **Verify**:
-- `cd src-tauri && cargo test --locked` → all pass, rust total baseline + 2 or 3 (depending how many tests you added in Step 2)
+- `cd src-tauri && cargo test --locked` → all pass, rust total baseline + 1
 - `cd src-tauri && cargo clippy --locked --all-targets -- -D warnings` → exit 0
 - `cd src-tauri && cargo fmt --check` → exit 0
 
 ## Test plan
 
-- 2-3 new tests in `src-tauri/src/settings.rs`'s `mod tests`: accept at
-  `3600`, reject at `3601`, reject at `0` — following the `espn_ttl_secs`
-  boundary-test pattern already in the file (locate via
-  `grep -n "espn_ttl_secs = 36" src-tauri/src/settings.rs`).
+- 1 new test in `src-tauri/src/settings.rs`'s `mod tests`:
+  `cmux_ttl_boundaries` (shown in full in Step 2) — covers reject-at-0,
+  accept-at-1, accept-at-3600, reject-at-3601 in one function, following
+  the `<field>_boundaries` pattern already established for every other
+  numeric-range field in this file (`ttl_boundaries`,
+  `queue_cap_boundaries`, `espn_ttl_boundaries`, `rss_ttl_boundaries`,
+  and others).
 - Verification: `cargo test --locked settings::` → all pass, including
-  the new cases.
+  the new case.
 
 ## Done criteria
 
-- [ ] `cargo test --locked` exits 0; rust total is baseline + 2 or 3
+Machine-checkable. ALL must hold. The file-scope bullet below is about
+*source* files only — `plans/README.md` and (conditionally)
+`docs/TESTING_STRATEGY.md` are the standard bookkeeping exemption every
+plan in this repo's index carries, not a contradiction of it:
+
+- [ ] `cargo test --locked` exits 0; rust total is baseline + 1
 - [ ] `cargo clippy --locked --all-targets -- -D warnings` exits 0
 - [ ] `cargo fmt --check` exits 0
-- [ ] A scratch test confirms `validate(&Config { cmux_ttl_secs: 0, ..Default::default() })` now returns `Err(...)` (remove the scratch test before finishing — it's covered by Step 2's permanent tests)
-- [ ] No files outside `src-tauri/src/settings.rs` modified (`git status`)
+- [ ] A scratch test confirms `validate(&Config { cmux_ttl_secs: 0, ..Default::default() })` now returns `Err(...)` (remove the scratch test before finishing — it's covered by Step 2's permanent test)
+- [ ] No *source* files outside `src-tauri/src/settings.rs` modified (`git status` — `plans/README.md` and, if applicable, `docs/TESTING_STRATEGY.md` are expected to change too; everything else is out of scope)
 - [ ] `plans/README.md` status row for 066 updated
 - [ ] Update `docs/TESTING_STRATEGY.md` §0's `settings` count if this plan lands before plan 071 (the docs truth pass) — otherwise note it in this plan's completion note
 

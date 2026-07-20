@@ -12,6 +12,18 @@
   question ("can we hook up phone notifications?") during a live UI
   walkthrough; answered inline in that conversation, filed here for the
   real design work if pursued.
+- **BLOCKED (2026-07-20)**: operator doesn't own an Android device, which
+  was the one realistic capture path this spike identified — iOS was
+  independently re-verified via live web search the same day (not just
+  recalled) and confirmed to have no path at all, not even a partial
+  one: Shortcuts' only notification-adjacent personal-automation
+  triggers are Email and Messages content-matching (Apple Support's
+  "Communication triggers" doc), not a general per-app notification
+  listener, and Apple's own developer forum states plainly "there's no
+  public API to discover anything about other apps installed on the
+  device. That would be a big privacy fail." This is a hardware/practical
+  blocker, not a rejection on merits — revisit if an Android device is
+  ever acquired.
 
 ## Why this matters
 

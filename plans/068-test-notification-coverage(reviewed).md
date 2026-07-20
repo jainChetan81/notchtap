@@ -20,6 +20,21 @@
 - **Depends on**: none
 - **Category**: tests
 - **Planned at**: commit `f6c2f46`, 2026-07-20
+- **Review-plan pass (2026-07-20)**: own read (zero drift — `settings.rs`
+  byte-identical since planning at the cited lines; read all 5 match
+  arms in full, not just the Football excerpt). Confirmed the Football
+  sketch in Step 2 is accurate as written. Found one real gap: the plan
+  treated all 5 branches as symmetric ("assert the branch pulls its
+  priority/ttl-or-display-secs from the *matching* config field... set a
+  distinct weather_priority-equivalent field and a distinct ttl/display
+  value"), but they aren't — Football/News/Cmux each read a *dedicated*
+  per-source ttl field (`espn_ttl_secs`/`rss_ttl_secs`/`cmux_ttl_secs`),
+  while Manual and Weather both read the *shared* `default_ttl` (there
+  is no `manual_ttl_secs`/`weather_ttl_secs`). An executor following the
+  original "set a distinct ttl value" instruction literally for Weather
+  would hunt for a field that doesn't exist. Step 2 is corrected below
+  with the verified real field names for all 5 branches, so nothing is
+  left to guess.
 
 ## Why this matters
 
@@ -171,18 +186,44 @@ fn build_test_event_football_uses_espn_config() {
 }
 ```
 
-Repeat for `Manual`, `Cmux`, `News`, `Weather` — for each, assert the
-branch pulls its `priority`/ttl-or-display-secs from the *matching*
-config field (e.g. Weather's test should set a distinct
-`weather_priority`-equivalent field and a distinct ttl/display value in
-the fixture `Config`, then assert those exact values landed on the
-constructed `Event` — this is the check that would have caught a
-copy-paste bug like "Weather's branch accidentally reads
-`espn_ttl_secs`"). Match whatever the actual per-source config field
-names turn out to be once you've read all 5 branches in Step 1 — don't
-guess field names from this sketch.
+Repeat for `News`, `Cmux`, `Manual`, `Weather`, using the verified real
+field names (confirmed by reading all 5 arms directly — not a guess):
 
-**Verify**: `cd src-tauri && cargo test --locked settings:: -- build_test_event` (adjust filter) → 5 new tests pass.
+- **News**: `priority: config.rss_priority`, ttl from
+  `config.rss_ttl_secs` — its own dedicated field, same shape as
+  Football.
+- **Cmux**: `priority: config.cmux_priority`, ttl from
+  `config.cmux_ttl_secs` — its own dedicated field.
+- **Manual**: `priority: config.manual_default_priority`, ttl from
+  `config.default_ttl` — **shared** with Weather (see below), not a
+  dedicated `manual_ttl_secs` field. Assert the branch reads
+  `default_ttl` specifically (set a distinct value there and confirm it
+  lands on the event), not "a distinct Manual-only field" — there isn't
+  one.
+- **Weather**: `priority: config.weather_priority`, ttl also from
+  `config.default_ttl` — the **same shared field Manual uses**. This
+  means a test asserting "Weather reads its own ttl field, not a
+  sibling's" can't be built the way Football/News/Cmux's can (there's no
+  `weather_ttl_secs` to distinguish it from `default_ttl`); assert
+  Weather's `priority` comes from `weather_priority` specifically
+  (that field IS dedicated) and that its `rotation` reflects
+  `default_ttl`, but don't write an assertion implying Weather has a
+  private ttl field — it would be testing something that isn't true of
+  the code.
+
+For each of the 5, assert `event_type`, `origin`, and whichever of
+`priority`/ttl-source is source-specific enough to catch a copy-paste
+swap (per the field list above) — not every field needs asserting, just
+enough to distinguish "this branch reads its own config" from "this
+branch accidentally reads a sibling's."
+
+**Verify**: `cd src-tauri && cargo test --locked settings::` → all 46+
+settings tests pass, including your 5 new tests (confirm each appears in
+the output as `ok`). Don't rely on a second filter after `--` to isolate
+them — verified empirically (in this batch's other plan reviews) that
+cargo/libtest's pre-`--` and post-`--` filters union rather than
+intersect, so `settings::` alone already pulls in the entire module
+regardless of what follows.
 
 ### Step 3: Full suite + lint
 
@@ -207,11 +248,16 @@ guess field names from this sketch.
 
 ## Done criteria
 
+Machine-checkable. ALL must hold. The file-scope bullet below is about
+*source* files only — `plans/README.md` and (conditionally)
+`docs/TESTING_STRATEGY.md` are the standard bookkeeping exemption every
+plan in this repo's index carries, not a contradiction of it:
+
 - [ ] `cargo test --locked` exits 0; rust total is baseline + 5
 - [ ] `cargo clippy --locked --all-targets -- -D warnings` exits 0
 - [ ] `cargo fmt --check` exits 0
-- [ ] Each of the 5 new tests asserts at least one config-field-sourced value (not just the constant fields like `event_type`) — a test that only checks `event_type` wouldn't catch the copy-paste bug this plan exists to guard against
-- [ ] No files outside `src-tauri/src/settings.rs` modified (`git status`)
+- [ ] Each of the 5 new tests asserts at least one config-field-sourced value (not just the constant fields like `event_type`) — a test that only checks `event_type` wouldn't catch the copy-paste bug this plan exists to guard against; for Manual/Weather that means asserting the shared `default_ttl` landed correctly, not a nonexistent per-source ttl field
+- [ ] No *source* files outside `src-tauri/src/settings.rs` modified (`git status` — `plans/README.md` and, if applicable, `docs/TESTING_STRATEGY.md` are expected to change too; everything else is out of scope)
 - [ ] `plans/README.md` status row for 068 updated
 - [ ] Update `docs/TESTING_STRATEGY.md` §0's `settings` count if this plan lands before plan 071 (the docs truth pass) — otherwise note it in this plan's completion note
 

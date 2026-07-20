@@ -23,6 +23,32 @@
 - **Depends on**: 064 (soft — same file region, land 064 first to avoid rebasing)
 - **Category**: bug (latent/defensive — not reachable by any producer today)
 - **Planned at**: commit `f6c2f46`, 2026-07-20
+- **Review-plan pass (2026-07-20)**: own read + a required fresh-context
+  subagent cold-read (authored in-session). Plan 064 has now actually
+  landed (`git diff --stat f6c2f46..HEAD -- src-tauri/src/queue.rs`
+  shows +98 lines, all three of 064's new meta-update tests, inserted
+  exactly where that plan specified — right after the two exemplar tests
+  this plan cites). That shifted this plan's exemplar-test line numbers;
+  fixed below to the current, directly-verified locations
+  (`cross_tier_supersede_moves_to_back_of_new_tier` now at 1085-1116,
+  `full_low_tier_rejects_low_but_accepts_high` now at 1157-1170 — their
+  content is otherwise byte-identical to what this plan already
+  described). The cold-read independently traced Step 1's code and
+  Step 2's test logic against the live file and found both sound —
+  Step 1 compiles as a drop-in, and Step 2's test sequence (enqueue
+  order, cap state, expected post-supersede tier contents) checks out
+  exactly. Also resolved the two previously-uncited claims in this
+  section: the `Config.espn_priority`-per-match claim traces to
+  `poller.rs:408,461-466` (`diff_scoreboard`'s `priority: Priority`
+  parameter, held constant for the whole poll cycle — the actual
+  `Config.espn_priority` read happens further upstream at the
+  poller-spawn call site, not worth tracing further for this plan's
+  purposes); and `full_low_tier_rejects_low_but_accepts_high`
+  (`queue.rs:1157-1170`) directly gives the exact rejection variant
+  Step 0/2 need — `QueueError::QueueFull`, confirmed via
+  `assert!(matches!(low_err, QueueError::QueueFull))` in that test —
+  so Step 2's test below no longer needs to say "read it, don't
+  approximate."
 
 ## Why this matters
 
@@ -37,20 +63,20 @@ tier and pushes it onto the new tier's back with no cap check at all.
 
 Today this is **not reachable in production**: the only Topic producer,
 the ESPN live-match card (`poller.rs`'s `make_event`), passes a single
-`priority: Priority` sourced from the constant `Config.espn_priority` for
-the whole match — so a given match's Topic never crosses tiers across
-polls, and this code path's `if new_tier_idx == tier_idx` branch is
-always taken instead of the `else` branch this finding is about. But the
-gap is structural, not incidental: `queue.rs`'s own test suite already
-covers `cross_tier_supersede_moves_to_back_of_new_tier`
-(`queue.rs:1019-1050`) without ever setting the destination tier near
+`priority: Priority` that stays constant for an entire poll cycle
+(`poller.rs:408`, threaded through `diff_scoreboard`'s parameter at
+`poller.rs:461-466` — ultimately sourced from `Config.espn_priority`
+upstream at the poller-spawn call site) — so a given match's Topic never
+crosses tiers across polls, and this code path's `if new_tier_idx ==
+tier_idx` branch is always taken instead of the `else` branch this
+finding is about. But the gap is structural, not incidental: `queue.rs`'s
+own test suite already covers `cross_tier_supersede_moves_to_back_of_new_tier`
+(`queue.rs:1085-1116`) without ever setting the destination tier near
 its cap — meaning the *existing* test coverage doesn't protect this
 path either. Any future Topic-carrying producer whose priority can vary
-per push (plausible given `EventMeta`/Topic groundwork already exists for
-other sources per the design docs in `docs/design/`) would silently be
-able to push a destination tier's waiting queue past
-`max_queued_per_tier`, defeating the cap
-`full_low_tier_rejects_low_but_accepts_high` (`queue.rs:1059-1077`)
+per push would silently be able to push a destination tier's waiting
+queue past `max_queued_per_tier`, defeating the cap
+`full_low_tier_rejects_low_but_accepts_high` (`queue.rs:1157-1170`)
 exists to test for every other insert path.
 
 This is deliberately filed as a small, standalone defensive-hardening
@@ -102,24 +128,30 @@ deserves its own STOP-and-decide gate rather than a mechanical fix.
   `self.waiting[new_tier_idx].push_back(existing);` line at 208 needing a
   cap check before it.
 
-- `src-tauri/src/queue.rs:147-183` — `enqueue_new`, the cap-check pattern
-  to mirror (read the full function; the relevant excerpt is the check
-  itself around lines 157-159 — re-locate exactly, since this plan's
-  Step 1 needs to match its error type/message style precisely):
+- `src-tauri/src/queue.rs:147-179` — `enqueue_new`, the cap-check pattern
+  to mirror (the actual check, verified verbatim — note it also gates on
+  `!can_promote_now`, a fresh-enqueue-only concept that doesn't apply to
+  the cross-tier-supersede case, which is always moving an *existing*
+  waiting item between waiting tiers, never promoting):
 
   ```rust
-  if self.waiting[tier].len() >= self.max_queued_per_tier {
-      return Err(QueueError::TierFull /* or whatever the actual variant/message is — read it */);
+  if !can_promote_now && self.waiting[tier].len() >= self.max_queued_per_tier {
+      return Err(QueueError::QueueFull);
   }
   ```
 
-- `src-tauri/src/queue.rs:1019-1050` — the existing
+  The error variant to use in Step 1 is `QueueError::QueueFull` —
+  confirmed, not a placeholder (see the exemplar test below).
+
+- `src-tauri/src/queue.rs:1085-1116` — the existing
   `cross_tier_supersede_moves_to_back_of_new_tier` test, to extend (not
   replace) with a capacity-boundary case.
 
-- `src-tauri/src/queue.rs:1059-1077` — `full_low_tier_rejects_low_but_accepts_high`,
+- `src-tauri/src/queue.rs:1157-1170` — `full_low_tier_rejects_low_but_accepts_high`,
   the exemplar cap-enforcement test pattern for `enqueue_new` to mirror
-  for this new cross-tier-supersede case.
+  for this new cross-tier-supersede case (confirms `QueueError::QueueFull`
+  is the variant `enqueue_new`'s cap check returns, via
+  `assert!(matches!(low_err, QueueError::QueueFull))`).
 
 ## Commands you will need
 
@@ -176,9 +208,11 @@ rather than guessing.
 ### Step 1: Add the cap check
 
 In the cross-tier branch (`queue.rs:203-209`), add a capacity check
-before the `push_back`, mirroring `enqueue_new`'s check exactly (same
-comparison, same error type — re-read `enqueue_new`'s exact check before
-writing this, don't approximate it):
+before the `push_back`, mirroring `enqueue_new`'s comparison
+(`self.waiting[tier].len() >= self.max_queued_per_tier`, confirmed above
+— this branch doesn't need `enqueue_new`'s `!can_promote_now` gate,
+since a cross-tier supersede never promotes, only moves between waiting
+tiers):
 
 ```rust
 let new_tier_idx = fresh.priority as usize;
@@ -216,9 +250,9 @@ assuming it's fine — re-check `queue.rs` for all call sites of
 ### Step 2: Add a regression test
 
 Extend near `cross_tier_supersede_moves_to_back_of_new_tier`
-(`queue.rs:1019`) with a new test modeled on
+(`queue.rs:1085`) with a new test modeled on
 `full_low_tier_rejects_low_but_accepts_high`'s cap-filling setup
-(`queue.rs:1059`):
+(`queue.rs:1157`):
 
 ```rust
 #[test]
@@ -254,7 +288,12 @@ actually find in the file — this sketch follows the patterns visible in
 the two exemplar tests but you must verify against the live code, not
 copy this verbatim if anything doesn't compile.
 
-**Verify**: `cd src-tauri && cargo test --locked queue:: -- cross_tier_supersede_drops` (adjust filter) → passes.
+**Verify**: `cd src-tauri && cargo test --locked queue::` → all queue
+tests pass, including your new test (confirm it appears in the output as
+`ok`). Don't rely on a second filter after `--` to isolate it — verified
+empirically (in this batch's other plan reviews) that cargo/libtest's
+pre-`--` and post-`--` filters union rather than intersect, so `queue::`
+alone already pulls in the entire module regardless of what follows.
 
 ### Step 3: Full suite + lint
 
@@ -276,11 +315,16 @@ copy this verbatim if anything doesn't compile.
 
 ## Done criteria
 
+Machine-checkable. ALL must hold. The file-scope bullet below is about
+*source* files only — `plans/README.md` is the standard bookkeeping
+exemption every plan in this repo's index carries, not a contradiction
+of it:
+
 - [ ] `cargo test --locked` exits 0; rust total is baseline + 1
 - [ ] `cargo clippy --locked --all-targets -- -D warnings` exits 0
 - [ ] `cargo fmt --check` exits 0
 - [ ] The pre-existing `cross_tier_supersede_moves_to_back_of_new_tier` test still passes unmodified
-- [ ] No files outside `src-tauri/src/queue.rs` modified (`git status`)
+- [ ] No *source* files outside `src-tauri/src/queue.rs` modified (`git status` — `plans/README.md` is expected to change too; everything else is out of scope)
 - [ ] `plans/README.md` status row for 072 updated
 
 ## STOP conditions

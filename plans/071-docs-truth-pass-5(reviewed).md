@@ -254,7 +254,7 @@ is the grep/diff checks embedded in each step above, plus the live
 - [ ] `docs/TESTING_STRATEGY.md` §0's rust count matches a fresh `cargo test --locked -- --list` count exactly, re-verified after writing (Step 3)
 - [ ] `README.md`'s docs table includes AGENTS.md, docs/recipes/, and docs/design/ (Step 4)
 - [ ] `justfile`'s cargo-audit comment is self-contained, no dangling "see note below" (Step 5)
-- [ ] No files outside the 5 listed in Scope modified (`git status`)
+- [ ] No files outside the 5 listed in Scope modified, plus `plans/README.md` (`git status` — that status-row update is expected and is the standard bookkeeping exemption every plan in this index carries; everything else outside the 5 is out of scope)
 - [ ] `plans/README.md` status row for 071 updated
 
 ## STOP conditions

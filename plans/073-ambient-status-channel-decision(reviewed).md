@@ -12,9 +12,14 @@
 > maintain the index.
 >
 > **Drift check (run first)**: `git diff --stat f6c2f46..HEAD -- src-tauri/src/engine.rs src-tauri/src/status.rs`
-> If either file changed since this plan was written, compare the
-> "Current state" excerpts against the live code before proceeding; on a
-> mismatch, treat it as a STOP condition.
+> **`engine.rs` WILL show a diff** — plan 076 (Telegram connector health)
+> already landed and added a `telegram_health` field/accessor before
+> `update_live_match`/`update_weather`, shifting them from the
+> planning-time lines 196/216 to their current 211/231 (content
+> otherwise unchanged — already corrected below). That specific shift is
+> expected, not a STOP condition; only treat further engine.rs/status.rs
+> changes as a STOP if the ambient-channel functions themselves changed
+> shape, not just moved.
 
 ## Status
 
@@ -68,7 +73,7 @@ either way.
 
 ## Current state
 
-- `src-tauri/src/engine.rs:196-229` — the two existing ambient channels,
+- `src-tauri/src/engine.rs:211-244` — the two existing ambient channels,
   side by side (already near-identical — this is the duplication in
   question):
 

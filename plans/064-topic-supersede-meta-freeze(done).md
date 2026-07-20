@@ -20,6 +20,33 @@
 - **Depends on**: none
 - **Category**: bug
 - **Planned at**: commit `f6c2f46`, 2026-07-20
+- **Review-plan pass (2026-07-20)**: own read (re-verified every citation
+  against HEAD `5c5ea2f` — `queue.rs`/`event.rs` are byte-identical to
+  when this plan was written, confirmed via `git diff --stat f6c2f46..HEAD`,
+  so no drift) + a required fresh-context subagent cold-read (this plan
+  was authored in-session, so the skill mandates it). Found and fixed
+  real defects, most severe first: (1) Step 2/3's verify command was
+  invalid `cargo test` syntax — passing three bare test-name filters
+  before `--` (`cargo test --locked name1 name2 name3 -- --exact`);
+  confirmed by actually running it (`error: unexpected argument`).
+  Replaced with a plain substring filter, which is also what every
+  sibling plan in this batch already uses for its own module-scoped test
+  runs. (2) The same-tier and cross-tier waiting-item test variants were
+  left as "same shape, adjust names" rather than written out — fully
+  specified below, verified against the real
+  `same_tier_waiting_supersede_keeps_position` /
+  `cross_tier_supersede_moves_to_back_of_new_tier` exemplars' exact
+  structure (including which waiting-tier index the moved item lands at).
+  (3) A genuine contradiction the cold-read caught: the Done criteria's
+  "no files outside `src-tauri/src/queue.rs` modified" bullet directly
+  conflicted with the "update `plans/README.md`" bullet two lines below
+  it — clarified that the file-scope restriction is about source files;
+  `plans/README.md` (and conditionally `docs/TESTING_STRATEGY.md`) are
+  the standard bookkeeping exemption every plan in this repo's index
+  carries. (4) Fixed a dangling citation (bare "§9.1" → the actual
+  document, `docs/TESTING_STRATEGY.md` §9.1) and an unexplained magic
+  number (the `8` in `topic_event(..., 8, ...)` is `ttl_secs`, now
+  annotated at first use).
 
 ## Why this matters
 
@@ -50,8 +77,8 @@ No existing test catches this: poller tests never touch the queue,
 `queue.rs`'s own supersede tests never vary `meta` between the two events
 being merged (see `visible_supersede_updates_content_priority_rotation`,
 which asserts `payload`/`priority`/`rotation`/`signal` update but never
-touches `meta`), and the property-test fuzzer (`§9.1`) hardcodes
-`EventMeta::default()` for every generated event.
+touches `meta`), and the property-test fuzzer (`docs/TESTING_STRATEGY.md`
+§9.1) hardcodes `EventMeta::default()` for every generated event.
 
 ## Current state
 
@@ -128,9 +155,10 @@ touches `meta`), and the property-test fuzzer (`§9.1`) hardcodes
   }
   ```
 
-- Repo convention: `apply_fresh_content` is the one and only place that
-  decides what "fresh content" means for a superseding event — match its
-  existing style (flat field copies, no helper abstraction) rather than
+- `apply_fresh_content` (shown above) is the one and only place that
+  decides what "fresh content" means for a superseding event, confirmed
+  by its three call sites all routing through it — match its existing
+  style (flat field copies, no helper abstraction) rather than
   introducing a new merge strategy.
 
 ## Commands you will need
@@ -180,13 +208,24 @@ fn apply_fresh_content(existing: &mut Event, fresh: &Event) {
 the bug — it's a silent behavioral gap, not a type error — so Step 2's
 test is the real gate).
 
-### Step 2: Add a regression test pinning the fix
+### Step 2: Add three regression tests pinning the fix
 
-Model this after the existing exemplar `visible_supersede_updates_content_priority_rotation`
-(`src-tauri/src/queue.rs:850-884`), which already asserts payload/priority/
-rotation/signal update on supersede — extend the same pattern to cover
-`meta`. Add a new test in the same `mod tests` block (near line 884, right
-after the exemplar):
+One per `apply_fresh_content` call site (visible, same-tier waiting,
+cross-tier waiting), each modeled directly on that call site's existing
+non-meta exemplar test so the setup shape (paused-queue, tier
+population, `topic_event(title, priority, ttl_secs, topic)` helper) is
+already proven correct — only the `meta` assertion is new. `DetailItem`/
+`EventMeta` are already imported at the top of `mod tests`
+(`queue.rs:538`: `use crate::event::{test_fixtures, DetailItem,
+EventMeta, EventPayload, EventSignal};`). Note `topic_event`'s third
+argument is `ttl_secs` (all three exemplars below use `8`, matching the
+existing tests they're modeled on — not a value with any special
+significance, just consistency with the pattern).
+
+**2a. Visible-item variant** — modeled on
+`visible_supersede_updates_content_priority_rotation`
+(`src-tauri/src/queue.rs:850-884`). Add in the same `mod tests` block,
+near line 884, right after that exemplar:
 
 ```rust
 #[test]
@@ -213,15 +252,103 @@ fn visible_supersede_updates_meta() {
 }
 ```
 
-Also add a same-tier and cross-tier waiting-item variant, modeled after
-`same_tier_waiting_supersede_keeps_position` (`queue.rs:981`) and
-`cross_tier_supersede_moves_to_back_of_new_tier` (`queue.rs:1019`)
-respectively — same shape, just add a `meta` assertion on the waiting
-item after the second `enqueue`. Use `DetailItem` from
-`crate::event::{DetailItem, EventMeta}` — both are already imported at
-the top of `mod tests` (`queue.rs:538`).
+**2b. Same-tier waiting-item variant** — modeled on
+`same_tier_waiting_supersede_keeps_position` (`queue.rs:981-1016`,
+reproduced here so you don't have to cross-reference: it pauses the
+queue, enqueues two different-Topic items into the Medium tier, then
+supersedes the first Topic with fresh same-tier content and asserts both
+the count and ordering are unchanged). Add right after it:
 
-**Verify**: `cd src-tauri && cargo test --locked queue::visible_supersede_updates_meta queue::same_tier_waiting_supersede_updates_meta queue::cross_tier_supersede_updates_meta -- --exact` → all 3 pass (adjust names to whatever you actually call the waiting-item variants).
+```rust
+#[test]
+fn same_tier_waiting_supersede_updates_meta() {
+    let mut q = SingleSlotQueue::new(50);
+    q.pause();
+    q.enqueue(
+        topic_event("first", Priority::Medium, 8, "topic"),
+        Instant::now(),
+    )
+    .unwrap();
+    q.enqueue(
+        topic_event("second", Priority::Medium, 8, "topic2"),
+        Instant::now(),
+    )
+    .unwrap();
+
+    let fresh = Event {
+        meta: EventMeta {
+            details: vec![DetailItem {
+                label: "Clock".to_string(),
+                value: "45'".to_string(),
+            }],
+            ..EventMeta::default()
+        },
+        ..topic_event("first-updated", Priority::Medium, 8, "topic")
+    };
+    q.enqueue(fresh, Instant::now()).unwrap();
+
+    assert_eq!(q.waiting[Priority::Medium as usize].len(), 2);
+    assert_eq!(
+        q.waiting[Priority::Medium as usize][0].event.meta.details.len(),
+        1
+    );
+    assert_eq!(
+        q.waiting[Priority::Medium as usize][0].event.meta.details[0].label,
+        "Clock"
+    );
+}
+```
+
+**2c. Cross-tier waiting-item variant** — modeled on
+`cross_tier_supersede_moves_to_back_of_new_tier` (`queue.rs:1019-1052`:
+pauses the queue, puts a Topic item in the Low tier alongside a filler,
+puts a filler in the High tier, then supersedes the Topic item with
+High-priority fresh content and asserts it lands at **index 1** — the
+back — of the High tier, behind the pre-existing "high" filler). Add
+right after it:
+
+```rust
+#[test]
+fn cross_tier_supersede_updates_meta() {
+    let mut q = SingleSlotQueue::new(50);
+    q.pause();
+    q.enqueue(
+        topic_event("topic", Priority::Low, 8, "topic"),
+        Instant::now(),
+    )
+    .unwrap();
+    q.enqueue(event("low", Priority::Low, 8), Instant::now())
+        .unwrap();
+    q.enqueue(event("high", Priority::High, 8), Instant::now())
+        .unwrap();
+
+    let fresh = Event {
+        meta: EventMeta {
+            details: vec![DetailItem {
+                label: "Clock".to_string(),
+                value: "45'".to_string(),
+            }],
+            ..EventMeta::default()
+        },
+        ..topic_event("topic-upgraded", Priority::High, 8, "topic")
+    };
+    q.enqueue(fresh, Instant::now()).unwrap();
+
+    assert_eq!(q.waiting[Priority::High as usize].len(), 2);
+    let moved = &q.waiting[Priority::High as usize][1];
+    assert_eq!(moved.event.meta.details.len(), 1);
+    assert_eq!(moved.event.meta.details[0].label, "Clock");
+}
+```
+
+**Verify**: `cd src-tauri && cargo test --locked queue::` → all queue
+tests pass (this filters by substring, not exact name — a single
+positional filter argument is all `cargo test` accepts before `--`;
+running three bare names there, as an earlier draft of this plan did, is
+a `cargo` CLI parse error, confirmed by trying it). Confirm your 3 new
+tests appear in the output as `ok`: `visible_supersede_updates_meta`,
+`same_tier_waiting_supersede_updates_meta`,
+`cross_tier_supersede_updates_meta`.
 
 ### Step 3: Full suite + lint
 
@@ -232,27 +359,30 @@ the top of `mod tests` (`queue.rs:538`).
 
 ## Test plan
 
-- 3 new tests in `src-tauri/src/queue.rs`'s `mod tests`: visible-item
-  meta update, same-tier waiting-item meta update, cross-tier waiting-item
-  meta update — one per `apply_fresh_content` call site, since all three
-  currently share the same bug and should share the same regression
-  coverage.
+- 3 new tests in `src-tauri/src/queue.rs`'s `mod tests` (written out in
+  full in Step 2 — 2a/2b/2c): visible-item meta update, same-tier
+  waiting-item meta update, cross-tier waiting-item meta update — one per
+  `apply_fresh_content` call site, since all three currently share the
+  same bug and should share the same regression coverage.
 - Pattern: `visible_supersede_updates_content_priority_rotation`
   (`queue.rs:850`), `same_tier_waiting_supersede_keeps_position`
   (`queue.rs:981`), `cross_tier_supersede_moves_to_back_of_new_tier`
-  (`queue.rs:1019`) — copy their `enqueue`/`enqueue`/assert shape, add a
-  `meta` field with distinguishable content to the "fresh" event, assert
-  it lands on the merged event.
+  (`queue.rs:1019`).
 - Verification: `cargo test --locked queue::` → all pass, including the 3
   new tests.
 
 ## Done criteria
 
+Machine-checkable. ALL must hold. The file-scope restriction below is
+about *source* files only — `plans/README.md` and (conditionally)
+`docs/TESTING_STRATEGY.md` are the standard bookkeeping exemption every
+plan in this repo's index carries, not a contradiction of it:
+
 - [ ] `cargo test --locked` exits 0; rust total is baseline + 3
 - [ ] `cargo clippy --locked --all-targets -- -D warnings` exits 0
 - [ ] `cargo fmt --check` exits 0
 - [ ] `grep -n "existing.meta = fresh.meta.clone();" src-tauri/src/queue.rs` returns exactly one match, inside `apply_fresh_content`
-- [ ] No files outside `src-tauri/src/queue.rs` modified (`git status`)
+- [ ] No *source* files outside `src-tauri/src/queue.rs` modified (`git status` — `plans/README.md` and, if applicable, `docs/TESTING_STRATEGY.md` are expected to change too; everything else is out of scope)
 - [ ] `plans/README.md` status row for 064 updated
 - [ ] Update `docs/TESTING_STRATEGY.md` §0's `queue` count (+3) if this plan lands before plan 071 (the docs truth pass) — otherwise note it in this plan's own completion note so 071's executor picks it up
 

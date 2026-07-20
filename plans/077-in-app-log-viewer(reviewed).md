@@ -7,10 +7,23 @@
 > in `plans/README.md` — unless a reviewer dispatched you and told you they
 > maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat f6c2f46..HEAD -- src-tauri/src/logging.rs src-tauri/src/settings.rs src-tauri/build.rs src-tauri/capabilities/settings.json src/settings/SettingsApp.tsx`
-> If any of these changed since this plan was written, compare the
-> "Current state" excerpts against the live code before proceeding; on a
-> mismatch, treat it as a STOP condition.
+> **Drift check (run first)**: `git diff --stat f6c2f46..HEAD -- src-tauri/src/logging.rs src-tauri/src/settings.rs src-tauri/build.rs src-tauri/src/lib.rs src-tauri/capabilities/settings.json src/settings/SettingsApp.tsx`
+> (note: an earlier version of this command omitted `lib.rs` even though
+> the prose already named it as one of the 4 affected files — fixed,
+> re-verified 2026-07-20 second pass: still exactly 8 entries in
+> `lib.rs`'s `generate_handler!` list, `get_connector_health` at
+> `lib.rs:204`, content otherwise unchanged since the first review pass.)
+> **This WILL show changes** — plan 076 (Telegram connector health) has
+> already landed and added an 8th settings command
+> (`get_connector_health`) to `settings.rs`/`build.rs`/`lib.rs`/
+> `capabilities/settings.json`. That specific delta is expected and
+> already accounted for in "Current state" below (which reflects the
+> real post-076 baseline, not the original planning-time one) — it is
+> NOT a STOP condition on its own. Only treat this as a STOP condition if
+> `logging.rs` changed, or if the settings-command files changed in some
+> OTHER way beyond one additional registered command (e.g. the 4-file
+> pattern itself was restructured) — re-read the live files in that case
+> before proceeding.
 
 ## Status
 
@@ -24,6 +37,45 @@
 - **Category**: direction (grounded feature suggestion — see
   `plans/README.md`'s Direction section)
 - **Planned at**: commit `f6c2f46`, 2026-07-20
+- **Review-plan pass (2026-07-20)**: own read + a required fresh-context
+  subagent cold-read (authored in-session). The cold-read's first
+  finding was that this plan's own top-level drift check fails as
+  written — plan 076 landed since planning and added an 8th settings
+  command, so `settings.rs`/`build.rs`/`lib.rs`/`capabilities/settings.json`
+  all show real diffs, and the plan's drift-check text told a literal
+  executor to STOP right there, even though the bottom STOP-conditions
+  section already anticipated and correctly handled exactly this case
+  ("an 8th or 9th command already added by another plan like 076"). The
+  two instructions contradicted each other in reading order. Fixed the
+  top-level note to name the expected delta explicitly and defer to the
+  bottom STOP condition, and refreshed "Current state" below to the
+  real, directly-verified post-076 baseline (8 commands, not 7) instead
+  of a cross-reference to plan 076. Also found and noted (not fixed,
+  out of this plan's scope, but worth doing while Step 2 already touches
+  the file): `capabilities/settings.json`'s own `"description"` field
+  still says "the seven v5 settings commands" — stale since 076 landed
+  the 8th, a pre-existing drift this plan didn't cause. Cross-checked:
+  the 4-file pattern is otherwise fully self-contained in this plan
+  already (the cold-read confirmed an executor doesn't actually need to
+  open plan 076 to execute this one, despite the "if you're executing
+  this plan independently of 076" hedge suggesting otherwise).
+- **Second review-plan pass (2026-07-20, same day)**: re-invoked after
+  more concurrent landings (plan 066's `cmux_ttl_secs` validation and
+  further plan 076 frontend work both touched `settings.rs`/
+  `SettingsApp.tsx` since the first pass). Re-verified every citation
+  live: `logging.rs` (Step 1's file) is completely untouched — zero
+  drift; the 8-command baseline in `build.rs`/`lib.rs`/
+  `capabilities/settings.json` is unchanged from the first pass; the 8
+  sidebar sections are still exactly as documented (plan 076's health
+  line rendered *inside* the existing Connectors section, confirmed by
+  reading the actual diff — it did not add a 9th section, so this
+  plan's own new Diagnostics section still lands cleanly with no
+  overlap). Found and fixed one real gap the first pass introduced: the
+  drift-check *command* itself never actually included `lib.rs` in its
+  `git diff --stat` file list, even though this same Status block's
+  prose already said lib.rs was one of the 4 affected files — an
+  executor running the command literally as written would not have seen
+  that file's change flagged at all. Fixed.
 
 ## Why this matters
 
@@ -90,12 +142,25 @@ worth surfacing.
   added here.
 
 - The 4-file pattern for adding a new settings-window-only invoke
-  command (identical to plan 076's Step 2 — read that plan's "Current
-  state" section for the full list if you're executing this plan
-  independently of 076): `settings.rs` (the command function),
-  `build.rs` (`AppManifest::commands` allowlist), `lib.rs`
-  (`generate_handler!` list), `capabilities/settings.json`
-  (`permissions` array).
+  command — directly verified against HEAD (post-076: **8** commands
+  registered, not the original 7; `get_connector_health` was plan 076's
+  addition, already landed):
+  1. `src-tauri/src/settings.rs` — the `#[tauri::command]` function itself.
+  2. `src-tauri/build.rs` — `AppManifest::commands(&[...])` allowlist, currently:
+     ```rust
+     .commands(&[
+         "get_config",
+         "get_connector_health",
+         "get_default_config",
+         "get_secret_status",
+         "save_config_and_relaunch",
+         "set_secret",
+         "send_test_notification",
+         "set_appearance",
+     ])
+     ```
+  3. `src-tauri/src/lib.rs`'s `generate_handler![...]` list (same 8 entries, mirrored, at `lib.rs:202-211`).
+  4. `src-tauri/capabilities/settings.json`'s `permissions` array (8 `allow-*` entries, one per command, plus the two `core:event:*` entries).
 
 - `src/settings/SettingsApp.tsx` — read its existing sidebar-section
   structure (`grep -n "nav-item" src/settings/SettingsApp.tsx`, 8
@@ -156,11 +221,12 @@ anything's been logged) by returning an empty `Vec`, not an error.
 
 ### Step 2: Add the `get_recent_log_lines` invoke command
 
-Follow the exact 4-file pattern (see "Current state"):
+Follow the exact 4-file pattern (see "Current state" — you're adding the
+**9th** command, since plan 076 already landed the 8th):
 1. `settings.rs`: `pub async fn get_recent_log_lines(window: tauri::WebviewWindow) -> Result<Vec<String>, String>` — `ensure_settings_window(&window)?` first, then call `logging::read_recent_lines(200)` (or a similarly modest fixed count — no need to make this configurable), map the error to `String` matching every other command's error-handling style.
 2. `build.rs`: add `"get_recent_log_lines"` to the `AppManifest::commands(&[...])` list.
 3. `lib.rs`: add `settings::get_recent_log_lines,` to `generate_handler![...]`.
-4. `capabilities/settings.json`: add `"allow-get-recent-log-lines"` to `permissions`.
+4. `capabilities/settings.json`: add `"allow-get-recent-log-lines"` to `permissions`. While you're editing this file, also fix its `"description"` field — it still says "the seven v5 settings commands," stale since plan 076 landed the 8th; update it to reflect the real count (9, after this step) rather than leaving pre-existing drift in a file you're already touching.
 
 **Verify**: `cd src-tauri && cargo build` → exit 0; `grep -c "get_recent_log_lines" src-tauri/build.rs src-tauri/src/lib.rs src-tauri/capabilities/settings.json src-tauri/src/settings.rs` → each returns at least 1.
 
@@ -242,10 +308,13 @@ critical panel load" pattern `CLAUDE.md` already describes for
 
 ## Maintenance notes
 
-- If plan 076 (Telegram connector health) also lands, consider whether
-  its health line belongs in this same new Diagnostics section rather
-  than the Connectors section — not required, just noted as a plausible
-  follow-up UI consolidation, not something this plan should force.
+- Plan 076 has already landed (its Telegram health line rendered inside
+  the existing Connectors section, not a new one) — this plan's new
+  Diagnostics section stays independent of it; no consolidation is
+  required or blocked by landing order. If a future pass wants to move
+  076's health line into this plan's Diagnostics section for UI
+  consistency, that's a separate, optional follow-up, not something
+  either plan depends on.
 - If log volume ever grows enough that reading rotated backups becomes
   genuinely useful (not just "nice to have"), that's a natural, small
   follow-up extension of `read_recent_lines` rather than a redesign.

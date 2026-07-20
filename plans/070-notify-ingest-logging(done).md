@@ -8,9 +8,14 @@
 > maintain the index.
 >
 > **Drift check (run first)**: `git diff --stat f6c2f46..HEAD -- src-tauri/src/http.rs src-tauri/src/engine.rs`
-> If either file changed since this plan was written, compare the
-> "Current state" excerpts against the live code before proceeding; on a
-> mismatch, treat it as a STOP condition.
+> **`engine.rs` WILL show a diff** — plan 076 (Telegram connector health)
+> already landed and added a `telegram_health` field/accessor before
+> `Engine::accept`, shifting it from the original planning-time lines
+> 159-185 to its current 174-200 (content otherwise byte-identical — this
+> is cited correctly below already). That specific shift is expected, not
+> a STOP condition. `http.rs` should show no diff; if it does, or if
+> `engine.rs` differs by more than a pure line shift, re-read the live
+> file before proceeding.
 
 ## Status
 
@@ -20,6 +25,41 @@
 - **Depends on**: none
 - **Category**: dx
 - **Planned at**: commit `f6c2f46`, 2026-07-20
+- **Review-plan pass (2026-07-20)**: own read + a required fresh-context
+  subagent cold-read (authored in-session). Found and fixed: (1) a false
+  claim — "notifier.rs [is] the one place tracing already exists" — a
+  repo-wide grep shows `tracing::` calls in 10 files, not one (event.rs,
+  lib.rs, login_item.rs, notifier.rs, poller.rs, presentation.rs,
+  rss_poller.rs, settings.rs, status.rs, weather_poller.rs); corrected
+  below to just cite notifier.rs as *a* representative example of the
+  structured-field style to match, not the sole occurrence. (2) Step 2
+  sent the executor hunting for a "log then propagate" idiom
+  (`.inspect_err` or similar) that doesn't exist anywhere in this
+  codebase — confirmed via `grep -rn "inspect_err" src-tauri/src/*.rs`,
+  zero hits. Removed the false research pointer; the plan's own sketch
+  is the pattern to use directly, no further precedent to find. (3)
+  `engine.rs` has drifted (see the drift-check note above, plan 076
+  landed) — `Engine::accept` is now at lines 174-200, not 159-185;
+  content unchanged, just shifted. (4) `notifier.rs`'s four quoted
+  tracing calls had drifted further than a citation should
+  (`242/247/252/278` → real current locations `271/276/281/310`) —
+  fixed to the verified-current lines.
+- **Second review-plan pass (2026-07-20, same day)**: re-invoked after
+  more concurrent landings; re-verified all citations live. Steps 1
+  (`http.rs:147-223`) and 2 (`engine.rs:174-200`, `Engine::accept`) are
+  still byte-identical to what's already cited — no further drift there.
+  But Step 3's target code had gone stale in a genuinely dangerous way:
+  plan 076 (already landed) inserted a `cfg.health.lock().unwrap()
+  .consecutive_failures += 1;` line (plus a comment) directly between
+  the `tracing::warn!` call and `return;` in the exact
+  `RetryDecision::Drop` branch Step 3 edits. The plan's shown
+  "before"/"after" snippets only had 2 statements (warn + return); an
+  executor doing a literal block-replace against the plan's stale
+  snippet would have silently deleted plan 076's health-tracking
+  increment while adding the `id` field. Fixed Step 3 to show the real
+  3-statement current shape, instruct changing only the `tracing::warn!`
+  line, and added a grep-based verification that the health-tracking
+  line survived the edit.
 
 ## Why this matters
 
@@ -31,7 +71,7 @@ not as an afterthought." The write side is built and tested
 that promise is meant to cover has zero `tracing::` calls anywhere.
 `notify_handler` (`src-tauri/src/http.rs:147-223`), the `/notify` HTTP
 handler, never logs a rejection reason (bad content-type, malformed
-JSON, missing field). `Engine::accept` (`src-tauri/src/engine.rs:159-185`),
+JSON, missing field). `Engine::accept` (`src-tauri/src/engine.rs:174-200`),
 which the codebase's own doc-comments call "the one ingest path" for
 every source (http `/notify`, Settings test notifications, ESPN/RSS/
 weather pollers — per plan 037), never logs acceptance, `QueueFull`
@@ -55,7 +95,7 @@ diagnostic path is adding `tracing::` calls, rebuilding, and reproducing.
   title/body at lines 165-171). No `tracing::` import currently exists in
   this file — confirm with `grep -n "^use\|tracing::" src-tauri/src/http.rs`.
 
-- `src-tauri/src/engine.rs:159-185` — `Engine::accept`, the full
+- `src-tauri/src/engine.rs:174-200` — `Engine::accept`, the full
   function:
 
   ```rust
@@ -94,11 +134,11 @@ diagnostic path is adding `tracing::` calls, rebuilding, and reproducing.
   = event.clone();` line, or log from `to_offer` (the clone) after that
   point, since `to_offer` survives past the move.
 
-- `src-tauri/src/notifier.rs:242,247,252,278` — the existing `tracing::`
-  usage pattern in this codebase (the one place tracing already exists,
-  on the outbound side) — match this style (structured fields via
-  `tracing`'s `key = value` / `key = ?value` / `key = %value` syntax, not
-  string interpolation):
+- `src-tauri/src/notifier.rs:271,276,281,310` — a representative sample
+  of this codebase's `tracing::` structured-field style (tracing is
+  actually used in 10 files already, not just this one — but notifier.rs
+  is the clearest example to match): use `key = value` / `key = ?value`
+  / `key = %value` syntax, not string interpolation:
 
   ```rust
   tracing::warn!(?kind, attempt, "telegram send failed — retrying");
@@ -199,16 +239,11 @@ In `Engine::accept`, add:
   `q.enqueue(...)`/`q.enqueue_test(...)` call returns `Ok`), logging
   `to_offer.id`, `to_offer.origin`, `to_offer.priority`.
 - A `tracing::warn!` on the `QueueFull` path — since `q.enqueue(...)?`
-  uses `?` to propagate the error, you'll need to either restructure that
-  line to inspect the `Err` case before propagating, or add a `.inspect_err(...)`
-  (if the codebase's Rust edition/toolchain supports it — check
-  `Cargo.toml`'s `edition`/`rust-version` first) that logs before the `?`
-  still propagates the error. Match whichever idiom is already used
-  elsewhere in this codebase for "log then propagate" (search for
-  `.inspect_err` or a manual `match` pattern in `engine.rs`/`queue.rs`
-  first).
-
-Example shape (adjust to match the actual idiom you find):
+  uses `?` to propagate the error, restructure that line to inspect the
+  `Err` case before propagating. There is no existing "log then
+  propagate" idiom elsewhere in this codebase to match (confirmed: zero
+  `.inspect_err` usage anywhere in `src-tauri/src/`) — use the shape
+  below directly, it's the pattern for this plan, not a precedent lookup.
 
 ```rust
 let slot_change = {
@@ -231,19 +266,39 @@ let slot_change = {
 
 ### Step 3: Thread `event.id` into `notifier.rs`'s existing drop-log
 
-In `notifier.rs`'s `send_with_policy` (line ~252, the `RetryDecision::Drop`
+In `notifier.rs`'s `send_with_policy` (line 280, the `RetryDecision::Drop`
 branch), add `id = %event.id` alongside the existing `title = %event.payload.title`
-field:
+field — **only on the `tracing::warn!` line**. Plan 076 (Telegram
+connector health, already landed) added a `consecutive_failures`
+increment right after this warn call, in the same branch — the real
+current shape is:
+
+```rust
+RetryDecision::Drop => {
+    tracing::warn!(?kind, attempt, title = %event.payload.title,
+        "telegram send dropped after failure");
+    // a drop is a failed delivery: bump the counter but
+    // leave last_success at the last time it actually worked
+    cfg.health.lock().unwrap().consecutive_failures += 1;
+    return;
+}
+```
+
+Change only the `tracing::warn!` line; leave the comment and the
+`cfg.health...` line untouched:
 
 ```rust
 RetryDecision::Drop => {
     tracing::warn!(?kind, attempt, id = %event.id, title = %event.payload.title,
         "telegram send dropped after failure");
+    // a drop is a failed delivery: bump the counter but
+    // leave last_success at the last time it actually worked
+    cfg.health.lock().unwrap().consecutive_failures += 1;
     return;
 }
 ```
 
-**Verify**: `cd src-tauri && cargo build` → exit 0.
+**Verify**: `cd src-tauri && cargo build` → exit 0; `grep -n "consecutive_failures += 1" src-tauri/src/notifier.rs` still shows exactly one match — confirms this step didn't accidentally delete plan 076's health-tracking line while editing the same branch.
 
 ### Step 4: Full suite + lint
 
@@ -285,7 +340,7 @@ rather than claiming this step passed.
 - [ ] `grep -c "tracing::" src-tauri/src/engine.rs` returns at least 2 (success + QueueFull paths in `accept`)
 - [ ] `grep -n "id = %event.id" src-tauri/src/notifier.rs` shows the threaded id in the drop-log line
 - [ ] Manual smoke (Step 5) confirms a log line appears for a real push, or is explicitly flagged operator-owed
-- [ ] No files outside `http.rs`/`engine.rs`/`notifier.rs` modified (`git status`)
+- [ ] No *source* files outside `http.rs`/`engine.rs`/`notifier.rs` modified (`git status` — `plans/README.md` is expected to change too; everything else is out of scope)
 - [ ] `plans/README.md` status row for 070 updated
 
 ## STOP conditions

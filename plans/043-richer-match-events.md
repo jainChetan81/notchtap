@@ -1,11 +1,12 @@
 # Plan 043: richer live-match event coverage (fouls, offside, disallowed goals, subs)
 
 > **Executor instructions**: Follow this plan, run every gate, update the
-> `plans/README.md` row when done. **Read "Verified against live ESPN
-> endpoints" below FIRST** — this review-plan pass found real evidence
-> that the plan's core assumption (the `summary` endpoint carries a
-> play-by-play timeline) may not hold, and Step 0 below is a hard
-> verification gate on a genuinely live match before any other work.
+> `plans/README.md` row when done. **Read "Step 0: CONFIRMED against a
+> genuinely live match (2026-07-20)" below FIRST** — Step 0's gate has
+> been satisfied with real evidence; you do not need to re-run it. But
+> that same evidence surfaced a new requirement (`summary` is flaky —
+> see below) that changes the "Approach" section below the original
+> filing didn't have — read that too before writing fetch/parse code.
 >
 > **Coordination**: touches `poller.rs`, which 037 (the Engine) has
 > already migrated (DONE, merged `6b53c32` — no coordination needed
@@ -17,15 +18,15 @@
 
 ## Status
 
-- **TODO, but see Step 0** — filed 2026-07-19 from live-session
-  feedback: "are we reporting fouls, free kicks? Saka scored a good
-  goal but was offside and I didn't see anything."
-- **Priority**: P3 · **Effort**: M–L, contingent on Step 0's finding (see
-  below — could be materially larger, or this endpoint could turn out
-  not to work at all, which changes the effort question entirely) ·
-  **Risk**: MED (heavier feed, more polling + parsing; rate-limit care)
-  **plus** a real feasibility risk this pass surfaced (see below) that
-  the original filing didn't have evidence for either way.
+- **TODO — Step 0 CONFIRMED, ready for Step 1.** Filed 2026-07-19 from
+  live-session feedback: "are we reporting fouls, free kicks? Saka
+  scored a good goal but was offside and I didn't see anything."
+- **Priority**: P3 · **Effort**: M–L (no longer contingent on Step 0 —
+  the data exists; the fallback-chain requirement below adds real but
+  bounded scope, not open-ended risk) · **Risk**: MED (heavier feed,
+  more polling + parsing, rate-limit care, **plus** the `summary`
+  endpoint's confirmed flakiness means the fetch path needs a fallback
+  chain, not a single request — see "Approach" below).
 - **Depends on**: 037 (DONE — no longer a coordination concern), 039
   (soft — same live-match surface; unblocked, not yet executed).
 - **Review-plan pass (2026-07-20)**: fetched ESPN's actual `summary`
@@ -42,6 +43,17 @@
   the config-opt-in pattern reference now that 040 (weather) has
   established a second real precedent for a `*_enabled`-style flag
   alongside `espn_enabled`/`rss_enabled`.
+- **Step 0 result (2026-07-20 night, confirmed 2026-07-20)**: the
+  question this plan was blocked on is now answered — see "Step 0:
+  CONFIRMED against a genuinely live match" below for the full
+  evidence. Short version: `commentary`/`keyEvents` both exist and grow
+  monotonically through a live match (confirmed independently by two
+  systems across 6+ polls of the same real match, FIFA World Cup Final,
+  ESPN event `760517`), but the `summary` endpoint that carries them
+  returned empty/404 on 2 of those polls even while the match was live
+  — so the fetch path needs a fallback chain (core API
+  `/competitions/{id}/plays`, then HTML scrape), not a single endpoint
+  with retries. This is now folded into "Approach" below.
 
 ## Problem
 
@@ -94,19 +106,90 @@ timeline. This pass fetched it for real:
    unverified assumption, not a confirmed fact, until Step 0 checks it
    for real.
 
+## Step 0: CONFIRMED against a genuinely live match (2026-07-20)
+
+The "Step 0" gate below (filed by the review-plan pass above) has been
+satisfied. During the actual FIFA World Cup Final (ESPN event
+`760517`, league slug `fifa.world`), the `summary?event={id}` endpoint
+was polled repeatedly across the full match by two independent
+systems — full raw findings live in
+`research/043-worldcup-final-verification/` (six `kimi-*` files plus
+three `hermes-*` files; the one bad run,
+`kimi-worldcup-final-api-UNRELIABLE-discard.md`, is flagged in its own
+filename and excluded from the conclusions below).
+
+1. **The key names are `commentary` and `keyEvents`** (not `plays` or
+   `playByPlay` at the `summary` top level — those don't exist there).
+   Confirmed on 4 independent polls spanning the match:
+
+   | Poll (match clock) | `commentary` count | `keyEvents` count |
+   |---|---|---|
+   | 9' (1st half) | 9 | 1 |
+   | 90'+8' (2nd half stoppage) | 115 | 29 |
+   | 108' (overtime) | 144 | 41 |
+
+   Both arrays grow monotonically as the match progresses — this is a
+   live, updating timeline, not a static snapshot.
+
+2. **`commentary` entry shape**: `sequence`, `time` (`{value: seconds,
+   displayValue: "X'"}`), `text`, plus an embedded `play` object with
+   `id`, `type` (foul, shot-on-target, kickoff, yellow-card, etc.),
+   `period`, `clock`, `team`, `participants`, `fieldPositionX/Y` +
+   `fieldPosition2X/Y` (pitch coordinates), `wallclock` (ISO
+   timestamp), `source`. This is the target shape for Step 1's parser
+   — richer than the scoreboard's existing `SbDetail`, with per-event
+   type text ready to use directly (e.g. "Foul by Pedro Porro (Spain)
+   on Nico González", "Shot On Target — Lamine Yamal (Spain) saved by
+   Emiliano Martínez").
+
+3. **`keyEvents` entry shape**: `id`, `type`, `text`, `period`, `clock`,
+   `scoringPlay` (bool), `wallclock`, `shootout` (bool), `source`. This
+   is the filtered/significant-events-only view — likely the better
+   source for "card-worthy" event selection (open question below),
+   with `commentary` feeding the fuller 042 scorecard detail view.
+
+4. **New finding beyond what Step 0 asked for: `summary` is flaky even
+   mid-match.** Of 6 polls against the same live match, 2 returned
+   empty `{}` or 404 on every parameter variant tried (one at 39' into
+   the first half, one at half-time) — not because the match wasn't
+   live, but as an apparent transient API gap. Two working fallbacks
+   were confirmed in the same research pass:
+   - Core API `/competitions/{id}/plays` (paginated, 25/page — 625
+     plays available by 39') — same event data, different endpoint,
+     worked when `summary` didn't.
+   - HTML-scraping `https://www.espn.com/soccer/match/_/gameId/{id}`
+     as a last resort — worked when both API paths failed (confirmed
+     at the half-time poll).
+
+   This means Step 1's fetch path cannot be "hit `summary`, retry on
+   failure" — it needs to fall through to `/competitions/{id}/plays`
+   on an empty/error response. (HTML scraping is a heavier, more
+   fragile last resort; whether to build it or just tolerate an
+   occasional missed poll is an open question for whoever builds this,
+   not decided here.)
+
+**The original Step 0 STOP condition ("no play-by-play found on a live
+match → STOP and report") does not fire.** The data is there. Proceed
+to Step 1 with the shapes and fallback-chain requirement above.
+
 ## Approach
 
 Getting these requires ESPN's richer **per-match play-by-play /
 commentary / "summary" endpoint** (a different URL from the scoreboard,
-confirmed above), which is EXPECTED to carry the timeline of key events
-while a match is live — **not yet confirmed, see Step 0**. This is a
-real integration, not a config tweak:
+confirmed above), which **is now confirmed** to carry the timeline of
+key events while a match is live — see "Step 0: CONFIRMED" above for
+the verified `commentary`/`keyEvents` shapes. This is a real
+integration, not a config tweak:
 
 - New fetch path (per live match, not per league) against the play-by-play
   endpoint; capped via `net.rs` (plan 025 — reuse `build_poll_client()`/
   `read_body_capped()` as-is, same as every other poller); polite poll
   interval + only while a match is `in` play (don't poll finished/
-  scheduled matches).
+  scheduled matches). **Must fall through to core API
+  `/competitions/{id}/plays` when `summary` returns empty/error** — see
+  "Step 0: CONFIRMED" point 4 above; this isn't optional hardening,
+  `summary` was observed failing on a genuinely live match in the
+  Step 0 evidence, not just a hypothetical.
 - Parse the event timeline; map event types → `MatchState`/`EventSignal`
   (goal, disallowed/VAR, offside, foul, free kick, sub, shot on target…).
   Decide which are **card-worthy** (interrupt) vs merely feed into the
@@ -119,7 +202,13 @@ real integration, not a config tweak:
   `default_*` fn convention, e.g. `espn_play_by_play: bool` default
   `false`) — this is materially more polling, so it must be opt-in.
 
-## Step 0: confirm the data exists on a real live match (REQUIRED before Step 1)
+## Step 0 original instructions (SATISFIED — kept for reference only)
+
+**Status: done.** See "Step 0: CONFIRMED against a genuinely live
+match (2026-07-20)" above for the actual result — key names, shapes,
+growth counts, and the fallback-chain finding. The instructions below
+are kept only so a future reader can see what was being verified; do
+not re-run this check before starting Step 1.
 
 Do not write any fetch/parse code before this. During an actual live
 match (any league), fetch
@@ -138,7 +227,7 @@ understood, and either a different ESPN endpoint/query param, a
 different provider entirely, or dropping this plan is the real decision
 — don't improvise a fallback data source without that conversation.
 
-## Done criteria (finalize at build, after Step 0)
+## Done criteria (finalize at build)
 
 | Check | Command (from `src-tauri/`) | Expected |
 |---|---|---|
@@ -147,8 +236,9 @@ different provider entirely, or dropping this plan is the real decision
 | Disallowed goal | test: a VAR/offside-disallowed event surfaces (or is deliberately filtered) per decision | pass |
 | Opt-in off = no extra polling | test: `espn_play_by_play=false` hits only the scoreboard endpoint, never the summary one | pass |
 | Dedup | test: a real goal reported by both the scoreboard and play-by-play feeds produces exactly one card, not two | pass |
+| Fallback chain | test: a `summary` response of empty `{}`/error causes a fetch against `/competitions/{id}/plays` instead of silently dropping that poll — see "Step 0: CONFIRMED" point 4 | pass |
 
-## Open questions (resolve at build, after Step 0 confirms feasibility)
+## Open questions (resolve at build)
 
 - Which event types are **card-worthy** vs scorecard-only? (foul-per-card
   would be noise — likely only goals, disallowed/VAR, red cards, penalties
@@ -165,12 +255,16 @@ different provider entirely, or dropping this plan is the real decision
 
 ## STOP conditions
 
-- Step 0 finds no play-by-play/commentary data on a genuinely live
-  match → STOP and report to the operator (see Step 0) — this
-  supersedes and sharpens the original filing's more generic "endpoint
-  requires auth" STOP condition below; a missing-key-or-terms problem
-  and a missing-data problem are different failures needing different
-  responses, don't conflate them in the report.
+- ~~Step 0 finds no play-by-play/commentary data on a genuinely live
+  match~~ — **resolved, does not apply.** Step 0 confirmed the data
+  exists (see above); kept struck-through rather than deleted so a
+  reader knows this was a real gate that got cleared, not an
+  oversight.
+- The fallback chain (`summary` → core API `/competitions/{id}/plays`)
+  both fail on the same poll during a live match → STOP and report;
+  this would mean the live-match data path is unavailable for reasons
+  beyond the flakiness Step 0 already characterized, and needs a fresh
+  decision rather than a third fallback improvised on the spot.
 - ESPN play-by-play endpoint requires auth / terms incompatible with
   polling → STOP and surface to the operator (as with 040's provider).
 - Would touch `capabilities/default.json` → STOP.

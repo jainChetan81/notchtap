@@ -20,6 +20,33 @@
 - **Depends on**: none
 - **Category**: bug
 - **Planned at**: commit `f6c2f46`, 2026-07-20
+- **Review-plan pass (2026-07-20)**: own read (zero drift — `config.rs`
+  is byte-identical to when this plan was written; every citation,
+  including the settings.rs permutation check, re-verified exactly at
+  its stated line) + a required fresh-context subagent cold-read
+  (authored in-session, so the skill mandates it). Found and fixed a
+  compile-blocking defect both independently converged on: Step 1's
+  primary code sample used `std::collections::HashSet`, but `SourceKind`
+  (`src-tauri/src/event.rs:81`) derives `Debug, Clone, Copy, PartialEq,
+  Eq, Serialize, Deserialize` — **no `Hash`** — so `HashSet::insert`
+  would not compile as written. This plan's own STOP conditions already
+  anticipated the *possibility* ("if it doesn't [derive Hash]... use a
+  `Vec`-based dedupe instead"), but the primary Step 1 sample was still
+  the broken one, with a hedged claim ("almost certainly already does,
+  since it's used as a `HashSet`/map key elsewhere") that the cold-read
+  checked and found flatly false — a repo-wide grep for
+  `HashSet<SourceKind>`/`HashMap<SourceKind>` returns zero hits anywhere.
+  Rewrote Step 1 with the correct, verified-compiling `Vec`-based dedupe
+  as the primary (only) code sample — no more hedging needed, the
+  question is settled. Also fixed the same class of issue found in
+  plans 064/066's reviews: Step 2's verify command
+  (`cargo test --locked config:: -- duplicate`) doesn't scope to the new
+  test as implied — run for real, it pulled in all 22 `config::` tests
+  *plus* two unrelated `settings::` tests matching "duplicate" (cargo/
+  libtest's pre-/post-`--` filters union globally across the whole test
+  binary, not just within the `config::` prefix) — replaced with an
+  unambiguous single-filter command and an explicit note not to rely on
+  the count as proof the new test specifically ran.
 
 ## Why this matters
 
@@ -51,9 +78,15 @@ the duplicate. `settings::validate`'s permutation check requires
 `len() == 5`, so this "healed" config fails validation forever — exactly
 the "no in-UI escape hatch short of Reset to defaults" lockout the
 `fb4acce` fix exists to prevent, just via a different root cause. This
-was verified live during the audit: `Config::parse` on the array above
-heals to `[Football, Football, Manual, Weather, Cmux, News]` (6 entries,
-duplicate still present).
+was verified via a throwaway `cargo test` during the original audit
+session (not committed — the loop shown above is read directly from the
+live file, and its logic is unambiguous: `contains` only gates the
+append, nothing ever removes a pre-existing duplicate, so
+`Config::parse` on the array above heals to `[Football, Football,
+Manual, Weather, Cmux, News]`, 6 entries, duplicate still present). If
+you want independent confirmation before implementing the fix, write a
+scratch test asserting the same, then delete it — Step 2 below adds the
+permanent version.
 
 This is a narrow, hand-edited-TOML-only edge case (unreachable through
 the Settings UI, which only reorders) — low day-to-day likelihood, but it
@@ -138,15 +171,29 @@ defaults didn't even fully work" report later.
 Change the heal to first deduplicate `config.rotation_order` (keeping
 the first occurrence of each `SourceKind`, to preserve the "existing
 relative order" guarantee the doc comment already promises), then append
-any of the 5 canonical sources still missing:
+any of the 5 canonical sources still missing. `SourceKind` does **not**
+derive `Hash` (confirmed: its derive list at `event.rs:81` is `Debug,
+Clone, Copy, PartialEq, Eq, Serialize, Deserialize`), so this uses a
+`Vec`-based `contains` check rather than a `HashSet` — fine at this size
+(the array is at most 5-6 elements, and the surrounding heal already
+uses the same `O(n²)`-shaped `.contains()` idiom):
 
 ```rust
 // dedupe first (keep first occurrence — a malformed hand-edited config
 // might repeat a source; without this, a duplicate-plus-missing array
 // would grow past 5 elements and fail `validate`'s permutation check
-// forever, the same lockout this heal exists to prevent).
-let mut seen = std::collections::HashSet::new();
-config.rotation_order.retain(|s| seen.insert(*s));
+// forever, the same lockout this heal exists to prevent). `SourceKind`
+// doesn't derive `Hash`, so this tracks "seen" sources in a small `Vec`
+// rather than a `HashSet` — negligible at this size.
+let mut seen: Vec<SourceKind> = Vec::new();
+config.rotation_order.retain(|s| {
+    if seen.contains(s) {
+        false
+    } else {
+        seen.push(*s);
+        true
+    }
+});
 for source in default_rotation_order() {
     if !config.rotation_order.contains(&source) {
         config.rotation_order.push(source);
@@ -157,13 +204,7 @@ for source in default_rotation_order() {
 Adjust the doc comment above the block to mention the dedupe step too
 (one added sentence is enough — don't rewrite the whole comment).
 
-**Verify**: `cd src-tauri && cargo build` → exit 0. Confirm `SourceKind`
-implements `Eq + Hash` (it almost certainly already does, since it's used
-as a `HashSet`/map key elsewhere in this codebase — check
-`src-tauri/src/event.rs`'s `SourceKind` derive list before assuming; if
-it doesn't, use a `Vec`-based `contains` dedupe instead of `HashSet`,
-mirroring the existing `.contains(&source)` idiom already in this
-function, just applied to a `retain`).
+**Verify**: `cd src-tauri && cargo build` → exit 0.
 
 ### Step 2: Add a regression test
 
@@ -205,12 +246,20 @@ fn rotation_order_with_duplicate_and_missing_sources_heals_to_exactly_five() {
 }
 ```
 
-Adjust the exact assertion style (e.g. if `SourceKind` doesn't implement
-`Debug`-sortable formatting the way this sketch assumes) to match
-whatever's idiomatic elsewhere in this file's existing tests — the two
-existing tests you read in "Current state" are the closest pattern.
+`SourceKind` derives `Debug` (confirmed, `event.rs:81`) but not `Ord`,
+so the `format!("{s:?}")`-keyed sort above is the right approach for an
+order-independent equality check, not a workaround — it's necessary,
+not optional. If `SourceKind` gains additional variants before you
+implement this, update the `expected` vec in the test accordingly.
 
-**Verify**: `cd src-tauri && cargo test --locked config:: -- duplicate` (adjust filter to your test name) → passes.
+**Verify**: `cd src-tauri && cargo test --locked config::` → all 22+
+config tests pass, including your new test (confirm it appears in the
+output as `ok`). Don't add a second filter after `--` expecting it to
+narrow further — verified empirically that cargo/libtest's pre-`--` and
+post-`--` filters union rather than intersect (running `config:: --
+duplicate` pulls in all `config::` tests *plus* any unrelated test
+anywhere in the binary whose name merely contains "duplicate" — it
+doesn't isolate the new test at all).
 
 ### Step 3: Full suite + lint
 
@@ -235,11 +284,16 @@ existing tests you read in "Current state" are the closest pattern.
 
 ## Done criteria
 
+Machine-checkable. ALL must hold. The file-scope bullet below is about
+*source* files only — `plans/README.md` and (conditionally)
+`docs/TESTING_STRATEGY.md` are the standard bookkeeping exemption every
+plan in this repo's index carries, not a contradiction of it:
+
 - [ ] `cargo test --locked` exits 0; rust total is baseline + 1
 - [ ] `cargo clippy --locked --all-targets -- -D warnings` exits 0
 - [ ] `cargo fmt --check` exits 0
 - [ ] The two pre-existing `rotation_order_*` tests in `config.rs` still pass unmodified
-- [ ] No files outside `src-tauri/src/config.rs` modified (`git status`)
+- [ ] No *source* files outside `src-tauri/src/config.rs` modified (`git status` — `plans/README.md` and, if applicable, `docs/TESTING_STRATEGY.md` are expected to change too; everything else is out of scope)
 - [ ] `plans/README.md` status row for 067 updated
 - [ ] Update `docs/TESTING_STRATEGY.md` §0's `config` count if this plan lands before plan 071 (the docs truth pass) — otherwise note it in this plan's completion note
 
@@ -247,10 +301,12 @@ existing tests you read in "Current state" are the closest pattern.
 
 - The code at `config.rs:394-410` doesn't match the excerpt above (drift
   since planning).
-- `SourceKind` doesn't derive `Eq`/`Hash`/`Clone`/`Copy` as assumed by
-  Step 1's sketch — check its derive list first; if it's missing a trait
-  the sketch needs, use the `Vec`-based dedupe fallback mentioned in
-  Step 1 rather than adding a new derive to `SourceKind` (that's a wider
+- `SourceKind`'s derive list has changed from `Debug, Clone, Copy,
+  PartialEq, Eq, Serialize, Deserialize` (confirmed at planning time,
+  `event.rs:81`) in a way that would break the `Vec`-based dedupe in
+  Step 1's code (e.g. `Clone`/`Copy`/`Eq` removed) — check its derive
+  list first if `cargo build` fails on that block; do not add a new
+  derive to `SourceKind` yourself to work around it (that's a wider
   blast-radius change outside this plan's scope — report it instead).
 
 ## Maintenance notes

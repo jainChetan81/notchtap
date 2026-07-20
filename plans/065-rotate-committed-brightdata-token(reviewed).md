@@ -173,7 +173,7 @@ plus the manual connectivity check in Step 3.
 - [ ] `grep -r "API_TOKEN.*[A-Za-z0-9]\{20,\}" mcp-servers/` (or equivalent — adjust the pattern to whatever the real token's shape turns out to be) returns no matches in tracked files
 - [ ] The new local secret file exists, is gitignored, and is NOT staged (`git status --short`)
 - [ ] Operator has explicitly acknowledged the token needs rotation at BrightData's dashboard (Step 0) — record this acknowledgment in your completion note, don't just assume it
-- [ ] No files outside the Scope section modified
+- [ ] No *source/config* files outside the Scope section modified (`git status` — `plans/README.md` is expected to change too; everything else is out of scope)
 - [ ] `plans/README.md` status row for 065 updated, explicitly noting rotation is operator-owed and not yet confirmed done (mirror the phrasing style plans 005/007/029/045 use for "operator-owed" gates)
 
 ## STOP conditions
