@@ -1665,4 +1665,130 @@ mod tests {
             "the overlay window must be refused even if the acl were misconfigured"
         );
     }
+
+    // --- build_test_event: one test per SourceKind branch (plan 068) ---
+    //
+    // Guards against the copy-paste failure mode a 5-way match like this
+    // is prone to — a branch silently reading a sibling's config field.
+    // NOTE for future editors: if a 6th SourceKind is ever added,
+    // build_test_event gains a 6th match arm — add its matching test here.
+
+    #[test]
+    fn build_test_event_football_uses_espn_config() {
+        use crate::event::{EventType, Priority, RotationSpec, SourceKind};
+
+        let config = Config {
+            espn_priority: Priority::High,
+            espn_ttl_secs: 42,
+            // pin every sibling to a contrasting value so this assertion
+            // fails if the arm reads someone else's priority field (espn
+            // and cmux share the same High default, so without this the
+            // swap is invisible)
+            rss_priority: Priority::Low,
+            cmux_priority: Priority::Low,
+            manual_default_priority: Priority::Low,
+            weather_priority: Priority::Low,
+            ..Config::default()
+        };
+        let event = build_test_event(&config, SourceKind::Football);
+        assert_eq!(event.event_type, EventType::ScoreUpdate);
+        assert_eq!(event.priority, Priority::High);
+        assert_eq!(event.rotation, RotationSpec::OneShot { ttl_secs: 42 });
+        assert_eq!(event.origin, SourceKind::Football);
+    }
+
+    #[test]
+    fn build_test_event_news_uses_rss_config() {
+        use crate::event::{EventType, Priority, RotationSpec, SourceKind};
+
+        let config = Config {
+            rss_priority: Priority::Low,
+            rss_ttl_secs: 17,
+            // pin every sibling to a contrasting value (see Football's
+            // test for why) so a swap onto any of them is caught
+            espn_priority: Priority::High,
+            cmux_priority: Priority::High,
+            manual_default_priority: Priority::High,
+            weather_priority: Priority::High,
+            ..Config::default()
+        };
+        let event = build_test_event(&config, SourceKind::News);
+        assert_eq!(event.event_type, EventType::NewsItem);
+        assert_eq!(event.priority, Priority::Low);
+        assert_eq!(event.rotation, RotationSpec::OneShot { ttl_secs: 17 });
+        assert_eq!(event.origin, SourceKind::News);
+        assert!(event.meta.espn.is_none());
+    }
+
+    #[test]
+    fn build_test_event_cmux_uses_cmux_config() {
+        use crate::event::{EventType, Priority, RotationSpec, SourceKind};
+
+        let config = Config {
+            cmux_priority: Priority::High,
+            cmux_ttl_secs: 23,
+            // pin every sibling to a contrasting value (see Football's
+            // test for why) so a swap onto any of them is caught
+            espn_priority: Priority::Low,
+            rss_priority: Priority::Low,
+            manual_default_priority: Priority::Low,
+            weather_priority: Priority::Low,
+            ..Config::default()
+        };
+        let event = build_test_event(&config, SourceKind::Cmux);
+        assert_eq!(event.event_type, EventType::Generic);
+        assert_eq!(event.priority, Priority::High);
+        assert_eq!(event.rotation, RotationSpec::OneShot { ttl_secs: 23 });
+        assert_eq!(event.origin, SourceKind::Cmux);
+    }
+
+    #[test]
+    fn build_test_event_manual_uses_default_ttl_and_manual_priority() {
+        use crate::event::{EventType, Priority, RotationSpec, SourceKind};
+
+        // Manual has no manual_ttl_secs field of its own — it shares
+        // default_ttl with Weather. Assert it lands on the event so a
+        // copy-paste swap (e.g. reading espn_ttl_secs instead) is caught.
+        let config = Config {
+            manual_default_priority: Priority::Low,
+            default_ttl: 99,
+            // pin every sibling to a contrasting value (see Football's
+            // test for why) so a swap onto any of them is caught
+            espn_priority: Priority::High,
+            rss_priority: Priority::High,
+            cmux_priority: Priority::High,
+            weather_priority: Priority::High,
+            ..Config::default()
+        };
+        let event = build_test_event(&config, SourceKind::Manual);
+        assert_eq!(event.event_type, EventType::Generic);
+        assert_eq!(event.priority, Priority::Low);
+        assert_eq!(event.rotation, RotationSpec::OneShot { ttl_secs: 99 });
+        assert_eq!(event.origin, SourceKind::Manual);
+    }
+
+    #[test]
+    fn build_test_event_weather_uses_weather_priority_and_default_ttl() {
+        use crate::event::{EventType, Priority, RotationSpec, SourceKind};
+
+        // Weather's priority IS dedicated (weather_priority); its ttl is
+        // the same shared default_ttl field Manual uses — there is no
+        // private weather_ttl_secs to distinguish it from default_ttl.
+        let config = Config {
+            weather_priority: Priority::High,
+            default_ttl: 77,
+            // pin every sibling to a contrasting value (see Football's
+            // test for why) so a swap onto any of them is caught
+            espn_priority: Priority::Low,
+            rss_priority: Priority::Low,
+            cmux_priority: Priority::Low,
+            manual_default_priority: Priority::Low,
+            ..Config::default()
+        };
+        let event = build_test_event(&config, SourceKind::Weather);
+        assert_eq!(event.event_type, EventType::Generic);
+        assert_eq!(event.priority, Priority::High);
+        assert_eq!(event.rotation, RotationSpec::OneShot { ttl_secs: 77 });
+        assert_eq!(event.origin, SourceKind::Weather);
+    }
 }
