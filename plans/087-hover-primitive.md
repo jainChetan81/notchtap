@@ -14,13 +14,21 @@
 > done, update the status row for this plan in `plans/README.md` —
 > unless a reviewer dispatched you and told you they maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat 3de785a..HEAD -- src-tauri/src/lib.rs src-tauri/src/engine.rs src-tauri/src/queue.rs src-tauri/Cargo.toml src-tauri/capabilities/default.json src-tauri/tauri.conf.json src/styles.css src/App.tsx docs/design/hover-cursor-tracking.md`
-> Expect `lib.rs`/`App.tsx` to differ by plan 085's diff if it merged
-> (`resting_state` on the appearance channel), and `styles.css` by
-> 081's `.ttl-*` rules if that merged — anything MORE is drift to
-> reconcile. **A diff in `capabilities/default.json` is a STOP
-> condition** (see below). A diff in `docs/design/hover-cursor-tracking.md`
-> means the spike was revised — re-read it before starting.
+> **Drift check (run first)**: `git diff --stat d42603a..HEAD -- src-tauri/src/lib.rs src-tauri/Cargo.toml src-tauri/capabilities/default.json src-tauri/tauri.conf.json src/styles.css src/App.tsx docs/design/hover-cursor-tracking.md`
+> Baseline `d42603a` is master with plans 080/081/082/083/085/086 ALL
+> merged, so this should be **empty or near-empty** — unlike the earlier
+> `3de785a` baseline this plan originally carried, which understated the
+> drift badly (083 alone added +74 to `engine.rs` and +131 to
+> `queue.rs`). If you see a large diff, you are not on `d42603a` — fix
+> that first rather than trying to reconcile.
+> **A diff in `capabilities/default.json` is a STOP condition** (see
+> below). A diff in `docs/design/hover-cursor-tracking.md` means the
+> spike was revised — re-read it before starting.
+>
+> **All line numbers below were re-verified against `d42603a` by a
+> cold-read review on 2026-07-21** (the previous set was stale by ~13-14
+> lines throughout `lib.rs`). They are correct as written. Re-grep anyway
+> if anything looks off — content matters more than line numbers.
 
 ## Status
 
@@ -42,6 +50,12 @@
 - **Category**: tech-debt / architecture (spike → build)
 - **Planned at**: commit `3de785a`, 2026-07-21. Written by the advisor
   directly from plan 086's reviewed spike output, at operator request.
+  **Review-plan pass (2026-07-21, against `d42603a`)**: cold-read by a
+  fresh-context agent. `tauri-nspanel`'s tracking-area support CONFIRMED
+  in the vendored checkout at the pinned rev. All `lib.rs` citations were
+  stale by ~13-14 lines (083's merge) and are refreshed. Three real gaps
+  closed — see the cold-read section below. Drift baseline re-stamped
+  `3de785a` → `d42603a`.
 
 ## Why this matters
 
@@ -77,17 +91,17 @@ explicitly rejected; see the STOP conditions.
 
 ## Current state
 
-- `src-tauri/src/lib.rs:42-49` — the `tauri_nspanel::tauri_panel!`
+- `src-tauri/src/lib.rs:44-51` — the `tauri_nspanel::tauri_panel!`
   macro invocation declaring `OverlayPanel`, today carrying only a
   `config:` block (`can_become_key_window: true`,
   `can_become_main_window: false`). This is where the `with: {
   tracking_area: {...} }` block goes.
-- `src-tauri/src/lib.rs:544-574` — `apply_overlay_native_config`, whose
-  `window.set_ignore_cursor_events(true)` at :554 **stays exactly as
-  it is**. Its comment (:546-553) records the 2026-07-17 bug it fixed.
-  Called at two sites: `lib.rs:258` (initial setup) and `lib.rs:483`
+- `src-tauri/src/lib.rs:558-594` — `apply_overlay_native_config`, whose
+  `window.set_ignore_cursor_events(true)` at :568 **stays exactly as
+  it is**. Its comment (:560-567) records the 2026-07-17 bug it fixed.
+  Called at two sites: `lib.rs:271` (initial setup) and `lib.rs:497`
   (re-apply). Neither changes.
-- `src-tauri/Cargo.toml:37` — `tauri-nspanel` pinned at rev
+- `src-tauri/Cargo.toml:40` — `tauri-nspanel` pinned at rev
   `a3122e894383aa068ec5365a42994e3ac94ba1b6` (`a3122e8`). The pinned rev
   already ships tracking-area support: `TrackingAreaOptions` builder at
   `src/builder.rs:244-330`, the macro-generated `add_tracking_area`
@@ -109,20 +123,20 @@ explicitly rejected; see the STOP conditions.
   size; only the CSS width *within* it changes. This is why
   `auto_resize` on the tracking area is irrelevant and why a rect
   derivation is needed at all.
-- `src/styles.css:25-61` — the card width breakpoints the rect table
+- `src/styles.css:25-61` — the card width breakpoints (cold-read-verified UNSHIFTED despite 081/082 both editing this file elsewhere) the rect table
   must mirror:
   - `.rail-card` base — `calc(400px * var(--card-scale))` (:25)
   - `.rail-card.expanded` — `calc(500px * var(--card-scale))` (:39)
   - `.rail-card.idle` — `calc(270px * var(--card-scale))` (:44)
   - `.rail-card.idle.status` — `calc(460px * var(--card-scale))` (:52)
   - notch mode — `calc(clamp(270px, var(--notchtap-cutout-width, 270px), 460px) * var(--card-scale))` (:61)
-- `src-tauri/src/lib.rs:597-604` — `cutout_width_js_value`: rust is
+- `src-tauri/src/lib.rs:611-616` — `cutout_width_js_value` (call site :484): rust is
   ALREADY the geometry authority for the cutout width and already
   pushes it to JS. The rect derivation reads the same input from the
   same source, in the same direction — no new IPC.
 - Delivery precedent: `webview.emit("appearance-changed", &payload)`
-  (`lib.rs:459`, `settings.rs:556`) with a matching `listen` in
-  `src/App.tsx:36-53`. `hover-changed` mirrors this shape exactly.
+  (`lib.rs:473`, `settings.rs:564`) with a matching `listen` in
+  `src/App.tsx:47-55`, inside the `useEffect` at :39-70. `hover-changed` mirrors this shape exactly.
 - `docs/design/hover-cursor-tracking.md` — the spike. §2 is the
   empirical result, §6 is the rect-derivation decision and the
   **rejected** alternative, §7 the recommendation, §8 the test strategy.
@@ -143,6 +157,103 @@ Rust already owns this value: it is the `scale` field on the same
 **The derivation function must take scale as an input and multiply.**
 Say so explicitly in the completion report, and pin it with its own
 test case (scale 0.8 and 1.25, not just 1.0).
+
+## ⚠️ Cold-read review findings (2026-07-21) — the three gaps this plan had
+
+A fresh-context agent reviewed this plan against live code and found
+three places where it assumed knowledge an executor won't have. All
+three are closed below. **Read this section before Step 2.**
+
+It also CONFIRMED the plan's load-bearing claim by locating the vendored
+source at `~/.cargo/git/checkouts/tauri-nspanel-*/a3122e8/`:
+`TrackingAreaOptions` at `builder.rs:244`, `add_tracking_area` at
+`panel.rs:659-696` (file is exactly 696 lines), and both example
+programs, using the exact macro shape Step 3 sketches. The mechanism is
+verified, not merely plausible.
+
+### Gap 1 (BIGGEST RISK) — `has_status_chips` is NOT rust-owned today
+
+This plan frames all six `active_card_rect` inputs as "state rust
+already owns." **That is true for five of them and false for
+`has_status_chips`.** The predicate it mirrors lives ONLY in TypeScript:
+
+```ts
+// src/useStatusState.ts:106 — statusRailActive()
+status.football.enabled ||
+status.news.enabled ||
+status.football.live !== null ||
+status.weather.enabled ||
+status.weather.current !== null ||
+status.waiting > 0 ||
+status.paused
+```
+
+Rust has the *data* — `StatusState` at `src-tauri/src/status.rs:21-27`
+(`paused`, `waiting`, `football`, `news`, `weather`) — but **no
+equivalent predicate function.** You must port it.
+
+Port it as a small pure function next to `active_card_rect` (e.g.
+`fn status_rail_active(s: &StatusState) -> bool`), mirroring the seven
+terms above **exactly** — the two easiest to miss are `waiting > 0` and
+`paused`, which have nothing to do with sources being enabled. Give it
+its own table-driven test with one case per term (each term alone → true;
+all false → false). Add a comment on BOTH copies naming the other as its
+mirror — this is now a duplicated predicate across the language seam,
+same class of hazard as the rect table vs `styles.css`.
+
+### Gap 2 — how state reaches the `panel_event!` closure
+
+Step 3 says "built from current state" without saying how the AppKit
+callback reaches the Engine/Config/StatusState. The upstream examples
+capture nothing (they just print), so they don't answer it. **This repo
+already has the pattern**, in the same file:
+
+```rust
+let engine = app_handle.state::<Engine>().inner().clone();          // lib.rs:423
+let config = app_handle.state::<StdMutex<Config>>().lock().unwrap().clone();  // lib.rs:466
+```
+
+Clone an `AppHandle` into the closure (`let handle = app_handle.to_owned()`,
+the upstream `mouse_tracking` example's own pattern) and pull state
+through it per event. **Do not hold a lock across the callback** — read,
+clone what you need, drop, then compute. The rect function is pure and
+cheap; the lock scope should be one or two lines.
+
+### Gap 3 — the coordinate-space flip, which nothing tests
+
+`locationInWindow` is **bottom-left origin, y grows up** (AppKit). The
+CSS card is laid out **top-down** in a window pinned flush to the
+physical screen top. Get the flip wrong and the rect never matches the
+cursor — and per this plan's own Test plan, the tracking-area handler
+has **no automated coverage**, so a y-axis bug passes every rust,
+vitest, clippy and build gate and surfaces only at the manual smoke
+step, which can pass by accident on a large card.
+
+Requirements, now mandatory:
+1. Convert explicitly, in one named helper, with the formula in a
+   comment: for a window of height `H`, a top-down rect at CSS y-offset
+   `t` with height `h` occupies AppKit y from `H - t - h` to `H - t`.
+   `H` is 300 (`tauri.conf.json`, fixed, non-resizable).
+2. **Unit-test the conversion itself** — it is pure arithmetic, so there
+   is no excuse for leaving it untested. At minimum: a rect at the very
+   top of the window converts to the TOP in AppKit coords (high y, not
+   low), and a point just inside vs just outside each edge classifies
+   correctly. This is the test that catches an inverted axis; the
+   existing "table of widths" tests cannot, because they only check the
+   function against constants its own author chose.
+3. In the manual smoke step, hover **near the card's top edge and again
+   near its bottom edge** specifically. An inverted rect often still
+   overlaps in the middle — the edges are where it shows.
+
+### Gap 4 (minor) — `docs/ARCHITECTURE.md` has no obviously-right section
+
+The done criterion says "one line where the window/native-config
+behavior is already described." The cold read checked: **no such
+description exists.** §6 ("always-on background behaviour") is closest
+but never mentions `set_ignore_cursor_events`, `NSStatusWindowLevel`, or
+the 2026-07-17 bug — that narrative lives only in `lib.rs` comments and
+the spike doc. So: add a short new subsection under §6 rather than
+hunting for a home, and say in your report where you put it.
 
 ## Commands you will need
 
@@ -308,8 +419,8 @@ events and violates the idle-cost discipline plans 015/018 established.
 Payload: `{ "hovered": bool }`, emitted via `webview.emit`, same shape
 as `appearance-changed`.
 
-`set_ignore_cursor_events(true)` at `lib.rs:554` is NOT touched. Both
-call sites (`:258`, `:483`) are NOT touched.
+`set_ignore_cursor_events(true)` at `lib.rs:568` is NOT touched. Both
+call sites (`:271`, `:497`) are NOT touched.
 
 **Verify**: `cd src-tauri && cargo test --locked` → all pass; clippy →
 exit 0; `cargo fmt --check` → exit 0; and confirm by grep that
@@ -320,7 +431,7 @@ unconditional, still `true`.
 
 `src/App.tsx`: a `hover-changed` listener holding one boolean state,
 mirroring the `appearance-changed` listener's exact shape (including the
-`unmounted` guard and `.catch` — see `App.tsx:36-53`). Pass it into
+`unmounted` guard and `.catch` — see `App.tsx:47-55`). Pass it into
 `StatusRailCard` as a prop (optional, defaulting to `false`, so every
 existing caller and test is unaffected — plan 085's `restingState` prop
 is the precedent to copy), applied as a `.hovered` class on the card
@@ -366,6 +477,8 @@ the CURRENT figures, per the Commands-table note).
 ## Done criteria
 
 - [ ] `active_card_rect` (or equivalent) is a pure function with no AppKit types in its signature, unit-tested across every mode/state branch AND at ≥3 distinct `--card-scale` values
+- [ ] `status_rail_active` ported to rust from `src/useStatusState.ts:106`, all seven terms, table-tested one case per term, with mirror comments on both copies (cold-read Gap 1)
+- [ ] The AppKit y-flip lives in ONE named helper and has its own unit test proving top-of-window maps to HIGH AppKit y, plus inside/outside cases on each edge (cold-read Gap 3)
 - [ ] Tracking area attached via the pinned `tauri-nspanel`'s own support; `hover-changed` emitted on TRANSITIONS only, never per mouse-move
 - [ ] `src-tauri/src/lib.rs`'s `set_ignore_cursor_events(true)` is byte-identical to before this plan, at both call sites (`git diff` proves it)
 - [ ] `src-tauri/capabilities/default.json` byte-identical (`git diff --exit-code` on that path)
