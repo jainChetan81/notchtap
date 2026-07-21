@@ -200,6 +200,17 @@ impl SingleSlotQueue {
             let new_tier_idx = fresh.priority as usize;
             if new_tier_idx == tier_idx {
                 apply_fresh_content(&mut self.waiting[tier_idx][pos].event, fresh);
+            } else if self.waiting[new_tier_idx].len() >= self.max_queued_per_tier {
+                // destination tier is full — per plan 072's decision, drop
+                // the fresh content and leave the item in its current tier
+                // rather than evicting something to make room. This
+                // function returns `bool` (whether a Topic match was found
+                // and handled), not a `Result`, so there's no error
+                // channel to report the drop through today — the caller
+                // only cares "did I find and handle this Topic." Leave a
+                // comment explaining this rather than silently changing
+                // the return contract.
+                return true;
             } else {
                 let mut existing = self.waiting[tier_idx]
                     .remove(pos)
@@ -1185,6 +1196,36 @@ mod tests {
         let moved = &q.waiting[Priority::High as usize][1];
         assert_eq!(moved.event.meta.details.len(), 1);
         assert_eq!(moved.event.meta.details[0].label, "Clock");
+    }
+
+    #[test]
+    fn cross_tier_supersede_drops_fresh_content_when_destination_tier_full() {
+        let mut q = SingleSlotQueue::new(1); // max_queued_per_tier = 1
+        let t0 = Instant::now();
+        // fill the visible slot so nothing promotes out from under us
+        q.enqueue(event("visible", Priority::Medium, 60), t0)
+            .unwrap();
+        // put the Topic item in the Medium tier
+        q.enqueue(
+            topic_event("match-a", Priority::Medium, 60, "espn:match"),
+            t0,
+        )
+        .unwrap();
+        // fill the High tier to its cap of 1
+        q.enqueue(event("filler", Priority::High, 60), t0).unwrap();
+        // a fresh event for the same Topic, now High priority — destination
+        // tier (High) is already full
+        let fresh = topic_event("match-a-updated", Priority::High, 60, "espn:match");
+        q.enqueue(fresh, t0 + Duration::from_millis(10)).unwrap();
+        // the original Medium-tier item must still be there, UNCHANGED
+        // (fresh content dropped, not applied) — confirm both facts
+        assert_eq!(q.waiting[Priority::Medium as usize].len(), 1);
+        assert_eq!(
+            q.waiting[Priority::Medium as usize][0].event.payload.title,
+            "match-a" // NOT "match-a-updated" — the supersede was dropped
+        );
+        // the High tier still has only its original filler, not a second item
+        assert_eq!(q.waiting[Priority::High as usize].len(), 1);
     }
 
     // ------------------------------------------------------------------
