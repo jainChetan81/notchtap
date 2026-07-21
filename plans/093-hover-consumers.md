@@ -13,13 +13,17 @@
 > missing); if `grep -c "notif-track" src/styles.css` is 0 → STOP (092
 > missing).
 >
-> **NOT YET DISPATCHABLE**: filed while 091 was executing and before 092.
-> Requires a review-plan pass at dispatch: stamp SHAs, re-verify every
-> citation against shipped 091+092, and re-check the hover.rs geometry
-> (091 rewrote `active_card_rect`'s formulas and constants).
+> **PARTIALLY REVIEWED — one short re-check owed at dispatch.** The
+> post-091 review pass ran 2026-07-21 (see the note at the end): every
+> rust/hover citation below is re-verified against shipped 091. The
+> **092-dependent** citations (the below-block content classes this plan's
+> peek/reveal render beside) could not be verified because 092 had not
+> merged yet — at dispatch, re-read the `.below-block` content rules and
+> confirm the `notif-track` grep gate, then stamp. That is a ~5-minute
+> check, not a full pass.
 >
 > **Drift check (run first, after stamping)**:
-> `git diff --stat <stamp at dispatch>..HEAD -- src-tauri/src/hover.rs src-tauri/src/lib.rs src-tauri/src/queue.rs src-tauri/src/engine.rs src/App.tsx src/components/ src/styles.css src/settings/preview-overlay.css src/lib/weatherArt.ts`
+> `git diff --stat <stamp at dispatch, post-092>..HEAD -- src-tauri/src/hover.rs src-tauri/src/lib.rs src-tauri/src/queue.rs src-tauri/src/engine.rs src/App.tsx src/components/ src/styles.css src/settings/preview-overlay.css src/lib/weatherArt.ts`
 > Expected: empty. On a mismatch with "Current state", STOP.
 
 ## Status
@@ -94,19 +98,47 @@ idle; cutout height + measured/constant below-block height for showing),
 using the already-tested `css_top_down_to_appkit_y` flip. Hover must
 stop firing over empty window space below the card.
 
-## Current state (pre-091 facts — re-verify at the review-plan pass)
+## Current state — rust/hover re-verified against shipped 091 at `0ea2a96`
 
 - `src/App.tsx:86-97` — `hover-changed` listener → `hovered` state →
   prop. Already shipped, tested (087: `.hovered` class toggles).
-- `src-tauri/src/hover.rs` — `active_card_rect` (091 REWRITES its
-  formulas/constants — cite the post-091 form at the pass), the
-  tracking-area wiring, `css_top_down_to_appkit_y` (tested).
-- `src-tauri/src/queue.rs` — rotation deadlines/`next_deadline`,
-  extension rules (`MIN_REMAINING_ON_SUPERSEDE_SECS`, expand top-ups);
-  `src-tauri/src/engine.rs` — the mutate→wake→emit protocol every
-  deadline change must follow.
-- `src/components/TtlBar.tsx` — deadline-anchored rAF bar; re-anchors on
-  `remainingMs`/`ttlMs`/`slotId` change (`:10-14`).
+- **`src-tauri/src/hover.rs::active_card_rect` (post-091 form — this is
+  what you extend)**:
+  - Signature `(mode, cutout_width, scale, visible, expanded,
+    _has_status_chips) -> Rect`. The last parameter is **deliberately
+    unused** (underscore-prefixed) — 091 kept it only so the sole call
+    site, `lib.rs`'s `hover_point_is_over_card`, needed no edit. If this
+    plan gives it a real use again, un-prefix it; otherwise leave it.
+  - Width no longer branches on `mode` at all; `mode` only selects
+    `effective_cutout_width` (measured vs `HUD_CUTOUT_W`). Constants at
+    `:37-50`: `FLANK_IDLE 85.0`, `MIN_FLANK_SHOWING 60.0`,
+    `BASE_SHOWING 400.0`, `BASE_EXPANDED 500.0`, `HUD_CUTOUT_W 200.0`,
+    `HUD_CUTOUT_H 32.0`; window `500.0 × 300.0` at `:23-24`. The cutout
+    term is never multiplied by `scale` (plan 090) — preserve that.
+  - **The y-span this plan must fix is at `hover.rs:201`**:
+    `let (y_min, y_max) = css_top_down_to_appkit_y(WINDOW_HEIGHT, 0.0, WINDOW_HEIGHT);`
+    — the full 300px window, with 091's own comment at `:147-148`
+    acknowledging it. Replace the `0.0, WINDOW_HEIGHT` span with the
+    real assembly height: `HUD_CUTOUT_H`-or-measured-cutout-height for
+    idle, plus the below-block's height when showing. `css_top_down_to_appkit_y`
+    (`:84`) is already correct and tested (`:545-568`) — reuse it, do
+    not reimplement the flip.
+  - Two existing tests pin the full-window span (`:566-577`,
+    asserting `y_min == 0.0` / `y_max == WINDOW_HEIGHT`) — they encode
+    the limitation, so UPDATE them, never delete them.
+- `src-tauri/src/queue.rs` — deadline machinery: `promoted_at`
+  (`:10`, `Option<Instant>`, set at `:176`) and `extension_secs`
+  (`:11`); the auto-retract read at `:247-253` is the closest existing
+  example of reasoning from `promoted_at`. `src-tauri/src/engine.rs` —
+  the mutate→wake→emit protocol every deadline change must follow.
+- `src/components/TtlBar.tsx:18-40` — props `{ slotId, ttlMs,
+  remainingMs }`; re-anchors in a `useEffect` keyed on all three
+  (the biome-ignore there explains why `slotId` is a deliberate
+  re-anchor trigger). A `hoverPaused` flag joins these props; note the
+  rAF loop is already gated under `prefers-reduced-motion`.
+- **092-dependent (verify at dispatch, not yet merged when this was
+  reviewed)**: the `.below-block` content classes the peek/reveal render
+  beside, and 092's `.chip` language if the peek reuses it.
 - `src/lib/weatherArt.ts` — mood/glyph tables (082), built to be reused
   by this peek ("preps but does not build the 086-gated hover
   weather-peek" — its own plan text).
@@ -158,8 +190,27 @@ styling.
 ## Maintenance notes
 
 - This closes the last deferred halves of 081/082/084 and completes 079
-  item 17 (both halves) — after this plan plus 092, the 079 ledger holds
-  only items 12/13 (app icon) and the item-16 MediaRemote spike.
+  item 17 (both halves). Items 12/13 shipped via plan 094 and item 16 is
+  filed as plan 095, so **this plan is the last build the 079 ledger is
+  waiting on** — when it lands, 079 retires to `done/`.
+
+**Review-plan pass (2026-07-21, at `0ea2a96`, after 091 merged)**: the
+rust/hover half of this plan is now verified against shipped code rather
+than the pre-091 assumptions it was filed with. Materially: 091 rewrote
+`active_card_rect` — its width formula no longer branches on `mode`
+(only `effective_cutout_width` does), its constants are an entirely new
+set (`FLANK_IDLE`/`MIN_FLANK_SHOWING`/`BASE_SHOWING`/`BASE_EXPANDED`/
+`HUD_CUTOUT_W`/`HUD_CUTOUT_H`), and the old width constants this plan
+would have cited are gone. The y-span fix now has an exact target
+(`hover.rs:201`) plus the two existing tests that pin the limitation
+(`:566-577`) flagged as update-not-delete. `_has_status_chips` is
+documented as deliberately-unused so this plan doesn't "fix" it by
+accident. `TtlBar`'s prop shape and re-anchor effect confirmed at
+`:18-40`; `promoted_at`/`extension_secs` confirmed at `queue.rs:10-11`
+with the auto-retract read (`:247-253`) named as the closest existing
+precedent for reasoning from `promoted_at`. The 092-dependent citations
+remain unverified by construction — a short re-check at dispatch, noted
+in the header.
 - The hover interaction model (one below-block at a time; football >
   weather precedence; hold-while-hovered) becomes the contract any
   future hover consumer extends — document it in a comment block in
