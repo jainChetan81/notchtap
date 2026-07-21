@@ -8,7 +8,7 @@
 > maintain the index.
 >
 > **Drift check (run first)**:
-> `git diff --stat <stamp at dispatch>..HEAD -- src-tauri/icons/ src-tauri/tauri.conf.json`
+> `git diff --stat e9e5a2b..HEAD -- src-tauri/icons/ src-tauri/tauri.conf.json`
 > Expected: empty (nobody touches icons). On a diff, re-read Current
 > state before proceeding.
 
@@ -21,7 +21,7 @@
 - **Risk**: LOW — asset-only; no code paths change.
 - **Depends on**: none.
 - **Category**: direction
-- **Planned at**: `<stamp at dispatch>` — a review pass is NOT required
+- **Planned at**: commit `e9e5a2b`, 2026-07-21 — a review pass is NOT required
   beyond stamping; nothing here cites volatile code.
 
 ## Decisions of record (operator, 2026-07-21)
