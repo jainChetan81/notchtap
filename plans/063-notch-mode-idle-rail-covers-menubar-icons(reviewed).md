@@ -163,6 +163,29 @@
   operator-owed MacBook smoke-check (checks a–d; (d), the Mac
   mini/HUD byte-identity check, can be done locally), then flip the
   `plans/README.md` 063 row and rename this file `(done)`.
+- **Review-plan pass (2026-07-21, at `958c2f7`)**: re-verified after
+  plan 087 (hover primitive) and plans 068/072/074 merged. The merged
+  063 code is intact and byte-identical where it matters: the HUD 460px
+  rule (`styles.css:51-53`) and the notch clamp (`:60-62`) are at the
+  same lines and unchanged; `presentation.rs` still has zero diff since
+  `9a954b0`. Pure line shifts from 087's additions (content verified
+  identical): `.src-rail` wrap `:597-603`→`:608-614`, `.src-chip.live`
+  truncation `:623`→`:635`, `.live-label` →`:647`; `lib.rs` eval block
+  `:476-488`→`:563-571`, `cutout_width_js_value` `:611`→`:696`, its two
+  tests `:826-837`→`:977-988`; `App.tsx` mount effect `:32-35`→`:36-39`
+  (087's hover-changed listener landed above it); `IdleView.tsx`
+  `.live-label` span now `:22`. **One genuinely new coupling, added to
+  Maintenance notes below**: plan 087's `src-tauri/src/hover.rs:27-33`
+  hardcodes rust mirrors of this plan's width constants
+  (`IDLE_STATUS_WIDTH = 460.0`, `NOTCH_CLAMP_MIN = 270.0`,
+  `NOTCH_CLAMP_MAX = 460.0`, citing `styles.css` by line) for the
+  hover-rect math. If the operator MacBook smoke-check (the sole
+  remaining work) leads to adjusting any width/clamp number, the CSS
+  and `hover.rs` must change in the SAME commit — `hover.rs:402-405`'s
+  named-constant tripwire test pins the rust side only; nothing
+  automated catches a CSS-only change. Sole remaining work is
+  unchanged: Step 5's operator-owed MacBook smoke-check with
+  `resting_state` at its default `"rail"`.
 
 ## Why this matters
 
@@ -587,3 +610,11 @@ Stop and report back (do not improvise) if:
   menu-bar icon load (not a nearly-empty menu bar) before calling it
   done — same discipline plan 060 and the hardware-only checks in
   plans 010/012/018/023/032/033/034 already require.
+- **Post-087 coupling (2026-07-21)**: `src-tauri/src/hover.rs:27-33`
+  now mirrors this plan's width numbers as rust constants (270 floor,
+  460 cap, plus the cutout clamp shape) for the tracking-area rect. Any
+  future change to `.rail-card.idle.status`'s widths or the notch
+  clamp in `styles.css` MUST update `hover.rs`'s constants in the same
+  commit, or the hover rect silently diverges from the rendered card.
+  The tripwire test (`hover.rs:402-405`) pins the rust constants but
+  cannot see CSS — the lockstep is manual review discipline.

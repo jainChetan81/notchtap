@@ -12,16 +12,20 @@
 > maintain the index.
 >
 > **Drift check (run first)**: `git diff --stat f6c2f46..HEAD -- src-tauri/src/engine.rs src-tauri/src/status.rs`
-> **`engine.rs` WILL show a diff** — plan 076 (Telegram connector health)
-> landed a `telegram_health` field/accessor, and plan 070 (ingest
-> tracing) added log lines inside `accept`, both before
-> `update_live_match`/`update_weather` — shifting them from the
-> planning-time lines 196/216 to their current 216/236 (content of both
-> functions otherwise unchanged — verified byte-identical 2026-07-21;
-> already corrected below). `status.rs` is byte-identical since
-> planning. Those specific shifts are expected, not a STOP condition;
-> only treat further engine.rs/status.rs changes as a STOP if the
-> ambient-channel functions themselves changed shape, not just moved.
+> **`engine.rs` WILL show a diff** (~130 insertions at last verify) —
+> three expected landings, none a STOP condition: plan 076 (Telegram
+> connector health) added a `telegram_health` field/accessor, plan 070
+> (ingest tracing) added log lines inside `accept`, and **plan 087
+> (hover primitive) refactored the emit-path read site**: the
+> live/weather lock-reads that used to live inline in
+> `emit_current_status_blocking` moved into a new non-emitting
+> `status_snapshot_blocking` (`engine.rs:352-368`), and
+> `emit_current_status_blocking` (`:376-379`) is now a two-line
+> delegating wrapper around it. `update_live_match`/`update_weather`
+> themselves are at :216/:236, content unchanged since planning.
+> `status.rs` is byte-identical since planning. Only treat FURTHER
+> engine.rs/status.rs changes as a STOP if the ambient-channel
+> functions changed shape beyond what's described here.
 
 ## Status
 
@@ -64,20 +68,56 @@
   plumbing instance to weigh as evidence, though not a third copy of
   the full ambient pattern. Stale line citations fixed (update fns
   216/236; status.rs excerpt corrected to actual struct order incl. the
-  pre-existing enabled-only `NewsStatus`; engine test baseline 10→12).
+  pre-existing enabled-only `NewsStatus`; engine test baseline 10→12 —
+  **this "12" was a miscount, corrected to 11 in review pass 2 below**;
+  the phantom 12th match is a `#[tokio::test]` occurrence inside a
+  comment at `engine.rs:636`).
   Verdict: still a valid, correctly-scoped decision plan; urgency
   unchanged (not escalated) — but it should still run before plan 052
   is dispatched.
+- **Review-plan pass 2 (2026-07-21, at `958c2f7`)**: two corrections
+  and one new piece of Step-1 evidence, all from plan 087's merge.
+  (1) **Citation reshape**: touch point (6) — the
+  `emit_current_status_blocking` read site cited at ":350-351 +
+  :357/:360" — no longer exists in that form. Plan 087 extracted the
+  live/weather lock-reads into a new non-emitting
+  `status_snapshot_blocking` (`engine.rs:352-368`);
+  `emit_current_status_blocking` (`:376-379`) now just delegates to it
+  and emits. Touch points (1)-(5) all verified unchanged at their
+  cited lines (fields :36/:37, Clone :53/:54, ctor init :82/:83,
+  update fns :216/:236, spawn_rotation Arc clones :272-273 +
+  lock-clone :291-292 + `StatusInputs` fields :301/:304).
+  (2) **Test-count error fixed**: the engine baseline is **11** tests,
+  not 12 as the first pass claimed (verified by running
+  `cargo test --locked --lib` and counting `^test engine::` lines —
+  10 at planning + exactly 1 from plan 081; `docs/TESTING_STRATEGY.md`
+  §0 agrees). The Test plan section below is corrected.
+  (3) **New Step-1 evidence, cuts both ways**: 087 added a *third
+  consumer* of the ambient reads (the hover handler in `lib.rs` calls
+  `status_snapshot_blocking` on mouse-move) — more pressure on the
+  read side — but the same refactor already *centralized* the
+  read-side pattern into one method: both emit and hover now share one
+  snapshot fn, and `spawn_rotation`'s inline read is the only
+  remaining duplicate read site. So the read half of the duplication
+  is converging on its own; what remains hand-duplicated per channel
+  is the write half (field + Clone + ctor + compare-then-store-then-
+  wake `update_*`). Step 1's generalization question should therefore
+  focus on whether an `AmbientSlot<T>` for the WRITE side alone still
+  clears the effort bar — a narrower abstraction than the first pass
+  assumed, which may tip the answer toward either "cheaper, do it" or
+  "too thin to bother." Weigh explicitly.
 
 ## Why this matters
 
 `src-tauri/src/engine.rs` carries two parallel, hand-duplicated ambient
 status side-channels — one for football (`live`/`update_live_match`) and
 one for weather (`weather`/`update_weather`) — each duplicated across 5
-touch points: a private field on `Engine`, a `Clone` derive concern, a
-constructor argument at `Engine::new`, an `update_*` method, and two read
-sites (`spawn_rotation`'s wake-check and
-`emit_current_status_blocking`). The same shape is mirrored again in
+touch points: a private field on `Engine`, a `Clone` impl line, an
+internal initialization inside `Engine::new` (NOT a constructor
+parameter — only 076's `telegram_health` is a parameter), an `update_*`
+method, and two read sites (`spawn_rotation`'s inline lock-clone and
+the shared `status_snapshot_blocking`, which since plan 087 serves both
+`emit_current_status_blocking` and the hover handler). The same shape is mirrored again in
 `status.rs`'s `FootballStatus`/`LiveMatchSummary` and
 `WeatherStatus`/`WeatherSummary` structs.
 
@@ -145,10 +185,20 @@ either way.
   ```
 
   Read the full `Engine` struct definition and `Engine::new` constructor
-  yourself to see the other 3 duplicated touch points per channel (field
-  declaration, constructor parameter, and the two read sites in
-  `spawn_rotation`/`emit_current_status_blocking`) before scoping Step 1's
-  investigation.
+  yourself to see the other duplicated touch points per channel — the
+  canonical enumeration (authoritative for Step 1's deliverable) is **6
+  distinct code locations** per channel: (1) field declaration
+  (`engine.rs:36`/`:37`), (2) the manual `Clone` impl line (`:53`/`:54`),
+  (3) internal initialization inside `Engine::new` (`:82`/`:83` — NOT a
+  constructor parameter; only `telegram_health` is one), (4) the
+  `update_*` method (`:216`/`:236`), (5) `spawn_rotation`'s inline
+  read (Arc clones `:272-273`, lock-clone `:291-292`, `StatusInputs`
+  fields `:301`/`:304`), (6) the `status_snapshot_blocking` read
+  (`:352-368`, shared since plan 087 by `emit_current_status_blocking`
+  and the hover handler). Where this plan's prose says "5 touch
+  points," it counts the two read sites as one bucket — same code, two
+  ways of counting; the 6-location list above is what Step 1 should
+  enumerate.
 
 - `src-tauri/src/status.rs:31-76` — the mirrored duplication on the
   wire-shape side:
@@ -199,8 +249,10 @@ either way.
   first.
 
 - `plans/README.md`'s "Findings considered and rejected" section — the
-  "no `Notifier` trait" precedent (search for "Notifier trait" in that
-  file) is the closest analogous precedent for how this repo has
+  "no `Notifier` trait" precedent (search for just `Notifier` in that
+  file; the literal two-word string "Notifier trait" gets ZERO matches
+  because the actual text has a backtick between the words — the row
+  is near `plans/README.md:442`) is the closest analogous precedent for how this repo has
   historically decided "duplicate vs. generalize" questions; read it
   before forming a recommendation, since consistency with that precedent
   is part of what makes a recommendation here credible.
@@ -240,7 +292,8 @@ either way.
 ### Step 1: Investigate and recommend
 
 Read `docs/design/news-ambient-status.md` in full, plus `engine.rs`'s
-full `live`/`weather` implementation (all 5 touch points each) and
+full `live`/`weather` implementation (all 6 code locations each — use
+the canonical enumeration in the Current state section above) and
 `status.rs`'s corresponding wire types. Answer, with evidence:
 
 1. Would a generic `Ambient<T>`-style handle (or similar) actually
@@ -297,7 +350,11 @@ methods before assuming zero test impact).
 
 **Verify**:
 - `cd src-tauri && cargo test --locked` → all pass, same test count as
-  baseline (pure refactor, no new/removed behavior)
+  baseline (pure refactor, no new/removed behavior). Concretely: the
+  full suite is **428 + 3 doc-tests** at `958c2f7` (engine module: 11
+  of those) — but run the suite ONCE BEFORE touching anything and use
+  YOUR live pre-change count as the authoritative baseline; more plans
+  may have landed since this pass.
 - `cd src-tauri && cargo clippy --locked --all-targets -- -D warnings` →
   exit 0
 - `cd src-tauri && cargo fmt --check` → exit 0
@@ -305,9 +362,9 @@ methods before assuming zero test impact).
 ## Test plan
 
 - If Step 2 executes: no new tests required (pure internal refactor); the
-  existing `engine.rs` test suite (12 tests at current HEAD — 10 at
-  planning time, +2 landed since, incl. plan 081's emission-dedup
-  regression test)
+  existing `engine.rs` test suite (**11** tests at current HEAD `958c2f7`
+  — 10 at planning time + 1 from plan 081's emission-dedup regression
+  test; count corrected in review pass 2, verified by live run)
   already exercises `update_live_match`/`update_weather` behaviorally —
   re-running it unchanged after the refactor IS the verification that the
   generalization preserved behavior exactly.
