@@ -483,8 +483,13 @@ implementation; app icon open), item 17 (plan 085 `725040b` cheap half;
 plan 086 spike `4ec98fe` de-risked hover; plan 087 filed TODO). LOCKED
 BUT UNBUILT: items 1 and 2 — the cutout shape and time+dots idle exist
 only in `prototype/notch-states.html`; no build plan filed. STILL
-OPEN / OPERATOR DECISION: **only items 12 (app icon direction) and
-13-remainder (icon artwork sourcing)** — everything else is now decided.
+OPEN / OPERATOR DECISION: **none — every decision in this ledger is now
+made.** Items 12+13 were DECIDED in the third 2026-07-21 session
+(12: minimal notch-cutout glyph — dark rounded square, pure-#000 top
+bite, one live-green accent dot, legible at 16px, no third-party
+branding echo; 13: self-made SVG master in-repo through the tauri icon
+pipeline — no AI generation, no stock) and filed as **plan 094**
+(S, independent, dispatchable after a stamp).
 Items 16 and 18 were DECIDED in the first 2026-07-21 session (16:
 MediaRemote spike to be filed, not dropped; 18: timeline folds into
 hover-expanded idle). Items 8/10/11/14 were DECIDED in the second
