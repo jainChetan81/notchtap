@@ -337,9 +337,13 @@ Grouped by actual implementation cost, not decision complexity — a few
     subprocess precedent (ARCHITECTURE.md §5), with the
     undocumented-framework fragility as the spike's central question.
     The advisor was recommending drop; operator chose to investigate
-    first. Spike plan to be filed at the next free number in a future
-    session — deliberately NOT filed today (operator asked to wrap up
-    planning without starting new work).]**
+    first.]** **[FILED as plan 095 (2026-07-21, later same day) —
+    docs-only deliverable `docs/design/now-playing-mediaremote.md`,
+    six central questions with the failure-mode question load-bearing,
+    zero production code, throwaway POC outside the repo per 086's
+    precedent. Independent of every other plan; dispatchable anytime.
+    A NO-GO verdict is an explicitly successful outcome and closes this
+    item permanently.]**
 17. **Hide-when-idle, reveal-on-hover** — not a visual decision, a real
     interaction-model change. Today's overlay is explicitly architected
     as a "permanent rotating overlay" (`CLAUDE.md`'s v3.6 description) —
