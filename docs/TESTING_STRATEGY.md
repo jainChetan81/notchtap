@@ -150,12 +150,19 @@ without sudo (a real environment fact, not a bug) — the vendored tree
 was built and empirically probed (entitlement `test` subcommand exit 0;
 `stream` mode's connection-time payload confirmed live as
 `{"type":"data","diff":false,"payload":{}}`, matching 103's own finding)
-from its own local, git-ignored `build/` directory instead of the
-configured runtime path; the final install-to-
-`/usr/local/lib/notchtap/mediaremote-adapter/` step (`just
-build-media-adapter`) and the settings-toggle end-to-end smoke check are
-operator-owed on a machine where that path is writable (or after a
-one-time `sudo mkdir`/chown), same posture as every other
+from its own local, git-ignored `build/` directory before that finding
+prompted a same-day revision: `now_playing_adapter_dir`'s default moved
+to `"$HOME/Library/Application Support/notchtap/mediaremote-adapter/"`
+(the macOS-conventional, user-writable location — `dirs::home_dir()`,
+the same resolution `Config::load` already uses, falling back to the
+old `/usr/local/lib` path only if home can't be determined at all), so
+an operator's first `just build-media-adapter` no longer needs root.
+Re-verified end-to-end on this machine after the revision: `mkdir`/`cp`
+into the new path succeeded with no sudo, and the installed copy's
+`test` subcommand — run from that installed path, not the local
+`build/` tree — exited 0. The settings-toggle live smoke check (opting
+into `now_playing_enabled` and confirming a real session appears in the
+idle peek) remains operator-owed, same posture as every other
 subprocess-backed source here.
 
 **left — each is a decision with an owner section, not a gap:**

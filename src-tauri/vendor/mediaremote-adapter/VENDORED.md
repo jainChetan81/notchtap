@@ -21,6 +21,10 @@ Copied subset (no `.git`, no build output): `bin/`, `src/`, `include/`,
 Run `just build-media-adapter` (plan 104) from the repo root. It
 cmake-builds this tree into `build/` (git-ignored) and installs
 `MediaRemoteAdapter.framework` + `bin/` to
-`/usr/local/lib/notchtap/mediaremote-adapter/` — no sudo. The rust core
+`"$HOME/Library/Application Support/notchtap/mediaremote-adapter/"` — the
+macOS-conventional, user-writable location (revised 2026-07-22: the
+original `/usr/local/lib/notchtap/` default required root ownership of
+`/usr/local/lib` on a stock install, verified live to fail with
+`Permission denied` — no sudo, then or now). The rust core
 (`src-tauri/src/now_playing.rs`) shells out to the installed copy, never
 to this vendored source tree directly.

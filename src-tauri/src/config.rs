@@ -336,8 +336,29 @@ fn default_now_playing_adapter_enabled() -> bool {
     true
 }
 
+/// plan 104 revision (reviewer 2026-07-22): the original
+/// `/usr/local/lib/notchtap/mediaremote-adapter` default requires
+/// root-owned `/usr/local/lib` on a stock macOS install — verified live
+/// on this exact machine (`mkdir -p` there fails with `Permission
+/// denied`, no sudo), which means an operator's very first
+/// `just build-media-adapter` run would fail before ever reaching the
+/// adapter itself. `~/Library/Application Support/notchtap/` is the
+/// macOS-conventional, user-writable location, resolved the same way
+/// `Config::load`/`settings::notchtap_config_dir` already resolve home
+/// (`dirs::home_dir()`, not a raw env lookup — this repo's one
+/// home-resolution idiom, mirrored here rather than reimplemented).
+/// Falls back to the old `/usr/local/lib` path only if home can't be
+/// determined at all, so this default (like every other `default_*` fn
+/// in this file) stays infallible and never empty.
 fn default_now_playing_adapter_dir() -> PathBuf {
-    PathBuf::from("/usr/local/lib/notchtap/mediaremote-adapter")
+    dirs::home_dir()
+        .map(|home| {
+            home.join("Library")
+                .join("Application Support")
+                .join("notchtap")
+                .join("mediaremote-adapter")
+        })
+        .unwrap_or_else(|| PathBuf::from("/usr/local/lib/notchtap/mediaremote-adapter"))
 }
 
 fn default_rotation_order() -> Vec<SourceKind> {
@@ -633,10 +654,12 @@ mod tests {
         assert!(!c.history_enabled);
         assert!(!c.now_playing_enabled);
         assert!(c.now_playing_adapter_enabled);
-        assert_eq!(
-            c.now_playing_adapter_dir,
-            PathBuf::from("/usr/local/lib/notchtap/mediaremote-adapter")
-        );
+        // plan 104 revision: user-writable default — pin the suffix, not
+        // the whole absolute path, since the leading component is this
+        // test-runner's own $HOME (CI/local machines differ).
+        assert!(c
+            .now_playing_adapter_dir
+            .ends_with("Library/Application Support/notchtap/mediaremote-adapter"));
     }
 
     #[test]
