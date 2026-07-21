@@ -67,6 +67,108 @@
   `:101-144`→`:104-175`, detail cells `:135-142`→`:141-148`,
   compact-hint `:151-155`→`:157-161`).
 
+## ⚠️ POST-083 CONTRACT RECONCILIATION (2026-07-21) — read before Step 1
+
+Plan 083 shipped and merged (master `737676f`). Its wire contract
+**diverged from what this plan assumed**, in four ways that change the
+work. This section supersedes the Current-state and Steps below wherever
+they conflict.
+
+### 1. `EspnMeta`'s real shape — 10 fields, not 8
+
+```rust
+pub struct EspnMeta {
+    pub league: String,          // friendly label already ("EPL"/"UCL"/"La Liga")
+    pub home_abbrev: String,
+    pub away_abbrev: String,
+    pub home_score: u32,
+    pub away_score: u32,
+    pub clock: String,           // display_clock, e.g. "78'"
+    pub home_cards: (u32, u32),  // -> JSON array [yellow, red]
+    pub away_cards: (u32, u32),
+    pub home_crest: Option<String>,   // ADDED by 083
+    pub away_crest: Option<String>,   // ADDED by 083
+}
+```
+
+It lands as `SlotState::Showing.espn: Option<EspnMeta>` with
+`skip_serializing_if` — an absent block is an **omitted JSON key**, never
+`null`. The TS type is already declared at `src/useSlotState.ts:84`
+(`espn?: EspnMeta`) and already validated. Detect the live-match branch
+by this block's presence, exactly as this plan intended.
+
+### 2. 🔴 The crest fields are RAW FILESYSTEM PATHS, not URLs
+
+This is the single most important correction. `home_crest`/`away_crest`
+carry an absolute path like
+`/Users/chetanjain/.config/notchtap/crests/96.png` — **not** a
+ready-to-use `asset://` URL. This plan's Step 2 says
+`<img src={crestUrl}>` and its Maintenance notes say "treat the URL as
+opaque." **Both are wrong now.**
+
+The frontend MUST call `convertFileSrc()` from `@tauri-apps/api/core`
+on a non-null value before using it as an `<img src>`:
+
+```ts
+import { convertFileSrc } from "@tauri-apps/api/core";
+const src = meta.home_crest ? convertFileSrc(meta.home_crest) : null;
+```
+
+`null`/absent → render the text-abbrev fallback circle. 083 enabled the
+asset protocol scoped to `$HOME/.config/notchtap/crests/*` and added
+`img-src 'self' asset: http://asset.localhost` to BOTH `csp` and
+`devCsp` — so a correctly-converted src will load, and a raw path will
+silently render as a broken image with no test catching it. If crests
+don't appear, check `convertFileSrc` FIRST.
+
+### 3. Step 1's signal stamps are ALREADY DONE — don't redo them
+
+083 added the four variants and their stamps itself, because the enum
+addition forced `presentation.ts` to compile. Shipped values:
+
+| signal (serde) | stamp |
+|---|---|
+| `foul` | `"Foul"` |
+| `offside` | `"Offside"` |
+| `var_check` | `"VAR"` |
+| `substitution` | `"Sub"` |
+
+Note the exact serde names: **`var_check`** and **`substitution`** —
+NOT `var`/`sub` as this plan's Step 1 sketch guessed. `EVENT_SIGNALS` in
+`src/useSlotState.ts:4-18` already mirrors them. This plan's Step 1
+reduces to **only** the new event-kind → (icon, tint, celebration)
+table; the stamps are done. Also: the plan worried `offside`→"Off" would
+collide with `red_card`'s stamp — 083 sidestepped it with "Offside", so
+that concern is moot.
+
+### 4. The card now has two neighbours it must coexist with
+
+`StatusRailCard.tsx` changed under three merged plans since this plan
+was written — **re-read it; every DOM line ref below has shifted**:
+
+- **085** added an early `return null` for idle + `resting_state:
+  "notch"` near the top.
+- **081** mounts `<TtlBar>` between the compact block and `Manifest`.
+  **Decide deliberately whether the live football card shows the TTL
+  bar.** The prototype locks "no queue `Track`" for the recurring card,
+  and the same reasoning arguably applies to a countdown bar on a
+  sticky presence that isn't counting down to anything meaningful.
+  This plan does NOT pre-decide it — make the call, implement it, and
+  **state the choice and rationale in your completion report.**
+- **082** added `wx-*` marker filtering (`visibleDetails()`) plus mood/
+  glyph classes on the outer `.rail-card`. Your branch must not
+  reintroduce unfiltered `renderedSlot.details` — use the existing
+  `renderedVisibleDetails`.
+
+### 5. Untestable-by-you note carried from 083
+
+083's `espn_rich_events` flag-off path is gated by a plain `if` in the
+async poll loop and is NOT covered by a pure-function test (083's
+executor said so plainly rather than overclaiming). Don't assume the
+rich-event path is exercised by the suite; your tests should drive the
+render branch from constructed `SlotState` payloads, not from poller
+behavior.
+
 ## Why this matters
 
 The football mockup is the most-iterated surface of the 079 redesign
