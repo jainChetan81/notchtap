@@ -61,21 +61,35 @@ function isDaytimeNow(): boolean {
   return hour >= 6 && hour < 18;
 }
 
-function WeatherPeekScene({ weather }: { weather: WeatherSummary }) {
+// plan 105 (Step B): split from the old combined `WeatherPeekScene` so the
+// art (this component) can sit BEHIND the media row instead of being
+// replaced by it — operator feedback wanted the weather backdrop kept once
+// media took over the readout slot. `aria-hidden` because this is pure
+// decoration, same as the ALERT card's own mood layer; the glyph rides
+// along here (not in the readout) because it's part of the art, not the
+// data — same z-index tier (0) as the mood gradient it's layered with.
+function WeatherPeekBackdrop({ weather }: { weather: WeatherSummary }) {
   const art = weatherArtFor(weather.condition, isDaytimeNow());
-  const sceneClass = ["wx-peek-scene", "wx-card", art.moodClass, art.textureClass]
+  const backdropClass = ["wx-peek-backdrop", "wx-card", art.moodClass, art.textureClass]
     .filter(Boolean)
     .join(" ");
   return (
-    <div className={sceneClass}>
+    <div className={backdropClass} aria-hidden="true">
       <img className="wx-icon" src={art.glyphUrl} alt="" />
-      <div className="wx-peek-readout">
-        <span className="wx-peek-temp">{weather.tempDisplay}</span>
-        {/* plan 092 (item 10): reuse `.chip` for the condition label —
-            092 retired `.pill` entirely; a new pill here would silently
-            undo that. */}
-        <span className="chip wx-peek-condition">{weather.condition}</span>
-      </div>
+    </div>
+  );
+}
+
+// plan 105 (Step B): the data half of the old `WeatherPeekScene` — markup
+// unchanged from before the split, just no longer carries the art classes.
+function WeatherPeekReadout({ weather }: { weather: WeatherSummary }) {
+  return (
+    <div className="wx-peek-readout">
+      <span className="wx-peek-temp">{weather.tempDisplay}</span>
+      {/* plan 092 (item 10): reuse `.chip` for the condition label —
+          092 retired `.pill` entirely; a new pill here would silently
+          undo that. */}
+      <span className="chip wx-peek-condition">{weather.condition}</span>
     </div>
   );
 }
@@ -239,21 +253,30 @@ export function IdleHoverPeek({ status, hovered }: { status?: StatusState; hover
   const live = status?.football.live ?? null;
   const media = status?.media.current ?? null;
   const weather = status?.weather.current ?? null;
+  // plan 105 (Step B): the art now paints as a backdrop layer under
+  // whatever the precedence chain picks, rather than being one of the
+  // precedence options itself — so it survives media outranking the
+  // weather readout. A live match keeps its own visual (the scorecard
+  // reveal), so the weather backdrop stays out in that case.
+  const showBackdrop = weather !== null && live === null;
 
   return (
     <div className={`below-block idle-peek${closing ? " closing" : " open"}`}>
-      {/* plan 104: precedence is football > media > weather > timeline —
-          an actively-chosen media session outranks ambient temperature,
-          but a live match still outranks everything (item 3's original
-          rule, extended). One below-block at a time. */}
-      {live !== null ? (
-        <ScorecardRevealContent live={live} />
-      ) : media !== null ? (
-        <MediaPeekRow media={media} />
-      ) : weather !== null ? (
-        <WeatherPeekScene weather={weather} />
-      ) : null}
-      <PeekTimeline />
+      {showBackdrop ? <WeatherPeekBackdrop weather={weather} /> : null}
+      <div className="peek-content">
+        {/* plan 104: precedence is football > media > weather > timeline —
+            an actively-chosen media session outranks ambient temperature,
+            but a live match still outranks everything (item 3's original
+            rule, extended). One below-block at a time. */}
+        {live !== null ? (
+          <ScorecardRevealContent live={live} />
+        ) : media !== null ? (
+          <MediaPeekRow media={media} />
+        ) : weather !== null ? (
+          <WeatherPeekReadout weather={weather} />
+        ) : null}
+        <PeekTimeline />
+      </div>
     </div>
   );
 }

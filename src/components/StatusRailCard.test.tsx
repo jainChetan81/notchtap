@@ -726,38 +726,70 @@ describe("StatusRailCard", () => {
     });
   });
 
-  // plan 085: resting_state "notch" — the cheap half of plan 079 item 17.
-  // Idle must render zero app-drawn pixels: no idle content, and no
-  // `.card-assembly` shell at all (not even an empty one), since the shell
-  // itself carries background/shadow/priority-accent styling.
-  describe("resting_state: notch (plan 085)", () => {
-    it("renders nothing while idle", () => {
+  // plan 085 (original) / plan 105 Step C (fix): resting_state "notch" —
+  // the cheap half of plan 079 item 17. Idle must render zero app-drawn
+  // pixels — but (105) the shell itself still mounts, bare, so hovering
+  // can reveal the peek; only the painted chrome (clock, dots,
+  // below-block) is gone. This replaces 085's original "no shell at all"
+  // test — that promise was a dead end (nothing painted AND nothing
+  // hoverable) — with the narrower "no painted chrome" contract 105
+  // authorizes. See that plan's Maintenance notes.
+  describe("resting_state: notch (plan 085; bare-hover fix: plan 105)", () => {
+    it("renders bare — no below-block, no clock text, no status dots — while idle and not hovered", () => {
       const { container } = render(
         <StatusRailCard slot={{ state: "empty" }} restingState="notch" />,
       );
-      expect(container.querySelector(".card-assembly")).toBeNull();
-      expect(container.querySelector(".card-assembly.idle")).toBeNull();
+      const shell = container.querySelector(".card-assembly");
+      expect(shell).not.toBeNull();
+      expect(shell?.classList.contains("bare")).toBe(true);
+      expect(container.querySelector(".below-block")).toBeNull();
+      expect(container.querySelector(".time-only")).toBeNull();
       expect(container.querySelector(".status-dots")).toBeNull();
-      expect(container.innerHTML).toBe("");
+    });
+
+    // plan 105's actual bug fix: hovering bare mode must reveal the peek —
+    // the whole point is that the mode is no longer a dead end.
+    it("reveals the idle-peek below-block when hovered, even though nothing painted while not hovered", () => {
+      const { container } = render(
+        <StatusRailCard slot={{ state: "empty" }} restingState="notch" hovered={true} />,
+      );
+      expect(container.querySelector(".card-assembly.bare")).not.toBeNull();
+      expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
     });
 
     it("renders the card normally while showing (promotions unaffected)", () => {
       const { container } = render(<StatusRailCard slot={GOAL} restingState="notch" />);
       expect(container.querySelector(".card-assembly.high")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.bare")).toBeNull();
       expect(screen.getByText("GOAL")).toBeTruthy();
     });
 
-    it("hides the card once a showing item finishes rotating out to idle", async () => {
+    // Step C's DOM-identity requirement: a showing card in notch mode must
+    // render byte-identical content to the same card in rail mode — the
+    // bare modifier only ever applies to the settled-idle state.
+    it("renders identical DOM to rail mode while showing", () => {
+      const { container: notchContainer } = render(
+        <StatusRailCard slot={GOAL} restingState="notch" />,
+      );
+      const { container: railContainer } = render(
+        <StatusRailCard slot={GOAL} restingState="rail" />,
+      );
+      expect(notchContainer.innerHTML).toBe(railContainer.innerHTML);
+    });
+
+    it("keeps the exit animation, then settles bare (not absent) once a showing item finishes rotating out to idle", async () => {
       const { container, rerender } = render(<StatusRailCard slot={GOAL} restingState="notch" />);
       expect(container.querySelector(".card-assembly")).not.toBeNull();
 
       rerender(<StatusRailCard slot={{ state: "empty" }} restingState="notch" />);
       // the outgoing card keeps playing its normal exit animation for the
       // same 220ms window as "rail" mode — it must not vanish abruptly.
-      expect(container.querySelector(".card-assembly")).not.toBeNull();
+      expect(container.querySelector(".below-block")).not.toBeNull();
 
       await vi.waitFor(() => {
-        expect(container.querySelector(".card-assembly")).toBeNull();
+        const shell = container.querySelector(".card-assembly");
+        expect(shell?.classList.contains("bare")).toBe(true);
+        expect(container.querySelector(".below-block")).toBeNull();
       });
     });
   });

@@ -101,17 +101,35 @@ describe("IdleHoverPeek (plan 093)", () => {
     const { container } = render(<IdleHoverPeek status={NOTHING_AMBIENT_STATUS} hovered={true} />);
     expect(container.querySelector(".below-block.idle-peek.open")).not.toBeNull();
     expect(container.querySelector(".idle-peek-timeline")).not.toBeNull();
-    expect(container.querySelector(".wx-peek-scene")).toBeNull();
+    expect(container.querySelector(".wx-peek-backdrop")).toBeNull();
     expect(container.querySelector(".idle-reveal-scorecard")).toBeNull();
   });
 
-  it("renders the weather mood scene and timeline when weather data is available", () => {
+  it("renders the weather mood backdrop and readout when weather data is available", () => {
     const { container } = render(<IdleHoverPeek status={WEATHER_STATUS} hovered={true} />);
-    expect(container.querySelector(".wx-peek-scene.wx-card")).not.toBeNull();
+    expect(container.querySelector(".wx-peek-backdrop.wx-card")).not.toBeNull();
     expect(container.querySelector("img.wx-icon")).not.toBeNull();
     expect(container.querySelector(".wx-peek-temp")?.textContent).toBe("27°");
     expect(container.querySelector(".wx-peek-condition")?.textContent).toBe("Cloudy");
     expect(container.querySelector(".idle-peek-timeline")).not.toBeNull();
+  });
+
+  // plan 105 (Step B): the operator wanted the weather art kept behind the
+  // media row rather than replaced by it — the backdrop is now independent
+  // of the precedence chain that picks what renders in `.peek-content`.
+  it("keeps the weather backdrop behind the media row when both are available", () => {
+    const { container } = render(<IdleHoverPeek status={MEDIA_STATUS} hovered={true} />);
+    expect(container.querySelector(".wx-peek-backdrop.wx-card")).not.toBeNull();
+    expect(container.querySelector(".media-row")).not.toBeNull();
+    // the readout itself still yields to the media row — one visible
+    // "content" slot at a time, per the existing precedence rule.
+    expect(container.querySelector(".wx-peek-readout")).toBeNull();
+  });
+
+  it("has no weather backdrop when a live match is showing (scorecard keeps its own visual)", () => {
+    const { container } = render(<IdleHoverPeek status={LIVE_MATCH_STATUS} hovered={true} />);
+    expect(container.querySelector(".idle-reveal-scorecard")).not.toBeNull();
+    expect(container.querySelector(".wx-peek-backdrop")).toBeNull();
   });
 
   // plan 092 (item 10) retired `.pill` entirely — the condition label
@@ -130,7 +148,7 @@ describe("IdleHoverPeek (plan 093)", () => {
     expect(container.querySelector(".idle-reveal-scorecard")).not.toBeNull();
     expect(container.querySelector(".idle-reveal-label")?.textContent).toBe("MTL 1-0 TOR");
     expect(container.querySelector(".clock-pill")?.textContent).toBe("63'");
-    expect(container.querySelector(".wx-peek-scene")).toBeNull();
+    expect(container.querySelector(".wx-peek-readout")).toBeNull();
     // the timeline still rides along underneath the reveal.
     expect(container.querySelector(".idle-peek-timeline")).not.toBeNull();
   });
@@ -144,8 +162,10 @@ describe("IdleHoverPeek (plan 093)", () => {
     expect(container.querySelector(".media-subtitle")?.textContent).toBe("M83");
     expect(container.querySelector(".media-state")?.textContent).toBe("▶");
     expect(container.querySelector(".idle-peek-timeline")).not.toBeNull();
-    // media outranks weather — one below-block at a time.
-    expect(container.querySelector(".wx-peek-scene")).toBeNull();
+    // media outranks weather in the content slot — one visible readout at
+    // a time — but (plan 105) the weather backdrop itself still shows
+    // behind it; see the dedicated backdrop test above.
+    expect(container.querySelector(".wx-peek-readout")).toBeNull();
   });
 
   it("renders ⏸ for a paused now-playing session", () => {

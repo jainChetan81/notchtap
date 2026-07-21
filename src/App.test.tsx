@@ -164,7 +164,12 @@ describe("App", () => {
       delete window.__NOTCHTAP_APPEARANCE__;
     });
 
-    it("renders nothing while idle when the boot seed carries resting_state: notch", () => {
+    // plan 105 (Step C, fixing the plan-085 bug): the shell still mounts
+    // (bare) so it stays hoverable — see StatusRailCard.test.tsx's own
+    // "resting_state: notch" suite for the full behavior contract. This
+    // pin only checks the wiring from the boot seed through to the bare
+    // render, not the whole contract.
+    it("renders bare (no painted chrome) while idle when the boot seed carries resting_state: notch", () => {
       window.__NOTCHTAP_APPEARANCE__ = {
         scale: 1,
         radius: 16,
@@ -172,7 +177,10 @@ describe("App", () => {
         resting_state: "notch",
       };
       const { container } = render(<App />);
-      expect(container.querySelector(".card-assembly")).toBeNull();
+      expect(container.querySelector(".card-assembly.bare")).not.toBeNull();
+      expect(container.querySelector(".time-only")).toBeNull();
+      expect(container.querySelector(".status-dots")).toBeNull();
+      expect(container.querySelector(".below-block")).toBeNull();
     });
 
     it("falls back to the rail when the seed omits resting_state", () => {
@@ -193,8 +201,9 @@ describe("App", () => {
           resting_state: "notch",
         }),
       );
+      // plan 105 (Step C): bare, not absent — see the boot-seed test above.
       await vi.waitFor(() => {
-        expect(container.querySelector(".card-assembly")).toBeNull();
+        expect(container.querySelector(".card-assembly.bare")).not.toBeNull();
       });
 
       // and back — the toggle isn't a one-way ratchet

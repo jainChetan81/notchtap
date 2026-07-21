@@ -38,6 +38,20 @@
   --cw: min(max(calc(500px * var(--card-scale)), calc(var(--notchtap-cutout-width, 200px) + (2 * 60px * var(--card-scale)))), 100%);
 }
 
+/* plan 105 (mirror law): bare notch mode — see styles.css's own block for
+   the full rationale. */
+.appearance-preview .card-assembly.bare {
+  --cw: min(var(--notchtap-cutout-width, 200px), 100%);
+}
+.appearance-preview .card-assembly.bare .flank-left,
+.appearance-preview .card-assembly.bare .flank-right {
+  background: transparent;
+  box-shadow: none;
+}
+.appearance-preview .card-assembly.bare:has(.idle-peek) {
+  --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
+}
+
 .appearance-preview .flank-left,
 .appearance-preview .flank-right {
   box-sizing: border-box;
@@ -577,9 +591,10 @@
   background: #f0c46a;
 }
 
+/* plan 105 (item A): steady glow, not a blink — mirror of styles.css
+   (mirror law). */
 .appearance-preview .status-dot.active {
-  box-shadow: 0 0 7px 1px currentColor;
-  animation: dot-pulse 1.8s ease-in-out infinite;
+  box-shadow: 0 0 8px 1px currentColor;
 }
 .appearance-preview .status-dot.football.active {
   color: #3ddc70;
@@ -595,22 +610,6 @@
   opacity: 0.22;
   box-shadow: none;
   animation: none;
-}
-
-@keyframes dot-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.55;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .appearance-preview .status-dot.active {
-    animation: none;
-  }
 }
 
 /* plan 092 (item 11): mirror of styles.css's paused-indicator glyph
@@ -636,6 +635,8 @@
 .appearance-preview .cat-world    { --cat: #c99df0; --cat-deep: rgba(201,157,240,0.15); --cat-pill: rgba(201,157,240,0.13); }
 .appearance-preview .cat-generic  { --cat: #aab3bd; --cat-deep: rgba(170,179,189,0.10); --cat-pill: rgba(170,179,189,0.10); }
 
+/* plan 105 (mirror law): deliberately KEPT — see styles.css's own block
+   for the full rationale (a slow positional drift, not a blink). */
 .appearance-preview .news-shade::before {
   content: "";
   position: absolute;
@@ -797,16 +798,6 @@
   }
 }
 
-@keyframes live-dot-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
-}
-
 .appearance-preview .preview-row {
   display: flex;
   flex-direction: column;
@@ -920,13 +911,14 @@
   border: 1px solid rgba(127, 224, 141, 0.35);
 }
 
+/* plan 105 (scope extension to Step A, mirror law): steady glow, not a
+   blink — see styles.css's own block for the full rationale. */
 .appearance-preview .chip-live .live-dot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
   background: #7fe08d;
   box-shadow: 0 0 6px rgba(127, 224, 141, 0.9);
-  animation: live-dot-pulse 1.6s ease-in-out infinite;
 }
 
 .appearance-preview .chip-live.break {
@@ -1068,17 +1060,24 @@
   }
 }
 
-.appearance-preview .wx-peek-scene {
-  position: relative;
-  min-height: 78px;
+/* plan 105 (mirror law): the weather art backdrop, split out of the old
+   combined `.wx-peek-scene` — see styles.css's own block for the full
+   rationale. */
+.appearance-preview .wx-peek-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   border-radius: 10px;
   overflow: hidden;
-  display: flex;
-  align-items: flex-end;
 }
-.appearance-preview .wx-peek-readout {
+.appearance-preview .peek-content {
   position: relative;
   z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.appearance-preview .wx-peek-readout {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1370,9 +1369,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .appearance-preview .chip-live .live-dot {
-    animation: none;
-  }
   .appearance-preview .card-assembly.cele-goal,
   .appearance-preview .card-assembly.cele-goal::after,
   .appearance-preview .card-assembly.cele-yc::after,

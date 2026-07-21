@@ -80,6 +80,32 @@ body {
   --cw: min(max(calc(500px * var(--card-scale)), calc(var(--notchtap-cutout-width, 200px) + (2 * 60px * var(--card-scale)))), 100%);
 }
 
+/* plan 105 (Step C, fixing the plan-085 bug): bare notch mode
+   (`resting_state: "notch"`, idle, not hovered) — the shell mounts (so
+   the rust-derived tracking area still exists and hover keeps working)
+   but paints zero app-drawn pixels: transparent flanks, cutout-width-only
+   shell so there's no wide invisible blocker sitting over the desktop.
+   `.idle`'s wider rest-rail formula still applies underneath (source
+   order below it), so this narrows it back down; `:has(.idle-peek)`
+   (below) restores the normal idle width the instant the peek opens on
+   hover, since the below-block needs real room to render into. */
+.card-assembly.bare {
+  --cw: min(var(--notchtap-cutout-width, 200px), 100%);
+}
+.card-assembly.bare .flank-left,
+.card-assembly.bare .flank-right {
+  background: transparent;
+  box-shadow: none;
+}
+/* plan 105: hovered bare mode reveals the peek exactly like rail mode —
+   same idle width formula so `.below-block.idle-peek` (IdleHoverPeek)
+   has room to render, not the cutout-only width above. Higher
+   specificity than `.card-assembly.bare` above, so this wins regardless
+   of source order once `.idle-peek` mounts. */
+.card-assembly.bare:has(.idle-peek) {
+  --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
+}
+
 .flank-left,
 .flank-right {
   box-sizing: border-box;
@@ -859,9 +885,11 @@ body {
   background: #f0c46a;
 }
 
+/* plan 105 (item A): steady glow, not a blink — the pulse read as
+   distracting in peripheral vision during live use. Strengthened the
+   resting glow slightly to compensate for losing the animated emphasis. */
 .status-dot.active {
-  box-shadow: 0 0 7px 1px currentColor;
-  animation: dot-pulse 1.8s ease-in-out infinite;
+  box-shadow: 0 0 8px 1px currentColor;
 }
 .status-dot.football.active {
   color: #3ddc70;
@@ -877,22 +905,6 @@ body {
   opacity: 0.22;
   box-shadow: none;
   animation: none;
-}
-
-@keyframes dot-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.55;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .status-dot.active {
-    animation: none;
-  }
 }
 
 /* plan 092 (item 11): the paused indicator — while `status.paused` is
@@ -917,20 +929,6 @@ body {
   background: rgba(255, 255, 255, 0.5);
 }
 
-/* `live-dot-pulse` stays — `.chip-live .live-dot` (the football scorecard
-   content, chip-converged by this plan but not otherwise touched) still
-   reuses it; only its OWN former host rule (`.src-chip .live-dot`, the
-   deleted idle rail) is gone. */
-@keyframes live-dot-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
-}
-
 /* ==== news card v5: category system (shader + masthead + pills) ==== */
 .cat-politics { --cat: #7c9df5; --cat-deep: rgba(124,157,245,0.16); --cat-pill: rgba(124,157,245,0.14); }
 .cat-tech     { --cat: #5fd4e8; --cat-deep: rgba(95,212,232,0.15);  --cat-pill: rgba(95,212,232,0.13); }
@@ -939,6 +937,14 @@ body {
 .cat-world    { --cat: #c99df0; --cat-deep: rgba(201,157,240,0.15); --cat-pill: rgba(201,157,240,0.13); }
 .cat-generic  { --cat: #aab3bd; --cat-deep: rgba(170,179,189,0.10); --cat-pill: rgba(170,179,189,0.10); }
 
+/* plan 105 (scope extension to Step A): deliberately KEPT — reviewed
+   alongside the status-dot and live-dot pulses the operator asked to
+   remove, but this one is a different category of motion: a single
+   12s-per-leg (24s round trip) positional drift of an oversized (-30%
+   inset), already-translucent gradient, not a brightness/opacity blink.
+   It reads as ambient "alive" background texture, not a distracting
+   flicker in peripheral vision — the operator's actual complaint was
+   about the latter. Kept as is. */
 .news-shade::before {
   content: ""; position: absolute; inset: -30% -30% -30% -30%; z-index: 0;
   background:
@@ -1211,15 +1217,16 @@ body {
   border: 1px solid rgba(127, 224, 141, 0.35);
 }
 
-/* reuses the shipped `live-dot-pulse` keyframe (idle-rail `.src-chip
-   .live-dot` above) rather than redeclaring it. */
+/* plan 105 (scope extension to Step A): steady glow, not a blink — same
+   operator request as the status dots. The static `box-shadow` glow below
+   already reads as a liveness signal on its own; only the looping
+   keyframe animation (now deleted) is gone. */
 .chip-live .live-dot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
   background: #7fe08d;
   box-shadow: 0 0 6px rgba(127, 224, 141, 0.9);
-  animation: live-dot-pulse 1.6s ease-in-out infinite;
 }
 
 .chip-live.break {
@@ -1390,23 +1397,35 @@ body {
   }
 }
 
-/* the weather mood scene half — reuses `.wx-card`'s mood-gradient
-   `::before`/texture `::after` (weather ALERT card block, above) and
-   `.wx-icon`'s glyph placement verbatim; `.wx-peek-scene` is the
-   structural anchor those rules need (`position: relative` so the
-   absolutely-positioned glyph/gradient layers have a containing block,
-   same role `.notif-block`'s parent already plays for that card type). */
-.wx-peek-scene {
-  position: relative;
-  min-height: 78px;
+/* plan 105 (Step B): the weather art, split out of the old combined
+   `.wx-peek-scene` into its own backdrop layer so it can sit BEHIND
+   whatever the precedence chain (football/media/weather) puts in
+   `.peek-content`, instead of being replaced by it — the operator wanted
+   the mood art kept once the media row took over the readout slot.
+   Reuses `.wx-card`'s mood-gradient `::before`/texture `::after` (weather
+   ALERT card block, above) and `.wx-icon`'s glyph placement verbatim.
+   `inset: 0` fills `.below-block.idle-peek`'s own animated height (that
+   block is already `position: relative` — see its rule above), so no
+   min-height is needed here the way `.wx-peek-scene` used to carry one:
+   this layer is the full block, not a sub-box inside it. */
+.wx-peek-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   border-radius: 10px;
   overflow: hidden;
-  display: flex;
-  align-items: flex-end;
 }
-.wx-peek-readout {
+/* the real content (scorecard/media/weather readout + timeline) sits
+   above the backdrop, same z-order discipline as `.wx-card .compact`
+   above. */
+.peek-content {
   position: relative;
   z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wx-peek-readout {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1734,9 +1753,6 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chip-live .live-dot {
-    animation: none;
-  }
   .card-assembly.cele-goal,
   .card-assembly.cele-goal::after,
   .card-assembly.cele-yc::after,
