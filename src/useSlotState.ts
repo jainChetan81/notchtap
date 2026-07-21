@@ -55,6 +55,9 @@ declare global {
       scale: number;
       radius: number;
       opacity: number;
+      // plan 085: optional — an old seed predating this field means
+      // `rail` (the frontend default), never a hard failure.
+      resting_state?: "rail" | "notch";
     };
   }
 }

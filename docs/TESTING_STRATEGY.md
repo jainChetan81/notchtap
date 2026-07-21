@@ -16,9 +16,9 @@ other sections point back rather than repeating them):
 
 | suite | size | where |
 |---|---|---|
-| rust unit/integration | 331 tests — settings 46, queue 65, http 36, notifier 23, rss_poller 28, poller 32, event 19, config 19, weather_poller 16, presentation 11, lib 11, engine 10, status 7, logging 4, net 4 | `cargo test` from `src-tauri/` |
+| rust unit/integration | 348 tests — settings 49 (47 + 2 with plan 085), queue 68, http 36, notifier 26, rss_poller 28, poller 32, event 19, config 22 (21 + 1 with plan 085), weather_poller 16, presentation 11, lib 13, engine 10, status 7, logging 7, net 4 | `cargo test` from `src-tauri/` |
 | rust doc-tests | 3 — public `queue`/`event` apis | same `cargo test` run |
-| frontend | 124 tests — presentation tables 12, presentation facts 4, inline markdown 7, useDelayedSwap hook 3, slot-state hook 22, status-state hook 15, StatusRailCard 26 (+2 with plan 080), IdleView rail 8, Track slider 6, settings form 16, App render 5 | `npx vitest run` |
+| frontend | 133 tests — presentation tables 12, presentation facts 4, inline markdown 7, useDelayedSwap hook 3, slot-state hook 22, status-state hook 15, StatusRailCard 31 (24 + 2 with plan 080 + 5 with plan 085), IdleView rail 8, Track slider 6, settings form 17 (16 + 1 with plan 085), App render 8 (5 + 3 with plan 085) | `npx vitest run` |
 | ci (v4) | fmt, clippy `-D warnings` (`--locked`), cargo test (`--locked`), cargo-audit, npm audit, tsc, vitest, vite build, `sh -n` cli syntax check, swiftc compile check | every push + pr |
 
 every example case listed in §4 for v1/v2/v3 components has a passing

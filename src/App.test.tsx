@@ -140,4 +140,59 @@ describe("App", () => {
     expect(container.querySelector(".rail-card")).toBe(card);
     expect(container.querySelector(".body")).toBeNull();
   });
+
+  // plan 085: the resting-state render choice rides the same appearance
+  // channel as scale/radius/opacity — seeded at boot, hot-updated live.
+  describe("resting_state (plan 085)", () => {
+    afterEach(() => {
+      delete window.__NOTCHTAP_APPEARANCE__;
+    });
+
+    it("renders nothing while idle when the boot seed carries resting_state: notch", () => {
+      window.__NOTCHTAP_APPEARANCE__ = {
+        scale: 1,
+        radius: 16,
+        opacity: 0.9,
+        resting_state: "notch",
+      };
+      const { container } = render(<App />);
+      expect(container.querySelector(".rail-card")).toBeNull();
+    });
+
+    it("falls back to the rail when the seed omits resting_state", () => {
+      window.__NOTCHTAP_APPEARANCE__ = { scale: 1, radius: 16, opacity: 0.9 };
+      const { container } = render(<App />);
+      expect(container.querySelector(".rail-card.idle")).not.toBeNull();
+    });
+
+    it("hot-applies a live appearance-changed event without a reload", async () => {
+      const { container } = render(<App />);
+      expect(container.querySelector(".rail-card.idle")).not.toBeNull();
+
+      act(() =>
+        emitTo("appearance-changed", {
+          scale: 1,
+          radius: 16,
+          opacity: 0.9,
+          resting_state: "notch",
+        }),
+      );
+      await vi.waitFor(() => {
+        expect(container.querySelector(".rail-card")).toBeNull();
+      });
+
+      // and back — the toggle isn't a one-way ratchet
+      act(() =>
+        emitTo("appearance-changed", {
+          scale: 1,
+          radius: 16,
+          opacity: 0.9,
+          resting_state: "rail",
+        }),
+      );
+      await vi.waitFor(() => {
+        expect(container.querySelector(".rail-card.idle")).not.toBeNull();
+      });
+    });
+  });
 });

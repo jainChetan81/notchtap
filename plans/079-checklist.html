@@ -63,7 +63,8 @@
 
   <h2>Bigger/deferred (not part of the mockup loop)</h2>
   <ul>
-    <li><span class="badge open">○</span><div><div class="item-title">Hide-when-idle / reveal-on-hover</div><div class="item-note">Real interaction-model change (hover detection, window resize), not a style question.</div></div></li>
+    <li><span class="badge done">✓</span><div><div class="item-title">Hide-when-idle (cheap half of item 17)</div><div class="item-note">Shipped via plan 085: a <code>resting_state: rail|notch</code> config flag on the appearance channel. <code>notch</code> renders zero app-drawn pixels while idle (the bare native notch); every <code>showing</code> path (promotions, rotation, expand, TTL) is unaffected. No hover detection — a render choice only.</div></div></li>
+    <li><span class="badge open">○</span><div><div class="item-title">Reveal-on-hover (expensive half of item 17)</div><div class="item-note">Still open — real interaction-model change (cursor tracking, hover detection), gated on plan 086's spike.</div></div></li>
   </ul>
 </main>
 </html>
