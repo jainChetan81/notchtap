@@ -8,10 +8,10 @@
 > maintain the index.
 >
 > **Drift check (run first)**:
-> `git diff --stat <planned-at SHA>..HEAD -- src-tauri/src/history.rs src-tauri/src/settings.rs src-tauri/build.rs src-tauri/capabilities/settings.json src/settings/SettingsApp.tsx`
-> If any changed since this plan was written, compare the "Current state"
-> excerpts against the live files before proceeding; on a mismatch, treat it
-> as a STOP condition.
+> `git diff --stat e09725c..HEAD -- src-tauri/src/history.rs src-tauri/src/settings.rs src-tauri/build.rs src-tauri/capabilities/settings.json src/settings/SettingsApp.tsx src-tauri/src/lib.rs`
+> Expected: empty. If any changed since this plan was re-verified, compare
+> the "Current state" excerpts against the live files before proceeding; on
+> a mismatch, treat it as a STOP condition.
 
 ## Status
 
@@ -21,14 +21,13 @@
   the load-bearing security step (see "The one thing that must not go
   wrong"); getting it wrong silently exposes commands to the overlay
   window.
-- **Depends on**: **plan 088 (must be DONE and merged)** — this plan calls
-  `HistoryStore::read_recent` / `clear`, which 088 creates. Do not start
-  until `src-tauri/src/history.rs` exists on the branch you build from.
+- **Depends on**: plan 088 — **satisfied**: DONE and merged to master
+  (`1a38903`, merge `7f8a5c8`, 2026-07-21); `src-tauri/src/history.rs`
+  exists on master.
 - **Category**: direction
-- **Planned at**: commit `<fill at dispatch — re-stamp after 088 merges>`
-- **Note**: this plan was filed alongside 088 before 088 executed. It
-  **requires a review-plan pass** to re-stamp its SHA and re-verify every
-  citation against 088's actual shipped API before it is dispatched.
+- **Planned at**: commit `a6d29e4`, 2026-07-21; **re-verified and stamped
+  at `e09725c`** (review-plan pass, same day, after 088's merge — see the
+  note at the end of this file). This plan is now dispatchable.
 
 ## Why this matters
 
@@ -201,9 +200,12 @@ icon: ScrollText }`), a copy record at `:164`, and a render branch at
 
 ## Commands you will need
 
+Baseline at `e09725c`, verified live: **439 rust + 3 doc-tests / 183
+frontend.** Re-derive rather than trusting these numbers.
+
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Rust tests | `cd src-tauri && cargo test --locked` | all pass |
+| Rust tests | `cd src-tauri && cargo test --locked` | all pass (439 baseline, unchanged — this plan adds no rust tests) |
 | Rust lint | `cd src-tauri && cargo clippy --locked --all-targets -- -D warnings` | exit 0 |
 | Rust format | `cd src-tauri && cargo fmt --check` | exit 0 |
 | Frontend tests | `npx vitest run` | all pass, +N new |
@@ -224,12 +226,22 @@ icon: ScrollText }`), a copy record at `:164`, and a render branch at
 - `src/settings/SettingsApp.test.tsx` (new tests)
 - `docs/TESTING_STRATEGY.md` (§0 counts)
 
+**In scope, narrowly — `src-tauri/src/history.rs`** (added by the
+review-plan pass): exactly two kinds of edit, nothing else —
+1. Remove the `#[allow(dead_code)]` attributes on `read_recent`
+   (`history.rs:138`) and `clear` (`history.rs:164`) — once your commands
+   call them from production code they are no longer dead, and a stale
+   allow is a lie waiting to hide a real regression.
+2. Refresh the now-stale "ships dark / no invoke command reads this yet
+   (that's plan 089)" prose in the module doc (`history.rs:1-16`) and in
+   `read_recent`/`clear`'s doc comments — after this plan they ARE wired.
+
 **Out of scope**:
 - `src-tauri/capabilities/default.json` — must stay byte-identical. This is
   a STOP condition, not a preference.
-- `src-tauri/src/history.rs` — plan 088's module; consume its API, do not
-  change it. If you need a signature it does not expose, STOP and report
-  rather than widening it.
+- Everything else in `src-tauri/src/history.rs` — consume its API, do not
+  change signatures, rotation logic, or tests. If you need a signature it
+  does not expose, STOP and report rather than widening it.
 - `src-tauri/src/engine.rs`, `queue.rs` — no ingest or queue change.
 - The overlay (`src/App.tsx`, `src/components/**`, `src/styles.css`) —
   history is a Settings-window feature only.
@@ -265,6 +277,37 @@ Place both under the existing invoke-commands banner, alongside
 
 **Note the ordering contract**: 088's `read_recent` returns oldest → newest.
 The UI reverses for display; do not change the rust contract.
+
+**The wire shape is snake_case with ONE camelCase island — do not copy the
+`slot-state` convention** (verified against live code at `e09725c`, then
+re-verified after a cold read caught a mis-attribution in this very
+paragraph): `HistoryEntry` and `Event` carry no `#[serde(rename_all)]`, so
+their fields serialize as snake_case field names — `recorded_at_ms`, and
+inside `event`: `event_type`, `priority`, `rotation` (internally tagged
+`{"kind": "one_shot", "ttl_secs": …}`), `payload` (`title`/`body`),
+`meta`, `signal`, `origin`. `EventMeta` (`event.rs:158-160`, only
+`#[serde(default)]`) is ALSO snake_case: `source`, `category`,
+`published_at_ms`, `link`, `subtitle`, `details`. The one camelCase
+island is `EspnMeta` (`event.rs:200-201`, `rename_all = "camelCase"`),
+nested at `meta.espn` and ABSENT from the JSON entirely unless the espn
+live card populated it (`skip_serializing_if`). All enum *values* are
+snake_case. Do NOT model casing on the `slot-state` wire
+(`SlotState`, `event.rs:234`) — that one is camelCase throughout via
+`rename_all_fields` and is where `publishedAtMs`-style keys come from;
+the history wire never passes through it. Model your TS types'
+*validator structure* on `src/useSlotState.ts` but not its casing. Pin
+the exact shape in a test with a hand-written mocked payload (test 1
+below) rather than deriving the mock from your own TS type — a mock
+derived from a wrong type passes vacuously. Cheapest ground truth if in
+any doubt: run one rust line in a scratch test —
+`println!("{}", serde_json::to_string(&HistoryEntry { recorded_at_ms: 1, event: test_fixtures::event("x") }).unwrap());`
+— and copy the printed keys.
+
+**Verified 088 API you are calling** (signatures at `e09725c`, all on
+`crate::history::HistoryStore`): `new(dir: impl AsRef<Path>) ->
+io::Result<Self>`, `read_recent(&self, n: usize) ->
+io::Result<Vec<HistoryEntry>>`, `clear(&self) -> io::Result<()>`;
+`HistoryEntry { recorded_at_ms: i64, event: Event }` derives `Serialize`.
 
 **Verify**: `cd src-tauri && cargo build --locked` → exit 0.
 
@@ -372,10 +415,11 @@ ALL must hold:
 
 ## STOP conditions
 
-- Plan 088 is not merged / `src-tauri/src/history.rs` does not exist.
-- 088's shipped API differs from this plan's excerpts (it was filed before
-  088 executed) — re-read `history.rs` and STOP if `read_recent`/`clear`
-  have different signatures or ordering than described.
+- The drift check is non-empty and the "Current state" excerpts no longer
+  match the live files.
+- 088's shipped API differs from the "Verified 088 API" block in Step 1 —
+  re-read `history.rs` and STOP if `read_recent`/`clear` have different
+  signatures or ordering than described there.
 - Any change to `capabilities/default.json` appears necessary.
 - The build fails with an ACL/permission error after Step 2 — that means
   the command names in `build.rs` and the `allow-*` permissions disagree;
@@ -395,5 +439,35 @@ ALL must hold:
   change gives the store real in-memory state, this must be revisited.
 - What a reviewer should scrutinize: both files updated in Step 2,
   `default.json` untouched, the two-step clear confirmation actually
-  gating the invoke, and that the newest-first reversal happens in the UI
-  rather than by changing 088's contract.
+  gating the invoke, that the newest-first reversal happens in the UI
+  rather than by changing 088's contract, and that the TS types match the
+  wire shape (snake_case throughout, incl. `meta`; camelCase ONLY inside
+  the optional `meta.espn` block) rather than assuming the `slot-state`
+  camelCase convention.
+
+**Review-plan pass (2026-07-21, at `e09725c`, after 088's merge)**: the
+filing-time note requiring this pass is discharged. Verified: all exemplar
+citations (settings.rs:790-798/:505-509/:511-514, SettingsApp.tsx
+:1140-1190/:95-120/:164/:1690, build.rs's 9 commands, settings.json's
+"nine") are byte-exact at HEAD — none of the day's landings touched them;
+088's shipped API matches this plan's usage exactly (signatures now pinned
+in Step 1's "Verified 088 API" block); nothing of 089 exists yet (zero
+grep hits for `get_history`/`clear_history`/`HistorySection` across
+src-tauri/ and src/). Three substantive additions: (1) the mixed-casing
+wire-shape warning in Step 1 — `HistoryEntry`/`Event` serialize
+snake_case but nested `EventMeta` is camelCase, and the obvious exemplar
+(`useSlotState.ts`) is camelCase-throughout, a trap an executor would walk
+into; (2) `history.rs` moved from fully-out-of-scope to narrowly-in-scope
+— the two `#[allow(dead_code)]`s (:138/:164) must come off when the
+commands wire them, and the "ships dark, that's plan 089" prose becomes
+stale the moment this plan lands; (3) drift baseline stamped `e09725c`,
+gate baselines 439+3/183 recorded, and lib.rs added to the drift paths
+(its `generate_handler!` is an in-scope touch point). The required
+fresh-context cold read then caught a mis-attribution in addition (1)'s
+first draft — it claimed `EventMeta` was camelCase, when the
+`rename_all` at event.rs:201 belongs to `EspnMeta` (`EventMeta` at :158-160
+is snake_case; the remembered `publishedAtMs` comes from the `slot-state`
+wire, which history never passes through). Corrected against a direct
+read; the paragraph now also gives the executor a one-line rust
+ground-truth command so no future casing claim has to be taken on faith.
+Verdict after correction: dispatchable.

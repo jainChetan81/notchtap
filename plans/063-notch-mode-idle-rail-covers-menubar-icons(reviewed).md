@@ -10,11 +10,28 @@
 > plan is now execution-ready. Follow the steps in order, run every
 > verification, and honor the STOP conditions.
 >
-> **Drift check (run first)**: `git diff --stat 9a954b0..HEAD -- src/styles.css src/components/IdleView.tsx src/App.tsx src-tauri/src/lib.rs src-tauri/src/presentation.rs src-tauri/tauri.conf.json`
-> Any diff in these files means line refs below have shifted — re-read
-> before editing. The `.src-rail`/`.src-chip` citations were re-verified
-> in the fourth pass (they moved from `:488-506` to `:560-580` when plan
-> 078 added ~100 lines of keyframes above them).
+> ⚠️ **THIS PLAN HAS ALREADY SHIPPED.** The build merged to master as
+> `4fb3af9` (2026-07-20). Steps 1-4 are DONE — do not re-execute them.
+> The only outstanding work is Step 5's operator-owed MacBook
+> smoke-check, plus the index flip and the `(done)` rename. Read the
+> "Executed record" section at the end of this file before anything
+> else; it supersedes the step-by-step body for anyone picking this up
+> now.
+>
+> **Drift check**: the old baseline `9a954b0` is obsolete — since it,
+> `styles.css` alone has gained +535 lines, so the pre-execution line
+> refs in Steps 1-4 are wholesale stale and following them will send you
+> to the wrong code. They are kept as a historical record of what was
+> built, NOT as instructions. Current verification baseline is
+> `e09725c`; the shipped code has been unchanged since `958c2f7`
+> (`git diff 958c2f7..HEAD -- src/styles.css src/App.tsx
+> src-tauri/src/lib.rs src/components/IdleView.tsx` is empty).
+>
+> Citation status as of the fifth pass (2026-07-21): the
+> `.src-rail`/`.src-chip` refs are now at `styles.css:608-614` and
+> `:616-629` (the banner previously claimed `:560-580`, itself already
+> stale). Three citations in "Current state" pointed at unrelated code
+> and are corrected inline below.
 
 ## Status
 
@@ -211,9 +228,18 @@ that's a real usability regression, not a style preference.
   rust side, reported by `notchtap-detect` and used today only to
   compute `center_x()` for window positioning (`lib.rs`'s
   `position_window`). It is never surfaced to the frontend.
-- `src-tauri/src/lib.rs:590-600` (`position_window`'s notch branch)
-  already has a monitor-bounds safety fallback — *"if a result outside
-  the current monitor falls back to top-center"* — but this only
+- `src-tauri/src/lib.rs:782-799` (`position_window`'s notch branch —
+  the function itself starts at `:772` and runs to `:806`; **corrected
+  in the fifth pass, this was cited as `:590-600` / `:581-600` and
+  those lines are now unrelated `server_once.call_once` /
+  `http::AppState` code**. An earlier pass explicitly vouched for the
+  old numbers as "byte-identical", and no later pass rechecked while
+  `lib.rs` gained +223 lines — treat any un-rechecked "still valid"
+  claim in this file with the same suspicion.)
+  already has a monitor-bounds safety fallback — the quoted phrase
+  *"if a result outside the current monitor falls back to top-center"*
+  is at `:785-786`, with `return position_top_center(window);` at
+  `:797` — but this only
   guards against the window rendering fully off-screen. It does not
   and cannot know where other apps' menu-bar icons currently are (no
   public macOS API exposes that — same category of wall as the
@@ -330,6 +356,43 @@ mechanic none of the three original options described:
   (An earlier draft of this session considered a 20px/side margin; that
   was only useful when trying to cram a full row of chips into one
   line, which wrapping makes unnecessary.)
+
+  ⚠️ **FIFTH PASS CORRECTION — as written, this invariant is FALSE of
+  the shipped code, in two independent ways. Do not cite this bullet as
+  a guarantee.** What actually ships is "never wider than the cutout
+  *when `card_scale` is exactly 1.0 and the cutout is at least 270px*":
+
+  1. **The 270px floor overrides it** (see the very next bullet, which
+     states the floor as a deliberate decision). Any real cutout
+     narrower than 270px yields a card wider than the cutout even at
+     scale 1.0. The repo's own model of a narrow cutout is 200px
+     (`src-tauri/src/hover.rs:323`, `:335`), which renders a 270px card
+     — 35px of overhang per side. This is a **knowing tradeoff**
+     (readability floor) that simply contradicts the sentence above;
+     the two bullets were never reconciled.
+  2. **`--card-scale` multiplies the clamped result** (Step 3's CSS,
+     `src/styles.css:61`). This one was **not** anticipated: `:506`
+     specifies the ordering and forbids reordering, but no risk entry,
+     STOP condition, done criterion, or smoke-check step anywhere in
+     this plan mentions the consequence. At the 319px cutout this plan
+     uses as its own fixture, scale 1.15 (the Settings UI's "Large"
+     preset) renders 366.9px — ~24px of overhang per side, back over
+     the menu-bar icons this P1 was filed to stop covering. At the
+     0.8–1.4 validated ceiling it is ~64px per side, which recovers
+     only about a tenth of the originally-reported overhang.
+
+  The overshoot is not merely unguarded, it is **pinned green by
+  shipped tests**: `src-tauri/src/hover.rs:340-343`
+  (`notch_clamp_ceils_wide_cutout_at_scale_1_25`) asserts a 575px
+  notch-mode card, and `:322-325` asserts the 270px floor against a
+  200px cutout. Any fix must change those tests, so they are the
+  tripwire that will surface this — treat a failure there as expected,
+  not as a regression.
+
+  Resolving which of the two sentences is the real intent is a
+  **product decision, deliberately not made here** — it is the subject
+  of plan 090. Do not silently pick one while doing unrelated work in
+  this file.
 - **270px does double duty**: it's both (a) the fallback width when
   `CutoutGeometry` is unavailable, and (b) an absolute floor — even a
   real, very narrow notch's exact width never shrinks the card below
@@ -556,6 +619,32 @@ Do not add `max-width`/`text-overflow` to the base `.src-chip` — the locked de
 
 Then hand to the operator for the **MacBook smoke-check** (manual, required by the locked decision): run the built app on the notch MacBook with a realistic menu-bar icon load and confirm (a) the idle status rail never extends past the cutout's own width, (b) chips wrap onto a second row instead of clipping when they don't fit, (c) a long live-match label ellipsizes, (d) the Mac mini (HUD mode) is byte-for-byte unchanged — still 460px, single row. That check is operator-owed; do not mark the plan DONE in `plans/README.md` until it passes.
 
+⚠️ **Fifth-pass addition — run every check above at Settings → Card
+shape → Scale = "Medium" (1.0) FIRST, then repeat (a) at "Large"
+(1.15).** As originally written this check is silently scale-blind:
+every step runs at the default 1.0, where the clamp behaves exactly as
+specified, so all four checks pass while the defect described in the
+"Width cap in notch mode" bullet above goes unobserved.
+
+Expect (a) to **FAIL at "Large"** — that is the known, already-analyzed
+defect, not a new regression and not a reason to withhold sign-off on
+(b)/(c)/(d). Record what you actually see (rough overhang in icon-widths
+per side is enough) and carry it into plan 090; do not attempt a fix
+here. If (a) *passes* at "Large", that is genuinely surprising and worth
+reporting — it would mean the rendered geometry does not match the
+arithmetic in `styles.css:61`, and 090's premise needs rechecking before
+anything is changed.
+
+Also worth one look while you have notch hardware in front of you, since
+it costs nothing and no automated gate covers it: trigger an **expanded**
+card at "Large" and check whether its left/right edges are clipped.
+`.rail-card.expanded` is `calc(500px * var(--card-scale))` inside a
+window fixed at 500px wide with `overflow: hidden`, so it should clip at
+any scale above 1.0 — **in both modes, including the Mac mini**. That is
+a separate defect from this plan's subject and is also 090's to fix; it
+is noted here only because this is the next scheduled time someone is
+looking at the overlay with intent.
+
 ## Test plan
 
 - **Rust** (`src-tauri/src/lib.rs`'s existing `#[cfg(test)]` module, or wherever `position_window`'s tests live — match that location): `cutout_width_js_value(Some(CutoutGeometry { left_x: 480.5, right_x: 799.5, width: 319.0 }))` returns `"319"`; `cutout_width_js_value(None)` returns `"null"`. No other rust tests — no behavior change beyond one eval string.
@@ -566,14 +655,19 @@ Then hand to the operator for the **MacBook smoke-check** (manual, required by t
 
 ## Done criteria
 
-- [ ] `window.__NOTCHTAP_MODE__` and `window.__NOTCHTAP_CUTOUT_WIDTH__` are eval-spliced in `lib.rs`'s `on_page_load` (one new block, no other rust changes; `git diff src-tauri/src/presentation.rs` is empty)
-- [ ] `document.documentElement.dataset.notchtapMode` is set on mount; `--notchtap-cutout-width` is set only when the splice carried a positive number
-- [ ] `:root[data-notchtap-mode="notch"] .rail-card.idle.status` clamps to `clamp(270px, var(--notchtap-cutout-width, 270px), 460px)`; the plain `.rail-card.idle.status` 460px rule is byte-identical
-- [ ] `.src-rail` wraps (`flex-wrap: wrap` + row gap); the live chip truncates via `.live-label`, base `.src-chip` untouched
-- [ ] `cargo test --locked`, `cargo clippy --locked --all-targets -- -D warnings`, `cargo fmt --check`, `npx vitest run`, `npx tsc --noEmit`, `npx biome ci .` all exit 0
-- [ ] No files outside the in-scope list are modified (`git status`)
-- [ ] Operator MacBook smoke-check passed (all four checks in Step 5) — plan stays TODO/IN PROGRESS in `plans/README.md` until then
-- [ ] `plans/README.md` status row for 063 updated
+Six of the eight were verified satisfied on master during the fifth
+review pass (2026-07-21) by direct inspection of the shipped code, and
+are checked off accordingly. Only the two genuinely-open items remain
+unchecked.
+
+- [x] `window.__NOTCHTAP_MODE__` and `window.__NOTCHTAP_CUTOUT_WIDTH__` are eval-spliced in `lib.rs`'s `on_page_load` (one new block, no other rust changes; `git diff src-tauri/src/presentation.rs` is empty) — verified: block at `lib.rs:564-573`, helper `:696-701`, tests `:977-988`; `presentation.rs` byte-identical since `9a954b0`
+- [x] `document.documentElement.dataset.notchtapMode` is set on mount; `--notchtap-cutout-width` is set only when the splice carried a positive number — verified: `src/App.tsx:36-42`, guard at `:39`
+- [x] `:root[data-notchtap-mode="notch"] .rail-card.idle.status` clamps to `clamp(270px, var(--notchtap-cutout-width, 270px), 460px)`; the plain `.rail-card.idle.status` 460px rule is byte-identical — verified: `src/styles.css:60-62` byte-exact to spec, `:51-53` unchanged
+- [x] `.src-rail` wraps (`flex-wrap: wrap` + row gap); the live chip truncates via `.live-label`, base `.src-chip` untouched — verified: `src/styles.css:608-614`, `:635-645`, `:647-653`; base `.src-chip` `:616-629` untouched
+- [x] `cargo test --locked`, `cargo clippy --locked --all-targets -- -D warnings`, `cargo fmt --check`, `npx vitest run`, `npx tsc --noEmit`, `npx biome ci .` all exit 0 — all six gates were re-run green by the reviewer at merge time
+- [x] No files outside the in-scope list are modified (`git status`) — verified at merge: exactly the 7 in-scope files
+- [ ] Operator MacBook smoke-check passed (all four checks in Step 5) — plan stays IN PROGRESS in `plans/README.md` until then. **Note (fifth pass): check (a) as written is not satisfiable by the shipped code at `card_scale > 1.0` or at any cutout below 270px — see the correction under "Width cap in notch mode". Expect it to fail at "Large"; that is known and is plan 090's to fix, not a blocker on the other three checks.**
+- [ ] `plans/README.md` status row for 063 updated (and this file renamed `(done)`)
 
 ## STOP conditions
 
@@ -618,3 +712,63 @@ Stop and report back (do not improvise) if:
   commit, or the hover rect silently diverges from the rendered card.
   The tripwire test (`hover.rs:402-405`) pins the rust constants but
   cannot see CSS — the lockstep is manual review discipline.
+
+---
+
+## Executed record
+
+**Built and merged 2026-07-20 as `4fb3af9`** (fast-forward; worktree and
+temp branch cleaned up). Reviewer-verified before merge: all six gates
+re-run green independently, scope exactly the 7 in-scope files,
+`presentation.rs` untouched, the HUD 460px rule byte-identical. Built
+exactly per the locked mechanic, no visual restyle.
+
+**Status: IN PROGRESS, not DONE.** Sole remaining work is Step 5's
+operator-owed MacBook smoke-check, then the index flip and the `(done)`
+rename. Everything in Steps 1-4 is shipped; their line references are
+pre-execution and stale, kept as a record of what was built rather than
+as instructions.
+
+Note the smoke-check must run with `resting_state` at its default
+`"rail"` — at `"notch"`, `src/components/StatusRailCard.tsx:261-263`
+returns a zero-pixel render and checks (a)-(c) are unobservable.
+
+**Review-plan pass 5 (2026-07-21, at `e09725c`)**: cold read by a
+fresh-context agent plus the reviewer's own verification. Everything
+this plan claims it built, it built — clamp, eval-splice,
+`presentationFacts`, flex-wrap and the `.live-label` ellipsis were each
+checked byte-against-spec on master and hold up. What had rotted was the
+surrounding spec and bookkeeping:
+
+1. **Three citations pointed at unrelated code**, corrected inline: the
+   monitor-bounds fallback (`:590-600` → `:782-799`), `position_window`
+   (`:581-600` → `:772-806`), and the mode destructure (`lib.rs:114` →
+   `:142`). The first is the cautionary one — a previous pass explicitly
+   certified it "byte-identical" and no later pass rechecked, while
+   `lib.rs` gained +223 lines underneath it.
+2. **The drift baseline `9a954b0` had gone wholesale stale** (+535 lines
+   in `styles.css` alone), so an executor honoring this plan's own STOP
+   condition would have halted on essentially every step. The banner now
+   says plainly that the plan has shipped and the step refs are
+   historical.
+3. **The "zero outward margin" invariant is false of the shipped code**,
+   in two independent ways — the deliberate 270px floor, and the
+   unanticipated `--card-scale` multiplication. Both are now documented
+   at the bullet itself rather than left to contradict a sibling bullet
+   six lines below. The scale half is the one nobody had reasoned about:
+   `:506` fixes the operator ordering and forbids reordering, but no
+   risk, STOP, done criterion or smoke-check step anywhere mentions what
+   it costs.
+4. **Step 5 was scale-blind** — all four checks run at the default 1.0,
+   where the clamp behaves exactly as specified. It now requires a
+   repeat of check (a) at the "Large" preset, with the expected failure
+   called out so it is not mistaken for a fresh regression.
+5. Six of eight done-criteria boxes were satisfiable by inspection and
+   have been checked, leaving only the two genuinely-open items.
+
+The remediation is deliberately NOT specified here — whether
+`--card-scale` should apply to hardware-derived geometry (and what
+should happen below 1.0) is a product decision, and it is the subject of
+**plan 090**, which also covers the related expanded-card window
+overflow and the `hover.rs` mirror. Do not fix it piecemeal from this
+file.
