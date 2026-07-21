@@ -592,8 +592,9 @@ pub fn run() {
                         presentation::Mode::Hud => "hud",
                     };
                     let width_json = cutout_width_js_value(cutout);
+                    let height_json = cutout_height_js_value(inset);
                     let _ = webview.eval(format!(
-                        "window.__NOTCHTAP_MODE__ = \"{mode_str}\"; window.__NOTCHTAP_CUTOUT_WIDTH__ = {width_json};"
+                        "window.__NOTCHTAP_MODE__ = \"{mode_str}\"; window.__NOTCHTAP_CUTOUT_WIDTH__ = {width_json}; window.__NOTCHTAP_CUTOUT_HEIGHT__ = {height_json};"
                     ));
                 }
 
@@ -722,6 +723,29 @@ fn cutout_width_js_value(cutout: Option<presentation::CutoutGeometry>) -> String
     match cutout {
         Some(c) => format!("{}", c.width),
         None => "null".into(),
+    }
+}
+
+// plan 091: the notch cutout's HEIGHT, exposed through the same eval-splice
+// site as its width, one line below the width's own splice. `CutoutGeometry`
+// carries no height field (it's purely the horizontal bounds the shim
+// reports) — the height is `DetectOutput::safe_area_top_inset`
+// (presentation.rs:41), already destructured into `inset` at this
+// function's top (`detect_mode`'s second tuple field, presentation.rs:66)
+// and already in scope at the on_page_load call site below, so this needed
+// no new plumbing, only mirroring `cutout_width_js_value`'s shape.
+// `presentation_mode` (presentation.rs:14) treats `inset > 0.0` as the
+// notch/hud boundary, so gating on that here keeps this function's notion
+// of "a cutout was reported" identical to `Mode::Notch` itself — a hud-mode
+// `inset` (always `0.0`, presentation.rs:77's fallback) renders `null`,
+// exactly like `cutout_width_js_value` does for a missing cutout; App.tsx's
+// HUD synthetic-height constant fills the gap client-side, same pattern as
+// width.
+fn cutout_height_js_value(inset: f64) -> String {
+    if inset > 0.0 {
+        format!("{inset}")
+    } else {
+        "null".into()
     }
 }
 
@@ -1011,6 +1035,26 @@ mod tests {
     #[test]
     fn cutout_width_js_value_renders_null_without_a_cutout() {
         assert_eq!(cutout_width_js_value(None), "null");
+    }
+
+    #[test]
+    fn cutout_height_js_value_renders_the_inset_when_positive() {
+        assert_eq!(cutout_height_js_value(32.0), "32");
+    }
+
+    #[test]
+    fn cutout_height_js_value_renders_null_at_zero_inset() {
+        // presentation.rs's hud fallback (`detect_mode`'s Err arm) reports
+        // exactly this: `inset: 0.0`.
+        assert_eq!(cutout_height_js_value(0.0), "null");
+    }
+
+    #[test]
+    fn cutout_height_js_value_renders_null_for_a_negative_inset() {
+        // defensive: never observed from the shim, but the `> 0.0` guard
+        // (matching `presentation_mode`'s own boundary) must not render a
+        // negative number as if it were a real height.
+        assert_eq!(cutout_height_js_value(-1.0), "null");
     }
 
     fn test_engine(app: &tauri::App<tauri::test::MockRuntime>) -> Engine<tauri::test::MockRuntime> {

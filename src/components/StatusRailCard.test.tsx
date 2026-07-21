@@ -241,12 +241,12 @@ function liveSlot(overrides: Partial<Extract<SlotState, { state: "showing" }>> =
 describe("StatusRailCard", () => {
   describe("goal/red-card pulse", () => {
     // The celebration is plan 023's pure-CSS confetti burst + ring on
-    // `.rail-card.pulse-goal`'s ::after/::before PLUS plan 032's mounted
+    // `.card-assembly.pulse-goal`'s ::after/::before PLUS plan 032's mounted
     // three-ring ripple (.cele-ripple). Signal-keying coverage: the pulse
     // class lands and the ripple mounts — goal-signal only.
     it("applies pulse-goal (CSS burst + mounted three-ring ripple) on a goal signal", () => {
       const { container } = render(<StatusRailCard slot={GOAL} />);
-      expect(container.querySelector(".rail-card.pulse-goal")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.pulse-goal")).not.toBeNull();
       expect(container.querySelectorAll(".cele-ripple span")).toHaveLength(3);
     });
 
@@ -254,7 +254,7 @@ describe("StatusRailCard", () => {
     // retires the burst unmounts the rings — no separate cleanup path.
     it("unmounts the ripple when the goal pulse's animation ends", () => {
       const { container } = render(<StatusRailCard slot={GOAL} />);
-      const card = container.querySelector(".rail-card") as HTMLElement;
+      const card = container.querySelector(".card-assembly") as HTMLElement;
       expect(container.querySelector(".cele-ripple")).not.toBeNull();
       fireAnimationEnd(card, "goal-overshoot");
       expect(container.querySelector(".cele-ripple")).toBeNull();
@@ -266,35 +266,35 @@ describe("StatusRailCard", () => {
     // its natural completion.
     it("clears pulse-goal when its animation ends", () => {
       const { container } = render(<StatusRailCard slot={GOAL} />);
-      const card = container.querySelector(".rail-card") as HTMLElement;
+      const card = container.querySelector(".card-assembly") as HTMLElement;
       fireAnimationEnd(card, "goal-overshoot");
       expect(container.querySelector(".pulse-goal")).toBeNull();
     });
 
     it("applies pulse-red (and never the goal burst) on a red-card signal", () => {
       const { container } = render(<StatusRailCard slot={RED_CARD} />);
-      expect(container.querySelector(".rail-card.pulse-red")).not.toBeNull();
-      expect(container.querySelector(".rail-card.pulse-goal")).toBeNull();
+      expect(container.querySelector(".card-assembly.pulse-red")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.pulse-goal")).toBeNull();
       expect(container.querySelector(".cele-ripple")).toBeNull();
     });
 
     it("clears pulse-red when its animation ends", () => {
       const { container } = render(<StatusRailCard slot={RED_CARD} />);
-      const card = container.querySelector(".rail-card") as HTMLElement;
+      const card = container.querySelector(".card-assembly") as HTMLElement;
       fireAnimationEnd(card, "red-alert");
       expect(container.querySelector(".pulse-red")).toBeNull();
     });
 
     it("ignores an unrelated animation ending on the same element", () => {
       const { container } = render(<StatusRailCard slot={GOAL} />);
-      const card = container.querySelector(".rail-card") as HTMLElement;
+      const card = container.querySelector(".card-assembly") as HTMLElement;
       fireAnimationEnd(card, "goal-burst");
       expect(container.querySelector(".pulse-goal")).not.toBeNull();
     });
 
     it("does not replay the pulse on an unrelated re-render of the same notification", () => {
       const { container, rerender } = render(<StatusRailCard slot={GOAL} />);
-      const card = container.querySelector(".rail-card") as HTMLElement;
+      const card = container.querySelector(".card-assembly") as HTMLElement;
       fireAnimationEnd(card, "goal-overshoot");
       expect(container.querySelector(".pulse-goal")).toBeNull();
 
@@ -316,19 +316,24 @@ describe("StatusRailCard", () => {
 
   it("renders the idle clock, not a card, when the slot is empty", () => {
     const { container } = render(<StatusRailCard slot={{ state: "empty" }} />);
-    expect(container.querySelector(".rail-card.idle")).not.toBeNull();
-    expect(container.querySelector(".idle-view")).not.toBeNull();
+    expect(container.querySelector(".card-assembly.idle")).not.toBeNull();
+    expect(container.querySelector(".time-only")).not.toBeNull();
+    expect(container.querySelector(".status-dots")).not.toBeNull();
     expect(screen.queryByText("GOAL")).toBeNull();
   });
 
-  // plan 034: the widened idle card (`.rail-card.idle.status`) applies
-  // only while the status rail actually has chips — an active status with
-  // every gate off and an empty queue keeps the narrow plain-clock card.
-  it("widens the idle card only while the status rail is active", () => {
+  // plan 091: plan 034's idle/idle-status width split (`.rail-card.idle`
+  // vs `.rail-card.idle.status`) deliberately collapses — the new idle
+  // has ONE width formula regardless of status-rail activity, because the
+  // status dots replace the old chip rail entirely (no chips to widen
+  // for). This is a regression PIN for that collapse, not a rewrite of
+  // the old widening behavior: no "status" modifier class exists at all
+  // anymore, active status or not, status prop present or not.
+  it("never applies a width-modifier class for status-rail activity (plan 034's split is gone)", () => {
     const active: StatusState = {
       paused: false,
-      waiting: 0,
-      football: { enabled: false, live: null },
+      waiting: 1,
+      football: { enabled: true, live: { label: "MTL 0–0 TOR", minute: "12'" } },
       news: { enabled: true },
       weather: { enabled: false, current: null },
     };
@@ -343,27 +348,21 @@ describe("StatusRailCard", () => {
     const { container, rerender } = render(
       <StatusRailCard slot={{ state: "empty" }} status={active} />,
     );
-    expect(container.querySelector(".rail-card.idle.status")).not.toBeNull();
+    expect(container.querySelector(".card-assembly.idle")).not.toBeNull();
+    expect(container.querySelector(".card-assembly.status")).toBeNull();
 
     rerender(<StatusRailCard slot={{ state: "empty" }} status={inactive} />);
-    expect(container.querySelector(".rail-card.idle")).not.toBeNull();
-    expect(container.querySelector(".rail-card.idle.status")).toBeNull();
+    expect(container.querySelector(".card-assembly.idle")).not.toBeNull();
+    expect(container.querySelector(".card-assembly.status")).toBeNull();
 
-    // no status prop at all (settings preview, older hosts): narrow card
+    // no status prop at all (settings preview, older hosts): same, no
+    // status-modifier class either way.
     rerender(<StatusRailCard slot={{ state: "empty" }} />);
-    expect(container.querySelector(".rail-card.idle.status")).toBeNull();
-  });
+    expect(container.querySelector(".card-assembly.status")).toBeNull();
 
-  it("never carries the status width class onto a showing card", () => {
-    const active: StatusState = {
-      paused: false,
-      waiting: 1,
-      football: { enabled: true, live: { label: "MTL 0–0 TOR", minute: "12'" } },
-      news: { enabled: true },
-      weather: { enabled: false, current: null },
-    };
-    const { container } = render(<StatusRailCard slot={GOAL} status={active} />);
-    expect(container.querySelector(".rail-card.status")).toBeNull();
+    // and a showing card never carried it either, before or after.
+    rerender(<StatusRailCard slot={GOAL} status={active} />);
+    expect(container.querySelector(".card-assembly.status")).toBeNull();
   });
 
   // The idle clock re-renders every 30s (useClock) — a live region there
@@ -371,7 +370,7 @@ describe("StatusRailCard", () => {
   // isn't what an arrival-alert live region is for.
   it("is not a live region while idle, and becomes one while showing", () => {
     const { container, rerender } = render(<StatusRailCard slot={{ state: "empty" }} />);
-    const card = container.querySelector(".rail-card") as HTMLElement;
+    const card = container.querySelector(".card-assembly") as HTMLElement;
     expect(card.getAttribute("role")).toBeNull();
     expect(card.getAttribute("aria-live")).toBeNull();
 
@@ -382,7 +381,7 @@ describe("StatusRailCard", () => {
 
   it("renders the priority class and expanded class when showing", () => {
     const { container } = render(<StatusRailCard slot={GOAL} />);
-    expect(container.querySelector(".rail-card.high.expanded")).not.toBeNull();
+    expect(container.querySelector(".card-assembly.high.expanded")).not.toBeNull();
     expect(screen.getByText("GOAL")).toBeTruthy();
     // "Arsenal 2-0" legitimately appears twice while expanded — once in
     // the compact preview, once in the manifest's "Message" detail.
@@ -421,7 +420,15 @@ describe("StatusRailCard", () => {
     expect(screen.getAllByText("Politics").length).toBeGreaterThan(0);
     expect(screen.getByText("5m ago").classList.contains("pill")).toBe(true);
     expect(screen.getByText("5m ago").classList.contains("age")).toBe(true);
-    expect(container.querySelector(".rail-card.low.news-shade.cat-politics")).not.toBeNull();
+    // plan 091: priority accent (`low`) stays on the outer shell;
+    // news-shade/category mood classes moved to `.below-block` — required
+    // for the mood gradient to paint at all (a `.card-assembly::before`
+    // pseudo-element there would paint BEHIND below-block's own opaque
+    // fill in stacking order, making the gradient invisible), and matches
+    // the locked prototype's own placement (`wx-block`/mood classes sit
+    // on `.below-block`, never on `.card-wrap`).
+    expect(container.querySelector(".card-assembly.low")).not.toBeNull();
+    expect(container.querySelector(".below-block.news-shade.cat-politics")).not.toBeNull();
     // plan 032 deleted the tier chip — priority reads from the CSS-only
     // .compact::before accent edge (a pseudo-element, not assertable in
     // jsdom), so the coverage here is absence: no chip markup, no code text.
@@ -467,7 +474,9 @@ describe("StatusRailCard", () => {
     expect(container.querySelector(".pill.category")).toBeNull();
     expect(container.querySelector(".pill.age")).toBeNull();
     expect(container.querySelector(".pub-meta")).toBeNull();
-    expect(container.querySelector(".rail-card.news-shade.cat-generic")).not.toBeNull();
+    // plan 091: news-shade/category classes moved to `.below-block` (see
+    // the comment on the same assertion above for why).
+    expect(container.querySelector(".below-block.news-shade.cat-generic")).not.toBeNull();
   });
 
   it("renders the published-time meta in the compact news card when publishedAtMs is set", () => {
@@ -624,36 +633,36 @@ describe("StatusRailCard", () => {
 
   // plan 085: resting_state "notch" — the cheap half of plan 079 item 17.
   // Idle must render zero app-drawn pixels: no idle content, and no
-  // `.rail-card` shell at all (not even an empty one), since the shell
+  // `.card-assembly` shell at all (not even an empty one), since the shell
   // itself carries background/shadow/priority-accent styling.
   describe("resting_state: notch (plan 085)", () => {
     it("renders nothing while idle", () => {
       const { container } = render(
         <StatusRailCard slot={{ state: "empty" }} restingState="notch" />,
       );
-      expect(container.querySelector(".rail-card")).toBeNull();
-      expect(container.querySelector(".rail-card.idle")).toBeNull();
-      expect(container.querySelector(".idle-view")).toBeNull();
+      expect(container.querySelector(".card-assembly")).toBeNull();
+      expect(container.querySelector(".card-assembly.idle")).toBeNull();
+      expect(container.querySelector(".status-dots")).toBeNull();
       expect(container.innerHTML).toBe("");
     });
 
     it("renders the card normally while showing (promotions unaffected)", () => {
       const { container } = render(<StatusRailCard slot={GOAL} restingState="notch" />);
-      expect(container.querySelector(".rail-card.high")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.high")).not.toBeNull();
       expect(screen.getByText("GOAL")).toBeTruthy();
     });
 
     it("hides the card once a showing item finishes rotating out to idle", async () => {
       const { container, rerender } = render(<StatusRailCard slot={GOAL} restingState="notch" />);
-      expect(container.querySelector(".rail-card")).not.toBeNull();
+      expect(container.querySelector(".card-assembly")).not.toBeNull();
 
       rerender(<StatusRailCard slot={{ state: "empty" }} restingState="notch" />);
       // the outgoing card keeps playing its normal exit animation for the
       // same 220ms window as "rail" mode — it must not vanish abruptly.
-      expect(container.querySelector(".rail-card")).not.toBeNull();
+      expect(container.querySelector(".card-assembly")).not.toBeNull();
 
       await vi.waitFor(() => {
-        expect(container.querySelector(".rail-card")).toBeNull();
+        expect(container.querySelector(".card-assembly")).toBeNull();
       });
     });
   });
@@ -665,14 +674,16 @@ describe("StatusRailCard", () => {
       const { container } = render(
         <StatusRailCard slot={{ state: "empty" }} restingState="rail" />,
       );
-      expect(container.querySelector(".rail-card.idle")).not.toBeNull();
-      expect(container.querySelector(".idle-view")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.idle")).not.toBeNull();
+      expect(container.querySelector(".time-only")).not.toBeNull();
+      expect(container.querySelector(".status-dots")).not.toBeNull();
     });
 
     it("renders today's idle clock/status rail when restingState is omitted", () => {
       const { container } = render(<StatusRailCard slot={{ state: "empty" }} />);
-      expect(container.querySelector(".rail-card.idle")).not.toBeNull();
-      expect(container.querySelector(".idle-view")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.idle")).not.toBeNull();
+      expect(container.querySelector(".time-only")).not.toBeNull();
+      expect(container.querySelector(".status-dots")).not.toBeNull();
     });
   });
 
@@ -681,8 +692,14 @@ describe("StatusRailCard", () => {
   // leak into the visible detail cells (collapsed or expanded) — the
   // marker-leak guard.
   describe("weather ALERT card art (plan 082)", () => {
+    // plan 091: wx-card/mood/texture classes moved from the outer shell
+    // to `.below-block` — required for the mood gradient to actually
+    // paint (see the comment on the news-shade assertions above for the
+    // stacking-order reason) and matching the locked prototype's own
+    // placement. `classesOf` now reads `.below-block`'s className, not
+    // the outer `.card-assembly`'s.
     function classesOf(container: HTMLElement): string[] {
-      return (container.querySelector(".rail-card")?.className ?? "").split(" ").filter(Boolean);
+      return (container.querySelector(".below-block")?.className ?? "").split(" ").filter(Boolean);
     }
 
     it("applies the mood class and renders the condition glyph for a weather alert", () => {
@@ -750,8 +767,9 @@ describe("StatusRailCard", () => {
           }}
         />,
       );
-      const card = container.querySelector(".rail-card");
-      expect(card?.className).toContain("wx-overcast");
+      // plan 091: mood classes live on `.below-block` now.
+      const block = container.querySelector(".below-block");
+      expect(block?.className).toContain("wx-overcast");
     });
 
     // Regression pin: a generic card WITHOUT wx markers (the existing
@@ -760,8 +778,8 @@ describe("StatusRailCard", () => {
     // still render normally.
     it("renders a non-weather generic card byte-identically (no wx classes, no glyph, own details intact)", () => {
       const { container } = render(<StatusRailCard slot={CMUX_RICH} />);
-      const card = container.querySelector(".rail-card");
-      expect(card?.className).not.toContain("wx-card");
+      const block = container.querySelector(".below-block");
+      expect(block?.className).not.toContain("wx-card");
       expect(container.querySelector("img.wx-icon")).toBeNull();
       const manifest = container.querySelector(".manifest") as HTMLElement;
       expect(within(manifest).getByText("Tool")).toBeTruthy();
@@ -820,8 +838,8 @@ describe("StatusRailCard", () => {
       expect(eventLine?.classList.contains("tint-goal")).toBe(true);
       expect(eventLine?.querySelector(".ev-ico.goal")).not.toBeNull();
       expect(eventLine?.textContent).toContain("Goal — K. Havertz 78'");
-      expect(container.querySelector(".rail-card.cele-goal")).not.toBeNull();
-      expect(container.querySelector(".rail-card.pulse-goal")).toBeNull();
+      expect(container.querySelector(".card-assembly.cele-goal")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.pulse-goal")).toBeNull();
       expect(container.querySelector(".cele-ripple")).toBeNull();
     });
 
@@ -834,7 +852,7 @@ describe("StatusRailCard", () => {
       const eventLine = container.querySelector(".event-line");
       expect(eventLine?.classList.contains("tint-goal")).toBe(true);
       expect(eventLine?.querySelector(".ev-ico.pen")).not.toBeNull();
-      expect(container.querySelector(".rail-card.cele-goal")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.cele-goal")).not.toBeNull();
     });
 
     it("own goal: score updates, hollow icon, NO tint and NO celebration", () => {
@@ -851,9 +869,9 @@ describe("StatusRailCard", () => {
       const eventLine = container.querySelector(".event-line");
       expect(eventLine?.className).toBe("event-line");
       expect(eventLine?.querySelector(".ev-ico.og")).not.toBeNull();
-      expect(container.querySelector(".rail-card.cele-goal")).toBeNull();
-      expect(container.querySelector(".rail-card.cele-yc")).toBeNull();
-      expect(container.querySelector(".rail-card.cele-rc")).toBeNull();
+      expect(container.querySelector(".card-assembly.cele-goal")).toBeNull();
+      expect(container.querySelector(".card-assembly.cele-yc")).toBeNull();
+      expect(container.querySelector(".card-assembly.cele-rc")).toBeNull();
     });
 
     it("yellow card: amber tint, cele-yc, and the per-side cards line ticks up", () => {
@@ -869,7 +887,7 @@ describe("StatusRailCard", () => {
       const eventLine = container.querySelector(".event-line");
       expect(eventLine?.classList.contains("tint-yc")).toBe(true);
       expect(eventLine?.querySelector(".ev-ico.yc")).not.toBeNull();
-      expect(container.querySelector(".rail-card.cele-yc")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.cele-yc")).not.toBeNull();
       expect(container.querySelector(".cards-line")?.textContent).toBe("ARS 1Y0R · PSG 2Y0R");
     });
 
@@ -886,8 +904,8 @@ describe("StatusRailCard", () => {
       const eventLine = container.querySelector(".event-line");
       expect(eventLine?.classList.contains("tint-rc")).toBe(true);
       expect(eventLine?.querySelector(".ev-ico.rc")).not.toBeNull();
-      expect(container.querySelector(".rail-card.cele-rc")).not.toBeNull();
-      expect(container.querySelector(".rail-card.pulse-red")).toBeNull();
+      expect(container.querySelector(".card-assembly.cele-rc")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.pulse-red")).toBeNull();
     });
 
     it.each([
@@ -903,15 +921,15 @@ describe("StatusRailCard", () => {
         expect(eventLine?.className).toBe("event-line");
         expect(eventLine?.querySelector(`.ev-ico.${iconSuffix}`)).not.toBeNull();
         expect(eventLine?.textContent).toContain(body);
-        expect(container.querySelector(".rail-card.cele-goal")).toBeNull();
-        expect(container.querySelector(".rail-card.cele-yc")).toBeNull();
-        expect(container.querySelector(".rail-card.cele-rc")).toBeNull();
+        expect(container.querySelector(".card-assembly.cele-goal")).toBeNull();
+        expect(container.querySelector(".card-assembly.cele-yc")).toBeNull();
+        expect(container.querySelector(".card-assembly.cele-rc")).toBeNull();
       },
     );
 
     it("clears cele-goal on its ring animation ending, and never both pulse and cele stack", () => {
       const { container } = render(<StatusRailCard slot={liveSlot({ signal: "goal" })} />);
-      const card = container.querySelector(".rail-card") as HTMLElement;
+      const card = container.querySelector(".card-assembly") as HTMLElement;
       expect(container.querySelector(".cele-goal")).not.toBeNull();
       fireAnimationEnd(card, "cele-ring");
       expect(container.querySelector(".cele-goal")).toBeNull();
@@ -919,7 +937,7 @@ describe("StatusRailCard", () => {
 
     it("clears cele-rc on the red-strobe animation ending", () => {
       const { container } = render(<StatusRailCard slot={liveSlot({ signal: "red_card" })} />);
-      const card = container.querySelector(".rail-card") as HTMLElement;
+      const card = container.querySelector(".card-assembly") as HTMLElement;
       expect(container.querySelector(".cele-rc")).not.toBeNull();
       fireAnimationEnd(card, "red-strobe");
       expect(container.querySelector(".cele-rc")).toBeNull();
@@ -1048,14 +1066,14 @@ describe("StatusRailCard", () => {
   describe("hovered prop (plan 087)", () => {
     it("toggles the .hovered class when hovered is true", () => {
       const { container } = render(<StatusRailCard slot={GOAL} hovered={true} />);
-      expect(container.querySelector(".rail-card.hovered")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.hovered")).not.toBeNull();
     });
 
     it("renders byte-identically to today when hovered is omitted (regression pin)", () => {
       const withHovered = render(<StatusRailCard slot={GOAL} hovered={false} />);
       const withoutHovered = render(<StatusRailCard slot={GOAL} />);
       expect(withoutHovered.container.innerHTML).toBe(withHovered.container.innerHTML);
-      expect(withoutHovered.container.querySelector(".rail-card.hovered")).toBeNull();
+      expect(withoutHovered.container.querySelector(".card-assembly.hovered")).toBeNull();
     });
   });
 });

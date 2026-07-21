@@ -4,12 +4,16 @@ import { useEffect, useState } from "react";
 // webview — never touches SingleSlotQueue/Event/Priority. computes "now"
 // directly rather than being pushed data, so no backend plumbing exists
 // for it at all.
+// plan 091: `display` is now the flank clock's HH:MM text — the prototype's
+// locked idle rail (`prototype/notch-states.html:220`, `<span
+// class="time-only">14:32</span>`) is 24h, no date. `hourCycle: "h23"`
+// forces 0-23 regardless of the user's locale (some locales' default
+// 24h cycle uses "24" for midnight instead of "00", which `time-only`'s
+// reference never shows).
 const formatter = new Intl.DateTimeFormat(undefined, {
-  weekday: "short",
-  month: "short",
-  day: "numeric",
   hour: "2-digit",
   minute: "2-digit",
+  hourCycle: "h23",
 });
 
 export type ClockReading = {
