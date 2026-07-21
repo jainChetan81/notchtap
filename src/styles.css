@@ -1264,6 +1264,153 @@ body {
   color: rgba(255, 255, 255, 0.38);
 }
 
+/* ==== plan 093 (079 items 9/17/18): the idle hover-expanded state —
+   weather peek / scorecard reveal / day-progress timeline, all sharing
+   ONE below-block (`IdleHoverPeek.tsx`). Mounted ONLY while
+   `IdleHoverPeek` reports itself open/closing (never continuously
+   whenever ambient data merely exists) — see that component's own doc
+   comment for why: `.card-assembly`'s existing, UNTOUCHED
+   `:not(:has(.below-block))` rounding law (above) is what makes "flanks
+   un-round while the peek is open" true, and that only works if this
+   block's mere DOM presence tracks "open," not "data available."
+
+   height, not max-height (mirrors `prototype/notch-states.html:112-124`'s
+   own `.wx-peek` exactly, including its reasoning: the weather scene's
+   own min-height, below, would fight a max-height:0 collapse). Driven by
+   `@keyframes`, not a `transition` — this app's REAL constraint the
+   prototype's static `:hover`-driven demo never had: `hovered` mounts and
+   unmounts this block (App.tsx's `hover-changed`-sourced prop, never CSS
+   `:hover` — the overlay window is click-through), and a CSS `transition`
+   cannot play across a browser's very first paint of a newly-mounted
+   element, only a subsequent property change — the exact problem
+   `@keyframes` (which DOES autoplay on mount) doesn't have. Same idiom
+   this file already uses for every other mount/unmount animation
+   (`.card-content`'s enter/exit keyframes above); IdleHoverPeek.tsx's own
+   comment has the full comparison against `useDelayedSwap`. Timing/easing
+   still matches the locked reference exactly: 260ms height,
+   cubic-bezier(0.22,1,0.36,1); 200ms opacity, ease-out. */
+.below-block.idle-peek {
+  padding: 12px 16px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+.below-block.idle-peek.open {
+  animation:
+    idle-peek-open 260ms cubic-bezier(0.22, 1, 0.36, 1) forwards,
+    idle-peek-fade-in 200ms ease-out forwards;
+}
+.below-block.idle-peek.closing {
+  animation:
+    idle-peek-close 260ms cubic-bezier(0.22, 1, 0.36, 1) forwards,
+    idle-peek-fade-out 200ms ease-out forwards;
+}
+/* plan 093: mirrors `hover.rs`'s `IDLE_PEEK_BELOW_BLOCK_H` constant
+   exactly — a real duplicated-constants pair (see that constant's own
+   doc comment). Any change to this height MUST change that constant in
+   the same commit. */
+@keyframes idle-peek-open {
+  from { height: 0; }
+  to { height: 100px; }
+}
+@keyframes idle-peek-close {
+  from { height: 100px; }
+  to { height: 0; }
+}
+@keyframes idle-peek-fade-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+@keyframes idle-peek-fade-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .below-block.idle-peek.open,
+  .below-block.idle-peek.closing {
+    animation: none;
+  }
+}
+
+/* the weather mood scene half — reuses `.wx-card`'s mood-gradient
+   `::before`/texture `::after` (weather ALERT card block, above) and
+   `.wx-icon`'s glyph placement verbatim; `.wx-peek-scene` is the
+   structural anchor those rules need (`position: relative` so the
+   absolutely-positioned glyph/gradient layers have a containing block,
+   same role `.notif-block`'s parent already plays for that card type). */
+.wx-peek-scene {
+  position: relative;
+  min-height: 78px;
+  border-radius: 10px;
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+}
+.wx-peek-readout {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+}
+.wx-peek-temp {
+  font: 800 18px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color: #f5f7fa;
+}
+/* plan 092 (item 10): the condition label is `.chip` — 092 retired the
+   old pill vocabulary entirely; a bespoke pill here would silently undo
+   that. Neutral tint, matching `.chip-league`'s treatment above (this
+   isn't a priority/category signal, just a plain label). */
+.wx-peek-condition {
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+/* the football scorecard-reveal half — a lighter render than the
+   recurring live card above (`.notif-block`/`.sc-head`/`.score-row`):
+   `status.football.live` (the ambient `LiveMatchSummary`) carries only
+   `label`/`minute`, not the full structured espn meta, so there are no
+   crests/per-side scores to lay out. Reuses `.sc-head`/`.chip-live`/
+   `.clock-pill` verbatim for the header row. */
+.idle-reveal-scorecard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.idle-reveal-label {
+  text-align: center;
+  font: 700 13px/1.3 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  color: #f5f7fa;
+}
+
+/* item 18: the day-progress timeline, relocated from the deleted
+   `.idle-view .timeline` (091 removed the old always-on idle view along
+   with this rule) into its new, sole home — same thin-line-plus-dot
+   shape, rebuilt fresh since the original selector no longer exists
+   anywhere to reuse. */
+.idle-peek-timeline {
+  position: relative;
+  display: block;
+  height: 1px;
+  margin-top: 2px;
+  background: rgba(255, 255, 255, 0.14);
+}
+.idle-peek-timeline::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: var(--day-progress, 50%);
+  width: 5px;
+  height: 5px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: #b6f5e5;
+  box-shadow: 0 0 10px rgba(182, 245, 229, 0.75);
+}
+
 /* event icon set (item 6 + plan 043's richer events): CSS shapes, no
    emoji — goal = filled green ball, penalty = green ring, own goal =
    hollow grey ball, yellow/red = slips, foul = whistle triangle, offside

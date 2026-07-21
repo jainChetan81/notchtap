@@ -78,6 +78,37 @@ pub struct SingleSlotQueue {
     /// so promotion degenerates to plain arrival-order FIFO (today's
     /// behavior). Set via `with_rotation_order`.
     rotation_order: Vec<SourceKind>,
+    /// plan 093: TTL hover-pause. `Some(t)` while the visible item is
+    /// currently under the cursor (`t` is when the CURRENT hover session
+    /// started); `hover_paused_total` is the cumulative real wall-clock
+    /// duration banked from every PAST hover session on this same visible
+    /// item. Both reset to their empty state at every promotion
+    /// (`set_expanded_for_promotion`), same as `expanded`/
+    /// `window_expanded`/`auto_retract_armed` — a hover session can never
+    /// leak from one visible item onto the next.
+    ///
+    /// The mechanism (see `hover_frozen_rotation_elapsed`): rather than
+    /// mutating `promoted_at` directly on every hover-enter (which would
+    /// need to know the FUTURE exit time up front), elapsed time for
+    /// ROTATION purposes only is computed as `real_elapsed -
+    /// hover_paused_total - (currently hovering ? real_elapsed_since_
+    /// hover_started_at : 0)` — the in-flight subtraction exactly cancels
+    /// the passage of time while a hover session is open (frozen), and
+    /// gets permanently banked into `hover_paused_total` the moment the
+    /// session ends (`hover_exit`). This guarantees the two design
+    /// invariants pinned by this plan's property tests: (1) a card can
+    /// never rotate out while `hover_started_at` is `Some` (rotation
+    /// elapsed time cannot advance while frozen), and (2) no number of
+    /// hover cycles can ever grant MORE total active (non-paused) time
+    /// than `rotation_window(...) + extension_secs` already allowed — each
+    /// cycle only pauses, it never adds.
+    ///
+    /// Deliberately scoped to the ROTATION deadline only — the auto-
+    /// retract (expand→collapse) deadline is intentionally NOT frozen by
+    /// this mechanism (`retract_if_elapsed` is untouched); the plan's own
+    /// design constraint names only "the rotation deadline holds."
+    hover_started_at: Option<Instant>,
+    hover_paused_total: Duration,
 }
 
 impl SingleSlotQueue {
@@ -94,6 +125,8 @@ impl SingleSlotQueue {
             batch_done: 0,
             last_emitted: None,
             rotation_order: Vec::new(),
+            hover_started_at: None,
+            hover_paused_total: Duration::ZERO,
         }
     }
 
@@ -258,10 +291,18 @@ impl SingleSlotQueue {
     }
 
     fn rotate_out_if_elapsed(&mut self, now: Instant) {
+        // plan 093 design constraint: a card must NEVER rotate out while
+        // under the cursor. `hover_started_at.is_some()` means a hover
+        // session is currently open on the visible item — elapsed time is
+        // frozen for the whole tick, so there is nothing to check.
+        if self.hover_started_at.is_some() {
+            return;
+        }
         let Some(item) = &self.visible else { return };
         let promoted_at = item.promoted_at.expect("visible items have promoted_at");
         let window = item.event.rotation_window(self.window_expanded) + item.extension_secs;
-        if now.duration_since(promoted_at).as_secs() < window {
+        let elapsed = self.hover_frozen_rotation_elapsed(promoted_at, now);
+        if elapsed.as_secs() < window {
             return;
         }
         let item = self.visible.take().expect("checked Some above");
@@ -270,6 +311,65 @@ impl SingleSlotQueue {
             self.waiting[tier].push_back(item);
         } else {
             self.batch_done += 1;
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // hover hold (plan 093) — see the `hover_started_at`/
+    // `hover_paused_total` field doc comments for the full mechanism.
+    // ------------------------------------------------------------------
+
+    /// Rotation-purposes-only elapsed time since `promoted_at`, with every
+    /// past AND (if currently open) in-flight hover session subtracted
+    /// out. `saturating_sub` because a session that hasn't banked yet can
+    /// make the subtrahend momentarily exceed the raw elapsed time by a
+    /// few nanoseconds' rounding at the instant hover starts — never
+    /// meaningfully, but `Duration` cannot go negative, so this is the
+    /// honest guard rather than a `debug_assert` that could panic on a
+    /// clock artifact.
+    fn hover_frozen_rotation_elapsed(&self, promoted_at: Instant, now: Instant) -> Duration {
+        let raw_elapsed = now.saturating_duration_since(promoted_at);
+        let in_flight = match self.hover_started_at {
+            Some(started) => now.saturating_duration_since(started),
+            None => Duration::ZERO,
+        };
+        raw_elapsed.saturating_sub(self.hover_paused_total + in_flight)
+    }
+
+    /// Rotation deadline anchor with every banked (already-ended) hover
+    /// session's duration added back — the "re-anchors with the remaining
+    /// time it had at entry" half of the design constraint. Deliberately
+    /// does NOT account for an in-flight session (unlike
+    /// `hover_frozen_rotation_elapsed`) — callers that care about "is a
+    /// session open right now" (`next_deadline`) check
+    /// `hover_started_at` separately.
+    fn hover_adjusted_promoted_at(&self, promoted_at: Instant) -> Instant {
+        promoted_at + self.hover_paused_total
+    }
+
+    /// Called from every tracking-area transition into "hovering the
+    /// visible card" (`lib.rs`'s `emit_hover_changed_if_transitioned`,
+    /// gated there to fire only on the boolean's actual flip). A no-op if
+    /// nothing is visible (nothing to hold) or a session is already open
+    /// (idempotent — the transitions-only gate at the call site should
+    /// already prevent a double-enter, but this stays defensive rather
+    /// than trusting that from a distance).
+    pub fn hover_enter(&mut self, now: Instant) {
+        if self.visible.is_none() {
+            return;
+        }
+        if self.hover_started_at.is_none() {
+            self.hover_started_at = Some(now);
+        }
+    }
+
+    /// The mirror-image transition. Banks the just-ended session's real
+    /// duration into `hover_paused_total` — permanently, so it keeps
+    /// shifting the rotation deadline forward even after this call
+    /// returns, without needing to remember individual past sessions.
+    pub fn hover_exit(&mut self, now: Instant) {
+        if let Some(started) = self.hover_started_at.take() {
+            self.hover_paused_total += now.saturating_duration_since(started);
         }
     }
 
@@ -292,10 +392,16 @@ impl SingleSlotQueue {
     // leak onto the next item. Called from both promotion sites
     // (promote_next and enqueue_new's immediate-promote fast path) so
     // neither can drift from the other.
+    //
+    // plan 093: the hover-hold fields reset here too, for the same
+    // reason — a hover session (or banked pause total) from the PREVIOUS
+    // visible item must never leak onto the new one's rotation deadline.
     fn set_expanded_for_promotion(&mut self) {
         self.expanded = true;
         self.window_expanded = false;
         self.auto_retract_armed = true;
+        self.hover_started_at = None;
+        self.hover_paused_total = Duration::ZERO;
     }
 
     fn pop_highest_priority_waiting(&mut self) -> Option<QueueItem> {
@@ -462,17 +568,36 @@ impl SingleSlotQueue {
     /// method could return. The deadline is returned regardless of
     /// `paused`: paused items still age out (`rotate_out_if_elapsed`
     /// doesn't check `paused`), Paused only disables `promote_next`.
+    ///
+    /// plan 093: the ROTATION half is also `None` while a hover session is
+    /// open (`hover_started_at.is_some()`) — nothing about rotation
+    /// elapsed time changes purely from time passing while frozen, so
+    /// there is genuinely nothing to schedule a wake for; the eventual
+    /// un-freeze is `hover_exit`'s own `apply_blocking` call waking the
+    /// loop directly (the existing mutate→wake→emit protocol), not a
+    /// timer this method could predict in advance. The auto-retract half
+    /// is untouched by hovering (see the `hover_started_at` field doc for
+    /// why only rotation freezes), so it can still be the earlier/only
+    /// deadline even while a hover session holds rotation open.
     pub fn next_deadline(&self) -> Option<Instant> {
         let item = self.visible.as_ref()?;
         let promoted_at = item.promoted_at?;
-        let window = item.event.rotation_window(self.window_expanded) + item.extension_secs;
-        let rotation_deadline = promoted_at + Duration::from_secs(window);
-        if self.auto_retract_armed && self.expanded {
-            let retract_deadline =
-                promoted_at + Duration::from_secs(item.event.rotation_window(false)) / 2;
-            Some(retract_deadline.min(rotation_deadline))
+        let retract_deadline = if self.auto_retract_armed && self.expanded {
+            Some(promoted_at + Duration::from_secs(item.event.rotation_window(false)) / 2)
         } else {
-            Some(rotation_deadline)
+            None
+        };
+        let rotation_deadline = if self.hover_started_at.is_some() {
+            None
+        } else {
+            let window = item.event.rotation_window(self.window_expanded) + item.extension_secs;
+            let anchor = self.hover_adjusted_promoted_at(promoted_at);
+            Some(anchor + Duration::from_secs(window))
+        };
+        match (retract_deadline, rotation_deadline) {
+            (Some(r), Some(t)) => Some(r.min(t)),
+            (Some(d), None) | (None, Some(d)) => Some(d),
+            (None, None) => None,
         }
     }
 
@@ -524,13 +649,28 @@ impl SingleSlotQueue {
                 // is a pure function of `Instant::now()` taken right here at
                 // emission time — the frontend anchors its own countdown
                 // from it on receipt.
+                //
+                // plan 093: `remaining_ms` freezes while a hover session is
+                // open — `reference_now` pins to `hover_started_at` instead
+                // of the real `Instant::now()`, so this reads the same
+                // value on every call for the whole session's duration
+                // (note: `SlotState::dedup_eq` already excludes
+                // `remaining_ms` from change detection, so freezing this
+                // value causes no new emission either way — this is purely
+                // what a webview reload / settings-preview snapshot would
+                // see, not a wire push). Once hovering ends,
+                // `hover_adjusted_promoted_at` folds the now-banked session
+                // into the deadline permanently, matching `next_deadline`'s
+                // own adjustment exactly.
                 let window_secs =
                     item.event.rotation_window(self.window_expanded) + item.extension_secs;
                 let ttl_ms = window_secs.saturating_mul(1000);
                 let remaining_ms = match item.promoted_at {
                     Some(promoted_at) => {
-                        let deadline = promoted_at + Duration::from_secs(window_secs);
-                        let remaining = deadline.saturating_duration_since(Instant::now());
+                        let anchor = self.hover_adjusted_promoted_at(promoted_at);
+                        let deadline = anchor + Duration::from_secs(window_secs);
+                        let reference_now = self.hover_started_at.unwrap_or_else(Instant::now);
+                        let remaining = deadline.saturating_duration_since(reference_now);
                         u64::try_from(remaining.as_millis()).unwrap_or(u64::MAX)
                     }
                     // Defensive: every real promotion path sets
@@ -2056,6 +2196,257 @@ mod tests {
                 assert_eq!(ttl_ms, (1 + extension_secs) * 1000);
             }
             SlotState::Empty => panic!("expected Showing"),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // plan 093: TTL hover-pause — the two design constraints named in the
+    // plan (never rotates while held; repeated hover cycles never grant
+    // more total time than ttl+extension already allows), plus focused
+    // mechanics tests for hover_enter/hover_exit themselves.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn hover_enter_is_a_noop_when_nothing_visible() {
+        let mut q = SingleSlotQueue::new(50);
+        let now = Instant::now();
+        q.hover_enter(now);
+        assert!(q.hover_started_at.is_none());
+    }
+
+    #[test]
+    fn hover_enter_is_idempotent_double_enter_keeps_the_first_start_time() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue(event("a", Priority::Medium, 8), t0).unwrap();
+        q.hover_enter(t0);
+        let first_start = q.hover_started_at;
+        q.hover_enter(t0 + Duration::from_secs(1));
+        assert_eq!(
+            q.hover_started_at, first_start,
+            "a second hover_enter before an exit must not reset the session start"
+        );
+    }
+
+    #[test]
+    fn hover_exit_without_a_prior_enter_is_a_noop() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue(event("a", Priority::Medium, 8), t0).unwrap();
+        q.hover_exit(t0 + Duration::from_secs(1));
+        assert_eq!(q.hover_paused_total, Duration::ZERO);
+    }
+
+    #[test]
+    fn hover_exit_banks_the_session_duration() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue(event("a", Priority::Medium, 8), t0).unwrap();
+        q.hover_enter(t0);
+        q.hover_exit(t0 + Duration::from_secs(3));
+        assert_eq!(q.hover_paused_total, Duration::from_secs(3));
+        assert!(q.hover_started_at.is_none());
+    }
+
+    // plan 093 design constraint 1, deterministic case: a card whose
+    // rotation window has already fully elapsed in wall-clock time must
+    // still be visible if a hover session opened before the deadline and
+    // is still open.
+    #[test]
+    fn visible_item_does_not_rotate_out_while_hover_held_past_its_window() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        let ev = event("held", Priority::Medium, 2);
+        let id = ev.id;
+        q.enqueue(ev, t0).unwrap();
+        q.hover_enter(t0 + Duration::from_secs(1));
+        // well past the 2s window, but still hover-held throughout.
+        q.tick(t0 + Duration::from_secs(50));
+        match q.current_slot_state() {
+            SlotState::Showing { id: cur, .. } => assert_eq!(cur, id),
+            SlotState::Empty => panic!("must never rotate out while hover-held"),
+        }
+    }
+
+    // plan 093 design constraint 1: re-anchors with the remaining time it
+    // had at entry — after hover exits, the item rotates out only once
+    // its full (unpaused) window has actually elapsed, not immediately.
+    #[test]
+    fn visible_item_rotates_out_the_correct_amount_of_active_time_after_hover_exit() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        let ev = event("held", Priority::Medium, 2);
+        let id = ev.id;
+        q.enqueue(ev, t0).unwrap();
+        // 1s active, then a 10s hover pause.
+        q.hover_enter(t0 + Duration::from_secs(1));
+        q.tick(t0 + Duration::from_secs(11));
+        q.hover_exit(t0 + Duration::from_secs(11));
+        // only 1s of the 2s window has actually elapsed (active time) —
+        // ticking 1 more active second must not yet rotate it out.
+        q.tick(t0 + Duration::from_secs(11) + Duration::from_millis(900));
+        match q.current_slot_state() {
+            SlotState::Showing { id: cur, .. } => assert_eq!(cur, id),
+            SlotState::Empty => panic!("only 1.9s of active time has elapsed against a 2s window"),
+        }
+        // the remaining 0.2s of active time passes — now it rotates out.
+        q.tick(t0 + Duration::from_secs(12) + Duration::from_millis(200));
+        assert_eq!(q.current_slot_state(), SlotState::Empty);
+    }
+
+    // plan 093: `remaining_ms` freezes for the whole hover session — the
+    // TTL bar's rust-side data source must never appear to keep
+    // decrementing while the cursor holds it.
+    //
+    // `current_slot_state`'s non-hovering branch reads REAL
+    // `Instant::now()` internally (it's the emission-time snapshot every
+    // other `current_slot_state_*` test already relies on) — so, same
+    // technique as `current_slot_state_emits_ttl_and_remaining_from_real_
+    // promoted_at`, this backdates `promoted_at` directly off a real
+    // `Instant::now()` anchor rather than driving an independent
+    // simulated clock, and drives `hover_enter`/`hover_exit` with real
+    // `Instant::now()` calls too — mixing a simulated clock with the one
+    // internal call site that always reads the real one would desync the
+    // two and produce a nonsensical reading (this test's first draft
+    // caught exactly that mistake).
+    #[test]
+    fn remaining_ms_freezes_during_a_hover_session_and_resumes_after() {
+        let mut q = SingleSlotQueue::new(50);
+        q.enqueue(event("a", Priority::Medium, 10), Instant::now())
+            .unwrap();
+
+        fn remaining_ms(q: &SingleSlotQueue) -> u64 {
+            match q.current_slot_state() {
+                SlotState::Showing { remaining_ms, .. } => remaining_ms,
+                SlotState::Empty => panic!("expected Showing"),
+            }
+        }
+
+        // 2s of the 10s window has already "elapsed" by the time hover
+        // starts.
+        let promoted_at = Instant::now() - Duration::from_secs(2);
+        q.visible.as_mut().unwrap().promoted_at = Some(promoted_at);
+
+        q.hover_enter(Instant::now());
+        let frozen_at_entry = remaining_ms(&q);
+        assert!(
+            (7800..=8000).contains(&frozen_at_entry),
+            "expected ~8000ms remaining at hover-enter (2s of a 10s window elapsed), got {frozen_at_entry}"
+        );
+
+        // real time passes while still hovering — remaining_ms must not
+        // move (`reference_now` pins to `hover_started_at`, not the real
+        // `Instant::now()` this sleep advances, while a session is open).
+        std::thread::sleep(Duration::from_millis(20));
+        let still_frozen = remaining_ms(&q);
+        assert_eq!(
+            still_frozen, frozen_at_entry,
+            "remaining_ms must not move while a hover session is open"
+        );
+
+        q.hover_exit(Instant::now());
+        // the ~20ms just spent hovering is banked (paused, not counted) —
+        // remaining_ms picks back up from essentially the same ~8000ms it
+        // was frozen at, not from wherever a non-paused countdown would
+        // have reached by now.
+        let at_exit = remaining_ms(&q);
+        assert!(
+            (7800..=8000).contains(&at_exit),
+            "expected remaining_ms to pick back up from ~8000ms right at hover-exit, got {at_exit}"
+        );
+    }
+
+    mod hover_hold_properties {
+        use super::*;
+        use proptest::prelude::*;
+
+        proptest! {
+            // Design constraint 1 (property form): however far real
+            // wall-clock time advances while a hover session stays open,
+            // the visible item is never rotated out.
+            #[test]
+            fn never_rotates_while_hover_held(
+                ttl_secs in 1u64..20,
+                hold_secs in 0u64..200,
+                steps in 1usize..8,
+            ) {
+                let mut q = SingleSlotQueue::new(50);
+                let start = Instant::now();
+                let ev = event("held", Priority::Medium, ttl_secs);
+                let id = ev.id;
+                q.enqueue(ev, start).unwrap();
+                q.hover_enter(start);
+
+                let step = Duration::from_secs(hold_secs) / u32::try_from(steps).unwrap_or(1).max(1);
+                let mut now = start;
+                for _ in 0..steps {
+                    now += step;
+                    q.tick(now);
+                    match q.current_slot_state() {
+                        SlotState::Showing { id: cur, .. } => prop_assert_eq!(cur, id),
+                        SlotState::Empty => prop_assert!(false, "rotated out while hover-held"),
+                    }
+                }
+            }
+
+            // Design constraint 2 (property form): across any sequence of
+            // hover-pause / active-time cycles, the item rotates out
+            // exactly when cumulative ACTIVE (non-paused) time reaches the
+            // rotation window — never sooner (constraint 1, restated) and
+            // never later than that same window would allow on its own
+            // (no cycle count can inject bonus life).
+            #[test]
+            fn hover_cycles_never_grant_more_than_the_rotation_window(
+                ttl_secs in 1u64..10,
+                cycles in proptest::collection::vec((0u64..5, 0u64..4), 1..8),
+            ) {
+                let mut q = SingleSlotQueue::new(50);
+                let start = Instant::now();
+                let ev = event("held", Priority::Medium, ttl_secs);
+                let id = ev.id;
+                q.enqueue(ev, start).unwrap();
+
+                let mut now = start;
+                let mut total_active = 0u64;
+                let mut already_rotated = false;
+                for (pause_secs, active_secs) in cycles {
+                    if already_rotated {
+                        break;
+                    }
+
+                    q.hover_enter(now);
+                    now += Duration::from_secs(pause_secs);
+                    q.tick(now);
+                    // constraint 1, exercised inline: never rotates while
+                    // the pause phase (still hover-held) is in progress.
+                    let visible_during_pause = matches!(
+                        q.current_slot_state(),
+                        SlotState::Showing { id: cur, .. } if cur == id
+                    );
+                    prop_assert!(visible_during_pause, "rotated out during a hover pause");
+                    q.hover_exit(now);
+
+                    now += Duration::from_secs(active_secs);
+                    total_active += active_secs;
+                    q.tick(now);
+                    let still_visible = matches!(
+                        q.current_slot_state(),
+                        SlotState::Showing { id: cur, .. } if cur == id
+                    );
+                    if total_active < ttl_secs {
+                        prop_assert!(
+                            still_visible,
+                            "total_active={total_active} < ttl={ttl_secs} but rotated out early"
+                        );
+                    } else {
+                        prop_assert!(
+                            !still_visible,
+                            "total_active={total_active} >= ttl={ttl_secs} but did not rotate out — hover cycles granted extra life"
+                        );
+                        already_rotated = true;
+                    }
+                }
+            }
         }
     }
 

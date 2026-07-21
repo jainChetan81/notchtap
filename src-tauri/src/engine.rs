@@ -409,16 +409,22 @@ impl<R: tauri::Runtime> Engine<R> {
     }
 
     /// Non-emitting read of the current `StatusState` — same inputs as
-    /// `emit_current_status_blocking`, no wire event. Added for plan
-    /// 087's hover tracking-area handler (`lib.rs`), which needs this on
-    /// every mouse-move (to derive `hover::status_rail_active`, the
-    /// idle-card width's `has_status_chips` input) without re-emitting
-    /// `status-state` per move — that would flood the webview with an
-    /// unrelated event on every mouse move, defeating the exact
-    /// idle-cost discipline `hover-changed`'s own transitions-only
-    /// emission is designed to preserve (plans 015/018). Lock
-    /// discipline matches `emit_current_status_blocking`: live/weather
-    /// locked and dropped before the queue lock.
+    /// `emit_current_status_blocking`, no wire event. Originally added
+    /// for plan 087's hover tracking-area handler (`lib.rs`), which
+    /// needed this on every mouse-move to derive
+    /// `hover::status_rail_active`, the idle-card WIDTH formula's
+    /// `has_status_chips` input — that need went away when plan 091
+    /// collapsed the idle/idle-status width split (there is no wider
+    /// idle variant to pick anymore), and plan 093's y-span rect no
+    /// longer needs `StatusState` either (its `idle_peek_open` input is
+    /// hover hysteresis, not ambient-data availability — see
+    /// `hover::active_card_rect`'s doc). This non-emitting shape (no
+    /// re-emitting `status-state` on every read, which would flood the
+    /// webview and defeat `hover-changed`'s own transitions-only idle-cost
+    /// discipline, plans 015/018) is kept as `pub` for its current real
+    /// caller, `emit_current_status_blocking` below. Lock discipline
+    /// matches that caller: live/weather locked and dropped before the
+    /// queue lock.
     pub fn status_snapshot_blocking(&self) -> StatusState {
         let live_summary = self.live.snapshot();
         let weather_summary = self.weather.snapshot();

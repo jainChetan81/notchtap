@@ -12,7 +12,6 @@
 //! recommendation.
 
 use crate::presentation::Mode;
-use crate::status::StatusState;
 
 /// The fixed overlay window's size — `src-tauri/tauri.conf.json`'s
 /// `"width": 500, "height": 300`, `"resizable": false`. The window frame
@@ -39,15 +38,33 @@ const MIN_FLANK_SHOWING: f64 = 60.0; // showing/expanded minimum flank width
 const BASE_SHOWING: f64 = 400.0; // .card-assembly (showing) design-width floor
 const BASE_EXPANDED: f64 = 500.0; // .card-assembly.expanded design-width floor
 const HUD_CUTOUT_W: f64 = 200.0; // App.tsx's HUD synthetic cutout width
-                                 // App.tsx's HUD synthetic cutout height — not consumed by
-                                 // `active_card_rect`'s own math (the rect's y-span stays the full window
-                                 // height, that function's doc comment). Kept as a named constant purely
-                                 // so `active_card_rect_geometry_constants_match_named_style_constants`
-                                 // pins it alongside every other Geometry-contract number — a reviewer
-                                 // diffing styles.css's synthetic-cutout height then sees both sides.
-                                 // `#[allow(dead_code)]`: real, but its only reader is that test.
-#[allow(dead_code)]
-const HUD_CUTOUT_H: f64 = 32.0;
+const HUD_CUTOUT_H: f64 = 32.0; // App.tsx's HUD synthetic cutout height
+
+// plan 093: the y-span constants. `IDLE_PEEK_BELOW_BLOCK_H` is a REAL
+// duplicated-constant (styles.css's `.idle-peek` fixed target height —
+// unlike the showing/expanded below-block, which is CSS `auto`-sized off
+// real content, the peek is a deliberately FIXED-height block, same
+// technique as the locked reference's own `.wx-peek { height: 78px }`,
+// `prototype/notch-states.html:119`) — any change to one MUST change the
+// other in the same commit, same discipline as every other constant
+// above.
+//
+// `BELOW_BLOCK_SHOWING_H`/`BELOW_BLOCK_EXPANDED_H` are NOT duplicated
+// constants in that sense — the real showing/expanded below-block is CSS
+// `auto`-height, sized by whatever content the card carries (a short
+// compact body vs. a long news article vs. a full manifest), so there is
+// no single true number in styles.css to mirror. These are deliberately
+// CONSERVATIVE ESTIMATES (never intended to be pixel-exact) chosen to
+// close most of the ~240px dead-zone gap 079 item 17 flagged while
+// staying safely under what a real card of that kind renders — err
+// generous, not tight, per this file's standing CONSERVATIVE philosophy
+// (never narrower than the true rendered edge). If a future redesign
+// changes the compact/manifest content shape enough to make these feel
+// wrong, adjust them directly; there is no styles.css number to keep
+// them "in sync" with.
+const IDLE_PEEK_BELOW_BLOCK_H: f64 = 100.0; // styles.css .idle-peek's fixed height
+const BELOW_BLOCK_SHOWING_H: f64 = 160.0; // conservative estimate, compact (non-expanded) content
+const BELOW_BLOCK_EXPANDED_H: f64 = 240.0; // conservative estimate, expanded (manifest) content
 
 /// A screen-space rect in AppKit window coordinates (bottom-left origin,
 /// y grows UP) — the region where hover should count as "over the
@@ -87,26 +104,6 @@ pub fn css_top_down_to_appkit_y(window_height: f64, top: f64, height: f64) -> (f
     (low, high)
 }
 
-/// Cold-read Gap 1: `has_status_chips` is not rust-owned today — the
-/// predicate lives only in TypeScript (`src/useStatusState.ts:106`,
-/// `statusRailActive`). This is the rust mirror; the two copies carry a
-/// cross-reference comment naming the other. Keep the seven terms and
-/// their order identical to the TS original — the two easiest to miss
-/// are `waiting > 0` and `paused`, which have nothing to do with a
-/// source's `enabled` gate.
-///
-/// Mirror of `src/useStatusState.ts:106`'s `statusRailActive`. Any
-/// change to either predicate's terms must change both.
-pub fn status_rail_active(status: &StatusState) -> bool {
-    status.football.enabled
-        || status.news.enabled
-        || status.football.live.is_some()
-        || status.weather.enabled
-        || status.weather.current.is_some()
-        || status.waiting > 0
-        || status.paused
-}
-
 /// The screen-space rect, in AppKit window coordinates, currently
 /// covered by the rendered card — the region where hover should count.
 /// Deliberately CONSERVATIVE: it may be slightly wider than the true
@@ -138,15 +135,35 @@ pub fn status_rail_active(status: &StatusState) -> bool {
 /// card was showing) — Decision 6 removes that special case along with
 /// the mode branch itself.
 ///
-/// The vertical span is deliberately the FULL window height (no partial
-/// `top`/`height` narrowing): unlike width, `styles.css` has no per-state
-/// height breakpoints to mirror (091 exposes a notch HEIGHT var, but it
-/// only sizes the flank ROW inside a card whose OUTER rect this function
-/// still treats as the whole window), and the CONSERVATIVE philosophy
-/// (never narrower than truth) permits skipping a height guess entirely
-/// by covering the whole fixed 300px window. `css_top_down_to_appkit_y`
-/// is still used for that span (not hardcoded `0.0..WINDOW_HEIGHT`
-/// inline) so the one coordinate-flip seam stays in exactly one place.
+/// The vertical span (plan 093 — replaces the pre-093 "always the full
+/// window" behavior 091 shipped, flagged in its own now-deleted comment
+/// here as a carried-forward limitation, and in 079 item 17's bracketed
+/// note as "~240px of empty space below the card currently registers as
+/// hovered"): `top` is always `0.0` (`.card-assembly` has no vertical
+/// margin — `src/styles.css`'s `html,body,#root { margin:0 }` plus
+/// `.card-assembly`'s own `margin: 0 auto` centers horizontally only),
+/// and `height` is derived from the actual assembly state rather than
+/// hardcoded to `WINDOW_HEIGHT`:
+/// - idle, peek/reveal closed: `effective_cutout_height` alone — during
+///   idle, `.card-assembly`'s grid row 2 (`auto`) has no content in it at
+///   all (no below-block mounted), so its real rendered height IS
+///   exactly the cutout row's height, not an estimate.
+/// - idle, peek/reveal open (`idle_peek_open`): cutout height +
+///   `IDLE_PEEK_BELOW_BLOCK_H` — the hover-expanded idle state (plan 093:
+///   the weather peek / scorecard reveal / day-progress timeline), whose
+///   below-block is a real, FIXED-height CSS block (`styles.css`'s
+///   `.idle-peek`), mirrored here exactly like every other duplicated
+///   width constant above.
+/// - showing (not expanded): cutout height + `BELOW_BLOCK_SHOWING_H`.
+/// - expanded: cutout height + `BELOW_BLOCK_EXPANDED_H`.
+///
+/// Both non-idle estimates are deliberately CONSERVATIVE (see those
+/// constants' own doc comments) — this function still never claims to be
+/// pixel-perfect, only close enough to kill the ~240px dead zone. The
+/// total is capped at `WINDOW_HEIGHT`, the same `min(..., 100%)`
+/// discipline the width formula already uses, via the same
+/// `css_top_down_to_appkit_y` flip (never hardcoded inline) so the one
+/// coordinate-flip seam stays in exactly one place.
 ///
 /// `scale` is `Config.appearance.card_scale` (user-configurable via the
 /// Settings Appearance section, default `1.0`) — a COSMETIC preference.
@@ -164,26 +181,48 @@ pub fn status_rail_active(status: &StatusState) -> bool {
 /// cutout term back to multiplying by `scale` — that reverts a
 /// deliberate, decided exemption, not an oversight
 /// (`plans/090-card-scale-vs-hardware-geometry.md` has the original
-/// rationale and the operator's Decision).
+/// rationale and the operator's Decision). `cutout_height` (plan 093,
+/// notch mode only — `HUD_CUTOUT_H` is a synthetic constant in HUD mode,
+/// never a measured term) follows the exact same exemption for the exact
+/// same reason: a hardware/synthetic measurement, never a cosmetic
+/// design height, so it is likewise never multiplied by `scale`.
 ///
-/// `_has_status_chips` is intentionally unused: plan 034's idle/idle-
-/// status width split collapsed in 091 (the status dots replace the chip
-/// rail entirely, so there is no wider idle variant to pick anymore) —
-/// the parameter stays, prefixed, purely so the sole call site
-/// (`lib.rs`'s `hover_point_is_over_card`) needs no edit; Rust's
-/// positional call convention means the caller's variable name never
-/// has to match this signature's.
+/// `idle_peek_open` (plan 093: replaces the formerly-unused
+/// `_has_status_chips` slot — plan 034's idle/idle-status WIDTH split it
+/// was named for collapsed in 091, and this plan repurposes the spare
+/// boolean rather than adding an 8th positional parameter) is
+/// deliberately NOT "is there weather/live-match data available" — it is
+/// hover HYSTERESIS: "as of the last computed frame, was the cursor
+/// already registered as hovering." `lib.rs`'s `hover_point_is_over_card`
+/// passes in `was_hovered`'s CURRENT value (read before this event can
+/// overwrite it). This is what lets the rect GROW to cover the peek's
+/// newly-opened area once hover starts (so moving the cursor further
+/// down, into the area that only just became visible, doesn't
+/// immediately fall outside the rect and snap the peek shut), while
+/// staying at the tight cutout-only height the rest of the time (idle,
+/// not hovered — the overwhelming majority of an idle card's lifetime).
+/// The idle-hover-expanded state itself is unconditional on ambient data
+/// (item 18's decision: the day-progress timeline lives here regardless
+/// of whether weather/football happen to be configured) — see
+/// `src/components/IdleHoverPeek.tsx` for what actually renders inside
+/// it. Only relevant while `!visible`; ignored (never read) whenever
+/// `visible` is `true`.
 pub fn active_card_rect(
     mode: Mode,
     cutout_width: f64,
+    cutout_height: f64,
     scale: f64,
     visible: bool,
     expanded: bool,
-    _has_status_chips: bool,
+    idle_peek_open: bool,
 ) -> Rect {
     let effective_cutout_width = match mode {
         Mode::Notch => cutout_width,
         Mode::Hud => HUD_CUTOUT_W,
+    };
+    let effective_cutout_height = match mode {
+        Mode::Notch => cutout_height,
+        Mode::Hud => HUD_CUTOUT_H,
     };
 
     let raw_width = if visible && expanded {
@@ -197,8 +236,22 @@ pub fn active_card_rect(
     // is that "100%" in this window's own coordinate space.
     let width = raw_width.min(WINDOW_WIDTH);
 
+    let below_block_h = if !visible {
+        if idle_peek_open {
+            IDLE_PEEK_BELOW_BLOCK_H
+        } else {
+            0.0
+        }
+    } else if expanded {
+        BELOW_BLOCK_EXPANDED_H
+    } else {
+        BELOW_BLOCK_SHOWING_H
+    };
+    let raw_height = effective_cutout_height + below_block_h;
+    let height = raw_height.min(WINDOW_HEIGHT);
+
     let x_min = (WINDOW_WIDTH - width) / 2.0;
-    let (y_min, y_max) = css_top_down_to_appkit_y(WINDOW_HEIGHT, 0.0, WINDOW_HEIGHT);
+    let (y_min, y_max) = css_top_down_to_appkit_y(WINDOW_HEIGHT, 0.0, height);
 
     Rect {
         x_min,
@@ -211,100 +264,6 @@ pub fn active_card_rect(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::status::{FootballStatus, LiveMatchSummary, NewsStatus, WeatherStatus};
-
-    fn status(
-        paused: bool,
-        waiting: usize,
-        football_enabled: bool,
-        football_live: bool,
-        news_enabled: bool,
-        weather_enabled: bool,
-        weather_current: bool,
-    ) -> StatusState {
-        StatusState {
-            paused,
-            waiting,
-            football: FootballStatus {
-                enabled: football_enabled,
-                live: football_live.then(|| LiveMatchSummary {
-                    label: "Home 1-0 Away".into(),
-                    minute: "45'".into(),
-                }),
-            },
-            news: NewsStatus {
-                enabled: news_enabled,
-            },
-            weather: WeatherStatus {
-                enabled: weather_enabled,
-                current: weather_current.then(|| crate::status::WeatherSummary {
-                    temp_display: "27°".into(),
-                    condition: "Cloudy".into(),
-                }),
-            },
-        }
-    }
-
-    fn all_false() -> StatusState {
-        status(false, 0, false, false, false, false, false)
-    }
-
-    // Cold-read Gap 1: one case per term of the seven-term predicate —
-    // each alone makes the whole thing true; all false makes it false.
-    #[test]
-    fn status_rail_active_all_false_is_false() {
-        assert!(!status_rail_active(&all_false()));
-    }
-
-    #[test]
-    fn status_rail_active_football_enabled_alone_is_true() {
-        assert!(status_rail_active(&status(
-            false, 0, true, false, false, false, false
-        )));
-    }
-
-    #[test]
-    fn status_rail_active_news_enabled_alone_is_true() {
-        assert!(status_rail_active(&status(
-            false, 0, false, false, true, false, false
-        )));
-    }
-
-    #[test]
-    fn status_rail_active_football_live_alone_is_true() {
-        assert!(status_rail_active(&status(
-            false, 0, false, true, false, false, false
-        )));
-    }
-
-    #[test]
-    fn status_rail_active_weather_enabled_alone_is_true() {
-        assert!(status_rail_active(&status(
-            false, 0, false, false, false, true, false
-        )));
-    }
-
-    #[test]
-    fn status_rail_active_weather_current_alone_is_true() {
-        assert!(status_rail_active(&status(
-            false, 0, false, false, false, false, true
-        )));
-    }
-
-    // The two easiest to miss per the plan's own callout.
-    #[test]
-    fn status_rail_active_waiting_gt_zero_alone_is_true() {
-        assert!(status_rail_active(&status(
-            false, 1, false, false, false, false, false
-        )));
-    }
-
-    #[test]
-    fn status_rail_active_paused_alone_is_true() {
-        assert!(status_rail_active(&status(
-            true, 0, false, false, false, false, false
-        )));
-    }
 
     // --- active_card_rect: plan 091's three state formulas, HUD mode
     // (effective cutout = HUD_CUTOUT_W, always — the `cutout_width`
@@ -312,7 +271,7 @@ mod tests {
 
     #[test]
     fn hud_idle_is_cutout_plus_two_flanks_at_scale_1() {
-        let r = active_card_rect(Mode::Hud, 0.0, 1.0, false, false, false);
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, false, false, false);
         assert_eq!(r.x_max - r.x_min, HUD_CUTOUT_W + 2.0 * FLANK_IDLE);
     }
 
@@ -321,13 +280,13 @@ mod tests {
         // cutout(200) + 2*60 = 320, well under the 400 design floor, so
         // the floor wins — this is the common case (a real cutout is
         // never anywhere near 280px wide).
-        let r = active_card_rect(Mode::Hud, 0.0, 1.0, true, false, false);
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, false, false);
         assert_eq!(r.x_max - r.x_min, BASE_SHOWING);
     }
 
     #[test]
     fn hud_expanded_is_the_500_floor_at_scale_1() {
-        let r = active_card_rect(Mode::Hud, 0.0, 1.0, true, true, false);
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, true, false);
         assert_eq!(r.x_max - r.x_min, BASE_EXPANDED);
     }
 
@@ -338,8 +297,8 @@ mod tests {
     // whatever it sends).
     #[test]
     fn hud_mode_ignores_the_passed_cutout_width_argument() {
-        let with_zero = active_card_rect(Mode::Hud, 0.0, 1.0, false, false, false);
-        let with_something_else = active_card_rect(Mode::Hud, 999.0, 1.0, false, false, false);
+        let with_zero = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, false, false, false);
+        let with_something_else = active_card_rect(Mode::Hud, 999.0, 0.0, 1.0, false, false, false);
         assert_eq!(with_zero, with_something_else);
         assert_eq!(
             with_zero.x_max - with_zero.x_min,
@@ -352,19 +311,19 @@ mod tests {
 
     #[test]
     fn hud_idle_scales_the_flank_term_only_at_0_8() {
-        let r = active_card_rect(Mode::Hud, 0.0, 0.8, false, false, false);
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 0.8, false, false, false);
         assert_eq!(r.x_max - r.x_min, HUD_CUTOUT_W + 2.0 * FLANK_IDLE * 0.8);
     }
 
     #[test]
     fn hud_idle_scales_the_flank_term_only_at_1_25() {
-        let r = active_card_rect(Mode::Hud, 0.0, 1.25, false, false, false);
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.25, false, false, false);
         assert_eq!(r.x_max - r.x_min, HUD_CUTOUT_W + 2.0 * FLANK_IDLE * 1.25);
     }
 
     #[test]
     fn hud_showing_scales_at_0_8() {
-        let r = active_card_rect(Mode::Hud, 0.0, 0.8, true, false, false);
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 0.8, true, false, false);
         assert_eq!(
             r.x_max - r.x_min,
             (BASE_SHOWING * 0.8_f64).max(HUD_CUTOUT_W + 2.0 * MIN_FLANK_SHOWING * 0.8)
@@ -378,7 +337,7 @@ mod tests {
         // immediately — that specific interaction has its own dedicated
         // test right below, `expanded_at_scale_above_1_hits_the_window_cap`.
         // This one isolates the scaling math itself, unaffected by the cap.
-        let r = active_card_rect(Mode::Hud, 0.0, 0.8, true, true, false);
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 0.8, true, true, false);
         assert_eq!(
             r.x_max - r.x_min,
             (BASE_EXPANDED * 0.8_f64).max(HUD_CUTOUT_W + 2.0 * MIN_FLANK_SHOWING * 0.8)
@@ -392,9 +351,9 @@ mod tests {
     // card, never wider).
     #[test]
     fn expanded_at_scale_above_1_hits_the_window_cap() {
-        let hud = active_card_rect(Mode::Hud, 0.0, 1.25, true, true, false);
+        let hud = active_card_rect(Mode::Hud, 0.0, 0.0, 1.25, true, true, false);
         assert_eq!(hud.x_max - hud.x_min, WINDOW_WIDTH);
-        let notch = active_card_rect(Mode::Notch, 200.0, 1.25, true, true, false);
+        let notch = active_card_rect(Mode::Notch, 200.0, 32.0, 1.25, true, true, false);
         assert_eq!(notch.x_max - notch.x_min, WINDOW_WIDTH);
     }
 
@@ -406,7 +365,7 @@ mod tests {
     fn notch_idle_is_measured_cutout_plus_two_flanks_at_scale_1() {
         // plan 063's own fixture (`src-tauri/src/lib.rs`'s
         // cutout_width_js_value test) — a realistic measured width.
-        let r = active_card_rect(Mode::Notch, 319.0, 1.0, false, false, false);
+        let r = active_card_rect(Mode::Notch, 319.0, 32.0, 1.0, false, false, false);
         assert_eq!(r.x_max - r.x_min, 319.0 + 2.0 * FLANK_IDLE);
     }
 
@@ -414,7 +373,7 @@ mod tests {
     fn notch_showing_uses_the_measured_cutout_when_it_beats_the_floor() {
         // 319 + 2*60 = 439, which beats the 400 design floor — the
         // cutout-driven term wins here, unlike HUD's default 200px.
-        let r = active_card_rect(Mode::Notch, 319.0, 1.0, true, false, false);
+        let r = active_card_rect(Mode::Notch, 319.0, 32.0, 1.0, true, false, false);
         assert_eq!(r.x_max - r.x_min, 319.0 + 2.0 * MIN_FLANK_SHOWING);
     }
 
@@ -423,7 +382,7 @@ mod tests {
         // 319 + 2*60 = 439, under the 500 expanded floor — the floor
         // wins here even though the same cutout beat the showing floor
         // above (400).
-        let r = active_card_rect(Mode::Notch, 319.0, 1.0, true, true, false);
+        let r = active_card_rect(Mode::Notch, 319.0, 32.0, 1.0, true, true, false);
         assert_eq!(r.x_max - r.x_min, BASE_EXPANDED);
     }
 
@@ -438,8 +397,8 @@ mod tests {
     // below for what happens when it doesn't.
     #[test]
     fn notch_mode_cutout_term_stays_unscaled_only_the_flank_term_scales() {
-        let at_scale_1 = active_card_rect(Mode::Notch, 200.0, 1.0, false, false, false);
-        let at_scale_1_25 = active_card_rect(Mode::Notch, 200.0, 1.25, false, false, false);
+        let at_scale_1 = active_card_rect(Mode::Notch, 200.0, 32.0, 1.0, false, false, false);
+        let at_scale_1_25 = active_card_rect(Mode::Notch, 200.0, 32.0, 1.25, false, false, false);
         let width_1 = at_scale_1.x_max - at_scale_1.x_min;
         let width_1_25 = at_scale_1_25.x_max - at_scale_1_25.x_min;
         let expected_flank_delta = 2.0 * FLANK_IDLE * (1.25 - 1.0);
@@ -455,13 +414,13 @@ mod tests {
 
     #[test]
     fn notch_idle_caps_at_the_window_width_for_a_very_wide_cutout() {
-        let r = active_card_rect(Mode::Notch, 600.0, 1.0, false, false, false);
+        let r = active_card_rect(Mode::Notch, 600.0, 32.0, 1.0, false, false, false);
         assert_eq!(r.x_max - r.x_min, WINDOW_WIDTH);
     }
 
     #[test]
     fn notch_showing_caps_at_the_window_width_for_a_very_wide_cutout() {
-        let r = active_card_rect(Mode::Notch, 600.0, 1.0, true, false, false);
+        let r = active_card_rect(Mode::Notch, 600.0, 32.0, 1.0, true, false, false);
         assert_eq!(r.x_max - r.x_min, WINDOW_WIDTH);
     }
 
@@ -533,6 +492,12 @@ mod tests {
         assert_eq!(BASE_EXPANDED, 500.0);
         assert_eq!(HUD_CUTOUT_W, 200.0);
         assert_eq!(HUD_CUTOUT_H, 32.0);
+        // plan 093: IDLE_PEEK_BELOW_BLOCK_H is a real duplicated-constant
+        // (styles.css's `.idle-peek` fixed height) — see its own doc
+        // comment for why BELOW_BLOCK_SHOWING_H/BELOW_BLOCK_EXPANDED_H
+        // are deliberately NOT asserted here (they're estimates, not a
+        // styles.css mirror).
+        assert_eq!(IDLE_PEEK_BELOW_BLOCK_H, 100.0);
     }
 
     // --- cold-read Gap 3: the coordinate-space flip, unit-tested on its own ---
@@ -568,12 +533,93 @@ mod tests {
         assert_eq!(high, WINDOW_HEIGHT);
     }
 
+    // plan 093: was `active_card_rect_y_span_is_the_full_window_height`,
+    // pinning the pre-093 "always the whole window" behavior — UPDATED,
+    // not deleted, per the plan's explicit instruction. Idle, peek
+    // closed: the y-span is now the cutout row's height alone, nowhere
+    // near the full 300px window — the headline fix this plan exists for.
     #[test]
-    fn active_card_rect_y_span_is_the_full_window_height() {
-        // Documents the deliberate "no height breakpoints to mirror"
-        // choice: the rect's y-range always covers the whole fixed window.
-        let r = active_card_rect(Mode::Hud, 0.0, 1.0, false, false, false);
-        assert_eq!(r.y_min, 0.0);
-        assert_eq!(r.y_max, WINDOW_HEIGHT);
+    fn idle_peek_closed_y_span_is_the_cutout_height_alone() {
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, false, false, false);
+        let height = r.y_max - r.y_min;
+        assert_eq!(height, HUD_CUTOUT_H);
+        assert!(
+            height < WINDOW_HEIGHT,
+            "the whole point of plan 093's y-span fix: idle must not span the full window"
+        );
+    }
+
+    // --- plan 093: the y-span's height term, one case per assembly state ---
+
+    #[test]
+    fn idle_peek_open_y_span_adds_the_peek_below_block_height() {
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, false, false, true);
+        assert_eq!(r.y_max - r.y_min, HUD_CUTOUT_H + IDLE_PEEK_BELOW_BLOCK_H);
+    }
+
+    #[test]
+    fn notch_idle_peek_closed_y_span_uses_the_measured_cutout_height() {
+        let r = active_card_rect(Mode::Notch, 319.0, 40.0, 1.0, false, false, false);
+        assert_eq!(r.y_max - r.y_min, 40.0);
+    }
+
+    #[test]
+    fn notch_idle_peek_open_y_span_uses_the_measured_cutout_height_plus_peek() {
+        let r = active_card_rect(Mode::Notch, 319.0, 40.0, 1.0, false, false, true);
+        assert_eq!(r.y_max - r.y_min, 40.0 + IDLE_PEEK_BELOW_BLOCK_H);
+    }
+
+    #[test]
+    fn showing_not_expanded_y_span_adds_the_showing_below_block_estimate() {
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, false, false);
+        assert_eq!(r.y_max - r.y_min, HUD_CUTOUT_H + BELOW_BLOCK_SHOWING_H);
+    }
+
+    #[test]
+    fn expanded_y_span_adds_the_expanded_below_block_estimate() {
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, true, false);
+        assert_eq!(r.y_max - r.y_min, HUD_CUTOUT_H + BELOW_BLOCK_EXPANDED_H);
+    }
+
+    // idle_peek_open is documented as irrelevant once `visible` is true —
+    // prove it the same way `hud_mode_ignores_the_passed_cutout_width_
+    // argument` proves the analogous width-side claim.
+    #[test]
+    fn idle_peek_open_is_ignored_while_visible() {
+        let showing_false = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, false, false);
+        let showing_true = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, false, true);
+        assert_eq!(showing_false, showing_true);
+        let expanded_false = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, true, false);
+        let expanded_true = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, true, true);
+        assert_eq!(expanded_false, expanded_true);
+    }
+
+    // the height side of the `min(..., 100%)` cap — mirrors the width
+    // cap tests above. A tall enough measured cutout (or, in principle, a
+    // tall enough below-block estimate) must never push the rect past
+    // the fixed window.
+    #[test]
+    fn height_caps_at_the_window_height_for_a_tall_measured_cutout() {
+        let r = active_card_rect(Mode::Notch, 200.0, 280.0, 1.0, true, true, false);
+        assert_eq!(r.y_max - r.y_min, WINDOW_HEIGHT);
+    }
+
+    // --- the actual behavioral fix: a point in the old dead zone below
+    // the idle card no longer registers as hovered. ---
+
+    #[test]
+    fn idle_peek_closed_point_below_the_cutout_row_is_not_in_the_rect() {
+        // HUD idle: cutout height alone is 32.0. A point comfortably
+        // inside the OLD full-300px span but below the real 32px-tall
+        // card (in CSS top-down terms, y=100 — i.e. AppKit y = 300-100 =
+        // 200) must no longer count as hovered.
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, false, false, false);
+        let (appkit_y_min, appkit_y_max) = css_top_down_to_appkit_y(WINDOW_HEIGHT, 0.0, 32.0);
+        assert_eq!((appkit_y_min, appkit_y_max), (268.0, 300.0));
+        // AppKit y=200 is well below the idle rect's low edge (268) — the
+        // dead zone the pre-093 full-window rect used to wrongly cover.
+        assert!(!point_in_rect(&r, WINDOW_WIDTH / 2.0, 200.0));
+        // sanity: a point actually inside the real idle rect still hovers.
+        assert!(point_in_rect(&r, WINDOW_WIDTH / 2.0, 280.0));
     }
 }
