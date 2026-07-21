@@ -217,7 +217,9 @@ fn default_espn_priority() -> Priority {
 }
 
 fn default_espn_ttl_secs() -> u64 {
-    8
+    // operator decision 2026-07-21: a scoreline needs longer on screen
+    // than a generic alert; still configurable via espn_ttl_secs.
+    15
 }
 
 fn default_espn_live_card() -> bool {
@@ -436,8 +438,15 @@ impl Config {
         // (not what serde defaulted them to) lets us inherit the file's
         // effective default_ttl exactly where the old shared-field
         // behavior would have applied it.
+        //
+        // plan 101: the espn arm is conditional on the file ALSO having
+        // customized default_ttl — the inherit exists only for configs
+        // that customized the old shared default_ttl; a config that never
+        // touched it gets espn's own default (15) instead of silently
+        // re-inheriting the generic default. The cmux arm stays
+        // unconditional (its default intentionally tracks default_ttl).
         if let Ok(raw) = content.parse::<toml::Table>() {
-            if !raw.contains_key("espn_ttl_secs") {
+            if !raw.contains_key("espn_ttl_secs") && raw.contains_key("default_ttl") {
                 config.espn_ttl_secs = config.default_ttl;
             }
             if !raw.contains_key("cmux_ttl_secs") {
@@ -534,7 +543,7 @@ mod tests {
         assert_eq!(c.espn_leagues, ["eng.1", "uefa.champions", "esp.1"]);
         assert_eq!(c.espn_poll_secs, 30);
         assert_eq!(c.espn_priority, Priority::High);
-        assert_eq!(c.espn_ttl_secs, 8);
+        assert_eq!(c.espn_ttl_secs, 15);
         assert!(!c.rss_enabled);
         assert_eq!(
             c.rss_feeds,
@@ -770,12 +779,28 @@ url = "https://example.com/without-meta"
     #[test]
     fn absent_default_ttl_still_yields_the_shared_default_of_eight() {
         // no default_ttl in the file at all: default_ttl resolves to its
-        // own default (8), and espn/cmux inherit that same resolved
-        // value — identical to today's fresh-install behavior.
+        // own default (8), and cmux inherits that same resolved value —
+        // identical to today's fresh-install behavior. plan 101: espn no
+        // longer inherits here — with default_ttl untouched, espn gets
+        // its own default (15) instead.
         let c = Config::parse("").unwrap();
         assert_eq!(c.default_ttl, 8);
-        assert_eq!(c.espn_ttl_secs, 8);
+        assert_eq!(c.espn_ttl_secs, 15);
         assert_eq!(c.cmux_ttl_secs, 8);
+    }
+
+    #[test]
+    fn espn_ttl_defaults_to_15_when_default_ttl_untouched() {
+        // plan 101: espn's own default (15) applies when the file never
+        // customized default_ttl — the generic default itself must not
+        // have moved.
+        let c = Config::parse("").unwrap();
+        assert_eq!(c.espn_ttl_secs, 15);
+        assert_eq!(c.default_ttl, default_ttl());
+
+        // but the heal still honors a customized shared default_ttl.
+        let c = Config::parse("default_ttl = 30\n").unwrap();
+        assert_eq!(c.espn_ttl_secs, 30);
     }
 
     #[test]
