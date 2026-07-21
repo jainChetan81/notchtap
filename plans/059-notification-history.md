@@ -17,9 +17,19 @@
 
 ## Why this matters
 
-Confirmed by direct read: **nothing is persisted today.** `logging.rs`
-writes only `tracing`-level diagnostic logs (poll failures, bind errors)
-to `~/Library/Logs/notchtap/notchtap.log` — not notification content.
+Confirmed by direct read: **nothing is persisted today** (one narrow
+exception, below). `logging.rs` writes only `tracing`-level diagnostic
+logs (poll failures, bind errors) to
+`~/Library/Logs/notchtap/notchtap.log` — not notification content, with
+one exception: on a telegram send drop, `src-tauri/src/notifier.rs:281`
+logs the event *title* (`title = %event.payload.title`) into that
+diagnostic log — and since plan 077's Diagnostics section, that log is
+browsable inside Settings via `get_recent_log_lines`
+(`src-tauri/src/settings.rs:791`). So today, a connector failure can
+already put a notification title on disk AND in the control-panel UI —
+unplanned, connector-failure-only, but real. Plan 070's ingest logging
+was checked and is content-clean (`engine.rs:189-192` logs only
+id/origin/priority/error, never title/body).
 `SettingsApp.tsx`'s sidebar (`SectionId`,
 `src/settings/SettingsApp.tsx:95-104` — nine sections as of 2026-07-21,
 including the newer `diagnostics`) has no History/Recent/Log tab. Once an item leaves the single-slot
@@ -47,6 +57,11 @@ recover what it said.
    nothing. Persisting it changes the app's privacy posture materially:
    a history file becomes a target (disk access, backups, another app
    reading it) in a way "it was on screen for 8 seconds" never was.
+   Note the posture is already not perfectly clean: dropped telegram
+   sends log the title to the diagnostic log today (see "Why this
+   matters") — deciding this plan is also implicitly deciding whether
+   that existing narrow leak is acceptable or should be redacted the way
+   plan 006 redacted the bot token from transport errors.
 4. **UI surface**: a new Settings sidebar section (History), a list view,
    probably a retention/clear-all control given point 3.
 
@@ -64,6 +79,24 @@ recover what it said.
    dependency; JSONL matches this repo's plain-file convention but needs
    its own rotation logic (this repo already has that pattern —
    `logging.rs`'s size-rotating appender — that could be reused/adapted).
+4. Independent of 1-3: keep or redact the EXISTING title-on-drop log
+   line (`notifier.rs:281` — see "Why this matters")? Redaction is a
+   one-line S-effort fix in plan 006's pattern; keeping it is also a
+   defensible choice (it's the only clue when a telegram send silently
+   drops) — but decide it explicitly rather than by omission.
+
+## How this proceeds
+
+This file is a decision memo, not an executor plan — there is nothing to
+dispatch. When the operator answers the three questions above, the
+advisor files the outcome as a NEW plan (next free number): a spike-shaped
+plan (deliverable: a `docs/design/` doc, zero production code — the plan
+030/031/086 shape) if the answers leave open design work, or a build plan
+if they fully pin the design. If the answer to question 1 is "no
+persistence at all," record that in `plans/README.md`'s
+findings-considered-and-rejected section and retire this file — and
+separately decide whether the existing notifier.rs title-on-drop log line
+should be redacted (a one-line S-effort fix, filable on its own).
 
 ## Recommendation
 
@@ -92,10 +125,18 @@ coordination note (049 is done). All other claims re-verified:
 `SingleSlotQueue` (`src-tauri/src/queue.rs:48`), `rss_enabled`/
 `weather_enabled` default false (`src-tauri/src/config.rs:484,500`
 asserts), log dir `~/Library/Logs/notchtap` (`logging.rs:27-33`),
-`DESIGN.html` manifest example present. One precision caveat found, not
-fixed in the body since the substantive claim (no browsable history)
-stands: "not notification content" is not 100% airtight — on a telegram
-send drop, `src-tauri/src/notifier.rs:281-282` writes the event *title*
-into the diagnostic log (`title = %event.payload.title`). Factor that
-into the privacy decision (titles already leak to disk on connector
-failure today).
+`DESIGN.html` manifest example present. Found the title-on-drop caveat
+(notifier.rs), initially recorded only in this note.
+
+**Review-plan pass 2 (2026-07-21, at `f084fa8`)**: all five cited source
+files confirmed byte-unchanged since pass 1 (087's landing touched none
+of them). Pass 1's caveat was material to the exact decision this memo
+asks for, so it now lives in the body, upgraded with two verified facts:
+plan 077's Diagnostics section makes the diagnostic log — and therefore
+any dropped-send title — browsable in Settings via `get_recent_log_lines`
+(`settings.rs:791`), and plan 070's ingest logging was checked
+content-clean (`engine.rs:189-192`: id/origin/priority only). Also added
+the "How this proceeds" section (decision → next-numbered spike/build
+plan, or retirement + an optional one-line title-redaction fix), so the
+memo states its own exit path. Still NEEDS-OPERATOR-DECISION — nothing
+here is dispatchable.
