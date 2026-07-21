@@ -100,3 +100,29 @@ the block is hardware (no Android device), the iOS-impossibility claim
 is dated and sourced, and the recommendation (Android app → local relay
 on the Mac → unchanged loopback `/notify`) is the right shape because it
 leaves the locked boundary untouched. Keep blocked.
+
+## CLOSED — operator decision, not pursued (2026-07-21)
+
+The operator closed this spike without building it, converting the
+2026-07-20 BLOCKED state into a final closure ("same for 62" —
+mark done and move on, immediately after closing 065 the same way).
+
+The facts the closure rests on, unchanged from the BLOCKED note:
+
+- **iOS: no path at all** — re-verified 2026-07-20 via live web search,
+  not recall. Shortcuts' only notification-adjacent triggers are
+  Email/Messages content-matching; Apple provides no public API for
+  reading other apps' notifications, and its own developer forum calls
+  the idea "a big privacy fail."
+- **Android: feasible but moot** — `NotificationListenerService` is a
+  real public API, but the operator owns no Android device, so the one
+  realistic capture path has no hardware to run on.
+- The `/notify` listener remains loopback-only by locked design
+  (`http.rs`'s hardcoded `127.0.0.1` + `listener_binds_loopback_only`
+  test) — nothing about this closure loosens that boundary.
+
+**Resolution: closed, not built.** No code was ever written for this
+plan; nothing to revert. Do not re-file from a future audit — the
+"genuinely new capability" observation in Why-this-matters remains true
+but decided against. Reopen ONLY if the operator acquires an Android
+device AND asks again — both, not either.
