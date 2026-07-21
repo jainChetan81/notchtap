@@ -171,6 +171,18 @@ body {
   border-bottom-right-radius: var(--card-radius, 14px);
 }
 
+/* plan 096 (079 item 8, part (c)): the cmux accent's hairline — a plain
+   `border-top`, not a `::before`/`::after` pseudo-element, because
+   `.news-shade::before` already claims `.below-block`'s `::before` for
+   its background wash. Lives on `.below-block` (content chrome), never
+   on `.card-assembly` (the shell that owns the priority accent) — origin
+   and priority are orthogonal and must never share a paint channel; this
+   rule touches none of the `--accent`/`--accent-soft` vars the priority
+   edge (`.compact::before`, `.stamp`, `.track span.cur`) reads from. */
+.below-block.cmux-origin {
+  border-top: 1px solid rgba(240, 196, 106, 0.55);
+}
+
 /* priority accent — a single named color per tier, consumed by the
    compact row's accent edge (.compact::before), the stamp pill, and the
    track rail. deliberately NOT signal-driven
@@ -507,9 +519,8 @@ body {
    (`prototype/notch-states.html:158-166`, `.notif-header-row`/
    `.notif-title`/`.notif-subtitle-row`/`.notif-subtitle`/
    `.notif-time-inline`/`.notif-body`). `.notif-header-row` pairs the
-   title with the priority Stamp badge (the only real "chip" content the
-   generic branch has — see the plan's cmux-accent note in
-   StatusRailCard.tsx for why no per-origin source chip exists here);
+   title with the badge cluster on the right (priority Stamp, plus the
+   plan-096 cmux chip when present — see `.notif-header-badges` below);
    `.notif-subtitle-row` pairs plan 035's `subtitle` field (surfaced in
    compact for the first time — previously expanded-manifest-only) with
    an inline-time slot. News reuses `.notif-time-inline` too (Decision 5
@@ -532,6 +543,38 @@ body {
   white-space: normal;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+/* plan 096: the header row's right-hand badge cluster — today just the
+   cmux chip (conditional) beside the always-present Stamp; a plain flex
+   row keeps `.notif-header-row`'s own `justify-content: space-between`
+   working with exactly two children (title, this cluster) regardless of
+   how many badges are inside it. */
+.notif-header-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+/* plan 096 (079 item 8): the cmux accent, part (a)+(b) — cards whose
+   `origin` is `"cmux"` (the field 096 added to the wire) get this tinted
+   chip with a small glyph prefix INSIDE it (the `::before`), reusing the
+   shared `.chip` shape from plan 092's chip language. Deliberately its
+   own color (not the priority accent vars) — `--accent`/`--accent-soft`
+   must stay reserved for priority alone (see `.card-assembly.low/medium/
+   high` above); origin and priority are orthogonal and must never share
+   a channel. See `.below-block.cmux-origin` below for part (c), the
+   hairline. */
+.chip-cmux {
+  color: #f0c46a;
+  background: rgba(240, 196, 106, 0.14);
+  border: 1px solid color-mix(in srgb, #f0c46a 35%, transparent);
+}
+
+.chip-cmux::before {
+  content: "⌁";
+  margin-right: 3px;
 }
 
 .notif-subtitle-row {

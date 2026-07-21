@@ -242,6 +242,16 @@ pub enum SlotState {
         event_type: EventType,
         priority: Priority,
         signal: EventSignal,
+        /// Which source produced this item (plan 096) — mirrors
+        /// `Event.origin` (v6, rotation-order tie-break) onto the wire so
+        /// the frontend can style/label cards by their origin; today's only
+        /// consumer is the cmux accent in `StatusRailCard.tsx`, but any
+        /// future per-source presentation can key off this without another
+        /// wire change. Time-invariant: it's assigned once when the event
+        /// is accepted and never changes for that item's lifetime, so
+        /// unlike `remaining_ms` it stays IN `dedup_eq`'s comparison below
+        /// (see that method's doc for the general rule).
+        origin: SourceKind,
         expanded: bool,
         source: Option<String>,
         category: Option<String>,
@@ -306,6 +316,13 @@ impl SlotState {
     /// exactly the moments a fresh emission is wanted, so keeping it means
     /// the gate still fires — with a fresh `remaining_ms` — right when the
     /// bar needs to re-anchor.
+    ///
+    /// `origin` (plan 096) stays IN the comparison for the same reason as
+    /// `ttl_ms`: it is set once per item and never varies on its own, so
+    /// normalizing it away here would be pure risk (masking a genuine
+    /// origin change, which cannot happen today but would be a silent bug
+    /// if it ever could) for zero benefit (there is no re-emit storm to
+    /// prevent, since it never ticks like `remaining_ms` does).
     ///
     /// This does NOT replace the derived `PartialEq`, which stays intact
     /// and honest — several tests assert full `SlotState` equality
@@ -447,6 +464,12 @@ mod tests {
             event_type: EventType::ScoreUpdate,
             priority: Priority::High,
             signal: EventSignal::Goal,
+            // plan 096: origin deliberately doesn't match event_type/source
+            // here — this test pins the WIRE SHAPE (every field's JSON key
+            // and value), not a semantically-coherent payload; Cmux is
+            // chosen because "origin":"cmux" is the exact literal this
+            // step's verify requires pinning.
+            origin: SourceKind::Cmux,
             expanded: false,
             source: Some("NDTV".to_string()),
             category: Some("politics".to_string()),
@@ -477,6 +500,10 @@ mod tests {
         assert_eq!(json["eventType"], "score_update");
         assert_eq!(json["priority"], "high");
         assert_eq!(json["signal"], "goal");
+        // plan 096: origin joins the wire, camelCase key (no rename needed —
+        // the field name is already one word), snake_case value per
+        // SourceKind's own serde attr.
+        assert_eq!(json["origin"], "cmux");
         assert_eq!(json["expanded"], false);
         assert_eq!(json["source"], "NDTV");
         assert_eq!(json["category"], "politics");
@@ -511,6 +538,7 @@ mod tests {
             event_type: EventType::Generic,
             priority: Priority::Medium,
             signal: EventSignal::Generic,
+            origin: SourceKind::Manual,
             expanded: false,
             source: None,
             category: None,
@@ -557,6 +585,7 @@ mod tests {
             event_type: EventType::MatchState,
             priority: Priority::High,
             signal: EventSignal::Kickoff,
+            origin: SourceKind::Football,
             expanded: false,
             source: None,
             category: None,
@@ -660,6 +689,7 @@ mod tests {
                 event_type: EventType::ScoreUpdate,
                 priority: Priority::High,
                 signal: EventSignal::Goal,
+                origin: SourceKind::Football,
                 expanded: false,
                 source: None,
                 category: None,
@@ -697,6 +727,51 @@ mod tests {
         assert!(
             !before.dedup_eq(&after_new_goal),
             "a changed espn block (new goal) must NOT be deduped away"
+        );
+    }
+
+    // plan 096: `origin` is time-invariant (constant per queued item), so
+    // — unlike `remaining_ms` — it must stay IN `dedup_eq`'s comparison.
+    // This is the tripwire the plan calls out by name: if two SlotStates
+    // differing ONLY in origin ever dedup_eq as equal, the field is not
+    // behaving as assumed.
+    #[test]
+    fn dedup_eq_treats_a_changed_origin_as_a_real_change() {
+        fn showing_with_origin(origin: SourceKind) -> SlotState {
+            SlotState::Showing {
+                id: Uuid::nil(),
+                title: "t".to_string(),
+                body: "b".to_string(),
+                event_type: EventType::Generic,
+                priority: Priority::Medium,
+                signal: EventSignal::Generic,
+                origin,
+                expanded: false,
+                source: None,
+                category: None,
+                published_at_ms: None,
+                link: None,
+                subtitle: None,
+                details: Vec::new(),
+                queue_total: 1,
+                queue_done: 0,
+                ttl_ms: 8000,
+                remaining_ms: 8000,
+                espn: None,
+            }
+        }
+
+        let before = showing_with_origin(SourceKind::Manual);
+        let after_same_origin = showing_with_origin(SourceKind::Manual);
+        let after_new_origin = showing_with_origin(SourceKind::Cmux);
+
+        assert!(
+            before.dedup_eq(&after_same_origin),
+            "identical origin must still dedup"
+        );
+        assert!(
+            !before.dedup_eq(&after_new_origin),
+            "a changed origin must NOT be deduped away"
         );
     }
 

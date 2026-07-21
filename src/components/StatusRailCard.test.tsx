@@ -1,6 +1,6 @@
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { EspnMeta, SlotState } from "../useSlotState";
+import type { EspnMeta, SlotState, SourceKind } from "../useSlotState";
 import type { StatusState } from "../useStatusState";
 import { StatusRailCard } from "./StatusRailCard";
 
@@ -40,6 +40,7 @@ const GOAL: SlotState = {
   eventType: "score_update",
   priority: "high",
   signal: "goal",
+  origin: "football",
   expanded: true,
   source: null,
   category: null,
@@ -61,6 +62,7 @@ const RED_CARD: SlotState = {
   eventType: "match_state",
   priority: "high",
   signal: "red_card",
+  origin: "football",
   expanded: true,
   source: null,
   category: null,
@@ -82,6 +84,7 @@ const CMUX_NEEDS_INPUT: SlotState = {
   eventType: "generic",
   priority: "high",
   signal: "generic",
+  origin: "cmux",
   expanded: true,
   source: null,
   category: null,
@@ -105,6 +108,7 @@ const LIVE_MATCH: SlotState = {
   eventType: "match_state",
   priority: "high",
   signal: "yellow_card",
+  origin: "football",
   expanded: false,
   source: null,
   category: null,
@@ -129,6 +133,7 @@ const NEWS: SlotState = {
   eventType: "news_item",
   priority: "low",
   signal: "generic",
+  origin: "news",
   expanded: true,
   source: "NDTV",
   category: "politics",
@@ -152,6 +157,7 @@ const CMUX_RICH: SlotState = {
   eventType: "generic",
   priority: "high",
   signal: "generic",
+  origin: "cmux",
   expanded: true,
   source: null,
   category: null,
@@ -171,8 +177,10 @@ const CMUX_RICH: SlotState = {
 
 // plan 082: a weather ALERT card — the rust core attaches wx-condition/
 // wx-is-day marker pairs (plan 035's details channel, reused) so the
-// frontend can derive mood/glyph art. `origin` is not on the wire; these
-// markers are the only signal the card is weather-derived.
+// frontend can derive mood/glyph art. Weather art is keyed off those
+// markers, not `origin` (plan 096 put `origin` on the wire, but the
+// weather mood/glyph derivation predates that and has no reason to move
+// off the markers now).
 const WEATHER_ALERT: SlotState = {
   state: "showing",
   id: "wx-1",
@@ -181,6 +189,7 @@ const WEATHER_ALERT: SlotState = {
   eventType: "generic",
   priority: "medium",
   signal: "generic",
+  origin: "weather",
   expanded: false,
   source: null,
   category: null,
@@ -222,6 +231,7 @@ function liveSlot(overrides: Partial<Extract<SlotState, { state: "showing" }>> =
     eventType: "score_update",
     priority: "high",
     signal: "goal",
+    origin: "football",
     expanded: false,
     source: null,
     category: null,
@@ -656,6 +666,59 @@ describe("StatusRailCard", () => {
       />,
     );
     expect(screen.getByText("FOO=bar make build")).toBeTruthy();
+  });
+
+  // plan 096 (079 item 8, the wire addition + accent build): the cmux
+  // accent — a chip (tint + glyph) in the header badge cluster, plus a
+  // hairline on `.below-block`, gated strictly on the now-wire `origin`
+  // field. Byte-absent for the other four SourceKind values; must never
+  // touch the priority accent channel (origin and priority are orthogonal).
+  describe("cmux accent (plan 096)", () => {
+    // cast to the narrower "showing" branch before spreading: spreading a
+    // `SlotState`-typed (union) variable and overriding one field produces
+    // a spurious excess-property error against the `{ state: "empty" }`
+    // branch — an existing TS quirk with union spreads, unrelated to this
+    // plan's own logic.
+    function genericSlot(origin: SourceKind): SlotState {
+      return { ...(CMUX_NEEDS_INPUT as Extract<SlotState, { state: "showing" }>), origin };
+    }
+
+    it("renders the chip and the below-block hairline for origin: cmux", () => {
+      const { container } = render(<StatusRailCard slot={genericSlot("cmux")} />);
+      const chip = container.querySelector(".chip-cmux");
+      expect(chip).not.toBeNull();
+      expect(chip?.textContent).toBe("Agent");
+      // lives inside the header badge cluster, alongside the Stamp — not
+      // some separate unrelated location.
+      expect(container.querySelector(".notif-header-badges .chip-cmux")).not.toBeNull();
+      expect(container.querySelector(".below-block.cmux-origin")).not.toBeNull();
+    });
+
+    it("is byte-absent for every other origin", () => {
+      for (const origin of ["football", "news", "manual", "weather"] as const) {
+        const { container, unmount } = render(<StatusRailCard slot={genericSlot(origin)} />);
+        expect(container.querySelector(".chip-cmux")).toBeNull();
+        expect(container.querySelector(".below-block.cmux-origin")).toBeNull();
+        expect(container.innerHTML).not.toContain("chip-cmux");
+        expect(container.innerHTML).not.toContain("cmux-origin");
+        unmount();
+      }
+    });
+
+    // the sharpest STOP condition in the plan: the accent must never touch
+    // the priority accent channel. Same priority (high), different origin
+    // — the shell's class list (which is exactly where the priority accent
+    // classes live, `.card-assembly.low/medium/high`) must be identical.
+    it("never touches the priority accent channel — same priority, different origin, identical shell classes", () => {
+      const { container: cmuxContainer } = render(<StatusRailCard slot={genericSlot("cmux")} />);
+      const { container: manualContainer } = render(
+        <StatusRailCard slot={genericSlot("manual")} />,
+      );
+      const cmuxShell = cmuxContainer.querySelector(".card-assembly") as HTMLElement;
+      const manualShell = manualContainer.querySelector(".card-assembly") as HTMLElement;
+      expect(cmuxShell.className).toBe(manualShell.className);
+      expect(cmuxShell.className).not.toContain("cmux");
+    });
   });
 
   // plan 085: resting_state "notch" — the cheap half of plan 079 item 17.

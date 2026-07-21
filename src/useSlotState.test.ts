@@ -16,6 +16,7 @@ const SHOWING_N1: SlotState = {
   eventType: "generic",
   priority: "medium",
   signal: "generic",
+  origin: "manual",
   expanded: false,
   source: null,
   category: null,
@@ -66,6 +67,7 @@ describe("useSlotState", () => {
       eventType: "generic",
       priority: "low",
       signal: "generic",
+      origin: "manual",
       expanded: false,
       source: null,
       category: null,
@@ -86,6 +88,7 @@ describe("useSlotState", () => {
       eventType: "score_update",
       priority: "high",
       signal: "goal",
+      origin: "football",
       expanded: true,
       source: null,
       category: null,
@@ -128,6 +131,7 @@ describe("useSlotState", () => {
       eventType: "news_item",
       priority: "low",
       signal: "generic",
+      origin: "news",
       expanded: false,
       source: "NDTV",
       category: "politics",
@@ -216,6 +220,29 @@ describe("useSlotState", () => {
     window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, signal: "confetti" };
     const { result } = renderHook(() => useSlotState());
     expect(result.current).toEqual({ state: "empty" });
+  });
+
+  // plan 096: `origin` — a closed five-value union, same rejection
+  // discipline as every other enum on this wire (signal/eventType/priority
+  // above).
+  it("accepts a showing payload with each recognized origin value", () => {
+    for (const origin of ["football", "news", "manual", "cmux", "weather"] as const) {
+      window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, origin };
+      const { result } = renderHook(() => useSlotState());
+      expect(result.current).toMatchObject({ origin });
+    }
+  });
+
+  it("ignores a showing payload with an unrecognized origin value", () => {
+    window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, origin: "telegram" };
+    const { result } = renderHook(() => useSlotState());
+    expect(result.current).toEqual({ state: "empty" });
+  });
+
+  it("ignores a showing payload missing origin entirely", () => {
+    const { origin: _origin, ...missingOrigin } = SHOWING_N1;
+    window.__NOTCHTAP_SLOT_STATE__ = missingOrigin;
+    expect(renderHook(() => useSlotState()).result.current).toEqual({ state: "empty" });
   });
 
   // plan 033: the queue-slider fields ride the same payload — the slider
@@ -313,6 +340,7 @@ describe("useSlotState", () => {
       eventType: "news_item",
       priority: "low",
       signal: "generic",
+      origin: "news",
       expanded: false,
       source: "NDTV",
       category: "politics",
