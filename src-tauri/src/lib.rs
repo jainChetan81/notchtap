@@ -444,13 +444,12 @@ pub fn run() {
                 // an emit for listeners already registered.
                 {
                     use tauri::Emitter;
-                    let appearance = app_handle
-                        .state::<StdMutex<Config>>()
-                        .lock()
-                        .unwrap()
-                        .appearance
-                        .clone();
-                    let payload = AppearanceChangedPayload::from(&appearance);
+                    // plan 085: the seed must carry resting_state too — a
+                    // fresh boot learns the flag ONLY from this seed, so
+                    // building the payload from the whole Config (not just
+                    // Appearance) is required, not optional.
+                    let config = app_handle.state::<StdMutex<Config>>().lock().unwrap().clone();
+                    let payload = AppearanceChangedPayload::from_config(&config);
                     let payload_json = escape_for_eval_splice(
                         &serde_json::to_string(&payload).unwrap_or_else(|_| "null".into()),
                     );
@@ -1070,6 +1069,8 @@ mod tests {
             details: Vec::new(),
             queue_total: 1,
             queue_done: 0,
+            ttl_ms: 8000,
+            remaining_ms: 8000,
         };
         let escaped = escape_for_eval_splice(&serde_json::to_string(&state).unwrap());
 

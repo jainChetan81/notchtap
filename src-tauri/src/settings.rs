@@ -16,7 +16,7 @@ use std::sync::Mutex as StdMutex;
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 
-use crate::config::{Appearance, Config};
+use crate::config::{Appearance, Config, RestingState};
 use crate::engine::Engine;
 use crate::event::{
     Event, EventMeta, EventPayload, EventSignal, EventType, RotationSpec, SourceKind,
@@ -527,31 +527,39 @@ fn ensure_settings_window<R: tauri::Runtime>(
 }
 
 /// IPC payload for `appearance-changed`: sent to the overlay whenever the
-/// user updates card styling. The field names stay camelCase-free; the
-/// frontend's listener mirrors this shape directly.
+/// user updates card styling, or any other overlay-behavior field on the
+/// appearance channel. The field names stay camelCase-free; the frontend's
+/// listener mirrors this shape directly.
+///
+/// plan 085: `resting_state` widened this beyond pure card styling — it's a
+/// top-level `Config` field, not part of `Appearance`, so this payload is
+/// always built from the whole `Config` (`from_config`), never from
+/// `Appearance` alone. That matters even for a pure appearance-only change
+/// (`set_appearance`): the emitted event must still carry the *current*
+/// `resting_state`, or the frontend's tracked value would fall back to its
+/// default on every unrelated scale/radius/opacity tweak.
 #[derive(Clone, serde::Serialize)]
 pub struct AppearanceChangedPayload {
     pub scale: f64,
     pub radius: f64,
     pub opacity: f64,
+    pub resting_state: RestingState,
 }
 
-impl From<&Appearance> for AppearanceChangedPayload {
-    fn from(appearance: &Appearance) -> Self {
+impl AppearanceChangedPayload {
+    pub fn from_config(config: &Config) -> Self {
         Self {
-            scale: appearance.card_scale,
-            radius: appearance.card_radius,
-            opacity: appearance.card_opacity,
+            scale: config.appearance.card_scale,
+            radius: config.appearance.card_radius,
+            opacity: config.appearance.card_opacity,
+            resting_state: config.resting_state,
         }
     }
 }
 
-fn broadcast_appearance_change<R: tauri::Runtime>(
-    app: &tauri::AppHandle<R>,
-    appearance: &Appearance,
-) {
+fn broadcast_appearance_change<R: tauri::Runtime>(app: &tauri::AppHandle<R>, config: &Config) {
     use tauri::Emitter;
-    let payload = AppearanceChangedPayload::from(appearance);
+    let payload = AppearanceChangedPayload::from_config(config);
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.emit("appearance-changed", &payload);
     }
@@ -813,7 +821,7 @@ pub fn set_appearance(
         let mut managed = state.inner().lock().unwrap();
         managed.appearance = appearance.clone();
     }
-    broadcast_appearance_change(&app, &appearance);
+    broadcast_appearance_change(&app, &config);
     Ok(())
 }
 
@@ -1050,6 +1058,41 @@ mod tests {
         })
         .unwrap_err();
         assert_eq!(high.len(), 3);
+    }
+
+    // --- appearance-changed payload (plan 085 widened it with resting_state) ---
+
+    #[test]
+    fn appearance_changed_payload_carries_resting_state_from_config() {
+        // plan 085: the payload is built from the whole Config, not just
+        // Appearance — a pure appearance change (set_appearance) must still
+        // report the config's actual resting_state, not a default.
+        let mut config = Config {
+            resting_state: crate::config::RestingState::Notch,
+            ..Config::default()
+        };
+        config.appearance.card_scale = 1.2;
+        let payload = AppearanceChangedPayload::from_config(&config);
+        assert_eq!(payload.scale, 1.2);
+        assert_eq!(payload.resting_state, crate::config::RestingState::Notch);
+
+        config.resting_state = crate::config::RestingState::Rail;
+        let payload = AppearanceChangedPayload::from_config(&config);
+        assert_eq!(payload.resting_state, crate::config::RestingState::Rail);
+    }
+
+    #[test]
+    fn appearance_changed_payload_serializes_resting_state_as_snake_case_string() {
+        let config = Config {
+            resting_state: crate::config::RestingState::Notch,
+            ..Config::default()
+        };
+        let payload = AppearanceChangedPayload::from_config(&config);
+        let json = serde_json::to_value(&payload).unwrap();
+        // no camelCase rename on this payload (the frontend listener
+        // mirrors the shape directly) — snake_case wire field, snake_case
+        // value, matching the frontend's `"rail" | "notch"` union exactly.
+        assert_eq!(json["resting_state"], serde_json::json!("notch"));
     }
 
     // --- rss rules (v5 news backend, folded into the panel 2026-07-17) ---

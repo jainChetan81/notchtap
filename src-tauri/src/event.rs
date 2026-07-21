@@ -203,7 +203,63 @@ pub enum SlotState {
         /// `queue_total - 1` so the current segment stays lit).
         queue_total: u32,
         queue_done: u32,
+        /// Total rotation window for this showing, milliseconds — includes
+        /// `extension_secs` and resolves OneShot ttl vs Recurring
+        /// display_secs exactly as `rotation_window(self.window_expanded)`
+        /// does (plan 081). Time-free: it only changes at discrete
+        /// lifecycle moments (promotion, supersede top-up, manual expand),
+        /// which is exactly what makes it safe to keep in the dedup
+        /// comparison below — see `dedup_eq`.
+        ttl_ms: u64,
+        /// Milliseconds remaining until rotate-out AT EMISSION TIME,
+        /// computed from the same `promoted_at` Instant math as
+        /// `next_deadline` (saturating at 0). The frontend anchors its
+        /// countdown at receipt — `Instant` isn't wall-clock and can't
+        /// cross the wire, so remaining-at-emit + local elapsed is the
+        /// honest shape. Deliberately EXCLUDED from the dedup comparison
+        /// (`dedup_eq`) — it's a pure function of wall-clock time and so
+        /// never matches between two calls even microseconds apart, which
+        /// would defeat deduping entirely (plan 081 attempt 1 measured 2
+        /// emissions per 1 `accept()` before this exclusion existed).
+        remaining_ms: u64,
     },
+}
+
+impl SlotState {
+    /// Dedup-only equality for `queue.rs::slot_state_if_changed`.
+    ///
+    /// Identical to the derived `PartialEq` above EXCEPT it ignores
+    /// `remaining_ms`, which is a pure function of `Instant::now()` and can
+    /// never be equal between two calls even milliseconds apart — see the
+    /// rotation loop's post-wake recheck in `engine.rs::spawn_rotation`,
+    /// which re-locks the queue and calls `slot_state_if_changed()` again
+    /// after every mutation's own emit. Without this exclusion that second,
+    /// structurally-unavoidable call always sees a "changed" state (because
+    /// `remaining_ms` ticked down) and always re-emits, doubling emission
+    /// volume system-wide (plan 081 attempt 1's finding).
+    ///
+    /// `ttl_ms` stays IN the comparison on purpose: it only changes at real
+    /// lifecycle events (promotion, supersede extension, manual expand),
+    /// exactly the moments a fresh emission is wanted, so keeping it means
+    /// the gate still fires — with a fresh `remaining_ms` — right when the
+    /// bar needs to re-anchor.
+    ///
+    /// This does NOT replace the derived `PartialEq`, which stays intact
+    /// and honest — several tests assert full `SlotState` equality
+    /// (`assert_eq!`), and a hand-rolled `PartialEq` that quietly ignored a
+    /// field would make those assertions silently meaningless. Any future
+    /// continuously-varying wire field (see the module doc's "maintenance
+    /// notes" pointer) must extend this method, not `PartialEq`.
+    pub(crate) fn dedup_eq(&self, other: &SlotState) -> bool {
+        fn normalized(s: &SlotState) -> SlotState {
+            let mut s = s.clone();
+            if let SlotState::Showing { remaining_ms, .. } = &mut s {
+                *remaining_ms = 0;
+            }
+            s
+        }
+        normalized(self) == normalized(other)
+    }
 }
 
 /// The one event channel into the overlay — the frontend listens for
@@ -342,6 +398,8 @@ mod tests {
             ],
             queue_total: 5,
             queue_done: 2,
+            ttl_ms: 8000,
+            remaining_ms: 6000,
         };
         let json = serde_json::to_value(&state).unwrap();
         assert_eq!(json["state"], "showing");
@@ -365,9 +423,14 @@ mod tests {
         assert_eq!(json["details"][1]["value"], "git push");
         assert_eq!(json["queueTotal"], 5);
         assert_eq!(json["queueDone"], 2);
+        // plan 081: timing fields, camelCase, milliseconds.
+        assert_eq!(json["ttlMs"], 8000);
+        assert_eq!(json["remainingMs"], 6000);
         assert!(json.get("event_type").is_none());
         assert!(json.get("published_at_ms").is_none());
         assert!(json.get("queue_total").is_none());
+        assert!(json.get("ttl_ms").is_none());
+        assert!(json.get("remaining_ms").is_none());
         assert!(json.get("ttlSecs").is_none());
     }
 
@@ -389,6 +452,8 @@ mod tests {
             details: Vec::new(),
             queue_total: 1,
             queue_done: 0,
+            ttl_ms: 4000,
+            remaining_ms: 4000,
         };
 
         let json = serde_json::to_value(state).unwrap();
@@ -396,6 +461,9 @@ mod tests {
         assert!(json["category"].is_null());
         assert!(json["publishedAtMs"].is_null());
         assert!(json["link"].is_null());
+        // plan 081: timing fields are always present (never optional).
+        assert_eq!(json["ttlMs"], 4000);
+        assert_eq!(json["remainingMs"], 4000);
         // plan 035: absent subtitle serializes null; absent details is an
         // empty array (never null/absent), so the frontend can map over it.
         assert!(json["subtitle"].is_null());

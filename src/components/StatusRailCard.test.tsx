@@ -40,6 +40,8 @@ const GOAL: SlotState = {
   details: [],
   queueTotal: 3,
   queueDone: 0,
+  ttlMs: 8000,
+  remainingMs: 8000,
 };
 
 const RED_CARD: SlotState = {
@@ -59,6 +61,8 @@ const RED_CARD: SlotState = {
   details: [],
   queueTotal: 3,
   queueDone: 1,
+  ttlMs: 8000,
+  remainingMs: 6000,
 };
 
 const CMUX_NEEDS_INPUT: SlotState = {
@@ -78,6 +82,8 @@ const CMUX_NEEDS_INPUT: SlotState = {
   details: [],
   queueTotal: 1,
   queueDone: 0,
+  ttlMs: 8000,
+  remainingMs: 8000,
 };
 
 // plan 042: a live-match card — the rust core attaches Clock + per-side
@@ -102,6 +108,8 @@ const LIVE_MATCH: SlotState = {
   ],
   queueTotal: 1,
   queueDone: 0,
+  ttlMs: 8000,
+  remainingMs: 8000,
 };
 
 const NEWS: SlotState = {
@@ -121,6 +129,8 @@ const NEWS: SlotState = {
   details: [],
   queueTotal: 2,
   queueDone: 1,
+  ttlMs: 8000,
+  remainingMs: 6000,
 };
 
 // plan 035: a generic (cmux/claude-relay) card carrying a subtitle and
@@ -146,6 +156,8 @@ const CMUX_RICH: SlotState = {
   ],
   queueTotal: 1,
   queueDone: 0,
+  ttlMs: 8000,
+  remainingMs: 8000,
 };
 
 describe("StatusRailCard", () => {
@@ -297,6 +309,27 @@ describe("StatusRailCard", () => {
     // "Arsenal 2-0" legitimately appears twice while expanded — once in
     // the compact preview, once in the manifest's "Message" detail.
     expect(screen.getAllByText("Arsenal 2-0").length).toBe(2);
+  });
+
+  // plan 081: the TTL bar exists only in the "showing" state (no card, no
+  // bar) and sits between the compact content block and the manifest wrap
+  // — the prototype's exact position (notch-states.html:392 vs
+  // .manifest-wrap at :394).
+  it("renders no ttl-bar while idle", () => {
+    const { container } = render(<StatusRailCard slot={{ state: "empty" }} />);
+    expect(container.querySelector(".ttl-bar")).toBeNull();
+  });
+
+  it("renders the ttl-bar between the compact content and the manifest wrap when showing", () => {
+    const { container } = render(<StatusRailCard slot={GOAL} />);
+    const cardContent = container.querySelector(".card-content") as HTMLElement;
+    const children = Array.from(cardContent.children);
+    const compactIndex = children.findIndex((el) => el.classList.contains("compact"));
+    const ttlBarIndex = children.findIndex((el) => el.classList.contains("ttl-bar"));
+    const manifestIndex = children.findIndex((el) => el.classList.contains("manifest-wrap"));
+    expect(compactIndex).toBeGreaterThanOrEqual(0);
+    expect(ttlBarIndex).toBeGreaterThan(compactIndex);
+    expect(manifestIndex).toBeGreaterThan(ttlBarIndex);
   });
 
   it("renders the news masthead, headline, category, age, published time, and category shader classes", () => {
@@ -509,6 +542,60 @@ describe("StatusRailCard", () => {
       />,
     );
     expect(screen.getByText("FOO=bar make build")).toBeTruthy();
+  });
+
+  // plan 085: resting_state "notch" — the cheap half of plan 079 item 17.
+  // Idle must render zero app-drawn pixels: no idle content, and no
+  // `.rail-card` shell at all (not even an empty one), since the shell
+  // itself carries background/shadow/priority-accent styling.
+  describe("resting_state: notch (plan 085)", () => {
+    it("renders nothing while idle", () => {
+      const { container } = render(
+        <StatusRailCard slot={{ state: "empty" }} restingState="notch" />,
+      );
+      expect(container.querySelector(".rail-card")).toBeNull();
+      expect(container.querySelector(".rail-card.idle")).toBeNull();
+      expect(container.querySelector(".idle-view")).toBeNull();
+      expect(container.innerHTML).toBe("");
+    });
+
+    it("renders the card normally while showing (promotions unaffected)", () => {
+      const { container } = render(<StatusRailCard slot={GOAL} restingState="notch" />);
+      expect(container.querySelector(".rail-card.high")).not.toBeNull();
+      expect(screen.getByText("GOAL")).toBeTruthy();
+    });
+
+    it("hides the card once a showing item finishes rotating out to idle", async () => {
+      const { container, rerender } = render(<StatusRailCard slot={GOAL} restingState="notch" />);
+      expect(container.querySelector(".rail-card")).not.toBeNull();
+
+      rerender(<StatusRailCard slot={{ state: "empty" }} restingState="notch" />);
+      // the outgoing card keeps playing its normal exit animation for the
+      // same 220ms window as "rail" mode — it must not vanish abruptly.
+      expect(container.querySelector(".rail-card")).not.toBeNull();
+
+      await vi.waitFor(() => {
+        expect(container.querySelector(".rail-card")).toBeNull();
+      });
+    });
+  });
+
+  // plan 085: explicit regression pin for the default/unset cases — the
+  // idle rail must render byte-identically to before this plan.
+  describe("resting_state: rail (default) and unset (plan 085 regression pin)", () => {
+    it('renders today\'s idle clock/status rail when restingState is "rail"', () => {
+      const { container } = render(
+        <StatusRailCard slot={{ state: "empty" }} restingState="rail" />,
+      );
+      expect(container.querySelector(".rail-card.idle")).not.toBeNull();
+      expect(container.querySelector(".idle-view")).not.toBeNull();
+    });
+
+    it("renders today's idle clock/status rail when restingState is omitted", () => {
+      const { container } = render(<StatusRailCard slot={{ state: "empty" }} />);
+      expect(container.querySelector(".rail-card.idle")).not.toBeNull();
+      expect(container.querySelector(".idle-view")).not.toBeNull();
+    });
   });
 
   // plan 033: the track is now the queue slider — an enqueue while the

@@ -599,6 +599,80 @@ mod tests {
         );
     }
 
+    // plan 081 REQUIRED regression test — the tripwire for attempt 1's
+    // finding. The rotation loop above (the `loop` in `spawn_rotation`) is
+    // woken by `notify_waiters()` after EVERY mutation, then independently
+    // re-locks the queue and calls `q.tick` + `q.slot_state_if_changed()` a
+    // SECOND time, downstream of the mutation site's (`accept`'s) own
+    // emit — this is the shipped plan-036/037 protocol, working as
+    // designed. `SlotState::Showing::remaining_ms` is computed from
+    // `Instant::now()` inside `current_slot_state`, so the two calls a few
+    // ms apart always differed on that field alone — attempt 1 measured
+    // exactly 2 emissions for 1 `accept()` before `SlotState::dedup_eq`
+    // (which deliberately excludes `remaining_ms`, see its doc comment in
+    // event.rs) existed. With the dedup split in place, this must be
+    // exactly 1: the rotation loop's recheck sees an unchanged `ttl_ms` and
+    // no other differing field, so it dedupes and does not re-emit.
+    //
+    // If a future change makes this assert !=1 again, it means either the
+    // dedup split broke, or a new non-deduping emitter was introduced
+    // elsewhere — do not "fix" this test by loosening the assertion.
+    //
+    // Ordering note: `accept()` runs BEFORE `spawn_rotation()` here,
+    // deliberately — `tauri::async_runtime::spawn` schedules onto Tauri's
+    // own (real, separate) async runtime, not this test's `#[tokio::test]`
+    // one, so a rotation loop already running against an *empty* queue
+    // races the test's own setup for real OS-scheduling reasons having
+    // nothing to do with this regression: its first iteration sees
+    // `last_emitted == None` and unconditionally emits a startup `Empty`
+    // state, and under real system load there is no fixed settle delay
+    // that reliably drains that emission before the observation window
+    // starts (a fixed `sleep` + counter reset was tried and measured
+    // flaky under a full-suite-load run). Doing the one `accept()` call
+    // FIRST means the queue already holds the visible item by the time
+    // `spawn_rotation()` starts, so the loop's first iteration is itself
+    // the "downstream recheck" this test exists to exercise — no empty
+    // queue, no startup emission, nothing to race.
+    #[tokio::test]
+    async fn one_accept_emits_exactly_one_slot_state_despite_live_remaining_ms() {
+        let app = tauri::test::mock_app();
+        let engine = test_engine(&app);
+
+        let emit_count = Arc::new(AtomicUsize::new(0));
+        {
+            use tauri::Listener;
+            let counter = emit_count.clone();
+            app.handle().listen(SLOT_STATE_EVENT, move |_| {
+                counter.fetch_add(1, Ordering::SeqCst);
+            });
+        }
+
+        // long ttl so the item is still visible (and no rotation-out
+        // occurs) during the observation window below.
+        let mut long_lived = event(Priority::Medium);
+        long_lived.rotation = RotationSpec::OneShot { ttl_secs: 30 };
+        engine.accept(long_lived, false).await.unwrap();
+        assert_eq!(
+            emit_count.load(Ordering::SeqCst),
+            1,
+            "accept() itself must have emitted exactly once"
+        );
+
+        // only now start the rotation loop — its first iteration is the
+        // downstream recheck under test.
+        engine.spawn_rotation();
+
+        // give the rotation loop's recheck time to run.
+        tokio::time::sleep(Duration::from_millis(300)).await;
+
+        assert_eq!(
+            emit_count.load(Ordering::SeqCst),
+            1,
+            "expected exactly one slot-state emission per accept() — the rotation \
+             loop's post-wake recheck must dedupe via remaining_ms-exclusive comparison"
+        );
+    }
+
     #[test]
     fn emit_current_returns_and_emits() {
         // The webview-reload re-emit: dedup deliberately bypassed, so two

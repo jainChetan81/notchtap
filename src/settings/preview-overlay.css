@@ -344,6 +344,25 @@
   box-shadow: 0 -3px 14px var(--accent-soft);
 }
 
+/* plan 081: mirror styles.css's TTL bar (mirror law) — same card-chrome
+   accent fill, JS-driven width (TtlBar.tsx), no CSS transition. */
+.appearance-preview .ttl-bar {
+  height: 2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.appearance-preview .ttl-fill {
+  height: 100%;
+  width: 100%;
+  background: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .appearance-preview .ttl-fill {
+    transition: none;
+  }
+}
+
 .appearance-preview .manifest {
   overflow: hidden;
   border-top: 1px solid rgba(255, 255, 255, 0.1);

@@ -44,6 +44,7 @@ const config: Config = {
   rotation_order: ["news", "cmux", "manual", "weather", "football"],
   connectors: { telegram: { enabled: true } },
   appearance: { card_scale: 1, card_radius: 8, card_opacity: 0.9 },
+  resting_state: "notch",
 };
 
 // Mirrors src-tauri/src/config.rs::Config::default() (served over IPC by
@@ -89,6 +90,7 @@ const rustConfigDefaults: Config = {
   rotation_order: ["football", "manual", "weather", "cmux", "news"],
   connectors: { telegram: { enabled: false } },
   appearance: { card_scale: 1, card_radius: 16, card_opacity: 0.9 },
+  resting_state: "rail",
 };
 
 const unsetSecrets: SecretStatus = {
@@ -230,11 +232,45 @@ describe("SettingsApp", () => {
     expect(screen.getByDisplayValue("14")).toBeTruthy();
     expect(screen.getByDisplayValue("75")).toBeTruthy();
     expect((screen.getByLabelText("Start paused") as HTMLInputElement).checked).toBe(true);
+    // plan 085: the toggle reflects the loaded config's resting_state
+    // ("notch" in this fixture) — checked means "hidden while idle".
+    expect((screen.getByLabelText("Hide overlay when idle") as HTMLInputElement).checked).toBe(
+      true,
+    );
     expect(
       screen.getByText(
         "Waiting items promote high → medium → low. Priority chooses the next turn; it never interrupts the visible item.",
       ),
     ).toBeTruthy();
+  });
+
+  // plan 085: the hide-when-idle toggle patches resting_state and it rides
+  // the same Save & Relaunch path as every other General-section field —
+  // the toggle's help text says so, and this test pins that it's true.
+  it("toggling Hide overlay when idle patches resting_state into the saved config", async () => {
+    let savedConfig: Config | null = null;
+    mockIPC((command, payload) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "save_config_and_relaunch") {
+        savedConfig = (payload as { config: Config }).config;
+        return null;
+      }
+    });
+    render(<SettingsApp />);
+
+    const toggle = (await screen.findByLabelText("Hide overlay when idle")) as HTMLInputElement;
+    expect(toggle.checked).toBe(true); // fixture config has resting_state: "notch"
+
+    fireEvent.click(toggle);
+    expect(toggle.checked).toBe(false);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save & Relaunch" }));
+
+    await waitFor(() => expect(savedConfig).not.toBeNull());
+    // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
+    expect(savedConfig!.resting_state).toBe("rail");
   });
 
   it("renders every save rejection message", async () => {
@@ -332,6 +368,9 @@ describe("SettingsApp", () => {
       "50",
     );
     expect((screen.getByLabelText("Start paused") as HTMLInputElement).checked).toBe(false);
+    expect((screen.getByLabelText("Hide overlay when idle") as HTMLInputElement).checked).toBe(
+      false,
+    );
     expect(selectedPriorityLabel(screen.getByLabelText("Manual push priority"))).toBe("Medium");
     expect(rotationOrderRowNames()).toEqual([
       "Football",

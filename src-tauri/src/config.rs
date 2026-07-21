@@ -85,6 +85,22 @@ pub struct Config {
     pub rotation_order: Vec<SourceKind>,
     pub connectors: Connectors,
     pub appearance: Appearance,
+    /// plan 085: the overlay's RESTING (idle) render choice — the cheap
+    /// half of plan 079 item 17. `Rail` (default) is today's time+dots
+    /// idle rail, zero behavior change. `Notch` renders nothing while
+    /// idle (the bare native notch) — a render choice only, no hover
+    /// detection; every `showing` path (promotions, rotation, expand,
+    /// TTL) is unaffected either way.
+    #[serde(default = "default_resting_state")]
+    pub resting_state: RestingState,
+}
+
+/// See [`Config::resting_state`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RestingState {
+    Rail,
+    Notch,
 }
 
 /// `[connectors.*]` tables — non-secret on/off switches only; credentials
@@ -246,6 +262,10 @@ fn default_weather_priority() -> Priority {
     Priority::Medium
 }
 
+fn default_resting_state() -> RestingState {
+    RestingState::Rail
+}
+
 fn default_rotation_order() -> Vec<SourceKind> {
     // v6.1 review fix: Manual ranks ahead of Cmux — at default priorities
     // (Football/Cmux both High, Manual Medium, News Low) this never
@@ -342,6 +362,7 @@ impl Default for Config {
             rotation_order: default_rotation_order(),
             connectors: Connectors::default(),
             appearance: default_appearance(),
+            resting_state: default_resting_state(),
         }
     }
 }
@@ -488,6 +509,21 @@ mod tests {
         assert_eq!(c.appearance.card_scale, 1.0);
         assert_eq!(c.appearance.card_radius, 16.0);
         assert_eq!(c.appearance.card_opacity, 0.9);
+        assert_eq!(c.resting_state, RestingState::Rail);
+    }
+
+    #[test]
+    fn resting_state_defaults_to_rail_and_is_overridable() {
+        // plan 085: a config file predating this field (or one that simply
+        // never sets it) heals to `rail` — zero behavior change by default.
+        let healed = Config::parse("").unwrap();
+        assert_eq!(healed.resting_state, RestingState::Rail);
+
+        let notch = Config::parse("resting_state = \"notch\"\n").unwrap();
+        assert_eq!(notch.resting_state, RestingState::Notch);
+
+        let rail = Config::parse("resting_state = \"rail\"\n").unwrap();
+        assert_eq!(rail.resting_state, RestingState::Rail);
     }
 
     #[test]

@@ -8,6 +8,7 @@ import { IdleView } from "./IdleView";
 import { Manifest } from "./Manifest";
 import { Stamp } from "./Stamp";
 import { Track } from "./Track";
+import { TtlBar } from "./TtlBar";
 
 type Pulse = "pulse-goal" | "pulse-red" | null;
 
@@ -19,7 +20,18 @@ const PULSE_END_ANIMATION: Record<NonNullable<Pulse>, string> = {
   "pulse-red": "red-alert",
 };
 
-export function StatusRailCard({ slot, status }: { slot: SlotState; status?: StatusState }) {
+export function StatusRailCard({
+  slot,
+  status,
+  restingState = "rail",
+}: {
+  slot: SlotState;
+  status?: StatusState;
+  // plan 085: the resting-state render choice. Optional, defaulting to
+  // "rail" — every existing caller (tests, the settings preview) that
+  // never passes it keeps today's idle rail, byte-identical.
+  restingState?: "rail" | "notch";
+}) {
   const showing = slot.state === "showing";
   const currentId = showing ? slot.id : null;
   const currentSignal = showing ? slot.signal : null;
@@ -89,6 +101,18 @@ export function StatusRailCard({ slot, status }: { slot: SlotState; status?: Sta
     () => renderInlineMarkdown(renderedSlot.state === "showing" ? renderedSlot.body : ""),
     [renderedSlot],
   );
+
+  // plan 085: idle + resting_state "notch" → zero app-drawn pixels, not a
+  // narrower/emptied shell — the outer `.rail-card` div itself must not
+  // mount (it carries background/shadow/priority-accent styling that a
+  // bare native notch must never show). Gated on the delayed-swap-settled
+  // state (`renderedShowing`/`exiting`), not the live `showing` flag, so a
+  // still-exiting prior card finishes its normal exit animation exactly as
+  // it does in "rail" mode; only once the swap has fully settled into idle
+  // does notch mode hide the card. Every `showing` path is unaffected.
+  if (!renderedShowing && !exiting && restingState === "notch") {
+    return null;
+  }
 
   return (
     <div
@@ -161,6 +185,12 @@ export function StatusRailCard({ slot, status }: { slot: SlotState; status?: Sta
               )}
               <Track total={renderedSlot.queueTotal} done={renderedSlot.queueDone} />
             </div>
+            <TtlBar
+              key={renderedSlot.id}
+              slotId={renderedSlot.id}
+              ttlMs={renderedSlot.ttlMs}
+              remainingMs={renderedSlot.remainingMs}
+            />
             <Manifest
               body={renderedSlot.body}
               eventType={renderedSlot.eventType}

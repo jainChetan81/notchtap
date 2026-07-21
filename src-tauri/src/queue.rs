@@ -469,13 +469,25 @@ impl SingleSlotQueue {
     // slot-state emission helpers
     // ------------------------------------------------------------------
 
+    /// Emits only when the state has meaningfully changed, per
+    /// `SlotState::dedup_eq` (plan 081) — NOT the derived `PartialEq`. The
+    /// derived equality would compare `remaining_ms` too, which is a pure
+    /// function of `Instant::now()` and so is never stable between two
+    /// calls even milliseconds apart; using it here reintroduces plan 081
+    /// attempt 1's double-emission bug (the rotation loop's post-wake
+    /// recheck always seeing "changed"). See `SlotState::dedup_eq`'s doc
+    /// for the full mechanism.
     pub fn slot_state_if_changed(&mut self) -> Option<SlotState> {
         let current = self.current_slot_state();
-        if self.last_emitted.as_ref() == Some(&current) {
-            None
-        } else {
+        let changed = match self.last_emitted.as_ref() {
+            Some(last) => !last.dedup_eq(&current),
+            None => true,
+        };
+        if changed {
             self.last_emitted = Some(current.clone());
             Some(current)
+        } else {
+            None
         }
     }
 
@@ -493,6 +505,29 @@ impl SingleSlotQueue {
                 let queue_done = u32::try_from(self.batch_done)
                     .unwrap_or(u32::MAX)
                     .min(queue_total - 1);
+
+                // Timing (plan 081): the same window math `next_deadline`
+                // uses, expressed as wire-friendly milliseconds. `ttl_ms` is
+                // time-free (a pure function of the rotation spec,
+                // `window_expanded`, and `extension_secs`); `remaining_ms`
+                // is a pure function of `Instant::now()` taken right here at
+                // emission time — the frontend anchors its own countdown
+                // from it on receipt.
+                let window_secs =
+                    item.event.rotation_window(self.window_expanded) + item.extension_secs;
+                let ttl_ms = window_secs.saturating_mul(1000);
+                let remaining_ms = match item.promoted_at {
+                    Some(promoted_at) => {
+                        let deadline = promoted_at + Duration::from_secs(window_secs);
+                        let remaining = deadline.saturating_duration_since(Instant::now());
+                        u64::try_from(remaining.as_millis()).unwrap_or(u64::MAX)
+                    }
+                    // Defensive: every real promotion path sets
+                    // `promoted_at`. If it's somehow absent, render a full
+                    // bar rather than panicking.
+                    None => ttl_ms,
+                };
+
                 SlotState::Showing {
                     id: item.event.id,
                     title: item.event.payload.title.clone(),
@@ -509,6 +544,8 @@ impl SingleSlotQueue {
                     details: item.event.meta.details.clone(),
                     queue_total,
                     queue_done,
+                    ttl_ms,
+                    remaining_ms,
                 }
             }
         }
@@ -1445,6 +1482,36 @@ mod tests {
         assert!(second.is_none());
     }
 
+    // plan 081: `slot_state_if_changed` must dedupe across a real
+    // wall-clock gap in which only `remaining_ms` moves. This is a direct,
+    // deterministic complement to the engine-level regression test
+    // (`engine.rs`'s
+    // `one_accept_emits_exactly_one_slot_state_despite_live_remaining_ms`):
+    // that test's two `current_slot_state` calls are separated only by an
+    // async wake-and-relock, which on fast hardware can complete within
+    // the same millisecond `remaining_ms` is truncated to — so it can
+    // pass even under too-strict equality, purely by luck of timing. A
+    // real sleep here forces the gap deterministically, proving
+    // `SlotState::dedup_eq`'s `remaining_ms` exclusion (not scheduling
+    // luck) is what keeps this deduped: reverting `slot_state_if_changed`
+    // to derived `PartialEq` makes this test fail reliably.
+    #[test]
+    fn slot_state_if_changed_dedupes_across_a_real_time_gap_that_only_moves_remaining_ms() {
+        let mut q = SingleSlotQueue::new(50);
+        q.enqueue(event("a", Priority::Medium, 30), Instant::now())
+            .unwrap();
+        assert!(q.slot_state_if_changed().is_some(), "promotion must emit");
+
+        // real sleep: guarantees remaining_ms strictly decreases while
+        // ttl_ms (time-free) stays exactly the same.
+        std::thread::sleep(Duration::from_millis(5));
+
+        assert!(
+            q.slot_state_if_changed().is_none(),
+            "remaining_ms alone moving must not trigger a re-emission"
+        );
+    }
+
     #[test]
     fn slot_state_emits_on_promotion_and_rotation_to_empty() {
         let mut q = SingleSlotQueue::new(50);
@@ -1888,6 +1955,63 @@ mod tests {
                 assert_eq!(details[0].value, "Bash");
                 assert_eq!(details[1].label, "Command");
                 assert_eq!(details[1].value, "git push");
+            }
+            SlotState::Empty => panic!("expected Showing"),
+        }
+    }
+
+    // plan 081: current_slot_state's timing fields. No clock-injection
+    // harness exists for this method (it deliberately consults real
+    // `Instant::now()` at emission time, per the doc comment on
+    // `remaining_ms`) — so unlike the `next_deadline` tests above (which
+    // use a synthetic `t0` clock passed through `tick`), this test moves
+    // `promoted_at` directly using real `Instant::now()` arithmetic.
+    #[test]
+    fn current_slot_state_emits_ttl_and_remaining_from_real_promoted_at() {
+        let mut q = SingleSlotQueue::new(50);
+        q.enqueue(event("a", Priority::Medium, 8), Instant::now())
+            .unwrap();
+        // move the visible item's promotion 2s into its 8s window.
+        q.visible.as_mut().unwrap().promoted_at = Some(Instant::now() - Duration::from_secs(2));
+
+        match q.current_slot_state() {
+            SlotState::Showing {
+                ttl_ms,
+                remaining_ms,
+                ..
+            } => {
+                assert_eq!(ttl_ms, 8000);
+                // ~6000ms remaining; allow slack for test execution time.
+                assert!(
+                    (5500..=6000).contains(&remaining_ms),
+                    "expected remaining_ms near 6000, got {remaining_ms}"
+                );
+            }
+            SlotState::Empty => panic!("expected Showing"),
+        }
+    }
+
+    // plan 081: a supersede top-up (queue.rs:338-348) grows extension_secs,
+    // which must show up in ttl_ms — the whole point of keeping ttl_ms in
+    // the emission is that the bar re-anchors to the real, possibly-
+    // extended deadline. Mirrors
+    // next_deadline_includes_supersede_extension's setup.
+    #[test]
+    fn current_slot_state_ttl_includes_supersede_extension() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue(topic_event("a", Priority::Medium, 1, "topic"), t0)
+            .unwrap();
+        // below the floor: this supersede grants a top-up.
+        q.enqueue(topic_event("a2", Priority::Medium, 1, "topic"), t0)
+            .unwrap();
+
+        let extension_secs = q.visible.as_ref().unwrap().extension_secs;
+        assert!(extension_secs > 0, "expected a top-up to have been granted");
+
+        match q.current_slot_state() {
+            SlotState::Showing { ttl_ms, .. } => {
+                assert_eq!(ttl_ms, (1 + extension_secs) * 1000);
             }
             SlotState::Empty => panic!("expected Showing"),
         }

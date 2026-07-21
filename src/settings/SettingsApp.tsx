@@ -26,6 +26,7 @@ export interface RssFeedConfig {
 export type PriorityLevel = "low" | "medium" | "high";
 export type SourceKind = "football" | "manual" | "news" | "cmux" | "weather";
 export type Units = "celsius" | "fahrenheit";
+export type RestingState = "rail" | "notch";
 
 export interface AppearanceConfig {
   card_scale: number;
@@ -71,6 +72,7 @@ export interface Config {
     };
   };
   appearance: AppearanceConfig;
+  resting_state: RestingState;
 }
 
 export interface SecretStatus {
@@ -648,6 +650,16 @@ function GeneralSection({
           label="Start paused"
           checked={config.start_paused}
           onChange={(start_paused) => patchConfig({ start_paused })}
+        />
+        <ToggleControl
+          id="hide-when-idle"
+          name="Hide overlay when idle"
+          help="Resting state shows the bare notch instead of the clock and status dots. Notifications, rotation, and shortcuts are unaffected. Applies after Save & Relaunch."
+          label="Hide overlay when idle"
+          checked={config.resting_state === "notch"}
+          onChange={(hideWhenIdle) =>
+            patchConfig({ resting_state: hideWhenIdle ? "notch" : "rail" })
+          }
         />
         <NumberControl
           id="port"
@@ -1269,6 +1281,8 @@ const PREVIEW_SAMPLES: ReadonlyArray<{
       details: [],
       queueTotal: 3,
       queueDone: 0,
+      ttlMs: 8000,
+      remainingMs: 5000,
     },
   },
   {
@@ -1290,6 +1304,8 @@ const PREVIEW_SAMPLES: ReadonlyArray<{
       details: [],
       queueTotal: 3,
       queueDone: 1,
+      ttlMs: 8000,
+      remainingMs: 5000,
     },
   },
   {
@@ -1313,6 +1329,8 @@ const PREVIEW_SAMPLES: ReadonlyArray<{
       details: [],
       queueTotal: 3,
       queueDone: 2,
+      ttlMs: 8000,
+      remainingMs: 5000,
     },
   },
   {
@@ -1334,6 +1352,8 @@ const PREVIEW_SAMPLES: ReadonlyArray<{
       details: [],
       queueTotal: 1,
       queueDone: 0,
+      ttlMs: 8000,
+      remainingMs: 5000,
     },
   },
 ];
