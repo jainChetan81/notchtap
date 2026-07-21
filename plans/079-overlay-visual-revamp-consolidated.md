@@ -458,9 +458,18 @@ live-match path that's been the focus of the mockups so far.
   Settings window, not the receive-only overlay card) with its own
   visual context.
 - Plan 065 (hardcoded BrightData API token) is unrelated to this plan
-  entirely — a live credential exposure needing operator rotation, not a
-  design decision. Flagged here only so it doesn't get lost in the
-  shuffle of "combine everything."
+  entirely, and is **CLOSED** as of 2026-07-21 — operator-accepted risk,
+  not an open action. The credential is a free-tier BrightData token
+  with nothing to spend; it was knowingly left in place rather than
+  rotated, with the full picture on the table (repo is public, the token
+  has been in history since `7430b4b` so only rotation could un-expose
+  it, and the app has zero references to `mcp-servers/`). Full closure
+  note: `plans/done/065-rotate-committed-brightdata-token(done).md`.
+  **Do not re-audit, re-file, or re-raise this** — it reopens only if
+  that account ever goes paid. (This bullet previously read "a live
+  credential exposure needing operator rotation"; that text outlived the
+  decision and caused the finding to be re-raised by a later audit pass,
+  which is exactly the waste this correction prevents.)
 
 ---
 
