@@ -449,15 +449,26 @@ impl SingleSlotQueue {
     // ------------------------------------------------------------------
 
     fn top_up_visible_remaining_time(&mut self, now: Instant) {
-        let Some(item) = &mut self.visible else {
+        let Some(promoted_at) = self.visible.as_ref().and_then(|i| i.promoted_at) else {
             return;
         };
-        let Some(promoted_at) = item.promoted_at else {
+        // plan 097: the top-up's notion of "remaining" must match the real
+        // rotation deadline, which discounts banked and in-flight hover
+        // time (`hover_adjusted_promoted_at` / plan 093) — every OTHER
+        // deadline consumer (`next_deadline`, `remaining_ms`) already
+        // anchors there. Using raw `now - promoted_at` here over-granted
+        // extensions to previously-hovered cards: a card that had banked
+        // hover time looked closer to expiry than it actually was.
+        // `hover_frozen_rotation_elapsed` takes `&self`, so it must be
+        // called before the `&mut self.visible` borrow below.
+        let elapsed = self
+            .hover_frozen_rotation_elapsed(promoted_at, now)
+            .as_secs();
+        let Some(item) = &mut self.visible else {
             return;
         };
         let base_window = item.event.rotation_window(self.window_expanded);
         let effective_window = base_window + item.extension_secs;
-        let elapsed = now.saturating_duration_since(promoted_at).as_secs();
         let remaining = effective_window.saturating_sub(elapsed);
         if remaining < MIN_REMAINING_ON_SUPERSEDE_SECS {
             let deficit = MIN_REMAINING_ON_SUPERSEDE_SECS - remaining;
@@ -1118,6 +1129,64 @@ mod tests {
         q2.enqueue(topic_event("b2", Priority::Medium, 1, "topic"), t0)
             .unwrap();
         let extension = q2.visible.as_ref().unwrap().extension_secs;
+        assert!(
+            extension > 0,
+            "remaining was below the floor, expected an extension"
+        );
+        assert!(extension <= MAX_EXTENSION_ON_SUPERSEDE_SECS);
+    }
+
+    // plan 097: the top-up's "remaining" must be computed against the
+    // hover-adjusted elapsed time, not raw `now - promoted_at` — otherwise
+    // a card that banked hover-pause time looks closer to expiry than it
+    // really is and gets an extension it doesn't need.
+    #[test]
+    fn visible_supersede_top_up_ignores_banked_hover_time() {
+        let t0 = Instant::now();
+        let mut q = SingleSlotQueue::new(50);
+        // base window 10s.
+        q.enqueue(topic_event("a", Priority::Medium, 10, "topic"), t0)
+            .unwrap();
+
+        // hover for 3s, then exit — 3s banked into hover_paused_total.
+        q.hover_enter(t0 + Duration::from_secs(1));
+        q.hover_exit(t0 + Duration::from_secs(4));
+
+        // raw elapsed at t0+9s is 9s, so RAW remaining (10 - 9 = 1s) is
+        // below the 2s floor and the pre-fix code would grant an
+        // extension. Hover-adjusted elapsed discounts the banked 3s
+        // (9 - 3 = 6s), so real remaining is 10 - 6 = 4s — comfortably
+        // above the floor. No extension should be granted.
+        q.enqueue(
+            topic_event("a2", Priority::Medium, 10, "topic"),
+            t0 + Duration::from_secs(9),
+        )
+        .unwrap();
+
+        assert_eq!(
+            q.visible.as_ref().unwrap().extension_secs,
+            0,
+            "banked hover time must not make the card look closer to expiry than it is"
+        );
+    }
+
+    // plan 097: the unhovered path (no hover session ever opened) must
+    // behave exactly as before the hover-adjusted-elapsed change — this
+    // replicates the below-the-floor half of
+    // `visible_supersede_grants_extension_only_when_below_floor` as an
+    // explicit regression guard for the Step 3 borrow reorder.
+    #[test]
+    fn visible_supersede_top_up_grants_extension_unchanged_without_hover() {
+        let t0 = Instant::now();
+        let mut q = SingleSlotQueue::new(50);
+        // base window 1s: an immediate supersede already has only ~1s
+        // remaining, below the 2s floor — extension granted to close the
+        // gap, exactly as before Step 3's reorder (no hover involved).
+        q.enqueue(topic_event("b", Priority::Medium, 1, "topic"), t0)
+            .unwrap();
+        q.enqueue(topic_event("b2", Priority::Medium, 1, "topic"), t0)
+            .unwrap();
+        let extension = q.visible.as_ref().unwrap().extension_secs;
         assert!(
             extension > 0,
             "remaining was below the floor, expected an extension"
@@ -2293,6 +2362,60 @@ mod tests {
         // the remaining 0.2s of active time passes — now it rotates out.
         q.tick(t0 + Duration::from_secs(12) + Duration::from_millis(200));
         assert_eq!(q.current_slot_state(), SlotState::Empty);
+    }
+
+    // plan 097: `dismiss_visible` (and `skip_visible`) promote the next
+    // waiting item via `promote_next`, which resets the new item's hover
+    // fields (`set_expanded_for_promotion`) — but that's a queue-internal
+    // fact. The bug this guards against lived one layer up, in lib.rs's
+    // AppKit glue: the `was_hovered` latch there didn't reset on a hotkey
+    // dismiss (no mouse event fires), so the queue never saw a matching
+    // `hover_exit` and the newly-promoted item could be left with no
+    // active hover session yet still get treated as hover-frozen by a
+    // stale `hover_started_at` from... except promotion already clears
+    // that field, which is exactly what this test pins down: the item
+    // promoted BY `dismiss_visible` must rotate out strictly on its own
+    // schedule, with nothing inherited from the previous item's hover
+    // session.
+    #[test]
+    fn dismiss_while_hover_held_leaves_next_items_rotation_unfrozen() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        let first = event("first", Priority::Medium, 2);
+        let first_id = first.id;
+        q.enqueue(first, t0).unwrap();
+        let second = event("second", Priority::Medium, 2);
+        let second_id = second.id;
+        q.enqueue(second, t0).unwrap();
+
+        q.hover_enter(t0 + Duration::from_secs(1));
+        // well past the first item's 2s window, but hover-held throughout —
+        // must not rotate out (same invariant as the test above).
+        q.tick(t0 + Duration::from_secs(50));
+        match q.current_slot_state() {
+            SlotState::Showing { id: cur, .. } => assert_eq!(cur, first_id),
+            SlotState::Empty => panic!("must never rotate out while hover-held"),
+        }
+
+        // hotkey dismiss, still "mid-hover" from the queue's point of view
+        // (no hover_exit call — mirrors the lib.rs latch bug: the AppKit
+        // side never told the queue the session ended either).
+        q.dismiss_visible(t0 + Duration::from_secs(50));
+        match q.current_slot_state() {
+            SlotState::Showing { id: cur, .. } => assert_eq!(cur, second_id),
+            SlotState::Empty => panic!("dismiss must promote the second item"),
+        }
+
+        // advance past the second item's full 2s window with NO further
+        // hover_enter — its deadline must not have inherited the first
+        // item's frozen/banked state, so it rotates out strictly on
+        // schedule.
+        q.tick(t0 + Duration::from_secs(50) + Duration::from_secs(3));
+        assert_eq!(
+            q.current_slot_state(),
+            SlotState::Empty,
+            "the second item's rotation must not be frozen by the first item's hover session"
+        );
     }
 
     // plan 093: `remaining_ms` freezes for the whole hover session — the

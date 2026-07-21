@@ -133,6 +133,13 @@ pub struct TelegramToggle {
     pub enabled: bool,
 }
 
+/// plan 097: shared bounds for the `[appearance]` fields, so the save path
+/// (`settings::validate_appearance`) and the load path (`Config::parse`'s
+/// self-heal, below) can never drift apart.
+pub const CARD_SCALE_RANGE: std::ops::RangeInclusive<f64> = 0.8..=1.4;
+pub const CARD_RADIUS_RANGE: std::ops::RangeInclusive<f64> = 0.0..=24.0;
+pub const CARD_OPACITY_RANGE: std::ops::RangeInclusive<f64> = 0.5..=1.0;
+
 /// `[appearance]` — overlay card styling. Serialized as its own table so
 /// hand-edited `config.toml` can override one value without touching others.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -471,6 +478,39 @@ impl Config {
             if !config.rotation_order.contains(&source) {
                 config.rotation_order.push(source);
             }
+        }
+        // plan 097: the load-path twin of `settings::validate_appearance`,
+        // which only guards the settings-save path. A hand-edited
+        // `config.toml` (e.g. `card_scale = 0.0`) would otherwise boot
+        // unclamped, silently producing a degenerate hover rect plus
+        // broken card rendering. Non-finite values (NaN, +/-inf — can't
+        // occur through the settings UI, but a hand-edited TOML can
+        // express `nan`/`inf`) fall back to the field's own default rather
+        // than clamping, since clamping a NaN is a no-op in IEEE 754 and
+        // would silently let it through.
+        if !config.appearance.card_scale.is_finite() {
+            config.appearance.card_scale = default_card_scale();
+        } else {
+            config.appearance.card_scale = config
+                .appearance
+                .card_scale
+                .clamp(*CARD_SCALE_RANGE.start(), *CARD_SCALE_RANGE.end());
+        }
+        if !config.appearance.card_radius.is_finite() {
+            config.appearance.card_radius = default_card_radius();
+        } else {
+            config.appearance.card_radius = config
+                .appearance
+                .card_radius
+                .clamp(*CARD_RADIUS_RANGE.start(), *CARD_RADIUS_RANGE.end());
+        }
+        if !config.appearance.card_opacity.is_finite() {
+            config.appearance.card_opacity = default_card_opacity();
+        } else {
+            config.appearance.card_opacity = config
+                .appearance
+                .card_opacity
+                .clamp(*CARD_OPACITY_RANGE.start(), *CARD_OPACITY_RANGE.end());
         }
         Ok(config)
     }
@@ -834,5 +874,42 @@ url = "https://example.com/without-meta"
     fn unknown_priority_or_source_kind_string_is_a_parse_error() {
         assert!(Config::parse("espn_priority = \"urgent\"").is_err());
         assert!(Config::parse("rotation_order = [\"telegram\"]").is_err());
+    }
+
+    // plan 097: `validate_appearance` (settings.rs) only guards the
+    // settings-save path — a hand-edited `config.toml` bypasses it
+    // entirely. `Config::parse` must clamp out-of-range appearance values
+    // at load time too, or a degenerate `card_scale = 0.0` boots a broken
+    // hover rect and card rendering.
+    #[test]
+    fn appearance_out_of_range_is_clamped_on_load() {
+        let c = Config::parse(
+            "[appearance]\ncard_scale = 0.0\ncard_radius = 99.0\ncard_opacity = 2.0\n",
+        )
+        .unwrap();
+        assert_eq!(c.appearance.card_scale, *CARD_SCALE_RANGE.start());
+        assert_eq!(c.appearance.card_radius, *CARD_RADIUS_RANGE.end());
+        assert_eq!(c.appearance.card_opacity, *CARD_OPACITY_RANGE.end());
+    }
+
+    // plan 097: a non-finite value can't be expressed through the settings
+    // UI (only a hand-edited TOML can write `nan`), and clamping a NaN is
+    // a no-op in IEEE 754 (`NaN.clamp(lo, hi)` stays NaN) — so non-finite
+    // values fall back to the field's own default instead.
+    #[test]
+    fn appearance_non_finite_falls_back_to_defaults() {
+        let c = Config::parse("[appearance]\ncard_scale = nan\n").unwrap();
+        assert_eq!(c.appearance.card_scale, Appearance::default().card_scale);
+    }
+
+    #[test]
+    fn appearance_in_range_values_pass_through_untouched() {
+        let c = Config::parse(
+            "[appearance]\ncard_scale = 1.1\ncard_radius = 12.0\ncard_opacity = 0.75\n",
+        )
+        .unwrap();
+        assert_eq!(c.appearance.card_scale, 1.1);
+        assert_eq!(c.appearance.card_radius, 12.0);
+        assert_eq!(c.appearance.card_opacity, 0.75);
     }
 }
