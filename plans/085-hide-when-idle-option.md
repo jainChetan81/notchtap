@@ -14,11 +14,18 @@
 > `plans/README.md` — unless a reviewer dispatched you and told you they
 > maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat 71e54a7..HEAD -- src-tauri/src/config.rs src-tauri/src/settings.rs src/App.tsx src/useSlotState.ts src/components/StatusRailCard.tsx src/settings/SettingsApp.tsx prototype/notch-states.html`
-> Expect `StatusRailCard.tsx`/`SettingsApp.tsx` to differ from 71e54a7
-> by 080's diff (and `useSlotState.ts` possibly by 081/083's) — anything
-> MORE is drift to reconcile. Any diff in the prototype is a STOP
-> condition.
+> **Drift check (run first)**: `git diff --stat 3de785a..HEAD -- src-tauri/src/config.rs src-tauri/src/settings.rs src-tauri/src/lib.rs src/App.tsx src/useSlotState.ts src/components/StatusRailCard.tsx src/settings/SettingsApp.tsx prototype/notch-states.html`
+> Expect `useSlotState.ts` possibly to differ from 3de785a by 081/083's
+> diff, `src-tauri/src/lib.rs` possibly by 081's test-literal update,
+> and `StatusRailCard.tsx` possibly by 082/084's diffs if those landed
+> first (085 is independent of 081-084 but shares the file) — anything
+> MORE is drift to reconcile. Any diff in the
+> prototype is a STOP condition. Baseline `3de785a` already INCLUDES
+> plan 080 (merged 2026-07-21 as `d21d689`) — the StatusRailCard.tsx
+> refs below are post-080. (Baseline history: `71e54a7` → `4fb3af9` for
+> 063's merge — App.tsx refs at :30-53, lib.rs added to the path list —
+> then → `3de785a` for 080's merge. All refreshed and re-verified by
+> direct read.)
 
 ## Status
 
@@ -32,7 +39,21 @@
 - **Category**: direction (locked 2026-07-20 — "Hide-when-idle option
   (079 item 17, cheap half)", `plans/frontend-ui-consolidated.html`
   Locked decisions) → build
-- **Planned at**: commit `71e54a7`, 2026-07-20
+- **Planned at**: commit `71e54a7`, 2026-07-20. **Review-plan pass 2
+  (2026-07-21, against `4fb3af9`)**: citations re-verified
+  (StatusRailCard.tsx :56-67/:101-103, useStatusState.ts :106-116,
+  config.rs :65/:205-245/:373-395/:620-635, useSlotState.ts :51-60,
+  settings.rs :533/:549-556, SettingsApp.tsx :634, notch-states.html
+  :202-206/:424/:442-448) — three stale/wrong refs fixed (App.tsx seed
+  read `:20-23` → `:30-34` and listener `:27-42` → `:36-53`, shifted by
+  063's `presentationFacts` effect; `validate()` `:76-108` → `:49+` —
+  the cited range was mid-function; `set_appearance` `:791` → `:792`).
+  One scope gap closed: `src-tauri/src/lib.rs` (the
+  `__NOTCHTAP_APPEARANCE__` seed block) added to in-scope and the
+  drift paths — without the seed the flag never reaches a fresh boot
+  on the relaunch apply path. Drift baseline re-stamped to `4fb3af9`,
+  then again to `3de785a` when plan 080 merged mid-review (the idle
+  branch moved to `StatusRailCard.tsx:104-106`).
 
 ## Why this matters
 
@@ -50,25 +71,27 @@ is deliberately tiny: one enum, one toggle, one render branch.
 
 ## Current state
 
-- `src/components/StatusRailCard.tsx:101-103` — the idle branch:
+- `src/components/StatusRailCard.tsx:104-106` — the idle branch:
   `!renderedShowing ? <IdleView status={status} /> : …`. `IdleView`
   (`src/components/IdleView.tsx`) renders the clock, the source-status
   chips (gated by `statusRailActive`, `useStatusState.ts:106-116`), and
   the day-progress timeline. The card's idle width classes are keyed at
   `StatusRailCard.tsx:56-67` (`.rail-card.idle[.status]`).
 - `src-tauri/src/config.rs` — flat config fields with per-field
-  `default_*` fns (e.g. `weather_enabled` :65, defaults :209-245) and a
+  `default_*` fns (e.g. `weather_enabled` :65, defaults :205-245) and a
   parse-heal/migration precedent (:373-395) for files predating new
   keys — a new field with a `#[serde(default = "…")]` fn rides that
-  machinery; `settings.rs`'s `validate()` (:76-108) covers range-like
+  machinery; `settings.rs`'s `validate()` (:49+) covers range-like
   fields (an enum needs no range check — follow the nearest bool/enum
   precedent).
 - Delivery channel precedent (the overlay learns appearance-ish state
   this way today): `window.__NOTCHTAP_APPEARANCE__` seed (declared
-  `src/useSlotState.ts:51-59`, read at `src/App.tsx:20-23`) plus the
-  `appearance-changed` event listener (`src/App.tsx:27-42`), emitted
-  rust-side from `set_appearance` (`settings.rs:791`,
-  `AppearanceChangedPayload` `settings.rs:533`). Either this channel
+  `src/useSlotState.ts:51-60`, read at `src/App.tsx:30-34`) plus the
+  `appearance-changed` event listener (`src/App.tsx:36-53`), emitted
+  rust-side from `set_appearance` (`settings.rs:792`,
+  `AppearanceChangedPayload` `settings.rs:533`). The seed itself is
+  built in `src-tauri/src/lib.rs:445-460` from the app's `Config`
+  mutex. Either this channel
   extended with `resting_state`, or the slot-state seed/event — pick
   the appearance channel (it already exists for exactly this class of
   overlay-behavior state and hot-applies without touching the
@@ -111,6 +134,18 @@ is deliberately tiny: one enum, one toggle, one render branch.
   `resting_state`, and make the settings save path emit it (verify the
   exact emit site — `set_appearance` today, or the save flow; note the
   choice and its apply semantics in the completion report).
+- `src-tauri/src/lib.rs` — the `__NOTCHTAP_APPEARANCE__` seed block
+  (:445-460): REQUIRED, not optional. The General-section save path
+  relaunches the app, and a fresh boot learns the flag ONLY from this
+  seed — extending just the event payload would boot every relaunch
+  into `rail` regardless of config until the next settings save.
+  Construction caveat (pinned at review-plan pass 2): the payload's
+  `From<&Appearance>` impl (settings.rs:539-547) sees only the
+  `Appearance` struct, but `resting_state` is a top-level `Config`
+  field — construct the widened payload from `Config` at both emit
+  sites (the seed already locks the full `Config` at lib.rs:447-453;
+  the broadcast path at settings.rs:549-556 needs the same access)
+  rather than through that `From` impl.
 - `src/App.tsx` (+ the `__NOTCHTAP_APPEARANCE__` global declaration in
   `src/useSlotState.ts`) — accept + apply the new field.
 - `src/components/StatusRailCard.tsx` — the idle branch renders nothing
@@ -175,9 +210,10 @@ prototype's `notch` state has zero app-drawn pixels). Watch the shell:
 `.rail-card` carries background/shadow/priority accents — in the
 notch-resting state none of that may paint. Simplest correct shape:
 early-return `null` (or a zero-size fragment) for the idle+notch
-combination, keeping every `showing` path byte-identical. The
-appearance change itself (rail↔notch toggle while running) must
-re-render without a reload — it's React state from Step 3's listener.
+  combination, keeping every `showing` path byte-identical. The
+  appearance change itself (rail↔notch toggle while running) must
+  re-render without a reload — it's React state driven by the App.tsx
+  `appearance-changed` listener extended in Step 2.
 
 **Verify**: `npx vitest run` → all pass; `npx tsc --noEmit` → exit 0.
 

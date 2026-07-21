@@ -5,7 +5,8 @@
 > exactly as operator-locked 2026-07-20 (sticky medium-priority presence
 > ~T-30 → full-time; resting = idle rail green dot; hover = compact
 > scorecard, NO full-expand; expansion is EVENT-driven — goal/penalty/
-> own-goal/yellow/red celebrate, foul/offside/VAR/sub open quietly;
+> yellow/red celebrate, own-goal updates the score with NO celebration,
+> foul/offside/VAR/sub open quietly;
 > preemptible by higher tiers, returns after; paused football → ambient
 > weather fallback; no queue track). It consumes the wire contract plan
 > 083 ships (structured espn meta, crest URLs, richer event signals) —
@@ -19,11 +20,19 @@
 > plan in `plans/README.md` — unless a reviewer dispatched you and told
 > you they maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat 71e54a7..HEAD -- src/components/StatusRailCard.tsx src/lib/presentation.ts src/styles.css src/settings/preview-overlay.css src/useSlotState.ts prototype/football-card.html`
-> Expect `StatusRailCard.tsx`/`styles.css`/`presentation.ts` to differ
-> from 71e54a7 by exactly 080's (and possibly 082's) diff, and
-> `useSlotState.ts` by 083's — anything MORE is drift to reconcile. Any
-> diff in `prototype/football-card.html` is a STOP condition.
+> **Drift check (run first)**: `git diff --stat 3de785a..HEAD -- src/components/StatusRailCard.tsx src/lib/presentation.ts src/styles.css src/settings/preview-overlay.css src/useSlotState.ts prototype/football-card.html`
+> Expect `StatusRailCard.tsx`/`styles.css`/`preview-overlay.css` to
+> differ from 3de785a by exactly 081's and/or 082's diff (081 mounts
+> its TTL bar in the card and adds `.ttl-*` CSS; 082 adds `.wx-*` CSS),
+> and `useSlotState.ts` by 081's and/or 083's — anything MORE is drift
+> to reconcile. Any diff in
+> `prototype/football-card.html` is a STOP condition. Baseline
+> `3de785a` already INCLUDES plan 080 (merged 2026-07-21 as `d21d689`)
+> — the StatusRailCard.tsx refs below are post-080. (Baseline history:
+> `9a954b0` → `4fb3af9` for 063's merge — celebration/keyframe refs
+> shifted NON-uniformly, +9 early and +24 by the live-dot block — then
+> → `3de785a` for 080's merge. All refreshed individually and
+> re-verified by direct read.)
 
 ## Status
 
@@ -39,7 +48,24 @@
   rail is gated on 086's outcome like every other hover interaction.
 - **Category**: direction (locked 2026-07-20 — 079 items 3/4/5/6
   display + 043 looped in) → build
-- **Planned at**: commit `71e54a7`, 2026-07-20
+- **Planned at**: commit `9a954b0`, 2026-07-20 (reviewed same date:
+  drift baseline corrected, own-goal header contradiction fixed,
+  pulse-gating/SOON-source/compact-hint gaps pinned). **Review-plan
+  pass 2 (2026-07-21, against `4fb3af9`)**: component/prototype
+  citations re-verified exact (StatusRailCard.tsx :17-20/:28-50/:47/
+  :57-67, presentation.ts :22-54/:28,
+  useSlotState.ts :4-13, useStatusState.ts :106-116, poller.rs
+  :373-436/:385-388/:481-487/:504-506, football-card.html :46-68/
+  :74-92/:123-129); eight styles.css refs refreshed for 063's
+  non-uniform shift (goal-overshoot `:142`→`:151`, goal-burst
+  `:157`→`:166`, goal-ring `:176`→`:185`, ripple-out `:222`→`:231`,
+  red-alert `:245`→`:254`, pulse machinery `~:76-256`→`~:99-257`,
+  live-dot-pulse `:601`→`:622-625`, reduced-motion precedents
+  `:233-237`/`:260-267`→`:242-246`/`:269-276`). Drift baseline
+  re-stamped to `4fb3af9`, then again to `3de785a` when plan 080 merged
+  mid-review (StatusRailCard.tsx refs refreshed to post-080: branches
+  `:101-144`→`:104-175`, detail cells `:135-142`→`:141-148`,
+  compact-hint `:151-155`→`:157-161`).
 
 ## Why this matters
 
@@ -60,19 +86,20 @@ expansion split, on top of 083's structured wire.
 
 - `src/components/StatusRailCard.tsx` — one card shell (`.rail-card` +
   priority/idle/expanded/pulse classes, `:57-67`), content branches:
-  idle vs showing, and within showing: news vs generic (`:101-144`).
-  Plan 042's collapsed detail cells render at `:135-142`. The pulse
-  celebration (`:28-50`): `pulse-goal`/`pulse-red` classes keyed on
+  idle vs showing, and within showing: news vs generic (`:104-175`,
+  post-080). Plan 042's collapsed detail cells render at `:141-148`. The pulse
+  celebration (`:28-50`; the `PULSE_END_ANIMATION` constant is DEFINED
+  at `:17-20` and used at `:47`): `pulse-goal`/`pulse-red` classes keyed on
   `[currentId, currentSignal]`, cleared on `animationend` via
   `PULSE_END_ANIMATION` — goal/red bursts are pure CSS keyed off the
   signal, never priority (the documented acceptance criterion at
   `:30-34`).
 - `src/styles.css` — shipped celebration CSS this plan echoes:
-  `goal-overshoot` (:142), `goal-burst` (:157), `goal-ring` (:176),
-  `ripple-out` (:222), `red-alert` (:245) — the `.rail-card.pulse-goal`
-  /`.pulse-red` machinery spans ~:76-256. Green `#7fe08d` is RESERVED
+  `goal-overshoot` (:151), `goal-burst` (:166), `goal-ring` (:185),
+  `ripple-out` (:231), `red-alert` (:254) — the `.rail-card.pulse-goal`
+  /`.pulse-red` machinery spans ~:99-257. Green `#7fe08d` is RESERVED
   for live-now (locked decision — `.src-chip.live`, pulsing live-dot,
-  `live-dot-pulse` :601).
+  `live-dot-pulse` :622-625).
 - `src/lib/presentation.ts:22-54` — `SIGNAL_STAMPS` (goal/kickoff→Live,
   halftime→Break, yellow_card→Card, fulltime→Final, red_card→Off) and
   `stampFor` — exhaustive switches with `assertNever`; if 083 added
@@ -138,8 +165,9 @@ expansion split, on top of 083's structured wire.
 - Preemption/paused behaviors INSOFAR as they render: preempted = the
   slot simply shows the preempting item (existing machinery — nothing
   to build); paused football = the ambient rail falls back to weather
-  (verify it already does via the status-state gates; build only if a
-  gap exists).
+  (verify it already does via the status-state gates —
+  `statusRailActive` in `src/useStatusState.ts:106-116`; build only if
+  a gap exists).
 
 **Out of scope**:
 - The hover TRIGGER and any cursor machinery (plan 086-gated): the
@@ -161,7 +189,8 @@ expansion split, on top of 083's structured wire.
 
 In `src/lib/presentation.ts`, extend `SIGNAL_STAMPS` for 083's new
 signals (foul/offside/var/sub → quiet informational stamps — pick
-terse words in the existing style, e.g. foul→"Foul", offside→"Off",
+terse words in the existing style, e.g. foul→"Foul", offside→"Flag"
+(NOT "Off" — that stamp is already red_card's, `presentation.ts:28`),
 var→"Check", sub→"Sub"; the stamps are the small status words, the
 event line carries the detail). Add the event-kind table mapping each
 football signal to its presentation triple:
@@ -182,8 +211,14 @@ structured espn meta (detect via the espn meta block's presence, not
 string sniffing — 083 put it on the wire for exactly this). Render the
 prototype's compact scorecard: `.sc-head` (league chip from
 `meta.league`; state pill derived from the existing signal/match-state
-— Live/Break/Final/Soon mapping the prototype's four `.live-pill`
-variants; clock pill from `meta.clock`); `.score-row` with crest
+— Live/Break/Final mapping three of the prototype's four `.live-pill`
+variants; clock pill from `meta.clock`). SOON variant caveat: NO
+pre-match signal or meta field exists on the wire today (kickoff→Live,
+and the poller's first sighting of a match is a silent baseline,
+`poller.rs:481-487`) — render SOON only if 083 shipped an explicit
+pre-match state; otherwise omit the variant and note the gap in the
+completion report (the STOP below covers the deeper poller gap).
+`.score-row` with crest
 `<img src={crestUrl}>` on each side falling back to the text-abbrev
 `.crest` circle when the URL is `None` (onerror → swap to fallback
 too, defense in depth); `.event-line` with the Step-1 icon + tint for
@@ -193,11 +228,14 @@ from the per-side tuples, omitted on a clean match (same rule as
 plan 042's cell omission, `poller.rs:504-506`). NO `Track` for this
 card — the queue slider is meaningless for a recurring presence
 (prototype lock: "no queue track"); keep it on every other card type.
+  Also omit the `⌃⇧N more` compact-hint (`StatusRailCard.tsx:157-161`)
+  on this branch — it advertises a full-expand this card doesn't have.
 NO full-expand: this branch does not render the `Manifest` expand path
 (the card's expansion is event-driven presence, not the ⌃⇧N manifest —
 but ⌃⇧N expand-toggle must not break; if the slot's `expanded` flag
 arrives true on a live card, render the same compact scorecard, and
-note the choice).
+note the choice in a code comment AND in this plan's Maintenance notes
+when you report completion).
 
 **Verify**: `npx vitest run` → all pass; `npx tsc --noEmit` → exit 0.
 
@@ -206,14 +244,19 @@ note the choice).
 Reuse the shipped pulse discipline (`StatusRailCard.tsx:28-50`):
 celebration classes keyed on `[currentId, currentSignal]`, cleared on
 `animationend` via the ending keyframe's name, never keyed on priority.
+CRITICAL gating: the existing pulse `useEffect` fires `pulse-goal`/
+`pulse-red` on signal alone regardless of branch — gate it on
+`!isLiveCard` so a live-branch goal plays ONLY `cele-goal`, never both
+celebrations stacked (the existing pulses stay for non-live-card
+football events and the flag-off path).
 Add `cele-goal`/`cele-yc`/`cele-rc` CSS (prototype `:123-129` adapted):
 green glow + ring for goal/penalty-scored, amber ring for yellow,
 coral strobe for red — visually echoing `pulse-goal`/`pulse-red`
-(:76-256) rather than replacing them (the existing pulses stay for
-non-live-card football events and the flag-off path). Own-goal updates
+(:99-257) rather than replacing them. Own-goal updates
 the score with NO celebration (prototype lock). Each new keyframe gets
 a `prefers-reduced-motion` override, matching the file's existing
-precedent. Foul/offside/VAR/sub render the quiet event line only.
+precedents at `styles.css:242-246` and `:269-276`.
+Foul/offside/VAR/sub render the quiet event line only.
 
 **Verify**: `npx vitest run` → all pass (new assertions per Test plan);
 the existing pulse tests pass UNCHANGED.

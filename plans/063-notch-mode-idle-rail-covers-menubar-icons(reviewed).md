@@ -5,11 +5,16 @@
 > in "Decision needed"; that section and "Recommendation" right after it
 > are **superseded**, kept only as background context for why the locked
 > decision looks the way it does. Read "Grilling session resolved" as
-> the authoritative scope. **This plan does not yet have a Steps/Scope/
-> Test-plan/Done-criteria section** — see the third review-plan pass note
-> in Status below for what's still missing before this is fully
-> execution-ready; don't treat the absence of those sections as
-> permission to improvise the implementation shape yourself.
+> the authoritative scope. The Scope/Steps/Test-plan/Done-criteria
+> sections were added in the fourth review-plan pass (2026-07-20) — this
+> plan is now execution-ready. Follow the steps in order, run every
+> verification, and honor the STOP conditions.
+>
+> **Drift check (run first)**: `git diff --stat 9a954b0..HEAD -- src/styles.css src/components/IdleView.tsx src/App.tsx src-tauri/src/lib.rs src-tauri/src/presentation.rs src-tauri/tauri.conf.json`
+> Any diff in these files means line refs below have shifted — re-read
+> before editing. The `.src-rail`/`.src-chip` citations were re-verified
+> in the fourth pass (they moved from `:488-506` to `:560-580` when plan
+> 078 added ~100 lines of keyframes above them).
 
 ## Status
 
@@ -113,6 +118,19 @@
   exact chip-rendering structure) is real, substantial work in its own
   right — recommend a follow-up `plan` pass (not another `review-plan`
   pass) to write those sections before this is handed to an executor.
+- **Fourth review-plan pass (2026-07-20, plan pass)**: the execution
+  sections (Commands/Scope/Steps/Test plan/Done criteria/STOP
+  conditions) are now written below, against commit `9a954b0`. Every
+  citation re-verified by direct read: `.src-rail` moved to
+  `styles.css:560-565` and `.src-chip` to `styles.css:567-580`
+  (`white-space: nowrap` at `:576`) after plan 078's keyframe additions
+  (the `:488-506` refs in the superseded sections below are stale —
+  trust the new sections); `.rail-card*` `:22-53`, `presentation.rs`
+  `:14-63`, and the `on_page_load` eval-splice site `lib.rs:394-460`
+  unchanged. Confirmed by direct read that `mode` and `cutout` are
+  already in scope inside the `on_page_load` closure (both `Copy`,
+  destructured at `lib.rs:114`, the closure is `move`) — Step 1 needs
+  no new plumbing channels, only a fourth eval block.
 
 ## Why this matters
 
@@ -289,6 +307,228 @@ mechanic none of the three original options described:
 - Still needs the real MacBook smoke-check with a realistic menu-bar
   icon load before calling this done, per the existing maintenance note
   below.
+
+## Commands you will need
+
+| Purpose | Command | Expected on success |
+|---|---|---|
+| Rust tests | `cd src-tauri && cargo test --locked` | all pass |
+| Clippy | `cd src-tauri && cargo clippy --locked --all-targets -- -D warnings` | exit 0 |
+| Rust format | `cd src-tauri && cargo fmt --check` | exit 0 |
+| Frontend tests | `npx vitest run` | all pass |
+| Typecheck | `npx tsc --noEmit` | exit 0 |
+| Lint/format | `npx biome ci .` | exit 0 |
+| Full gate (optional, mirrors CI) | `just test-all` | all green (`just` needs `brew install just` on this machine) |
+
+## Scope
+
+**In scope** (the only files you should modify):
+- `src-tauri/src/lib.rs` — add the presentation-facts eval block in `on_page_load` (Step 1) + its unit-testable helper.
+- `src/lib/presentationFacts.ts` — **create** (Step 2).
+- `src/lib/presentationFacts.test.ts` — **create** (Step 2's tests).
+- `src/App.tsx` — consume the facts, set the root dataset attribute + CSS var (Step 2).
+- `src/styles.css` — mode-aware width cap, `.src-rail` wrap, chip truncation rules (Steps 3–4).
+- `src/components/IdleView.tsx` — wrap the live chip's label text in a truncatable span (Step 4).
+- The IdleView render test file that covers the live chip, if one exists (`src/components/IdleView.test.tsx` or the IdleView section of `src/App.test.tsx`/`src/components/StatusRailCard.test.tsx` — find it with `grep -rn "src-chip\|IdleView" src/*.test.* src/components/*.test.*` and extend the live-chip case there).
+
+**Out of scope** (do NOT touch, even though they look related):
+- `src-tauri/src/presentation.rs` — `detect_mode`/`CutoutGeometry` already return everything needed and are fully tested; no changes.
+- `src-tauri/src/lib.rs` `position_window` (`:581-600`) — positioning already consumes `mode`/`cutout`; untouched.
+- The live-match chip's wire shape (`status.football.live = { label, minute }`) — a joined-string change is plan 079/083 territory, explicitly deferred by the locked decision.
+- Any visual restyle of the chips (colors, typography, padding) — "no visual restyle" is part of the locked decision.
+- `src/settings/preview-overlay.css` — the mirror law does **not** apply here: the preview renders promoted cards, not the idle rail's `.status` width mechanics; the `.src-chip` base styles are untouched (only `.src-chip.live`/`.live-label` additions). If you find yourself editing a rule that exists in both files, STOP and re-read this paragraph.
+- HUD-mode behavior — it stays at 460px by construction; any diff that changes the HUD render is a bug in the step, not a choice.
+
+## Steps
+
+### Step 1: rust — splice `__NOTCHTAP_MODE__` and `__NOTCHTAP_CUTOUT_WIDTH__` at page load
+
+In `src-tauri/src/lib.rs`'s `.on_page_load` closure (`:394-460`), add a fourth block right after the appearance block (`:445-460`). `mode` and `cutout` are already in scope — both are `Copy`, destructured at `lib.rs:114` (`let (mode, inset, cutout) = presentation::detect_mode(&config);`), and the closure is `move`, so it captures its own copy with no signature changes anywhere.
+
+Follow the appearance block's pattern exactly, but note the values are a constant string and a JSON number-or-null, so no `escape_for_eval_splice` is needed (the mode string is rust-generated, never user data):
+
+```rust
+// plan 063: presentation facts for the frontend — the mode boolean and
+// the numeric cutout width, one eval, same page-load site as the other
+// boot facts. plan 060 will consume __NOTCHTAP_MODE__ when it lands.
+{
+    let mode_str = match mode {
+        presentation::Mode::Notch => "notch",
+        presentation::Mode::Hud => "hud",
+    };
+    let width_json = cutout_width_js_value(cutout);
+    let _ = webview.eval(format!(
+        "window.__NOTCHTAP_MODE__ = \"{mode_str}\"; window.__NOTCHTAP_CUTOUT_WIDTH__ = {width_json};"
+    ));
+}
+```
+
+Add the helper as a free function near `position_window`, so it's unit-testable without a webview:
+
+```rust
+fn cutout_width_js_value(cutout: Option<presentation::CutoutGeometry>) -> String {
+    match cutout {
+        Some(c) => format!("{}", c.width),
+        None => "null".into(),
+    }
+}
+```
+
+(`cutout_width <= 0.0` cannot occur — `presentation.rs:52-63`'s `cutout()` already normalizes it to `None`, per the third review-plan pass. Do not add a second zero-guard.)
+
+**Verify**: `cd src-tauri && cargo build` → compiles; `cargo test --locked` → all existing tests pass (no behavior change yet).
+
+### Step 2: frontend — read the facts and expose them to CSS
+
+Create `src/lib/presentationFacts.ts`, following the seed-read pattern of `useSlotState.ts:130-132` (validate the global, fall back safely, never throw on malformed input):
+
+```ts
+// plan 063: boot-time presentation facts spliced by the rust core at
+// page load (lib.rs's on_page_load). Mode gates notch-only CSS; the
+// cutout width feeds the idle status rail's width clamp (styles.css).
+export type PresentationMode = "notch" | "hud";
+
+declare global {
+  interface Window {
+    __NOTCHTAP_MODE__?: unknown;
+    __NOTCHTAP_CUTOUT_WIDTH__?: unknown;
+  }
+}
+
+export function presentationFacts(): { mode: PresentationMode; cutoutWidth: number | null } {
+  const mode: PresentationMode =
+    window.__NOTCHTAP_MODE__ === "notch" ? "notch" : "hud";
+  const w = window.__NOTCHTAP_CUTOUT_WIDTH__;
+  const cutoutWidth = typeof w === "number" && Number.isFinite(w) && w > 0 ? w : null;
+  return { mode, cutoutWidth };
+}
+```
+
+In `src/App.tsx` (it already reads the `__NOTCHTAP_APPEARANCE__` seed at `:20`), add a mount effect that applies both facts to the document root:
+
+```ts
+useEffect(() => {
+  const { mode, cutoutWidth } = presentationFacts();
+  document.documentElement.dataset.notchtapMode = mode;
+  if (cutoutWidth !== null) {
+    document.documentElement.style.setProperty("--notchtap-cutout-width", `${cutoutWidth}px`);
+  }
+}, []);
+```
+
+**Verify**: `npx tsc --noEmit` → exit 0; `npx vitest run` → all pass (new tests from the Test plan below included).
+
+### Step 3: CSS — mode-aware width cap, floor, and `.src-rail` wrap
+
+In `src/styles.css`:
+
+1. `.src-rail` (`:560-565`) — add wrapping. Locked decision: chips wrap onto extra rows and the card grows downward into the window's unused height, instead of clipping or overflowing:
+
+```css
+.src-rail {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  row-gap: 4px;
+  gap: 6px; /* keep the existing column gap — merge into `gap: 4px 6px` if biome prefers */
+  min-width: 0;
+}
+```
+
+2. `.rail-card.idle.status` (`:51-52`) — keep the existing 460px rule exactly as-is (it is now the HUD-mode path and the no-facts fallback), and add the notch-mode clamp right after it:
+
+```css
+/* plan 063: in notch mode the idle status rail caps at exactly the
+   physical cutout width, zero outward margin — menu-bar icons live
+   outside that span. 270px does double duty: fallback when the cutout
+   width never arrived, and absolute floor for very narrow notches.
+   460px ceiling: never wider than today's HUD width. */
+:root[data-notchtap-mode="notch"] .rail-card.idle.status {
+  width: calc(clamp(270px, var(--notchtap-cutout-width, 270px), 460px) * var(--card-scale));
+}
+```
+
+Note the clamp is **inside** the `--card-scale` multiplication — the floor/cap apply to the unscaled design width, the user's appearance scale still applies on top. Do not reorder.
+
+**Verify**: `npx biome ci .` → exit 0; `npx vite build` → succeeds.
+
+### Step 4: live-match chip ellipsis truncation
+
+`.src-chip` (`styles.css:567-580`) has `white-space: nowrap` (`:576`) and is `display: inline-flex` — a bare text node inside it cannot ellipsis on its own, so this is markup + CSS:
+
+1. `src/components/IdleView.tsx:19-23` — wrap the joined label in its own span:
+
+```tsx
+<span className="src-chip live">
+  <span className="live-dot" aria-hidden="true" />
+  <span className="live-label">{live.label} · {live.minute}</span>
+</span>
+```
+
+2. `src/styles.css` — let the live chip (and only it) shrink below its content width, and truncate the label span:
+
+```css
+/* plan 063: the live-match chip is the only chip with unbounded text
+   (real team names) — it may shrink and ellipsis; every other chip
+   keeps its natural width. Locked: truncate, never wrap internally. */
+.src-chip.live {
+  max-width: 100%;
+  min-width: 0;
+  flex: 0 1 auto;
+}
+.src-chip .live-label {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+```
+
+Do not add `max-width`/`text-overflow` to the base `.src-chip` — the locked decision scopes truncation to the live chip.
+
+**Verify**: `npx biome ci .` → exit 0; `npx vitest run` → all pass (IdleView live-chip test updated per the Test plan).
+
+### Step 5: full gate + operator hardware check
+
+**Verify** (all must pass before handoff):
+- `cd src-tauri && cargo test --locked` → all pass
+- `cd src-tauri && cargo clippy --locked --all-targets -- -D warnings` → exit 0
+- `cd src-tauri && cargo fmt --check` → exit 0
+- `npx vitest run` → all pass
+- `npx tsc --noEmit` → exit 0
+- `npx biome ci .` → exit 0
+
+Then hand to the operator for the **MacBook smoke-check** (manual, required by the locked decision): run the built app on the notch MacBook with a realistic menu-bar icon load and confirm (a) the idle status rail never extends past the cutout's own width, (b) chips wrap onto a second row instead of clipping when they don't fit, (c) a long live-match label ellipsizes, (d) the Mac mini (HUD mode) is byte-for-byte unchanged — still 460px, single row. That check is operator-owed; do not mark the plan DONE in `plans/README.md` until it passes.
+
+## Test plan
+
+- **Rust** (`src-tauri/src/lib.rs`'s existing `#[cfg(test)]` module, or wherever `position_window`'s tests live — match that location): `cutout_width_js_value(Some(CutoutGeometry { left_x: 480.5, right_x: 799.5, width: 319.0 }))` returns `"319"`; `cutout_width_js_value(None)` returns `"null"`. No other rust tests — no behavior change beyond one eval string.
+- **Frontend, new file** `src/lib/presentationFacts.test.ts` — model after `src/useStatusState.test.ts`'s seed tests (`:84-90` set/delete the global between cases): (a) `__NOTCHTAP_MODE__ = "notch"` + width `319` → `{ mode: "notch", cutoutWidth: 319 }`; (b) mode `"hud"` or garbage/missing → `"hud"`; (c) width `0`, `-5`, `"319"`, missing → `cutoutWidth: null`.
+- **IdleView live chip** — in whichever existing test file renders IdleView with a live status (find it per the Scope section): assert the live chip now contains a `.live-label` span whose text is `{label} · {minute}`. Extend the existing case; do not weaken any existing assertion.
+- **CSS behavior (width clamp, wrap, ellipsis)** is manual-only per `docs/TESTING_STRATEGY.md` §5 — no jsdom layout assertions. The MacBook smoke-check in Step 5 is the verification.
+- Verification: `npx vitest run` → all pass, including the new `presentationFacts` suite (+4 tests) and the extended IdleView case; `cd src-tauri && cargo test --locked` → all pass (+2 new).
+
+## Done criteria
+
+- [ ] `window.__NOTCHTAP_MODE__` and `window.__NOTCHTAP_CUTOUT_WIDTH__` are eval-spliced in `lib.rs`'s `on_page_load` (one new block, no other rust changes; `git diff src-tauri/src/presentation.rs` is empty)
+- [ ] `document.documentElement.dataset.notchtapMode` is set on mount; `--notchtap-cutout-width` is set only when the splice carried a positive number
+- [ ] `:root[data-notchtap-mode="notch"] .rail-card.idle.status` clamps to `clamp(270px, var(--notchtap-cutout-width, 270px), 460px)`; the plain `.rail-card.idle.status` 460px rule is byte-identical
+- [ ] `.src-rail` wraps (`flex-wrap: wrap` + row gap); the live chip truncates via `.live-label`, base `.src-chip` untouched
+- [ ] `cargo test --locked`, `cargo clippy --locked --all-targets -- -D warnings`, `cargo fmt --check`, `npx vitest run`, `npx tsc --noEmit`, `npx biome ci .` all exit 0
+- [ ] No files outside the in-scope list are modified (`git status`)
+- [ ] Operator MacBook smoke-check passed (all four checks in Step 5) — plan stays TODO/IN PROGRESS in `plans/README.md` until then
+- [ ] `plans/README.md` status row for 063 updated
+
+## STOP conditions
+
+Stop and report back (do not improvise) if:
+
+- The code at any "Current state"/Steps citation doesn't match (drift since `9a954b0`) — re-read and re-verify before editing; on a real mismatch, stop.
+- `mode`/`cutout` are no longer in scope inside the `on_page_load` closure (e.g. detection moved into a managed-state struct) — the plumbing shape changes; stop and report rather than inventing a new channel.
+- The wrapped idle rail grows taller than the 300px window can hold at the 270px floor with a realistic chip load (4 chips + a live match) — that contradicts the locked "grows downward into unused vertical space" mechanic; stop and report the measured heights.
+- You find the 460px default rule needs to change to make the notch clamp work — that means the fallback structure is wrong; the HUD path must stay byte-identical.
+- Any test outside this plan's own new/extended cases needs its assertions changed to pass.
 
 ## Maintenance notes
 

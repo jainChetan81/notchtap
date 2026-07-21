@@ -15,10 +15,16 @@
 > When done, update the status row for this plan in `plans/README.md` —
 > unless a reviewer dispatched you and told you they maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat 71e54a7..HEAD -- src-tauri/src/weather_poller.rs src-tauri/src/config.rs src/components/StatusRailCard.tsx src/styles.css src/settings/preview-overlay.css prototype/weather-art.html prototype/assets/weather/`
+> **Drift check (run first)**: `git diff --stat 3de785a..HEAD -- src-tauri/src/weather_poller.rs src-tauri/src/config.rs src/components/StatusRailCard.tsx src/styles.css src/settings/preview-overlay.css prototype/weather-art.html prototype/assets/weather/`
 > Any diff in the source files means line refs below have shifted —
 > re-read before editing. Any diff in the prototype or its assets is a
-> STOP condition (see below).
+> STOP condition (see below). Baseline `3de785a` already INCLUDES plan
+> 080 (merged 2026-07-21 as `d21d689`) — the StatusRailCard.tsx refs
+> below are post-080; if 081 landed first, expect its diff on
+> `StatusRailCard.tsx`/`styles.css`/`preview-overlay.css` as well.
+> (Baseline history: `9a954b0` → `4fb3af9` for
+> 063's merge — `news-shade` refs at :643-658 — then → `3de785a` for
+> 080's merge. All refreshed and re-verified by direct read.)
 
 ## Status
 
@@ -31,7 +37,22 @@
   `StatusRailCard.tsx`/`styles.css` surface area with 080 — land after
   080 to avoid CSS rebase noise, but nothing structural requires it.)
 - **Category**: direction (locked) → build
-- **Planned at**: commit `71e54a7`, 2026-07-20
+- **Planned at**: commit `9a954b0`, 2026-07-20 (reviewed same date:
+  drift baseline corrected, vite inline-limit import form pinned,
+  `is_day` fetch spelled out, wx-marker render-leak instruction added).
+  **Review-plan pass 2 (2026-07-21, against `4fb3af9`)**: all
+  citations re-verified exact (weather_poller.rs :44/:83-94/:104-106/
+  :198-210/:219, config.rs :68-69, the 12 vendored SVG names + their
+  745–3017-byte range, `is_day` confirmed absent from both
+  `forecast_url` and the Bangalore fixture, no `.wx-*` in styles.css,
+  `src/assets/` confirmed absent, prototype :29-42/:44-45/:49-58/
+  :224-236); two stale styles.css refs fixed (`news-shade` precedent
+  `:619-634` → `:643-658`, its z-order rule `:633-634` → `:657-658`).
+  One load-bearing trap pinned in Step 3: Open-Meteo's `is_day` is an
+  integer `1`/`0`, not a JSON boolean — the struct field must not be
+  `bool`. Drift baseline re-stamped to `4fb3af9`, then again to
+  `3de785a` when plan 080 merged mid-review (the collapsed details
+  loop moved to `StatusRailCard.tsx:141-148`).
 
 ## Why this matters
 
@@ -72,8 +93,8 @@ new plumbing to get it.
   codes.
 - `src-tauri/src/weather_poller.rs` alert cards: rain-incoming +
   hot/cold threshold alerts, `alert_event` at
-  `weather_poller.rs:198-205`, `WEATHER_ALERT_TTL_SECS` = 8 (line 44),
-  `origin: SourceKind::Weather`. Today they carry no condition word in
+  `weather_poller.rs:198-210`, `WEATHER_ALERT_TTL_SECS` = 8 (line 44),
+  `origin: SourceKind::Weather` (line 208). Today they carry no condition word in
   a structured field — the condition lives in the title/body text. See
   Step 4 for the honest way to key the mood.
 - `src-tauri/src/config.rs:68-69` — `weather_lat`/`weather_lon` already
@@ -84,7 +105,7 @@ new plumbing to get it.
   exists; weather alerts render through the generic card path
   (`eventType: "generic"`, `origin` isn't on the wire).
 - `src/styles.css` — no `.wx-*` rules exist yet; the shipped
-  `news-shade` precedent (styles.css:619-634) shows how a card-variant
+  `news-shade` precedent (styles.css:643-658) shows how a card-variant
   background layer composes with `.compact`/`.manifest` z-ordering.
 - Vite: `src/` assets imported in TS are bundled by `vite build` (the
   overlay has no runtime network by architecture — ARCHITECTURE.md's
@@ -104,9 +125,9 @@ new plumbing to get it.
 ## Scope
 
 **In scope**:
-- Move `prototype/assets/weather/*.svg` → `src/assets/weather/` (all
-  12, spares included), plus a `NOTICE` file with the Meteocons
-  attribution.
+- Copy `prototype/assets/weather/*.svg` → `src/assets/weather/` (all
+  12, spares included), leaving the prototype's own copies in place,
+  plus a `NOTICE` file with the Meteocons attribution.
 - A new frontend data table (suggest `src/lib/weatherArt.ts`):
   condition word → (glyph import, mood class, texture class), with
   day/night variants.
@@ -133,10 +154,9 @@ new plumbing to get it.
 
 ### Step 1: Vendor assets + NOTICE
 
-Move the 12 SVGs from `prototype/assets/weather/` to
-`src/assets/weather/` (git mv semantics — the prototype copies are the
-same files; leave the prototype's own copies in place so
-`prototype/weather-art.html` keeps rendering standalone). Add
+Copy the 12 SVGs from `prototype/assets/weather/` to
+`src/assets/weather/` (NEW files — leave the prototype's own copies in
+place so `prototype/weather-art.html` keeps rendering standalone). Add
 `src/assets/weather/NOTICE` (or a top-level `NOTICE` section if the
 repo already has one — check first) containing: Meteocons by Bas
 Milius, MIT license, upstream URL, and which files it covers. Keep the
@@ -148,10 +168,14 @@ attribution/provenance story.
 
 ### Step 2: The condition→art data table
 
-New `src/lib/weatherArt.ts`: import each glyph with vite asset URLs
-(`import clearDayUrl from "../assets/weather/clear-day.svg?url"` — or
-the `new URL(..., import.meta.url)` form; check what this repo's vite
-version favors and match it), then export a plain lookup keyed on the
+New `src/lib/weatherArt.ts`: import each glyph with the
+`new URL("../assets/weather/clear-day.svg", import.meta.url).href`
+form — MANDATED, not optional: all 12 SVGs are 745–3017 bytes, under
+vite's default 4 KB `assetsInlineLimit`, so the `?url` import form
+would silently inline them as base64 data-URLs and emit zero `.svg`
+files into `dist/` (this repo has no existing asset-import precedent
+to match — `src/assets/` doesn't exist yet — so this plan sets it).
+Then export a plain lookup keyed on the
 SHIPPED condition vocabulary (`Clear | Cloudy | Fog | Rain | Snow |
 Showers | Storm`, mirroring `weather_poller.rs:83-94`):
 
@@ -180,20 +204,33 @@ the SVGs appear under `dist/` (hashed assets) — `ls dist/assets | grep -c svg`
 The frontend must not invent timezone math. Day/night comes from
 location time, which the data already has: Open-Meteo's
 `current.time` is location-local (`weather_poller.rs:104-106` relies on
-this). Two honest options, in preference order: (a) parse Open-Meteo's
-`is_day` field (present in the current-weather payload) rust-side and
-carry it on the weather alert's `EventMeta.details` or the
-`WeatherSummary` — small, fixture-testable poller change; (b) derive
-from the local hour in `current.time` rust-side (06:00–18:00 = day) —
-same plumbing, one less field to trust. Either way the BOOLEAN crosses
-the wire from rust; the frontend never computes it from the user's
-wall clock + lat/lon. Pick (a), fall back to (b) if `is_day` isn't in
-the captured fixture (`src-tauri/tests/fixtures/open-meteo-bangalore.json`
-— check it first). If the fixture lacks it, extend the fixture and say
-so in the completion report.
+this). Implement option (a), pinned by the reviewer: parse Open-Meteo's
+`is_day` field rust-side and carry the boolean on the weather alert's
+`EventMeta.details` (Step 4's mechanism). Note (verified at review
+time): `is_day` is NOT in today's payload — `forecast_url`
+(`weather_poller.rs:219`) requests only
+`current=temperature_2m,weather_code`, and the captured fixture
+(`src-tauri/tests/fixtures/open-meteo-bangalore.json`) confirms its
+absence. So (a) is a three-part change: add `is_day` to the `current=`
+param in `forecast_url`, add the field to the `OpenMeteoCurrent`
+response struct (`#[serde(default)]` so old fixtures still parse),
+and extend the Bangalore fixture with an `is_day` value consistent
+with its `current.time` — say so in the completion report. **Type trap
+(pinned at review-plan pass 2)**: Open-Meteo returns `is_day` as an
+integer `1`/`0`, NOT a JSON boolean — declare it
+`#[serde(default)] pub is_day: u8` (or `Option<u8>`), never `bool`:
+a `bool` field deserializes the fixture you write yourself (if you
+write `true`) but fails on the live `1`/`0`, and only real polling
+would surface it. Write the fixture value in the API's real integer
+form (`"is_day": 1`) so the fixture test proves the real shape parses.
+The
+BOOLEAN crosses the wire from rust; the frontend never computes it
+from the user's wall clock + lat/lon. (If Open-Meteo ever drops
+`is_day`, the fallback is local-hour derivation 06:00–18:00 from
+`current.time` — do not build it now.)
 
 **Verify**: `cd src-tauri && cargo test --locked` → all pass (add a
-fixture-backed test for the day/night boolean if the poller changes).
+fixture-backed test for the day/night boolean).
 
 ### Step 4: Apply mood+glyph to weather alert cards
 
@@ -206,12 +243,28 @@ alert's existing `meta.details` mechanism (plan 035's
 frontend-side): e.g. `{label: "wx-condition", value: "Rain"}` +
 `{label: "wx-is-day", value: "1"}`. The weather_poller already builds
 the alert's title/body from the same data, so this is additive, not a
-new data path. Frontend: in `StatusRailCard.tsx`'s generic branch, when
+new data path.
+
+**Marker-leak guard (load-bearing)**: `details` pairs are RENDERED as
+visible text — the collapsed card maps every pair to
+`detail-label`/`detail-value` cells (`StatusRailCard.tsx:141-148`) and
+the expanded `Manifest` renders them too. Left unfiltered, the card
+would show literal "wx-condition / Rain / wx-is-day / 1" text. So:
+frontend-side, derive the art inputs from the markers, then EXCLUDE
+every pair whose label starts with `wx-` from BOTH the collapsed
+details loop and the `details` passed to `Manifest`. Pin this with a
+test (below).
+
+Frontend: in `StatusRailCard.tsx`'s generic branch, when
 `renderedSlot.details` carries the `wx-condition` marker, add the mood
-class + texture class to the card and render the `<img class="wx-icon"
-src={glyphUrl} alt="">` layer behind `.compact`, following the
-`news-shade` z-order precedent (styles.css:633-634 — content sits above
-the background layer). Keep it strictly opt-in via the marker: every
+class + texture class to the OUTER `.rail-card` element (where the
+priority/idle classes already live, `StatusRailCard.tsx:57-67`) and
+render the `<img class="wx-icon"
+  src={glyphUrl} alt="">` layer behind `.compact`, following the
+  `news-shade` z-order precedent (styles.css:657-658 — content sits above
+  the background layer; the card needs `position: relative` if it
+  doesn't already establish one — check the `.rail-card` rule first).
+Keep it strictly opt-in via the marker: every
 other generic card renders byte-identically to today. Add the
 `.wx-card`-adapted mood gradients + `.wx-icon` + texture classes to
 `src/styles.css` (adapted to the rail-card, not the prototype's
@@ -225,8 +278,10 @@ mirror grep — `grep -c 'wx-icon\|wx-clear-day\|wx-rain\b' src/settings/preview
 
 Naming/shape only: the mood/texture/glyph class names from Steps 2-4
 must be exactly the ones a future `.wx-block` peek block will reuse
-(the prototype's `wx-*` vocabulary — already satisfied if Steps 2-4
-kept it), and `weatherArtFor` must be importable without pulling in
+(the GALLERY's `wx-*` vocabulary from `prototype/weather-art.html` —
+NOT `notch-states.html`'s older `wx-sunny`/`wx-cloud` blob stand-ins —
+already satisfied if Steps 2-4 kept it), and `weatherArtFor` must be
+importable without pulling in
 StatusRailCard. No peek markup, no hover CSS, no interaction — one
 comment at the table noting it feeds the 086-gated peek.
 
@@ -247,7 +302,9 @@ assets + types.
   for all 7 condition words × day/night (table test, same discipline as
   `presentation.test.ts`); unknown input → neutral default, never
   throws. StatusRailCard: a generic card WITH the wx markers renders
-  the mood class + glyph img; one WITHOUT renders exactly the shipped
+  the mood class + glyph img AND does NOT render the `wx-*` pairs as
+  visible detail cells (neither collapsed nor expanded — the
+  marker-leak guard); one WITHOUT renders exactly the shipped
   card (regression pin).
 - **Manual-only** (operator, TESTING_STRATEGY §5): visual check of a
   real rain-incoming/hot/cold alert against `prototype/weather-art.html`'s
@@ -273,12 +330,17 @@ assets + types.
   sign-off at filing; if they changed, re-confirm before implementing.
 - **Mirror-law risk**: a `.wx-*` rule can't be scoped into
   `preview-overlay.css` — stop; do not land unmirrored CSS.
+- **Marker leak**: the `wx-condition`/`wx-is-day` pairs show up as
+  visible text cells in either the collapsed or expanded card — the
+  filtering instruction in Step 4 was missed; fix that before anything
+  else (it means the render path diverged from the plan).
 - License/attribution uncertainty: if any SVG in the folder is NOT
   Meteocons/MIT (check before moving — provenance matters here), stop
   and exclude it rather than shipping unattributed art.
-- `is_day` absent from the fixture AND the local-hour derivation turns
-  out wrong for a real edge (polar day/night, fixture timestamps near
-  midnight) — present the approximation honestly rather than hiding it.
+- `is_day` turns out to be absent from Open-Meteo's LIVE response even
+  after adding it to the `current=` param (the docs lied or the field
+  moved) — stop and fall back to local-hour derivation explicitly,
+  presenting the approximation honestly rather than hiding it.
 - You find yourself writing hover/peek interaction code — that's
   086-gated; stop.
 

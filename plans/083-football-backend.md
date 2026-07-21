@@ -16,11 +16,17 @@
 > `plans/README.md` — unless a reviewer dispatched you and told you they
 > maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat 71e54a7..HEAD -- src-tauri/src/poller.rs src-tauri/src/event.rs src-tauri/src/config.rs src-tauri/src/settings.rs src-tauri/capabilities/default.json src-tauri/tauri.conf.json src/useSlotState.ts`
+> **Drift check (run first)**: `git diff --stat 4fb3af9..HEAD -- src-tauri/src/poller.rs src-tauri/src/event.rs src-tauri/src/config.rs src-tauri/src/settings.rs src-tauri/src/queue.rs src-tauri/src/net.rs src-tauri/src/lib.rs src-tauri/capabilities/default.json src-tauri/tauri.conf.json src/useSlotState.ts`
 > Any diff means line refs below have shifted — re-read before editing.
 > Plan 064 already landed (`apply_fresh_content` copies `meta` on
 > supersede — this plan's new meta fields ride Topic supersession
 > correctly BECAUSE of that fix; if you find it reverted, STOP).
+> (Baseline re-stamped `9a954b0` → `4fb3af9` on 2026-07-21 when plan 063
+> merged, and `src-tauri/src/lib.rs` ADDED to the path list — 063's
+> +41-line lib.rs block shifted the full SlotState test literal this
+> plan edits to `lib.rs:1057`. No other 083-scoped file changed in
+> 063's merge; every other citation re-verified unchanged by direct
+> read.)
 
 ## Status
 
@@ -36,7 +42,22 @@
   behavior is load-bearing here.
 - **Category**: direction (locked 2026-07-20 — 079 items 3/4/15 + 6a
   confirmed executable independently) → build
-- **Planned at**: commit `71e54a7`, 2026-07-20
+- **Planned at**: commit `9a954b0`, 2026-07-20 (reviewed same date:
+  drift baseline corrected + `queue.rs`/`net.rs` added to the check,
+  asset-protocol route corrected to tauri.conf.json-only, CSP step
+  added, endpoint URLs/pagination inlined, biome gate added).
+  **Review-plan pass 2 (2026-07-21, against `4fb3af9`)**: every rust
+  citation re-verified exact (poller.rs :75-83/:144-179/:348-357/
+  :359-371/:373-436/:443-460/:481-487/:497-526/:711, event.rs
+  :150-162/:183-206/:320/:376, queue.rs :496/:524-530 — plan 064's
+  meta copy live at :529, config.rs :367-370, settings.rs :505-509,
+  notifier.rs :163, tauri.conf.json :32-33, capabilities/default.json's
+  two event permissions, SettingsApp.tsx :715/:769-770); one stale ref
+  fixed (`lib.rs:1016` → `:1057`, shifted by 063) and lib.rs added to
+  the drift paths. One precision gap pinned in Step 1: the flag-off
+  "byte-identical" promise needs `skip_serializing_if` on the new
+  field, or every payload gains an `"espn": null` key. Drift baseline
+  re-stamped to `4fb3af9`.
 
 ## Why this matters
 
@@ -86,16 +107,24 @@ fabricated run kept as a cautionary artifact — never cite it.)
   `meta` on supersede (plan 064's fix) — new structured meta therefore
   survives Topic supersession, which the sticky live card depends on.
 - Config/flags precedent: `espn_live_card` (default `false`,
-  `config.rs`; settings toggle in `SettingsApp.tsx`'s Football section,
-  `SettingsApp.tsx:715`) — item 6a's flag mirrors this exactly.
+  `config.rs`; settings toggle in `src/settings/SettingsApp.tsx`'s
+  Football section — the section function starts at
+  `SettingsApp.tsx:715`, the `espn_live_card` `ToggleControl` to copy
+  is at `:764-771`) — item 6a's flag mirrors this exactly.
 - Crest-serving constraint: the overlay webview has NO network access
   and `src-tauri/capabilities/default.json` holds only
   `core:event:allow-listen`/`allow-unlisten`. AGENTS.md's v5 amendment
   pins `default.json` against invoke-command creep ("must never
-  change") — asset-serving is a different permission class, but treat
-  any `default.json` edit as needing explicit justification (Step 2
-  offers the two routes). Config-dir precedent for the cache location:
-  `settings.rs:505-506` (`~/.config/notchtap/`), `notifier.rs:163`.
+  change"). NOTE (reviewer-verified): tauri v2 has NO asset-protocol
+  capability permission — asset access is governed solely by
+  `app.security.assetProtocol` in `tauri.conf.json`, so route (i)
+  leaves `default.json` byte-identical. Also note `tauri.conf.json:32`
+  sets `csp: default-src 'self'` (and `devCsp` at :33) with no
+  `img-src` for `asset:`/`crest:` — CSP is part of the serving work
+  (Step 2). Config-dir precedent for the cache location:
+  the literal `~/.config/notchtap/` path is built at
+  `config.rs:367-370` (`Config::dir_from_home`), reached via
+  `settings.rs:505-509` (`notchtap_config_dir`); `notifier.rs:163`.
 - ESPN fetch posture: `reqwest` client with the hardened poller
   posture (UA, redirect limit, timeout, byte cap — plan 010/025;
   `poller.rs:711` `fetch_league`, shared helpers in `net.rs`). The
@@ -111,6 +140,7 @@ fabricated run kept as a cautionary artifact — never cite it.)
 | Rust format | `cd src-tauri && cargo fmt --check` | exit 0 |
 | Frontend unit tests (wire validator) | `npx vitest run` | all pass |
 | Typecheck | `npx tsc --noEmit` | exit 0 |
+| Lint + format gate (SettingsApp.tsx is edited) | `npx biome ci .` | exit 0 |
 
 ## Scope
 
@@ -153,7 +183,17 @@ fabricated run kept as a cautionary artifact — never cite it.)
 Add an espn-only structured block to `EventMeta` — prefer a single
 optional sub-struct over seven flat fields (keeps `EventMeta`'s
 plan-035 flat-field shape clean; serde `default` keeps every other
-source's payload byte-identical):
+source's payload byte-identical — **but only with
+`#[serde(skip_serializing_if = "Option::is_none")]` on the new field,
+pinned at review-plan pass 2**: this struct's house style serializes
+`None` Options as explicit `null` (pinned by
+`slot_state_showing_without_metadata_serializes_null_fields`,
+event.rs:375), so without the skip EVERY payload — manual, cmux, news,
+flag-off espn — gains an `"espn": null` key and the flag-off
+byte-identical pin below fails at the JSON level. Apply the skip in
+BOTH places the field lands (`EventMeta` and the `SlotState::Showing`
+mirror); it deviates from the house style for exactly one field,
+deliberately, so "byte-identical" stays literally testable):
 
 ```rust
 /// plan 083: structured live-match fields (079 item 4 — decided
@@ -176,10 +216,15 @@ Populate it in `poller.rs` at the same place plan 042 builds the
 Clock/Cards `details` (`poller.rs:497-526`) — same `topic.is_some()`
 gate, so flag-off payloads stay byte-identical (pin that with a test).
 Mirror onto `SlotState::Showing` in `event.rs` (camelCase via the
-existing `rename_all_fields`), then the TS side: `useSlotState.ts`
+existing `rename_all_fields`, same `skip_serializing_if` as above),
+and copy the block in at the Showing
+construction site `queue.rs:496` (`current_slot_state`) plus the test
+constructors (`event.rs:320`, `event.rs:376`, `lib.rs:1057`) — the
+compiler will name them all via missing-field errors if you miss one.
+Then the TS side: `useSlotState.ts`
 type + `isValidSlotState` grows an optional nested-object check (absent
 or valid — a malformed espn block must fall back like every other
-field, `useSlotState.ts:105-127`'s discipline). The pre-joined
+field, the discipline stated at `useSlotState.ts:72-103`). The pre-joined
 `matchup()` string stays as `title` (it remains the compact title for
 non-live presentation); the structured block is ADDITIVE.
 
@@ -202,17 +247,23 @@ non-live presentation); the structured block is ADDITIVE.
    256 KiB is generous) and the cache (per-league team counts are
    bounded by ESPN's feed; no eviction needed for v1 — note it).
 3. Serve to the webview — two routes, pick (i) unless it hits the
-   STOP condition: (i) tauri asset protocol — enable `assetProtocol`
-   in `tauri.conf.json` scoped to the crests dir and add the minimal
-   asset permission to `capabilities/default.json`; the frontend reads
-   via `convertFileSrc`. JUSTIFY the `default.json` edit in the
-   completion report against AGENTS.md's "must never change" line
-   (that rule was written about invoke commands; asset scope is a
-   different class — but say so explicitly, don't slip it in). (ii)
+   STOP condition: (i) tauri asset protocol — enable
+   `app.security.assetProtocol` in `tauri.conf.json` with `enable:
+   true` and `scope` covering ONLY the crests dir; the frontend reads
+   via `convertFileSrc`. REVIEWER CORRECTION: tauri v2 has no
+   asset-protocol capability permission — `capabilities/default.json`
+   stays byte-identical on this route (which also moots the AGENTS.md
+   "must never change" tension; say so in the completion report).
+   CSP (load-bearing, silent-failure-prone): `tauri.conf.json:32`'s
+   `csp` and :33's `devCsp` are `default-src 'self'` — extend BOTH
+   with `img-src` allowing `asset: http://asset.localhost` (route i)
+   or `crest:` (route ii), or the crests render as broken images with
+   NO automated test catching it (only the manual live-match check
+   would). (ii)
    Fallback if (i) is rejected: a custom `crest://` URI scheme protocol
    registered rust-side (`register_uri_scheme_protocol`) serving cached
    files — zero capability changes, `default.json` byte-identical,
-   more rust code.
+   more rust code (and the same `img-src` CSP addition for `crest:`).
 4. Wire: carry the crest availability on the structured meta from Step
    1 — e.g. `home_crest: Option<String>` / `away_crest` holding the
    servable URL (asset-protocol URL or `crest://` URL) when cached,
@@ -226,8 +277,9 @@ non-live presentation); the structured block is ADDITIVE.
 tests: logo URL parses from a checked-in fixture; cache-miss → fetch
 scheduled, cache-hit → none, via a test-local temp dir; fetch failure →
 `None`, no panic); `cargo clippy --locked --all-targets -- -D warnings`
-→ exit 0; `cargo fmt --check` → exit 0; `git status` shows NO `*.png`
-under `src-tauri/` or anywhere tracked.
+→ exit 0; `cargo fmt --check` → exit 0; `git status` shows NO new/
+untracked `*.png` (tracked PNGs under `src-tauri/icons/` legitimately
+exist — the bar is no NEW ones).
 
 ### Step 3 (workstream c, part 1): `summary` fetch + richer event parse
 
@@ -235,10 +287,14 @@ Opt-in flag first: `espn_rich_events` (default `false`), mirroring
 `espn_live_card`'s full path — `config.rs` field + default-fn +
 parse-heal awareness, `settings.rs` `validate()` if range-like (it's a
 bool — follow the bool precedent, likely no validation), Settings
-Football-section toggle in `SettingsApp.tsx:715` following the
-`espn_live_card` toggle's exact shape. Then the fetch: for each match
-currently tracked live (only when the flag is on), poll ESPN's
-`summary` endpoint and parse `commentary`/`keyEvents` into a typed
+Football-section toggle in `src/settings/SettingsApp.tsx` following the
+`espn_live_card` toggle at `:764-771`'s exact shape. Then the fetch:
+for each match currently tracked live (only when the flag is on), poll
+ESPN's `summary` endpoint —
+`https://site.api.espn.com/apis/site/v2/sports/soccer/{league}/summary?event={event_id}`
+(same host family as the existing scoreboard URL at `poller.rs:712`;
+verified live in the 043 research) — and parse `commentary`/`keyEvents`
+into a typed
 event stream — map at minimum: foul, offside, VAR check, substitution
 (the four locked informational types; goal/penalty/own-goal/yellow/red
 already flow from the scoreboard feed — do NOT re-emit those from
@@ -257,9 +313,14 @@ monotonic-growth handling, unknown event types skipped not fatal).
 ### Step 4 (workstream c, part 2): Fallback chain + dedup
 
 Fallback is mandatory, not a retry: when `summary` errors, 404s, or
-returns empty for a match known-live, fall back to the core API
-`/competitions/{id}/plays` (confirmed working during the live
-verification when `summary` wasn't). Chain: `summary` → `plays` →
+returns empty for a match known-live, fall back to the core API —
+`https://sports.core.api.espn.com/v2/sports/soccer/leagues/{league}/events/{event_id}/competitions/{competition_id}/plays`
+(confirmed working during the live verification when `summary`
+wasn't). PAGINATION (pinned): the feed is paginated at 25 plays/page
+(625 plays = 25 pages by the 39th minute in the 043 evidence, and
+`?limit=300` returned an internal error) — fetch the NEWEST page only
+each poll and let the seen-set dedup absorb the overlap; do not
+backfill pages. Chain: `summary` → `plays` →
 give-up-this-poll (silent, next poll retries — same posture as the
 scoreboard's absent-poll carry-forward, `poller.rs:455-460`). Dedup vs
 the scoreboard feed: the scoreboard already emits
@@ -267,16 +328,18 @@ goal/penalty/own-goal/yellow/red/kickoff/halftime/fulltime — the rich
 feed must NEVER re-emit a scored-goal/card event the scoreboard path
 owns. Dedup key on (match id, event type, clock, athlete where
 present); keep a small per-match seen-set carried in the snapshot
-(mirror the `missed_polls` carry-forward pattern), and drop any
-summary/plays event whose type is scoreboard-owned outright (they're
-redundant by construction, not just by key-collision). Emitted events
+(mirror the `missed_polls` carry-forward pattern — the field lives at
+`poller.rs:164-169`, its reset/evict logic in `diff_scoreboard`), and
+drop any summary/plays event whose type is scoreboard-owned outright
+(they're redundant by construction, not just by key-collision). Emitted events
 route through `Engine::accept` like all Football events, as
 one-shots with the football TTL — the sticky-card supersession is the
 existing Topic machinery's job (`poller.rs:373-436`), not new code
 here. Signal mapping: extend `EventSignal` ONLY if 084's icons need a
 new variant (foul/offside/var/sub likely do) — that's a wire-enum
 addition; keep it serde-snake_case and update the TS mirrors
-(`useSlotState.ts:4-13`, `presentation.ts`'s exhaustive tables will
+(`src/useSlotState.ts:4-13`, `src/lib/presentation.ts`'s exhaustive
+tables will
 fail to compile until updated — good, that's the seam working).
 
 **Verify**: `cd src-tauri && cargo test --locked` → all pass (new
@@ -290,7 +353,7 @@ snapshots/events); `cargo clippy --locked --all-targets -- -D warnings`
 
 **Verify**: every command in the Commands table exits 0;
 `git status`/`git diff --stat` shows no binary assets, no prototype
-edits, no display-layer (`StatusRailCard.tsx`/`styles.css`) changes.
+edits, no display-layer (`src/components/StatusRailCard.tsx`/`src/styles.css`) changes.
 
 ## Test plan
 
@@ -329,8 +392,13 @@ pure and fixture-tested; no live network in tests:
 
 ## STOP conditions
 
+- The crest `<img>`s silently don't render after the serving route
+  lands — that's the CSP (Step 2's `img-src` addition), not the cache
+  or the fetch; nothing in the automated suite catches it, so check it
+  first before debugging the pipeline.
 - The asset-protocol route (Step 2 route i) requires a `default.json`
-  change you judge to violate AGENTS.md's pin, or `tauri.conf.json`
+  change after all (it shouldn't — tauri v2 governs assets via
+  `tauri.conf.json` alone), or `tauri.conf.json`
   asset scoping proves broader than the crests dir — stop and present
   routes (i) vs (ii) to the operator rather than choosing under a
   security-rule cloud.

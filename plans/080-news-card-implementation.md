@@ -44,7 +44,12 @@
   **Reconciled 2026-07-20 against `4fb3af9`** (plan 063 merged to
   master): all `styles.css` refs refreshed +24, the test-file scope note
   corrected (lines 358-365 are the generic branch, not news), and the
-  063-shipped STOP condition marked satisfied.
+  063-shipped STOP condition marked satisfied. **Review-plan pass 2
+  (2026-07-21)**: every component, CSS, prototype, and test-file
+  citation re-verified against `4fb3af9` — all exact except two
+  `styles.css` cites in Step 3 the first reconciliation missed (still
+  pre-shift numbers): the news-block range (611-686 → 636-713) and the
+  `.manifest-inner.news` removal target (685-686 → 709-710). Fixed.
 - **Executed**: 2026-07-21, worktree `exec/080-news-card-display`; `/improve execute` reviewed **APPROVE**. Vitest 122→124; all four frontend gates green.
 
 ## Why this matters
@@ -200,7 +205,7 @@ leave no unused locals).
 
 ### Step 3: styles.css + preview-overlay.css mirror (same commit)
 
-Add to `src/styles.css`, next to the existing news block (611-686):
+Add to `src/styles.css`, next to the existing news block (636-713):
 `.manifest-block` (prototype line 96 verbatim — padding + border-top),
 `.manifest-label` (prototype line 97 verbatim — base rule AND its
 `var(--cat)` color, which is how the removed `.manifest-inner.news
@@ -210,7 +215,7 @@ verbatim), `.manifest-meta` +
 `.manifest-hint` (prototype lines 99-106), and `.manifest-text` if the
 generic manifest's `.detail-value.message` styling doesn't already
 cover it — check before adding a duplicate. Remove the
-`.manifest-inner.news` rules at styles.css:685-686 (nothing renders
+`.manifest-inner.news` rules at styles.css:709-710 (nothing renders
 that class after Step 2). Then mirror EVERY added/removed rule in
 `src/settings/preview-overlay.css` under its `.appearance-preview`
 scoping, in the same commit — note the preview currently mirrors
@@ -277,7 +282,8 @@ visual look stays manual:
   into `preview-overlay.css` (e.g. a rule that can't be scoped under
   `.appearance-preview`) — stop and surface it; do NOT land an
   unmirrored `styles.css` change.
-- Plan 063 has not shipped yet — its width/wrap mechanics are this
+- **[SATISFIED 2026-07-20 — 063 merged at `4fb3af9`]** Plan 063 has not
+  shipped yet — its width/wrap mechanics are this
   card's baseline; landing the news card first risks a rebase against
   moving width rules. Confirm 063's status row before starting.
 - A payload-shape surprise: a real news item where `publishedAtMs` is

@@ -18,10 +18,14 @@
 > `plans/README.md` — unless a reviewer dispatched you and told you they
 > maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat 71e54a7..HEAD -- src-tauri/src/lib.rs src-tauri/Cargo.toml src-tauri/capabilities/default.json docs/ARCHITECTURE.md`
+> **Drift check (run first)**: `git diff --stat 4fb3af9..HEAD -- src-tauri/src/lib.rs src-tauri/Cargo.toml src-tauri/capabilities/default.json docs/ARCHITECTURE.md`
 > Any diff in `lib.rs` means the native-config line refs below shifted —
 > re-read before investigating. A diff adding hover machinery anywhere
 > means someone jumped the gate — reconcile before proceeding.
+> (Baseline re-stamped `71e54a7` → `4fb3af9` on 2026-07-21: plan 063's
+> merge added a +41-line block to `lib.rs`'s `on_page_load`, shifting
+> `apply_overlay_native_config` and its comment to :544-574 — refreshed
+> and re-verified by direct read.)
 
 ## Status
 
@@ -35,7 +39,14 @@
 - **Depends on**: none. Gates: the hover-halves of 081/082/084 and the
   idle expanded-on-hover state (079's locked three-states design).
 - **Category**: tech-debt / architecture (investigate)
-- **Planned at**: commit `71e54a7`, 2026-07-20
+- **Planned at**: commit `71e54a7`, 2026-07-20. **Review-plan pass 2
+  (2026-07-21, against `4fb3af9`)**: the one code citation block
+  re-verified — `apply_overlay_native_config` now lives at
+  `lib.rs:544-574` (`set_ignore_cursor_events(true)` at :554, the
+  2026-07-17-bug comment at :546-553, the `objc2_app_kit` use at :545),
+  shifted +15 by 063's `on_page_load` block; fixed below. Capabilities
+  file confirmed still exactly the two event permissions. Drift
+  baseline re-stamped to `4fb3af9`.
 
 ## Why this matters
 
@@ -56,9 +67,9 @@ trade-offs named up front, not discovered mid-build.
 
 ## Current state
 
-- `src-tauri/src/lib.rs:529-540` — `apply_overlay_native_config` calls
-  `window.set_ignore_cursor_events(true)` UNCONDITIONALLY, on the whole
-  overlay window. The comment (:532-539) records why: the window sits
+- `src-tauri/src/lib.rs:544-574` — `apply_overlay_native_config` calls
+  `window.set_ignore_cursor_events(true)` UNCONDITIONALLY (:554), on the whole
+  overlay window. The comment (:546-553) records why: the window sits
   flush over the real menu bar at `NSStatusWindowLevel`, so without
   click-through it swallows clicks meant for other apps' menu-bar icons
   (the exact 2026-07-17 bug this line fixed). Safe today because the
@@ -72,7 +83,7 @@ trade-offs named up front, not discovered mid-build.
   within the card's current rendered bounds, or the icon-swallowing bug
   comes back.
 - Building blocks already in the repo:
-  - `objc2_app_kit` in use at `lib.rs:531` (NSWindow-level calls are an
+  - `objc2_app_kit` in use at `lib.rs:545` (NSWindow-level calls are an
     established pattern here).
   - The swift-subprocess precedent: `notchtap-detect` — a standalone
     swift CLI printing JSON to stdout, rust shells out and parses
