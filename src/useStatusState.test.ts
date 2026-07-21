@@ -2,7 +2,7 @@ import { act, renderHook } from "@testing-library/react";
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { emitTo, listen, resetHandlers } from "./test-support/tauriEventMock";
 import type { StatusState } from "./useStatusState";
-import { statusRailActive, useStatusState } from "./useStatusState";
+import { useStatusState } from "./useStatusState";
 
 vi.mock("@tauri-apps/api/event", () => import("./test-support/tauriEventMock"));
 
@@ -172,42 +172,5 @@ describe("useStatusState", () => {
     const { result } = await renderReady();
     emit(LIVE);
     expect(result.current).toEqual(LIVE);
-  });
-});
-
-describe("statusRailActive", () => {
-  it("is false only when every gate is off, nothing is waiting, and not paused", () => {
-    expect(statusRailActive(FALLBACK)).toBe(false);
-  });
-
-  it("is true for a live match, a source gate on, a backlog, or a paused engine", () => {
-    expect(statusRailActive(LIVE)).toBe(true);
-    // the manual all-clear check (espn off, rss on, idle) must show the rail
-    expect(
-      statusRailActive({
-        paused: false,
-        waiting: 0,
-        football: { enabled: false, live: null },
-        news: { enabled: true },
-        weather: { enabled: false, current: null },
-      }),
-    ).toBe(true);
-    expect(
-      statusRailActive({
-        paused: false,
-        waiting: 2,
-        football: { enabled: false, live: null },
-        news: { enabled: false },
-        weather: { enabled: false, current: null },
-      }),
-    ).toBe(true);
-    // a weather gate on (or a current reading) must show the rail too
-    expect(
-      statusRailActive({
-        ...FALLBACK,
-        weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy" } },
-      }),
-    ).toBe(true);
-    expect(statusRailActive({ ...FALLBACK, paused: true })).toBe(true);
   });
 });

@@ -34,8 +34,7 @@ declare global {
 }
 
 // Before the first valid payload (and after any invalid one): every gate
-// off, nothing queued — statusRailActive is false on it, so the idle card
-// keeps its plain-clock form until rust's seed lands.
+// off, nothing queued, engine unpaused — until rust's seed lands.
 const FALLBACK_STATUS: StatusState = {
   paused: false,
   waiting: 0,
@@ -95,29 +94,6 @@ function isValidStatusState(v: unknown): v is StatusState {
     typeof news.enabled === "boolean" &&
     typeof weather.enabled === "boolean" &&
     (weather.current === null || isValidWeatherSummary(weather.current))
-  );
-}
-
-// The rail renders only while it has something to say: a source gate on
-// (football/news), a live match, items waiting behind the empty slot, or
-// the engine paused. All gates off + empty queue + unpaused = the plain
-// clock idle, and StatusRailCard keys the narrow 270px width off the same
-// predicate (the `.rail-card.idle.status` class, plan 034).
-//
-// plan 087: mirrored in rust as `hover::status_rail_active`
-// (`src-tauri/src/hover.rs`) — the hover rect-derivation function needs
-// this same boolean to pick the idle card's width (270 vs 460), and rust
-// has no runtime access to this TS predicate. Keep the seven terms and
-// their order identical in both copies.
-export function statusRailActive(status: StatusState): boolean {
-  return (
-    status.football.enabled ||
-    status.news.enabled ||
-    status.football.live !== null ||
-    status.weather.enabled ||
-    status.weather.current !== null ||
-    status.waiting > 0 ||
-    status.paused
   );
 }
 
