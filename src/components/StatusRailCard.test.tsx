@@ -1,8 +1,17 @@
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import type { SlotState } from "../useSlotState";
+import type { EspnMeta, SlotState } from "../useSlotState";
 import type { StatusState } from "../useStatusState";
 import { StatusRailCard } from "./StatusRailCard";
+
+// plan 084: `Crest` (StatusRailCard.tsx) calls `convertFileSrc` itself —
+// the real tauri implementation isn't available under vitest/jsdom, so
+// every test asserting on the crest <img> src needs this mocked. The fake
+// prefix makes "the src actually went through convertFileSrc, not the
+// raw path" assertable rather than assumed.
+vi.mock("@tauri-apps/api/core", () => ({
+  convertFileSrc: (path: string) => `asset://converted${path}`,
+}));
 
 // this project's vitest config doesn't set `test.globals`, so RTL's
 // auto-cleanup (which hooks a global `afterEach`) never registers —
@@ -187,6 +196,47 @@ const WEATHER_ALERT: SlotState = {
   ttlMs: 8000,
   remainingMs: 8000,
 };
+
+// plan 084: the structured espn meta (POST-083 contract) — a base fixture
+// plus a small helper to build a showing slot around it, one event/state
+// at a time, so each scorecard test only overrides what it's about.
+const ESPN_BASE: EspnMeta = {
+  league: "UCL",
+  homeAbbrev: "ARS",
+  awayAbbrev: "PSG",
+  homeScore: 1,
+  awayScore: 1,
+  clock: "78'",
+  homeCards: [0, 0],
+  awayCards: [0, 0],
+  homeCrest: null,
+  awayCrest: null,
+};
+
+function liveSlot(overrides: Partial<Extract<SlotState, { state: "showing" }>> = {}): SlotState {
+  return {
+    state: "showing",
+    id: "match-live-1",
+    title: "UCL: ARS 1–1 PSG",
+    body: "Goal — K. Havertz 78'",
+    eventType: "score_update",
+    priority: "high",
+    signal: "goal",
+    expanded: false,
+    source: null,
+    category: null,
+    publishedAtMs: null,
+    link: null,
+    subtitle: null,
+    details: [],
+    queueTotal: 1,
+    queueDone: 0,
+    ttlMs: 8000,
+    remainingMs: 8000,
+    espn: ESPN_BASE,
+    ...overrides,
+  };
+}
 
 describe("StatusRailCard", () => {
   describe("goal/red-card pulse", () => {
@@ -738,5 +788,256 @@ describe("StatusRailCard", () => {
     expect(trackAfter?.querySelectorAll("span")).toHaveLength(5);
     expect(trackAfter?.querySelectorAll("span.done")).toHaveLength(1);
     expect(trackAfter?.querySelectorAll("span.cur")).toHaveLength(1);
+  });
+
+  // plan 084: the recurring live-match scorecard — detected by the
+  // structured `espn` block's presence (POST-083 contract), rendered
+  // through a wholly different branch than the generic/news layouts
+  // above (no Track, no TtlBar, no Manifest, no compact-hint).
+  describe("live-match football scorecard (plan 084)", () => {
+    it("renders the league chip, live-pill, clock, crests-as-abbrev, and score", () => {
+      const { container } = render(<StatusRailCard slot={liveSlot()} />);
+      expect(container.querySelector(".notif-block")).not.toBeNull();
+      expect(screen.getByText("UCL")).toBeTruthy();
+      const pill = container.querySelector(".live-pill");
+      expect(pill?.textContent).toBe("Live");
+      expect(pill?.classList.contains("break")).toBe(false);
+      expect(pill?.classList.contains("final")).toBe(false);
+      expect(pill?.querySelector(".live-dot")).not.toBeNull();
+      expect(container.querySelector(".clock-pill")?.textContent).toBe("78'");
+      const crests = container.querySelectorAll(".crest");
+      expect(crests).toHaveLength(2);
+      expect(crests[0].textContent).toBe("ARS");
+      expect(crests[1].textContent).toBe("PSG");
+      expect(container.querySelector(".score")?.textContent).toBe("1–1");
+    });
+
+    it("goal: tints the event line green, plays cele-goal (not pulse-goal), never the ripple", () => {
+      const { container } = render(
+        <StatusRailCard slot={liveSlot({ signal: "goal", body: "Goal — K. Havertz 78'" })} />,
+      );
+      const eventLine = container.querySelector(".event-line");
+      expect(eventLine?.classList.contains("tint-goal")).toBe(true);
+      expect(eventLine?.querySelector(".ev-ico.goal")).not.toBeNull();
+      expect(eventLine?.textContent).toContain("Goal — K. Havertz 78'");
+      expect(container.querySelector(".rail-card.cele-goal")).not.toBeNull();
+      expect(container.querySelector(".rail-card.pulse-goal")).toBeNull();
+      expect(container.querySelector(".cele-ripple")).toBeNull();
+    });
+
+    it("penalty scored: same cele-goal celebration family, ring icon", () => {
+      const { container } = render(
+        <StatusRailCard
+          slot={liveSlot({ signal: "goal", body: "Penalty - Scored — Mohamed Salah 44'" })}
+        />,
+      );
+      const eventLine = container.querySelector(".event-line");
+      expect(eventLine?.classList.contains("tint-goal")).toBe(true);
+      expect(eventLine?.querySelector(".ev-ico.pen")).not.toBeNull();
+      expect(container.querySelector(".rail-card.cele-goal")).not.toBeNull();
+    });
+
+    it("own goal: score updates, hollow icon, NO tint and NO celebration", () => {
+      const { container } = render(
+        <StatusRailCard
+          slot={liveSlot({
+            signal: "goal",
+            body: "Own Goal — W. Saliba 12'",
+            espn: { ...ESPN_BASE, homeScore: 0, awayScore: 1 },
+          })}
+        />,
+      );
+      expect(container.querySelector(".score")?.textContent).toBe("0–1");
+      const eventLine = container.querySelector(".event-line");
+      expect(eventLine?.className).toBe("event-line");
+      expect(eventLine?.querySelector(".ev-ico.og")).not.toBeNull();
+      expect(container.querySelector(".rail-card.cele-goal")).toBeNull();
+      expect(container.querySelector(".rail-card.cele-yc")).toBeNull();
+      expect(container.querySelector(".rail-card.cele-rc")).toBeNull();
+    });
+
+    it("yellow card: amber tint, cele-yc, and the per-side cards line ticks up", () => {
+      const { container } = render(
+        <StatusRailCard
+          slot={liveSlot({
+            signal: "yellow_card",
+            body: "Yellow Card — B. Saka 54'",
+            espn: { ...ESPN_BASE, homeCards: [1, 0], awayCards: [2, 0] },
+          })}
+        />,
+      );
+      const eventLine = container.querySelector(".event-line");
+      expect(eventLine?.classList.contains("tint-yc")).toBe(true);
+      expect(eventLine?.querySelector(".ev-ico.yc")).not.toBeNull();
+      expect(container.querySelector(".rail-card.cele-yc")).not.toBeNull();
+      expect(container.querySelector(".cards-line")?.textContent).toBe("ARS 1Y0R · PSG 2Y0R");
+    });
+
+    it("red card: coral tint and cele-rc", () => {
+      const { container } = render(
+        <StatusRailCard
+          slot={liveSlot({
+            signal: "red_card",
+            body: "Red Card — M. Dembélé 71'",
+            espn: { ...ESPN_BASE, homeCards: [1, 0], awayCards: [2, 1] },
+          })}
+        />,
+      );
+      const eventLine = container.querySelector(".event-line");
+      expect(eventLine?.classList.contains("tint-rc")).toBe(true);
+      expect(eventLine?.querySelector(".ev-ico.rc")).not.toBeNull();
+      expect(container.querySelector(".rail-card.cele-rc")).not.toBeNull();
+      expect(container.querySelector(".rail-card.pulse-red")).toBeNull();
+    });
+
+    it.each([
+      ["foul", "foul", "Foul — D. Rice 62'"],
+      ["offside", "off", "Offside — K. Mbappé 55'"],
+      ["var_check", "var", "VAR check — possible penalty 67'"],
+      ["substitution", "sub", "Substitution — L. Trossard for G. Martinelli 70'"],
+    ] as const)(
+      "%s: quiet event line — correct icon, no tint, no celebration",
+      (signal, iconSuffix, body) => {
+        const { container } = render(<StatusRailCard slot={liveSlot({ signal, body })} />);
+        const eventLine = container.querySelector(".event-line");
+        expect(eventLine?.className).toBe("event-line");
+        expect(eventLine?.querySelector(`.ev-ico.${iconSuffix}`)).not.toBeNull();
+        expect(eventLine?.textContent).toContain(body);
+        expect(container.querySelector(".rail-card.cele-goal")).toBeNull();
+        expect(container.querySelector(".rail-card.cele-yc")).toBeNull();
+        expect(container.querySelector(".rail-card.cele-rc")).toBeNull();
+      },
+    );
+
+    it("clears cele-goal on its ring animation ending, and never both pulse and cele stack", () => {
+      const { container } = render(<StatusRailCard slot={liveSlot({ signal: "goal" })} />);
+      const card = container.querySelector(".rail-card") as HTMLElement;
+      expect(container.querySelector(".cele-goal")).not.toBeNull();
+      fireAnimationEnd(card, "cele-ring");
+      expect(container.querySelector(".cele-goal")).toBeNull();
+    });
+
+    it("clears cele-rc on the red-strobe animation ending", () => {
+      const { container } = render(<StatusRailCard slot={liveSlot({ signal: "red_card" })} />);
+      const card = container.querySelector(".rail-card") as HTMLElement;
+      expect(container.querySelector(".cele-rc")).not.toBeNull();
+      fireAnimationEnd(card, "red-strobe");
+      expect(container.querySelector(".cele-rc")).toBeNull();
+    });
+
+    it("half-time: Break pill and the HT clock, from the wire's own signal/clock", () => {
+      const { container } = render(
+        <StatusRailCard
+          slot={liveSlot({
+            signal: "halftime",
+            body: "half-time",
+            espn: { ...ESPN_BASE, clock: "HT" },
+          })}
+        />,
+      );
+      const pill = container.querySelector(".live-pill");
+      expect(pill?.textContent).toBe("Break");
+      expect(pill?.classList.contains("break")).toBe(true);
+      expect(pill?.querySelector(".live-dot")).not.toBeNull();
+      expect(container.querySelector(".clock-pill")?.textContent).toBe("HT");
+    });
+
+    it("full-time: Final pill (no live-dot) and the FT clock", () => {
+      const { container } = render(
+        <StatusRailCard
+          slot={liveSlot({
+            signal: "fulltime",
+            body: "full-time",
+            espn: { ...ESPN_BASE, clock: "FT" },
+          })}
+        />,
+      );
+      const pill = container.querySelector(".live-pill");
+      expect(pill?.textContent).toBe("Final");
+      expect(pill?.classList.contains("final")).toBe(true);
+      expect(pill?.querySelector(".live-dot")).toBeNull();
+      expect(container.querySelector(".clock-pill")?.textContent).toBe("FT");
+    });
+
+    // No "Soon" (pre-match) variant: there is no wire signal for it (see
+    // StatusRailCard.tsx's live-match branch doc) — every wire EventSignal
+    // maps to Live/Break/Final only. This is coverage-by-exhaustion, not a
+    // single assertion: `livePillVariantFor` (lib/presentation.ts) is
+    // exhaustive over the full EventSignal union with no "soon" arm, so a
+    // wire signal can never resolve to a fourth variant this component
+    // would need to render.
+
+    it("omits the cards line on a clean match (no cards either side)", () => {
+      const { container } = render(<StatusRailCard slot={liveSlot()} />);
+      expect(container.querySelector(".cards-line")).toBeNull();
+    });
+
+    it("renders no Track (queue slider) on the live card, while a generic card in the same run still gets one", () => {
+      const { container: liveContainer } = render(<StatusRailCard slot={liveSlot()} />);
+      expect(liveContainer.querySelector(".track")).toBeNull();
+      cleanup();
+
+      const { container: genericContainer } = render(<StatusRailCard slot={GOAL} />);
+      expect(genericContainer.querySelector(".track")).not.toBeNull();
+    });
+
+    it("renders no TtlBar and no Manifest on the live card", () => {
+      const { container } = render(<StatusRailCard slot={liveSlot()} />);
+      expect(container.querySelector(".ttl-bar")).toBeNull();
+      expect(container.querySelector(".manifest")).toBeNull();
+      expect(container.querySelector(".manifest-wrap")).toBeNull();
+      expect(container.querySelector(".compact-hint")).toBeNull();
+    });
+
+    it("still renders the compact scorecard (not a bigger layout) when expanded arrives true", () => {
+      const { container } = render(<StatusRailCard slot={liveSlot({ expanded: true })} />);
+      expect(container.querySelector(".notif-block")).not.toBeNull();
+      expect(container.querySelector(".manifest")).toBeNull();
+    });
+
+    describe("crest rendering", () => {
+      it("renders an <img> with a convertFileSrc-converted src when a crest path is present", () => {
+        const { container } = render(
+          <StatusRailCard
+            slot={liveSlot({
+              espn: {
+                ...ESPN_BASE,
+                homeCrest: "/Users/x/.config/notchtap/crests/96.png",
+              },
+            })}
+          />,
+        );
+        const img = container.querySelector(".crest img") as HTMLImageElement;
+        expect(img).not.toBeNull();
+        expect(img.getAttribute("src")).toBe(
+          "asset://converted/Users/x/.config/notchtap/crests/96.png",
+        );
+      });
+
+      it("falls back to the text-abbrev circle when the crest path is absent", () => {
+        const { container } = render(<StatusRailCard slot={liveSlot({ espn: ESPN_BASE })} />);
+        expect(container.querySelector(".crest img")).toBeNull();
+        const crests = container.querySelectorAll(".crest");
+        expect(crests[0].textContent).toBe("ARS");
+        expect(crests[1].textContent).toBe("PSG");
+      });
+
+      it("falls back to the text-abbrev circle when the <img> itself errors (defense in depth)", () => {
+        const { container } = render(
+          <StatusRailCard
+            slot={liveSlot({
+              espn: { ...ESPN_BASE, homeCrest: "/Users/x/.config/notchtap/crests/96.png" },
+            })}
+          />,
+        );
+        const img = container.querySelector(".crest img") as HTMLImageElement;
+        expect(img).not.toBeNull();
+        act(() => {
+          img.dispatchEvent(new Event("error"));
+        });
+        expect(container.querySelector(".crest img")).toBeNull();
+        expect(container.querySelector(".crest")?.textContent).toBe("ARS");
+      });
+    });
   });
 });

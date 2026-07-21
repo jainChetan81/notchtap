@@ -62,6 +62,145 @@ export function stampFor(priority: Priority, signal: EventSignal, eventType: Eve
   return SIGNAL_STAMPS[signal];
 }
 
+// plan 084: the football scorecard's event-kind → (icon class, tint class,
+// celebration) table — the ONE place a new live-match event type
+// registers its presentation (see the maintenance note in plan 084's
+// spec). Deliberately distinct from SIGNAL_STAMPS above, which 083 already
+// populated and this plan does not touch: a wire `EventSignal` alone
+// can't distinguish a regular goal from a penalty or an own goal — all
+// three carry `EventSignal::Goal` (poller.rs's `labeled_detail_line`
+// passes ESPN's own label through verbatim, with "Own Goal" checked
+// first and short-circuited). `footballEventKindFor` below resolves the
+// richer `FootballEventKind` from (signal, body) before this table is
+// consulted. Reading the body's "Own Goal — "/"Penalty - Scored — "
+// prefix here is NOT the rejected generic notification-kind-sniffing
+// (SIGNAL_STAMPS's doc above) — it's reading a specific, tested,
+// backend-guaranteed prefix that poller.rs's own tests pin byte-for-byte
+// (`own_goal_body_derived_from_structural_flag`, `penalty_body_names_the_event`).
+export type FootballEventKind =
+  | "goal"
+  | "penalty_scored"
+  | "own_goal"
+  | "yellow_card"
+  | "red_card"
+  | "foul"
+  | "offside"
+  | "var_check"
+  | "substitution";
+
+// Celebration values are the exact CSS class names StatusRailCard.tsx
+// applies to the outer `.rail-card` (styles.css/preview-overlay.css) —
+// no separate translation table to keep in sync.
+export type Celebration = "cele-goal" | "cele-yc" | "cele-rc" | null;
+
+export interface EventKindPresentation {
+  iconClass: string;
+  tintClass: string | null;
+  celebration: Celebration;
+}
+
+const EVENT_KIND_PRESENTATION: Record<FootballEventKind, EventKindPresentation> = {
+  goal: { iconClass: "ev-ico goal", tintClass: "tint-goal", celebration: "cele-goal" },
+  // penalty scored counts as a goal — same green celebration family
+  // (prototype lock: "Penalty scored. Counts as a goal — same green
+  // celebration."), distinct ring-shaped icon only.
+  penalty_scored: { iconClass: "ev-ico pen", tintClass: "tint-goal", celebration: "cele-goal" },
+  // own-goal updates the score with NO celebration — hollow-ball icon,
+  // neutral (no tint) event line, per the operator-locked model.
+  own_goal: { iconClass: "ev-ico og", tintClass: null, celebration: null },
+  yellow_card: { iconClass: "ev-ico yc", tintClass: "tint-yc", celebration: "cele-yc" },
+  red_card: { iconClass: "ev-ico rc", tintClass: "tint-rc", celebration: "cele-rc" },
+  // plan 043's informational events (item 6a) open the card quietly: no
+  // tint, no celebration, just the neutral CSS-shape icon.
+  foul: { iconClass: "ev-ico foul", tintClass: null, celebration: null },
+  offside: { iconClass: "ev-ico off", tintClass: null, celebration: null },
+  var_check: { iconClass: "ev-ico var", tintClass: null, celebration: null },
+  substitution: { iconClass: "ev-ico sub", tintClass: null, celebration: null },
+};
+
+export function eventKindPresentationFor(kind: FootballEventKind): EventKindPresentation {
+  switch (kind) {
+    case "goal":
+    case "penalty_scored":
+    case "own_goal":
+    case "yellow_card":
+    case "red_card":
+    case "foul":
+    case "offside":
+    case "var_check":
+    case "substitution":
+      return EVENT_KIND_PRESENTATION[kind];
+    default:
+      return assertNever(kind);
+  }
+}
+
+// Resolves a wire EventSignal (+ body, for the goal family only) to the
+// richer FootballEventKind the table above keys on. `null` for the three
+// match-STATE signals (kickoff/halftime/fulltime) and `generic` — none of
+// those is a football EVENT with an icon/tint/celebration; the live
+// scorecard renders them as plain event-line text
+// (StatusRailCard.tsx's live-match branch).
+export function footballEventKindFor(signal: EventSignal, body: string): FootballEventKind | null {
+  switch (signal) {
+    case "goal":
+      if (body.startsWith("Own Goal")) {
+        return "own_goal";
+      }
+      if (body.startsWith("Penalty - Scored")) {
+        return "penalty_scored";
+      }
+      return "goal";
+    case "yellow_card":
+      return "yellow_card";
+    case "red_card":
+      return "red_card";
+    case "foul":
+      return "foul";
+    case "offside":
+      return "offside";
+    case "var_check":
+      return "var_check";
+    case "substitution":
+      return "substitution";
+    case "kickoff":
+    case "halftime":
+    case "fulltime":
+    case "generic":
+      return null;
+    default:
+      return assertNever(signal);
+  }
+}
+
+// The live scorecard's state pill (Live/Break/Final) — there is no
+// pre-match "Soon" wire signal (kickoff transitions straight to Live, and
+// the poller's first sighting of a match is a silent baseline — see
+// StatusRailCard.tsx's live-match branch doc), so that prototype variant
+// has no entry here and is deliberately omitted from the render.
+export type LivePillVariant = "live" | "break" | "final";
+
+export function livePillVariantFor(signal: EventSignal): LivePillVariant {
+  switch (signal) {
+    case "halftime":
+      return "break";
+    case "fulltime":
+      return "final";
+    case "generic":
+    case "goal":
+    case "red_card":
+    case "yellow_card":
+    case "kickoff":
+    case "foul":
+    case "offside":
+    case "var_check":
+    case "substitution":
+      return "live";
+    default:
+      return assertNever(signal);
+  }
+}
+
 export function sourceLabelFor(eventType: EventType): string {
   switch (eventType) {
     case "generic":
