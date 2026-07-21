@@ -450,15 +450,17 @@ body {
   }
 }
 
+/* plan 092: `.compact` dropped its old 2-column grid (`.copy` | `Stamp`
+   as siblings) — the Stamp badge now sits INSIDE the header row (see
+   `.notif-header-row`/`.masthead-row` below) for both card types, so
+   `.compact` is plain block flow. `Track`/`.compact-hint` stay absolutely
+   positioned against this element (unchanged), and the accent edge below
+   is unaffected by the display-mode change. */
 .compact {
   position: relative;
   box-sizing: border-box;
   min-height: 74px;
   padding: 12px 18px 14px 20px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
 }
 
 .expanded .compact {
@@ -484,6 +486,11 @@ body {
   min-width: 0;
 }
 
+/* the news headline reuses this rule via the `.title.headline` combo
+   below (`.headline` overrides size/line-clamp specifics but inherits
+   `display`/`overflow`/`font-weight`/`box-orient` from here) — kept for
+   that reason even though the generic branch now uses `.notif-title`
+   instead of this bare class. */
 .title {
   display: -webkit-box;
   overflow: hidden;
@@ -495,12 +502,71 @@ body {
   -webkit-line-clamp: 2;
 }
 
-.body {
+/* ==== plan 092 (item 19): the general card's header/subtitle-row
+   language, ported from the locked reference
+   (`prototype/notch-states.html:158-166`, `.notif-header-row`/
+   `.notif-title`/`.notif-subtitle-row`/`.notif-subtitle`/
+   `.notif-time-inline`/`.notif-body`). `.notif-header-row` pairs the
+   title with the priority Stamp badge (the only real "chip" content the
+   generic branch has — see the plan's cmux-accent note in
+   StatusRailCard.tsx for why no per-origin source chip exists here);
+   `.notif-subtitle-row` pairs plan 035's `subtitle` field (surfaced in
+   compact for the first time — previously expanded-manifest-only) with
+   an inline-time slot. News reuses `.notif-time-inline` too (Decision 5
+   — ageLabel moves here, out of the old age pill) via its own
+   `.masthead-row`/meta-row below, not this header row. ==== */
+.notif-header-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.notif-title {
   display: -webkit-box;
-  margin-top: 4px;
   overflow: hidden;
-  color: rgba(255, 255, 255, 0.74);
-  font-size: 12px;
+  min-width: 0;
+  font-size: 14px;
+  font-weight: 680;
+  line-height: 1.2;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.notif-subtitle-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 3px;
+}
+
+.notif-subtitle {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* shared by news's meta row (ageLabel, Decision 5) and the generic
+   header's subtitle row (no data today — no non-news event carries a
+   publishedAtMs, so this slot simply never renders there). */
+.notif-time-inline {
+  flex: none;
+  color: rgba(255, 255, 255, 0.35);
+  font: 700 10px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+
+.notif-body {
+  display: -webkit-box;
+  margin-top: 8px;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11.5px;
   line-height: 1.35;
   white-space: normal;
   -webkit-box-orient: vertical;
@@ -508,8 +574,8 @@ body {
 }
 
 /* inline-markdown code spans (plan 032): rendered by
-   lib/markdown.tsx in .body and the manifest's .detail-value cells. */
-.body code,
+   lib/markdown.tsx in .notif-body and the manifest's .detail-value cells. */
+.notif-body code,
 .detail-value code {
   padding: 1px 5px;
   background: rgba(255, 255, 255, 0.08);
@@ -651,12 +717,20 @@ body {
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent);
 }
 
-.manifest-inner {
-  box-sizing: border-box;
-  padding: 14px 18px 18px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
+/* plan 092: the generic branch's expanded manifest converged onto the
+   same full-width `.manifest-block`/`.manifest-label`/`.manifest-text`/
+   `.manifest-meta`/`.manifest-footer` vocabulary news already shipped
+   (080/090) instead of this 2-column grid — `.manifest-fields` is the
+   new stacking wrapper for the subtitle/detail-pair cells that used to
+   live in this grid's second column; each cell keeps its own
+   `.detail-label`/`.detail-value` heading+value pair (Content semantics
+   unchanged — only the container went from a 2-up grid to a full-width
+   stack). */
+.manifest-fields {
+  margin-top: 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
 }
 
 .detail-label {
@@ -764,10 +838,32 @@ body {
   }
 }
 
-/* `live-dot-pulse` stays — `.live-pill .live-dot` (the football scorecard
-   content, unrelated to and unmoved by this plan) still reuses it; only
-   its OWN former host rule (`.src-chip .live-dot`, the deleted idle rail)
-   is gone. */
+/* plan 092 (item 11): the paused indicator — while `status.paused` is
+   true, every dot renders forced-dim (StatusDots.tsx overrides the
+   per-source active/dim read) plus this small static two-bar glyph
+   beside the dot row. Nested INSIDE `.status-dots` (StatusDots.tsx), so
+   the existing `gap: 8px` on that flex row spaces it from the last dot —
+   no extra margin needed here. Receive-only, like the dots themselves: an
+   indicator, never a button. Retires the old "News paused" idle text
+   remnant (091 already removed IdleView; this is its replacement). */
+.pause-glyph {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+}
+
+.pause-glyph span {
+  width: 2px;
+  height: 9px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.5);
+}
+
+/* `live-dot-pulse` stays — `.chip-live .live-dot` (the football scorecard
+   content, chip-converged by this plan but not otherwise touched) still
+   reuses it; only its OWN former host rule (`.src-chip .live-dot`, the
+   deleted idle rail) is gone. */
 @keyframes live-dot-pulse {
   0%,
   100% {
@@ -803,14 +899,28 @@ body {
 .news-shade .compact,
 .news-shade .manifest { position: relative; z-index: 1; }
 
+/* plan 092: `.masthead-row` pairs the masthead with the priority Stamp
+   badge — the same header-row shape the generic branch's
+   `.notif-header-row` uses (Stamp moved out of `.compact`'s old grid
+   column into the header, for both card types). `.masthead` itself grows
+   to fill the row (`flex: 1`) so its own trailing hairline (`::after`)
+   still fills exactly the space before the Stamp badge, same visual as
+   before this plan moved Stamp next to it. */
+.masthead-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
 .masthead {
-  display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
+  display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0;
   font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
   letter-spacing: 0.14em; text-transform: uppercase;
   color: rgba(255, 255, 255, 0.38);
 }
 .masthead::after { content: ""; flex: 1; height: 1px; background: rgba(255,255,255,0.12); }
-.masthead .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--cat); box-shadow: 0 0 6px var(--cat); }
+.masthead .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--cat); box-shadow: 0 0 6px var(--cat); flex: none; }
 
 .title.headline {
   white-space: normal;
@@ -818,14 +928,39 @@ body {
   font-size: 13px; line-height: 1.3;
 }
 
-.pills { display: flex; gap: 5px; margin-top: 6px; }
-.pill {
-  padding: 3px 7px; border-radius: 999px;
+/* ==== plan 092 (item 10): the unified chip language, ported from the
+   locked reference (`prototype/notch-states.html:161-162`, `.chip`) —
+   REPLACES the old per-surface pill classes (news's category/age pill,
+   football's `.league-chip`/`.live-pill`). `.notif-meta-row` is the
+   renamed old pills container; `.chip-category` is the renamed old
+   category-pill class. The old age-pill class does NOT converge to
+   `.chip` — Decision 5 moves it out of the chip row entirely, into the
+   plain `.notif-time-inline` slot (defined above) instead, so there is
+   no `.chip-age`. `.pub-meta` is unchanged (it was never chip-shaped —
+   plain trailing text — so item 10 doesn't touch it). ==== */
+.chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
   font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  letter-spacing: 0.1em; text-transform: uppercase;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
 }
-.pill.category { color: var(--cat); background: var(--cat-pill); border: 1px solid color-mix(in srgb, var(--cat) 35%, transparent); }
-.pill.age { color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); }
+
+.notif-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.chip-category {
+  color: var(--cat);
+  background: var(--cat-pill);
+  border: 1px solid color-mix(in srgb, var(--cat) 35%, transparent);
+}
 
 .pub-meta {
   margin-left: auto;
@@ -835,16 +970,18 @@ body {
   white-space: nowrap;
 }
 
-/* plan 078: the two news pills' enter animations, formerly motion.span
+/* plan 078: the news meta row's enter animations, formerly motion.span
    (enter-only even then — they were never wrapped in an AnimatePresence,
-   so they had no exit to replicate). `both` fill-mode keeps the pill at
-   its `from` state before the delayed animation starts, matching
-   motion's `initial` prop. */
-.pill.category,
-.pill.age {
+   so they had no exit to replicate). `both` fill-mode keeps the element
+   at its `from` state before the delayed animation starts, matching
+   motion's `initial` prop. plan 092: retargeted from the old category/
+   age pill classes onto their chip-converged replacements — same two
+   elements, same timing, only the selectors moved. */
+.chip-category,
+.notif-meta-row .notif-time-inline {
   animation: pill-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
 }
-.pill.age {
+.notif-meta-row .notif-time-inline {
   animation-delay: 70ms;
 }
 
@@ -854,8 +991,8 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .pill.category,
-  .pill.age {
+  .chip-category,
+  .notif-meta-row .notif-time-inline {
     animation: none;
   }
 }
@@ -994,32 +1131,24 @@ body {
   gap: 8px;
 }
 
-.league-chip {
+/* plan 092 (item 10): chip-converged from `.league-chip` — `.chip` (the
+   base rule, near the news meta-row section above) supplies the shared
+   shape/type; `.chip-league` carries the neutral tint only. */
+.chip-league {
   flex: none;
-  padding: 3px 7px;
-  border-radius: 999px;
-  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
   color: rgba(255, 255, 255, 0.6);
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-/* the state pill — Live (green) / Break (amber) / Final (dim). There is
-   no "Soon" (pre-match) variant here: no wire signal exists for it (see
-   StatusRailCard.tsx's live-match branch doc), so it's omitted rather
-   than half-built against a state the backend never sends. */
-.live-pill {
+/* chip-converged from `.live-pill` — the state chip: Live (green) /
+   Break (amber) / Final (dim). There is no "Soon" (pre-match) variant
+   here: no wire signal exists for it (see StatusRailCard.tsx's
+   live-match branch doc), so it's omitted rather than half-built against
+   a state the backend never sends. */
+.chip-live {
   flex: none;
-  display: inline-flex;
-  align-items: center;
   gap: 5px;
-  padding: 3px 8px;
-  border-radius: 999px;
-  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
   color: #7fe08d;
   background: rgba(127, 224, 141, 0.12);
   border: 1px solid rgba(127, 224, 141, 0.35);
@@ -1027,7 +1156,7 @@ body {
 
 /* reuses the shipped `live-dot-pulse` keyframe (idle-rail `.src-chip
    .live-dot` above) rather than redeclaring it. */
-.live-pill .live-dot {
+.chip-live .live-dot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
@@ -1036,19 +1165,19 @@ body {
   animation: live-dot-pulse 1.6s ease-in-out infinite;
 }
 
-.live-pill.break {
+.chip-live.break {
   color: #f0c46a;
   background: rgba(240, 196, 106, 0.12);
   border-color: rgba(240, 196, 106, 0.35);
 }
 
-.live-pill.break .live-dot {
+.chip-live.break .live-dot {
   background: #f0c46a;
   box-shadow: 0 0 6px rgba(240, 196, 106, 0.9);
   animation: none;
 }
 
-.live-pill.final {
+.chip-live.final {
   color: rgba(255, 255, 255, 0.5);
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.12);
@@ -1315,7 +1444,7 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .live-pill .live-dot {
+  .chip-live .live-dot {
     animation: none;
   }
   .card-assembly.cele-goal,

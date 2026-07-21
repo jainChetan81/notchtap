@@ -418,8 +418,17 @@ describe("StatusRailCard", () => {
     expect(screen.getByText(NEWS.title).classList.contains("title")).toBe(true);
     expect(screen.getByText(NEWS.title).classList.contains("headline")).toBe(true);
     expect(screen.getAllByText("Politics").length).toBeGreaterThan(0);
-    expect(screen.getByText("5m ago").classList.contains("pill")).toBe(true);
-    expect(screen.getByText("5m ago").classList.contains("age")).toBe(true);
+    // plan 092 (item 10/Decision 5): the category pill chip-converged to
+    // `.chip.chip-category`; the age pill moved OUT of the chip row
+    // entirely into the plain `.notif-time-inline` slot (same ageLabel
+    // computation/thresholds, new location — no longer chip-shaped).
+    // "Politics" legitimately appears twice while expanded (compact chip +
+    // manifest meta segment), so scope to the compact chip specifically.
+    const categoryChip = container.querySelector(".chip-category") as HTMLElement;
+    expect(categoryChip.textContent).toBe("Politics");
+    expect(categoryChip.classList.contains("chip")).toBe(true);
+    expect(screen.getByText("5m ago").classList.contains("notif-time-inline")).toBe(true);
+    expect(screen.getByText("5m ago").classList.contains("chip")).toBe(false);
     // plan 091: priority accent (`low`) stays on the outer shell;
     // news-shade/category mood classes moved to `.below-block` — required
     // for the mood gradient to paint at all (a `.card-assembly::before`
@@ -471,8 +480,8 @@ describe("StatusRailCard", () => {
     // normalized textContent rather than an exact getByText.
     expect(container.querySelector(".compact-hint")?.textContent).toBe("⌃⇧N more");
     expect(container.querySelector(".manifest-wrap")?.getAttribute("aria-hidden")).toBe("true");
-    expect(container.querySelector(".pill.category")).toBeNull();
-    expect(container.querySelector(".pill.age")).toBeNull();
+    expect(container.querySelector(".chip-category")).toBeNull();
+    expect(container.querySelector(".notif-time-inline")).toBeNull();
     expect(container.querySelector(".pub-meta")).toBeNull();
     // plan 091: news-shade/category classes moved to `.below-block` (see
     // the comment on the same assertion above for why).
@@ -486,9 +495,11 @@ describe("StatusRailCard", () => {
     const pubMeta = container.querySelector(".pub-meta");
     expect(pubMeta).not.toBeNull();
     expect(pubMeta?.textContent).toBe("published 08:58");
-    // the meta is the last child of the pills row, pushed right by auto margin
-    const pills = container.querySelector(".pills");
-    expect(pills?.lastElementChild?.classList.contains("pub-meta")).toBe(true);
+    // the meta is the last child of the meta row, pushed right by auto margin
+    // plan 092: `.pills` renamed `.notif-meta-row` (item 10, chip
+    // convergence).
+    const metaRow = container.querySelector(".notif-meta-row");
+    expect(metaRow?.lastElementChild?.classList.contains("pub-meta")).toBe(true);
 
     now.mockRestore();
   });
@@ -517,17 +528,24 @@ describe("StatusRailCard", () => {
     now.mockRestore();
   });
 
+  // plan 092 (Step 3): the generic manifest converged onto news's
+  // full-width `.manifest-block` vocabulary — the old "Source / Control"
+  // detail-label heading is gone; the source label now sits in
+  // `.manifest-meta` (unlabeled, like news's) and the hotkey hint moved
+  // to `.manifest-footer` (also like news's), so these two assertions now
+  // read directly off `.manifest-footer`, mirroring the news manifest
+  // test above exactly.
   it("shows only the collapse control in an expanded manifest without a link", () => {
-    render(<StatusRailCard slot={{ ...CMUX_NEEDS_INPUT, link: null }} />);
+    const { container } = render(<StatusRailCard slot={{ ...CMUX_NEEDS_INPUT, link: null }} />);
 
-    const control = screen.getByText("Source / Control").nextElementSibling;
-    expect(control?.textContent).toContain("⌃⇧N collapse");
-    expect(control?.textContent).not.toContain("⌃⇧O read");
+    const footer = container.querySelector(".manifest-footer") as HTMLElement;
+    expect(footer.textContent).toContain("⌃⇧N collapse");
+    expect(footer.textContent).not.toContain("⌃⇧O read");
     expect(screen.queryByText("⌃⇧N more")).toBeNull();
   });
 
   it("shows the read and collapse controls in a non-news manifest with a link", () => {
-    render(
+    const { container } = render(
       <StatusRailCard
         slot={{
           ...CMUX_NEEDS_INPUT,
@@ -536,26 +554,35 @@ describe("StatusRailCard", () => {
       />,
     );
 
-    expect(screen.getByText("Source / Control").nextElementSibling?.textContent).toContain(
-      "⌃⇧O read · ⌃⇧N collapse",
-    );
+    const footer = container.querySelector(".manifest-footer") as HTMLElement;
+    expect(footer.textContent).toContain("⌃⇧O read · ⌃⇧N collapse");
   });
 
   // plan 035 (Layout A): subtitle and each detail pair render as ordinary
   // manifest cells in the generic branch — exercised through StatusRailCard,
   // the real render path, not a bare <Manifest>.
+  // plan 092: subtitle now ALSO renders in the compact header's
+  // `.notif-subtitle-row` (Decision 1 — surfaced there for the first
+  // time), so "Permission request" legitimately appears twice while
+  // expanded — once in the header, once in the manifest's Subtitle cell.
+  // Scope the manifest-cell assertions to the manifest specifically, like
+  // the goal fixture's "Arsenal 2-0"-appears-twice test above does.
   it("renders the subtitle and each detail pair as manifest cells when expanded", () => {
-    render(<StatusRailCard slot={CMUX_RICH} />);
+    const { container } = render(<StatusRailCard slot={CMUX_RICH} />);
+    const manifest = container.querySelector(".manifest") as HTMLElement;
 
-    expect(screen.getByText("Subtitle")).toBeTruthy();
-    expect(screen.getByText("Permission request")).toBeTruthy();
-    expect(screen.getByText("Tool")).toBeTruthy();
-    expect(screen.getByText("Bash")).toBeTruthy();
-    expect(screen.getByText("Command")).toBeTruthy();
+    expect(within(manifest).getByText("Subtitle")).toBeTruthy();
+    expect(within(manifest).getByText("Permission request")).toBeTruthy();
+    expect(within(manifest).getByText("Tool")).toBeTruthy();
+    expect(within(manifest).getByText("Bash")).toBeTruthy();
+    expect(within(manifest).getByText("Command")).toBeTruthy();
     // detail values are plain text (not markdown) — the literal string shows.
-    expect(screen.getByText("git push origin master")).toBeTruthy();
-    expect(screen.getByText("Project")).toBeTruthy();
-    expect(screen.getByText("/Users/x/proj")).toBeTruthy();
+    expect(within(manifest).getByText("git push origin master")).toBeTruthy();
+    expect(within(manifest).getByText("Project")).toBeTruthy();
+    expect(within(manifest).getByText("/Users/x/proj")).toBeTruthy();
+    // and the compact header does carry the subtitle too (new in this plan).
+    const compact = container.querySelector(".compact") as HTMLElement;
+    expect(within(compact).getByText("Permission request")).toBeTruthy();
   });
 
   // plan 042 changed the collapsed contract: detail pairs now render below
@@ -817,7 +844,7 @@ describe("StatusRailCard", () => {
       const { container } = render(<StatusRailCard slot={liveSlot()} />);
       expect(container.querySelector(".notif-block")).not.toBeNull();
       expect(screen.getByText("UCL")).toBeTruthy();
-      const pill = container.querySelector(".live-pill");
+      const pill = container.querySelector(".chip-live");
       expect(pill?.textContent).toBe("Live");
       expect(pill?.classList.contains("break")).toBe(false);
       expect(pill?.classList.contains("final")).toBe(false);
@@ -953,7 +980,7 @@ describe("StatusRailCard", () => {
           })}
         />,
       );
-      const pill = container.querySelector(".live-pill");
+      const pill = container.querySelector(".chip-live");
       expect(pill?.textContent).toBe("Break");
       expect(pill?.classList.contains("break")).toBe(true);
       expect(pill?.querySelector(".live-dot")).not.toBeNull();
@@ -970,7 +997,7 @@ describe("StatusRailCard", () => {
           })}
         />,
       );
-      const pill = container.querySelector(".live-pill");
+      const pill = container.querySelector(".chip-live");
       expect(pill?.textContent).toBe("Final");
       expect(pill?.classList.contains("final")).toBe(true);
       expect(pill?.querySelector(".live-dot")).toBeNull();
