@@ -242,9 +242,11 @@ pub fn run() {
         // listed in build.rs's AppManifest::commands; that pairing is what
         // keeps them deniable to the overlay window (spec §2).
         .invoke_handler(tauri::generate_handler![
+            settings::clear_history,
             settings::get_config,
             settings::get_connector_health,
             settings::get_default_config,
+            settings::get_history,
             settings::get_recent_log_lines,
             settings::get_secret_status,
             settings::save_config_and_relaunch,

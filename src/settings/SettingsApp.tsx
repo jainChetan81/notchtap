@@ -2,6 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   CloudSun,
   Command,
+  History,
   KeyRound,
   type LucideIcon,
   Newspaper,
@@ -74,6 +75,7 @@ export interface Config {
   };
   appearance: AppearanceConfig;
   resting_state: RestingState;
+  history_enabled: boolean;
 }
 
 export interface SecretStatus {
@@ -91,6 +93,63 @@ export interface ConnectorHealthDto {
   consecutiveFailures: number;
 }
 
+// Wire shape of get_history (plan 089) — mirrors HistoryEntry/Event in
+// src-tauri/src/history.rs and event.rs. Unlike ConnectorHealthDto above
+// and unlike the camelCase SlotState wire (useSlotState.ts), this shape
+// is snake_case throughout, INCLUDING `meta` — the one camelCase island
+// is the optional `meta.espn` block (EspnMeta derives
+// `rename_all = "camelCase"`), absent entirely unless the espn live card
+// populated it. Verified against a live serde_json::to_string print of a
+// real HistoryEntry, not derived from the SlotState convention.
+export interface HistoryDetailItem {
+  label: string;
+  value: string;
+}
+
+export interface HistoryEspnMeta {
+  league: string;
+  homeAbbrev: string;
+  awayAbbrev: string;
+  homeScore: number;
+  awayScore: number;
+  clock: string;
+  homeCards: [number, number];
+  awayCards: [number, number];
+  homeCrest: string | null;
+  awayCrest: string | null;
+}
+
+export interface HistoryEventMeta {
+  source: string | null;
+  category: string | null;
+  published_at_ms: number | null;
+  link: string | null;
+  subtitle: string | null;
+  details: HistoryDetailItem[];
+  espn?: HistoryEspnMeta;
+}
+
+export type HistoryRotationSpec =
+  | { kind: "one_shot"; ttl_secs: number }
+  | { kind: "recurring"; display_secs: number };
+
+export interface HistoryEvent {
+  id: string;
+  event_type: string;
+  priority: PriorityLevel;
+  rotation: HistoryRotationSpec;
+  topic: string | null;
+  payload: { title: string; body: string };
+  meta: HistoryEventMeta;
+  signal: string;
+  origin: SourceKind;
+}
+
+export interface HistoryEntry {
+  recorded_at_ms: number;
+  event: HistoryEvent;
+}
+
 type SecretField = keyof SecretStatus;
 type SectionId =
   | "general"
@@ -101,7 +160,8 @@ type SectionId =
   | "connectors"
   | "shortcuts"
   | "appearance"
-  | "diagnostics";
+  | "diagnostics"
+  | "history";
 
 const navigation: ReadonlyArray<{
   id: SectionId;
@@ -117,6 +177,7 @@ const navigation: ReadonlyArray<{
   { id: "shortcuts", label: "Shortcuts", icon: Command },
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "diagnostics", label: "Diagnostics", icon: ScrollText },
+  { id: "history", label: "History", icon: History },
 ];
 
 const sectionCopy: Record<SectionId, { index: string; title: string; description: string }> = {
@@ -165,6 +226,11 @@ const sectionCopy: Record<SectionId, { index: string; title: string; description
     index: "09",
     title: "Diagnostics",
     description: "Read the app's recent log lines without leaving settings.",
+  },
+  history: {
+    index: "10",
+    title: "History",
+    description: "Review and clear recorded past notifications.",
   },
 };
 
@@ -661,6 +727,14 @@ function GeneralSection({
           onChange={(hideWhenIdle) =>
             patchConfig({ resting_state: hideWhenIdle ? "notch" : "rail" })
           }
+        />
+        <ToggleControl
+          id="history-enabled"
+          name="Record notification history"
+          help="Records notification content (including cmux payloads) to ~/.config/notchtap/history.jsonl. Applies after Save & Relaunch."
+          label="Record notification history"
+          checked={config.history_enabled}
+          onChange={(history_enabled) => patchConfig({ history_enabled })}
         />
         <NumberControl
           id="port"
@@ -1202,6 +1276,102 @@ function DiagnosticsSection() {
   );
 }
 
+// plan 089: read-only recent history, newest first (088's read_recent
+// contract itself stays oldest -> newest; the reversal happens here at
+// the display layer, not in the rust store). Same advisory mount-only
+// fetch shape as DiagnosticsSection above. Not a card renderer — this
+// deliberately does not import overlay components or presentation.ts;
+// history is a plain scannable list.
+function HistorySection({ config }: { config: Config }) {
+  const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
+  const [confirmingClear, setConfirmingClear] = useState(false);
+
+  function refresh() {
+    invoke<HistoryEntry[]>("get_history")
+      .then((fetched) => setEntries(fetched))
+      .catch(() => {
+        // advisory fetch — a failed read leaves the previous entries shown
+      });
+  }
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only fetch on section-open — refresh is re-created every render, so adding it would re-invoke get_history on every render.
+  useEffect(() => {
+    refresh();
+  }, []);
+
+  async function handleClearClick() {
+    if (!confirmingClear) {
+      // step one of the in-component two-step confirmation — never a
+      // browser confirm()/alert(), which would block the webview.
+      setConfirmingClear(true);
+      return;
+    }
+    try {
+      await invoke("clear_history");
+    } catch (reason) {
+      // Errors are fire-and-forget from the settings panel, same pattern as TestButton.
+      console.error("clear_history failed:", reason);
+    } finally {
+      setConfirmingClear(false);
+      refresh();
+    }
+  }
+
+  const newestFirst = entries === null ? null : [...entries].reverse();
+
+  return (
+    <SettingsGroup
+      title="Recorded notifications"
+      description="The most recent notifications recorded to ~/.config/notchtap/history.jsonl, newest first."
+    >
+      {newestFirst === null ? (
+        <p className="history-empty">Loading…</p>
+      ) : newestFirst.length === 0 ? (
+        <p className="history-empty">
+          {config.history_enabled
+            ? "History is on, but nothing has been recorded yet."
+            : 'History is off. Turn on "Record notification history" in General to start recording.'}
+        </p>
+      ) : (
+        <ul className="history-list">
+          {newestFirst.map((entry) => (
+            <li key={entry.event.id} className="history-row">
+              <span className="history-time">
+                {new Date(entry.recorded_at_ms).toLocaleString()}
+              </span>
+              <span className="history-origin">{entry.event.origin}</span>
+              <span className="history-title">{entry.event.payload.title}</span>
+              <span className="history-body">{entry.event.payload.body}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="control-row">
+        <ControlCopy
+          htmlFor="clear-history"
+          name="Clear history"
+          help="Permanently deletes every recorded notification. This cannot be undone."
+        />
+        <button
+          id="clear-history"
+          type="button"
+          className="secondary-button test-button"
+          // the <label htmlFor="clear-history"> above would otherwise
+          // become this button's accessible name via native label
+          // association, freezing it at "Clear history" even once the
+          // visible text flips to "Really clear?" — aria-label takes
+          // precedence and keeps the accessible name in sync with what's
+          // on screen.
+          aria-label={confirmingClear ? "Really clear?" : "Clear history"}
+          onClick={() => void handleClearClick()}
+        >
+          {confirmingClear ? "Really clear?" : "Clear history"}
+        </button>
+      </div>
+    </SettingsGroup>
+  );
+}
+
 function TestButton({ source }: { source: TestSource }) {
   async function send() {
     try {
@@ -1688,6 +1858,7 @@ export function SettingsApp() {
                     ) : null}
                     {activeSection === "shortcuts" ? <ShortcutsSection /> : null}
                     {activeSection === "diagnostics" ? <DiagnosticsSection /> : null}
+                    {activeSection === "history" ? <HistorySection config={config} /> : null}
                     {activeSection === "appearance" ? (
                       // keyed on formGeneration so Reset/Reset-to-defaults remounts the
                       // section — its controls seed local state from config.appearance at

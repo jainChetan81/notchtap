@@ -6,9 +6,11 @@ fn main() {
     // #[tauri::command] to generate_handler without also listing it here.
     tauri_build::try_build(tauri_build::Attributes::new().app_manifest(
         tauri_build::AppManifest::new().commands(&[
+            "clear_history",
             "get_config",
             "get_connector_health",
             "get_default_config",
+            "get_history",
             "get_recent_log_lines",
             "get_secret_status",
             "save_config_and_relaunch",
