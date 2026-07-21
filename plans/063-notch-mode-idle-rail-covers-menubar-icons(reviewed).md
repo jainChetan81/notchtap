@@ -131,6 +131,38 @@
   already in scope inside the `on_page_load` closure (both `Copy`,
   destructured at `lib.rs:114`, the closure is `move`) — Step 1 needs
   no new plumbing channels, only a fourth eval block.
+- **Review-plan pass (2026-07-21, post-merge)**: code executed and
+  merged at `4fb3af9`; re-verified at HEAD `647f6d0` that the merged
+  code still matches the locked mechanic exactly, despite plans
+  080–086 landing on top of it. Confirmed live by direct read: the
+  notch clamp is byte-exact to Step 3's spec
+  (`:root[data-notchtap-mode="notch"] .rail-card.idle.status` →
+  `calc(clamp(270px, var(--notchtap-cutout-width, 270px), 460px) *
+  var(--card-scale))`, now `styles.css:60-62`); the HUD 460px rule is
+  byte-identical to pre-063 (`styles.css:51-53`, diffed against
+  `9a954b0`); `.src-rail` wraps with the plan-sanctioned merged
+  `gap: 4px 6px` (`styles.css:597-603` — 082/084's additions shifted it
+  from the step-time `:560` refs; rules intact, refs merely moved);
+  `.src-chip.live` truncation + `.live-label` (`styles.css:623-643`,
+  the max-width/min-width/flex block merged into the existing `.live`
+  color rule — functionally identical to Step 4); `IdleView.tsx:20-25`
+  has the `.live-label` span; `lib.rs` eval block at `:476-488`,
+  `cutout_width_js_value` at `:611` with both Step-1 tests
+  (`:826-837`); `presentationFacts.ts`/`.test.ts` and the
+  `App.tsx:32-35` mount effect all present; `presentation.rs` has zero
+  diff since `9a954b0` (out-of-scope honored;
+  `tauri.conf.json`'s only post-063 diff is 083's crest
+  `assetProtocol` — window dims untouched). 080–086 regression check:
+  no conflict found. One interaction worth naming: plan 085's
+  `resting_state: "notch"` early-null (`StatusRailCard.tsx:244-254`)
+  skips the idle rail entirely when opted in — it bypasses, not
+  breaks, this plan's clamp (default `"rail"` renders the clamped
+  rail), but the Step 5 MacBook smoke-check must be run with
+  `resting_state` at its default `"rail"`, otherwise checks (a)–(c)
+  are unobservable. **Sole remaining work before DONE**: Step 5's
+  operator-owed MacBook smoke-check (checks a–d; (d), the Mac
+  mini/HUD byte-identity check, can be done locally), then flip the
+  `plans/README.md` 063 row and rename this file `(done)`.
 
 ## Why this matters
 

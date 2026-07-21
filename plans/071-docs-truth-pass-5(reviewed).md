@@ -178,8 +178,12 @@ citing style. Cover:
   `docs/design/`, not shipped behavior (lower narrative priority — the
   existing doc already treats spikes this way for 030/031, match that
   precedent)
-- do NOT claim plan 058 (`notchtap run`) as landed — it's filed but still
-  TODO, no code yet; if you mention it at all, say "filed, not yet built"
+- plan 058 (`notchtap run`) HAS landed since this plan was written —
+  DONE 2026-07-20, commit `8743ce6` (a `run` subcommand on the cli
+  script; `README.md:34` already documents it). Mention it as landed.
+  (This bullet originally said the opposite — "filed but still TODO, no
+  code yet" — corrected in the 2026-07-21 review-plan pass; see the
+  note at the end of this file.)
 
 Apply the identical addition to both files — they've been kept in sync
 until now (only the kuma-webhook gap broke that), so diverging them
@@ -282,3 +286,61 @@ is the grep/diff checks embedded in each step above, plus the live
   had two separate false-count incidents (plan 046's real drift, and a
   near-miss false-positive in the same plan's own review pass) from
   exactly that shortcut.
+
+**Review-plan pass (2026-07-21)**: item-by-item recheck against live
+docs at HEAD `647f6d0`, after plans 076/077/078/080–086 + 083/084 all
+landed on top of this plan's `f6c2f46` baseline. Drift-check ground
+truth: `git diff --stat f6c2f46..HEAD` on the five in-scope files shows
+CLAUDE.md, AGENTS.md, and justfile with **zero** diff (items 1/3/5
+premises intact), README.md +3 lines (058's `notchtap run` usage,
+outside the docs table), and `docs/TESTING_STRATEGY.md` heavily
+rewritten (expected — see item 2). Per item:
+
+1. **Item 1 (narrative extension) — STILL VALID, scope grown.**
+   044/045/047/048/`fb4acce` remain absent from both files (grep: zero
+   hits in either). New drift to fold into the same Step-1 edit: plan
+   058 landed (`8743ce6`, bullet above corrected); plan 063 landed
+   (notch-mode idle-rail clamp + the shared
+   `__NOTCHTAP_MODE__`/`__NOTCHTAP_CUTOUT_WIDTH__` boot-fact channel);
+   the 064/066/067/068 bugfix quartet; plan 080 (news card meta +
+   full-width expanded summary); 081 (TTL bar — `ttl_ms`/`remaining_ms`
+   wire fields and the `SlotState::dedup_eq` rule, a real
+   contributor-facing invariant); 082 (weather-alert art); 083
+   (football backend — `EspnMeta`, crest cache + `assetProtocol` scope
+   in `tauri.conf.json`, `espn_rich_events`); 084 (live-match
+   scorecard); 085 (`resting_state` rail|notch hide-when-idle); 086
+   spike DONE (docs-only → `docs/design/hover-cursor-tracking.md`) with
+   follow-up plan 087 filed. Also: CLAUDE.md's commands section still
+   says the cli is "flags only — there is no positional form", which
+   058's `run` subcommand has made inaccurate — fold that one-line fix
+   in too.
+2. **Item 2 (§0 rust count) — ALREADY SATISFIED by later plan
+   executors, in passing.** §0 now reads 390 rust + 3 doc-tests / 181
+   frontend, dated 2026-07-21, with per-plan attribution through
+   083/084. **Live-verified this pass**: `cargo test --locked -- --list`
+   → 390 exactly, every per-module figure in the table matches the live
+   grouped count (queue 71, poller 55, settings 49, http 36,
+   rss_poller 28, notifier 26, config 23, event 22, weather_poller 19,
+   lib 13, presentation 11, engine 11, crests 8, status 7, logging 7,
+   net 4; sum 390) + 3 doc-tests; `npx vitest run` → 181/181 passed.
+   Step 3's *procedure* (re-derive live) stays correct, but its
+   contingency numbers (331→332, config 19→20) and its attribution
+   list (064/066/067/068 + `fb4acce`) are obsolete — if executed today
+   Step 3 is a verify-only no-op unless further plans land first.
+3. **Item 3 (AGENTS.md kuma sentence) — STILL VALID.** `grep -c kuma`:
+   CLAUDE.md 3, AGENTS.md 0. The two files' project-state paragraphs
+   otherwise still differ only by reflow — Step 2 applies as written.
+4. **Item 4 (README docs table) — STILL VALID.** Zero table rows for
+   AGENTS.md, `docs/recipes/`, or `docs/design/` (grep confirms). One
+   count update: `docs/design/` is now **8** files, not 7 —
+   `hover-cursor-tracking.md` landed with plan 086; the single
+   summary-row approach in Step 4 absorbs this without change.
+5. **Item 5 (justfile dangling comment) — STILL VALID.** The
+   `# ... except cargo-audit — see note below` line is still at
+   `justfile:47` with no note anywhere in the file.
+
+Net: 4 of 5 items survive unchanged (1/3/4/5); item 2 is done but its
+verify-live step should still be run at execution time. The plan
+remains executable as written given the corrections above; the drift
+check's STOP on `docs/TESTING_STRATEGY.md` / README.md diffs is
+explained by this note and is not a reason to abort.

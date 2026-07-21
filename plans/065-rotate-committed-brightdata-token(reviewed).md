@@ -8,10 +8,10 @@
 > update the status row for this plan in `plans/README.md` — unless a
 > reviewer dispatched you and told you they maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat f6c2f46..HEAD -- mcp-servers/`
-> If the mcp-servers tree changed since this plan was written, re-verify
-> the token is still present at the cited location before proceeding; on a
-> mismatch, treat it as a STOP condition.
+> **Drift check (run first)**: `git diff --stat f6c2f46..HEAD -- mcp-servers/ .mcp.json`
+> If the mcp-servers tree or `.mcp.json` changed since this plan was
+> written, re-verify the token is still present at the cited locations
+> before proceeding; on a mismatch, treat it as a STOP condition.
 
 ## Status
 
@@ -67,10 +67,27 @@ precedent recorded in `CLAUDE.md`). The same shape applies here.
   }
   ```
 
-- `mcp-servers/mcp-config-all.json` — confirmed to contain a duplicate
-  `API_TOKEN` entry for the same server (grep count: 1 match in each
-  file at planning time; re-verify, don't assume it's still exactly one
-  each).
+- `mcp-servers/mcp-config-all.json` — contains the same token TWICE:
+  line 9 as `API_TOKEN` and line 20 as `BRIGHTDATA_API_KEY` (verified at
+  review, 2026-07-21 — the original "1 match in each file" count was
+  wrong because it grepped only for `API_TOKEN`; the token also travels
+  under the env-var name `BRIGHTDATA_API_KEY`).
+- **Three more tracked locations the original plan missed** (verified
+  2026-07-21 — all hold the *same* 36-character UUID-format token value,
+  all introduced in the same commit `7430b4b`):
+  - `mcp-servers/brightdata/test-tools.js:6` — `API_TOKEN` hardcoded in
+    a spawn `env` block of a test script.
+  - `mcp-servers/product-research-plugins/test-init.js:6` —
+    `BRIGHTDATA_API_KEY` hardcoded in a spawn `env` block.
+  - `.mcp.json` (repo root) lines 13 and 24 — `API_TOKEN` and
+    `BRIGHTDATA_API_KEY`. This is the file Claude Code actually loads
+    for project-scoped MCP servers, so it is almost certainly the *live*
+    consumer (Step 1's "check what reads them" question) — the
+    `mcp-servers/*.json` copies may be reference duplicates.
+  Total: 5 tracked files, 7 occurrences, one token value. Any grep used
+  in this plan must match **both** env-var names:
+  `grep -rnE "API_TOKEN|BRIGHTDATA_API_KEY"` — an `API_TOKEN`-only
+  pattern misses two occurrences.
 - Neither file is gitignored: `git check-ignore -v mcp-servers/brightdata/mcp-config.json`
   returned nothing (exit 1) at planning time, and `git log --oneline -- mcp-servers/brightdata/mcp-config.json`
   shows it tracked since `7430b4b`.
@@ -83,8 +100,8 @@ precedent recorded in `CLAUDE.md`). The same shape applies here.
 
 | Purpose | Command | Expected on success |
 |---|---|---|
-| Confirm tracked status | `git ls-files mcp-servers/brightdata/mcp-config.json mcp-servers/mcp-config-all.json` | both paths listed |
-| Confirm token count | `grep -c "API_TOKEN" mcp-servers/brightdata/mcp-config.json mcp-servers/mcp-config-all.json` | matches what you find when you open the files |
+| Confirm tracked status | `git ls-files .mcp.json mcp-servers/brightdata/mcp-config.json mcp-servers/mcp-config-all.json mcp-servers/brightdata/test-tools.js mcp-servers/product-research-plugins/test-init.js` | all five paths listed |
+| Confirm token count | `grep -rcE "API_TOKEN\|BRIGHTDATA_API_KEY" .mcp.json mcp-servers/brightdata/mcp-config.json mcp-servers/mcp-config-all.json mcp-servers/brightdata/test-tools.js mcp-servers/product-research-plugins/test-init.js` | matches what you find when you open the files (at review time: 2/1/2/1/1) |
 | Verify ignore takes effect | `git status --short` after Step 2 | the now-untracked-content files show as unmodified/ignored, not staged |
 
 ## Scope
@@ -92,6 +109,14 @@ precedent recorded in `CLAUDE.md`). The same shape applies here.
 **In scope**:
 - `mcp-servers/brightdata/mcp-config.json`
 - `mcp-servers/mcp-config-all.json`
+- `mcp-servers/brightdata/test-tools.js` (added at review 2026-07-21 —
+  hardcoded token in its spawn `env`; switch it to reading
+  `process.env`, matching the pattern its sibling
+  `brightdata-mcp-wrapper.js` already uses)
+- `mcp-servers/product-research-plugins/test-init.js` (added at review
+  2026-07-21 — same treatment)
+- `.mcp.json` (repo root — added at review 2026-07-21; likely the live
+  loader config, so Step 1's indirection decision applies here first)
 - `.gitignore` (repo root) — add entries so the token-bearing files (or a
   split-out local secrets file, per Step 1's decision) never get
   re-committed
@@ -143,7 +168,7 @@ overlays) or, if it doesn't, leave a placeholder value plus a comment/
 README note pointing at where the real value now lives, with the tracked
 file itself no longer containing the working credential.
 
-**Verify**: `grep -r "API_TOKEN" mcp-servers/*.json mcp-servers/brightdata/*.json` — the tracked files now contain no live token value (a placeholder string like `"<see mcp-config.local.json>"` is fine).
+**Verify**: `grep -rnE "API_TOKEN|BRIGHTDATA_API_KEY" .mcp.json mcp-servers/ --include="*.json" --include="*.js" | grep -v node_modules` — the tracked files now contain no live token value under either env-var name (a placeholder string like `"<see mcp-config.local.json>"` or a `process.env` read is fine).
 
 ### Step 2: Add `.gitignore` entries
 
@@ -170,7 +195,7 @@ plus the manual connectivity check in Step 3.
 
 ## Done criteria
 
-- [ ] `grep -r "API_TOKEN.*[A-Za-z0-9]\{20,\}" mcp-servers/` (or equivalent — adjust the pattern to whatever the real token's shape turns out to be) returns no matches in tracked files
+- [ ] `grep -rE "(API_TOKEN|BRIGHTDATA_API_KEY).{0,10}[0-9a-f]{8}-[0-9a-f]{4}" .mcp.json mcp-servers/ | grep -v node_modules` returns no matches in tracked files (the token is UUID-format — this pattern catches it under either env-var name without printing the full value)
 - [ ] The new local secret file exists, is gitignored, and is NOT staged (`git status --short`)
 - [ ] Operator has explicitly acknowledged the token needs rotation at BrightData's dashboard (Step 0) — record this acknowledgment in your completion note, don't just assume it
 - [ ] No *source/config* files outside the Scope section modified (`git status` — `plans/README.md` is expected to change too; everything else is out of scope)
@@ -180,7 +205,8 @@ plus the manual connectivity check in Step 3.
 
 - The operator has not acknowledged the rotation requirement (Step 0) —
   do not proceed past this point without it.
-- The token appears in more than the two files named here — if a third
+- The token appears in more than the five files named in "Current state"
+  (verified list as of 2026-07-21) — if a sixth
   location turns up, stop and report the full list before deciding scope,
   since Hard Rule 4 means you should not be pasting multiple locations'
   worth of secret context into a single sweeping fix without the operator
@@ -199,3 +225,29 @@ plus the manual connectivity check in Step 3.
 - If other `mcp-servers/*.json` files gain credentials in the future,
   apply the same gitignored-local-file pattern from the start rather than
   discovering this finding again.
+
+---
+
+**Review-plan pass (2026-07-21)**: cold re-verification at HEAD `647f6d0`.
+The token is STILL present and STILL tracked — nothing has been rotated or
+de-committed since planning. Exposure is *wider* than the plan stated: the
+same 36-character UUID-format token exists in **5 tracked files / 7
+occurrences** (the plan named 2 files): `mcp-servers/brightdata/mcp-config.json:9`,
+`mcp-servers/mcp-config-all.json:9` + `:20`, `mcp-servers/brightdata/test-tools.js:6`,
+`mcp-servers/product-research-plugins/test-init.js:6`, and `.mcp.json:13` +
+`:24` at repo root. Two of the seven occurrences use the env-var name
+`BRIGHTDATA_API_KEY`, which the plan's original `API_TOKEN`-only greps
+would have silently missed. All 7 entered in the single commit `7430b4b`
+(the only commit touching these files), so history exposure is unchanged:
+one commit, still reachable. None of the files is gitignored
+(`git check-ignore` exit 1 re-confirmed). `node_modules` copies of README
+examples are untracked (gitignored) — not part of the exposure. No OTHER
+credential type was found in `mcp-servers/` or `.mcp.json` — every
+credential-looking hit resolves to this one BrightData token. Edits
+applied this pass: drift-check path widened to include `.mcp.json`;
+"Current state" corrected to the full 5-file/7-occurrence list; Scope,
+command table, Step 1 verify, Done-criteria grep, and the
+third-location STOP condition all updated to cover both env-var names
+and all five files. Step 0 (operator rotation acknowledgment gate) is
+unchanged and still mandatory — the token must be treated as burned and
+rotated at BrightData regardless of the file relocation.

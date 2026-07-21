@@ -96,7 +96,7 @@ dependency trial instead of a design doc.
 | Trial-bump versions | (in the worktree) edit `package.json`'s `typescript`/`vite`/`vitest`/`@vitejs/plugin-react` to their latest majors, then `npm install` | lockfile updates, no install errors |
 | Typecheck | `npx tsc --noEmit` | records pass/fail + error count if any |
 | Lint | `npx biome ci .` | records pass/fail |
-| Tests | `npx vitest run` | records pass/fail + count vs. baseline (112 at planning time — re-confirm live) |
+| Tests | `npx vitest run` | records pass/fail + count vs. baseline (181 as of the 2026-07-21 review — plans 080-086 landed after this plan was written; re-confirm live against `docs/TESTING_STRATEGY.md` §0) |
 | Build | `npx vite build` | records pass/fail |
 | Dev server smoke | `npm run tauri dev` (if you can drive a GUI) | app launches without a blank/broken webview |
 | Clean up | `git worktree remove ../notchtap-ts7-spike` (after recording findings — do NOT merge or push this branch) | worktree removed |
@@ -235,3 +235,16 @@ verification; there's nothing to add to the permanent test suite.
   audit session after being carried for 3 prior sessions) — don't let
   this one linger un-revisited for that long; a stale "we should check
   this" is worse than either a clear yes or a clear not-yet.
+
+**Review-plan pass (2026-07-21)**: Verified at HEAD `647f6d0`. All
+version claims re-checked and confirmed live: `package.json` still pins
+`typescript ~5.8.3` / `vite ^7.0.4` / `vitest ^3.2.0` /
+`@vitejs/plugin-react ^4.6.0` / `react ^19.1.0`; lockfile resolves
+5.8.3 / 7.3.6 / 3.2.7 / 4.7.0 exactly as stated;
+`git diff --stat f6c2f46..HEAD -- package.json` is empty (no drift);
+registry latest per `npm view` today is still exactly TS 7.0.2 /
+Vite 8.1.5 / Vitest 4.1.10 / plugin-react 6.0.3; Biome is 2.5.4;
+`tsconfig.json` has the four named strict flags; `vite.config.ts` has
+port 1420 / `strictPort` / `TAURI_DEV_HOST`. One fix applied: the vitest
+baseline count was stale (112 → 181; plans 080-086 landed 2026-07-20/21
+after this plan's planned-at SHA). Plan is ready to execute as written.

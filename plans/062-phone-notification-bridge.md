@@ -45,12 +45,12 @@ a genuinely new capability, not an extension of an existing one.
      built-in behavior, but it's a private, unhookable OS feature — this
      app cannot intercept or relay it.
 
-2. **Getting the event into notchtap.** `src-tauri/src/http.rs:141-144`
+2. **Getting the event into notchtap.** `src-tauri/src/http.rs:140-144`
    hardcodes the `/notify` listener to `127.0.0.1` — verified directly in
    code, with an explicit comment: *"this is the single place a bind
    happens, and it is hardcoded to 127.0.0.1 — no config field can widen
    it"* — and a dedicated test (`listener_binds_loopback_only`,
-   `http.rs:415-418`) pins that. A phone on the same Wi-Fi network cannot
+   `http.rs:421-427`) pins that. A phone on the same Wi-Fi network cannot
    reach this endpoint today, by design (`ARCHITECTURE.md` §7 is the
    cited rationale).
 
@@ -87,3 +87,16 @@ Apple platform capabilities this app doesn't have).
   locked decision (`ARCHITECTURE.md` §7) rather than a UI/design choice —
   treat the network-exposure question with the same weight as any other
   boundary change in this codebase, not as a quick add.
+
+**Review-plan pass (2026-07-21)**: Verified at HEAD `647f6d0`. Fixed two
+drifted line citations: the bind site is `http.rs:140-144` (was 141-144;
+comment + `bind_listener` shifted slightly) and `listener_binds_loopback_only`
+is now at `http.rs:421-427` (was 415-418; tests above it grew). The
+quoted comment text matches the live code verbatim, `docs/ARCHITECTURE.md`
+§7 does contain the loopback-only boundary and the "not an authentication
+boundary between local processes" scope note (~lines 270-283), and
+`docs/recipes/kuma-webhook.md` exists. BLOCKED status remains correct —
+the block is hardware (no Android device), the iOS-impossibility claim
+is dated and sourced, and the recommendation (Android app → local relay
+on the Mac → unchanged loopback `/notify`) is the right shape because it
+leaves the locked boundary untouched. Keep blocked.

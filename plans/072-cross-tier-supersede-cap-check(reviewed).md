@@ -49,6 +49,33 @@
   `assert!(matches!(low_err, QueueError::QueueFull))` in that test —
   so Step 2's test below no longer needs to say "read it, don't
   approximate."
+- **Review-plan pass (2026-07-21)**: fresh cold read at `647f6d0`.
+  Plans 081 (`dedup_eq`/slot-state work) and 083 (EspnMeta tests)
+  touched `queue.rs` after the 07-20 pass (+229 lines total since
+  `f6c2f46`), re-shifting the exemplar tests — the 07-20 note's
+  "1085-1116"/"1157-1170" are historical; the operative citations below
+  are re-fixed to the directly-verified current locations
+  (`cross_tier_supersede_moves_to_back_of_new_tier` 1123-1156,
+  `full_low_tier_rejects_low_but_accepts_high` 1195-1208 — both
+  byte-identical in content to what this plan describes; the
+  `QueueError::QueueFull` matches! assert is at `queue.rs:1203`).
+  Crucially, **the target code itself has zero drift**:
+  `supersede_if_topic_matches` (185-213, cross-tier `push_back` still
+  at 208), `enqueue_new` (147-183, cap check 157-159), and
+  `apply_fresh_content` (now at 562-568, copying meta per landed 064)
+  all match this plan's excerpts exactly, so Step 1's diff still
+  applies as a drop-in and the drift-check header's excerpt comparison
+  will pass. Step 0's product decision re-checked against 083/084's
+  landed football supersession: still coherent — `diff_scoreboard`
+  (`poller.rs:558-565`) takes one `priority: Priority` per poll cycle,
+  threaded unchanged into both `make_event` (:499/:505) and 083's new
+  `make_rich_event` (:1087/:1092, call at :1352), and
+  `Config.espn_priority` is boot-config — so no producer varies
+  priority per Topic push and the cross-tier branch remains
+  production-unreachable; option (a) reject-on-full stays the right
+  conservative default. Poller citations in "Why this matters" updated
+  from the stale pre-083 :408/:461-466 to the current lines. Verdict:
+  ready to execute after these fixes.
 
 ## Why this matters
 
@@ -64,19 +91,22 @@ tier and pushes it onto the new tier's back with no cap check at all.
 Today this is **not reachable in production**: the only Topic producer,
 the ESPN live-match card (`poller.rs`'s `make_event`), passes a single
 `priority: Priority` that stays constant for an entire poll cycle
-(`poller.rs:408`, threaded through `diff_scoreboard`'s parameter at
-`poller.rs:461-466` — ultimately sourced from `Config.espn_priority`
-upstream at the poller-spawn call site) — so a given match's Topic never
+(`poller.rs:505`, `make_event`'s parameter — threaded from
+`diff_scoreboard`'s own single `priority: Priority` parameter at
+`poller.rs:563`, and since plan 083 also into `make_rich_event`'s
+parameter at `poller.rs:1092` — ultimately sourced from
+`Config.espn_priority`, a boot-config value, upstream at the
+poller-spawn call site) — so a given match's Topic never
 crosses tiers across polls, and this code path's `if new_tier_idx ==
 tier_idx` branch is always taken instead of the `else` branch this
 finding is about. But the gap is structural, not incidental: `queue.rs`'s
 own test suite already covers `cross_tier_supersede_moves_to_back_of_new_tier`
-(`queue.rs:1085-1116`) without ever setting the destination tier near
+(`queue.rs:1123-1156`) without ever setting the destination tier near
 its cap — meaning the *existing* test coverage doesn't protect this
 path either. Any future Topic-carrying producer whose priority can vary
 per push would silently be able to push a destination tier's waiting
 queue past `max_queued_per_tier`, defeating the cap
-`full_low_tier_rejects_low_but_accepts_high` (`queue.rs:1157-1170`)
+`full_low_tier_rejects_low_but_accepts_high` (`queue.rs:1195-1208`)
 exists to test for every other insert path.
 
 This is deliberately filed as a small, standalone defensive-hardening
@@ -128,7 +158,7 @@ deserves its own STOP-and-decide gate rather than a mechanical fix.
   `self.waiting[new_tier_idx].push_back(existing);` line at 208 needing a
   cap check before it.
 
-- `src-tauri/src/queue.rs:147-179` — `enqueue_new`, the cap-check pattern
+- `src-tauri/src/queue.rs:147-183` — `enqueue_new`, the cap-check pattern
   to mirror (the actual check, verified verbatim — note it also gates on
   `!can_promote_now`, a fresh-enqueue-only concept that doesn't apply to
   the cross-tier-supersede case, which is always moving an *existing*
@@ -143,11 +173,13 @@ deserves its own STOP-and-decide gate rather than a mechanical fix.
   The error variant to use in Step 1 is `QueueError::QueueFull` —
   confirmed, not a placeholder (see the exemplar test below).
 
-- `src-tauri/src/queue.rs:1085-1116` — the existing
+- `src-tauri/src/queue.rs:1123-1156` — the existing
   `cross_tier_supersede_moves_to_back_of_new_tier` test, to extend (not
-  replace) with a capacity-boundary case.
+  replace) with a capacity-boundary case. (Plan 064's
+  `cross_tier_supersede_updates_meta` now sits directly after it at
+  `queue.rs:1159-1188` — leave it alone, it's a different concern.)
 
-- `src-tauri/src/queue.rs:1157-1170` — `full_low_tier_rejects_low_but_accepts_high`,
+- `src-tauri/src/queue.rs:1195-1208` — `full_low_tier_rejects_low_but_accepts_high`,
   the exemplar cap-enforcement test pattern for `enqueue_new` to mirror
   for this new cross-tier-supersede case (confirms `QueueError::QueueFull`
   is the variant `enqueue_new`'s cap check returns, via
@@ -250,9 +282,9 @@ assuming it's fine — re-check `queue.rs` for all call sites of
 ### Step 2: Add a regression test
 
 Extend near `cross_tier_supersede_moves_to_back_of_new_tier`
-(`queue.rs:1085`) with a new test modeled on
+(`queue.rs:1123`) with a new test modeled on
 `full_low_tier_rejects_low_but_accepts_high`'s cap-filling setup
-(`queue.rs:1157`):
+(`queue.rs:1195`):
 
 ```rust
 #[test]

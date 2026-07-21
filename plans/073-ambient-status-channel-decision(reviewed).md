@@ -13,13 +13,15 @@
 >
 > **Drift check (run first)**: `git diff --stat f6c2f46..HEAD -- src-tauri/src/engine.rs src-tauri/src/status.rs`
 > **`engine.rs` WILL show a diff** — plan 076 (Telegram connector health)
-> already landed and added a `telegram_health` field/accessor before
-> `update_live_match`/`update_weather`, shifting them from the
-> planning-time lines 196/216 to their current 211/231 (content
-> otherwise unchanged — already corrected below). That specific shift is
-> expected, not a STOP condition; only treat further engine.rs/status.rs
-> changes as a STOP if the ambient-channel functions themselves changed
-> shape, not just moved.
+> landed a `telegram_health` field/accessor, and plan 070 (ingest
+> tracing) added log lines inside `accept`, both before
+> `update_live_match`/`update_weather` — shifting them from the
+> planning-time lines 196/216 to their current 216/236 (content of both
+> functions otherwise unchanged — verified byte-identical 2026-07-21;
+> already corrected below). `status.rs` is byte-identical since
+> planning. Those specific shifts are expected, not a STOP condition;
+> only treat further engine.rs/status.rs changes as a STOP if the
+> ambient-channel functions themselves changed shape, not just moved.
 
 ## Status
 
@@ -34,6 +36,38 @@
   before starting this one
 - **Category**: tech-debt / architecture
 - **Planned at**: commit `f6c2f46`, 2026-07-20
+- **Review-plan pass (2026-07-21)**: fresh cold read at `647f6d0`.
+  Re-checked the urgency question against plan 083's landing: the
+  duplication has **not** gotten worse — 083's crests/EspnMeta ride the
+  notification-card wire (`EspnMeta` on `EventMeta` in `event.rs`), not
+  the ambient channel; `status.rs` is byte-identical since planning and
+  `LiveMatchSummary` is still exactly `label`+`minute`, with one
+  unchanged `engine.update_live_match(summary)` call site
+  (`poller.rs:1376`). Precise current touch-point count per channel in
+  `engine.rs`, directly verified: (1) field decl (:36 live / :37
+  weather), (2) manual `Clone` impl line (:53/:54), (3) constructor-time
+  initialization inside `Engine::new` (:82/:83 — a **correction** to
+  this plan's "constructor argument" phrasing: `live`/`weather` are
+  initialized internally, NOT parameters; only 076's `telegram_health`
+  is a parameter), (4) `update_*` method (:216-229/:236-249), (5) read
+  site in `spawn_rotation` (Arc clones :272-273 + lock-clone :291-292 +
+  `StatusInputs` fields :301/:304), (6) read site in
+  `emit_current_status_blocking` (:350-351 + :357/:360) — i.e. 6
+  distinct touch points counting the two read sites separately, plus
+  the `status.rs` mirror (summary struct + `*Status` struct +
+  `StatusInputs` field + `snapshot()` wiring). Same count as at
+  planning. One new adjacent data point strengthening Step 1's
+  question: plan 076's `telegram_health` deliberately "mirror[s]
+  `live`/`weather`" (its own README row's words) for the
+  field/Clone/ctor/accessor half of the pattern (no
+  compare-then-store-then-wake) — a third Engine-side per-channel
+  plumbing instance to weigh as evidence, though not a third copy of
+  the full ambient pattern. Stale line citations fixed (update fns
+  216/236; status.rs excerpt corrected to actual struct order incl. the
+  pre-existing enabled-only `NewsStatus`; engine test baseline 10→12).
+  Verdict: still a valid, correctly-scoped decision plan; urgency
+  unchanged (not escalated) — but it should still run before plan 052
+  is dispatched.
 
 ## Why this matters
 
@@ -73,7 +107,7 @@ either way.
 
 ## Current state
 
-- `src-tauri/src/engine.rs:211-244` — the two existing ambient channels,
+- `src-tauri/src/engine.rs:216-249` — the two existing ambient channels,
   side by side (already near-identical — this is the duplication in
   question):
 
@@ -120,26 +154,34 @@ either way.
   wire-shape side:
 
   ```rust
-  pub struct FootballStatus {
+  pub struct FootballStatus {          // status.rs:31
       pub enabled: bool,
       pub live: Option<LiveMatchSummary>,
   }
 
-  pub struct LiveMatchSummary {
+  pub struct LiveMatchSummary {        // status.rs:39
       pub label: String,
       pub minute: String,
   }
 
-  pub struct WeatherStatus {
-      pub enabled: bool,
-      pub current: Option<WeatherSummary>,
-  }
-
-  pub struct WeatherSummary {
+  pub struct WeatherSummary {          // status.rs:54
       pub temp_display: String,
       pub condition: String,
   }
+
+  pub struct NewsStatus {              // status.rs:64 — enabled-gate only;
+      pub enabled: bool,               // NO ambient summary channel yet.
+  }                                    // The 052 spike's NewsSummary would
+                                       // be the third summary channel.
+
+  pub struct WeatherStatus {           // status.rs:73
+      pub enabled: bool,
+      pub current: Option<WeatherSummary>,
+  }
   ```
+
+  (Derive/serde attributes and doc comments elided; struct order and
+  fields verified against the live file 2026-07-21.)
 
   Note `LiveMatchSummary` and `WeatherSummary` are NOT structurally
   identical (2 differently-named string fields each, but different field
@@ -263,7 +305,9 @@ methods before assuming zero test impact).
 ## Test plan
 
 - If Step 2 executes: no new tests required (pure internal refactor); the
-  existing `engine.rs` test suite (10 tests at planning-time baseline)
+  existing `engine.rs` test suite (12 tests at current HEAD — 10 at
+  planning time, +2 landed since, incl. plan 081's emission-dedup
+  regression test)
   already exercises `update_live_match`/`update_weather` behaviorally —
   re-running it unchanged after the refactor IS the verification that the
   generalization preserved behavior exactly.

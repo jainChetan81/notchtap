@@ -138,6 +138,12 @@ These came up during today's conversation and don't need to be re-asked:
     exactly (confirmed via a real macOS photo — not a semi-transparent
     near-black). This shape is unconditional across both modes now — no
     remaining notch-mode/HUD-mode branch in the mockup at all.
+  - **[2026-07-21 review-plan pass: decision LOCKED but BUILD STILL
+    OPEN.** Verified at HEAD `647f6d0`: no `.flank-left`/`.flank-right`/
+    `.below-block` anywhere in `src/styles.css` — the shipped overlay
+    still uses the pre-redesign rounded-card language; the cutout shape
+    exists only in `prototype/notch-states.html`. None of plans 080-086
+    built it, and no build plan for it has been filed yet.]
   - **New idle content (supersedes item 2's original framing)**: not
     day+time+text-pills. Just the time on one flanking side, three
     status dots (Football=green/News=red/Weather=yellow, glow when
@@ -164,7 +170,11 @@ These came up during today's conversation and don't need to be re-asked:
     `.manifest` view have **not** been touched by the new shape at all.
     Added as items 18-19 below so this doesn't get lost.
 - **Item 3 (team identification) — LOCKED, 2026-07-20**: real club
-  crests, not flags or text badges. Checked a real ESPN fixture
+  crests, not flags or text badges. **[2026-07-21: BUILT — plan 083
+  workstream a (`59bceda`, `src-tauri/src/crests.rs` fetch/cache/serve)
+  plus plan 084 display (`ff9a312`, `Crest` in
+  `src/components/StatusRailCard.tsx` with text-abbrev fallback).]**
+  Checked a real ESPN fixture
   (`src-tauri/tests/fixtures/scoreboard-esp.1.json`): flags don't apply
   semantically since this app's 3 configured leagues (`league_label` in
   `poller.rs`) are all club competitions, not national teams. ESPN's
@@ -220,53 +230,96 @@ Grouped by actual implementation cost, not decision complexity — a few
 ## Decision needed (operator) — remaining topics for the dedicated session
 
 2. Idle clock/day-row typography scale (bold time, day-of-week
-   treatment).
+   treatment). **[2026-07-21: decision effectively LOCKED by item 1's
+   "time+dots" idle record above ("nailed"); BUILD STILL OPEN —
+   `src/components/IdleView.tsx` at HEAD `647f6d0` still renders the
+   old text-pill rail + timeline; only plan 063's width cap (`4fb3af9`)
+   touched the shipped idle view.]**
 4. Live-match wire shape: confirm structured fields (league, home/away
    abbrev, home/away score, minute) over one joined string, once 043's
-   real data shape is available to design against.
+   real data shape is available to design against. **[2026-07-21:
+   SHIPPED — plan 083 workstream b (`512e6e9`) put structured
+   `EspnMeta` on the wire; plan 084 (`ff9a312`) consumes it in
+   `StatusRailCard.tsx` (gates the live branch on `slot.espn`, never
+   string-sniffing).]**
 5. Score prominence — a bigger, visually distinct score element vs.
-   today's inline title text.
+   today's inline title text. **[2026-07-21: SHIPPED — plan 084
+   (`ff9a312`): crest–score–crest row, `.score-row`/`.score` at
+   `src/styles.css:950-997`.]**
 6. Event icon set for scoring plays / cards / fouls / offside — the
    *display* half of what plan 043 fed into this file; without richer
    event data, this stays limited to goal/card/penalty/own-goal (today's
-   `poller.rs` extraction).
+   `poller.rs` extraction). **[2026-07-21: SHIPPED — display via plan
+   084 (latest-event line, CSS-shape event icons + event tint); the
+   richer event data arrived via plan 083 workstream c (`9dad2b5`).]**
    - **6a. The backend half is not a design decision** — the fetch/parse
      work described in the Session-0 record above (fallback chain
      against ESPN's `summary`/`plays` endpoints) is confirmed and can be
      executed independently, any time, ahead of or in parallel with this
      session's display decisions. Whoever picks this up should treat 6a
-     as its own execution step, not wait on items 1-14.
+     as its own execution step, not wait on items 1-14. **[2026-07-21:
+     SHIPPED — plan 083 workstream c (`9dad2b5`), richer ESPN match
+     events with the confirmed summary→plays fallback chain.]**
 7. **News card** presentation — any restyle beyond today's
    masthead/category-pill treatment (flagged in-scope per the operator's
-   "everything UI-related" direction).
+   "everything UI-related" direction). **[2026-07-21: SHIPPED — plan
+   080 (`d21d689`): compact `.pub-meta` published-time
+   (`src/styles.css:712`) + full-width expanded `.manifest-block`
+   summary (`:745`). Note: styled within today's pre-cutout visual
+   language — revisit only when/if item 1's shape is built.]**
 8. **Cmux-relayed** notification presentation — any surface-specific
-   visual treatment.
+   visual treatment. **[2026-07-21: STILL OPEN — nothing landed;
+   operator decision needed (does cmux get any treatment beyond the
+   general compact card of item 19, or none).]**
 9. **Weather**: today's chip styling, plus condition-based *background*
    art (starfield for clear night, rain, snow, hot/cold, etc.) —
    deliberately deferred out of plan 063 today; this is the open-ended
    one (condition bucket list, day/night variants, static vs. animated,
    asset sourcing) and may itself need splitting into its own follow-up
-   spike rather than a single-sitting answer.
+   spike rather than a single-sitting answer. **[2026-07-21: PARTIALLY
+   SHIPPED — plan 082 (`7d48062`): 12 vendored Meteocons (MIT, Bas
+   Milius) at `src/assets/weather/` + NOTICE, the condition→(glyph,
+   mood, day/night) table in `src/lib/weatherArt.ts`, and CSS mood
+   gradients + glyph on the rain/hot/cold ALERT cards
+   (`src/styles.css:787-860`). Remaining: idle-chip styling, the
+   expanded ambient background scene (hover-gated, now on plan 087),
+   and assigning the spare buckets — `extreme-rain`/`wind`/`hail` are
+   vendored but unassigned.]**
 10. Bottom-row / status-pill final shape — today's direction (inert
     pills carrying real existing data: News/Weather/Queued, restyled
     bigger/bolder) applied consistently across every card state, not
-    just idle.
+    just idle. **[2026-07-21: STILL OPEN — no pill restyle landed;
+    decide together with items 2/18/19 since they share the idle/compact
+    surfaces.]**
 11. **In-card pause discoverability** (plan 055) — pause already exists
     (hotkey + tray + boot checkbox); does it get a visible *static*
     indicator (not a button, per the receive-only law above), and if so
-    what does it look like.
+    what does it look like. **[2026-07-21: STILL OPEN — operator
+    decision needed. If built, plan 085's appearance-channel wiring is
+    the named template (see its maintenance notes).]**
 12. **App icon/branding** (plan 054) — `src-tauri/icons/` is still the
     Tauri scaffold default; needs a visual-identity direction before any
     artwork is generated. Different surface (the app icon, not the
     in-app card) but folded in for one-stop visual-identity discussion.
+    **[2026-07-21: STILL OPEN — `src-tauri/icons/` is still the
+    scaffold set; operator direction needed before any artwork.]**
 13. **Asset sourcing / licensing**, resolved once for every surface that
     wants non-text art: real club crests/flags, weather-condition art,
     app icon artwork — where do assets come from, and is using real
     team branding acceptable scope for this app at all (worth a direct
-    answer, not an assumption).
+    answer, not an assumption). **[2026-07-21: PARTIALLY RESOLVED in
+    practice — weather art: Meteocons, MIT, vendored with NOTICE (plan
+    082); crests: runtime fetch-and-cache under
+    `~/.config/notchtap/crests/`, never committed to the repo (plan
+    083's trademark stance). Remaining: app-icon artwork sourcing,
+    together with item 12.]**
 14. Staleness/age indicators — confirm whether today's shipped
     `ageLabel`/pill treatment (plan 032) extends into the new visual
-    language as-is or needs its own restyle pass.
+    language as-is or needs its own restyle pass. **[2026-07-21: STILL
+    OPEN — plan 032's treatment carried forward untouched by 080-086;
+    decide with/after item 19. Adjacent but distinct: plan 081
+    (`ae50ca1`, `TtlBar.tsx`) added a per-card TTL/rotation progress
+    bar — a new locked visual element this file's topic list predates.]**
 15. ~~**Data source**~~ — **LOCKED**, see running decision record above.
 16. **Now-playing / media controls** — a genuinely new source type
     (alongside Football/News/Weather/Cmux today), directly inspired by
@@ -274,7 +327,10 @@ Grouped by actual implementation cost, not decision complexity — a few
     documented API for system-wide now-playing metadata — NotchNook and
     similar apps lean on the undocumented, semi-private `MediaRemote`
     framework. Buildable, but worth deciding with that dependency risk
-    named up front, not discovered mid-build.
+    named up front, not discovered mid-build. **[2026-07-21: STILL OPEN
+    — deliberately deferred per the effort-triage note; operator
+    decision: commit to a MediaRemote Swift helper as its own build
+    effort, or drop the source type.]**
 17. **Hide-when-idle, reveal-on-hover** — not a visual decision, a real
     interaction-model change. Today's overlay is explicitly architected
     as a "permanent rotating overlay" (`CLAUDE.md`'s v3.6 description) —
@@ -303,12 +359,27 @@ Grouped by actual implementation cost, not decision complexity — a few
       replacement for, the effort-triage note above — item 17 is bigger
       than "big," it touches this specific native-config function
       directly.
+    - **[2026-07-21: PARTIALLY SHIPPED / DE-RISKED.** Cheap half shipped
+      via plan 085 (`725040b`): `resting_state: rail|notch` config flag
+      (`src-tauri/src/config.rs:100-101`), collapsed bare-notch resting
+      state selectable from Settings. The hover blocker above was
+      resolved by plan 086's spike (`4ec98fe`,
+      `docs/design/hover-cursor-tracking.md`): tracking-area events
+      still fire while `set_ignore_cursor_events(true)` stays
+      unconditional — no dynamic toggling needed, the 2026-07-17
+      icon-swallowing fix survives untouched. Plan 087 (hover
+      primitive, filed TODO 2026-07-21) builds the one shared
+      mechanism; the reveal-on-hover feature itself follows it.]
 18. **Timeline/day-progress slider** — today's idle view has a thin
     horizontal line with a moving dot showing progress through the day
     (`.idle-view .timeline`, `styles.css`). The new time+dots idle layout
     dropped it entirely with nowhere obvious for it to live. Decide:
     bring it back (where?), fold it into the expanded state instead, or
-    drop it for good.
+    drop it for good. **[2026-07-21: STILL OPEN — `.idle-view
+    .timeline` is still shipped and live (`src/styles.css:574`,
+    rendered by `IdleView.tsx`) because the new idle layout hasn't been
+    built. Plan 081's TTL bar is per-card rotation timing, not this
+    day-progress slider — it does not resolve this item.]**
 19. **The general compact card + expanded manifest view** — everything
     built so far covers only idle and the live-match scorecard. The
     accent edge (`.compact::before`, priority color), the stamp word
@@ -318,7 +389,13 @@ Grouped by actual implementation cost, not decision complexity — a few
     reconciled with the new notch-cutout shape at all. This is the
     biggest remaining gap — most notifications a user actually sees
     (not live matches) go through this path, not the one path that's
-    been mocked up.
+    been mocked up. **[2026-07-21: STILL OPEN — re-verified at HEAD
+    `647f6d0`: `.compact::before` (`src/styles.css:342`), `.stamp`
+    (`:391`), `.compact-hint` (`:401`), `.track` (`:433`), `.manifest`
+    (`:519`) are all unchanged pre-redesign language. Plan 080 restyled
+    only the news manifest's internals *within* that language; plan 084
+    built only the football path. Still the biggest remaining gap; its
+    revamp is gated on item 1's shape being built first.]**
 
 ## Recommendation
 
@@ -355,3 +432,30 @@ live-match path that's been the focus of the mockups so far.
   entirely — a live credential exposure needing operator rotation, not a
   design decision. Flagged here only so it doesn't get lost in the
   shuffle of "combine everything."
+
+---
+
+**Review-plan pass (2026-07-21)**: statuses above verified against live
+code at HEAD `647f6d0` and annotated per item (bracketed **[2026-07-21:
+...]** notes). Scoreboard — SHIPPED: items 3, 4, 5, 6/6a (plans 083/084:
+`59bceda`, `512e6e9`, `9dad2b5`, `ff9a312`) and item 7 (plan 080,
+`d21d689`). PARTIALLY SHIPPED: item 9 (plan 082, `7d48062` — alert-card
+art only), item 13 (weather + crest licensing settled by
+implementation; app icon open), item 17 (plan 085 `725040b` cheap half;
+plan 086 spike `4ec98fe` de-risked hover; plan 087 filed TODO). LOCKED
+BUT UNBUILT: items 1 and 2 — the cutout shape and time+dots idle exist
+only in `prototype/notch-states.html`; no build plan filed. STILL
+OPEN / OPERATOR DECISION: items 8 (cmux treatment), 10 (pill shape), 11
+(pause indicator), 12 (app icon direction), 14 (staleness restyle), 16
+(now-playing commit-or-drop), 18 (timeline fate); item 19 remains the
+biggest user-facing gap, mechanically gated on item 1's build. Item 15
+stays LOCKED (ESPN). One vocabulary gap: plan 081's TTL bar
+(`ae50ca1`) is a locked visual element this file's topic list predates
+— noted under item 14. Mechanical follow-ups needing no new decisions:
+(a) a build plan for items 1+2 (shape + new idle), (b) execute plan
+087 then the four hover consumers, (c) an item-19 revamp plan once (a)
+lands. Recommendation: keep this file as the single tracking ledger
+(re-filing would orphan the Session-0 record and lock history); the
+annotations above make it current. Companion trackers
+`plans/079-checklist.html` / `plans/frontend-ui-consolidated.html`
+were out of scope for this pass and may lag these annotations.

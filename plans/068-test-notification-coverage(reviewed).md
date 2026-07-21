@@ -8,14 +8,17 @@
 > maintain the index.
 >
 > **Drift check (run first)**: `git diff --stat f6c2f46..HEAD -- src-tauri/src/settings.rs`
-> **This WILL show changes** — plans 066 (`cmux_ttl_secs` validation) and
-> 076 (Telegram connector health: `ConnectorHealthDto`/
-> `get_connector_health`) have both landed since planning, both inserted
-> *before* `build_test_event` in the file. That's expected and already
-> accounted for in the citations below (564/749, not the original
-> 542/727) — not a STOP condition on its own. Only treat this as a STOP
-> condition if `build_test_event`'s or `send_test_notification`'s own
-> content differs from what's quoted below, not just their line numbers.
+> **This WILL show changes** — since planning, plans 066 (`cmux_ttl_secs`
+> validation), 076 (Telegram connector health: `ConnectorHealthDto`/
+> `get_connector_health`), 077 (`get_recent_log_lines`), 085
+> (`resting_state` in the appearance payload), and 083 (one line inside
+> `build_test_event` itself: the News arm's `EventMeta` literal gained
+> `espn: None`) have all landed. That's expected and already accounted
+> for in the citations below (572/758, not the original 542/727 or the
+> previously-corrected 564/749) — not a STOP condition on its own. Only
+> treat this as a STOP condition if `build_test_event`'s or
+> `send_test_notification`'s own content differs from what's quoted
+> below beyond the noted `espn: None` line, not just their line numbers.
 
 ## Status
 
@@ -72,7 +75,7 @@ button in the Settings window and eyeballing the result.
 
 ## Current state
 
-- `src-tauri/src/settings.rs:564-...` — `build_test_event`, a
+- `src-tauri/src/settings.rs:572-664` — `build_test_event`, a
   `match source { ... }` over `SourceKind` (Football shown; read the full
   function yourself — it has one arm per `SourceKind` variant, so 5
   branches total after plan 040 added `Weather`):
@@ -101,8 +104,9 @@ button in the Settings window and eyeballing the result.
   }
   ```
 
-- `src-tauri/src/settings.rs:749-763` — `send_test_notification`, the
-  command that calls it:
+- `src-tauri/src/settings.rs:758-772` — `send_test_notification`, the
+  command that calls it (the live function also carries a plan-037
+  explanatory comment before the `engine.accept` line, elided here):
 
   ```rust
   pub async fn send_test_notification(
@@ -229,8 +233,10 @@ swap (per the field list above) — not every field needs asserting, just
 enough to distinguish "this branch reads its own config" from "this
 branch accidentally reads a sibling's."
 
-**Verify**: `cd src-tauri && cargo test --locked settings::` → all 46+
-settings tests pass, including your 5 new tests (confirm each appears in
+**Verify**: `cd src-tauri && cargo test --locked settings::` → all
+settings tests pass (49 `#[test]`/`#[tokio::test]` fns exist in
+`settings.rs` at review time, 2026-07-21, so expect 54 after this
+plan), including your 5 new tests (confirm each appears in
 the output as `ok`). Don't rely on a second filter after `--` to isolate
 them — verified empirically (in this batch's other plan reviews) that
 cargo/libtest's pre-`--` and post-`--` filters union rather than
@@ -293,3 +299,35 @@ plan in this repo's index carries, not a contradiction of it:
   with it — flag this in a comment near the test block so a future
   editor adding a source remembers to add the matching test, not just
   the match arm.
+
+---
+
+**Review-plan pass (2026-07-21)**: third cold re-verification at HEAD
+`647f6d0`, after plans 080-086 landed. Read all 5 match arms of
+`build_test_event` and `send_test_notification` in full against the live
+file. Line drift only, plus one benign content change: `build_test_event`
+moved `:564` → `:572` and `send_test_notification` `:749-763` → `:758-772`
+(pushed down by plan 085's `resting_state` additions to the appearance
+payload above them), and plan 083 (`512e6e9`, structured `EspnMeta` on
+the wire) added exactly one line *inside* `build_test_event` — the News
+arm's explicit `EventMeta` literal gained `espn: None`. No other arm
+changed (Football/Cmux/Manual/Weather all use `EventMeta::default()`, so
+the new `espn` field flows in via `Default`). Citations fixed above.
+Everything else re-verified still true: `SourceKind` still has exactly 5
+variants (`event.rs:83-89` — plans 080-086 added NO new source, so no
+new branch for this plan to cover; 082's weather `is_day` and 085's
+`resting_state` never touched `build_test_event`); the per-source
+config-field mapping in Step 2 (espn_priority/espn_ttl_secs,
+rss_priority/rss_ttl_secs, cmux_priority/cmux_ttl_secs,
+manual_default_priority/default_ttl, weather_priority/default_ttl —
+Manual and Weather sharing `default_ttl`) is byte-accurate against HEAD;
+zero test coverage still holds (`grep -n "build_test_event\|send_test_notification"
+src-tauri/src/settings.rs` → only lines 572, 758, 766 — production
+definition/call sites, no `#[cfg(test)]` references); `settings.rs` has
+an existing `mod tests` (49 test fns) to extend, as Step 2 anticipates.
+One forward-looking note for the executor: the News-arm test may assert
+`event.meta.espn.is_none()` if convenient, but it is not required —
+`espn` is not a config-sourced field, and this plan's copy-paste guard
+is about priority/ttl provenance. In-scope file list still complete
+(`src-tauri/src/settings.rs` only). Verdict: ready to execute as
+corrected.

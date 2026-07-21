@@ -14,21 +14,23 @@
 > done, update the status row for this plan in `plans/README.md` —
 > unless a reviewer dispatched you and told you they maintain the index.
 >
-> **Drift check (run first)**: `git diff --stat d42603a..HEAD -- src-tauri/src/lib.rs src-tauri/Cargo.toml src-tauri/capabilities/default.json src-tauri/tauri.conf.json src/styles.css src/App.tsx docs/design/hover-cursor-tracking.md`
-> Baseline `d42603a` is master with plans 080/081/082/083/085/086 ALL
-> merged, so this should be **empty or near-empty** — unlike the earlier
-> `3de785a` baseline this plan originally carried, which understated the
-> drift badly (083 alone added +74 to `engine.rs` and +131 to
-> `queue.rs`). If you see a large diff, you are not on `d42603a` — fix
-> that first rather than trying to reconcile.
+> **Drift check (run first)**: `git diff --stat 647f6d0..HEAD -- src-tauri/src/lib.rs src-tauri/Cargo.toml src-tauri/capabilities/default.json src-tauri/tauri.conf.json src/styles.css src/App.tsx src/components/StatusRailCard.tsx docs/design/hover-cursor-tracking.md`
+> Baseline `647f6d0` is master with plans 080–086 ALL merged (084's
+> scorecard CSS included — it appended +348 lines to `styles.css` at
+> :862+, which is why the earlier `d42603a` baseline was re-stamped a
+> second time), so this should be **empty or near-empty**. If you see a
+> large diff, you are not on `647f6d0` — fix that first rather than
+> trying to reconcile.
 > **A diff in `capabilities/default.json` is a STOP condition** (see
 > below). A diff in `docs/design/hover-cursor-tracking.md` means the
 > spike was revised — re-read it before starting.
 >
-> **All line numbers below were re-verified against `d42603a` by a
-> cold-read review on 2026-07-21** (the previous set was stale by ~13-14
-> lines throughout `lib.rs`). They are correct as written. Re-grep anyway
-> if anything looks off — content matters more than line numbers.
+> **All line numbers below were re-verified against `647f6d0` by a
+> second cold-read review on 2026-07-21** (pass 1 verified them at
+> `d42603a`; pass 2 re-checked after 084's merge — `lib.rs`, `App.tsx`,
+> and `styles.css:25-61` are all unshifted, because 084 only appended
+> CSS). They are correct as written. Re-grep anyway if anything looks
+> off — content matters more than line numbers.
 
 ## Status
 
@@ -44,9 +46,10 @@
   *cannot* (click-through is never disabled), but the reviewer will
   check that line first.
 - **Depends on**: 086 (DONE — `docs/design/hover-cursor-tracking.md`).
-  Soft: land after 081/085 merge to avoid `lib.rs`/`styles.css` rebase
-  noise. **Gates**: the hover-halves of 081, 082, 084, and the locked
-  idle expanded-on-hover state.
+  The former soft-dependency ("land after 081/085 merge") is satisfied —
+  080–086 are all in master at the `647f6d0` baseline. **Gates**: the
+  hover-halves of 081, 082, 084, and the locked idle expanded-on-hover
+  state.
 - **Category**: tech-debt / architecture (spike → build)
 - **Planned at**: commit `3de785a`, 2026-07-21. Written by the advisor
   directly from plan 086's reviewed spike output, at operator request.
@@ -56,6 +59,21 @@
   stale by ~13-14 lines (083's merge) and are refreshed. Three real gaps
   closed — see the cold-read section below. Drift baseline re-stamped
   `3de785a` → `d42603a`.
+  **Review-plan pass 2 (2026-07-21, against `647f6d0`)**: second
+  cold-read after 084's merge. All prior citations re-verified and still
+  exact (084 appended CSS at `styles.css:862+`; nothing cited shifted);
+  the vendored `tauri-nspanel` claims re-confirmed against the
+  `a3122e8` checkout. Two REAL errors found and fixed: (1) the Step 2
+  width table applied the notch clamp to ALL notch-mode states, but the
+  only notch-scoped rule in `styles.css` is
+  `:root[data-notchtap-mode="notch"] .rail-card.idle.status` — notch
+  visible/expanded stay 400/500 and notch plain-idle stays 270; (2) the
+  plan was silent on plan 085's `resting_state = "notch"`, under which
+  the idle card renders NOTHING (`src/components/StatusRailCard.tsx:252`
+  returns `null`) — the rect decision for that case is now pinned in
+  Step 2 and guarded by a STOP condition. Drift baseline re-stamped
+  `d42603a` → `647f6d0`. Step 3's stale `lib.rs:42-49` corrected to
+  `:44-51`.
 
 ## Why this matters
 
@@ -123,13 +141,36 @@ explicitly rejected; see the STOP conditions.
   size; only the CSS width *within* it changes. This is why
   `auto_resize` on the tracking area is irrelevant and why a rect
   derivation is needed at all.
-- `src/styles.css:25-61` — the card width breakpoints (cold-read-verified UNSHIFTED despite 081/082 both editing this file elsewhere) the rect table
-  must mirror:
+- `src/styles.css:25-61` — the card width breakpoints (cold-read-verified
+  UNSHIFTED twice, despite 081/082/084 all editing this file elsewhere —
+  084 only appended, at :862+) the rect table must mirror:
   - `.rail-card` base — `calc(400px * var(--card-scale))` (:25)
   - `.rail-card.expanded` — `calc(500px * var(--card-scale))` (:39)
   - `.rail-card.idle` — `calc(270px * var(--card-scale))` (:44)
   - `.rail-card.idle.status` — `calc(460px * var(--card-scale))` (:52)
-  - notch mode — `calc(clamp(270px, var(--notchtap-cutout-width, 270px), 460px) * var(--card-scale))` (:61)
+  - `:root[data-notchtap-mode="notch"] .rail-card.idle.status` — `calc(clamp(270px, var(--notchtap-cutout-width, 270px), 460px) * var(--card-scale))` (:60-61)
+
+  **The notch clamp is scoped to `.idle.status` ONLY** — it is the sole
+  `data-notchtap-mode` rule in the file (grep to confirm). In notch mode
+  a visible card is still 400/500 and a plain (chipless) idle card is
+  still 270. Plan 063 capped only the idle status rail. The Step 2 width
+  table reflects this — do not "simplify" it back to a blanket
+  notch-mode clamp.
+- `src/components/StatusRailCard.tsx:244-253` — plan 085's
+  `resting_state` escape hatch. When the config's `resting_state` is
+  `"notch"` and the card has fully settled into idle, the component
+  renders **nothing at all**:
+
+  ```ts
+  // plan 085: idle + resting_state "notch" → zero app-drawn pixels, ...
+  if (!renderedShowing && !exiting && restingState === "notch") {
+    return null;
+  }
+  ```
+
+  So "idle" does not always mean "an idle rail is on screen." The rect
+  decision for this case is pinned in Step 2 — read it; it is one of
+  the two errors the second cold-read found.
 - `src-tauri/src/lib.rs:611-616` — `cutout_width_js_value` (call site :484): rust is
   ALREADY the geometry authority for the cutout width and already
   pushes it to JS. The rect derivation reads the same input from the
@@ -267,11 +308,12 @@ hunting for a home, and say in your report where you put it.
 | Lint + format gate | `npx biome ci .` | exit 0 |
 | Frontend build | `npx vite build` | exit 0 |
 
-Baseline at planning time (`3de785a`): rust **345 + 3 doc-tests**,
-frontend **124**. If 081 and/or 085 merged before you start, those
-numbers are higher — **recount, don't trust this line**, and read the
-current figures from `docs/TESTING_STRATEGY.md` §0 (which plan 085
-corrected to be accurate).
+The counts stamped at planning time (`3de785a`: rust 345 + 3 doc-tests,
+frontend 124) predate the 081/082/083/084/085 merges and are certainly
+low now — **recount from a clean run before you start, don't trust any
+number written here**, and read the current figures from
+`docs/TESTING_STRATEGY.md` §0 (which plan 085 corrected to be accurate
+and 083/084 have since updated).
 
 ## Scope
 
@@ -360,12 +402,34 @@ pub fn active_card_rect(
 ) -> Rect
 ```
 
-Width selection, mirroring `styles.css`:
-- notch mode → `clamp(270.0, cutout_width, 460.0)`
-- hud mode, `visible && expanded` → `500.0`
-- hud mode, `visible` → `400.0`
-- hud mode, idle + status chips → `460.0`
-- hud mode, idle → `270.0`
+Width selection, mirroring `styles.css` (the notch clamp applies ONLY
+to the idle-with-chips state — see the Current state note; `mode` is
+irrelevant to every other branch):
+- `visible && expanded` (either mode) → `500.0`
+- `visible` (either mode) → `400.0`
+- idle + status chips, notch mode → `clamp(270.0, cutout_width, 460.0)`
+- idle + status chips, hud mode → `460.0`
+- idle, no chips (either mode) → `270.0`
+
+**The `resting_state = "notch"` case (pinned by review pass 2 — the
+plan was previously silent on it)**: under plan 085's flag, a
+fully-idle card renders zero pixels
+(`src/components/StatusRailCard.tsx:252` returns `null`). The decision:
+**`resting_state` is deliberately NOT an input to `active_card_rect`,
+and the idle branches above apply unchanged** — the rect targets the
+card's *would-be* footprint. Rationale: the gated "idle
+expanded-on-hover" consumer (079 item 17's full vision) exists
+precisely to summon the rail by hovering the bare cutout/rest region,
+so the primitive must keep reporting hover there even while nothing is
+drawn; and the cost of a `hover-changed` while nothing renders is nil
+(the `.hovered` class lands on a component that returned `null`). This
+also keeps the function's inputs exactly the six listed. Record this
+decision in the function's doc comment, citing
+`StatusRailCard.tsx:244-253`. If, while wiring, you find this makes the
+diagnostic smoke test impossible to pass (nothing visible to observe),
+verify via the DOM-inspector/event log instead — do NOT add a
+`resting_state` special case on your own; that changes what the four
+consumers inherit and is the operator's call (STOP condition).
 
 **Then multiply the chosen width by `scale`** (see the `--card-scale`
 gap section above — this is the step most likely to be forgotten).
@@ -377,7 +441,11 @@ conservative way and document the choice.
 Tests (table-driven, the `presentation_mode` test style):
 - every branch above at scale 1.0
 - **the same branches at scale 0.8 and 1.25** (the pinned gap)
-- notch-mode clamp at both bounds (cutout 200 → 270; cutout 600 → 460)
+- notch-mode idle+chips clamp at both bounds (cutout 200 → 270;
+  cutout 600 → 460)
+- **notch mode, `visible` → 400 regardless of cutout width** — the
+  tripwire for the blanket-clamp error review pass 2 removed from this
+  very table; the clamp is idle+chips-only
 - a `point_in_rect` case just inside and just outside each edge
 - one test asserting the table's raw widths equal named constants, with
   a comment naming `src/styles.css:25-61` as the other half of the
@@ -390,7 +458,7 @@ included); `cargo clippy --locked --all-targets -- -D warnings` → exit 0;
 
 ### Step 3: Tracking area + `hover-changed` emission
 
-Extend the `OverlayPanel` macro (`lib.rs:42-49`) with the tracking-area
+Extend the `OverlayPanel` macro (`lib.rs:44-51`) with the tracking-area
 block, following the upstream examples:
 
 ```rust
@@ -432,7 +500,8 @@ unconditional, still `true`.
 `src/App.tsx`: a `hover-changed` listener holding one boolean state,
 mirroring the `appearance-changed` listener's exact shape (including the
 `unmounted` guard and `.catch` — see `App.tsx:47-55`). Pass it into
-`StatusRailCard` as a prop (optional, defaulting to `false`, so every
+`StatusRailCard` (`src/components/StatusRailCard.tsx`) as a prop
+(optional, defaulting to `false`, so every
 existing caller and test is unaffected — plan 085's `restingState` prop
 is the precedent to copy), applied as a `.hovered` class on the card
 root. Add ONE minimal rule for `.rail-card.hovered` in `src/styles.css`
@@ -473,10 +542,15 @@ the CURRENT figures, per the Commands-table note).
      `active_always` requirement).
   4. Both presentation modes if both machines are reachable — the mac
      mini is HUD-only; notch-mode geometry is unverifiable there.
+  5. With `resting_state = "notch"` set and the card idle (nothing
+     rendered), confirm `hover-changed` still fires over the would-be
+     footprint — observe via the event log / DOM inspector, since
+     there are no pixels to watch (the Step 2 pinned decision).
 
 ## Done criteria
 
-- [ ] `active_card_rect` (or equivalent) is a pure function with no AppKit types in its signature, unit-tested across every mode/state branch AND at ≥3 distinct `--card-scale` values
+- [ ] `active_card_rect` (or equivalent) is a pure function with no AppKit types in its signature, unit-tested across every mode/state branch AND at ≥3 distinct `--card-scale` values, including the notch-mode `visible → 400` (unclamped) tripwire case
+- [ ] The `resting_state = "notch"` decision (idle rect = would-be footprint, `resting_state` NOT an input) is recorded in the function's doc comment citing `src/components/StatusRailCard.tsx:244-253`
 - [ ] `status_rail_active` ported to rust from `src/useStatusState.ts:106`, all seven terms, table-tested one case per term, with mirror comments on both copies (cold-read Gap 1)
 - [ ] The AppKit y-flip lives in ONE named helper and has its own unit test proving top-of-window maps to HIGH AppKit y, plus inside/outside cases on each edge (cold-read Gap 3)
 - [ ] Tracking area attached via the pinned `tauri-nspanel`'s own support; `hover-changed` emitted on TRANSITIONS only, never per mouse-move
@@ -514,6 +588,13 @@ the CURRENT figures, per the Commands-table note).
 - Emission turns out to require per-mouse-move events to feel correct —
   stop and reassess against the idle-cost discipline (plans 015/018)
   before proceeding.
+- **You find yourself adding `resting_state` as an input to
+  `active_card_rect` or special-casing the idle rect when
+  `resting_state = "notch"` renders nothing** — the pinned decision
+  (Step 2) is that the rect targets the would-be footprint unchanged.
+  Deviating changes what all four consumers inherit (especially idle
+  expanded-on-hover, which depends on hover firing over the bare rest
+  region) and is the operator's call, not an engineering judgment.
 
 ## Maintenance notes
 

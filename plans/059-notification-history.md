@@ -7,9 +7,9 @@
 - **Risk**: LOW-MED — new persistent storage of potentially sensitive
   content (permission-prompt bodies, cmux/agent output) is a privacy
   surface this app has never had before.
-- **Depends on**: none (touches the Settings sidebar, so soft-coordinate
-  with plan 049 if that per-source-config-consolidation work is also
-  in flight)
+- **Depends on**: none (plan 049, the per-source-config-consolidation
+  spike this originally soft-coordinated with, is DONE as of the
+  2026-07-21 review — no coordination needed anymore)
 - **Category**: direction
 - **Planned at**: commit `f58ced2`, 2026-07-19 — filed from an operator
   question ("do we hold past notification data? can I look it up in the
@@ -20,8 +20,9 @@
 Confirmed by direct read: **nothing is persisted today.** `logging.rs`
 writes only `tracing`-level diagnostic logs (poll failures, bind errors)
 to `~/Library/Logs/notchtap/notchtap.log` — not notification content.
-`SettingsApp.tsx`'s sidebar (`SectionId`, `SettingsApp.tsx:82-90`) has no
-History/Recent/Log tab. Once an item leaves the single-slot
+`SettingsApp.tsx`'s sidebar (`SectionId`,
+`src/settings/SettingsApp.tsx:95-104` — nine sections as of 2026-07-21,
+including the newer `diagnostics`) has no History/Recent/Log tab. Once an item leaves the single-slot
 `SingleSlotQueue` (dismissed or rotated out), nothing about it survives
 anywhere. An operator who glances away and misses a card has no way to
 recover what it said.
@@ -82,3 +83,19 @@ mirrors how `weather_enabled`/`rss_enabled` already default off
   size-based rotation as the exemplar pattern, per this repo's stated
   convention of matching established patterns rather than inventing new
   ones.
+
+**Review-plan pass (2026-07-21)**: Verified at HEAD `647f6d0`. Fixed the
+drifted `SectionId` citation (`82-90` → `src/settings/SettingsApp.tsx:95-104`;
+the sidebar grew to nine sections — football/diagnostics etc. — still no
+History tab, so the core claim holds) and retired the plan-049
+coordination note (049 is done). All other claims re-verified:
+`SingleSlotQueue` (`src-tauri/src/queue.rs:48`), `rss_enabled`/
+`weather_enabled` default false (`src-tauri/src/config.rs:484,500`
+asserts), log dir `~/Library/Logs/notchtap` (`logging.rs:27-33`),
+`DESIGN.html` manifest example present. One precision caveat found, not
+fixed in the body since the substantive claim (no browsable history)
+stands: "not notification content" is not 100% airtight — on a telegram
+send drop, `src-tauri/src/notifier.rs:281-282` writes the event *title*
+into the diagnostic log (`title = %event.payload.title`). Factor that
+into the privacy decision (titles already leak to disk on connector
+failure today).

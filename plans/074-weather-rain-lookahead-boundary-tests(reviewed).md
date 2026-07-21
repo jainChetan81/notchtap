@@ -37,10 +37,31 @@
   day-rollover fixture (`OpenMeteoCurrent.time: String`,
   `OpenMeteoHourly.time: Vec<String>` /
   `.precipitation_probability: Vec<u8>` — `weather_poller.rs:47-65`).
+- **Review-plan pass (2026-07-21)**: fresh cold read at `647f6d0`. The
+  07-20 pass's "zero drift" no longer holds — plan 082 (weather art)
+  landed, adding `is_day: u8` (`#[serde(default)]`) to
+  `OpenMeteoCurrent`, `is_day: 1` to the Bangalore fixture JSON, and
+  `condition`/`is_day` parameters to `alert_event`, shifting every
+  cited line in this file. All citations re-fixed to directly-verified
+  current locations: `lookahead_rain_probability` 115-128 (**function
+  body byte-identical** — the rounding logic this plan tests is
+  untouched), structs 47-76 (excerpt updated to include `is_day`),
+  `fixture()` 360-362, `fixture_with_rain_probability` 471-479 (body
+  unchanged), `lookahead_rounds_to_the_nearest_hour` 646-654 (content
+  unchanged, still asserts `Some(16)`/`Some(22)`/`Some(33)`). The
+  fixture's `current.time` is still `"2026-07-19T06:30"` and index 7 is
+  still 16%, so Step 2's arithmetic (`+59min → 07:29 → rounds down →
+  Some(16)`) and Step 3's rollover fixture (`23:45 + 30 → 00:15 →
+  2026-07-20T00:00 → Some(42)`) both still check out. Explicit ruling
+  on 082's new field: `is_day` needs NO representation in this plan's
+  test fixtures — both new tests clone `fixture()` (which now carries
+  `is_day: 1`), the field is serde-defaulted, and the function under
+  test never reads it (note added under the struct excerpt). Verdict:
+  ready to execute after these fixes.
 
 ## Why this matters
 
-`lookahead_rain_probability` (`src-tauri/src/weather_poller.rs:104-117`)
+`lookahead_rain_probability` (`src-tauri/src/weather_poller.rs:115-128`)
 computes a target timestamp by rounding the current poll time forward to
 the nearest hour (per Open-Meteo's hourly forecast granularity) based on
 a configurable lookahead window, then looks up that hour's precipitation
@@ -65,7 +86,7 @@ break the day-rollover case with no test to catch it.
 
 ## Current state
 
-- `src-tauri/src/weather_poller.rs:104-117` — the full function:
+- `src-tauri/src/weather_poller.rs:115-128` — the full function:
 
   ```rust
   fn lookahead_rain_probability(response: &OpenMeteoResponse, lookahead_mins: u16) -> Option<u8> {
@@ -84,7 +105,7 @@ break the day-rollover case with no test to catch it.
   }
   ```
 
-- `src-tauri/src/weather_poller.rs:552-566` — the existing
+- `src-tauri/src/weather_poller.rs:646-654` — the existing
   `lookahead_rounds_to_the_nearest_hour` test, already landed (not part
   of this plan, don't duplicate it):
 
@@ -107,7 +128,7 @@ break the day-rollover case with no test to catch it.
   plan's actual scope now.
 
 - `src-tauri/tests/fixtures/open-meteo-bangalore.json` — the fixture
-  data `fixture()` deserializes (`weather_poller.rs:312-314`:
+  data `fixture()` deserializes (`weather_poller.rs:360-362`:
   `serde_json::from_str(BANGALORE).unwrap()`, where `BANGALORE =
   include_str!(...)`). It's a **fixed** JSON file, not a parameterized
   builder — `current.time` is hardcoded `"2026-07-19T06:30"`, and
@@ -118,7 +139,7 @@ break the day-rollover case with no test to catch it.
   matching the existing test above). There is **no next-day entry** —
   relevant for Step 3.
 
-- `src-tauri/src/weather_poller.rs:382-389` — `fixture_with_rain_probability`,
+- `src-tauri/src/weather_poller.rs:471-479` — `fixture_with_rain_probability`,
   the established pattern for building a scenario the static JSON
   fixture doesn't have: clone `fixture()`'s result and mutate the
   already-deserialized struct directly (not the JSON), reusing the same
@@ -126,30 +147,43 @@ break the day-rollover case with no test to catch it.
 
   ```rust
   fn fixture_with_rain_probability(probability: u8) -> OpenMeteoResponse {
+      // (live version carries an explanatory comment here — elided)
       let mut response = fixture();
       response.hourly.as_mut().unwrap().precipitation_probability[7] = probability;
       response
   }
   ```
 
-- `src-tauri/src/weather_poller.rs:47-65` — `OpenMeteoResponse`'s field
-  types, needed to construct the day-rollover fixture in Step 3:
+- `src-tauri/src/weather_poller.rs:47-76` — `OpenMeteoResponse`'s field
+  types, needed to construct the day-rollover fixture in Step 3
+  (derive attributes and doc comments elided; note `is_day` was added
+  by plan 082 after this plan was written):
 
   ```rust
   pub struct OpenMeteoResponse {
       pub current: OpenMeteoCurrent,
+      #[serde(default)]
       pub hourly: Option<OpenMeteoHourly>,
   }
   pub struct OpenMeteoCurrent {
       pub time: String,
       pub temperature_2m: f64,
       pub weather_code: u8,
+      #[serde(default)]
+      pub is_day: u8,   // plan 082 — 1/0 integer, serde-defaulted
   }
   pub struct OpenMeteoHourly {
       pub time: Vec<String>,
+      #[serde(default)]
       pub precipitation_probability: Vec<u8>,
   }
   ```
+
+  The new `is_day` field needs **no handling in this plan's tests**:
+  both new tests build on a clone of `fixture()` (whose JSON now
+  carries `is_day: 1`), the field is `#[serde(default)]`, and
+  `lookahead_rain_probability` never reads it — do not add it to the
+  Step 3 builder.
 
 ## Commands you will need
 
@@ -177,9 +211,9 @@ break the day-rollover case with no test to catch it.
 
 ### Step 1: Confirm the fixture and existing test match "Current state"
 
-Read `weather_poller.rs:47-65` (`OpenMeteoResponse`/`OpenMeteoCurrent`/
-`OpenMeteoHourly`), `:312-314` (`fixture()`), `:382-389`
-(`fixture_with_rain_probability`), and `:552-566`
+Read `weather_poller.rs:47-76` (`OpenMeteoResponse`/`OpenMeteoCurrent`/
+`OpenMeteoHourly`), `:360-362` (`fixture()`), `:471-479`
+(`fixture_with_rain_probability`), and `:646-654`
 (`lookahead_rounds_to_the_nearest_hour`) yourself and confirm they match
 the excerpts already inlined in "Current state" above — all four are
 reproduced there verbatim so you don't need to re-derive them, just
@@ -262,7 +296,7 @@ pass, including `lookahead_rolls_over_to_next_day_at_midnight`.
   `lookahead_rounds_down_just_under_the_boundary`,
   `lookahead_rolls_over_to_next_day_at_midnight` (both written out in
   full in Steps 2/3).
-- Pattern: `fixture_with_rain_probability` (`weather_poller.rs:382-389`)
+- Pattern: `fixture_with_rain_probability` (`weather_poller.rs:471-479`)
   for the mutate-the-deserialized-struct technique Step 3's new builder
   follows.
 - Verification: `cargo test --locked weather_poller::` → all pass,
@@ -286,7 +320,7 @@ plan in this repo's index carries, not a contradiction of it:
 
 ## STOP conditions
 
-- The function at `weather_poller.rs:104-117` doesn't match the excerpt
+- The function at `weather_poller.rs:115-128` doesn't match the excerpt
   above (drift since planning).
 - While writing the day-rollover test, you find the function actually
   DOES have a bug at that boundary (e.g. `with_minute(0)` on a
