@@ -4,6 +4,7 @@ use std::time::{Duration, Instant};
 use serde::Deserialize;
 use uuid::Uuid;
 
+use crate::crests::CrestCache;
 use crate::engine::Engine;
 use crate::event::{
     DetailItem, EspnMeta, Event, EventMeta, EventPayload, EventSignal, EventType, Priority,
@@ -80,6 +81,15 @@ pub struct SbTeam {
     pub id: String,
     #[serde(default)]
     pub abbreviation: String,
+    /// plan 083 workstream a: ESPN already sends a direct crest CDN url
+    /// per team on the scoreboard response we already fetch — zero extra
+    /// discovery cost. Verified present in the checked-in
+    /// `scoreboard-esp.1.json` fixture (`.../teamlogos/soccer/500/{id}.png`).
+    /// Detail-level card `team` objects (`SbDetail::team`, which reuses
+    /// this same struct) never carry `logo` — defaults to `None` there,
+    /// harmlessly.
+    #[serde(default)]
+    pub logo: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -368,6 +378,93 @@ fn matchup(league: &str, s: &MatchSnapshot) -> String {
         s.home_score,
         s.home_abbrev
     )
+}
+
+/// plan 083 workstream a: (team id -> logo url) pairs from a freshly
+/// fetched scoreboard — pure, fixture-testable, no I/O. Read directly
+/// off the raw feed (not off `MatchSnapshot`, which doesn't carry team
+/// ids) so a crest fetch can be scheduled even for matches this poll
+/// won't otherwise emit an event for.
+fn team_logos(fetched: &Scoreboard) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    for event in &fetched.events {
+        let Some(comp) = event.competitions.first() else {
+            continue;
+        };
+        for c in &comp.competitors {
+            let Some(team) = &c.team else { continue };
+            if team.id.is_empty() {
+                continue;
+            }
+            if let Some(logo) = &team.logo {
+                out.insert(team.id.clone(), logo.clone());
+            }
+        }
+    }
+    out
+}
+
+/// plan 083 workstream a: (match id -> (home team id, away team id))
+/// pairs from a freshly fetched scoreboard — pure, fixture-testable, no
+/// I/O. Read directly off the raw feed, same reasoning as `team_logos`
+/// above: `MatchSnapshot` doesn't carry team ids, and a full-time event
+/// evicts its match from the *next* snapshot before crest-patching runs,
+/// so this can't be derived from post-diff state either.
+fn team_ids_by_match(fetched: &Scoreboard) -> HashMap<String, (String, String)> {
+    let mut out = HashMap::new();
+    for event in &fetched.events {
+        let Some(comp) = event.competitions.first() else {
+            continue;
+        };
+        let mut home_id = String::new();
+        let mut away_id = String::new();
+        for c in &comp.competitors {
+            let id = c.team.as_ref().map(|t| t.id.clone()).unwrap_or_default();
+            match c.home_away.as_str() {
+                "home" => home_id = id,
+                "away" => away_id = id,
+                _ => {}
+            }
+        }
+        out.insert(event.id.clone(), (home_id, away_id));
+    }
+    out
+}
+
+/// plan 083 workstream a: patch `home_crest`/`away_crest` onto every
+/// emitted event's `EspnMeta` (if any) using the match's team ids and
+/// whatever's already cache-hit on disk — pure aside from the
+/// `CrestCache::cached_path` filesystem stat, no network. Kept separate
+/// from `diff_scoreboard` (which never touches the filesystem) so that
+/// function stays the pure, fixture-tested surface it's always been;
+/// this is the untested-by-design fetch-loop's job, mirroring the
+/// module's existing "tested pure core, thin untested wiring" split.
+///
+/// Matches by parsing the match id back out of the event's own Topic
+/// string (`espn:{league}:{match_id}`) — reliable because crest
+/// patching only ever has something to do when `EspnMeta` is present,
+/// which is exactly the same `espn_live_card`-on gate that populates
+/// `topic` in the first place.
+fn patch_crests(
+    events: &mut [Event],
+    league: &str,
+    team_ids: &HashMap<String, (String, String)>,
+    crests: &CrestCache,
+) {
+    let prefix = format!("espn:{league}:");
+    for event in events {
+        let Some(espn) = &mut event.meta.espn else {
+            continue;
+        };
+        let Some(match_id) = event.topic.as_deref().and_then(|t| t.strip_prefix(&prefix)) else {
+            continue;
+        };
+        let Some((home_id, away_id)) = team_ids.get(match_id) else {
+            continue;
+        };
+        espn.home_crest = crests.cached_path_string(home_id);
+        espn.away_crest = crests.cached_path_string(away_id);
+    }
 }
 
 /// plan 039: how one match's event lands in the Slot, bundled into a
@@ -743,6 +840,7 @@ async fn fetch_league(client: &reqwest::Client, league: &str) -> anyhow::Result<
 /// exception: rss/news events are overlay-only and never offered,
 /// `IMPLEMENTATION_PLAN.md` §4.6 — a rule `accept` encodes via the
 /// origin gate, so no per-caller flag is needed here).
+#[allow(clippy::too_many_arguments)] // untested outer wiring, same reasoning as CardTopic's bundling for the pure/tested side
 pub fn spawn_espn_poller(
     engine: Engine,
     leagues: Vec<String>,
@@ -750,6 +848,7 @@ pub fn spawn_espn_poller(
     ttl_secs: u64,
     priority: Priority,
     espn_live_card: bool,
+    crests: CrestCache,
 ) {
     tauri::async_runtime::spawn(async move {
         let client = match crate::net::build_poll_client() {
@@ -792,8 +891,23 @@ pub fn spawn_espn_poller(
                     }
                 };
 
+                // plan 083 workstream a: schedule a background fetch for
+                // any team whose crest isn't cached yet — before the diff,
+                // so a crest that lands mid-poll is available for
+                // `patch_crests` below even on the same poll it completes.
+                for (team_id, logo_url) in team_logos(&scoreboard) {
+                    if crests.should_fetch(&team_id) {
+                        let crests = crests.clone();
+                        let client = client.clone();
+                        tauri::async_runtime::spawn(async move {
+                            crests.fetch_and_store(&client, &team_id, &logo_url).await;
+                        });
+                    }
+                }
+                let team_ids = team_ids_by_match(&scoreboard);
+
                 let prev = snapshots.entry(league.clone()).or_default();
-                let (events, next) = diff_scoreboard(
+                let (mut events, next) = diff_scoreboard(
                     prev,
                     &scoreboard,
                     ttl_secs,
@@ -801,6 +915,7 @@ pub fn spawn_espn_poller(
                     priority,
                     espn_live_card,
                 );
+                patch_crests(&mut events, league, &team_ids, &crests);
                 snapshots.insert(league.clone(), next);
                 if events.is_empty() {
                     continue;
@@ -836,6 +951,7 @@ mod tests {
 
     const USA: &str = include_str!("../tests/fixtures/scoreboard-usa.1.json");
     const UCL: &str = include_str!("../tests/fixtures/scoreboard-uefa.champions.json");
+    const ESP: &str = include_str!("../tests/fixtures/scoreboard-esp.1.json");
 
     fn score_event(title: &str) -> Event {
         test_fixtures::with_origin(
@@ -903,6 +1019,103 @@ mod tests {
         assert_eq!(v.snap.home_abbrev, "MTL");
         assert_eq!(v.snap.away_abbrev, "TOR");
         assert_eq!(v.snap.state, "pre");
+    }
+
+    // plan 083 workstream a: crest logo parsing + the two pure lookup
+    // helpers the async poll loop uses to schedule fetches and patch
+    // `EspnMeta.home_crest`/`away_crest`.
+
+    #[test]
+    fn team_logo_url_parses_from_the_real_fixture() {
+        // verified directly against the raw esp.1 fixture json: Alavés
+        // (home, id 96) and Getafe (away, id 2922) both carry a direct
+        // espncdn.com crest url.
+        let sb = parse_scoreboard(ESP).unwrap();
+        let comp = &sb.events[0].competitions[0];
+        let home = comp
+            .competitors
+            .iter()
+            .find(|c| c.home_away == "home")
+            .unwrap();
+        let away = comp
+            .competitors
+            .iter()
+            .find(|c| c.home_away == "away")
+            .unwrap();
+        assert_eq!(
+            home.team.as_ref().unwrap().logo.as_deref(),
+            Some("https://a.espncdn.com/i/teamlogos/soccer/500/96.png")
+        );
+        assert_eq!(
+            away.team.as_ref().unwrap().logo.as_deref(),
+            Some("https://a.espncdn.com/i/teamlogos/soccer/500/2922.png")
+        );
+    }
+
+    #[test]
+    fn team_logos_extracts_every_team_id_to_logo_url_pair() {
+        let sb = parse_scoreboard(ESP).unwrap();
+        let logos = team_logos(&sb);
+        assert_eq!(
+            logos.get("96").map(String::as_str),
+            Some("https://a.espncdn.com/i/teamlogos/soccer/500/96.png")
+        );
+        assert_eq!(
+            logos.get("2922").map(String::as_str),
+            Some("https://a.espncdn.com/i/teamlogos/soccer/500/2922.png")
+        );
+    }
+
+    #[test]
+    fn team_ids_by_match_maps_match_id_to_home_and_away_team_ids() {
+        let sb = parse_scoreboard(ESP).unwrap();
+        let match_id = sb.events[0].id.clone();
+        let ids = team_ids_by_match(&sb);
+        assert_eq!(
+            ids.get(&match_id),
+            Some(&("96".to_string(), "2922".to_string()))
+        );
+    }
+
+    #[test]
+    fn patch_crests_fills_in_cached_paths_by_topic_match_id() {
+        let (_dir, crests) = crate::crests::test_support::temp_cache();
+        // fabricate a warm cache hit for the home team (96) only.
+        std::fs::create_dir_all(&crests.dir).unwrap();
+        std::fs::write(crests.path_for("96"), b"png bytes").unwrap();
+
+        let mut team_ids = HashMap::new();
+        team_ids.insert("761659".to_string(), ("96".to_string(), "2922".to_string()));
+
+        let mut events = vec![score_event("t")];
+        events[0].topic = Some("espn:usa.1:761659".to_string());
+        events[0].meta.espn = Some(EspnMeta {
+            league: "usa.1".to_string(),
+            home_abbrev: "MTL".to_string(),
+            away_abbrev: "TOR".to_string(),
+            home_score: 0,
+            away_score: 0,
+            clock: "0'".to_string(),
+            home_cards: (0, 0),
+            away_cards: (0, 0),
+            home_crest: None,
+            away_crest: None,
+        });
+
+        patch_crests(&mut events, "usa.1", &team_ids, &crests);
+
+        let espn = events[0].meta.espn.as_ref().unwrap();
+        assert!(espn.home_crest.is_some(), "96 is a cache hit");
+        assert_eq!(espn.away_crest, None, "2922 was never cached");
+    }
+
+    #[test]
+    fn patch_crests_leaves_events_without_espn_meta_untouched() {
+        let (_dir, crests) = crate::crests::test_support::temp_cache();
+        let team_ids = HashMap::new();
+        let mut events = vec![score_event("t")];
+        patch_crests(&mut events, "usa.1", &team_ids, &crests);
+        assert_eq!(events[0].meta.espn, None);
     }
 
     #[test]
@@ -1178,6 +1391,7 @@ mod tests {
         last_detail.team = Some(SbTeam {
             id: "999999".to_string(),
             abbreviation: String::new(),
+            logo: None,
         });
 
         let snap = view(&sb.events[0]).snap;
