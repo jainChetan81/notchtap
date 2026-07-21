@@ -32,8 +32,11 @@ root alongside
 `docs/` — the docs folder isn't part of the app build. the test suite
 exists and must stay green (`cargo test` from `src-tauri/`, `npx
 vitest run` from repo root, all gated by ci) — current counts live in
-`docs/TESTING_STRATEGY.md` §0 and only there. later landings the
-paragraph above predates: plan 037 (`6b53c32`) introduced the Engine
+`docs/TESTING_STRATEGY.md` §0 and only there. an uptime kuma →
+notchtap webhook integration recipe (docs only, no source changes)
+landed 2026-07-17 at `docs/recipes/kuma-webhook.md` — verified working
+end-to-end against kuma v2.4.0. later landings the paragraph above
+predates: plan 037 (`6b53c32`) introduced the Engine
 (`src-tauri/src/engine.rs`) — one propagation module every Slot
 mutation now flows through
 (`apply`/`apply_blocking`/`read`/`accept`/`update_live_match`),
@@ -51,6 +54,46 @@ scoreboard card — one single-updating card per live match via Topic
 supersession (`espn:{league}:{match_id}`), with per-side card counts
 and a Clock detail line in its collapsed presentation, and scoring
 plays labeled with espn's own event-type text (goal/penalty/own-goal).
+plan 044 (`5c1ca36`) fixed a same-poll Topic-supersession ordering bug that
+could permanently un-retire a finished match's card. plan 045 bumped the
+`tauri-nspanel` git pin (13mo/39 commits behind) and added a compensating
+`tauri_panel!` macro block for a confirmed API break the bump introduced.
+plans 047/048 backfilled tests on newer modules and refactored the status
+snapshot signature to named `StatusInputs` fields. `fb4acce` (unfiled) made
+`Config::parse` self-heal a `rotation_order` missing a `SourceKind` variant by
+appending it. plans 049-053 are docs-only design spikes in `docs/design/` —
+deliverable is a design doc, zero production code, same precedent as 030/031.
+plan 058 (`8743ce6`, 2026-07-20) added a `run` subcommand to the cli script.
+plan 063 clamped the notch-mode idle rail to the cutout width and added the
+shared `__NOTCHTAP_MODE__`/`__NOTCHTAP_CUTOUT_WIDTH__` boot-fact eval-splice
+channel. the 064/066/067/070 hardening quartet added Topic supersede meta
+freeze, cmux `ttl_secs` validation, rotation-order heal dedup, and `/notify`
+ingest logging. plans 076/077/078 added the telegram connector health chip, an
+in-app log viewer (Diagnostics settings section), and dropped the motion
+library from the overlay bundle. the 080-085 UI batch added: news card
+published-time meta + full-width expanded summary (080); the TTL progress bar
+with `ttl_ms`/`remaining_ms` wire fields and the `SlotState::dedup_eq` rule —
+continuously-varying wire fields must extend `dedup_eq`, never derived
+`PartialEq` (081); weather-alert Meteocons art + mood backdrops (082);
+football backend `EspnMeta`/crest cache/`espn_rich_events` + `assetProtocol`
+scope (083); the live-match compact scorecard (084); and the `resting_state:
+rail|notch` hide-when-idle flag (085). plans 086/087 spiked
+(`docs/design/hover-cursor-tracking.md`) then shipped the hover primitive —
+tracking area + rust-derived card rect + `hover-changed` event — but the hover
+CONSUMER features (TTL-bar pause, weather peek, scorecard reveal, idle
+expand-on-hover) are still unbuilt. plans 068/072/074 (landed 2026-07-21) were
+mostly test backfill (`build_test_event`'s five per-source arms; weather
+rain-lookahead minute-rounding and day-rollover boundaries), plus one small
+defensive queue fix: a cross-tier Topic supersede now honors
+`max_queued_per_tier` instead of skipping the cap check, dropping the fresh
+content rather than evicting — this is **latent**: zero production behavior
+change today, since no producer currently varies priority per Topic. plan 075
+was a docs-only toolchain spike (TypeScript 7 / Vite 8 / Vitest 4 trial bump
+in a throwaway worktree) — verdict was **GO**, but nothing was adopted:
+`package.json` is untouched, adoption is a separate unwritten plan, and the
+spike result lives in
+`plans/done/075-frontend-toolchain-major-bump-spike(done).md`, not
+`docs/design/`.
 remaining open work: the
 manual checklist rows in `docs/IMPLEMENTATION_PLAN.md` §6, and whatever
 `plans/` holds.
@@ -114,8 +157,12 @@ records now, not active contracts (same status as `BLIND_REVIEW.md`/
 - `./notchtap --title "t" --body "b"` — manually trigger a notification
   against the local `/notify` endpoint (default `127.0.0.1:9789`,
   override via `--port` or `$NOTCHTAP_PORT`), for testing the
-  queue/animation without a real event source. flags only — there is no
-  positional form; the cli is a committed shell script at repo root
+  queue/animation without a real event source. the cli is a committed
+  shell script at repo root; besides flags, it also has a `run`
+  subcommand (plan 058) — `notchtap run -- pnpm build` wraps a
+  long-running command and pushes a completion card when it finishes
+  (skipped for successful runs under `--min-secs`, default 15s; a
+  failure always pushes)
 - `just test-all` — one-command local verification mirroring
   `.github/workflows/ci.yml` exactly (see `justfile` at repo root for
   the full recipe list: `setup`, `dev`, `test-rust`, `check-rust`,

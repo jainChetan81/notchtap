@@ -44,7 +44,9 @@ check-cli:
 check-swift:
     cd notchtap-detect && swift build
 
-# everything CI runs, locally (except cargo-audit — see note below)
+# everything CI runs, locally, except cargo-audit (binary isn't
+# installed on the dev machine; CI's rustsec/audit-check action runs it
+# instead — see .github/workflows/ci.yml's rust job)
 test-all: check-rust test-rust check-web audit-web test-web build-web check-cli check-swift
 
 # manual push against the local endpoint
