@@ -161,6 +161,8 @@ records now, not active contracts (same status as `BLIND_REVIEW.md`/
   shell script at repo root; besides flags, it also has a `run`
   subcommand (plan 058) — `notchtap run -- pnpm build` wraps a
   long-running command and pushes a completion card when it finishes
+  (skipped for successful runs under `--min-secs`, default 15s; a
+  failure always pushes)
 - `just test-all` — one-command local verification mirroring
   `.github/workflows/ci.yml` exactly (see `justfile` at repo root for
   the full recipe list: `setup`, `dev`, `test-rust`, `check-rust`,
