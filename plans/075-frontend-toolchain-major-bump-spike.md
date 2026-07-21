@@ -300,3 +300,108 @@ baseline), renumbering the old Steps 3-6 to 4-7, requiring Step 5 to
 record explicit delta-vs-baseline pairs, and adding a matching STOP
 condition (baseline failure = report, don't proceed). Done criteria
 updated to require both result sets.
+
+## Completion note (executed 2026-07-21, base commit `f084fa8`)
+
+Executed in an already-isolated agent worktree (no nested worktree
+created — the dispatching agent owns worktree lifecycle; this satisfies
+the plan's real intent since the main tree was never reachable).
+
+**Step 2 — live versions** (all matched the plan's pre-verified numbers
+exactly, no drift): TypeScript `7.0.2`, Vite `8.1.5`, Vitest `4.1.10`,
+`@vitejs/plugin-react` `6.0.3`.
+
+**Baseline vs. post-bump — all four gates:**
+
+| Gate | Baseline (pinned: TS 5.8.3 / Vite 7.3.6 / Vitest 3.2.7 / plugin-react 4.7.0) | Post-bump (TS 7.0.2 / Vite 8.1.5 / Vitest 4.1.10 / plugin-react 6.0.3) | Delta |
+|---|---|---|---|
+| `npx tsc --noEmit` | exit 0, no output | exit 0, no output | none — zero new type errors under TS7 + existing strict flags |
+| `npx biome ci .` | exit 0, "Checked 35 files in 38ms. No fixes applied." | exit 0, "Checked 35 files in 61ms. No fixes applied." | none — no config-discovery quirk hit either side |
+| `npx vitest run` | exit 0, **13 test files / 183 tests passed** | exit 0, **13 test files / 183 tests passed** | none — identical count, matches `docs/TESTING_STRATEGY.md` §0's 183 exactly |
+| `npx vite build` | exit 0, 2222 modules transformed, built in 1.01s | exit 0, 2210 modules transformed, built in 0.467s | none functionally; build ~2x faster and slightly fewer modules/smaller bundles (Rolldown), no config-shape change needed — `vite.config.ts` (port 1420, `strictPort`, `TAURI_DEV_HOST`) worked unmodified against Vite 8 |
+
+`npm install` for the bump exited 0 with no peer-dependency conflicts or
+warnings (9 packages added, 51 removed, 17 changed).
+
+**Step 6 — dev-server smoke: NOT ATTEMPTED.** This execution has no
+GUI-driving capability available; `npm run tauri dev` opens a native
+webview window that can't be observed or verified without one. Not
+claimed as passed.
+
+**Recommendation: GO** (with one caveat). Every automated gate —
+typecheck, lint, unit tests, build — passed identically at the bumped
+majors with zero source or config changes required. `vite.config.ts`
+needed no migration-guide adjustments; the strict `tsconfig.json` flags
+surfaced no new errors under TS7's rewritten checker;
+`@vitejs/plugin-react` 6.x plugged into Vite 8 without incident; Biome
+2.5.4 has no TS-version-coupled settings that reacted. The one
+open item before full adoption is Step 6 — the dev-server/webview smoke
+test — which this execution could not perform; a future adoption pass
+should run `npm run tauri dev` by hand on the target mac before merging,
+since none of the four automated gates exercise the actual Tauri
+webview boot path. No other blocker was found.
+
+**For a future adoption plan**: bump `package.json` exactly as trialled
+here (`typescript` `~5.8.3`→`^7.0.2`, `vite` `^7.0.4`→`^8.1.5`, `vitest`
+`^3.2.0`→`^4.1.10`, `@vitejs/plugin-react` `^4.6.0`→`^6.0.3`), run
+`npm install`, then do the one thing this spike couldn't: an actual
+`npm run tauri dev` visual check on the mac mini (HUD mode) before
+calling it done.
+
+**Cleanup confirmation**: `package.json`/`package-lock.json` reverted
+via `git checkout`; `git diff --stat -- package.json package-lock.json`
+and `git status --porcelain` both empty; `node_modules` reinstalled via
+`npm ci` to match the reverted lockfile. No nested worktree or branch
+was created (per dispatch-time deviation from Step 1/Step 7), so there
+is nothing to `git worktree remove` or `git branch -D`.
+
+## Reviewer verification (2026-07-21, base `f084fa8`)
+
+A four-gates-all-green spike result is exactly the shape that warrants
+independent re-running rather than acceptance, so the reviewer re-ran
+the load-bearing gates directly in the executor's worktree:
+
+- **`tsc --noEmit` under TypeScript 7.0.2** — re-installed TS 7.0.2 and
+  re-ran: exit 0, no output. Confirmed. This was the single most
+  surprising claim (a Go-native compiler rewrite producing zero new
+  errors against `strict` + `noUnusedLocals` + `noUnusedParameters` +
+  `noFallthroughCasesInSwitch`) and it holds.
+- **`vite build` under Vite 8.1.5 / plugin-react 6.0.3** — exit 0, built
+  in 342ms. Confirmed.
+- **`vitest run` under Vitest 4.1.10** — 13 files / **183 passed**,
+  matching `docs/TESTING_STRATEGY.md` §0 exactly. Confirmed.
+- **Scope** — diff is one file, +54/-0 (pure append).
+  `git diff --stat -- package.json package-lock.json` empty in both the
+  worktree and the main tree. No source, config, or tsconfig file
+  touched.
+
+**One invariant the executor did not check, verified here and passing**:
+plan 082 vendored 12 Meteocons SVGs that must be emitted as real asset
+files, not inlined as data URIs — an invariant held today only by the
+`?no-inline` query suffix in `src/lib/weatherArt.ts`. Since Vite 8
+swaps the bundler wholesale (Rollup → Rolldown), asset-inlining
+behavior is a plausible silent regression that **no gate would catch**
+(tsc, biome, vitest and the build's own exit code are all blind to it).
+Checked explicitly post-bump: `dist/assets/*.svg` = 12 files, zero
+`data:image/svg` occurrences in emitted JS. The escape hatch survives
+Rolldown.
+
+**Verdict: APPROVE the spike, and concur with GO — with the caveat
+sharpened.** The recommendation rests on genuinely re-verified evidence,
+not self-report. Two items the future adoption plan must own, neither of
+which is a blocker:
+
+1. **Step 6 (Tauri webview boot) remains unverified** and is correctly
+   flagged not-attempted rather than fake-passed. This matters more than
+   the executor's framing implies: the four automated gates verify the
+   *build*, and none of them boot the app. Vite 8's dev server is the
+   piece Tauri actually consumes in `npm run tauri dev`, so the dev-path
+   config surface (port 1420, `strictPort`, `TAURI_DEV_HOST` HMR) is
+   precisely what stays untested — a passing `vite build` is not
+   evidence for it. Hands-on check on the mac mini before merging.
+2. **The module-count delta (2222 → 2210) is unexplained.** Almost
+   certainly Rolldown's differing module accounting rather than 12
+   dropped modules, and the SVG check above rules out the most alarming
+   candidate — but it is an assumption, not a measurement. The adoption
+   plan should diff the emitted `dist/` asset list pre- and post-bump
+   and confirm the sets match.
