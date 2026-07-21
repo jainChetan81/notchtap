@@ -8,7 +8,7 @@
 > maintain the index.
 >
 > **Drift check (run first)**:
-> `git diff --stat 68edd66..HEAD -- src-tauri/src/engine.rs src-tauri/src/config.rs src-tauri/src/lib.rs src-tauri/src/event.rs src-tauri/src/logging.rs docs/TESTING_STRATEGY.md`
+> `git diff --stat 172fd63..HEAD -- src-tauri/src/engine.rs src-tauri/src/config.rs src-tauri/src/lib.rs src-tauri/src/poller.rs src-tauri/src/http.rs src-tauri/src/event.rs src-tauri/src/logging.rs docs/TESTING_STRATEGY.md`
 > Expected: empty. If any of these changed, compare the "Current state"
 > excerpts against the live files before proceeding; on a mismatch, treat it
 > as a STOP condition.
@@ -24,7 +24,33 @@
 - **Depends on**: none (plan 059's decision memo pinned the design; no code
   dependency)
 - **Category**: direction
-- **Planned at**: commit `68edd66`, 2026-07-21
+- **Planned at**: commit `68edd66`, 2026-07-21; **re-baselined to `172fd63`
+  after attempt 1 (see "Attempt 1" below)**
+
+## Attempt 1 — STOPPED correctly, plan was wrong (2026-07-21)
+
+A first executor ran this plan at `68edd66`, completed Steps 1, 2, 4 and
+most of 3, then **correctly hit the call-site STOP condition and reported
+instead of guessing**. It was right and the plan was wrong:
+
+- **`Engine::new` has 9 call sites, not the 7 this plan claimed.** The two
+  the plan missed are `src-tauri/src/poller.rs:1420` and `:2130`, both
+  test-only (`tauri::test::mock_app()`), and both already present at the
+  original baseline — a planning miscount, not drift. `poller.rs` was
+  therefore absent from the in-scope list, so the executor could not add the
+  8th argument there and `cargo test` would not compile. **Fixed below**:
+  the count now reads 9 and `poller.rs` is in scope for those two lines only.
+- **Separately, `engine.rs` was refactored underneath that run** by plan 073
+  (`48a6d66`, AmbientSlot generalization), which landed mid-execution. It
+  changed `live`/`weather` from `Arc<StdMutex<Option<T>>>` to
+  `AmbientSlot<T>` — the struct excerpt below is updated accordingly.
+  `Engine::new`'s signature and `accept`'s body were verified unchanged by
+  073, so every other excerpt in this plan still holds exactly.
+
+Attempt 1's worktree was discarded rather than rebased (its `engine.rs`
+edits predate 073). Its `history.rs` was reviewed and matched this plan's
+Step 1 contract precisely — that part of the spec is known-good; you are
+re-deriving it on a correct base, not fixing it.
 
 ## Why this matters
 
@@ -64,6 +90,8 @@ Files you will modify, each with its role:
   path every event flows through.
 - `src-tauri/src/config.rs` — the `Config` struct, its serde defaults, and
   its parse-heal tests.
+- `src-tauri/src/poller.rs` and `src-tauri/src/http.rs` — **test call sites
+  of `Engine::new` only** (three lines total; see the call-site table).
 - `docs/TESTING_STRATEGY.md` — §0 records live test counts.
 
 ### The event being recorded (`src-tauri/src/event.rs:1-20`, do NOT modify)
@@ -166,7 +194,7 @@ fn read_recent_lines_from(path: &Path, n: usize) -> anyhow::Result<Vec<String>> 
 Two conventions to carry over: a **missing file reads as an empty Vec, not
 an error** (fresh install), and the tail slice uses `saturating_sub`.
 
-### The ingest path to hook (`src-tauri/src/engine.rs:176-203`)
+### The ingest path to hook (`src-tauri/src/engine.rs:234-261`)
 
 ```rust
     pub async fn accept(
@@ -206,7 +234,10 @@ an error** (fresh install), and the tail slice uses `saturating_sub`.
 Note: this logging is deliberately **content-clean** — id/origin/priority
 only, never title or body. Your new log lines must match that (Step 3).
 
-### The `Engine` struct + hand-written Clone (`src-tauri/src/engine.rs:30-60`)
+### The `Engine` struct + hand-written Clone (`src-tauri/src/engine.rs:92-120`)
+
+Post-073 shape (`engine.rs:92-120`) — note `live`/`weather` are now
+`AmbientSlot<T>`, not `Arc<StdMutex<Option<T>>>`:
 
 ```rust
 pub struct Engine<R: tauri::Runtime = tauri::Wry> {
@@ -215,26 +246,37 @@ pub struct Engine<R: tauri::Runtime = tauri::Wry> {
     app: tauri::AppHandle<R>,
     connectors: Arc<Vec<ConnectorHandle>>,
     telegram_health: Arc<StdMutex<ConnectorHealth>>,
-    live: Arc<StdMutex<Option<LiveMatchSummary>>>,
-    weather: Arc<StdMutex<Option<WeatherSummary>>>,
+    live: AmbientSlot<LiveMatchSummary>,
+    weather: AmbientSlot<WeatherSummary>,
     espn_enabled: bool,
     rss_enabled: bool,
     weather_enabled: bool,
 }
 
-// Clone by hand (Arc clones + AppHandle clone + bool copies), like
-// AppState's — derived Clone would needlessly require `R: Clone`.
 impl<R: tauri::Runtime> Clone for Engine<R> {
     fn clone(&self) -> Self {
         Self {
             queue: self.queue.clone(),
-            // ... every field cloned by hand
+            wake: self.wake.clone(),
+            app: self.app.clone(),
+            connectors: self.connectors.clone(),
+            telegram_health: self.telegram_health.clone(),
+            live: self.live.clone(),
+            weather: self.weather.clone(),
+            espn_enabled: self.espn_enabled,
+            rss_enabled: self.rss_enabled,
+            weather_enabled: self.weather_enabled,
         }
     }
 }
 ```
 
-and its constructor (`engine.rs:67-88`):
+Your `history: Option<Arc<HistoryStore>>` field goes alongside the three
+bools, and gets one `history: self.history.clone()` line in that Clone.
+Do NOT convert it to an `AmbientSlot` — that type is for the ambient
+status side-channels (live/weather), a different concern entirely.
+
+and its constructor (`engine.rs:125-146`):
 
 ```rust
     pub fn new(
@@ -248,11 +290,26 @@ and its constructor (`engine.rs:67-88`):
     ) -> Self {
 ```
 
-**`Engine::new` has 7 call sites** — `engine.rs:403` (a test helper),
-`engine.rs:472`, `engine.rs:501`, `engine.rs:728` (tests), `lib.rs:261`
-(the one production site), `lib.rs:992` (test), `http.rs:274` (test).
-Adding a parameter touches all seven. This is expected mechanical churn,
-not scope creep — the compiler will name every one.
+**`Engine::new` has exactly 9 call sites** — verified at `172fd63` with
+`grep -rn "Engine::new(" src-tauri/src/`:
+
+| File:line | Kind |
+|---|---|
+| `lib.rs:261` | **the one production site** |
+| `lib.rs:992` | test |
+| `engine.rs:437` | test helper |
+| `engine.rs:506` | test |
+| `engine.rs:535` | test |
+| `engine.rs:762` | test |
+| `poller.rs:1420` | test |
+| `poller.rs:2130` | test |
+| `http.rs:274` | test |
+
+Adding a parameter touches all nine — expected mechanical churn, not scope
+creep; the compiler names every one. **The two `poller.rs` sites are the
+ones an earlier attempt of this plan tripped over** (the plan said 7); they
+are plain test call sites that need `None,` as the new final argument and
+nothing else. If you count anything other than 9, STOP and report.
 
 ### The config-field convention (`src-tauri/src/config.rs`)
 
@@ -339,6 +396,9 @@ Re-derive live rather than trusting these numbers.
   test call sites, new tests)
 - `src-tauri/src/http.rs` (**only** the `Engine::new` test call site at
   ~:274 — one added argument, nothing else)
+- `src-tauri/src/poller.rs` (**only** the two `Engine::new` test call sites
+  at ~:1420 and ~:2130 — one added `None,` argument each, nothing else. Any
+  other change to this file is out of scope.)
 - `src-tauri/src/config.rs` (one field + default fn + initializer + tests)
 - `docs/TESTING_STRATEGY.md` (§0 counts only)
 
@@ -464,7 +524,7 @@ In `src-tauri/src/engine.rs`:
 - Add field `history: Option<Arc<HistoryStore>>` to `Engine`.
 - Add it to the hand-written `Clone` impl (`history: self.history.clone()`).
 - Add `history: Option<Arc<HistoryStore>>` as the **last** parameter of
-  `Engine::new`, and update all 7 call sites. Every test call site passes
+  `Engine::new`, and update all 9 call sites. Every test call site passes
   `None` except the new tests in Step 5.
 
   Why `Option<Arc<HistoryStore>>` rather than a `history_enabled: bool`
@@ -655,8 +715,9 @@ Stop and report — do not improvise — if:
 - The drift check shows any in-scope file changed since `68edd66` and the
   "Current state" excerpts no longer match the live code.
 - `Engine::new` turns out to have a different number of call sites than the
-  7 named above (someone added one) — report the count rather than guessing
-  which are tests.
+  **9** named in the table above — report the count rather than guessing
+  which are tests. (An earlier attempt hit exactly this: the plan said 7,
+  reality was 9. The table is now verified, but verify it yourself.)
 - Adding the `history` field to `Engine` forces a change to `Engine`'s
   generic bounds or to `AppState` — the plan assumes it does not; if it
   does, the design needs review, not a workaround.
