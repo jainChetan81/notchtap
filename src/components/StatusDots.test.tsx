@@ -13,6 +13,7 @@ const ALL_ON: StatusState = {
   football: { enabled: true, live: { label: "Arsenal 2–0 Chelsea", minute: "45'" } },
   news: { enabled: true },
   weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy" } },
+  media: { enabled: false, current: null },
 };
 
 const ALL_OFF: StatusState = {
@@ -21,6 +22,7 @@ const ALL_OFF: StatusState = {
   football: { enabled: false, live: null },
   news: { enabled: false },
   weather: { enabled: false, current: null },
+  media: { enabled: false, current: null },
 };
 
 describe("StatusDots", () => {
@@ -60,6 +62,7 @@ describe("StatusDots", () => {
           football: { enabled: true, live: null },
           news: { enabled: false },
           weather: { enabled: true, current: null },
+          media: { enabled: false, current: null },
         }}
       />,
     );
@@ -100,6 +103,7 @@ describe("StatusDots", () => {
             football: { enabled: true, live: null },
             news: { enabled: true },
             weather: { enabled: true, current: null },
+            media: { enabled: false, current: null },
           }}
         />,
       );

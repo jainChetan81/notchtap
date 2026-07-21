@@ -346,6 +346,7 @@ describe("StatusRailCard", () => {
       football: { enabled: true, live: { label: "MTL 0–0 TOR", minute: "12'" } },
       news: { enabled: true },
       weather: { enabled: false, current: null },
+      media: { enabled: false, current: null },
     };
     const inactive: StatusState = {
       paused: false,
@@ -353,6 +354,7 @@ describe("StatusRailCard", () => {
       football: { enabled: false, live: null },
       news: { enabled: false },
       weather: { enabled: false, current: null },
+      media: { enabled: false, current: null },
     };
 
     const { container, rerender } = render(
@@ -1185,6 +1187,7 @@ describe("StatusRailCard", () => {
       football: { enabled: false, live: null },
       news: { enabled: false },
       weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy" } },
+      media: { enabled: false, current: null },
     };
 
     it("mounts no below-block while idle and not hovered (flanks stay rounded — 091's shell untouched)", () => {

@@ -47,6 +47,7 @@ const config: Config = {
   appearance: { card_scale: 1, card_radius: 8, card_opacity: 0.9 },
   resting_state: "notch",
   history_enabled: true,
+  now_playing_enabled: true,
 };
 
 // Mirrors src-tauri/src/config.rs::Config::default() (served over IPC by
@@ -95,6 +96,7 @@ const rustConfigDefaults: Config = {
   appearance: { card_scale: 1, card_radius: 16, card_opacity: 0.9 },
   resting_state: "rail",
   history_enabled: false,
+  now_playing_enabled: false,
 };
 
 const unsetSecrets: SecretStatus = {
@@ -817,5 +819,46 @@ describe("SettingsApp", () => {
     await waitFor(() => expect(savedConfig).not.toBeNull());
     // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
     expect(savedConfig!.history_enabled).toBe(true);
+  });
+
+  // plan 104: weather_enabled's own round-trip test is this test's pattern.
+  it("the now_playing_enabled toggle round-trips into the saved config payload", async () => {
+    let savedConfig: Config | null = null;
+    const disabledConfig: Config = { ...config, now_playing_enabled: false };
+    mockIPC((command, payload) => {
+      if (command === "get_config") return disabledConfig;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "save_config_and_relaunch") {
+        savedConfig = (payload as { config: Config }).config;
+        return null;
+      }
+    });
+    render(<SettingsApp />);
+
+    const toggle = (await screen.findByLabelText("Enable now playing")) as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+
+    fireEvent.click(toggle);
+    expect(toggle.checked).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save & Relaunch" }));
+
+    await waitFor(() => expect(savedConfig).not.toBeNull());
+    // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
+    expect(savedConfig!.now_playing_enabled).toBe(true);
+  });
+
+  // done criterion: the kill switch must never surface in this UI.
+  it("never renders a control for the now_playing_adapter_enabled kill switch", async () => {
+    mockIPC((command) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+    });
+    render(<SettingsApp />);
+    await screen.findByLabelText("Enable now playing");
+    expect(screen.queryByText(/adapter.enabled/i)).toBeNull();
+    expect(screen.queryByLabelText(/kill switch/i)).toBeNull();
   });
 });

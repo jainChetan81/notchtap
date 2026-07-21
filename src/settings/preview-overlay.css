@@ -1094,6 +1094,85 @@
   border: 1px solid rgba(255, 255, 255, 0.14);
 }
 
+/* plan 104 (mirror law): the now-playing media row — see styles.css's
+   own block (same selectors, same comments) for the full rationale. */
+.appearance-preview .media-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.appearance-preview .media-track {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.appearance-preview .media-art {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #f5f7fa;
+}
+.appearance-preview .media-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.appearance-preview .media-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f5f7fa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.appearance-preview .media-subtitle {
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.appearance-preview .media-transport {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.85);
+}
+.appearance-preview .media-state {
+  font-size: 12px;
+  line-height: 1;
+}
+.appearance-preview .media-bar {
+  width: 56px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.appearance-preview .media-bar-fill {
+  display: block;
+  height: 100%;
+  background: #b6f5e5;
+  border-radius: 2px;
+}
+.appearance-preview .media-time {
+  font-variant-numeric: tabular-nums;
+  min-width: 30px;
+  text-align: right;
+}
+
 .appearance-preview .idle-reveal-scorecard {
   display: flex;
   flex-direction: column;
