@@ -14,10 +14,11 @@ import {
 import { weatherArtFor } from "../lib/weatherArt";
 import { useDelayedSwap } from "../useDelayedSwap";
 import type { EspnMeta, SlotState } from "../useSlotState";
-import { type StatusState, statusRailActive } from "../useStatusState";
-import { IdleView } from "./IdleView";
+import type { StatusState } from "../useStatusState";
+import { FlankClock } from "./FlankClock";
 import { Manifest } from "./Manifest";
 import { Stamp } from "./Stamp";
+import { StatusDots } from "./StatusDots";
 import { Track } from "./Track";
 import { TtlBar } from "./TtlBar";
 
@@ -163,20 +164,25 @@ export function StatusRailCard({
   }
 
   const expanded = showing && slot.expanded;
-  // plan 034: the idle card widens only while the status rail has chips
-  // to show — the plain clock idle keeps its narrow width. `status` is
-  // optional: the settings preview renders the card without one.
-  const statusRail = !showing && status !== undefined && statusRailActive(status);
   // plan 082: weather ALERT cards carry their art derived from the live
   // slot's `wx-*` marker pairs — same live-`slot` basis as `news`/
-  // `categoryClass` above (not `renderedSlot`), so the outer shell's mood
-  // updates in lockstep with every other outer-shell class. `null` for
-  // every non-weather card, so it renders byte-identical to today.
+  // `categoryClass` above (not `renderedSlot`), so the below-block's mood
+  // updates in lockstep with every other live-slot-derived class, not
+  // delayed by the 220ms content swap. `null` for every non-weather card,
+  // so it renders byte-identical to today.
   const wxArt = showing ? weatherArtFromDetails(slot.details) : null;
+  // plan 091: the outer shell (`.card-assembly`) now owns ONLY geometry-
+  // and-effects classes — priority accent, hover diagnostic, the goal/
+  // red-card pulse and the live-match celebrations. `news-shade`/`wx-card`
+  // (and their mood/texture riders) move to `belowBlockClass` below: they
+  // are content presentation, not shell, and the below-block is the block
+  // that actually carries that content now (Step 4's ownership split).
+  // The old idle/idle-status width split (plan 034) is gone — the new
+  // idle has one width formula regardless of status chips (Geometry
+  // contract point 5), so there is no more "status" class to compute here.
   const cardClass = [
-    "rail-card",
+    "card-assembly",
     showing ? slot.priority : "idle",
-    statusRail && "status",
     expanded && "expanded",
     hovered && "hovered",
     // plan 084: `pulse`/`cele-*` are mutually exclusive, never stacked —
@@ -186,6 +192,15 @@ export function StatusRailCard({
     // signal) keeps the shipped pulse-goal/pulse-red exactly as before.
     !isLiveCard && pulse,
     isLiveCard && liveCelebration,
+  ]
+    .filter(Boolean)
+    .join(" ");
+  // plan 091: below-block's own class list — the news/weather mood
+  // presentation, still derived off the LIVE slot (not `renderedSlot`) for
+  // the same "no delayed-swap lag" reason the comment above always gave;
+  // only WHERE these classes attach moved (below-block, not the shell).
+  const belowBlockClass = [
+    "below-block",
     news && "news-shade",
     news && categoryClass(slot.category),
     wxArt && "wx-card",
@@ -251,16 +266,38 @@ export function StatusRailCard({
     renderedEspn.awayCards[1] === 0;
 
   // plan 085: idle + resting_state "notch" → zero app-drawn pixels, not a
-  // narrower/emptied shell — the outer `.rail-card` div itself must not
-  // mount (it carries background/shadow/priority-accent styling that a
-  // bare native notch must never show). Gated on the delayed-swap-settled
-  // state (`renderedShowing`/`exiting`), not the live `showing` flag, so a
-  // still-exiting prior card finishes its normal exit animation exactly as
-  // it does in "rail" mode; only once the swap has fully settled into idle
-  // does notch mode hide the card. Every `showing` path is unaffected.
+  // narrower/emptied shell — the outer `.card-assembly` div itself must
+  // not mount (it carries background/shadow/priority-accent styling that
+  // a bare native notch must never show). Gated on the delayed-swap-
+  // settled state (`renderedShowing`/`exiting`), not the live `showing`
+  // flag, so a still-exiting prior card finishes its normal exit
+  // animation exactly as it does in "rail" mode; only once the swap has
+  // fully settled into idle does notch mode hide the card. Every
+  // `showing` path is unaffected.
   if (!renderedShowing && !exiting && restingState === "notch") {
     return null;
   }
+
+  // plan 091: the below-block mounts if and only if `renderedShowing` is
+  // true (used directly in the JSX below, not through an extra alias, so
+  // TypeScript's control-flow narrowing of `renderedSlot` inside that
+  // branch stays exactly as reliable as every other `renderedShowing`
+  // check already in this file) — which, thanks to useDelayedSwap
+  // freezing `renderedSlot` at its pre-transition value for the whole
+  // `exiting` window, already covers BOTH "currently showing" and
+  // "exiting FROM showing back to idle" (renderedSlot stays showing-
+  // flavored throughout that fade). It does NOT need `|| exiting` on top:
+  // during the opposite transition (idle exiting INTO showing),
+  // renderedSlot is still frozen idle-flavored — there is no below-block
+  // content to fade out of idle, because idle never had any (flank-
+  // right's dots below play that side of the transition instead, gated
+  // on `!renderedShowing`, the mirror-image condition). Exit animations
+  // still work: the existing `card-content` key/idle/swap-exit mechanics
+  // are byte-identical, just relocated — `key={swapKey}` still forces a
+  // fresh remount (and a replayed enter/exit) on every
+  // showing(A)->showing(B) transition, since below-block itself doesn't
+  // remount for that case (renderedShowing stays true throughout), only
+  // its keyed child does.
 
   return (
     <div
@@ -269,150 +306,177 @@ export function StatusRailCard({
       aria-live={showing ? "polite" : undefined}
       onAnimationEnd={clearPulseWhenItsAnimationEnds}
     >
-      {/* plan 082: the condition glyph — a background-layer image, same
-          z-order tier as .news-shade::before (behind .compact/.manifest,
-          which the CSS below lifts to z-index 1). Live-slot-derived, like
-          the mood/texture classes on the outer div above, so it never
-          waits on the delayed content swap. */}
-      {wxArt && <img className="wx-icon" src={wxArt.glyphUrl} alt="" />}
-      <div
-        key={swapKey}
-        className={`card-content${!renderedShowing ? " idle" : ""}${exiting ? " swap-exit" : ""}`}
-      >
-        {!renderedShowing ? (
-          <IdleView status={status} />
-        ) : isRenderedLiveCard && renderedEspn !== undefined ? (
-          // plan 084: the recurring live-match scorecard (POST-083 espn
-          // meta) — sticky medium-priority presence, no full-expand
-          // (operator lock). Deliberately ignores `renderedExpanded`: even
-          // if the slot's `expanded` flag arrives true, there is no manual-
-          // expand affordance for football, so this branch always renders
-          // this same compact scorecard rather than switching to a richer
-          // layout. No `Track` (a batch-position slider is meaningless for
-          // a single recurring presence — prototype lock) and no `TtlBar`
-          // either: the bar's countdown-to-rotation framing would visually
-          // contradict "sticky" (see plan 084's report for the reasoning).
-          // No generic `<Stamp>` — the live-pill above already carries
-          // that role (Live/Break/Final) with more precision.
-          <div className="notif-block">
-            <div className="sc-head">
-              <span className="league-chip">{renderedEspn.league}</span>
-              <span
-                className={`live-pill${renderedPillVariant === "live" ? "" : ` ${renderedPillVariant}`}`}
-              >
-                {renderedPillVariant !== "final" && <span className="live-dot" />}
-                {renderedPillLabel}
-              </span>
-              <span className="clock-pill">{renderedEspn.clock}</span>
-            </div>
-            <div className="score-row">
-              <div className="side">
-                <Crest abbrev={renderedEspn.homeAbbrev} path={renderedEspn.homeCrest} />
-              </div>
-              <span className="score">
-                {renderedEspn.homeScore}
-                <span className="dash">–</span>
-                {renderedEspn.awayScore}
-              </span>
-              <div className="side">
-                <Crest abbrev={renderedEspn.awayAbbrev} path={renderedEspn.awayCrest} />
-              </div>
-            </div>
-            <div
-              className={`event-line${renderedEventPresentation?.tintClass ? ` ${renderedEventPresentation.tintClass}` : ""}`}
-            >
-              {renderedEventPresentation && (
-                <span className={renderedEventPresentation.iconClass} />
-              )}
-              {renderedSlot.body}
-            </div>
-            {!renderedCardsClean && (
-              <div className="cards-line">
-                {renderedEspn.homeAbbrev} {renderedEspn.homeCards[0]}Y{renderedEspn.homeCards[1]}R ·{" "}
-                {renderedEspn.awayAbbrev} {renderedEspn.awayCards[0]}Y{renderedEspn.awayCards[1]}R
-              </div>
-            )}
+      <div className="flank-left">
+        <FlankClock />
+      </div>
+      {/* plan 091: the notch cutout itself — real hardware empty space in
+          notch mode (nothing painted here), an app-drawn pure-#000 block
+          in HUD mode (`:root[data-notchtap-mode="hud"] .synthetic-cutout`,
+          styles.css). Always rendered; CSS alone decides whether it
+          paints, so there is no mode branch in this component (Decision
+          6 — "no mode branch" in the shape itself). */}
+      <div className="synthetic-cutout" aria-hidden="true" />
+      <div className="flank-right">
+        {/* plan 091: StatusDots is idle-only furniture — mirrors the old
+            IdleView's single `card-content` swap wrapper (same classes,
+            same keyframes) so the dots fade out over the same 220ms
+            window the old idle content did, on the idle->showing leg of
+            the transition. No `key` needed: unlike below-block's content,
+            there is only ever one "flavor" of dots, so a plain mount/
+            unmount (no forced remount) is enough. */}
+        {!renderedShowing && (
+          <div className={`card-content idle${exiting ? " swap-exit" : ""}`}>
+            <StatusDots status={status} />
           </div>
-        ) : (
-          <>
-            <div className="compact">
-              <div className="copy">
-                {renderedNews ? (
-                  <>
-                    <div className="masthead">
-                      <span className="dot" />
-                      {renderedSlot.source ?? "RSS"}
-                    </div>
-                    <div className="title headline">{renderedSlot.title}</div>
-                    {(renderedNewsCategory !== null || renderedNewsAge !== null) && (
-                      <div className="pills">
-                        {renderedNewsCategory !== null && (
-                          <span className="pill category">{renderedNewsCategory}</span>
-                        )}
-                        {renderedNewsAge !== null && (
-                          <span className="pill age">{renderedNewsAge}</span>
-                        )}
-                        {renderedNewsPublished !== null && (
-                          <span className="pub-meta">published {renderedNewsPublished}</span>
-                        )}
-                      </div>
-                    )}
-                  </>
-                ) : (
-                  <>
-                    <div className="title">{renderedSlot.title}</div>
-                    <div className="body">{bodyContent}</div>
-                    {/* plan 042: collapsed scorecard cells (Clock, per-side
-                        Cards) — only a live-match card with `espn_live_card`
-                        on populates `details`, so every other card renders
-                        exactly as before. Same detail-label/detail-value
-                        classes as the expanded Manifest view; collapsed-only,
-                        so the pairs never render twice when expanded. */}
-                    {!renderedExpanded &&
-                      renderedVisibleDetails.length > 0 &&
-                      renderedVisibleDetails.map((detail) => (
-                        <div key={`${detail.label}:${detail.value}`}>
-                          <div className="detail-label">{detail.label}</div>
-                          <div className="detail-value">{detail.value}</div>
-                        </div>
-                      ))}
-                  </>
-                )}
-              </div>
-              <Stamp
-                priority={renderedSlot.priority}
-                signal={renderedSlot.signal}
-                eventType={renderedSlot.eventType}
-              />
-              {!renderedExpanded && (
-                <div className="compact-hint">
-                  <kbd>⌃⇧N</kbd> more
-                </div>
-              )}
-              <Track total={renderedSlot.queueTotal} done={renderedSlot.queueDone} />
-            </div>
-            <TtlBar
-              key={renderedSlot.id}
-              slotId={renderedSlot.id}
-              ttlMs={renderedSlot.ttlMs}
-              remainingMs={renderedSlot.remainingMs}
-            />
-            <Manifest
-              body={renderedSlot.body}
-              eventType={renderedSlot.eventType}
-              expanded={renderedExpanded}
-              source={renderedSlot.source}
-              category={renderedSlot.category}
-              publishedAtMs={renderedSlot.publishedAtMs}
-              hasLink={renderedSlot.link !== null}
-              subtitle={renderedSlot.subtitle}
-              details={renderedVisibleDetails}
-            />
-          </>
         )}
       </div>
+      {renderedShowing && (
+        <div className={belowBlockClass}>
+          {/* plan 082: the condition glyph — a background-layer image,
+              same z-order tier as .news-shade::before (behind
+              .compact/.manifest, which the CSS below lifts to z-index 1).
+              Live-slot-derived, like belowBlockClass's mood/texture
+              classes above, so it never waits on the delayed content
+              swap. */}
+          {wxArt && <img className="wx-icon" src={wxArt.glyphUrl} alt="" />}
+          <div key={swapKey} className={`card-content${exiting ? " swap-exit" : ""}`}>
+            {isRenderedLiveCard && renderedEspn !== undefined ? (
+              // plan 084: the recurring live-match scorecard (POST-083 espn
+              // meta) — sticky medium-priority presence, no full-expand
+              // (operator lock). Deliberately ignores `renderedExpanded`:
+              // even if the slot's `expanded` flag arrives true, there is
+              // no manual-expand affordance for football, so this branch
+              // always renders this same compact scorecard rather than
+              // switching to a richer layout. No `Track` (a batch-position
+              // slider is meaningless for a single recurring presence —
+              // prototype lock) and no `TtlBar` either: the bar's
+              // countdown-to-rotation framing would visually contradict
+              // "sticky" (see plan 084's report for the reasoning). No
+              // generic `<Stamp>` — the live-pill above already carries
+              // that role (Live/Break/Final) with more precision.
+              <div className="notif-block">
+                <div className="sc-head">
+                  <span className="league-chip">{renderedEspn.league}</span>
+                  <span
+                    className={`live-pill${renderedPillVariant === "live" ? "" : ` ${renderedPillVariant}`}`}
+                  >
+                    {renderedPillVariant !== "final" && <span className="live-dot" />}
+                    {renderedPillLabel}
+                  </span>
+                  <span className="clock-pill">{renderedEspn.clock}</span>
+                </div>
+                <div className="score-row">
+                  <div className="side">
+                    <Crest abbrev={renderedEspn.homeAbbrev} path={renderedEspn.homeCrest} />
+                  </div>
+                  <span className="score">
+                    {renderedEspn.homeScore}
+                    <span className="dash">–</span>
+                    {renderedEspn.awayScore}
+                  </span>
+                  <div className="side">
+                    <Crest abbrev={renderedEspn.awayAbbrev} path={renderedEspn.awayCrest} />
+                  </div>
+                </div>
+                <div
+                  className={`event-line${renderedEventPresentation?.tintClass ? ` ${renderedEventPresentation.tintClass}` : ""}`}
+                >
+                  {renderedEventPresentation && (
+                    <span className={renderedEventPresentation.iconClass} />
+                  )}
+                  {renderedSlot.body}
+                </div>
+                {!renderedCardsClean && (
+                  <div className="cards-line">
+                    {renderedEspn.homeAbbrev} {renderedEspn.homeCards[0]}Y
+                    {renderedEspn.homeCards[1]}R · {renderedEspn.awayAbbrev}{" "}
+                    {renderedEspn.awayCards[0]}Y{renderedEspn.awayCards[1]}R
+                  </div>
+                )}
+              </div>
+            ) : (
+              <>
+                <div className="compact">
+                  <div className="copy">
+                    {renderedNews ? (
+                      <>
+                        <div className="masthead">
+                          <span className="dot" />
+                          {renderedSlot.source ?? "RSS"}
+                        </div>
+                        <div className="title headline">{renderedSlot.title}</div>
+                        {(renderedNewsCategory !== null || renderedNewsAge !== null) && (
+                          <div className="pills">
+                            {renderedNewsCategory !== null && (
+                              <span className="pill category">{renderedNewsCategory}</span>
+                            )}
+                            {renderedNewsAge !== null && (
+                              <span className="pill age">{renderedNewsAge}</span>
+                            )}
+                            {renderedNewsPublished !== null && (
+                              <span className="pub-meta">published {renderedNewsPublished}</span>
+                            )}
+                          </div>
+                        )}
+                      </>
+                    ) : (
+                      <>
+                        <div className="title">{renderedSlot.title}</div>
+                        <div className="body">{bodyContent}</div>
+                        {/* plan 042: collapsed scorecard cells (Clock,
+                            per-side Cards) — only a live-match card with
+                            `espn_live_card` on populates `details`, so
+                            every other card renders exactly as before.
+                            Same detail-label/detail-value classes as the
+                            expanded Manifest view; collapsed-only, so the
+                            pairs never render twice when expanded. */}
+                        {!renderedExpanded &&
+                          renderedVisibleDetails.length > 0 &&
+                          renderedVisibleDetails.map((detail) => (
+                            <div key={`${detail.label}:${detail.value}`}>
+                              <div className="detail-label">{detail.label}</div>
+                              <div className="detail-value">{detail.value}</div>
+                            </div>
+                          ))}
+                      </>
+                    )}
+                  </div>
+                  <Stamp
+                    priority={renderedSlot.priority}
+                    signal={renderedSlot.signal}
+                    eventType={renderedSlot.eventType}
+                  />
+                  {!renderedExpanded && (
+                    <div className="compact-hint">
+                      <kbd>⌃⇧N</kbd> more
+                    </div>
+                  )}
+                  <Track total={renderedSlot.queueTotal} done={renderedSlot.queueDone} />
+                </div>
+                <TtlBar
+                  key={renderedSlot.id}
+                  slotId={renderedSlot.id}
+                  ttlMs={renderedSlot.ttlMs}
+                  remainingMs={renderedSlot.remainingMs}
+                />
+                <Manifest
+                  body={renderedSlot.body}
+                  eventType={renderedSlot.eventType}
+                  expanded={renderedExpanded}
+                  source={renderedSlot.source}
+                  category={renderedSlot.category}
+                  publishedAtMs={renderedSlot.publishedAtMs}
+                  hasLink={renderedSlot.link !== null}
+                  subtitle={renderedSlot.subtitle}
+                  details={renderedVisibleDetails}
+                />
+              </>
+            )}
+          </div>
+        </div>
+      )}
       {/* the goal celebration is plan 023's pure-CSS confetti burst +
-          ring on `.rail-card.pulse-goal`'s ::after/::before PLUS plan
+          ring on `.card-assembly.pulse-goal`'s ::after/::before PLUS plan
           032's ripple: three staggered concentric accent rings, mounted
           only while the goal pulse is live and unmounted by the same
           animationend path that clears the burst (goal-signal only,

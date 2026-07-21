@@ -23,17 +23,31 @@ use crate::status::StatusState;
 const WINDOW_WIDTH: f64 = 500.0;
 const WINDOW_HEIGHT: f64 = 300.0;
 
-// Card width breakpoints — duplicated-constants pair with
-// `src/styles.css:25-61`. Any future change to a card width there MUST
-// change these too (see the `active_card_rect` doc comment and the
-// named-constant test below, which is the tripwire).
-const BASE_WIDTH: f64 = 400.0; // .rail-card, styles.css:25
-const EXPANDED_WIDTH: f64 = 500.0; // .rail-card.expanded, styles.css:39
-const IDLE_WIDTH: f64 = 270.0; // .rail-card.idle, styles.css:44
-const IDLE_STATUS_WIDTH: f64 = 460.0; // .rail-card.idle.status, styles.css:52
-                                      // notch-mode clamp bounds — same 270/460 pair, styles.css:61.
-const NOTCH_CLAMP_MIN: f64 = IDLE_WIDTH;
-const NOTCH_CLAMP_MAX: f64 = IDLE_STATUS_WIDTH;
+// Geometry-contract constants — duplicated-constants pair with
+// `src/styles.css`'s `.card-assembly`/`.card-assembly.idle`/
+// `.card-assembly.expanded` rules and App.tsx's HUD synthetic constants.
+// Any future change to one of these numbers anywhere MUST change every
+// other copy in the same commit (see the `active_card_rect` doc comment
+// and the named-constant test below, which is the tripwire).
+// plan 091: replaces the old BASE_WIDTH/EXPANDED_WIDTH/IDLE_WIDTH/
+// IDLE_STATUS_WIDTH/NOTCH_CLAMP_MIN/NOTCH_CLAMP_MAX set — the idle/idle-
+// status width split (plan 034's 270/460 distinction) deliberately
+// collapses here too: the new idle has ONE width formula regardless of
+// status chips, because the status dots replace the chip rail entirely.
+const FLANK_IDLE: f64 = 85.0; // idle flank width, styles.css .card-assembly.idle
+const MIN_FLANK_SHOWING: f64 = 60.0; // showing/expanded minimum flank width
+const BASE_SHOWING: f64 = 400.0; // .card-assembly (showing) design-width floor
+const BASE_EXPANDED: f64 = 500.0; // .card-assembly.expanded design-width floor
+const HUD_CUTOUT_W: f64 = 200.0; // App.tsx's HUD synthetic cutout width
+                                 // App.tsx's HUD synthetic cutout height — not consumed by
+                                 // `active_card_rect`'s own math (the rect's y-span stays the full window
+                                 // height, that function's doc comment). Kept as a named constant purely
+                                 // so `active_card_rect_geometry_constants_match_named_style_constants`
+                                 // pins it alongside every other Geometry-contract number — a reviewer
+                                 // diffing styles.css's synthetic-cutout height then sees both sides.
+                                 // `#[allow(dead_code)]`: real, but its only reader is that test.
+#[allow(dead_code)]
+const HUD_CUTOUT_H: f64 = 32.0;
 
 /// A screen-space rect in AppKit window coordinates (bottom-left origin,
 /// y grows UP) — the region where hover should count as "over the
@@ -98,51 +112,90 @@ pub fn status_rail_active(status: &StatusState) -> bool {
 /// Deliberately CONSERVATIVE: it may be slightly wider than the true
 /// rendered edge (the spike's §6 decision), never narrower.
 ///
-/// Mirrors the width breakpoints in `src/styles.css:25-61`. Any change
-/// to a card width there MUST change the constants at the top of this
-/// file — see `active_card_rect_widths_match_named_style_constants`.
+/// Mirrors the Geometry contract in
+/// `plans/091-cutout-card-shape-and-idle.md` and `src/styles.css`'s
+/// `.card-assembly`/`.card-assembly.idle`/`.card-assembly.expanded`
+/// rules. Any change to a width formula there MUST change the constants
+/// at the top of this file — see
+/// `active_card_rect_geometry_constants_match_named_style_constants`.
+///
+/// plan 091 (Decision 6, "no mode branch" in the shape itself): the
+/// WIDTH FORMULA no longer branches on `mode` at all — idle/showing/
+/// expanded use the exact same three formulas in both notch and HUD
+/// mode now, mirroring `src/styles.css`'s own `.card-assembly` rules
+/// (which read `var(--notchtap-cutout-width)` unconditionally, gated by
+/// state classes, never by `[data-notchtap-mode]`). `mode` is used for
+/// exactly one thing: resolving the cutout-width TERM those formulas
+/// take as input — the measured hardware value in notch mode, or the
+/// same `HUD_CUTOUT_W` synthetic constant App.tsx now sets the CSS var
+/// to in HUD mode (previously HUD's `cutout_width` argument was simply
+/// unused; leaving it unresolved here would under-measure the idle rect
+/// in HUD mode, violating the CONSERVATIVE philosophy — see the 090
+/// doc-comment paragraph below for why the term itself still can't be
+/// scaled). This also fixes a pre-existing limitation the old
+/// `Mode::Notch` arm had: today's rect ignored `visible`/`expanded`
+/// entirely in notch mode (always the idle-clamped width even while a
+/// card was showing) — Decision 6 removes that special case along with
+/// the mode branch itself.
 ///
 /// The vertical span is deliberately the FULL window height (no partial
 /// `top`/`height` narrowing): unlike width, `styles.css` has no per-state
-/// height breakpoints to mirror, and the CONSERVATIVE philosophy (never
-/// narrower than truth) permits skipping a height guess entirely by
-/// covering the whole fixed 300px window. `css_top_down_to_appkit_y` is
-/// still used for that span (not hardcoded `0.0..WINDOW_HEIGHT` inline)
-/// so the one coordinate-flip seam stays in exactly one place.
+/// height breakpoints to mirror (091 exposes a notch HEIGHT var, but it
+/// only sizes the flank ROW inside a card whose OUTER rect this function
+/// still treats as the whole window), and the CONSERVATIVE philosophy
+/// (never narrower than truth) permits skipping a height guess entirely
+/// by covering the whole fixed 300px window. `css_top_down_to_appkit_y`
+/// is still used for that span (not hardcoded `0.0..WINDOW_HEIGHT`
+/// inline) so the one coordinate-flip seam stays in exactly one place.
 ///
 /// `scale` is `Config.appearance.card_scale` (user-configurable via the
 /// Settings Appearance section, default `1.0`) — a COSMETIC preference.
 ///
-/// Plan 090 (Q1a): `scale` must NOT be applied to the `Mode::Notch`
-/// width. That width mirrors `--notchtap-cutout-width`
-/// (`src/styles.css:61`), which is itself a hardware measurement — the
+/// Plan 090 (Q1a), extended by 091: `scale` must NOT multiply the cutout
+/// term in ANY mode now. In notch mode that term mirrors
+/// `--notchtap-cutout-width`, itself a hardware measurement — the
 /// physical `NSScreen` safe-area inset, read via the `notchtap-detect`
-/// subprocess — not a design width. The physical notch does not get
-/// wider because the user picked a bigger card, so scaling it would
-/// silently reintroduce the menu-bar-overlap defect the plan fixes (see
-/// `plans/090-card-scale-vs-hardware-geometry.md` for the full
-/// rationale and the operator's Decision). Every OTHER width (every
-/// `Mode::Hud` arm) IS a cosmetic design width and IS multiplied by
-/// `scale` in `styles.css` via `var(--card-scale)`, so those arms must
-/// keep doing the same here or the rect silently drifts from the
-/// rendered card for any user not at scale 1.0. Do not "fix" the
-/// `Mode::Notch` arm back to multiplying by `scale` — that reverts a
-/// deliberate, decided exemption, not an oversight.
+/// subprocess — not a design width; in HUD mode it's `HUD_CUTOUT_W`,
+/// equally not a user-scalable design value (a notchless mac doesn't
+/// grow a bigger synthetic notch because the user picked a bigger
+/// card). Every OTHER width in these formulas (the flank px figures) IS
+/// a cosmetic design width and IS multiplied by `scale`, matching
+/// `styles.css`'s `var(--card-scale)` exactly. Do not "fix" either
+/// cutout term back to multiplying by `scale` — that reverts a
+/// deliberate, decided exemption, not an oversight
+/// (`plans/090-card-scale-vs-hardware-geometry.md` has the original
+/// rationale and the operator's Decision).
+///
+/// `_has_status_chips` is intentionally unused: plan 034's idle/idle-
+/// status width split collapsed in 091 (the status dots replace the chip
+/// rail entirely, so there is no wider idle variant to pick anymore) —
+/// the parameter stays, prefixed, purely so the sole call site
+/// (`lib.rs`'s `hover_point_is_over_card`) needs no edit; Rust's
+/// positional call convention means the caller's variable name never
+/// has to match this signature's.
 pub fn active_card_rect(
     mode: Mode,
     cutout_width: f64,
     scale: f64,
     visible: bool,
     expanded: bool,
-    has_status_chips: bool,
+    _has_status_chips: bool,
 ) -> Rect {
-    let width = match mode {
-        Mode::Notch => cutout_width.clamp(NOTCH_CLAMP_MIN, NOTCH_CLAMP_MAX),
-        Mode::Hud if visible && expanded => EXPANDED_WIDTH * scale,
-        Mode::Hud if visible => BASE_WIDTH * scale,
-        Mode::Hud if has_status_chips => IDLE_STATUS_WIDTH * scale,
-        Mode::Hud => IDLE_WIDTH * scale,
+    let effective_cutout_width = match mode {
+        Mode::Notch => cutout_width,
+        Mode::Hud => HUD_CUTOUT_W,
     };
+
+    let raw_width = if visible && expanded {
+        (BASE_EXPANDED * scale).max(effective_cutout_width + 2.0 * MIN_FLANK_SHOWING * scale)
+    } else if visible {
+        (BASE_SHOWING * scale).max(effective_cutout_width + 2.0 * MIN_FLANK_SHOWING * scale)
+    } else {
+        effective_cutout_width + 2.0 * FLANK_IDLE * scale
+    };
+    // the `min(..., 100%)` cap from the Geometry contract — `WINDOW_WIDTH`
+    // is that "100%" in this window's own coordinate space.
+    let width = raw_width.min(WINDOW_WIDTH);
 
     let x_min = (WINDOW_WIDTH - width) / 2.0;
     let (y_min, y_max) = css_top_down_to_appkit_y(WINDOW_HEIGHT, 0.0, WINDOW_HEIGHT);
@@ -253,124 +306,163 @@ mod tests {
         )));
     }
 
-    // --- active_card_rect: every mode/state branch, at scale 1.0 ---
+    // --- active_card_rect: plan 091's three state formulas, HUD mode
+    // (effective cutout = HUD_CUTOUT_W, always — the `cutout_width`
+    // argument is irrelevant in this mode, pinned below), at scale 1.0 ---
 
     #[test]
-    fn hud_visible_expanded_is_500_at_scale_1() {
-        let r = active_card_rect(Mode::Hud, 0.0, 1.0, true, true, false);
-        assert_eq!(r.x_max - r.x_min, EXPANDED_WIDTH);
-    }
-
-    #[test]
-    fn hud_visible_not_expanded_is_400_at_scale_1() {
-        let r = active_card_rect(Mode::Hud, 0.0, 1.0, true, false, false);
-        assert_eq!(r.x_max - r.x_min, BASE_WIDTH);
-    }
-
-    #[test]
-    fn hud_idle_with_status_chips_is_460_at_scale_1() {
-        let r = active_card_rect(Mode::Hud, 0.0, 1.0, false, false, true);
-        assert_eq!(r.x_max - r.x_min, IDLE_STATUS_WIDTH);
-    }
-
-    #[test]
-    fn hud_idle_without_status_chips_is_270_at_scale_1() {
+    fn hud_idle_is_cutout_plus_two_flanks_at_scale_1() {
         let r = active_card_rect(Mode::Hud, 0.0, 1.0, false, false, false);
-        assert_eq!(r.x_max - r.x_min, IDLE_WIDTH);
-    }
-
-    // --- the same branches at scale 0.8 and 1.25 (the pinned gap) ---
-
-    #[test]
-    fn hud_visible_expanded_scales_at_0_8() {
-        let r = active_card_rect(Mode::Hud, 0.0, 0.8, true, true, false);
-        assert_eq!(r.x_max - r.x_min, EXPANDED_WIDTH * 0.8);
+        assert_eq!(r.x_max - r.x_min, HUD_CUTOUT_W + 2.0 * FLANK_IDLE);
     }
 
     #[test]
-    fn hud_visible_expanded_scales_at_1_25() {
-        let r = active_card_rect(Mode::Hud, 0.0, 1.25, true, true, false);
-        assert_eq!(r.x_max - r.x_min, EXPANDED_WIDTH * 1.25);
+    fn hud_showing_not_expanded_is_the_400_floor_at_scale_1() {
+        // cutout(200) + 2*60 = 320, well under the 400 design floor, so
+        // the floor wins — this is the common case (a real cutout is
+        // never anywhere near 280px wide).
+        let r = active_card_rect(Mode::Hud, 0.0, 1.0, true, false, false);
+        assert_eq!(r.x_max - r.x_min, BASE_SHOWING);
     }
 
     #[test]
-    fn hud_visible_not_expanded_scales_at_0_8() {
-        let r = active_card_rect(Mode::Hud, 0.0, 0.8, true, false, false);
-        assert_eq!(r.x_max - r.x_min, BASE_WIDTH * 0.8);
+    fn hud_expanded_is_the_500_floor_at_scale_1() {
+        let r = active_card_rect(Mode::Hud, 0.0, 1.0, true, true, false);
+        assert_eq!(r.x_max - r.x_min, BASE_EXPANDED);
     }
 
+    // plan 091: HUD mode always resolves the cutout term to
+    // `HUD_CUTOUT_W` — the `cutout_width` argument passed in is simply
+    // never consulted in this mode (lib.rs's caller happens to send
+    // 0.0 for hud today; this test proves the result doesn't depend on
+    // whatever it sends).
     #[test]
-    fn hud_visible_not_expanded_scales_at_1_25() {
-        let r = active_card_rect(Mode::Hud, 0.0, 1.25, true, false, false);
-        assert_eq!(r.x_max - r.x_min, BASE_WIDTH * 1.25);
+    fn hud_mode_ignores_the_passed_cutout_width_argument() {
+        let with_zero = active_card_rect(Mode::Hud, 0.0, 1.0, false, false, false);
+        let with_something_else = active_card_rect(Mode::Hud, 999.0, 1.0, false, false, false);
+        assert_eq!(with_zero, with_something_else);
+        assert_eq!(
+            with_zero.x_max - with_zero.x_min,
+            HUD_CUTOUT_W + 2.0 * FLANK_IDLE
+        );
     }
 
-    #[test]
-    fn hud_idle_with_status_chips_scales_at_0_8() {
-        let r = active_card_rect(Mode::Hud, 0.0, 0.8, false, false, true);
-        assert_eq!(r.x_max - r.x_min, IDLE_STATUS_WIDTH * 0.8);
-    }
+    // --- the same three states at scale 0.8 and 1.25 — the flank/design
+    // terms scale, the cutout term (HUD_CUTOUT_W here) never does. ---
 
     #[test]
-    fn hud_idle_with_status_chips_scales_at_1_25() {
-        let r = active_card_rect(Mode::Hud, 0.0, 1.25, false, false, true);
-        assert_eq!(r.x_max - r.x_min, IDLE_STATUS_WIDTH * 1.25);
-    }
-
-    #[test]
-    fn hud_idle_without_status_chips_scales_at_0_8() {
+    fn hud_idle_scales_the_flank_term_only_at_0_8() {
         let r = active_card_rect(Mode::Hud, 0.0, 0.8, false, false, false);
-        assert_eq!(r.x_max - r.x_min, IDLE_WIDTH * 0.8);
+        assert_eq!(r.x_max - r.x_min, HUD_CUTOUT_W + 2.0 * FLANK_IDLE * 0.8);
     }
 
     #[test]
-    fn hud_idle_without_status_chips_scales_at_1_25() {
+    fn hud_idle_scales_the_flank_term_only_at_1_25() {
         let r = active_card_rect(Mode::Hud, 0.0, 1.25, false, false, false);
-        assert_eq!(r.x_max - r.x_min, IDLE_WIDTH * 1.25);
-    }
-
-    // --- notch-mode clamp at both bounds — plan 090 (Q1a): `scale` is
-    // NOT applied to notch-mode width, because it mirrors a hardware
-    // measurement (the physical cutout), not a cosmetic design width.
-    // These pin the clamp bounds at several scales to confirm the
-    // result is identical regardless of `scale` — renamed from
-    // `_at_scale_N` (which implied scale-dependence) to `_ignores_scale`
-    // where the old name would now mislead.
-
-    #[test]
-    fn notch_clamp_floors_narrow_cutout_ignores_scale_at_1_0() {
-        let r = active_card_rect(Mode::Notch, 200.0, 1.0, false, false, false);
-        assert_eq!(r.x_max - r.x_min, NOTCH_CLAMP_MIN);
+        assert_eq!(r.x_max - r.x_min, HUD_CUTOUT_W + 2.0 * FLANK_IDLE * 1.25);
     }
 
     #[test]
-    fn notch_clamp_ceils_wide_cutout_at_scale_1() {
+    fn hud_showing_scales_at_0_8() {
+        let r = active_card_rect(Mode::Hud, 0.0, 0.8, true, false, false);
+        assert_eq!(
+            r.x_max - r.x_min,
+            (BASE_SHOWING * 0.8_f64).max(HUD_CUTOUT_W + 2.0 * MIN_FLANK_SHOWING * 0.8)
+        );
+    }
+
+    #[test]
+    fn hud_expanded_scales_at_0_8() {
+        // 0.8, not 1.25: BASE_EXPANDED (500) already equals WINDOW_WIDTH
+        // at scale 1.0, so any scale ABOVE 1.0 hits the window cap
+        // immediately — that specific interaction has its own dedicated
+        // test right below, `expanded_at_scale_above_1_hits_the_window_cap`.
+        // This one isolates the scaling math itself, unaffected by the cap.
+        let r = active_card_rect(Mode::Hud, 0.0, 0.8, true, true, false);
+        assert_eq!(
+            r.x_max - r.x_min,
+            (BASE_EXPANDED * 0.8_f64).max(HUD_CUTOUT_W + 2.0 * MIN_FLANK_SHOWING * 0.8)
+        );
+    }
+
+    // plan 091: a real, useful invariant this exposes — BASE_EXPANDED
+    // (500) equals WINDOW_WIDTH (500) exactly, so the expanded state
+    // hits its window cap at any scale above 1.0, in EITHER mode (a
+    // user with `card_scale` > 1.0 always gets a full-window expanded
+    // card, never wider).
+    #[test]
+    fn expanded_at_scale_above_1_hits_the_window_cap() {
+        let hud = active_card_rect(Mode::Hud, 0.0, 1.25, true, true, false);
+        assert_eq!(hud.x_max - hud.x_min, WINDOW_WIDTH);
+        let notch = active_card_rect(Mode::Notch, 200.0, 1.25, true, true, false);
+        assert_eq!(notch.x_max - notch.x_min, WINDOW_WIDTH);
+    }
+
+    // --- notch mode: the SAME three formulas, fed the measured cutout
+    // (Decision 6 — "no mode branch" in the shape itself, so this is
+    // deliberately not a separate code path, just a different input). ---
+
+    #[test]
+    fn notch_idle_is_measured_cutout_plus_two_flanks_at_scale_1() {
+        // plan 063's own fixture (`src-tauri/src/lib.rs`'s
+        // cutout_width_js_value test) — a realistic measured width.
+        let r = active_card_rect(Mode::Notch, 319.0, 1.0, false, false, false);
+        assert_eq!(r.x_max - r.x_min, 319.0 + 2.0 * FLANK_IDLE);
+    }
+
+    #[test]
+    fn notch_showing_uses_the_measured_cutout_when_it_beats_the_floor() {
+        // 319 + 2*60 = 439, which beats the 400 design floor — the
+        // cutout-driven term wins here, unlike HUD's default 200px.
+        let r = active_card_rect(Mode::Notch, 319.0, 1.0, true, false, false);
+        assert_eq!(r.x_max - r.x_min, 319.0 + 2.0 * MIN_FLANK_SHOWING);
+    }
+
+    #[test]
+    fn notch_expanded_falls_back_to_the_500_floor_when_the_cutout_is_narrower() {
+        // 319 + 2*60 = 439, under the 500 expanded floor — the floor
+        // wins here even though the same cutout beat the showing floor
+        // above (400).
+        let r = active_card_rect(Mode::Notch, 319.0, 1.0, true, true, false);
+        assert_eq!(r.x_max - r.x_min, BASE_EXPANDED);
+    }
+
+    // plan 091: the cutout term stays unscaled in notch mode too — but
+    // unlike the old design (where the whole notch-mode rect was
+    // scale-invariant, since flanks never scaled there at all), the
+    // FLANK term now scales in every mode (Decision 6). This isolates
+    // just the cutout term's exemption: the scale-1.0-to-1.25 delta must
+    // equal exactly the flank term's own delta, with nothing attributed
+    // to the 200px cutout figure. (200, not 319, so the result stays
+    // under the WINDOW_WIDTH cap at both scales — see the cap tests
+    // below for what happens when it doesn't.
+    #[test]
+    fn notch_mode_cutout_term_stays_unscaled_only_the_flank_term_scales() {
+        let at_scale_1 = active_card_rect(Mode::Notch, 200.0, 1.0, false, false, false);
+        let at_scale_1_25 = active_card_rect(Mode::Notch, 200.0, 1.25, false, false, false);
+        let width_1 = at_scale_1.x_max - at_scale_1.x_min;
+        let width_1_25 = at_scale_1_25.x_max - at_scale_1_25.x_min;
+        let expected_flank_delta = 2.0 * FLANK_IDLE * (1.25 - 1.0);
+        assert!(
+            (width_1_25 - width_1 - expected_flank_delta).abs() < 1e-9,
+            "width_1={width_1}, width_1_25={width_1_25}, expected_flank_delta={expected_flank_delta}"
+        );
+    }
+
+    // --- the `min(..., 100%)` cap (Geometry contract) — `WINDOW_WIDTH`
+    // in this window's own coordinate space. A wide-enough measured
+    // cutout can otherwise exceed the window, which must never happen. ---
+
+    #[test]
+    fn notch_idle_caps_at_the_window_width_for_a_very_wide_cutout() {
         let r = active_card_rect(Mode::Notch, 600.0, 1.0, false, false, false);
-        assert_eq!(r.x_max - r.x_min, NOTCH_CLAMP_MAX);
+        assert_eq!(r.x_max - r.x_min, WINDOW_WIDTH);
     }
 
     #[test]
-    fn notch_clamp_floors_narrow_cutout_ignores_scale_at_0_8() {
-        let r = active_card_rect(Mode::Notch, 200.0, 0.8, false, false, false);
-        assert_eq!(r.x_max - r.x_min, NOTCH_CLAMP_MIN);
-    }
-
-    #[test]
-    fn notch_clamp_ceils_wide_cutout_ignores_scale_at_1_25() {
-        let r = active_card_rect(Mode::Notch, 600.0, 1.25, false, false, false);
-        assert_eq!(r.x_max - r.x_min, NOTCH_CLAMP_MAX);
-    }
-
-    // New invariant pinned directly (not just via clamp bounds): at a
-    // realistic cutout width (319px — plan 063's own fixture,
-    // `src-tauri/src/lib.rs:983`), the WHOLE rect — not just its width —
-    // must be byte-for-byte identical at scale 1.0 vs 1.25, since
-    // `x_min`/`x_max` both derive from the (now-unscaled) notch width.
-    #[test]
-    fn notch_mode_rect_is_identical_across_scale_for_realistic_cutout() {
-        let at_scale_1 = active_card_rect(Mode::Notch, 319.0, 1.0, false, false, false);
-        let at_scale_1_25 = active_card_rect(Mode::Notch, 319.0, 1.25, false, false, false);
-        assert_eq!(at_scale_1, at_scale_1_25);
+    fn notch_showing_caps_at_the_window_width_for_a_very_wide_cutout() {
+        let r = active_card_rect(Mode::Notch, 600.0, 1.0, true, false, false);
+        assert_eq!(r.x_max - r.x_min, WINDOW_WIDTH);
     }
 
     // --- point_in_rect: just inside vs just outside each edge ---
@@ -419,21 +511,28 @@ mod tests {
 
     // --- the named-constant assertion (duplicated-constants tripwire) ---
 
-    // Mirrors src/styles.css:25 (.rail-card), :39 (.expanded), :44 (.idle),
-    // :52 (.idle.status), :61 (the notch-mode clamp) — a NAMED-constant
-    // assertion, not a live CSS parse (spike §6's explicit simplification).
-    // If a future edit changes a width in styles.css without updating the
-    // constants at the top of this file, this test does NOT catch it by
-    // itself (it only asserts internal self-consistency) — it exists so a
-    // reviewer diffing this file sees the citations and checks both sides.
+    // Mirrors src/styles.css's `.card-assembly` (idle: FLANK_IDLE),
+    // `.card-assembly`/`.card-assembly.expanded` (showing/expanded:
+    // MIN_FLANK_SHOWING + BASE_SHOWING/BASE_EXPANDED), and App.tsx's HUD
+    // synthetic constants (HUD_CUTOUT_W/HUD_CUTOUT_H) — a NAMED-constant
+    // assertion, not a live CSS parse (spike §6's explicit
+    // simplification, carried forward by plan 091). If a future edit
+    // changes one of these numbers in styles.css or App.tsx without
+    // updating the constants at the top of this file, this test does NOT
+    // catch it by itself (it only asserts internal self-consistency) —
+    // it exists so a reviewer diffing this file sees the citations and
+    // checks both sides. plan 091: replaces the old BASE_WIDTH/
+    // EXPANDED_WIDTH/IDLE_WIDTH/IDLE_STATUS_WIDTH/NOTCH_CLAMP_MIN/
+    // NOTCH_CLAMP_MAX set (see the constants' own doc comments for why
+    // each was removed).
     #[test]
-    fn active_card_rect_widths_match_named_style_constants() {
-        assert_eq!(BASE_WIDTH, 400.0);
-        assert_eq!(EXPANDED_WIDTH, 500.0);
-        assert_eq!(IDLE_WIDTH, 270.0);
-        assert_eq!(IDLE_STATUS_WIDTH, 460.0);
-        assert_eq!(NOTCH_CLAMP_MIN, 270.0);
-        assert_eq!(NOTCH_CLAMP_MAX, 460.0);
+    fn active_card_rect_geometry_constants_match_named_style_constants() {
+        assert_eq!(FLANK_IDLE, 85.0);
+        assert_eq!(MIN_FLANK_SHOWING, 60.0);
+        assert_eq!(BASE_SHOWING, 400.0);
+        assert_eq!(BASE_EXPANDED, 500.0);
+        assert_eq!(HUD_CUTOUT_W, 200.0);
+        assert_eq!(HUD_CUTOUT_H, 32.0);
     }
 
     // --- cold-read Gap 3: the coordinate-space flip, unit-tested on its own ---

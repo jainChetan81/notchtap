@@ -19,49 +19,156 @@ body {
   user-select: none;
 }
 
-.rail-card {
-  box-sizing: border-box;
+/* ==== plan 091: the cutout card shape — three plain geometry blocks,
+   deliberately never a single masked/cut shape. Ported from the locked
+   reference (`prototype/notch-states.html:36-60`), operator-approved
+   across two rounds of real macOS photos: `.flank-left`/`.flank-right`
+   sit either side of the
+   permanent notch cutout at the notch's own height; `.below-block` (when
+   present) carries everything underneath, full width. Grid, not the
+   prototype's absolute positioning: this app's window is a fixed-size,
+   content-flow-sized canvas (no outer "stage" element the way the
+   prototype's demo page has one), so an absolutely-positioned flank row
+   would leave `.card-assembly`'s own auto height at zero during idle
+   (nothing else in normal flow to size it) — a zero-height ancestor
+   under this app's own `overflow: hidden` (html/body/#root) would clip
+   everything painted inside it, flanks included. A 3-column/2-row grid
+   sizes identically to the prototype's math (the two flank columns are
+   `1fr` each, so they automatically split whatever width remains after
+   the fixed-width cutout column — exactly `(--cw - --notchtap-cutout-
+   width) / 2` per side, the prototype's own formula) while keeping every
+   block in normal flow, so `.card-assembly`'s height is always the real
+   sum of its rows: never zero, never at odds with `overflow: hidden`.
+
+   ROUNDING LAW (read before touching any radius here): the cutout's own
+   base corners stay perfectly SQUARE — a sharp rectangular bite, never
+   rounded on either side. Outer rounding lives ONLY at the two true
+   outer ends of the whole assembly: on `.flank-left`/`.flank-right`
+   themselves when there is no below-block (idle — they ARE the bottom
+   edge), or on `.below-block` when there is one (showing/exiting —
+   below-block owns the outer rounding then, and the flanks above it go
+   square). Rounding both at once is the documented double-curve gap bug
+   — see the prototype's own comment blocks at
+   `prototype/notch-states.html:25-31` (the collapsed `.hw-notch.solo`
+   case) and `:35-45`/`:138-144` (the flank/below-block handoff). Never
+   round the flank's INNER corner (the one touching the cutout) in any
+   state — only ever the outer one. ==== */
+.card-assembly {
   position: relative;
-  width: min(calc(400px * var(--card-scale)), 100%);
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 1fr var(--notchtap-cutout-width, 200px) 1fr;
+  grid-template-rows: var(--notchtap-cutout-height, 32px) auto;
+  width: var(--cw, min(max(calc(400px * var(--card-scale)), calc(var(--notchtap-cutout-width, 200px) + (2 * 60px * var(--card-scale)))), 100%));
   margin: 0 auto;
+  isolation: isolate;
+  transition: width 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* plan 090 (Q1a/Q2b, carried forward): the cutout term
+   (`--notchtap-cutout-width`) is a hardware measurement (or, in HUD
+   mode, its synthetic stand-in — App.tsx) — `--card-scale` must NEVER
+   multiply it. Every OTHER width in these three formulas (the flank
+   px figures) IS a cosmetic design width and does scale. Every formula
+   is capped at the window via `min(..., 100%)` — 090's Q2b, unchanged. */
+.card-assembly.idle {
+  --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
+}
+
+.card-assembly.expanded {
+  --cw: min(max(calc(500px * var(--card-scale)), calc(var(--notchtap-cutout-width, 200px) + (2 * 60px * var(--card-scale)))), 100%);
+}
+
+.flank-left,
+.flank-right {
+  box-sizing: border-box;
+  grid-row: 1;
   overflow: hidden;
-  border-radius: 0 0 var(--card-radius) var(--card-radius);
-  background: rgba(5, 6, 7, var(--card-opacity));
+  display: flex;
+  align-items: center;
+  background: #000;
   color: #f5f7fa;
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
-  transition:
-    width 320ms cubic-bezier(0.22, 1, 0.36, 1),
-    border-radius 320ms ease,
-    background 180ms ease;
+  /* grid items default to `min-width: auto` (their content's min-content
+     size), which can force the whole grid wider than `--cw` if content
+     ever doesn't wrap — the clock/dots content here is always
+     short/fixed-format, but this is the standard safe default for any
+     grid item carrying inline content, at zero visual cost. */
+  min-width: 0;
 }
 
-.rail-card.expanded {
-  width: min(calc(500px * var(--card-scale)), 100%);
-  border-radius: 0 0 var(--card-radius) var(--card-radius);
+.flank-left {
+  grid-column: 1;
+  justify-content: flex-start;
+  padding-left: 16px;
 }
 
-.rail-card.idle {
-  width: min(calc(270px * var(--card-scale)), 100%);
-  border-radius: 0 0 var(--card-radius) var(--card-radius);
+.flank-right {
+  grid-column: 3;
+  justify-content: flex-end;
+  padding-right: 16px;
 }
 
-/* plan 034: the idle card widens only while the status rail has chips to
-   show (live match / news gate / queue depth) — the plain clock idle
-   keeps the 270px above. */
-.rail-card.idle.status {
-  width: min(calc(460px * var(--card-scale)), 100%);
+/* the flanks are the true bottom edge ONLY when there is no below-block
+   beneath them — round their own OUTER corner then. Once a below-block
+   exists, IT owns the bottom rounding instead and the flanks must go
+   square, or it's the double-curve gap bug documented above.
+
+   Keyed on actual DOM presence of `.below-block` (`:has()`), NOT on the
+   `.idle`/priority class: that class is computed off the LIVE `showing`
+   flag (StatusRailCard.tsx), which flips a render ahead of
+   `renderedShowing` — the delayed value that actually gates
+   `.below-block`'s own mount/unmount (useDelayedSwap's whole point is to
+   keep exiting content on screen after the live state has already moved
+   on). During a showing-to-idle exit, `.card-assembly` already carries
+   `.idle` while `.below-block` is still mounted and fading out; keying
+   rounding off the class would round the flanks AND leave the still-
+   mounted below-block rounded too — both at once, the exact bug this
+   rule exists to avoid. Reading real DOM structure instead sidesteps the
+   live-vs-delayed mismatch entirely: the flanks are rounded exactly when
+   `.below-block` is genuinely absent, in every state, with no separate
+   timing to keep in sync. `:has()` has shipped in Safari/WebKit since
+   15.4 (2022), well within this app's WKWebView target. */
+.card-assembly:not(:has(.below-block)) .flank-left {
+  border-bottom-left-radius: var(--card-radius, 14px);
+  transition: border-radius 320ms ease;
+}
+.card-assembly:not(:has(.below-block)) .flank-right {
+  border-bottom-right-radius: var(--card-radius, 14px);
+  transition: border-radius 320ms ease;
 }
 
-/* plan 063: in notch mode the idle status rail caps at exactly the
-   physical cutout width, zero outward margin — menu-bar icons live
-   outside that span. 270px does double duty: fallback when the cutout
-   width never arrived, and absolute floor for very narrow notches.
-   460px ceiling: never wider than today's HUD width.
-   plan 090: the cutout term is a hardware measurement, not a cosmetic
-   design width — `--card-scale` must NOT multiply it (Q1a). It is used
-   raw, only clamped to the window via `min(..., 100%)` for safety. */
-:root[data-notchtap-mode="notch"] .rail-card.idle.status {
-  width: min(clamp(270px, var(--notchtap-cutout-width, 270px), 460px), 100%);
+/* the notch cutout itself: real hardware empty space in notch mode
+   (nothing painted — the hardware notch already reads as black), an
+   app-drawn pure-#000 rectangle in HUD mode (Decision 6 — the shape is
+   identical in both modes, so a notchless mac must draw its own cutout
+   rather than branch the shape). `.card-assembly`'s middle grid column
+   is already sized to `--notchtap-cutout-width`, so this block only
+   needs to fill that cell — no separate width/position math. */
+.synthetic-cutout {
+  grid-column: 2;
+  grid-row: 1;
+  display: none;
+}
+:root[data-notchtap-mode="hud"] .synthetic-cutout {
+  display: block;
+  background: #000;
+}
+
+.below-block {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  position: relative;
+  box-sizing: border-box;
+  overflow: hidden;
+  width: 100%;
+  min-width: 0; /* see the flank rule above — same grid-blowout guard */
+  background: #000;
+  color: #f5f7fa;
+  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.5);
+  /* the cutout's base corners stay square at this seam too (rounding law
+     above) — only the two BOTTOM corners round; no top-radius here. */
+  border-bottom-left-radius: var(--card-radius, 14px);
+  border-bottom-right-radius: var(--card-radius, 14px);
 }
 
 /* priority accent — a single named color per tier, consumed by the
@@ -70,17 +177,17 @@ body {
    (goal/red_card share "high" accent with any other high-priority
    source) — see lib/presentation.ts's stamp table for where signal does
    change what's shown. */
-.rail-card.low {
+.card-assembly.low {
   --accent: #aab3bd;
   --accent-soft: rgba(170, 179, 189, 0.2);
 }
 
-.rail-card.medium {
+.card-assembly.medium {
   --accent: #55d6bd;
   --accent-soft: rgba(85, 214, 189, 0.24);
 }
 
-.rail-card.high {
+.card-assembly.high {
   --accent: #ff6b57;
   --accent-soft: rgba(255, 107, 87, 0.28);
 }
@@ -91,8 +198,10 @@ body {
    spike's own suggestion): this is NOT the real hover design for any
    of the four consumers (081/082/084/idle expanded-on-hover), which
    will each replace it with their own presentation. Mirrored in
-   src/settings/preview-overlay.css per the mirror law. */
-.rail-card.hovered {
+   src/settings/preview-overlay.css per the mirror law. Set on the
+   whole assembly (not a single block) so idle's two flanks and
+   showing's flank+below-block all lift together as one shape. */
+.card-assembly.hovered {
   filter: brightness(1.04);
 }
 
@@ -109,15 +218,21 @@ body {
    opaque, so a negative-z layer paints behind it — rendered but
    invisible. effects at 0 (over the surface, briefly), background below.
    `isolation` pins the stacking context so 0/-1 mean the card, not the
-   page. */
-.rail-card {
-  isolation: isolate;
-}
+   page. (plan 091: `.card-assembly` already declares `isolation: isolate`
+   in its own definition above — this used to be a second, separate
+   single-purpose rule on the old shell class purely for that one
+   property; folded away as a duplicate now that both live in the same
+   block.)
+
+   plan 091: these effects stay on the outer `.card-assembly` (not
+   below-block) — a full-card celebration reads better than one confined
+   to just the content block, and it exactly preserves the pre-091
+   visual (the burst/ring/box-shadow always spanned the whole card). */
 
 /* the confetti spray: a warm core, six offset color sparks, and an
    outer coral glow, all in one layered background so a single ::after
    reads as a full particle field on the dark 400px card. */
-.rail-card::after {
+.card-assembly::after {
   content: "";
   position: absolute;
   inset: -60px;
@@ -135,18 +250,18 @@ body {
   pointer-events: none;
 }
 
-.rail-card.pulse-goal {
+.card-assembly.pulse-goal {
   animation: goal-overshoot 620ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.rail-card.pulse-goal::after {
+.card-assembly.pulse-goal::after {
   animation: goal-burst 620ms ease-out;
 }
 
 /* the expanding ring — a thin bright hoop that shoots out from the
    card centre. ::before only becomes a box under .pulse-goal, so news
    cards (which own .news-shade::before) are never touched. */
-.rail-card.pulse-goal::before {
+.card-assembly.pulse-goal::before {
   content: "";
   position: absolute;
   top: 50%;
@@ -261,7 +376,7 @@ body {
 
 /* signature moment #2 — Red Card: a sharp two-pulse alert strobe,
    different register from Goal's celebration — urgent, not festive. */
-.rail-card.pulse-red {
+.card-assembly.pulse-red {
   animation: red-alert 460ms steps(1, end) 2;
 }
 
@@ -281,10 +396,10 @@ body {
 /* the two pulses above are plain CSS and were never covered by any
    reduced-motion mechanism — they need this override in their own right. */
 @media (prefers-reduced-motion: reduce) {
-  .rail-card.pulse-goal,
-  .rail-card.pulse-goal::before,
-  .rail-card.pulse-goal::after,
-  .rail-card.pulse-red {
+  .card-assembly.pulse-goal,
+  .card-assembly.pulse-goal::before,
+  .card-assembly.pulse-goal::after,
+  .card-assembly.pulse-red {
     animation: none;
   }
 }
@@ -569,101 +684,90 @@ body {
   line-height: 1.5;
 }
 
-.idle-view {
-  box-sizing: border-box;
-  min-height: 38px;
-  padding: 0 16px;
+/* plan 091: the flank clock — the prototype's own class name
+   (`prototype/notch-states.html:63`, `.time-only`), rendered by
+   `<FlankClock>` at both call sites (idle's left flank AND showing/
+   exiting's left flank — the SAME shared component, per Step 4's
+   ownership split). Deliberately not scoped under `.flank-left` alone:
+   there is only ever one clock in the assembly at a time. */
+.time-only {
+  font: 800 15px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  letter-spacing: 0.02em;
+  color: #f5f7fa;
+  white-space: nowrap;
+}
+
+/* ==== plan 091 (079 item 2): the idle right flank's three status dots —
+   replaces the old text-pill `.src-rail`/`.src-chip` rail entirely
+   (rewritten, not restyled — <StatusDots>). Fixed Football/News/Weather
+   order and coloring, straight from the locked reference
+   (`prototype/notch-states.html:62-74`). `active` = enabled (glow + a
+   1.8s pulse); `dim` = disabled (flat, low opacity) — plain color/glow
+   state, no text content at all now that the pill labels are gone. ==== */
+.status-dots {
   display: flex;
   align-items: center;
-  gap: 12px;
-  font-size: 11px;
+  gap: 8px;
+  flex: none;
 }
 
-.idle-view .time {
-  font: 720 12px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-}
-
-.idle-view .timeline {
-  position: relative;
-  flex: 1;
-  height: 1px;
-  background: rgba(255, 255, 255, 0.14);
-}
-
-.idle-view .timeline::before {
-  content: "";
-  position: absolute;
-  top: -2px;
-  left: var(--day-progress, 50%);
-  width: 5px;
-  height: 5px;
-  transform: translateX(-50%);
+.status-dot {
+  width: 9px;
+  height: 9px;
   border-radius: 50%;
-  background: #b6f5e5;
-  box-shadow: 0 0 10px rgba(182, 245, 229, 0.75);
+  flex: none;
 }
 
-/* ==== idle status rail (plan 034): live match / news gate / queue depth
-   chips beside the clock. same pill vocabulary as .pill (monospace, 8px,
-   uppercase) so the rail reads as part of the same design system. ==== */
-.src-rail {
-  display: flex;
-  align-items: center;
-  flex-wrap: wrap;
-  gap: 4px 6px;
-  min-width: 0;
+.status-dot.football {
+  background: #3ddc70;
+}
+.status-dot.news {
+  background: #ff5c5c;
+}
+.status-dot.weather {
+  background: #f0c46a;
 }
 
-.src-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 7px;
-  border-radius: 999px;
-  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  color: rgba(255, 255, 255, 0.62);
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
+.status-dot.active {
+  box-shadow: 0 0 7px 1px currentColor;
+  animation: dot-pulse 1.8s ease-in-out infinite;
+}
+.status-dot.football.active {
+  color: #3ddc70;
+}
+.status-dot.news.active {
+  color: #ff5c5c;
+}
+.status-dot.weather.active {
+  color: #f0c46a;
 }
 
-.src-chip.dim {
-  color: rgba(255, 255, 255, 0.34);
+.status-dot.dim {
+  opacity: 0.22;
+  box-shadow: none;
+  animation: none;
 }
 
-.src-chip.live {
-  color: #7fe08d;
-  background: rgba(127, 224, 141, 0.1);
-  border-color: rgba(127, 224, 141, 0.28);
-  /* plan 063: the live-match chip is the only chip with unbounded text
-     (real team names) — it may shrink and ellipsis; every other chip
-     keeps its natural width. Locked: truncate, never wrap internally. */
-  max-width: 100%;
-  min-width: 0;
-  flex: 0 1 auto;
+@keyframes dot-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.55;
+  }
 }
 
-.src-chip .live-label {
-  display: block;
-  min-width: 0;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+@media (prefers-reduced-motion: reduce) {
+  .status-dot.active {
+    animation: none;
+  }
 }
 
-.src-chip .live-dot {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: #7fe08d;
-  box-shadow: 0 0 6px rgba(127, 224, 141, 0.9);
-  animation: live-dot-pulse 1.6s ease-in-out infinite;
-}
-
+/* `live-dot-pulse` stays — `.live-pill .live-dot` (the football scorecard
+   content, unrelated to and unmoved by this plan) still reuses it; only
+   its OWN former host rule (`.src-chip .live-dot`, the deleted idle rail)
+   is gone. */
 @keyframes live-dot-pulse {
   0%,
   100% {
@@ -795,12 +899,12 @@ body {
 
 @media (prefers-reduced-motion: reduce) {
   .news-shade::before { animation: none; }
-  .src-chip .live-dot { animation: none; }
 }
 
 /* ==== weather ALERT card art (plan 082): Meteocons glyph + CSS mood
    backdrop, adapted from the approved gallery (prototype/weather-art.html)
-   to the rail-card shape. Same z-order discipline as .news-shade above:
+   to the below-block shape (091: previously the old single-shell shape).
+   Same z-order discipline as .news-shade above:
    background layer (mood gradient + glyph + texture) at z-index 0, real
    content (.compact/.manifest) lifted to z-index 1 so it always reads
    over the art. `.wx-card` is the structural marker class (added
@@ -1145,15 +1249,15 @@ body {
    amber ring, red = two-pulse coral strobe — visually echo pulse-goal/
    pulse-red (signature moments #1/#2 above) without replacing them; the
    two never stack (StatusRailCard.tsx gates pulse-goal/pulse-red off
-   while `isLiveCard`). Reuses `.rail-card`'s own `::after` for the ring,
-   like pulse-goal's confetti does — mutually exclusive in practice
+   while `isLiveCard`). Reuses `.card-assembly`'s own `::after` for the
+   ring, like pulse-goal's confetti does — mutually exclusive in practice
    (isLiveCard vs the generic pulse path never both apply to one card),
    so `background: transparent` here simply neutralizes the inherited
    confetti gradient rather than fighting it. */
-.rail-card.cele-goal {
+.card-assembly.cele-goal {
   animation: goal-glow 900ms ease-out;
 }
-.rail-card.cele-goal::after {
+.card-assembly.cele-goal::after {
   background: transparent;
   inset: -6px;
   border-radius: 18px;
@@ -1184,7 +1288,7 @@ body {
   }
 }
 
-.rail-card.cele-yc::after {
+.card-assembly.cele-yc::after {
   background: transparent;
   inset: -6px;
   border-radius: 18px;
@@ -1192,7 +1296,7 @@ body {
   animation: cele-ring 700ms ease-out;
 }
 
-.rail-card.cele-rc {
+.card-assembly.cele-rc {
   animation: red-strobe 900ms ease-out;
 }
 
@@ -1214,10 +1318,10 @@ body {
   .live-pill .live-dot {
     animation: none;
   }
-  .rail-card.cele-goal,
-  .rail-card.cele-goal::after,
-  .rail-card.cele-yc::after,
-  .rail-card.cele-rc {
+  .card-assembly.cele-goal,
+  .card-assembly.cele-goal::after,
+  .card-assembly.cele-yc::after,
+  .card-assembly.cele-rc {
     animation: none;
   }
 }

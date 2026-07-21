@@ -6,19 +6,22 @@ import { presentationFacts } from "./presentationFacts";
 afterEach(() => {
   delete window.__NOTCHTAP_MODE__;
   delete window.__NOTCHTAP_CUTOUT_WIDTH__;
+  delete window.__NOTCHTAP_CUTOUT_HEIGHT__;
 });
 
 describe("presentationFacts", () => {
-  it("reads a notch mode and a positive cutout width as-is", () => {
+  it("reads a notch mode and a positive cutout width/height as-is", () => {
     window.__NOTCHTAP_MODE__ = "notch";
     window.__NOTCHTAP_CUTOUT_WIDTH__ = 319;
-    expect(presentationFacts()).toEqual({ mode: "notch", cutoutWidth: 319 });
+    window.__NOTCHTAP_CUTOUT_HEIGHT__ = 32;
+    expect(presentationFacts()).toEqual({ mode: "notch", cutoutWidth: 319, cutoutHeight: 32 });
   });
 
   it("reads hud mode explicitly", () => {
     window.__NOTCHTAP_MODE__ = "hud";
     window.__NOTCHTAP_CUTOUT_WIDTH__ = null;
-    expect(presentationFacts()).toEqual({ mode: "hud", cutoutWidth: null });
+    window.__NOTCHTAP_CUTOUT_HEIGHT__ = null;
+    expect(presentationFacts()).toEqual({ mode: "hud", cutoutWidth: null, cutoutHeight: null });
   });
 
   it("falls back to hud on a garbage or missing mode", () => {
@@ -45,5 +48,26 @@ describe("presentationFacts", () => {
 
     delete window.__NOTCHTAP_CUTOUT_WIDTH__;
     expect(presentationFacts().cutoutWidth).toBeNull();
+  });
+
+  // plan 091: cutoutHeight validates identically to cutoutWidth — same
+  // reject list, same rule (finite, positive number only).
+  it("rejects zero, negative, non-number, and missing cutout heights", () => {
+    window.__NOTCHTAP_MODE__ = "notch";
+
+    window.__NOTCHTAP_CUTOUT_HEIGHT__ = 0;
+    expect(presentationFacts().cutoutHeight).toBeNull();
+
+    window.__NOTCHTAP_CUTOUT_HEIGHT__ = -5;
+    expect(presentationFacts().cutoutHeight).toBeNull();
+
+    window.__NOTCHTAP_CUTOUT_HEIGHT__ = "32";
+    expect(presentationFacts().cutoutHeight).toBeNull();
+
+    window.__NOTCHTAP_CUTOUT_HEIGHT__ = Number.NaN;
+    expect(presentationFacts().cutoutHeight).toBeNull();
+
+    delete window.__NOTCHTAP_CUTOUT_HEIGHT__;
+    expect(presentationFacts().cutoutHeight).toBeNull();
   });
 });

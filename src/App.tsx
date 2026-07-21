@@ -8,6 +8,16 @@ import "./styles.css";
 
 type RestingState = "rail" | "notch";
 
+// plan 091: the HUD synthetic cutout — a notchless mac has no hardware
+// cutout to measure, so the app draws its own pure-#000 rectangle
+// (`.synthetic-cutout`, styles.css) at these dimensions instead, keeping
+// the assembly's geometry formulas mode-agnostic (Decision 6: "no mode
+// branch" in the shape). Mirrored in `src-tauri/src/hover.rs` as
+// `HUD_CUTOUT_W`/`HUD_CUTOUT_H` — same lockstep rule as every other
+// geometry constant in that file.
+const HUD_CUTOUT_WIDTH_PX = 200;
+const HUD_CUTOUT_HEIGHT_PX = 32;
+
 function applyAppearance(scale: number, radius: number, opacity: number) {
   const root = document.documentElement;
   root.style.setProperty("--card-scale", String(scale));
@@ -32,12 +42,26 @@ function App() {
   const [hovered, setHovered] = useState(false);
 
   // plan 063: expose the boot-time presentation facts to CSS — the mode
-  // gates the notch-only width clamp, the cutout width feeds it.
+  // gates notch-only CSS, the cutout width/height feed the card-assembly's
+  // geometry formulas (styles.css).
+  // plan 091: in HUD mode rust never reports a cutout (there is no
+  // hardware one to measure), so `cutoutWidth`/`cutoutHeight` are always
+  // null there — this now falls through to the HUD synthetic constants
+  // instead of leaving the vars unset, so `.synthetic-cutout` and every
+  // width/flank formula have a real value to size against in both modes,
+  // not just notch mode. Notch mode is unaffected: a real measurement
+  // always wins over the synthetic fallback.
   useEffect(() => {
-    const { mode, cutoutWidth } = presentationFacts();
+    const { mode, cutoutWidth, cutoutHeight } = presentationFacts();
     document.documentElement.dataset.notchtapMode = mode;
-    if (cutoutWidth !== null) {
-      document.documentElement.style.setProperty("--notchtap-cutout-width", `${cutoutWidth}px`);
+    const root = document.documentElement.style;
+    const width = cutoutWidth ?? (mode === "hud" ? HUD_CUTOUT_WIDTH_PX : null);
+    const height = cutoutHeight ?? (mode === "hud" ? HUD_CUTOUT_HEIGHT_PX : null);
+    if (width !== null) {
+      root.setProperty("--notchtap-cutout-width", `${width}px`);
+    }
+    if (height !== null) {
+      root.setProperty("--notchtap-cutout-height", `${height}px`);
     }
   }, []);
 
