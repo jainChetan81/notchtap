@@ -17,7 +17,14 @@
 - **Effort**: S–M (a small wire addition + a small frontend accent)
 - **Risk**: MED — touches `SlotState`, which is governed by the
   `dedup_eq` rule; a careless addition there causes emission storms.
-- **Depends on**: 092 (merged). Independent of 093.
+- **Depends on**: 092 (merged), **and 093 must merge FIRST** — not a
+  logical dependency but a file-conflict one: 093's in-scope list
+  overlaps this plan's on `queue.rs`, `styles.css`,
+  `preview-overlay.css`, `StatusRailCard.tsx`, and
+  `docs/TESTING_STRATEGY.md` §0. Running both concurrently would
+  manufacture merge conflicts in exactly the regions each is editing.
+  Dispatch only after 093 is reviewed and merged, then re-stamp the
+  drift SHA.
 - **Category**: direction
 - **Planned at**: commit `18a3e8d`, 2026-07-21
 
@@ -51,7 +58,21 @@ So the accent needs `origin` on the wire. That is a real (if small)
 architectural addition, and it is the operator's call whether a cosmetic
 accent justifies it.
 
-## Step 0: OPERATOR DECISION — do not skip, do not guess
+## Decision — operator, 2026-07-21 (Step 0 SATISFIED)
+
+**Answer: (a) — add `origin` to the wire.** The operator confirmed the
+advisor's recommendation. Proceed with the full plan below: `origin`
+joins `SlotState::Showing`, the TS validator learns it, and the cmux
+accent is built on top of it. Step 0 requires no further action; start
+at Step 1.
+
+Recorded consequence to honor: `origin` is **time-invariant**, so it
+stays IN `dedup_eq`'s comparison (unlike plan 081's `remaining_ms`,
+which had to be excluded because it varies every tick). Plan 081's
+single-emit regression test is the tripwire — if it fails, the field is
+not behaving as assumed; STOP rather than excluding it.
+
+## Step 0 (historical — the decision above answers this)
 
 **Should `origin` be added to the `SlotState::Showing` wire payload so
 the frontend can style cards by their source?**
