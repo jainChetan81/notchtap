@@ -89,6 +89,7 @@ export function StatusRailCard({
   slot,
   status,
   restingState = "rail",
+  hovered = false,
 }: {
   slot: SlotState;
   status?: StatusState;
@@ -96,6 +97,13 @@ export function StatusRailCard({
   // "rail" — every existing caller (tests, the settings preview) that
   // never passes it keeps today's idle rail, byte-identical.
   restingState?: "rail" | "notch";
+  // plan 087: the hover primitive's one diagnostic consumer — a real
+  // `hover-changed` event drives this in the shipped app; every other
+  // caller (tests, the settings preview) that never passes it keeps
+  // today's un-hovered render, byte-identical. Consuming features
+  // (081/082/084/idle expanded-on-hover) are each their own follow-on
+  // work — this prop only proves the signal arrives.
+  hovered?: boolean;
 }) {
   const showing = slot.state === "showing";
   const currentId = showing ? slot.id : null;
@@ -170,6 +178,7 @@ export function StatusRailCard({
     showing ? slot.priority : "idle",
     statusRail && "status",
     expanded && "expanded",
+    hovered && "hovered",
     // plan 084: `pulse`/`cele-*` are mutually exclusive, never stacked —
     // the live-match branch (structured espn meta) plays its own
     // `cele-goal`/`cele-yc`/`cele-rc`; every other football-signal card

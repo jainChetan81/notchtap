@@ -245,6 +245,24 @@ api) to read airpods motion data, ~60 samples/sec, fully on-device,
 inside app sandbox. if picked up later it's a clean addition: a new
 event source feeding the same v1 queue, no rework.
 
+### 6.1 hover primitive (plan 087)
+
+the overlay window sits at `NSStatusWindowLevel`, flush over the real
+menu bar (not just a notch cutout's dead zone) — `apply_overlay_native_config`
+(`src-tauri/src/lib.rs`) calls `window.set_ignore_cursor_events(true)`
+unconditionally there to stop it swallowing clicks meant for other
+apps' menu-bar tray icons (the 2026-07-17 bug). plan 086's spike
+(`docs/design/hover-cursor-tracking.md`) found, empirically, that a
+`tauri-nspanel` tracking area's mouseEntered/mouseMoved/mouseExited
+still fire normally under `ignoresMouseEvents = true` — click dispatch
+and tracking-area notifications are gated by independent AppKit
+mechanisms. plan 087 built on that: a tracking area on the same
+`OverlayPanel`, a pure rust rect-derivation function
+(`src-tauri/src/hover.rs`), and a `hover-changed` event to the webview —
+with zero change to `set_ignore_cursor_events` or
+`capabilities/default.json`. see the spike doc for the rationale and
+the rejected alternative (a frontend-reported-bounds invoke command).
+
 ---
 
 ## 7. cli push — v1's actual notification source

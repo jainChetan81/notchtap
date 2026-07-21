@@ -16,9 +16,9 @@ other sections point back rather than repeating them):
 
 | suite | size | where |
 |---|---|---|
-| rust unit/integration | 390 tests — poller 55 (32 + 23 with plan 083: team-logo/team-ids-by-match/patch_crests, EspnMeta population + flag-off pin, summary/plays parse + classify + dedup + fallback-chain via wiremock), settings 49 (47 + 2 with plan 085), queue 71 (68 + 3 with plan 081: real-promoted_at timing, supersede-extension ttl, dedup-across-a-real-time-gap), http 36, notifier 26, rss_poller 28, event 22 (19 + 3 with plan 083: EspnMeta serialization, skip_serializing_if omission, dedup_eq participation), config 23 (21 + 1 with plan 085 + 1 with plan 083: espn_rich_events default/override), crests 8 (new with plan 083: cache-miss/hit, one-attempt-per-team, fetch success/failure/oversized, filename sanitization), weather_poller 19 (16 + 3 with plan 082: `is_day` fixture parse, `is_day` defaults-to-zero-when-absent, alert event carries `wx-condition`/`wx-is-day` detail pairs), presentation 11, lib 13, engine 11 (10 + 1 with plan 081: the single-emit regression test), status 7, logging 7, net 4 | `cargo test` from `src-tauri/` |
+| rust unit/integration | 420 tests — poller 55 (32 + 23 with plan 083: team-logo/team-ids-by-match/patch_crests, EspnMeta population + flag-off pin, summary/plays parse + classify + dedup + fallback-chain via wiremock), settings 49 (47 + 2 with plan 085), queue 71 (68 + 3 with plan 081: real-promoted_at timing, supersede-extension ttl, dedup-across-a-real-time-gap), http 36, notifier 26, rss_poller 28, event 22 (19 + 3 with plan 083: EspnMeta serialization, skip_serializing_if omission, dedup_eq participation), config 23 (21 + 1 with plan 085 + 1 with plan 083: espn_rich_events default/override), crests 8 (new with plan 083: cache-miss/hit, one-attempt-per-team, fetch success/failure/oversized, filename sanitization), weather_poller 19 (16 + 3 with plan 082: `is_day` fixture parse, `is_day` defaults-to-zero-when-absent, alert event carries `wx-condition`/`wx-is-day` detail pairs), presentation 11, lib 13, engine 11 (10 + 1 with plan 081: the single-emit regression test), status 7, logging 7, net 4, hover 30 (new with plan 087: `active_card_rect` every mode/state branch at scale 1.0/0.8/1.25, notch-clamp both bounds at all three scales, `point_in_rect` inside/outside each edge, the named-constant tripwire, `status_rail_active`'s seven terms one-per-case, `css_top_down_to_appkit_y`'s coordinate-flip cases) | `cargo test` from `src-tauri/` |
 | rust doc-tests | 3 — public `queue`/`event` apis | same `cargo test` run |
-| frontend | 181 tests — presentation tables 12, presentation facts 4, inline markdown 7, weatherArt table 7 (plan 082: gallery day/night pairings, Cloudy/Storm/Snow texture assignment, Cloudy-never-keys-to-overcast, unknown-condition neutral fallback), useDelayedSwap hook 3, slot-state hook 27 (22 + 2 with plan 081: ttlMs/remainingMs validator accept/reject + 3 with plan 083: espn block absent/valid/malformed), status-state hook 15, StatusRailCard 60 (24 + 2 with plan 080 + 5 with plan 085 + 2 with plan 081 + 6 with plan 082: weather-alert mood/glyph class, day-vs-night mood, marker-leak guard collapsed + expanded, unknown-condition fallback, non-weather regression pin + 21 with plan 084: live-match scorecard render, goal/penalty/own-goal/yellow/red/foul/offside/var-check/substitution presentation, cele-goal/cele-yc/cele-rc animationend clearing, half-time/full-time pill+clock, no-Track/no-TtlBar/no-Manifest on the recurring card, expanded-flag ignored, crest present/absent/onerror-fallback via a mocked `convertFileSrc`), IdleView rail 8, Track slider 6, settings form 17 (16 + 1 with plan 085), App render 8 (5 + 3 with plan 085), TtlBar 7 (plan 081: anchor/re-anchor/clamp/reduced-motion/unmount-cancel) | `npx vitest run` |
+| frontend | 183 tests — presentation tables 12, presentation facts 4, inline markdown 7, weatherArt table 7 (plan 082: gallery day/night pairings, Cloudy/Storm/Snow texture assignment, Cloudy-never-keys-to-overcast, unknown-condition neutral fallback), useDelayedSwap hook 3, slot-state hook 27 (22 + 2 with plan 081: ttlMs/remainingMs validator accept/reject + 3 with plan 083: espn block absent/valid/malformed), status-state hook 15, StatusRailCard 62 (24 + 2 with plan 080 + 5 with plan 085 + 2 with plan 081 + 6 with plan 082: weather-alert mood/glyph class, day-vs-night mood, marker-leak guard collapsed + expanded, unknown-condition fallback, non-weather regression pin + 21 with plan 084: live-match scorecard render, goal/penalty/own-goal/yellow/red/foul/offside/var-check/substitution presentation, cele-goal/cele-yc/cele-rc animationend clearing, half-time/full-time pill+clock, no-Track/no-TtlBar/no-Manifest on the recurring card, expanded-flag ignored, crest present/absent/onerror-fallback via a mocked `convertFileSrc` + 2 with plan 087: `.hovered` class toggles when the prop is true, byte-identical render when omitted), IdleView rail 8, Track slider 6, settings form 17 (16 + 1 with plan 085), App render 8 (5 + 3 with plan 085), TtlBar 7 (plan 081: anchor/re-anchor/clamp/reduced-motion/unmount-cancel) | `npx vitest run` |
 | ci (v4) | fmt, clippy `-D warnings` (`--locked`), cargo test (`--locked`), cargo-audit, npm audit, tsc, vitest, vite build, `sh -n` cli syntax check, swiftc compile check | every push + pr |
 
 every example case listed in §4 for v1/v2/v3 components has a passing
@@ -99,6 +99,36 @@ validator's absent/valid/malformed `espn` block cases). The one real
 network path this plan touches (the crest fetch itself, and the
 summary/plays endpoints during a live match) is unverifiable in CI by
 design, same posture as every other poller here — operator-owed.
+
+plan 087 landed the hover primitive from a 390/181 baseline (080–086
+merged): a new `hover.rs` module — `active_card_rect` (mirrors
+`styles.css`'s width breakpoints, `--card-scale`-aware), `status_rail_active`
+(a rust port of `useStatusState.ts`'s `statusRailActive`, since rust
+had the underlying data but not the predicate), and
+`css_top_down_to_appkit_y` (the one named helper for the AppKit
+bottom-left-origin vs CSS top-down y-flip) — plus its own 30-case
+table-driven suite (rust 390→420); a `panel_event!` tracking-area
+handler on the existing `OverlayPanel` (`lib.rs`) wiring
+mouseEntered/mouseMoved/mouseExited to a `hover-changed` event, emitted
+only on transitions, never per mouse-move; and `Engine::status_snapshot_blocking`,
+a non-emitting sibling of `emit_current_status_blocking` the hover
+handler reads on every tracking-area callback so it never re-emits
+`status-state` off a mouse move. `set_ignore_cursor_events(true)` and
+`capabilities/default.json` are untouched (git-diff-verified) — the
+whole mechanism rides the empirical finding in
+`docs/design/hover-cursor-tracking.md` §2 that a tracking area fires
+independent of click-through. Frontend: one `.hovered` diagnostic CSS
+class (mirrored in `preview-overlay.css`) and its two StatusRailCard
+cases (frontend 181→183) — no actual hover FEATURE (081's TTL
+hover-pause, 082's weather peek, 084's rail→scorecard reveal, idle
+expanded-on-hover) is built here; each consumes this signal as its own
+follow-on plan. The tracking-area wiring itself has no automated test
+(AppKit callback plumbing, manual-only per §5, same treatment
+`apply_overlay_native_config` already gets) — the manual smoke check
+(hover near a card's top/bottom edge, then confirm a menu-bar icon
+under the window's dead margin still responds to a real click) is
+operator-owed and unverified in this pass (no notch macbook, no live
+GUI session in this environment).
 
 **left — each is a decision with an owner section, not a gap:**
 

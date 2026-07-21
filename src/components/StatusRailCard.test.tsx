@@ -1040,4 +1040,22 @@ describe("StatusRailCard", () => {
       });
     });
   });
+
+  // plan 087: the hover primitive's one frontend consumer — a diagnostic
+  // `.hovered` class proving `hover-changed` reaches the webview. Every
+  // actual hover FEATURE (081/082/084/idle expanded-on-hover) is
+  // separate follow-on work; this only pins the prop/class wiring.
+  describe("hovered prop (plan 087)", () => {
+    it("toggles the .hovered class when hovered is true", () => {
+      const { container } = render(<StatusRailCard slot={GOAL} hovered={true} />);
+      expect(container.querySelector(".rail-card.hovered")).not.toBeNull();
+    });
+
+    it("renders byte-identically to today when hovered is omitted (regression pin)", () => {
+      const withHovered = render(<StatusRailCard slot={GOAL} hovered={false} />);
+      const withoutHovered = render(<StatusRailCard slot={GOAL} />);
+      expect(withoutHovered.container.innerHTML).toBe(withHovered.container.innerHTML);
+      expect(withoutHovered.container.querySelector(".rail-card.hovered")).toBeNull();
+    });
+  });
 });

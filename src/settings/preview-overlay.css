@@ -52,6 +52,14 @@
   --accent-soft: rgba(255, 107, 87, 0.28);
 }
 
+/* plan 087: mirrors src/styles.css's .rail-card.hovered diagnostic rule
+   (mirror law) — the settings preview never receives a real
+   hover-changed event, but the class name must render identically if a
+   future preview ever toggles it. */
+.appearance-preview .rail-card.hovered {
+  filter: brightness(1.04);
+}
+
 .appearance-preview .rail-card {
   isolation: isolate;
 }

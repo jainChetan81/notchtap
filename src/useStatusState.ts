@@ -103,6 +103,12 @@ function isValidStatusState(v: unknown): v is StatusState {
 // the engine paused. All gates off + empty queue + unpaused = the plain
 // clock idle, and StatusRailCard keys the narrow 270px width off the same
 // predicate (the `.rail-card.idle.status` class, plan 034).
+//
+// plan 087: mirrored in rust as `hover::status_rail_active`
+// (`src-tauri/src/hover.rs`) — the hover rect-derivation function needs
+// this same boolean to pick the idle card's width (270 vs 460), and rust
+// has no runtime access to this TS predicate. Keep the seven terms and
+// their order identical in both copies.
 export function statusRailActive(status: StatusState): boolean {
   return (
     status.football.enabled ||
