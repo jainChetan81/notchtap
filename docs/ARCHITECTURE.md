@@ -451,6 +451,15 @@ above) and renames `max_queued` to `max_queued_per_tier` (same default,
 `50`, now applied independently per priority tier rather than as one
 shared cap).
 
+plan 083 adds `~/.config/notchtap/crests/` — a sibling of
+`config.toml`/`secrets.toml` under the same directory — as the repo's
+first binary-asset cache: club crest PNGs, fetched at runtime from
+ESPN's scoreboard-provided logo URLs and never committed to git.
+Lifecycle: fetched once per team per process lifetime on a cache miss,
+persists across restarts, no eviction (bounded by the watched leagues'
+team counts). Served to the overlay webview via tauri's asset protocol,
+scoped to this directory only.
+
 the rust core reads this file once at startup. changes require a restart
 in v1; a file-watcher or settings ui is a v2+ convenience. **(resolved
 2026-07-17, v5, §17)**: the settings ui is that convenience — a
