@@ -99,6 +99,15 @@ pub struct Config {
     /// TTL) is unaffected either way.
     #[serde(default = "default_resting_state")]
     pub resting_state: RestingState,
+    /// plan 088 (from plan 059's operator decision): persist accepted
+    /// one-shot notifications to `~/.config/notchtap/history.jsonl` for
+    /// later browsing. Defaults to `false` like every other opt-in surface
+    /// here (`rss_enabled`, `weather_enabled`, `espn_live_card`,
+    /// `espn_rich_events`) — this one writes notification CONTENT to disk,
+    /// including cmux payloads, so off-by-default is load-bearing, not
+    /// stylistic.
+    #[serde(default = "default_history_enabled")]
+    pub history_enabled: bool,
 }
 
 /// See [`Config::resting_state`].
@@ -276,6 +285,10 @@ fn default_resting_state() -> RestingState {
     RestingState::Rail
 }
 
+fn default_history_enabled() -> bool {
+    false
+}
+
 fn default_rotation_order() -> Vec<SourceKind> {
     // v6.1 review fix: Manual ranks ahead of Cmux — at default priorities
     // (Football/Cmux both High, Manual Medium, News Low) this never
@@ -374,6 +387,7 @@ impl Default for Config {
             connectors: Connectors::default(),
             appearance: default_appearance(),
             resting_state: default_resting_state(),
+            history_enabled: default_history_enabled(),
         }
     }
 }
@@ -522,6 +536,7 @@ mod tests {
         assert_eq!(c.appearance.card_opacity, 0.9);
         assert_eq!(c.resting_state, RestingState::Rail);
         assert!(!c.espn_rich_events);
+        assert!(!c.history_enabled);
     }
 
     #[test]
@@ -548,6 +563,19 @@ mod tests {
 
         let rail = Config::parse("resting_state = \"rail\"\n").unwrap();
         assert_eq!(rail.resting_state, RestingState::Rail);
+    }
+
+    #[test]
+    fn history_enabled_defaults_to_false_and_is_overridable() {
+        // plan 088: a config file predating this field (or one that simply
+        // never sets it) heals to `false` — off-by-default, matching every
+        // other opt-in surface, since this one writes notification CONTENT
+        // to disk.
+        let healed = Config::parse("").unwrap();
+        assert!(!healed.history_enabled);
+
+        let on = Config::parse("history_enabled = true\n").unwrap();
+        assert!(on.history_enabled);
     }
 
     #[test]

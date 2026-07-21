@@ -13,7 +13,8 @@ use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
 use crate::error::QueueError;
-use crate::event::{emit_slot_state, Event, SlotState, SourceKind};
+use crate::event::{emit_slot_state, Event, RotationSpec, SlotState, SourceKind};
+use crate::history::HistoryStore;
 use crate::notifier::{ConnectorHandle, ConnectorHealth};
 use crate::queue::SingleSlotQueue;
 use crate::status::{
@@ -98,6 +99,13 @@ pub struct Engine<R: tauri::Runtime = tauri::Wry> {
     espn_enabled: bool,
     rss_enabled: bool,
     weather_enabled: bool,
+    /// plan 088: `None` when history is disabled (the default) — the
+    /// `accept` hook is then a no-op and behavior is byte-identical to
+    /// pre-088. `Some` when the operator opted in and the store opened
+    /// successfully. Injected rather than constructed here so the hook is
+    /// testable against a temp dir instead of the operator's real config
+    /// directory.
+    history: Option<Arc<HistoryStore>>,
 }
 
 // Clone by hand (Arc clones + AppHandle clone + bool copies), like
@@ -115,6 +123,7 @@ impl<R: tauri::Runtime> Clone for Engine<R> {
             espn_enabled: self.espn_enabled,
             rss_enabled: self.rss_enabled,
             weather_enabled: self.weather_enabled,
+            history: self.history.clone(),
         }
     }
 }
@@ -124,6 +133,16 @@ impl<R: tauri::Runtime> Engine<R> {
     /// live-match handle internally — by construction, no code outside
     /// this module can ever hold the queue Arc, the wake, or the
     /// live-match handle: there is nothing to alias.
+    // plan 088 pushed this to 8 positional params (over clippy's default
+    // 7-arg threshold) by adding `history` as the last one. A named-field
+    // params struct (the fix `StatusInputs` used for a similar overflow,
+    // plans 047/048) is a bigger surface change than this plan's scope —
+    // it would touch every one of the 9 call sites' shape, not just add
+    // an argument — so the minimal, in-scope fix is this allow, matching
+    // the codebase's existing precedent of allowing a targeted clippy
+    // lint with a comment (see `SlotState`'s `large_enum_variant` allow
+    // in event.rs) rather than restructuring around it.
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         queue: SingleSlotQueue,
         app: tauri::AppHandle<R>,
@@ -132,6 +151,7 @@ impl<R: tauri::Runtime> Engine<R> {
         espn_enabled: bool,
         rss_enabled: bool,
         weather_enabled: bool,
+        history: Option<Arc<HistoryStore>>,
     ) -> Self {
         Self {
             queue: Arc::new(Mutex::new(queue)),
@@ -144,6 +164,7 @@ impl<R: tauri::Runtime> Engine<R> {
             espn_enabled,
             rss_enabled,
             weather_enabled,
+            history,
         }
     }
 
@@ -259,6 +280,21 @@ impl<R: tauri::Runtime> Engine<R> {
         if to_offer.origin != SourceKind::News {
             for connector in self.connectors.iter() {
                 connector.offer(&to_offer);
+            }
+        }
+        // plan 088: best-effort history append. ONE-SHOT ONLY —
+        // `Recurring` is the ambient live-scoreboard card, which
+        // topic-supersedes on every poll cycle; recording it would bury
+        // the discrete notifications this feature exists to recover under
+        // ~100 near-identical score updates per match. A write failure
+        // must never fail an accept: the notification already promoted.
+        // Log id/origin only — never title/body, matching this function's
+        // existing content-clean logging.
+        if let Some(store) = &self.history {
+            if matches!(to_offer.rotation, RotationSpec::OneShot { .. }) {
+                if let Err(e) = store.append(&to_offer) {
+                    tracing::warn!(id = %to_offer.id, origin = ?to_offer.origin, error = %e, "history append failed");
+                }
             }
         }
         Ok(())
@@ -442,6 +478,7 @@ mod tests {
             true,
             true,
             false,
+            None,
         )
     }
 
@@ -511,6 +548,7 @@ mod tests {
             true,
             true,
             false,
+            None,
         );
 
         engine.accept(event(Priority::Medium), false).await.unwrap();
@@ -540,6 +578,7 @@ mod tests {
             true,
             true,
             false,
+            None,
         );
 
         // fill the Medium tier: first promotes into the visible slot,
@@ -767,6 +806,7 @@ mod tests {
             true,
             false,
             false,
+            None,
         );
         engine.update_live_match(Some(live_summary("45'")));
 
@@ -867,5 +907,100 @@ mod tests {
         tokio::time::timeout(Duration::from_millis(200), notified)
             .await
             .expect("a changed summary must wake again");
+    }
+
+    // plan 088: history hook tests. `with_limits` in a fresh temp dir per
+    // test — never the real config dir (see history.rs's own temp_dir()
+    // helper for why a shared dir is unsafe here too).
+    fn history_temp_dir() -> std::path::PathBuf {
+        std::env::temp_dir().join(format!(
+            "notchtap-enginehistorytest-{}",
+            uuid::Uuid::new_v4()
+        ))
+    }
+
+    #[tokio::test]
+    async fn accept_records_one_shot_event_to_history() {
+        let app = tauri::test::mock_app();
+        let dir = history_temp_dir();
+        let store =
+            Arc::new(crate::history::HistoryStore::with_limits(&dir, 5 * 1024 * 1024, 2).unwrap());
+        let engine = Engine::new(
+            SingleSlotQueue::new(50),
+            app.handle().clone(),
+            Arc::new(Vec::new()),
+            Arc::new(StdMutex::new(ConnectorHealth::default())),
+            true,
+            true,
+            false,
+            Some(store.clone()),
+        );
+
+        let mut one_shot = event(Priority::Medium);
+        one_shot.rotation = RotationSpec::OneShot { ttl_secs: 8 };
+        engine.accept(one_shot, false).await.unwrap();
+
+        let entries = store.read_recent(10).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].event.payload.title, "t");
+    }
+
+    #[tokio::test]
+    async fn accept_does_not_record_recurring_event() {
+        // THE TRIPWIRE for the core design decision: `Recurring` events
+        // (the ambient live-scoreboard card) must never be written to
+        // history — if someone later "simplifies" the gate away, this
+        // test must fail.
+        let app = tauri::test::mock_app();
+        let dir = history_temp_dir();
+        let store =
+            Arc::new(crate::history::HistoryStore::with_limits(&dir, 5 * 1024 * 1024, 2).unwrap());
+        let engine = Engine::new(
+            SingleSlotQueue::new(50),
+            app.handle().clone(),
+            Arc::new(Vec::new()),
+            Arc::new(StdMutex::new(ConnectorHealth::default())),
+            true,
+            true,
+            false,
+            Some(store.clone()),
+        );
+
+        let mut recurring = event(Priority::Medium);
+        recurring.rotation = RotationSpec::Recurring { display_secs: 8 };
+        engine.accept(recurring, false).await.unwrap();
+
+        let entries = store.read_recent(10).unwrap();
+        assert!(
+            entries.is_empty(),
+            "Recurring events must never be recorded to history"
+        );
+    }
+
+    #[tokio::test]
+    async fn accept_with_history_disabled_writes_nothing() {
+        // Engine built with `None` (test_engine's default) — the store is
+        // never even constructed, so there is no directory `accept` could
+        // possibly write to. Assert the field directly (tests share
+        // module scope with private fields) AND that an unrelated temp
+        // dir stays empty, as a belt-and-suspenders regression pin: if a
+        // future change made the `None` path fall back to constructing a
+        // default store somewhere, this would catch the field flipping
+        // to `Some` even before any file shows up.
+        let app = tauri::test::mock_app();
+        let dir = history_temp_dir();
+        let engine = test_engine(&app);
+        assert!(
+            engine.history.is_none(),
+            "test_engine must build with history disabled"
+        );
+
+        engine.accept(event(Priority::Medium), false).await.unwrap();
+
+        assert!(
+            !dir.join("history.jsonl").exists(),
+            "history_enabled off must create no history.jsonl anywhere, \
+             let alone in this unrelated temp dir"
+        );
     }
 }

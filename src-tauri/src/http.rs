@@ -279,6 +279,7 @@ mod tests {
                 true,
                 true,
                 false,
+                None,
             ),
             default_ttl: 8,
             manual_default_priority: Priority::Medium,
