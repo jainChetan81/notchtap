@@ -511,17 +511,6 @@ export function StatusRailCard({
                   )}
                   <Track total={renderedSlot.queueTotal} done={renderedSlot.queueDone} />
                 </div>
-                <TtlBar
-                  key={renderedSlot.id}
-                  slotId={renderedSlot.id}
-                  ttlMs={renderedSlot.ttlMs}
-                  remainingMs={renderedSlot.remainingMs}
-                  // plan 093: TTL hover-pause — this bar only ever mounts
-                  // while `renderedShowing`, so `hovered` alone (the live
-                  // cursor signal) is exactly "is THIS card hovered right
-                  // now," no extra gating needed.
-                  hoverPaused={hovered}
-                />
                 <Manifest
                   body={renderedSlot.body}
                   eventType={renderedSlot.eventType}
@@ -532,6 +521,21 @@ export function StatusRailCard({
                   hasLink={renderedSlot.link !== null}
                   subtitle={renderedSlot.subtitle}
                   details={renderedVisibleDetails}
+                />
+                {/* plan 100: last in DOM order within .below-block — the bar
+                    is the card's floor, absolutely positioned to its bottom
+                    edge (styles.css), clipped to the rounded corners by
+                    .below-block's own overflow: hidden. */}
+                <TtlBar
+                  key={renderedSlot.id}
+                  slotId={renderedSlot.id}
+                  ttlMs={renderedSlot.ttlMs}
+                  remainingMs={renderedSlot.remainingMs}
+                  // plan 093: TTL hover-pause — this bar only ever mounts
+                  // while `renderedShowing`, so `hovered` alone (the live
+                  // cursor signal) is exactly "is THIS card hovered right
+                  // now," no extra gating needed.
+                  hoverPaused={hovered}
                 />
               </>
             )}
