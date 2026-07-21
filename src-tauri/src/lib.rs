@@ -6,6 +6,7 @@ mod engine;
 // nothing else consumes this crate as a library.
 pub mod error;
 pub mod event;
+mod history;
 mod hover;
 mod http;
 mod logging;
@@ -30,6 +31,7 @@ use tauri::{ActivationPolicy, Manager};
 use crate::config::Config;
 use crate::crests::CrestCache;
 use crate::engine::Engine;
+use crate::history::HistoryStore;
 use crate::queue::SingleSlotQueue;
 use crate::settings::AppearanceChangedPayload;
 
@@ -200,6 +202,7 @@ pub fn run() {
     let weather_temp_hot_c = config.weather_temp_hot_c;
     let weather_temp_cold_c = config.weather_temp_cold_c;
     let weather_priority = config.weather_priority;
+    let history_enabled = config.history_enabled;
 
     // v3 outbound connectors: built here (channel needs no runtime), the
     // worker future is spawned in setup once the runtime exists. missing
@@ -258,6 +261,25 @@ pub fn run() {
             // so the settings commands (send_test_notification) and the
             // on_page_load/server_once closures below can reach the same
             // Engine the rotation loop and pollers run on.
+            // plan 088: `None` when disabled (the default) — the Engine's
+            // hook is then a no-op and behavior is byte-identical to
+            // pre-088. A store that fails to open (unwritable config dir)
+            // degrades to `None` with a warning rather than failing boot;
+            // history is a convenience, not a correctness requirement.
+            let history = if history_enabled {
+                match dirs::home_dir()
+                    .ok_or_else(|| anyhow::anyhow!("could not determine home directory"))
+                    .and_then(|h| Ok(HistoryStore::new(Config::dir_from_home(&h))?))
+                {
+                    Ok(store) => Some(Arc::new(store)),
+                    Err(e) => {
+                        tracing::warn!(error = %e, "history disabled: could not open store");
+                        None
+                    }
+                }
+            } else {
+                None
+            };
             let engine = Engine::new(
                 initial_queue,
                 app.handle().clone(),
@@ -266,6 +288,7 @@ pub fn run() {
                 espn_enabled,
                 rss_enabled,
                 weather_enabled,
+                history,
             );
             app.manage(engine.clone());
 
@@ -997,6 +1020,7 @@ mod tests {
             false,
             false,
             false,
+            None,
         )
     }
 

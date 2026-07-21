@@ -1425,6 +1425,7 @@ mod tests {
             true,
             true,
             false,
+            None,
         );
 
         engine.accept(score_event("accepted"), false).await.unwrap();
@@ -2135,6 +2136,7 @@ mod tests {
             true,
             true,
             false,
+            None,
         );
 
         for event in live_cycle_events(true) {
