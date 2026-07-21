@@ -16,6 +16,7 @@ import { useDelayedSwap } from "../useDelayedSwap";
 import type { EspnMeta, SlotState } from "../useSlotState";
 import type { StatusState } from "../useStatusState";
 import { FlankClock } from "./FlankClock";
+import { IdleHoverPeek } from "./IdleHoverPeek";
 import { Manifest } from "./Manifest";
 import { Stamp } from "./Stamp";
 import { StatusDots } from "./StatusDots";
@@ -330,6 +331,12 @@ export function StatusRailCard({
           </div>
         )}
       </div>
+      {/* plan 093 (079 items 9/17/18): the idle hover-expanded state —
+          gated on `renderedShowing` (not the live `showing`) for the same
+          reason `StatusDots` above is: it must stay in step with the
+          delayed-swap settle, not flicker on/off mid-transition. Driven
+          by the live `hovered` prop, never CSS `:hover`. */}
+      {!renderedShowing && <IdleHoverPeek status={status} hovered={hovered} />}
       {renderedShowing && (
         <div className={belowBlockClass}>
           {/* plan 082: the condition glyph — a background-layer image,
@@ -502,6 +509,11 @@ export function StatusRailCard({
                   slotId={renderedSlot.id}
                   ttlMs={renderedSlot.ttlMs}
                   remainingMs={renderedSlot.remainingMs}
+                  // plan 093: TTL hover-pause — this bar only ever mounts
+                  // while `renderedShowing`, so `hovered` alone (the live
+                  // cursor signal) is exactly "is THIS card hovered right
+                  // now," no extra gating needed.
+                  hoverPaused={hovered}
                 />
                 <Manifest
                   body={renderedSlot.body}

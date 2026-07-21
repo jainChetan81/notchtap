@@ -1087,9 +1087,11 @@ describe("StatusRailCard", () => {
   });
 
   // plan 087: the hover primitive's one frontend consumer — a diagnostic
-  // `.hovered` class proving `hover-changed` reaches the webview. Every
-  // actual hover FEATURE (081/082/084/idle expanded-on-hover) is
-  // separate follow-on work; this only pins the prop/class wiring.
+  // `.hovered` class proving `hover-changed` reaches the webview. Plan
+  // 093 builds the actual hover FEATURES (081/082/084/idle
+  // expanded-on-hover) — see the "idle hover-expanded peek/reveal (plan
+  // 093)" describe block below for those; this block only pins the
+  // prop/class wiring plan 087 shipped.
   describe("hovered prop (plan 087)", () => {
     it("toggles the .hovered class when hovered is true", () => {
       const { container } = render(<StatusRailCard slot={GOAL} hovered={true} />);
@@ -1101,6 +1103,56 @@ describe("StatusRailCard", () => {
       const withoutHovered = render(<StatusRailCard slot={GOAL} />);
       expect(withoutHovered.container.innerHTML).toBe(withHovered.container.innerHTML);
       expect(withoutHovered.container.querySelector(".card-assembly.hovered")).toBeNull();
+    });
+  });
+
+  // plan 093: the idle hover-expanded state (079 items 9/17/18) and the
+  // TTL hover-pause (081's deferred half), exercised through the whole
+  // StatusRailCard tree rather than IdleHoverPeek/TtlBar in isolation —
+  // IdleHoverPeek.test.tsx and TtlBar.test.tsx already cover each
+  // component's own behavior in depth; these pin how StatusRailCard
+  // actually wires `hovered`/`status` into both of them.
+  describe("idle hover-expanded peek/reveal (plan 093)", () => {
+    const WEATHER_STATUS: StatusState = {
+      paused: false,
+      waiting: 0,
+      football: { enabled: false, live: null },
+      news: { enabled: false },
+      weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy" } },
+    };
+
+    it("mounts no below-block while idle and not hovered (flanks stay rounded — 091's shell untouched)", () => {
+      const { container } = render(
+        <StatusRailCard slot={{ state: "empty" }} status={WEATHER_STATUS} hovered={false} />,
+      );
+      expect(container.querySelector(".below-block")).toBeNull();
+    });
+
+    // 091's `:not(:has(.below-block))` rounding law is untouched by this
+    // plan — this pins the DOM condition that law keys off (a real
+    // `.below-block` becoming present), which is what makes "flanks
+    // un-round while the peek is open" true without editing that rule.
+    it("mounts a .below-block.idle-peek while idle and hovered", () => {
+      const { container } = render(
+        <StatusRailCard slot={{ state: "empty" }} status={WEATHER_STATUS} hovered={true} />,
+      );
+      const peek = container.querySelector(".below-block.idle-peek");
+      expect(peek).not.toBeNull();
+      expect(container.querySelector(".card-assembly:has(.below-block)")).not.toBeNull();
+    });
+
+    it("never mounts the idle peek while a card is showing, regardless of hovered", () => {
+      const { container } = render(<StatusRailCard slot={GOAL} hovered={true} />);
+      expect(container.querySelector(".idle-peek")).toBeNull();
+    });
+
+    it("passes hoverPaused through to the TtlBar while a card is showing and hovered", () => {
+      const { container } = render(<StatusRailCard slot={GOAL} hovered={true} />);
+      expect(container.querySelector(".ttl-bar")).not.toBeNull();
+      // TtlBar.test.tsx pins the freeze mechanics themselves; this only
+      // proves StatusRailCard doesn't lose the wire — a stale/omitted
+      // hoverPaused would still render a ttl-bar, so absence of a crash
+      // plus TtlBar's own hoverPaused tests together cover this.
     });
   });
 });

@@ -18,18 +18,42 @@ export function TtlBar({
   slotId,
   ttlMs,
   remainingMs,
+  hoverPaused = false,
 }: {
   slotId: string;
   ttlMs: number;
   remainingMs: number;
+  // plan 093: 081's deferred half. Freezes the countdown for as long as
+  // the caller reports the card hovered — driven by `App.tsx`'s
+  // `hover-changed`-sourced `hovered` prop (never CSS `:hover`, per the
+  // hover primitive's own rule), NOT by re-anchoring off a fresh
+  // `remainingMs`: the rust side never re-emits `slot-state` purely for a
+  // hover transition (`SlotState::dedup_eq` excludes `remaining_ms`,
+  // CLAUDE.md's own rule, so a hover-only mutation is never wire-visible
+  // here) — this prop is the ONLY signal this component gets. The actual
+  // rotation-deadline hold lives rust-side (`queue.rs`'s
+  // `hover_started_at`/`hover_paused_total`); this is purely the LOCAL
+  // visual mirror of that hold, decoupled from it but kept honest because
+  // both sides pause/resume off the same tracking-area transition.
+  hoverPaused?: boolean;
 }) {
   const fillRef = useRef<HTMLDivElement | null>(null);
+  // Read inside the rAF loop below without re-running the anchoring
+  // effect on every hoverPaused flip (see that effect's own dependency
+  // array) — a ref, not a second effect, so pause/resume never resets
+  // `deadline`.
+  const hoverPausedRef = useRef(hoverPaused);
+  useEffect(() => {
+    hoverPausedRef.current = hoverPaused;
+  }, [hoverPaused]);
 
   // Re-anchors on mount and on every slotId/ttlMs/remainingMs change: a
   // new promotion (slotId changes) or a same-id re-emit with a fresh
   // remainingMs (supersede top-up, manual expand) both need the countdown
   // to restart from the new numbers, not keep counting from the old ones.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: slotId isn't read in the body, but it's the deliberate re-anchor trigger documented above (same pattern as StatusRailCard's currentId) — a new promotion must restart the countdown even when ttlMs/remainingMs happen to coincide.
+  // Deliberately NOT keyed on hoverPaused — see the ref above; a hover
+  // toggle must pause/resume in place, never restart the countdown.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: slotId isn't read in the body, but it's the deliberate re-anchor trigger documented above (same pattern as StatusRailCard's currentId) — a new promotion must restart the countdown even when ttlMs/remainingMs happen to coincide. hoverPaused is excluded on purpose too (see the comment above the effect).
   useEffect(() => {
     const fill = fillRef.current;
     if (!fill) {
@@ -49,6 +73,14 @@ export function TtlBar({
     }
 
     const deadline = performance.now() + remainingMs;
+    // plan 093: total time already spent paused (banked once a pause
+    // ends) plus, while a pause is currently open, the in-flight duration
+    // since it started — the same freeze-via-subtraction technique
+    // queue.rs's `hover_frozen_rotation_elapsed` uses rust-side, kept
+    // independent here since this component never round-trips a fresh
+    // remainingMs to resync against (see the `hoverPaused` prop doc).
+    let pausedAccumMs = 0;
+    let pauseStartedAt: number | null = hoverPausedRef.current ? performance.now() : null;
     let frame: number;
 
     function tick() {
@@ -56,7 +88,15 @@ export function TtlBar({
       if (!fillEl) {
         return;
       }
-      const remaining = Math.max(0, deadline - performance.now());
+      const nowPaused = hoverPausedRef.current;
+      if (nowPaused && pauseStartedAt === null) {
+        pauseStartedAt = performance.now();
+      } else if (!nowPaused && pauseStartedAt !== null) {
+        pausedAccumMs += performance.now() - pauseStartedAt;
+        pauseStartedAt = null;
+      }
+      const effectiveNow = pauseStartedAt ?? performance.now();
+      const remaining = Math.max(0, deadline + pausedAccumMs - effectiveNow);
       const pct = Math.min(100, (remaining / ttlMs) * 100);
       fillEl.style.width = `${pct}%`;
       frame = requestAnimationFrame(tick);

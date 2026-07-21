@@ -326,6 +326,17 @@ pub fn run() {
                 // per mouse-move.
                 let hover_handler = OverlayPanelEventHandler::new();
                 let hover_cutout_width = cutout.map(|c| c.width).unwrap_or(0.0);
+                // plan 093: the y-span fix's cutout-HEIGHT term. Mirrors
+                // `cutout_height_js_value`'s own reasoning (lib.rs, near
+                // the on_page_load eval-splice site) — `CutoutGeometry`
+                // carries no height field, so `inset`
+                // (`DetectOutput::safe_area_top_inset`, already
+                // destructured above and already in scope here) is the
+                // notch's real height in notch mode; `0.0` in HUD mode,
+                // where `hover::active_card_rect` ignores this argument
+                // entirely in favor of `HUD_CUTOUT_H` anyway (same
+                // pattern `hover_cutout_width` already follows).
+                let hover_cutout_height = inset;
                 let was_hovered = Arc::new(StdMutex::new(false));
 
                 {
@@ -334,15 +345,23 @@ pub fn run() {
                     let was_hovered = was_hovered.clone();
                     hover_handler.on_mouse_entered(move |event| {
                         let loc = event.locationInWindow();
+                        // plan 093: read BEFORE this event can overwrite
+                        // it — `hover_point_is_over_card`'s own doc
+                        // explains why the CURRENT (pre-event) value is
+                        // the correct hysteresis input for whether the
+                        // idle peek's rect should already be grown.
+                        let idle_peek_open = *was_hovered.lock().unwrap();
                         let hovered = hover_point_is_over_card(
                             &engine,
                             &app_handle,
                             mode,
                             hover_cutout_width,
+                            hover_cutout_height,
+                            idle_peek_open,
                             loc.x,
                             loc.y,
                         );
-                        emit_hover_changed_if_transitioned(&app_handle, &was_hovered, hovered);
+                        emit_hover_changed_if_transitioned(&engine, &app_handle, &was_hovered, hovered);
                     });
                 }
                 {
@@ -351,25 +370,29 @@ pub fn run() {
                     let was_hovered = was_hovered.clone();
                     hover_handler.on_mouse_moved(move |event| {
                         let loc = event.locationInWindow();
+                        let idle_peek_open = *was_hovered.lock().unwrap();
                         let hovered = hover_point_is_over_card(
                             &engine,
                             &app_handle,
                             mode,
                             hover_cutout_width,
+                            hover_cutout_height,
+                            idle_peek_open,
                             loc.x,
                             loc.y,
                         );
-                        emit_hover_changed_if_transitioned(&app_handle, &was_hovered, hovered);
+                        emit_hover_changed_if_transitioned(&engine, &app_handle, &was_hovered, hovered);
                     });
                 }
                 {
+                    let engine = engine.clone();
                     let app_handle = app.handle().clone();
                     let was_hovered = was_hovered.clone();
                     // Leaving the window's tracking area is never "still
                     // hovered" regardless of where the cursor lands next —
                     // no rect comparison needed.
                     hover_handler.on_mouse_exited(move |_event| {
-                        emit_hover_changed_if_transitioned(&app_handle, &was_hovered, false);
+                        emit_hover_changed_if_transitioned(&engine, &app_handle, &was_hovered, false);
                     });
                 }
 
@@ -752,17 +775,34 @@ fn cutout_height_js_value(inset: f64) -> String {
 // plan 087: called fresh from every tracking-area callback (mouseEntered/
 // mouseMoved) — cheap (a few short-lived mutex locks, no lock held across
 // the return) rather than cached, since the card's rect can change
-// between events (a new item promoted, expand toggled, status chips
-// gained/lost) while the cursor is still resting over the window. Lock
-// discipline: each of `engine.read_blocking`/`status_snapshot_blocking`/
-// the config lock acquires, reads, and drops before the next opens —
-// never nested (cold-read Gap 2).
+// between events (a new item promoted, expand toggled) while the cursor
+// is still resting over the window. Lock discipline: each of
+// `engine.read_blocking`/the config lock acquires, reads, and drops
+// before the next opens — never nested (cold-read Gap 2).
+// plan 093: `cutout_height`/`idle_peek_open` added for the y-span fix —
+// see `hover::active_card_rect`'s doc comment for what each means.
+// `idle_peek_open` is the caller's job to supply (it needs `was_hovered`,
+// which this function has no reason to know about); this function no
+// longer reads `StatusState` at all — `hover::status_rail_active` (the
+// old `has_status_chips` input) is gone, both the function and its call
+// here, now that the y-span's idle-peek input is hover hysteresis, not
+// ambient-data availability.
+//
+// plan 093 pushed this to 8 positional params (over clippy's default 7-arg
+// threshold) by adding `cutout_height`/`idle_peek_open`. Same call as
+// `Engine::new`'s own `#[allow(clippy::too_many_arguments)]` (engine.rs):
+// a named-field params struct is a bigger surface change than this plan's
+// scope for a function with exactly two call sites, both in this same
+// file.
+#[allow(clippy::too_many_arguments)]
 #[cfg(target_os = "macos")]
 fn hover_point_is_over_card(
     engine: &Engine,
     app_handle: &tauri::AppHandle,
     mode: presentation::Mode,
     cutout_width: f64,
+    cutout_height: f64,
+    idle_peek_open: bool,
     point_x: f64,
     point_y: f64,
 ) -> bool {
@@ -772,8 +812,6 @@ fn hover_point_is_over_card(
         SlotState::Showing { expanded, .. } => (true, expanded),
         SlotState::Empty => (false, false),
     });
-    let status = engine.status_snapshot_blocking();
-    let has_status_chips = hover::status_rail_active(&status);
     let scale = app_handle
         .state::<StdMutex<Config>>()
         .lock()
@@ -783,10 +821,11 @@ fn hover_point_is_over_card(
     let rect = hover::active_card_rect(
         mode,
         cutout_width,
+        cutout_height,
         scale,
         visible,
         expanded,
-        has_status_chips,
+        idle_peek_open,
     );
     hover::point_in_rect(&rect, point_x, point_y)
 }
@@ -797,22 +836,44 @@ fn hover_point_is_over_card(
 // the webview and violate the idle-cost discipline plans 015/018
 // established). Same emission shape as `appearance-changed`
 // (`settings.rs:564`).
+//
+// plan 093: this is also the ONE place the TTL hover-pause hooks into
+// the Engine — the same transitions-only gate that protects the webview
+// from a flood of `hover-changed` events also protects the queue from a
+// flood of pointless hover_enter/hover_exit calls (both are no-ops once
+// already in the state they'd be set to, but there's no reason to pay a
+// queue lock per mouse-move when nothing changed). `apply_blocking`
+// carries the mutate→wake→emit protocol (plan 036/037) — no new side
+// channel, no second wake path: this is the existing protocol, reused.
 #[cfg(target_os = "macos")]
 fn emit_hover_changed_if_transitioned(
+    engine: &Engine,
     app_handle: &tauri::AppHandle,
     was_hovered: &StdMutex<bool>,
     hovered: bool,
 ) {
     use tauri::Emitter;
 
-    let mut last = was_hovered.lock().unwrap();
-    if *last == hovered {
-        return;
+    {
+        let mut last = was_hovered.lock().unwrap();
+        if *last == hovered {
+            return;
+        }
+        *last = hovered;
+        // guard dropped at the end of this block — `apply_blocking` below
+        // takes its own, unrelated queue lock; no reason to hold this
+        // one across that call.
     }
-    *last = hovered;
     if let Some(webview) = app_handle.get_webview_window("main") {
         let _ = webview.emit("hover-changed", &serde_json::json!({ "hovered": hovered }));
     }
+    engine.apply_blocking(|q, now| {
+        if hovered {
+            q.hover_enter(now);
+        } else {
+            q.hover_exit(now);
+        }
+    });
 }
 
 // notch-morph nudge (plan §3.5): anchor to the reported cutout when we have
