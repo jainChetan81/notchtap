@@ -483,12 +483,18 @@ implementation; app icon open), item 17 (plan 085 `725040b` cheap half;
 plan 086 spike `4ec98fe` de-risked hover; plan 087 filed TODO). LOCKED
 BUT UNBUILT: items 1 and 2 — the cutout shape and time+dots idle exist
 only in `prototype/notch-states.html`; no build plan filed. STILL
-OPEN / OPERATOR DECISION: items 8 (cmux treatment), 10 (pill shape), 11
-(pause indicator), 12 (app icon direction), 13-remainder (icon artwork
-sourcing), 14 (staleness restyle) — items 16 and 18 were DECIDED in the
-2026-07-21 operator decision session (16: MediaRemote spike to be filed,
-not dropped; 18: timeline folds into hover-expanded idle, rides the
-items-1+2 build — see the bracketed decision records on those items).
+OPEN / OPERATOR DECISION: **only items 12 (app icon direction) and
+13-remainder (icon artwork sourcing)** — everything else is now decided.
+Items 16 and 18 were DECIDED in the first 2026-07-21 session (16:
+MediaRemote spike to be filed, not dropped; 18: timeline folds into
+hover-expanded idle). Items 8/10/11/14 were DECIDED in the second
+2026-07-21 session and their full decision records live in **plan 092's
+"Decisions of record"** (8: cmux-specific accent — operator chose
+against the general-template-only recommendation; 10: prototype chip
+language everywhere; 11: pause = dim dots + static glyph; 14: ageLabel
+carries as-is). Build routing: items 1+2 → plan 091 (dispatched);
+items 8/10/11/14/19 → plan 092; the hover halves of 9/17/18 + 081/084's
+deferred halves → plan 093.
 **Still-needed check (2026-07-21, post-088)**: this ledger remains the
 ONLY tracker for the unbuilt core of the revamp — verified at HEAD:
 items 1+2's cutout card shape has zero code in `src/styles.css` (no
