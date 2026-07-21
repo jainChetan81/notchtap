@@ -352,13 +352,13 @@ export function StatusRailCard({
               // prototype lock) and no `TtlBar` either: the bar's
               // countdown-to-rotation framing would visually contradict
               // "sticky" (see plan 084's report for the reasoning). No
-              // generic `<Stamp>` — the live-pill above already carries
+              // generic `<Stamp>` — the live chip above already carries
               // that role (Live/Break/Final) with more precision.
               <div className="notif-block">
                 <div className="sc-head">
-                  <span className="league-chip">{renderedEspn.league}</span>
+                  <span className="chip chip-league">{renderedEspn.league}</span>
                   <span
-                    className={`live-pill${renderedPillVariant === "live" ? "" : ` ${renderedPillVariant}`}`}
+                    className={`chip chip-live${renderedPillVariant === "live" ? "" : ` ${renderedPillVariant}`}`}
                   >
                     {renderedPillVariant !== "final" && <span className="live-dot" />}
                     {renderedPillLabel}
@@ -399,19 +399,38 @@ export function StatusRailCard({
                 <div className="compact">
                   <div className="copy">
                     {renderedNews ? (
+                      // plan 092 (item 19 + 080 carry-forward): the shipped
+                      // news layout stays screenshot-faithful (masthead,
+                      // headline, WIRE stamp, news-shade, track) — only the
+                      // Stamp badge's position (now inline with the
+                      // masthead, `.masthead-row`) and the pills' visual
+                      // vocabulary (chip-converged, item 10) change. Age
+                      // moves out of the meta row entirely into the plain
+                      // `.notif-time-inline` slot (Decision 5 — same
+                      // ageLabel computation/thresholds, new location);
+                      // pub-meta is untouched.
                       <>
-                        <div className="masthead">
-                          <span className="dot" />
-                          {renderedSlot.source ?? "RSS"}
+                        <div className="masthead-row">
+                          <div className="masthead">
+                            <span className="dot" />
+                            {renderedSlot.source ?? "RSS"}
+                          </div>
+                          <Stamp
+                            priority={renderedSlot.priority}
+                            signal={renderedSlot.signal}
+                            eventType={renderedSlot.eventType}
+                          />
                         </div>
                         <div className="title headline">{renderedSlot.title}</div>
-                        {(renderedNewsCategory !== null || renderedNewsAge !== null) && (
-                          <div className="pills">
+                        {(renderedNewsCategory !== null ||
+                          renderedNewsAge !== null ||
+                          renderedNewsPublished !== null) && (
+                          <div className="notif-meta-row">
                             {renderedNewsCategory !== null && (
-                              <span className="pill category">{renderedNewsCategory}</span>
+                              <span className="chip chip-category">{renderedNewsCategory}</span>
                             )}
                             {renderedNewsAge !== null && (
-                              <span className="pill age">{renderedNewsAge}</span>
+                              <span className="notif-time-inline">{renderedNewsAge}</span>
                             )}
                             {renderedNewsPublished !== null && (
                               <span className="pub-meta">published {renderedNewsPublished}</span>
@@ -420,9 +439,39 @@ export function StatusRailCard({
                         )}
                       </>
                     ) : (
+                      // plan 092 (item 19, this plan's core): the general
+                      // card's header row (title + the priority Stamp
+                      // badge) + subtitle row (plan 035's `subtitle`,
+                      // surfaced in compact for the first time) +
+                      // full-width clamped body. The Stamp badge is the
+                      // only real "chip" content this branch has: Decision
+                      // 3's per-origin (cmux) source chip is NOT built
+                      // here — `SlotState::Showing` never carries `origin`
+                      // on the wire (only rust's internal `Event` struct
+                      // does; `queue.rs::current_slot_state` never reads
+                      // it), and `meta.source` is `None` for every
+                      // generic-eventType event regardless of whether it
+                      // came from cmux or a plain manual/CLI push, so
+                      // there is no frontend-safe way to tell them apart
+                      // without a wire-type change (out of scope for this
+                      // plan). There is no inline-time value here either
+                      // (no non-news event carries a publishedAtMs), so
+                      // the subtitle row's time slot simply never renders.
                       <>
-                        <div className="title">{renderedSlot.title}</div>
-                        <div className="body">{bodyContent}</div>
+                        <div className="notif-header-row">
+                          <span className="notif-title">{renderedSlot.title}</span>
+                          <Stamp
+                            priority={renderedSlot.priority}
+                            signal={renderedSlot.signal}
+                            eventType={renderedSlot.eventType}
+                          />
+                        </div>
+                        {renderedSlot.subtitle !== null && (
+                          <div className="notif-subtitle-row">
+                            <span className="notif-subtitle">{renderedSlot.subtitle}</span>
+                          </div>
+                        )}
+                        <div className="notif-body">{bodyContent}</div>
                         {/* plan 042: collapsed scorecard cells (Clock,
                             per-side Cards) — only a live-match card with
                             `espn_live_card` on populates `details`, so
@@ -441,11 +490,6 @@ export function StatusRailCard({
                       </>
                     )}
                   </div>
-                  <Stamp
-                    priority={renderedSlot.priority}
-                    signal={renderedSlot.signal}
-                    eventType={renderedSlot.eventType}
-                  />
                   {!renderedExpanded && (
                     <div className="compact-hint">
                       <kbd>⌃⇧N</kbd> more

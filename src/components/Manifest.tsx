@@ -37,6 +37,7 @@ export function Manifest({
     ...(newsPublished !== null ? [<span key="pub">published {newsPublished}</span>] : []),
     ...(newsCategory !== null ? [<span key="cat">{newsCategory}</span>] : []),
   ];
+  const genericSourceLabel = sourceLabelFor(eventType);
 
   // plan 069 (folded into 078): memoized on `body` so unrelated re-renders
   // don't re-tokenize the markdown.
@@ -76,16 +77,41 @@ export function Manifest({
             </div>
           </div>
         ) : (
-          <div className="manifest-inner">
-            <div>
-              <div className="detail-label">Message</div>
-              <div className="detail-value message">{messageContent}</div>
+          // plan 092 (Step 3): the generic branch's expanded manifest
+          // converges onto the SAME full-width `.manifest-block`
+          // vocabulary news already ships (080/090) — Message gets
+          // `.manifest-label`/`.manifest-text` like news's Summary, the
+          // source label moves into an inline `.manifest-meta` row (like
+          // news's `<b>{source}</b>` segment), and the hotkey hint moves
+          // to `.manifest-footer` (also matching news). Subtitle and each
+          // detail pair keep their own `.detail-label`/`.detail-value`
+          // heading+value cell — content semantics unchanged, only the
+          // container went from a 2-column grid to a full-width stack
+          // (`.manifest-fields`).
+          <div className="manifest-block">
+            <div className="manifest-label">Message</div>
+            <div className="manifest-text">{messageContent}</div>
+            <div className="manifest-meta">
+              <b>{genericSourceLabel}</b>
             </div>
-            <div>
-              <div className="detail-label">Source / Control</div>
-              <div className="detail-value">
-                {sourceLabelFor(eventType)}
-                <br />
+            {(subtitle || details.length > 0) && (
+              <div className="manifest-fields">
+                {subtitle ? (
+                  <div>
+                    <div className="detail-label">Subtitle</div>
+                    <div className="detail-value">{subtitle}</div>
+                  </div>
+                ) : null}
+                {details.map((detail) => (
+                  <div key={`${detail.label}:${detail.value}`}>
+                    <div className="detail-label">{detail.label}</div>
+                    <div className="detail-value">{detail.value}</div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="manifest-footer">
+              <span className="manifest-hint">
                 {hasLink ? (
                   <>
                     <kbd>⌃⇧O</kbd> read · <kbd>⌃⇧N</kbd> collapse
@@ -95,20 +121,8 @@ export function Manifest({
                     <kbd>⌃⇧N</kbd> collapse
                   </>
                 )}
-              </div>
+              </span>
             </div>
-            {subtitle ? (
-              <div>
-                <div className="detail-label">Subtitle</div>
-                <div className="detail-value">{subtitle}</div>
-              </div>
-            ) : null}
-            {details.map((detail) => (
-              <div key={`${detail.label}:${detail.value}`}>
-                <div className="detail-label">{detail.label}</div>
-                <div className="detail-value">{detail.value}</div>
-              </div>
-            ))}
           </div>
         )}
       </div>

@@ -50,7 +50,9 @@ describe("App", () => {
     // plan 078: the collapsed manifest stays mounted (aria-hidden), so the
     // body text also appears in its Message cell — assert on the compact
     // view's copy specifically.
-    expect(container.querySelector(".compact .body")?.textContent).toBe("1-0");
+    // plan 092: the generic branch's body class renamed `.body` ->
+    // `.notif-body` (header/subtitle/body restructure).
+    expect(container.querySelector(".compact .notif-body")?.textContent).toBe("1-0");
     expect(container.querySelector(".card-assembly.high")).not.toBeNull();
   });
 
@@ -141,12 +143,14 @@ describe("App", () => {
     // the outer card's "idle" class flips synchronously with the state
     // change, but the old title/body only leave the DOM once their exit
     // animation finishes — wait for that too, not just the class.
+    // plan 092: the generic branch's title/body classes renamed
+    // `.title`/`.body` -> `.notif-title`/`.notif-body`.
     await vi.waitFor(() => {
       expect(card?.classList.contains("idle")).toBe(true);
-      expect(container.querySelector(".title")).toBeNull();
+      expect(container.querySelector(".notif-title")).toBeNull();
     });
     expect(container.querySelector(".card-assembly")).toBe(card);
-    expect(container.querySelector(".body")).toBeNull();
+    expect(container.querySelector(".notif-body")).toBeNull();
   });
 
   // plan 085: the resting-state render choice rides the same appearance

@@ -86,4 +86,46 @@ describe("StatusDots", () => {
       expect(dot.classList.contains("dim")).toBe(true);
     }
   });
+
+  // plan 092 (item 11): the paused indicator — every dot forces `dim`
+  // (never `active`) while paused, even for sources that are otherwise
+  // enabled, plus a static two-bar glyph renders beside the dot row.
+  describe("paused (plan 092)", () => {
+    it("forces every dot dim, even for otherwise-enabled sources, while paused", () => {
+      const { container } = render(
+        <StatusDots
+          status={{
+            paused: true,
+            waiting: 0,
+            football: { enabled: true, live: null },
+            news: { enabled: true },
+            weather: { enabled: true, current: null },
+          }}
+        />,
+      );
+      const dots = container.querySelectorAll(".status-dot");
+      for (const dot of Array.from(dots)) {
+        expect(dot.classList.contains("dim")).toBe(true);
+        expect(dot.classList.contains("active")).toBe(false);
+      }
+    });
+
+    it("renders the pause glyph only while paused", () => {
+      const { container, rerender } = render(<StatusDots status={ALL_ON} />);
+      expect(container.querySelector(".pause-glyph")).toBeNull();
+
+      rerender(<StatusDots status={{ ...ALL_ON, paused: true }} />);
+      const glyph = container.querySelector(".pause-glyph");
+      expect(glyph).not.toBeNull();
+      // two CSS-drawn bars, no text content (receive-only indicator, not
+      // a label).
+      expect(glyph?.querySelectorAll("span")).toHaveLength(2);
+      expect(container.textContent).toBe("");
+    });
+
+    it("omits the pause glyph when status is omitted (no data to say paused)", () => {
+      const { container } = render(<StatusDots />);
+      expect(container.querySelector(".pause-glyph")).toBeNull();
+    });
+  });
 });
