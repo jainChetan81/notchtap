@@ -31,10 +31,10 @@ call site (`login_item.rs`), low blast radius, no action needed; the
 rather than re-flagged a fourth time. One low-value finding
 (`.editorconfig`/`.vscode/settings.json` absence) was surfaced but not
 planned — see the rejected-findings section. Housekeeping note, not a
-finding: `plans/_to_delete/` is untracked cruft (a superseded duplicate
+finding: `plans/_to_delete/` WAS untracked cruft (a superseded duplicate
 of plan 058 plus a `README.md.bak`) left from a prior session's
 renumbering — flagged for the operator to clean up manually, not touched
-by this session (outside this skill's write scope). Suites at HEAD:
+by this session (outside this skill's write scope). **Cleaned up as of 2026-07-21 — the directory no longer exists.** Suites at HEAD:
 `cargo test --locked` 332 + 3 doc-tests, `npx vitest run` 112 — both
 independently re-counted live (not transcribed), matching what plan 071
 now records in `docs/TESTING_STRATEGY.md` §0.
