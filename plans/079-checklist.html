@@ -65,7 +65,7 @@
   <h2>Bigger/deferred (not part of the mockup loop)</h2>
   <ul>
     <li><span class="badge done">✓</span><div><div class="item-title">Hide-when-idle (cheap half of item 17)</div><div class="item-note">Shipped via plan 085: a <code>resting_state: rail|notch</code> config flag on the appearance channel. <code>notch</code> renders zero app-drawn pixels while idle (the bare native notch); every <code>showing</code> path (promotions, rotation, expand, TTL) is unaffected. No hover detection — a render choice only.</div></div></li>
-    <li><span class="badge open">○</span><div><div class="item-title">Reveal-on-hover (expensive half of item 17)</div><div class="item-note">Still open — real interaction-model change (cursor tracking, hover detection), gated on plan 086's spike.</div></div></li>
+    <li><span class="badge partial">~</span><div><div class="item-title">Reveal-on-hover (expensive half of item 17)</div><div class="item-note">Blocker RESOLVED by plan 086's spike (2026-07-21): <code>tauri-nspanel</code>'s tracking-area support delivers mouseEntered/Exited independently of <code>set_ignore_cursor_events</code>, so no global watcher, no permission prompt, and no capabilities change — see <code>docs/design/hover-cursor-tracking.md</code>. The shared hover primitive is filed as plan 087 but NOT yet built (no rect-derivation fn, no tracking-area block, no <code>hover-changed</code> event), so reveal-on-hover itself remains unbuilt.</div></div></li>
   </ul>
 </main>
 </html>
