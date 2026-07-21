@@ -1,7 +1,7 @@
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { type Config, type SecretStatus, SettingsApp } from "./SettingsApp";
+import { type Config, type HistoryEntry, type SecretStatus, SettingsApp } from "./SettingsApp";
 
 const config: Config = {
   port: 4321,
@@ -46,6 +46,7 @@ const config: Config = {
   connectors: { telegram: { enabled: true } },
   appearance: { card_scale: 1, card_radius: 8, card_opacity: 0.9 },
   resting_state: "notch",
+  history_enabled: true,
 };
 
 // Mirrors src-tauri/src/config.rs::Config::default() (served over IPC by
@@ -93,12 +94,63 @@ const rustConfigDefaults: Config = {
   connectors: { telegram: { enabled: false } },
   appearance: { card_scale: 1, card_radius: 16, card_opacity: 0.9 },
   resting_state: "rail",
+  history_enabled: false,
 };
 
 const unsetSecrets: SecretStatus = {
   openrouter_api_key: null,
   telegram_bot_token: null,
   telegram_chat_id: null,
+};
+
+// get_history's wire shape (plan 089) — snake_case throughout, including
+// `meta`; pinned against a live serde_json print of a real HistoryEntry
+// rather than derived from the SlotState (camelCase) convention. 088's
+// read_recent returns oldest -> newest; these two fixtures are ordered
+// that way so the "newest first" display test can assert the UI does the
+// reversal, not the mock data.
+const historyEntryOlder: HistoryEntry = {
+  recorded_at_ms: 1700000000000,
+  event: {
+    id: "11111111-1111-1111-1111-111111111111",
+    event_type: "generic",
+    priority: "medium",
+    rotation: { kind: "one_shot", ttl_secs: 8 },
+    topic: null,
+    payload: { title: "First notification", body: "body one" },
+    meta: {
+      source: null,
+      category: null,
+      published_at_ms: null,
+      link: null,
+      subtitle: null,
+      details: [],
+    },
+    signal: "generic",
+    origin: "manual",
+  },
+};
+
+const historyEntryNewer: HistoryEntry = {
+  recorded_at_ms: 1700000100000,
+  event: {
+    id: "22222222-2222-2222-2222-222222222222",
+    event_type: "news_item",
+    priority: "low",
+    rotation: { kind: "one_shot", ttl_secs: 10 },
+    topic: null,
+    payload: { title: "Second notification", body: "body two" },
+    meta: {
+      source: "Example",
+      category: null,
+      published_at_ms: null,
+      link: null,
+      subtitle: null,
+      details: [],
+    },
+    signal: "generic",
+    origin: "news",
+  },
 };
 
 function mockLoads(status: SecretStatus = unsetSecrets) {
@@ -643,5 +695,127 @@ describe("SettingsApp", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Diagnostics" })).toBeTruthy();
     expect(await screen.findByText(/INFO notchtap: boot complete/)).toBeTruthy();
     expect(screen.getByText(/WARN notchtap: queue full/)).toBeTruthy();
+  });
+
+  it("History section renders entries newest-first from a mocked get_history", async () => {
+    // fixture entries are oldest -> newest (088's read_recent contract);
+    // the UI must reverse them for display, not the mock.
+    mockIPC((command) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "get_history") return [historyEntryOlder, historyEntryNewer];
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+
+    expect(await screen.findByRole("heading", { level: 1, name: "History" })).toBeTruthy();
+    expect(await screen.findByText("Second notification")).toBeTruthy();
+    expect(screen.getByText("First notification")).toBeTruthy();
+
+    const titles = screen
+      .getAllByText(/notification$/)
+      .filter((el) => el.className === "history-title")
+      .map((el) => el.textContent);
+    expect(titles).toEqual(["Second notification", "First notification"]);
+  });
+
+  it("Empty-history state renders the 'nothing recorded yet' copy", async () => {
+    // fixture config has history_enabled: true, so an empty result reads
+    // as "on, nothing recorded" rather than "off".
+    mockIPC((command) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "get_history") return [];
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+
+    expect(
+      await screen.findByText("History is on, but nothing has been recorded yet."),
+    ).toBeTruthy();
+    expect(screen.queryByText(/History is off/)).toBeNull();
+  });
+
+  it("History-disabled state renders the distinct 'history is off' copy", async () => {
+    const disabledConfig: Config = { ...config, history_enabled: false };
+    mockIPC((command) => {
+      if (command === "get_config") return disabledConfig;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "get_history") return [];
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+
+    expect(
+      await screen.findByText(
+        'History is off. Turn on "Record notification history" in General to start recording.',
+      ),
+    ).toBeTruthy();
+    expect(screen.queryByText("History is on, but nothing has been recorded yet.")).toBeNull();
+  });
+
+  it("the clear control requires a second confirming click before clear_history is invoked", async () => {
+    const clearHistory = vi.fn();
+    mockIPC((command) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "get_history") return [historyEntryOlder];
+      if (command === "clear_history") {
+        clearHistory();
+        return null;
+      }
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+
+    const clearButton = await screen.findByRole("button", { name: "Clear history" });
+    fireEvent.click(clearButton);
+    // first click only arms the confirmation — clear_history must NOT fire yet
+    expect(clearHistory).not.toHaveBeenCalled();
+    expect(await screen.findByRole("button", { name: "Really clear?" })).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Really clear?" }));
+    await waitFor(() => expect(clearHistory).toHaveBeenCalledTimes(1));
+  });
+
+  it("the history_enabled toggle round-trips into the saved config payload", async () => {
+    let savedConfig: Config | null = null;
+    const disabledConfig: Config = { ...config, history_enabled: false };
+    mockIPC((command, payload) => {
+      if (command === "get_config") return disabledConfig;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "save_config_and_relaunch") {
+        savedConfig = (payload as { config: Config }).config;
+        return null;
+      }
+    });
+    render(<SettingsApp />);
+
+    const toggle = (await screen.findByLabelText(
+      "Record notification history",
+    )) as HTMLInputElement;
+    expect(toggle.checked).toBe(false);
+
+    fireEvent.click(toggle);
+    expect(toggle.checked).toBe(true);
+
+    fireEvent.click(screen.getByRole("button", { name: "Save & Relaunch" }));
+
+    await waitFor(() => expect(savedConfig).not.toBeNull());
+    // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
+    expect(savedConfig!.history_enabled).toBe(true);
   });
 });

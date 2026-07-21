@@ -1,8 +1,8 @@
 //! Plan 088: append-only JSONL notification history, gated behind the
 //! opt-in `history_enabled` config flag (default `false`, see
-//! `config.rs`). Backend-only — no invoke command reads this yet
-//! (that's plan 089); today the only writer is `Engine::accept` and the
-//! only readers are this module's own tests.
+//! `config.rs`). The only writer is `Engine::accept`; the settings
+//! window's `get_history`/`clear_history` invoke commands (plan 089,
+//! `settings.rs`) are the read/clear surface.
 //!
 //! DELIBERATE DIVERGENCE from `logging.rs`'s `SizeRotatingAppender`: this
 //! store stats the file on every `append` instead of caching an open file
@@ -130,12 +130,9 @@ impl HistoryStore {
     /// read. Returned oldest -> newest, same ordering contract as
     /// `read_recent_lines`.
     ///
-    /// Plan 088 ships this store dark: no invoke command reads it yet
-    /// (that's plan 089's settings-window read surface). Today it's
-    /// exercised only by this module's own tests and `engine.rs`'s
-    /// history-hook tests — the same "seam exists before it's needed"
-    /// shape as `Engine::apply`'s doc comment.
-    #[allow(dead_code)]
+    /// Called by the settings window's `get_history` invoke command
+    /// (plan 089, `settings.rs`); also exercised directly by this
+    /// module's own tests and `engine.rs`'s history-hook tests.
     pub fn read_recent(&self, n: usize) -> io::Result<Vec<HistoryEntry>> {
         let _guard = self.lock.lock().unwrap();
 
@@ -157,11 +154,9 @@ impl HistoryStore {
     /// Remove the current file and every rotated backup. A missing file
     /// is success, not an error.
     ///
-    /// Same "not wired up yet" status as `read_recent` above — this is
-    /// the manual "Clear history" control's future backing call
-    /// (plan 059 decision #2), not reachable from production code until
-    /// plan 089 adds its invoke command.
-    #[allow(dead_code)]
+    /// Backs the settings window's "Clear history" control via the
+    /// `clear_history` invoke command (plan 089, `settings.rs`; plan
+    /// 059 decision #2).
     pub fn clear(&self) -> io::Result<()> {
         let _guard = self.lock.lock().unwrap();
 

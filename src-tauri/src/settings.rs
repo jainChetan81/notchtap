@@ -826,6 +826,24 @@ pub fn set_appearance(
     Ok(())
 }
 
+#[tauri::command]
+pub async fn get_history(
+    window: tauri::WebviewWindow,
+) -> Result<Vec<crate::history::HistoryEntry>, String> {
+    ensure_settings_window(&window)?;
+    let dir = notchtap_config_dir()?;
+    let store = crate::history::HistoryStore::new(dir).map_err(|e| e.to_string())?;
+    store.read_recent(200).map_err(|e| e.to_string())
+}
+
+#[tauri::command]
+pub async fn clear_history(window: tauri::WebviewWindow) -> Result<(), String> {
+    ensure_settings_window(&window)?;
+    let dir = notchtap_config_dir()?;
+    let store = crate::history::HistoryStore::new(dir).map_err(|e| e.to_string())?;
+    store.clear().map_err(|e| e.to_string())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
