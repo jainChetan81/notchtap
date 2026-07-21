@@ -58,6 +58,21 @@
   "byte-identical" promise needs `skip_serializing_if` on the new
   field, or every payload gains an `"espn": null` key. Drift baseline
   re-stamped to `4fb3af9`.
+- **Executed**: 2026-07-21, base commit `ae50ca1`. Three commits, in
+  order: workstream b (`EspnMeta` on the wire, gated on
+  `espn_live_card`, JSON-level flag-off byte-identical pin), workstream
+  a (`SbTeam.logo` parse, `crests.rs` fetch/cache, tauri asset-protocol
+  serving, `capabilities/default.json` untouched), workstream c
+  (`espn_rich_events` opt-in flag, summary→plays fallback chain, four
+  new `EventSignal` variants, per-match dedup). `research/043-worldcup-
+  final-verification/` (cited by this plan's "Why this matters") is
+  gitignored and was not present in this checkout — workstream c's
+  fixtures were synthesized from the documented shape recorded in
+  `plans/suspended/043-richer-match-events.md`, noted in-code. Rust
+  352→387, Vitest 144→147; `cargo test --locked`, clippy, `cargo fmt
+  --check`, `npx vitest run`, `npx tsc --noEmit`, `npx biome ci .` all
+  green. Gates plan 084 — see this plan's `EspnMeta` final shape (report
+  to the reviewer) for exactly what 084 should consume.
 
 ## Why this matters
 

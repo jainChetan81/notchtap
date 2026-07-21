@@ -1,4 +1,5 @@
 mod config;
+mod crests;
 mod engine;
 // queue, event, and error are `pub` so their doc-tests can exercise the
 // real public api (doc-tests link against the lib crate from outside);
@@ -26,6 +27,7 @@ use tauri::webview::PageLoadEvent;
 use tauri::{ActivationPolicy, Manager};
 
 use crate::config::Config;
+use crate::crests::CrestCache;
 use crate::engine::Engine;
 use crate::queue::SingleSlotQueue;
 use crate::settings::AppearanceChangedPayload;
@@ -142,6 +144,17 @@ pub fn run() {
     let espn_priority = config.espn_priority;
     let espn_ttl_secs = config.espn_ttl_secs;
     let espn_live_card = config.espn_live_card;
+    let espn_rich_events = config.espn_rich_events;
+    // plan 083 workstream a: `~/.config/notchtap/crests/`, a sibling of
+    // config.toml/secrets.toml under the same directory
+    // (`Config::dir_from_home`) — the repo's first binary-asset cache.
+    // Crest PNGs are runtime-cached here, never committed to git.
+    let crests = dirs::home_dir()
+        .map(|h| CrestCache::new(Config::dir_from_home(&h).join("crests")))
+        .unwrap_or_else(|| {
+            tracing::warn!("could not determine home directory; crests will not be cached");
+            CrestCache::new(std::path::PathBuf::from("crests"))
+        });
     let rss_enabled = config.rss_enabled;
     let rss_feeds = config.rss_feeds.clone();
     let rss_poll_secs = config.rss_poll_secs;
@@ -358,6 +371,8 @@ pub fn run() {
                     espn_ttl_secs,
                     espn_priority,
                     espn_live_card,
+                    espn_rich_events,
+                    crests.clone(),
                 );
             }
             if rss_enabled {
@@ -1071,6 +1086,7 @@ mod tests {
             queue_done: 0,
             ttl_ms: 8000,
             remaining_ms: 8000,
+            espn: None,
         };
         let escaped = escape_for_eval_splice(&serde_json::to_string(&state).unwrap());
 

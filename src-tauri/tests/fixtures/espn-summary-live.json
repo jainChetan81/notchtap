@@ -1,0 +1,61 @@
+{
+  "commentary": [
+    {
+      "sequence": 1,
+      "time": { "value": 540, "displayValue": "9'" },
+      "text": "Kickoff",
+      "play": { "id": "1", "type": "kickoff" }
+    }
+  ],
+  "keyEvents": [
+    {
+      "id": "e1",
+      "type": "foul",
+      "text": "Foul by Pedro Porro (Spain) on Nico González",
+      "clock": { "displayValue": "12'" },
+      "scoringPlay": false
+    },
+    {
+      "id": "e2",
+      "type": "offside",
+      "text": "Offside — Lamine Yamal (Spain)",
+      "clock": { "displayValue": "23'" },
+      "scoringPlay": false
+    },
+    {
+      "id": "e3",
+      "type": "var-check",
+      "text": "VAR Check — Possible Penalty",
+      "clock": { "displayValue": "35'" },
+      "scoringPlay": false
+    },
+    {
+      "id": "e4",
+      "type": "substitution",
+      "text": "Substitution — Alvarez replaces Martinez",
+      "clock": { "displayValue": "60'" },
+      "scoringPlay": false
+    },
+    {
+      "id": "e5",
+      "type": "goal",
+      "text": "Goal — Messi",
+      "clock": { "displayValue": "70'" },
+      "scoringPlay": true
+    },
+    {
+      "id": "e6",
+      "type": "yellow-card",
+      "text": "Yellow Card — Otamendi",
+      "clock": { "displayValue": "75'" },
+      "scoringPlay": false
+    },
+    {
+      "id": "e7",
+      "type": "some-future-espn-type",
+      "text": "Something ESPN added later",
+      "clock": { "displayValue": "80'" },
+      "scoringPlay": false
+    }
+  ]
+}

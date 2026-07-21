@@ -29,8 +29,12 @@
       }
     ],
     "security": {
-      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost",
-      "devCsp": "default-src 'self'; connect-src ipc: http://ipc.localhost ws://localhost:1420; style-src 'self' 'unsafe-inline'"
+      "csp": "default-src 'self'; connect-src ipc: http://ipc.localhost; img-src 'self' asset: http://asset.localhost",
+      "devCsp": "default-src 'self'; connect-src ipc: http://ipc.localhost ws://localhost:1420; style-src 'self' 'unsafe-inline'; img-src 'self' asset: http://asset.localhost",
+      "assetProtocol": {
+        "enable": true,
+        "scope": ["$HOME/.config/notchtap/crests/*"]
+      }
     }
   },
   "bundle": {

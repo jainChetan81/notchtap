@@ -1,0 +1,17 @@
+{
+  "pageCount": 3,
+  "items": [
+    {
+      "id": "p40",
+      "type": { "id": "foul", "text": "Foul" },
+      "text": "Foul by Rodri",
+      "clock": { "displayValue": "40'" }
+    },
+    {
+      "id": "p41",
+      "type": { "id": "goal", "text": "Goal" },
+      "text": "Goal — should be dropped as scoreboard-owned",
+      "clock": { "displayValue": "44'" }
+    }
+  ]
+}

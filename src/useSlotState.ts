@@ -9,6 +9,12 @@ const EVENT_SIGNALS = [
   "kickoff",
   "halftime",
   "fulltime",
+  // plan 083 workstream c: the four locked richer event kinds (foul,
+  // offside, VAR check, substitution) — mirrors rust's `EventSignal`.
+  "foul",
+  "offside",
+  "var_check",
+  "substitution",
 ] as const;
 export type EventSignal = (typeof EVENT_SIGNALS)[number];
 
@@ -21,6 +27,26 @@ type EventType = (typeof EVENT_TYPES)[number];
 
 const PRIORITIES = ["low", "medium", "high"] as const;
 type Priority = (typeof PRIORITIES)[number];
+
+// plan 083: structured live-match fields (mirrors rust's `EspnMeta`) —
+// present only on a Football event when `espn_live_card` is on; every
+// other payload omits the `espn` key entirely (not even `null` — see
+// `EventMeta.espn`'s `skip_serializing_if` doc in event.rs).
+export interface EspnMeta {
+  league: string;
+  homeAbbrev: string;
+  awayAbbrev: string;
+  homeScore: number;
+  awayScore: number;
+  clock: string;
+  homeCards: [number, number];
+  awayCards: [number, number];
+  // raw filesystem path to a cached crest PNG, or null on a cache miss —
+  // the frontend must call `convertFileSrc` itself before using this as
+  // an <img> src (plan 083 workstream a, crest route (i)).
+  homeCrest: string | null;
+  awayCrest: string | null;
+}
 
 export type SlotState =
   | { state: "empty" }
@@ -52,6 +78,10 @@ export type SlotState =
       // TtlBar.tsx) rather than re-reading it every frame.
       ttlMs: number;
       remainingMs: number;
+      // plan 083: optional — absent on every non-football payload and on
+      // football with `espn_live_card` off (the key itself is omitted on
+      // the wire, so this reads as `undefined`, not `null`).
+      espn?: EspnMeta;
     };
 
 declare global {
@@ -109,8 +139,38 @@ function isValidSlotState(v: unknown): v is SlotState {
     isNonNegativeInteger(obj.queueTotal) &&
     isNonNegativeInteger(obj.queueDone) &&
     isNonNegativeInteger(obj.ttlMs) &&
-    isNonNegativeInteger(obj.remainingMs)
+    isNonNegativeInteger(obj.remainingMs) &&
+    // plan 083: espn is entirely optional (the wire omits the key rather
+    // than sending null) — absent must still validate; present-but-
+    // malformed must fall back like every other field.
+    (obj.espn === undefined || isValidEspnMeta(obj.espn))
   );
+}
+
+// plan 083: `espn`'s nested-object check — absent or valid, never a
+// half-populated block (a malformed espn must fall back like every other
+// field, same discipline as `isDetailArray` above).
+function isValidEspnMeta(v: unknown): v is EspnMeta {
+  if (typeof v !== "object" || v === null) {
+    return false;
+  }
+  const o = v as Record<string, unknown>;
+  return (
+    typeof o.league === "string" &&
+    typeof o.homeAbbrev === "string" &&
+    typeof o.awayAbbrev === "string" &&
+    isNonNegativeInteger(o.homeScore) &&
+    isNonNegativeInteger(o.awayScore) &&
+    typeof o.clock === "string" &&
+    isCardTuple(o.homeCards) &&
+    isCardTuple(o.awayCards) &&
+    (o.homeCrest === null || typeof o.homeCrest === "string") &&
+    (o.awayCrest === null || typeof o.awayCrest === "string")
+  );
+}
+
+function isCardTuple(v: unknown): v is [number, number] {
+  return Array.isArray(v) && v.length === 2 && v.every(isNonNegativeInteger);
 }
 
 // plan 035: `details` is an array of {label, value} string pairs. Like every

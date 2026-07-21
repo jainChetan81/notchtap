@@ -16,9 +16,9 @@ other sections point back rather than repeating them):
 
 | suite | size | where |
 |---|---|---|
-| rust unit/integration | 355 tests — settings 49 (47 + 2 with plan 085), queue 71 (68 + 3 with plan 081: real-promoted_at timing, supersede-extension ttl, dedup-across-a-real-time-gap), http 36, notifier 26, rss_poller 28, poller 32, event 19, config 22 (21 + 1 with plan 085), weather_poller 19 (16 + 3 with plan 082: `is_day` fixture parse, `is_day` defaults-to-zero-when-absent, alert event carries `wx-condition`/`wx-is-day` detail pairs), presentation 11, lib 13, engine 11 (10 + 1 with plan 081: the single-emit regression test), status 7, logging 7, net 4 | `cargo test` from `src-tauri/` |
+| rust unit/integration | 390 tests — poller 55 (32 + 23 with plan 083: team-logo/team-ids-by-match/patch_crests, EspnMeta population + flag-off pin, summary/plays parse + classify + dedup + fallback-chain via wiremock), settings 49 (47 + 2 with plan 085), queue 71 (68 + 3 with plan 081: real-promoted_at timing, supersede-extension ttl, dedup-across-a-real-time-gap), http 36, notifier 26, rss_poller 28, event 22 (19 + 3 with plan 083: EspnMeta serialization, skip_serializing_if omission, dedup_eq participation), config 23 (21 + 1 with plan 085 + 1 with plan 083: espn_rich_events default/override), crests 8 (new with plan 083: cache-miss/hit, one-attempt-per-team, fetch success/failure/oversized, filename sanitization), weather_poller 19 (16 + 3 with plan 082: `is_day` fixture parse, `is_day` defaults-to-zero-when-absent, alert event carries `wx-condition`/`wx-is-day` detail pairs), presentation 11, lib 13, engine 11 (10 + 1 with plan 081: the single-emit regression test), status 7, logging 7, net 4 | `cargo test` from `src-tauri/` |
 | rust doc-tests | 3 — public `queue`/`event` apis | same `cargo test` run |
-| frontend | 157 tests — presentation tables 12, presentation facts 4, inline markdown 7, weatherArt table 7 (plan 082: gallery day/night pairings, Cloudy/Storm/Snow texture assignment, Cloudy-never-keys-to-overcast, unknown-condition neutral fallback), useDelayedSwap hook 3, slot-state hook 24 (22 + 2 with plan 081: ttlMs/remainingMs validator accept/reject), status-state hook 15, StatusRailCard 39 (24 + 2 with plan 080 + 5 with plan 085 + 2 with plan 081 + 6 with plan 082: weather-alert mood/glyph class, day-vs-night mood, marker-leak guard collapsed + expanded, unknown-condition fallback, non-weather regression pin), IdleView rail 8, Track slider 6, settings form 17 (16 + 1 with plan 085), App render 8 (5 + 3 with plan 085), TtlBar 7 (plan 081: anchor/re-anchor/clamp/reduced-motion/unmount-cancel) | `npx vitest run` |
+| frontend | 160 tests — presentation tables 12, presentation facts 4, inline markdown 7, weatherArt table 7 (plan 082: gallery day/night pairings, Cloudy/Storm/Snow texture assignment, Cloudy-never-keys-to-overcast, unknown-condition neutral fallback), useDelayedSwap hook 3, slot-state hook 27 (22 + 2 with plan 081: ttlMs/remainingMs validator accept/reject + 3 with plan 083: espn block absent/valid/malformed), status-state hook 15, StatusRailCard 39 (24 + 2 with plan 080 + 5 with plan 085 + 2 with plan 081 + 6 with plan 082: weather-alert mood/glyph class, day-vs-night mood, marker-leak guard collapsed + expanded, unknown-condition fallback, non-weather regression pin), IdleView rail 8, Track slider 6, settings form 17 (16 + 1 with plan 085), App render 8 (5 + 3 with plan 085), TtlBar 7 (plan 081: anchor/re-anchor/clamp/reduced-motion/unmount-cancel) | `npx vitest run` |
 | ci (v4) | fmt, clippy `-D warnings` (`--locked`), cargo test (`--locked`), cargo-audit, npm audit, tsc, vitest, vite build, `sh -n` cli syntax check, swiftc compile check | every push + pr |
 
 every example case listed in §4 for v1/v2/v3 components has a passing
@@ -74,6 +74,31 @@ poller (`MatchSnapshot.home_cards`/`away_cards` replacing the aggregate
 per-side Cards `meta.details` cells on flag-on match events, and the
 collapsed StatusRailCard detail lines — poller 25→30, rust 321→326;
 StatusRailCard 21→23, frontend 110→112.
+
+plan 083 landed the football backend (crest fetch/cache/serve,
+structured `EspnMeta` on the wire, richer ESPN events with a mandatory
+summary→plays fallback chain) in three commits from a 352/144 baseline:
+workstream b added `EspnMeta` (league/abbrev/score/clock/cards, plus
+crest-path fields) as an `EventMeta`/`SlotState::Showing` field, gated
+behind `espn_live_card` exactly like the existing Clock/Cards detail
+cells, with a `skip_serializing_if`-backed flag-off byte-identical pin
+at the JSON level (event 19→22); workstream a added the `crests` module
+(fetch-on-cache-miss, one attempt per team per process lifetime, atomic
+writes, silent failure) and wired `SbTeam.logo` parsing plus a
+`patch_crests` step in the poll loop, served to the webview via tauri's
+asset protocol (poller 32→55 combined with workstream c below, crests
+0→8); workstream c added the opt-in `espn_rich_events` flag (default
+false) and the `summary`/`plays` fetch chain — four new `EventSignal`
+variants (foul/offside/var_check/substitution), a `classify_rich_type`
+that drops scoreboard-owned and unrecognized types outright, a
+per-match (kind, clock) dedup set, and wiremock tests exercising the
+real fallback orchestration (`poll_rich_events`) for both trigger
+conditions (404, empty) plus the newest-page-only pagination rule
+(config 22→23). Total: rust 352→387, frontend 144→147 (the `useSlotState`
+validator's absent/valid/malformed `espn` block cases). The one real
+network path this plan touches (the crest fetch itself, and the
+summary/plays endpoints during a live match) is unverifiable in CI by
+design, same posture as every other poller here — operator-owed.
 
 **left — each is a decision with an owner section, not a gap:**
 

@@ -1,13 +1,14 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::time::{Duration, Instant};
 
 use serde::Deserialize;
 use uuid::Uuid;
 
+use crate::crests::CrestCache;
 use crate::engine::Engine;
 use crate::event::{
-    DetailItem, Event, EventMeta, EventPayload, EventSignal, EventType, Priority, RotationSpec,
-    SourceKind,
+    DetailItem, EspnMeta, Event, EventMeta, EventPayload, EventSignal, EventType, Priority,
+    RotationSpec, SourceKind,
 };
 use crate::status::LiveMatchSummary;
 
@@ -80,6 +81,15 @@ pub struct SbTeam {
     pub id: String,
     #[serde(default)]
     pub abbreviation: String,
+    /// plan 083 workstream a: ESPN already sends a direct crest CDN url
+    /// per team on the scoreboard response we already fetch — zero extra
+    /// discovery cost. Verified present in the checked-in
+    /// `scoreboard-esp.1.json` fixture (`.../teamlogos/soccer/500/{id}.png`).
+    /// Detail-level card `team` objects (`SbDetail::team`, which reuses
+    /// this same struct) never carry `logo` — defaults to `None` there,
+    /// harmlessly.
+    #[serde(default)]
+    pub logo: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -370,6 +380,93 @@ fn matchup(league: &str, s: &MatchSnapshot) -> String {
     )
 }
 
+/// plan 083 workstream a: (team id -> logo url) pairs from a freshly
+/// fetched scoreboard — pure, fixture-testable, no I/O. Read directly
+/// off the raw feed (not off `MatchSnapshot`, which doesn't carry team
+/// ids) so a crest fetch can be scheduled even for matches this poll
+/// won't otherwise emit an event for.
+fn team_logos(fetched: &Scoreboard) -> HashMap<String, String> {
+    let mut out = HashMap::new();
+    for event in &fetched.events {
+        let Some(comp) = event.competitions.first() else {
+            continue;
+        };
+        for c in &comp.competitors {
+            let Some(team) = &c.team else { continue };
+            if team.id.is_empty() {
+                continue;
+            }
+            if let Some(logo) = &team.logo {
+                out.insert(team.id.clone(), logo.clone());
+            }
+        }
+    }
+    out
+}
+
+/// plan 083 workstream a: (match id -> (home team id, away team id))
+/// pairs from a freshly fetched scoreboard — pure, fixture-testable, no
+/// I/O. Read directly off the raw feed, same reasoning as `team_logos`
+/// above: `MatchSnapshot` doesn't carry team ids, and a full-time event
+/// evicts its match from the *next* snapshot before crest-patching runs,
+/// so this can't be derived from post-diff state either.
+fn team_ids_by_match(fetched: &Scoreboard) -> HashMap<String, (String, String)> {
+    let mut out = HashMap::new();
+    for event in &fetched.events {
+        let Some(comp) = event.competitions.first() else {
+            continue;
+        };
+        let mut home_id = String::new();
+        let mut away_id = String::new();
+        for c in &comp.competitors {
+            let id = c.team.as_ref().map(|t| t.id.clone()).unwrap_or_default();
+            match c.home_away.as_str() {
+                "home" => home_id = id,
+                "away" => away_id = id,
+                _ => {}
+            }
+        }
+        out.insert(event.id.clone(), (home_id, away_id));
+    }
+    out
+}
+
+/// plan 083 workstream a: patch `home_crest`/`away_crest` onto every
+/// emitted event's `EspnMeta` (if any) using the match's team ids and
+/// whatever's already cache-hit on disk — pure aside from the
+/// `CrestCache::cached_path` filesystem stat, no network. Kept separate
+/// from `diff_scoreboard` (which never touches the filesystem) so that
+/// function stays the pure, fixture-tested surface it's always been;
+/// this is the untested-by-design fetch-loop's job, mirroring the
+/// module's existing "tested pure core, thin untested wiring" split.
+///
+/// Matches by parsing the match id back out of the event's own Topic
+/// string (`espn:{league}:{match_id}`) — reliable because crest
+/// patching only ever has something to do when `EspnMeta` is present,
+/// which is exactly the same `espn_live_card`-on gate that populates
+/// `topic` in the first place.
+fn patch_crests(
+    events: &mut [Event],
+    league: &str,
+    team_ids: &HashMap<String, (String, String)>,
+    crests: &CrestCache,
+) {
+    let prefix = format!("espn:{league}:");
+    for event in events {
+        let Some(espn) = &mut event.meta.espn else {
+            continue;
+        };
+        let Some(match_id) = event.topic.as_deref().and_then(|t| t.strip_prefix(&prefix)) else {
+            continue;
+        };
+        let Some((home_id, away_id)) = team_ids.get(match_id) else {
+            continue;
+        };
+        espn.home_crest = crests.cached_path_string(home_id);
+        espn.away_crest = crests.cached_path_string(away_id);
+    }
+}
+
 /// plan 039: how one match's event lands in the Slot, bundled into a
 /// single parameter so `make_event` stays under clippy's 7-arg
 /// `too_many_arguments` threshold.
@@ -517,8 +614,29 @@ pub fn diff_scoreboard(
                             ),
                         });
                     }
+                    // plan 083 item 4: the structured sibling of the
+                    // details cells just above — same fields, unjoined,
+                    // so 084's card can lay out crest–score–crest instead
+                    // of parsing `matchup()`'s pre-joined string. Crest
+                    // paths are always `None` here (populated afterward
+                    // by the crest cache patch in `spawn_espn_poller` —
+                    // that step is async I/O and this function stays
+                    // pure/sync/fixture-tested, plan 083 workstream a).
+                    let espn = EspnMeta {
+                        league: league_label(league).to_string(),
+                        home_abbrev: v.snap.home_abbrev.clone(),
+                        away_abbrev: v.snap.away_abbrev.clone(),
+                        home_score: v.snap.home_score,
+                        away_score: v.snap.away_score,
+                        clock: v.snap.display_clock.clone(),
+                        home_cards: v.snap.home_cards,
+                        away_cards: v.snap.away_cards,
+                        home_crest: None,
+                        away_crest: None,
+                    };
                     EventMeta {
                         details,
+                        espn: Some(espn),
                         ..EventMeta::default()
                     }
                 } else {
@@ -702,6 +820,303 @@ impl Backoff {
 }
 
 // ---------------------------------------------------------------------------
+// plan 083 workstream c (item 6a): richer live-match events — foul,
+// offside, VAR check, substitution. Goal/penalty/own-goal/yellow/red
+// already flow from the scoreboard feed above and are NEVER re-emitted
+// here (see `classify_rich_type`'s "scoreboard-owned" comment). Opt-in
+// via `espn_rich_events` (default false), mirroring `espn_live_card`.
+//
+// Wire shapes below are synthesized to match the DOCUMENTED evidence in
+// `plans/suspended/043-richer-match-events.md`'s "Step 0: CONFIRMED
+// against a genuinely live match" section — that plan's own
+// `research/043-worldcup-final-verification/` raw evidence directory is
+// gitignored (`.gitignore`: "throwaway exploratory captures") and not
+// present in this checkout, so the shapes here are built from the
+// checked-in plan's summary of that evidence (key names `commentary`/
+// `keyEvents`, the `commentary` entry's `sequence`/`time`/`text`/`play`
+// shape, the `keyEvents` entry's `id`/`type`/`text`/`clock`/`scoringPlay`
+// shape, and the confirmed fallback chain to the core API's
+// `/competitions/{id}/plays`, paginated 25/page) — not independently
+// re-verified against a live match this pass. Pure parse/classify/dedup
+// logic is fully fixture-tested below; the two endpoints' exact field
+// set beyond what's documented is necessarily best-effort, same posture
+// as the scoreboard structs above ("everything is defaulted so a
+// missing field degrades to no delta, never a parse error").
+// ---------------------------------------------------------------------------
+
+/// The `summary?event={id}` endpoint's response — only the two fields
+/// this plan's approach depends on (`plans/suspended/043...md` point 1:
+/// "The key names are `commentary` and `keyEvents`").
+#[derive(Debug, Deserialize)]
+pub struct SummaryResponse {
+    #[serde(default)]
+    pub commentary: Vec<CommentaryEntry>,
+    #[serde(default, rename = "keyEvents")]
+    pub key_events: Vec<KeyEventEntry>,
+}
+
+/// One `commentary` array entry (`plans/suspended/043...md` point 2):
+/// `sequence`, `time` (`{value, displayValue}`), `text`, plus an
+/// embedded `play` object. Parsed in full for parity with the
+/// documented shape (satisfying "parse commentary/keyEvents into a
+/// typed event stream"); `extract_rich_events` (below) builds the
+/// actual EMITTED stream from `key_events` instead (see that function's
+/// doc for why) — `#[allow(dead_code)]` here is deliberate: these fields
+/// are parsed and available (e.g. to a future 084 richer-detail view),
+/// just not read by anything yet.
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+pub struct CommentaryEntry {
+    #[serde(default)]
+    pub sequence: i64,
+    #[serde(default)]
+    pub time: Option<CommentaryTime>,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub play: Option<CommentaryPlay>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[allow(dead_code)]
+pub struct CommentaryTime {
+    #[serde(default)]
+    pub value: f64,
+    #[serde(rename = "displayValue", default)]
+    pub display_value: String,
+}
+
+#[derive(Debug, Deserialize)]
+#[allow(dead_code)]
+pub struct CommentaryPlay {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default, rename = "type")]
+    pub play_type: String,
+    #[serde(default)]
+    pub team: Option<SbTeam>,
+}
+
+/// One `keyEvents` array entry (`plans/suspended/043...md` point 3):
+/// `id`, `type`, `text`, `clock`, `scoringPlay`. This is the "filtered/
+/// significant-events-only view" the research called out as "likely the
+/// better source for card-worthy event selection" — `extract_rich_events`
+/// builds the emitted stream from this array. `id`/`scoring_play` are
+/// parsed for shape completeness but not consumed by extraction (dedup
+/// keys on kind+clock, not id; scoreboard-owned filtering happens on
+/// `event_type` before `scoring_play` would matter).
+#[derive(Debug, Deserialize)]
+pub struct KeyEventEntry {
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub id: String,
+    #[serde(default, rename = "type")]
+    pub event_type: String,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub clock: Option<SbClock>,
+    #[serde(default, rename = "scoringPlay")]
+    #[allow(dead_code)]
+    pub scoring_play: bool,
+}
+
+/// The core API's `/competitions/{id}/plays` fallback response —
+/// paginated (`plans/suspended/043...md` point 4: "25/page"). Only
+/// `pageCount` and `items` are consumed: `pageCount` drives the
+/// newest-page-only fetch, `items` are parsed the same way as
+/// `keyEvents`.
+#[derive(Debug, Deserialize, Default)]
+pub struct PlaysResponse {
+    #[serde(default, rename = "pageCount")]
+    pub page_count: u32,
+    #[serde(default)]
+    pub items: Vec<PlayItem>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PlayItem {
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub id: String,
+    #[serde(default, rename = "type")]
+    pub play_type: Option<PlayTypeTag>,
+    #[serde(default)]
+    pub text: String,
+    #[serde(default)]
+    pub clock: Option<SbClock>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+pub struct PlayTypeTag {
+    #[serde(default)]
+    pub id: String,
+    #[serde(default)]
+    #[allow(dead_code)]
+    pub text: String,
+}
+
+pub fn parse_summary(body: &str) -> Result<SummaryResponse, serde_json::Error> {
+    serde_json::from_str(body)
+}
+
+pub fn parse_plays(body: &str) -> Result<PlaysResponse, serde_json::Error> {
+    serde_json::from_str(body)
+}
+
+/// The four locked informational event kinds (079 item 6a) — everything
+/// else (scoreboard-owned or genuinely unrecognized) is dropped, never
+/// emitted, by `classify_rich_type` below.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum RichEventKind {
+    Foul,
+    Offside,
+    VarCheck,
+    Substitution,
+}
+
+/// Maps a raw `type` string (from either `keyEvents` or the `plays`
+/// fallback) to one of the four locked kinds, or `None` — which covers
+/// BOTH a scoreboard-owned type (goal, penalty-scored, yellow-card,
+/// red-card, own-goal, kickoff, half-time, full-time, …) AND any
+/// genuinely unrecognized type. Both cases are dropped outright here,
+/// not merely deduped by key later — "drop any summary/plays event
+/// whose type is scoreboard-owned outright (redundant by construction,
+/// not just by key-collision)" (plan 083 step 4).
+fn classify_rich_type(raw: &str) -> Option<RichEventKind> {
+    match raw {
+        "foul" => Some(RichEventKind::Foul),
+        "offside" => Some(RichEventKind::Offside),
+        "var-check" | "var-review" | "video-review" => Some(RichEventKind::VarCheck),
+        "substitution" | "sub" => Some(RichEventKind::Substitution),
+        _ => None,
+    }
+}
+
+/// One informational event ready for dedup + emission.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RichEventCandidate {
+    pub kind: RichEventKind,
+    pub text: String,
+    pub clock: String,
+}
+
+/// Extracts informational candidates from a `summary` response's
+/// `keyEvents` array — the documented "better source for card-worthy
+/// event selection" (`plans/suspended/043...md` point 3). `commentary`
+/// is parsed above (satisfying "parse commentary/keyEvents into a typed
+/// event stream") but not used for emission here: `keyEvents` already
+/// carries a clean `type` tag and a ready-to-display `text`, so it's the
+/// simpler and more faithful-to-research source for the four locked
+/// kinds; `commentary`'s fuller play-by-play detail is left for 084 (or
+/// a later plan) to consume if the collapsed scorecard ever wants it.
+fn extract_rich_events(summary: &SummaryResponse) -> Vec<RichEventCandidate> {
+    summary
+        .key_events
+        .iter()
+        .filter_map(|e| {
+            let kind = classify_rich_type(&e.event_type)?;
+            Some(RichEventCandidate {
+                kind,
+                text: e.text.clone(),
+                clock: e
+                    .clock
+                    .as_ref()
+                    .map(|c| c.display_value.clone())
+                    .unwrap_or_default(),
+            })
+        })
+        .collect()
+}
+
+/// Same extraction, from the core-API `/plays` fallback response.
+fn extract_rich_events_from_plays(plays: &PlaysResponse) -> Vec<RichEventCandidate> {
+    plays
+        .items
+        .iter()
+        .filter_map(|p| {
+            let raw_type = p.play_type.as_ref().map(|t| t.id.as_str()).unwrap_or("");
+            let kind = classify_rich_type(raw_type)?;
+            Some(RichEventCandidate {
+                kind,
+                text: p.text.clone(),
+                clock: p
+                    .clock
+                    .as_ref()
+                    .map(|c| c.display_value.clone())
+                    .unwrap_or_default(),
+            })
+        })
+        .collect()
+}
+
+/// `summary`'s "returns empty" fallback trigger (plan 083 step 4: "when
+/// `summary` errors, 404s, or returns empty for a match known-live").
+fn is_empty_summary(resp: &SummaryResponse) -> bool {
+    resp.commentary.is_empty() && resp.key_events.is_empty()
+}
+
+/// Dedup key: (kind, clock) — a re-poll re-fetching the same event must
+/// not re-emit it. No athlete field is documented on `keyEvents`/`plays`
+/// beyond the embedded `commentary.play`, which isn't the extraction
+/// source (see `extract_rich_events`'s doc), so (kind, clock) is the
+/// key's full extent for now — sufficient because two distinct events
+/// of the same kind at the same displayed clock string are not
+/// realistically distinguishable from this feed anyway.
+fn dedup_key(candidate: &RichEventCandidate) -> String {
+    format!("{:?}|{}", candidate.kind, candidate.clock)
+}
+
+/// Filters `candidates` down to ones not already in `seen`, inserting
+/// each survivor's key so a later call (next poll) drops the repeat.
+fn filter_new(
+    seen: &mut HashSet<String>,
+    candidates: Vec<RichEventCandidate>,
+) -> Vec<RichEventCandidate> {
+    candidates
+        .into_iter()
+        .filter(|c| seen.insert(dedup_key(c)))
+        .collect()
+}
+
+/// Builds the emitted `Event` for one informational candidate — a
+/// one-shot (never a Topic/Recurring card; the sticky live-match card
+/// is the existing Topic machinery's job, not new code here, per plan
+/// 083 step 4), Football-origin, same TTL/priority as every other
+/// football event.
+fn make_rich_event(
+    league: &str,
+    snap: &MatchSnapshot,
+    candidate: &RichEventCandidate,
+    ttl_secs: u64,
+    priority: Priority,
+) -> Event {
+    let title = matchup(league, snap);
+    let body = if candidate.text.is_empty() {
+        format!("{:?}", candidate.kind)
+    } else {
+        candidate.text.clone()
+    };
+    let signal = match candidate.kind {
+        RichEventKind::Foul => EventSignal::Foul,
+        RichEventKind::Offside => EventSignal::Offside,
+        RichEventKind::VarCheck => EventSignal::VarCheck,
+        RichEventKind::Substitution => EventSignal::Substitution,
+    };
+    Event {
+        id: Uuid::new_v4(),
+        event_type: EventType::MatchState,
+        priority,
+        rotation: RotationSpec::OneShot { ttl_secs },
+        topic: None,
+        payload: EventPayload { title, body },
+        meta: EventMeta::default(),
+        signal,
+        origin: SourceKind::Football,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // fetch loop — deliberately thin and untested (v2 spec §3): everything below
 // the "here is a response body" line is the tested surface above. the capped
 // body read is no longer inline here — it's the shared, wiremock-tested
@@ -715,6 +1130,106 @@ async fn fetch_league(client: &reqwest::Client, league: &str) -> anyhow::Result<
     Ok(String::from_utf8(bytes)?)
 }
 
+// plan 083 workstream c: production base URLs for the summary/plays
+// fetch chain, matching the same host families verified in
+// `plans/suspended/043-richer-match-events.md`. `base` is a parameter on
+// the fetch functions below (not baked in) so the fallback-chain
+// orchestration is wiremock-testable, same posture as `net.rs`.
+const ESPN_SUMMARY_BASE: &str = "https://site.api.espn.com/apis/site/v2/sports/soccer";
+const ESPN_CORE_BASE: &str = "https://sports.core.api.espn.com/v2/sports/soccer/leagues";
+const MAX_RICH_EVENT_BYTES: usize = 512 * 1024;
+
+async fn fetch_summary(
+    client: &reqwest::Client,
+    base: &str,
+    league: &str,
+    event_id: &str,
+) -> anyhow::Result<String> {
+    let url = format!("{base}/{league}/summary?event={event_id}");
+    let response = client.get(&url).send().await?.error_for_status()?;
+    let bytes = crate::net::read_body_capped(response, MAX_RICH_EVENT_BYTES).await?;
+    Ok(String::from_utf8(bytes)?)
+}
+
+/// ESPN's soccer events are single-competition (no doubleheaders), so
+/// `competition_id == event_id` in practice — an assumption carried over
+/// from `plans/suspended/043-richer-match-events.md`'s URL, not
+/// independently re-verified this pass (that plan's live verification
+/// confirmed the URL shape worked, but didn't specifically probe a
+/// competition_id divergent from event_id).
+async fn fetch_plays_page(
+    client: &reqwest::Client,
+    base: &str,
+    league: &str,
+    event_id: &str,
+    page: u32,
+) -> anyhow::Result<String> {
+    let url =
+        format!("{base}/{league}/events/{event_id}/competitions/{event_id}/plays?page={page}");
+    let response = client.get(&url).send().await?.error_for_status()?;
+    let bytes = crate::net::read_body_capped(response, MAX_RICH_EVENT_BYTES).await?;
+    Ok(String::from_utf8(bytes)?)
+}
+
+/// Fetches the NEWEST page only (plan 083 step 4's pagination rule: "25
+/// plays/page ... fetch the newest page only each poll ... do not
+/// backfill pages") — one request to learn `pageCount`, a second to the
+/// last page only when there's more than one.
+async fn fetch_newest_plays(
+    client: &reqwest::Client,
+    base: &str,
+    league: &str,
+    event_id: &str,
+) -> anyhow::Result<PlaysResponse> {
+    let first_body = fetch_plays_page(client, base, league, event_id, 1).await?;
+    let first: PlaysResponse = parse_plays(&first_body)?;
+    if first.page_count > 1 {
+        let last_body = fetch_plays_page(client, base, league, event_id, first.page_count).await?;
+        Ok(parse_plays(&last_body)?)
+    } else {
+        Ok(first)
+    }
+}
+
+/// The fallback-chain orchestration (plan 083 step 4): `summary` first;
+/// if it errors OR parses to an empty response, fall through to the core
+/// API's `/plays` (newest page only); if THAT also fails, give up
+/// silently for this poll — the next poll retries both from scratch,
+/// same posture as the scoreboard feed's absent-poll carry-forward.
+async fn poll_rich_events(
+    client: &reqwest::Client,
+    summary_base: &str,
+    core_base: &str,
+    league: &str,
+    event_id: &str,
+) -> Vec<RichEventCandidate> {
+    let summary_result = fetch_summary(client, summary_base, league, event_id)
+        .await
+        .and_then(|body| parse_summary(&body).map_err(anyhow::Error::from));
+
+    let needs_fallback = match &summary_result {
+        Err(_) => true,
+        Ok(resp) => is_empty_summary(resp),
+    };
+    if !needs_fallback {
+        return summary_result
+            .map(|r| extract_rich_events(&r))
+            .unwrap_or_default();
+    }
+
+    match fetch_newest_plays(client, core_base, league, event_id).await {
+        Ok(plays) => extract_rich_events_from_plays(&plays),
+        Err(e) => {
+            tracing::warn!(
+                league,
+                event_id,
+                "rich events: summary and plays both failed this poll: {e}"
+            );
+            Vec::new()
+        }
+    }
+}
+
 /// plan 037: ingest goes through `Engine::accept` — the one shared path
 /// that enqueues with the mutate→wake→emit protocol and then fans
 /// accepted events out to every connector (plan §3: "every accepted
@@ -722,6 +1237,7 @@ async fn fetch_league(client: &reqwest::Client, league: &str) -> anyhow::Result<
 /// exception: rss/news events are overlay-only and never offered,
 /// `IMPLEMENTATION_PLAN.md` §4.6 — a rule `accept` encodes via the
 /// origin gate, so no per-caller flag is needed here).
+#[allow(clippy::too_many_arguments)] // untested outer wiring, same reasoning as CardTopic's bundling for the pure/tested side
 pub fn spawn_espn_poller(
     engine: Engine,
     leagues: Vec<String>,
@@ -729,6 +1245,8 @@ pub fn spawn_espn_poller(
     ttl_secs: u64,
     priority: Priority,
     espn_live_card: bool,
+    espn_rich_events: bool,
+    crests: CrestCache,
 ) {
     tauri::async_runtime::spawn(async move {
         let client = match crate::net::build_poll_client() {
@@ -740,6 +1258,11 @@ pub fn spawn_espn_poller(
         };
         let mut snapshots: HashMap<String, Snapshot> = HashMap::new();
         let mut backoffs: HashMap<String, Backoff> = HashMap::new();
+        // plan 083 workstream c: per-match dedup key sets for the richer
+        // event feed — keyed by match id, evicted alongside that match's
+        // scoreboard snapshot (see the retain() call below) so this never
+        // grows unbounded.
+        let mut rich_seen: HashMap<String, HashSet<String>> = HashMap::new();
         let mut interval = tokio::time::interval(Duration::from_secs(poll_secs.max(5)));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         tracing::info!(?leagues, poll_secs, "espn poller started");
@@ -771,8 +1294,23 @@ pub fn spawn_espn_poller(
                     }
                 };
 
+                // plan 083 workstream a: schedule a background fetch for
+                // any team whose crest isn't cached yet — before the diff,
+                // so a crest that lands mid-poll is available for
+                // `patch_crests` below even on the same poll it completes.
+                for (team_id, logo_url) in team_logos(&scoreboard) {
+                    if crests.should_fetch(&team_id) {
+                        let crests = crests.clone();
+                        let client = client.clone();
+                        tauri::async_runtime::spawn(async move {
+                            crests.fetch_and_store(&client, &team_id, &logo_url).await;
+                        });
+                    }
+                }
+                let team_ids = team_ids_by_match(&scoreboard);
+
                 let prev = snapshots.entry(league.clone()).or_default();
-                let (events, next) = diff_scoreboard(
+                let (mut events, next) = diff_scoreboard(
                     prev,
                     &scoreboard,
                     ttl_secs,
@@ -780,14 +1318,49 @@ pub fn spawn_espn_poller(
                     priority,
                     espn_live_card,
                 );
+                patch_crests(&mut events, league, &team_ids, &crests);
                 snapshots.insert(league.clone(), next);
-                if events.is_empty() {
-                    continue;
-                }
-
                 for event in events {
                     if let Err(e) = engine.accept(event, false).await {
                         tracing::warn!(league, "espn event dropped: {e}");
+                    }
+                }
+
+                // plan 083 workstream c: for every currently-live match,
+                // poll the richer summary/plays fallback chain and emit
+                // any newly-seen informational event. Only when opted in
+                // — this is materially heavier per-match polling.
+                if espn_rich_events {
+                    if let Some(current) = snapshots.get(league) {
+                        let live_matches: Vec<(String, MatchSnapshot)> = current
+                            .iter()
+                            .filter(|(_, s)| s.state == "in")
+                            .map(|(id, s)| (id.clone(), s.clone()))
+                            .collect();
+                        for (match_id, snap) in live_matches {
+                            let candidates = poll_rich_events(
+                                &client,
+                                ESPN_SUMMARY_BASE,
+                                ESPN_CORE_BASE,
+                                league,
+                                &match_id,
+                            )
+                            .await;
+                            let seen = rich_seen.entry(match_id.clone()).or_default();
+                            for candidate in filter_new(seen, candidates) {
+                                let event =
+                                    make_rich_event(league, &snap, &candidate, ttl_secs, priority);
+                                if let Err(e) = engine.accept(event, false).await {
+                                    tracing::warn!(league, match_id, "rich event dropped: {e}");
+                                }
+                            }
+                        }
+                    }
+                    // evict dedup state for matches no longer tracked at
+                    // all (evicted by the scoreboard's own absent-poll
+                    // logic above) — never grows unbounded.
+                    if let Some(current) = snapshots.get(league) {
+                        rich_seen.retain(|id, _| current.contains_key(id));
                     }
                 }
             }
@@ -812,9 +1385,12 @@ mod tests {
     use crate::notifier::{ConnectorHandle, ConnectorHealth};
     use crate::queue::SingleSlotQueue;
     use std::sync::Arc;
+    use wiremock::matchers::{method, path, query_param};
+    use wiremock::{Mock, MockServer, ResponseTemplate};
 
     const USA: &str = include_str!("../tests/fixtures/scoreboard-usa.1.json");
     const UCL: &str = include_str!("../tests/fixtures/scoreboard-uefa.champions.json");
+    const ESP: &str = include_str!("../tests/fixtures/scoreboard-esp.1.json");
 
     fn score_event(title: &str) -> Event {
         test_fixtures::with_origin(
@@ -882,6 +1458,103 @@ mod tests {
         assert_eq!(v.snap.home_abbrev, "MTL");
         assert_eq!(v.snap.away_abbrev, "TOR");
         assert_eq!(v.snap.state, "pre");
+    }
+
+    // plan 083 workstream a: crest logo parsing + the two pure lookup
+    // helpers the async poll loop uses to schedule fetches and patch
+    // `EspnMeta.home_crest`/`away_crest`.
+
+    #[test]
+    fn team_logo_url_parses_from_the_real_fixture() {
+        // verified directly against the raw esp.1 fixture json: Alavés
+        // (home, id 96) and Getafe (away, id 2922) both carry a direct
+        // espncdn.com crest url.
+        let sb = parse_scoreboard(ESP).unwrap();
+        let comp = &sb.events[0].competitions[0];
+        let home = comp
+            .competitors
+            .iter()
+            .find(|c| c.home_away == "home")
+            .unwrap();
+        let away = comp
+            .competitors
+            .iter()
+            .find(|c| c.home_away == "away")
+            .unwrap();
+        assert_eq!(
+            home.team.as_ref().unwrap().logo.as_deref(),
+            Some("https://a.espncdn.com/i/teamlogos/soccer/500/96.png")
+        );
+        assert_eq!(
+            away.team.as_ref().unwrap().logo.as_deref(),
+            Some("https://a.espncdn.com/i/teamlogos/soccer/500/2922.png")
+        );
+    }
+
+    #[test]
+    fn team_logos_extracts_every_team_id_to_logo_url_pair() {
+        let sb = parse_scoreboard(ESP).unwrap();
+        let logos = team_logos(&sb);
+        assert_eq!(
+            logos.get("96").map(String::as_str),
+            Some("https://a.espncdn.com/i/teamlogos/soccer/500/96.png")
+        );
+        assert_eq!(
+            logos.get("2922").map(String::as_str),
+            Some("https://a.espncdn.com/i/teamlogos/soccer/500/2922.png")
+        );
+    }
+
+    #[test]
+    fn team_ids_by_match_maps_match_id_to_home_and_away_team_ids() {
+        let sb = parse_scoreboard(ESP).unwrap();
+        let match_id = sb.events[0].id.clone();
+        let ids = team_ids_by_match(&sb);
+        assert_eq!(
+            ids.get(&match_id),
+            Some(&("96".to_string(), "2922".to_string()))
+        );
+    }
+
+    #[test]
+    fn patch_crests_fills_in_cached_paths_by_topic_match_id() {
+        let (_dir, crests) = crate::crests::test_support::temp_cache();
+        // fabricate a warm cache hit for the home team (96) only.
+        std::fs::create_dir_all(&crests.dir).unwrap();
+        std::fs::write(crests.path_for("96"), b"png bytes").unwrap();
+
+        let mut team_ids = HashMap::new();
+        team_ids.insert("761659".to_string(), ("96".to_string(), "2922".to_string()));
+
+        let mut events = vec![score_event("t")];
+        events[0].topic = Some("espn:usa.1:761659".to_string());
+        events[0].meta.espn = Some(EspnMeta {
+            league: "usa.1".to_string(),
+            home_abbrev: "MTL".to_string(),
+            away_abbrev: "TOR".to_string(),
+            home_score: 0,
+            away_score: 0,
+            clock: "0'".to_string(),
+            home_cards: (0, 0),
+            away_cards: (0, 0),
+            home_crest: None,
+            away_crest: None,
+        });
+
+        patch_crests(&mut events, "usa.1", &team_ids, &crests);
+
+        let espn = events[0].meta.espn.as_ref().unwrap();
+        assert!(espn.home_crest.is_some(), "96 is a cache hit");
+        assert_eq!(espn.away_crest, None, "2922 was never cached");
+    }
+
+    #[test]
+    fn patch_crests_leaves_events_without_espn_meta_untouched() {
+        let (_dir, crests) = crate::crests::test_support::temp_cache();
+        let team_ids = HashMap::new();
+        let mut events = vec![score_event("t")];
+        patch_crests(&mut events, "usa.1", &team_ids, &crests);
+        assert_eq!(events[0].meta.espn, None);
     }
 
     #[test]
@@ -1157,6 +1830,7 @@ mod tests {
         last_detail.team = Some(SbTeam {
             id: "999999".to_string(),
             abbreviation: String::new(),
+            logo: None,
         });
 
         let snap = view(&sb.events[0]).snap;
@@ -1364,6 +2038,53 @@ mod tests {
         );
     }
 
+    // plan 083 item 4: EspnMeta — the structured sibling of the Clock/Cards
+    // detail cells above, same values, unjoined.
+
+    #[test]
+    fn live_card_on_attaches_structured_espn_meta() {
+        let sb = parse_scoreboard(UCL).unwrap();
+        let mut v_snap = view(&sb.events[0]).snap;
+        v_snap.state = "in".to_string();
+        v_snap.home_cards.0 -= 1;
+        let mut snap = Snapshot::new();
+        snap.insert(sb.events[0].id.clone(), v_snap);
+
+        let mut live = parse_scoreboard(UCL).unwrap();
+        live.events[0].status.status_type.state = "in".to_string();
+
+        let (events, _) = diff_scoreboard(&snap, &live, 8, "uefa.champions", Priority::High, true);
+        assert_eq!(events.len(), 1);
+        let espn = events[0]
+            .meta
+            .espn
+            .as_ref()
+            .expect("espn_live_card on must populate EspnMeta");
+        assert_eq!(espn.league, "UCL");
+        assert_eq!(espn.home_abbrev, "PSG");
+        assert_eq!(espn.away_abbrev, "ARS");
+        assert_eq!(espn.home_score, 1);
+        assert_eq!(espn.away_score, 1);
+        assert_eq!(espn.clock, "120'");
+        assert_eq!(espn.home_cards, (2, 0));
+        assert_eq!(espn.away_cards, (4, 0));
+        // crest paths are patched in afterward by the async poller loop
+        // (workstream a) — diff_scoreboard itself never touches the
+        // filesystem, so both stay None here.
+        assert_eq!(espn.home_crest, None);
+        assert_eq!(espn.away_crest, None);
+    }
+
+    #[test]
+    fn live_card_off_leaves_espn_meta_none() {
+        // regression pin: flag off must stay byte-identical — no EspnMeta,
+        // same as the pre-083 `meta == EventMeta::default()` pin above.
+        let events = live_cycle_events(false);
+        for event in &events {
+            assert_eq!(event.meta.espn, None);
+        }
+    }
+
     #[test]
     fn live_card_on_clean_match_omits_cards_cell() {
         // the USA fixture carries no card details — Clock must still be
@@ -1467,5 +2188,290 @@ mod tests {
         assert!(b.ready(t0));
         b.on_failure(t0);
         assert!(b.ready(t0 + Duration::from_secs(30))); // reset to base
+    }
+
+    // -----------------------------------------------------------------
+    // plan 083 workstream c (079 item 6a): richer live-match events.
+    //
+    // `SUMMARY_LIVE` is SYNTHESIZED, not a captured live-network payload
+    // — the raw research evidence directory
+    // (`research/043-worldcup-final-verification/`) is gitignored and not
+    // present in this checkout (`.gitignore`: "throwaway exploratory
+    // captures"). This fixture matches the DOCUMENTED shape recorded in
+    // the checked-in `plans/suspended/043-richer-match-events.md` (key
+    // names `commentary`/`keyEvents`; `keyEvents` entry fields `id`/
+    // `type`/`text`/`clock`/`scoringPlay`), with one entry per locked
+    // rich-event kind plus a scoreboard-owned goal/yellow-card (must be
+    // dropped) and one unrecognized future type (must be skipped, not
+    // fatal).
+    // -----------------------------------------------------------------
+
+    const SUMMARY_LIVE: &str = include_str!("../tests/fixtures/espn-summary-live.json");
+    const PLAYS_PAGE1: &str = include_str!("../tests/fixtures/espn-plays-page1.json");
+    const PLAYS_PAGE3_NEWEST: &str = include_str!("../tests/fixtures/espn-plays-page3-newest.json");
+
+    #[test]
+    fn parse_summary_parses_commentary_and_key_events() {
+        let resp = parse_summary(SUMMARY_LIVE).unwrap();
+        assert_eq!(resp.commentary.len(), 1);
+        assert_eq!(resp.commentary[0].text, "Kickoff");
+        assert_eq!(resp.key_events.len(), 7);
+    }
+
+    #[test]
+    fn parse_summary_empty_object_yields_empty_arrays() {
+        let resp = parse_summary("{}").unwrap();
+        assert!(resp.commentary.is_empty());
+        assert!(resp.key_events.is_empty());
+        assert!(is_empty_summary(&resp));
+    }
+
+    #[test]
+    fn parse_plays_parses_page_count_and_items() {
+        let resp = parse_plays(PLAYS_PAGE1).unwrap();
+        assert_eq!(resp.page_count, 3);
+        assert_eq!(resp.items.len(), 1);
+    }
+
+    #[test]
+    fn classify_rich_type_maps_all_four_locked_kinds() {
+        assert_eq!(classify_rich_type("foul"), Some(RichEventKind::Foul));
+        assert_eq!(classify_rich_type("offside"), Some(RichEventKind::Offside));
+        assert_eq!(
+            classify_rich_type("var-check"),
+            Some(RichEventKind::VarCheck)
+        );
+        assert_eq!(
+            classify_rich_type("substitution"),
+            Some(RichEventKind::Substitution)
+        );
+    }
+
+    #[test]
+    fn classify_rich_type_drops_scoreboard_owned_types_outright() {
+        for scoreboard_owned in [
+            "goal",
+            "penalty-scored",
+            "yellow-card",
+            "red-card",
+            "own-goal",
+            "kickoff",
+            "half-time",
+            "full-time",
+        ] {
+            assert_eq!(
+                classify_rich_type(scoreboard_owned),
+                None,
+                "{scoreboard_owned} must never be classified as a rich event"
+            );
+        }
+    }
+
+    #[test]
+    fn classify_rich_type_skips_unrecognized_types_not_fatal() {
+        assert_eq!(classify_rich_type("some-future-espn-type"), None);
+        assert_eq!(classify_rich_type(""), None);
+    }
+
+    #[test]
+    fn extract_rich_events_pulls_only_the_four_locked_kinds_from_key_events() {
+        let resp = parse_summary(SUMMARY_LIVE).unwrap();
+        let candidates = extract_rich_events(&resp);
+        // 7 keyEvents total: foul, offside, var-check, substitution,
+        // goal (dropped), yellow-card (dropped), unrecognized (dropped)
+        // -> exactly 4 candidates survive.
+        assert_eq!(candidates.len(), 4);
+        assert_eq!(candidates[0].kind, RichEventKind::Foul);
+        assert!(candidates[0].text.contains("Foul by Pedro Porro"));
+        assert_eq!(candidates[0].clock, "12'");
+        assert_eq!(candidates[1].kind, RichEventKind::Offside);
+        assert_eq!(candidates[2].kind, RichEventKind::VarCheck);
+        assert_eq!(candidates[3].kind, RichEventKind::Substitution);
+    }
+
+    #[test]
+    fn extract_rich_events_from_plays_pulls_only_recognized_kinds() {
+        let resp = parse_plays(PLAYS_PAGE3_NEWEST).unwrap();
+        let candidates = extract_rich_events_from_plays(&resp);
+        // page3 has a foul (kept) and a goal (dropped, scoreboard-owned).
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].kind, RichEventKind::Foul);
+        assert_eq!(candidates[0].clock, "40'");
+    }
+
+    #[test]
+    fn dedup_filter_new_drops_the_same_key_on_a_second_poll() {
+        let mut seen = HashSet::new();
+        let candidate = RichEventCandidate {
+            kind: RichEventKind::Foul,
+            text: "Foul by X".to_string(),
+            clock: "12'".to_string(),
+        };
+        let first_poll = filter_new(&mut seen, vec![candidate.clone()]);
+        assert_eq!(first_poll.len(), 1, "first sighting must pass through");
+        let second_poll = filter_new(&mut seen, vec![candidate]);
+        assert!(
+            second_poll.is_empty(),
+            "same (kind, clock) key on a re-poll must be deduped away"
+        );
+    }
+
+    #[test]
+    fn dedup_filter_new_treats_a_different_clock_as_a_new_event() {
+        let mut seen = HashSet::new();
+        let first = RichEventCandidate {
+            kind: RichEventKind::Foul,
+            text: "Foul by X".to_string(),
+            clock: "12'".to_string(),
+        };
+        let second = RichEventCandidate {
+            kind: RichEventKind::Foul,
+            text: "Foul by Y".to_string(),
+            clock: "50'".to_string(),
+        };
+        assert_eq!(filter_new(&mut seen, vec![first]).len(), 1);
+        assert_eq!(
+            filter_new(&mut seen, vec![second]).len(),
+            1,
+            "a genuinely different event (different clock) must not be deduped"
+        );
+    }
+
+    #[test]
+    fn make_rich_event_maps_kind_to_signal_and_rides_football_ttl() {
+        let (snap, _) = baseline(USA);
+        let match_snap = snap.get("761659").unwrap();
+        let candidate = RichEventCandidate {
+            kind: RichEventKind::Offside,
+            text: "Offside — someone".to_string(),
+            clock: "23'".to_string(),
+        };
+        let event = make_rich_event("usa.1", match_snap, &candidate, 8, Priority::High);
+        assert_eq!(event.signal, EventSignal::Offside);
+        assert_eq!(event.payload.body, "Offside — someone");
+        assert_eq!(event.rotation, RotationSpec::OneShot { ttl_secs: 8 });
+        assert_eq!(event.topic, None, "informational one-shots ride no Topic");
+        assert_eq!(event.origin, SourceKind::Football);
+    }
+
+    // ---- fallback-chain orchestration (wiremock) ----
+
+    #[tokio::test]
+    async fn poll_rich_events_uses_summary_when_it_succeeds_and_never_touches_plays() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/usa.1/summary"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(SUMMARY_LIVE))
+            .expect(1)
+            .mount(&server)
+            .await;
+        // no /plays mock mounted at all — if poll_rich_events called it,
+        // wiremock's default 404-on-unmounted-path response would still
+        // be handled gracefully, but `.expect(1)` above (summary called
+        // exactly once) combined with checking the candidates came from
+        // SUMMARY_LIVE is the real assertion here.
+
+        let client = crate::net::build_poll_client().unwrap();
+        let base = server.uri();
+        let candidates = poll_rich_events(&client, &base, &base, "usa.1", "123").await;
+        assert_eq!(candidates.len(), 4, "candidates must come from summary");
+        server.verify().await;
+    }
+
+    #[tokio::test]
+    async fn poll_rich_events_falls_back_to_plays_on_summary_404() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/usa.1/summary"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/usa.1/events/123/competitions/123/plays"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(PLAYS_PAGE1))
+            .mount(&server)
+            .await;
+
+        let client = crate::net::build_poll_client().unwrap();
+        let base = server.uri();
+        let candidates = poll_rich_events(&client, &base, &base, "usa.1", "123").await;
+        // PLAYS_PAGE1's one item is "kickoff" — scoreboard-owned, dropped
+        // — so an empty candidate list here still proves the plays
+        // endpoint was consulted (pageCount 1, no newest-page fetch).
+        assert!(candidates.is_empty());
+    }
+
+    #[tokio::test]
+    async fn poll_rich_events_falls_back_to_plays_on_summary_empty() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/usa.1/summary"))
+            .respond_with(ResponseTemplate::new(200).set_body_string("{}"))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/usa.1/events/123/competitions/123/plays"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(PLAYS_PAGE1))
+            .mount(&server)
+            .await;
+
+        let client = crate::net::build_poll_client().unwrap();
+        let base = server.uri();
+        let candidates = poll_rich_events(&client, &base, &base, "usa.1", "123").await;
+        assert!(
+            candidates.is_empty(),
+            "plays page1 (kickoff only) consulted, nothing card-worthy on it"
+        );
+    }
+
+    #[tokio::test]
+    async fn poll_rich_events_fetches_the_newest_plays_page_only() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/usa.1/summary"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/usa.1/events/123/competitions/123/plays"))
+            .and(query_param("page", "1"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(PLAYS_PAGE1))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/usa.1/events/123/competitions/123/plays"))
+            .and(query_param("page", "3"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(PLAYS_PAGE3_NEWEST))
+            .mount(&server)
+            .await;
+
+        let client = crate::net::build_poll_client().unwrap();
+        let base = server.uri();
+        let candidates = poll_rich_events(&client, &base, &base, "usa.1", "123").await;
+        // page1's lone item is "kickoff" (dropped); if page1's content had
+        // leaked through instead of page3's, this would be empty, not 1 —
+        // proving only the newest page's content was used.
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].kind, RichEventKind::Foul);
+    }
+
+    #[tokio::test]
+    async fn poll_rich_events_both_endpoints_failing_returns_empty_not_a_panic() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/usa.1/summary"))
+            .respond_with(ResponseTemplate::new(404))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/usa.1/events/123/competitions/123/plays"))
+            .respond_with(ResponseTemplate::new(500))
+            .mount(&server)
+            .await;
+
+        let client = crate::net::build_poll_client().unwrap();
+        let base = server.uri();
+        let candidates = poll_rich_events(&client, &base, &base, "usa.1", "123").await;
+        assert!(candidates.is_empty());
     }
 }

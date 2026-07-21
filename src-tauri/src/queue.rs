@@ -546,6 +546,7 @@ impl SingleSlotQueue {
                     queue_done,
                     ttl_ms,
                     remaining_ms,
+                    espn: item.event.meta.espn.clone(),
                 }
             }
         }

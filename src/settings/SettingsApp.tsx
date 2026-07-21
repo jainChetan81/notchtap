@@ -46,6 +46,7 @@ export interface Config {
   espn_priority: PriorityLevel;
   espn_ttl_secs: number;
   espn_live_card: boolean;
+  espn_rich_events: boolean;
   rss_enabled: boolean;
   rss_feeds: RssFeedConfig[];
   rss_poll_secs: number;
@@ -780,6 +781,14 @@ function FootballSection({
         label="Consolidate live match updates"
         checked={config.espn_live_card}
         onChange={(espn_live_card) => patchConfig({ espn_live_card })}
+      />
+      <ToggleControl
+        id="espn-rich-events"
+        name="Richer match events"
+        help="Poll for fouls, offsides, VAR checks, and substitutions in addition to goals and cards. Heavier polling — opt in per match."
+        label="Show richer match events"
+        checked={config.espn_rich_events}
+        onChange={(espn_rich_events) => patchConfig({ espn_rich_events })}
       />
       <PriorityToggle
         id="espn-priority"

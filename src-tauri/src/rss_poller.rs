@@ -334,6 +334,8 @@ pub fn diff_feed(
                 // plan 035: rss items carry no subtitle/details.
                 subtitle: None,
                 details: Vec::new(),
+                // plan 083: espn-only field; rss never populates it.
+                espn: None,
             },
             origin: SourceKind::News,
         };
@@ -804,6 +806,7 @@ mod tests {
                 link: Some(entry_link),
                 subtitle: None,
                 details: Vec::new(),
+                espn: None,
             }
         );
     }

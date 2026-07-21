@@ -123,6 +123,14 @@ pub enum EventSignal {
     Kickoff,
     Halftime,
     Fulltime,
+    /// plan 083 workstream c (079 item 6a) — the four locked richer
+    /// event kinds, sourced from ESPN's `summary`/`plays` fallback chain
+    /// rather than the scoreboard feed. Presentation-only, same rigor as
+    /// every other variant here.
+    Foul,
+    Offside,
+    VarCheck,
+    Substitution,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -159,6 +167,53 @@ pub struct EventMeta {
     pub subtitle: Option<String>,
     /// Label/value detail pairs (plan 035), capped server-side.
     pub details: Vec<DetailItem>,
+    /// Structured live-match fields (plan 083 item 4 — decided STRUCTURED,
+    /// not pre-joined into `matchup()`'s display string). Populated by the
+    /// espn poller only when `espn_live_card` is on (the same gate as the
+    /// `details` Clock/Cards cells above); every other source, and espn
+    /// itself with the flag off, leaves this `None`. `skip_serializing_if`
+    /// is deliberate here (unlike every other `Option` field above, which
+    /// serializes explicit `null`): without it, EVERY payload — manual,
+    /// cmux, news, flag-off espn — would gain a literal `"espn": null` key
+    /// on the wire, breaking the flag-off byte-identical pin at the JSON
+    /// level (see `espn_field_is_omitted_from_wire_when_absent` below).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub espn: Option<EspnMeta>,
+}
+
+/// plan 083: structured live-match fields (079 item 4 — decided
+/// STRUCTURED, not pre-joined). Present only on Football events when
+/// the live-card flag is on; everything else leaves it `None` and the
+/// wire is unchanged. Display-only, like the rest of `EventMeta` — never
+/// consulted by queue/rotation/priority logic.
+///
+/// `home_crest`/`away_crest` (workstream a) are the raw absolute
+/// filesystem path to a cached crest PNG under the crest cache dir
+/// (`~/.config/notchtap/crests/`), present only on a cache hit; `None`
+/// means no crest cached yet (first sighting, still fetching, or the
+/// fetch failed) — the frontend renders the text-abbrev fallback. This
+/// is deliberately NOT yet a servable `asset://`/`crest://` URL: the
+/// frontend converts the raw path via tauri's `convertFileSrc` (route
+/// (i), see `poller.rs`'s crest-serving doc), keeping this struct
+/// serving-route-agnostic — a future route (ii) migration would not
+/// need to change this field's shape.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EspnMeta {
+    pub league: String,
+    pub home_abbrev: String,
+    pub away_abbrev: String,
+    pub home_score: u32,
+    pub away_score: u32,
+    /// espn's own clock text ("45'"), same value as `poller.rs`'s Clock
+    /// detail cell.
+    pub clock: String,
+    /// per-side (yellow, red) card counts — same values as the Cards
+    /// detail cell, structured instead of pre-formatted text.
+    pub home_cards: (u32, u32),
+    pub away_cards: (u32, u32),
+    pub home_crest: Option<String>,
+    pub away_crest: Option<String>,
 }
 
 /// The rust-authoritative slot state pushed to the frontend whenever it
@@ -197,6 +252,14 @@ pub enum SlotState {
         /// `details` pair. Display-only, camelCase on the wire.
         subtitle: Option<String>,
         details: Vec<DetailItem>,
+        /// Structured live-match fields (plan 083), mirrored from
+        /// `EventMeta.espn` — see that field's doc for the gate and the
+        /// `skip_serializing_if` rationale (applies here identically: an
+        /// absent block must be an absent JSON key, not an explicit
+        /// `null`, or the flag-off byte-identical pin fails at the JSON
+        /// level).
+        #[serde(skip_serializing_if = "Option::is_none")]
+        espn: Option<EspnMeta>,
         /// Queue-slider position within the current batch (plan 033):
         /// `queue_total` is the batch size (never below 1 while Showing),
         /// `queue_done` how many items completed (capped at
@@ -363,6 +426,10 @@ mod tests {
             (EventSignal::Kickoff, "kickoff"),
             (EventSignal::Halftime, "halftime"),
             (EventSignal::Fulltime, "fulltime"),
+            (EventSignal::Foul, "foul"),
+            (EventSignal::Offside, "offside"),
+            (EventSignal::VarCheck, "var_check"),
+            (EventSignal::Substitution, "substitution"),
         ] {
             assert_eq!(serde_json::to_value(signal).unwrap(), wire);
             let parsed: EventSignal = serde_json::from_str(&format!("\"{wire}\"")).unwrap();
@@ -400,6 +467,7 @@ mod tests {
             queue_done: 2,
             ttl_ms: 8000,
             remaining_ms: 6000,
+            espn: None,
         };
         let json = serde_json::to_value(&state).unwrap();
         assert_eq!(json["state"], "showing");
@@ -454,6 +522,7 @@ mod tests {
             queue_done: 0,
             ttl_ms: 4000,
             remaining_ms: 4000,
+            espn: None,
         };
 
         let json = serde_json::to_value(state).unwrap();
@@ -470,6 +539,63 @@ mod tests {
         assert_eq!(json["details"], serde_json::json!([]));
         assert_eq!(json["queueTotal"], 1);
         assert_eq!(json["queueDone"], 0);
+        // plan 083: unlike every other Option field above, an absent espn
+        // block must be an ABSENT KEY, not an explicit null — the
+        // flag-off byte-identical pin depends on this at the JSON level.
+        assert!(
+            !json.as_object().unwrap().contains_key("espn"),
+            "absent espn must be an omitted key, not a null value"
+        );
+    }
+
+    #[test]
+    fn espn_meta_serializes_camel_case_when_present() {
+        let state = SlotState::Showing {
+            id: Uuid::new_v4(),
+            title: "UCL: ARS 1–1 PSG".to_string(),
+            body: "kickoff".to_string(),
+            event_type: EventType::MatchState,
+            priority: Priority::High,
+            signal: EventSignal::Kickoff,
+            expanded: false,
+            source: None,
+            category: None,
+            published_at_ms: None,
+            link: None,
+            subtitle: None,
+            details: Vec::new(),
+            queue_total: 1,
+            queue_done: 0,
+            ttl_ms: 8000,
+            remaining_ms: 8000,
+            espn: Some(EspnMeta {
+                league: "UCL".to_string(),
+                home_abbrev: "PSG".to_string(),
+                away_abbrev: "ARS".to_string(),
+                home_score: 1,
+                away_score: 1,
+                clock: "45'".to_string(),
+                home_cards: (2, 0),
+                away_cards: (4, 0),
+                home_crest: Some("/home/u/.config/notchtap/crests/160.png".to_string()),
+                away_crest: None,
+            }),
+        };
+        let json = serde_json::to_value(&state).unwrap();
+        assert_eq!(json["espn"]["league"], "UCL");
+        assert_eq!(json["espn"]["homeAbbrev"], "PSG");
+        assert_eq!(json["espn"]["awayAbbrev"], "ARS");
+        assert_eq!(json["espn"]["homeScore"], 1);
+        assert_eq!(json["espn"]["awayScore"], 1);
+        assert_eq!(json["espn"]["clock"], "45'");
+        assert_eq!(json["espn"]["homeCards"], serde_json::json!([2, 0]));
+        assert_eq!(json["espn"]["awayCards"], serde_json::json!([4, 0]));
+        assert_eq!(
+            json["espn"]["homeCrest"],
+            "/home/u/.config/notchtap/crests/160.png"
+        );
+        assert!(json["espn"]["awayCrest"].is_null());
+        assert!(json.get("home_abbrev").is_none());
     }
 
     #[test]
@@ -496,6 +622,82 @@ mod tests {
         let meta = EventMeta::default();
         assert_eq!(meta.subtitle, None);
         assert!(meta.details.is_empty());
+        // plan 083: same back-compat rule for the new structured block —
+        // every non-football source, and football itself with
+        // `espn_live_card` off, leaves this `None`.
+        assert_eq!(meta.espn, None);
+    }
+
+    #[test]
+    fn event_meta_espn_field_is_omitted_from_wire_when_absent() {
+        // plan 083: the one deliberate house-style deviation — every other
+        // Option field on EventMeta serializes explicit null (see
+        // `event_meta_deserializes_subtitle_and_details_from_wire` and the
+        // slot-state sibling test above), but `espn` must be an omitted
+        // key entirely, or every non-football/flag-off payload gains a
+        // stray `"espn": null` and the byte-identical pin fails at the
+        // JSON level.
+        let json = serde_json::to_value(EventMeta::default()).unwrap();
+        assert!(
+            !json.as_object().unwrap().contains_key("espn"),
+            "absent espn must be an omitted key, not a null value"
+        );
+        // sibling fields keep serializing explicit null, unchanged:
+        assert!(json["subtitle"].is_null());
+    }
+
+    #[test]
+    fn dedup_eq_treats_a_changed_espn_block_as_a_real_change() {
+        // plan 083: EspnMeta must participate in dedup_eq normally (it is
+        // NOT time-varying — it only changes at real match-state moments,
+        // exactly when a re-emit is wanted) — unlike `remaining_ms`, which
+        // dedup_eq deliberately normalizes away.
+        fn showing_with_score(home_score: u32) -> SlotState {
+            SlotState::Showing {
+                id: Uuid::nil(),
+                title: "t".to_string(),
+                body: "b".to_string(),
+                event_type: EventType::ScoreUpdate,
+                priority: Priority::High,
+                signal: EventSignal::Goal,
+                expanded: false,
+                source: None,
+                category: None,
+                published_at_ms: None,
+                link: None,
+                subtitle: None,
+                details: Vec::new(),
+                queue_total: 1,
+                queue_done: 0,
+                ttl_ms: 8000,
+                remaining_ms: 8000,
+                espn: Some(EspnMeta {
+                    league: "UCL".to_string(),
+                    home_abbrev: "PSG".to_string(),
+                    away_abbrev: "ARS".to_string(),
+                    home_score,
+                    away_score: 1,
+                    clock: "45'".to_string(),
+                    home_cards: (0, 0),
+                    away_cards: (0, 0),
+                    home_crest: None,
+                    away_crest: None,
+                }),
+            }
+        }
+
+        let before = showing_with_score(1);
+        let after_same_score = showing_with_score(1);
+        let after_new_goal = showing_with_score(2);
+
+        assert!(
+            before.dedup_eq(&after_same_score),
+            "identical espn blocks must still dedup"
+        );
+        assert!(
+            !before.dedup_eq(&after_new_goal),
+            "a changed espn block (new goal) must NOT be deduped away"
+        );
     }
 
     #[test]

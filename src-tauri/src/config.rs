@@ -28,6 +28,12 @@ pub struct Config {
     /// collapses to a single updating card (Topic `espn:{league}:{match_id}`,
     /// `Recurring` while in play, `OneShot` full-time on the same Topic).
     pub espn_live_card: bool,
+    /// plan 083 workstream c: opt-in richer match events (foul, offside,
+    /// VAR check, substitution) via ESPN's `summary`/`plays` endpoints —
+    /// default false, mirroring `espn_live_card`'s opt-in-gated pattern
+    /// exactly. This is materially more per-match polling than the
+    /// scoreboard feed alone, so it must stay opt-in.
+    pub espn_rich_events: bool,
     /// default false — news is opt-in per machine; ambient sources must
     /// not default on top of the app's primary agent-notification purpose.
     pub rss_enabled: bool,
@@ -202,6 +208,10 @@ fn default_espn_live_card() -> bool {
     false
 }
 
+fn default_espn_rich_events() -> bool {
+    false
+}
+
 fn default_rss_enabled() -> bool {
     false
 }
@@ -340,6 +350,7 @@ impl Default for Config {
             espn_priority: default_espn_priority(),
             espn_ttl_secs: default_espn_ttl_secs(),
             espn_live_card: default_espn_live_card(),
+            espn_rich_events: default_espn_rich_events(),
             rss_enabled: default_rss_enabled(),
             rss_feeds: default_rss_feeds(),
             rss_poll_secs: default_rss_poll_secs(),
@@ -510,6 +521,19 @@ mod tests {
         assert_eq!(c.appearance.card_radius, 16.0);
         assert_eq!(c.appearance.card_opacity, 0.9);
         assert_eq!(c.resting_state, RestingState::Rail);
+        assert!(!c.espn_rich_events);
+    }
+
+    #[test]
+    fn espn_rich_events_defaults_to_false_and_is_overridable() {
+        // plan 083 workstream c: mirrors espn_live_card's opt-in pattern —
+        // default off, this heavier per-match feed must not turn on for
+        // an install that hasn't opted in.
+        let default = Config::parse("").unwrap();
+        assert!(!default.espn_rich_events);
+
+        let on = Config::parse("espn_rich_events = true\n").unwrap();
+        assert!(on.espn_rich_events);
     }
 
     #[test]
