@@ -21,6 +21,66 @@ use crate::status::{
     WeatherSummary,
 };
 
+/// A single ambient status side-channel: an `Arc<Mutex<Option<T>>>` plus
+/// the compare-then-store-then-wake-only-on-change update shape and the
+/// read/clone/drop snapshot shape, both previously hand-duplicated once
+/// per channel (plan 073 generalization — see `update_live_match`'s doc
+/// comment for the history this replaces). Parameterized by the summary
+/// type so `live`/`weather` (and any future ambient channel) share one
+/// implementation instead of copying the ~10-line lock/compare/store/wake
+/// block per channel. Deliberately NOT `derive(Clone)`: that would add an
+/// unneeded `T: Clone` bound on the derive itself (the manual impl below
+/// only ever clones the `Arc`, never `T`).
+struct AmbientSlot<T> {
+    inner: Arc<StdMutex<Option<T>>>,
+}
+
+impl<T> AmbientSlot<T> {
+    fn new() -> Self {
+        Self {
+            inner: Arc::new(StdMutex::new(None)),
+        }
+    }
+}
+
+impl<T> Clone for AmbientSlot<T> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
+}
+
+impl<T: Clone + PartialEq> AmbientSlot<T> {
+    /// Locks, compares to the new value, stores it, and wakes `wake`
+    /// ONLY if it changed — the same compare-then-store-then-wake shape
+    /// `update_live_match`/`update_weather` each used to implement
+    /// inline. The handle is written independently of the queue lock;
+    /// nobody holds both at the same time (callers pass `&self.wake`,
+    /// never the queue).
+    fn update(&self, value: Option<T>, wake: &tokio::sync::Notify) {
+        let changed = {
+            let mut guard = self.inner.lock().unwrap();
+            if *guard == value {
+                false
+            } else {
+                *guard = value;
+                true
+            }
+        };
+        if changed {
+            wake.notify_waiters();
+        }
+    }
+
+    /// Read/clone/drop the handle — same lock discipline every caller
+    /// already follows: read the ambient handles BEFORE locking the
+    /// queue, so nobody ever holds both locks at once.
+    fn snapshot(&self) -> Option<T> {
+        self.inner.lock().unwrap().clone()
+    }
+}
+
 /// Owns the queue, the heartbeat wake, the app handle, the Connectors,
 /// and (plan 034's territory, folded into plan 037) the live-match handle
 /// and source-enabled flags the rotation loop needs to also be the sole
@@ -33,8 +93,8 @@ pub struct Engine<R: tauri::Runtime = tauri::Wry> {
     app: tauri::AppHandle<R>,
     connectors: Arc<Vec<ConnectorHandle>>,
     telegram_health: Arc<StdMutex<ConnectorHealth>>,
-    live: Arc<StdMutex<Option<LiveMatchSummary>>>,
-    weather: Arc<StdMutex<Option<WeatherSummary>>>,
+    live: AmbientSlot<LiveMatchSummary>,
+    weather: AmbientSlot<WeatherSummary>,
     espn_enabled: bool,
     rss_enabled: bool,
     weather_enabled: bool,
@@ -79,8 +139,8 @@ impl<R: tauri::Runtime> Engine<R> {
             app,
             connectors,
             telegram_health,
-            live: Arc::new(StdMutex::new(None)),
-            weather: Arc::new(StdMutex::new(None)),
+            live: AmbientSlot::new(),
+            weather: AmbientSlot::new(),
             espn_enabled,
             rss_enabled,
             weather_enabled,
@@ -205,47 +265,21 @@ impl<R: tauri::Runtime> Engine<R> {
     }
 
     /// Replaces the espn poller's direct `live.lock().unwrap()` +
-    /// `wake.notify_waiters()` dance (poller.rs, plan 034): locks `live`,
-    /// compares to the new summary, stores it, and wakes the rotation
-    /// loop ONLY if it changed — same compare-then-store shape
-    /// `status_state_if_changed` (status.rs) already uses for the
-    /// analogous StatusState guard. Not `apply`/`accept`: it never
-    /// touches the queue. Lock discipline: the live-match handle is
-    /// written independently of the queue lock — nobody holds both at
-    /// the same time.
+    /// `wake.notify_waiters()` dance (poller.rs, plan 034): compares to
+    /// the new summary, stores it, and wakes the rotation loop ONLY if it
+    /// changed — via the shared `AmbientSlot::update` (plan 073; was
+    /// hand-written inline here and in `update_weather` until then). Not
+    /// `apply`/`accept`: it never touches the queue.
     pub fn update_live_match(&self, summary: Option<LiveMatchSummary>) {
-        let changed = {
-            let mut guard = self.live.lock().unwrap();
-            if *guard == summary {
-                false
-            } else {
-                *guard = summary;
-                true
-            }
-        };
-        if changed {
-            self.wake.notify_waiters();
-        }
+        self.live.update(summary, &self.wake);
     }
 
     /// The weather twin of `update_live_match` (plan 040 Part B): the
     /// ambient weather summary the weather poller folds into the idle
-    /// rail. Same compare-then-store-then-wake-only-on-change shape, same
-    /// lock discipline — the handle is written independently of the queue
-    /// lock, nobody holds both at the same time.
+    /// rail. Same `AmbientSlot::update` call, same shape, just a
+    /// different summary type.
     pub fn update_weather(&self, summary: Option<WeatherSummary>) {
-        let changed = {
-            let mut guard = self.weather.lock().unwrap();
-            if *guard == summary {
-                false
-            } else {
-                *guard = summary;
-                true
-            }
-        };
-        if changed {
-            self.wake.notify_waiters();
-        }
+        self.weather.update(summary, &self.wake);
     }
 
     /// The rotation loop (formerly lib.rs spawn_heartbeat), moved inside
@@ -288,8 +322,8 @@ impl<R: tauri::Runtime> Engine<R> {
                     // plan 034 lock discipline: read/clone/drop the
                     // live-match handle BEFORE locking the queue — nobody
                     // holds both at the same time.
-                    let live_summary = live.lock().unwrap().clone();
-                    let weather_summary = weather.lock().unwrap().clone();
+                    let live_summary = live.snapshot();
+                    let weather_summary = weather.snapshot();
                     let mut q = queue.lock().await;
                     q.tick(Instant::now());
                     if let Some(state) = q.slot_state_if_changed() {
@@ -350,8 +384,8 @@ impl<R: tauri::Runtime> Engine<R> {
     /// discipline matches `emit_current_status_blocking`: live/weather
     /// locked and dropped before the queue lock.
     pub fn status_snapshot_blocking(&self) -> StatusState {
-        let live_summary = self.live.lock().unwrap().clone();
-        let weather_summary = self.weather.lock().unwrap().clone();
+        let live_summary = self.live.snapshot();
+        let weather_summary = self.weather.snapshot();
         let q = self.queue.blocking_lock();
         StatusState::snapshot(
             &q,
