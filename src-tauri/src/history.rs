@@ -56,7 +56,7 @@ pub struct HistoryStore {
 }
 
 impl HistoryStore {
-    /// `dir/history.jsonl`, defaults: 5MB cap, current + one `.1` backup.
+    /// `dir/history.jsonl`, defaults: 5MB cap, current + two backups (`.1`, `.2`).
     pub fn new(dir: impl AsRef<Path>) -> io::Result<Self> {
         Self::with_limits(dir, DEFAULT_MAX_SIZE, DEFAULT_MAX_FILES)
     }

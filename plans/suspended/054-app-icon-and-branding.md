@@ -1,5 +1,9 @@
 # Plan 054: give notchtap its own icon (currently the Tauri scaffold default)
 
+> **SUPERSEDED — do not execute.** Folded into 079 item 12 and shipped
+> by plan 094 (2026-07). Kept for historical context; see
+> plans/README.md.
+
 > **Executor instructions**: This plan cannot be executed as-is — it
 > requires a visual identity decision from the operator first (Step 0).
 > Do not generate icon artwork speculatively; confirm direction, then

@@ -20,9 +20,9 @@ don't tell you.
   must never rely on derived `PartialEq` — deriving it causes every
   tick to read as a content change.
 - the hover primitive shipped (tracking area, rust-derived card rect,
-  `hover-changed` event) but every hover CONSUMER feature is still
-  unbuilt: TTL-bar pause, weather peek, scorecard reveal, idle
-  expand-on-hover.
+  `hover-changed` event) and all four hover CONSUMER features shipped
+  in plan 093: TTL-bar hover-pause, idle weather peek, scorecard
+  reveal-on-hover, idle expand-on-hover.
 - the frontend toolchain spike (TypeScript 7 / Vite 8 / Vitest 4)
   returned a **GO** verdict, but nothing was adopted — `package.json`
   is untouched and adoption is a separate unwritten plan. don't read

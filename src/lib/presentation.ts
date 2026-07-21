@@ -89,7 +89,7 @@ export type FootballEventKind =
   | "substitution";
 
 // Celebration values are the exact CSS class names StatusRailCard.tsx
-// applies to the outer `.rail-card` (styles.css/preview-overlay.css) —
+// applies to the outer `.card-assembly` (styles.css/preview-overlay.css) —
 // no separate translation table to keep in sync.
 export type Celebration = "cele-goal" | "cele-yc" | "cele-rc" | null;
 

@@ -333,10 +333,10 @@ matters."
   a hover class toggles in the DOM inspector, confirm a menu-bar icon
   directly overlapped by the window's dead margin still responds to a
   real click.
-- `cargo test`/`npx vitest run` should stay at the current counts
-  (345 + 3 doc-tests / 124) until an actual build plan lands the
-  rect-derivation function and its tests — this spike adds no committed
-  code.
+- `cargo test`/`npx vitest run` should stay at the counts as of this
+  spike until an actual build plan lands the rect-derivation function
+  and its tests — this spike adds no committed code. Current counts
+  live in `docs/TESTING_STRATEGY.md` §0.
 
 ## Maintenance notes
 
