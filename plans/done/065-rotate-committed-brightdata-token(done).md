@@ -251,3 +251,33 @@ third-location STOP condition all updated to cover both env-var names
 and all five files. Step 0 (operator rotation acknowledgment gate) is
 unchanged and still mandatory — the token must be treated as burned and
 rotated at BrightData regardless of the file relocation.
+
+## CLOSED — operator-accepted risk (2026-07-21)
+
+The operator closed this plan without rotation, with the full picture
+laid out immediately beforehand and acknowledged:
+
+- The token authenticates a **free-tier** BrightData account — the
+  operator's stated reason the exposure is acceptable ("its free api we
+  can ignore it").
+- The repo was re-verified **PUBLIC** (`gh repo view` → `PUBLIC`) at
+  closure time, and the token has been in git history since `7430b4b` —
+  deleting the file alone would never have un-exposed it; only rotation
+  would. The operator accepted this explicitly.
+- Nothing in the notchtap app consumes `mcp-servers/` (zero references
+  from `src/`, `src-tauri/`, `package.json`, `Cargo.toml`, verified at
+  closure) — it is AI-session tooling config only, and the committed
+  config's `command` path points at a copy OUTSIDE this repo
+  (`~/Desktop/Claude/ai-setup/...`), so the in-repo copy is
+  documentation at best.
+- `node_modules` under `mcp-servers/` is NOT tracked (verified — 11
+  small files tracked total), so the exposure is exactly the token in
+  the two config files, nothing broader.
+
+**Resolution: accepted risk, not fixed.** No rotation performed, no
+files de-committed, by explicit operator decision. Do not re-audit or
+re-file this finding; if a future audit surfaces this token again,
+point it at this closure note. The calculus changes ONLY if the
+BrightData account is ever upgraded to paid — that would reopen the
+question, since "free tier, nothing to spend" is the load-bearing
+premise of this acceptance.
