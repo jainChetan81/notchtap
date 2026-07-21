@@ -162,7 +162,11 @@ body {
   overflow: hidden;
   width: 100%;
   min-width: 0; /* see the flank rule above — same grid-blowout guard */
-  background: #000;
+  /* opacity (the Settings Glass/Default/Solid control, App.tsx
+     --card-opacity) applies ONLY here — the flanks and synthetic cutout
+     above are the shell and stay solid #000 so the drawn shape matches
+     the hardware notch (plan 091 decision; re-scoped by plan 098). */
+  background: rgba(0, 0, 0, var(--card-opacity, 1));
   color: #f5f7fa;
   box-shadow: 0 14px 28px rgba(0, 0, 0, 0.5);
   /* the cutout's base corners stay square at this seam too (rounding law

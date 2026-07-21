@@ -88,7 +88,9 @@
   overflow: hidden;
   width: 100%;
   min-width: 0;
-  background: #000;
+  /* opacity (the Settings Glass/Default/Solid control, App.tsx
+     --card-opacity) applies ONLY here — see styles.css .below-block. */
+  background: rgba(0, 0, 0, var(--card-opacity, 1));
   color: #f5f7fa;
   box-shadow: 0 14px 28px rgba(0, 0, 0, 0.5);
   border-bottom-left-radius: var(--card-radius, 14px);
