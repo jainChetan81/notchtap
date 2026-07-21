@@ -7,14 +7,14 @@
 > in `plans/README.md` — unless a reviewer dispatched you and told you they
 > maintain the index.
 >
-> **HARD PREREQUISITE — plan 090 must be DONE and merged before dispatch.**
-> This plan builds on 090's decided geometry rules (cutout exempt from
-> `--card-scale`; every card width capped at the window). If
-> `src/styles.css:61` still multiplies the cutout term by
-> `var(--card-scale)`, 090 has not landed — STOP.
+> **PREREQUISITE SATISFIED — plan 090 merged 2026-07-21** (`67b56cb`,
+> merge `96d74f8`). Sanity-confirm before starting: `src/styles.css:64`
+> reads `width: min(clamp(270px, var(--notchtap-cutout-width, 270px), 460px), 100%);`
+> — the cutout term unscaled. If it is ever again multiplied by
+> `var(--card-scale)`, someone reverted 090 — STOP.
 >
 > **Drift check (run first)**:
-> `git diff --stat <re-stamp after 090 merges>..HEAD -- src/styles.css src/components/IdleView.tsx src/components/StatusRailCard.tsx src/App.tsx src-tauri/src/hover.rs src/settings/preview-overlay.css`
+> `git diff --stat 148a6eb..HEAD -- src/styles.css src/components/IdleView.tsx src/components/StatusRailCard.tsx src/App.tsx src-tauri/src/hover.rs src/settings/preview-overlay.css`
 > Expected: empty. On any diff, compare the "Current state" excerpts
 > against live files; on a mismatch, STOP.
 
@@ -33,8 +33,8 @@
   DONE — interplay specified below). 087 (hover primitive, DONE — its
   `active_card_rect` must be re-derived here, same-commit lockstep).
 - **Category**: direction
-- **Planned at**: commit `<fill and re-verify at dispatch, after 090>`,
-  2026-07-21
+- **Planned at**: commit `148a6eb`, 2026-07-21 (stamped post-090/089
+  merges; excerpts re-verified at this SHA)
 
 ## Why this matters
 
@@ -93,8 +93,9 @@ byte-preserved wherever possible.
 
 ## Current state (verify each before editing)
 
-- `src/styles.css:25,39,44,52,61` — the five width rules (post-090 form:
-  scale-capped, cutout exempt). `:29` — the shell fill
+- `src/styles.css:25,39,44,52,64` — the five width rules (post-090 form:
+  `min(calc(<base>px * var(--card-scale)), 100%)`, and the notch rule at
+  `:64` with the cutout term unscaled). `:29` — the shell fill
   `rgba(5, 6, 7, var(--card-opacity))` this plan replaces with `#000`.
   `:13` — container `overflow: hidden`.
 - `src/styles.css` — `.rail-card` is the single rounded-rect shell every
