@@ -36,3 +36,7 @@ opencode.json
 
 # throwaway exploratory captures (live-API research, screenshots, etc.)
 research/
+
+# plan 104: local cmake build output for the vendored mediaremote-adapter
+# (never committed — the install target is /usr/local/lib, not this tree)
+src-tauri/vendor/mediaremote-adapter/build/
