@@ -108,6 +108,36 @@ pub struct Config {
     /// stylistic.
     #[serde(default = "default_history_enabled")]
     pub history_enabled: bool,
+    /// plan 104: user feature toggle for the ambient now-playing peek row.
+    /// Default `false` — same opt-in convention as `weather_enabled`/
+    /// `rss_enabled`: ambient sources never default on top of the app's
+    /// primary agent-notification purpose. The panel-editable half of the
+    /// two-gate design (`docs/design/now-playing-adapter.md`'s GO
+    /// conditions) — the child process spawns only when this AND
+    /// `now_playing_adapter_enabled` are both true.
+    #[serde(default = "default_now_playing_enabled")]
+    pub now_playing_enabled: bool,
+    /// plan 104: the kill switch, deliberately separate from the feature
+    /// toggle above and deliberately NOT exposed in the settings UI
+    /// (`docs/design/now-playing-adapter.md` §7 risk #1: if Apple closes
+    /// the `com.apple.*` MediaRemote oversight this adapter relies on, the
+    /// failure degrades silently to "no data," indistinguishable from
+    /// "nothing playing" — this flag is the config-file-only escape hatch
+    /// so an operator can mute a dead feature without losing every other
+    /// setting or waiting for a rebuild). Default `true`: once a user
+    /// opts into `now_playing_enabled`, the adapter runs unless someone
+    /// has explicitly muted it here by hand.
+    #[serde(default = "default_now_playing_adapter_enabled")]
+    pub now_playing_adapter_enabled: bool,
+    /// plan 104: mirrors `detect_path`'s runtime-path convention exactly —
+    /// built/installed out of band (`justfile`'s `build-media-adapter`
+    /// recipe), never by the rust core itself. Expected to contain
+    /// `bin/mediaremote-adapter.pl` + `MediaRemoteAdapter.framework`. Like
+    /// `detect_path`, this is pinned server-side and never editable via
+    /// the settings panel (`settings::pin_uneditable_fields`) — it names
+    /// an executed subprocess path, not a display preference.
+    #[serde(default = "default_now_playing_adapter_dir")]
+    pub now_playing_adapter_dir: PathBuf,
 }
 
 /// See [`Config::resting_state`].
@@ -298,6 +328,18 @@ fn default_history_enabled() -> bool {
     false
 }
 
+fn default_now_playing_enabled() -> bool {
+    false
+}
+
+fn default_now_playing_adapter_enabled() -> bool {
+    true
+}
+
+fn default_now_playing_adapter_dir() -> PathBuf {
+    PathBuf::from("/usr/local/lib/notchtap/mediaremote-adapter")
+}
+
 fn default_rotation_order() -> Vec<SourceKind> {
     // v6.1 review fix: Manual ranks ahead of Cmux — at default priorities
     // (Football/Cmux both High, Manual Medium, News Low) this never
@@ -397,6 +439,9 @@ impl Default for Config {
             appearance: default_appearance(),
             resting_state: default_resting_state(),
             history_enabled: default_history_enabled(),
+            now_playing_enabled: default_now_playing_enabled(),
+            now_playing_adapter_enabled: default_now_playing_adapter_enabled(),
+            now_playing_adapter_dir: default_now_playing_adapter_dir(),
         }
     }
 }
@@ -586,6 +631,12 @@ mod tests {
         assert_eq!(c.resting_state, RestingState::Rail);
         assert!(!c.espn_rich_events);
         assert!(!c.history_enabled);
+        assert!(!c.now_playing_enabled);
+        assert!(c.now_playing_adapter_enabled);
+        assert_eq!(
+            c.now_playing_adapter_dir,
+            PathBuf::from("/usr/local/lib/notchtap/mediaremote-adapter")
+        );
     }
 
     #[test]
@@ -612,6 +663,33 @@ mod tests {
 
         let rail = Config::parse("resting_state = \"rail\"\n").unwrap();
         assert_eq!(rail.resting_state, RestingState::Rail);
+    }
+
+    #[test]
+    fn now_playing_disabled_by_default() {
+        // plan 104: ambient sources are opt-in per machine — same rule as
+        // weather_enabled/rss_enabled. A config file predating this field
+        // (or one that simply never sets it) heals to `false`.
+        let c = Config::parse("").unwrap();
+        assert!(!c.now_playing_enabled);
+        // the kill switch defaults `true`: once a user opts into the
+        // feature, the adapter runs unless someone has explicitly muted
+        // it in config.toml by hand.
+        assert!(c.now_playing_adapter_enabled);
+    }
+
+    #[test]
+    fn now_playing_fields_are_overridable() {
+        let c = Config::parse(
+            "now_playing_enabled = true\nnow_playing_adapter_enabled = false\nnow_playing_adapter_dir = \"/opt/mediaremote-adapter\"\n",
+        )
+        .unwrap();
+        assert!(c.now_playing_enabled);
+        assert!(!c.now_playing_adapter_enabled);
+        assert_eq!(
+            c.now_playing_adapter_dir,
+            PathBuf::from("/opt/mediaremote-adapter")
+        );
     }
 
     #[test]

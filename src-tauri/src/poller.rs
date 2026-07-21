@@ -1425,6 +1425,7 @@ mod tests {
             true,
             true,
             false,
+            false,
             None,
         );
 
@@ -2135,6 +2136,7 @@ mod tests {
             Arc::new(std::sync::Mutex::new(ConnectorHealth::default())),
             true,
             true,
+            false,
             false,
             None,
         );

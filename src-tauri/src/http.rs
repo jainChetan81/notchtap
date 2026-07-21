@@ -279,6 +279,7 @@ mod tests {
                 true,
                 true,
                 false,
+                false,
                 None,
             ),
             default_ttl: 8,
