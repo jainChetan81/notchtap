@@ -8,6 +8,7 @@ import { IdleView } from "./IdleView";
 import { Manifest } from "./Manifest";
 import { Stamp } from "./Stamp";
 import { Track } from "./Track";
+import { TtlBar } from "./TtlBar";
 
 type Pulse = "pulse-goal" | "pulse-red" | null;
 
@@ -184,6 +185,12 @@ export function StatusRailCard({
               )}
               <Track total={renderedSlot.queueTotal} done={renderedSlot.queueDone} />
             </div>
+            <TtlBar
+              key={renderedSlot.id}
+              slotId={renderedSlot.id}
+              ttlMs={renderedSlot.ttlMs}
+              remainingMs={renderedSlot.remainingMs}
+            />
             <Manifest
               body={renderedSlot.body}
               eventType={renderedSlot.eventType}

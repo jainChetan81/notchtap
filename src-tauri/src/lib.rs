@@ -1069,6 +1069,8 @@ mod tests {
             details: Vec::new(),
             queue_total: 1,
             queue_done: 0,
+            ttl_ms: 8000,
+            remaining_ms: 8000,
         };
         let escaped = escape_for_eval_splice(&serde_json::to_string(&state).unwrap());
 

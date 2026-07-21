@@ -1281,6 +1281,8 @@ const PREVIEW_SAMPLES: ReadonlyArray<{
       details: [],
       queueTotal: 3,
       queueDone: 0,
+      ttlMs: 8000,
+      remainingMs: 5000,
     },
   },
   {
@@ -1302,6 +1304,8 @@ const PREVIEW_SAMPLES: ReadonlyArray<{
       details: [],
       queueTotal: 3,
       queueDone: 1,
+      ttlMs: 8000,
+      remainingMs: 5000,
     },
   },
   {
@@ -1325,6 +1329,8 @@ const PREVIEW_SAMPLES: ReadonlyArray<{
       details: [],
       queueTotal: 3,
       queueDone: 2,
+      ttlMs: 8000,
+      remainingMs: 5000,
     },
   },
   {
@@ -1346,6 +1352,8 @@ const PREVIEW_SAMPLES: ReadonlyArray<{
       details: [],
       queueTotal: 1,
       queueDone: 0,
+      ttlMs: 8000,
+      remainingMs: 5000,
     },
   },
 ];

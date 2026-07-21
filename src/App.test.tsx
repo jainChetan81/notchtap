@@ -43,6 +43,8 @@ describe("App", () => {
       details: [],
       queueTotal: 1,
       queueDone: 0,
+      ttlMs: 8000,
+      remainingMs: 8000,
     });
     expect(await screen.findByText("GOAL")).toBeTruthy();
     // plan 078: the collapsed manifest stays mounted (aria-hidden), so the
@@ -71,6 +73,8 @@ describe("App", () => {
       details: [],
       queueTotal: 1,
       queueDone: 0,
+      ttlMs: 8000,
+      remainingMs: 8000,
     });
     await screen.findByText("t");
     expect(container.querySelector(".rail-card.expanded")).not.toBeNull();
@@ -95,6 +99,8 @@ describe("App", () => {
       details: [],
       queueTotal: 1,
       queueDone: 0,
+      ttlMs: 8000,
+      remainingMs: 8000,
     });
     await screen.findByText("t");
     expect(container.querySelector(".rail-card.expanded")).toBeNull();
@@ -124,6 +130,8 @@ describe("App", () => {
       details: [],
       queueTotal: 1,
       queueDone: 0,
+      ttlMs: 8000,
+      remainingMs: 8000,
     });
     await screen.findByText("t");
     expect(container.querySelector(".rail-card")).toBe(card);

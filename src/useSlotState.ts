@@ -46,6 +46,12 @@ export type SlotState =
       // the rust SlotState::Showing fields exactly.
       queueTotal: number;
       queueDone: number;
+      // TTL-bar timing (plan 081) — mirrors the rust SlotState::Showing
+      // fields exactly. `remainingMs` is a snapshot at emission time; the
+      // frontend anchors its own countdown from it on receipt (see
+      // TtlBar.tsx) rather than re-reading it every frame.
+      ttlMs: number;
+      remainingMs: number;
     };
 
 declare global {
@@ -101,7 +107,9 @@ function isValidSlotState(v: unknown): v is SlotState {
     (obj.subtitle === null || typeof obj.subtitle === "string") &&
     isDetailArray(obj.details) &&
     isNonNegativeInteger(obj.queueTotal) &&
-    isNonNegativeInteger(obj.queueDone)
+    isNonNegativeInteger(obj.queueDone) &&
+    isNonNegativeInteger(obj.ttlMs) &&
+    isNonNegativeInteger(obj.remainingMs)
   );
 }
 

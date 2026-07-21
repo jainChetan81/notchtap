@@ -59,6 +59,7 @@
     <li><span class="badge open">○</span><div><div class="item-title">Staleness / age indicators</div></div></li>
     <li><span class="badge open">○</span><div><div class="item-title">Now-playing / media controls</div><div class="item-note">Concept only so far, no actual mockup. Real caveat: undocumented <code>MediaRemote</code> framework dependency.</div></div></li>
     <li><span class="badge open">○</span><div><div class="item-title">App icon / branding</div><div class="item-note">Different surface, lower priority.</div></div></li>
+    <li><span class="badge partial">~</span><div><div class="item-title">TTL progress bar (plan 081)</div><div class="item-note">Shipped: wire ttl_ms/remaining_ms on SlotState::Showing, rAF-driven TtlBar.tsx on every rotating card, remaining_ms deliberately excluded from the slot-state dedup comparison so emission volume doesn't double. Hover-pause half still open — plan 086 concluded the underlying tracking-area primitive is unbuilt.</div></div></li>
   </ul>
 
   <h2>Bigger/deferred (not part of the mockup loop)</h2>

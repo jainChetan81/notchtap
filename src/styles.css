@@ -459,6 +459,34 @@ body {
   box-shadow: 0 -3px 14px var(--accent-soft);
 }
 
+/* plan 081: the TTL progress bar, mounted between the compact content and
+   the manifest wrap (TtlBar.tsx) on every showing card. `.ttl-fill`'s
+   width is JS-driven per animation frame (TtlBar.tsx), never a CSS
+   transition — no `transition` here to fight the rAF loop. Accent color
+   is deliberate on every card type (priority accent, not the news `--cat`
+   var) — the bar is card chrome, like the priority border, not news
+   content. */
+.ttl-bar {
+  height: 2px;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.ttl-fill {
+  height: 100%;
+  width: 100%;
+  background: var(--accent);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* belt-and-braces: the rAF loop itself is gated off in JS under
+     reduced-motion (TtlBar.tsx renders a static full-width fill and never
+     arms the loop), but a CSS transition would still animate a later
+     width change if one were ever added here — keep it inert. */
+  .ttl-fill {
+    transition: none;
+  }
+}
+
 /* plan 078: expand/collapse is a grid-template-rows 0fr→1fr transition
    (the standard animatable-"auto"-height technique, no JS measuring) —
    the manifest content stays mounted at all times, at zero height when
