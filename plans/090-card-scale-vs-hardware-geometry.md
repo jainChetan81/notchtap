@@ -249,6 +249,30 @@ a fourth option yourself.
 **Verify**: the chosen answers to Q1/Q2/Q3 are written into this file
 under a "Decision" heading before any file is edited.
 
+## Decision — operator session, 2026-07-21 (Step 0 SATISFIED)
+
+All three questions answered by the operator; this plan is now
+dispatchable:
+
+- **Q1 → (a) Exempt the cutout.** Cutout-derived width is used raw —
+  `--card-scale` must NOT multiply `--notchtap-cutout-width`. Scale
+  continues to apply to every other card width. The accepted cost is
+  explicit: at "Large" the notch rail visibly does not grow.
+- **Q2 → (b) Cap each card at the window** — `min(<base> * var(--card-scale), 100%)`
+  (or `max-width: 100%`) on the five width rules. "Large" saturating on
+  the two widest cards is accepted. Window growth was considered and
+  deferred — it can be revisited with plan 079 item 19 if the redesign
+  wants the room; note 087's finding (window is fully click-through)
+  removes the click-risk objection if that day comes.
+- **Q3 → leave boot validation as-is** (warn-and-continue, plan 013).
+  Q1+Q2 make geometry safe at any value, which is the robust fix.
+
+Also decided in the same session, for the plan-079 item-1 build that
+this plan unblocks (recorded here because this file flagged it): the new
+card shape is **always opaque `#000`** — `card_opacity` stops affecting
+the card shell entirely (stays in config unchanged; Appearance-UI
+retirement is a later cleanup).
+
 ## Step 1: Implement the Q2 (window overflow) fix
 
 Scale-independent and mode-independent, so do it first and verify it in

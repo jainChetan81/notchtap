@@ -111,10 +111,23 @@ pub fn status_rail_active(status: &StatusState) -> bool {
 /// so the one coordinate-flip seam stays in exactly one place.
 ///
 /// `scale` is `Config.appearance.card_scale` (user-configurable via the
-/// Settings Appearance section, default `1.0`) — EVERY width below is
-/// multiplied by it in `styles.css` via `var(--card-scale)`, so this
-/// function must do the same or the rect silently drifts from the
-/// rendered card for any user not at scale 1.0.
+/// Settings Appearance section, default `1.0`) — a COSMETIC preference.
+///
+/// Plan 090 (Q1a): `scale` must NOT be applied to the `Mode::Notch`
+/// width. That width mirrors `--notchtap-cutout-width`
+/// (`src/styles.css:61`), which is itself a hardware measurement — the
+/// physical `NSScreen` safe-area inset, read via the `notchtap-detect`
+/// subprocess — not a design width. The physical notch does not get
+/// wider because the user picked a bigger card, so scaling it would
+/// silently reintroduce the menu-bar-overlap defect the plan fixes (see
+/// `plans/090-card-scale-vs-hardware-geometry.md` for the full
+/// rationale and the operator's Decision). Every OTHER width (every
+/// `Mode::Hud` arm) IS a cosmetic design width and IS multiplied by
+/// `scale` in `styles.css` via `var(--card-scale)`, so those arms must
+/// keep doing the same here or the rect silently drifts from the
+/// rendered card for any user not at scale 1.0. Do not "fix" the
+/// `Mode::Notch` arm back to multiplying by `scale` — that reverts a
+/// deliberate, decided exemption, not an oversight.
 pub fn active_card_rect(
     mode: Mode,
     cutout_width: f64,
@@ -125,11 +138,11 @@ pub fn active_card_rect(
 ) -> Rect {
     let width = match mode {
         Mode::Notch => cutout_width.clamp(NOTCH_CLAMP_MIN, NOTCH_CLAMP_MAX),
-        Mode::Hud if visible && expanded => EXPANDED_WIDTH,
-        Mode::Hud if visible => BASE_WIDTH,
-        Mode::Hud if has_status_chips => IDLE_STATUS_WIDTH,
-        Mode::Hud => IDLE_WIDTH,
-    } * scale;
+        Mode::Hud if visible && expanded => EXPANDED_WIDTH * scale,
+        Mode::Hud if visible => BASE_WIDTH * scale,
+        Mode::Hud if has_status_chips => IDLE_STATUS_WIDTH * scale,
+        Mode::Hud => IDLE_WIDTH * scale,
+    };
 
     let x_min = (WINDOW_WIDTH - width) / 2.0;
     let (y_min, y_max) = css_top_down_to_appkit_y(WINDOW_HEIGHT, 0.0, WINDOW_HEIGHT);
@@ -316,10 +329,16 @@ mod tests {
         assert_eq!(r.x_max - r.x_min, IDLE_WIDTH * 1.25);
     }
 
-    // --- notch-mode clamp at both bounds, all three scales ---
+    // --- notch-mode clamp at both bounds — plan 090 (Q1a): `scale` is
+    // NOT applied to notch-mode width, because it mirrors a hardware
+    // measurement (the physical cutout), not a cosmetic design width.
+    // These pin the clamp bounds at several scales to confirm the
+    // result is identical regardless of `scale` — renamed from
+    // `_at_scale_N` (which implied scale-dependence) to `_ignores_scale`
+    // where the old name would now mislead.
 
     #[test]
-    fn notch_clamp_floors_narrow_cutout_at_scale_1() {
+    fn notch_clamp_floors_narrow_cutout_ignores_scale_at_1_0() {
         let r = active_card_rect(Mode::Notch, 200.0, 1.0, false, false, false);
         assert_eq!(r.x_max - r.x_min, NOTCH_CLAMP_MIN);
     }
@@ -331,15 +350,27 @@ mod tests {
     }
 
     #[test]
-    fn notch_clamp_floors_narrow_cutout_at_scale_0_8() {
+    fn notch_clamp_floors_narrow_cutout_ignores_scale_at_0_8() {
         let r = active_card_rect(Mode::Notch, 200.0, 0.8, false, false, false);
-        assert_eq!(r.x_max - r.x_min, NOTCH_CLAMP_MIN * 0.8);
+        assert_eq!(r.x_max - r.x_min, NOTCH_CLAMP_MIN);
     }
 
     #[test]
-    fn notch_clamp_ceils_wide_cutout_at_scale_1_25() {
+    fn notch_clamp_ceils_wide_cutout_ignores_scale_at_1_25() {
         let r = active_card_rect(Mode::Notch, 600.0, 1.25, false, false, false);
-        assert_eq!(r.x_max - r.x_min, NOTCH_CLAMP_MAX * 1.25);
+        assert_eq!(r.x_max - r.x_min, NOTCH_CLAMP_MAX);
+    }
+
+    // New invariant pinned directly (not just via clamp bounds): at a
+    // realistic cutout width (319px — plan 063's own fixture,
+    // `src-tauri/src/lib.rs:983`), the WHOLE rect — not just its width —
+    // must be byte-for-byte identical at scale 1.0 vs 1.25, since
+    // `x_min`/`x_max` both derive from the (now-unscaled) notch width.
+    #[test]
+    fn notch_mode_rect_is_identical_across_scale_for_realistic_cutout() {
+        let at_scale_1 = active_card_rect(Mode::Notch, 319.0, 1.0, false, false, false);
+        let at_scale_1_25 = active_card_rect(Mode::Notch, 319.0, 1.25, false, false, false);
+        assert_eq!(at_scale_1, at_scale_1_25);
     }
 
     // --- point_in_rect: just inside vs just outside each edge ---

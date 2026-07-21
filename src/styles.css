@@ -22,7 +22,7 @@ body {
 .rail-card {
   box-sizing: border-box;
   position: relative;
-  width: calc(400px * var(--card-scale));
+  width: min(calc(400px * var(--card-scale)), 100%);
   margin: 0 auto;
   overflow: hidden;
   border-radius: 0 0 var(--card-radius) var(--card-radius);
@@ -36,12 +36,12 @@ body {
 }
 
 .rail-card.expanded {
-  width: calc(500px * var(--card-scale));
+  width: min(calc(500px * var(--card-scale)), 100%);
   border-radius: 0 0 var(--card-radius) var(--card-radius);
 }
 
 .rail-card.idle {
-  width: calc(270px * var(--card-scale));
+  width: min(calc(270px * var(--card-scale)), 100%);
   border-radius: 0 0 var(--card-radius) var(--card-radius);
 }
 
@@ -49,16 +49,19 @@ body {
    show (live match / news gate / queue depth) — the plain clock idle
    keeps the 270px above. */
 .rail-card.idle.status {
-  width: calc(460px * var(--card-scale));
+  width: min(calc(460px * var(--card-scale)), 100%);
 }
 
 /* plan 063: in notch mode the idle status rail caps at exactly the
    physical cutout width, zero outward margin — menu-bar icons live
    outside that span. 270px does double duty: fallback when the cutout
    width never arrived, and absolute floor for very narrow notches.
-   460px ceiling: never wider than today's HUD width. */
+   460px ceiling: never wider than today's HUD width.
+   plan 090: the cutout term is a hardware measurement, not a cosmetic
+   design width — `--card-scale` must NOT multiply it (Q1a). It is used
+   raw, only clamped to the window via `min(..., 100%)` for safety. */
 :root[data-notchtap-mode="notch"] .rail-card.idle.status {
-  width: calc(clamp(270px, var(--notchtap-cutout-width, 270px), 460px) * var(--card-scale));
+  width: min(clamp(270px, var(--notchtap-cutout-width, 270px), 460px), 100%);
 }
 
 /* priority accent — a single named color per tier, consumed by the
