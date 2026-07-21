@@ -330,7 +330,16 @@ Grouped by actual implementation cost, not decision complexity — a few
     named up front, not discovered mid-build. **[2026-07-21: STILL OPEN
     — deliberately deferred per the effort-triage note; operator
     decision: commit to a MediaRemote Swift helper as its own build
-    effort, or drop the source type.]**
+    effort, or drop the source type.]** **[2026-07-21 operator
+    decision session: DECIDED — commit to a SPIKE (086-shape,
+    investigate-first, not a build commitment): evaluate the
+    MediaRemote Swift-helper approach following the `notchtap-detect`
+    subprocess precedent (ARCHITECTURE.md §5), with the
+    undocumented-framework fragility as the spike's central question.
+    The advisor was recommending drop; operator chose to investigate
+    first. Spike plan to be filed at the next free number in a future
+    session — deliberately NOT filed today (operator asked to wrap up
+    planning without starting new work).]**
 17. **Hide-when-idle, reveal-on-hover** — not a visual decision, a real
     interaction-model change. Today's overlay is explicitly architected
     as a "permanent rotating overlay" (`CLAUDE.md`'s v3.6 description) —
@@ -367,9 +376,22 @@ Grouped by actual implementation cost, not decision complexity — a few
       `docs/design/hover-cursor-tracking.md`): tracking-area events
       still fire while `set_ignore_cursor_events(true)` stays
       unconditional — no dynamic toggling needed, the 2026-07-17
-      icon-swallowing fix survives untouched. Plan 087 (hover
-      primitive, filed TODO 2026-07-21) builds the one shared
-      mechanism; the reveal-on-hover feature itself follows it.]
+      icon-swallowing fix survives untouched. **Plan 087 SHIPPED
+      (2026-07-21, `a5a98b1`, merge `0b316c8`, filed done)**: the one
+      shared mechanism exists — `hover::active_card_rect` +
+      `status_rail_active` (`src-tauri/src/hover.rs`), the
+      tracking-area block, the transitions-only `hover-changed` event,
+      and a diagnostic `.hovered` class. The reveal-on-hover feature
+      itself is now unblocked but UNBUILT, with one carried-forward
+      limitation every consumer must handle: 087's rect is
+      **x-constrained only** — its vertical span is the full 300px
+      window, so ~240px of empty space below the card currently
+      registers as hovered. This item's idle expanded-on-hover (and
+      the other three consumers: 081's TTL hover-pause, 082's weather
+      peek, 084's rail→scorecard reveal) must each add a height
+      constraint to the rect before shipping its hover half — the
+      y-flip helper (`css_top_down_to_appkit_y`) is already built and
+      tested for exactly that.]
 18. **Timeline/day-progress slider** — today's idle view has a thin
     horizontal line with a moving dot showing progress through the day
     (`.idle-view .timeline`, `styles.css`). The new time+dots idle layout
@@ -380,6 +402,13 @@ Grouped by actual implementation cost, not decision complexity — a few
     rendered by `IdleView.tsx`) because the new idle layout hasn't been
     built. Plan 081's TTL bar is per-card rotation timing, not this
     day-progress slider — it does not resolve this item.]**
+    **[2026-07-21 operator decision session: DECIDED — fold into the
+    hover-expanded idle state (087's primitive makes it reachable):
+    the timeline appears only in the idle expanded-on-hover view, not
+    the resting time+dots rail, preserving the locked minimal idle.
+    Lands with the items-1+2 idle build, not as its own plan. Note
+    087's carried-forward y-span limitation applies to that build like
+    every other hover consumer.]**
 19. **The general compact card + expanded manifest view** — everything
     built so far covers only idle and the live-match scorecard. The
     accent edge (`.compact::before`, priority color), the stamp word
@@ -446,8 +475,15 @@ plan 086 spike `4ec98fe` de-risked hover; plan 087 filed TODO). LOCKED
 BUT UNBUILT: items 1 and 2 — the cutout shape and time+dots idle exist
 only in `prototype/notch-states.html`; no build plan filed. STILL
 OPEN / OPERATOR DECISION: items 8 (cmux treatment), 10 (pill shape), 11
-(pause indicator), 12 (app icon direction), 14 (staleness restyle), 16
-(now-playing commit-or-drop), 18 (timeline fate); item 19 remains the
+(pause indicator), 12 (app icon direction), 13-remainder (icon artwork
+sourcing), 14 (staleness restyle) — items 16 and 18 were DECIDED in the
+2026-07-21 operator decision session (16: MediaRemote spike to be filed,
+not dropped; 18: timeline folds into hover-expanded idle, rides the
+items-1+2 build — see the bracketed decision records on those items).
+Same session also resolved decisions outside this file: 072's Step 0
+(reject-on-full, ratifying what the executor shipped), 059's four
+history questions (full-source JSONL history — see that plan), and 065
+(deferred by operator). Item 19 remains the
 biggest user-facing gap, mechanically gated on item 1's build. Item 15
 stays LOCKED (ESPN). One vocabulary gap: plan 081's TTL bar
 (`ae50ca1`) is a locked visual element this file's topic list predates
@@ -459,3 +495,23 @@ lands. Recommendation: keep this file as the single tracking ledger
 annotations above make it current. Companion trackers
 `plans/079-checklist.html` / `plans/frontend-ui-consolidated.html`
 were out of scope for this pass and may lag these annotations.
+
+**Review-plan pass 2 (2026-07-21, at `958c2f7`)**: delta since the
+pass above — plan 087 moved from "filed TODO" to **SHIPPED** (merge
+`0b316c8`; item 17's bracket updated in place with the carried-forward
+y-span limitation every hover consumer must close). Follow-up (b)
+above is therefore half done: the primitive exists; the four consumer
+wirings (081 hover-pause, 082 weather peek, 084 scorecard reveal,
+item 17's own idle expand) are the remaining halves, each needing a
+height constraint per the limitation note. One new cross-plan coupling
+worth knowing before item 1/2's build plan is written:
+`src-tauri/src/hover.rs:27-33` hardcodes rust mirrors of the CURRENT
+card widths (270/400/460/500, cited to `styles.css` lines) — the
+cutout-shape rebuild (item 1) and new idle layout (item 2) will change
+those widths, so their build plan MUST scope updating `hover.rs`'s
+constants (and its `active_card_rect` mode branches) in the same
+commit, or hover geometry silently diverges from the redesigned cards.
+Also verified this pass: plans 068/072/074 (test coverage + a queue
+cap guard) merged the same day touch nothing visual — no annotation
+impact. `plans/079-checklist.html` was updated by the 087 filing
+session and is currently IN SYNC with these annotations, not lagging.

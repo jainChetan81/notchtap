@@ -107,6 +107,32 @@ payloads just because the mechanism exists for other sources. This
 mirrors how `weather_enabled`/`rss_enabled` already default off
 (opt-in) rather than on.
 
+## DECIDED — operator decision session, 2026-07-21
+
+All four questions answered; this memo's decision phase is CLOSED:
+
+1. **Persist ALL sources, including cmux/manual** — the operator
+   explicitly accepted the privacy tradeoff, going broader than the
+   recommendation above (which is retained for the record, not as the
+   decision).
+2. **Retention: size-capped + manual "Clear history" control** — keep
+   the last N items / N MB (exact figure chosen at build-plan time),
+   following `logging.rs`'s size-rotation precedent; no time-based
+   pruning.
+3. **Storage: JSONL, size-rotated** — append-only
+   `~/.config/notchtap/history.jsonl` (path per the `settings.rs`/
+   `notifier.rs` config-dir conventions), reusing/adapting
+   `logging.rs`'s rotation pattern; no SQLite, no new dependency.
+4. **Keep the title-on-drop log line** (`notifier.rs:281`) as-is — a
+   deliberate debuggability tradeoff, consistent with choosing full
+   history; decided explicitly, not by omission.
+
+**Next step (deliberately NOT taken today — operator asked to wrap up
+planning without starting new work)**: a future session files the build
+plan at the next free plan number per "How this proceeds" — the answers
+above fully pin the design, so it's a build plan, not a spike. Until
+then this file stays in `plans/` as the decision of record.
+
 ## Maintenance notes
 
 - If built, `docs/TESTING_STRATEGY.md` needs a new component-test row for
