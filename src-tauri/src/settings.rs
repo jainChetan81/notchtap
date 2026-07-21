@@ -607,6 +607,7 @@ fn build_test_event(config: &Config, source: SourceKind) -> Event {
                 link: None,
                 subtitle: None,
                 details: Vec::new(),
+                espn: None,
             },
             signal: EventSignal::Generic,
             origin: SourceKind::News,

@@ -6,8 +6,8 @@ use uuid::Uuid;
 
 use crate::engine::Engine;
 use crate::event::{
-    DetailItem, Event, EventMeta, EventPayload, EventSignal, EventType, Priority, RotationSpec,
-    SourceKind,
+    DetailItem, EspnMeta, Event, EventMeta, EventPayload, EventSignal, EventType, Priority,
+    RotationSpec, SourceKind,
 };
 use crate::status::LiveMatchSummary;
 
@@ -517,8 +517,29 @@ pub fn diff_scoreboard(
                             ),
                         });
                     }
+                    // plan 083 item 4: the structured sibling of the
+                    // details cells just above — same fields, unjoined,
+                    // so 084's card can lay out crest–score–crest instead
+                    // of parsing `matchup()`'s pre-joined string. Crest
+                    // paths are always `None` here (populated afterward
+                    // by the crest cache patch in `spawn_espn_poller` —
+                    // that step is async I/O and this function stays
+                    // pure/sync/fixture-tested, plan 083 workstream a).
+                    let espn = EspnMeta {
+                        league: league_label(league).to_string(),
+                        home_abbrev: v.snap.home_abbrev.clone(),
+                        away_abbrev: v.snap.away_abbrev.clone(),
+                        home_score: v.snap.home_score,
+                        away_score: v.snap.away_score,
+                        clock: v.snap.display_clock.clone(),
+                        home_cards: v.snap.home_cards,
+                        away_cards: v.snap.away_cards,
+                        home_crest: None,
+                        away_crest: None,
+                    };
                     EventMeta {
                         details,
+                        espn: Some(espn),
                         ..EventMeta::default()
                     }
                 } else {
@@ -1362,6 +1383,53 @@ mod tests {
                 },
             ]
         );
+    }
+
+    // plan 083 item 4: EspnMeta — the structured sibling of the Clock/Cards
+    // detail cells above, same values, unjoined.
+
+    #[test]
+    fn live_card_on_attaches_structured_espn_meta() {
+        let sb = parse_scoreboard(UCL).unwrap();
+        let mut v_snap = view(&sb.events[0]).snap;
+        v_snap.state = "in".to_string();
+        v_snap.home_cards.0 -= 1;
+        let mut snap = Snapshot::new();
+        snap.insert(sb.events[0].id.clone(), v_snap);
+
+        let mut live = parse_scoreboard(UCL).unwrap();
+        live.events[0].status.status_type.state = "in".to_string();
+
+        let (events, _) = diff_scoreboard(&snap, &live, 8, "uefa.champions", Priority::High, true);
+        assert_eq!(events.len(), 1);
+        let espn = events[0]
+            .meta
+            .espn
+            .as_ref()
+            .expect("espn_live_card on must populate EspnMeta");
+        assert_eq!(espn.league, "UCL");
+        assert_eq!(espn.home_abbrev, "PSG");
+        assert_eq!(espn.away_abbrev, "ARS");
+        assert_eq!(espn.home_score, 1);
+        assert_eq!(espn.away_score, 1);
+        assert_eq!(espn.clock, "120'");
+        assert_eq!(espn.home_cards, (2, 0));
+        assert_eq!(espn.away_cards, (4, 0));
+        // crest paths are patched in afterward by the async poller loop
+        // (workstream a) — diff_scoreboard itself never touches the
+        // filesystem, so both stay None here.
+        assert_eq!(espn.home_crest, None);
+        assert_eq!(espn.away_crest, None);
+    }
+
+    #[test]
+    fn live_card_off_leaves_espn_meta_none() {
+        // regression pin: flag off must stay byte-identical — no EspnMeta,
+        // same as the pre-083 `meta == EventMeta::default()` pin above.
+        let events = live_cycle_events(false);
+        for event in &events {
+            assert_eq!(event.meta.espn, None);
+        }
     }
 
     #[test]

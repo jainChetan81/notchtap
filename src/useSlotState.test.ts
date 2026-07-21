@@ -336,4 +336,50 @@ describe("useSlotState", () => {
     emit(SHOWING_N1);
     expect(result.current).toEqual(SHOWING_N1);
   });
+
+  // plan 083: the structured `espn` block — absent (the common case, and
+  // every non-football payload), present-and-valid, and present-but-
+  // malformed (must fall back like every other field).
+
+  const VALID_ESPN = {
+    league: "UCL",
+    homeAbbrev: "PSG",
+    awayAbbrev: "ARS",
+    homeScore: 1,
+    awayScore: 1,
+    clock: "45'",
+    homeCards: [2, 0] as [number, number],
+    awayCards: [4, 0] as [number, number],
+    homeCrest: "/home/u/.config/notchtap/crests/160.png",
+    awayCrest: null,
+  };
+
+  it("accepts a showing payload with no espn block (the common case)", () => {
+    window.__NOTCHTAP_SLOT_STATE__ = SHOWING_N1;
+    const { result } = renderHook(() => useSlotState());
+    expect(result.current).toEqual(SHOWING_N1);
+  });
+
+  it("accepts a showing payload with a valid espn block", () => {
+    window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, espn: VALID_ESPN };
+    const { result } = renderHook(() => useSlotState());
+    expect(result.current).toMatchObject({ espn: VALID_ESPN });
+  });
+
+  it("ignores a showing payload with a malformed espn block", () => {
+    window.__NOTCHTAP_SLOT_STATE__ = {
+      ...SHOWING_N1,
+      espn: { ...VALID_ESPN, homeScore: "1" },
+    };
+    expect(renderHook(() => useSlotState()).result.current).toEqual({ state: "empty" });
+
+    window.__NOTCHTAP_SLOT_STATE__ = {
+      ...SHOWING_N1,
+      espn: { ...VALID_ESPN, homeCards: [2] },
+    };
+    expect(renderHook(() => useSlotState()).result.current).toEqual({ state: "empty" });
+
+    window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, espn: "not an object" };
+    expect(renderHook(() => useSlotState()).result.current).toEqual({ state: "empty" });
+  });
 });
