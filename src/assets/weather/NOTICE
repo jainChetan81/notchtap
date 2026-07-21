@@ -1,0 +1,22 @@
+Weather condition glyphs (plan 082)
+===================================
+
+The SVG files in this directory (clear-day.svg, clear-night.svg,
+extreme-rain.svg, fog.svg, hail.svg, overcast.svg,
+partly-cloudy-day.svg, partly-cloudy-night.svg, rain.svg, snow.svg,
+thunderstorms.svg, wind.svg) are static-fill exports of Meteocons,
+by Bas Milius.
+
+License: MIT
+Upstream: https://github.com/basmilius/weather-icons
+
+These are vendored byte-identical copies of the same files at
+prototype/assets/weather/ (that directory documents the original
+gallery pairing this app's condition→art table implements). No
+modification, "optimization", or re-export has been applied to
+either copy — the provenance stays traceable file-for-file.
+
+Of the 12 files, 10 are actively assigned to a condition in
+src/lib/weatherArt.ts. `extreme-rain.svg`, `wind.svg`, and
+`hail.svg` are vendored but unassigned — spare buckets for a future
+condition mapping, exactly as in the prototype gallery.

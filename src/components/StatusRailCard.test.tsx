@@ -160,6 +160,34 @@ const CMUX_RICH: SlotState = {
   remainingMs: 8000,
 };
 
+// plan 082: a weather ALERT card — the rust core attaches wx-condition/
+// wx-is-day marker pairs (plan 035's details channel, reused) so the
+// frontend can derive mood/glyph art. `origin` is not on the wire; these
+// markers are the only signal the card is weather-derived.
+const WEATHER_ALERT: SlotState = {
+  state: "showing",
+  id: "wx-1",
+  title: "Rain expected soon",
+  body: "75% chance of rain within ~30 min",
+  eventType: "generic",
+  priority: "medium",
+  signal: "generic",
+  expanded: false,
+  source: null,
+  category: null,
+  publishedAtMs: null,
+  link: null,
+  subtitle: null,
+  details: [
+    { label: "wx-condition", value: "Rain" },
+    { label: "wx-is-day", value: "1" },
+  ],
+  queueTotal: 1,
+  queueDone: 0,
+  ttlMs: 8000,
+  remainingMs: 8000,
+};
+
 describe("StatusRailCard", () => {
   describe("goal/red-card pulse", () => {
     // The celebration is plan 023's pure-CSS confetti burst + ring on
@@ -595,6 +623,99 @@ describe("StatusRailCard", () => {
       const { container } = render(<StatusRailCard slot={{ state: "empty" }} />);
       expect(container.querySelector(".rail-card.idle")).not.toBeNull();
       expect(container.querySelector(".idle-view")).not.toBeNull();
+    });
+  });
+
+  // plan 082: weather ALERT cards get their mood+glyph art from the
+  // wx-condition/wx-is-day marker pairs, and those markers must never
+  // leak into the visible detail cells (collapsed or expanded) — the
+  // marker-leak guard.
+  describe("weather ALERT card art (plan 082)", () => {
+    function classesOf(container: HTMLElement): string[] {
+      return (container.querySelector(".rail-card")?.className ?? "").split(" ").filter(Boolean);
+    }
+
+    it("applies the mood class and renders the condition glyph for a weather alert", () => {
+      const { container } = render(<StatusRailCard slot={WEATHER_ALERT} />);
+      const classes = classesOf(container);
+      expect(classes).toContain("wx-card");
+      expect(classes).toContain("wx-rain"); // Rain + day (wx-is-day: "1")
+      expect(classes).toContain("wx-rain-streaks");
+      const icon = container.querySelector("img.wx-icon");
+      expect(icon).not.toBeNull();
+      expect(icon?.getAttribute("src")).toMatch(/rain.*\.svg/);
+    });
+
+    it("keys night (wx-is-day: 0) to the rainy-night mood, not the day mood", () => {
+      const { container } = render(
+        <StatusRailCard
+          slot={{
+            ...WEATHER_ALERT,
+            details: [
+              { label: "wx-condition", value: "Rain" },
+              { label: "wx-is-day", value: "0" },
+            ],
+          }}
+        />,
+      );
+      const classes = classesOf(container);
+      expect(classes).toContain("wx-rainy-night");
+      expect(classes).not.toContain("wx-rain");
+    });
+
+    it("never renders wx-condition/wx-is-day as visible detail cells while collapsed", () => {
+      const { container } = render(<StatusRailCard slot={WEATHER_ALERT} />);
+      const compact = container.querySelector(".compact") as HTMLElement;
+      expect(within(compact).queryByText("wx-condition")).toBeNull();
+      expect(within(compact).queryByText("wx-is-day")).toBeNull();
+      expect(within(compact).queryByText("Rain")).toBeNull();
+      expect(compact.querySelector(".detail-label")).toBeNull();
+      expect(compact.querySelector(".detail-value")).toBeNull();
+    });
+
+    it("never renders wx-condition/wx-is-day as visible detail cells while expanded (Manifest)", () => {
+      const { container } = render(<StatusRailCard slot={{ ...WEATHER_ALERT, expanded: true }} />);
+      const manifest = container.querySelector(".manifest") as HTMLElement;
+      expect(within(manifest).queryByText("wx-condition")).toBeNull();
+      expect(within(manifest).queryByText("wx-is-day")).toBeNull();
+      // the manifest's Message cell legitimately contains the alert body
+      // text, so assert there's no *label* cell for either marker rather
+      // than banning the word "Rain" outright.
+      const labels = Array.from(manifest.querySelectorAll(".detail-label")).map(
+        (el) => el.textContent,
+      );
+      expect(labels).not.toContain("wx-condition");
+      expect(labels).not.toContain("wx-is-day");
+    });
+
+    it("falls back to the neutral overcast mood for an unrecognized condition word", () => {
+      const { container } = render(
+        <StatusRailCard
+          slot={{
+            ...WEATHER_ALERT,
+            details: [
+              { label: "wx-condition", value: "—" },
+              { label: "wx-is-day", value: "1" },
+            ],
+          }}
+        />,
+      );
+      const card = container.querySelector(".rail-card");
+      expect(card?.className).toContain("wx-overcast");
+    });
+
+    // Regression pin: a generic card WITHOUT wx markers (the existing
+    // CMUX_RICH fixture) must render exactly as it did before this plan —
+    // no wx-card class, no glyph image, and its own (non-wx) detail pairs
+    // still render normally.
+    it("renders a non-weather generic card byte-identically (no wx classes, no glyph, own details intact)", () => {
+      const { container } = render(<StatusRailCard slot={CMUX_RICH} />);
+      const card = container.querySelector(".rail-card");
+      expect(card?.className).not.toContain("wx-card");
+      expect(container.querySelector("img.wx-icon")).toBeNull();
+      const manifest = container.querySelector(".manifest") as HTMLElement;
+      expect(within(manifest).getByText("Tool")).toBeTruthy();
+      expect(within(manifest).getByText("Bash")).toBeTruthy();
     });
   });
 

@@ -28,8 +28,8 @@ use uuid::Uuid;
 
 use crate::engine::Engine;
 use crate::event::{
-    Event, EventMeta, EventPayload, EventSignal, EventType, Priority, RotationSpec, SourceKind,
-    Units,
+    DetailItem, Event, EventMeta, EventPayload, EventSignal, EventType, Priority, RotationSpec,
+    SourceKind, Units,
 };
 use crate::poller::Backoff;
 use crate::status::WeatherSummary;
@@ -55,6 +55,17 @@ pub struct OpenMeteoCurrent {
     pub time: String,
     pub temperature_2m: f64,
     pub weather_code: u8,
+    /// Day/night, straight from Open-Meteo (plan 082) — the frontend must
+    /// never derive this from the user's wall clock + lat/lon, so this is
+    /// the one authoritative source. Open-Meteo returns this as an
+    /// INTEGER `1`/`0`, not a JSON boolean — `u8` (not `bool`) is
+    /// load-bearing: a `bool` field would deserialize a hand-written
+    /// fixture (if written as `true`/`false`) but fail on the real
+    /// `1`/`0` wire shape, and only real polling would surface that.
+    /// `#[serde(default)]` heals a response/fixture that predates this
+    /// field to `0` (night) rather than failing to parse.
+    #[serde(default)]
+    pub is_day: u8,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -135,9 +146,11 @@ pub fn diff_weather(
     ttl_secs: u64,
     priority: Priority,
 ) -> (WeatherSummary, Vec<Event>, WeatherAlertState) {
+    let condition = condition_word(response.current.weather_code);
+    let is_day = response.current.is_day;
     let summary = WeatherSummary {
         temp_display: format!("{:.0}°", response.current.temperature_2m),
-        condition: condition_word(response.current.weather_code).to_string(),
+        condition: condition.to_string(),
     };
 
     let mut events = Vec::new();
@@ -154,6 +167,8 @@ pub fn diff_weather(
                 format!("{probability}% chance of rain within ~{rain_lookahead_mins} min"),
                 ttl_secs,
                 priority,
+                condition,
+                is_day,
             ));
         }
         next.rain_fired = crossed;
@@ -174,6 +189,8 @@ pub fn diff_weather(
             ),
             ttl_secs,
             priority,
+            condition,
+            is_day,
         ));
     }
     next.hot_fired = hot;
@@ -188,6 +205,8 @@ pub fn diff_weather(
             ),
             ttl_secs,
             priority,
+            condition,
+            is_day,
         ));
     }
     next.cold_fired = cold;
@@ -195,7 +214,24 @@ pub fn diff_weather(
     (summary, events, next)
 }
 
-fn alert_event(title: String, body: String, ttl_secs: u64, priority: Priority) -> Event {
+// plan 082: `condition`/`is_day` ride along as `meta.details` pairs under
+// the `wx-` label prefix — plan 035's existing display-only details
+// channel, reused rather than adding `origin` to the wire (the slot-state
+// wire has no `origin` field and this plan doesn't add one). The
+// frontend derives the card's mood/glyph from these two pairs, then
+// EXCLUDES every `wx-`-prefixed pair from its own visible rendering (both
+// the collapsed detail-cell loop and the expanded Manifest) — see
+// StatusRailCard.tsx's marker-leak guard. `is_day` is carried as the
+// literal "0"/"1" string Open-Meteo's integer already is, not "true"/
+// "false" — the frontend compares against the string "1" directly.
+fn alert_event(
+    title: String,
+    body: String,
+    ttl_secs: u64,
+    priority: Priority,
+    condition: &str,
+    is_day: u8,
+) -> Event {
     Event {
         id: Uuid::new_v4(),
         event_type: EventType::Generic,
@@ -203,7 +239,19 @@ fn alert_event(title: String, body: String, ttl_secs: u64, priority: Priority) -
         rotation: RotationSpec::OneShot { ttl_secs },
         topic: None,
         payload: EventPayload { title, body },
-        meta: EventMeta::default(),
+        meta: EventMeta {
+            details: vec![
+                DetailItem {
+                    label: "wx-condition".to_string(),
+                    value: condition.to_string(),
+                },
+                DetailItem {
+                    label: "wx-is-day".to_string(),
+                    value: is_day.to_string(),
+                },
+            ],
+            ..EventMeta::default()
+        },
         signal: EventSignal::Generic,
         origin: SourceKind::Weather,
     }
@@ -216,7 +264,7 @@ fn forecast_url(lat: f64, lon: f64, units: Units) -> String {
         Units::Fahrenheit => "&temperature_unit=fahrenheit",
     };
     format!(
-        "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,weather_code&hourly=precipitation_probability&forecast_days=1{units_param}"
+        "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,weather_code,is_day&hourly=precipitation_probability&forecast_days=1{units_param}"
     )
 }
 
@@ -375,6 +423,47 @@ mod tests {
         // the real fixture's near-term rain probabilities are all under
         // the 60% threshold and 26.7°C is between 14/36 — no alerts.
         assert!(events.is_empty());
+    }
+
+    // --- day/night (plan 082): is_day crosses the wire as Open-Meteo's
+    // own integer 1/0, never a JSON boolean. This test proves the real
+    // wire shape parses — the fixture is written with the API's actual
+    // integer form ("is_day": 1), not a hand-authored `true`. ---
+
+    #[test]
+    fn fixture_parses_is_day_as_the_api_real_integer_form() {
+        let response = fixture();
+        // 06:30 in the fixture's location-local time — daytime.
+        assert_eq!(response.current.is_day, 1);
+    }
+
+    #[test]
+    fn missing_is_day_field_defaults_to_zero_rather_than_failing_to_parse() {
+        // A response/fixture predating this field must still parse
+        // (`#[serde(default)]`) — healed to 0 (night), not a hard error.
+        let json =
+            r#"{"current":{"time":"2026-07-19T06:30","temperature_2m":26.7,"weather_code":3}}"#;
+        let response: OpenMeteoResponse = serde_json::from_str(json).unwrap();
+        assert_eq!(response.current.is_day, 0);
+    }
+
+    // --- wx-* marker pairs (plan 082): the alert's meta.details carries
+    // condition + is_day so the frontend can derive mood/glyph art. These
+    // are plan 035's existing display-only details channel, reused under
+    // the `wx-` label prefix — the frontend is responsible for filtering
+    // them out of its own visible rendering (StatusRailCard.tsx). ---
+
+    #[test]
+    fn alert_event_carries_wx_condition_and_wx_is_day_detail_pairs() {
+        let crossed = fixture_with_rain_probability(75);
+        let (_, events, _) = diff(&crossed, WeatherAlertState::default());
+        assert_eq!(events.len(), 1);
+        let details = &events[0].meta.details;
+        assert_eq!(details.len(), 2);
+        assert_eq!(details[0].label, "wx-condition");
+        assert_eq!(details[0].value, "Cloudy");
+        assert_eq!(details[1].label, "wx-is-day");
+        assert_eq!(details[1].value, "1");
     }
 
     // --- rain-incoming: the four edge-trigger cases ---

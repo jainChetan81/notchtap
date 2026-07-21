@@ -665,3 +665,65 @@
   background: var(--surface);
   border: 1px solid var(--divider);
 }
+
+/* ==== weather ALERT card art (plan 082) — mirror of styles.css's block
+   of the same name (mirror law). See that file's comment for the
+   z-order rationale; selectors here are identical, scoped under
+   .appearance-preview like every other rule in this file. ==== */
+.appearance-preview .wx-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.appearance-preview .wx-card .compact,
+.appearance-preview .wx-card .manifest {
+  position: relative;
+  z-index: 1;
+}
+
+.appearance-preview .wx-icon {
+  position: absolute;
+  top: 10px;
+  right: 14px;
+  z-index: 0;
+  width: 48px;
+  height: 48px;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45));
+  pointer-events: none;
+}
+
+.appearance-preview .wx-card.wx-clear-day::before          { background: linear-gradient(180deg, #163149 0%, #0e2436 100%); }
+.appearance-preview .wx-card.wx-clear-night::before        { background: linear-gradient(180deg, #0d1226 0%, #070a16 100%); }
+.appearance-preview .wx-card.wx-partly-cloudy-day::before  { background: linear-gradient(180deg, #1a3a52 0%, #122b3d 100%); }
+.appearance-preview .wx-card.wx-partly-cloudy-night::before{ background: linear-gradient(180deg, #141a33 0%, #0c1022 100%); }
+.appearance-preview .wx-card.wx-overcast::before           { background: linear-gradient(180deg, #232a33 0%, #161b21 100%); }
+.appearance-preview .wx-card.wx-rain::before               { background: linear-gradient(180deg, #2b3d4d 0%, #1b2731 100%); }
+.appearance-preview .wx-card.wx-rainy-night::before        { background: linear-gradient(180deg, #171b35 0%, #262c52 55%, #12142a 100%); }
+.appearance-preview .wx-card.wx-thunderstorm::before       { background: linear-gradient(180deg, #1d1430 0%, #110a1e 100%); }
+.appearance-preview .wx-card.wx-snow::before               { background: linear-gradient(180deg, #26313f 0%, #18212b 100%); }
+.appearance-preview .wx-card.wx-fog::before                { background: linear-gradient(180deg, #2a2f36 0%, #1a1e24 100%); }
+
+.appearance-preview .wx-card.wx-rain-streaks::after,
+.appearance-preview .wx-card.wx-snow-dots::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+.appearance-preview .wx-card.wx-rain-streaks::after {
+  background-image: repeating-linear-gradient(
+    115deg,
+    rgba(180, 210, 255, 0.16) 0px,
+    rgba(180, 210, 255, 0.16) 1px,
+    transparent 1px,
+    transparent 10px
+  );
+}
+.appearance-preview .wx-card.wx-snow-dots::after {
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.35) 1px, transparent 1.6px);
+  background-size: 22px 22px;
+}
