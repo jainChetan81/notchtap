@@ -26,7 +26,8 @@
   width: var(--cw, min(max(calc(400px * var(--card-scale)), calc(var(--notchtap-cutout-width, 200px) + (2 * 60px * var(--card-scale)))), 100%));
   margin: 0 auto;
   isolation: isolate;
-  transition: width 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  /* plan 102: +25% pacing, operator feedback */
+  transition: width 400ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .appearance-preview .card-assembly.idle {
@@ -63,11 +64,11 @@
 
 .appearance-preview .card-assembly:not(:has(.below-block)) .flank-left {
   border-bottom-left-radius: var(--card-radius, 14px);
-  transition: border-radius 320ms ease;
+  transition: border-radius 400ms ease;
 }
 .appearance-preview .card-assembly:not(:has(.below-block)) .flank-right {
   border-bottom-right-radius: var(--card-radius, 14px);
-  transition: border-radius 320ms ease;
+  transition: border-radius 400ms ease;
 }
 
 .appearance-preview .synthetic-cutout {
