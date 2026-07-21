@@ -133,6 +133,30 @@ plan at the next free plan number per "How this proceeds" — the answers
 above fully pin the design, so it's a build plan, not a spike. Until
 then this file stays in `plans/` as the decision of record.
 
+## CONSUMED — this memo's lifecycle is complete (2026-07-21, later same day)
+
+The "next step" above was taken, executed, and merged within hours:
+
+- **Plan 088** (backend: `src-tauri/src/history.rs` JSONL store,
+  `history_enabled` config flag defaulting `false`, one-shot-only write
+  hook in `Engine::accept`) — **DONE, merged to master** (`1a38903`,
+  merge `7f8a5c8`), reviewer-verified: 439 rust tests + 3 doc-tests
+  green post-merge, the Recurring-never-recorded tripwire empirically
+  proven. Two decisions this memo left open were made at 088's filing,
+  by the operator: record **one-shot events only** (the Recurring
+  live-scoreboard card would append ~100 near-identical updates per
+  match), and **default off** per every opt-in precedent.
+- **Plan 089** (UI: Settings History section, `get_history`/
+  `clear_history` invoke commands, the `history_enabled` toggle) —
+  **filed, TODO**; requires a review-plan pass against 088's shipped
+  API before dispatch.
+- Decision #4 (keep the `notifier.rs:281` title-on-drop log line) —
+  requires no code change; it is the status quo, now deliberate.
+
+Nothing remains for this file to decide or gate. It moves to
+`plans/done/` as the historical decision record; 089 is the only live
+work item for this feature and stands alone.
+
 ## Maintenance notes
 
 - If built, `docs/TESTING_STRATEGY.md` needs a new component-test row for

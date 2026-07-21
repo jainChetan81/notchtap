@@ -480,6 +480,17 @@ sourcing), 14 (staleness restyle) — items 16 and 18 were DECIDED in the
 2026-07-21 operator decision session (16: MediaRemote spike to be filed,
 not dropped; 18: timeline folds into hover-expanded idle, rides the
 items-1+2 build — see the bracketed decision records on those items).
+**Still-needed check (2026-07-21, post-088)**: this ledger remains the
+ONLY tracker for the unbuilt core of the revamp — verified at HEAD:
+items 1+2's cutout card shape has zero code in `src/styles.css` (no
+flank/below blocks; the shape exists only in `prototype/notch-states.html`)
+and no build plan filed; item 19 stays gated on it; the four hover
+consumers (081 TTL-pause / 082 peek / 084 reveal / idle
+expanded-on-hover) remain unbuilt atop 087's shipped primitive. The
+notification-history feature (059 → 088 DONE+merged → 089 TODO) is
+deliberately OUTSIDE this ledger, as this file already states — 088's
+landing changes nothing here. Retire this file only when items 1+2+19
+ship and the six open decisions above are resolved or rejected.
 Same session also resolved decisions outside this file: 072's Step 0
 (reject-on-full, ratifying what the executor shipped), 059's four
 history questions (full-source JSONL history — see that plan), and 065
