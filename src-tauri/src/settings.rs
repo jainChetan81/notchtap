@@ -16,7 +16,9 @@ use std::sync::Mutex as StdMutex;
 use chrono::Local;
 use serde::{Deserialize, Serialize};
 
-use crate::config::{Appearance, Config, RestingState};
+use crate::config::{
+    Appearance, Config, RestingState, CARD_OPACITY_RANGE, CARD_RADIUS_RANGE, CARD_SCALE_RANGE,
+};
 use crate::engine::Engine;
 use crate::event::{
     Event, EventMeta, EventPayload, EventSignal, EventType, RotationSpec, SourceKind,
@@ -216,18 +218,20 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
     }
 }
 
+// plan 097: ranges live in `config::CARD_*_RANGE` so this save-path check
+// and `Config::parse`'s load-path self-heal can never drift apart.
 pub fn validate_appearance(a: &Appearance) -> Result<(), Vec<String>> {
     let mut errors = Vec::new();
-    if !(0.8..=1.4).contains(&a.card_scale) {
+    if !CARD_SCALE_RANGE.contains(&a.card_scale) {
         errors.push(format!("card_scale must be 0.8–1.4 (got {})", a.card_scale));
     }
-    if !(0.0..=24.0).contains(&a.card_radius) {
+    if !CARD_RADIUS_RANGE.contains(&a.card_radius) {
         errors.push(format!(
             "card_radius must be 0.0–24.0 (got {})",
             a.card_radius
         ));
     }
-    if !(0.5..=1.0).contains(&a.card_opacity) {
+    if !CARD_OPACITY_RANGE.contains(&a.card_opacity) {
         errors.push(format!(
             "card_opacity must be 0.5–1.0 (got {})",
             a.card_opacity

@@ -299,6 +299,16 @@ pub fn run() {
                 .expect("main window missing from tauri.conf.json");
             window.set_always_on_top(true)?;
 
+            // plan 097: hoisted out of the tracking-area block below so the
+            // global-shortcut handler (registered further down, in its own
+            // `#[cfg(target_os = "macos")]` block) can also reach it — the
+            // dismiss/skip hotkeys replace the visible card with no mouse
+            // event firing, so they must force this latch back to "not
+            // hovered" themselves (see `emit_hover_changed_if_transitioned`
+            // call sites in the shortcut handler).
+            #[cfg(target_os = "macos")]
+            let was_hovered = Arc::new(StdMutex::new(false));
+
             // permanent-overlay pass: a plain NSWindow is never composited
             // into another app's fullscreen Space, regardless of level or
             // collection behavior — macOS only honors fullScreenAuxiliary
@@ -337,7 +347,6 @@ pub fn run() {
                 // entirely in favor of `HUD_CUTOUT_H` anyway (same
                 // pattern `hover_cutout_width` already follows).
                 let hover_cutout_height = inset;
-                let was_hovered = Arc::new(StdMutex::new(false));
 
                 {
                     let engine = engine.clone();
@@ -414,6 +423,7 @@ pub fn run() {
             {
                 let engine_for_handler = engine.clone();
                 let pause_item_for_handler = pause_item.clone();
+                let was_hovered_for_handler = was_hovered.clone();
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
                         .with_handler(move |app, shortcut, event| {
@@ -433,6 +443,21 @@ pub fn run() {
                                     == Shortcut::new(DISMISS_SHORTCUT.0, DISMISS_SHORTCUT.1)
                                 {
                                     dismiss_current(&engine_for_handler);
+                                    // plan 097: the dismiss hotkey replaces the
+                                    // visible card with no mouse event firing, so
+                                    // the AppKit-side latch never resets on its
+                                    // own and the transitions-only gate then
+                                    // swallows the cursor's re-enter onto the new
+                                    // card — force it back to "not hovered" here;
+                                    // the next real mouse move re-enters normally.
+                                    // Accepted residual: a perfectly stationary
+                                    // cursor stays un-paused until it moves 1px.
+                                    emit_hover_changed_if_transitioned(
+                                        &engine_for_handler,
+                                        app,
+                                        &was_hovered_for_handler,
+                                        false,
+                                    );
                                 } else if *shortcut
                                     == Shortcut::new(
                                         PAUSE_TOGGLE_SHORTCUT.0,
@@ -444,6 +469,16 @@ pub fn run() {
                                     == Shortcut::new(SKIP_SHORTCUT.0, SKIP_SHORTCUT.1)
                                 {
                                     skip_current(&engine_for_handler);
+                                    // plan 097: same hover-latch desync as the
+                                    // dismiss arm above — the skip hotkey also
+                                    // replaces the visible card with no mouse
+                                    // event.
+                                    emit_hover_changed_if_transitioned(
+                                        &engine_for_handler,
+                                        app,
+                                        &was_hovered_for_handler,
+                                        false,
+                                    );
                                 } else if *shortcut
                                     == Shortcut::new(
                                         OPEN_SETTINGS_SHORTCUT.0,
