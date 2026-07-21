@@ -686,6 +686,7 @@ impl SingleSlotQueue {
                     event_type: item.event.event_type.clone(),
                     priority: item.event.priority,
                     signal: item.event.signal,
+                    origin: item.event.origin,
                     expanded: self.expanded,
                     source: item.event.meta.source.clone(),
                     category: item.event.meta.category.clone(),

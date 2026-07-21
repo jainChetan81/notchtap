@@ -28,6 +28,14 @@ type EventType = (typeof EVENT_TYPES)[number];
 const PRIORITIES = ["low", "medium", "high"] as const;
 type Priority = (typeof PRIORITIES)[number];
 
+// plan 096: mirrors rust's `SourceKind` (event.rs) — a closed set, same
+// rigor as EVENT_TYPES/EVENT_SIGNALS above (unrecognized values reject the
+// whole payload, never silently coerce). `origin` is rust-internal-turned-
+// wire-field as of this plan; it did not exist on `SlotState::Showing`
+// before.
+const SOURCE_KINDS = ["football", "news", "manual", "cmux", "weather"] as const;
+export type SourceKind = (typeof SOURCE_KINDS)[number];
+
 // plan 083: structured live-match fields (mirrors rust's `EspnMeta`) —
 // present only on a Football event when `espn_live_card` is on; every
 // other payload omits the `espn` key entirely (not even `null` — see
@@ -58,6 +66,11 @@ export type SlotState =
       eventType: EventType;
       priority: Priority;
       signal: EventSignal;
+      // plan 096: which source produced this item — mirrors rust's
+      // `Event.origin` onto the wire. Always present (never optional):
+      // `queue.rs::current_slot_state` populates it from every accepted
+      // item unconditionally.
+      origin: SourceKind;
       expanded: boolean;
       source: string | null;
       category: string | null;
@@ -130,6 +143,10 @@ function isValidSlotState(v: unknown): v is SlotState {
     EVENT_TYPES.includes(obj.eventType as EventType) &&
     PRIORITIES.includes(obj.priority as Priority) &&
     EVENT_SIGNALS.includes(obj.signal as EventSignal) &&
+    // plan 096: origin is a closed five-value union, rejected like every
+    // other enum on this wire — an unrecognized origin falls back to
+    // empty, not a card with an undefined origin.
+    SOURCE_KINDS.includes(obj.origin as SourceKind) &&
     (obj.source === null || typeof obj.source === "string") &&
     (obj.category === null || typeof obj.category === "string") &&
     (obj.publishedAtMs === null || typeof obj.publishedAtMs === "number") &&

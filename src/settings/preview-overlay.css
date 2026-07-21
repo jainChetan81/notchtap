@@ -95,6 +95,13 @@
   border-bottom-right-radius: var(--card-radius, 14px);
 }
 
+/* plan 096 (mirror law): the cmux accent's hairline — see styles.css's
+   `.below-block.cmux-origin` for the full rationale (border-top, not a
+   pseudo-element, and deliberately off the priority accent channel). */
+.appearance-preview .below-block.cmux-origin {
+  border-top: 1px solid rgba(240, 196, 106, 0.55);
+}
+
 .appearance-preview .card-assembly.low {
   --accent: #aab3bd;
   --accent-soft: rgba(170, 179, 189, 0.2);
@@ -340,6 +347,27 @@
   white-space: normal;
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
+}
+
+/* plan 096 (mirror law): the header row's badge cluster + the cmux chip —
+   see styles.css's `.notif-header-badges`/`.chip-cmux` for the full
+   rationale. */
+.appearance-preview .notif-header-badges {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+}
+
+.appearance-preview .chip-cmux {
+  color: #f0c46a;
+  background: rgba(240, 196, 106, 0.14);
+  border: 1px solid color-mix(in srgb, #f0c46a 35%, transparent);
+}
+
+.appearance-preview .chip-cmux::before {
+  content: "⌁";
+  margin-right: 3px;
 }
 
 .appearance-preview .notif-subtitle-row {

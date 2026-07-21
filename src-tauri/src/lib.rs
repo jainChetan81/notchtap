@@ -1076,7 +1076,7 @@ fn open_current_story<R: tauri::Runtime>(engine: &Engine<R>) {
 mod tests {
     use super::*;
     use crate::event::{
-        test_fixtures, Event, EventSignal, EventType, Priority, RotationSpec, SlotState,
+        test_fixtures, Event, EventSignal, EventType, Priority, RotationSpec, SlotState, SourceKind,
     };
 
     fn event(priority: Priority) -> Event {
@@ -1357,6 +1357,7 @@ mod tests {
             event_type: EventType::Generic,
             priority: Priority::Medium,
             signal: EventSignal::Generic,
+            origin: SourceKind::Manual,
             expanded: false,
             source: None,
             category: None,

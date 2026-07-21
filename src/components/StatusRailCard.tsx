@@ -53,11 +53,13 @@ const CELEBRATION_END_ANIMATION: Record<NonNullable<Celebration>, string> = {
 };
 
 // plan 082: weather ALERT cards ride the plan-035 display-only `details`
-// channel to carry condition + day/night art inputs — `origin` is not on
-// the slot-state wire, and this plan deliberately doesn't add it. Every
-// pair whose label starts with "wx-" is a MARKER, never real content: it
-// must be read to derive the mood/glyph art, then excluded from every
-// place `details` is rendered as visible text (the marker-leak guard).
+// channel to carry condition + day/night art inputs — plan 096 later put
+// `origin` on the slot-state wire, but weather art derivation has no
+// reason to move off these markers (they carry condition/day-night, which
+// `origin: "weather"` alone doesn't). Every pair whose label starts with
+// "wx-" is a MARKER, never real content: it must be read to derive the
+// mood/glyph art, then excluded from every place `details` is rendered as
+// visible text (the marker-leak guard).
 function isWxMarker(label: string): boolean {
   return label.startsWith("wx-");
 }
@@ -172,6 +174,12 @@ export function StatusRailCard({
   // delayed by the 220ms content swap. `null` for every non-weather card,
   // so it renders byte-identical to today.
   const wxArt = showing ? weatherArtFromDetails(slot.details) : null;
+  // plan 096: the cmux accent's below-block hairline gate — same live-slot
+  // basis as `news`/`wxArt` above, for the same lockstep-with-below-block
+  // reason. Deliberately NOT part of `cardClass` (the shell): the shell
+  // owns the priority accent channel only, and origin must never share
+  // that channel (see the CSS comment on `.below-block.cmux-origin`).
+  const cmuxOrigin = showing && slot.origin === "cmux";
   // plan 091: the outer shell (`.card-assembly`) now owns ONLY geometry-
   // and-effects classes — priority accent, hover diagnostic, the goal/
   // red-card pulse and the live-match celebrations. `news-shade`/`wx-card`
@@ -207,6 +215,7 @@ export function StatusRailCard({
     wxArt && "wx-card",
     wxArt?.moodClass,
     wxArt?.textureClass,
+    cmuxOrigin && "cmux-origin",
   ]
     .filter(Boolean)
     .join(" ");
@@ -447,31 +456,29 @@ export function StatusRailCard({
                       </>
                     ) : (
                       // plan 092 (item 19, this plan's core): the general
-                      // card's header row (title + the priority Stamp
-                      // badge) + subtitle row (plan 035's `subtitle`,
-                      // surfaced in compact for the first time) +
-                      // full-width clamped body. The Stamp badge is the
-                      // only real "chip" content this branch has: Decision
-                      // 3's per-origin (cmux) source chip is NOT built
-                      // here — `SlotState::Showing` never carries `origin`
-                      // on the wire (only rust's internal `Event` struct
-                      // does; `queue.rs::current_slot_state` never reads
-                      // it), and `meta.source` is `None` for every
-                      // generic-eventType event regardless of whether it
-                      // came from cmux or a plain manual/CLI push, so
-                      // there is no frontend-safe way to tell them apart
-                      // without a wire-type change (out of scope for this
-                      // plan). There is no inline-time value here either
-                      // (no non-news event carries a publishedAtMs), so
-                      // the subtitle row's time slot simply never renders.
+                      // card's header row (title + the badge cluster) +
+                      // subtitle row (plan 035's `subtitle`, surfaced in
+                      // compact for the first time) + full-width clamped
+                      // body. There is no inline-time value here (no
+                      // non-news event carries a publishedAtMs), so the
+                      // subtitle row's time slot simply never renders.
+                      // plan 096: the badge cluster is the priority Stamp
+                      // PLUS the cmux chip, conditional on `origin` (now on
+                      // the wire — 092 deferred this exact spot pending
+                      // that wire change).
                       <>
                         <div className="notif-header-row">
                           <span className="notif-title">{renderedSlot.title}</span>
-                          <Stamp
-                            priority={renderedSlot.priority}
-                            signal={renderedSlot.signal}
-                            eventType={renderedSlot.eventType}
-                          />
+                          <div className="notif-header-badges">
+                            {renderedSlot.origin === "cmux" && (
+                              <span className="chip chip-cmux">Agent</span>
+                            )}
+                            <Stamp
+                              priority={renderedSlot.priority}
+                              signal={renderedSlot.signal}
+                              eventType={renderedSlot.eventType}
+                            />
+                          </div>
                         </div>
                         {renderedSlot.subtitle !== null && (
                           <div className="notif-subtitle-row">

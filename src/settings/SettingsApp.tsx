@@ -1451,6 +1451,7 @@ const PREVIEW_SAMPLES: ReadonlyArray<{
       eventType: "score_update",
       priority: "high",
       signal: "goal",
+      origin: "football",
       expanded: true,
       source: null,
       category: null,
@@ -1474,6 +1475,7 @@ const PREVIEW_SAMPLES: ReadonlyArray<{
       eventType: "match_state",
       priority: "high",
       signal: "red_card",
+      origin: "football",
       expanded: true,
       source: null,
       category: null,
@@ -1497,6 +1499,10 @@ const PREVIEW_SAMPLES: ReadonlyArray<{
       eventType: "generic",
       priority: "high",
       signal: "generic",
+      // this sample is the cmux accent's own preview vehicle (plan 096) —
+      // it's the one origin the settings preview can actually show the
+      // accent for; label above says "cmux" for exactly this reason.
+      origin: "cmux",
       expanded: true,
       source: null,
       category: null,
@@ -1522,6 +1528,7 @@ const PREVIEW_SAMPLES: ReadonlyArray<{
       eventType: "news_item",
       priority: "low",
       signal: "generic",
+      origin: "news",
       expanded: true,
       source: "NDTV",
       category: "politics",
