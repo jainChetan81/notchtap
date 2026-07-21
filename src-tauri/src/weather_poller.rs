@@ -653,4 +653,42 @@ mod tests {
         // index 9 (33%).
         assert_eq!(lookahead_rain_probability(&fixture(), 120), Some(33));
     }
+
+    #[test]
+    fn lookahead_rounds_down_just_under_the_boundary() {
+        // 06:30 + 59min = 07:29 — minute 29 is just under the >=30 rounding
+        // threshold, so this must round DOWN to 07:00 (index 7, 16%), not
+        // up to 08:00 (index 8, 22%). The existing
+        // lookahead_rounds_to_the_nearest_hour test only exercises the
+        // round-UP side of this boundary (minute == 30) and an exact-hour
+        // target (minute == 0) — this is the missing round-DOWN case.
+        assert_eq!(lookahead_rain_probability(&fixture(), 59), Some(16));
+    }
+
+    fn fixture_with_late_poll_time_and_next_day_hour() -> OpenMeteoResponse {
+        // mirrors fixture_with_rain_probability's technique: mutate the
+        // already-deserialized struct rather than editing the JSON fixture,
+        // since the base fixture has no next-day hourly entry to round into.
+        let mut response = fixture();
+        response.current.time = "2026-07-19T23:45".to_string();
+        let hourly = response.hourly.as_mut().unwrap();
+        hourly.time.push("2026-07-20T00:00".to_string());
+        hourly.precipitation_probability.push(42);
+        response
+    }
+
+    #[test]
+    fn lookahead_rolls_over_to_next_day_at_midnight() {
+        // poll_time 23:45 + 30min lookahead = next-day 00:15, minute 15 < 30,
+        // rounds DOWN to next-day 00:00 — only found if the date component
+        // actually rolled over. If only the hour wrapped in place (23→00 on
+        // the SAME day), the produced string would be "2026-07-19T00:00",
+        // which IS in this fixture — it's the hourly index-0 entry, with
+        // probability 2% — so a buggy lookup would still succeed, returning
+        // Some(2). That's exactly why the assertion below checks the
+        // specific pushed value (42), not just `is_some()`: an `is_some()`
+        // assertion would pass under precisely that bug.
+        let response = fixture_with_late_poll_time_and_next_day_hour();
+        assert_eq!(lookahead_rain_probability(&response, 30), Some(42));
+    }
 }
