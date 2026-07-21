@@ -144,6 +144,7 @@ pub fn run() {
     let espn_priority = config.espn_priority;
     let espn_ttl_secs = config.espn_ttl_secs;
     let espn_live_card = config.espn_live_card;
+    let espn_rich_events = config.espn_rich_events;
     // plan 083 workstream a: `~/.config/notchtap/crests/`, a sibling of
     // config.toml/secrets.toml under the same directory
     // (`Config::dir_from_home`) — the repo's first binary-asset cache.
@@ -370,6 +371,7 @@ pub fn run() {
                     espn_ttl_secs,
                     espn_priority,
                     espn_live_card,
+                    espn_rich_events,
                     crests.clone(),
                 );
             }

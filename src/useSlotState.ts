@@ -9,6 +9,12 @@ const EVENT_SIGNALS = [
   "kickoff",
   "halftime",
   "fulltime",
+  // plan 083 workstream c: the four locked richer event kinds (foul,
+  // offside, VAR check, substitution) — mirrors rust's `EventSignal`.
+  "foul",
+  "offside",
+  "var_check",
+  "substitution",
 ] as const;
 export type EventSignal = (typeof EVENT_SIGNALS)[number];
 

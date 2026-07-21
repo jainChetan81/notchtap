@@ -19,6 +19,11 @@ function assertNever(x: never): never {
 // Fixed per-signal text for anything with a real football signal — a
 // documented lookup table, never derived from parsing title/body text
 // (the cmux-notification-kind-sniffing this session already rejected).
+// plan 083 workstream c: minimal exhaustive-arm additions for the four
+// new richer-event signals (foul/offside/var_check/substitution) — a
+// wire-enum addition forces this table to compile, on purpose (the
+// "seam working" the plan calls out). Visual/wording choices beyond
+// this placeholder text are 084's territory.
 const SIGNAL_STAMPS: Record<Exclude<EventSignal, "generic">, string> = {
   goal: "Live",
   kickoff: "Live",
@@ -26,6 +31,10 @@ const SIGNAL_STAMPS: Record<Exclude<EventSignal, "generic">, string> = {
   yellow_card: "Card",
   fulltime: "Final",
   red_card: "Off",
+  foul: "Foul",
+  offside: "Offside",
+  var_check: "VAR",
+  substitution: "Sub",
 };
 
 // `generic` sources (cmux/CLI/any future non-football source) have no

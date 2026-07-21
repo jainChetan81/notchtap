@@ -123,6 +123,14 @@ pub enum EventSignal {
     Kickoff,
     Halftime,
     Fulltime,
+    /// plan 083 workstream c (079 item 6a) — the four locked richer
+    /// event kinds, sourced from ESPN's `summary`/`plays` fallback chain
+    /// rather than the scoreboard feed. Presentation-only, same rigor as
+    /// every other variant here.
+    Foul,
+    Offside,
+    VarCheck,
+    Substitution,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -418,6 +426,10 @@ mod tests {
             (EventSignal::Kickoff, "kickoff"),
             (EventSignal::Halftime, "halftime"),
             (EventSignal::Fulltime, "fulltime"),
+            (EventSignal::Foul, "foul"),
+            (EventSignal::Offside, "offside"),
+            (EventSignal::VarCheck, "var_check"),
+            (EventSignal::Substitution, "substitution"),
         ] {
             assert_eq!(serde_json::to_value(signal).unwrap(), wire);
             let parsed: EventSignal = serde_json::from_str(&format!("\"{wire}\"")).unwrap();

@@ -15,6 +15,7 @@ const config: Config = {
   espn_priority: "medium",
   espn_ttl_secs: 22,
   espn_live_card: false,
+  espn_rich_events: false,
   rss_enabled: true,
   rss_feeds: [
     {
@@ -62,6 +63,7 @@ const rustConfigDefaults: Config = {
   espn_priority: "high",
   espn_ttl_secs: 8,
   espn_live_card: false,
+  espn_rich_events: false,
   rss_enabled: false,
   rss_feeds: [
     {
