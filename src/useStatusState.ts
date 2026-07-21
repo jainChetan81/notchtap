@@ -19,12 +19,29 @@ export type WeatherSummary = {
   condition: string;
 };
 
+// plan 104: the ambient now-playing snapshot. Unlike WeatherSummary
+// (already display-formatted), this carries a raw snapshot — the
+// frontend derives LIVE progress locally from elapsedMs/capturedAtMs
+// (TtlBar.tsx's own pattern), never re-reading this on a per-second
+// cadence; rust only re-emits it on a genuine adapter diff event.
+export type NowPlayingSummary = {
+  title: string;
+  artist: string | null;
+  album: string | null;
+  playing: boolean;
+  elapsedMs: number;
+  durationMs: number | null;
+  capturedAtMs: number;
+  appBundleId: string | null;
+};
+
 export type StatusState = {
   paused: boolean;
   waiting: number;
   football: { enabled: boolean; live: LiveMatchSummary | null };
   news: { enabled: boolean };
   weather: { enabled: boolean; current: WeatherSummary | null };
+  media: { enabled: boolean; current: NowPlayingSummary | null };
 };
 
 declare global {
@@ -41,6 +58,7 @@ const FALLBACK_STATUS: StatusState = {
   football: { enabled: false, live: null },
   news: { enabled: false },
   weather: { enabled: false, current: null },
+  media: { enabled: false, current: null },
 };
 
 // same rule as the slot-state queue-slider fields (plan 033): the rail
@@ -66,6 +84,27 @@ function isValidWeatherSummary(v: unknown): v is WeatherSummary {
   return typeof obj.tempDisplay === "string" && typeof obj.condition === "string";
 }
 
+// plan 104: every field checked, matching isValidWeatherSummary's
+// defense-in-depth — nullable string fields must be exactly `string |
+// null`, never merely "not undefined".
+function isValidNowPlaying(v: unknown): v is NowPlayingSummary {
+  if (typeof v !== "object" || v === null) {
+    return false;
+  }
+  const obj = v as Record<string, unknown>;
+  return (
+    typeof obj.title === "string" &&
+    (obj.artist === null || typeof obj.artist === "string") &&
+    (obj.album === null || typeof obj.album === "string") &&
+    typeof obj.playing === "boolean" &&
+    isNonNegativeInteger(obj.elapsedMs) &&
+    (obj.durationMs === null || isNonNegativeInteger(obj.durationMs)) &&
+    typeof obj.capturedAtMs === "number" &&
+    Number.isFinite(obj.capturedAtMs) &&
+    (obj.appBundleId === null || typeof obj.appBundleId === "string")
+  );
+}
+
 // Every field checked, not just the top level: a well-shaped-but-partial
 // payload (e.g. football missing `enabled`) must fall back, not render
 // with undefined fields — same defense-in-depth as isValidSlotState.
@@ -83,9 +122,13 @@ function isValidStatusState(v: unknown): v is StatusState {
   if (typeof obj.weather !== "object" || obj.weather === null) {
     return false;
   }
+  if (typeof obj.media !== "object" || obj.media === null) {
+    return false;
+  }
   const football = obj.football as Record<string, unknown>;
   const news = obj.news as Record<string, unknown>;
   const weather = obj.weather as Record<string, unknown>;
+  const media = obj.media as Record<string, unknown>;
   return (
     typeof obj.paused === "boolean" &&
     isNonNegativeInteger(obj.waiting) &&
@@ -93,7 +136,9 @@ function isValidStatusState(v: unknown): v is StatusState {
     (football.live === null || isValidLiveMatch(football.live)) &&
     typeof news.enabled === "boolean" &&
     typeof weather.enabled === "boolean" &&
-    (weather.current === null || isValidWeatherSummary(weather.current))
+    (weather.current === null || isValidWeatherSummary(weather.current)) &&
+    typeof media.enabled === "boolean" &&
+    (media.current === null || isValidNowPlaying(media.current))
   );
 }
 

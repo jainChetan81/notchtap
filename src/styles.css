@@ -1426,6 +1426,92 @@ body {
   border: 1px solid rgba(255, 255, 255, 0.14);
 }
 
+/* plan 104: the now-playing media row — slots between the scorecard
+   reveal and the weather scene in `IdleHoverPeek.tsx`'s precedence
+   (football > media > weather > timeline). Text glyphs only (no artwork
+   transport, per the plan's own decision 6) — `.media-art`'s tile reuses
+   `.wx-peek-condition`'s exact neutral chip tint (above) rather than
+   inventing a new color; `.media-bar-fill` reuses `.idle-peek-timeline`'s
+   own teal (below) for the same reason — no new colors beyond existing
+   tokens, per this step's own constraint. Chip/gauge sizing stays
+   consistent with the rest of `.idle-peek`'s vocabulary. */
+.media-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.media-track {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.media-art {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #f5f7fa;
+}
+.media-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.media-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f5f7fa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.media-subtitle {
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.media-transport {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.85);
+}
+.media-state {
+  font-size: 12px;
+  line-height: 1;
+}
+.media-bar {
+  width: 56px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.media-bar-fill {
+  display: block;
+  height: 100%;
+  background: #b6f5e5;
+  border-radius: 2px;
+}
+.media-time {
+  font-variant-numeric: tabular-nums;
+  min-width: 30px;
+  text-align: right;
+}
+
 /* the football scorecard-reveal half — a lighter render than the
    recurring live card above (`.notif-block`/`.sc-head`/`.score-row`):
    `status.football.live` (the ambient `LiveMatchSummary`) carries only

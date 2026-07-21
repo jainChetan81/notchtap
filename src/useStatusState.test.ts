@@ -15,6 +15,7 @@ const FALLBACK: StatusState = {
   football: { enabled: false, live: null },
   news: { enabled: false },
   weather: { enabled: false, current: null },
+  media: { enabled: false, current: null },
 };
 
 const LIVE: StatusState = {
@@ -23,6 +24,18 @@ const LIVE: StatusState = {
   football: { enabled: true, live: { label: "Arsenal 2–0 Chelsea", minute: "45'" } },
   news: { enabled: true },
   weather: { enabled: false, current: null },
+  media: { enabled: false, current: null },
+};
+
+const NOW_PLAYING: StatusState["media"]["current"] = {
+  title: "Midnight City",
+  artist: "M83",
+  album: "Hurry Up, We're Dreaming",
+  playing: true,
+  elapsedMs: 1500,
+  durationMs: 243_000,
+  capturedAtMs: 1_753_000_000_000,
+  appBundleId: "app.zen-browser.zen",
 };
 
 describe("useStatusState", () => {
@@ -161,10 +174,75 @@ describe("useStatusState", () => {
       football: { enabled: false, live: null },
       news: { enabled: true },
       weather: { enabled: false, current: null },
+      media: { enabled: false, current: null },
     };
     window.__NOTCHTAP_STATUS_STATE__ = allClear;
     const { result } = renderHook(() => useStatusState());
     expect(result.current).toEqual(allClear);
+  });
+
+  // --- plan 104: the media validator ---
+
+  it("accepts a valid now-playing summary", () => {
+    const withMedia: StatusState = {
+      ...LIVE,
+      media: { enabled: true, current: NOW_PLAYING },
+    };
+    window.__NOTCHTAP_STATUS_STATE__ = withMedia;
+    const { result } = renderHook(() => useStatusState());
+    expect(result.current).toEqual(withMedia);
+  });
+
+  it("accepts a now-playing summary with null artist/album/durationMs/appBundleId", () => {
+    const minimal: StatusState = {
+      ...LIVE,
+      media: {
+        enabled: true,
+        current: {
+          title: "Some Video",
+          artist: null,
+          album: null,
+          playing: false,
+          elapsedMs: 0,
+          durationMs: null,
+          capturedAtMs: 1_753_000_000_000,
+          appBundleId: null,
+        },
+      },
+    };
+    window.__NOTCHTAP_STATUS_STATE__ = minimal;
+    const { result } = renderHook(() => useStatusState());
+    expect(result.current).toEqual(minimal);
+  });
+
+  it("ignores a payload with a missing media gate or a malformed now-playing summary", () => {
+    const { media: _media, ...missingMedia } = LIVE;
+    window.__NOTCHTAP_STATUS_STATE__ = missingMedia;
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
+
+    window.__NOTCHTAP_STATUS_STATE__ = {
+      ...LIVE,
+      media: { enabled: "yes", current: null },
+    };
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
+
+    window.__NOTCHTAP_STATUS_STATE__ = {
+      ...LIVE,
+      media: { enabled: true, current: { ...NOW_PLAYING, title: 5 } },
+    };
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
+
+    window.__NOTCHTAP_STATUS_STATE__ = {
+      ...LIVE,
+      media: { enabled: true, current: { ...NOW_PLAYING, elapsedMs: -1 } },
+    };
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
+
+    window.__NOTCHTAP_STATUS_STATE__ = {
+      ...LIVE,
+      media: { enabled: true, current: { ...NOW_PLAYING, playing: "yes" } },
+    };
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
   });
 
   it("updates from the status-state event even when a valid global was also planted", async () => {
