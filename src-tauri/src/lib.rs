@@ -6,6 +6,7 @@ mod engine;
 // nothing else consumes this crate as a library.
 pub mod error;
 pub mod event;
+mod hover;
 mod http;
 mod logging;
 mod login_item;
@@ -40,6 +41,20 @@ use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut,
 // (RawNSPanel hardcoded canBecomeKeyWindow -> YES); can_become_main_window:
 // false matches NSPanel's AppKit default, which the pinned rev never
 // overrode.
+//
+// plan 087: `with: { tracking_area: {...} }` attaches a real
+// NSTrackingArea to the panel's content view — this is what makes
+// mouseEntered/mouseMoved/mouseExited observable at all. Empirically
+// verified (docs/design/hover-cursor-tracking.md §2) to fire normally
+// even with `set_ignore_cursor_events(true)` (apply_overlay_native_config,
+// below) permanently set — that call is NEVER made conditional on this.
+// `active_always()` is required (not `active_in_active_app()`): this is
+// a non-activating accessory panel, so hover must be observable while
+// another app is focused. `auto_resize: true` mirrors the upstream
+// examples but is a no-op here since the window frame itself never
+// resizes (`tauri.conf.json`'s `"resizable": false`) — only the CSS
+// width within it changes; that's the reason `hover::active_card_rect`
+// exists at all (see its doc comment).
 #[cfg(target_os = "macos")]
 tauri_nspanel::tauri_panel! {
     panel!(OverlayPanel {
@@ -47,7 +62,18 @@ tauri_nspanel::tauri_panel! {
             can_become_key_window: true,
             can_become_main_window: false
         }
+        with: {
+            tracking_area: {
+                options: tauri_nspanel::TrackingAreaOptions::new()
+                    .active_always()
+                    .mouse_entered_and_exited()
+                    .mouse_moved(),
+                auto_resize: true
+            }
+        }
     })
+
+    panel_event!(OverlayPanelEventHandler {})
 }
 
 // placeholder combo — v3.6 spec §7.1 explicitly defers "exact global hotkey
@@ -264,6 +290,65 @@ pub fn run() {
                 // NSWindowStyleMaskNonactivatingPanel (1 << 7); the window
                 // is borderless (mask 0), so the panel bit is the whole mask.
                 panel.set_style_mask(objc2_app_kit::NSWindowStyleMask::NonactivatingPanel);
+
+                // plan 087: the hover primitive. `set_ignore_cursor_events
+                // (true)` (apply_overlay_native_config, below) is NEVER
+                // touched by any of this — the tracking area's mouseEntered/
+                // mouseMoved/mouseExited fire independent of click-through,
+                // empirically verified (docs/design/hover-cursor-tracking.md
+                // §2). `hover-changed` is emitted ONLY when the hovered
+                // boolean flips (emit_hover_changed_if_transitioned), never
+                // per mouse-move.
+                let hover_handler = OverlayPanelEventHandler::new();
+                let hover_cutout_width = cutout.map(|c| c.width).unwrap_or(0.0);
+                let was_hovered = Arc::new(StdMutex::new(false));
+
+                {
+                    let engine = engine.clone();
+                    let app_handle = app.handle().clone();
+                    let was_hovered = was_hovered.clone();
+                    hover_handler.on_mouse_entered(move |event| {
+                        let loc = event.locationInWindow();
+                        let hovered = hover_point_is_over_card(
+                            &engine,
+                            &app_handle,
+                            mode,
+                            hover_cutout_width,
+                            loc.x,
+                            loc.y,
+                        );
+                        emit_hover_changed_if_transitioned(&app_handle, &was_hovered, hovered);
+                    });
+                }
+                {
+                    let engine = engine.clone();
+                    let app_handle = app.handle().clone();
+                    let was_hovered = was_hovered.clone();
+                    hover_handler.on_mouse_moved(move |event| {
+                        let loc = event.locationInWindow();
+                        let hovered = hover_point_is_over_card(
+                            &engine,
+                            &app_handle,
+                            mode,
+                            hover_cutout_width,
+                            loc.x,
+                            loc.y,
+                        );
+                        emit_hover_changed_if_transitioned(&app_handle, &was_hovered, hovered);
+                    });
+                }
+                {
+                    let app_handle = app.handle().clone();
+                    let was_hovered = was_hovered.clone();
+                    // Leaving the window's tracking area is never "still
+                    // hovered" regardless of where the cursor lands next —
+                    // no rect comparison needed.
+                    hover_handler.on_mouse_exited(move |_event| {
+                        emit_hover_changed_if_transitioned(&app_handle, &was_hovered, false);
+                    });
+                }
+
+                panel.set_event_handler(Some(hover_handler.as_ref()));
             }
 
             // v3.6 spec §7.2: survive Spaces switches and fullscreen apps.
@@ -612,6 +697,72 @@ fn cutout_width_js_value(cutout: Option<presentation::CutoutGeometry>) -> String
     match cutout {
         Some(c) => format!("{}", c.width),
         None => "null".into(),
+    }
+}
+
+// plan 087: called fresh from every tracking-area callback (mouseEntered/
+// mouseMoved) — cheap (a few short-lived mutex locks, no lock held across
+// the return) rather than cached, since the card's rect can change
+// between events (a new item promoted, expand toggled, status chips
+// gained/lost) while the cursor is still resting over the window. Lock
+// discipline: each of `engine.read_blocking`/`status_snapshot_blocking`/
+// the config lock acquires, reads, and drops before the next opens —
+// never nested (cold-read Gap 2).
+#[cfg(target_os = "macos")]
+fn hover_point_is_over_card(
+    engine: &Engine,
+    app_handle: &tauri::AppHandle,
+    mode: presentation::Mode,
+    cutout_width: f64,
+    point_x: f64,
+    point_y: f64,
+) -> bool {
+    use crate::event::SlotState;
+
+    let (visible, expanded) = engine.read_blocking(|q| match q.current_slot_state() {
+        SlotState::Showing { expanded, .. } => (true, expanded),
+        SlotState::Empty => (false, false),
+    });
+    let status = engine.status_snapshot_blocking();
+    let has_status_chips = hover::status_rail_active(&status);
+    let scale = app_handle
+        .state::<StdMutex<Config>>()
+        .lock()
+        .unwrap()
+        .appearance
+        .card_scale;
+    let rect = hover::active_card_rect(
+        mode,
+        cutout_width,
+        scale,
+        visible,
+        expanded,
+        has_status_chips,
+    );
+    hover::point_in_rect(&rect, point_x, point_y)
+}
+
+// plan 087: the transitions-only guard — `hover-changed` must fire when
+// the boolean flips and never per mouse-move (a moving cursor generates
+// many mouseMoved events per second; emitting on every one would flood
+// the webview and violate the idle-cost discipline plans 015/018
+// established). Same emission shape as `appearance-changed`
+// (`settings.rs:564`).
+#[cfg(target_os = "macos")]
+fn emit_hover_changed_if_transitioned(
+    app_handle: &tauri::AppHandle,
+    was_hovered: &StdMutex<bool>,
+    hovered: bool,
+) {
+    use tauri::Emitter;
+
+    let mut last = was_hovered.lock().unwrap();
+    if *last == hovered {
+        return;
+    }
+    *last = hovered;
+    if let Some(webview) = app_handle.get_webview_window("main") {
+        let _ = webview.emit("hover-changed", &serde_json::json!({ "hovered": hovered }));
     }
 }
 

@@ -82,6 +82,17 @@ body {
   --accent-soft: rgba(255, 107, 87, 0.28);
 }
 
+/* plan 087: the hover primitive's one diagnostic rule — proves the
+   rust-derived tracking-area signal reaches the webview end-to-end.
+   Deliberately boring (a barely-perceptible brightness lift, the
+   spike's own suggestion): this is NOT the real hover design for any
+   of the four consumers (081/082/084/idle expanded-on-hover), which
+   will each replace it with their own presentation. Mirrored in
+   src/settings/preview-overlay.css per the mirror law. */
+.rail-card.hovered {
+  filter: brightness(1.04);
+}
+
 /* signature moment #1 — Goal: a bright confetti-spray burst over the
    card surface, an expanding ring, plus a quick scale overshoot on the
    card itself. plays once, never loops (this sits in a persistent

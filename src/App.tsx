@@ -25,6 +25,11 @@ function App() {
   const [restingState, setRestingState] = useState<RestingState>(
     () => window.__NOTCHTAP_APPEARANCE__?.resting_state ?? "rail",
   );
+  // plan 087: the hover primitive's one diagnostic consumer — no boot
+  // seed (there is nothing to seed; the cursor's start position is
+  // unknown at page load), so this starts false and only ever moves via
+  // the listener below.
+  const [hovered, setHovered] = useState(false);
 
   // plan 063: expose the boot-time presentation facts to CSS — the mode
   // gates the notch-only width clamp, the cutout width feeds it.
@@ -69,7 +74,37 @@ function App() {
     };
   }, []);
 
-  return <StatusRailCard slot={slot} status={status} restingState={restingState} />;
+  // plan 087: the hover primitive's frontend half — mirrors the
+  // appearance-changed listener above exactly (the `unmounted` guard,
+  // the `.catch`), because that's this repo's precedent shape for a
+  // rust->webview listen-only channel. No boot-time global seed here:
+  // unlike appearance/resting-state, there is no "value at page load"
+  // for hover, since the seed IS the tracking area's own first event.
+  useEffect(() => {
+    let unlisten: UnlistenFn | undefined;
+    let unmounted = false;
+    listen<{ hovered: boolean }>("hover-changed", ({ payload }) => {
+      setHovered(payload.hovered);
+    })
+      .then((fn) => {
+        if (unmounted) {
+          fn();
+        } else {
+          unlisten = fn;
+        }
+      })
+      .catch((error) => {
+        console.error("hover-changed listener failed to register", error);
+      });
+    return () => {
+      unmounted = true;
+      unlisten?.();
+    };
+  }, []);
+
+  return (
+    <StatusRailCard slot={slot} status={status} restingState={restingState} hovered={hovered} />
+  );
 }
 
 export default App;

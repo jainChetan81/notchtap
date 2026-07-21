@@ -338,6 +338,33 @@ impl<R: tauri::Runtime> Engine<R> {
         state
     }
 
+    /// Non-emitting read of the current `StatusState` — same inputs as
+    /// `emit_current_status_blocking`, no wire event. Added for plan
+    /// 087's hover tracking-area handler (`lib.rs`), which needs this on
+    /// every mouse-move (to derive `hover::status_rail_active`, the
+    /// idle-card width's `has_status_chips` input) without re-emitting
+    /// `status-state` per move — that would flood the webview with an
+    /// unrelated event on every mouse move, defeating the exact
+    /// idle-cost discipline `hover-changed`'s own transitions-only
+    /// emission is designed to preserve (plans 015/018). Lock
+    /// discipline matches `emit_current_status_blocking`: live/weather
+    /// locked and dropped before the queue lock.
+    pub fn status_snapshot_blocking(&self) -> StatusState {
+        let live_summary = self.live.lock().unwrap().clone();
+        let weather_summary = self.weather.lock().unwrap().clone();
+        let q = self.queue.blocking_lock();
+        StatusState::snapshot(
+            &q,
+            StatusInputs {
+                live: live_summary,
+                espn_enabled: self.espn_enabled,
+                rss_enabled: self.rss_enabled,
+                weather: weather_summary,
+                weather_enabled: self.weather_enabled,
+            },
+        )
+    }
+
     /// The on_page_load StatusState twin of `emit_current_blocking` —
     /// same shape, over StatusState instead of SlotState, using the
     /// Engine's own `live`/`espn_enabled`/`rss_enabled`. Also bypasses
@@ -347,21 +374,7 @@ impl<R: tauri::Runtime> Engine<R> {
     /// dropped BEFORE the queue lock (nobody holds both at once), same
     /// as the rotation loop.
     pub fn emit_current_status_blocking(&self) -> StatusState {
-        let live_summary = self.live.lock().unwrap().clone();
-        let weather_summary = self.weather.lock().unwrap().clone();
-        let state = {
-            let q = self.queue.blocking_lock();
-            StatusState::snapshot(
-                &q,
-                StatusInputs {
-                    live: live_summary,
-                    espn_enabled: self.espn_enabled,
-                    rss_enabled: self.rss_enabled,
-                    weather: weather_summary,
-                    weather_enabled: self.weather_enabled,
-                },
-            )
-        };
+        let state = self.status_snapshot_blocking();
         emit_status_state(&self.app, state.clone());
         state
     }
