@@ -96,7 +96,7 @@ dependency trial instead of a design doc.
 | Trial-bump versions | (in the worktree) edit `package.json`'s `typescript`/`vite`/`vitest`/`@vitejs/plugin-react` to their latest majors, then `npm install` | lockfile updates, no install errors |
 | Typecheck | `npx tsc --noEmit` | records pass/fail + error count if any |
 | Lint | `npx biome ci .` | records pass/fail |
-| Tests | `npx vitest run` | records pass/fail + count vs. baseline (181 as of the 2026-07-21 review — plans 080-086 landed after this plan was written; re-confirm live against `docs/TESTING_STRATEGY.md` §0) |
+| Tests | `npx vitest run` | records pass/fail + count vs. the pre-bump baseline you record in Step 3 (183 as of 2026-07-21 per `docs/TESTING_STRATEGY.md` §0 — but Step 3's own run is the authoritative baseline, never a number from this plan) |
 | Build | `npx vite build` | records pass/fail |
 | Dev server smoke | `npm run tauri dev` (if you can drive a GUI) | app launches without a blank/broken webview |
 | Clean up | `git worktree remove ../notchtap-ts7-spike` (after recording findings — do NOT merge or push this branch) | worktree removed |
@@ -124,6 +124,8 @@ dependency trial instead of a design doc.
 
 ### Step 1: Set up the isolated worktree
 
+From the repo root (`/Users/chetanjain/Desktop/code/mac-notification-nudge`):
+
 ```
 git worktree add ../notchtap-ts7-spike -b spike/ts7-vite8-trial
 cd ../notchtap-ts7-spike
@@ -145,7 +147,28 @@ written, and even newer versions may exist now.
 
 **Verify**: 4 version strings recorded.
 
-### Step 3: Bump and install
+### Step 3: Establish the pre-bump baseline (still at pinned versions)
+
+Before touching `package.json`, install and run all four gates at the
+CURRENT pinned versions in the worktree:
+
+```
+npm ci
+npx tsc --noEmit
+npx biome ci .
+npx vitest run
+npx vite build
+```
+
+Record each result (exit code + test count). This is the baseline every
+post-bump result is compared against — without it, a post-bump failure
+can't be attributed to the bump vs. a pre-existing environment problem.
+
+**Verify**: all four gate results + the vitest count recorded. If ANY
+gate fails here, at the pinned versions, STOP and report — the trial
+cannot produce attributable evidence on a broken baseline.
+
+### Step 4: Bump and install
 
 Edit `package.json` in the worktree to the latest majors found in Step 2
 (exact syntax: replace `~5.8.3`→`^<latest TS>`, `^7.0.4`→`^<latest
@@ -154,7 +177,7 @@ Run `npm install`.
 
 **Verify**: `npm install` exits 0, no peer-dependency conflict errors printed (record them if any appear even on success — `npm` sometimes warns rather than failing).
 
-### Step 4: Run every gate, record pass/fail + details
+### Step 5: Run every gate again, record pass/fail + details vs. baseline
 
 ```
 npx tsc --noEmit
@@ -164,12 +187,15 @@ npx vite build
 ```
 
 For each: record exit code, and if non-zero, the actual error output
-(trimmed to the relevant lines, not the full noise) — this is the
-concrete evidence the go/no-go recommendation rests on.
+(trimmed to the relevant lines, not the full noise), compared explicitly
+against Step 3's baseline result for the same gate — this delta is the
+concrete evidence the go/no-go recommendation rests on. A vitest count
+differing from Step 3's baseline count is a finding even if the run
+passes.
 
-**Verify**: each command's result recorded, whether pass or fail.
+**Verify**: each command's result recorded as a pass/fail + delta-vs-baseline pair.
 
-### Step 5: Dev-server smoke (best-effort)
+### Step 6: Dev-server smoke (best-effort)
 
 If you can drive a GUI (or the environment supports headless Tauri dev
 launch), run `npm run tauri dev` and confirm the app launches without a
@@ -178,7 +204,7 @@ claiming this step passed.
 
 **Verify**: recorded pass/fail/not-attempted.
 
-### Step 6: Write the recommendation, clean up
+### Step 7: Write the recommendation, clean up
 
 Summarize: did every gate pass cleanly? If not, what broke and how
 severe does the fix look (a config tweak vs. real source changes)? Give
@@ -186,25 +212,32 @@ a clear go/no-go-for-now recommendation. Then:
 
 ```
 cd /Users/chetanjain/Desktop/code/mac-notification-nudge
-git worktree remove ../notchtap-ts7-spike
+git worktree remove --force ../notchtap-ts7-spike
 ```
+
+(`--force` is required and expected here: the worktree is deliberately
+dirty — the bumped `package.json`/`package-lock.json` were never meant
+to be committed. This is the one sanctioned `--force` in this plan; it
+discards only the disposable trial state.)
 
 Do NOT push or merge `spike/ts7-vite8-trial` — delete the branch too
 once findings are recorded (`git branch -D spike/ts7-vite8-trial`), since
 nothing about this trial should persist as a mergeable branch.
 
-**Verify**: `git worktree list` no longer shows the spike worktree; `git status` on the main tree is unchanged (`git diff --stat` empty).
+**Verify**: `git worktree list` no longer shows the spike worktree; on the main tree, `git diff --stat -- package.json package-lock.json` is empty (the main tree's toolchain pins are untouched — other files, like this plan's completion note and `plans/README.md`, are expected to change).
 
 ## Test plan
 
 No new automated tests — this is a one-time exploratory trial in a
-disposable worktree. The four gate commands in Step 4 ARE the
-verification; there's nothing to add to the permanent test suite.
+disposable worktree. The four gate commands, run at pinned versions
+(Step 3) and again post-bump (Step 5), ARE the verification; there's
+nothing to add to the permanent test suite.
 
 ## Done criteria
 
-- [ ] Worktree created, versions bumped, `npm install` run, all 4 gates
-      (tsc/biome/vitest/vite build) executed with results recorded
+- [ ] Worktree created; all 4 gates (tsc/biome/vitest/vite build)
+      executed TWICE — at pinned versions (baseline) and post-bump —
+      with both result sets and the delta recorded
 - [ ] Dev-server smoke attempted or explicitly flagged not-attempted
 - [ ] A clear written go/no-go recommendation exists (in this plan's
       completion note or a new `docs/design/` doc if warranted)
@@ -214,6 +247,9 @@ verification; there's nothing to add to the permanent test suite.
 
 ## STOP conditions
 
+- Any gate fails in Step 3, at the PINNED versions — the environment
+  itself is broken and no post-bump result can be attributed to the
+  bump; report the baseline failure instead of proceeding.
 - `npm install` fails outright with an unresolvable peer-dependency
   conflict — record the exact error and stop; that itself is a strong
   "not yet" signal worth reporting rather than fighting through with
@@ -248,3 +284,19 @@ Vite 8.1.5 / Vitest 4.1.10 / plugin-react 6.0.3; Biome is 2.5.4;
 port 1420 / `strictPort` / `TAURI_DEV_HOST`. One fix applied: the vitest
 baseline count was stale (112 → 181; plans 080-086 landed 2026-07-20/21
 after this plan's planned-at SHA). Plan is ready to execute as written.
+
+**Review-plan pass 2 (2026-07-21, at `62d6eb0`)**: re-verified after
+plan 087 (hover primitive) merged — `package.json`/`package-lock.json`
+still have zero drift from `f6c2f46` (the drift check stays valid as
+written) and registry latests are unchanged (TS 7.0.2 / Vite 8.1.5 /
+Vitest 4.1.10 / plugin-react 6.0.3, re-run this pass). The vitest count
+moved again (181 → 183 with 087), which exposed a structural weakness:
+the plan pinned a baseline count that goes stale with every landing, and
+bumped versions immediately after worktree creation, so a post-bump gate
+failure couldn't be attributed (bump vs. pre-broken environment). Fixed
+by inserting Step 3 (run all four gates at pinned versions in the
+worktree first; its live run — not any number in this plan — is the
+baseline), renumbering the old Steps 3-6 to 4-7, requiring Step 5 to
+record explicit delta-vs-baseline pairs, and adding a matching STOP
+condition (baseline failure = report, don't proceed). Done criteria
+updated to require both result sets.
