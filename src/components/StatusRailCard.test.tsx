@@ -398,25 +398,28 @@ describe("StatusRailCard", () => {
     expect(screen.getAllByText("Arsenal 2-0").length).toBe(2);
   });
 
-  // plan 081: the TTL bar exists only in the "showing" state (no card, no
-  // bar) and sits between the compact content block and the manifest wrap
-  // — the prototype's exact position (notch-states.html:392 vs
-  // .manifest-wrap at :394).
+  // plan 100: the TTL bar exists only in the "showing" state (no card, no
+  // bar) and is the LAST child of the card-content block, after both the
+  // compact content and the manifest wrap — it's the card's bottom edge
+  // (absolutely positioned, styles.css), not static-flow content between
+  // sections (that was plan 081's position; plan 100 moved it to fix the
+  // double-border artifact against the manifest wrap's own border-top).
   it("renders no ttl-bar while idle", () => {
     const { container } = render(<StatusRailCard slot={{ state: "empty" }} />);
     expect(container.querySelector(".ttl-bar")).toBeNull();
   });
 
-  it("renders the ttl-bar between the compact content and the manifest wrap when showing", () => {
+  it("renders the ttl-bar last, after the compact content and the manifest wrap, when showing", () => {
     const { container } = render(<StatusRailCard slot={GOAL} />);
     const cardContent = container.querySelector(".card-content") as HTMLElement;
     const children = Array.from(cardContent.children);
     const compactIndex = children.findIndex((el) => el.classList.contains("compact"));
-    const ttlBarIndex = children.findIndex((el) => el.classList.contains("ttl-bar"));
     const manifestIndex = children.findIndex((el) => el.classList.contains("manifest-wrap"));
+    const ttlBarIndex = children.findIndex((el) => el.classList.contains("ttl-bar"));
     expect(compactIndex).toBeGreaterThanOrEqual(0);
-    expect(ttlBarIndex).toBeGreaterThan(compactIndex);
-    expect(manifestIndex).toBeGreaterThan(ttlBarIndex);
+    expect(manifestIndex).toBeGreaterThan(compactIndex);
+    expect(ttlBarIndex).toBeGreaterThan(manifestIndex);
+    expect(ttlBarIndex).toBe(children.length - 1);
   });
 
   it("renders the news masthead, headline, category, age, published time, and category shader classes", () => {
