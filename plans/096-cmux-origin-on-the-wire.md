@@ -8,7 +8,7 @@
 > reviewer dispatched you and told you they maintain the index.
 >
 > **Drift check (run first)**:
-> `git diff --stat 18a3e8d..HEAD -- src-tauri/src/event.rs src-tauri/src/queue.rs src-tauri/src/http.rs src/useSlotState.ts src/components/StatusRailCard.tsx src/styles.css`
+> `git diff --stat 8dfbd4f..HEAD -- src-tauri/src/event.rs src-tauri/src/queue.rs src-tauri/src/http.rs src/useSlotState.ts src/components/StatusRailCard.tsx src/styles.css`
 > Expected: empty. On a mismatch with "Current state", STOP.
 
 ## Status
@@ -26,7 +26,7 @@
   Dispatch only after 093 is reviewed and merged, then re-stamp the
   drift SHA.
 - **Category**: direction
-- **Planned at**: commit `18a3e8d`, 2026-07-21
+- **Planned at**: commit `18a3e8d`, 2026-07-21; **re-stamped `8dfbd4f`** after 093 merged (its file-conflict gate is now clear)
 
 ## Why this exists
 
@@ -123,9 +123,9 @@ heading before any file is edited.
 
 | Purpose | Command | Expected |
 |---|---|---|
-| Rust tests | `cd src-tauri && cargo test --locked` | all pass (baseline 441 + 3 doc-tests) |
+| Rust tests | `cd src-tauri && cargo test --locked` | all pass (baseline **450** + 3 doc-tests) |
 | Rust lint/fmt | `cargo clippy --locked --all-targets -- -D warnings` / `cargo fmt --check` | exit 0 |
-| Frontend | `npx vitest run` / `npx tsc --noEmit` / `npx biome ci .` / `npx vite build` | all pass (baseline 192) |
+| Frontend | `npx vitest run` / `npx tsc --noEmit` / `npx biome ci .` / `npx vite build` | all pass (baseline **210**) |
 
 ## Scope (if Step 0 answers (a))
 
