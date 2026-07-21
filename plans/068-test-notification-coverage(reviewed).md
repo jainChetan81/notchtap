@@ -331,3 +331,17 @@ One forward-looking note for the executor: the News-arm test may assert
 is about priority/ttl provenance. In-scope file list still complete
 (`src-tauri/src/settings.rs` only). Verdict: ready to execute as
 corrected.
+
+**Review-plan pass (2026-07-21, second pass at `74fabc7`)**: zero source
+drift since the same-day `647f6d0` pass (the only commit between them is
+docs-only). Independently re-read all 5 arms of `build_test_event`
+(:572-664) and `send_test_notification` (:758-772) — every citation,
+the per-source config-field mapping, the News-arm `espn: None` line, the
+grep result (572/758/766 only), the 49-test-fn count, and `SourceKind`'s
+5 variants (`event.rs:83-89`) all re-confirmed by direct read. One new
+verification this pass adds: the Step 2 sketch's `assert_eq!`
+comparisons all compile as written — `EventType` (`event.rs:50`),
+`Priority` (:59), `SourceKind` (:81), and `RotationSpec` (:91) each
+derive `PartialEq`, so the executor will not hit a missing-derive
+compile error and be tempted into an out-of-scope production-code
+change. No content changes needed. Verdict: ready to execute.

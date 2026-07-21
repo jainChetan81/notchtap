@@ -269,12 +269,13 @@ fn fixture_with_late_poll_time_and_next_day_hour() -> OpenMeteoResponse {
 fn lookahead_rolls_over_to_next_day_at_midnight() {
     // poll_time 23:45 + 30min lookahead = next-day 00:15, minute 15 < 30,
     // rounds DOWN to next-day 00:00 — only found if the date component
-    // actually rolled over (not just the hour wrapping 23→00 in place,
-    // which would produce "2026-07-19T00:00" — a string that exists
-    // nowhere in this fixture and would make the test pass for the
-    // wrong reason if the lookup silently returned None either way, so
-    // the assertion below checks the specific pushed value, not just
-    // `is_some()`).
+    // actually rolled over. If only the hour wrapped in place (23→00 on
+    // the SAME day), the produced string would be "2026-07-19T00:00",
+    // which IS in this fixture — it's the hourly index-0 entry, with
+    // probability 2% — so a buggy lookup would still succeed, returning
+    // Some(2). That's exactly why the assertion below checks the
+    // specific pushed value (42), not just `is_some()`: an `is_some()`
+    // assertion would pass under precisely that bug.
     let response = fixture_with_late_poll_time_and_next_day_hour();
     assert_eq!(lookahead_rain_probability(&response, 30), Some(42));
 }
@@ -337,3 +338,23 @@ plan in this repo's index carries, not a contradiction of it:
   changes, these 3 boundary tests are exactly the ones most likely to
   need updating alongside it — they're intentionally testing the
   "interesting" edges, not just a happy path.
+
+---
+
+**Review-plan pass (2026-07-21, second pass at `74fabc7`)**: zero source
+drift since the same-day `647f6d0` pass (the only commit between them is
+docs-only), and every citation re-confirmed by direct read —
+`lookahead_rain_probability` 115-128 byte-identical, structs 47-76,
+`fixture()` 360-362, `fixture_with_rain_probability` 471-479,
+`lookahead_rounds_to_the_nearest_hour` 646-654, and the fixture JSON
+(`current.time` `"2026-07-19T06:30"`, 24 hourly entries
+`2026-07-19T00:00`–`23:00`, index 7 = 16%, no next-day entry). One real
+error found and fixed: Step 3's sketch comment claimed the
+wrong-rollover string `"2026-07-19T00:00"` "exists nowhere in this
+fixture" — it is in fact the fixture's **index-0 entry (2%)**, so a
+date-rollover bug would return `Some(2)`, not `None`. The test's
+assertion (`Some(42)`) was already the right guard either way — it fails
+under that bug — but the comment's justification was factually wrong and
+is now corrected to describe the actual failure mode (and why
+`is_some()` alone would falsely pass). No other change needed. Verdict:
+ready to execute.

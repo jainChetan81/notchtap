@@ -379,3 +379,30 @@ of it:
   behavior for that specific producer's use case, or whether it needs a
   visible signal (a log line at minimum, via plan 070's logging work if
   that's landed) rather than silence.
+
+---
+
+**Review-plan pass (2026-07-21, second pass at `74fabc7`)**: zero source
+drift since the same-day `647f6d0` pass (the only commit between them is
+docs-only), and every citation re-confirmed by direct read —
+`supersede_if_topic_matches` 185-213 (cross-tier `push_back` at 208),
+`enqueue_new` 147-183 (cap check 157-159), `apply_fresh_content` 562-568
+(with 064's `meta` copy), both exemplar tests (1123-1156 / 1195-1208,
+`QueueFull` matches! at 1203), and the poller lines (`diff_scoreboard`
+:558-565 with `priority` at :563, `make_event` :499, `make_rich_event`
+:1087, call at :1352). Two facts resolved this pass that shrink executor
+work: **(1)** `supersede_if_topic_matches` has exactly ONE call site —
+`queue.rs:140`, inside `enqueue`, *before* it falls through to
+`enqueue_new` — so Step 1's "confirm against every caller" check is a
+one-line read, and the caller's contract ("`true` = found and handled,
+skip `enqueue_new`") is exactly what the new early-return branch
+preserves. **(2)** Step 2's sketch traced through the live enqueue
+semantics: the queue starts unpaused, so the first `enqueue` promotes to
+visible as the sketch's comment intends; items 2-3 then queue behind it
+(visible occupied → `can_promote_now` false); and the fourth `enqueue`
+hits the supersede path at :140 ahead of any cap logic, so its
+`.unwrap()` is correct once the fix makes the full-destination case
+return `true`. Helper signatures (`event(title, priority, ttl)` /
+`topic_event(..., topic)` / `SingleSlotQueue::new(cap)` /
+two-arg `enqueue`) all match the exemplar tests verbatim. No content
+changes needed. Verdict: ready to execute.
