@@ -13,17 +13,15 @@
 > missing); if `grep -c "notif-track" src/styles.css` is 0 → STOP (092
 > missing).
 >
-> **PARTIALLY REVIEWED — one short re-check owed at dispatch.** The
-> post-091 review pass ran 2026-07-21 (see the note at the end): every
-> rust/hover citation below is re-verified against shipped 091. The
-> **092-dependent** citations (the below-block content classes this plan's
-> peek/reveal render beside) could not be verified because 092 had not
-> merged yet — at dispatch, re-read the `.below-block` content rules and
-> confirm the `notif-track` grep gate, then stamp. That is a ~5-minute
-> check, not a full pass.
+> **FULLY REVIEWED AND DISPATCHABLE.** The post-091 rust/hover pass ran
+> 2026-07-21, and the owed 092-dependent re-check completed after 092
+> merged (both notes at the end of this file). Prerequisite gates both
+> confirmed live at `147a996`: `grep -c "below-block" src/styles.css` > 0
+> (091 shipped) and `grep -c "notif-track\|notif-body" src/styles.css`
+> → 4 (092 shipped).
 >
 > **Drift check (run first, after stamping)**:
-> `git diff --stat <stamp at dispatch, post-092>..HEAD -- src-tauri/src/hover.rs src-tauri/src/lib.rs src-tauri/src/queue.rs src-tauri/src/engine.rs src/App.tsx src/components/ src/styles.css src/settings/preview-overlay.css src/lib/weatherArt.ts`
+> `git diff --stat 147a996..HEAD -- src-tauri/src/hover.rs src-tauri/src/lib.rs src-tauri/src/queue.rs src-tauri/src/engine.rs src/App.tsx src/components/ src/styles.css src/settings/preview-overlay.css src/lib/weatherArt.ts`
 > Expected: empty. On a mismatch with "Current state", STOP.
 
 ## Status
@@ -39,7 +37,7 @@
   (weatherArt moods, DONE); 084 (scorecard, DONE); item 18 decision
   (timeline folds into the hover-expanded idle).
 - **Category**: direction
-- **Planned at**: `<stamp at dispatch, post-092>`
+- **Planned at**: commit `147a996`, 2026-07-21 (stamped post-091 AND post-092 merges; all citations re-verified)
 
 ## Why this matters
 
@@ -136,9 +134,22 @@ stop firing over empty window space below the card.
   (the biome-ignore there explains why `slotId` is a deliberate
   re-anchor trigger). A `hoverPaused` flag joins these props; note the
   rAF loop is already gated under `prefers-reduced-motion`.
-- **092-dependent (verify at dispatch, not yet merged when this was
-  reviewed)**: the `.below-block` content classes the peek/reveal render
-  beside, and 092's `.chip` language if the peek reuses it.
+- **092's shipped content language (verified live at `147a996`)**, which
+  the peek and reveal render beside inside `.below-block`:
+  `.notif-header-row` (`styles.css:518`), `.notif-title` (:525),
+  `.notif-subtitle-row` (:537), `.notif-subtitle` (:545),
+  `.notif-time-inline` (:558), `.notif-body` (:564), `.notif-meta-row`
+  (:952), and the `.chip` family (:941, `.chip-category` :959). **The
+  weather peek should reuse `.chip` for its condition label rather than
+  inventing a pill** — 092 retired `.pill` entirely (`grep -c "\.pill\b"`
+  → 0); reintroducing one would undo item 10.
+- `src/lib/weatherArt.ts` — `weatherArtFor(condition, isDay)` (`:120`)
+  returning `WeatherArt` (`:40`). The peek's mood/glyph come from here;
+  do not duplicate the table.
+- **Note the pause indicator now exists** (092, Decision 4): `StatusDots`
+  dims every dot while `status.paused` and renders a `.pause-glyph`. The
+  hover peek must not fight it — a paused engine still shows the idle
+  furniture, so hovering while paused should still peek.
 - `src/lib/weatherArt.ts` — mood/glyph tables (082), built to be reused
   by this peek ("preps but does not build the 086-gated hover
   weather-peek" — its own plan text).
@@ -215,3 +226,12 @@ in the header.
   weather precedence; hold-while-hovered) becomes the contract any
   future hover consumer extends — document it in a comment block in
   hover.rs when building.
+
+**Owed 092-dependent re-check (2026-07-21, at `147a996`, after 092
+merged)**: discharged. Both prerequisite greps confirmed live. 092's
+content classes are cited exactly above, and one substantive addition
+came out of it: 092 retired `.pill` completely, so the peek must reuse
+`.chip` rather than reintroducing a pill class — otherwise this plan
+would silently undo item 10. Also flagged the new pause indicator so the
+peek's interaction doesn't fight it. This plan is now fully stamped and
+dispatchable; nothing further is owed before execution.
