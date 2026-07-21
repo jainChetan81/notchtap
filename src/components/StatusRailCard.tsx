@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { renderInlineMarkdown } from "../lib/markdown";
 import { ageLabel, categoryClass, categoryLabel, publishedLabel } from "../lib/presentation";
+import { weatherArtFor } from "../lib/weatherArt";
 import { useDelayedSwap } from "../useDelayedSwap";
 import type { SlotState } from "../useSlotState";
 import { type StatusState, statusRailActive } from "../useStatusState";
@@ -9,6 +10,31 @@ import { Manifest } from "./Manifest";
 import { Stamp } from "./Stamp";
 import { Track } from "./Track";
 import { TtlBar } from "./TtlBar";
+
+// plan 082: weather ALERT cards ride the plan-035 display-only `details`
+// channel to carry condition + day/night art inputs — `origin` is not on
+// the slot-state wire, and this plan deliberately doesn't add it. Every
+// pair whose label starts with "wx-" is a MARKER, never real content: it
+// must be read to derive the mood/glyph art, then excluded from every
+// place `details` is rendered as visible text (the marker-leak guard).
+function isWxMarker(label: string): boolean {
+  return label.startsWith("wx-");
+}
+
+type Detail = { label: string; value: string };
+
+function visibleDetails(details: Detail[]): Detail[] {
+  return details.filter((detail) => !isWxMarker(detail.label));
+}
+
+function weatherArtFromDetails(details: Detail[]) {
+  const condition = details.find((detail) => detail.label === "wx-condition")?.value;
+  if (condition === undefined) {
+    return null;
+  }
+  const isDay = details.find((detail) => detail.label === "wx-is-day")?.value === "1";
+  return weatherArtFor(condition, isDay);
+}
 
 type Pulse = "pulse-goal" | "pulse-red" | null;
 
@@ -66,6 +92,12 @@ export function StatusRailCard({
   // to show — the plain clock idle keeps its narrow width. `status` is
   // optional: the settings preview renders the card without one.
   const statusRail = !showing && status !== undefined && statusRailActive(status);
+  // plan 082: weather ALERT cards carry their art derived from the live
+  // slot's `wx-*` marker pairs — same live-`slot` basis as `news`/
+  // `categoryClass` above (not `renderedSlot`), so the outer shell's mood
+  // updates in lockstep with every other outer-shell class. `null` for
+  // every non-weather card, so it renders byte-identical to today.
+  const wxArt = showing ? weatherArtFromDetails(slot.details) : null;
   const cardClass = [
     "rail-card",
     showing ? slot.priority : "idle",
@@ -74,6 +106,9 @@ export function StatusRailCard({
     pulse,
     news && "news-shade",
     news && categoryClass(slot.category),
+    wxArt && "wx-card",
+    wxArt?.moodClass,
+    wxArt?.textureClass,
   ]
     .filter(Boolean)
     .join(" ");
@@ -94,6 +129,12 @@ export function StatusRailCard({
   const renderedNewsPublished = renderedNews
     ? publishedLabel(renderedSlot.publishedAtMs, Date.now())
     : null;
+  // plan 082 marker-leak guard: every `wx-*` pair is a mood/glyph input,
+  // never real content — strip it from `details` before it reaches EITHER
+  // place details render as visible text (the collapsed loop below and
+  // the expanded Manifest). Every non-weather card's `details` has no
+  // `wx-*` labels, so this filter is a no-op there — byte-identical.
+  const renderedVisibleDetails = renderedShowing ? visibleDetails(renderedSlot.details) : [];
 
   // plan 069 (folded into 078): memoized on the rendered slot so unrelated
   // re-renders don't re-tokenize the markdown.
@@ -121,6 +162,12 @@ export function StatusRailCard({
       aria-live={showing ? "polite" : undefined}
       onAnimationEnd={clearPulseWhenItsAnimationEnds}
     >
+      {/* plan 082: the condition glyph — a background-layer image, same
+          z-order tier as .news-shade::before (behind .compact/.manifest,
+          which the CSS below lifts to z-index 1). Live-slot-derived, like
+          the mood/texture classes on the outer div above, so it never
+          waits on the delayed content swap. */}
+      {wxArt && <img className="wx-icon" src={wxArt.glyphUrl} alt="" />}
       <div
         key={swapKey}
         className={`card-content${!renderedShowing ? " idle" : ""}${exiting ? " swap-exit" : ""}`}
@@ -163,8 +210,8 @@ export function StatusRailCard({
                         classes as the expanded Manifest view; collapsed-only,
                         so the pairs never render twice when expanded. */}
                     {!renderedExpanded &&
-                      renderedSlot.details.length > 0 &&
-                      renderedSlot.details.map((detail) => (
+                      renderedVisibleDetails.length > 0 &&
+                      renderedVisibleDetails.map((detail) => (
                         <div key={`${detail.label}:${detail.value}`}>
                           <div className="detail-label">{detail.label}</div>
                           <div className="detail-value">{detail.value}</div>
@@ -200,7 +247,7 @@ export function StatusRailCard({
               publishedAtMs={renderedSlot.publishedAtMs}
               hasLink={renderedSlot.link !== null}
               subtitle={renderedSlot.subtitle}
-              details={renderedSlot.details}
+              details={renderedVisibleDetails}
             />
           </>
         )}
