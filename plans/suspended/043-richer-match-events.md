@@ -1,5 +1,9 @@
 # Plan 043: richer live-match event coverage (fouls, offside, disallowed goals, subs)
 
+> **SUPERSEDED — do not execute.** Folded into 079 item 6a and shipped
+> by plan 083 (2026-07). Kept for historical context; see
+> plans/README.md.
+
 > **Executor instructions**: Follow this plan, run every gate, update the
 > `plans/README.md` row when done. **Read "Step 0: CONFIRMED against a
 > genuinely live match (2026-07-20)" below FIRST** — Step 0's gate has

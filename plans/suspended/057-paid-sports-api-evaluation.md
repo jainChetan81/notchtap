@@ -1,5 +1,9 @@
 # Plan 057: SPIKE — evaluate a paid sports-data API (e.g. Sportmonks) as an ESPN alternative
 
+> **SUPERSEDED — do not execute.** Closed by 079 item 15 decision — stay
+> on ESPN — no successor plan. Kept for historical context; see
+> plans/README.md.
+
 ## Status
 
 - **Priority**: P3

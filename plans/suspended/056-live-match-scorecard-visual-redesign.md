@@ -1,5 +1,9 @@
 # Plan 056: SPIKE — richer live-match scorecard visual (flags, bigger score, icon events)
 
+> **SUPERSEDED — do not execute.** Folded into 079 items 3/5/6 and
+> shipped by plans 083/084 (2026-07). Kept for historical context; see
+> plans/README.md.
+
 > **Executor instructions**: Decision spike. The reference image the
 > operator provided (a broadcast-style scoreboard graphic: team flags,
 > large centered score, icon-annotated event ticker) does not fit this

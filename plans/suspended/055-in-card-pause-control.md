@@ -1,5 +1,9 @@
 # Plan 055: SPIKE — should pause get a visible in-card control?
 
+> **SUPERSEDED — do not execute.** Folded into 079 item 11 and shipped
+> by plan 092 (2026-07). Kept for historical context; see
+> plans/README.md.
+
 > **Executor instructions**: This is a decision spike, not a build plan.
 > The deliverable is a recorded decision (in this file, or a design doc
 > under `docs/design/` if the operator wants the fuller spike-doc

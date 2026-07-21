@@ -1,5 +1,9 @@
 # Plan 060: SPIKE — the overlay card visually merges with whatever's behind it in HUD mode
 
+> **SUPERSEDED — do not execute.** Folded into 079 item 1 and shipped
+> by plan 091 (2026-07). Kept for historical context; see
+> plans/README.md.
+
 > **Executor instructions**: Decision spike, not a ready-to-execute CSS
 > fix — investigation below found a real cross-mode risk that blocks a
 > blind "just add a margin" fix. Read "Current state" before proposing a

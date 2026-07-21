@@ -56,12 +56,13 @@ const HUD_CUTOUT_H: f64 = 32.0; // App.tsx's HUD synthetic cutout height
 // no single true number in styles.css to mirror. These are deliberately
 // CONSERVATIVE ESTIMATES (never intended to be pixel-exact) chosen to
 // close most of the ~240px dead-zone gap 079 item 17 flagged while
-// staying safely under what a real card of that kind renders — err
-// generous, not tight, per this file's standing CONSERVATIVE philosophy
-// (never narrower than the true rendered edge). If a future redesign
-// changes the compact/manifest content shape enough to make these feel
-// wrong, adjust them directly; there is no styles.css number to keep
-// them "in sync" with.
+// staying safely UNDER what a real card of that kind renders — the
+// hover rect must never claim MORE height than the card actually
+// occupies, per this file's standing CONSERVATIVE philosophy (err
+// small, not generous, when in doubt). If a future redesign changes the
+// compact/manifest content shape enough to make these feel wrong,
+// adjust them directly; there is no styles.css number to keep them "in
+// sync" with.
 const IDLE_PEEK_BELOW_BLOCK_H: f64 = 100.0; // styles.css .idle-peek's fixed height
 const BELOW_BLOCK_SHOWING_H: f64 = 160.0; // conservative estimate, compact (non-expanded) content
 const BELOW_BLOCK_EXPANDED_H: f64 = 240.0; // conservative estimate, expanded (manifest) content

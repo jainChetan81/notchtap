@@ -1,5 +1,8 @@
 # Plan 069: Memoize `renderInlineMarkdown` so unrelated re-renders don't re-tokenize card bodies
 
+> **SUPERSEDED — do not execute.** Superseded by and shipped in plan
+> 078 (2026-07). Kept for historical context; see plans/README.md.
+
 > **Executor instructions**: Follow this plan step by step. Run every
 > verification command and confirm the expected result before moving to the
 > next step. If anything in the "STOP conditions" section occurs, stop and
