@@ -1,7 +1,21 @@
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
 import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { type Config, type HistoryEntry, type SecretStatus, SettingsApp } from "./SettingsApp";
+
+// plan 112 Step 4: jsdom has no ResizeObserver; the shadcn Switch
+// (radix-ui's useSize hook, used to size its thumb) reads one on mount.
+// A no-op stub is enough — nothing in this suite asserts on a resize
+// callback, only on rendered DOM/ARIA state.
+class ResizeObserverStub {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+}
+// biome-ignore lint/suspicious/noExplicitAny: test-environment polyfill assignment, not app code.
+(globalThis as any).ResizeObserver ??= ResizeObserverStub;
 
 // Several plan-108 tests drive setInterval/setTimeout-based status transitions
 // (connector-health poll, ok-message auto-clear) with fake timers. Those
@@ -16,6 +30,15 @@ async function flush(times = 6) {
       await Promise.resolve();
     });
   }
+}
+
+// plan 112 Step 4: the Switch contract change (native checkbox ->
+// shadcn/radix Switch) moves the on/off signal from
+// `HTMLInputElement.checked` to `aria-checked` on a real `<button
+// role="switch">` — this reads that attribute instead, everywhere a
+// test used to read `.checked` on a toggle.
+function isChecked(element: HTMLElement): boolean {
+  return element.getAttribute("aria-checked") === "true";
 }
 
 const config: Config = {
@@ -381,12 +404,10 @@ describe("SettingsApp", () => {
     expect(await screen.findByDisplayValue("4321")).toBeTruthy();
     expect(screen.getByDisplayValue("14")).toBeTruthy();
     expect(screen.getByDisplayValue("75")).toBeTruthy();
-    expect((screen.getByLabelText("Start paused") as HTMLInputElement).checked).toBe(true);
+    expect(isChecked(screen.getByLabelText("Start paused"))).toBe(true);
     // plan 085: the toggle reflects the loaded config's resting_state
     // ("notch" in this fixture) — checked means "hidden while idle".
-    expect((screen.getByLabelText("Hide overlay when idle") as HTMLInputElement).checked).toBe(
-      true,
-    );
+    expect(isChecked(screen.getByLabelText("Hide overlay when idle"))).toBe(true);
     expect(
       screen.getByText(
         "Waiting items promote high → medium → low. Priority chooses the next turn; it never interrupts the visible item.",
@@ -410,11 +431,11 @@ describe("SettingsApp", () => {
     });
     render(<SettingsApp />);
 
-    const toggle = (await screen.findByLabelText("Hide overlay when idle")) as HTMLInputElement;
-    expect(toggle.checked).toBe(true); // fixture config has resting_state: "notch"
+    const toggle = await screen.findByLabelText("Hide overlay when idle");
+    expect(isChecked(toggle)).toBe(true); // fixture config has resting_state: "notch"
 
     fireEvent.click(toggle);
-    expect(toggle.checked).toBe(false);
+    expect(isChecked(toggle)).toBe(false);
 
     fireEvent.click(screen.getByRole("button", { name: "Save & Relaunch" }));
 
@@ -490,7 +511,7 @@ describe("SettingsApp", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Reset" }));
     expect((screen.getByLabelText("Listener port") as HTMLInputElement).value).toBe("4321");
-    expect((screen.getByLabelText("Start paused") as HTMLInputElement).checked).toBe(true);
+    expect(isChecked(screen.getByLabelText("Start paused"))).toBe(true);
   });
 
   it("Reset to defaults applies the defaults served by get_default_config", async () => {
@@ -517,10 +538,8 @@ describe("SettingsApp", () => {
     expect((screen.getByLabelText("Queue cap per priority tier") as HTMLInputElement).value).toBe(
       "50",
     );
-    expect((screen.getByLabelText("Start paused") as HTMLInputElement).checked).toBe(false);
-    expect((screen.getByLabelText("Hide overlay when idle") as HTMLInputElement).checked).toBe(
-      false,
-    );
+    expect(isChecked(screen.getByLabelText("Start paused"))).toBe(false);
+    expect(isChecked(screen.getByLabelText("Hide overlay when idle"))).toBe(false);
     expect(selectedPriorityLabel(screen.getByLabelText("Manual push priority"))).toBe("Medium");
     expect(rotationOrderRowNames()).toEqual([
       "Football",
@@ -531,9 +550,7 @@ describe("SettingsApp", () => {
     ]);
 
     fireEvent.click(screen.getByRole("button", { name: "Football" }));
-    expect(((await screen.findByLabelText("Enable ESPN scores")) as HTMLInputElement).checked).toBe(
-      true,
-    );
+    expect(isChecked(await screen.findByLabelText("Enable ESPN scores"))).toBe(true);
     expect((screen.getByLabelText("Leagues") as HTMLTextAreaElement).value).toBe(
       "eng.1\nuefa.champions\nesp.1",
     );
@@ -1044,13 +1061,11 @@ describe("SettingsApp", () => {
     });
     render(<SettingsApp />);
 
-    const toggle = (await screen.findByLabelText(
-      "Record notification history",
-    )) as HTMLInputElement;
-    expect(toggle.checked).toBe(false);
+    const toggle = await screen.findByLabelText("Record notification history");
+    expect(isChecked(toggle)).toBe(false);
 
     fireEvent.click(toggle);
-    expect(toggle.checked).toBe(true);
+    expect(isChecked(toggle)).toBe(true);
 
     fireEvent.click(screen.getByRole("button", { name: "Save & Relaunch" }));
 
@@ -1074,11 +1089,11 @@ describe("SettingsApp", () => {
     });
     render(<SettingsApp />);
 
-    const toggle = (await screen.findByLabelText("Enable now playing")) as HTMLInputElement;
-    expect(toggle.checked).toBe(false);
+    const toggle = await screen.findByLabelText("Enable now playing");
+    expect(isChecked(toggle)).toBe(false);
 
     fireEvent.click(toggle);
-    expect(toggle.checked).toBe(true);
+    expect(isChecked(toggle)).toBe(true);
 
     fireEvent.click(screen.getByRole("button", { name: "Save & Relaunch" }));
 
@@ -1619,5 +1634,75 @@ describe("SettingsApp — native semantic markup (plan 109)", () => {
     for (const cell of dataCells) {
       expect(cell.parentElement?.parentElement).toBe(tbody);
     }
+  });
+});
+
+// plan 112 Step 4: the shadcn Switch contract, in two parts —
+// (a) through the app's own ToggleControl call sites (accessible name,
+// checked-state reflection — already covered by the isChecked() round-
+// trip tests above); (b) here, direct primitive-level coverage of the
+// pieces isChecked() alone doesn't prove: real button/role semantics
+// (keyboard-operable by native browser behavior, not a custom
+// keydown handler), and disabled behavior — ToggleControl itself never
+// passes `disabled` today (grep confirms no call site does), so
+// disabled coverage renders the shadcn Switch + Label pair directly,
+// the same components ToggleControl composes.
+describe("SettingsApp — shadcn Switch contract (plan 112 Step 4)", () => {
+  it("is a real role=switch button, named by an associated Label, reflecting aria-checked", () => {
+    render(
+      <>
+        <Label htmlFor="demo-switch">Demo switch</Label>
+        <Switch id="demo-switch" checked={false} onCheckedChange={() => {}} />
+      </>,
+    );
+
+    const toggle = screen.getByLabelText("Demo switch");
+    expect(toggle.tagName).toBe("BUTTON");
+    expect(toggle.getAttribute("type")).toBe("button");
+    expect(toggle.getAttribute("role")).toBe("switch");
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+  });
+
+  it("clicking calls onCheckedChange with the flipped value — the same activation a Space/Enter key press dispatches on any native <button> (browser default, not a custom key handler)", () => {
+    const onCheckedChange = vi.fn();
+    render(
+      <>
+        <Label htmlFor="demo-switch-2">Demo switch two</Label>
+        <Switch id="demo-switch-2" checked={false} onCheckedChange={onCheckedChange} />
+      </>,
+    );
+
+    const toggle = screen.getByLabelText("Demo switch two");
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+    fireEvent.click(toggle);
+    expect(onCheckedChange).toHaveBeenCalledWith(true);
+  });
+
+  it("a disabled Switch carries aria-disabled/disabled semantics and ignores activation", () => {
+    const onCheckedChange = vi.fn();
+    render(
+      <>
+        <Label htmlFor="demo-switch-3">Demo switch three</Label>
+        <Switch id="demo-switch-3" checked={false} disabled onCheckedChange={onCheckedChange} />
+      </>,
+    );
+
+    const toggle = screen.getByLabelText("Demo switch three") as HTMLButtonElement;
+    expect(toggle.disabled).toBe(true);
+    fireEvent.click(toggle);
+    expect(onCheckedChange).not.toHaveBeenCalled();
+  });
+
+  it("every General-section toggle in the live app is a real role=switch button reflecting its loaded checked state", async () => {
+    mockLoads();
+    render(<SettingsApp />);
+
+    const startPaused = await screen.findByLabelText("Start paused");
+    expect(startPaused.tagName).toBe("BUTTON");
+    expect(startPaused.getAttribute("role")).toBe("switch");
+    expect(startPaused.getAttribute("aria-checked")).toBe("true"); // fixture: start_paused true
+
+    const hideWhenIdle = screen.getByLabelText("Hide overlay when idle");
+    expect(hideWhenIdle.getAttribute("aria-checked")).toBe("true"); // fixture: resting_state "notch"
   });
 });

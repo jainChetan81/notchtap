@@ -22,6 +22,10 @@ import {
   useState,
 } from "react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch as UiSwitch } from "@/components/ui/switch";
 import { cn } from "@/lib/utils";
 import { StatusRailCard } from "../components/StatusRailCard";
 import { PREVIEW_SAMPLES } from "./previewFixtures";
@@ -503,6 +507,26 @@ function ActionStatus({
   );
 }
 
+// plan 112 Step 4 (General): shared row shell for every control kind
+// (toggle, number, priority/units fieldset, the diagnostics/history
+// footer-style rows). Old settings.css used an adjacent-sibling selector
+// (".control-row + .control-row") so only a row PRECEDED BY another row
+// got a top divider; `first-child:border-t-0` reproduces the same
+// visible result (every row but the first in its group gets the
+// divider) without depending on sibling order in the stylesheet. This
+// single className is reused at every ".control-row" call site across
+// the whole file (control-row is a shared layout idiom, not a
+// per-section one) — migrated once, here, rather than duplicated at each
+// of the ten sections that render one.
+const CONTROL_ROW =
+  "control-row grid min-h-[58px] grid-cols-[minmax(0,1fr)_auto] items-center gap-3 border-t border-border/60 py-2.5 first:border-t-0";
+
+// plan 112 Step 4 (General): shadcn Card replaces the old
+// .settings-group/.group-heading/.group-controls box. gap-0/py-0/ring-0
+// strip Card's own spacing/ring defaults (they'd otherwise double up
+// with the explicit padding below); the border-bottom divider between
+// heading and controls is the only piece Card's own subcomponents don't
+// give for free, so it's added directly on CardHeader.
 function SettingsGroup({
   title,
   description,
@@ -513,52 +537,66 @@ function SettingsGroup({
   children: ReactNode;
 }) {
   return (
-    <section className="settings-group">
-      <div className="group-heading">
-        <h2>{title}</h2>
-        {description ? <p>{description}</p> : null}
-      </div>
-      <div className="group-controls">{children}</div>
-    </section>
-  );
-}
-
-function Switch({
-  id,
-  label,
-  checked,
-  onChange,
-}: {
-  id: string;
-  label: string;
-  checked: boolean;
-  onChange: (checked: boolean) => void;
-}) {
-  return (
-    <label className="switch-control" htmlFor={id}>
-      <input
-        id={id}
-        type="checkbox"
-        aria-label={label}
-        checked={checked}
-        onChange={(event) => onChange(event.currentTarget.checked)}
-      />
-      <span className="switch" aria-hidden="true" />
-    </label>
+    <Card
+      // Card's own default className carries `text-sm` (14px/20px
+      // line-height) — harmless for the title/description text below
+      // (both set their own explicit text-fs-* size), but it's an
+      // INHERITED property, so left alone it silently reaches every
+      // descendant that doesn't set its own font-size, including the
+      // Appearance section's Plan 111 preview subtree nested inside this
+      // same Card (`.appearance-preview`/`.preview-stage`/`.card-root`
+      // never declared their own font-size — they relied on inheriting
+      // the browser's 16px/normal default, same as before this
+      // migration). `text-[16px] leading-[normal]` restores exactly that
+      // inherited baseline so the preview subtree's computed styles stay
+      // byte-identical (caught by the settings_capture.js preview-
+      // equivalence harness before this fix landed).
+      className="gap-0 overflow-hidden rounded-[8px] border border-border bg-card py-0 text-[16px] leading-[normal] ring-0"
+    >
+      <CardHeader
+        // CardHeader's own default className carries a self-triggering
+        // `[.border-b]:pb-(--card-spacing)` rule keyed on the literal
+        // presence of the "border-b" token — adding it for the divider
+        // below silently re-widens padding-bottom to Card's own 16px
+        // spacing unit, fighting the `pb-[11px]` needed to match the old
+        // `.group-heading { padding: 12px 13px 11px }`. The trailing `!`
+        // forces this pb to win regardless of that rule's higher
+        // selector specificity (caught by the settings_capture.js
+        // preview-equivalence harness — it grew "Card shape"'s box by
+        // enough to shift the Appearance preview gallery below it).
+        className="gap-[5px] border-b border-border/60 px-[13px] pt-3 pb-[11px]!"
+      >
+        <CardTitle className="text-fs-body leading-[1.25] font-[640] text-foreground">
+          {title}
+        </CardTitle>
+        {description ? (
+          <CardDescription className="text-fs-secondary leading-[1.45] text-muted-foreground">
+            {description}
+          </CardDescription>
+        ) : null}
+      </CardHeader>
+      <CardContent className="px-[13px]">{children}</CardContent>
+    </Card>
   );
 }
 
 function ControlCopy({ htmlFor, name, help }: { htmlFor: string; name: string; help: string }) {
   return (
-    <div className="control-copy">
+    <div className="control-copy min-w-0">
       {/* id lets a sibling <fieldset role=group> (PriorityToggle,
           UnitsToggle) point aria-labelledby back at this same visible
           text — <label for> alone doesn't associate with a fieldset,
           since fieldset isn't a "labelable" HTML element. */}
-      <label className="control-name" id={`${htmlFor}-label`} htmlFor={htmlFor}>
+      <label
+        className="control-name block text-fs-body leading-[1.3] font-[590] text-foreground"
+        id={`${htmlFor}-label`}
+        htmlFor={htmlFor}
+      >
         {name}
       </label>
-      <span className="control-help">{help}</span>
+      <span className="control-help mt-[3px] block text-fs-secondary leading-[1.4] text-muted-foreground">
+        {help}
+      </span>
     </div>
   );
 }
@@ -583,10 +621,10 @@ function NumberControl({
   onChange: (value: number) => void;
 }) {
   return (
-    <div className="control-row">
+    <div className={CONTROL_ROW}>
       <ControlCopy htmlFor={id} name={name} help={help} />
-      <div className="number-field">
-        <input
+      <div className="number-field relative w-24 flex-none">
+        <Input
           id={id}
           type="number"
           min={min}
@@ -594,13 +632,31 @@ function NumberControl({
           value={value}
           inputMode="numeric"
           onChange={(event) => onChange(Number(event.currentTarget.value))}
+          className={cn(
+            "h-[31px] rounded-[6px] border-input bg-input/20 text-right font-mono text-fs-body font-[650] text-foreground",
+            unit ? "pr-10" : "pr-2.5",
+          )}
         />
-        {unit ? <span className="unit">{unit}</span> : null}
+        {unit ? (
+          <span className="unit pointer-events-none absolute top-1/2 right-2 -translate-y-1/2 text-fs-caption font-bold tracking-[0.05em] text-muted-foreground">
+            {unit}
+          </span>
+        ) : null}
       </div>
     </div>
   );
 }
 
+// plan 112 Step 4 (General): the bespoke checkbox+track Switch is gone —
+// role="switch"/aria-checked shadcn Switch (radix-ui's real <button
+// type="button" role="switch">) plus a visually-hidden shadcn Label
+// (ControlCopy already renders the visible name for this row) replace
+// it. This is the plan's one authorized behavioral change: `checked` on
+// an HTMLInputElement becomes `aria-checked` on a native button —
+// `screen.getByLabelText` still resolves it via the label[for] ->
+// button-id association (button is a labelable element), so accessible
+// name is unchanged; only the test assertions that read `.checked`
+// needed updating (see SettingsApp.test.tsx).
 function ToggleControl({
   id,
   name,
@@ -617,9 +673,12 @@ function ToggleControl({
   onChange: (checked: boolean) => void;
 }) {
   return (
-    <div className="control-row">
+    <div className={CONTROL_ROW}>
       <ControlCopy htmlFor={id} name={name} help={help} />
-      <Switch id={id} label={label} checked={checked} onChange={onChange} />
+      <Label htmlFor={id} className="sr-only">
+        {label}
+      </Label>
+      <UiSwitch id={id} checked={checked} onCheckedChange={onChange} />
     </div>
   );
 }
@@ -645,17 +704,25 @@ function PriorityToggle({
   onChange: (value: PriorityLevel) => void;
 }) {
   return (
-    <div className="control-row">
+    <div className={CONTROL_ROW}>
       <ControlCopy htmlFor={id} name={name} help={help} />
-      <fieldset className="priority-toggle" id={id} aria-labelledby={`${id}-label`}>
+      <fieldset
+        className="priority-toggle grid h-[31px] w-36 min-w-0 flex-none grid-cols-3 gap-0.5 rounded-[7px] border border-input bg-input/20 p-[3px]"
+        id={id}
+        aria-labelledby={`${id}-label`}
+      >
         {/* accessible-name only — ControlCopy already renders the
             visible label for this group via the htmlFor above. */}
-        <legend className="visually-hidden">{name}</legend>
+        <legend className="sr-only">{name}</legend>
         {PRIORITY_LEVELS.map((level) => (
           <button
             key={level}
             type="button"
-            className={`priority-toggle-button${value === level ? " is-selected" : ""}`}
+            className={cn(
+              "priority-toggle-button rounded-[4px] px-1.5 py-px font-mono text-fs-secondary font-[620] tracking-[0.03em] text-muted-foreground outline-none transition-colors duration-[140ms] ease-notchtap hover:bg-accent hover:text-foreground focus-visible:shadow-[0_0_0_2px_var(--ring)]",
+              value === level &&
+                "is-selected bg-accent text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.4)]",
+            )}
             aria-pressed={value === level}
             onClick={() => onChange(level)}
           >
@@ -690,17 +757,25 @@ function UnitsToggle({
   onChange: (value: Units) => void;
 }) {
   return (
-    <div className="control-row">
+    <div className={CONTROL_ROW}>
       <ControlCopy htmlFor={id} name={name} help={help} />
-      <fieldset className="priority-toggle" id={id} aria-labelledby={`${id}-label`}>
+      <fieldset
+        className="priority-toggle grid h-[31px] w-36 min-w-0 flex-none grid-cols-3 gap-0.5 rounded-[7px] border border-input bg-input/20 p-[3px]"
+        id={id}
+        aria-labelledby={`${id}-label`}
+      >
         {/* accessible-name only — ControlCopy already renders the
             visible label for this group via the htmlFor above. */}
-        <legend className="visually-hidden">{name}</legend>
+        <legend className="sr-only">{name}</legend>
         {UNITS_OPTIONS.map((unit) => (
           <button
             key={unit}
             type="button"
-            className={`priority-toggle-button${value === unit ? " is-selected" : ""}`}
+            className={cn(
+              "priority-toggle-button rounded-[4px] px-1.5 py-px font-mono text-fs-secondary font-[620] tracking-[0.03em] text-muted-foreground outline-none transition-colors duration-[140ms] ease-notchtap hover:bg-accent hover:text-foreground focus-visible:shadow-[0_0_0_2px_var(--ring)]",
+              value === unit &&
+                "is-selected bg-accent text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.4)]",
+            )}
             aria-pressed={value === unit}
             onClick={() => onChange(unit)}
           >
@@ -735,30 +810,49 @@ function RotationOrderList({
   }
 
   return (
-    <ul className="rotation-order-list" aria-label="Rotation order">
+    <ul
+      className="rotation-order-list m-0 list-none px-0 pt-1 pb-[11px]"
+      aria-label="Rotation order"
+    >
       {order.map((source, index) => (
-        <li className="rotation-order-row" key={source}>
-          <span className="rotation-order-rank">{index + 1}</span>
-          <span className="rotation-order-name">{SOURCE_LABELS[source]}</span>
-          <div className="rotation-order-controls">
-            <button
+        <li
+          className="rotation-order-row grid grid-cols-[16px_minmax(0,1fr)_auto] items-center gap-2.5 border-t border-border/60 py-2.5 first:border-t-0"
+          key={source}
+        >
+          <span className="rotation-order-rank font-mono text-fs-secondary font-bold text-muted-foreground">
+            {index + 1}
+          </span>
+          {/* still a bespoke class rather than a plain utility set — a
+              deliberate test tripwire (plan 112 Step 4 explicit
+              carve-out): rotationOrderRowNames() in SettingsApp.test.tsx
+              locates each row's label text via
+              `row.querySelector(".rotation-order-name")`. */}
+          <span className="rotation-order-name min-w-0 text-fs-body font-[590] text-foreground">
+            {SOURCE_LABELS[source]}
+          </span>
+          <div className="rotation-order-controls inline-flex flex-none gap-1">
+            <Button
               type="button"
-              className="rotation-order-button"
+              variant="outline"
+              size="icon-xs"
+              className="text-muted-foreground"
               aria-label={`Move ${SOURCE_LABELS[source]} earlier`}
               disabled={index === 0}
               onClick={() => move(index, -1)}
             >
               ▲
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
-              className="rotation-order-button"
+              variant="outline"
+              size="icon-xs"
+              className="text-muted-foreground"
               aria-label={`Move ${SOURCE_LABELS[source]} later`}
               disabled={index === order.length - 1}
               onClick={() => move(index, 1)}
             >
               ▼
-            </button>
+            </Button>
           </div>
         </li>
       ))}
@@ -782,7 +876,12 @@ function TextareaControl({
   onChange: (value: string) => void;
 }) {
   return (
-    <div className="textarea-control">
+    // plan 112 Step 4 (General): only the shared control-row divider
+    // rhythm moves here now (this wrapper sits in the same adjacent-row
+    // sequence as CONTROL_ROW siblings) — the textarea/caption styling
+    // itself is Football's turn below, first section to actually render
+    // one.
+    <div className="textarea-control border-t border-border/60 pt-[11px] pb-3 first:border-t-0">
       <ControlCopy htmlFor={id} name={name} help={help} />
       <textarea
         id={id}
@@ -1491,7 +1590,7 @@ function DiagnosticsSection() {
         {logText}
       </pre>
       <ActionStatus status={status} className="diagnostics-status" showPending={false} />
-      <div className="control-row">
+      <div className={CONTROL_ROW}>
         <ControlCopy
           htmlFor="refresh-log-lines"
           name="Refresh"
@@ -1744,7 +1843,7 @@ function HistorySection({ config }: { config: Config }) {
           ))}
         </ul>
       )}
-      <div className="control-row">
+      <div className={CONTROL_ROW}>
         <ControlCopy
           htmlFor="clear-history"
           name="Clear history"
@@ -1810,7 +1909,7 @@ function TestButton({ source }: { source: TestSource }) {
 
 function TestButtonRow({ name, help, source }: { name: string; help: string; source: TestSource }) {
   return (
-    <div className="control-row">
+    <div className={CONTROL_ROW}>
       <ControlCopy htmlFor={name.replace(/\s+/g, "-")} name={name} help={help} />
       <TestButton source={source} />
     </div>
@@ -1831,12 +1930,14 @@ function SegmentedControl({
   onChange: (value: number) => void;
 }) {
   return (
-    <div className="control-row">
-      <div className="control-copy">
+    <div className={CONTROL_ROW}>
+      <div className="control-copy min-w-0">
         {/* not a form-control label (the fieldset/legend below supplies
             the group's accessible name) — a plain span avoids an
             orphaned <label for="…">. */}
-        <span className="control-name">{label}</span>
+        <span className="control-name block text-fs-body leading-[1.3] font-[590] text-foreground">
+          {label}
+        </span>
       </div>
       <fieldset className="segmented-control">
         <legend className="visually-hidden">{label}</legend>
