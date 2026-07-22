@@ -433,10 +433,15 @@ impl<R: tauri::Runtime> Engine<R> {
     /// deliberately bypassed — a freshly reloaded webview has no state,
     /// so it must be re-sent even if unchanged), returns it for the
     /// eval-splice global seed. No wake: nothing mutated.
+    ///
+    /// plan 107 Step C: routes through `current_slot_state_for_emission`
+    /// (not the plain `current_slot_state`) so this one wire-emission
+    /// path that bypasses `slot_state_if_changed`'s dedup gate still
+    /// feeds the TTL-restart sampler — see that method's doc.
     pub fn emit_current_blocking(&self) -> SlotState {
         let state = {
-            let q = self.queue.blocking_lock();
-            q.current_slot_state()
+            let mut q = self.queue.blocking_lock();
+            q.current_slot_state_for_emission(Instant::now())
         };
         emit_slot_state(&self.app, state.clone());
         state

@@ -1,5 +1,5 @@
 import { act, cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EspnMeta, SlotState, SourceKind } from "../useSlotState";
 import type { StatusState } from "../useStatusState";
 import { StatusRailCard } from "./StatusRailCard";
@@ -1254,6 +1254,89 @@ describe("StatusRailCard", () => {
       // proves StatusRailCard doesn't lose the wire — a stale/omitted
       // hoverPaused would still render a ttl-bar, so absence of a crash
       // plus TtlBar's own hoverPaused tests together cover this.
+    });
+  });
+
+  // plan 107 Step B: compact->idle as one directional state machine. The
+  // outer shell's geometry (priority accent class + expanded width class)
+  // used to key off the live `showing` flag alone, which snapped straight
+  // to idle the instant a card started exiting — a visible "grows before
+  // shrinking" race against the still-fading below-block content (delayed
+  // by useDelayedSwap's 220ms exit window). Entrance was always correct
+  // (it already read the live slot); only the exit direction needed
+  // fixing. Uses fake timers, scoped to this describe block only, so the
+  // 220ms delayed-swap boundary is directly steppable (same pattern as
+  // useDelayedSwap.test.ts).
+  describe("compact->idle geometry as one state machine (plan 107 Step B)", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    // Entrance contract: geometry keys off the live slot, so the shell
+    // grows (priority class + expanded class) on the exact same render
+    // the promotion arrives — no timer advance needed. This is today's
+    // shipped width-leads-content entrance, pinned rather than changed.
+    it("idle->showing promotion applies showing geometry (priority + expanded) on the same render the promotion arrives", () => {
+      const { container, rerender } = render(<StatusRailCard slot={{ state: "empty" }} />);
+      expect(container.querySelector(".card-assembly.idle")).not.toBeNull();
+
+      rerender(<StatusRailCard slot={GOAL} />);
+      // synchronous — zero timer advance — entrance never waits on the
+      // delayed swap.
+      expect(container.querySelector(".card-assembly.high.expanded")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.idle")).toBeNull();
+    });
+
+    // Exit contract: the shell must hold its showing-geometry class for
+    // the whole 220ms delayed-swap window, then flip to `.idle` in the
+    // same tick the swap completes — never before.
+    it("showing->idle exit holds the showing-geometry class until the 220ms swap, then settles idle", () => {
+      const { container, rerender } = render(<StatusRailCard slot={GOAL} />);
+      expect(container.querySelector(".card-assembly.high")).not.toBeNull();
+
+      rerender(<StatusRailCard slot={{ state: "empty" }} />);
+      // mid-exit, immediately after the live slot goes empty: the swap
+      // timer hasn't fired yet, so geometry must still read the frozen
+      // renderedSlot — high, not idle.
+      expect(container.querySelector(".card-assembly.high")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.idle")).toBeNull();
+
+      act(() => vi.advanceTimersByTime(219));
+      // still one tick short of the swap — geometry must not have moved.
+      expect(container.querySelector(".card-assembly.high")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.idle")).toBeNull();
+
+      act(() => vi.advanceTimersByTime(1));
+      // the swap has now completed — geometry settles idle in the same
+      // tick, not late.
+      expect(container.querySelector(".card-assembly.idle")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.high")).toBeNull();
+    });
+
+    // The sharpest part of the contract: "geometry" is not just the
+    // showing/idle shell class, it also covers `expanded` — an expanded
+    // card must not silently collapse to compact mid-exit, only settle
+    // to idle once the swap actually completes. GOAL is expanded: true.
+    it("an expanded card's showing->idle exit keeps the expanded class until the swap completes", () => {
+      const { container, rerender } = render(<StatusRailCard slot={GOAL} />);
+      expect(container.querySelector(".card-assembly.expanded")).not.toBeNull();
+
+      rerender(<StatusRailCard slot={{ state: "empty" }} />);
+      // mid-exit: expanded must still be held, not dropped to compact.
+      expect(container.querySelector(".card-assembly.expanded")).not.toBeNull();
+
+      act(() => vi.advanceTimersByTime(219));
+      expect(container.querySelector(".card-assembly.expanded")).not.toBeNull();
+
+      act(() => vi.advanceTimersByTime(1));
+      // swap complete — settles idle, expanded gone (idle has no concept
+      // of expanded).
+      expect(container.querySelector(".card-assembly.expanded")).toBeNull();
+      expect(container.querySelector(".card-assembly.idle")).not.toBeNull();
     });
   });
 });

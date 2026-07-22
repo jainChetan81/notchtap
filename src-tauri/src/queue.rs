@@ -1,6 +1,8 @@
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
+use uuid::Uuid;
+
 use crate::error::QueueError;
 use crate::event::{Event, Priority, RotationSpec, SlotState, SourceKind};
 
@@ -109,6 +111,31 @@ pub struct SingleSlotQueue {
     /// design constraint names only "the rotation deadline holds."
     hover_started_at: Option<Instant>,
     hover_paused_total: Duration,
+    /// plan 107 Step C: the ONE queue-owned sample the TTL-restart
+    /// detector compares each new wire-emission attempt against — see
+    /// `TtlEmissionSample`'s own doc and `observe_emission_for_ttl_restart`
+    /// for the full mechanism. Deliberately adjacent to `last_emitted`
+    /// (the same "one piece of queue-owned state tracking the last thing
+    /// that went out over the wire" shape), not a second/engine-side
+    /// tracking structure.
+    ttl_sample: Option<TtlEmissionSample>,
+}
+
+/// plan 107 Step C: a snapshot of the last observed slot-state wire
+/// emission, kept purely so the NEXT emission for the same item can be
+/// checked for a TTL restart (`is_ttl_restart`, below `SingleSlotQueue`'s
+/// impl block) instead of a raw "did it get bigger" comparison, which
+/// misses the canonical restart pattern (see that function's doc).
+/// `hover_held_at_sample` is the CUMULATIVE hover-held total as of this
+/// sample (`SingleSlotQueue::cumulative_hover_held`), not a delta — the
+/// next observation subtracts this from ITS OWN cumulative total to
+/// recover just the hover-held time that elapsed between the two samples.
+struct TtlEmissionSample {
+    item_id: Uuid,
+    ttl_ms: u64,
+    remaining_ms: u64,
+    emitted_at: Instant,
+    hover_held_at_sample: Duration,
 }
 
 impl SingleSlotQueue {
@@ -127,6 +154,7 @@ impl SingleSlotQueue {
             rotation_order: Vec::new(),
             hover_started_at: None,
             hover_paused_total: Duration::ZERO,
+            ttl_sample: None,
         }
     }
 
@@ -371,6 +399,22 @@ impl SingleSlotQueue {
         if let Some(started) = self.hover_started_at.take() {
             self.hover_paused_total += now.saturating_duration_since(started);
         }
+    }
+
+    /// plan 107 Step C: cumulative hover-held time as of `now` — every
+    /// banked past session (`hover_paused_total`) plus the in-flight one
+    /// if a session is currently open. Same in-flight computation as
+    /// `hover_frozen_rotation_elapsed` above, but returns the total
+    /// itself rather than subtracting it from a rotation elapsed value —
+    /// the TTL-restart detector (`observe_emission_for_ttl_restart`)
+    /// needs the raw cumulative total so it can diff two samples and
+    /// recover just the hover-held DELTA between them.
+    fn cumulative_hover_held(&self, now: Instant) -> Duration {
+        let in_flight = match self.hover_started_at {
+            Some(started) => now.saturating_duration_since(started),
+            None => Duration::ZERO,
+        };
+        self.hover_paused_total + in_flight
     }
 
     fn promote_next(&mut self, now: Instant) {
@@ -632,10 +676,122 @@ impl SingleSlotQueue {
         };
         if changed {
             self.last_emitted = Some(current.clone());
+            // plan 107 Step C: every gated emission feeds the TTL-restart
+            // sampler too — see `observe_emission_for_ttl_restart`'s doc
+            // for why this needs to cover BOTH this path and the
+            // unconditional one (`current_slot_state_for_emission`).
+            self.observe_emission_for_ttl_restart(&current, Instant::now());
             Some(current)
         } else {
             None
         }
+    }
+
+    /// plan 107 Step C: the webview-reload re-emit's own door into
+    /// `current_slot_state` — identical output, but ALSO feeds the
+    /// TTL-restart sampler, so the one wire-emission route that bypasses
+    /// `slot_state_if_changed`'s dedup gate entirely
+    /// (`Engine::emit_current_blocking`, the on-page-load unconditional
+    /// re-emit) still participates in detection instead of silently
+    /// falling outside it. `now` is an explicit parameter (unlike
+    /// `current_slot_state` itself, which is unaffected — see that
+    /// method's own real-time `remaining_ms` computation) purely so tests
+    /// can drive the sampler deterministically.
+    pub fn current_slot_state_for_emission(&mut self, now: Instant) -> SlotState {
+        let current = self.current_slot_state();
+        self.observe_emission_for_ttl_restart(&current, now);
+        current
+    }
+
+    /// plan 107 Step C: the boundary half of the TTL-restart detector —
+    /// the decision itself is the pure `is_ttl_restart` function below
+    /// (module scope, after this `impl` block); this half gathers the
+    /// queue-owned state (the previous sample, hover accounting) the
+    /// decision needs and performs the one real side effect
+    /// (`tracing::warn!`). Same pure-decision/boundary split this
+    /// codebase already uses for `presentation::presentation_mode` vs its
+    /// subprocess-calling wrapper: one half is a plain function over
+    /// plain values, unit-testable with zero timing dependencies; this
+    /// half reads `Instant`-derived queue state and has a real side
+    /// effect, so it isn't.
+    ///
+    /// Called from every attempted wire-emission site (`slot_state_if_
+    /// changed`'s change-gated route AND `current_slot_state_for_
+    /// emission`'s unconditional one), so a restart shows up regardless
+    /// of which path pushed it.
+    ///
+    /// Boundary: this only ever detects a BACKEND WIRE jump —
+    /// `remaining_ms` landing higher than elapsed real time (minus
+    /// hover-held time) can explain. A visible restart with NO warning
+    /// from this function implicates FRONTEND remount/re-anchor behavior
+    /// instead of anything back here.
+    ///
+    /// Returns whether a restart was detected (and warned) — mainly so
+    /// tests can assert on it directly without needing a `tracing`
+    /// subscriber; both production call sites above ignore the return
+    /// value.
+    fn observe_emission_for_ttl_restart(&mut self, state: &SlotState, now: Instant) -> bool {
+        let SlotState::Showing {
+            id,
+            ttl_ms,
+            remaining_ms,
+            ..
+        } = state
+        else {
+            // Idle/empty: nothing meaningful to compare the NEXT emission
+            // against either, so the sample resets without a warning —
+            // matches the "state becomes Empty" reset case in the plan.
+            self.ttl_sample = None;
+            return false;
+        };
+        let hover_held_now = self.cumulative_hover_held(now);
+        let restarted = match self.ttl_sample.as_ref() {
+            // A different item id is a legitimate promotion, not a
+            // restart — resets without warning below, same as Empty.
+            Some(prev) if prev.item_id == *id => {
+                let elapsed_ms =
+                    u64::try_from(now.saturating_duration_since(prev.emitted_at).as_millis())
+                        .unwrap_or(u64::MAX);
+                let hover_held_delta_ms = u64::try_from(
+                    hover_held_now
+                        .saturating_sub(prev.hover_held_at_sample)
+                        .as_millis(),
+                )
+                .unwrap_or(u64::MAX);
+                let is_restart = is_ttl_restart(
+                    prev.ttl_ms,
+                    prev.remaining_ms,
+                    elapsed_ms,
+                    hover_held_delta_ms,
+                    *ttl_ms,
+                    *remaining_ms,
+                    TTL_RESTART_SLACK_MS,
+                );
+                if is_restart {
+                    tracing::warn!(
+                        item_id = %id,
+                        prev_remaining_ms = prev.remaining_ms,
+                        new_remaining_ms = remaining_ms,
+                        elapsed_ms,
+                        hover_held_delta_ms,
+                        "ttl-restart: remaining_ms jumped further than elapsed real time \
+                         (minus hover-held time) can explain on the backend wire — see \
+                         queue.rs::is_ttl_restart. A visible restart with no matching warning \
+                         here points at the frontend instead."
+                    );
+                }
+                is_restart
+            }
+            _ => false,
+        };
+        self.ttl_sample = Some(TtlEmissionSample {
+            item_id: *id,
+            ttl_ms: *ttl_ms,
+            remaining_ms: *remaining_ms,
+            emitted_at: now,
+            hover_held_at_sample: hover_held_now,
+        });
+        restarted
     }
 
     pub fn current_slot_state(&self) -> SlotState {
@@ -732,6 +888,57 @@ fn apply_fresh_content(existing: &mut Event, fresh: &Event) {
 
 const MIN_REMAINING_ON_SUPERSEDE_SECS: u64 = 2;
 const MAX_EXTENSION_ON_SUPERSEDE_SECS: u64 = 6;
+
+/// plan 107 Step C: scheduling-jitter slack for the TTL-restart detector
+/// (`is_ttl_restart`) — real wake-ups never land on the exact millisecond,
+/// so a few hundred ms of "remaining_ms is a bit higher than the elapsed-
+/// adjusted expectation" is normal noise, not a restart.
+const TTL_RESTART_SLACK_MS: u64 = 500;
+
+/// plan 107 Step C: pure decision half of the TTL-restart detector — see
+/// `SingleSlotQueue::observe_emission_for_ttl_restart` for the boundary
+/// half (queue-owned state, `tracing::warn!`) that calls this. Same
+/// pure-decision/boundary split this codebase already uses for
+/// `presentation::presentation_mode` vs its subprocess-calling wrapper.
+///
+/// The naive predicate (`new_remaining_ms > prev_remaining_ms + slack_ms`)
+/// misses the canonical restart pattern: wire emissions are SPARSE
+/// (`remaining_ms` is excluded from `SlotState::dedup_eq`, so most ticks
+/// never emit at all), and a buggy reset back to full TTL is NOT
+/// numerically greater than the LAST emission — e.g. emit 8000, 5s pass
+/// silently, a bug re-emits 8000 again: `8000 > 8000 + slack` is false,
+/// yet the frontend visibly jumps ~3000 -> 8000 (what the true elapsed-
+/// adjusted expectation would have been). So the real test compares
+/// against the ELAPSED-ADJUSTED expectation instead: how much
+/// `remaining_ms` SHOULD have dropped by, given how much real (non-hover-
+/// held) time passed since the last emission.
+///
+/// A changed total window (`new_ttl_ms != prev_ttl_ms`) is never a
+/// restart on its own — both a manual expand and a legitimate
+/// Topic-supersede top-up legitimately change `ttl_ms`, and neither is a
+/// bug.
+///
+/// All subtraction is saturating: a hover-held delta that (via rounding)
+/// slightly exceeds the raw elapsed time, or an elapsed-adjusted
+/// expectation exceeding the previous remaining value, must clamp to
+/// zero rather than wrap/panic — the same discipline
+/// `hover_frozen_rotation_elapsed` already uses for the same reason.
+fn is_ttl_restart(
+    prev_ttl_ms: u64,
+    prev_remaining_ms: u64,
+    elapsed_since_prev_emission_ms: u64,
+    hover_held_delta_ms: u64,
+    new_ttl_ms: u64,
+    new_remaining_ms: u64,
+    slack_ms: u64,
+) -> bool {
+    if new_ttl_ms != prev_ttl_ms {
+        return false;
+    }
+    let active_elapsed_ms = elapsed_since_prev_emission_ms.saturating_sub(hover_held_delta_ms);
+    let expected_remaining_ms = prev_remaining_ms.saturating_sub(active_elapsed_ms);
+    new_remaining_ms > expected_remaining_ms.saturating_add(slack_ms)
+}
 
 #[cfg(test)]
 mod tests {
@@ -2478,6 +2685,209 @@ mod tests {
             (7800..=8000).contains(&at_exit),
             "expected remaining_ms to pick back up from ~8000ms right at hover-exit, got {at_exit}"
         );
+    }
+
+    // ------------------------------------------------------------------
+    // plan 107 Step C: TTL-restart instrumentation. Pure predicate cases
+    // (a)-(e) below are the plan's own lettered list; case (f) (a new
+    // item id resets the sample without warning) is queue-driven — the
+    // pure `is_ttl_restart` function has no id concept, that reset is
+    // `observe_emission_for_ttl_restart`'s own responsibility.
+    // ------------------------------------------------------------------
+
+    // (a) normal decay after 5s (8000 -> ~3000) must not warn.
+    #[test]
+    fn is_ttl_restart_case_a_normal_decay_does_not_warn() {
+        assert!(!is_ttl_restart(
+            8000,
+            8000,
+            5000,
+            0,
+            8000,
+            3000,
+            TTL_RESTART_SLACK_MS
+        ));
+    }
+
+    // (b) hover-held for the whole gap, then re-emit ~8000, must not warn
+    // — the elapsed-adjusted expectation is still ~8000ms once the full
+    // gap is subtracted out as hover-held.
+    #[test]
+    fn is_ttl_restart_case_b_hover_held_the_whole_gap_does_not_warn() {
+        assert!(!is_ttl_restart(
+            8000,
+            8000,
+            5000,
+            5000,
+            8000,
+            8000,
+            TTL_RESTART_SLACK_MS
+        ));
+    }
+
+    // (c) the canonical restart pattern: emit 8000, 5s pass silently and
+    // UNHOVERED (expected ~3000 by now), a bug re-emits 8000 again. Must
+    // warn — and, per the plan's own red/green requirement, must be RED
+    // (fail) if the elapsed adjustment is removed: `8000 > 8000 + slack`
+    // is false, so the naive predicate this replaces would have missed
+    // it (pinned explicitly by the second test below).
+    #[test]
+    fn is_ttl_restart_case_c_canonical_restart_pattern_warns() {
+        assert!(is_ttl_restart(
+            8000,
+            8000,
+            5000,
+            0,
+            8000,
+            8000,
+            TTL_RESTART_SLACK_MS
+        ));
+    }
+
+    #[test]
+    fn is_ttl_restart_case_c_the_naive_elapsed_unaware_predicate_would_have_missed_it() {
+        // the exact predicate this function replaces (see its own doc):
+        // comparing only against the PREVIOUS remaining_ms, never the
+        // elapsed-adjusted expectation.
+        let naive_would_warn = 8000_u64 > 8000_u64.saturating_add(TTL_RESTART_SLACK_MS);
+        assert!(
+            !naive_would_warn,
+            "case (c) must be undetectable by the naive predicate — that's the whole reason \
+             is_ttl_restart compares against the elapsed-adjusted expectation instead"
+        );
+    }
+
+    // (d) small jitter within slack must not warn — 300ms over the
+    // elapsed-adjusted expectation, safely under the 500ms slack.
+    #[test]
+    fn is_ttl_restart_case_d_small_jitter_within_slack_does_not_warn() {
+        assert!(!is_ttl_restart(
+            8000,
+            8000,
+            1000,
+            0,
+            8000,
+            7300,
+            TTL_RESTART_SLACK_MS
+        ));
+    }
+
+    // (e) a grown ttl_ms (manual expand, or a legitimate Topic-supersede
+    // top-up) is never a restart, short-circuited before the
+    // elapsed-adjusted math even runs — however implausible the raw
+    // remaining_ms jump looks.
+    #[test]
+    fn is_ttl_restart_case_e_a_changed_ttl_window_is_never_a_restart() {
+        assert!(!is_ttl_restart(
+            8000,
+            3000,
+            5000,
+            0,
+            14000,
+            14000,
+            TTL_RESTART_SLACK_MS
+        ));
+    }
+
+    // (f), queue-driven: a new item id resets the sample without warning
+    // — a promotion, not a restart, even though the new item's
+    // remaining_ms would look like an enormous unexplained jump against
+    // the PREVIOUS item's sample.
+    #[test]
+    fn a_new_item_id_resets_the_ttl_sample_without_warning() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue(event("a", Priority::Medium, 8), t0).unwrap();
+        let first = q.current_slot_state();
+        assert!(!q.observe_emission_for_ttl_restart(&first, t0));
+
+        q.dismiss_visible(t0);
+        q.enqueue(event("b", Priority::High, 8), t0 + Duration::from_secs(1))
+            .unwrap();
+        let second = q.current_slot_state();
+        assert!(!q.observe_emission_for_ttl_restart(&second, t0 + Duration::from_secs(1)));
+    }
+
+    // Queue-driven: a real hover-pause sequence (genuine `hover_enter`/
+    // `hover_paused_total` accounting, not hand-fed numbers) must never
+    // warn. Stays inside one open hover session throughout — `current_
+    // slot_state`'s `reference_now` pins to `hover_started_at` while a
+    // session is open (see that method's own doc), so every sample here
+    // is a pure function of the injected Instants, never the real wall
+    // clock (post-hover-exit resumption is already covered by
+    // `remaining_ms_freezes_during_a_hover_session_and_resumes_after`
+    // above; this test is scoped to the restart detector specifically).
+    #[test]
+    fn a_hover_pause_sequence_never_warns_the_ttl_restart_detector() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue(event("a", Priority::Medium, 8), t0).unwrap();
+        q.hover_enter(t0);
+
+        let first = q.current_slot_state();
+        assert!(!q.observe_emission_for_ttl_restart(&first, t0));
+
+        // A naive (elapsed-only) predicate would see 5s pass and expect
+        // remaining_ms to have dropped by ~5000ms — it hasn't (the whole
+        // 5s was hover-held, frozen), so the hover-aware predicate must
+        // not warn.
+        let second = q.current_slot_state();
+        assert!(!q.observe_emission_for_ttl_restart(&second, t0 + Duration::from_secs(5)));
+    }
+
+    // Queue-driven: the unconditional page-load re-emit route
+    // (`current_slot_state_for_emission`, what `Engine::emit_current_
+    // blocking` calls — bypasses `slot_state_if_changed`'s dedup gate
+    // entirely) must actually feed the shared sampler, not silently fall
+    // outside it. Proven directly against the queue's own recorded
+    // sample (private-field inspection, same test module) — first-ever
+    // sample, so a warning is impossible by construction either way
+    // (`observe_emission_for_ttl_restart`'s `None` branch), which is
+    // exactly the "without warning" half of this test's name.
+    #[test]
+    fn unconditional_page_load_reemit_participates_in_ttl_restart_sampling() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue(event("a", Priority::Medium, 8), t0).unwrap();
+        assert!(
+            q.ttl_sample.is_none(),
+            "nothing observed by the sampler yet"
+        );
+
+        let emitted = q.current_slot_state_for_emission(t0);
+        let (id, ttl_ms, remaining_ms) = match emitted {
+            SlotState::Showing {
+                id,
+                ttl_ms,
+                remaining_ms,
+                ..
+            } => (id, ttl_ms, remaining_ms),
+            SlotState::Empty => panic!("expected a showing slot"),
+        };
+        let sample = q
+            .ttl_sample
+            .as_ref()
+            .expect("the unconditional route must record a sample, not bypass the detector");
+        assert_eq!(sample.item_id, id);
+        assert_eq!(sample.ttl_ms, ttl_ms);
+        assert_eq!(sample.remaining_ms, remaining_ms);
+
+        // a second call shortly after keeps updating it, consistently —
+        // proving this is the live sampling route, not a one-shot fluke.
+        let emitted2 = q.current_slot_state_for_emission(t0 + Duration::from_millis(50));
+        let (id2, ttl_ms2, remaining_ms2) = match emitted2 {
+            SlotState::Showing {
+                id,
+                ttl_ms,
+                remaining_ms,
+                ..
+            } => (id, ttl_ms, remaining_ms),
+            SlotState::Empty => panic!("expected a showing slot"),
+        };
+        let sample2 = q.ttl_sample.as_ref().unwrap();
+        assert_eq!(sample2.item_id, id2);
+        assert_eq!(sample2.ttl_ms, ttl_ms2);
+        assert_eq!(sample2.remaining_ms, remaining_ms2);
     }
 
     mod hover_hold_properties {

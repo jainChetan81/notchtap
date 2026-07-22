@@ -141,20 +141,26 @@ body {
    square, or it's the double-curve gap bug documented above.
 
    Keyed on actual DOM presence of `.below-block` (`:has()`), NOT on the
-   `.idle`/priority class: that class is computed off the LIVE `showing`
-   flag (StatusRailCard.tsx), which flips a render ahead of
-   `renderedShowing` — the delayed value that actually gates
-   `.below-block`'s own mount/unmount (useDelayedSwap's whole point is to
-   keep exiting content on screen after the live state has already moved
-   on). During a showing-to-idle exit, `.card-assembly` already carries
-   `.idle` while `.below-block` is still mounted and fading out; keying
-   rounding off the class would round the flanks AND leave the still-
-   mounted below-block rounded too — both at once, the exact bug this
-   rule exists to avoid. Reading real DOM structure instead sidesteps the
+   `.idle`/priority class. Reading real DOM structure sidesteps any
    live-vs-delayed mismatch entirely: the flanks are rounded exactly when
    `.below-block` is genuinely absent, in every state, with no separate
    timing to keep in sync. `:has()` has shipped in Safari/WebKit since
-   15.4 (2022), well within this app's WKWebView target. */
+   15.4 (2022), well within this app's WKWebView target.
+
+   plan 107 Step B evaluated dropping this in favor of keying off the
+   priority/`.idle` class directly (StatusRailCard.tsx's `geometryPriority`
+   now tracks `renderedShowing` — i.e. `.below-block`'s own mount
+   condition — for the EXIT direction, so that half of the original
+   mismatch this comment used to describe is gone). It's still required,
+   for the OTHER (entrance) direction: on an idle->showing promotion the
+   shell's class flips to the priority class on the SAME render (reading
+   the live slot, by design — the width-leads-content choreography), but
+   `.below-block` itself is still absent for the whole 220ms delayed-swap
+   window that follows (confirmed empirically: immediately after a
+   promotion, `.card-assembly.high` and no `.below-block` coexist). A
+   class-keyed rule would unround the flanks in that window even though
+   there is no below-block yet to justify it — so DOM presence remains
+   the only condition that's correct in BOTH directions. */
 .card-assembly:not(:has(.below-block)) .flank-left {
   border-bottom-left-radius: var(--card-radius, 14px);
   transition: border-radius 400ms ease;
@@ -267,6 +273,22 @@ body {
    property; folded away as a duplicate now that both live in the same
    block.)
 
+   plan 107: the FULL stacking contract, low to high — card background
+   (bottom), burst/ring effects at z-index 0 (over the surface, briefly),
+   `.card-content` at z-index 1 (its own rule below, `:card-content`)
+   above BOTH. The z-index-0 argument above only ever proved "over the
+   background" — it never addressed the burst painting over the card's
+   TEXT, which it did (title/body unreadable for roughly the first half
+   of the animation). `.card-content` now gets `position: relative;
+   z-index: 1` specifically so it wins paint order against this
+   non-positioned-by-default pseudo-element. Peak burst opacity is also
+   cut (core alpha 0.95 -> 0.55, the `goal-burst` keyframe capped at 0.7
+   instead of 1) so even the brief top layer never fully washes the card
+   out. jsdom can't compute cascade from stylesheets, so this is pinned
+   at the string level (both this file and the mirror) plus a DOM check
+   that `.card-content` mounts during a goal celebration —
+   `celebrationStacking.test.ts`, cross-referenced here by name.
+
    plan 091: these effects stay on the outer `.card-assembly` (not
    below-block) — a full-card celebration reads better than one confined
    to just the content block, and it exactly preserves the pre-091
@@ -282,7 +304,10 @@ body {
   z-index: 0;
   border-radius: 50%;
   background:
-    radial-gradient(circle at 50% 50%, rgba(255, 224, 130, 0.95), transparent 40%),
+    /* plan 107: bright core 0.95 -> 0.55 — the brightest layer, dialed
+       back so the burst never fully washes out the card text it now sits
+       under (z-index 1, see the comment above). */
+    radial-gradient(circle at 50% 50%, rgba(255, 224, 130, 0.55), transparent 40%),
     radial-gradient(circle at 22% 32%, rgba(255, 107, 87, 0.9), transparent 12%),
     radial-gradient(circle at 78% 30%, rgba(120, 224, 200, 0.85), transparent 12%),
     radial-gradient(circle at 30% 74%, rgba(124, 157, 245, 0.85), transparent 12%),
@@ -335,17 +360,20 @@ body {
   }
 }
 
+/* plan 107: peak opacity capped at 0.7 (was 1) — same proportional shape
+   (35%/70% stops scaled by the same ~0.7 factor: 1->0.7, 0.85->0.6), just
+   never bright enough to obscure `.card-content` (z-index 1) above it. */
 @keyframes goal-burst {
   0% {
     opacity: 0;
     transform: scale(0.5) rotate(-8deg);
   }
   35% {
-    opacity: 1;
+    opacity: 0.7;
     transform: scale(1.15) rotate(0deg);
   }
   70% {
-    opacity: 0.85;
+    opacity: 0.6;
     transform: scale(1.4) rotate(4deg);
   }
   100% {
@@ -454,7 +482,16 @@ body {
    replays the enter animation) only when the swap key changes; the
    useDelayedSwap hook (useDelayedSwap.ts) adds `.swap-exit` for the
    duration of the exit. */
+/* plan 107: `position: relative; z-index: 1` is the decisive stacking
+   declaration against the celebration burst (`.card-assembly::after`,
+   `z-index: 0`, above) — `position: relative` alone leaves `z-index:
+   auto`, and an auto-z-index positioned box still paints below an
+   earlier `z-index: 0` sibling in the same stacking context (source
+   order alone doesn't win once ANY sibling declares a real z-index).
+   see the fuller contract comment on `.card-assembly::after` above. */
 .card-content {
+  position: relative;
+  z-index: 1;
   animation: card-enter-showing 220ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .card-content.idle {

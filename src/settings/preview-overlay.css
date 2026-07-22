@@ -149,7 +149,9 @@
   z-index: 0;
   border-radius: 50%;
   background:
-    radial-gradient(circle at 50% 50%, rgba(255, 224, 130, 0.95), transparent 40%),
+    /* plan 107 (mirror law): bright core 0.95 -> 0.55 — see styles.css's
+       fuller contract comment on this same rule. */
+    radial-gradient(circle at 50% 50%, rgba(255, 224, 130, 0.55), transparent 40%),
     radial-gradient(circle at 22% 32%, rgba(255, 107, 87, 0.9), transparent 12%),
     radial-gradient(circle at 78% 30%, rgba(120, 224, 200, 0.85), transparent 12%),
     radial-gradient(circle at 30% 74%, rgba(124, 157, 245, 0.85), transparent 12%),
@@ -158,6 +160,17 @@
     radial-gradient(circle at 50% 50%, rgba(255, 107, 87, 0.55), transparent 68%);
   opacity: 0;
   pointer-events: none;
+}
+
+/* plan 107: born here — the settings preview never had a `.card-content`
+   rule of its own before (it only inherited the swap-key-driven
+   card-content DOM structure without any preview-side CSS for it). Same
+   stacking contract as styles.css's `.card-content` (mirror law): the
+   preview must also keep its content above its own celebration burst
+   (`.appearance-preview .card-assembly::after` above, `z-index: 0`). */
+.appearance-preview .card-content {
+  position: relative;
+  z-index: 1;
 }
 
 .appearance-preview .card-assembly.pulse-goal {
@@ -199,17 +212,19 @@
   }
 }
 
+/* plan 107 (mirror law): peak capped at 0.7 — see styles.css's comment
+   on this same keyframe. */
 @keyframes goal-burst {
   0% {
     opacity: 0;
     transform: scale(0.5) rotate(-8deg);
   }
   35% {
-    opacity: 1;
+    opacity: 0.7;
     transform: scale(1.15) rotate(0deg);
   }
   70% {
-    opacity: 0.85;
+    opacity: 0.6;
     transform: scale(1.4) rotate(4deg);
   }
   100% {
