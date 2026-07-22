@@ -242,87 +242,15 @@
    styling is now utilities (border-destructive/40, bg-destructive/10,
    text-destructive per the token table's "error" row). */
 
-/* plan 109: now a real <table> (was a role="table" div grid) —
-   thead/tbody/tr/th/td replace the emulated row/cell roles. Each
-   shortcut is one <tr> of three side-by-side cells (Keys/Action/
-   Status) instead of the old two-column grid with a row-spanning kbd;
-   border-collapse plus per-cell padding keeps the same row height and
-   divider rhythm. */
-.shortcut-table {
-  width: 100%;
-  margin: 0 -13px;
-  border-collapse: collapse;
-}
-
-.shortcut-table thead th {
-  padding: 0 13px 7px;
-  color: var(--text-muted);
-  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
-  font-size: var(--fs-caption);
-  font-weight: 700;
-  font-style: normal;
-  line-height: 1;
-  text-align: left;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
-.shortcut-row > * {
-  min-height: 54px;
-  padding: 9px 13px;
-  border-bottom: 1px solid var(--divider-soft);
-  text-align: left;
-  font-weight: normal;
-  vertical-align: middle;
-}
-
-.shortcut-row:last-child > * {
-  border-bottom: 0;
-}
-
-.shortcut-row kbd {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 25px;
-  padding: 0 5px;
-  border: 1px solid #363a42;
-  border-bottom-color: #4a4e57;
-  border-radius: 5px;
-  background: #15171b;
-  color: #d8dade;
-  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
-  font-size: var(--fs-body);
-  font-weight: 600;
-  font-style: normal;
-  line-height: 1;
-  box-shadow: 0 1px 0 #24272d;
-}
-
-.shortcut-action {
-  color: #d3d5d9;
-  font-size: var(--fs-secondary);
-  font-weight: 560;
-  line-height: 1.3;
-}
-
-.shortcut-status {
-  display: inline-block;
-  width: max-content;
-  padding: 2px 4px;
-  border: 1px solid #30333a;
-  border-radius: 3px;
-  color: var(--text-muted);
-  font-size: var(--fs-caption);
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.shortcut-status.active {
-  border-color: #575c65;
-  color: #c8cbd0;
-}
+/* plan 112 Step 4 (Shortcuts): .shortcut-table(+thead th)/.shortcut-row
+   (+last-child/kbd)/.shortcut-action/.shortcut-status(+.active) (Step 0
+   CSSOM rows 108-115) -> utilities directly on the still-native
+   table/thead/tbody/tr/th/td/kbd elements at ShortcutsSection's call
+   site (Plan 109's real-table semantics test is unaffected — no
+   wrapper component, no shadcn Table primitive generated). The classes
+   stay as stable hooks on those elements even though every property
+   they used to carry (including font-mono, now given directly as a
+   `font-mono` utility at each call site) is now a utility duplicate. */
 
 /* plan 112 Step 3: .loading-state and .settings-footer (+ its nested
    .action-status override, + .footer-button, folded into the shadcn
