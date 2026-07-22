@@ -77,6 +77,13 @@
   width: var(--cw, min(max(calc(400px * var(--card-scale)), calc(var(--notchtap-cutout-width, 200px) + (2 * 60px * var(--card-scale)))), 100%));
   margin: 0 auto;
   isolation: isolate;
+  /* Depth (boring.notch import #4): a single drop-shadow on the COMPOSITE
+     notch shape (drop-shadow follows the actual painted flanks+cutout+
+     below-block alpha, so no seams between the grid cells the way per-cell
+     box-shadows would). Lifts the HUD notch off the wallpaper; in notch
+     mode it shadows the part that extends below the hardware cutout. Only
+     recomputes during animation — idle is cached, so no idle-CPU cost. */
+  filter: drop-shadow(0 7px 18px rgba(0, 0, 0, 0.5));
   /* plan 102: +25% pacing, operator feedback */
   transition: width 400ms var(--ease-notchtap);
 }
@@ -178,11 +185,11 @@
    the only condition that's correct in BOTH directions. */
 .card-root .card-assembly:not(:has(.below-block)) .flank-left {
   border-bottom-left-radius: var(--card-radius, 14px);
-  transition: border-radius 400ms ease;
+  transition: border-radius 260ms var(--ease-notchtap);
 }
 .card-root .card-assembly:not(:has(.below-block)) .flank-right {
   border-bottom-right-radius: var(--card-radius, 14px);
-  transition: border-radius 400ms ease;
+  transition: border-radius 260ms var(--ease-notchtap);
 }
 
 /* the notch cutout itself: real hardware empty space in notch mode
@@ -216,7 +223,8 @@
      the hardware notch (plan 091 decision; re-scoped by plan 098). */
   background: rgba(0, 0, 0, var(--card-opacity, 1));
   color: #f5f7fa;
-  box-shadow: 0 14px 28px rgba(0, 0, 0, 0.5);
+  /* depth now comes from the single `.card-assembly` drop-shadow above
+     (composite shape, no double shadow) — removed the per-block box-shadow. */
   /* the cutout's base corners stay square at this seam too (rounding law
      above) — only the two BOTTOM corners round; no top-radius here. */
   border-bottom-left-radius: var(--card-radius, 14px);
@@ -1467,13 +1475,15 @@
   from { height: 100px; }
   to { height: 0; }
 }
+/* boring.notch import #8: content slides down from the top as it fades in
+   (asymmetric enter), instead of just appearing — reads far more premium. */
 @keyframes idle-peek-fade-in {
-  from { opacity: 0; }
-  to { opacity: 1; }
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
 }
 @keyframes idle-peek-fade-out {
-  from { opacity: 1; }
-  to { opacity: 0; }
+  from { opacity: 1; transform: translateY(0); }
+  to { opacity: 0; transform: translateY(-6px); }
 }
 @media (prefers-reduced-motion: reduce) {
   .card-root .below-block.idle-peek.open,
