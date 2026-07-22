@@ -24,18 +24,65 @@ import type { StatusState } from "../useStatusState";
 // themselves: an indicator, never a button. Retires the old "News paused"
 // idle text remnant that 091 already removed (IdleView) — this is its
 // replacement.
+//
+// plan 110 (Step D): each dot now carries `role="img"` + a truthful
+// `aria-label` and a non-color configured-state SHAPE, both independent of
+// the pause-luminance (active/dim) treatment above. The label/shape read
+// off the RAW config flag (`status.<source>.enabled`), never the
+// pause-suppressed `football`/`news`/`weather` booleans below — those
+// already fold in `!paused`, so while paused every dot would otherwise
+// announce "disabled" even for a source that's actually configured on, a
+// false statement about CONFIGURATION sitting right next to the pause
+// glyph's own (true) statement about the pause. One fact per element: the
+// dot announces configuration, the pause glyph announces the pause. A
+// `status` prop that's entirely absent (settings preview / older callers,
+// still loading) is NOT coerced to "disabled" — it gets its own third
+// state, "status unavailable", since "off" and "unknown" are different
+// facts. Visually: enabled = filled circle (the pre-091 default shape,
+// unchanged), disabled = hollow square, unavailable = hollow circle — same
+// 9x9 footprint throughout (styles.css); pause still only changes
+// luminance (active/dim), never this shape.
+function configuredLabel(name: string, configured: boolean | undefined): string {
+  if (configured === undefined) {
+    return `${name} — status unavailable`;
+  }
+  return configured ? `${name} — enabled` : `${name} — disabled`;
+}
+
+function shapeClass(configured: boolean | undefined): string {
+  if (configured === undefined) {
+    return "shape-unavailable";
+  }
+  return configured ? "shape-enabled" : "shape-disabled";
+}
+
 export function StatusDots({ status }: { status?: StatusState }) {
   const paused = status?.paused ?? false;
-  const football = !paused && (status?.football.enabled ?? false);
-  const news = !paused && (status?.news.enabled ?? false);
-  const weather = !paused && (status?.weather.enabled ?? false);
+  const footballConfigured = status ? status.football.enabled : undefined;
+  const newsConfigured = status ? status.news.enabled : undefined;
+  const weatherConfigured = status ? status.weather.enabled : undefined;
+  const football = !paused && (footballConfigured ?? false);
+  const news = !paused && (newsConfigured ?? false);
+  const weather = !paused && (weatherConfigured ?? false);
   return (
     <span className="status-dots">
-      <span className={`status-dot football${football ? " active" : " dim"}`} />
-      <span className={`status-dot news${news ? " active" : " dim"}`} />
-      <span className={`status-dot weather${weather ? " active" : " dim"}`} />
+      <span
+        className={`status-dot football ${shapeClass(footballConfigured)}${football ? " active" : " dim"}`}
+        role="img"
+        aria-label={configuredLabel("Football", footballConfigured)}
+      />
+      <span
+        className={`status-dot news ${shapeClass(newsConfigured)}${news ? " active" : " dim"}`}
+        role="img"
+        aria-label={configuredLabel("News", newsConfigured)}
+      />
+      <span
+        className={`status-dot weather ${shapeClass(weatherConfigured)}${weather ? " active" : " dim"}`}
+        role="img"
+        aria-label={configuredLabel("Weather", weatherConfigured)}
+      />
       {paused && (
-        <span className="pause-glyph" aria-hidden="true">
+        <span className="pause-glyph" role="img" aria-label="Notifications paused">
           <span />
           <span />
         </span>

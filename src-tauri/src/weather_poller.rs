@@ -151,6 +151,14 @@ pub fn diff_weather(
     let summary = WeatherSummary {
         temp_display: format!("{:.0}°", response.current.temperature_2m),
         condition: condition.to_string(),
+        // plan 110 (Step B): `is_day == 1` — production traffic reaches
+        // this point only after `fetch_forecast` has already validated
+        // `is_day` is 0 or 1 (`validate_is_day` below), so this is a
+        // straight boolean read, not a fallback/default. Fixture-driven
+        // unit tests below call `diff_weather` directly (bypassing that
+        // validation) specifically to pin the 0->false/1->true mapping in
+        // isolation.
+        is_day: is_day == 1,
     };
 
     let mut events = Vec::new();
@@ -341,13 +349,36 @@ pub fn spawn_weather_poller(
     });
 }
 
+/// plan 110 (Step B): Open-Meteo's `is_day` is documented as strictly 0/1
+/// (`OpenMeteoCurrent::is_day`'s own doc comment) — anything else means
+/// the upstream contract broke. Pure and unit-testable on its own,
+/// deliberately NOT folded into `diff_weather` (that function stays a
+/// fixture-driven pure transform with no `Result`, called both by
+/// production polling AFTER this gate and directly by unit tests that
+/// want to exercise the 0/1 mapping in isolation without also wiring up
+/// this validation).
+fn validate_is_day(raw: u8) -> anyhow::Result<()> {
+    if raw == 0 || raw == 1 {
+        Ok(())
+    } else {
+        anyhow::bail!("unexpected is_day value: {raw} (expected 0 or 1)")
+    }
+}
+
 async fn fetch_forecast(client: &reqwest::Client, url: &str) -> anyhow::Result<OpenMeteoResponse> {
     let response = client.get(url).send().await?;
     if response.status() != reqwest::StatusCode::OK {
         anyhow::bail!("unexpected http status {}", response.status());
     }
     let body = crate::net::read_body_capped(response, MAX_RESPONSE_BYTES).await?;
-    let parsed = serde_json::from_slice(&body)?;
+    let parsed: OpenMeteoResponse = serde_json::from_slice(&body)?;
+    // plan 110 (Step B): an out-of-contract is_day value is treated as a
+    // malformed response — the SAME `Err` branch in the outer poll loop
+    // (spawn_weather_poller) that already handles an unparseable body or
+    // a non-200 status: logged, backed off, and the previous ambient
+    // summary is left in place rather than repainting with a coerced or
+    // wrong day/night guess.
+    validate_is_day(parsed.current.is_day)?;
     Ok(parsed)
 }
 
@@ -412,17 +443,51 @@ mod tests {
     fn fixture_parses_into_the_expected_summary() {
         let (summary, events, _) = diff(&fixture(), WeatherAlertState::default());
         // 26.7°C rounds to the nearest integer at format time ("27°"),
-        // weather_code 3 maps to "Cloudy".
+        // weather_code 3 maps to "Cloudy", and the fixture's is_day: 1
+        // (06:30 local, daytime) carries through as `true`.
         assert_eq!(
             summary,
             WeatherSummary {
                 temp_display: "27°".to_string(),
                 condition: "Cloudy".to_string(),
+                is_day: true,
             }
         );
         // the real fixture's near-term rain probabilities are all under
         // the 60% threshold and 26.7°C is between 14/36 — no alerts.
         assert!(events.is_empty());
+    }
+
+    // --- is_day -> WeatherSummary.is_day (plan 110 Step B) ---
+
+    #[test]
+    fn is_day_zero_carries_as_false_on_the_ambient_summary() {
+        let mut response = fixture();
+        response.current.is_day = 0;
+        let (summary, _, _) = diff(&response, WeatherAlertState::default());
+        assert!(!summary.is_day);
+    }
+
+    #[test]
+    fn is_day_one_carries_as_true_on_the_ambient_summary() {
+        let mut response = fixture();
+        response.current.is_day = 1;
+        let (summary, _, _) = diff(&response, WeatherAlertState::default());
+        assert!(summary.is_day);
+    }
+
+    // --- validate_is_day: the malformed-response gate (plan 110 Step B) ---
+
+    #[test]
+    fn validate_is_day_accepts_zero_and_one() {
+        assert!(validate_is_day(0).is_ok());
+        assert!(validate_is_day(1).is_ok());
+    }
+
+    #[test]
+    fn validate_is_day_rejects_any_other_numeric_value() {
+        assert!(validate_is_day(2).is_err());
+        assert!(validate_is_day(255).is_err());
     }
 
     // --- day/night (plan 082): is_day crosses the wire as Open-Meteo's

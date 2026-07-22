@@ -503,22 +503,34 @@ describe("StatusRailCard", () => {
     expect(container.querySelector(".below-block.news-shade.cat-generic")).not.toBeNull();
   });
 
-  it("renders the published-time meta in the compact news card when publishedAtMs is set", () => {
+  // plan 110 (Step C): flips the OLD contract this test used to pin (a
+  // `.pub-meta` "published HH:MM" node duplicating the relative age in
+  // the same compact row). The compact row now shows exactly one time
+  // expression — the relative age — and `.pub-meta` is gone entirely
+  // (orphaned CSS removed from both styles.css and preview-overlay.css).
+  // The expanded Manifest's own "published HH:MM" segment is untouched —
+  // see the dedicated pin below.
+  it("renders exactly one time expression (relative age) in the compact news card's meta row — no duplicate published time", () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(2_000_000_000_000);
     const { container } = render(<StatusRailCard slot={{ ...NEWS, expanded: false }} />);
 
-    const pubMeta = container.querySelector(".pub-meta");
-    expect(pubMeta).not.toBeNull();
-    expect(pubMeta?.textContent).toBe("published 08:58");
-    // the meta is the last child of the meta row, pushed right by auto margin
-    // plan 092: `.pills` renamed `.notif-meta-row` (item 10, chip
-    // convergence).
-    const metaRow = container.querySelector(".notif-meta-row");
-    expect(metaRow?.lastElementChild?.classList.contains("pub-meta")).toBe(true);
+    const metaRow = container.querySelector(".notif-meta-row") as HTMLElement;
+    expect(metaRow).not.toBeNull();
+    const ageNode = metaRow.querySelector(".notif-time-inline");
+    expect(ageNode).not.toBeNull();
+    expect(ageNode?.textContent).toBe("5m ago");
+    expect(container.querySelector(".pub-meta")).toBeNull();
+    // the age node is the only time expression in the row — it's also
+    // the row's last child now that .pub-meta is gone.
+    expect(metaRow.lastElementChild).toBe(ageNode);
 
     now.mockRestore();
   });
 
+  // plan 110 (Step C): the pin this plan's own comment promises —
+  // Manifest's expanded "published HH:MM" segment must survive the
+  // compact-row deletion above unchanged, so a future edit can't
+  // "simplify" the compact fix into deleting the expanded rendering too.
   it("renders the expanded news manifest as a full-width summary with an inline meta row", () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(2_000_000_000_000);
     const { container } = render(<StatusRailCard slot={{ ...NEWS, link: null }} />);
@@ -1218,7 +1230,7 @@ describe("StatusRailCard", () => {
       waiting: 0,
       football: { enabled: false, live: null },
       news: { enabled: false },
-      weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy" } },
+      weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy", isDay: true } },
       media: { enabled: false, current: null },
     };
 

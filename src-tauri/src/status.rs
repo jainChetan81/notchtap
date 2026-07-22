@@ -50,11 +50,25 @@ pub struct LiveMatchSummary {
 /// `condition` the WMO-code word ("Cloudy"). The frontend concatenates
 /// them (`{tempDisplay} {condition}`), same shape as football's
 /// `{live.label} · {live.minute}`.
+///
+/// plan 110 (Step B): `is_day` rides along too — Open-Meteo's own day/
+/// night flag (already parsed by `weather_poller.rs` for the alert card's
+/// `wx-is-day` marker, plan 082) now also reaches the ambient channel, so
+/// the idle hover-peek's mood art no longer has to guess from the wall
+/// clock. Plain `bool` here (unlike `OpenMeteoCurrent.is_day: u8`,
+/// documented there): this struct is the wire's OWN presentation shape,
+/// not a raw API passthrough, and every other field on it is already
+/// display-formatted the same way. This field is NOT continuously
+/// varying (flips at most twice a day, CLAUDE.md's `SlotState::dedup_eq`
+/// rule doesn't apply) — it belongs in ordinary derived `PartialEq`, and
+/// a flip is a genuine content change the change-guard below must repaint
+/// on.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct WeatherSummary {
     pub temp_display: String,
     pub condition: String,
+    pub is_day: bool,
 }
 
 /// "News paused" in the idle rail means `enabled == false`: the polling
@@ -234,6 +248,7 @@ mod tests {
         WeatherSummary {
             temp_display: "27°".to_string(),
             condition: "Cloudy".to_string(),
+            is_day: true,
         }
     }
 
@@ -288,6 +303,12 @@ mod tests {
         assert_eq!(json["weather"]["enabled"], true);
         assert_eq!(json["weather"]["current"]["tempDisplay"], "27°");
         assert_eq!(json["weather"]["current"]["condition"], "Cloudy");
+        // plan 110 (Step B): the wire carries `isDay` (camelCase), never
+        // the rust-side `is_day` spelling — a serialize-shape regression
+        // here would silently break the frontend's runtime guard, which
+        // checks for `isDay` specifically (useStatusState.ts).
+        assert_eq!(json["weather"]["current"]["isDay"], true);
+        assert!(json["weather"]["current"].get("is_day").is_none());
     }
 
     #[test]
@@ -310,6 +331,49 @@ mod tests {
             status_state_if_changed(&mut last, status(Some(live_summary()))),
             None
         );
+    }
+
+    // plan 110 (Step B): `is_day` is not continuously-varying — this pins
+    // that a lone day/night flip is treated as an ordinary content change
+    // by the SAME derived-`PartialEq` guard above (no `dedup_eq`-style
+    // special case needed, no tick-storm from re-polls that don't change
+    // it either).
+    #[test]
+    fn is_day_flip_emits_once_then_stays_silent() {
+        let mut last = None;
+        let mut day = status(None);
+        day.weather = WeatherStatus {
+            enabled: true,
+            current: Some(WeatherSummary {
+                temp_display: "27°".to_string(),
+                condition: "Cloudy".to_string(),
+                is_day: true,
+            }),
+        };
+        // first sighting emits
+        assert_eq!(
+            status_state_if_changed(&mut last, day.clone()),
+            Some(day.clone())
+        );
+        // identical weather (including is_day): silent
+        assert_eq!(status_state_if_changed(&mut last, day.clone()), None);
+
+        let mut night = day.clone();
+        night.weather = WeatherStatus {
+            enabled: true,
+            current: Some(WeatherSummary {
+                temp_display: "27°".to_string(),
+                condition: "Cloudy".to_string(),
+                is_day: false,
+            }),
+        };
+        // is_day alone flipping emits once
+        assert_eq!(
+            status_state_if_changed(&mut last, night.clone()),
+            Some(night.clone())
+        );
+        // repeating the flipped value: silent again
+        assert_eq!(status_state_if_changed(&mut last, night), None);
     }
 
     fn generic_event() -> Event {

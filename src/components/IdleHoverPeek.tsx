@@ -47,20 +47,6 @@ import type {
 // hovering."
 const CLOSE_DELAY_MS = 260;
 
-// plan 093: `weatherArtFor` (082, reused per this plan's own citation)
-// needs a day/night flag the ambient `WeatherSummary` wire shape doesn't
-// carry (`status.rs`'s `WeatherSummary` is `{ tempDisplay, condition }`
-// only — unlike the weather ALERT card's `wx-is-day` detail marker, there
-// is no real sunrise/sunset value on this channel, and extending the wire
-// shape is out of this plan's scope, `src-tauri/src/status.rs` not being
-// among the in-scope files). A plain local-hour heuristic stands in
-// instead — less precise than the ALERT card's rust-computed flag, but a
-// reasonable approximation for a purely decorative mood scene.
-function isDaytimeNow(): boolean {
-  const hour = new Date().getHours();
-  return hour >= 6 && hour < 18;
-}
-
 // plan 105 (Step B): split from the old combined `WeatherPeekScene` so the
 // art (this component) can sit BEHIND the media row instead of being
 // replaced by it — operator feedback wanted the weather backdrop kept once
@@ -68,8 +54,17 @@ function isDaytimeNow(): boolean {
 // decoration, same as the ALERT card's own mood layer; the glyph rides
 // along here (not in the readout) because it's part of the art, not the
 // data — same z-index tier (0) as the mood gradient it's layered with.
+//
+// plan 110 (Step B): `weather.isDay` now rides the wire itself
+// (status.rs's `WeatherSummary.is_day`) — the old local-hour heuristic
+// (`isDaytimeNow()`, wall-clock based, wrong for coordinates outside the
+// machine's timezone) is gone; this is rust's own day/night read, the
+// same source the weather ALERT card's `wx-is-day` marker already used.
+// Same binary serves both rust and this frontend (a Tauri app, not two
+// deployables that could skew), so there is no "old rust / new frontend"
+// window to guard with a clock fallback.
 function WeatherPeekBackdrop({ weather }: { weather: WeatherSummary }) {
-  const art = weatherArtFor(weather.condition, isDaytimeNow());
+  const art = weatherArtFor(weather.condition, weather.isDay);
   const backdropClass = ["wx-peek-backdrop", "wx-card", art.moodClass, art.textureClass]
     .filter(Boolean)
     .join(" ");

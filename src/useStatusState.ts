@@ -14,9 +14,15 @@ export type LiveMatchSummary = {
 // plan 040 Part B: the ambient weather chip's data, already display-
 // formatted rust-side ("27°" + "Cloudy") — the chip concatenates them,
 // same shape as football's `{live.label} · {live.minute}`.
+//
+// plan 110 (Step B): `isDay` rides along too — Open-Meteo's own day/night
+// flag (status.rs's `WeatherSummary.is_day`), so the idle hover-peek's
+// mood art keys off the real value instead of guessing from the wall
+// clock (the old `isDaytimeNow()` in IdleHoverPeek.tsx, now deleted).
 export type WeatherSummary = {
   tempDisplay: string;
   condition: string;
+  isDay: boolean;
 };
 
 // plan 104: the ambient now-playing snapshot. Unlike WeatherSummary
@@ -81,7 +87,15 @@ function isValidWeatherSummary(v: unknown): v is WeatherSummary {
     return false;
   }
   const obj = v as Record<string, unknown>;
-  return typeof obj.tempDisplay === "string" && typeof obj.condition === "string";
+  // plan 110 (Step B): every field checked, `isDay` included — a payload
+  // missing or mistyping it must fall back to FALLBACK_STATUS whole, not
+  // reach weatherArtFor as `undefined` (a silently wrong night/day guess
+  // instead of a rejected payload).
+  return (
+    typeof obj.tempDisplay === "string" &&
+    typeof obj.condition === "string" &&
+    typeof obj.isDay === "boolean"
+  );
 }
 
 // plan 104: every field checked, matching isValidWeatherSummary's

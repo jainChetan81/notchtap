@@ -1,4 +1,4 @@
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { StatusState } from "../useStatusState";
 import { StatusDots } from "./StatusDots";
@@ -12,7 +12,7 @@ const ALL_ON: StatusState = {
   waiting: 3,
   football: { enabled: true, live: { label: "Arsenal 2–0 Chelsea", minute: "45'" } },
   news: { enabled: true },
-  weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy" } },
+  weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy", isDay: true } },
   media: { enabled: false, current: null },
 };
 
@@ -130,6 +130,92 @@ describe("StatusDots", () => {
     it("omits the pause glyph when status is omitted (no data to say paused)", () => {
       const { container } = render(<StatusDots />);
       expect(container.querySelector(".pause-glyph")).toBeNull();
+    });
+  });
+
+  // plan 110 (Step D): each dot is `role="img"` + a truthful `aria-label`,
+  // and carries a non-color shape class independent of active/dim.
+  describe("accessible names + non-color shapes (plan 110)", () => {
+    it("names every dot 'enabled' and shapes it filled when every source is enabled", () => {
+      render(<StatusDots status={ALL_ON} />);
+      const football = screen.getByRole("img", { name: "Football — enabled" });
+      const news = screen.getByRole("img", { name: "News — enabled" });
+      const weather = screen.getByRole("img", { name: "Weather — enabled" });
+      for (const dot of [football, news, weather]) {
+        expect(dot.classList.contains("shape-enabled")).toBe(true);
+      }
+    });
+
+    it("names every dot 'disabled' and shapes it hollow when every source is disabled", () => {
+      render(<StatusDots status={ALL_OFF} />);
+      const football = screen.getByRole("img", { name: "Football — disabled" });
+      const news = screen.getByRole("img", { name: "News — disabled" });
+      const weather = screen.getByRole("img", { name: "Weather — disabled" });
+      for (const dot of [football, news, weather]) {
+        expect(dot.classList.contains("shape-disabled")).toBe(true);
+      }
+    });
+
+    it("names every dot 'status unavailable' and shapes it hollow-circle when status is omitted", () => {
+      render(<StatusDots />);
+      const football = screen.getByRole("img", { name: "Football — status unavailable" });
+      const news = screen.getByRole("img", { name: "News — status unavailable" });
+      const weather = screen.getByRole("img", { name: "Weather — status unavailable" });
+      for (const dot of [football, news, weather]) {
+        expect(dot.classList.contains("shape-unavailable")).toBe(true);
+      }
+    });
+
+    it("reads each dot's name/shape off its own source independently", () => {
+      render(
+        <StatusDots
+          status={{
+            paused: false,
+            waiting: 0,
+            football: { enabled: true, live: null },
+            news: { enabled: false },
+            weather: { enabled: true, current: null },
+            media: { enabled: false, current: null },
+          }}
+        />,
+      );
+      expect(screen.getByRole("img", { name: "Football — enabled" })).toBeTruthy();
+      expect(screen.getByRole("img", { name: "News — disabled" })).toBeTruthy();
+      expect(screen.getByRole("img", { name: "Weather — enabled" })).toBeTruthy();
+    });
+
+    // The core bug this plan fixes: the label must come from the RAW
+    // config flag, never the pause-suppressed display booleans — while
+    // paused, an otherwise-enabled source is still truthfully "enabled"
+    // (dim luminance + its configured shape retained), and the pause
+    // fact lives exclusively on the pause glyph, never on a dot's label.
+    it("keeps a dot labeled 'enabled' (dim, configured shape retained) while paused — the pause fact lives only on the glyph", () => {
+      const { container } = render(
+        <StatusDots
+          status={{
+            paused: true,
+            waiting: 0,
+            football: { enabled: true, live: null },
+            news: { enabled: false },
+            weather: { enabled: true, current: null },
+            media: { enabled: false, current: null },
+          }}
+        />,
+      );
+      const football = screen.getByRole("img", { name: "Football — enabled" });
+      expect(football.classList.contains("dim")).toBe(true);
+      expect(football.classList.contains("active")).toBe(false);
+      expect(football.classList.contains("shape-enabled")).toBe(true);
+
+      const glyph = screen.getByRole("img", { name: "Notifications paused" });
+      expect(glyph.classList.contains("pause-glyph")).toBe(true);
+      expect(container.querySelectorAll('[aria-label="Notifications paused"]')).toHaveLength(1);
+
+      // no dot's accessible name ever mentions "paused" — that fact is
+      // exclusively the glyph's.
+      for (const dot of Array.from(container.querySelectorAll(".status-dot"))) {
+        expect(dot.getAttribute("aria-label")?.toLowerCase()).not.toContain("paused");
+      }
     });
   });
 });

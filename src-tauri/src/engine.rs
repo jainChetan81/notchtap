@@ -923,6 +923,7 @@ mod tests {
         WeatherSummary {
             temp_display: temp.to_string(),
             condition: "Cloudy".to_string(),
+            is_day: true,
         }
     }
 

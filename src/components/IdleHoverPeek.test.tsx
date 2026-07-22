@@ -23,7 +23,7 @@ const WEATHER_STATUS: StatusState = {
   waiting: 0,
   football: { enabled: false, live: null },
   news: { enabled: false },
-  weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy" } },
+  weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy", isDay: true } },
   media: { enabled: false, current: null },
 };
 
@@ -32,7 +32,7 @@ const LIVE_MATCH_STATUS: StatusState = {
   waiting: 0,
   football: { enabled: true, live: { label: "MTL 1-0 TOR", minute: "63'" } },
   news: { enabled: false },
-  weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy" } },
+  weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy", isDay: true } },
   media: { enabled: false, current: null },
 };
 
@@ -61,7 +61,7 @@ const MEDIA_STATUS: StatusState = {
   waiting: 0,
   football: { enabled: false, live: null },
   news: { enabled: false },
-  weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy" } },
+  weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy", isDay: true } },
   media: { enabled: true, current: NOW_PLAYING },
 };
 
@@ -112,6 +112,44 @@ describe("IdleHoverPeek (plan 093)", () => {
     expect(container.querySelector(".wx-peek-temp")?.textContent).toBe("27°");
     expect(container.querySelector(".wx-peek-condition")?.textContent).toBe("Cloudy");
     expect(container.querySelector(".idle-peek-timeline")).not.toBeNull();
+  });
+
+  // plan 110 (Step B): the mood art must key off the wire's `isDay`, never
+  // the wall clock (the deleted `isDaytimeNow()`) — freeze the system
+  // clock at each side's OPPOSITE time of day and prove the art still
+  // follows the payload, not `Date`.
+  describe("weather art keys off the wire's isDay, not the wall clock (plan 110)", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    it("renders the day mood at isDay: true even with the system clock at midnight", () => {
+      vi.setSystemTime(new Date("2026-07-22T00:00:00"));
+      const status: StatusState = {
+        ...WEATHER_STATUS,
+        weather: {
+          enabled: true,
+          current: { tempDisplay: "27°", condition: "Cloudy", isDay: true },
+        },
+      };
+      const { container } = render(<IdleHoverPeek status={status} hovered={true} />);
+      expect(container.querySelector(".wx-partly-cloudy-day")).not.toBeNull();
+      expect(container.querySelector(".wx-partly-cloudy-night")).toBeNull();
+    });
+
+    it("renders the night mood at isDay: false even with the system clock at noon", () => {
+      vi.setSystemTime(new Date("2026-07-22T12:00:00"));
+      const status: StatusState = {
+        ...WEATHER_STATUS,
+        weather: {
+          enabled: true,
+          current: { tempDisplay: "27°", condition: "Cloudy", isDay: false },
+        },
+      };
+      const { container } = render(<IdleHoverPeek status={status} hovered={true} />);
+      expect(container.querySelector(".wx-partly-cloudy-night")).not.toBeNull();
+      expect(container.querySelector(".wx-partly-cloudy-day")).toBeNull();
+    });
   });
 
   // plan 105 (Step B): the operator wanted the weather art kept behind the

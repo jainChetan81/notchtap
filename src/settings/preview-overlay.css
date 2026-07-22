@@ -590,6 +590,7 @@
 }
 
 .appearance-preview .status-dot {
+  box-sizing: border-box;
   width: 9px;
   height: 9px;
   border-radius: 50%;
@@ -625,6 +626,31 @@
   opacity: 0.22;
   box-shadow: none;
   animation: none;
+}
+
+/* plan 110 (Step D): mirror of styles.css's non-color configured-state
+   shapes (mirror law). */
+.appearance-preview .status-dot.shape-disabled,
+.appearance-preview .status-dot.shape-unavailable {
+  background: transparent;
+}
+
+.appearance-preview .status-dot.shape-disabled {
+  border-radius: 2px;
+}
+
+.appearance-preview .status-dot.football.shape-disabled {
+  border: 1.5px solid #3ddc70;
+}
+.appearance-preview .status-dot.news.shape-disabled {
+  border: 1.5px solid #ff5c5c;
+}
+.appearance-preview .status-dot.weather.shape-disabled {
+  border: 1.5px solid #f0c46a;
+}
+
+.appearance-preview .status-dot.shape-unavailable {
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
 }
 
 /* plan 092 (item 11): mirror of styles.css's paused-indicator glyph
@@ -746,15 +772,6 @@
   color: var(--cat);
   background: var(--cat-pill);
   border: 1px solid color-mix(in srgb, var(--cat) 35%, transparent);
-}
-
-.appearance-preview .pub-meta {
-  margin-left: auto;
-  font: 600 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.32);
-  white-space: nowrap;
 }
 
 .appearance-preview .manifest-block {

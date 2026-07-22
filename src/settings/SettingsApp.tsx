@@ -1474,6 +1474,158 @@ function DiagnosticsSection() {
   );
 }
 
+// plan 110 (Step A): local formatting helpers for the history row's
+// metadata chips + expandable details — deliberately duplicated rather
+// than imported from lib/presentation.ts, per HistorySection's own
+// "plain scannable list, not a card renderer" rule below.
+const HISTORY_EVENT_TYPE_LABELS: Record<string, string> = {
+  generic: "Generic",
+  score_update: "Score update",
+  match_state: "Match state",
+  news_item: "News item",
+};
+
+// event_type is a plain wire string here (HistoryEvent.event_type),
+// unlike rust's closed `EventType` enum — an unrecognized value (a future
+// type landing on one side before the other) falls back to the raw
+// string rather than throwing.
+function historyEventTypeLabel(eventType: string): string {
+  return HISTORY_EVENT_TYPE_LABELS[eventType] ?? eventType;
+}
+
+function historyRotationLabel(rotation: HistoryRotationSpec): string {
+  return rotation.kind === "one_shot"
+    ? `TTL ${rotation.ttl_secs}s`
+    : `every ${rotation.display_secs}s`;
+}
+
+// Same HH:MM shape as lib/presentation.ts's publishedLabel (local
+// getHours/getMinutes, not toLocaleTimeString, so this stays
+// deterministic under a mocked Date in tests) — duplicated locally rather
+// than imported, per this section's no-presentation.ts rule.
+function historyPublishedLabel(publishedAtMs: number): string {
+  const published = new Date(publishedAtMs);
+  const hours = published.getHours().toString().padStart(2, "0");
+  const minutes = published.getMinutes().toString().padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
+// Text only, no crest artwork (Step A's explicit field disposition) — a
+// compact one-line score/clock/cards summary for the expandable details.
+function historyEspnSummary(espn: HistoryEspnMeta): string {
+  const cardsClean =
+    espn.homeCards[0] === 0 &&
+    espn.homeCards[1] === 0 &&
+    espn.awayCards[0] === 0 &&
+    espn.awayCards[1] === 0;
+  const cards = cardsClean
+    ? ""
+    : ` · ${espn.homeAbbrev} ${espn.homeCards[0]}Y${espn.homeCards[1]}R · ${espn.awayAbbrev} ${espn.awayCards[0]}Y${espn.awayCards[1]}R`;
+  return `${espn.league}: ${espn.homeAbbrev} ${espn.homeScore}–${espn.awayScore} ${espn.awayAbbrev} (${espn.clock})${cards}`;
+}
+
+// "Absent when null/undefined OR blank after trim" (Step A §1) — a
+// source/category string of only whitespace reads as absent, same as null.
+function historyNonBlank(value: string | null | undefined): string | null {
+  if (value === null || value === undefined) {
+    return null;
+  }
+  const trimmed = value.trim();
+  return trimmed.length > 0 ? trimmed : null;
+}
+
+// plan 110 (Step A): one recorded entry — the always-present metadata row
+// (source when present, category when present, priority, event_type, and
+// the formatted rotation window — rotation, priority, and event_type are
+// Event's own required fields, so they always render) plus a conditional
+// native `<details>` for the optional richness (subtitle, topic,
+// published time, an espn score/clock/cards summary, each `details[]`
+// pair, and the link). `signal`/`id` are intentionally never rendered —
+// internal/debug identifiers, not user-facing content (`id` is used only
+// as the list key, which isn't rendering).
+function HistoryRow({ entry }: { entry: HistoryEntry }) {
+  const { event } = entry;
+  const source = historyNonBlank(event.meta.source);
+  const category = historyNonBlank(event.meta.category);
+  const subtitle = historyNonBlank(event.meta.subtitle);
+  const topic = historyNonBlank(event.topic);
+  const link = historyNonBlank(event.meta.link);
+  const details = event.meta.details;
+  const hasExpandable =
+    subtitle !== null ||
+    details.length > 0 ||
+    link !== null ||
+    topic !== null ||
+    event.meta.published_at_ms !== null ||
+    event.meta.espn !== undefined;
+
+  return (
+    <li className="history-row">
+      <span className="history-time">{new Date(entry.recorded_at_ms).toLocaleString()}</span>
+      <span className="history-origin">{event.origin}</span>
+      <span className="history-title">{event.payload.title}</span>
+      <div className="history-meta-row">
+        {source !== null && <span className="history-meta-chip">{source}</span>}
+        {category !== null && <span className="history-meta-chip">{category}</span>}
+        <span className="history-meta-chip">{PRIORITY_LABELS[event.priority]}</span>
+        <span className="history-meta-chip">{historyEventTypeLabel(event.event_type)}</span>
+        <span className="history-meta-chip">{historyRotationLabel(event.rotation)}</span>
+      </div>
+      <span className="history-body">{event.payload.body}</span>
+      {hasExpandable && (
+        <details className="history-details">
+          <summary>More details</summary>
+          <div className="history-details-content">
+            {subtitle !== null && (
+              <div className="history-detail-field">
+                <span className="history-detail-label">Subtitle</span>
+                <span className="history-detail-value">{subtitle}</span>
+              </div>
+            )}
+            {topic !== null && (
+              <div className="history-detail-field">
+                <span className="history-detail-label">Topic</span>
+                <span className="history-detail-value">{topic}</span>
+              </div>
+            )}
+            {event.meta.published_at_ms !== null && (
+              <div className="history-detail-field">
+                <span className="history-detail-label">Published</span>
+                <span className="history-detail-value">
+                  {historyPublishedLabel(event.meta.published_at_ms)}
+                </span>
+              </div>
+            )}
+            {event.meta.espn !== undefined && (
+              <div className="history-detail-field">
+                <span className="history-detail-label">Match</span>
+                <span className="history-detail-value">{historyEspnSummary(event.meta.espn)}</span>
+              </div>
+            )}
+            {details.map((detail) => (
+              <div className="history-detail-field" key={`${detail.label}:${detail.value}`}>
+                <span className="history-detail-label">{detail.label}</span>
+                <span className="history-detail-value">{detail.value}</span>
+              </div>
+            ))}
+            {link !== null && (
+              <div className="history-detail-field">
+                <span className="history-detail-label">Link</span>
+                {/* plan 110 (Step A): untrusted feed data (RSS/ESPN) —
+                    literal, selectable TEXT, never an <a href> or
+                    in-webview navigation. No vetted external-open
+                    precedent exists in this webview; adding one is a
+                    separate IPC/capability plan. */}
+                <span className="history-detail-value history-link-text">{link}</span>
+              </div>
+            )}
+          </div>
+        </details>
+      )}
+    </li>
+  );
+}
+
 // plan 089: read-only recent history, newest first (088's read_recent
 // contract itself stays oldest -> newest; the reversal happens here at
 // the display layer, not in the rust store). Same advisory mount-only
@@ -1550,14 +1702,7 @@ function HistorySection({ config }: { config: Config }) {
       ) : (
         <ul className="history-list">
           {newestFirst.map((entry) => (
-            <li key={entry.event.id} className="history-row">
-              <span className="history-time">
-                {new Date(entry.recorded_at_ms).toLocaleString()}
-              </span>
-              <span className="history-origin">{entry.event.origin}</span>
-              <span className="history-title">{entry.event.payload.title}</span>
-              <span className="history-body">{entry.event.payload.body}</span>
-            </li>
+            <HistoryRow key={entry.event.id} entry={entry} />
           ))}
         </ul>
       )}

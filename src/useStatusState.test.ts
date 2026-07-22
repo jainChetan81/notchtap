@@ -162,7 +162,50 @@ describe("useStatusState", () => {
 
     window.__NOTCHTAP_STATUS_STATE__ = {
       ...LIVE,
-      weather: { enabled: true, current: { tempDisplay: 27, condition: "Cloudy" } },
+      weather: {
+        enabled: true,
+        current: { tempDisplay: 27, condition: "Cloudy", isDay: true },
+      },
+    };
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
+  });
+
+  // --- plan 110 (Step B): the isDay guard ---
+
+  it("accepts a valid weather summary with isDay", () => {
+    const withWeather: StatusState = {
+      ...LIVE,
+      weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy", isDay: true } },
+    };
+    window.__NOTCHTAP_STATUS_STATE__ = withWeather;
+    const { result } = renderHook(() => useStatusState());
+    expect(result.current).toEqual(withWeather);
+  });
+
+  it("ignores a weather summary missing isDay, rather than reaching the renderer as undefined", () => {
+    window.__NOTCHTAP_STATUS_STATE__ = {
+      ...LIVE,
+      weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy" } },
+    };
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
+  });
+
+  it("ignores a weather summary with a non-boolean isDay", () => {
+    window.__NOTCHTAP_STATUS_STATE__ = {
+      ...LIVE,
+      weather: {
+        enabled: true,
+        current: { tempDisplay: "27°", condition: "Cloudy", isDay: 0 },
+      },
+    };
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
+
+    window.__NOTCHTAP_STATUS_STATE__ = {
+      ...LIVE,
+      weather: {
+        enabled: true,
+        current: { tempDisplay: "27°", condition: "Cloudy", isDay: "false" },
+      },
     };
     expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
   });

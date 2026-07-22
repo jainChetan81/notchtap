@@ -906,6 +906,7 @@ body {
 }
 
 .status-dot {
+  box-sizing: border-box;
   width: 9px;
   height: 9px;
   border-radius: 50%;
@@ -944,6 +945,37 @@ body {
   animation: none;
 }
 
+/* plan 110 (Step D): the non-color configured-state shape — independent
+   of the active/dim pause-luminance treatment above (pause changes
+   brightness only; it never overrides these). `shape-enabled` is the
+   pre-091 default filled circle (no override needed, listed here only
+   for completeness); `shape-disabled` is a hollow square, per-source
+   outline; `shape-unavailable` is a hollow circle with a neutral outline
+   (no known source state to color it by). Same 9x9 footprint throughout
+   — `box-sizing: border-box` above keeps the border from growing the box. */
+.status-dot.shape-disabled,
+.status-dot.shape-unavailable {
+  background: transparent;
+}
+
+.status-dot.shape-disabled {
+  border-radius: 2px;
+}
+
+.status-dot.football.shape-disabled {
+  border: 1.5px solid #3ddc70;
+}
+.status-dot.news.shape-disabled {
+  border: 1.5px solid #ff5c5c;
+}
+.status-dot.weather.shape-disabled {
+  border: 1.5px solid #f0c46a;
+}
+
+.status-dot.shape-unavailable {
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+}
+
 /* plan 092 (item 11): the paused indicator — while `status.paused` is
    true, every dot renders forced-dim (StatusDots.tsx overrides the
    per-source active/dim read) plus this small static two-bar glyph
@@ -951,7 +983,9 @@ body {
    the existing `gap: 8px` on that flex row spaces it from the last dot —
    no extra margin needed here. Receive-only, like the dots themselves: an
    indicator, never a button. Retires the old "News paused" idle text
-   remnant (091 already removed IdleView; this is its replacement). */
+   remnant (091 already removed IdleView; this is its replacement).
+   plan 110 (Step D): `role="img"` + `aria-label="Notifications paused"`
+   now (was `aria-hidden`) — a sighted-only signal before this. */
 .pause-glyph {
   display: inline-flex;
   align-items: center;
@@ -1036,8 +1070,7 @@ body {
    category-pill class. The old age-pill class does NOT converge to
    `.chip` — Decision 5 moves it out of the chip row entirely, into the
    plain `.notif-time-inline` slot (defined above) instead, so there is
-   no `.chip-age`. `.pub-meta` is unchanged (it was never chip-shaped —
-   plain trailing text — so item 10 doesn't touch it). ==== */
+   no `.chip-age`. ==== */
 .chip {
   display: inline-flex;
   align-items: center;
@@ -1060,14 +1093,6 @@ body {
   color: var(--cat);
   background: var(--cat-pill);
   border: 1px solid color-mix(in srgb, var(--cat) 35%, transparent);
-}
-
-.pub-meta {
-  margin-left: auto;
-  font: 600 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  letter-spacing: 0.1em; text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.32);
-  white-space: nowrap;
 }
 
 /* plan 078: the news meta row's enter animations, formerly motion.span

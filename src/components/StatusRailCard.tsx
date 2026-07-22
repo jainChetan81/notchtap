@@ -9,7 +9,6 @@ import {
   eventKindPresentationFor,
   footballEventKindFor,
   livePillVariantFor,
-  publishedLabel,
 } from "../lib/presentation";
 import { weatherArtFor } from "../lib/weatherArt";
 import { useDelayedSwap } from "../useDelayedSwap";
@@ -279,9 +278,6 @@ export function StatusRailCard({
   const renderedNews = renderedShowing && renderedSlot.eventType === "news_item";
   const renderedNewsCategory = renderedNews ? categoryLabel(renderedSlot.category) : null;
   const renderedNewsAge = renderedNews ? ageLabel(renderedSlot.publishedAtMs, Date.now()) : null;
-  const renderedNewsPublished = renderedNews
-    ? publishedLabel(renderedSlot.publishedAtMs, Date.now())
-    : null;
   // plan 082 marker-leak guard: every `wx-*` pair is a mood/glyph input,
   // never real content — strip it from `details` before it reaches EITHER
   // place details render as visible text (the collapsed loop below and
@@ -463,8 +459,13 @@ export function StatusRailCard({
                       // vocabulary (chip-converged, item 10) change. Age
                       // moves out of the meta row entirely into the plain
                       // `.notif-time-inline` slot (Decision 5 — same
-                      // ageLabel computation/thresholds, new location);
-                      // pub-meta is untouched.
+                      // ageLabel computation/thresholds, new location).
+                      // plan 110 (Step C): the redundant `.pub-meta`
+                      // "published HH:MM" node is gone — the compact row
+                      // now carries exactly one time expression (the
+                      // relative age above). The expanded Manifest's own
+                      // "published HH:MM" segment is untouched (its own
+                      // pinned test lives in StatusRailCard.test.tsx).
                       <>
                         <div className="masthead-row">
                           <div className="masthead">
@@ -478,18 +479,13 @@ export function StatusRailCard({
                           />
                         </div>
                         <div className="title headline">{renderedSlot.title}</div>
-                        {(renderedNewsCategory !== null ||
-                          renderedNewsAge !== null ||
-                          renderedNewsPublished !== null) && (
+                        {(renderedNewsCategory !== null || renderedNewsAge !== null) && (
                           <div className="notif-meta-row">
                             {renderedNewsCategory !== null && (
                               <span className="chip chip-category">{renderedNewsCategory}</span>
                             )}
                             {renderedNewsAge !== null && (
                               <span className="notif-time-inline">{renderedNewsAge}</span>
-                            )}
-                            {renderedNewsPublished !== null && (
-                              <span className="pub-meta">published {renderedNewsPublished}</span>
                             )}
                           </div>
                         )}

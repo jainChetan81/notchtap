@@ -170,6 +170,42 @@ const historyEntryNewer: HistoryEntry = {
   },
 };
 
+// plan 110 (Step A): every optional field populated, to exercise the
+// metadata chips + the expandable <details> block together.
+const historyEntryFullMeta: HistoryEntry = {
+  recorded_at_ms: 1700000200000,
+  event: {
+    id: "33333333-3333-3333-3333-333333333333",
+    event_type: "score_update",
+    priority: "high",
+    rotation: { kind: "recurring", display_secs: 30 },
+    topic: "arsenal-vs-chelsea",
+    payload: { title: "Third notification", body: "body three" },
+    meta: {
+      source: "ESPN",
+      category: "Sports",
+      published_at_ms: 1700000000000,
+      link: "https://example.com/story",
+      subtitle: "Full-time report",
+      details: [{ label: "Attendance", value: "60,000" }],
+      espn: {
+        league: "ENG.1",
+        homeAbbrev: "ARS",
+        awayAbbrev: "CHE",
+        homeScore: 2,
+        awayScore: 0,
+        clock: "FT",
+        homeCards: [1, 0],
+        awayCards: [0, 1],
+        homeCrest: null,
+        awayCrest: null,
+      },
+    },
+    signal: "generic",
+    origin: "football",
+  },
+};
+
 function mockLoads(status: SecretStatus = unsetSecrets) {
   mockIPC((command) => {
     if (command === "get_config") return config;
@@ -809,6 +845,150 @@ describe("SettingsApp", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "Really clear?" }));
     await waitFor(() => expect(clearHistory).toHaveBeenCalledTimes(1));
+  });
+
+  // plan 110 (Step A): history richness — the metadata row + expandable
+  // details.
+  describe("history richness (plan 110)", () => {
+    function mockHistory(entries: HistoryEntry[]) {
+      mockIPC((command) => {
+        if (command === "get_config") return config;
+        if (command === "get_secret_status") return unsetSecrets;
+        if (command === "get_default_config") return rustConfigDefaults;
+        if (command === "get_history") return entries;
+      });
+    }
+
+    async function openHistory() {
+      render(<SettingsApp />);
+      await screen.findByRole("heading", { level: 1, name: "General" });
+      fireEvent.click(screen.getByRole("button", { name: "History" }));
+      await screen.findByRole("heading", { level: 1, name: "History" });
+    }
+
+    it("renders the metadata chips and an expandable, togglable details block for an entry with full meta", async () => {
+      mockHistory([historyEntryFullMeta]);
+      await openHistory();
+
+      const row = (await screen.findByText("Third notification")).closest(
+        ".history-row",
+      ) as HTMLElement;
+      expect(row).not.toBeNull();
+
+      // always-present chips: source, category, priority, event_type, rotation
+      expect(within(row).getByText("ESPN")).toBeTruthy();
+      expect(within(row).getByText("Sports")).toBeTruthy();
+      expect(within(row).getByText("High")).toBeTruthy();
+      expect(within(row).getByText("Score update")).toBeTruthy();
+      expect(within(row).getByText("every 30s")).toBeTruthy();
+
+      // the disclosure starts closed, is queryable/togglable by its
+      // accessible (visible) name, and flips `open` on click.
+      const details = row.querySelector(".history-details") as HTMLDetailsElement;
+      expect(details).not.toBeNull();
+      expect(details.open).toBe(false);
+      const summary = within(row).getByText("More details");
+      fireEvent.click(summary);
+      expect(details.open).toBe(true);
+
+      // expanded-only content
+      expect(within(row).getByText("Full-time report")).toBeTruthy();
+      expect(within(row).getByText("arsenal-vs-chelsea")).toBeTruthy();
+      expect(within(row).getByText("Attendance")).toBeTruthy();
+      expect(within(row).getByText("60,000")).toBeTruthy();
+      expect(within(row).getByText("03:43")).toBeTruthy(); // published_at_ms
+      expect(within(row).getByText(/ENG\.1: ARS 2–0 CHE \(FT\)/)).toBeTruthy();
+      expect(within(row).getByText("https://example.com/story")).toBeTruthy();
+    });
+
+    it("renders no empty chrome (no source/category chip, no details disclosure) for an entry with empty meta", async () => {
+      mockHistory([historyEntryOlder]);
+      await openHistory();
+
+      const row = (await screen.findByText("First notification")).closest(
+        ".history-row",
+      ) as HTMLElement;
+      expect(row).not.toBeNull();
+
+      // only the three always-present chips (priority, event_type,
+      // rotation) — no source/category chip.
+      expect(row.querySelectorAll(".history-meta-chip")).toHaveLength(3);
+      expect(within(row).getByText("Medium")).toBeTruthy();
+      expect(within(row).getByText("Generic")).toBeTruthy();
+      expect(within(row).getByText("TTL 8s")).toBeTruthy();
+
+      // no optional-richness fields exist on this fixture, so no
+      // disclosure affordance renders at all.
+      expect(row.querySelector(".history-details")).toBeNull();
+      expect(within(row).queryByText("More details")).toBeNull();
+    });
+
+    it("renders a 300-char unbroken-token body without widening the row (pins the .history-body class)", async () => {
+      const longToken = "x".repeat(300);
+      const entry: HistoryEntry = {
+        ...historyEntryOlder,
+        event: {
+          ...historyEntryOlder.event,
+          payload: { title: "Long body notification", body: longToken },
+        },
+      };
+      mockHistory([entry]);
+      await openHistory();
+
+      const body = await screen.findByText(longToken);
+      expect(body.classList.contains("history-body")).toBe(true);
+    });
+
+    it("renders a non-http-scheme link as literal, non-clickable text — never an <a href>", async () => {
+      const maliciousLink = "javascript:alert(1)";
+      const entry: HistoryEntry = {
+        ...historyEntryFullMeta,
+        event: {
+          ...historyEntryFullMeta.event,
+          meta: { ...historyEntryFullMeta.event.meta, link: maliciousLink },
+        },
+      };
+      mockHistory([entry]);
+      await openHistory();
+
+      const row = (await screen.findByText("Third notification")).closest(
+        ".history-row",
+      ) as HTMLElement;
+      fireEvent.click(within(row).getByText("More details"));
+
+      const linkText = within(row).getByText(maliciousLink);
+      expect(linkText.tagName).not.toBe("A");
+      expect(row.querySelector("a")).toBeNull();
+      expect(within(row).queryByRole("link")).toBeNull();
+      expect(linkText.classList.contains("history-link-text")).toBe(true);
+    });
+
+    it("renders markup-like feed text literally — no created img/script element, no HTML injection", async () => {
+      const markupSubtitle = '<img src=x onerror="alert(1)">';
+      const markupBody = "<script>alert(1)</script>";
+      const entry: HistoryEntry = {
+        ...historyEntryFullMeta,
+        event: {
+          ...historyEntryFullMeta.event,
+          payload: { title: "Markup notification", body: markupBody },
+          meta: { ...historyEntryFullMeta.event.meta, subtitle: markupSubtitle },
+        },
+      };
+      mockHistory([entry]);
+      await openHistory();
+
+      const row = (await screen.findByText("Markup notification")).closest(
+        ".history-row",
+      ) as HTMLElement;
+      expect(within(row).getByText(markupBody)).toBeTruthy();
+      fireEvent.click(within(row).getByText("More details"));
+      expect(within(row).getByText(markupSubtitle)).toBeTruthy();
+
+      // literal text, never parsed as markup: no element actually created
+      // from either string.
+      expect(row.querySelector("script")).toBeNull();
+      expect(row.querySelector("img")).toBeNull();
+    });
   });
 
   it("the history_enabled toggle round-trips into the saved config payload", async () => {
