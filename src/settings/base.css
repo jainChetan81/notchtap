@@ -318,7 +318,10 @@
   .relaunch-note,
   .shortcut-status,
   .error-title {
-    font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+    /* plan 113: shared-ui's `--font-mono` token (see
+       vendor/shared-ui/design/tokens.css) is this exact literal stack —
+       adopting it retires the last hardcoded mono font-family here. */
+    font-family: var(--font-mono);
   }
 
   /* plan 112 Step 3: `.section-stack` (Step 0 CSSOM row 35) — its
