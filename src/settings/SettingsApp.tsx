@@ -733,7 +733,7 @@ function PriorityToggle({
               // visible corner radius.
               "priority-toggle-button rounded-[4px] border-0 bg-transparent px-1.5 py-px font-mono text-fs-secondary font-[620] tracking-[0.03em] text-muted-foreground outline-none transition-colors duration-[140ms] ease-notchtap hover:bg-accent hover:text-foreground focus-visible:shadow-[0_0_0_2px_var(--ring)]",
               value === level &&
-                "is-selected bg-accent text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.4)]",
+                "is-selected bg-accent text-foreground shadow-[var(--shadow-selected)]",
             )}
             aria-pressed={value === level}
             onClick={() => onChange(level)}
@@ -794,7 +794,7 @@ function UnitsToggle({
               // visible corner radius.
               "priority-toggle-button rounded-[4px] border-0 bg-transparent px-1.5 py-px font-mono text-fs-secondary font-[620] tracking-[0.03em] text-muted-foreground outline-none transition-colors duration-[140ms] ease-notchtap hover:bg-accent hover:text-foreground focus-visible:shadow-[0_0_0_2px_var(--ring)]",
               value === unit &&
-                "is-selected bg-accent text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.4)]",
+                "is-selected bg-accent text-foreground shadow-[var(--shadow-selected)]",
             )}
             aria-pressed={value === unit}
             onClick={() => onChange(unit)}
@@ -2082,7 +2082,7 @@ function SegmentedControl({
               // visible corner radius.
               "segmented-control-button rounded-[4px] border-0 bg-transparent px-1.5 py-px font-mono text-fs-secondary font-[620] tracking-[0.03em] text-muted-foreground outline-none transition-colors duration-[140ms] ease-notchtap hover:bg-accent hover:text-foreground focus-visible:shadow-[0_0_0_2px_var(--ring)]",
               value === option.value &&
-                "is-selected bg-accent text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.4)]",
+                "is-selected bg-accent text-foreground shadow-[var(--shadow-selected)]",
             )}
             aria-pressed={value === option.value}
             onClick={() => onChange(option.value)}
