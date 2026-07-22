@@ -21,6 +21,7 @@ import {
   useRef,
   useState,
 } from "react";
+import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -967,24 +968,34 @@ function SecretRow({
   }
 
   return (
-    <div className="secret-row">
-      <div className="secret-meta">
-        <label className="secret-label" htmlFor={id}>
+    <div className="secret-row border-t border-border/60 py-[11px] pb-3 first:border-t-0">
+      <div className="secret-meta mb-[7px] flex items-center justify-between gap-2.5">
+        <label
+          className="secret-label block text-fs-body leading-[1.3] font-[590] text-foreground"
+          htmlFor={id}
+        >
           {label}
         </label>
-        <span className={`status-chip${status ? " is-set" : ""}`} aria-live="polite">
+        <Badge
+          aria-live="polite"
+          variant="outline"
+          className={cn(
+            "status-chip h-auto flex-none rounded-[4px] border-input px-[5px] py-[3px] font-mono text-fs-caption font-bold tracking-[0.06em] text-muted-foreground uppercase",
+            status && "is-set border-ring/40 bg-input/40 text-foreground",
+          )}
+        >
           {status ?? "unset"}
-        </span>
+        </Badge>
       </div>
-      <div className="secret-controls">
-        <input
+      <div className="secret-controls grid grid-cols-[minmax(0,1fr)_auto] gap-[7px]">
+        <Input
           id={id}
-          className="secret-input"
           type="password"
           autoComplete="new-password"
           placeholder={placeholder}
           value={value}
           onChange={(event) => setValue(event.currentTarget.value)}
+          className="secret-input h-[31px] rounded-[6px] border-input bg-input/20 font-mono text-fs-secondary font-[560] text-foreground"
         />
         <Button
           type="button"
@@ -999,7 +1010,10 @@ function SecretRow({
         </Button>
       </div>
       {error ? (
-        <div className="secret-error" role="alert">
+        <div
+          className="secret-error mt-1.5 text-fs-secondary leading-[1.4] text-destructive"
+          role="alert"
+        >
           {error}
         </div>
       ) : null}

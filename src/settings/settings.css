@@ -182,34 +182,12 @@
    .secret-row`'s own divider (still unmigrated — Connectors' turn) is
    the only survivor of that old compound rule; see below. */
 
-.secret-row + .secret-row {
-  border-top: 1px solid var(--divider-soft);
-}
-
-/* plan 112 Step 4 (General): .number-field/.unit (rows 50-55) -> shadcn
-   Input (+ a utility-styled absolutely-positioned unit span) at
-   NumberControl's call site. `.secret-input` styling that used to
-   share this selector list with the old bare `textarea` tag selector
-   stays live here verbatim — Connectors hasn't migrated yet. */
-
-.secret-input {
-  width: 100%;
-  border: 1px solid #2a2d34;
-  border-radius: 6px;
-  outline: none;
-  background: var(--surface-raised);
-  color: var(--text);
-  transition: border-color 140ms var(--ease), background 140ms var(--ease), box-shadow 140ms var(--ease);
-}
-
-.secret-input:hover {
-  background: var(--surface-hover);
-}
-
-.secret-input:focus-visible {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--focus-ring);
-}
+/* plan 112 Step 4 (Connectors): .secret-row(+divider)/.secret-meta/
+   .status-chip(+.is-set)/.secret-controls/.secret-input(+::placeholder)/
+   .secret-error (Step 0 CSSOM rows 82-89) -> shadcn Badge + Input +
+   Button (Button already landed app-wide in Step 3) at SecretRow's
+   call site, utilities only; masking (type=password), the write-only
+   save flow, and the inline error remain byte-identical behavior. */
 
 /* plan 112 Step 4 (General): the bespoke checkbox+track .switch-control/
    .switch(+::after)(+:checked/:focus-visible) (rows 56-62) is gone —
@@ -242,67 +220,6 @@
 /* plan 112 Step 3: .relaunch-note (Step 0 CSSOM row 81) moved to
    utilities at both call sites (ConnectorHealthLine, ConnectorsSection's
    "applied after relaunch" note). */
-
-.secret-row {
-  padding: 11px 0 12px;
-}
-
-.secret-meta {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-  margin-bottom: 7px;
-}
-
-.status-chip {
-  flex: none;
-  padding: 3px 5px;
-  border: 1px solid #343840;
-  border-radius: 4px;
-  color: var(--text-muted);
-  font-size: var(--fs-caption);
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.status-chip.is-set {
-  border-color: #555a63;
-  background: #17191d;
-  color: #aeb2b8;
-}
-
-.secret-controls {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  gap: 7px;
-}
-
-.secret-input {
-  height: 31px;
-  padding: 0 9px;
-  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
-  font-size: var(--fs-secondary);
-  font-weight: 560;
-  font-style: normal;
-  line-height: 1;
-}
-
-.secret-input::placeholder {
-  /* plan 109: was #555a62 (~2.8:1, failed AA); placeholder text is
-     still real, readable hint content here (not decorative), so it
-     gets the compliant --text-muted tier like everything else. */
-  color: var(--text-muted);
-}
-
-.secret-error {
-  margin-top: 6px;
-  color: var(--error);
-  font-size: var(--fs-secondary);
-  line-height: 1.4;
-}
 
 /* plan 112 Step 3: .action-status (+ .is-pending/.is-ok/.is-error) and
    .test-button-wrap (+ its nested .action-status override) moved to
