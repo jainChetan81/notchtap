@@ -498,13 +498,13 @@
   }
 }
 
-/* plan 078: the idle/showing swap, formerly AnimatePresence/motion.div —
-   keyframes mirror the old motion values exactly (220ms,
-   var(--ease-notchtap), opacity ± translateY(-4px) for showing,
-   opacity-only for idle). `.card-content` gets a fresh DOM node (and so
-   replays the enter animation) only when the swap key changes; the
-   useDelayedSwap hook (useDelayedSwap.ts) adds `.swap-exit` for the
-   duration of the exit. */
+/* plan 12x (wave 2): the idle/showing content-swap moved off this
+   file's hand-rolled `@keyframes` and onto `motion` (`motion/react`,
+   `AnimatePresence` + `motion.div` in StatusRailCard.tsx) — the same
+   migration IdleHoverPeek.tsx made in wave 1. `.card-content` no longer
+   carries its own `animation`; motion inline-styles opacity/transform
+   on the node directly. `position: relative; z-index: 1` stays a plain
+   rule below, unrelated to the swap itself. */
 /* plan 107: `position: relative; z-index: 1` is the decisive stacking
    declaration against the celebration burst (`.card-assembly::after`,
    `z-index: 0`, above) — `position: relative` alone leaves `z-index:
@@ -512,49 +512,9 @@
    earlier `z-index: 0` sibling in the same stacking context (source
    order alone doesn't win once ANY sibling declares a real z-index).
    see the fuller contract comment on `.card-assembly::after` above. */
-/* plan 117: the 220ms below (all four rules) must equal SWAP_EXIT_MS
-   (animationTiming.ts) — useDelayedSwap.ts's timeout waits exactly that
-   long before swapping content, so these exit animations must finish in
-   the same window. */
 .card-root .card-content {
   position: relative;
   z-index: 1;
-  animation: card-enter-showing 220ms var(--ease-notchtap);
-}
-.card-root .card-content.idle {
-  animation: card-enter-idle 220ms ease-out;
-}
-.card-root .card-content.swap-exit {
-  animation: card-exit-showing 220ms var(--ease-notchtap) forwards;
-}
-.card-root .card-content.idle.swap-exit {
-  animation: card-exit-idle 220ms ease-out forwards;
-}
-
-@keyframes card-enter-showing {
-  from { opacity: 0; transform: translateY(-4px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes card-exit-showing {
-  from { opacity: 1; transform: translateY(0); }
-  to { opacity: 0; transform: translateY(-4px); }
-}
-@keyframes card-enter-idle {
-  from { opacity: 0; }
-  to { opacity: 1; }
-}
-@keyframes card-exit-idle {
-  from { opacity: 1; }
-  to { opacity: 0; }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .card-root .card-content,
-  .card-root .card-content.idle,
-  .card-root .card-content.swap-exit,
-  .card-root .card-content.idle.swap-exit {
-    animation: none;
-  }
 }
 
 /* plan 092: `.compact` dropped its old 2-column grid (`.copy` | `Stamp`

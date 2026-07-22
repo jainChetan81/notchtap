@@ -1,4 +1,5 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
+import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
 import { SWAP_EXIT_MS } from "../animationTiming";
 import { renderInlineMarkdown } from "../lib/markdown";
@@ -79,6 +80,16 @@ function weatherArtFromDetails(details: Detail[]) {
   return weatherArtFor(condition, isDay);
 }
 
+// plan 12x (wave 2): mirrors shared-ui's `--ease-notchtap`
+// (vendor/shared-ui/design/tokens.css: `cubic-bezier(.22, 1, .36, 1)`) —
+// motion's `transition.ease` takes a bezier array, not a CSS var, so this
+// is the JS-side literal twin of that token for the showing-flavored
+// content swap below (mirrors card-enter-showing/card-exit-showing's old
+// `var(--ease-notchtap)`). The idle-flavored swap (StatusDots) keeps
+// motion's built-in "easeOut", matching the old card-enter-idle/
+// card-exit-idle's plain `ease-out`.
+const NOTCHTAP_EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
+
 type Pulse = "pulse-goal" | "pulse-red" | null;
 
 // Which @keyframes name (styles.css) ends each pulse — the *only* place
@@ -117,8 +128,8 @@ export function StatusRailCard({
   // plan 084: detect the live-match football branch by the structured
   // `espn` block's presence (POST-083 contract), never by string-sniffing
   // eventType/signal — off the LIVE slot, matching how `news`/`wxArt`
-  // above are computed (not the delayed-swap `renderedSlot`), so the
-  // pulse-vs-celebration gate below always reflects the arriving item.
+  // above are computed, so the pulse-vs-celebration gate below always
+  // reflects the arriving item.
   const isLiveCard = showing && slot.espn !== undefined;
 
   const [pulse, setPulse] = useState<Pulse>(null);
@@ -179,14 +190,18 @@ export function StatusRailCard({
   // owns the priority accent channel only, and origin must never share
   // that channel (see the CSS comment on `.below-block.cmux-origin`).
   const cmuxOrigin = showing && slot.origin === "cmux";
-  // plan 078: the idle/showing swap (formerly AnimatePresence mode="wait")
-  // freezes the outgoing item via useDelayedSwap while the CSS exit
-  // animation runs, then swaps content and key together. Everything that
-  // was inside the old swapped motion.div reads from `renderedSlot`;
-  // only cardClass (outer div) and the pulse celebration stay on live
-  // slot/status, exactly as they did before. Hoisted above `cardClass`
-  // (plan 105) so `bare`, below, can feed into it — `renderedShowing`/
-  // `exiting` are needed before the class list is built, not after.
+  // plan 078: originally the idle/showing content swap itself (freezing
+  // the outgoing item via useDelayedSwap while a matching CSS exit
+  // animation ran). plan 12x (wave 2) moved the content swap onto real
+  // `AnimatePresence` (JSX below), which owns its own freeze — so this
+  // hook is kept now for exactly one reason: plan 107's GEOMETRY
+  // choreography (`geometryPriority`/`expanded`/`bare` immediately
+  // below, and the below-block/StatusDots mount gates further down)
+  // must NOT move into motion (that plan's contract), and still needs a
+  // literal, fake-timer-steppable JS exit window to hold the outer
+  // shell's classes through. Hoisted above `cardClass` (plan 105) so
+  // `bare`, below, can feed into it — `renderedShowing`/`exiting` are
+  // needed before the class list is built, not after.
   const swapKey = showing ? slot.id : "idle";
   const { value: renderedSlot, exiting } = useDelayedSwap(slot, swapKey, SWAP_EXIT_MS);
   const renderedShowing = renderedSlot.state === "showing";
@@ -275,69 +290,68 @@ export function StatusRailCard({
     .filter(Boolean)
     .join(" ");
 
-  const renderedExpanded = renderedShowing && renderedSlot.expanded;
-  const renderedNews = renderedShowing && renderedSlot.eventType === "news_item";
-  const renderedNewsCategory = renderedNews ? categoryLabel(renderedSlot.category) : null;
-  const renderedNewsAge = renderedNews ? ageLabel(renderedSlot.publishedAtMs, Date.now()) : null;
+  // plan 12x (wave 2): the swapped card BODY (everything inside
+  // `.card-content`, below) now reads the LIVE `slot` directly, like
+  // `news`/`wxArt`/`isLiveCard` above — there is no more `renderedSlot`
+  // stand-in for content. `AnimatePresence` (in the JSX below) is what
+  // now supplies the "outgoing content stays frozen through its own
+  // exit" behavior: an exiting `motion.div` keeps whatever it last
+  // rendered (captured automatically once its parent stops including
+  // it), so freezing content by hand is no longer this component's job.
+  // `renderedSlot`/`renderedShowing`/`exiting` (from the STILL-KEPT
+  // `useDelayedSwap` above) are now scoped to ONE job only: the plan-107
+  // GEOMETRY choreography (`geometryPriority`/`expanded`/`bare` above,
+  // and the below-block/StatusDots mount gates below) — never content.
+  const newsCategory = news ? categoryLabel(slot.category) : null;
+  const newsAge = news ? ageLabel(slot.publishedAtMs, Date.now()) : null;
   // plan 082 marker-leak guard: every `wx-*` pair is a mood/glyph input,
   // never real content — strip it from `details` before it reaches EITHER
   // place details render as visible text (the collapsed loop below and
   // the expanded Manifest). Every non-weather card's `details` has no
   // `wx-*` labels, so this filter is a no-op there — byte-identical.
-  const renderedVisibleDetails = renderedShowing ? visibleDetails(renderedSlot.details) : [];
+  const liveVisibleDetails = showing ? visibleDetails(slot.details) : [];
 
-  // plan 069 (folded into 078): memoized on the rendered slot so unrelated
-  // re-renders don't re-tokenize the markdown.
+  // plan 069 (folded into 078; re-scoped to live `slot` in wave 2): memoized
+  // so unrelated re-renders don't re-tokenize the markdown.
   const bodyContent = useMemo(
-    () => renderInlineMarkdown(renderedSlot.state === "showing" ? renderedSlot.body : ""),
-    [renderedSlot],
+    () => renderInlineMarkdown(showing ? slot.body : ""),
+    [slot, showing],
   );
 
-  // plan 084: the live-match branch reads off the DELAYED-SWAP value, like
-  // every other piece of rendered content above — the outer shell's
-  // isLiveCard (used only to gate the pulse/celebration classes) stays on
-  // the live `slot` on purpose, so the two can briefly disagree during the
-  // 220ms swap-exit window, exactly like `news` vs `renderedNews` above.
-  const renderedEspn: EspnMeta | undefined = renderedShowing ? renderedSlot.espn : undefined;
-  const isRenderedLiveCard = renderedEspn !== undefined;
-  const renderedFootballKind =
-    isRenderedLiveCard && renderedShowing
-      ? footballEventKindFor(renderedSlot.signal, renderedSlot.body)
-      : null;
-  const renderedEventPresentation = renderedFootballKind
-    ? eventKindPresentationFor(renderedFootballKind)
-    : null;
-  const renderedPillVariant =
-    isRenderedLiveCard && renderedShowing ? livePillVariantFor(renderedSlot.signal) : "live";
-  const renderedPillLabel =
-    renderedPillVariant === "break" ? "Break" : renderedPillVariant === "final" ? "Final" : "Live";
-  const renderedCardsClean =
-    renderedEspn !== undefined &&
-    renderedEspn.homeCards[0] === 0 &&
-    renderedEspn.homeCards[1] === 0 &&
-    renderedEspn.awayCards[0] === 0 &&
-    renderedEspn.awayCards[1] === 0;
+  // plan 084: the live-match branch — `isLiveCard` (above) already reads
+  // the live slot, so it doubles as both the outer shell's accent gate
+  // AND the content branch selector below; there is no more a separate
+  // delayed/live pair that could "briefly disagree" (wave 2 dropped that
+  // window entirely — see the comment above).
+  const liveEspn: EspnMeta | undefined = showing ? slot.espn : undefined;
+  const footballKind = showing && isLiveCard ? footballEventKindFor(slot.signal, slot.body) : null;
+  const eventPresentation = footballKind ? eventKindPresentationFor(footballKind) : null;
+  const pillVariant = showing && isLiveCard ? livePillVariantFor(slot.signal) : "live";
+  const pillLabel = pillVariant === "break" ? "Break" : pillVariant === "final" ? "Final" : "Live";
+  const cardsClean =
+    liveEspn !== undefined &&
+    liveEspn.homeCards[0] === 0 &&
+    liveEspn.homeCards[1] === 0 &&
+    liveEspn.awayCards[0] === 0 &&
+    liveEspn.awayCards[1] === 0;
 
   // plan 091: the below-block mounts if and only if `renderedShowing` is
-  // true (used directly in the JSX below, not through an extra alias, so
-  // TypeScript's control-flow narrowing of `renderedSlot` inside that
-  // branch stays exactly as reliable as every other `renderedShowing`
-  // check already in this file) — which, thanks to useDelayedSwap
-  // freezing `renderedSlot` at its pre-transition value for the whole
-  // `exiting` window, already covers BOTH "currently showing" and
-  // "exiting FROM showing back to idle" (renderedSlot stays showing-
-  // flavored throughout that fade). It does NOT need `|| exiting` on top:
-  // during the opposite transition (idle exiting INTO showing),
-  // renderedSlot is still frozen idle-flavored — there is no below-block
-  // content to fade out of idle, because idle never had any (flank-
-  // right's dots below play that side of the transition instead, gated
-  // on `!renderedShowing`, the mirror-image condition). Exit animations
-  // still work: the existing `card-content` key/idle/swap-exit mechanics
-  // are byte-identical, just relocated — `key={swapKey}` still forces a
-  // fresh remount (and a replayed enter/exit) on every
-  // showing(A)->showing(B) transition, since below-block itself doesn't
-  // remount for that case (renderedShowing stays true throughout), only
-  // its keyed child does.
+  // true — which, thanks to `useDelayedSwap` freezing `renderedSlot` at
+  // its pre-transition value for the whole `exiting` window, already
+  // covers BOTH "currently showing" and "exiting FROM showing back to
+  // idle". It does NOT need `|| exiting` on top: during the opposite
+  // transition (idle exiting INTO showing), renderedSlot is still frozen
+  // idle-flavored — there is no below-block content to fade out of idle,
+  // because idle never had any (flank-right's dots below play that side
+  // of the transition instead, gated on `!renderedShowing`, the
+  // mirror-image condition).
+  // plan 12x (wave 2): this wrapper's PRESENCE stays on the kept
+  // `renderedShowing` (unchanged from plan 091/107) so the swapped
+  // content's own `AnimatePresence`, just inside it, always has a parent
+  // that outlives its exit animation — `belowBlockClass` itself is still
+  // computed off the LIVE slot above, so the mood/texture classes keep
+  // updating in lockstep with `slot`, not delayed by the content swap,
+  // exactly as before.
 
   return (
     <div
@@ -361,20 +375,31 @@ export function StatusRailCard({
           6 — "no mode branch" in the shape itself). */}
       <div className="synthetic-cutout" aria-hidden="true" />
       <div className="flank-right">
-        {/* plan 091: StatusDots is idle-only furniture — mirrors the old
-            IdleView's single `card-content` swap wrapper (same classes,
-            same keyframes) so the dots fade out over the same 220ms
-            window the old idle content did, on the idle->showing leg of
-            the transition. No `key` needed: unlike below-block's content,
-            there is only ever one "flavor" of dots, so a plain mount/
-            unmount (no forced remount) is enough.
+        {/* plan 091: StatusDots is idle-only furniture — mounted whenever
+            idle-flavored content should be visible, so the dots fade out
+            over the same SWAP_EXIT_MS window the old idle content did, on
+            the idle->showing leg of the transition. No `key` needed:
+            unlike below-block's content, there is only ever one "flavor"
+            of dots, so a plain mount/unmount (no forced remount) is
+            enough — and no `AnimatePresence` either, since this node's
+            OWN mount/unmount is already externally timed by the
+            `renderedShowing`/`bare` condition it's wrapped in (kept
+            `useDelayedSwap`, plan 107's geometry timer).
+            plan 12x (wave 2): the fade itself is now a `motion.div`
+            controlled by `exiting`, replacing the old CSS `.swap-exit`
+            class + `card-enter-idle`/`card-exit-idle` keyframes.
             plan 105 (Step C): also gated on `!bare` — the dots are rail
             furniture, not part of the "looks like a native notch" bare
             state. */}
         {!renderedShowing && !bare && (
-          <div className={`card-content idle${exiting ? " swap-exit" : ""}`}>
+          <motion.div
+            className="card-content idle"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: exiting ? 0 : 1 }}
+            transition={{ duration: SWAP_EXIT_MS / 1000, ease: "easeOut" }}
+          >
             <StatusDots status={status} />
-          </div>
+          </motion.div>
         )}
       </div>
       {/* plan 093 (079 items 9/17/18): the idle hover-expanded state —
@@ -389,194 +414,219 @@ export function StatusRailCard({
               same z-order tier as .news-shade::before (behind
               .compact/.manifest, which the CSS below lifts to z-index 1).
               Live-slot-derived, like belowBlockClass's mood/texture
-              classes above, so it never waits on the delayed content
-              swap. */}
+              classes above, so it never waits on the content swap. */}
           {wxArt && <img className="wx-icon" src={wxArt.glyphUrl} alt="" />}
-          <div key={swapKey} className={`card-content${exiting ? " swap-exit" : ""}`}>
-            {isRenderedLiveCard && renderedEspn !== undefined ? (
-              // plan 084: the recurring live-match scorecard (POST-083 espn
-              // meta) — sticky medium-priority presence, no full-expand
-              // (operator lock). Deliberately ignores `renderedExpanded`:
-              // even if the slot's `expanded` flag arrives true, there is
-              // no manual-expand affordance for football, so this branch
-              // always renders this same compact scorecard rather than
-              // switching to a richer layout. No `Track` (a batch-position
-              // slider is meaningless for a single recurring presence —
-              // prototype lock) and no `TtlBar` either: the bar's
-              // countdown-to-rotation framing would visually contradict
-              // "sticky" (see plan 084's report for the reasoning). No
-              // generic `<Stamp>` — the live chip above already carries
-              // that role (Live/Break/Final) with more precision.
-              <div className="notif-block">
-                <div className="sc-head">
-                  <span className="chip chip-league">{renderedEspn.league}</span>
-                  <span
-                    className={`chip chip-live${renderedPillVariant === "live" ? "" : ` ${renderedPillVariant}`}`}
-                  >
-                    {renderedPillVariant !== "final" && <span className="live-dot" />}
-                    {renderedPillLabel}
-                  </span>
-                  <span className="clock-pill">{renderedEspn.clock}</span>
-                </div>
-                <div className="score-row">
-                  <div className="side">
-                    <Crest abbrev={renderedEspn.homeAbbrev} path={renderedEspn.homeCrest} />
-                  </div>
-                  <span className="score">
-                    {renderedEspn.homeScore}
-                    <span className="dash">–</span>
-                    {renderedEspn.awayScore}
-                  </span>
-                  <div className="side">
-                    <Crest abbrev={renderedEspn.awayAbbrev} path={renderedEspn.awayCrest} />
-                  </div>
-                </div>
-                <div
-                  className={`event-line${renderedEventPresentation?.tintClass ? ` ${renderedEventPresentation.tintClass}` : ""}`}
-                >
-                  {renderedEventPresentation && (
-                    <span className={renderedEventPresentation.iconClass} />
-                  )}
-                  {renderedSlot.body}
-                </div>
-                {!renderedCardsClean && (
-                  <div className="cards-line">
-                    {renderedEspn.homeAbbrev} {renderedEspn.homeCards[0]}Y
-                    {renderedEspn.homeCards[1]}R · {renderedEspn.awayAbbrev}{" "}
-                    {renderedEspn.awayCards[0]}Y{renderedEspn.awayCards[1]}R
-                  </div>
-                )}
-              </div>
-            ) : (
-              <>
-                <div className="compact">
-                  <div className="copy">
-                    {renderedNews ? (
-                      // plan 092 (item 19 + 080 carry-forward): the shipped
-                      // news layout stays screenshot-faithful (masthead,
-                      // headline, WIRE stamp, news-shade, track) — only the
-                      // Stamp badge's position (now inline with the
-                      // masthead, `.masthead-row`) and the pills' visual
-                      // vocabulary (chip-converged, item 10) change. Age
-                      // moves out of the meta row entirely into the plain
-                      // `.notif-time-inline` slot (Decision 5 — same
-                      // ageLabel computation/thresholds, new location).
-                      // plan 110 (Step C): the redundant `.pub-meta`
-                      // "published HH:MM" node is gone — the compact row
-                      // now carries exactly one time expression (the
-                      // relative age above). The expanded Manifest's own
-                      // "published HH:MM" segment is untouched (its own
-                      // pinned test lives in StatusRailCard.test.tsx).
-                      <>
-                        <div className="masthead-row">
-                          <div className="masthead">
-                            <span className="dot" />
-                            {renderedSlot.source ?? "RSS"}
-                          </div>
-                          <Stamp
-                            priority={renderedSlot.priority}
-                            signal={renderedSlot.signal}
-                            eventType={renderedSlot.eventType}
-                          />
-                        </div>
-                        <div className="title headline">{renderedSlot.title}</div>
-                        {(renderedNewsCategory !== null || renderedNewsAge !== null) && (
-                          <div className="notif-meta-row">
-                            {renderedNewsCategory !== null && (
-                              <span className="chip chip-category">{renderedNewsCategory}</span>
-                            )}
-                            {renderedNewsAge !== null && (
-                              <span className="notif-time-inline">{renderedNewsAge}</span>
-                            )}
-                          </div>
-                        )}
-                      </>
-                    ) : (
-                      // plan 092 (item 19, this plan's core): the general
-                      // card's header row (title + the badge cluster) +
-                      // subtitle row (plan 035's `subtitle`, surfaced in
-                      // compact for the first time) + full-width clamped
-                      // body. There is no inline-time value here (no
-                      // non-news event carries a publishedAtMs), so the
-                      // subtitle row's time slot simply never renders.
-                      // plan 096: the badge cluster is the priority Stamp
-                      // PLUS the cmux chip, conditional on `origin` (now on
-                      // the wire — 092 deferred this exact spot pending
-                      // that wire change).
-                      <>
-                        <div className="notif-header-row">
-                          <span className="notif-title">{renderedSlot.title}</span>
-                          <div className="notif-header-badges">
-                            {renderedSlot.origin === "cmux" && (
-                              <span className="chip chip-cmux">Agent</span>
-                            )}
-                            <Stamp
-                              priority={renderedSlot.priority}
-                              signal={renderedSlot.signal}
-                              eventType={renderedSlot.eventType}
-                            />
-                          </div>
-                        </div>
-                        {renderedSlot.subtitle !== null && (
-                          <div className="notif-subtitle-row">
-                            <span className="notif-subtitle">{renderedSlot.subtitle}</span>
-                          </div>
-                        )}
-                        <div className="notif-body">{bodyContent}</div>
-                        {/* plan 042: collapsed scorecard cells (Clock,
-                            per-side Cards) — only a live-match card with
-                            `espn_live_card` on populates `details`, so
-                            every other card renders exactly as before.
-                            Same detail-label/detail-value classes as the
-                            expanded Manifest view; collapsed-only, so the
-                            pairs never render twice when expanded. */}
-                        {!renderedExpanded &&
-                          renderedVisibleDetails.length > 0 &&
-                          renderedVisibleDetails.map((detail) => (
-                            <div key={`${detail.label}:${detail.value}`}>
-                              <div className="detail-label">{detail.label}</div>
-                              <div className="detail-value">{detail.value}</div>
-                            </div>
-                          ))}
-                      </>
+          {/* plan 12x (wave 2): the actual content-swap animation — was a
+              hand-rolled `useDelayedSwap` freeze + CSS
+              `card-enter-showing`/`card-exit-showing` keyframes, now real
+              `AnimatePresence mode="wait"`. Keyed on the LIVE `swapKey`
+              (unchanged: `slot.id` while showing) — a same-id update
+              (e.g. a queue-counter tick) re-renders this SAME node in
+              place, no key change, no exit/enter replay, no remount
+              (pinned by the "updates the queue slider... without
+              remounting" test). A genuine id change (showing(A)->
+              showing(B)) — or `showing` itself going false, which yields
+              no child at all here — drops the old key; `AnimatePresence`
+              freezes whatever that child last rendered and plays its
+              `exit` variant, and `mode="wait"` holds any new child back
+              until that finishes. That's exactly what the old freeze
+              timer did, now framework-owned — which is also why content
+              below reads the LIVE `slot` directly (see the comment above
+              `newsCategory`) rather than a frozen stand-in: the freeze is
+              `AnimatePresence`'s job now. */}
+          <AnimatePresence mode="wait">
+            {showing && (
+              <motion.div
+                key={swapKey}
+                className="card-content"
+                initial={{ opacity: 0, y: -4 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -4 }}
+                transition={{ duration: SWAP_EXIT_MS / 1000, ease: NOTCHTAP_EASE }}
+              >
+                {isLiveCard && liveEspn !== undefined ? (
+                  // plan 084: the recurring live-match scorecard (POST-083 espn
+                  // meta) — sticky medium-priority presence, no full-expand
+                  // (operator lock). Deliberately ignores `expanded`: even if
+                  // the slot's `expanded` flag arrives true, there is no
+                  // manual-expand affordance for football, so this branch
+                  // always renders this same compact scorecard rather than
+                  // switching to a richer layout. No `Track` (a batch-position
+                  // slider is meaningless for a single recurring presence —
+                  // prototype lock) and no `TtlBar` either: the bar's
+                  // countdown-to-rotation framing would visually contradict
+                  // "sticky" (see plan 084's report for the reasoning). No
+                  // generic `<Stamp>` — the live chip above already carries
+                  // that role (Live/Break/Final) with more precision.
+                  <div className="notif-block">
+                    <div className="sc-head">
+                      <span className="chip chip-league">{liveEspn.league}</span>
+                      <span
+                        className={`chip chip-live${pillVariant === "live" ? "" : ` ${pillVariant}`}`}
+                      >
+                        {pillVariant !== "final" && <span className="live-dot" />}
+                        {pillLabel}
+                      </span>
+                      <span className="clock-pill">{liveEspn.clock}</span>
+                    </div>
+                    <div className="score-row">
+                      <div className="side">
+                        <Crest abbrev={liveEspn.homeAbbrev} path={liveEspn.homeCrest} />
+                      </div>
+                      <span className="score">
+                        {liveEspn.homeScore}
+                        <span className="dash">–</span>
+                        {liveEspn.awayScore}
+                      </span>
+                      <div className="side">
+                        <Crest abbrev={liveEspn.awayAbbrev} path={liveEspn.awayCrest} />
+                      </div>
+                    </div>
+                    <div
+                      className={`event-line${eventPresentation?.tintClass ? ` ${eventPresentation.tintClass}` : ""}`}
+                    >
+                      {eventPresentation && <span className={eventPresentation.iconClass} />}
+                      {slot.body}
+                    </div>
+                    {!cardsClean && (
+                      <div className="cards-line">
+                        {liveEspn.homeAbbrev} {liveEspn.homeCards[0]}Y{liveEspn.homeCards[1]}R ·{" "}
+                        {liveEspn.awayAbbrev} {liveEspn.awayCards[0]}Y{liveEspn.awayCards[1]}R
+                      </div>
                     )}
                   </div>
-                  {!renderedExpanded && (
-                    <div className="compact-hint">
-                      <kbd>⌃⇧N</kbd> more
+                ) : (
+                  <>
+                    <div className="compact">
+                      <div className="copy">
+                        {news ? (
+                          // plan 092 (item 19 + 080 carry-forward): the shipped
+                          // news layout stays screenshot-faithful (masthead,
+                          // headline, WIRE stamp, news-shade, track) — only the
+                          // Stamp badge's position (now inline with the
+                          // masthead, `.masthead-row`) and the pills' visual
+                          // vocabulary (chip-converged, item 10) change. Age
+                          // moves out of the meta row entirely into the plain
+                          // `.notif-time-inline` slot (Decision 5 — same
+                          // ageLabel computation/thresholds, new location).
+                          // plan 110 (Step C): the redundant `.pub-meta`
+                          // "published HH:MM" node is gone — the compact row
+                          // now carries exactly one time expression (the
+                          // relative age above). The expanded Manifest's own
+                          // "published HH:MM" segment is untouched (its own
+                          // pinned test lives in StatusRailCard.test.tsx).
+                          <>
+                            <div className="masthead-row">
+                              <div className="masthead">
+                                <span className="dot" />
+                                {slot.source ?? "RSS"}
+                              </div>
+                              <Stamp
+                                priority={slot.priority}
+                                signal={slot.signal}
+                                eventType={slot.eventType}
+                              />
+                            </div>
+                            <div className="title headline">{slot.title}</div>
+                            {(newsCategory !== null || newsAge !== null) && (
+                              <div className="notif-meta-row">
+                                {newsCategory !== null && (
+                                  <span className="chip chip-category">{newsCategory}</span>
+                                )}
+                                {newsAge !== null && (
+                                  <span className="notif-time-inline">{newsAge}</span>
+                                )}
+                              </div>
+                            )}
+                          </>
+                        ) : (
+                          // plan 092 (item 19, this plan's core): the general
+                          // card's header row (title + the badge cluster) +
+                          // subtitle row (plan 035's `subtitle`, surfaced in
+                          // compact for the first time) + full-width clamped
+                          // body. There is no inline-time value here (no
+                          // non-news event carries a publishedAtMs), so the
+                          // subtitle row's time slot simply never renders.
+                          // plan 096: the badge cluster is the priority Stamp
+                          // PLUS the cmux chip, conditional on `origin` (now on
+                          // the wire — 092 deferred this exact spot pending
+                          // that wire change).
+                          <>
+                            <div className="notif-header-row">
+                              <span className="notif-title">{slot.title}</span>
+                              <div className="notif-header-badges">
+                                {slot.origin === "cmux" && (
+                                  <span className="chip chip-cmux">Agent</span>
+                                )}
+                                <Stamp
+                                  priority={slot.priority}
+                                  signal={slot.signal}
+                                  eventType={slot.eventType}
+                                />
+                              </div>
+                            </div>
+                            {slot.subtitle !== null && (
+                              <div className="notif-subtitle-row">
+                                <span className="notif-subtitle">{slot.subtitle}</span>
+                              </div>
+                            )}
+                            <div className="notif-body">{bodyContent}</div>
+                            {/* plan 042: collapsed scorecard cells (Clock,
+                                per-side Cards) — only a live-match card with
+                                `espn_live_card` on populates `details`, so
+                                every other card renders exactly as before.
+                                Same detail-label/detail-value classes as the
+                                expanded Manifest view; collapsed-only, so the
+                                pairs never render twice when expanded. */}
+                            {!expanded &&
+                              liveVisibleDetails.length > 0 &&
+                              liveVisibleDetails.map((detail) => (
+                                <div key={`${detail.label}:${detail.value}`}>
+                                  <div className="detail-label">{detail.label}</div>
+                                  <div className="detail-value">{detail.value}</div>
+                                </div>
+                              ))}
+                          </>
+                        )}
+                      </div>
+                      {!expanded && (
+                        <div className="compact-hint">
+                          <kbd>⌃⇧N</kbd> more
+                        </div>
+                      )}
+                      <Track total={slot.queueTotal} done={slot.queueDone} />
                     </div>
-                  )}
-                  <Track total={renderedSlot.queueTotal} done={renderedSlot.queueDone} />
-                </div>
-                <Manifest
-                  body={renderedSlot.body}
-                  eventType={renderedSlot.eventType}
-                  expanded={renderedExpanded}
-                  source={renderedSlot.source}
-                  category={renderedSlot.category}
-                  publishedAtMs={renderedSlot.publishedAtMs}
-                  hasLink={renderedSlot.link !== null}
-                  subtitle={renderedSlot.subtitle}
-                  details={renderedVisibleDetails}
-                />
-                {/* plan 100: last in DOM order within .below-block — the bar
-                    is the card's floor, absolutely positioned to its bottom
-                    edge (styles.css), clipped to the rounded corners by
-                    .below-block's own overflow: hidden. */}
-                <TtlBar
-                  key={renderedSlot.id}
-                  slotId={renderedSlot.id}
-                  ttlMs={renderedSlot.ttlMs}
-                  remainingMs={renderedSlot.remainingMs}
-                  // plan 093: TTL hover-pause — this bar only ever mounts
-                  // while `renderedShowing`, so `hovered` alone (the live
-                  // cursor signal) is exactly "is THIS card hovered right
-                  // now," no extra gating needed.
-                  hoverPaused={hovered}
-                />
-              </>
+                    <Manifest
+                      body={slot.body}
+                      eventType={slot.eventType}
+                      expanded={expanded}
+                      source={slot.source}
+                      category={slot.category}
+                      publishedAtMs={slot.publishedAtMs}
+                      hasLink={slot.link !== null}
+                      subtitle={slot.subtitle}
+                      details={liveVisibleDetails}
+                    />
+                    {/* plan 100: last in DOM order within .below-block — the bar
+                        is the card's floor, absolutely positioned to its bottom
+                        edge (styles.css), clipped to the rounded corners by
+                        .below-block's own overflow: hidden. */}
+                    <TtlBar
+                      key={slot.id}
+                      slotId={slot.id}
+                      ttlMs={slot.ttlMs}
+                      remainingMs={slot.remainingMs}
+                      // plan 093: TTL hover-pause — this bar only ever mounts
+                      // while `showing`, so `hovered` alone (the live cursor
+                      // signal) is exactly "is THIS card hovered right now,"
+                      // no extra gating needed.
+                      hoverPaused={hovered}
+                    />
+                  </>
+                )}
+              </motion.div>
             )}
-          </div>
+          </AnimatePresence>
         </div>
       )}
       {/* the goal celebration is plan 023's pure-CSS confetti burst +

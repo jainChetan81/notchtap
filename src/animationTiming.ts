@@ -15,7 +15,17 @@
 // exit window, so there's no longer a JS-side literal to single-source
 // for it.
 
-// StatusRailCard's `useDelayedSwap(slot, swapKey, ...)` exit window — must
-// equal overlay-card.css's `.card-content`/`.card-content.swap-exit`
-// `card-enter-*`/`card-exit-*` animation durations (220ms).
+// plan 12x (wave 2): StatusRailCard's content-swap moved off CSS
+// `@keyframes` onto `motion` (AnimatePresence + motion.div), but this
+// constant is still load-bearing in TWO places there, and both must stay
+// equal to each other:
+//   1. `useDelayedSwap(slot, swapKey, SWAP_EXIT_MS)` — kept, but now
+//      scoped to GEOMETRY only (the outer shell's priority/expanded
+//      classes, plan 107's choreography): it must NOT move into motion,
+//      per that plan's contract, so it still needs its own JS-timer
+//      exit window.
+//   2. the `motion.div` swap's own `transition.duration` (seconds,
+//      SWAP_EXIT_MS / 1000) — so the visual content fade finishes at
+//      (or just before) the geometry timer flips the shell to idle,
+//      never after.
 export const SWAP_EXIT_MS = 220;
