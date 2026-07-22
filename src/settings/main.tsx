@@ -3,13 +3,16 @@ import ReactDOM from "react-dom/client";
 import { SettingsApp } from "./SettingsApp";
 // plan 112: Tailwind v4 entry (no-preflight, shared-ui tokens, shadcn
 // utilities) loads first so its @layer theme/utilities are established
-// before any plain CSS. plan 111: shared card-shape stylesheet next,
-// then this window's own residue (settings chrome + the Appearance
-// preview's frame/override rules) — fixed order so settings-only
-// declarations load after and win any specificity tie by source order.
+// before any plain CSS. plan 111: shared card-shape stylesheet next —
+// fixed order so overlay-card.css's unlayered rules still win any
+// specificity tie by source order over base.css's layered content.
+// Step 5: the old per-window settings stylesheet is gone — every rule
+// it still carried (the settings-scoped base reset, the Appearance
+// preview frame chrome, the shared mono-font list, `.section-stack`)
+// is now inside base.css itself, so this window is down to its two
+// real stylesheets.
 import "./base.css";
 import "../overlay-card.css";
-import "./settings.css";
 
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>

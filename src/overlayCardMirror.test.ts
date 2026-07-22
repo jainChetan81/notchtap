@@ -3,10 +3,19 @@
 // DESIGN.html, now retired). `src/settings/preview-overlay.css` is gone;
 // both entry points share `src/overlay-card.css`, scoped under
 // `.card-root`. The one thing that could silently bring the mirror back
-// is a context stylesheet (`src/styles.css`, `src/settings/settings.css`)
+// is a context stylesheet (`src/styles.css`, `src/settings/base.css`)
 // re-declaring one of overlay-card.css's own selectors as an UNSCOPED
 // duplicate — this file is the automated guard against that, run on
 // every test pass instead of relying on a reviewer noticing.
+// plan 112 Step 5: settings.css (the previous settings-side context
+// file this guard checked) is deleted; every rule it still carried —
+// including the Appearance preview frame chrome this guard exists to
+// protect — is now inside base.css, so the check below moved there
+// too. Zero-hit verified directly against the real files before this
+// edit landed (base.css's own selectors: element resets, `.section-*`,
+// the mono-font list, `.appearance-preview`/`.preview-row`/
+// `.preview-label`/`.preview-stage` — none collide with overlay-card.css's
+// ~186-member shared inventory).
 //
 // String-level by design (matches the plan's own instruction): strip
 // `/* ... */` comments first, then extract SELECTOR-shaped occurrences —
@@ -181,9 +190,9 @@ describe("overlayCardMirror scanner — self-test fixtures", () => {
 
   it("does not false-positive on an unrelated selector that merely shares a substring", () => {
     // regression guard for the exact shape this repo has today:
-    // settings.css's `.shortcut-status.active` must never be flagged
-    // just because `.active` appears (compounded differently) in the
-    // shared inventory (`.status-dot.active`).
+    // the settings window's `.shortcut-status.active` must never be
+    // flagged just because `.active` appears (compounded differently)
+    // in the shared inventory (`.status-dot.active`).
     const realInventory = new Set([".status-dot.active"]);
     const css = `.shortcut-status.active {\n  color: green;\n}\n`;
     expect(findRedefinitions(css, realInventory)).toEqual([]);
@@ -205,7 +214,7 @@ describe("overlayCardMirror scanner — self-test fixtures", () => {
 
 const overlayCardCss = readSourceCss("./overlay-card.css");
 const stylesCss = readSourceCss("./styles.css");
-const settingsCss = readSourceCss("./settings/settings.css");
+const baseCss = readSourceCss("./settings/base.css");
 
 describe("overlay-card.css mirror invariant (plan 111)", () => {
   it("src/settings/preview-overlay.css no longer exists", () => {
@@ -224,9 +233,9 @@ describe("overlay-card.css mirror invariant (plan 111)", () => {
     expect(findRedefinitions(stylesCss, inventory)).toEqual([]);
   });
 
-  it("settings.css never redefines a shared-inventory selector outside the allowlist", () => {
+  it("settings/base.css never redefines a shared-inventory selector outside the allowlist", () => {
     const inventory = buildSharedInventory(overlayCardCss);
-    expect(findRedefinitions(settingsCss, inventory)).toEqual([]);
+    expect(findRedefinitions(baseCss, inventory)).toEqual([]);
   });
 
   // the override block itself: plan 111's done criteria caps it at the

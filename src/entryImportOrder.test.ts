@@ -37,11 +37,20 @@ describe("entry-file CSS import order (plan 111)", () => {
     expect(overlayIdx).toBeLessThan(stylesIdx);
   });
 
-  it("settings/main.tsx imports overlay-card.css before settings.css", () => {
+  // plan 112 Step 5: settings.css is gone (its rules relocated into
+  // base.css); the load-bearing pair is now base.css (establishes
+  // @layer theme/utilities before any plain CSS) then overlay-card.css
+  // (unlayered, so it still wins any specificity tie by source order).
+  it("settings/main.tsx imports base.css before overlay-card.css", () => {
     const source = readSource("./settings/main.tsx");
+    const baseIdx = importOrderIndex(source, "./base.css");
     const overlayIdx = importOrderIndex(source, "../overlay-card.css");
-    const settingsIdx = importOrderIndex(source, "./settings.css");
-    expect(overlayIdx).toBeLessThan(settingsIdx);
+    expect(baseIdx).toBeLessThan(overlayIdx);
+  });
+
+  it("settings/main.tsx no longer imports settings.css (deleted; base.css owns its rules)", () => {
+    const source = readSource("./settings/main.tsx");
+    expect(source.includes("settings.css")).toBe(false);
   });
 
   it("App.tsx no longer imports styles.css directly (main.tsx owns both CSS imports)", () => {

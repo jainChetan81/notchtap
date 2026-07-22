@@ -141,6 +141,42 @@
   --fs-secondary: 10px;
   --fs-body: 11px;
   --fs-title: 19px;
+  /* plan 112 Step 5: relocated from the old settings.css `:root` (Step 0
+     CSSOM row 0). That block declared 19 bespoke custom properties;
+     16 of them (--window/--sidebar/--surface-raised/--surface-hover/
+     --text/--text-muted/--text-disabled/--divider-soft/--accent/
+     --accent-soft/--accent-button/--accent-button-hover/--focus-ring/
+     --error/--error-border/--ok/--ease) are dropped here, NOT carried
+     forward — row 0's own disposition marks them "superseded by
+     shared-ui semantic tokens" (bg-background/bg-sidebar/bg-card/
+     text-foreground/text-muted-foreground/border-border/bg-primary/
+     text-destructive/text-overlay-teal/ease-notchtap), and a exhaustive
+     grep of src/ confirms zero remaining var() readers anywhere once
+     settings.css is gone — including `--accent`/`--accent-soft`, whose
+     only consumer (overlay-card.css's `.card-assembly.low/.medium/
+     .high`) always supplies its own locally-scoped override in every
+     real render path (every Appearance preview fixture is `state:
+     "showing"` with a real low/medium/high priority, never the
+     unscoped idle fallback) — so the document-root value was already
+     unreachable in practice. Dropping them also sidesteps a genuine
+     footgun: shared-ui's tokens.css (imported above) already declares
+     its OWN semantic `--accent` (a gray hover-surface token, oklch
+     0.256/0.012/264.33) for `bg-accent`/`hover:bg-accent` utilities
+     used throughout this window (e.g. PriorityToggle's pill hover) —
+     re-declaring `--accent: #0a84ff` here, later in source order, would
+     have silently overridden that token document-wide and turned every
+     shadcn hover surface blue. The remaining 3 properties below
+     (--text-secondary/--surface/--divider) survive because they have a
+     genuine live reader: the Appearance preview frame chrome
+     (.preview-label/.preview-stage, also relocated in this step,
+     "left byte-identical" per Step 0 row 36-39's disposition) still
+     reads them by these exact names. Neither name collides with a
+     shared-ui token (tokens.css has no --text-secondary/--surface/
+     --divider) or with this block's own --fs-* names, so merging them
+     into this same unlayered :root is safe. */
+  --text-secondary: #a2a6ad;
+  --surface: #0d0f12;
+  --divider: #202329;
 }
 
 @theme inline {
@@ -245,5 +281,118 @@
     border-radius: 8px;
     background: var(--border);
     background-clip: padding-box;
+  }
+}
+
+/* plan 112 Step 5: the last of settings.css's genuinely-live rules,
+   relocated here verbatim (properties/values byte-identical, only the
+   file and surrounding comments changed) now that every Step 4 section
+   is done and settings.css itself is deleted. Grouped in their own
+   `@layer base` block (rather than folded into the one above) so this
+   Step 5 diff stays easy to audit against the Step 3 base rule it
+   otherwise mirrors in shape. Placed inside `@layer base`, same as
+   every other named settings-scoped rule above — none of the three
+   families below currently share an element with a competing Tailwind
+   utility class for the same property (confirmed against every call
+   site), so this is not the button/input font-size cascade-layer bug
+   Step 4 hit, but matching the established convention (bare
+   element/class selectors go in `@layer base`; only custom-property-
+   only `:root` blocks stay unlayered) keeps one rule for where things
+   live instead of two. */
+
+/* plan 112 Step 3/4: shared mono-font selector list (Step 0 CSSOM row
+   22). `.soon-badge`/`.sidebar-meta`/`.section-index`/`.relaunch-note`/
+   `.error-title` either match no remaining element or duplicate a
+   `font-mono` utility already applied at their call site (harmless);
+   `.field-caption`/`.unit`/`.status-chip`/`.shortcut-status` are real,
+   still-live readers with no `font-mono` utility of their own. Moved
+   verbatim rather than trimmed to the "still needed" subset — a
+   duplicate is zero-risk, a missed one is a silent regression. */
+@layer base {
+  .soon-badge,
+  .sidebar-meta,
+  .section-index,
+  .field-caption,
+  .unit,
+  .status-chip,
+  .relaunch-note,
+  .shortcut-status,
+  .error-title {
+    font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  }
+
+  /* plan 112 Step 3: `.section-stack` (Step 0 CSSOM row 35) — its
+     consumers are the still-native per-section body wrappers
+     (General/Connectors/Appearance and others); a bare `display: grid;
+     gap: 14px;` layout rule with no competing utility at any call
+     site. */
+  .section-stack {
+    display: grid;
+    gap: 14px;
+  }
+
+  /* ==== Appearance gallery frame chrome (plan 111) ====
+     `.appearance-preview` is the outer gallery container — frame chrome
+     only now, never a CSS scope (the old ".appearance-preview <selector>"
+     mirror is gone; overlay-card.css's shared rules are scoped under
+     `.card-root` instead, placed per-sample on `.preview-stage` below).
+     Still the context-owned custom-property OWNER for this window, exactly
+     like `:root` is in the overlay (styles.css) — the shared card-shape
+     formulas in overlay-card.css read `var(--card-scale)` etc. and inherit
+     whatever value is declared closest, so declaring the live/default
+     values here (AppearanceSection's `previewStyle` overrides them from
+     the actual scale/radius/opacity controls) is what drives the preview
+     without overlay-card.css needing any settings-specific branch.
+     Relocated verbatim from settings.css in Step 5 (Step 0 CSSOM row
+     36-39's disposition: "E", preview/overlay-owned, left byte-identical
+     — this comment block and the four rules below are unchanged aside
+     from moving files). */
+  .appearance-preview {
+    --card-scale: 1;
+    --card-radius: 8px;
+    --card-opacity: 1;
+    /* plan 091 (Step 6): the preview has no cutout-var plumbing (090 noted
+       this) — a fixed HUD-form synthetic width so the shape formulas below
+       have a real value to size against, mirroring App.tsx's HUD synthetic
+       constant. Height stays on overlay-card.css's own `32px` CSS fallback
+       (no override needed here — one line, not a preview overhaul). */
+    --notchtap-cutout-width: 200px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  .preview-row {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+  }
+
+  .preview-label {
+    font-size: 12px;
+    color: var(--text-secondary);
+  }
+
+  /* the per-sample frame box AND the shared stylesheet's scope host in one
+     element (`className="preview-stage card-root"`, SettingsApp.tsx) —
+     `.card-root` composes onto this real layout box rather than needing a
+     further nested element, unlike the overlay's own `.card-root` (a new,
+     otherwise-empty `display: contents` wrapper — see styles.css). No
+     override block follows: plan 111's Step 0 audit found every rule this
+     preview used to diverge on was either accumulated drift (now fixed by
+     unifying into overlay-card.css — `.card-content`'s enter/exit
+     animation, `.manifest-wrap`'s collapse, `.chip-category`'s pill-enter,
+     all previously mirrored only in part) or a genuinely preview-only
+     selector with no styles.css counterpart at all (this frame chrome).
+     Nothing needed a deliberate divergent override once the drift was
+     fixed — the plan's own preference ("if an adaptation can die instead,
+     kill it") is satisfied at zero overrides. */
+  .preview-stage {
+    display: flex;
+    justify-content: center;
+    padding: 24px;
+    border-radius: 8px;
+    background: var(--surface);
+    border: 1px solid var(--divider);
   }
 }
