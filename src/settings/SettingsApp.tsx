@@ -22,8 +22,7 @@ import {
   useState,
 } from "react";
 import { StatusRailCard } from "../components/StatusRailCard";
-import type { SlotState } from "../useSlotState";
-import "./preview-overlay.css";
+import { PREVIEW_SAMPLES } from "./previewFixtures";
 
 export interface RssFeedConfig {
   url: string;
@@ -1814,115 +1813,6 @@ function SegmentedControl({
   );
 }
 
-type ShowingSlotState = Extract<SlotState, { state: "showing" }>;
-
-const PREVIEW_SAMPLES: ReadonlyArray<{
-  label: string;
-  slot: ShowingSlotState;
-}> = [
-  {
-    label: "Goal (High priority, football)",
-    slot: {
-      state: "showing",
-      id: "preview-goal",
-      title: "GOAL",
-      body: "Arsenal 2-0",
-      eventType: "score_update",
-      priority: "high",
-      signal: "goal",
-      origin: "football",
-      expanded: true,
-      source: null,
-      category: null,
-      publishedAtMs: null,
-      link: null,
-      subtitle: null,
-      details: [],
-      queueTotal: 3,
-      queueDone: 0,
-      ttlMs: 8000,
-      remainingMs: 5000,
-    },
-  },
-  {
-    label: "Red card (High priority, football)",
-    slot: {
-      state: "showing",
-      id: "preview-red-card",
-      title: "Red Card",
-      body: "Chelsea down to 10",
-      eventType: "match_state",
-      priority: "high",
-      signal: "red_card",
-      origin: "football",
-      expanded: true,
-      source: null,
-      category: null,
-      publishedAtMs: null,
-      link: null,
-      subtitle: null,
-      details: [],
-      queueTotal: 3,
-      queueDone: 1,
-      ttlMs: 8000,
-      remainingMs: 5000,
-    },
-  },
-  {
-    label: "Generic alert (High priority, cmux)",
-    slot: {
-      state: "showing",
-      id: "preview-cmux",
-      title: "Agent needs input",
-      body: "run `git push origin master`?",
-      eventType: "generic",
-      priority: "high",
-      signal: "generic",
-      // this sample is the cmux accent's own preview vehicle (plan 096) —
-      // it's the one origin the settings preview can actually show the
-      // accent for; label above says "cmux" for exactly this reason.
-      origin: "cmux",
-      expanded: true,
-      source: null,
-      category: null,
-      publishedAtMs: null,
-      link: null,
-      // preview samples keep subtitle/details empty (plan 035): the render
-      // path for populated cells is exercised in StatusRailCard.test.tsx.
-      subtitle: null,
-      details: [],
-      queueTotal: 3,
-      queueDone: 2,
-      ttlMs: 8000,
-      remainingMs: 5000,
-    },
-  },
-  {
-    label: "News headline (Low priority)",
-    slot: {
-      state: "showing",
-      id: "preview-news",
-      title: "Parliament passes the landmark digital rights bill",
-      body: "The measure passed after a late-night vote.",
-      eventType: "news_item",
-      priority: "low",
-      signal: "generic",
-      origin: "news",
-      expanded: true,
-      source: "NDTV",
-      category: "politics",
-      publishedAtMs: null,
-      link: "https://example.com/digital-rights",
-      subtitle: null,
-      details: [],
-      queueTotal: 1,
-      queueDone: 0,
-      ttlMs: 8000,
-      remainingMs: 5000,
-    },
-  },
-];
-
 function AppearanceSection({
   config,
   patchConfig,
@@ -2026,7 +1916,15 @@ function AppearanceSection({
           {PREVIEW_SAMPLES.map(({ label, slot }) => (
             <div className="preview-row" key={slot.id}>
               <div className="preview-label">{label}</div>
-              <div className="preview-stage">
+              {/* plan 111: `.card-root` scopes the shared card-shape
+                  stylesheet (overlay-card.css) — each sample gets its OWN
+                  scope (one wrapper per card, matching the overlay's
+                  one-wrapper-per-card shape), and `.preview-stage` is
+                  already the per-sample frame box, so the scope class
+                  composes onto it rather than adding a further nested
+                  element. `.appearance-preview` itself stays frame chrome
+                  only (settings.css) — never the scope host. */}
+              <div className="preview-stage card-root">
                 <StatusRailCard slot={slot} />
               </div>
             </div>

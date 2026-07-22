@@ -25,9 +25,16 @@ afterEach(cleanup);
 // jsdom can't compute cascade from stylesheets (no layout/paint engine), so
 // plan 107's stacking contract — `.card-content` above the celebration
 // burst — is pinned at the STRING level here: read the rule text straight
-// out of both CSS files and assert the decisive declarations are present.
-// Cross-referenced by name (`celebrationStacking.test.tsx`) from the
-// contract comment on `.card-assembly::after` in both files.
+// out of the shared CSS file and assert the decisive declarations are
+// present. Cross-referenced by name (`celebrationStacking.test.tsx`) from
+// the contract comment on `.card-assembly::after`.
+//
+// plan 111: this used to pin the SAME contract twice — once in styles.css,
+// once in its hand-maintained mirror (src/settings/preview-overlay.css,
+// now deleted). Both entry points now import ONE shared stylesheet
+// (src/overlay-card.css, `.card-root`-scoped) — there is only one rule
+// pair to pin, and mirrorInvariant.test.ts is what stops a scoped copy
+// from ever coming back.
 //
 // Read via `node:fs`, not a `?raw`/`?inline` Vite import: under vitest's
 // SSR-consumer transform, Vite's own css plugin intercepts anything
@@ -39,8 +46,7 @@ function readSourceCss(relativePath: string): string {
   return readFileSync(fileURLToPath(new NodeURL(relativePath, import.meta.url)), "utf-8");
 }
 
-const stylesCss = readSourceCss("./styles.css");
-const previewOverlayCss = readSourceCss("./settings/preview-overlay.css");
+const overlayCardCss = readSourceCss("./overlay-card.css");
 
 function ruleBody(css: string, selector: string): string {
   const marker = `${selector} {`;
@@ -57,40 +63,26 @@ function ruleBody(css: string, selector: string): string {
 }
 
 describe("celebration stacking — CSS string pins (plan 107)", () => {
-  it("styles.css: .card-content is `position: relative; z-index: 1` — the decisive declaration against the burst's `z-index: 0`", () => {
-    const body = ruleBody(stylesCss, ".card-content");
+  it("overlay-card.css: .card-root .card-content is `position: relative; z-index: 1` — the decisive declaration against the burst's `z-index: 0`", () => {
+    const body = ruleBody(overlayCardCss, ".card-root .card-content");
     expect(body).toContain("position: relative");
     expect(body).toContain("z-index: 1");
   });
 
-  it("styles.css: the celebration burst (.card-assembly::after) stays at z-index: 0", () => {
-    const body = ruleBody(stylesCss, ".card-assembly::after");
-    expect(body).toContain("z-index: 0");
-  });
-
-  // mirror law: preview-overlay.css had NO `.card-content` rule before this
-  // plan (born here) — every selector in that file is `.appearance-preview`
-  // prefixed, its own scoping convention.
-  it("preview-overlay.css (mirror law): .appearance-preview .card-content is `position: relative; z-index: 1`", () => {
-    const body = ruleBody(previewOverlayCss, ".appearance-preview .card-content");
-    expect(body).toContain("position: relative");
-    expect(body).toContain("z-index: 1");
-  });
-
-  it("preview-overlay.css: the mirrored burst (.appearance-preview .card-assembly::after) stays at z-index: 0", () => {
-    const body = ruleBody(previewOverlayCss, ".appearance-preview .card-assembly::after");
+  it("overlay-card.css: the celebration burst (.card-root .card-assembly::after) stays at z-index: 0", () => {
+    const body = ruleBody(overlayCardCss, ".card-root .card-assembly::after");
     expect(body).toContain("z-index: 0");
   });
 
   // plan 100's 2x celebration pacing is explicitly out of scope for this
   // plan (Step A spends none of that timing budget) — pin the durations
-  // byte-unchanged in both files, matching the plan's own baseline counts.
-  it("plan-100 celebration durations are byte-unchanged in both files", () => {
-    for (const css of [stylesCss, previewOverlayCss]) {
-      expect((css.match(/1240ms/g) ?? []).length).toBe(3);
-      expect((css.match(/1440ms/g) ?? []).length).toBe(1);
-      expect((css.match(/920ms/g) ?? []).length).toBe(1);
-    }
+  // byte-unchanged, matching the plan's own baseline counts. plan 111:
+  // was 2x these counts pre-unification (once per mirrored file) — now
+  // 1x, since there is exactly one copy of this CSS.
+  it("plan-100 celebration durations are byte-unchanged", () => {
+    expect((overlayCardCss.match(/1240ms/g) ?? []).length).toBe(3);
+    expect((overlayCardCss.match(/1440ms/g) ?? []).length).toBe(1);
+    expect((overlayCardCss.match(/920ms/g) ?? []).length).toBe(1);
   });
 });
 

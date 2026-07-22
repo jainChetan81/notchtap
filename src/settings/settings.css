@@ -331,6 +331,67 @@ input[type="checkbox"] {
   gap: 14px;
 }
 
+/* ==== Appearance gallery frame chrome (plan 111) ====
+   `.appearance-preview` is the outer gallery container — frame chrome
+   only now, never a CSS scope (the old ".appearance-preview <selector>"
+   mirror is gone; overlay-card.css's shared rules are scoped under
+   `.card-root` instead, placed per-sample on `.preview-stage` below).
+   Still the context-owned custom-property OWNER for this window, exactly
+   like `:root` is in the overlay (styles.css) — the shared card-shape
+   formulas in overlay-card.css read `var(--card-scale)` etc. and inherit
+   whatever value is declared closest, so declaring the live/default
+   values here (AppearanceSection's `previewStyle` overrides them from
+   the actual scale/radius/opacity controls) is what drives the preview
+   without overlay-card.css needing any settings-specific branch. */
+.appearance-preview {
+  --card-scale: 1;
+  --card-radius: 8px;
+  --card-opacity: 1;
+  /* plan 091 (Step 6): the preview has no cutout-var plumbing (090 noted
+     this) — a fixed HUD-form synthetic width so the shape formulas below
+     have a real value to size against, mirroring App.tsx's HUD synthetic
+     constant. Height stays on overlay-card.css's own `32px` CSS fallback
+     (no override needed here — one line, not a preview overhaul). */
+  --notchtap-cutout-width: 200px;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+.preview-row {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.preview-label {
+  font-size: 12px;
+  color: var(--text-secondary);
+}
+
+/* the per-sample frame box AND the shared stylesheet's scope host in one
+   element (`className="preview-stage card-root"`, SettingsApp.tsx) —
+   `.card-root` composes onto this real layout box rather than needing a
+   further nested element, unlike the overlay's own `.card-root` (a new,
+   otherwise-empty `display: contents` wrapper — see styles.css). No
+   override block follows: plan 111's Step 0 audit found every rule this
+   preview used to diverge on was either accumulated drift (now fixed by
+   unifying into overlay-card.css — `.card-content`'s enter/exit
+   animation, `.manifest-wrap`'s collapse, `.chip-category`'s pill-enter,
+   all previously mirrored only in part) or a genuinely preview-only
+   selector with no styles.css counterpart at all (this frame chrome).
+   Nothing needed a deliberate divergent override once the drift was
+   fixed — the plan's own preference ("if an adaptation can die instead,
+   kill it") is satisfied at zero overrides. */
+.preview-stage {
+  display: flex;
+  justify-content: center;
+  padding: 24px;
+  border-radius: 8px;
+  background: var(--surface);
+  border: 1px solid var(--divider);
+}
+
 .settings-group {
   overflow: hidden;
   border: 1px solid var(--divider);

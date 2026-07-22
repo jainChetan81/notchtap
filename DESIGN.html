@@ -107,9 +107,12 @@ button.ctl.active { background: #3b4757; border-color: #5b7089; }
 
 /* ============================================================
    SHIPPED OVERLAY CSS — synced from src/styles.css @ 89850b6
-   (2026-07-19). When the design changes: edit src/styles.css,
-   mirror src/settings/preview-overlay.css, then replace this block.
-   Only the :root defaults differ (runtime config defaults shown).
+   (2026-07-19, predates plan 111's src/overlay-card.css split — the
+   shape rules below now live there instead). When the design changes:
+   edit src/overlay-card.css (the single source for both the overlay
+   and the settings preview, per the retired mirror law above), then
+   replace this block. Only the :root defaults differ (runtime config
+   defaults shown).
    ============================================================ */
 :root {
   --card-scale: 1;
@@ -1199,7 +1202,7 @@ Any <b>looping</b> animation must be compositor-only (transform/opacity) — pla
   <li><b>Markdown is inline and escaped.</b> <code>code</code>/<strong>bold</strong>/<em>italic</em>/line-breaks, React-node tokenizer, no <code>dangerouslySetInnerHTML</code>. Hook-supplied <code>details</code> are plain text, never markdown.</li>
   <li><b>Looping animations are compositor-only.</b> transform and opacity only (plan 018). No background-*, box-shadow, filter, or layout animation on an infinite loop.</li>
   <li><b>Reduced motion ⇒ silence, not substitutes.</b> Celebrations suppress entirely; the card, accent, stamp, and copy still render and announce.</li>
-  <li><b>The settings preview mirrors the overlay CSS.</b> <code>src/settings/preview-overlay.css</code> is a scoped copy of <code>src/styles.css</code> — change one, change both, in the same commit.</li>
+  <li><b>The settings preview shares the overlay CSS — there is no mirror to keep in sync.</b> Both the overlay (<code>src/main.tsx</code>) and the settings preview (<code>src/settings/main.tsx</code>) import the same <code>src/overlay-card.css</code>, scoped under a neutral <code>.card-root</code> class. Plan 111 retired the old hand-maintained copy (<code>src/settings/preview-overlay.css</code>, "change one, change both, in the same commit") after it repeatedly drifted; a vitest structural check (<code>src/overlayCardMirror.test.ts</code>) now fails the build if either window's own stylesheet ever redeclares a shared selector outside a small, reviewed override list.</li>
   <li><b>Stamps are a lookup table, never parsing.</b> Signal/priority/eventType drive the stamp via <code>lib/presentation.ts</code>; we never regex titles or bodies to decide what to show.</li>
 </ol>
 

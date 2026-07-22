@@ -4,7 +4,6 @@ import { StatusRailCard } from "./components/StatusRailCard";
 import { presentationFacts } from "./lib/presentationFacts";
 import { useSlotState } from "./useSlotState";
 import { useStatusState } from "./useStatusState";
-import "./styles.css";
 
 type RestingState = "rail" | "notch";
 
@@ -126,8 +125,16 @@ function App() {
     };
   }, []);
 
+  // plan 111: `.card-root` scopes the shared card-shape stylesheet
+  // (overlay-card.css) — StatusRailCard's own root element IS
+  // `.card-assembly`, so this wrapper is the only ancestor available to
+  // host that scope. `display: contents` (styles.css, overlay-only
+  // residue) makes it a layout-neutral scoping node: it changes zero
+  // overlay geometry, only which selectors match.
   return (
-    <StatusRailCard slot={slot} status={status} restingState={restingState} hovered={hovered} />
+    <div className="card-root">
+      <StatusRailCard slot={slot} status={status} restingState={restingState} hovered={hovered} />
+    </div>
   );
 }
 

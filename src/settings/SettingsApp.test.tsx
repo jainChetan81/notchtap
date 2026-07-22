@@ -268,7 +268,7 @@ describe("SettingsApp", () => {
     expect(screen.queryAllByText("planned · not implemented")).toHaveLength(0);
   });
 
-  it("Appearance section is enabled and renders all four preview cards", async () => {
+  it("Appearance section is enabled and renders all eight preview cards", async () => {
     mockLoads();
     render(<SettingsApp />);
 
@@ -284,6 +284,12 @@ describe("SettingsApp", () => {
     expect(await screen.findByText("Red card (High priority, football)")).toBeTruthy();
     expect(await screen.findByText("Generic alert (High priority, cmux)")).toBeTruthy();
     expect(await screen.findByText("News headline (Low priority)")).toBeTruthy();
+    // plan 111 Step 3: the four states the old four-sample gallery could
+    // never show — the ones most sensitive to CSS drift.
+    expect(await screen.findByText("Compact (collapsed manifest, medium priority)")).toBeTruthy();
+    expect(await screen.findByText("Live match (recurring scorecard, football)")).toBeTruthy();
+    expect(await screen.findByText("Weather alert (medium priority)")).toBeTruthy();
+    expect(await screen.findByText("News headline, compact (single timestamp)")).toBeTruthy();
     expect(await screen.findByText("GOAL")).toBeTruthy();
     expect(
       await screen.findByText("Parliament passes the landmark digital rights bill"),
@@ -304,6 +310,39 @@ describe("SettingsApp", () => {
         name: "Send test notification",
       }),
     ).toBeTruthy();
+  });
+
+  // plan 111 Step 3's own verify clause: the compact fixture renders
+  // `.compact` (the collapsed-manifest state), and the live fixture
+  // renders its `.chip-live` (proof `espn` meta reached the recurring
+  // scorecard branch, not the generic compact/manifest branch).
+  it("Appearance gallery: every fixture renders without error, compact shows .compact, live shows its live chip", async () => {
+    mockLoads();
+    const { container } = render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
+    await screen.findByRole("heading", { level: 1, name: "Appearance" });
+    await screen.findByText("GOAL");
+
+    const stages = container.querySelectorAll(".preview-stage.card-root");
+    expect(stages.length).toBe(8);
+    stages.forEach((stage) => {
+      expect(stage.querySelector(".card-assembly")).not.toBeNull();
+    });
+
+    const compactRow = (
+      await screen.findByText("Compact (collapsed manifest, medium priority)")
+    ).closest(".preview-row") as HTMLElement;
+    expect(within(compactRow).getByText("Build finished")).toBeTruthy();
+    expect(compactRow.querySelector(".compact")).not.toBeNull();
+    expect(compactRow.querySelector(".card-assembly.expanded")).toBeNull();
+
+    const liveRow = (await screen.findByText("Live match (recurring scorecard, football)")).closest(
+      ".preview-row",
+    ) as HTMLElement;
+    expect(liveRow.querySelector(".chip-live")).not.toBeNull();
+    expect(liveRow.querySelector(".notif-block")).not.toBeNull();
   });
 
   it("calls set_appearance with scale/radius/opacity, not card_scale/card_radius/card_opacity", async () => {
