@@ -780,8 +780,10 @@ v3.6's rewritten queue/frontend — see `TESTING_STRATEGY.md` §4.10.
 - [ ] notch-cutout anchoring looks correct on the macbook; hud placement
       looks correct on the mac mini
 - [ ] v3.6: the global hotkey toggles expand on the macbook (manual
-      trigger, `Medium`/`Low`-priority item Visible); pressing it while
-      a `High`-priority item is auto-Expanded is a no-op
+      trigger); every promotion auto-expands (plan 033 — universal,
+      not `High`-only), so the global hotkey collapses an
+      auto-expanded card on the first press and re-expands it on the
+      second press, for any priority
 - [ ] v3.6: the window survives a Spaces switch and stays visible over
       a fullscreen app (`NSWindowCollectionBehavior`)
 - [ ] v3.6: a live espn goal (`High` priority) auto-expands and rotates

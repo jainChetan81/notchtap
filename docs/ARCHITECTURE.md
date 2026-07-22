@@ -573,6 +573,10 @@ mechanism described above (the `build.rs` opt-in gating a per-window
 acl) is unchanged; only the count grew. `src-tauri/build.rs` and
 `V5_TECHNICAL_SPEC.md` §2 remain the authoritative list.
 
+**amended 2026-07-22**: as of 2026-07-22 the count is eleven (history
+×2, connector-health, log-lines added); `src-tauri/build.rs` is the
+authority.
+
 this boundary matters if the app ever processes untrusted content (e.g.,
 whatsapp messages from unknown senders in v3). establishing the
 one-way data flow in v1 means v3 doesn't accidentally open a hole.

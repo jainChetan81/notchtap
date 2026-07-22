@@ -176,12 +176,14 @@ the rust core sends it.
 
 **v5 settings window is the one exception, and it's opt-in-gated,
 not default-safe.** tauri v2 grants app-defined commands to *every*
-window by default — the settings window's seven invoke commands
-(`get_config`, `get_default_config`, `get_secret_status`,
-`save_config_and_relaunch`, `set_secret`, `send_test_notification`,
-`set_appearance`) are scoped to it alone only because `src-tauri/build.rs`
-opts into `tauri_build::AppManifest::commands(&[...])` (deny-by-default)
-plus a dedicated `capabilities/settings.json`. never add a new
+window by default — the settings window's eleven invoke commands
+(`clear_history`, `get_config`, `get_connector_health`,
+`get_default_config`, `get_history`, `get_recent_log_lines`,
+`get_secret_status`, `save_config_and_relaunch`, `set_secret`,
+`send_test_notification`, `set_appearance`) are scoped to it alone
+only because `src-tauri/build.rs`
+opts into `tauri_build::AppManifest::commands(&[...])`
+(deny-by-default) plus a dedicated `capabilities/settings.json`. never add a new
 `#[tauri::command]` without adding it to that `build.rs` list —
 otherwise it silently becomes callable from the overlay (`main`)
 window too, breaking the receive-only guarantee above.

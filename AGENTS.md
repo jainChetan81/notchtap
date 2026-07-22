@@ -246,8 +246,9 @@ the rust core sends it.
 **v5 amendment (rust side built 2026-07-17)**: the receive-only
 rule above now applies to the *overlay* window (`main`), permanently.
 the settings window (`settings` label, `src-tauri/src/settings.rs`)
-has seven
-invoke commands, gated per-window. critical tauri v2 gotcha: app-
+has eleven
+invoke commands (see `CLAUDE.md`'s receive-only section for the full
+list), gated per-window. critical tauri v2 gotcha: app-
 defined commands are allowed to **every** window by
 default — the gate only exists with the `tauri_build::AppManifest::
 commands` opt-in in `build.rs` plus a dedicated

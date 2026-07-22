@@ -534,12 +534,13 @@ priority tiers, not pure fifo; rotation, not ttl).
   `V3_6_TECHNICAL_SPEC.md` §5.2's "integration risk" note warned
   about, and the snapshot test caught it on the first real run rather
   than shipping a frontend that silently never renders anything.
-- **hotkey no-op branch** (`lib.rs`): `toggle_manual_expand`'s pure
-  decision (no-op while a `High`-priority item is Visible — because
-  it's already auto-expanded, per plan 008 — toggles otherwise) is
-  unit-tested directly against a `SingleSlotQueue` and a
-  `tauri::test::mock_app()` handle, bypassing the actual OS hotkey —
-  same split as §4.4's subprocess boundary
+- **hotkey toggle branch** (`lib.rs`): `toggle_manual_expand`'s pure
+  decision (always flips `expanded` — every promotion auto-expands
+  universally as of plan 033, so the first press collapses and the
+  second re-expands, for any priority) is unit-tested directly
+  against a `SingleSlotQueue` and a `tauri::test::mock_app()` handle,
+  bypassing the actual OS hotkey — same split as §4.4's subprocess
+  boundary
 - **frontend** (`useSlotState.ts` + `App.tsx`, 10 of the 14 total
   frontend tests): renders `empty` as nothing; renders `showing` with
   the right priority/expanded classes; a new `slot-state` payload

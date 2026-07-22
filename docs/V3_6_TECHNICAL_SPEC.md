@@ -975,14 +975,6 @@ Accessibility/Input Monitoring access).
 ```rust
 fn toggle_manual_expand(app: &AppHandle, queue: &Arc<Mutex<SingleSlotQueue>>) {
     let mut q = queue.blocking_lock(); // called off the tokio runtime — mirrors the tray handler's guard
-    // no-op while the current slot is already auto-expanded (High priority)
-    // — the hotkey is a *manual* override for "everything else", not a
-    // forced-collapse of an automatic expand (this spec's reading of
-    // §3.6: "manual, ... for everything else ('news')" reads as scoped
-    // to the non-high case, not a global override).
-    if q.current_priority() == Some(Priority::High) {
-        return;
-    }
     q.toggle_expanded();
     // toggling always changes `expanded` on the current Showing state,
     // so this is always Some in practice — routed through the same
@@ -996,12 +988,16 @@ fn toggle_manual_expand(app: &AppHandle, queue: &Arc<Mutex<SingleSlotQueue>>) {
 }
 ```
 
-this no-op-while-High behavior is **this spec's reading**, not a line
-lifted verbatim from §3.6 — §3.6 pins automatic-for-high and
-manual-for-else as two independent triggers but doesn't say what the
-hotkey does if pressed while a High item happens to be showing. Flagged
-here explicitly so it's easy to override in one function if that
-reading is wrong.
+every promotion starts expanded (plan 033: automatic expansion is
+universal, not High-priority-only), so the hotkey always flips — a
+press on a freshly-promoted card collapses it; a second press
+re-expands it (and extends its rotation window, per §7.1's manual-
+expansion-extends-the-turn rule).
+
+HISTORY: plan 008's original contract had this handler no-op while
+the current slot was already auto-expanded (High priority only, since
+only High auto-expanded then) — that no-op guard was reversed and
+deleted by plan 033 once auto-expand became universal.
 
 **7.1.2 dismiss and pause-toggle shortcuts** — two more combos, added
 later, same file, same registration pattern as §7.1's `EXPAND_TOGGLE_SHORTCUT`:
@@ -1083,7 +1079,7 @@ setting to configure.
 | `slot-state` emission (§5.1) | unit (tauri `MockRuntime`, mirroring `http.rs`'s existing pattern): change-guard suppresses a re-emit when nothing changed between two `tick()` calls; an actual promotion, rotation-to-empty, or expand toggle always emits |
 | cli `--priority` (§6) | manual + a `test-cli.sh` case if one gets written (today's cli stays manually verified per `IMPLEMENTATION_PLAN.md` §8 — no new automated coverage tier introduced by this field alone) |
 | frontend `useSlotState` (§5.2) | vitest: renders `empty` as nothing, renders `showing` with the right classes, re-render on a new `slot-state` payload replaces content without an intermediate empty frame |
-| global hotkey (§7.1) | manual only — `TESTING_STRATEGY.md` §5's existing rule (hardware-dependent OS interaction) extends naturally; the **pure** no-op-while-High branch of `toggle_manual_expand` should still be unit-tested against the queue directly, bypassing the actual OS hotkey |
+| global hotkey (§7.1) | manual only — `TESTING_STRATEGY.md` §5's existing rule (hardware-dependent OS interaction) extends naturally; the **pure** always-flip toggle branch of `toggle_manual_expand` should still be unit-tested against the queue directly, bypassing the actual OS hotkey (plan 008's no-op-while-High guard was reversed and deleted by plan 033 — see §7.1.1) |
 | dismiss/pause-toggle hotkeys (§7.1.2) | manual only — same `TESTING_STRATEGY.md` §5 rule; `dismiss_current`/`toggle_pause` and `SingleSlotQueue::dismiss_visible` are unit-tested directly against the queue, bypassing the actual OS keypress |
 | `NSWindowCollectionBehavior` (§7.2) | manual only (physical Spaces-switch + fullscreen-app check on the macbook) |
 
@@ -1182,10 +1178,11 @@ integration or C's frontend work. D does not need B or C at all.
 block and `NSWindowCollectionBehavior` block in `lib.rs`'s `.setup()`,
 `toggle_manual_expand`.
 **exit test**: `cargo build` clean with the new deps on macOS; the
-pure no-op-while-High branch unit-tested directly against a
-`SingleSlotQueue` (no real hotkey needed for that assertion); manual
-checklist entries for the actual keypress + Spaces/fullscreen behavior
-(§8's last two rows).
+pure always-flip toggle branch unit-tested directly against a
+`SingleSlotQueue` (no real hotkey needed for that assertion; plan
+008's no-op-while-High guard was reversed and deleted by plan 033 —
+see §7.1.1); manual checklist entries for the actual keypress +
+Spaces/fullscreen behavior (§8's last two rows).
 
 ### workstream E — docs
 **depends on**: nothing functionally; best done last so it reflects
