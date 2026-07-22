@@ -1,7 +1,22 @@
 import { clearMocks, mockIPC } from "@tauri-apps/api/mocks";
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { type Config, type HistoryEntry, type SecretStatus, SettingsApp } from "./SettingsApp";
+
+// Several plan-108 tests drive setInterval/setTimeout-based status transitions
+// (connector-health poll, ok-message auto-clear) with fake timers. Those
+// timers must be created UNDER the fake clock, so fake timers are engaged
+// before render — which means we can't rely on RTL's findBy/waitFor (their
+// internal polling assumes real timers). This flushes the microtask queue
+// enough times to drain invoke() promise chains and any resulting state
+// updates, entirely independent of the timer fake/real state.
+async function flush(times = 6) {
+  for (let i = 0; i < times; i++) {
+    await act(async () => {
+      await Promise.resolve();
+    });
+  }
+}
 
 const config: Config = {
   port: 4321,
@@ -164,6 +179,10 @@ function mockLoads(status: SecretStatus = unsetSecrets) {
 afterEach(() => {
   cleanup();
   clearMocks();
+  // defensive: a test that enables fake timers (plan 108's connector-health
+  // and auto-clear tests) always restores real timers itself, but this
+  // guards against a leak into later tests if one fails mid-test.
+  vi.useRealTimers();
 });
 
 describe("SettingsApp", () => {
@@ -817,5 +836,430 @@ describe("SettingsApp", () => {
     await waitFor(() => expect(savedConfig).not.toBeNull());
     // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
     expect(savedConfig!.history_enabled).toBe(true);
+  });
+});
+
+// Plan 108: resets hot-apply the live overlay, and every operation that can
+// silently fail now reports its outcome through the shared ActionStatus
+// mechanism. Each of the seven operations gets independent coverage below.
+describe("SettingsApp — action status (plan 108)", () => {
+  it("Reset invokes set_appearance with the loaded config's saved values, not the currently-adjusted ones", async () => {
+    const setAppearance = vi.fn();
+    mockIPC((command, payload) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "set_appearance") {
+        setAppearance(payload);
+        return null;
+      }
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
+    const scaleToggle = await screen.findByRole("group", { name: "Scale" });
+    fireEvent.click(within(scaleToggle).getByRole("button", { name: "Large" }));
+    await waitFor(() => {
+      expect(setAppearance).toHaveBeenLastCalledWith({ scale: 1.15, radius: 8, opacity: 0.9 });
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+
+    await waitFor(() => {
+      // config fixture's appearance is { card_scale: 1, card_radius: 8, card_opacity: 0.9 }
+      expect(setAppearance).toHaveBeenLastCalledWith({ scale: 1, radius: 8, opacity: 0.9 });
+    });
+  });
+
+  it("Reset to defaults invokes set_appearance with the defaults' values", async () => {
+    const setAppearance = vi.fn();
+    mockIPC((command, payload) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "set_appearance") {
+        setAppearance(payload);
+        return null;
+      }
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    await waitFor(() => {
+      expect(
+        (screen.getByRole("button", { name: "Reset to defaults" }) as HTMLButtonElement).disabled,
+      ).toBe(false);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset to defaults" }));
+
+    await waitFor(() => {
+      // rustConfigDefaults' appearance is { card_scale: 1, card_radius: 16, card_opacity: 0.9 }
+      expect(setAppearance).toHaveBeenCalledWith({ scale: 1, radius: 16, opacity: 0.9 });
+    });
+  });
+
+  it("a failed live-apply from Reset still resets the form, and renders the shared, announced appearance error", async () => {
+    mockIPC((command) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "set_appearance") return Promise.reject("overlay unreachable");
+    });
+    render(<SettingsApp />);
+
+    const port = (await screen.findByLabelText("Listener port")) as HTMLInputElement;
+    fireEvent.change(port, { target: { value: "5555" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset" }));
+
+    // form state and live-apply are separate concerns — the form still resets.
+    await waitFor(() => {
+      expect((screen.getByLabelText("Listener port") as HTMLInputElement).value).toBe("4321");
+    });
+
+    const message = await screen.findByText(
+      "Live preview couldn't update — will apply on Save & Relaunch",
+    );
+    expect(message.getAttribute("aria-live")).toBe("polite");
+  });
+
+  it("a failed live-apply from Reset to defaults still resets the form, and renders the shared, announced appearance error", async () => {
+    mockIPC((command) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "set_appearance") return Promise.reject("overlay unreachable");
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    await waitFor(() => {
+      expect(
+        (screen.getByRole("button", { name: "Reset to defaults" }) as HTMLButtonElement).disabled,
+      ).toBe(false);
+    });
+
+    fireEvent.click(screen.getByRole("button", { name: "Reset to defaults" }));
+
+    await waitFor(() => {
+      expect((screen.getByLabelText("Listener port") as HTMLInputElement).value).toBe("9789");
+    });
+
+    const message = await screen.findByText(
+      "Live preview couldn't update — will apply on Save & Relaunch",
+    );
+    expect(message.getAttribute("aria-live")).toBe("polite");
+  });
+
+  it("appearance slider hot-apply: repeated identical failures render one deduplicated, announced error with no pending/ok chatter, cleared by the next success", async () => {
+    let shouldFail = true;
+    mockIPC((command) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "set_appearance") {
+        return shouldFail ? Promise.reject("overlay unreachable") : null;
+      }
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
+    const scaleToggle = await screen.findByRole("group", { name: "Scale" });
+
+    // never shows a pending/ok "Working…" flicker for this high-frequency action
+    fireEvent.click(within(scaleToggle).getByRole("button", { name: "Large" }));
+    await screen.findByText("Live preview couldn't update — will apply on Save & Relaunch");
+    expect(screen.queryByText("Working…")).toBeNull();
+
+    // a second, identical failure must not duplicate the message
+    fireEvent.click(within(scaleToggle).getByRole("button", { name: "Medium" }));
+    await waitFor(() => {
+      expect(
+        screen.getAllByText("Live preview couldn't update — will apply on Save & Relaunch"),
+      ).toHaveLength(1);
+    });
+
+    // the next successful apply clears it — no lingering "ok" chatter either
+    shouldFail = false;
+    fireEvent.click(within(scaleToggle).getByRole("button", { name: "Small" }));
+    await waitFor(() => {
+      expect(
+        screen.queryByText("Live preview couldn't update — will apply on Save & Relaunch"),
+      ).toBeNull();
+    });
+    expect(screen.queryByText("Working…")).toBeNull();
+  });
+
+  it("Send test: pending disables the button, and success announces 'Queued'", async () => {
+    let resolveInvoke: (() => void) | null = null;
+    mockIPC((command) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "send_test_notification") {
+        return new Promise<void>((resolve) => {
+          resolveInvoke = resolve;
+        });
+      }
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    const button = screen.getByRole("button", {
+      name: "Send test notification",
+    }) as HTMLButtonElement;
+    fireEvent.click(button);
+
+    await waitFor(() => expect(button.disabled).toBe(true));
+    expect(button.textContent).toBe("Sending…");
+
+    // biome-ignore lint/style/noNonNullAssertion: assigned synchronously by mockIPC's executor before this line runs.
+    resolveInvoke!();
+    await waitFor(() => expect(button.disabled).toBe(false));
+    const message = screen.getByText("Queued");
+    expect(message.getAttribute("aria-live")).toBe("polite");
+  });
+
+  it("Send test failure shows the rejection reason inline, announced", async () => {
+    mockIPC((command) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "send_test_notification") return Promise.reject("queue is full");
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "Send test notification" }));
+
+    const message = await screen.findByText("queue is full");
+    expect(message.getAttribute("aria-live")).toBe("polite");
+  });
+
+  it("Send test success message auto-clears", async () => {
+    // scoped to leave requestAnimationFrame real — AnimatePresence's
+    // section-swap transition depends on it, and faking it would freeze
+    // the exit animation mid-flight, so the new section would never mount.
+    vi.useFakeTimers({ toFake: ["setTimeout", "setInterval", "clearInterval", "clearTimeout"] });
+    try {
+      mockIPC((command) => {
+        if (command === "get_config") return config;
+        if (command === "get_secret_status") return unsetSecrets;
+        if (command === "get_default_config") return rustConfigDefaults;
+        if (command === "send_test_notification") return null;
+      });
+      render(<SettingsApp />);
+      await flush();
+
+      fireEvent.click(screen.getByRole("button", { name: "Send test notification" }));
+      await flush();
+      expect(screen.getByText("Queued")).toBeTruthy();
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2600);
+      });
+      await flush();
+      expect(screen.queryByText("Queued")).toBeNull();
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("History load failure renders 'Couldn't load history' without aria-live — a passive mount read", async () => {
+    mockIPC((command) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "get_history") return Promise.reject("disk error");
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+
+    const message = await screen.findByText("Couldn't load history");
+    expect(message.getAttribute("aria-live")).toBeNull();
+  });
+
+  it("History clear failure renders 'Couldn't clear history' near the button, announced, and disables the button while pending", async () => {
+    let rejectClear: ((reason?: unknown) => void) | null = null;
+    mockIPC((command) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "get_history") return [historyEntryOlder];
+      if (command === "clear_history") {
+        return new Promise((_resolve, reject) => {
+          rejectClear = reject;
+        });
+      }
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+
+    const clearButton = (await screen.findByRole("button", {
+      name: "Clear history",
+    })) as HTMLButtonElement;
+    fireEvent.click(clearButton);
+    fireEvent.click(screen.getByRole("button", { name: "Really clear?" }));
+
+    await waitFor(() => expect(clearButton.disabled).toBe(true));
+
+    // biome-ignore lint/style/noNonNullAssertion: assigned synchronously by mockIPC's executor before this line runs.
+    rejectClear!("network error");
+    const message = await screen.findByText("Couldn't clear history");
+    expect(message.getAttribute("aria-live")).toBe("polite");
+    await waitFor(() => expect(clearButton.disabled).toBe(false));
+  });
+
+  it("History clear success shows 'History cleared', distinct from the load status's own location", async () => {
+    mockIPC((command) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "get_history") return [historyEntryOlder];
+      if (command === "clear_history") return null;
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Clear history" }));
+    fireEvent.click(screen.getByRole("button", { name: "Really clear?" }));
+
+    const message = await screen.findByText("History cleared");
+    expect(message.getAttribute("aria-live")).toBe("polite");
+    expect(screen.queryByText("Couldn't load history")).toBeNull();
+  });
+
+  it("Diagnostics passive mount-read failure has no aria-live", async () => {
+    mockIPC((command) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "get_recent_log_lines") return Promise.reject("log file missing");
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "Diagnostics" }));
+
+    const message = await screen.findByText("Couldn't read log lines");
+    expect(message.getAttribute("aria-live")).toBeNull();
+  });
+
+  it("Diagnostics Refresh-button failure is announced (interactive), unlike the passive mount read", async () => {
+    let callCount = 0;
+    mockIPC((command) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "get_recent_log_lines") {
+        callCount += 1;
+        return Promise.reject("log file missing");
+      }
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "Diagnostics" }));
+    await screen.findByText("Couldn't read log lines");
+    expect(screen.getByText("Couldn't read log lines").getAttribute("aria-live")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(callCount).toBe(2));
+    const message = screen.getByText("Couldn't read log lines");
+    expect(message.getAttribute("aria-live")).toBe("polite");
+  });
+
+  it("get_default_config failure renders the disabled-reason note by Reset to defaults, which stays disabled", async () => {
+    mockIPC((command) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return Promise.reject("defaults endpoint down");
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    const message = await screen.findByText("Defaults unavailable — reset disabled");
+    expect(message.getAttribute("aria-live")).toBeNull();
+    expect(
+      (screen.getByRole("button", { name: "Reset to defaults" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it("connector-health poll: repeated identical failures collapse to one transition; recovery is a second transition (transition-only)", async () => {
+    // Fake timers from before render, scoped to setInterval/clearInterval
+    // only — this test never navigates sections, so AnimatePresence's
+    // exit/enter transition (which needs real setTimeout/requestAnimationFrame
+    // ticks) is never in the picture. Only the poll's own setInterval cadence
+    // needs to be under our control. The state transitions asserted below
+    // happen in SettingsApp regardless of which section is mounted to
+    // visualize them — the DOM-visible wiring itself gets its own test below.
+    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
+    try {
+      const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
+      let healthCalls = 0;
+      mockIPC((command) => {
+        if (command === "get_config") return config;
+        if (command === "get_secret_status") return unsetSecrets;
+        if (command === "get_default_config") return rustConfigDefaults;
+        if (command === "get_connector_health") {
+          healthCalls += 1;
+          if (healthCalls <= 2) return Promise.reject("network down");
+          return { lastAttemptMs: 1000, lastSuccessMs: 1000, consecutiveFailures: 0 };
+        }
+      });
+
+      render(<SettingsApp />);
+      await flush();
+
+      const transitionCalls = () =>
+        debugSpy.mock.calls.filter((call) => call[0] === "[action-status:connector-health]").length;
+
+      // mount-time fetchHealth() is the first poll — already failed.
+      expect(healthCalls).toBe(1);
+      expect(transitionCalls()).toBe(1);
+
+      // second poll, 5s later: identical failure — must NOT add a transition.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      await flush();
+      expect(healthCalls).toBe(2);
+      expect(transitionCalls()).toBe(1);
+
+      // third poll, 5s later: succeeds — exactly one recovery transition.
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(5000);
+      });
+      await flush();
+      expect(healthCalls).toBe(3);
+      expect(transitionCalls()).toBe(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("connector-health read failure renders 'Health unavailable' inline, with no aria-live (a poll is never user-initiated)", async () => {
+    mockIPC((command) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "get_connector_health") return Promise.reject("network down");
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "Connectors & Keys" }));
+    await screen.findByRole("heading", { level: 1, name: "Connectors & Keys" });
+
+    const message = await screen.findByText("Health unavailable");
+    expect(message.getAttribute("aria-live")).toBeNull();
   });
 });

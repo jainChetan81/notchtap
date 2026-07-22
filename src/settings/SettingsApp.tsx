@@ -13,7 +13,14 @@ import {
   Trophy,
 } from "lucide-react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
-import { type CSSProperties, type FormEvent, type ReactNode, useEffect, useState } from "react";
+import {
+  type CSSProperties,
+  type FormEvent,
+  type ReactNode,
+  useEffect,
+  useRef,
+  useState,
+} from "react";
 import { StatusRailCard } from "../components/StatusRailCard";
 import type { SlotState } from "../useSlotState";
 import "./preview-overlay.css";
@@ -316,6 +323,147 @@ function errorList(error: unknown): string[] {
     return error.map(String);
   }
   return [typeof error === "string" ? error : "settings could not be saved"];
+}
+
+// Shared visible-outcome mechanism (plan 108). Every operation that can
+// silently fail — send-test, appearance hot-apply, history read/clear,
+// diagnostics read, connector-health read, defaults fetch — reports
+// through one instance of this hook, rendered through the ActionStatus
+// component below. Two knobs are per-ATTEMPT, not per-component: `announce`
+// (aria-live is for user-initiated attempts only — a passive mount read or
+// a background poll must never speak up on its own) and `showPending`
+// (high-frequency actions like a slider drag should never flicker a
+// "working" state). `error` is sticky until the next attempt settles it;
+// `ok` auto-clears.
+type ActionState = "idle" | "pending" | "ok" | "error";
+
+interface ActionStatusValue {
+  state: ActionState;
+  message?: string;
+  announce: boolean;
+}
+
+interface RunOptions {
+  /** true only for a user-initiated attempt whose result should be announced via aria-live. */
+  announce: boolean;
+  /** message to show (and, if announce, speak) on success; omit to skip the ok phase entirely — a silent success. */
+  okMessage?: string;
+  /** ms before an ok status clears back to idle. */
+  okClearMs?: number;
+  /** whether to surface a pending status at all while the action is in flight (default true). */
+  showPending?: boolean;
+  /** derive the user-facing message from the rejection reason; defaults to describeActionError. */
+  errorMessage?: (reason: unknown) => string;
+}
+
+const DEFAULT_OK_CLEAR_MS = 2500;
+
+function describeActionError(reason: unknown): string {
+  if (Array.isArray(reason)) return reason.map(String).join(", ");
+  if (typeof reason === "string") return reason;
+  return "Something went wrong";
+}
+
+// `label` is optional and purely a debug/test seam: a genuine state
+// transition (not a deduped repeat) logs once via console.debug. This is
+// what makes the connector-health poll's transition-only behavior
+// observable in tests without inventing a second render-tracking
+// mechanism — see the done criteria in plan 108.
+function useActionStatus(label?: string) {
+  const [status, setStatus] = useState<ActionStatusValue>({ state: "idle", announce: false });
+  const clearTimerRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (clearTimerRef.current !== null) window.clearTimeout(clearTimerRef.current);
+    };
+  }, []);
+
+  function clearOkTimer() {
+    if (clearTimerRef.current !== null) {
+      window.clearTimeout(clearTimerRef.current);
+      clearTimerRef.current = null;
+    }
+  }
+
+  function applyStatus(next: ActionStatusValue) {
+    setStatus((prev) => {
+      // Dedup: an identical status is a no-op, not a new render — this is
+      // what makes repeated identical poll failures collapse to a single
+      // transition, and steady-state success polling stay silent.
+      if (
+        prev.state === next.state &&
+        prev.message === next.message &&
+        prev.announce === next.announce
+      ) {
+        return prev;
+      }
+      if (label) {
+        console.debug(`[action-status:${label}]`, prev.state, "->", next.state);
+      }
+      return next;
+    });
+  }
+
+  async function run<T>(action: () => Promise<T>, options: RunOptions): Promise<T | undefined> {
+    const {
+      announce,
+      okMessage,
+      okClearMs = DEFAULT_OK_CLEAR_MS,
+      showPending = true,
+      errorMessage,
+    } = options;
+    clearOkTimer();
+    if (showPending) applyStatus({ state: "pending", announce });
+    try {
+      const result = await action();
+      if (okMessage) {
+        applyStatus({ state: "ok", message: okMessage, announce });
+        clearTimerRef.current = window.setTimeout(() => {
+          applyStatus({ state: "idle", announce: false });
+        }, okClearMs);
+      } else {
+        applyStatus({ state: "idle", announce: false });
+      }
+      return result;
+    } catch (reason) {
+      const message = errorMessage ? errorMessage(reason) : describeActionError(reason);
+      applyStatus({ state: "error", message, announce });
+      return undefined;
+    }
+  }
+
+  return { status, run };
+}
+
+// Renders the current ActionStatus. `announce` on the status value (set
+// per-attempt by the caller of `run`, not hardcoded per component) decides
+// whether this instance carries aria-live — never on a passive/pending
+// render. `showPending` lets a high-frequency action (e.g. the appearance
+// sliders) opt out of a "working" flicker entirely.
+function ActionStatus({
+  status,
+  className,
+  showPending = true,
+}: {
+  status: ActionStatusValue;
+  className?: string;
+  showPending?: boolean;
+}) {
+  if (status.state === "idle") return null;
+  const classes = `action-status is-${status.state}${className ? ` ${className}` : ""}`;
+  if (status.state === "pending") {
+    if (!showPending) return null;
+    return <div className={classes}>Working…</div>;
+  }
+  if (!status.message) return null;
+  return status.announce ? (
+    <div className={classes} aria-live="polite">
+      {status.message}
+    </div>
+  ) : (
+    <div className={classes}>{status.message}</div>
+  );
 }
 
 function SettingsGroup({
@@ -1133,12 +1281,14 @@ function ConnectorsSection({
   config,
   secretStatus,
   connectorHealth,
+  connectorHealthStatus,
   patchConfig,
   refreshSecretStatus,
 }: {
   config: Config;
   secretStatus: SecretStatus | null;
   connectorHealth: ConnectorHealthDto | null;
+  connectorHealthStatus: ActionStatusValue;
   patchConfig: (patch: Partial<Config>) => void;
   refreshSecretStatus: () => Promise<void>;
 }) {
@@ -1155,6 +1305,13 @@ function ConnectorsSection({
         />
         <div className="relaunch-note">Config change · applied after relaunch</div>
         <ConnectorHealthLine health={connectorHealth} />
+        {/* Transition-only (plan 108): renders only on an ok<->failed flip,
+            never aria-live — a passive setInterval poll must never chant. */}
+        <ActionStatus
+          status={connectorHealthStatus}
+          className="connector-health-status"
+          showPending={false}
+        />
       </SettingsGroup>
 
       <SettingsGroup
@@ -1213,18 +1370,26 @@ type TestSource = "football" | "news" | "cmux" | "manual" | "weather";
 // button re-invokes manually.
 function DiagnosticsSection() {
   const [logLines, setLogLines] = useState<string[] | null>(null);
+  const { status, run } = useActionStatus("diagnostics");
 
-  function refresh() {
-    invoke<string[]>("get_recent_log_lines")
-      .then((fetched) => setLogLines(fetched))
-      .catch(() => {
-        // advisory fetch — a failed read leaves the previous lines shown
-      });
+  // `announce` is explicit per call, not a static prop: the mount-time read
+  // below is passive (announce: false), the Refresh button's own call
+  // further down is interactive (announce: true) — same operation, two
+  // distinct attempt origins.
+  function refresh(announce: boolean) {
+    void run(
+      () => invoke<string[]>("get_recent_log_lines").then((fetched) => setLogLines(fetched)),
+      {
+        announce,
+        showPending: false,
+        errorMessage: () => "Couldn't read log lines",
+      },
+    );
   }
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only fetch on section-open — refresh is re-created every render, so adding it would re-invoke get_recent_log_lines on every render.
   useEffect(() => {
-    refresh();
+    refresh(false);
   }, []);
 
   const logText =
@@ -1257,6 +1422,7 @@ function DiagnosticsSection() {
       >
         {logText}
       </pre>
+      <ActionStatus status={status} className="diagnostics-status" showPending={false} />
       <div className="control-row">
         <ControlCopy
           htmlFor="refresh-log-lines"
@@ -1267,7 +1433,7 @@ function DiagnosticsSection() {
           id="refresh-log-lines"
           type="button"
           className="secondary-button test-button"
-          onClick={refresh}
+          onClick={() => refresh(true)}
         >
           Refresh
         </button>
@@ -1285,13 +1451,22 @@ function DiagnosticsSection() {
 function HistorySection({ config }: { config: Config }) {
   const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
   const [confirmingClear, setConfirmingClear] = useState(false);
+  // History load and clear are independent operations (plan 108): distinct
+  // status instances, distinct UI locations, distinct announce behavior.
+  // There is deliberately no manual Refresh control for history — the only
+  // read attempt is the passive mount fetch below.
+  const loadStatus = useActionStatus("history-load");
+  const clearStatus = useActionStatus("history-clear");
 
   function refresh() {
-    invoke<HistoryEntry[]>("get_history")
-      .then((fetched) => setEntries(fetched))
-      .catch(() => {
-        // advisory fetch — a failed read leaves the previous entries shown
-      });
+    void loadStatus.run(
+      () => invoke<HistoryEntry[]>("get_history").then((fetched) => setEntries(fetched)),
+      {
+        announce: false,
+        showPending: false,
+        errorMessage: () => "Couldn't load history",
+      },
+    );
   }
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only fetch on section-open — refresh is re-created every render, so adding it would re-invoke get_history on every render.
@@ -1306,15 +1481,18 @@ function HistorySection({ config }: { config: Config }) {
       setConfirmingClear(true);
       return;
     }
-    try {
-      await invoke("clear_history");
-    } catch (reason) {
-      // Errors are fire-and-forget from the settings panel, same pattern as TestButton.
-      console.error("clear_history failed:", reason);
-    } finally {
-      setConfirmingClear(false);
-      refresh();
-    }
+    await clearStatus.run(() => invoke("clear_history"), {
+      announce: true,
+      okMessage: "History cleared",
+      errorMessage: (reason) => {
+        // Errors are surfaced inline now, but the console line costs
+        // nothing and helps a dev watching the console too.
+        console.error("clear_history failed:", reason);
+        return "Couldn't clear history";
+      },
+    });
+    setConfirmingClear(false);
+    refresh();
   }
 
   const newestFirst = entries === null ? null : [...entries].reverse();
@@ -1324,6 +1502,11 @@ function HistorySection({ config }: { config: Config }) {
       title="Recorded notifications"
       description="The most recent notifications recorded to ~/.config/notchtap/history.jsonl, newest first."
     >
+      <ActionStatus
+        status={loadStatus.status}
+        className="history-load-status"
+        showPending={false}
+      />
       {newestFirst === null ? (
         <p className="history-empty">Loading…</p>
       ) : newestFirst.length === 0 ? (
@@ -1356,6 +1539,7 @@ function HistorySection({ config }: { config: Config }) {
           id="clear-history"
           type="button"
           className="secondary-button test-button"
+          disabled={clearStatus.status.state === "pending"}
           // the <label htmlFor="clear-history"> above would otherwise
           // become this button's accessible name via native label
           // association, freezing it at "Clear history" even once the
@@ -1368,24 +1552,40 @@ function HistorySection({ config }: { config: Config }) {
           {confirmingClear ? "Really clear?" : "Clear history"}
         </button>
       </div>
+      <ActionStatus status={clearStatus.status} className="history-clear-status" />
     </SettingsGroup>
   );
 }
 
 function TestButton({ source }: { source: TestSource }) {
+  const { status, run } = useActionStatus("send-test");
+  const pending = status.state === "pending";
+
   async function send() {
-    try {
-      await invoke("send_test_notification", { source });
-    } catch (reason) {
-      // Errors are fire-and-forget from the settings panel; the overlay owns the real queue state.
-      console.error("send_test_notification failed:", reason);
-    }
+    await run(() => invoke("send_test_notification", { source }), {
+      announce: true,
+      okMessage: "Queued",
+      errorMessage: (reason) => {
+        // Errors are surfaced inline now, but the console line costs
+        // nothing and helps a dev watching the console too.
+        console.error("send_test_notification failed:", reason);
+        return describeActionError(reason);
+      },
+    });
   }
 
   return (
-    <button type="button" className="secondary-button test-button" onClick={() => void send()}>
-      Send test notification
-    </button>
+    <div className="test-button-wrap">
+      <button
+        type="button"
+        className="secondary-button test-button"
+        disabled={pending}
+        onClick={() => void send()}
+      >
+        {pending ? "Sending…" : "Send test notification"}
+      </button>
+      <ActionStatus status={status} className="test-button-status" />
+    </div>
   );
 }
 
@@ -1547,9 +1747,17 @@ const PREVIEW_SAMPLES: ReadonlyArray<{
 function AppearanceSection({
   config,
   patchConfig,
+  applyAppearanceLive,
 }: {
   config: Config;
   patchConfig: (patch: Partial<Config>) => void;
+  // Owned by SettingsApp, not this component (plan 108 step A): this
+  // component remounts on every Reset/Reset-to-defaults (formGeneration
+  // key, plan 027) AND doesn't even exist while another section is open —
+  // but Reset/Reset to defaults are footer buttons, clickable from any
+  // section. So the function lives one level up, and its status renders in
+  // the footer (always visible), not here — see the settings-footer JSX.
+  applyAppearanceLive: (scale: number, radius: number, opacity: number) => void;
 }) {
   const initial = config.appearance;
   const [scale, setScale] = useState(initial.card_scale);
@@ -1566,13 +1774,7 @@ function AppearanceSection({
     setScale(next.card_scale);
     setRadius(next.card_radius);
     setOpacity(next.card_opacity);
-    invoke("set_appearance", {
-      scale: next.card_scale,
-      radius: next.card_radius,
-      opacity: next.card_opacity,
-    }).catch((reason) => {
-      console.error("set_appearance failed:", reason);
-    });
+    applyAppearanceLive(next.card_scale, next.card_radius, next.card_opacity);
     patchConfig({ appearance: next });
   }
 
@@ -1668,6 +1870,23 @@ export function SettingsApp() {
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   const [formGeneration, setFormGeneration] = useState(0);
+  // Owned here, not inside AppearanceSection (which remounts on every
+  // Reset/Reset-to-defaults via the formGeneration key, plan 027) — so a
+  // reset's own live-apply failure survives the remount it triggers. See
+  // AppearanceSection's applyAppearanceLive prop.
+  const appearanceStatus = useActionStatus("appearance-live-apply");
+  // Defaults-fetch and connector-health are both passive, mount/poll-only
+  // reads (plan 108) — never announced.
+  const defaultsStatus = useActionStatus("defaults");
+  const connectorHealthStatus = useActionStatus("connector-health");
+
+  function runAppearanceApply(scale: number, radius: number, opacity: number) {
+    void appearanceStatus.run(() => invoke("set_appearance", { scale, radius, opacity }), {
+      announce: true,
+      showPending: false,
+      errorMessage: () => "Live preview couldn't update — will apply on Save & Relaunch",
+    });
+  }
 
   function applyForm(nextConfig: Config) {
     const next = copyConfig(nextConfig);
@@ -1699,14 +1918,19 @@ export function SettingsApp() {
       });
     // defaults are advisory (Reset-to-defaults only) — isolate their failure
     // so it can never block the rest of the panel from loading; the button
-    // just stays disabled (see the footer's `disabled={!defaults || saving}`).
-    invoke<Config>("get_default_config")
-      .then((loadedDefaults) => {
-        if (active) setDefaults(copyConfig(loadedDefaults));
-      })
-      .catch(() => {
-        // leave defaults null — Reset to defaults stays disabled
-      });
+    // just stays disabled (see the footer's `disabled={!defaults || saving}`)
+    // — but now the disabled state carries a visible reason (plan 108).
+    void defaultsStatus.run(
+      () =>
+        invoke<Config>("get_default_config").then((loadedDefaults) => {
+          if (active) setDefaults(copyConfig(loadedDefaults));
+        }),
+      {
+        announce: false,
+        showPending: false,
+        errorMessage: () => "Defaults unavailable — reset disabled",
+      },
+    );
     return () => {
       active = false;
     };
@@ -1715,17 +1939,26 @@ export function SettingsApp() {
   // Connector health is advisory like get_default_config — fetched on its
   // own, isolated from the critical panel load, and refreshed on a light
   // polling interval so a run of drops surfaces without a window reopen.
-  // A failed or unknown fetch leaves the line hidden rather than erroring.
+  // A failed or unknown fetch leaves the data-driven line hidden, same as
+  // before — but the read failure itself is now transition-only inline
+  // status (plan 108): connectorHealthStatus's dedup (see useActionStatus)
+  // means back-to-back identical poll failures collapse into a single
+  // render/transition, never aria-live (a poll is never user-initiated).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only poll setup — connectorHealthStatus.run is a fresh closure every render, adding it would tear down and restart the interval on every render.
   useEffect(() => {
     let active = true;
     const fetchHealth = () => {
-      invoke<ConnectorHealthDto>("get_connector_health")
-        .then((health) => {
-          if (active && health) setConnectorHealth(health);
-        })
-        .catch(() => {
-          // leave health null — the Telegram section just shows no line
-        });
+      void connectorHealthStatus.run(
+        () =>
+          invoke<ConnectorHealthDto>("get_connector_health").then((health) => {
+            if (active && health) setConnectorHealth(health);
+          }),
+        {
+          announce: false,
+          showPending: false,
+          errorMessage: () => "Health unavailable",
+        },
+      );
     };
     fetchHealth();
     const interval = setInterval(fetchHealth, 5000);
@@ -1740,11 +1973,21 @@ export function SettingsApp() {
   }
 
   function resetLoaded() {
-    if (lastLoadedConfig) applyForm(lastLoadedConfig);
+    if (!lastLoadedConfig) return;
+    // Form state and live-apply are separate concerns (plan 108 step A):
+    // the form always resets from lastLoadedConfig regardless of whether
+    // the live overlay could be updated to match — a failed live-apply
+    // reports through appearanceStatus, it doesn't block the form reset.
+    applyForm(lastLoadedConfig);
+    const { card_scale, card_radius, card_opacity } = lastLoadedConfig.appearance;
+    runAppearanceApply(card_scale, card_radius, card_opacity);
   }
 
   function resetDefaults() {
-    if (defaults) applyForm(defaults);
+    if (!defaults) return;
+    applyForm(defaults);
+    const { card_scale, card_radius, card_opacity } = defaults.appearance;
+    runAppearanceApply(card_scale, card_radius, card_opacity);
   }
 
   async function saveConfig(event: FormEvent<HTMLFormElement>) {
@@ -1859,6 +2102,7 @@ export function SettingsApp() {
                         config={config}
                         secretStatus={secretStatus}
                         connectorHealth={connectorHealth}
+                        connectorHealthStatus={connectorHealthStatus.status}
                         patchConfig={patchConfig}
                         refreshSecretStatus={refreshSecretStatus}
                       />
@@ -1869,11 +2113,16 @@ export function SettingsApp() {
                     {activeSection === "appearance" ? (
                       // keyed on formGeneration so Reset/Reset-to-defaults remounts the
                       // section — its controls seed local state from config.appearance at
-                      // mount and would otherwise show stale values (plan 027)
+                      // mount and would otherwise show stale values (plan 027). The
+                      // live-apply status itself renders in the footer, not here — this
+                      // section doesn't even exist while another section is open, but
+                      // Reset/Reset to defaults (which also drive this same status) are
+                      // footer buttons reachable from every section.
                       <AppearanceSection
                         key={formGeneration}
                         config={config}
                         patchConfig={patchConfig}
+                        applyAppearanceLive={runAppearanceApply}
                       />
                     ) : null}
                   </motion.div>
@@ -1911,6 +2160,21 @@ export function SettingsApp() {
             >
               Reset to defaults
             </button>
+            <ActionStatus
+              status={defaultsStatus.status}
+              className="defaults-status"
+              showPending={false}
+            />
+            {/* Always visible regardless of active section (plan 108 step A):
+                Reset and Reset to defaults are footer buttons reachable from
+                any section, and the appearance sliders are high-frequency —
+                pending/ok never render here, only a deduplicated error,
+                cleared by the next successful apply. */}
+            <ActionStatus
+              status={appearanceStatus.status}
+              className="appearance-live-status"
+              showPending={false}
+            />
           </footer>
         </div>
       </main>
