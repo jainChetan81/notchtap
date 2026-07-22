@@ -14,7 +14,10 @@ body,
 }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  /* plan 114: adopt shared-ui's --font-sans instead of the hand-copied
+     stack — this restores "Helvetica Neue" to the fallback chain, which
+     the old literal here had dropped. deliberate visual change. */
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   user-select: none;
 }

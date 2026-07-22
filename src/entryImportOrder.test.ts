@@ -37,6 +37,17 @@ describe("entry-file CSS import order (plan 111)", () => {
     expect(overlayIdx).toBeLessThan(stylesIdx);
   });
 
+  // plan 114: the overlay window must import shared-ui's design tokens
+  // (--font-sans/--font-mono/--ease-notchtap, etc.) before overlay-card.css
+  // so the token-consuming declarations in that file resolve — same
+  // discipline settings/base.css already follows for the settings window.
+  it("main.tsx imports shared-ui tokens.css before overlay-card.css", () => {
+    const source = readSource("./main.tsx");
+    const tokensIdx = importOrderIndex(source, "@chetanjain/shared-ui/design/tokens.css");
+    const overlayIdx = importOrderIndex(source, "./overlay-card.css");
+    expect(tokensIdx).toBeLessThan(overlayIdx);
+  });
+
   // plan 112 Step 5: settings.css is gone (its rules relocated into
   // base.css); the load-bearing pair is now base.css (establishes
   // @layer theme/utilities before any plain CSS) then overlay-card.css

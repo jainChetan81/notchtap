@@ -78,7 +78,7 @@
   margin: 0 auto;
   isolation: isolate;
   /* plan 102: +25% pacing, operator feedback */
-  transition: width 400ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition: width 400ms var(--ease-notchtap);
 }
 
 /* plan 090 (Q1a/Q2b, carried forward): the cutout term
@@ -334,7 +334,7 @@
 }
 
 .card-root .card-assembly.pulse-goal {
-  animation: goal-overshoot 1240ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: goal-overshoot 1240ms var(--ease-notchtap);
 }
 
 .card-root .card-assembly.pulse-goal::after {
@@ -492,7 +492,7 @@
 
 /* plan 078: the idle/showing swap, formerly AnimatePresence/motion.div —
    keyframes mirror the old motion values exactly (220ms,
-   cubic-bezier(0.22, 1, 0.36, 1), opacity ± translateY(-4px) for showing,
+   var(--ease-notchtap), opacity ± translateY(-4px) for showing,
    opacity-only for idle). `.card-content` gets a fresh DOM node (and so
    replays the enter animation) only when the swap key changes; the
    useDelayedSwap hook (useDelayedSwap.ts) adds `.swap-exit` for the
@@ -507,13 +507,13 @@
 .card-root .card-content {
   position: relative;
   z-index: 1;
-  animation: card-enter-showing 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: card-enter-showing 220ms var(--ease-notchtap);
 }
 .card-root .card-content.idle {
   animation: card-enter-idle 220ms ease-out;
 }
 .card-root .card-content.swap-exit {
-  animation: card-exit-showing 220ms cubic-bezier(0.22, 1, 0.36, 1) forwards;
+  animation: card-exit-showing 220ms var(--ease-notchtap) forwards;
 }
 .card-root .card-content.idle.swap-exit {
   animation: card-exit-idle 220ms ease-out forwards;
@@ -684,7 +684,7 @@
 .card-root .notif-time-inline {
   flex: none;
   color: rgba(255, 255, 255, 0.35);
-  font: 700 10px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font: 700 10px/1 var(--font-mono);
 }
 
 .card-root .notif-body {
@@ -706,7 +706,8 @@
   padding: 1px 5px;
   background: rgba(255, 255, 255, 0.08);
   color: var(--accent);
-  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  /* plan 114: adopt shared-ui's --font-mono (byte-identical value). */
+  font-family: var(--font-mono);
 }
 
 .card-root .stamp {
@@ -714,7 +715,7 @@
   padding: 4px 6px;
   border: 1px solid var(--accent);
   color: var(--accent);
-  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font: 700 8px/1 var(--font-mono);
   letter-spacing: 0.12em;
   text-transform: uppercase;
 }
@@ -724,7 +725,7 @@
   right: 18px;
   bottom: 8px;
   color: rgba(255, 255, 255, 0.4);
-  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font: 700 8px/1 var(--font-mono);
   letter-spacing: 0.16em;
   text-transform: uppercase;
 }
@@ -746,7 +747,7 @@
   background: rgba(255, 255, 255, 0.07);
   box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
   color: inherit;
-  font: 700 9px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font: 700 9px/1 var(--font-mono);
   letter-spacing: 0;
   text-transform: none;
 }
@@ -828,8 +829,8 @@
   grid-template-rows: 0fr;
   opacity: 0;
   transition:
-    grid-template-rows 300ms cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 300ms cubic-bezier(0.22, 1, 0.36, 1);
+    grid-template-rows 300ms var(--ease-notchtap),
+    opacity 300ms var(--ease-notchtap);
 }
 .card-root .manifest-wrap.expanded {
   grid-template-rows: 1fr;
@@ -871,7 +872,7 @@
 .card-root .detail-label {
   margin-bottom: 5px;
   color: var(--accent);
-  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font: 700 8px/1 var(--font-mono);
   letter-spacing: 0.14em;
   text-transform: uppercase;
 }
@@ -900,7 +901,7 @@
    ownership split). Deliberately not scoped under `.flank-left` alone:
    there is only ever one clock in the assembly at a time. */
 .card-root .time-only {
-  font: 800 15px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font: 800 15px/1 var(--font-mono);
   letter-spacing: 0.02em;
   color: #f5f7fa;
   white-space: nowrap;
@@ -1064,7 +1065,7 @@
 
 .card-root .masthead {
   display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0;
-  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font: 700 8px/1 var(--font-mono);
   letter-spacing: 0.14em; text-transform: uppercase;
   color: rgba(255, 255, 255, 0.38);
 }
@@ -1091,7 +1092,7 @@
   align-items: center;
   padding: 3px 8px;
   border-radius: 999px;
-  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font: 700 8px/1 var(--font-mono);
   letter-spacing: 0.08em;
   text-transform: uppercase;
   white-space: nowrap;
@@ -1119,7 +1120,7 @@
    elements, same timing, only the selectors moved. */
 .card-root .chip-category,
 .card-root .notif-meta-row .notif-time-inline {
-  animation: pill-enter 220ms cubic-bezier(0.22, 1, 0.36, 1) both;
+  animation: pill-enter 220ms var(--ease-notchtap) both;
 }
 .card-root .notif-meta-row .notif-time-inline {
   animation-delay: 70ms;
@@ -1142,7 +1143,7 @@
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 .card-root .manifest-label {
-  font: 700 8.5px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font: 700 8.5px/1 var(--font-mono);
   letter-spacing: 0.1em; text-transform: uppercase;
   color: var(--cat);
   margin-bottom: 7px;
@@ -1158,7 +1159,7 @@
   align-items: center;
   gap: 6px;
   flex-wrap: wrap;
-  font: 600 9.5px/1.5 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font: 600 9.5px/1.5 var(--font-mono);
   color: rgba(255, 255, 255, 0.4);
 }
 .card-root .manifest-meta b { color: rgba(255, 255, 255, 0.7); font-weight: 700; }
@@ -1169,7 +1170,7 @@
   justify-content: flex-end;
 }
 .card-root .manifest-hint {
-  font: 700 9px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font: 700 9px/1 var(--font-mono);
   letter-spacing: 0.06em;
   color: rgba(255, 255, 255, 0.4);
 }
@@ -1327,7 +1328,7 @@
 .card-root .clock-pill {
   margin-left: auto;
   flex: none;
-  font: 800 10px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font: 800 10px/1 var(--font-mono);
   color: rgba(255, 255, 255, 0.75);
   padding: 3px 7px;
   border-radius: 999px;
@@ -1363,7 +1364,7 @@
   align-items: center;
   justify-content: center;
   overflow: hidden;
-  font: 800 9px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font: 800 9px/1 var(--font-mono);
   letter-spacing: 0.03em;
   background: rgba(255, 255, 255, 0.07);
   border: 1px solid rgba(255, 255, 255, 0.16);
@@ -1377,7 +1378,7 @@
 }
 
 .card-root .score {
-  font: 800 24px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font: 800 24px/1 var(--font-mono);
   color: #f5f7fa;
   letter-spacing: 0.02em;
 }
@@ -1400,7 +1401,7 @@
 .card-root .cards-line {
   margin-top: 6px;
   text-align: center;
-  font: 600 9px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font: 600 9px/1 var(--font-mono);
   letter-spacing: 0.06em;
   color: rgba(255, 255, 255, 0.38);
 }
@@ -1439,12 +1440,12 @@
 }
 .card-root .below-block.idle-peek.open {
   animation:
-    idle-peek-open 260ms cubic-bezier(0.22, 1, 0.36, 1) forwards,
+    idle-peek-open 260ms var(--ease-notchtap) forwards,
     idle-peek-fade-in 200ms ease-out forwards;
 }
 .card-root .below-block.idle-peek.closing {
   animation:
-    idle-peek-close 260ms cubic-bezier(0.22, 1, 0.36, 1) forwards,
+    idle-peek-close 260ms var(--ease-notchtap) forwards,
     idle-peek-fade-out 200ms ease-out forwards;
 }
 /* plan 093: mirrors `hover.rs`'s `IDLE_PEEK_BELOW_BLOCK_H` constant
@@ -1509,7 +1510,7 @@
   padding: 10px 12px;
 }
 .card-root .wx-peek-temp {
-  font: 800 18px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font: 800 18px/1 var(--font-mono);
   color: #f5f7fa;
 }
 /* plan 092 (item 10): the condition label is `.chip` — 092 retired the
