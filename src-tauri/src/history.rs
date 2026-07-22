@@ -17,6 +17,7 @@
 
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -66,6 +67,11 @@ impl HistoryStore {
     pub fn with_limits(dir: impl AsRef<Path>, max_size: u64, max_files: usize) -> io::Result<Self> {
         let dir = dir.as_ref().to_path_buf();
         fs::create_dir_all(&dir)?;
+        // history.jsonl holds sensitive notification content — same
+        // posture as settings.rs's secrets.toml (0600). `create_dir_all`
+        // makes the dir with the umask-derived default mode, so pin it
+        // down explicitly too (0700) rather than trusting the umask.
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
         Ok(Self {
             dir,
             max_size,
@@ -103,7 +109,18 @@ impl HistoryStore {
             self.rotate_locked()?;
         }
 
-        let mut file = OpenOptions::new().create(true).append(true).open(&path)?;
+        let mut file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .mode(0o600)
+            .open(&path)?;
+        // `.mode()` on `OpenOptions` only governs the permissions a *new*
+        // file is created with — it's a no-op against a file that already
+        // existed (e.g. one written before this hardening landed, umask
+        // 0644). Force 0600 unconditionally on every append so a
+        // pre-existing permissive file gets fixed rather than staying
+        // world-readable forever.
+        file.set_permissions(fs::Permissions::from_mode(0o600))?;
         file.write_all(line.as_bytes())?;
         Ok(())
     }
@@ -314,5 +331,36 @@ mod tests {
         assert!(!dir.join("history.jsonl").exists());
         assert!(!dir.join("history.jsonl.1").exists());
         assert!(store.read_recent(10).unwrap().is_empty());
+    }
+
+    #[test]
+    fn appended_history_file_and_dir_are_0600_and_0700() {
+        let dir = temp_dir();
+        let store = HistoryStore::with_limits(&dir, DEFAULT_MAX_SIZE, DEFAULT_MAX_FILES).unwrap();
+        store.append(&test_fixtures::event("secret")).unwrap();
+
+        let file_mode = fs::metadata(store.path()).unwrap().permissions().mode() & 0o777;
+        assert_eq!(file_mode, 0o600, "history.jsonl must not be world-readable");
+
+        let dir_mode = fs::metadata(&dir).unwrap().permissions().mode() & 0o777;
+        assert_eq!(dir_mode, 0o700, "history dir must not be world-readable");
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn preexisting_permissive_history_file_is_fixed_to_0600_on_append() {
+        let dir = temp_dir();
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("history.jsonl");
+        // simulate a file written before this hardening landed (umask 0644)
+        fs::write(&path, "").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+
+        let store = HistoryStore::with_limits(&dir, DEFAULT_MAX_SIZE, DEFAULT_MAX_FILES).unwrap();
+        store.append(&test_fixtures::event("a")).unwrap();
+
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+        std::fs::remove_dir_all(&dir).ok();
     }
 }
