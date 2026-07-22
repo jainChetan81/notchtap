@@ -7,16 +7,39 @@
   --surface-hover: #15181d;
   --text: #f1f2f4;
   --text-secondary: #a2a6ad;
-  --text-muted: #70757d;
+  /* plan 109: retuned from #70757d (4.14:1 on --surface, failed AA) to
+     #80868f, which clears 4.5:1 on every surface in this file
+     (window/sidebar/surface/surface-raised/surface-hover), not just the
+     two globals — see the plan-109 contrast sweep. */
+  --text-muted: #80868f;
+  /* plan 109: relaxed-tier gray for genuinely disabled controls only
+     (WCAG 1.4.3 doesn't require inactive UI text to meet contrast at
+     all; this project's floor is >=3:1 for that class). Never use for
+     real/enabled text. */
+  --text-disabled: #63676f;
   --divider: #202329;
   --divider-soft: #17191e;
   --accent: #0a84ff;
   --accent-soft: rgba(10, 132, 255, 0.14);
+  /* plan 109: dedicated CTA-button tones. var(--accent) itself stays
+     #0a84ff (used for focus rings/borders/active-nav, none of which are
+     text-on-fill pairs), but white text directly ON accent-blue fails
+     AA (3.65:1 base / 3.23:1 the old hover) — .primary-button gets its
+     own darker fills so white text clears 4.5:1. */
+  --accent-button: #086acc;
+  --accent-button-hover: #0972db;
   --focus-ring: rgba(10, 132, 255, 0.24);
   --error: #d6a1a5;
   --error-border: #553438;
   --ok: #a3c9a8;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  /* plan 109: gentle type-scale bump (operator decision: 10-11px body,
+     9px floor — not the reviewed 12-13px). Every sized font-size or
+     font: shorthand in this file routes through these four tokens. */
+  --fs-caption: 9px;
+  --fs-secondary: 10px;
+  --fs-body: 11px;
+  --fs-title: 19px;
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
   color: var(--text);
   background: var(--window);
@@ -27,6 +50,23 @@
 
 * {
   box-sizing: border-box;
+}
+
+/* plan 109: accessible-name-only text for native <legend>/<caption>
+   elements whose visible label is already rendered elsewhere (e.g. the
+   ControlCopy row next to a fieldset) — keeps the element in the
+   accessibility tree without a duplicate visible label. */
+.visually-hidden {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  margin: -1px;
+  padding: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 html,
@@ -85,7 +125,11 @@ input[type="checkbox"] {
   padding: 17px 14px 14px;
   border-bottom: 1px solid var(--divider-soft);
   color: #d8dade;
-  font: 700 10px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: var(--fs-body);
+  font-weight: 700;
+  font-style: normal;
+  line-height: 1;
   letter-spacing: 0.09em;
   text-transform: uppercase;
 }
@@ -145,7 +189,7 @@ input[type="checkbox"] {
 .nav-item > span:not(.soon-badge) {
   min-width: 0;
   overflow: hidden;
-  font-size: 10px;
+  font-size: var(--fs-body);
   font-weight: 560;
   line-height: 1.25;
   text-overflow: ellipsis;
@@ -171,7 +215,9 @@ input[type="checkbox"] {
 
 .nav-item:disabled {
   grid-template-columns: 16px minmax(0, 1fr) auto;
-  color: #52565e;
+  /* disabled nav entries ("coming soon"): relaxed >=3:1 tier is
+     intentional, see --text-disabled definition in :root. */
+  color: var(--text-disabled);
   cursor: not-allowed;
 }
 
@@ -191,7 +237,7 @@ input[type="checkbox"] {
   padding: 2px 4px;
   border: 1px solid #292c32;
   border-radius: 3px;
-  font-size: 7px;
+  font-size: var(--fs-caption);
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0.06em;
@@ -201,8 +247,8 @@ input[type="checkbox"] {
 .sidebar-meta {
   padding: 11px 14px 13px;
   border-top: 1px solid var(--divider-soft);
-  color: #474b53;
-  font-size: 8px;
+  color: var(--text-muted);
+  font-size: var(--fs-secondary);
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -233,7 +279,7 @@ input[type="checkbox"] {
 .section-index {
   margin-bottom: 8px;
   color: var(--text-muted);
-  font-size: 8px;
+  font-size: var(--fs-secondary);
   font-weight: 700;
   letter-spacing: 0.11em;
   text-transform: uppercase;
@@ -242,7 +288,7 @@ input[type="checkbox"] {
 .content-header h1 {
   margin: 0;
   color: var(--text);
-  font-size: 19px;
+  font-size: var(--fs-title);
   font-weight: 650;
   line-height: 1.15;
   letter-spacing: -0.018em;
@@ -252,7 +298,7 @@ input[type="checkbox"] {
   max-width: 290px;
   margin: 6px 0 0;
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--fs-body);
   line-height: 1.45;
 }
 
@@ -300,7 +346,7 @@ input[type="checkbox"] {
 .group-heading h2 {
   margin: 0;
   color: #d9dbe0;
-  font-size: 11px;
+  font-size: var(--fs-body);
   font-weight: 640;
   line-height: 1.25;
 }
@@ -308,7 +354,7 @@ input[type="checkbox"] {
 .group-heading p {
   margin: 5px 0 0;
   color: var(--text-muted);
-  font-size: 9px;
+  font-size: var(--fs-secondary);
   line-height: 1.45;
 }
 
@@ -340,7 +386,7 @@ input[type="checkbox"] {
 .secret-label {
   display: block;
   color: #e1e3e7;
-  font-size: 10px;
+  font-size: var(--fs-body);
   font-weight: 590;
   line-height: 1.3;
 }
@@ -349,13 +395,13 @@ input[type="checkbox"] {
   display: block;
   margin-top: 3px;
   color: var(--text-muted);
-  font-size: 8.5px;
+  font-size: var(--fs-secondary);
   line-height: 1.4;
 }
 
 .number-field {
   position: relative;
-  width: 86px;
+  width: 96px;
   flex: none;
 }
 
@@ -373,8 +419,12 @@ textarea,
 
 .number-field input {
   height: 31px;
-  padding: 0 31px 0 9px;
-  font: 650 10px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  padding: 0 40px 0 9px;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: var(--fs-body);
+  font-weight: 650;
+  font-style: normal;
+  line-height: 1;
 }
 
 .number-field input:hover,
@@ -395,8 +445,8 @@ textarea:focus-visible,
   top: 50%;
   right: 8px;
   transform: translateY(-50%);
-  color: #646972;
-  font-size: 6.5px;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
   font-weight: 700;
   letter-spacing: 0.05em;
   pointer-events: none;
@@ -457,11 +507,17 @@ textarea:focus-visible,
 }
 
 .priority-toggle {
+  /* plan 109: now a <fieldset> (was a role="group" div) — reset the
+     browser default fieldset chrome (border/padding/margin) and the
+     min-inline-size:min-content floor that would otherwise force this
+     wider than its grid track at 400px fitness width. */
+  min-inline-size: 0;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   flex: none;
-  width: 132px;
+  width: 144px;
   height: 31px;
+  margin: 0;
   padding: 3px;
   gap: 2px;
   border: 1px solid #2a2d34;
@@ -476,7 +532,11 @@ textarea:focus-visible,
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  font: 620 8.5px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: var(--fs-secondary);
+  font-weight: 620;
+  font-style: normal;
+  line-height: 1;
   letter-spacing: 0.03em;
   transition: background 140ms var(--ease), color 140ms var(--ease);
 }
@@ -497,7 +557,12 @@ textarea:focus-visible,
 }
 
 .rotation-order-list {
+  /* plan 109: now a native <ul> (was a role="list" div) — undo default
+     UL chrome; padding-inline was already 0 here so the visual gap is
+     unchanged. */
+  margin: 0;
   padding: 4px 0 11px;
+  list-style: none;
 }
 
 .rotation-order-row {
@@ -513,14 +578,18 @@ textarea:focus-visible,
 }
 
 .rotation-order-rank {
-  color: #63676f;
-  font: 700 9px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color: var(--text-muted);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: var(--fs-secondary);
+  font-weight: 700;
+  font-style: normal;
+  line-height: 1;
 }
 
 .rotation-order-name {
   min-width: 0;
   color: #e1e3e7;
-  font-size: 10px;
+  font-size: var(--fs-body);
   font-weight: 590;
 }
 
@@ -541,7 +610,7 @@ textarea:focus-visible,
   background: var(--surface-raised);
   color: var(--text-secondary);
   cursor: pointer;
-  font-size: 8px;
+  font-size: var(--fs-secondary);
   line-height: 1;
   transition: background 140ms var(--ease), border-color 140ms var(--ease), color 140ms var(--ease), opacity 140ms var(--ease);
 }
@@ -571,13 +640,17 @@ textarea:focus-visible,
   margin-top: 8px;
   padding: 8px 9px;
   resize: vertical;
-  font: 560 9px/1.55 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: var(--fs-secondary);
+  font-weight: 560;
+  font-style: normal;
+  line-height: 1.55;
 }
 
 .field-caption {
   margin-top: 5px;
-  color: #555a62;
-  font-size: 7px;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -585,8 +658,8 @@ textarea:focus-visible,
 
 .relaunch-note {
   margin: -2px 0 11px;
-  color: #666b73;
-  font-size: 7px;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
   letter-spacing: 0.06em;
   text-transform: uppercase;
 }
@@ -608,8 +681,8 @@ textarea:focus-visible,
   padding: 3px 5px;
   border: 1px solid #343840;
   border-radius: 4px;
-  color: #6d727a;
-  font-size: 7px;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
   font-weight: 700;
   line-height: 1;
   letter-spacing: 0.06em;
@@ -631,17 +704,24 @@ textarea:focus-visible,
 .secret-input {
   height: 31px;
   padding: 0 9px;
-  font: 560 9px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: var(--fs-secondary);
+  font-weight: 560;
+  font-style: normal;
+  line-height: 1;
 }
 
 .secret-input::placeholder {
-  color: #555a62;
+  /* plan 109: was #555a62 (~2.8:1, failed AA); placeholder text is
+     still real, readable hint content here (not decorative), so it
+     gets the compliant --text-muted tier like everything else. */
+  color: var(--text-muted);
 }
 
 .secret-error {
   margin-top: 6px;
   color: var(--error);
-  font-size: 8px;
+  font-size: var(--fs-secondary);
   line-height: 1.4;
 }
 
@@ -652,7 +732,7 @@ textarea:focus-visible,
    markup, so class names stay semantic. */
 .action-status {
   margin-top: 6px;
-  font-size: 8px;
+  font-size: var(--fs-secondary);
   line-height: 1.4;
 }
 
@@ -708,10 +788,10 @@ textarea:focus-visible,
 }
 
 .secret-save {
-  min-width: 49px;
+  min-width: 56px;
   height: 31px;
   padding: 0 9px;
-  font-size: 8px;
+  font-size: var(--fs-secondary);
   font-weight: 650;
 }
 
@@ -719,14 +799,18 @@ textarea:focus-visible,
   height: 32px;
   padding: 0 11px;
   border: 1px solid #2f95ff;
-  background: var(--accent);
+  /* plan 109: white text directly on var(--accent) (#0a84ff) is
+     3.65:1, below AA. --accent itself stays untouched (used for focus
+     rings/borders elsewhere); this button gets its own darker,
+     compliant fill instead. See :root comment. */
+  background: var(--accent-button);
   color: white;
-  font-size: 9px;
+  font-size: var(--fs-secondary);
   font-weight: 680;
 }
 
 .primary-button:hover:not(:disabled) {
-  background: #2090ff;
+  background: var(--accent-button-hover);
 }
 
 .secondary-button:active:not(:disabled),
@@ -761,7 +845,7 @@ textarea:focus-visible,
 .error-title {
   margin-bottom: 5px;
   color: var(--error);
-  font-size: 7px;
+  font-size: var(--fs-caption);
   font-weight: 700;
   letter-spacing: 0.1em;
   text-transform: uppercase;
@@ -770,30 +854,49 @@ textarea:focus-visible,
 .error-panel ul {
   margin: 0;
   padding-left: 15px;
-  font-size: 8.5px;
+  font-size: var(--fs-secondary);
   line-height: 1.45;
 }
 
+/* plan 109: now a real <table> (was a role="table" div grid) —
+   thead/tbody/tr/th/td replace the emulated row/cell roles. Each
+   shortcut is one <tr> of three side-by-side cells (Keys/Action/
+   Status) instead of the old two-column grid with a row-spanning kbd;
+   border-collapse plus per-cell padding keeps the same row height and
+   divider rhythm. */
 .shortcut-table {
+  width: 100%;
   margin: 0 -13px;
+  border-collapse: collapse;
 }
 
-.shortcut-row {
+.shortcut-table thead th {
+  padding: 0 13px 7px;
+  color: var(--text-muted);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: var(--fs-caption);
+  font-weight: 700;
+  font-style: normal;
+  line-height: 1;
+  text-align: left;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.shortcut-row > * {
   min-height: 54px;
-  display: grid;
-  grid-template-columns: 44px minmax(0, 1fr);
-  align-items: center;
-  gap: 3px 10px;
   padding: 9px 13px;
   border-bottom: 1px solid var(--divider-soft);
+  text-align: left;
+  font-weight: normal;
+  vertical-align: middle;
 }
 
-.shortcut-row:last-child {
+.shortcut-row:last-child > * {
   border-bottom: 0;
 }
 
 .shortcut-row kbd {
-  grid-row: 1 / span 2;
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -804,24 +907,29 @@ textarea:focus-visible,
   border-radius: 5px;
   background: #15171b;
   color: #d8dade;
-  font: 600 10px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: var(--fs-body);
+  font-weight: 600;
+  font-style: normal;
+  line-height: 1;
   box-shadow: 0 1px 0 #24272d;
 }
 
 .shortcut-action {
   color: #d3d5d9;
-  font-size: 9px;
+  font-size: var(--fs-secondary);
   font-weight: 560;
   line-height: 1.3;
 }
 
 .shortcut-status {
+  display: inline-block;
   width: max-content;
   padding: 2px 4px;
   border: 1px solid #30333a;
   border-radius: 3px;
-  color: #666b73;
-  font-size: 6.5px;
+  color: var(--text-muted);
+  font-size: var(--fs-caption);
   font-weight: 700;
   letter-spacing: 0.06em;
   text-transform: uppercase;
@@ -837,7 +945,11 @@ textarea:focus-visible,
   display: grid;
   place-items: center;
   color: var(--text-muted);
-  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: var(--fs-secondary);
+  font-weight: 700;
+  font-style: normal;
+  line-height: 1;
   letter-spacing: 0.1em;
   text-transform: uppercase;
 }
@@ -859,16 +971,20 @@ textarea:focus-visible,
 .footer-button {
   height: 32px;
   padding: 0 9px;
-  font-size: 8.5px;
+  font-size: var(--fs-secondary);
   font-weight: 620;
 }
 
 .segmented-control {
+  /* plan 109: now a <fieldset> (was a role="group" div) — same reset
+     rationale as .priority-toggle above. */
+  min-inline-size: 0;
   display: grid;
   grid-template-columns: repeat(3, 1fr);
   flex: none;
-  width: 168px;
+  width: 180px;
   height: 31px;
+  margin: 0;
   padding: 3px;
   gap: 2px;
   border: 1px solid #2a2d34;
@@ -883,7 +999,11 @@ textarea:focus-visible,
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  font: 620 8.5px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: var(--fs-secondary);
+  font-weight: 620;
+  font-style: normal;
+  line-height: 1;
   letter-spacing: 0.03em;
   transition: background 140ms var(--ease), color 140ms var(--ease);
 }
@@ -904,10 +1024,10 @@ textarea:focus-visible,
 }
 
 .test-button {
-  min-width: 49px;
+  min-width: 56px;
   height: 28px;
   padding: 0 9px;
-  font-size: 8px;
+  font-size: var(--fs-secondary);
   font-weight: 650;
 }
 
@@ -915,7 +1035,7 @@ textarea:focus-visible,
   margin: 0;
   padding: 12px 0;
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--fs-body);
 }
 
 .history-list {
@@ -937,8 +1057,12 @@ textarea:focus-visible,
 
 .history-time,
 .history-origin {
-  color: #63676f;
-  font: 700 9px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
+  color: var(--text-muted);
+  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  font-size: var(--fs-secondary);
+  font-weight: 700;
+  font-style: normal;
+  line-height: 1;
 }
 
 .history-origin {
@@ -948,13 +1072,13 @@ textarea:focus-visible,
 
 .history-title {
   color: #e1e3e7;
-  font-size: 10px;
+  font-size: var(--fs-body);
   font-weight: 590;
 }
 
 .history-body {
   color: var(--text-secondary);
-  font-size: 10px;
+  font-size: var(--fs-body);
 }
 
 @media (max-width: 430px) {
@@ -987,7 +1111,7 @@ textarea:focus-visible,
   .primary-button {
     padding-right: 7px;
     padding-left: 7px;
-    font-size: 8px;
+    font-size: var(--fs-caption);
   }
 }
 

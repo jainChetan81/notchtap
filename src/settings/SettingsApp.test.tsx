@@ -1306,3 +1306,99 @@ describe("SettingsApp — action status (plan 108)", () => {
     expect(message.getAttribute("aria-live")).toBeNull();
   });
 });
+
+// plan 109: the emulated role="group"/"list"/"table" markup (and its
+// lint suppressions) is gone — these pin the *native* element
+// relationships (fieldset/legend, ul/li, table/thead/tbody/th/td, and
+// label-to-control) that replaced it, not just that the ARIA roles still
+// resolve.
+describe("SettingsApp — native semantic markup (plan 109)", () => {
+  it("the Scale segmented control is a real <fieldset> named by its <legend>", async () => {
+    mockLoads();
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "Appearance" }));
+    await screen.findByRole("heading", { level: 1, name: "Appearance" });
+
+    const scaleToggle = await screen.findByRole("group", { name: "Scale" });
+    expect(scaleToggle.tagName).toBe("FIELDSET");
+    const legend = scaleToggle.querySelector("legend");
+    expect(legend).toBeTruthy();
+    expect(legend?.textContent).toBe("Scale");
+    expect(legend?.parentElement).toBe(scaleToggle);
+  });
+
+  it("a Priority toggle is a real <fieldset>, and its visible ControlCopy label resolves to it via getByLabelText", async () => {
+    mockLoads();
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "Cmux" }));
+    await screen.findByRole("heading", { level: 1, name: "Cmux" });
+
+    const priorityToggle = await screen.findByLabelText("Priority");
+    expect(priorityToggle.tagName).toBe("FIELDSET");
+    const legend = priorityToggle.querySelector("legend");
+    expect(legend).toBeTruthy();
+    expect(legend?.textContent).toBe("Priority");
+  });
+
+  it("rotation order items are real <li> elements that belong to a real <ul>", async () => {
+    mockLoads();
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    const list = screen.getByRole("list", { name: "Rotation order" });
+    expect(list.tagName).toBe("UL");
+    const items = screen.getAllByRole("listitem");
+    expect(items.length).toBeGreaterThan(0);
+    for (const item of items) {
+      expect(item.tagName).toBe("LI");
+      expect(item.parentElement).toBe(list);
+    }
+  });
+
+  it("the shortcuts cheatsheet is a real <table> with thead/tbody/th/td belonging to it", async () => {
+    mockLoads();
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "Shortcuts" }));
+    await screen.findByRole("heading", { level: 1, name: "Shortcuts" });
+
+    // AnimatePresence mode="wait" swaps the section body in after the h1
+    // (which isn't animated) already shows the new title, so wait for
+    // the table itself rather than racing the exit/enter transition.
+    const table = await screen.findByRole("table", { name: "Keyboard shortcuts" });
+    expect(table.tagName).toBe("TABLE");
+
+    const thead = table.querySelector("thead");
+    const tbody = table.querySelector("tbody");
+    expect(thead?.parentElement).toBe(table);
+    expect(tbody?.parentElement).toBe(table);
+
+    const headerCells = within(table).getAllByRole("columnheader");
+    expect(headerCells.map((cell) => cell.textContent)).toEqual(["Keys", "Action", "Status"]);
+    for (const cell of headerCells) {
+      expect(cell.tagName).toBe("TH");
+      expect(cell.parentElement?.parentElement).toBe(thead);
+    }
+
+    const rowHeaderCells = within(table).getAllByRole("rowheader");
+    expect(rowHeaderCells.length).toBeGreaterThan(0);
+    for (const cell of rowHeaderCells) {
+      expect(cell.tagName).toBe("TH");
+      expect(cell.getAttribute("scope")).toBe("row");
+      expect(cell.parentElement?.parentElement).toBe(tbody);
+    }
+
+    const dataCells = within(table)
+      .getAllByRole("cell")
+      .filter((cell) => cell.tagName === "TD");
+    expect(dataCells.length).toBeGreaterThan(0);
+    for (const cell of dataCells) {
+      expect(cell.parentElement?.parentElement).toBe(tbody);
+    }
+  });
+});

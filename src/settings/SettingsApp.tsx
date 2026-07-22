@@ -526,7 +526,11 @@ function Switch({
 function ControlCopy({ htmlFor, name, help }: { htmlFor: string; name: string; help: string }) {
   return (
     <div className="control-copy">
-      <label className="control-name" htmlFor={htmlFor}>
+      {/* id lets a sibling <fieldset role=group> (PriorityToggle,
+          UnitsToggle) point aria-labelledby back at this same visible
+          text — <label for> alone doesn't associate with a fieldset,
+          since fieldset isn't a "labelable" HTML element. */}
+      <label className="control-name" id={`${htmlFor}-label`} htmlFor={htmlFor}>
         {name}
       </label>
       <span className="control-help">{help}</span>
@@ -618,8 +622,10 @@ function PriorityToggle({
   return (
     <div className="control-row">
       <ControlCopy htmlFor={id} name={name} help={help} />
-      {/* biome-ignore lint/a11y/useSemanticElements: role="group" is queried by tests (findByRole("group")) and styled via .priority-toggle; migrating to <fieldset> is a separate a11y-markup task with visual-regression risk, not a mechanical lint fix. */}
-      <div className="priority-toggle" id={id} role="group" aria-label={name}>
+      <fieldset className="priority-toggle" id={id} aria-labelledby={`${id}-label`}>
+        {/* accessible-name only — ControlCopy already renders the
+            visible label for this group via the htmlFor above. */}
+        <legend className="visually-hidden">{name}</legend>
         {PRIORITY_LEVELS.map((level) => (
           <button
             key={level}
@@ -631,7 +637,7 @@ function PriorityToggle({
             {PRIORITY_LABELS[level]}
           </button>
         ))}
-      </div>
+      </fieldset>
     </div>
   );
 }
@@ -643,7 +649,7 @@ const UNITS_LABELS: Record<Units, string> = {
 const UNITS_OPTIONS: Units[] = ["celsius", "fahrenheit"];
 
 // plan 040 Part B: the two-button sibling of PriorityToggle for weather
-// display units — same role="group" button-row shape keyed off
+// display units — same fieldset/legend button-row shape keyed off
 // `value === unit`.
 function UnitsToggle({
   id,
@@ -661,8 +667,10 @@ function UnitsToggle({
   return (
     <div className="control-row">
       <ControlCopy htmlFor={id} name={name} help={help} />
-      {/* biome-ignore lint/a11y/useSemanticElements: same role="group" shape as PriorityToggle (styled via .priority-toggle); migrating to <fieldset> is a separate a11y-markup task with visual-regression risk, not a mechanical lint fix. */}
-      <div className="priority-toggle" id={id} role="group" aria-label={name}>
+      <fieldset className="priority-toggle" id={id} aria-labelledby={`${id}-label`}>
+        {/* accessible-name only — ControlCopy already renders the
+            visible label for this group via the htmlFor above. */}
+        <legend className="visually-hidden">{name}</legend>
         {UNITS_OPTIONS.map((unit) => (
           <button
             key={unit}
@@ -674,7 +682,7 @@ function UnitsToggle({
             {UNITS_LABELS[unit]}
           </button>
         ))}
-      </div>
+      </fieldset>
     </div>
   );
 }
@@ -702,11 +710,9 @@ function RotationOrderList({
   }
 
   return (
-    // biome-ignore lint/a11y/useSemanticElements: role="list" is queried by tests and styled via .rotation-order-list; migrating to <ul>/<ol> is a separate a11y-markup task with visual-regression risk, not a mechanical lint fix.
-    <div className="rotation-order-list" role="list" aria-label="Rotation order">
+    <ul className="rotation-order-list" aria-label="Rotation order">
       {order.map((source, index) => (
-        // biome-ignore lint/a11y/useSemanticElements: role="listitem" is queried by tests (getAllByRole("listitem")) and styled via .rotation-order-row; migrating to <li> is a separate a11y-markup task, not a mechanical lint fix.
-        <div className="rotation-order-row" role="listitem" key={source}>
+        <li className="rotation-order-row" key={source}>
           <span className="rotation-order-rank">{index + 1}</span>
           <span className="rotation-order-name">{SOURCE_LABELS[source]}</span>
           <div className="rotation-order-controls">
@@ -729,9 +735,9 @@ function RotationOrderList({
               ▼
             </button>
           </div>
-        </div>
+        </li>
       ))}
-    </div>
+    </ul>
   );
 }
 
@@ -1357,26 +1363,32 @@ function ShortcutsSection() {
       title="Global shortcuts"
       description="These work while notchtap is running, regardless of which app has focus."
     >
-      {/* biome-ignore lint/a11y/useSemanticElements: role="table" is queried by tests (getByRole("table")) and styled via .shortcut-table; migrating to a semantic table element is a separate a11y-markup task with visual-regression risk, not a mechanical lint fix. */}
-      <div className="shortcut-table" role="table" aria-label="Keyboard shortcuts">
-        {shortcuts.map((shortcut) => (
-          // biome-ignore lint/a11y/useFocusableInteractive: display-only cheatsheet row — not meant to be keyboard-focusable; the interactive-role markup here is part of the role="table" cheatsheet, a separate a11y-markup task.
-          // biome-ignore lint/a11y/useSemanticElements: role="row" is part of the role="table" cheatsheet markup styled via .shortcut-row; migrating to <tr> is a separate a11y-markup task, not a mechanical lint fix.
-          <div className="shortcut-row" role="row" key={shortcut.action}>
-            {/* biome-ignore lint/a11y/noInteractiveElementToNoninteractiveRole: the kbd is display-only (shortcut keys), part of the role="table" cheatsheet markup — separate a11y-markup task. */}
-            {/* biome-ignore lint/a11y/useSemanticElements: role="cell" is part of the role="table" cheatsheet markup; migrating to <td> is a separate a11y-markup task, not a mechanical lint fix. */}
-            <kbd role="cell">{shortcut.keys}</kbd>
-            {/* biome-ignore lint/a11y/useSemanticElements: role="cell" is part of the role="table" cheatsheet markup; migrating to <td> is a separate a11y-markup task, not a mechanical lint fix. */}
-            <span className="shortcut-action" role="cell">
-              {shortcut.action}
-            </span>
-            {/* biome-ignore lint/a11y/useSemanticElements: role="cell" is part of the role="table" cheatsheet markup; migrating to <td> is a separate a11y-markup task, not a mechanical lint fix. */}
-            <span className={`shortcut-status ${shortcut.status}`} role="cell">
-              {shortcut.status === "active" ? "active" : "planned · not implemented"}
-            </span>
-          </div>
-        ))}
-      </div>
+      <table className="shortcut-table" aria-label="Keyboard shortcuts">
+        <thead>
+          <tr>
+            <th scope="col">Keys</th>
+            <th scope="col">Action</th>
+            <th scope="col">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {shortcuts.map((shortcut) => (
+            <tr className="shortcut-row" key={shortcut.action}>
+              <td>
+                <kbd>{shortcut.keys}</kbd>
+              </td>
+              <th scope="row" className="shortcut-action">
+                {shortcut.action}
+              </th>
+              <td>
+                <span className={`shortcut-status ${shortcut.status}`}>
+                  {shortcut.status === "active" ? "active" : "planned · not implemented"}
+                </span>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </SettingsGroup>
   );
 }
@@ -1634,11 +1646,13 @@ function SegmentedControl({
   return (
     <div className="control-row">
       <div className="control-copy">
-        {/* biome-ignore lint/a11y/noLabelWithoutControl: this label names a button group, not a form control — the group below carries aria-label={label}; rewiring htmlFor/id is a separate a11y-markup task. */}
-        <label className="control-name">{label}</label>
+        {/* not a form-control label (the fieldset/legend below supplies
+            the group's accessible name) — a plain span avoids an
+            orphaned <label for="…">. */}
+        <span className="control-name">{label}</span>
       </div>
-      {/* biome-ignore lint/a11y/useSemanticElements: role="group" is styled via .segmented-control; migrating to <fieldset> is a separate a11y-markup task with visual-regression risk, not a mechanical lint fix. */}
-      <div className="segmented-control" role="group" aria-label={label}>
+      <fieldset className="segmented-control">
+        <legend className="visually-hidden">{label}</legend>
         {options.map((option) => (
           <button
             key={option.value}
@@ -1650,7 +1664,7 @@ function SegmentedControl({
             {option.label}
           </button>
         ))}
-      </div>
+      </fieldset>
     </div>
   );
 }
