@@ -551,11 +551,13 @@ function SettingsGroup({
       // same Card (`.appearance-preview`/`.preview-stage`/`.card-root`
       // never declared their own font-size — they relied on inheriting
       // the browser's 16px/normal default, same as before this
-      // migration). `text-[16px] leading-[normal]` restores exactly that
+      // migration). `text-base leading-[normal]` restores exactly that
       // inherited baseline so the preview subtree's computed styles stay
       // byte-identical (caught by the settings_capture.js preview-
-      // equivalence harness before this fix landed).
-      className="gap-0 overflow-hidden rounded-[8px] border border-border bg-card py-0 text-[16px] leading-[normal] ring-0"
+      // equivalence harness before this fix landed; plan 115 renamed
+      // this from the equivalent `text-[16px]` arbitrary onto the
+      // `text-base` scale utility — 16px either way, pixel-identical).
+      className="gap-0 overflow-hidden rounded-md border border-border bg-card py-0 text-base leading-[normal] ring-0"
     >
       <CardHeader
         // CardHeader's own default className carries a self-triggering
@@ -637,7 +639,7 @@ function NumberControl({
           inputMode="numeric"
           onChange={(event) => onChange(Number(event.currentTarget.value))}
           className={cn(
-            "h-[31px] rounded-[6px] border-input bg-input/20 text-right font-mono text-fs-body font-[650] text-foreground",
+            "h-[31px] rounded-sm border-input bg-input/20 text-right font-mono text-fs-body font-[650] text-foreground",
             unit ? "pr-10" : "pr-2.5",
           )}
         />
@@ -711,6 +713,10 @@ function PriorityToggle({
     <div className={CONTROL_ROW}>
       <ControlCopy htmlFor={id} name={name} help={help} />
       <fieldset
+        // plan 115: rounded-[7px] is intentionally off-scale (sits
+        // between --radius-sm/6px and --radius-md/8px, no scale rung
+        // matches) — left as a literal arbitrary value; snapping either
+        // way would visibly shift this control's corner radius.
         className="priority-toggle grid h-[31px] w-36 min-w-0 flex-none grid-cols-3 gap-0.5 rounded-[7px] border border-input bg-input/20 p-[3px]"
         id={id}
         aria-labelledby={`${id}-label`}
@@ -723,9 +729,13 @@ function PriorityToggle({
             key={level}
             type="button"
             className={cn(
+              // plan 115: rounded-[4px] is intentionally off-scale (no
+              // --radius-* rung is 4px; --radius-sm is 6px) — left as a
+              // literal arbitrary value rather than shifting the
+              // visible corner radius.
               "priority-toggle-button rounded-[4px] border-0 bg-transparent px-1.5 py-px font-mono text-fs-secondary font-[620] tracking-[0.03em] text-muted-foreground outline-none transition-colors duration-[140ms] ease-notchtap hover:bg-accent hover:text-foreground focus-visible:shadow-[0_0_0_2px_var(--ring)]",
               value === level &&
-                "is-selected bg-accent text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.4)]",
+                "is-selected bg-accent text-foreground shadow-[var(--shadow-selected)]",
             )}
             aria-pressed={value === level}
             onClick={() => onChange(level)}
@@ -764,6 +774,10 @@ function UnitsToggle({
     <div className={CONTROL_ROW}>
       <ControlCopy htmlFor={id} name={name} help={help} />
       <fieldset
+        // plan 115: rounded-[7px] is intentionally off-scale (sits
+        // between --radius-sm/6px and --radius-md/8px, no scale rung
+        // matches) — left as a literal arbitrary value; snapping either
+        // way would visibly shift this control's corner radius.
         className="priority-toggle grid h-[31px] w-36 min-w-0 flex-none grid-cols-3 gap-0.5 rounded-[7px] border border-input bg-input/20 p-[3px]"
         id={id}
         aria-labelledby={`${id}-label`}
@@ -776,9 +790,13 @@ function UnitsToggle({
             key={unit}
             type="button"
             className={cn(
+              // plan 115: rounded-[4px] is intentionally off-scale (no
+              // --radius-* rung is 4px; --radius-sm is 6px) — left as a
+              // literal arbitrary value rather than shifting the
+              // visible corner radius.
               "priority-toggle-button rounded-[4px] border-0 bg-transparent px-1.5 py-px font-mono text-fs-secondary font-[620] tracking-[0.03em] text-muted-foreground outline-none transition-colors duration-[140ms] ease-notchtap hover:bg-accent hover:text-foreground focus-visible:shadow-[0_0_0_2px_var(--ring)]",
               value === unit &&
-                "is-selected bg-accent text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.4)]",
+                "is-selected bg-accent text-foreground shadow-[var(--shadow-selected)]",
             )}
             aria-pressed={value === unit}
             onClick={() => onChange(unit)}
@@ -915,7 +933,7 @@ function ErrorPanel({ errors }: { errors: string[] }) {
     <AnimatePresence initial={false}>
       {errors.length > 0 ? (
         <motion.div
-          className="error-panel mx-4 mt-2.5 rounded-[6px] border border-destructive/40 bg-destructive/10 px-2.5 py-2.5 text-destructive"
+          className="error-panel mx-4 mt-2.5 rounded-sm border border-destructive/40 bg-destructive/10 px-2.5 py-2.5 text-destructive"
           role="alert"
           aria-live="assertive"
           initial={{ opacity: 0, y: -3 }}
@@ -982,6 +1000,10 @@ function SecretRow({
           aria-live="polite"
           variant="outline"
           className={cn(
+            // plan 115: rounded-[4px] is intentionally off-scale (no
+            // --radius-* rung is 4px; --radius-sm is 6px) — left as a
+            // literal arbitrary value rather than shifting the visible
+            // corner radius.
             "status-chip h-auto flex-none rounded-[4px] border-input px-[5px] py-[3px] font-mono text-fs-caption font-bold tracking-[0.06em] text-muted-foreground uppercase",
             status && "is-set border-ring/40 bg-input/40 text-foreground",
           )}
@@ -997,7 +1019,7 @@ function SecretRow({
           placeholder={placeholder}
           value={value}
           onChange={(event) => setValue(event.currentTarget.value)}
-          className="secret-input h-[31px] rounded-[6px] border-input bg-input/20 font-mono text-fs-secondary font-[560] text-foreground"
+          className="secret-input h-[31px] rounded-sm border-input bg-input/20 font-mono text-fs-secondary font-[560] text-foreground"
         />
         <Button
           type="button"
@@ -2043,16 +2065,26 @@ function SegmentedControl({
           {label}
         </span>
       </div>
-      <fieldset className="segmented-control grid h-[31px] w-[180px] min-w-0 flex-none grid-cols-3 gap-0.5 rounded-[7px] border border-input bg-input/20 p-[3px]">
+      <fieldset
+        // plan 115: rounded-[7px] is intentionally off-scale (sits
+        // between --radius-sm/6px and --radius-md/8px, no scale rung
+        // matches) — left as a literal arbitrary value; snapping either
+        // way would visibly shift this control's corner radius.
+        className="segmented-control grid h-[31px] w-[180px] min-w-0 flex-none grid-cols-3 gap-0.5 rounded-[7px] border border-input bg-input/20 p-[3px]"
+      >
         <legend className="sr-only">{label}</legend>
         {options.map((option) => (
           <button
             key={option.value}
             type="button"
             className={cn(
+              // plan 115: rounded-[4px] is intentionally off-scale (no
+              // --radius-* rung is 4px; --radius-sm is 6px) — left as a
+              // literal arbitrary value rather than shifting the
+              // visible corner radius.
               "segmented-control-button rounded-[4px] border-0 bg-transparent px-1.5 py-px font-mono text-fs-secondary font-[620] tracking-[0.03em] text-muted-foreground outline-none transition-colors duration-[140ms] ease-notchtap hover:bg-accent hover:text-foreground focus-visible:shadow-[0_0_0_2px_var(--ring)]",
               value === option.value &&
-                "is-selected bg-accent text-foreground shadow-[0_1px_2px_rgba(0,0,0,0.4)]",
+                "is-selected bg-accent text-foreground shadow-[var(--shadow-selected)]",
             )}
             aria-pressed={value === option.value}
             onClick={() => onChange(option.value)}
