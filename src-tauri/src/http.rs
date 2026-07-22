@@ -93,6 +93,14 @@ const SUBTITLE_MAX_CHARS: usize = 120;
 const DETAILS_MAX_PAIRS: usize = 8;
 const DETAIL_LABEL_MAX_CHARS: usize = 40;
 const DETAIL_VALUE_MAX_CHARS: usize = 200;
+// title/body are the two required fields on every request — the same
+// display-safety rationale as the subtitle/detail caps above applies
+// (fixed 500×300 window), just sized a little larger since title/body
+// are the primary content rather than supplementary meta. Only the
+// overall 64 KiB body limit bounded these before; an unbounded single
+// field could still blow the layout even under that cap.
+const TITLE_MAX_CHARS: usize = 200;
+const BODY_MAX_CHARS: usize = 500;
 
 /// Truncates to at most `max_chars` characters (not bytes — never splits a
 /// UTF-8 codepoint), appending an ellipsis only when truncation happened.
@@ -169,10 +177,12 @@ async fn notify_handler<R: tauri::Runtime>(
         tracing::warn!(field = "title", "notify: rejected — missing field");
         HttpError::Event(EventError::MissingField("title"))
     })?;
+    let title = truncate_with_ellipsis(&title, TITLE_MAX_CHARS);
     let body = req.body.ok_or_else(|| {
         tracing::warn!(field = "body", "notify: rejected — missing field");
         HttpError::Event(EventError::MissingField("body"))
     })?;
+    let body = truncate_with_ellipsis(&body, BODY_MAX_CHARS);
 
     let (origin, default_priority, ttl_secs) = match req.source {
         Some(RequestSource::Cmux) => (SourceKind::Cmux, state.cmux_priority, state.cmux_ttl_secs),
@@ -987,6 +997,48 @@ mod tests {
         match slot {
             crate::event::SlotState::Showing { details, .. } => {
                 assert_eq!(details.len(), 8, "9 pairs on the wire must cap to 8");
+            }
+            other => panic!("expected Showing, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn notify_caps_title_and_body_server_side() {
+        let state = test_state(SingleSlotQueue::new(50));
+        let app = router(state.clone());
+        let long_title = "t".repeat(TITLE_MAX_CHARS + 50);
+        let long_body = "b".repeat(BODY_MAX_CHARS + 50);
+        let body = serde_json::json!({ "title": long_title, "body": long_body }).to_string();
+        let response = app.oneshot(json_request(&body)).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let slot = state.engine.read(|q| q.current_slot_state()).await;
+        match slot {
+            crate::event::SlotState::Showing { title, body, .. } => {
+                assert_eq!(title.chars().count(), TITLE_MAX_CHARS + 1); // cap + ellipsis
+                assert!(title.ends_with('…'));
+                assert_eq!(body.chars().count(), BODY_MAX_CHARS + 1);
+                assert!(body.ends_with('…'));
+            }
+            other => panic!("expected Showing, got {other:?}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn notify_leaves_short_title_and_body_untouched() {
+        let state = test_state(SingleSlotQueue::new(50));
+        let app = router(state.clone());
+        let response = app
+            .oneshot(json_request(r#"{"title":"short title","body":"short body"}"#))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let slot = state.engine.read(|q| q.current_slot_state()).await;
+        match slot {
+            crate::event::SlotState::Showing { title, body, .. } => {
+                assert_eq!(title, "short title");
+                assert_eq!(body, "short body");
             }
             other => panic!("expected Showing, got {other:?}"),
         }
