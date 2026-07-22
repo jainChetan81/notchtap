@@ -615,6 +615,7 @@ function NumberControl({
   min,
   max,
   unit,
+  step,
   onChange,
 }: {
   id: string;
@@ -624,8 +625,28 @@ function NumberControl({
   min: number;
   max: number;
   unit?: string;
+  /** HTML `step` attribute. Defaults to `1` (integer fields); pass
+   *  `"any"` for decimal fields (e.g. latitude/longitude) so a partial
+   *  value like `12.5` isn't flagged as a `stepMismatch`. */
+  step?: number | "any";
   onChange: (value: number) => void;
 }) {
+  // Local raw-string mirror of `value` (2026-07-23 review): a plain
+  // `value={value} onChange={(e) => onChange(Number(e.target.value))}`
+  // pair fights the user on two fronts — `Number("")` coerces a
+  // cleared field straight to `0`, and a controlled numeric `value`
+  // snaps an in-progress decimal like `"12."` back to `"12"` on every
+  // keystroke because `String(12) !== "12."`. Keeping the input's own
+  // in-progress text in state (and only reconciling it with the
+  // external `value` when that value actually changes, e.g. Reset)
+  // lets the user clear-and-retype or type a trailing `.`/leading `-`
+  // without the control fighting back.
+  const [raw, setRaw] = useState(() => String(value));
+
+  useEffect(() => {
+    setRaw(String(value));
+  }, [value]);
+
   return (
     <div className={CONTROL_ROW}>
       <ControlCopy htmlFor={id} name={name} help={help} />
@@ -635,9 +656,32 @@ function NumberControl({
           type="number"
           min={min}
           max={max}
-          value={value}
+          step={step ?? 1}
+          value={raw}
           inputMode="numeric"
-          onChange={(event) => onChange(Number(event.currentTarget.value))}
+          onChange={(event) => {
+            const next = event.currentTarget.value;
+            setRaw(next);
+            // Empty (clearing to retype) or a bare sign/decimal point
+            // mid-entry: don't coerce to 0 and don't propagate yet —
+            // leave the last-committed config value alone until the
+            // input reads as a real number.
+            if (next === "" || next === "-" || next === "." || next === "-.") {
+              return;
+            }
+            const parsed = Number(next);
+            if (!Number.isNaN(parsed)) {
+              onChange(parsed);
+            }
+          }}
+          onBlur={() => {
+            // Leaving the field on an invalid/empty in-progress value
+            // (e.g. the user cleared it and clicked away) restores the
+            // last-committed value rather than leaving the box blank.
+            if (raw === "" || Number.isNaN(Number(raw))) {
+              setRaw(String(value));
+            }
+          }}
           className={cn(
             "h-[31px] rounded-sm border-input bg-input/20 text-right font-mono text-fs-body font-[650] text-foreground",
             unit ? "pr-10" : "pr-2.5",
@@ -1373,6 +1417,7 @@ function WeatherSection({
         value={config.weather_lat}
         min={-90}
         max={90}
+        step="any"
         onChange={(weather_lat) => patchConfig({ weather_lat })}
       />
       <NumberControl
@@ -1382,6 +1427,7 @@ function WeatherSection({
         value={config.weather_lon}
         min={-180}
         max={180}
+        step="any"
         onChange={(weather_lon) => patchConfig({ weather_lon })}
       />
       <UnitsToggle
@@ -1718,10 +1764,32 @@ function historyEventTypeLabel(eventType: string): string {
   return HISTORY_EVENT_TYPE_LABELS[eventType] ?? eventType;
 }
 
+// `event.priority` crosses the tauri IPC boundary as untyped JSON
+// (`get_history`'s `invoke` return is cast to `HistoryEntry[]`, not
+// runtime-validated) — a value the rust side hasn't sent yet, or a typo
+// in a future variant, must render legibly rather than as a blank chip
+// (`PRIORITY_LABELS[unknownValue]` is `undefined`, which React silently
+// renders as nothing). Falls back to the raw wire value, same "total
+// lookup" shape as `historyEventTypeLabel` just above.
+function historyPriorityLabel(priority: string): string {
+  return (PRIORITY_LABELS as Record<string, string>)[priority] ?? priority;
+}
+
 function historyRotationLabel(rotation: HistoryRotationSpec): string {
-  return rotation.kind === "one_shot"
-    ? `TTL ${rotation.ttl_secs}s`
-    : `every ${rotation.display_secs}s`;
+  if (rotation.kind === "one_shot") {
+    return `TTL ${rotation.ttl_secs}s`;
+  }
+  if (rotation.kind === "recurring") {
+    return `every ${rotation.display_secs}s`;
+  }
+  // Same runtime-untrusted-IPC defense as `historyPriorityLabel` above:
+  // `HistoryRotationSpec` is a closed two-member union at the type
+  // level, so TS narrows `rotation` to `never` past both checks — but an
+  // actual malformed/future payload isn't guaranteed to match either
+  // member. Read the field back off `unknown` rather than crash or
+  // render nothing.
+  const raw = rotation as unknown as { kind?: unknown };
+  return typeof raw.kind === "string" ? raw.kind : "unknown rotation";
 }
 
 // Same HH:MM shape as lib/presentation.ts's publishedLabel (local
@@ -1816,7 +1884,7 @@ function HistoryRow({ entry }: { entry: HistoryEntry }) {
           </span>
         )}
         <span className="history-meta-chip min-w-0 rounded-full border border-border px-[7px] py-0.5 font-mono text-fs-caption font-[650] leading-[1.5] text-muted-foreground [overflow-wrap:anywhere]">
-          {PRIORITY_LABELS[event.priority]}
+          {historyPriorityLabel(event.priority)}
         </span>
         <span className="history-meta-chip min-w-0 rounded-full border border-border px-[7px] py-0.5 font-mono text-fs-caption font-[650] leading-[1.5] text-muted-foreground [overflow-wrap:anywhere]">
           {historyEventTypeLabel(event.event_type)}

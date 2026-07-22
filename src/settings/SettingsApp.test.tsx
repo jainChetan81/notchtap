@@ -3,7 +3,14 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
-import { type Config, type HistoryEntry, type SecretStatus, SettingsApp } from "./SettingsApp";
+import {
+  type Config,
+  type HistoryEntry,
+  type HistoryRotationSpec,
+  type PriorityLevel,
+  type SecretStatus,
+  SettingsApp,
+} from "./SettingsApp";
 
 // plan 112 Step 4: jsdom has no ResizeObserver; the shadcn Switch
 // (radix-ui's useSize hook, used to size its thumb) reads one on mount.
@@ -514,6 +521,54 @@ describe("SettingsApp", () => {
     expect(isChecked(screen.getByLabelText("Start paused"))).toBe(true);
   });
 
+  it('a NumberControl clearing to retype doesn\'t snap to 0, and decimal fields carry step="any"', async () => {
+    mockLoads();
+    render(<SettingsApp />);
+
+    // integer field: clear-then-retype must not flash to 0 mid-edit —
+    // the old `onChange(Number(e.target.value))` pattern turned a
+    // cleared field into `Number("") === 0` on every keystroke.
+    const port = (await screen.findByLabelText("Listener port")) as HTMLInputElement;
+    fireEvent.change(port, { target: { value: "" } });
+    expect(port.value).toBe("");
+    fireEvent.change(port, { target: { value: "8" } });
+    expect(port.value).toBe("8");
+    fireEvent.change(port, { target: { value: "80" } });
+    expect(port.value).toBe("80");
+
+    // latitude/longitude are decimal signed fields: step="any" (not the
+    // HTML default of 1) is what stops a value like 12.5 or -77.59 from
+    // registering as a stepMismatch.
+    fireEvent.click(screen.getByRole("button", { name: "Weather" }));
+    const lat = (await screen.findByLabelText("Latitude")) as HTMLInputElement;
+    const lon = (await screen.findByLabelText("Longitude")) as HTMLInputElement;
+    expect(lat.step).toBe("any");
+    expect(lon.step).toBe("any");
+    expect(lat.value).toBe("12.97");
+    expect(lon.value).toBe("77.59");
+
+    // a full decimal replacement round-trips correctly (jsdom's own
+    // number-input sanitization — same as real browsers — only
+    // discards genuinely-invalid intermediate strings like a bare "."
+    // or "-"; this NumberControl no longer forces `Number(value)` back
+    // onto the field on every keystroke, so a complete decimal is never
+    // fought by the controlled value).
+    fireEvent.change(lat, { target: { value: "13.5" } });
+    expect(lat.value).toBe("13.5");
+  });
+
+  it("a NumberControl left empty on blur restores the last-committed value", async () => {
+    mockLoads();
+    render(<SettingsApp />);
+
+    const port = (await screen.findByLabelText("Listener port")) as HTMLInputElement;
+    expect(port.value).toBe("4321");
+    fireEvent.change(port, { target: { value: "" } });
+    expect(port.value).toBe("");
+    fireEvent.blur(port);
+    expect(port.value).toBe("4321");
+  });
+
   it("Reset to defaults applies the defaults served by get_default_config", async () => {
     mockLoads();
     render(<SettingsApp />);
@@ -981,6 +1036,34 @@ describe("SettingsApp", () => {
       // disclosure affordance renders at all.
       expect(row.querySelector(".history-details")).toBeNull();
       expect(within(row).queryByText("More details")).toBeNull();
+    });
+
+    it("falls back to the raw wire value for an unrecognized priority or rotation kind, instead of a blank chip", async () => {
+      // `get_history` crosses the tauri IPC boundary as untyped JSON — an
+      // unexpected priority/rotation.kind (a future variant, a bug, a
+      // hand-edited history.jsonl) must render legibly rather than as an
+      // empty chip (an un-narrowed `Record` lookup would return
+      // `undefined`, which React renders as nothing).
+      const malformed: HistoryEntry = {
+        ...historyEntryOlder,
+        event: {
+          ...historyEntryOlder.event,
+          // deliberately off-contract values simulating untyped IPC
+          // input — routed through `unknown` (not `any`) to keep the
+          // rest of the object's real typing intact.
+          priority: "urgent" as unknown as PriorityLevel,
+          rotation: { kind: "hourly", every_secs: 60 } as unknown as HistoryRotationSpec,
+        },
+      };
+      mockHistory([malformed]);
+      await openHistory();
+
+      const row = (await screen.findByText("First notification")).closest(
+        ".history-row",
+      ) as HTMLElement;
+      expect(row).not.toBeNull();
+      expect(within(row).getByText("urgent")).toBeTruthy();
+      expect(within(row).getByText("hourly")).toBeTruthy();
     });
 
     it("renders a 300-char unbroken-token body without widening the row (pins the .history-body class)", async () => {
