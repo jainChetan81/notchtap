@@ -1,5 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
+  ChevronDown,
+  ChevronUp,
   CloudSun,
   Command,
   History,
@@ -842,7 +844,7 @@ function RotationOrderList({
               disabled={index === 0}
               onClick={() => move(index, -1)}
             >
-              ▲
+              <ChevronUp className="size-4" />
             </Button>
             <Button
               type="button"
@@ -853,7 +855,7 @@ function RotationOrderList({
               disabled={index === order.length - 1}
               onClick={() => move(index, 1)}
             >
-              ▼
+              <ChevronDown className="size-4" />
             </Button>
           </div>
         </li>
