@@ -1029,7 +1029,9 @@ mod tests {
         let state = test_state(SingleSlotQueue::new(50));
         let app = router(state.clone());
         let response = app
-            .oneshot(json_request(r#"{"title":"short title","body":"short body"}"#))
+            .oneshot(json_request(
+                r#"{"title":"short title","body":"short body"}"#,
+            ))
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::OK);
