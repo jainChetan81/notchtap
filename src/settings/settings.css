@@ -15,6 +15,7 @@
   --focus-ring: rgba(10, 132, 255, 0.24);
   --error: #d6a1a5;
   --error-border: #553438;
+  --ok: #a3c9a8;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
   color: var(--text);
@@ -644,6 +645,41 @@ textarea:focus-visible,
   line-height: 1.4;
 }
 
+/* Shared visible-outcome status (plan 108) — one mechanism reused by every
+   operation that can silently fail: send-test, appearance hot-apply,
+   history read/clear, diagnostics read, connector-health poll, defaults
+   fetch. State-only styling here; plan 109 restyles these without touching
+   markup, so class names stay semantic. */
+.action-status {
+  margin-top: 6px;
+  font-size: 8px;
+  line-height: 1.4;
+}
+
+.action-status.is-pending {
+  color: var(--text-muted);
+}
+
+.action-status.is-ok {
+  color: var(--ok);
+}
+
+.action-status.is-error {
+  color: var(--error);
+}
+
+.test-button-wrap {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.test-button-wrap .action-status {
+  margin-top: 0;
+  text-align: right;
+}
+
 .secondary-button,
 .footer-button,
 .primary-button {
@@ -814,6 +850,10 @@ textarea:focus-visible,
   padding: 12px 14px;
   border-top: 1px solid var(--divider);
   background: #08090b;
+}
+
+.settings-footer .action-status {
+  margin-top: 0;
 }
 
 .footer-button {
