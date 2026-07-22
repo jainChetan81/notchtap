@@ -45,9 +45,14 @@ const siblingPath = join(here, "..", "..", "..", "shared-ui", "design", "tokens.
 // range only touched upstream's own scripts/playground, not token
 // values — so PINNED_TOKENS_SHA256 below is unchanged and does not need
 // a re-hash.
-const UPSTREAM_SHA = "2279978";
+// 0.2.1 refresh (2026-07-22, external-review round): upstream flipped
+// --primary-foreground and --sidebar-primary-foreground from near-white to
+// near-black #050607 (white on accent blue #0a84ff was 3.26:1, fails WCAG AA
+// for normal text; dark-on-blue is 5.56:1, matching the destructive pattern).
+// token content commit b0ba7bb; pinned at upstream HEAD ef85e85. re-hashed.
+const UPSTREAM_SHA = "ef85e85";
 const PINNED_TOKENS_SHA256 =
-  "c8416630c99a60737ff8dd9e1348b2ec771a5569501b0d5f8fbfd0ac584635c8";
+  "5b7bcefe6f89c9ed72a1487e9ac2bd15c644d56904582aa33735fcc2039e8313";
 
 function sha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
