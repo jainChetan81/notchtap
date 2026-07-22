@@ -209,6 +209,56 @@
   background: #000;
 }
 
+/* the idle face — a minimal notchtap-branded face (two eyes + a soft
+   smile) that IdleFace.tsx fades into the CENTER of the idle rail after
+   a few seconds of true idle. Shares `.synthetic-cutout`'s own grid cell
+   and its "always render, CSS decides" idiom (Decision 6, comment above):
+   hidden by default, painted only in HUD mode — in real notch mode this
+   cell sits behind the physical camera housing, so there's nothing to
+   gain by painting it there, same reasoning as the cutout rectangle
+   itself. Stacks on top of `.synthetic-cutout` for free (later in DOM
+   order, same stacking context — `.card-assembly` already sets
+   `isolation: isolate`, see its own rule above). `pointer-events: none`
+   so the face can never intercept the rust-derived hover tracking area;
+   `aria-hidden` (component) covers assistive tech. */
+.card-root .idle-face {
+  grid-column: 2;
+  grid-row: 1;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  pointer-events: none;
+}
+:root[data-notchtap-mode="hud"] .card-root .idle-face {
+  display: flex;
+}
+
+.card-root .idle-face-eyes {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.card-root .idle-face-eye {
+  width: 3px;
+  height: 4px;
+  border-radius: 1.5px;
+  background: rgba(245, 247, 250, 0.92);
+}
+
+.card-root .idle-face-mouth {
+  display: block;
+  overflow: visible;
+}
+.card-root .idle-face-mouth path {
+  fill: none;
+  stroke: rgba(245, 247, 250, 0.75);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
 .card-root .below-block {
   grid-column: 1 / -1;
   grid-row: 2;

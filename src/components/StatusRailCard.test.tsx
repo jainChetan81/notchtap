@@ -1269,6 +1269,66 @@ describe("StatusRailCard", () => {
     });
   });
 
+  // the idle face — IdleFace.tsx owns the gaze/blink animation details;
+  // these pin how StatusRailCard gates it to TRUE idle (a delayed reveal
+  // driven by fake timers, same pattern as the geometry describe block
+  // below).
+  describe("idle face", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("never appears while a card is showing", () => {
+      const { container } = render(<StatusRailCard slot={GOAL} hovered={false} />);
+      act(() => vi.advanceTimersByTime(10_000));
+      expect(container.querySelector(".idle-face")).toBeNull();
+    });
+
+    it("never appears while idle but hovered", () => {
+      const { container } = render(<StatusRailCard slot={{ state: "empty" }} hovered={true} />);
+      act(() => vi.advanceTimersByTime(10_000));
+      expect(container.querySelector(".idle-face")).toBeNull();
+    });
+
+    it("appears only after the idle delay elapses while truly idle", () => {
+      const { container } = render(<StatusRailCard slot={{ state: "empty" }} hovered={false} />);
+      // immediately: not yet revealed.
+      expect(container.querySelector(".idle-face")).toBeNull();
+
+      act(() => vi.advanceTimersByTime(4499));
+      expect(container.querySelector(".idle-face")).toBeNull();
+
+      act(() => vi.advanceTimersByTime(1));
+      expect(container.querySelector(".idle-face")).not.toBeNull();
+    });
+
+    it("resets the reveal delay when hover breaks idle then idle resumes, rather than reusing a stale timer", () => {
+      const { container, rerender } = render(
+        <StatusRailCard slot={{ state: "empty" }} hovered={false} />,
+      );
+      // most of the way through the delay...
+      act(() => vi.advanceTimersByTime(3000));
+      expect(container.querySelector(".idle-face")).toBeNull();
+
+      // ...then hover breaks idle, which must cancel that in-flight timer.
+      rerender(<StatusRailCard slot={{ state: "empty" }} hovered={true} />);
+      rerender(<StatusRailCard slot={{ state: "empty" }} hovered={false} />);
+
+      // if the old timer had survived, only 1500ms more (3000 + 1500 =
+      // 4500) would be needed here — it must NOT have appeared yet.
+      act(() => vi.advanceTimersByTime(1500));
+      expect(container.querySelector(".idle-face")).toBeNull();
+
+      // the full delay from the fresh idle start does reveal it.
+      act(() => vi.advanceTimersByTime(3000));
+      expect(container.querySelector(".idle-face")).not.toBeNull();
+    });
+  });
+
   // plan 107 Step B: compact->idle as one directional state machine. The
   // outer shell's geometry (priority accent class + expanded width class)
   // used to key off the live `showing` flag alone, which snapped straight

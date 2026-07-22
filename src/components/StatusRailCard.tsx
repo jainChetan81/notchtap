@@ -17,6 +17,7 @@ import { useDelayedSwap } from "../useDelayedSwap";
 import type { EspnMeta, SlotState } from "../useSlotState";
 import type { StatusState } from "../useStatusState";
 import { FlankClock } from "./FlankClock";
+import { IdleFace } from "./IdleFace";
 import { IdleHoverPeek } from "./IdleHoverPeek";
 import { Manifest } from "./Manifest";
 import { Stamp } from "./Stamp";
@@ -246,6 +247,15 @@ export function StatusRailCard({
   // correctly here; the assembly only needs to keep mounting.
   const bare = restingState === "notch" && !renderedShowing && !exiting;
 
+  // idle face: true idle only — not while a card is showing OR still
+  // exiting (the delayed-swap window), and not while hovered (the hover
+  // primitive's live prop, never CSS `:hover`, matching every other hover
+  // consumer above). Deliberately keyed on `renderedShowing`/`exiting`
+  // (the same delayed-swap-settled basis StatusDots/IdleHoverPeek already
+  // use just below), not the live `showing` flag alone, so the face
+  // doesn't flash back on mid-exit before the swap actually settles.
+  const trueIdle = !showing && !renderedShowing && !exiting && !hovered;
+
   // plan 091: the outer shell (`.card-assembly`) now owns ONLY geometry-
   // and-effects classes — priority accent, hover diagnostic, the goal/
   // red-card pulse and the live-match celebrations. `news-shade`/`wx-card`
@@ -374,6 +384,11 @@ export function StatusRailCard({
           paints, so there is no mode branch in this component (Decision
           6 — "no mode branch" in the shape itself). */}
       <div className="synthetic-cutout" aria-hidden="true" />
+      {/* the idle face — purely additive decoration in the same grid cell
+          as .synthetic-cutout above (grid-column 2 / grid-row 1,
+          overlay-card.css); it owns none of the geometry/swap machinery,
+          only reads it via `trueIdle`. */}
+      <IdleFace idle={trueIdle} />
       <div className="flank-right">
         {/* plan 091: StatusDots is idle-only furniture — mounted whenever
             idle-flavored content should be visible, so the dots fade out
