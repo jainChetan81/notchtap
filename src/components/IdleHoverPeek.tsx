@@ -1,3 +1,4 @@
+import { Globe, type LucideIcon, Music, Pause, Play, Tv } from "lucide-react";
 import { useEffect, useState } from "react";
 import { IDLE_PEEK_CLOSE_MS } from "../animationTiming";
 import { weatherArtFor } from "../lib/weatherArt";
@@ -95,24 +96,26 @@ function WeatherPeekReadout({ weather }: { weather: WeatherSummary }) {
   );
 }
 
-// plan 104 (Step 7): a tiny bundle-id -> glyph map. Text glyphs only —
-// artwork transport is explicitly deferred (the plan's own decision 6).
-// Order matters: checked top-to-bottom, first match wins.
-export function glyphForBundleId(bundleId: string | null): string {
+// plan 104 (Step 7): a tiny bundle-id -> icon map. plan 118 swapped the
+// text-glyph transport for lucide components (rendered, not measured as
+// text) — order and branch conditions are unchanged from the original,
+// only the return type moved from an emoji string to the icon component
+// itself. Order matters: checked top-to-bottom, first match wins.
+export function iconForBundleId(bundleId: string | null): LucideIcon {
   if (bundleId === null) {
-    return "▶";
+    return Play;
   }
   const lower = bundleId.toLowerCase();
   if (lower.includes("music")) {
-    return "♪";
+    return Music;
   }
   if (lower.includes("tv")) {
-    return "📺";
+    return Tv;
   }
   if (["safari", "zen", "chrome", "firefox"].some((browser) => lower.includes(browser))) {
-    return "🌐";
+    return Globe;
   }
-  return "▶";
+  return Play;
 }
 
 function formatElapsed(ms: number): string {
@@ -157,12 +160,13 @@ function MediaPeekRow({ media }: { media: NowPlayingSummary }) {
       ? Math.min(100, (clampedElapsedMs / media.durationMs) * 100)
       : 0;
   const subtitle = media.artist ?? media.album ?? null;
+  const MediaIcon = iconForBundleId(media.appBundleId);
 
   return (
     <div className="media-row">
       <div className="media-track">
         <span className="media-art" aria-hidden="true">
-          {glyphForBundleId(media.appBundleId)}
+          <MediaIcon className="media-art-icon" aria-hidden="true" />
         </span>
         <span className="media-meta">
           <span className="media-title">{media.title}</span>
@@ -171,7 +175,11 @@ function MediaPeekRow({ media }: { media: NowPlayingSummary }) {
       </div>
       <div className="media-transport">
         <span className="media-state" aria-hidden="true">
-          {media.playing ? "▶" : "⏸"}
+          {media.playing ? (
+            <Play className="media-state-icon" aria-hidden="true" />
+          ) : (
+            <Pause className="media-state-icon" aria-hidden="true" />
+          )}
         </span>
         <span className="media-bar">
           <span className="media-bar-fill" style={{ width: `${progressPct}%` }} />

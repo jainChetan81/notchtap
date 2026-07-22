@@ -1565,6 +1565,15 @@
   border: 1px solid rgba(255, 255, 255, 0.14);
   color: #f5f7fa;
 }
+/* plan 118: the source-app glyph is now a lucide icon (svg), not a text
+   character — sized to match the `.media-art` font-size above (13px) so
+   the 26x26 tile's centered content keeps the same visual footprint and
+   the media row doesn't shift. Color still inherits via currentColor,
+   same as the text glyph it replaces. */
+.card-root .media-art-icon {
+  width: 13px;
+  height: 13px;
+}
 .card-root .media-meta {
   min-width: 0;
   display: flex;
@@ -1596,6 +1605,13 @@
 .card-root .media-state {
   font-size: 12px;
   line-height: 1;
+}
+/* plan 118: play/pause is now a lucide icon (svg), not a text glyph —
+   sized to match the `.media-state` font-size above (12px) so it doesn't
+   grow the `.media-transport` row. Color inherits via currentColor. */
+.card-root .media-state-icon {
+  width: 12px;
+  height: 12px;
 }
 .card-root .media-bar {
   width: 56px;

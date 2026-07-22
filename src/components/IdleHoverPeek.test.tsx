@@ -1,7 +1,8 @@
 import { act, cleanup, render } from "@testing-library/react";
+import { Globe, Music, Play, Tv } from "lucide-react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NowPlayingSummary, StatusState } from "../useStatusState";
-import { glyphForBundleId, IdleHoverPeek } from "./IdleHoverPeek";
+import { IdleHoverPeek, iconForBundleId } from "./IdleHoverPeek";
 
 afterEach(cleanup);
 
@@ -198,7 +199,9 @@ describe("IdleHoverPeek (plan 093)", () => {
     expect(container.querySelector(".media-row")).not.toBeNull();
     expect(container.querySelector(".media-title")?.textContent).toBe("Midnight City");
     expect(container.querySelector(".media-subtitle")?.textContent).toBe("M83");
-    expect(container.querySelector(".media-state")?.textContent).toBe("▶");
+    // plan 118: play/paused state renders as a lucide icon (svg), not
+    // text — lucide-react stamps a "lucide-<name>" class on every icon.
+    expect(container.querySelector(".media-state .lucide-play")).not.toBeNull();
     expect(container.querySelector(".idle-peek-timeline")).not.toBeNull();
     // media outranks weather in the content slot — one visible readout at
     // a time — but (plan 105) the weather backdrop itself still shows
@@ -206,13 +209,13 @@ describe("IdleHoverPeek (plan 093)", () => {
     expect(container.querySelector(".wx-peek-readout")).toBeNull();
   });
 
-  it("renders ⏸ for a paused now-playing session", () => {
+  it("renders the pause icon for a paused now-playing session", () => {
     const paused: StatusState = {
       ...MEDIA_STATUS,
       media: { enabled: true, current: { ...NOW_PLAYING, playing: false } },
     };
     const { container } = render(<IdleHoverPeek status={paused} hovered={true} />);
-    expect(container.querySelector(".media-state")?.textContent).toBe("⏸");
+    expect(container.querySelector(".media-state .lucide-pause")).not.toBeNull();
   });
 
   it("football outranks media — the scorecard reveal wins when both are available", () => {
@@ -228,25 +231,25 @@ describe("IdleHoverPeek (plan 093)", () => {
     expect(container.querySelector(".media-row")).toBeNull();
   });
 
-  describe("glyphForBundleId (plan 104 Step 7)", () => {
-    it("maps a Music bundle id to the note glyph", () => {
-      expect(glyphForBundleId("com.apple.Music")).toBe("♪");
+  describe("iconForBundleId (plan 104 Step 7, plan 118 lucide swap)", () => {
+    it("maps a Music bundle id to the note icon", () => {
+      expect(iconForBundleId("com.apple.Music")).toBe(Music);
     });
 
-    it("maps a TV bundle id to the tv glyph", () => {
-      expect(glyphForBundleId("com.apple.TV")).toBe("📺");
+    it("maps a TV bundle id to the tv icon", () => {
+      expect(iconForBundleId("com.apple.TV")).toBe(Tv);
     });
 
-    it("maps a browser bundle id to the globe glyph, case-insensitively", () => {
-      expect(glyphForBundleId("com.apple.Safari")).toBe("🌐");
-      expect(glyphForBundleId("app.zen-browser.zen")).toBe("🌐");
-      expect(glyphForBundleId("com.google.Chrome")).toBe("🌐");
-      expect(glyphForBundleId("org.mozilla.firefox")).toBe("🌐");
+    it("maps a browser bundle id to the globe icon, case-insensitively", () => {
+      expect(iconForBundleId("com.apple.Safari")).toBe(Globe);
+      expect(iconForBundleId("app.zen-browser.zen")).toBe(Globe);
+      expect(iconForBundleId("com.google.Chrome")).toBe(Globe);
+      expect(iconForBundleId("org.mozilla.firefox")).toBe(Globe);
     });
 
-    it("falls back to the play glyph for anything else, including null", () => {
-      expect(glyphForBundleId("com.example.SomeApp")).toBe("▶");
-      expect(glyphForBundleId(null)).toBe("▶");
+    it("falls back to the play icon for anything else, including null", () => {
+      expect(iconForBundleId("com.example.SomeApp")).toBe(Play);
+      expect(iconForBundleId(null)).toBe(Play);
     });
   });
 
