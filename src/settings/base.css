@@ -28,6 +28,31 @@
    ./settings.css (fixed order, same discipline Plan 111 documented for
    main.tsx's own import order). */
 
+/* plan 112 Step 4 (Appearance): pins the relative priority of the
+   `base`/`theme`/`utilities` cascade layers BEFORE any of their content
+   is added below — CSS Cascade Layers order layers by first
+   DECLARATION, later-declared = higher priority, and this bare
+   (block-less) form only fixes that order without adding rules yet.
+   Without this, the settings-scoped base reset a few lines down (inside
+   `@layer base`) would end up declared AFTER `layer(utilities)` (the
+   import order below), which would make `base` win the priority race
+   against `utilities` — the OPPOSITE of the real bug this line fixes:
+   every `button`/`input`/`textarea` reset previously lived as bare,
+   UNLAYERED CSS, and per the same spec, unlayered rules always beat ANY
+   layered rule regardless of specificity — so `.text-fs-secondary`
+   (inside `layer(utilities)`) never stood a chance against the old bare
+   `button, input, textarea { font: inherit; }`, no matter how many
+   classes an element carried. Caught by the Step 4 headless-Chromium
+   screenshot check: `PriorityToggle`'s pill buttons visibly overflowed
+   at their intended 10px because every button/input/textarea in the
+   WHOLE settings window — including buttons already migrated in Step 3
+   (Save & Relaunch, Reset, every shadcn Button/Input/Textarea) — had
+   silently been rendering at an inherited 16px instead of its
+   `text-fs-*`/`text-sm` utility, since Step 3 first added that reset
+   rule. Fixing the layer order here fixes it everywhere at once,
+   app-wide, not just in the JSX this Step 4 commit touches. */
+@layer base, theme, utilities;
+
 @import "tailwindcss/theme.css" layer(theme);
 @import "@chetanjain/shared-ui/design/tokens.css";
 @import "tw-animate-css";
@@ -142,72 +167,83 @@
    (SettingsApp's whole tree renders under one `<main
    className="settings-window">`), so this is the identical computed
    effect, just scoped down instead of literally global. */
-:root {
-  color-scheme: dark;
-  font-family: var(--font-sans);
-  color: var(--foreground);
-  background: var(--background);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-}
+/* plan 112 Step 4 (Appearance): every rule below that can compete with
+   a Tailwind utility class on the SAME element (button/input/textarea
+   font+color, and — defensively, for the same reason — the rest of
+   this settings-scoped reset) now lives inside `@layer base`, per the
+   pinned order above. Custom-property-only `:root` blocks (this file's
+   `--fs-*`/`--radius-*` declarations elsewhere) intentionally stay
+   OUTSIDE any layer, unchanged — nothing else declares those same
+   custom-property names competitively, so there was never a layering
+   bug there, only for the element-selector reset below. */
+@layer base {
+  :root {
+    color-scheme: dark;
+    font-family: var(--font-sans);
+    color: var(--foreground);
+    background: var(--background);
+    font-synthesis: none;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
 
-html,
-body,
-#root {
-  width: 100%;
-  min-width: 400px;
-  height: 100%;
-  margin: 0;
-}
+  html,
+  body,
+  #root {
+    width: 100%;
+    min-width: 400px;
+    height: 100%;
+    margin: 0;
+  }
 
-body {
-  overflow: hidden;
-  background: var(--background);
-}
+  body {
+    overflow: hidden;
+    background: var(--background);
+  }
 
-.settings-window,
-.settings-window * {
-  box-sizing: border-box;
-}
+  .settings-window,
+  .settings-window * {
+    box-sizing: border-box;
+  }
 
-button,
-input,
-textarea {
-  font: inherit;
-}
+  button,
+  input,
+  textarea {
+    font: inherit;
+  }
 
-button {
-  color: inherit;
-}
+  button {
+    color: inherit;
+  }
 
-button,
-label,
-input[type="checkbox"] {
-  -webkit-tap-highlight-color: transparent;
-}
+  button,
+  label,
+  input[type="checkbox"] {
+    -webkit-tap-highlight-color: transparent;
+  }
 
-/* plan 112 Step 3: `.section-scroll`'s scrollbar theming (Step 0 row
-   31-33) has no Tailwind utility equivalent (scrollbar-color/width,
-   ::-webkit-scrollbar pseudo-elements) — kept as a named base rule,
-   referenced by the unchanged `.section-scroll` className, alongside
-   Tailwind utilities for the properties that DO have one (min-h-0,
-   overflow-y-auto, overscroll-contain — applied at the JSX call site
-   instead of duplicated here). `var(--border)` replaces the old
-   hardcoded thumb hex (#2a2d33/#30333a) — close in value, no raw
-   palette literal. */
-.section-scroll {
-  scrollbar-color: var(--border) transparent;
-  scrollbar-width: thin;
-}
+  /* plan 112 Step 3: `.section-scroll`'s scrollbar theming (Step 0 row
+     31-33) has no Tailwind utility equivalent (scrollbar-color/width,
+     ::-webkit-scrollbar pseudo-elements) — kept as a named base rule,
+     referenced by the unchanged `.section-scroll` className, alongside
+     Tailwind utilities for the properties that DO have one (min-h-0,
+     overflow-y-auto, overscroll-contain — applied at the JSX call site
+     instead of duplicated here). `var(--border)` replaces the old
+     hardcoded thumb hex (#2a2d33/#30333a) — close in value, no raw
+     palette literal. */
+  .section-scroll {
+    scrollbar-color: var(--border) transparent;
+    scrollbar-width: thin;
+  }
 
-.section-scroll::-webkit-scrollbar {
-  width: 7px;
-}
+  .section-scroll::-webkit-scrollbar {
+    width: 7px;
+  }
 
-.section-scroll::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: 8px;
-  background: var(--border);
-  background-clip: padding-box;
+  .section-scroll::-webkit-scrollbar-thumb {
+    border: 2px solid transparent;
+    border-radius: 8px;
+    background: var(--border);
+    background-clip: padding-box;
+  }
 }
