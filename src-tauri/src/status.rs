@@ -24,6 +24,7 @@ pub struct StatusState {
     pub football: FootballStatus,
     pub news: NewsStatus,
     pub weather: WeatherStatus,
+    pub media: MediaStatus,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -75,6 +76,48 @@ pub struct WeatherStatus {
     pub current: Option<WeatherSummary>,
 }
 
+/// plan 104: the ambient now-playing snapshot. Unlike `WeatherSummary`
+/// (already display-formatted, never re-derived client-side), this DOES
+/// carry a raw snapshot (`elapsed_ms`/`duration_ms`/`captured_at_ms`) —
+/// the plan-081 emission-discipline lesson (CLAUDE.md's own
+/// `SlotState::dedup_eq` rule): playback position must never drive a
+/// per-second wire emission, so the frontend derives LIVE progress
+/// locally from this snapshot (`TtlBar.tsx`'s own pattern), and this
+/// struct only changes on a genuine adapter diff event, never a tick.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct NowPlayingSummary {
+    pub title: String,
+    pub artist: Option<String>,
+    pub album: Option<String>,
+    pub playing: bool,
+    pub elapsed_ms: u64,
+    pub duration_ms: Option<u64>,
+    /// Wall-clock epoch millis at the moment `now_playing.rs` received
+    /// this snapshot — the anchor the frontend re-derives elapsed-since
+    /// from, the same role `SlotState`'s emission timing plays for
+    /// `TtlBar`.
+    pub captured_at_ms: i64,
+    /// `parentApplicationBundleIdentifier` when present, else
+    /// `bundleIdentifier` (`now_playing.rs`'s `apply_event` — 103 §5c: the
+    /// raw `bundleIdentifier` can be a process-internal helper, e.g.
+    /// Safari's own `<audio>` sessions report `com.apple.WebKit.GPU`).
+    /// Used only to key the peek row's app glyph (Step 7) — never shown
+    /// verbatim.
+    pub app_bundle_id: Option<String>,
+}
+
+/// plan 104: mirrors `WeatherStatus` exactly — `enabled` is the boot-config
+/// gate (`Config.now_playing_enabled`), `current` is `None` until the
+/// adapter child reports a session (or the feature/kill-switch gate is
+/// off at all, or the child was never spawned/installed).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MediaStatus {
+    pub enabled: bool,
+    pub current: Option<NowPlayingSummary>,
+}
+
 /// Named-field inputs for [`StatusState::snapshot`] — replaces five
 /// positional bool/Option arguments (three same-typed `bool`s, two
 /// same-shaped `Option`s) that a future call-site edit could transpose
@@ -86,6 +129,11 @@ pub struct StatusInputs {
     pub rss_enabled: bool,
     pub weather: Option<WeatherSummary>,
     pub weather_enabled: bool,
+    /// plan 104: named `media` (not `now_playing`) to match the
+    /// `StatusState.media`/`MediaStatus` field it feeds — the ambient
+    /// snapshot `now_playing.rs`'s supervised child pushes.
+    pub media: Option<NowPlayingSummary>,
+    pub now_playing_enabled: bool,
 }
 
 impl StatusState {
@@ -106,6 +154,19 @@ impl StatusState {
             weather: WeatherStatus {
                 enabled: inputs.weather_enabled,
                 current: inputs.weather,
+            },
+            // plan 104: explicitly gated (unlike weather's assembly,
+            // which relies structurally on the poller never being spawned
+            // while disabled) — belt-and-suspenders against a stale
+            // `AmbientSlot` value ever reaching the wire while the user's
+            // current config says the feature is off.
+            media: MediaStatus {
+                enabled: inputs.now_playing_enabled,
+                current: if inputs.now_playing_enabled {
+                    inputs.media
+                } else {
+                    None
+                },
             },
         }
     }
@@ -162,6 +223,10 @@ mod tests {
                 enabled: false,
                 current: None,
             },
+            media: MediaStatus {
+                enabled: false,
+                current: None,
+            },
         }
     }
 
@@ -169,6 +234,19 @@ mod tests {
         WeatherSummary {
             temp_display: "27°".to_string(),
             condition: "Cloudy".to_string(),
+        }
+    }
+
+    fn now_playing_summary() -> NowPlayingSummary {
+        NowPlayingSummary {
+            title: "Midnight City".to_string(),
+            artist: Some("M83".to_string()),
+            album: Some("Hurry Up, We're Dreaming".to_string()),
+            playing: true,
+            elapsed_ms: 1500,
+            duration_ms: Some(243_000),
+            captured_at_ms: 1_753_000_000_000,
+            app_bundle_id: Some("app.zen-browser.zen".to_string()),
         }
     }
 
@@ -255,6 +333,8 @@ mod tests {
                 rss_enabled: false,
                 weather: None,
                 weather_enabled: false,
+                media: None,
+                now_playing_enabled: false,
             },
         );
         assert!(snap.paused);
@@ -264,6 +344,8 @@ mod tests {
         assert!(!snap.news.enabled);
         assert!(!snap.weather.enabled);
         assert_eq!(snap.weather.current, None);
+        assert!(!snap.media.enabled);
+        assert_eq!(snap.media.current, None);
 
         // paused pushes buffer instead of promoting (v5 semantics)
         queue
@@ -278,6 +360,8 @@ mod tests {
                     rss_enabled: false,
                     weather: None,
                     weather_enabled: false,
+                    media: None,
+                    now_playing_enabled: false,
                 },
             )
             .waiting,
@@ -296,9 +380,87 @@ mod tests {
                 rss_enabled: false,
                 weather: Some(weather_summary()),
                 weather_enabled: true,
+                media: None,
+                now_playing_enabled: false,
             },
         );
         assert!(snap.weather.enabled);
         assert_eq!(snap.weather.current, Some(weather_summary()));
+    }
+
+    #[test]
+    fn snapshot_carries_media_summary_and_gate() {
+        let queue = SingleSlotQueue::new(50);
+        let snap = StatusState::snapshot(
+            &queue,
+            StatusInputs {
+                live: None,
+                espn_enabled: true,
+                rss_enabled: false,
+                weather: None,
+                weather_enabled: false,
+                media: Some(now_playing_summary()),
+                now_playing_enabled: true,
+            },
+        );
+        assert!(snap.media.enabled);
+        assert_eq!(snap.media.current, Some(now_playing_summary()));
+    }
+
+    // plan 104: the explicit belt-and-suspenders gate — a session sitting
+    // in `inputs.media` must not reach the wire while the config-level
+    // toggle is off, even though in practice the poller never spawns
+    // (and so never populates the AmbientSlot) while disabled.
+    #[test]
+    fn snapshot_hides_media_current_when_the_gate_is_off_even_if_a_session_exists() {
+        let queue = SingleSlotQueue::new(50);
+        let snap = StatusState::snapshot(
+            &queue,
+            StatusInputs {
+                live: None,
+                espn_enabled: true,
+                rss_enabled: false,
+                weather: None,
+                weather_enabled: false,
+                media: Some(now_playing_summary()),
+                now_playing_enabled: false,
+            },
+        );
+        assert!(!snap.media.enabled);
+        assert_eq!(snap.media.current, None);
+    }
+
+    #[test]
+    fn serializes_media_summary_camel_case() {
+        let mut s = status(None);
+        s.media = MediaStatus {
+            enabled: true,
+            current: Some(now_playing_summary()),
+        };
+        let json = serde_json::to_value(s).unwrap();
+        assert_eq!(json["media"]["enabled"], true);
+        assert_eq!(json["media"]["current"]["title"], "Midnight City");
+        assert_eq!(json["media"]["current"]["artist"], "M83");
+        assert_eq!(
+            json["media"]["current"]["album"],
+            "Hurry Up, We're Dreaming"
+        );
+        assert_eq!(json["media"]["current"]["playing"], true);
+        assert_eq!(json["media"]["current"]["elapsedMs"], 1500);
+        assert_eq!(json["media"]["current"]["durationMs"], 243_000);
+        assert_eq!(
+            json["media"]["current"]["capturedAtMs"],
+            1_753_000_000_000i64
+        );
+        assert_eq!(
+            json["media"]["current"]["appBundleId"],
+            "app.zen-browser.zen"
+        );
+    }
+
+    #[test]
+    fn serializes_media_current_as_null_when_absent() {
+        let json = serde_json::to_value(status(None)).unwrap();
+        assert!(json["media"]["current"].is_null());
     }
 }

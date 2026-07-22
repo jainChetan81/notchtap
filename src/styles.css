@@ -62,7 +62,8 @@ body {
   width: var(--cw, min(max(calc(400px * var(--card-scale)), calc(var(--notchtap-cutout-width, 200px) + (2 * 60px * var(--card-scale)))), 100%));
   margin: 0 auto;
   isolation: isolate;
-  transition: width 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  /* plan 102: +25% pacing, operator feedback */
+  transition: width 400ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 /* plan 090 (Q1a/Q2b, carried forward): the cutout term
@@ -77,6 +78,32 @@ body {
 
 .card-assembly.expanded {
   --cw: min(max(calc(500px * var(--card-scale)), calc(var(--notchtap-cutout-width, 200px) + (2 * 60px * var(--card-scale)))), 100%);
+}
+
+/* plan 105 (Step C, fixing the plan-085 bug): bare notch mode
+   (`resting_state: "notch"`, idle, not hovered) — the shell mounts (so
+   the rust-derived tracking area still exists and hover keeps working)
+   but paints zero app-drawn pixels: transparent flanks, cutout-width-only
+   shell so there's no wide invisible blocker sitting over the desktop.
+   `.idle`'s wider rest-rail formula still applies underneath (source
+   order below it), so this narrows it back down; `:has(.idle-peek)`
+   (below) restores the normal idle width the instant the peek opens on
+   hover, since the below-block needs real room to render into. */
+.card-assembly.bare {
+  --cw: min(var(--notchtap-cutout-width, 200px), 100%);
+}
+.card-assembly.bare .flank-left,
+.card-assembly.bare .flank-right {
+  background: transparent;
+  box-shadow: none;
+}
+/* plan 105: hovered bare mode reveals the peek exactly like rail mode —
+   same idle width formula so `.below-block.idle-peek` (IdleHoverPeek)
+   has room to render, not the cutout-only width above. Higher
+   specificity than `.card-assembly.bare` above, so this wins regardless
+   of source order once `.idle-peek` mounts. */
+.card-assembly.bare:has(.idle-peek) {
+  --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
 }
 
 .flank-left,
@@ -130,11 +157,11 @@ body {
    15.4 (2022), well within this app's WKWebView target. */
 .card-assembly:not(:has(.below-block)) .flank-left {
   border-bottom-left-radius: var(--card-radius, 14px);
-  transition: border-radius 320ms ease;
+  transition: border-radius 400ms ease;
 }
 .card-assembly:not(:has(.below-block)) .flank-right {
   border-bottom-right-radius: var(--card-radius, 14px);
-  transition: border-radius 320ms ease;
+  transition: border-radius 400ms ease;
 }
 
 /* the notch cutout itself: real hardware empty space in notch mode
@@ -267,11 +294,11 @@ body {
 }
 
 .card-assembly.pulse-goal {
-  animation: goal-overshoot 620ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: goal-overshoot 1240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .card-assembly.pulse-goal::after {
-  animation: goal-burst 620ms ease-out;
+  animation: goal-burst 1240ms ease-out;
 }
 
 /* the expanding ring — a thin bright hoop that shoots out from the
@@ -290,7 +317,7 @@ body {
   border: 2px solid rgba(255, 224, 130, 0.9);
   opacity: 0;
   pointer-events: none;
-  animation: goal-ring 620ms ease-out;
+  animation: goal-ring 1240ms ease-out;
 }
 
 @keyframes goal-overshoot {
@@ -362,15 +389,15 @@ body {
   border-radius: 50%;
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.4);
-  animation: ripple-out 720ms ease-out forwards;
+  animation: ripple-out 1440ms ease-out forwards;
 }
 
 .cele-ripple span:nth-child(2) {
-  animation-delay: 140ms;
+  animation-delay: 280ms;
 }
 
 .cele-ripple span:nth-child(3) {
-  animation-delay: 280ms;
+  animation-delay: 560ms;
 }
 
 @keyframes ripple-out {
@@ -393,7 +420,7 @@ body {
 /* signature moment #2 — Red Card: a sharp two-pulse alert strobe,
    different register from Goal's celebration — urgent, not festive. */
 .card-assembly.pulse-red {
-  animation: red-alert 460ms steps(1, end) 2;
+  animation: red-alert 920ms steps(1, end) 2;
 }
 
 @keyframes red-alert {
@@ -701,14 +728,23 @@ body {
   box-shadow: 0 -3px 14px var(--accent-soft);
 }
 
-/* plan 081: the TTL progress bar, mounted between the compact content and
-   the manifest wrap (TtlBar.tsx) on every showing card. `.ttl-fill`'s
-   width is JS-driven per animation frame (TtlBar.tsx), never a CSS
-   transition — no `transition` here to fight the rAF loop. Accent color
-   is deliberate on every card type (priority accent, not the news `--cat`
-   var) — the bar is card chrome, like the priority border, not news
-   content. */
+/* plan 081: the TTL progress bar (TtlBar.tsx) on every showing card.
+   `.ttl-fill`'s width is JS-driven per animation frame (TtlBar.tsx),
+   never a CSS transition — no `transition` here to fight the rAF loop.
+   Accent color is deliberate on every card type (priority accent, not
+   the news `--cat` var) — the bar is card chrome, like the priority
+   border, not news content.
+   plan 100: moved to be the card's bottom edge — last child of
+   `.below-block`, absolutely positioned to its bottom, left, and right
+   edges. `.below-block`'s `overflow: hidden` + bottom-corner radii clip
+   it to the rounded corners for free. It must never regain static-flow
+   position — that recreates the double-border artifact above the
+   manifest wrap that this plan fixed. */
 .ttl-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
   height: 2px;
   background: rgba(255, 255, 255, 0.08);
 }
@@ -740,8 +776,8 @@ body {
   grid-template-rows: 0fr;
   opacity: 0;
   transition:
-    grid-template-rows 240ms cubic-bezier(0.22, 1, 0.36, 1),
-    opacity 240ms cubic-bezier(0.22, 1, 0.36, 1);
+    grid-template-rows 300ms cubic-bezier(0.22, 1, 0.36, 1),
+    opacity 300ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 .manifest-wrap.expanded {
   grid-template-rows: 1fr;
@@ -849,9 +885,11 @@ body {
   background: #f0c46a;
 }
 
+/* plan 105 (item A): steady glow, not a blink — the pulse read as
+   distracting in peripheral vision during live use. Strengthened the
+   resting glow slightly to compensate for losing the animated emphasis. */
 .status-dot.active {
-  box-shadow: 0 0 7px 1px currentColor;
-  animation: dot-pulse 1.8s ease-in-out infinite;
+  box-shadow: 0 0 8px 1px currentColor;
 }
 .status-dot.football.active {
   color: #3ddc70;
@@ -867,22 +905,6 @@ body {
   opacity: 0.22;
   box-shadow: none;
   animation: none;
-}
-
-@keyframes dot-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.55;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .status-dot.active {
-    animation: none;
-  }
 }
 
 /* plan 092 (item 11): the paused indicator — while `status.paused` is
@@ -907,20 +929,6 @@ body {
   background: rgba(255, 255, 255, 0.5);
 }
 
-/* `live-dot-pulse` stays — `.chip-live .live-dot` (the football scorecard
-   content, chip-converged by this plan but not otherwise touched) still
-   reuses it; only its OWN former host rule (`.src-chip .live-dot`, the
-   deleted idle rail) is gone. */
-@keyframes live-dot-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
-}
-
 /* ==== news card v5: category system (shader + masthead + pills) ==== */
 .cat-politics { --cat: #7c9df5; --cat-deep: rgba(124,157,245,0.16); --cat-pill: rgba(124,157,245,0.14); }
 .cat-tech     { --cat: #5fd4e8; --cat-deep: rgba(95,212,232,0.15);  --cat-pill: rgba(95,212,232,0.13); }
@@ -929,6 +937,14 @@ body {
 .cat-world    { --cat: #c99df0; --cat-deep: rgba(201,157,240,0.15); --cat-pill: rgba(201,157,240,0.13); }
 .cat-generic  { --cat: #aab3bd; --cat-deep: rgba(170,179,189,0.10); --cat-pill: rgba(170,179,189,0.10); }
 
+/* plan 105 (scope extension to Step A): deliberately KEPT — reviewed
+   alongside the status-dot and live-dot pulses the operator asked to
+   remove, but this one is a different category of motion: a single
+   12s-per-leg (24s round trip) positional drift of an oversized (-30%
+   inset), already-translucent gradient, not a brightness/opacity blink.
+   It reads as ambient "alive" background texture, not a distracting
+   flicker in peripheral vision — the operator's actual complaint was
+   about the latter. Kept as is. */
 .news-shade::before {
   content: ""; position: absolute; inset: -30% -30% -30% -30%; z-index: 0;
   background:
@@ -1201,15 +1217,16 @@ body {
   border: 1px solid rgba(127, 224, 141, 0.35);
 }
 
-/* reuses the shipped `live-dot-pulse` keyframe (idle-rail `.src-chip
-   .live-dot` above) rather than redeclaring it. */
+/* plan 105 (scope extension to Step A): steady glow, not a blink — same
+   operator request as the status dots. The static `box-shadow` glow below
+   already reads as a liveness signal on its own; only the looping
+   keyframe animation (now deleted) is gone. */
 .chip-live .live-dot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
   background: #7fe08d;
   box-shadow: 0 0 6px rgba(127, 224, 141, 0.9);
-  animation: live-dot-pulse 1.6s ease-in-out infinite;
 }
 
 .chip-live.break {
@@ -1380,23 +1397,35 @@ body {
   }
 }
 
-/* the weather mood scene half — reuses `.wx-card`'s mood-gradient
-   `::before`/texture `::after` (weather ALERT card block, above) and
-   `.wx-icon`'s glyph placement verbatim; `.wx-peek-scene` is the
-   structural anchor those rules need (`position: relative` so the
-   absolutely-positioned glyph/gradient layers have a containing block,
-   same role `.notif-block`'s parent already plays for that card type). */
-.wx-peek-scene {
-  position: relative;
-  min-height: 78px;
+/* plan 105 (Step B): the weather art, split out of the old combined
+   `.wx-peek-scene` into its own backdrop layer so it can sit BEHIND
+   whatever the precedence chain (football/media/weather) puts in
+   `.peek-content`, instead of being replaced by it — the operator wanted
+   the mood art kept once the media row took over the readout slot.
+   Reuses `.wx-card`'s mood-gradient `::before`/texture `::after` (weather
+   ALERT card block, above) and `.wx-icon`'s glyph placement verbatim.
+   `inset: 0` fills `.below-block.idle-peek`'s own animated height (that
+   block is already `position: relative` — see its rule above), so no
+   min-height is needed here the way `.wx-peek-scene` used to carry one:
+   this layer is the full block, not a sub-box inside it. */
+.wx-peek-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   border-radius: 10px;
   overflow: hidden;
-  display: flex;
-  align-items: flex-end;
 }
-.wx-peek-readout {
+/* the real content (scorecard/media/weather readout + timeline) sits
+   above the backdrop, same z-order discipline as `.wx-card .compact`
+   above. */
+.peek-content {
   position: relative;
   z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.wx-peek-readout {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1414,6 +1443,92 @@ body {
   color: rgba(255, 255, 255, 0.7);
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+/* plan 104: the now-playing media row — slots between the scorecard
+   reveal and the weather scene in `IdleHoverPeek.tsx`'s precedence
+   (football > media > weather > timeline). Text glyphs only (no artwork
+   transport, per the plan's own decision 6) — `.media-art`'s tile reuses
+   `.wx-peek-condition`'s exact neutral chip tint (above) rather than
+   inventing a new color; `.media-bar-fill` reuses `.idle-peek-timeline`'s
+   own teal (below) for the same reason — no new colors beyond existing
+   tokens, per this step's own constraint. Chip/gauge sizing stays
+   consistent with the rest of `.idle-peek`'s vocabulary. */
+.media-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.media-track {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.media-art {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #f5f7fa;
+}
+.media-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.media-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f5f7fa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.media-subtitle {
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.media-transport {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.85);
+}
+.media-state {
+  font-size: 12px;
+  line-height: 1;
+}
+.media-bar {
+  width: 56px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.media-bar-fill {
+  display: block;
+  height: 100%;
+  background: #b6f5e5;
+  border-radius: 2px;
+}
+.media-time {
+  font-variant-numeric: tabular-nums;
+  min-width: 30px;
+  text-align: right;
 }
 
 /* the football scorecard-reveal half — a lighter render than the
@@ -1578,14 +1693,14 @@ body {
    so `background: transparent` here simply neutralizes the inherited
    confetti gradient rather than fighting it. */
 .card-assembly.cele-goal {
-  animation: goal-glow 900ms ease-out;
+  animation: goal-glow 1800ms ease-out;
 }
 .card-assembly.cele-goal::after {
   background: transparent;
   inset: -6px;
   border-radius: 18px;
   border: 2px solid rgba(127, 224, 141, 0.7);
-  animation: cele-ring 900ms ease-out;
+  animation: cele-ring 1800ms ease-out;
 }
 
 @keyframes goal-glow {
@@ -1616,11 +1731,11 @@ body {
   inset: -6px;
   border-radius: 18px;
   border: 2px solid rgba(240, 196, 106, 0.65);
-  animation: cele-ring 700ms ease-out;
+  animation: cele-ring 1400ms ease-out;
 }
 
 .card-assembly.cele-rc {
-  animation: red-strobe 900ms ease-out;
+  animation: red-strobe 1800ms ease-out;
 }
 
 @keyframes red-strobe {
@@ -1638,9 +1753,6 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .chip-live .live-dot {
-    animation: none;
-  }
   .card-assembly.cele-goal,
   .card-assembly.cele-goal::after,
   .card-assembly.cele-yc::after,

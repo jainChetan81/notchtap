@@ -83,6 +83,18 @@ export interface Config {
   appearance: AppearanceConfig;
   resting_state: RestingState;
   history_enabled: boolean;
+  // plan 104: the panel-editable toggle only. The rust-side kill-switch
+  // field and the adapter install-dir field are deliberately OMITTED from
+  // this type — a done criterion for this plan forbids this file from
+  // naming the kill switch at all. The real config object the settings
+  // window round-trips (`get_config`/`save_config_and_relaunch`) still
+  // carries both fields at runtime regardless of this type's shape (TS
+  // types are erased, not enforced against the actual JSON payload), and
+  // the rust save path pins both to the booted value server-side either
+  // way (`settings.rs`'s `pin_uneditable_fields`) — so omitting them here
+  // costs nothing functionally, unlike `detect_path` above, which stays
+  // in this type only because nothing in this plan required removing it.
+  now_playing_enabled: boolean;
 }
 
 export interface SecretStatus {
@@ -883,6 +895,14 @@ function GeneralSection({
           label="Record notification history"
           checked={config.history_enabled}
           onChange={(history_enabled) => patchConfig({ history_enabled })}
+        />
+        <ToggleControl
+          id="now-playing-enabled"
+          name="Now playing"
+          help="Show what's currently playing (Music, a browser tab, etc.) in the idle hover peek. Requires the vendored adapter installed via `just build-media-adapter` — see VENDORED.md. Applies after Save & Relaunch."
+          label="Enable now playing"
+          checked={config.now_playing_enabled}
+          onChange={(now_playing_enabled) => patchConfig({ now_playing_enabled })}
         />
         <NumberControl
           id="port"

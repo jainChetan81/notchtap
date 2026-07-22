@@ -18,8 +18,8 @@ use crate::history::HistoryStore;
 use crate::notifier::{ConnectorHandle, ConnectorHealth};
 use crate::queue::SingleSlotQueue;
 use crate::status::{
-    emit_status_state, status_state_if_changed, LiveMatchSummary, StatusInputs, StatusState,
-    WeatherSummary,
+    emit_status_state, status_state_if_changed, LiveMatchSummary, NowPlayingSummary, StatusInputs,
+    StatusState, WeatherSummary,
 };
 
 /// A single ambient status side-channel: an `Arc<Mutex<Option<T>>>` plus
@@ -96,9 +96,18 @@ pub struct Engine<R: tauri::Runtime = tauri::Wry> {
     telegram_health: Arc<StdMutex<ConnectorHealth>>,
     live: AmbientSlot<LiveMatchSummary>,
     weather: AmbientSlot<WeatherSummary>,
+    /// plan 104: the now-playing ambient summary — same `AmbientSlot`
+    /// shape as `live`/`weather`, fed by `now_playing.rs`'s supervised
+    /// streaming child instead of a timer-polled http fetch.
+    now_playing: AmbientSlot<NowPlayingSummary>,
     espn_enabled: bool,
     rss_enabled: bool,
     weather_enabled: bool,
+    /// plan 104: the panel-editable half of the two-gate design
+    /// (`config.rs`'s `now_playing_enabled` doc comment) — gates
+    /// `MediaStatus.enabled`/`current` in the status assembly exactly like
+    /// `weather_enabled` gates `WeatherStatus`.
+    now_playing_enabled: bool,
     /// plan 088: `None` when history is disabled (the default) — the
     /// `accept` hook is then a no-op and behavior is byte-identical to
     /// pre-088. `Some` when the operator opted in and the store opened
@@ -120,9 +129,11 @@ impl<R: tauri::Runtime> Clone for Engine<R> {
             telegram_health: self.telegram_health.clone(),
             live: self.live.clone(),
             weather: self.weather.clone(),
+            now_playing: self.now_playing.clone(),
             espn_enabled: self.espn_enabled,
             rss_enabled: self.rss_enabled,
             weather_enabled: self.weather_enabled,
+            now_playing_enabled: self.now_playing_enabled,
             history: self.history.clone(),
         }
     }
@@ -142,6 +153,12 @@ impl<R: tauri::Runtime> Engine<R> {
     // the codebase's existing precedent of allowing a targeted clippy
     // lint with a comment (see `SlotState`'s `large_enum_variant` allow
     // in event.rs) rather than restructuring around it.
+    // plan 104 pushed this to 9 positional params by adding
+    // `now_playing_enabled` alongside `weather_enabled` — same accepted
+    // tradeoff plan 088's own comment above this allow already explains
+    // for `history`: a named-field params struct would touch every one
+    // of this method's call sites' shape, which is a bigger surface
+    // change than either plan's scope.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         queue: SingleSlotQueue,
@@ -151,6 +168,7 @@ impl<R: tauri::Runtime> Engine<R> {
         espn_enabled: bool,
         rss_enabled: bool,
         weather_enabled: bool,
+        now_playing_enabled: bool,
         history: Option<Arc<HistoryStore>>,
     ) -> Self {
         Self {
@@ -161,9 +179,11 @@ impl<R: tauri::Runtime> Engine<R> {
             telegram_health,
             live: AmbientSlot::new(),
             weather: AmbientSlot::new(),
+            now_playing: AmbientSlot::new(),
             espn_enabled,
             rss_enabled,
             weather_enabled,
+            now_playing_enabled,
             history,
         }
     }
@@ -318,6 +338,15 @@ impl<R: tauri::Runtime> Engine<R> {
         self.weather.update(summary, &self.wake);
     }
 
+    /// The now-playing twin of `update_weather` (plan 104): the ambient
+    /// media summary `now_playing.rs`'s supervised streaming child pushes
+    /// on every changed adapter diff line. Same `AmbientSlot::update`
+    /// call, same shape, just a different summary type and producer
+    /// lifecycle (a held-open child, not a timer).
+    pub fn update_now_playing(&self, summary: Option<NowPlayingSummary>) {
+        self.now_playing.update(summary, &self.wake);
+    }
+
     /// The rotation loop (formerly lib.rs spawn_heartbeat), moved inside
     /// the Engine so `wake` never escapes. It is the *consumer* of the
     /// wake, not a producer, so it gets its own private loop (lock →
@@ -341,9 +370,11 @@ impl<R: tauri::Runtime> Engine<R> {
         let wake = self.wake.clone();
         let live = self.live.clone();
         let weather = self.weather.clone();
+        let now_playing = self.now_playing.clone();
         let espn_enabled = self.espn_enabled;
         let rss_enabled = self.rss_enabled;
         let weather_enabled = self.weather_enabled;
+        let now_playing_enabled = self.now_playing_enabled;
         tauri::async_runtime::spawn(async move {
             let mut last_status: Option<StatusState> = None;
             loop {
@@ -360,6 +391,7 @@ impl<R: tauri::Runtime> Engine<R> {
                     // holds both at the same time.
                     let live_summary = live.snapshot();
                     let weather_summary = weather.snapshot();
+                    let now_playing_summary = now_playing.snapshot();
                     let mut q = queue.lock().await;
                     q.tick(Instant::now());
                     if let Some(state) = q.slot_state_if_changed() {
@@ -373,6 +405,8 @@ impl<R: tauri::Runtime> Engine<R> {
                             rss_enabled,
                             weather: weather_summary,
                             weather_enabled,
+                            media: now_playing_summary,
+                            now_playing_enabled,
                         },
                     );
                     if let Some(changed) = status_state_if_changed(&mut last_status, status) {
@@ -428,6 +462,7 @@ impl<R: tauri::Runtime> Engine<R> {
     pub fn status_snapshot_blocking(&self) -> StatusState {
         let live_summary = self.live.snapshot();
         let weather_summary = self.weather.snapshot();
+        let now_playing_summary = self.now_playing.snapshot();
         let q = self.queue.blocking_lock();
         StatusState::snapshot(
             &q,
@@ -437,6 +472,8 @@ impl<R: tauri::Runtime> Engine<R> {
                 rss_enabled: self.rss_enabled,
                 weather: weather_summary,
                 weather_enabled: self.weather_enabled,
+                media: now_playing_summary,
+                now_playing_enabled: self.now_playing_enabled,
             },
         )
     }
@@ -483,6 +520,7 @@ mod tests {
             Arc::new(StdMutex::new(ConnectorHealth::default())),
             true,
             true,
+            false,
             false,
             None,
         )
@@ -554,6 +592,7 @@ mod tests {
             true,
             true,
             false,
+            false,
             None,
         );
 
@@ -583,6 +622,7 @@ mod tests {
             Arc::new(StdMutex::new(ConnectorHealth::default())),
             true,
             true,
+            false,
             false,
             None,
         );
@@ -812,6 +852,7 @@ mod tests {
             true,
             false,
             false,
+            false,
             None,
         );
         engine.update_live_match(Some(live_summary("45'")));
@@ -939,6 +980,7 @@ mod tests {
             true,
             true,
             false,
+            false,
             Some(store.clone()),
         );
 
@@ -968,6 +1010,7 @@ mod tests {
             Arc::new(StdMutex::new(ConnectorHealth::default())),
             true,
             true,
+            false,
             false,
             Some(store.clone()),
         );

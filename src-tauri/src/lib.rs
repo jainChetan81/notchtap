@@ -13,6 +13,7 @@ mod logging;
 mod login_item;
 mod net;
 mod notifier;
+mod now_playing;
 mod poller;
 mod presentation;
 pub mod queue;
@@ -203,6 +204,9 @@ pub fn run() {
     let weather_temp_cold_c = config.weather_temp_cold_c;
     let weather_priority = config.weather_priority;
     let history_enabled = config.history_enabled;
+    let now_playing_enabled = config.now_playing_enabled;
+    let now_playing_adapter_enabled = config.now_playing_adapter_enabled;
+    let now_playing_adapter_dir = config.now_playing_adapter_dir.clone();
 
     // v3 outbound connectors: built here (channel needs no runtime), the
     // worker future is spawned in setup once the runtime exists. missing
@@ -290,6 +294,7 @@ pub fn run() {
                 espn_enabled,
                 rss_enabled,
                 weather_enabled,
+                now_playing_enabled,
                 history,
             );
             app.manage(engine.clone());
@@ -571,6 +576,20 @@ pub fn run() {
                     weather_priority,
                 );
             }
+
+            // now-playing ambient source (plan 104) — config-gated by
+            // BOTH the feature toggle and the kill switch; the module's
+            // own spawn function additionally requires the vendored
+            // adapter's two files to exist at `now_playing_adapter_dir`
+            // before starting the child (clean degrade, one warn-level
+            // log, never a startup error — mirrors `detect_path`'s own
+            // missing-binary tolerance).
+            now_playing::spawn_now_playing_poller(
+                engine.clone(),
+                now_playing_enabled,
+                now_playing_adapter_enabled,
+                now_playing_adapter_dir,
+            );
 
             Ok(())
         })
@@ -1159,6 +1178,7 @@ mod tests {
             app.handle().clone(),
             Arc::new(Vec::new()),
             Arc::new(StdMutex::new(notifier::ConnectorHealth::default())),
+            false,
             false,
             false,
             false,

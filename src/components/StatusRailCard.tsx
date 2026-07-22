@@ -180,6 +180,33 @@ export function StatusRailCard({
   // owns the priority accent channel only, and origin must never share
   // that channel (see the CSS comment on `.below-block.cmux-origin`).
   const cmuxOrigin = showing && slot.origin === "cmux";
+  // plan 078: the idle/showing swap (formerly AnimatePresence mode="wait")
+  // freezes the outgoing item via useDelayedSwap while the CSS exit
+  // animation runs, then swaps content and key together. Everything that
+  // was inside the old swapped motion.div reads from `renderedSlot`;
+  // only cardClass (outer div) and the pulse celebration stay on live
+  // slot/status, exactly as they did before. Hoisted above `cardClass`
+  // (plan 105) so `bare`, below, can feed into it — `renderedShowing`/
+  // `exiting` are needed before the class list is built, not after.
+  const swapKey = showing ? slot.id : "idle";
+  const { value: renderedSlot, exiting } = useDelayedSwap(slot, swapKey, 220);
+  const renderedShowing = renderedSlot.state === "showing";
+
+  // plan 105 (Step C): narrows plan 085's original "zero app-drawn
+  // pixels" promise to "zero app-drawn pixels *until hovered*" — the old
+  // `return null` here made the mode a dead end: nothing painted AND
+  // nothing was hoverable, so the peek could never be revealed once you
+  // were in it. Gated on the delayed-swap-settled state
+  // (`renderedShowing`/`exiting`), not the live `showing` flag, so a
+  // still-exiting prior card finishes its normal exit animation exactly
+  // as it does in "rail" mode; only once the swap has fully settled into
+  // idle does notch mode go bare. Every `showing`/`exiting` path is
+  // unaffected (identical to today). Hover detection itself is
+  // `resting_state`-agnostic (src-tauri/src/hover.rs never reads it), so
+  // the tracking area — and therefore `hovered` — already works
+  // correctly here; the assembly only needs to keep mounting.
+  const bare = restingState === "notch" && !renderedShowing && !exiting;
+
   // plan 091: the outer shell (`.card-assembly`) now owns ONLY geometry-
   // and-effects classes — priority accent, hover diagnostic, the goal/
   // red-card pulse and the live-match celebrations. `news-shade`/`wx-card`
@@ -194,6 +221,10 @@ export function StatusRailCard({
     showing ? slot.priority : "idle",
     expanded && "expanded",
     hovered && "hovered",
+    // plan 105 (Step C): the bare-notch modifier — transparent flanks,
+    // cutout-width-only shell (styles.css), so the mode reads as the
+    // native notch until hovered.
+    bare && "bare",
     // plan 084: `pulse`/`cele-*` are mutually exclusive, never stacked —
     // the live-match branch (structured espn meta) plays its own
     // `cele-goal`/`cele-yc`/`cele-rc`; every other football-signal card
@@ -220,15 +251,6 @@ export function StatusRailCard({
     .filter(Boolean)
     .join(" ");
 
-  // plan 078: the idle/showing swap (formerly AnimatePresence mode="wait")
-  // freezes the outgoing item via useDelayedSwap while the CSS exit
-  // animation runs, then swaps content and key together. Everything that
-  // was inside the old swapped motion.div reads from `renderedSlot`;
-  // only cardClass (outer div) and the pulse celebration stay on live
-  // slot/status, exactly as they did before.
-  const swapKey = showing ? slot.id : "idle";
-  const { value: renderedSlot, exiting } = useDelayedSwap(slot, swapKey, 220);
-  const renderedShowing = renderedSlot.state === "showing";
   const renderedExpanded = renderedShowing && renderedSlot.expanded;
   const renderedNews = renderedShowing && renderedSlot.eventType === "news_item";
   const renderedNewsCategory = renderedNews ? categoryLabel(renderedSlot.category) : null;
@@ -275,19 +297,6 @@ export function StatusRailCard({
     renderedEspn.awayCards[0] === 0 &&
     renderedEspn.awayCards[1] === 0;
 
-  // plan 085: idle + resting_state "notch" → zero app-drawn pixels, not a
-  // narrower/emptied shell — the outer `.card-assembly` div itself must
-  // not mount (it carries background/shadow/priority-accent styling that
-  // a bare native notch must never show). Gated on the delayed-swap-
-  // settled state (`renderedShowing`/`exiting`), not the live `showing`
-  // flag, so a still-exiting prior card finishes its normal exit
-  // animation exactly as it does in "rail" mode; only once the swap has
-  // fully settled into idle does notch mode hide the card. Every
-  // `showing` path is unaffected.
-  if (!renderedShowing && !exiting && restingState === "notch") {
-    return null;
-  }
-
   // plan 091: the below-block mounts if and only if `renderedShowing` is
   // true (used directly in the JSX below, not through an extra alias, so
   // TypeScript's control-flow narrowing of `renderedSlot` inside that
@@ -317,7 +326,11 @@ export function StatusRailCard({
       onAnimationEnd={clearPulseWhenItsAnimationEnds}
     >
       <div className="flank-left">
-        <FlankClock />
+        {/* plan 105 (Step C): bare mode draws no clock — CSS alone can't
+            hide it (the flanks going transparent still leaves text
+            painted), so this is a real render-time gate, unlike the
+            synthetic-cutout's "always render, CSS decides" idiom below. */}
+        {!bare && <FlankClock />}
       </div>
       {/* plan 091: the notch cutout itself — real hardware empty space in
           notch mode (nothing painted here), an app-drawn pure-#000 block
@@ -333,8 +346,11 @@ export function StatusRailCard({
             window the old idle content did, on the idle->showing leg of
             the transition. No `key` needed: unlike below-block's content,
             there is only ever one "flavor" of dots, so a plain mount/
-            unmount (no forced remount) is enough. */}
-        {!renderedShowing && (
+            unmount (no forced remount) is enough.
+            plan 105 (Step C): also gated on `!bare` — the dots are rail
+            furniture, not part of the "looks like a native notch" bare
+            state. */}
+        {!renderedShowing && !bare && (
           <div className={`card-content idle${exiting ? " swap-exit" : ""}`}>
             <StatusDots status={status} />
           </div>
@@ -511,17 +527,6 @@ export function StatusRailCard({
                   )}
                   <Track total={renderedSlot.queueTotal} done={renderedSlot.queueDone} />
                 </div>
-                <TtlBar
-                  key={renderedSlot.id}
-                  slotId={renderedSlot.id}
-                  ttlMs={renderedSlot.ttlMs}
-                  remainingMs={renderedSlot.remainingMs}
-                  // plan 093: TTL hover-pause — this bar only ever mounts
-                  // while `renderedShowing`, so `hovered` alone (the live
-                  // cursor signal) is exactly "is THIS card hovered right
-                  // now," no extra gating needed.
-                  hoverPaused={hovered}
-                />
                 <Manifest
                   body={renderedSlot.body}
                   eventType={renderedSlot.eventType}
@@ -532,6 +537,21 @@ export function StatusRailCard({
                   hasLink={renderedSlot.link !== null}
                   subtitle={renderedSlot.subtitle}
                   details={renderedVisibleDetails}
+                />
+                {/* plan 100: last in DOM order within .below-block — the bar
+                    is the card's floor, absolutely positioned to its bottom
+                    edge (styles.css), clipped to the rounded corners by
+                    .below-block's own overflow: hidden. */}
+                <TtlBar
+                  key={renderedSlot.id}
+                  slotId={renderedSlot.id}
+                  ttlMs={renderedSlot.ttlMs}
+                  remainingMs={renderedSlot.remainingMs}
+                  // plan 093: TTL hover-pause — this bar only ever mounts
+                  // while `renderedShowing`, so `hovered` alone (the live
+                  // cursor signal) is exactly "is THIS card hovered right
+                  // now," no extra gating needed.
+                  hoverPaused={hovered}
                 />
               </>
             )}

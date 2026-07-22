@@ -108,6 +108,36 @@ pub struct Config {
     /// stylistic.
     #[serde(default = "default_history_enabled")]
     pub history_enabled: bool,
+    /// plan 104: user feature toggle for the ambient now-playing peek row.
+    /// Default `false` — same opt-in convention as `weather_enabled`/
+    /// `rss_enabled`: ambient sources never default on top of the app's
+    /// primary agent-notification purpose. The panel-editable half of the
+    /// two-gate design (`docs/design/now-playing-adapter.md`'s GO
+    /// conditions) — the child process spawns only when this AND
+    /// `now_playing_adapter_enabled` are both true.
+    #[serde(default = "default_now_playing_enabled")]
+    pub now_playing_enabled: bool,
+    /// plan 104: the kill switch, deliberately separate from the feature
+    /// toggle above and deliberately NOT exposed in the settings UI
+    /// (`docs/design/now-playing-adapter.md` §7 risk #1: if Apple closes
+    /// the `com.apple.*` MediaRemote oversight this adapter relies on, the
+    /// failure degrades silently to "no data," indistinguishable from
+    /// "nothing playing" — this flag is the config-file-only escape hatch
+    /// so an operator can mute a dead feature without losing every other
+    /// setting or waiting for a rebuild). Default `true`: once a user
+    /// opts into `now_playing_enabled`, the adapter runs unless someone
+    /// has explicitly muted it here by hand.
+    #[serde(default = "default_now_playing_adapter_enabled")]
+    pub now_playing_adapter_enabled: bool,
+    /// plan 104: mirrors `detect_path`'s runtime-path convention exactly —
+    /// built/installed out of band (`justfile`'s `build-media-adapter`
+    /// recipe), never by the rust core itself. Expected to contain
+    /// `bin/mediaremote-adapter.pl` + `MediaRemoteAdapter.framework`. Like
+    /// `detect_path`, this is pinned server-side and never editable via
+    /// the settings panel (`settings::pin_uneditable_fields`) — it names
+    /// an executed subprocess path, not a display preference.
+    #[serde(default = "default_now_playing_adapter_dir")]
+    pub now_playing_adapter_dir: PathBuf,
 }
 
 /// See [`Config::resting_state`].
@@ -217,7 +247,9 @@ fn default_espn_priority() -> Priority {
 }
 
 fn default_espn_ttl_secs() -> u64 {
-    8
+    // operator decision 2026-07-21: a scoreline needs longer on screen
+    // than a generic alert; still configurable via espn_ttl_secs.
+    15
 }
 
 fn default_espn_live_card() -> bool {
@@ -294,6 +326,39 @@ fn default_resting_state() -> RestingState {
 
 fn default_history_enabled() -> bool {
     false
+}
+
+fn default_now_playing_enabled() -> bool {
+    false
+}
+
+fn default_now_playing_adapter_enabled() -> bool {
+    true
+}
+
+/// plan 104 revision (reviewer 2026-07-22): the original
+/// `/usr/local/lib/notchtap/mediaremote-adapter` default requires
+/// root-owned `/usr/local/lib` on a stock macOS install — verified live
+/// on this exact machine (`mkdir -p` there fails with `Permission
+/// denied`, no sudo), which means an operator's very first
+/// `just build-media-adapter` run would fail before ever reaching the
+/// adapter itself. `~/Library/Application Support/notchtap/` is the
+/// macOS-conventional, user-writable location, resolved the same way
+/// `Config::load`/`settings::notchtap_config_dir` already resolve home
+/// (`dirs::home_dir()`, not a raw env lookup — this repo's one
+/// home-resolution idiom, mirrored here rather than reimplemented).
+/// Falls back to the old `/usr/local/lib` path only if home can't be
+/// determined at all, so this default (like every other `default_*` fn
+/// in this file) stays infallible and never empty.
+fn default_now_playing_adapter_dir() -> PathBuf {
+    dirs::home_dir()
+        .map(|home| {
+            home.join("Library")
+                .join("Application Support")
+                .join("notchtap")
+                .join("mediaremote-adapter")
+        })
+        .unwrap_or_else(|| PathBuf::from("/usr/local/lib/notchtap/mediaremote-adapter"))
 }
 
 fn default_rotation_order() -> Vec<SourceKind> {
@@ -395,6 +460,9 @@ impl Default for Config {
             appearance: default_appearance(),
             resting_state: default_resting_state(),
             history_enabled: default_history_enabled(),
+            now_playing_enabled: default_now_playing_enabled(),
+            now_playing_adapter_enabled: default_now_playing_adapter_enabled(),
+            now_playing_adapter_dir: default_now_playing_adapter_dir(),
         }
     }
 }
@@ -436,8 +504,15 @@ impl Config {
         // (not what serde defaulted them to) lets us inherit the file's
         // effective default_ttl exactly where the old shared-field
         // behavior would have applied it.
+        //
+        // plan 101: the espn arm is conditional on the file ALSO having
+        // customized default_ttl — the inherit exists only for configs
+        // that customized the old shared default_ttl; a config that never
+        // touched it gets espn's own default (15) instead of silently
+        // re-inheriting the generic default. The cmux arm stays
+        // unconditional (its default intentionally tracks default_ttl).
         if let Ok(raw) = content.parse::<toml::Table>() {
-            if !raw.contains_key("espn_ttl_secs") {
+            if !raw.contains_key("espn_ttl_secs") && raw.contains_key("default_ttl") {
                 config.espn_ttl_secs = config.default_ttl;
             }
             if !raw.contains_key("cmux_ttl_secs") {
@@ -534,7 +609,7 @@ mod tests {
         assert_eq!(c.espn_leagues, ["eng.1", "uefa.champions", "esp.1"]);
         assert_eq!(c.espn_poll_secs, 30);
         assert_eq!(c.espn_priority, Priority::High);
-        assert_eq!(c.espn_ttl_secs, 8);
+        assert_eq!(c.espn_ttl_secs, 15);
         assert!(!c.rss_enabled);
         assert_eq!(
             c.rss_feeds,
@@ -577,6 +652,14 @@ mod tests {
         assert_eq!(c.resting_state, RestingState::Rail);
         assert!(!c.espn_rich_events);
         assert!(!c.history_enabled);
+        assert!(!c.now_playing_enabled);
+        assert!(c.now_playing_adapter_enabled);
+        // plan 104 revision: user-writable default — pin the suffix, not
+        // the whole absolute path, since the leading component is this
+        // test-runner's own $HOME (CI/local machines differ).
+        assert!(c
+            .now_playing_adapter_dir
+            .ends_with("Library/Application Support/notchtap/mediaremote-adapter"));
     }
 
     #[test]
@@ -603,6 +686,33 @@ mod tests {
 
         let rail = Config::parse("resting_state = \"rail\"\n").unwrap();
         assert_eq!(rail.resting_state, RestingState::Rail);
+    }
+
+    #[test]
+    fn now_playing_disabled_by_default() {
+        // plan 104: ambient sources are opt-in per machine — same rule as
+        // weather_enabled/rss_enabled. A config file predating this field
+        // (or one that simply never sets it) heals to `false`.
+        let c = Config::parse("").unwrap();
+        assert!(!c.now_playing_enabled);
+        // the kill switch defaults `true`: once a user opts into the
+        // feature, the adapter runs unless someone has explicitly muted
+        // it in config.toml by hand.
+        assert!(c.now_playing_adapter_enabled);
+    }
+
+    #[test]
+    fn now_playing_fields_are_overridable() {
+        let c = Config::parse(
+            "now_playing_enabled = true\nnow_playing_adapter_enabled = false\nnow_playing_adapter_dir = \"/opt/mediaremote-adapter\"\n",
+        )
+        .unwrap();
+        assert!(c.now_playing_enabled);
+        assert!(!c.now_playing_adapter_enabled);
+        assert_eq!(
+            c.now_playing_adapter_dir,
+            PathBuf::from("/opt/mediaremote-adapter")
+        );
     }
 
     #[test]
@@ -770,12 +880,28 @@ url = "https://example.com/without-meta"
     #[test]
     fn absent_default_ttl_still_yields_the_shared_default_of_eight() {
         // no default_ttl in the file at all: default_ttl resolves to its
-        // own default (8), and espn/cmux inherit that same resolved
-        // value — identical to today's fresh-install behavior.
+        // own default (8), and cmux inherits that same resolved value —
+        // identical to today's fresh-install behavior. plan 101: espn no
+        // longer inherits here — with default_ttl untouched, espn gets
+        // its own default (15) instead.
         let c = Config::parse("").unwrap();
         assert_eq!(c.default_ttl, 8);
-        assert_eq!(c.espn_ttl_secs, 8);
+        assert_eq!(c.espn_ttl_secs, 15);
         assert_eq!(c.cmux_ttl_secs, 8);
+    }
+
+    #[test]
+    fn espn_ttl_defaults_to_15_when_default_ttl_untouched() {
+        // plan 101: espn's own default (15) applies when the file never
+        // customized default_ttl — the generic default itself must not
+        // have moved.
+        let c = Config::parse("").unwrap();
+        assert_eq!(c.espn_ttl_secs, 15);
+        assert_eq!(c.default_ttl, default_ttl());
+
+        // but the heal still honors a customized shared default_ttl.
+        let c = Config::parse("default_ttl = 30\n").unwrap();
+        assert_eq!(c.espn_ttl_secs, 30);
     }
 
     #[test]

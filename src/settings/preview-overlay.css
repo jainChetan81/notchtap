@@ -26,7 +26,8 @@
   width: var(--cw, min(max(calc(400px * var(--card-scale)), calc(var(--notchtap-cutout-width, 200px) + (2 * 60px * var(--card-scale)))), 100%));
   margin: 0 auto;
   isolation: isolate;
-  transition: width 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  /* plan 102: +25% pacing, operator feedback */
+  transition: width 400ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .appearance-preview .card-assembly.idle {
@@ -35,6 +36,20 @@
 
 .appearance-preview .card-assembly.expanded {
   --cw: min(max(calc(500px * var(--card-scale)), calc(var(--notchtap-cutout-width, 200px) + (2 * 60px * var(--card-scale)))), 100%);
+}
+
+/* plan 105 (mirror law): bare notch mode — see styles.css's own block for
+   the full rationale. */
+.appearance-preview .card-assembly.bare {
+  --cw: min(var(--notchtap-cutout-width, 200px), 100%);
+}
+.appearance-preview .card-assembly.bare .flank-left,
+.appearance-preview .card-assembly.bare .flank-right {
+  background: transparent;
+  box-shadow: none;
+}
+.appearance-preview .card-assembly.bare:has(.idle-peek) {
+  --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
 }
 
 .appearance-preview .flank-left,
@@ -63,11 +78,11 @@
 
 .appearance-preview .card-assembly:not(:has(.below-block)) .flank-left {
   border-bottom-left-radius: var(--card-radius, 14px);
-  transition: border-radius 320ms ease;
+  transition: border-radius 400ms ease;
 }
 .appearance-preview .card-assembly:not(:has(.below-block)) .flank-right {
   border-bottom-right-radius: var(--card-radius, 14px);
-  transition: border-radius 320ms ease;
+  transition: border-radius 400ms ease;
 }
 
 .appearance-preview .synthetic-cutout {
@@ -146,11 +161,11 @@
 }
 
 .appearance-preview .card-assembly.pulse-goal {
-  animation: goal-overshoot 620ms cubic-bezier(0.22, 1, 0.36, 1);
+  animation: goal-overshoot 1240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .appearance-preview .card-assembly.pulse-goal::after {
-  animation: goal-burst 620ms ease-out;
+  animation: goal-burst 1240ms ease-out;
 }
 
 .appearance-preview .card-assembly.pulse-goal::before {
@@ -166,7 +181,7 @@
   border: 2px solid rgba(255, 224, 130, 0.9);
   opacity: 0;
   pointer-events: none;
-  animation: goal-ring 620ms ease-out;
+  animation: goal-ring 1240ms ease-out;
 }
 
 @keyframes goal-overshoot {
@@ -234,15 +249,15 @@
   border-radius: 50%;
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.4);
-  animation: ripple-out 720ms ease-out forwards;
+  animation: ripple-out 1440ms ease-out forwards;
 }
 
 .appearance-preview .cele-ripple span:nth-child(2) {
-  animation-delay: 140ms;
+  animation-delay: 280ms;
 }
 
 .appearance-preview .cele-ripple span:nth-child(3) {
-  animation-delay: 280ms;
+  animation-delay: 560ms;
 }
 
 @keyframes ripple-out {
@@ -263,7 +278,7 @@
 }
 
 .appearance-preview .card-assembly.pulse-red {
-  animation: red-alert 460ms steps(1, end) 2;
+  animation: red-alert 920ms steps(1, end) 2;
 }
 
 @keyframes red-alert {
@@ -482,8 +497,14 @@
 }
 
 /* plan 081: mirror styles.css's TTL bar (mirror law) — same card-chrome
-   accent fill, JS-driven width (TtlBar.tsx), no CSS transition. */
+   accent fill, JS-driven width (TtlBar.tsx), no CSS transition.
+   plan 100: mirrors styles.css's move to the card's bottom edge — see
+   that file's comment for the full rationale. */
 .appearance-preview .ttl-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
   height: 2px;
   background: rgba(255, 255, 255, 0.08);
 }
@@ -570,9 +591,10 @@
   background: #f0c46a;
 }
 
+/* plan 105 (item A): steady glow, not a blink — mirror of styles.css
+   (mirror law). */
 .appearance-preview .status-dot.active {
-  box-shadow: 0 0 7px 1px currentColor;
-  animation: dot-pulse 1.8s ease-in-out infinite;
+  box-shadow: 0 0 8px 1px currentColor;
 }
 .appearance-preview .status-dot.football.active {
   color: #3ddc70;
@@ -588,22 +610,6 @@
   opacity: 0.22;
   box-shadow: none;
   animation: none;
-}
-
-@keyframes dot-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.55;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .appearance-preview .status-dot.active {
-    animation: none;
-  }
 }
 
 /* plan 092 (item 11): mirror of styles.css's paused-indicator glyph
@@ -629,6 +635,8 @@
 .appearance-preview .cat-world    { --cat: #c99df0; --cat-deep: rgba(201,157,240,0.15); --cat-pill: rgba(201,157,240,0.13); }
 .appearance-preview .cat-generic  { --cat: #aab3bd; --cat-deep: rgba(170,179,189,0.10); --cat-pill: rgba(170,179,189,0.10); }
 
+/* plan 105 (mirror law): deliberately KEPT — see styles.css's own block
+   for the full rationale (a slow positional drift, not a blink). */
 .appearance-preview .news-shade::before {
   content: "";
   position: absolute;
@@ -790,16 +798,6 @@
   }
 }
 
-@keyframes live-dot-pulse {
-  0%,
-  100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.35;
-  }
-}
-
 .appearance-preview .preview-row {
   display: flex;
   flex-direction: column;
@@ -913,13 +911,14 @@
   border: 1px solid rgba(127, 224, 141, 0.35);
 }
 
+/* plan 105 (scope extension to Step A, mirror law): steady glow, not a
+   blink — see styles.css's own block for the full rationale. */
 .appearance-preview .chip-live .live-dot {
   width: 5px;
   height: 5px;
   border-radius: 50%;
   background: #7fe08d;
   box-shadow: 0 0 6px rgba(127, 224, 141, 0.9);
-  animation: live-dot-pulse 1.6s ease-in-out infinite;
 }
 
 .appearance-preview .chip-live.break {
@@ -1061,17 +1060,24 @@
   }
 }
 
-.appearance-preview .wx-peek-scene {
-  position: relative;
-  min-height: 78px;
+/* plan 105 (mirror law): the weather art backdrop, split out of the old
+   combined `.wx-peek-scene` — see styles.css's own block for the full
+   rationale. */
+.appearance-preview .wx-peek-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   border-radius: 10px;
   overflow: hidden;
-  display: flex;
-  align-items: flex-end;
 }
-.appearance-preview .wx-peek-readout {
+.appearance-preview .peek-content {
   position: relative;
   z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.appearance-preview .wx-peek-readout {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1085,6 +1091,85 @@
   color: rgba(255, 255, 255, 0.7);
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+/* plan 104 (mirror law): the now-playing media row — see styles.css's
+   own block (same selectors, same comments) for the full rationale. */
+.appearance-preview .media-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.appearance-preview .media-track {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.appearance-preview .media-art {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #f5f7fa;
+}
+.appearance-preview .media-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.appearance-preview .media-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f5f7fa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.appearance-preview .media-subtitle {
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.appearance-preview .media-transport {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.85);
+}
+.appearance-preview .media-state {
+  font-size: 12px;
+  line-height: 1;
+}
+.appearance-preview .media-bar {
+  width: 56px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.appearance-preview .media-bar-fill {
+  display: block;
+  height: 100%;
+  background: #b6f5e5;
+  border-radius: 2px;
+}
+.appearance-preview .media-time {
+  font-variant-numeric: tabular-nums;
+  min-width: 30px;
+  text-align: right;
 }
 
 .appearance-preview .idle-reveal-scorecard {
@@ -1224,14 +1309,14 @@
 }
 
 .appearance-preview .card-assembly.cele-goal {
-  animation: goal-glow 900ms ease-out;
+  animation: goal-glow 1800ms ease-out;
 }
 .appearance-preview .card-assembly.cele-goal::after {
   background: transparent;
   inset: -6px;
   border-radius: 18px;
   border: 2px solid rgba(127, 224, 141, 0.7);
-  animation: cele-ring 900ms ease-out;
+  animation: cele-ring 1800ms ease-out;
 }
 
 @keyframes goal-glow {
@@ -1262,11 +1347,11 @@
   inset: -6px;
   border-radius: 18px;
   border: 2px solid rgba(240, 196, 106, 0.65);
-  animation: cele-ring 700ms ease-out;
+  animation: cele-ring 1400ms ease-out;
 }
 
 .appearance-preview .card-assembly.cele-rc {
-  animation: red-strobe 900ms ease-out;
+  animation: red-strobe 1800ms ease-out;
 }
 
 @keyframes red-strobe {
@@ -1284,9 +1369,6 @@
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .appearance-preview .chip-live .live-dot {
-    animation: none;
-  }
   .appearance-preview .card-assembly.cele-goal,
   .appearance-preview .card-assembly.cele-goal::after,
   .appearance-preview .card-assembly.cele-yc::after,

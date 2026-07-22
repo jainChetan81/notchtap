@@ -1,7 +1,7 @@
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { StatusState } from "../useStatusState";
-import { IdleHoverPeek } from "./IdleHoverPeek";
+import type { NowPlayingSummary, StatusState } from "../useStatusState";
+import { glyphForBundleId, IdleHoverPeek } from "./IdleHoverPeek";
 
 afterEach(cleanup);
 
@@ -24,6 +24,7 @@ const WEATHER_STATUS: StatusState = {
   football: { enabled: false, live: null },
   news: { enabled: false },
   weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy" } },
+  media: { enabled: false, current: null },
 };
 
 const LIVE_MATCH_STATUS: StatusState = {
@@ -32,6 +33,7 @@ const LIVE_MATCH_STATUS: StatusState = {
   football: { enabled: true, live: { label: "MTL 1-0 TOR", minute: "63'" } },
   news: { enabled: false },
   weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy" } },
+  media: { enabled: false, current: null },
 };
 
 const NOTHING_AMBIENT_STATUS: StatusState = {
@@ -40,6 +42,32 @@ const NOTHING_AMBIENT_STATUS: StatusState = {
   football: { enabled: false, live: null },
   news: { enabled: false },
   weather: { enabled: false, current: null },
+  media: { enabled: false, current: null },
+};
+
+const NOW_PLAYING: NowPlayingSummary = {
+  title: "Midnight City",
+  artist: "M83",
+  album: "Hurry Up, We're Dreaming",
+  playing: true,
+  elapsedMs: 1500,
+  durationMs: 243_000,
+  capturedAtMs: Date.now(),
+  appBundleId: "app.zen-browser.zen",
+};
+
+const MEDIA_STATUS: StatusState = {
+  paused: false,
+  waiting: 0,
+  football: { enabled: false, live: null },
+  news: { enabled: false },
+  weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy" } },
+  media: { enabled: true, current: NOW_PLAYING },
+};
+
+const MEDIA_AND_LIVE_MATCH_STATUS: StatusState = {
+  ...LIVE_MATCH_STATUS,
+  media: { enabled: true, current: NOW_PLAYING },
 };
 
 describe("IdleHoverPeek (plan 093)", () => {
@@ -73,17 +101,35 @@ describe("IdleHoverPeek (plan 093)", () => {
     const { container } = render(<IdleHoverPeek status={NOTHING_AMBIENT_STATUS} hovered={true} />);
     expect(container.querySelector(".below-block.idle-peek.open")).not.toBeNull();
     expect(container.querySelector(".idle-peek-timeline")).not.toBeNull();
-    expect(container.querySelector(".wx-peek-scene")).toBeNull();
+    expect(container.querySelector(".wx-peek-backdrop")).toBeNull();
     expect(container.querySelector(".idle-reveal-scorecard")).toBeNull();
   });
 
-  it("renders the weather mood scene and timeline when weather data is available", () => {
+  it("renders the weather mood backdrop and readout when weather data is available", () => {
     const { container } = render(<IdleHoverPeek status={WEATHER_STATUS} hovered={true} />);
-    expect(container.querySelector(".wx-peek-scene.wx-card")).not.toBeNull();
+    expect(container.querySelector(".wx-peek-backdrop.wx-card")).not.toBeNull();
     expect(container.querySelector("img.wx-icon")).not.toBeNull();
     expect(container.querySelector(".wx-peek-temp")?.textContent).toBe("27°");
     expect(container.querySelector(".wx-peek-condition")?.textContent).toBe("Cloudy");
     expect(container.querySelector(".idle-peek-timeline")).not.toBeNull();
+  });
+
+  // plan 105 (Step B): the operator wanted the weather art kept behind the
+  // media row rather than replaced by it — the backdrop is now independent
+  // of the precedence chain that picks what renders in `.peek-content`.
+  it("keeps the weather backdrop behind the media row when both are available", () => {
+    const { container } = render(<IdleHoverPeek status={MEDIA_STATUS} hovered={true} />);
+    expect(container.querySelector(".wx-peek-backdrop.wx-card")).not.toBeNull();
+    expect(container.querySelector(".media-row")).not.toBeNull();
+    // the readout itself still yields to the media row — one visible
+    // "content" slot at a time, per the existing precedence rule.
+    expect(container.querySelector(".wx-peek-readout")).toBeNull();
+  });
+
+  it("has no weather backdrop when a live match is showing (scorecard keeps its own visual)", () => {
+    const { container } = render(<IdleHoverPeek status={LIVE_MATCH_STATUS} hovered={true} />);
+    expect(container.querySelector(".idle-reveal-scorecard")).not.toBeNull();
+    expect(container.querySelector(".wx-peek-backdrop")).toBeNull();
   });
 
   // plan 092 (item 10) retired `.pill` entirely — the condition label
@@ -102,9 +148,68 @@ describe("IdleHoverPeek (plan 093)", () => {
     expect(container.querySelector(".idle-reveal-scorecard")).not.toBeNull();
     expect(container.querySelector(".idle-reveal-label")?.textContent).toBe("MTL 1-0 TOR");
     expect(container.querySelector(".clock-pill")?.textContent).toBe("63'");
-    expect(container.querySelector(".wx-peek-scene")).toBeNull();
+    expect(container.querySelector(".wx-peek-readout")).toBeNull();
     // the timeline still rides along underneath the reveal.
     expect(container.querySelector(".idle-peek-timeline")).not.toBeNull();
+  });
+
+  // plan 104: media row precedence + rendering.
+
+  it("renders the media row and timeline when a now-playing session is available", () => {
+    const { container } = render(<IdleHoverPeek status={MEDIA_STATUS} hovered={true} />);
+    expect(container.querySelector(".media-row")).not.toBeNull();
+    expect(container.querySelector(".media-title")?.textContent).toBe("Midnight City");
+    expect(container.querySelector(".media-subtitle")?.textContent).toBe("M83");
+    expect(container.querySelector(".media-state")?.textContent).toBe("▶");
+    expect(container.querySelector(".idle-peek-timeline")).not.toBeNull();
+    // media outranks weather in the content slot — one visible readout at
+    // a time — but (plan 105) the weather backdrop itself still shows
+    // behind it; see the dedicated backdrop test above.
+    expect(container.querySelector(".wx-peek-readout")).toBeNull();
+  });
+
+  it("renders ⏸ for a paused now-playing session", () => {
+    const paused: StatusState = {
+      ...MEDIA_STATUS,
+      media: { enabled: true, current: { ...NOW_PLAYING, playing: false } },
+    };
+    const { container } = render(<IdleHoverPeek status={paused} hovered={true} />);
+    expect(container.querySelector(".media-state")?.textContent).toBe("⏸");
+  });
+
+  it("football outranks media — the scorecard reveal wins when both are available", () => {
+    const { container } = render(
+      <IdleHoverPeek status={MEDIA_AND_LIVE_MATCH_STATUS} hovered={true} />,
+    );
+    expect(container.querySelector(".idle-reveal-scorecard")).not.toBeNull();
+    expect(container.querySelector(".media-row")).toBeNull();
+  });
+
+  it("renders no media row when media.current is null (no-media renders nothing extra)", () => {
+    const { container } = render(<IdleHoverPeek status={WEATHER_STATUS} hovered={true} />);
+    expect(container.querySelector(".media-row")).toBeNull();
+  });
+
+  describe("glyphForBundleId (plan 104 Step 7)", () => {
+    it("maps a Music bundle id to the note glyph", () => {
+      expect(glyphForBundleId("com.apple.Music")).toBe("♪");
+    });
+
+    it("maps a TV bundle id to the tv glyph", () => {
+      expect(glyphForBundleId("com.apple.TV")).toBe("📺");
+    });
+
+    it("maps a browser bundle id to the globe glyph, case-insensitively", () => {
+      expect(glyphForBundleId("com.apple.Safari")).toBe("🌐");
+      expect(glyphForBundleId("app.zen-browser.zen")).toBe("🌐");
+      expect(glyphForBundleId("com.google.Chrome")).toBe("🌐");
+      expect(glyphForBundleId("org.mozilla.firefox")).toBe("🌐");
+    });
+
+    it("falls back to the play glyph for anything else, including null", () => {
+      expect(glyphForBundleId("com.example.SomeApp")).toBe("▶");
+      expect(glyphForBundleId(null)).toBe("▶");
+    });
   });
 
   it("renders with no status prop at all (settings preview / older callers)", () => {

@@ -705,6 +705,14 @@ pub fn get_secret_status(window: tauri::WebviewWindow) -> Result<SecretStatus, S
 /// submits.
 pub fn pin_uneditable_fields(mut submitted: Config, booted: &Config) -> Config {
     submitted.detect_path = booted.detect_path.clone();
+    // plan 104: same treatment as `detect_path` — `now_playing_adapter_dir`
+    // names another executed subprocess path, and `now_playing_adapter_enabled`
+    // is the deliberately-not-in-UI kill switch (config.rs's own doc
+    // comment) — both must round-trip from the booted value regardless of
+    // what the settings window submits, not just because the panel
+    // doesn't render an editor for them.
+    submitted.now_playing_adapter_enabled = booted.now_playing_adapter_enabled;
+    submitted.now_playing_adapter_dir = booted.now_playing_adapter_dir.clone();
     submitted
 }
 
@@ -1602,6 +1610,33 @@ mod tests {
             "detect_path must not be ipc-editable"
         );
         assert_eq!(pinned.port, 9999, "editable fields must pass through");
+    }
+
+    #[test]
+    fn now_playing_adapter_fields_are_pinned_to_the_booted_value() {
+        // plan 104: same treatment as detect_path — the kill switch and
+        // the adapter dir are config-file-only, never ipc-editable, even
+        // though the settings window doesn't render a control for either.
+        let booted = Config::default();
+        let submitted = Config {
+            now_playing_adapter_enabled: !booted.now_playing_adapter_enabled,
+            now_playing_adapter_dir: PathBuf::from("/tmp/evil-adapter-dir"),
+            now_playing_enabled: true,
+            ..Config::default()
+        };
+        let pinned = pin_uneditable_fields(submitted, &booted);
+        assert_eq!(
+            pinned.now_playing_adapter_enabled, booted.now_playing_adapter_enabled,
+            "now_playing_adapter_enabled must not be ipc-editable"
+        );
+        assert_eq!(
+            pinned.now_playing_adapter_dir, booted.now_playing_adapter_dir,
+            "now_playing_adapter_dir must not be ipc-editable"
+        );
+        assert!(
+            pinned.now_playing_enabled,
+            "now_playing_enabled (the panel-editable toggle) must pass through"
+        );
     }
 
     #[test]
