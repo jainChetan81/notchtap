@@ -956,7 +956,7 @@ describe("SettingsApp", () => {
       expect(within(row).getByText("arsenal-vs-chelsea")).toBeTruthy();
       expect(within(row).getByText("Attendance")).toBeTruthy();
       expect(within(row).getByText("60,000")).toBeTruthy();
-      expect(within(row).getByText("03:43")).toBeTruthy(); // published_at_ms
+      expect(within(row).getByText("22:13")).toBeTruthy(); // published_at_ms (1700000000000 = 22:13 UTC)
       expect(within(row).getByText(/ENG\.1: ARS 2–0 CHE \(FT\)/)).toBeTruthy();
       expect(within(row).getByText("https://example.com/story")).toBeTruthy();
     });

@@ -462,7 +462,7 @@ describe("StatusRailCard", () => {
     expect(screen.getByText("Summary").classList.contains("manifest-label")).toBe(true);
     expect(container.querySelector(".manifest-inner.news")).toBeNull();
     expect(container.querySelector(".manifest-meta")?.textContent).toContain("NDTV");
-    expect(container.querySelector(".manifest-meta")?.textContent).toContain("published 08:58");
+    expect(container.querySelector(".manifest-meta")?.textContent).toContain("published 03:28");
     expect(container.querySelector(".manifest-meta")?.textContent).toContain("Politics");
     expect(container.querySelector(".manifest-footer")?.textContent).toContain(
       "⌃⇧O read · ⌃⇧N collapse",
@@ -543,7 +543,7 @@ describe("StatusRailCard", () => {
     const meta = container.querySelector(".manifest-meta") as HTMLElement;
     expect(meta).not.toBeNull();
     expect(within(meta).getByText("NDTV")?.tagName).toBe("B");
-    expect(meta.textContent).toContain("published 08:58");
+    expect(meta.textContent).toContain("published 03:28");
     expect(meta.textContent).toContain("Politics");
     expect(meta.textContent?.split("·").length).toBeGreaterThanOrEqual(2);
 

@@ -31,6 +31,11 @@ export default defineConfig(async () => ({
 
   test: {
     environment: "jsdom",
+    // Pin the timezone so date/time-formatting tests are deterministic
+    // regardless of the runner's local zone. Without this, tests that assert
+    // rendered `HH:MM` pass on the dev machine (IST) but fail in CI (UTC).
+    // Assertions on formatted times are written against UTC.
+    env: { TZ: "UTC" },
     // don't discover tests inside agent worktrees (.claude/worktrees/<name>
     // holds full repo copies whose tests would double-count or break ours)
     exclude: ["**/node_modules/**", "**/.claude/**", "**/dist/**"],
