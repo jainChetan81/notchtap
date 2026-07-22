@@ -1,8 +1,7 @@
 import { Globe, type LucideIcon, Music, Pause, Play, Tv } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
-import { IDLE_PEEK_CLOSE_MS } from "../animationTiming";
 import { weatherArtFor } from "../lib/weatherArt";
-import { prefersReducedMotion } from "../prefersReducedMotion";
 import { useClock } from "../useClock";
 import type {
   LiveMatchSummary,
@@ -26,33 +25,25 @@ import type {
 // home on weather/football being configured would make it permanently
 // unreachable for anyone without either).
 //
-// Mount lifecycle: this component mounts (and its content animates in via
-// CSS `@keyframes`, this codebase's own established mount-transition
-// idiom — `.card-content`'s enter/exit animations, styles.css) only while
-// `hovered` is true, staying mounted for `CLOSE_DELAY_MS` after `hovered`
-// goes false so the close keyframe can play, then unmounting — same shape
-// as `useDelayedSwap`'s exiting window elsewhere in this file tree, but
-// NOT that hook itself: `useDelayedSwap` freezes an OLD value across a
-// KEY change (built for "show what was there while it fades"), whereas
-// this needs "mount instantly on open, delay only the unmount on close" —
-// a materially different shape, so this is a small purpose-built effect
-// rather than a mismatched reuse.
+// Mount lifecycle: this component mounts/unmounts on `hovered` via
+// `AnimatePresence` + `motion.div` (plan 12x — migrated off a hand-rolled
+// mounted/closing `useState` + `setTimeout` state machine and matching CSS
+// `@keyframes`, this codebase's animation-law now routes all animation
+// through the `motion` library rather than hand-drawn keyframes or manual
+// layout-prop tweening). `AnimatePresence` owns the exit window itself
+// (`exit={...}` plays out before the node actually leaves the DOM) — no
+// purpose-built timer needed here anymore.
 //
 // This is also why the block is NOT always-mounted whenever ambient data
 // exists: `.below-block`'s mere DOM presence is what 091's
 // `:not(:has(.below-block))` rounding law keys off (untouched by this
 // plan — the flanks-un-round-while-open behavior below falls out of that
-// existing rule for free, exactly because this mounts only while open).
-// Always-mounting whenever weather/football happened to be configured
-// would un-round the idle pill any time that ambient data exists, not
-// just while actually hovered — a real, unwanted change to 091's shell
-// behavior for the common case of "weather enabled, not currently
-// hovering."
-//
-// plan 117: the literal now lives in `animationTiming.ts`'s
-// `IDLE_PEEK_CLOSE_MS` (single-sourced alongside `useDelayedSwap`'s exit
-// window) — this alias keeps every reference below unchanged.
-const CLOSE_DELAY_MS = IDLE_PEEK_CLOSE_MS;
+// existing rule for free, exactly because this mounts only while open,
+// including during `AnimatePresence`'s exit animation). Always-mounting
+// whenever weather/football happened to be configured would un-round the
+// idle pill any time that ambient data exists, not just while actually
+// hovered — a real, unwanted change to 091's shell behavior for the
+// common case of "weather enabled, not currently hovering."
 
 // plan 105 (Step B): split from the old combined `WeatherPeekScene` so the
 // art (this component) can sit BEHIND the media row instead of being
@@ -128,16 +119,11 @@ function formatElapsed(ms: number): string {
 // Re-renders once a second while (and only while) playing, so the local
 // elapsed-time derivation below stays live without ever driving a wire
 // emission (rust never re-emits per tick — plan-081's own lesson, see
-// useStatusState.ts's NowPlayingSummary doc). Honors
-// prefers-reduced-motion by never arming the interval at all, so the
-// component renders exactly one static value (Step 6's own requirement).
+// useStatusState.ts's NowPlayingSummary doc).
 function useLiveTick(enabled: boolean) {
   const [, setTick] = useState(0);
   useEffect(() => {
     if (!enabled) {
-      return;
-    }
-    if (prefersReducedMotion()) {
       return;
     }
     const id = window.setInterval(() => setTick((t) => t + 1), 1000);
@@ -224,35 +210,6 @@ function PeekTimeline() {
 }
 
 export function IdleHoverPeek({ status, hovered }: { status?: StatusState; hovered: boolean }) {
-  const [mounted, setMounted] = useState(hovered);
-  const [closing, setClosing] = useState(false);
-
-  useEffect(() => {
-    if (hovered) {
-      setMounted(true);
-      setClosing(false);
-      return;
-    }
-    if (!mounted) {
-      return;
-    }
-    if (prefersReducedMotion()) {
-      setMounted(false);
-      setClosing(false);
-      return;
-    }
-    setClosing(true);
-    const id = window.setTimeout(() => {
-      setMounted(false);
-      setClosing(false);
-    }, CLOSE_DELAY_MS);
-    return () => window.clearTimeout(id);
-  }, [hovered, mounted]);
-
-  if (!mounted) {
-    return null;
-  }
-
   const live = status?.football.live ?? null;
   const media = status?.media.current ?? null;
   const weather = status?.weather.current ?? null;
@@ -264,22 +221,38 @@ export function IdleHoverPeek({ status, hovered }: { status?: StatusState; hover
   const showBackdrop = weather !== null && live === null;
 
   return (
-    <div className={`below-block idle-peek${closing ? " closing" : " open"}`}>
-      {showBackdrop ? <WeatherPeekBackdrop weather={weather} /> : null}
-      <div className="peek-content">
-        {/* plan 104: precedence is football > media > weather > timeline —
-            an actively-chosen media session outranks ambient temperature,
-            but a live match still outranks everything (item 3's original
-            rule, extended). One below-block at a time. */}
-        {live !== null ? (
-          <ScorecardRevealContent live={live} />
-        ) : media !== null ? (
-          <MediaPeekRow media={media} />
-        ) : weather !== null ? (
-          <WeatherPeekReadout weather={weather} />
-        ) : null}
-        <PeekTimeline />
-      </div>
-    </div>
+    <AnimatePresence>
+      {hovered ? (
+        // plan 093: `height: 100` mirrors `hover.rs`'s `IDLE_PEEK_BELOW_BLOCK_H`
+        // constant exactly — a real duplicated-constants pair (see that
+        // constant's own doc comment). Any change to this height MUST
+        // change that constant in the same commit.
+        <motion.div
+          className="below-block idle-peek"
+          initial={{ height: 0, opacity: 0 }}
+          animate={{ height: 100, opacity: 1 }}
+          exit={{ height: 0, opacity: 0 }}
+          transition={{ type: "spring", stiffness: 420, damping: 34, opacity: { duration: 0.18 } }}
+          style={{ overflow: "hidden" }}
+        >
+          {showBackdrop ? <WeatherPeekBackdrop weather={weather} /> : null}
+          <div className="peek-content">
+            {/* plan 104: precedence is football > media > weather >
+                timeline — an actively-chosen media session outranks
+                ambient temperature, but a live match still outranks
+                everything (item 3's original rule, extended). One
+                below-block at a time. */}
+            {live !== null ? (
+              <ScorecardRevealContent live={live} />
+            ) : media !== null ? (
+              <MediaPeekRow media={media} />
+            ) : weather !== null ? (
+              <WeatherPeekReadout weather={weather} />
+            ) : null}
+            <PeekTimeline />
+          </div>
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
   );
 }

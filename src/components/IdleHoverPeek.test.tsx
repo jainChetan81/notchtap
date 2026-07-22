@@ -1,23 +1,10 @@
-import { act, cleanup, render } from "@testing-library/react";
+import { cleanup, render } from "@testing-library/react";
 import { Globe, Music, Play, Tv } from "lucide-react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NowPlayingSummary, StatusState } from "../useStatusState";
 import { IdleHoverPeek, iconForBundleId } from "./IdleHoverPeek";
 
 afterEach(cleanup);
-
-function mockReducedMotion(matches: boolean) {
-  vi.stubGlobal("matchMedia", (query: string) => ({
-    matches,
-    media: query,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    addListener: () => {},
-    removeListener: () => {},
-    onchange: null,
-    dispatchEvent: () => false,
-  }));
-}
 
 const WEATHER_STATUS: StatusState = {
   paused: false,
@@ -72,12 +59,7 @@ const MEDIA_AND_LIVE_MATCH_STATUS: StatusState = {
 };
 
 describe("IdleHoverPeek (plan 093)", () => {
-  beforeEach(() => {
-    mockReducedMotion(false);
-  });
-
   afterEach(() => {
-    vi.unstubAllGlobals();
     vi.useRealTimers();
   });
 
@@ -88,11 +70,12 @@ describe("IdleHoverPeek (plan 093)", () => {
 
   // plan 093 constraint 2: hover is NOT CSS `:hover` — the peek is driven
   // entirely by the prop, with no dependency on any CSS pseudo-class.
-  it("opens (mounts a .below-block.idle-peek.open) when hovered is true", () => {
+  // plan 12x: mount is now owned by `motion`'s `AnimatePresence`, which
+  // renders the node synchronously in jsdom — no `.open`/`.closing`
+  // classes anymore, just DOM presence.
+  it("opens (mounts a .below-block.idle-peek) when hovered is true", () => {
     const { container } = render(<IdleHoverPeek status={WEATHER_STATUS} hovered={true} />);
-    const peek = container.querySelector(".below-block.idle-peek.open");
-    expect(peek).not.toBeNull();
-    expect(peek?.classList.contains("closing")).toBe(false);
+    expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
   });
 
   // item 18: the timeline lives here unconditionally — it must not
@@ -100,7 +83,7 @@ describe("IdleHoverPeek (plan 093)", () => {
   // configured, since 091 removed its only other home.
   it("still opens with the day-progress timeline alone when no ambient data exists", () => {
     const { container } = render(<IdleHoverPeek status={NOTHING_AMBIENT_STATUS} hovered={true} />);
-    expect(container.querySelector(".below-block.idle-peek.open")).not.toBeNull();
+    expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
     expect(container.querySelector(".idle-peek-timeline")).not.toBeNull();
     expect(container.querySelector(".wx-peek-backdrop")).toBeNull();
     expect(container.querySelector(".idle-reveal-scorecard")).toBeNull();
@@ -255,59 +238,7 @@ describe("IdleHoverPeek (plan 093)", () => {
 
   it("renders with no status prop at all (settings preview / older callers)", () => {
     const { container } = render(<IdleHoverPeek hovered={true} />);
-    expect(container.querySelector(".below-block.idle-peek.open")).not.toBeNull();
+    expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
     expect(container.querySelector(".idle-peek-timeline")).not.toBeNull();
-  });
-
-  describe("mount lifecycle (close delay)", () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
-    });
-
-    it("stays mounted with .closing for the exit window, then unmounts", () => {
-      const { container, rerender } = render(
-        <IdleHoverPeek status={WEATHER_STATUS} hovered={true} />,
-      );
-      expect(container.querySelector(".idle-peek.open")).not.toBeNull();
-
-      rerender(<IdleHoverPeek status={WEATHER_STATUS} hovered={false} />);
-      // still mounted immediately after the flip, now closing.
-      expect(container.querySelector(".idle-peek.closing")).not.toBeNull();
-      expect(container.querySelector(".idle-peek.open")).toBeNull();
-
-      act(() => {
-        vi.advanceTimersByTime(260);
-      });
-      expect(container.querySelector(".idle-peek")).toBeNull();
-    });
-
-    it("re-opens immediately (no lingering close delay) if hovered flips back true mid-close", () => {
-      const { container, rerender } = render(
-        <IdleHoverPeek status={WEATHER_STATUS} hovered={true} />,
-      );
-      rerender(<IdleHoverPeek status={WEATHER_STATUS} hovered={false} />);
-      expect(container.querySelector(".idle-peek.closing")).not.toBeNull();
-
-      rerender(<IdleHoverPeek status={WEATHER_STATUS} hovered={true} />);
-      expect(container.querySelector(".idle-peek.open")).not.toBeNull();
-      expect(container.querySelector(".idle-peek.closing")).toBeNull();
-
-      // the stale close timer must not fire and un-mount the now-open peek.
-      act(() => {
-        vi.advanceTimersByTime(260);
-      });
-      expect(container.querySelector(".idle-peek.open")).not.toBeNull();
-    });
-  });
-
-  it("unmounts immediately with no .closing window under prefers-reduced-motion", () => {
-    mockReducedMotion(true);
-    const { container, rerender } = render(
-      <IdleHoverPeek status={WEATHER_STATUS} hovered={true} />,
-    );
-    expect(container.querySelector(".idle-peek.open")).not.toBeNull();
-
-    rerender(<IdleHoverPeek status={WEATHER_STATUS} hovered={false} />);
-    expect(container.querySelector(".idle-peek")).toBeNull();
   });
 });

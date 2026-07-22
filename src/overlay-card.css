@@ -1420,76 +1420,25 @@
 
 /* ==== plan 093 (079 items 9/17/18): the idle hover-expanded state —
    weather peek / scorecard reveal / day-progress timeline, all sharing
-   ONE below-block (`IdleHoverPeek.tsx`). Mounted ONLY while
-   `IdleHoverPeek` reports itself open/closing (never continuously
-   whenever ambient data merely exists) — see that component's own doc
-   comment for why: `.card-assembly`'s existing, UNTOUCHED
-   `:not(:has(.below-block))` rounding law (above) is what makes "flanks
-   un-round while the peek is open" true, and that only works if this
-   block's mere DOM presence tracks "open," not "data available."
+   ONE below-block (`IdleHoverPeek.tsx`). Mounted ONLY while `hovered` is
+   true (never continuously whenever ambient data merely exists) — see
+   that component's own doc comment for why: `.card-assembly`'s existing,
+   UNTOUCHED `:not(:has(.below-block))` rounding law (above) is what makes
+   "flanks un-round while the peek is open" true, and that only works if
+   this block's mere DOM presence tracks "open," not "data available."
 
-   height, not max-height (mirrors `prototype/notch-states.html:112-124`'s
-   own `.wx-peek` exactly, including its reasoning: the weather scene's
-   own min-height, below, would fight a max-height:0 collapse). Driven by
-   `@keyframes`, not a `transition` — this app's REAL constraint the
-   prototype's static `:hover`-driven demo never had: `hovered` mounts and
-   unmounts this block (App.tsx's `hover-changed`-sourced prop, never CSS
-   `:hover` — the overlay window is click-through), and a CSS `transition`
-   cannot play across a browser's very first paint of a newly-mounted
-   element, only a subsequent property change — the exact problem
-   `@keyframes` (which DOES autoplay on mount) doesn't have. Same idiom
-   this file already uses for every other mount/unmount animation
-   (`.card-content`'s enter/exit keyframes above); IdleHoverPeek.tsx's own
-   comment has the full comparison against `useDelayedSwap`. Timing/easing
-   still matches the locked reference exactly: 260ms height,
-   cubic-bezier(0.22,1,0.36,1); 200ms opacity, ease-out. */
+   plan 12x: the mount/unmount animation (height 0->100px, opacity/fade)
+   moved to `motion` (`AnimatePresence` + `motion.div`, IdleHoverPeek.tsx)
+   — this app's animation law now routes all animation through that
+   library rather than hand-drawn CSS `@keyframes`, and never hand-tweens
+   layout props. `height`/`opacity` are set inline by `motion` now; this
+   rule only carries the non-animated box model. */
 .card-root .below-block.idle-peek {
   padding: 12px 16px 13px;
   display: flex;
   flex-direction: column;
   gap: 8px;
   overflow: hidden;
-}
-.card-root .below-block.idle-peek.open {
-  animation:
-    idle-peek-open 260ms var(--ease-notchtap) forwards,
-    idle-peek-fade-in 200ms ease-out forwards;
-}
-/* plan 117: 260ms above must equal IDLE_PEEK_CLOSE_MS (animationTiming.ts)
-   — IdleHoverPeek.tsx's unmount timer waits exactly that long so this
-   close animation can finish before the block leaves the DOM. */
-.card-root .below-block.idle-peek.closing {
-  animation:
-    idle-peek-close 260ms var(--ease-notchtap) forwards,
-    idle-peek-fade-out 200ms ease-out forwards;
-}
-/* plan 093: mirrors `hover.rs`'s `IDLE_PEEK_BELOW_BLOCK_H` constant
-   exactly — a real duplicated-constants pair (see that constant's own
-   doc comment). Any change to this height MUST change that constant in
-   the same commit. */
-@keyframes idle-peek-open {
-  from { height: 0; }
-  to { height: 100px; }
-}
-@keyframes idle-peek-close {
-  from { height: 100px; }
-  to { height: 0; }
-}
-/* boring.notch import #8: content slides down from the top as it fades in
-   (asymmetric enter), instead of just appearing — reads far more premium. */
-@keyframes idle-peek-fade-in {
-  from { opacity: 0; transform: translateY(-6px); }
-  to { opacity: 1; transform: translateY(0); }
-}
-@keyframes idle-peek-fade-out {
-  from { opacity: 1; transform: translateY(0); }
-  to { opacity: 0; transform: translateY(-6px); }
-}
-@media (prefers-reduced-motion: reduce) {
-  .card-root .below-block.idle-peek.open,
-  .card-root .below-block.idle-peek.closing {
-    animation: none;
-  }
 }
 
 /* plan 105 (Step B): the weather art, split out of the old combined
