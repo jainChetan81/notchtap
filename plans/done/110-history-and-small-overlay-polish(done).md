@@ -109,22 +109,42 @@ already returns the full entries).
 
 ### Step A: history display
 1. Metadata row per entry: source chip (when present), category,
-   priority, event_type — compact, muted, using 109's type tokens
+   priority, event_type, and formatted rotation window — compact,
+   muted, using 109's type tokens
    (the `--fs-*` custom properties 109 defines in settings.css's
    `:root` — read that file post-109-merge for the exact names;
    `--fs-caption` is the intended tier for this row).
-2. Expandable details: a native `<details>`/`<summary>` (semantics
+   Field disposition is explicit: rotation is always in the compact
+   metadata row; topic and `published_at_ms` render conditionally in
+   expanded details; `espn` renders a conditional score/clock/card
+   summary (no crest artwork); origin remains in the existing row;
+   signal/id are intentionally omitted as internal/debug identifiers.
+   Optional strings are absent when null/undefined OR blank after trim.
+2. Expandable details: a native `<details>` with non-empty
+   `<summary>More details</summary>` (semantics
    free of charge, no JS state) revealing subtitle, `details[]`
-   label/value pairs, and the link (rendered as a plain anchor —
-   settings window MAY open links; confirm existing precedent for
-   links in settings before adding `target`; if none exists, render
-   the URL as selectable text instead — STOP-lite: note the choice).
-3. `overflow-wrap: anywhere;` on `.history-body` (and the new details
-   values).
+   label/value pairs, and the link. **Cold-read found no safe external-
+   open precedent or opener permission in the Settings webview.** RSS/
+   ESPN URLs are untrusted feed data, so render the URL as React-escaped,
+   selectable TEXT (`user-select: text; overflow-wrap: anywhere`),
+   never an `<a href>` and never an in-webview navigation. Adding a
+   vetted external-browser opener is a separate IPC/capability plan.
+   Render `<details>` only when at least one optional expandable field
+   exists, and never nest it inside a row-level button/link. Query and
+   toggle the disclosure by accessible name in tests.
+3. `overflow-wrap: anywhere;` on `.history-body` and every
+   feed-controlled string—source/category/subtitle/topic, detail labels
+   + values, ESPN text, and URL. Every containing flex/grid child gets
+   `min-width: 0`.
 **Verify**: tests — an entry with full meta renders chips + details;
 an entry with empty meta renders no empty chrome; a 300-char
 unbroken-token body doesn't widen the row (assert the CSS class
-carries the rule; jsdom can't measure — pin the class).
+carries the rule; jsdom can't measure — pin the class). A link fixture
+including a non-http scheme renders as literal text with no `<a>` or
+clickable role, proving untrusted data cannot navigate the Settings
+webview. A second fixture containing markup-like text renders literally
+(no created `<img>`/script-capable element and no
+`dangerouslySetInnerHTML`/auto-link path).
 
 ### Step B: `is_day` on the ambient weather channel
 1. `status.rs` `WeatherSummary` += `is_day: bool`; populate it in the
@@ -152,10 +172,16 @@ carries the rule; jsdom can't measure — pin the class).
 5. Dedup: per Current state, place `is_day` in normal equality on the
    status channel so a flip repaints; verify no tick-storm results
    (it changes twice a day).
-**Verify**: rust test — summary built from a fixture with `is_day: 0`
-carries `false`; frontend test — art class matches `isDay` from the
-payload, not the wall clock (freeze/mock Date to prove the clock is
-no longer consulted).
+**Verify**: rust tests — `is_day: 0` carries `false`, `is_day: 1`
+carries `true`, and any other numeric value follows the poller's
+existing malformed-response error path. Serialize the Rust status
+payload and assert `"isDay": false` exists while `"is_day"` does not.
+Frontend guard tests reject both missing `isDay` and wrong types (`0`,
+`"false"`). Add a behavioral `status_state_if_changed` sequence:
+identical weather emits nothing; changing only is_day emits once;
+repeating it emits nothing. Frontend art class matches `isDay` from the
+payload, not the wall clock (freeze/mock Date to prove the clock is no
+longer consulted).
 
 ### Step C: news compact row — one timestamp
 **(Corrected at review round 2)** — the expanded side needs NO
@@ -181,17 +207,19 @@ would have duplicated it. The work is subtraction only:
   rewrite it to assert age present / published absent. Manifest
   renders its published span with NO class (`Manifest.tsx:37`), so
   once the compact node goes the class is genuinely orphaned.
-**Verify**: compact-row test asserts age present, published absent
-(the rewritten `:505-520` test); Manifest test asserts
+**Verify**: freeze clock/timezone inputs. Within the compact metadata
+container assert exactly one time expression and that it is the
+relative-age node (the rewritten `:505-520` test); within Manifest's
+expanded metadata assert
 `published HH:MM` still renders in expanded meta segments;
 `grep -rn "pub-meta" src/ --include="*.tsx"` (tests included) → only
 the rewritten assertions, no rendering site.
 
 ### Step D: dots minimally legible
-1. Each dot: `role="img"` + `aria-label` — "Football — enabled" /
-   "…— disabled". **(Corrected at plan review, 2026-07-22)**: derive
-   the label from the RAW config flag
-   (`status?.football.enabled ?? false`), NOT from the component's
+1. Each dot: `role="img"` + `aria-label` with THREE truthful states:
+   "Football — enabled" / "…— disabled" / "…— status unavailable".
+   **(Corrected at plan review, 2026-07-22)**: when status exists,
+   derive the label from the RAW config flag, NOT from the component's
    display booleans — those are `!paused && enabled`
    (`StatusDots.tsx:28-31`), so while paused every dot would
    announce "disabled" even for sources that remain configured-on: a
@@ -200,29 +228,37 @@ the rewritten assertions, no rendering site.
    labels instead (e.g. "Football — enabled, paused"): one fact per
    element — the dot announces configuration, the pause glyph
    announces the pause; AT users hear both, sighted users see dim +
-   glyph, and neither channel lies. The VISUAL dim-under-pause
-   behavior is untouched.
+   glyph, and neither channel lies. When the whole status payload is
+   absent/loading, do NOT coerce it to disabled. The visual dim-under-
+   pause behavior stays, but configuration gains a non-color cue:
+   enabled = filled circle, disabled = hollow square/diamond,
+   unavailable = hollow circle. Keep the same footprint; pause changes
+   luminance only and does not erase the configured shape.
 2. Paused: remove `aria-hidden` from `.pause-glyph`, give it
    `role="img"` + `aria-label="Notifications paused"`.
-3. NO layout/visual change in this plan (labels are for AT; the
-   review's fuller "labels in hover reveal + health semantics" is
-   parked with the product decisions).
-**Verify**: tests query by accessible name for all three dots and the
-pause glyph; one test pins the paused case — paused + football
-enabled → dot still labeled "Football — enabled" (dim visual class
-asserted unchanged) + pause glyph accessible.
+3. No layout change; the minimal fill/shape distinction above is the
+   only visual change. Fuller hover labels + health semantics remain
+   parked.
+**Verify**: tests query by accessible name for enabled, disabled, and
+unavailable dots plus the pause glyph, and pin their non-color shape
+classes. One test pins the paused case — paused + football enabled →
+dot still labeled "Football — enabled" (dim class + configured shape
+retained) + pause glyph accessible exactly once; no dot label contains
+“paused.”
 
 ### Step E: gates + §0
 Full frontend + rust gates → clean. §0 updated with attribution.
 
 ## Done criteria
 
-- [ ] History: metadata row + `<details>` expansion + overflow-wrap;
-      empty-meta entries render clean
+- [ ] History: always-present core metadata row + conditional named
+      `<details>` for optional richness; all untrusted text escapes,
+      wraps, and cannot navigate the webview
 - [ ] `WeatherSummary` carries `is_day` end-to-end; the local-clock
       guess and its comment are gone; art keyed off the wire
 - [ ] News compact row has exactly one time expression
-- [ ] Dots + pause glyph have accessible names
+- [ ] Dots truthfully distinguish enabled/disabled/unavailable by name
+      and non-color shape; pause is announced exactly once
 - [ ] `build.rs`/`capabilities/` byte-untouched; mirror law held where
       CSS changed
 - [ ] All gates clean; §0 matches observed counts
@@ -235,9 +271,6 @@ Full frontend + rust gates → clean. §0 updated with attribution.
   holds at execution time) — report what you found instead. (The
   081 tripwire guards SlotState `dedup_eq`, a DIFFERENT channel —
   do not cite it for this.)
-- History link rendering has no safe precedent and plain-text URL
-  feels wrong (report; don't invent a new open-URL path — that's an
-  IPC-surface question).
 - Any of the four items balloons past S on contact (report and land
   the other three).
 

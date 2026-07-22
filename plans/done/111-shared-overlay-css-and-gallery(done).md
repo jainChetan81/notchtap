@@ -92,9 +92,39 @@ is separate and unwritten).
 ## Steps
 
 ### Step 0: diff the mirror (the map before the surgery)
-Script: normalize both files (strip comments/whitespace), extract
-(selector, declarations) pairs from preview-overlay.css with the
-`.appearance-preview` prefix stripped, and diff against styles.css.
+**Fail-fast visual harness preflight—before any edit**:
+1. Resolve and record the exact Chromium executable; launch it headless
+   successfully against the clean Vite build. Use the existing boot-
+   fact/test seams (`__NOTCHTAP_SLOT_STATE__`, status/appearance globals)
+   to inject fixed local states—no live pollers/network/runtime data.
+2. Fix viewport, device scale, `Date.now`, timezone, reduced-motion,
+   system font environment, and animation currentTime. Write baseline
+   computed JSON/screenshots/matched-style manifests under
+   `/tmp/notchtap-plan111/before/`; after artifacts go under the sibling
+   `after/` directory.
+3. Prove the comparison commands before editing: normalized JSON uses
+   `diff -u`; screenshots use a scratch Swift/CoreGraphics pixel-buffer
+   comparator (no new npm dependency), exiting nonzero for any changed
+   pixel. Record the commands and zero-diff baseline self-check.
+4. Through the DevTools matched-styles API, inventory cascade winners,
+   specificity, and applicability for every candidate shared rule.
+   Classify selectors anchored at `html`, `body`, `#root`, `:root`,
+   direct-child/sibling relationships, and pseudo-elements before
+   extraction; `display: contents` changes boxes, not DOM ancestry, so
+   selectors relying on the old direct-child tree require an explicit
+   resolution. If the browser/injection/comparator preflight fails,
+   STOP before CSS surgery.
+
+Use a scratch browser-CSSOM audit, NOT regex/brace splitting: load each
+stylesheet in an isolated same-origin page, recursively walk `cssRules`,
+and carry enclosing `@media`/`@supports` context with every rule. CSSOM
+is required because both files contain nested media rules, comma
+selectors, and many `@keyframes`; a flat text extractor can silently
+misclassify their inner braces as ordinary selector blocks. Normalize
+preview CSSStyleRule selectors by removing only the leading
+`.appearance-preview` scope. Inventory keyframes and other non-style
+at-rules separately rather than pretending they are selector pairs.
+Diff normalized (at-rule context, selector, declarations) tuples.
 Output three lists: (1) identical pairs — the true shared set;
 (2) preview-only divergences — each is either accumulated DRIFT (a
 bug — report it) or a DELIBERATE preview adaptation (e.g. position
@@ -146,19 +176,51 @@ re-decide with that fact).
      stays as the frame chrome only.
    The wrapper must contain EVERYTHING the shared selectors target
    (`.card-assembly` and all descendants, `.status-dots`, the
-   below-block tree). Shared selectors become
-   `.card-root <original-selector>` mechanically — no selector is
-   rewritten beyond the prefix. State the final chosen elements for
-   both entries in the report.
-2. `styles.css`: delete the moved rules, `@import "./overlay-card.css"`
-   (or import in `main.tsx` — match how CSS is imported today).
-   **Import order, made explicit at review round 2**: the shared
-   file loads BEFORE each context's own rules (overlay:
-   `overlay-card.css` then `styles.css` residue; settings:
-   `overlay-card.css` then `settings.css` then the override block —
-   the override block does not exist yet, Step 2 creates it), so
-   context overrides win by both order and specificity. Pin the
-   order with a comment at each import site.
+   below-block tree). The new overlay wrapper is a layout-neutral
+   scoping node: add `.card-root { display: contents; }` to the
+   OVERLAY-ONLY `styles.css` residue. Do not apply that rule in
+   settings, where `.preview-stage.card-root` must retain its preview
+   layout box. Baseline/after rect checks below must prove the wrapper
+   changes no overlay geometry.
+
+   **Selector transform (review round 3; not a blind prefix):**
+   - ordinary card-local CSSStyleRule with no document-ancestry anchor:
+     prefix EACH comma-list member with `.card-root `;
+   - a selector beginning with `:root[...]` keeps that root compound
+     first and inserts the scope after it, e.g.
+     `:root[data-notchtap-mode="hud"] .card-root .synthetic-cutout`;
+     `.card-root :root` is invalid for this DOM and is a STOP;
+   - selectors anchored at `html`, `body`, or `#root`, and any direct-
+     child/sibling selector crossing the new wrapper, are NEVER ordinary.
+     Give each one a Step-0 disposition before extraction: (a) keep the
+     document/context portion first and insert `.card-root` at the
+     semantics-preserving descendant boundary; (b) retain it in the
+     context stylesheet when it is context-owned; or (c) STOP when no
+     equivalent transform exists. Known-impossible forms such as
+     `.card-root body …` / `.card-root #root …` must fail the audit;
+   - recurse into `@media`/`@supports`/other grouping rules without
+     changing their preludes;
+   - `@keyframes` names and percentage/from/to selectors, `@font-face`,
+     and other non-style at-rules stay GLOBAL/unprefixed. Move a
+     keyframe only once and preserve every animation-name reference;
+   - context-only custom-property owners remain in the context file:
+     overlay `:root` defaults in styles.css, preview frame variables on
+     `.appearance-preview` in settings.css. Shared consumers inherit
+     them through `.card-root`.
+
+   State the final chosen elements and every special-case transform in
+   the report.
+2. Import order is fixed at the TypeScript entry points; do NOT use CSS
+   `@import` and do not leave component-level CSS imports whose module
+   traversal order is implicit:
+   - `src/main.tsx`: import `./overlay-card.css`, then `./styles.css`;
+     remove `./styles.css` from `App.tsx`.
+   - `src/settings/main.tsx`: import `../overlay-card.css`, then
+     `./settings.css`; remove `./preview-overlay.css` from
+     `SettingsApp.tsx`.
+   Thus shared rules load before each context residue and settings
+   overrides win by source order. Pin both sequences with tests that
+   read the entry files.
 3. Settings: preview wrapper renders `.card-root` inside
    `.appearance-preview`; import the shared file; delete
    `preview-overlay.css` entirely.
@@ -172,33 +234,66 @@ every override earns its line; if an adaptation can die instead
 **Verify (Steps 1+2)**: re-run the Step 0 script against the NEW
 structure: shared-set parity is now structural (one file) — the
 script instead asserts (a) `preview-overlay.css` no longer exists,
-(b) styles.css contains no `.card-assembly`/card-shape rules outside
-the import, (c) the override block is ≤ the deliberate-adaptation
-count from Step 0. Commit a SMALL version of this check as a vitest
-test so the mirror can never silently return —
+(b) neither context stylesheet redefines ANY selector signature from
+the Step-0 shared inventory except an explicit reviewed allowlist
+(overlay's layout-neutral `.card-root`; preview adaptations), and (c)
+the override block contains no more CSS RULES/DECLARATIONS than the
+Step-0 deliberate-adaptation inventory—not vague line counts. Each
+allowlist entry records selector, declarations, and reason. Commit the
+selector-prelude scanner + invariant as a vitest test so the mirror can
+never silently return —
 **hardened at review round 2**: a naive substring test matches
 `.card-assembly` inside COMMENTS (styles.css is comment-dense by
 house style) and would false-positive; the committed check must
 strip `/* … */` comments first, then match SELECTOR-shaped
 occurrences only (the token appearing in a rule prelude — text
 between a `}` or file start and the next `{`). Still string-level,
-no CSS parser dependency; ~15 lines.
+no CSS parser dependency. Its own fixtures cover: class text in a
+comment (allowed); duplicate `.card-assembly` selector (fails);
+duplicate non-assembly shared selector such as `.status-dots` (fails);
+comma selector lists; and selectors nested in grouping rules. The
+shared inventory—not one hard-coded class family—is the authority.
 
-**Rendered-equivalence evidence (added at review round 2)** — the
+**Rendered-equivalence evidence (hardened at review round 3)** — the
 "zero visual change" claim needs artifacts, not assertion:
 1. BEFORE starting: `npx vite build` on the clean base and save
    `dist/`'s CSS asset(s) to the scratchpad.
-2. AFTER Steps 1+2: rebuild and extract from both builds every rule
-   whose selector touches the card tree (`.card-assembly`,
-   `.status-dot`, `.below-block`, the flanks…), normalize
-   (strip comments/whitespace, sort declarations within each rule),
-   and diff. The ONLY expected differences: the `.card-root` prefix
-   on shared selectors and rule-order moves that Step 2's import
-   order makes non-observable. Any declaration-level delta is a
-   defect — fix or classify it explicitly in the report.
-3. If a GUI is available, a before/after screenshot of the same
-   promoted card is welcome extra evidence but does not replace the
-   built-CSS diff (screenshots can't cover every state).
+2. BEFORE and AFTER, use headless Chromium against the built app to
+   capture a computed-style JSON snapshot for the same deterministic
+   overlay states (idle, generic compact + expanded, news compact,
+   goal celebration with animation paused) and the four existing
+   preview samples. Record root/card/flank/below-block bounding rects;
+   layout/display/position/grid; padding/borders/radii; color/
+   background/opacity; transform; z-index; transition; animation name/
+   duration; and `::before`/`::after` computed styles. Force reduced
+   motion or pause animations at a fixed time. The before/after JSON
+   must be identical except for selector text that is not part of
+   computed style. This catches root-variable loss, direct-child/
+   wrapper breakage, and cascade changes that declaration diff cannot.
+3. AFTER Steps 1+2, also rebuild and use CSSOM to compare the complete
+   shared rule inventory—including grouping context, root-scoped
+   owners, keyframes, and animation references—not only selectors that
+   contain `.card-assembly`. Expected changes are the documented scope
+   transform and removal of the duplicate; any declaration/keyframe/
+   applicability delta is a defect, not an order move to wave through.
+4. Capture deterministic before/after screenshots for the same overlay
+   states at the same viewport/device scale with animations frozen.
+   Pixel-diff them on the same machine; expected changed pixels = 0.
+   If the environment cannot run Chromium, this is an explicit STOP for
+   a visual-equivalence refactor, not an operator-owed optional check.
+5. Chromium is the deterministic comparison harness, but the shipped
+   macOS surface is Tauri's WKWebView. After the zero-diff proof, run the
+   built app with `npm run tauri dev` and smoke the same representative
+   overlay states in the actual webview, paying particular attention to
+   the overlay-only `.card-root { display: contents; }` wrapper:
+   `::before`/`::after`, hit testing/pointer events, accessibility-tree
+   exposure, and card/below-block geometry must remain intact. Record the
+   macOS/WebKit version and result in the report. When the execution
+   environment cannot launch the GUI, add this exact check to the named
+   operator-smoke list and do not claim WebKit equivalence from Chromium;
+   it must be completed before Plan 111 is marked done. Any WebKit-only
+   regression is a STOP—retain a context-owned wrapper rule or choose a
+   different layout-neutral scoping mechanism rather than accepting drift.
 
 ### Step 3: gallery becomes representative
 Extract `PREVIEW_SAMPLES` from SettingsApp.tsx into
@@ -239,12 +334,22 @@ attribution.
       bugs
 - [ ] Preview overrides ≤ deliberate-adaptation count, each commented
 - [ ] Anti-mirror vitest check committed and passing —
-      comment-stripped, selector-shaped matching (a `.card-assembly`
-      mention inside a comment must NOT trip it; add that as a test
-      case of the check itself)
-- [ ] Normalized built-CSS diff (base vs refactor) in the report:
-      only `.card-root` prefixes and non-observable order moves;
-      declaration-level deltas fixed or explicitly classified
+      every Step-0 shared selector barred from context styles except
+      reviewed allowlist; fixtures cover comments, assembly and
+      non-assembly duplicates, comma lists, and grouping rules
+- [ ] CSSOM inventory proves root owners/grouping rules/keyframes and
+      declarations preserved; entry-file tests pin shared-before-local
+      import order and the special selector transforms are enumerated
+- [ ] Before/after computed-style + bounding-rect JSON is identical for
+      the representative overlay/preview states; deterministic frozen-
+      animation screenshot pixel diff reports zero changed pixels
+- [ ] Fail-fast Chromium/injection/comparator/cascade preflight passed
+      before edits; artifact paths and exact commands recorded
+- [ ] Actual Tauri/WKWebView smoke passed for the representative overlay
+      states, including `display: contents` pseudo-elements, hit testing,
+      accessibility exposure, and geometry; if GUI access was unavailable,
+      the named operator-smoke item remains unchecked and the plan is not
+      marked done
 - [ ] Gallery covers compact/live/weather/news-compact + the original
       four; fixtures live outside SettingsApp.tsx
 - [ ] `git diff master -- src-tauri/` → empty (this diffs against
@@ -264,6 +369,8 @@ attribution.
   specificity ad hoc).
 - The live-ESPN fixture requires inventing wire shapes not found in
   any existing test fixture.
+- The actual WKWebView smoke finds a regression caused by the wrapper or
+  shared-CSS extraction that the Chromium proof did not expose.
 - 107/110 not merged (preflight).
 
 ## Maintenance notes

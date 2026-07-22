@@ -93,7 +93,9 @@
 StatusRailCard.tsx`, its test file, `src/useDelayedSwap.ts` (or
 wherever the hook lives) IF Step B needs a rendered-state export it
 doesn't have, `src-tauri/src/lib.rs` and/or `engine.rs`/`queue.rs`
-for Step C's log line only, `docs/TESTING_STRATEGY.md` §0 (counts,
+for Step C's queue-owned sample state, pure predicate, emission-boundary
+wiring, warning, and focused tests (instrumentation only—no queue
+behavior or wire-shape change), `docs/TESTING_STRATEGY.md` §0 (counts,
 last).
 
 **Out of scope**: celebration total durations (plan 100's 2× stands);
@@ -175,7 +177,12 @@ Directional contract:
 Implementation, in order of preference:
 1. **Preferred: pure derived state, hook untouched** — drive geometry
    from `showing || renderedShowing` (true when EITHER the live slot
-   shows or delayed content is still mounted). This yields exactly
+   shows or delayed content is still mounted), and choose the geometry
+   source explicitly: `geometrySlot = showing ? slot : renderedSlot`.
+   Entrance therefore reads priority/expanded from the new LIVE slot;
+   exit reads them from the still-mounted RENDERED slot. Derive the
+   shell priority class and `expanded` class from `geometrySlot`, never
+   from the boolean alone. This yields exactly
    the directional contract above with zero hook changes; plan 078's
    tested swap semantics stay byte-identical. (This is why the
    reviewer-suggested hook restructuring is NOT the first move: the
@@ -203,6 +210,19 @@ correct); (3) an EXPANDED card's showing→idle exit keeps its
 expanded class until the swap (the two-stage collapse is the bug
 this pins); (4) plan 105 bare-mode tests untouched and green.
 
+**Browser motion gate (UI evidence, not jsdom)**: in headless Chromium
+at a fixed viewport, inject deterministic expanded and compact slots,
+then drive each to idle while sampling `.card-assembly` and
+`.below-block` bounding rects/classes at 0/110/220/400ms. Width must
+move monotonically from its showing endpoint to idle—no reversal and
+no intermediate value outside the two endpoints—and the expanded
+class must survive through the 220ms content swap. Save the trace plus
+a four-frame contact sheet to the scratchpad/report. For Step A, freeze
+the goal burst at its peak frame and save a 2× screenshot plus computed
+z-index evidence showing content above the burst. These browser checks
+are mandatory on the dev machine; physical-notch feel remains the
+operator smoke check.
+
 ### Step C: TTL-restart instrumentation (cheap, log-only)
 **Corrected at plan review (2026-07-22)** — the original predicate
 (`new_remaining > prev_remaining + slack`) misses the canonical
@@ -218,18 +238,42 @@ Predicate (pure, unit-tested — following the pure-decision-vs-boundary
 split that CLAUDE.md cites via TESTING_STRATEGY §4.4; §4.4 itself is
 the presentation.rs case of that pattern, not a TTL section — cite
 the PATTERN, not the section, in code comments):
-`fn is_ttl_restart(prev_remaining_ms, elapsed_since_prev_emission_ms,
-hover_held_ms, new_remaining_ms, slack_ms) -> bool` — restart iff
-`new_remaining > prev_remaining - (elapsed - hover_held) + slack`
-(saturating; hover-held time legitimately doesn't consume TTL, and
-097's fix already bounds supersede top-ups — slack ~500ms covers
-scheduling jitter). The emit path must therefore retain per-item
-`(item id, remaining_ms, emission Instant)` from the previous
-emission, plus whatever hover-held accounting the queue already
-tracks (097 added the hover-adjusted anchor — reuse it; if
-hover-held isn't cheaply readable at the emit site, pass the hovered
-flag and treat a held period as unbounded credit, logging it as a
-caveat in the warn line).
+`fn is_ttl_restart(prev_ttl_ms, prev_remaining_ms,
+elapsed_since_prev_emission_ms, hover_held_delta_ms, new_ttl_ms,
+new_remaining_ms, slack_ms) -> bool`.
+
+First, a changed total window (`new_ttl_ms != prev_ttl_ms`) is NOT a
+restart: manual expansion and a legitimate Topic-supersede top-up both
+change `ttl_ms`, so treating either as suspicious would create the
+detector's most likely false positive. With an unchanged window,
+restart iff `new_remaining > prev_remaining - (elapsed -
+hover_held_delta) + slack` (all subtraction saturating; slack ~500ms
+covers scheduling jitter).
+
+**State placement is fixed, not open-ended.** `SingleSlotQueue`
+already owns `last_emitted: Option<SlotState>` and all hover accounting;
+add one adjacent queue-owned `TtlEmissionSample` field containing item
+id, ttl/remaining, emission `Instant`, and the cumulative hover-held
+total as of that sample. Do NOT use a process-global static or an
+engine-side map: both duplicate queue identity/lifetime, complicate
+parallel tests, and can leak samples across Engine instances. Add a
+small queue helper that returns cumulative hover-held time at an
+injected `now` (banked total plus the in-flight session when present),
+so the detector subtracts only the DELTA since the prior sample.
+
+Observe every attempted slot-state wire emission, including the
+unconditional `emit_current_blocking` page-load re-emit, not just
+`slot_state_if_changed`; otherwise a reload-triggered jump is invisible
+to the instrument. Parameterize the sampling helper with `Instant` so
+tests are deterministic and the state + timestamp are captured from
+one clock read. Reset the sample without warning when the item id
+changes or the state becomes Empty.
+
+Boundary of the evidence: this Rust warning detects a BACKEND WIRE
+jump. A visible restart with no warning implicates frontend remount/
+re-anchor behavior instead; state that explicitly near the detector
+and in the implementation report rather than claiming it can observe
+a React-only restart.
 On detection, `tracing::warn!` one line with: item id, prev/new
 remaining, elapsed, hover context, whether a supersede happened this
 tick (omit if not cheaply available). No behavior change, no config.
@@ -237,9 +281,12 @@ tick (omit if not cheaply available). No behavior change, no config.
 (8000→~3000) → no warn; (b) hover-held 5s then re-emit 8000 → no
 warn; (c) the canonical pattern (8000, 5s elapsed unhovered, re-emit
 8000) → WARN — this case is the whole point and must be red without
-the elapsed adjustment; (d) small jitter within slack → no warn.
-Plus one queue-driven test that a legitimate hover-pause emission
-sequence never fires the warn. `cargo test --locked` green.
+the elapsed adjustment; (d) small jitter within slack → no warn;
+(e) a legitimate supersede/manual-expand change where `ttl_ms` grows
+→ no warn; (f) a new item id → sample reset, no warn. Plus queue-driven
+tests that a hover-pause sequence never warns and an unconditional
+page-load re-emit participates in sampling without warning.
+`cargo test --locked` green.
 
 ### Step D: gates + §0
 All frontend gates + all rust gates → clean. Update
@@ -256,10 +303,11 @@ All frontend gates + all rust gates → clean. Update
 - [ ] Step B's four tests pass; entrance geometry applies on the
       promotion render (today's width-leads-content entrance pinned,
       not removed); plan 105 bare tests unmodified
-- [ ] TTL predicate is a pure tested function taking elapsed +
-      hover-held; test (c) — reset-to-initial after silent elapsed —
-      passes and is red without the elapsed adjustment; warn wired
-      into the emit path; hover-pause does not trigger it
+- [ ] TTL predicate is a pure tested function taking ttl, elapsed +
+      hover-held delta; queue-owned sample state covers changed emits
+      AND page-load re-emits; test (c) — reset-to-initial after silent
+      elapsed — passes and is red without the elapsed adjustment;
+      changed ttl/new id/hover pause do not trigger it
 - [ ] Mirror law held (`preview-overlay.css` diff mirrors `styles.css`)
 - [ ] All gates clean; §0 matches observed counts; only in-scope files
 
@@ -269,17 +317,18 @@ All frontend gates + all rust gates → clean. Update
   fallback fail to produce the contract (report both attempts; do not
   invent a third mechanism unreviewed).
 - The rounding workaround removal changes any entering-direction test.
-- Step C's emit path has no per-item previous-emission state to
-  compare against and adding it would need a new struct field on a
-  hot path (report; a static in the emit fn or an engine-side map are
-  both fine, but don't contort).
+- Step C cannot route every slot-state emission attempt through the
+  queue-owned sampling helper without changing the public wire contract
+  or introducing a second source of queue truth (report the uncovered
+  path; do not fall back to a global static/map).
 - Content mismatch against the excerpts above.
 
 ## Maintenance notes
 
-- The visual result of A and B is operator-owed on sight (next
-  rebuild) — jsdom cannot judge paint order or animation feel; this
-  matches the repo's standing manual-checklist practice.
+- Step A/B have deterministic headless-browser evidence in addition to
+  unit tests. Physical-notch feel is still operator-owed because the dev
+  machine is notchless; that smoke check judges polish, not correctness
+  of the stacking/directional contracts already pinned above.
 - If the operator's TTL restart recurs post-107, the warn line turns
   the anecdote into a timestamped, context-carrying repro. If it
   never fires again across a week of real use, 097 probably was the

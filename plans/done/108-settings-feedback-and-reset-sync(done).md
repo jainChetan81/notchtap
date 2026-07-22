@@ -32,9 +32,11 @@ From the verified 2026-07-22 external review:
   Relaunch. Every other appearance mutation hot-applies. Two controls
   that look identical to the user follow different contracts; the
   window lies about the state of the world.
-- **B.** Six action paths fail silently or console-only: send-test,
-  appearance hot-apply, history read/clear, diagnostics read,
-  connector-health read, defaults fetch. Three are empty-bodied
+- **B.** Seven operation paths fail silently or console-only:
+  send-test, appearance hot-apply, history read, history clear,
+  diagnostics read, connector-health read, defaults fetch. History
+  read and clear are independently failing operations, not one grouped
+  “history path.” Three are empty-bodied
   `.catch(() => { /* comment */ })` handlers (multi-line, comment
   only — NOT literal one-liners; this matters for why no grep can
   gate them, see Done criteria). The
@@ -71,7 +73,7 @@ All in `src/settings/SettingsApp.tsx` (1,939 lines):
     consequence — "leave defaults null — Reset to defaults stays
     disabled". On failure the Reset-to-defaults button is disabled
     FOREVER with zero explanation; the user can't distinguish "not
-    loaded yet" from "failed". This is the sixth silent path, and it
+    loaded yet" from "failed". This is the seventh silent operation, and it
     directly feeds Step A's reset flow.
 - `SecretField` (`:660`) has real `error`/`saving` state — the
   pattern to imitate.
@@ -117,42 +119,59 @@ in either:
    live-apply are separate concerns; say so in a comment).
 **Verify**: tests — mock `invoke`; assert `set_appearance` is called
 with the saved values on Reset and default values on
-Reset-to-defaults; assert existing hot-apply tests unchanged.
+Reset-to-defaults; reject each reset's `set_appearance` invoke and
+assert the shared visible live-apply error renders while the form still
+resets; assert existing hot-apply tests unchanged.
 
-### Step B: visible outcome for every action
+### Step B: visible outcome for every operation
 Introduce ONE small reusable mechanism, not five ad-hoc ones:
 1. A `useActionStatus()` hook (or equivalent tiny state triple):
    `{state: "idle" | "pending" | "ok" | "error", message?}` with an
    auto-clear timer for `ok` (~2.5s; keep `error` sticky until next
-   attempt).
-2. An inline `<ActionStatus>` presentational element +
-   **one `aria-live="polite"` region** for the section it sits in
-   (screen readers hear "Sent" / failures; don't create five
-   competing live regions — one per action row is fine if simpler,
-   but each must be `aria-live`).
-   **(Corrected at review round 2)** — `aria-live` is for
-   USER-INITIATED actions only. The connector-health read is NOT a
-   user action: it's a passive `setInterval(fetchHealth, 5000)` poll
+   attempt). Its runner API carries attempt origin explicitly, e.g.
+   `run(action, { announce: true | false })`; mixed handlers must not
+   rely on one static component prop to remember whether the current
+   result came from mount or a button click.
+2. An inline `<ActionStatus>` presentational element with an explicit
+   `announce` option. When true it owns one `aria-live="polite"` region
+   for that action row; when false it renders ordinary discoverable
+   status with no live-region attribute. Never create competing live
+   regions for one operation.
+   **(Corrected at review round 3)** — announcement behavior is chosen
+   per ATTEMPT. `aria-live` is for USER-INITIATED attempts only.
+   Connector health is always passive; defaults is mount-only passive;
+   history and diagnostics each perform a passive mount attempt, while
+   history Clear and diagnostics Refresh are interactive. (History has
+   no manual Refresh control; do not invent one.) The connector-health read is
+   a passive `setInterval(fetchHealth, 5000)` poll
    (verified at `:1751`) — announcing every failed poll would chant
    "Health unavailable" at an AT user every five seconds. Diagnostics
-   is NOT passive (cold-read verified: `DiagnosticsSection`'s
-   `refresh()` runs on a mount-only `useEffect` at `:1245` plus a
-   Refresh button — no interval), so it takes the normal
-   user-initiated treatment. Only connector-health gets the
-   passive-poll rule: TRANSITION-ONLY inline status — render
+   is mixed: its mount-only `useEffect` attempt is passive and its
+   Refresh-button attempt is interactive. History's mount load is
+   passive; clear is interactive. Defaults is passive and discoverable
+   beside the disabled footer control. Passive attempts render useful
+   inline state but carry NO `aria-live`; interactive attempts may
+   announce. Connector-health additionally gets the passive-poll rule:
+   TRANSITION-ONLY inline status — render
    the state change once when ok→failed or failed→ok flips,
    deduplicate identical consecutive failures, NO `aria-live` on
    the element (it's ambient state, discoverable on navigation, not
    an announcement).
-3. Wire it into the six paths:
+3. Wire it into the seven operations:
    - Send test → pending disables the button; success shows "Queued";
      failure shows the reason string.
    - `updateAppearance` / `applyAppearanceLive` failure → "Live
      preview couldn't update — will apply on Save & Relaunch".
+     Slider/segmented-control hot-apply is high-frequency: do not
+     announce pending/ok on every adjustment. Render/announce one
+     deduplicated error only; the next successful apply clears it.
    - History `refresh` failure → inline "Couldn't load history"
-     where the list would render; `clear` failure → inline error near
-     the button.
-   - Diagnostics read failure → inline "Couldn't read log lines".
+     where the list would render (passive mount attempt, no live
+     announcement); `clear` failure → inline error near the button,
+     and success → "History cleared" (interactive, polite live).
+   - Diagnostics mount-read failure → inline "Couldn't read log
+     lines" without live announcement; the same failure from the
+     Refresh button is interactive and politely announced.
    - Connector-health read failure → inline "Health unavailable"
      (transition-only, deduped, no aria-live — see the passive-poll
      rule in 2).
@@ -164,15 +183,18 @@ Introduce ONE small reusable mechanism, not five ad-hoc ones:
      so.
 4. Keep the console.error lines (they cost nothing and help dev), but
    they are no longer the ONLY signal.
-**Verify**: tests per path (all six) — mock `invoke` rejection;
-assert the inline message renders and the button (where one exists)
-disables while pending. `aria-live` presence is asserted ONLY on the
-five user-initiated paths; the connector-health test asserts its
-status element has NO aria-live attribute (the passive-poll rule —
-asserting presence there would contradict step 2). Assert success
-path for send-test shows then clears. For defaults: a rejected
-`get_default_config` renders the explanation next to the disabled
-button.
+**Verify**: independently mock rejection for EACH of the seven
+operations — send; appearance apply; history load; history clear;
+diagnostics load/refresh; connector health; defaults. History load and
+clear MUST be distinct tests with messages in their distinct UI
+locations. Diagnostics must test passive mount and interactive Refresh
+announcement behavior separately. Assert the inline message renders
+and the button (where one exists) disables while pending. Assert
+`aria-live` only for an interactive attempt; defaults, connector
+health, history mount, and diagnostics mount have none. Assert slider
+hot-apply does not announce pending/ok chatter. Assert send-test success
+shows then clears; clear success shows "History cleared." For defaults,
+rejection renders the explanation next to the disabled button.
 
 ### Step C: gates + §0
 `npx vitest run`, `npx tsc --noEmit`, `npx biome ci .`,
@@ -181,7 +203,10 @@ button.
 ## Done criteria
 
 - [ ] Both resets invoke `set_appearance` (tests pin values)
-- [ ] All six action paths render visible pending/ok/error states.
+- [ ] All seven operations render context-appropriate visible status;
+      history load/clear have independent tests and locations; passive
+      attempts do not announce; high-frequency appearance changes
+      announce only deduplicated errors.
       **(Corrected at review round 2; grep DELETED at cold-read)**:
       the per-path rejection tests are the ONLY gate. The previously
       suggested `grep -n "catch(() => {})"` is vacuous — cold-read
@@ -192,17 +217,19 @@ button.
       grep). A gate that passes before the fix proves nothing; do
       not reintroduce it.
 - [ ] Passive-poll status (connector-health) is transition-only and
-      carries NO aria-live; a test drives two consecutive failed
-      polls and asserts a single rendered state (no duplicate
-      announcements)
-- [ ] Exactly one status mechanism (hook/component) reused by all six
+      carries NO aria-live; a test drives two consecutive failed polls
+      and asserts one state-transition/render callback, then failed→ok
+      and one recovery transition (DOM element count alone does not
+      prove deduplication)
+- [ ] Exactly one status mechanism (hook/component, with explicit
+      announce/passive behavior) reused by all seven operations
 - [ ] `git diff master -- src-tauri/` → empty
 - [ ] All gates clean; §0 matches observed counts; only in-scope files
 
 ## STOP conditions
 
 - Any path turns out to need a NEW rust command to report properly
-  (it should not — all six already return promises whose rejection
+  (it should not — all seven already return promises whose rejection
   carries the failure).
 - The `formGeneration` remount (plan 027) interferes with status
   state lifetime in a way that needs restructuring beyond lifting the
@@ -214,5 +241,5 @@ button.
 - 109 (typography/semantics) will restyle these status elements; keep
   their class names semantic (`.action-status`, `.is-error`…) so 109
   only touches CSS.
-- If a sixth silent action appears later, the hook is the contract:
+- If another silent operation appears later, the hook is the contract:
   no new invoke path ships without an ActionStatus.

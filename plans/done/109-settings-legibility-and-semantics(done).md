@@ -108,7 +108,7 @@ Replace the ad-hoc sizes with a token scale in `:root`:
 6.5→9, 7→9, 8→10, 8.5→10, 9→10, 10→11, 11→11, 19→`--fs-title`.
 Judgment calls allowed one step either way where layout demands, but
 NOTHING below 9px survives. Convert declarations to the tokens (so
-the next pass is a token edit, not 28 greps).
+the next pass is a token edit, not 29 greps).
 
 **(Widened at plan review, 2026-07-22)** — the 29 `font-size`
 declarations are NOT the whole surface: settings.css also sets sizes
@@ -116,18 +116,29 @@ through `font:` SHORTHAND, verified down to 8px — e.g. `:478`
 (`font: 620 8.5px/1 …`), `:804` (`font: 700 8px/1 …`), `:846`
 (`font: 620 8.5px/1 …`), plus more 9–10px shorthands. Remap these on
 the same scale. Shorthand can't take `var()` for the size portion
-cleanly with the weight/line-height packed in — either split those
-declarations into longhand (`font-family`/`font-size: var(--fs-*)`/
-`font-weight`/`line-height`) or keep the shorthand with the literal
-remapped px and a `/* --fs-secondary */` comment; prefer longhand
-where it doesn't balloon the diff.
+cleanly with the weight/line-height packed in, so split EVERY sized
+shorthand into longhand (`font-family`/`font-size: var(--fs-*)`/
+`font-weight`/`line-height`). Do not keep comment-tagged literal-size
+exceptions: they would pass the 9px floor while defeating this step's
+single-token-edit maintenance goal.
 **Verify**: `grep -nE "font-size|font:" src/settings/settings.css` →
-every size is a `var(--fs-*)` or a literal ≥9px; zero
+every `font-size` is a `var(--fs-*)`; no sized `font:` shorthand
+remains; zero
 6.5/7/8/8.5px hits in EITHER form. (The grep also matches size-less
 lines — `font: inherit` at `:48` and any `font-family` — these carry
 no px size; skip them, they are not violations. Baseline cold-read:
 29 `font-size` + 9 sized `font:` shorthands, sub-9px present in both
 forms, so this gate genuinely fails before the fix.)
+
+Use the browser sweep in Step D as the behavioral half of this gate:
+every rendered SETTINGS-CHROME text node (explicitly exclude the
+out-of-scope overlay-card descendants inside the preview) computes to
+≥9px, every referenced `--fs-*` token is declared and ≥9px, and no
+undeclared alias/calc bypasses the scale. Capture before/after computed
+font family/style/variant/stretch/weight/size/line-height for the nine
+converted shorthand sites; add reset-relevant longhands where needed so
+splitting `font:` does not accidentally begin inheriting properties the
+shorthand previously reset.
 
 ### Step B: contrast tokens
 1. Retune tokens to AA on `--surface`: `--text-muted` ≥ 4.5:1
@@ -158,17 +169,39 @@ and reports the full table: every text color ≥4.5:1 on both
 surfaces except comment-marked disabled/decorative sites (each
 listed in the report). Belt-and-suspenders grep for the seven known
 hexes → 0, but the SCRIPT SWEEP is the gate — the grep alone proves
-nothing about colors the list missed.
+nothing about colors the list missed. At Step D's real-browser pass,
+also sample every rendered text element in all ten sections with
+`getComputedStyle`, pair its foreground with its actual effective
+background (including local raised/hover/status surfaces), and report
+any <4.5:1 result. The two-global-surface script is the static floor;
+the computed-style sweep closes its local-background blind spot.
+The sweep must resolve nested/fallback variables and rgba alpha,
+foreground/ancestor opacity, `currentColor`, and inherited colors. Walk
+ancestors and alpha-composite backgrounds to an opaque surface. Fail
+closed on unsupported forms; gradients/background images are listed for
+visual inspection rather than assigned a fabricated ratio. Exercise
+every selector state that changes color/background/opacity (selected,
+hover, focus, disabled, success, warning, error), with a small safety
+margin above 4.5 rather than accepting rounding-edge values.
 
 ### Step C: semantic markup
 Replace the emulations, preserving visual style via existing classes:
-1. `role="group"` ×3 → `<fieldset>` + `<legend>` (legend can be
+1. `role="group"` ×3 → `<fieldset>` + a non-empty `<legend>` that
+   supplies the intended accessible group name (legend can be
    visually styled as the current label; `fieldset` reset:
-   `border: 0; padding: 0; margin: 0; min-inline-size: min-content;`).
+   `border: 0; padding: 0; margin: 0; min-inline-size: 0;`). The zero
+   minimum is deliberate: `min-content` can force a segmented-control
+   fieldset wider than the 400px fitness floor.
+   Do not propagate a `disabled` fieldset state that the old wrapper did
+   not have; test each group by accessible name.
 2. Rotation order `role="list"`/`listitem` → `<ul>`/`<li>`
-   (`list-style: none; padding: 0;`).
-3. Shortcut cheatsheet `role="table"` cluster → `<table>`/`<tr>`/
-   `<td>`/`<th scope="row">` semantic table.
+   (`list-style: none; padding: 0; margin: 0;`).
+3. Shortcut cheatsheet → a valid native table: `<table
+   aria-label="Keyboard shortcuts">`, `<thead>` with three column
+   headers (Keys/Action/Status), and `<tbody>` rows. The Action cell is
+   `<th scope="row">`; Keys and Status are `<td>` (Keys may contain
+   `<kbd>`). Remove emulated roles and any inherited `tabIndex`; the
+   display-only table is not a keyboard stop.
 4. `noLabelWithoutControl` (`:1437`) → wire the `<label>` to its
    control (`htmlFor`) or restructure.
 5. Migrate the tests that query these roles: `getByRole("group")`
@@ -177,6 +210,10 @@ Replace the emulations, preserving visual style via existing classes:
    survive VERBATIM (that's the point of roles); update only what
    breaks and report which.
 6. Delete every now-unneeded `biome-ignore lint/a11y` suppression.
+   Tests also pin native relationships, not roles alone: FIELDSET is
+   named by LEGEND; LI children belong to UL; THEAD/TBODY/TH/TD belong
+   to TABLE; each label resolves to its intended control. A manually
+   retained `role` must not let fake semantics pass.
 **Verify**: `grep -c "biome-ignore lint/a11y" src/settings/SettingsApp.tsx`
 → 0 (if any legitimately must remain, report each with its reason —
 target is 0). `npx biome ci .` clean WITHOUT them.
@@ -193,7 +230,16 @@ The type bump grows every section; the floor it must survive is the
    every section must scroll to reach ALL controls (no dead
    clipping), no control paints outside its container, keyboard
    traversal (Tab order) reaches every interactive element with a
-   visible focus ring, and the section nav remains operable.
+   visible focus ring, and the section nav remains operable. While each
+   section is mounted, run Step B's computed foreground/background
+   sampling and resolve or explicitly classify every failure, including
+   translucent/local surfaces.
+   Record `window.innerWidth/innerHeight` (must be 400×480 CSS px), no
+   unintended horizontal/body overflow, intended content-scroller
+   reachability, and focus not hidden by fixed/sticky UI. Keyboard rows
+   distinguish Tab/Shift+Tab order from arrow-key operation inside
+   native radio/segmented groups; disabled controls are intentionally
+   skipped, focus auto-scrolls into view, and no focus trap exists.
 3. Fix what fails (usually: a fixed-height container needing
    `overflow-y: auto`, or a flex row needing wrap).
 **Verify**: report the per-section pass/fail table at 400×480; any
@@ -208,9 +254,10 @@ smoke list.
 
 ## Done criteria
 
-- [ ] No text size below 9px in `font-size` OR `font:` shorthand
-      form; sizes tokenized (or comment-tagged where shorthand kept)
-- [ ] Script sweep of ALL text colors ≥4.5:1 on both surfaces
+- [ ] No text size below 9px; every sized declaration uses a `--fs-*`
+      token through longhand `font-size`; zero sized `font:` shorthands
+- [ ] Static sweep of ALL text colors ≥4.5:1 on both global surfaces
+      plus rendered computed-style sweep across all ten sections
       (full table pasted into the report; disabled/decorative
       exemptions enumerated); zero raw dim hexes from the known-seven
       list
