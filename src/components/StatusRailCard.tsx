@@ -12,6 +12,7 @@ import {
   footballEventKindFor,
   livePillVariantFor,
 } from "../lib/presentation";
+import { presentationFacts } from "../lib/presentationFacts";
 import { weatherArtFor } from "../lib/weatherArt";
 import { useDelayedSwap } from "../useDelayedSwap";
 import type { EspnMeta, SlotState } from "../useSlotState";
@@ -272,6 +273,23 @@ export function StatusRailCard({
   // doesn't flash back on mid-exit before the swap actually settles.
   const trueIdle = !showing && !renderedShowing && !exiting && !hovered;
 
+  // 2026-07-23 review fix: `.idle-face` is CSS-hidden (`display: none`)
+  // for the ENTIRE lifetime of a real notch-hardware device — see
+  // overlay-card.css's `:root[data-notchtap-mode="hud"] .card-root
+  // .idle-face` rule, the only thing that ever flips it to `display:
+  // flex`. That gate is the boot-time device mode (`presentationFacts`),
+  // NOT `restingState`/`bare` (a user-chosen idle-LOOK preference that's
+  // orthogonal to whether hardware notch pixels exist — `.bare` never
+  // touches `.idle-face`'s grid cell). Read once — like App.tsx's own
+  // `presentationFacts()` call, this reflects a boot-time global that
+  // never changes for the process's lifetime, so there's nothing to
+  // resubscribe to. On real notch hardware this keeps `<IdleFace>`
+  // unmounted entirely, so its reveal-delay timer and the gaze/blink
+  // `setTimeout` loops inside it never arm in the first place — mirrors
+  // how `FlankClock` below is conditionally rendered rather than always
+  // mounted-but-hidden.
+  const idleFaceEligible = useMemo(() => presentationFacts().mode !== "notch", []);
+
   // plan 091: the outer shell (`.card-assembly`) now owns ONLY geometry-
   // and-effects classes — priority accent, hover diagnostic, the goal/
   // red-card pulse and the live-match celebrations. `news-shade`/`wx-card`
@@ -426,8 +444,12 @@ export function StatusRailCard({
       {/* the idle face — purely additive decoration in the same grid cell
           as .synthetic-cutout above (grid-column 2 / grid-row 1,
           overlay-card.css); it owns none of the geometry/swap machinery,
-          only reads it via `trueIdle`. */}
-      <IdleFace idle={trueIdle} />
+          only reads it via `trueIdle`. Gated on `idleFaceEligible`
+          (2026-07-23 review fix): CSS never paints it on real notch
+          hardware, so it's not rendered at all there — otherwise its
+          internal reveal/gaze/blink timers would run forever for a node
+          that can never be seen. */}
+      {idleFaceEligible && <IdleFace idle={trueIdle} />}
       <div className="flank-right">
         {/* plan 091: StatusDots is idle-only furniture — mounted whenever
             idle-flavored content should be visible, so the dots fade out

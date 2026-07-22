@@ -1327,6 +1327,41 @@ describe("StatusRailCard", () => {
       act(() => vi.advanceTimersByTime(3000));
       expect(container.querySelector(".idle-face")).not.toBeNull();
     });
+
+    // 2026-07-23 review fix: on real notch hardware, `.idle-face` is
+    // CSS-hidden for the process's entire lifetime (overlay-card.css's
+    // `data-notchtap-mode="hud"` gate) — so the component must not even
+    // mount there, or its reveal/gaze/blink timers would run forever for
+    // a node nothing can ever see (a continuous idle-CPU cost).
+    describe("on real notch hardware (presentationFacts().mode === 'notch')", () => {
+      beforeEach(() => {
+        window.__NOTCHTAP_MODE__ = "notch";
+      });
+
+      afterEach(() => {
+        delete window.__NOTCHTAP_MODE__;
+      });
+
+      it("never reveals the face even long past the reveal delay while truly idle", () => {
+        const { container } = render(<StatusRailCard slot={{ state: "empty" }} hovered={false} />);
+        act(() => vi.advanceTimersByTime(60_000));
+        expect(container.querySelector(".idle-face")).toBeNull();
+      });
+
+      it("never mounts the face at all — no new timer gets scheduled by it as idle continues", () => {
+        render(<StatusRailCard slot={{ state: "empty" }} hovered={false} />);
+        // baseline: whatever unrelated timers this render already owns
+        // (e.g. FlankClock's own clock tick) — not zero, and not this
+        // fix's concern.
+        const baseline = vi.getTimerCount();
+        // on the "hud"/eligible path (the describe block above), this
+        // same idle state arms IdleFace's own reveal timer on top of
+        // that baseline. Here the count must never grow past it, proving
+        // IdleFace never mounted rather than merely staying invisible.
+        act(() => vi.advanceTimersByTime(60_000));
+        expect(vi.getTimerCount()).toBeLessThanOrEqual(baseline);
+      });
+    });
   });
 
   // plan 107 Step B: compact->idle as one directional state machine. The
