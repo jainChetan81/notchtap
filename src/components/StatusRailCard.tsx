@@ -166,7 +166,6 @@ export function StatusRailCard({
     }
   }
 
-  const expanded = showing && slot.expanded;
   // plan 082: weather ALERT cards carry their art derived from the live
   // slot's `wx-*` marker pairs — same live-`slot` basis as `news`/
   // `categoryClass` above (not `renderedSlot`), so the below-block's mood
@@ -191,6 +190,31 @@ export function StatusRailCard({
   const swapKey = showing ? slot.id : "idle";
   const { value: renderedSlot, exiting } = useDelayedSwap(slot, swapKey, 220);
   const renderedShowing = renderedSlot.state === "showing";
+
+  // plan 107 Step B: the outer shell's geometry (priority accent class +
+  // expanded width class) must not snap to idle the instant live
+  // `showing` goes false — during the 220ms delayed-swap exit above,
+  // below-block content is still showing-flavored (`renderedSlot`/
+  // `renderedShowing`), and the shell's width formula has to stay in
+  // lockstep with it or the card visibly shrinks to idle width WHILE the
+  // old content is still fading out (the "grows before shrinking" exit
+  // race the 105 ledger already named — entrance was always fine, see
+  // below). Entrance (idle->showing): `showing` is live-true on the very
+  // render the promotion arrives, so `slot.priority`/`slot.expanded`
+  // apply immediately — unchanged from before this plan. Exit
+  // (showing->idle): once `showing` goes false, fall back to
+  // `renderedSlot` for as long as IT is still showing-flavored
+  // (`renderedShowing`) — useDelayedSwap freezes that value for the
+  // whole exit window, so priority/expanded stay put until the swap
+  // actually completes. Only once both are false (the swap has settled)
+  // does geometry become idle. Pinned by StatusRailCard.test.tsx's
+  // "compact->idle geometry" describe block.
+  const geometryPriority = showing
+    ? slot.priority
+    : renderedShowing
+      ? renderedSlot.priority
+      : "idle";
+  const expanded = showing ? slot.expanded : renderedShowing && renderedSlot.expanded;
 
   // plan 105 (Step C): narrows plan 085's original "zero app-drawn
   // pixels" promise to "zero app-drawn pixels *until hovered*" — the old
@@ -218,7 +242,7 @@ export function StatusRailCard({
   // contract point 5), so there is no more "status" class to compute here.
   const cardClass = [
     "card-assembly",
-    showing ? slot.priority : "idle",
+    geometryPriority,
     expanded && "expanded",
     hovered && "hovered",
     // plan 105 (Step C): the bare-notch modifier — transparent flanks,
