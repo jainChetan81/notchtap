@@ -1,5 +1,14 @@
+/* plan 112 Step 3: color-scheme/font-family/color/background/
+   font-synthesis/text-rendering/font-smoothing (the non-custom-property
+   declarations this rule used to also carry) moved to base.css (Step 0
+   CSSOM row 0's "C+superseded" disposition) — the custom properties
+   below stay here verbatim, still the live source every not-yet-migrated
+   Step 4 rule in this file reads via var(...). --fs-caption/-secondary/
+   -body/-title also moved to base.css (same row), unchanged, bridged to
+   text-fs-* Tailwind utilities there; every var(--fs-*) reference in
+   this file keeps resolving unchanged regardless of which file defines
+   it. */
 :root {
-  color-scheme: dark;
   --window: #050607;
   --sidebar: #090a0c;
   --surface: #0d0f12;
@@ -33,23 +42,6 @@
   --error-border: #553438;
   --ok: #a3c9a8;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
-  /* plan 109: gentle type-scale bump (operator decision: 10-11px body,
-     9px floor — not the reviewed 12-13px). Every sized font-size or
-     font: shorthand in this file routes through these four tokens. */
-  --fs-caption: 9px;
-  --fs-secondary: 10px;
-  --fs-body: 11px;
-  --fs-title: 19px;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
-  color: var(--text);
-  background: var(--window);
-  font-synthesis: none;
-  text-rendering: optimizeLegibility;
-  -webkit-font-smoothing: antialiased;
-}
-
-* {
-  box-sizing: border-box;
 }
 
 /* plan 109: accessible-name-only text for native <legend>/<caption>
@@ -69,158 +61,28 @@
   border: 0;
 }
 
-html,
-body,
-#root {
-  width: 100%;
-  min-width: 400px;
-  height: 100%;
-  margin: 0;
-}
+/* plan 112 Step 3: html/body/#root sizing, the button/input/textarea
+   no-preflight reset, and .settings-window itself moved to base.css /
+   Tailwind utilities at the SettingsApp.tsx root wrapper (Step 0 CSSOM
+   rows 3,4,5,6,7,8). */
 
-body {
-  overflow: hidden;
-  background: var(--window);
-}
-
-button,
-input,
-textarea {
-  font: inherit;
-}
-
-button {
-  color: inherit;
-}
-
-button,
-label,
-input[type="checkbox"] {
-  -webkit-tap-highlight-color: transparent;
-}
-
-.settings-window {
-  width: 100%;
-  height: 100%;
-  min-height: 480px;
-  display: grid;
-  grid-template-columns: 140px minmax(0, 1fr);
-  overflow: hidden;
-  background: var(--window);
-}
-
-.settings-sidebar {
-  min-width: 0;
-  display: grid;
-  grid-template-rows: auto minmax(0, 1fr) auto;
-  border-right: 1px solid var(--divider);
-  background: var(--sidebar);
-}
-
-.sidebar-brand {
-  min-height: 71px;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 17px 14px 14px;
-  border-bottom: 1px solid var(--divider-soft);
-  color: #d8dade;
-  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
-  font-size: var(--fs-body);
-  font-weight: 700;
-  font-style: normal;
-  line-height: 1;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
-}
-
-.brand-slot {
-  width: 17px;
-  height: 8px;
-  flex: none;
-  border-radius: 2px 2px 5px 5px;
-  background: #d8dade;
-  opacity: 0.86;
-}
-
-.sidebar-nav {
-  display: flex;
-  flex-direction: column;
-  gap: 3px;
-  padding: 12px 8px;
-}
-
-.nav-item {
-  position: relative;
-  min-width: 0;
-  min-height: 38px;
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
-  align-items: center;
-  gap: 8px;
-  padding: 7px 8px;
-  border: 0;
-  border-radius: 6px;
-  outline: none;
-  background: transparent;
-  color: var(--text-secondary);
-  cursor: pointer;
-  text-align: left;
-  transition: color 140ms var(--ease), background 140ms var(--ease);
-}
-
-.nav-item::before {
-  content: "";
-  position: absolute;
-  top: 8px;
-  bottom: 8px;
-  left: -8px;
-  width: 2px;
-  border-radius: 0 2px 2px 0;
-  background: transparent;
-}
-
-.nav-item svg {
-  width: 14px;
-  height: 14px;
-  stroke-width: 1.75;
-}
-
-.nav-item > span:not(.soon-badge) {
-  min-width: 0;
-  overflow: hidden;
-  font-size: var(--fs-body);
-  font-weight: 560;
-  line-height: 1.25;
-  text-overflow: ellipsis;
-}
-
-.nav-item:hover:not(:disabled) {
-  background: rgba(255, 255, 255, 0.04);
-  color: var(--text);
-}
-
-.nav-item:focus-visible {
-  box-shadow: inset 0 0 0 1px var(--accent), 0 0 0 2px var(--focus-ring);
-}
-
-.nav-item.is-active {
-  background: var(--accent-soft);
-  color: #f7faff;
-}
-
-.nav-item.is-active::before {
-  background: var(--accent);
-}
-
-.nav-item:disabled {
-  grid-template-columns: 16px minmax(0, 1fr) auto;
-  /* disabled nav entries ("coming soon"): relaxed >=3:1 tier is
-     intentional, see --text-disabled definition in :root. */
-  color: var(--text-disabled);
-  cursor: not-allowed;
-}
-
+/* plan 112 Step 3: .settings-sidebar/.sidebar-brand/.brand-slot/
+   .sidebar-nav/.nav-item(+states)/.settings-pane/.settings-form/
+   .content-header(+h1/p) moved to utilities at their SettingsApp.tsx
+   call sites (Step 0 CSSOM rows 9-21, 25-30). `.nav-item:disabled` and
+   `.soon-badge` had no JSX consumer at all in the live tree (no nav
+   entry is ever rendered disabled) — dropped outright rather than
+   ported, corrected from this row's original "utility" disposition to
+   "obsolete" now that Step 3 confirmed there's no markup to carry
+   forward. `.sidebar-meta` (idx 24, its own rule) is also gone — ported
+   to utilities. The shared mono-font selector list below (idx 22) stays
+   as-is: `.field-caption`/`.unit`/`.status-chip`/`.shortcut-status` are
+   still Step 4 (not yet migrated) and still read this rule via their
+   unchanged classNames; `.soon-badge`/`.sidebar-meta`/`.section-index`/
+   `.relaunch-note`/`.error-title` staying listed here too is harmless
+   (matches nothing or duplicates a `font-mono` utility already applied
+   at the call site) — deleting them from a list still serving other
+   selectors isn't required and risks a typo for zero benefit. */
 .soon-badge,
 .sidebar-meta,
 .section-index,
@@ -233,98 +95,13 @@ input[type="checkbox"] {
   font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
 }
 
-.soon-badge {
-  padding: 2px 4px;
-  border: 1px solid #292c32;
-  border-radius: 3px;
-  font-size: var(--fs-caption);
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
-
-.sidebar-meta {
-  padding: 11px 14px 13px;
-  border-top: 1px solid var(--divider-soft);
-  color: var(--text-muted);
-  font-size: var(--fs-secondary);
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.settings-pane {
-  min-width: 0;
-  min-height: 0;
-  display: grid;
-  grid-template-rows: minmax(0, 1fr) auto;
-  background: var(--window);
-}
-
-.settings-form {
-  min-width: 0;
-  min-height: 0;
-  display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
-  overflow: hidden;
-}
-
-.content-header {
-  padding: 22px 20px 17px;
-  border-bottom: 1px solid var(--divider);
-  background: #07080a;
-}
-
-.section-index {
-  margin-bottom: 8px;
-  color: var(--text-muted);
-  font-size: var(--fs-secondary);
-  font-weight: 700;
-  letter-spacing: 0.11em;
-  text-transform: uppercase;
-}
-
-.content-header h1 {
-  margin: 0;
-  color: var(--text);
-  font-size: var(--fs-title);
-  font-weight: 650;
-  line-height: 1.15;
-  letter-spacing: -0.018em;
-}
-
-.content-header p {
-  max-width: 290px;
-  margin: 6px 0 0;
-  color: var(--text-secondary);
-  font-size: var(--fs-body);
-  line-height: 1.45;
-}
-
-.section-scroll {
-  min-height: 0;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-  scrollbar-color: #2a2d33 transparent;
-  scrollbar-width: thin;
-}
-
-.section-scroll::-webkit-scrollbar {
-  width: 7px;
-}
-
-.section-scroll::-webkit-scrollbar-thumb {
-  border: 2px solid transparent;
-  border-radius: 8px;
-  background: #30333a;
-  background-clip: padding-box;
-}
-
-.section-content {
-  min-height: 100%;
-  padding: 16px 16px 24px;
-}
+/* plan 112 Step 3: .section-scroll's scrollbar theming moved to base.css
+   (Step 0 CSSOM rows 31-33; className stays unchanged on the JSX
+   element, min-h-0/overflow-y-auto/overscroll-contain now applied there
+   as utilities alongside it). .section-content moved to utilities at
+   its call site (row 34). .section-stack (row 35, its own separate
+   rule) stays here — its only consumers today are still-unmigrated
+   Step 4 per-source section bodies. */
 
 .section-stack {
   display: grid;
@@ -717,13 +494,9 @@ textarea:focus-visible,
   text-transform: uppercase;
 }
 
-.relaunch-note {
-  margin: -2px 0 11px;
-  color: var(--text-muted);
-  font-size: var(--fs-caption);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-}
+/* plan 112 Step 3: .relaunch-note (Step 0 CSSOM row 81) moved to
+   utilities at both call sites (ConnectorHealthLine, ConnectorsSection's
+   "applied after relaunch" note). */
 
 .secret-row {
   padding: 11px 0 12px;
@@ -786,138 +559,26 @@ textarea:focus-visible,
   line-height: 1.4;
 }
 
-/* Shared visible-outcome status (plan 108) — one mechanism reused by every
-   operation that can silently fail: send-test, appearance hot-apply,
-   history read/clear, diagnostics read, connector-health poll, defaults
-   fetch. State-only styling here; plan 109 restyles these without touching
-   markup, so class names stay semantic. */
-.action-status {
-  margin-top: 6px;
-  font-size: var(--fs-secondary);
-  line-height: 1.4;
-}
+/* plan 112 Step 3: .action-status (+ .is-pending/.is-ok/.is-error) and
+   .test-button-wrap (+ its nested .action-status override) moved to
+   utilities on the ActionStatus/TestButton components (Step 0 CSSOM
+   rows 90-95) — markup/announce/dedup behavior unchanged, Plan 108's
+   contract intact, only the color moves (text-muted-foreground/
+   text-overlay-teal/text-destructive per the token table). */
 
-.action-status.is-pending {
-  color: var(--text-muted);
-}
+/* plan 112 Step 3: .secondary-button/.footer-button/.primary-button/
+   .secret-save/.test-button (Step 0 CSSOM rows 96-104, 125) — every
+   JSX call site now uses the generated shadcn Button
+   (src/components/ui/button.tsx) instead of these bespoke classes; the
+   `default` variant there is the AA-compliant replacement for
+   .primary-button's old --accent-button darker fill (see that file's
+   own comment for the contrast math). */
 
-.action-status.is-ok {
-  color: var(--ok);
-}
-
-.action-status.is-error {
-  color: var(--error);
-}
-
-.test-button-wrap {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 2px;
-}
-
-.test-button-wrap .action-status {
-  margin-top: 0;
-  text-align: right;
-}
-
-.secondary-button,
-.footer-button,
-.primary-button {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 6px;
-  outline: none;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: transform 120ms var(--ease), border-color 140ms var(--ease), background 140ms var(--ease), color 140ms var(--ease), opacity 140ms var(--ease);
-}
-
-.secondary-button,
-.footer-button {
-  border: 1px solid #2d3037;
-  background: #111318;
-  color: #b3b7bd;
-}
-
-.secondary-button:hover:not(:disabled),
-.footer-button:hover:not(:disabled) {
-  border-color: #444851;
-  background: #17191e;
-  color: #eceef0;
-}
-
-.secret-save {
-  min-width: 56px;
-  height: 31px;
-  padding: 0 9px;
-  font-size: var(--fs-secondary);
-  font-weight: 650;
-}
-
-.primary-button {
-  height: 32px;
-  padding: 0 11px;
-  border: 1px solid #2f95ff;
-  /* plan 109: white text directly on var(--accent) (#0a84ff) is
-     3.65:1, below AA. --accent itself stays untouched (used for focus
-     rings/borders elsewhere); this button gets its own darker,
-     compliant fill instead. See :root comment. */
-  background: var(--accent-button);
-  color: white;
-  font-size: var(--fs-secondary);
-  font-weight: 680;
-}
-
-.primary-button:hover:not(:disabled) {
-  background: var(--accent-button-hover);
-}
-
-.secondary-button:active:not(:disabled),
-.footer-button:active:not(:disabled),
-.primary-button:active:not(:disabled) {
-  transform: translateY(1px);
-}
-
-.secondary-button:focus-visible,
-.footer-button:focus-visible,
-.primary-button:focus-visible {
-  border-color: var(--accent);
-  box-shadow: 0 0 0 3px var(--focus-ring);
-}
-
-.secondary-button:disabled,
-.footer-button:disabled,
-.primary-button:disabled {
-  cursor: default;
-  opacity: 0.42;
-}
-
-.error-panel {
-  margin: 10px 16px 0;
-  padding: 9px 10px;
-  border: 1px solid var(--error-border);
-  border-radius: 6px;
-  background: #171012;
-  color: #c5b5b7;
-}
-
-.error-title {
-  margin-bottom: 5px;
-  color: var(--error);
-  font-size: var(--fs-caption);
-  font-weight: 700;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.error-panel ul {
-  margin: 0;
-  padding-left: 15px;
-  font-size: var(--fs-secondary);
-  line-height: 1.45;
-}
+/* plan 112 Step 3: .error-panel/.error-title/.error-panel ul moved to
+   Card-equivalent utilities on ErrorPanel (Step 0 CSSOM rows 105-107) —
+   the motion.div AnimatePresence lifecycle is unchanged, only the box
+   styling is now utilities (border-destructive/40, bg-destructive/10,
+   text-destructive per the token table's "error" row). */
 
 /* plan 109: now a real <table> (was a role="table" div grid) —
    thead/tbody/tr/th/td replace the emulated row/cell roles. Each
@@ -1001,40 +662,10 @@ textarea:focus-visible,
   color: #c8cbd0;
 }
 
-.loading-state {
-  min-height: 0;
-  display: grid;
-  place-items: center;
-  color: var(--text-muted);
-  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
-  font-size: var(--fs-secondary);
-  font-weight: 700;
-  font-style: normal;
-  line-height: 1;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-}
-
-.settings-footer {
-  min-height: 57px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  padding: 12px 14px;
-  border-top: 1px solid var(--divider);
-  background: #08090b;
-}
-
-.settings-footer .action-status {
-  margin-top: 0;
-}
-
-.footer-button {
-  height: 32px;
-  padding: 0 9px;
-  font-size: var(--fs-secondary);
-  font-weight: 620;
-}
+/* plan 112 Step 3: .loading-state and .settings-footer (+ its nested
+   .action-status override, + .footer-button, folded into the shadcn
+   Button disposition above) moved to utilities at their SettingsApp.tsx
+   call sites (Step 0 CSSOM rows 116-119). */
 
 .segmented-control {
   /* plan 109: now a <fieldset> (was a role="group" div) — same reset
@@ -1082,14 +713,6 @@ textarea:focus-visible,
 
 .segmented-control-button:focus-visible {
   box-shadow: 0 0 0 2px var(--focus-ring);
-}
-
-.test-button {
-  min-width: 56px;
-  height: 28px;
-  padding: 0 9px;
-  font-size: var(--fs-secondary);
-  font-weight: 650;
 }
 
 .history-empty {
@@ -1230,47 +853,14 @@ textarea:focus-visible,
   overflow-wrap: anywhere;
 }
 
-@media (max-width: 430px) {
-  .settings-window {
-    grid-template-columns: 122px minmax(0, 1fr);
-  }
+/* plan 112 Step 3: the 400x480-fitness @media (max-width: 430px) block
+   (Step 0 CSSOM rows 143-148) is gone — every selector it touched
+   (.settings-window, .sidebar-brand/.sidebar-meta, .content-header,
+   .section-content, .settings-footer, .footer-button/.primary-button)
+   was ported to utilities above in this same step, each with an
+   equivalent `max-[430px]:` Tailwind arbitrary-breakpoint variant at
+   its JSX call site — nothing left here to fold a partial rule around.
 
-  .sidebar-brand,
-  .sidebar-meta {
-    padding-right: 10px;
-    padding-left: 10px;
-  }
-
-  .content-header {
-    padding-right: 16px;
-    padding-left: 16px;
-  }
-
-  .section-content {
-    padding-right: 12px;
-    padding-left: 12px;
-  }
-
-  .settings-footer {
-    padding-right: 10px;
-    padding-left: 10px;
-  }
-
-  .footer-button,
-  .primary-button {
-    padding-right: 7px;
-    padding-left: 7px;
-    font-size: var(--fs-caption);
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
+   The @media (prefers-reduced-motion: reduce) block (row 149) is gone
+   too — ported verbatim to base.css in Step 1 (see that file); this was
+   the now-redundant duplicate. */

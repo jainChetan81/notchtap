@@ -21,6 +21,8 @@ import {
   useRef,
   useState,
 } from "react";
+import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { StatusRailCard } from "../components/StatusRailCard";
 import { PREVIEW_SAMPLES } from "./previewFixtures";
 
@@ -452,6 +454,18 @@ function useActionStatus(label?: string) {
 // whether this instance carries aria-live — never on a passive/pending
 // render. `showPending` lets a high-frequency action (e.g. the appearance
 // sliders) opt out of a "working" flicker entirely.
+//
+// plan 112 Step 3: markup/behavior (which element, when aria-live is
+// present, dedup/announce policy) is unchanged from Plan 108 — only the
+// per-state color moves to utilities, following the token table verbatim
+// (pending -> text-muted-foreground, ok -> text-overlay-teal, error ->
+// text-destructive). The two old ancestor-selector overrides
+// (`.test-button-wrap .action-status` / `.settings-footer .action-status`,
+// both just `margin-top: 0`, the wrap variant also `text-align: right`)
+// have no single-element utility equivalent from inside this component, so
+// callers in those two contexts pass the override through `className`;
+// `cn` (clsx + tailwind-merge) resolves the conflicting `mt-*` in the
+// caller's favor since it's applied last.
 function ActionStatus({
   status,
   className,
@@ -462,7 +476,19 @@ function ActionStatus({
   showPending?: boolean;
 }) {
   if (status.state === "idle") return null;
-  const classes = `action-status is-${status.state}${className ? ` ${className}` : ""}`;
+  const stateClasses =
+    status.state === "pending"
+      ? "text-muted-foreground"
+      : status.state === "ok"
+        ? "text-overlay-teal"
+        : "text-destructive";
+  const classes = cn(
+    "action-status",
+    `is-${status.state}`,
+    "mt-1.5 text-fs-secondary leading-[1.4]",
+    stateClasses,
+    className,
+  );
   if (status.state === "pending") {
     if (!showPending) return null;
     return <div className={classes}>Working…</div>;
@@ -769,20 +795,31 @@ function TextareaControl({
   );
 }
 
+// plan 112 Step 3: keeps its motion.div lifecycle verbatim (AnimatePresence
+// enter/exit is application state, not a CSS concern Tailwind replaces) —
+// only the box styling is ported to utilities, Card-equivalent rather than
+// a forced <Card> wrapper swap. border/bg follow the token table's
+// "error -> text-destructive / border-destructive/40" row; bg-destructive/10
+// is a decorative background-opacity composition (allowed — the restriction
+// is on TEXT opacity, which would threaten contrast; this is a tinted panel
+// fill, and text-destructive against it still measures ~7:1, unchanged from
+// before).
 function ErrorPanel({ errors }: { errors: string[] }) {
   return (
     <AnimatePresence initial={false}>
       {errors.length > 0 ? (
         <motion.div
-          className="error-panel"
+          className="error-panel mx-4 mt-2.5 rounded-[6px] border border-destructive/40 bg-destructive/10 px-2.5 py-2.5 text-destructive"
           role="alert"
           aria-live="assertive"
           initial={{ opacity: 0, y: -3 }}
           animate={{ opacity: 1, y: 0 }}
           exit={{ opacity: 0, y: -3 }}
         >
-          <div className="error-title">Config rejected</div>
-          <ul>
+          <div className="error-title mb-[5px] text-fs-caption font-bold tracking-[0.1em] uppercase">
+            Config rejected
+          </div>
+          <ul className="m-0 pl-[15px] text-fs-secondary leading-[1.45]">
             {errors.map((error) => (
               <li key={error}>{error}</li>
             ))}
@@ -846,15 +883,17 @@ function SecretRow({
           value={value}
           onChange={(event) => setValue(event.currentTarget.value)}
         />
-        <button
-          className="secondary-button secret-save"
+        <Button
           type="button"
+          variant="outline"
+          size="sm"
+          className="text-fs-secondary"
           aria-label={`Save ${label}`}
           disabled={saving || value.trim().length === 0}
           onClick={() => void saveSecret()}
         >
           {saving ? "Saving…" : "Save"}
-        </button>
+        </Button>
       </div>
       {error ? (
         <div className="secret-error" role="alert">
@@ -1299,7 +1338,11 @@ function ConnectorHealthLine({ health }: { health: ConnectorHealthDto | null }) 
   } else {
     text = "No deliveries yet.";
   }
-  return <div className="relaunch-note">{text}</div>;
+  return (
+    <div className="relaunch-note mt-[-2px] mb-[11px] text-fs-caption tracking-[0.06em] text-muted-foreground uppercase">
+      {text}
+    </div>
+  );
 }
 
 function ConnectorsSection({
@@ -1328,7 +1371,9 @@ function ConnectorsSection({
           checked={config.connectors.telegram.enabled}
           onChange={(enabled) => patchConfig({ connectors: { telegram: { enabled } } })}
         />
-        <div className="relaunch-note">Config change · applied after relaunch</div>
+        <div className="relaunch-note mt-[-2px] mb-[11px] text-fs-caption tracking-[0.06em] text-muted-foreground uppercase">
+          Config change · applied after relaunch
+        </div>
         <ConnectorHealthLine health={connectorHealth} />
         {/* Transition-only (plan 108): renders only on an ok<->failed flip,
             never aria-live — a passive setInterval poll must never chant. */}
@@ -1435,22 +1480,14 @@ function DiagnosticsSection() {
       title="Recent log lines"
       description="The last 200 lines of ~/Library/Logs/notchtap/notchtap.log. Read-only; rotated backups are available via Console.app."
     >
-      <pre
-        style={{
-          margin: 0,
-          padding: "12px",
-          maxHeight: "320px",
-          overflow: "auto",
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-all",
-          fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-          fontSize: "11px",
-          lineHeight: 1.5,
-          background: "rgba(0, 0, 0, 0.25)",
-          borderRadius: "8px",
-          userSelect: "text",
-        }}
-      >
+      {/* plan 112 Step 3: was a raw inline style={{...}} (the sole
+          CSS-in-JSX color literal the Step 0 inventory found —
+          rgba(0,0,0,0.25)); ported to utilities, bg-black/25 reproduces
+          the same composited color without a raw hex/rgb literal in
+          code. fontSize stays a literal 11px (not the fs-body token) —
+          it was already decoupled from the type-scale system before
+          this migration, a fixed size for the monospace log viewer. */}
+      <pre className="m-0 max-h-[320px] overflow-auto rounded-lg bg-black/25 p-3 font-mono text-[11px] leading-[1.5] whitespace-pre-wrap break-all select-text">
         {logText}
       </pre>
       <ActionStatus status={status} className="diagnostics-status" showPending={false} />
@@ -1460,14 +1497,16 @@ function DiagnosticsSection() {
           name="Refresh"
           help="Re-read the log file. New lines appear as the app writes them."
         />
-        <button
+        <Button
           id="refresh-log-lines"
           type="button"
-          className="secondary-button test-button"
+          variant="outline"
+          size="sm"
+          className="text-fs-secondary"
           onClick={() => refresh(true)}
         >
           Refresh
-        </button>
+        </Button>
       </div>
     </SettingsGroup>
   );
@@ -1711,10 +1750,12 @@ function HistorySection({ config }: { config: Config }) {
           name="Clear history"
           help="Permanently deletes every recorded notification. This cannot be undone."
         />
-        <button
+        <Button
           id="clear-history"
           type="button"
-          className="secondary-button test-button"
+          variant="outline"
+          size="sm"
+          className="text-fs-secondary"
           disabled={clearStatus.status.state === "pending"}
           // the <label htmlFor="clear-history"> above would otherwise
           // become this button's accessible name via native label
@@ -1726,7 +1767,7 @@ function HistorySection({ config }: { config: Config }) {
           onClick={() => void handleClearClick()}
         >
           {confirmingClear ? "Really clear?" : "Clear history"}
-        </button>
+        </Button>
       </div>
       <ActionStatus status={clearStatus.status} className="history-clear-status" />
     </SettingsGroup>
@@ -1751,16 +1792,18 @@ function TestButton({ source }: { source: TestSource }) {
   }
 
   return (
-    <div className="test-button-wrap">
-      <button
+    <div className="test-button-wrap flex flex-col items-end gap-0.5">
+      <Button
         type="button"
-        className="secondary-button test-button"
+        variant="outline"
+        size="sm"
+        className="text-fs-secondary"
         disabled={pending}
         onClick={() => void send()}
       >
         {pending ? "Sending…" : "Send test notification"}
-      </button>
-      <ActionStatus status={status} className="test-button-status" />
+      </Button>
+      <ActionStatus status={status} className="test-button-status mt-0 text-right" />
     </div>
   );
 }
@@ -2097,53 +2140,78 @@ export function SettingsApp() {
 
   return (
     <MotionConfig reducedMotion="user" transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}>
-      <main className="settings-window" aria-labelledby="section-title">
-        <aside className="settings-sidebar" aria-label="Settings sections">
-          <div className="sidebar-brand">
-            <span className="brand-slot" aria-hidden="true" />
+      <main
+        className="settings-window grid h-full w-full min-h-[480px] grid-cols-[140px_minmax(0,1fr)] overflow-hidden bg-background max-[430px]:grid-cols-[122px_minmax(0,1fr)]"
+        aria-labelledby="section-title"
+      >
+        <aside
+          className="settings-sidebar grid min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] border-r border-border bg-sidebar"
+          aria-label="Settings sections"
+        >
+          <div className="sidebar-brand flex min-h-[71px] items-center gap-2 border-b border-border/60 px-3.5 pt-[17px] pb-3.5 font-mono text-fs-body leading-none font-bold tracking-[0.09em] text-foreground uppercase not-italic max-[430px]:px-[10px]">
+            <span
+              className="brand-slot h-2 w-[17px] flex-none rounded-tl-[2px] rounded-tr-[2px] rounded-br-[5px] rounded-bl-[5px] bg-foreground opacity-[0.86]"
+              aria-hidden="true"
+            />
             <span>notchtap</span>
           </div>
-          <nav className="sidebar-nav">
+          <nav className="sidebar-nav flex flex-col gap-[3px] px-2 py-3">
             {navigation.map((item) => {
               const Icon = item.icon;
               const selected = item.id === activeSection;
               return (
                 <button
                   key={item.id}
-                  className={`nav-item${selected ? " is-active" : ""}`}
+                  className={cn(
+                    "nav-item relative grid min-h-[38px] min-w-0 grid-cols-[16px_minmax(0,1fr)] items-center gap-2 rounded-md border-0 border-l-2 border-l-transparent bg-transparent py-[7px] pr-2 pl-[6px] text-left text-muted-foreground outline-none transition-colors duration-[140ms] ease-notchtap hover:bg-accent hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring",
+                    selected && "is-active border-l-primary bg-primary/15 text-foreground",
+                  )}
                   type="button"
                   aria-current={selected ? "page" : undefined}
                   onClick={() => setActiveSection(item.id)}
                 >
-                  <Icon aria-hidden="true" />
-                  <span>{item.label}</span>
+                  <Icon aria-hidden="true" className="h-3.5 w-3.5" strokeWidth={1.75} />
+                  <span className="min-w-0 overflow-hidden font-[560] text-fs-body text-ellipsis leading-[1.25]">
+                    {item.label}
+                  </span>
                 </button>
               );
             })}
           </nav>
-          <div className="sidebar-meta">settings / v5</div>
+          <div className="sidebar-meta border-t border-border/60 px-3.5 pt-[11px] pb-[13px] font-mono text-fs-secondary font-bold tracking-[0.1em] text-muted-foreground uppercase max-[430px]:px-[10px]">
+            settings / v5
+          </div>
         </aside>
 
-        <div className="settings-pane">
+        <div className="settings-pane grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[minmax(0,1fr)_auto] bg-background">
           {config ? (
             <form
               id="settings-form"
-              className="settings-form"
+              className="settings-form grid min-h-0 min-w-0 grid-cols-[minmax(0,1fr)] grid-rows-[auto_auto_minmax(0,1fr)] overflow-hidden"
               noValidate
               onSubmit={(event) => void saveConfig(event)}
             >
-              <header className="content-header">
-                <div className="section-index">Settings / {currentSection.index}</div>
-                <h1 id="section-title">{currentSection.title}</h1>
-                <p>{currentSection.description}</p>
+              <header className="content-header border-b border-border bg-background px-5 pt-[22px] pb-[17px] max-[430px]:px-4">
+                <div className="section-index mb-2 font-mono text-fs-secondary font-bold tracking-[0.11em] text-muted-foreground uppercase">
+                  Settings / {currentSection.index}
+                </div>
+                <h1
+                  id="section-title"
+                  className="m-0 text-fs-title leading-[1.15] font-[650] tracking-[-0.018em] text-foreground"
+                >
+                  {currentSection.title}
+                </h1>
+                <p className="mt-1.5 mr-0 mb-0 ml-0 max-w-[290px] text-fs-body leading-[1.45] text-muted-foreground">
+                  {currentSection.description}
+                </p>
               </header>
 
               <ErrorPanel errors={errors} />
 
-              <div className="section-scroll">
+              <div className="section-scroll min-h-0 overflow-y-auto overscroll-contain">
                 <AnimatePresence mode="wait" initial={false}>
                   <motion.div
-                    className="section-content"
+                    className="section-content min-h-full px-4 pt-4 pb-6 max-[430px]:px-3"
                     key={activeSection}
                     initial={{ opacity: 0, x: 3 }}
                     animate={{ opacity: 1, x: 0 }}
@@ -2207,39 +2275,44 @@ export function SettingsApp() {
               </div>
             </form>
           ) : (
-            <div className="loading-state" role="status">
+            <div
+              className="loading-state grid min-h-0 place-items-center text-fs-secondary leading-none font-bold tracking-[0.1em] text-muted-foreground uppercase not-italic"
+              role="status"
+            >
               Loading settings…
             </div>
           )}
 
-          <footer className="settings-footer">
-            <button
-              className="primary-button"
+          <footer className="settings-footer flex min-h-[57px] items-center gap-1.5 border-t border-border bg-background px-3.5 py-3 max-[430px]:px-[10px]">
+            <Button
               type="submit"
               form="settings-form"
               disabled={!config || saving}
+              className="text-fs-secondary max-[430px]:px-[7px] max-[430px]:text-fs-caption"
             >
               {saving ? "Relaunching…" : "Save & Relaunch"}
-            </button>
-            <button
-              className="footer-button"
+            </Button>
+            <Button
+              variant="outline"
               type="button"
               disabled={!lastLoadedConfig || saving}
               onClick={resetLoaded}
+              className="text-fs-secondary max-[430px]:px-[7px] max-[430px]:text-fs-caption"
             >
               Reset
-            </button>
-            <button
-              className="footer-button"
+            </Button>
+            <Button
+              variant="outline"
               type="button"
               disabled={!defaults || saving}
               onClick={resetDefaults}
+              className="text-fs-secondary max-[430px]:px-[7px] max-[430px]:text-fs-caption"
             >
               Reset to defaults
-            </button>
+            </Button>
             <ActionStatus
               status={defaultsStatus.status}
-              className="defaults-status"
+              className="defaults-status mt-0"
               showPending={false}
             />
             {/* Always visible regardless of active section (plan 108 step A):
@@ -2249,7 +2322,7 @@ export function SettingsApp() {
                 cleared by the next successful apply. */}
             <ActionStatus
               status={appearanceStatus.status}
-              className="appearance-live-status"
+              className="appearance-live-status mt-0"
               showPending={false}
             />
           </footer>
