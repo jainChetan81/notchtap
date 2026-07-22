@@ -36,10 +36,16 @@ const siblingPath = join(here, "..", "..", "..", "shared-ui", "design", "tokens.
 // plans/112-settings-shadcn-migration.md "Portable token snapshot").
 // NOTE: the plan text names 8e395a8 as the reviewed SHA, but the sibling
 // checkout legitimately advanced past that (operator-authorized) before
-// this snapshot was taken — ca4faf8 is the effective pin actually
-// vendored below (adds --font-sans/--font-mono/--font-heading tokens
-// upstream; no value changes to any token this app already consumed).
-const UPSTREAM_SHA = "ca4faf8";
+// this snapshot was taken — ca4faf8 was the effective pin at that time
+// (adds --font-sans/--font-mono/--font-heading tokens upstream; no value
+// changes to any token this app already consumed).
+//
+// plan 113: refreshed the pin to 2279978 (sibling now versioned 0.2.0).
+// `design/tokens.css` is BYTE-IDENTICAL across ca4faf8..2279978 — the
+// range only touched upstream's own scripts/playground, not token
+// values — so PINNED_TOKENS_SHA256 below is unchanged and does not need
+// a re-hash.
+const UPSTREAM_SHA = "2279978";
 const PINNED_TOKENS_SHA256 =
   "c8416630c99a60737ff8dd9e1348b2ec771a5569501b0d5f8fbfd0ac584635c8";
 
