@@ -14,14 +14,13 @@
 // compare individual comma-list members. No CSS parser: this is
 // deliberately the same "cheap but effective" register as
 // celebrationStacking.test.tsx's string pins, not a cascade engine.
-// @ts-expect-error no @types/node in this project (same pattern as
-// celebrationStacking.test.tsx) — Node's fs/url are real at runtime
-// (vitest runs on Node) even though this repo carries no @types/node.
+// plan 112: @types/node is now a devDependency (Step 1), so these two
+// Node imports typecheck directly — no @ts-expect-error needed. Node's
+// own `URL` is still imported explicitly (not the ambient global)
+// because jsdom's global `URL` shadow resolves a relative path against a
+// fake http: document location instead of `import.meta.url`'s real
+// file: base.
 import { readFileSync } from "node:fs";
-// @ts-expect-error no @types/node in this project. Node's own `URL` is
-// imported explicitly (not the ambient global) because jsdom's global
-// `URL` shadow resolves a relative path against a fake http: document
-// location instead of `import.meta.url`'s real file: base.
 import { fileURLToPath, URL as NodeURL } from "node:url";
 import { describe, expect, it } from "vitest";
 

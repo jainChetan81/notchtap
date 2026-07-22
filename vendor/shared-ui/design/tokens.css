@@ -1,0 +1,167 @@
+/*
+ * shared-ui design tokens — single source of truth
+ *
+ * derived from notchtap's bespoke dark palette (settings.css), converted to oklch.
+ * values were computed from hex via srgb -> linear -> oklab -> oklch; hex originals
+ * are kept in comments so kharcha's nativewind tailwind.config.js can mirror them.
+ *
+ * consumption (desktop, tailwind v4 css-first):
+ *   1. in your app's globals.css, import this file, then import tailwind:
+ *        @import "@chetanjain/shared-ui/design/tokens.css";
+ *        @import "tailwindcss";
+ *      (the @theme inline block below is picked up by the tailwind vite plugin,
+ *       so every --color-* token becomes a utility: bg-background, text-muted-foreground, ...)
+ *   2. shadcn components added after this import are themed by these tokens from
+ *      day one — the default shadcn look never lands in the apps.
+ *   3. bespoke per-app css (notch cutout art, keyframes) references the same vars,
+ *      e.g. var(--overlay-teal), var(--ease-notchtap).
+ *
+ * dark-only for now: :root and .dark are identical. tokens are named semantically
+ * (--surface would lie once a light theme exists; --background will not).
+ */
+
+:root {
+  /* shadcn-compatible semantic tokens */
+  --background: oklch(0.121 0.004 245.47);            /* window    #050607 */
+  --foreground: oklch(0.961 0.003 264.54);            /* text      #f1f2f4 */
+
+  --card: oklch(0.168 0.007 258.37);                  /* surface   #0d0f12 */
+  --card-foreground: oklch(0.961 0.003 264.54);
+
+  --popover: oklch(0.168 0.007 258.37);
+  --popover-foreground: oklch(0.961 0.003 264.54);
+
+  --primary: oklch(0.624 0.206 255.49);               /* accent    #0a84ff */
+  --primary-foreground: oklch(0.961 0.003 264.54);
+
+  --secondary: oklch(0.256 0.012 264.33);             /* divider   #202329 */
+  --secondary-foreground: oklch(0.961 0.003 264.54);
+
+  --muted: oklch(0.256 0.012 264.33);
+  --muted-foreground: oklch(0.724 0.011 261.78);      /* text-2nd  #a2a6ad */
+
+  --accent: oklch(0.256 0.012 264.33);
+  --accent-foreground: oklch(0.961 0.003 264.54);
+
+  --destructive: oklch(0.708 0.185 30.07);            /* coral     #ff6b57 */
+  --destructive-foreground: oklch(0.121 0.004 245.47);
+
+  --border: oklch(0.256 0.012 264.33);
+  --input: oklch(0.256 0.012 264.33);
+  --ring: oklch(0.624 0.206 255.49);
+
+  --radius: 0.625rem;
+
+  /* sidebar (settings-nav surfaces) */
+  --sidebar: oklch(0.145 0.005 263.79);               /* sidebar   #090a0c */
+  --sidebar-foreground: oklch(0.961 0.003 264.54);
+  --sidebar-primary: oklch(0.624 0.206 255.49);
+  --sidebar-primary-foreground: oklch(0.961 0.003 264.54);
+  --sidebar-accent: oklch(0.256 0.012 264.33);
+  --sidebar-accent-foreground: oklch(0.961 0.003 264.54);
+  --sidebar-border: oklch(0.256 0.012 264.33);
+  --sidebar-ring: oklch(0.624 0.206 255.49);
+
+  /* bespoke layer — overlay accent colors, named, not semantic */
+  --overlay-blue: oklch(0.624 0.206 255.49);          /*           #0a84ff */
+  --overlay-teal: oklch(0.798 0.119 178.03);          /*           #55d6bd */
+  --overlay-coral: oklch(0.708 0.185 30.07);          /*           #ff6b57 */
+}
+
+/* dark-only: .dark mirrors :root so a hardcoded class="dark" on <html>
+ * and a future class-toggle both resolve to the same values. */
+.dark {
+  --background: oklch(0.121 0.004 245.47);
+  --foreground: oklch(0.961 0.003 264.54);
+  --card: oklch(0.168 0.007 258.37);
+  --card-foreground: oklch(0.961 0.003 264.54);
+  --popover: oklch(0.168 0.007 258.37);
+  --popover-foreground: oklch(0.961 0.003 264.54);
+  --primary: oklch(0.624 0.206 255.49);
+  --primary-foreground: oklch(0.961 0.003 264.54);
+  --secondary: oklch(0.256 0.012 264.33);
+  --secondary-foreground: oklch(0.961 0.003 264.54);
+  --muted: oklch(0.256 0.012 264.33);
+  --muted-foreground: oklch(0.724 0.011 261.78);
+  --accent: oklch(0.256 0.012 264.33);
+  --accent-foreground: oklch(0.961 0.003 264.54);
+  --destructive: oklch(0.708 0.185 30.07);
+  --destructive-foreground: oklch(0.121 0.004 245.47);
+  --border: oklch(0.256 0.012 264.33);
+  --input: oklch(0.256 0.012 264.33);
+  --ring: oklch(0.624 0.206 255.49);
+  --radius: 0.625rem;
+  --sidebar: oklch(0.145 0.005 263.79);
+  --sidebar-foreground: oklch(0.961 0.003 264.54);
+  --sidebar-primary: oklch(0.624 0.206 255.49);
+  --sidebar-primary-foreground: oklch(0.961 0.003 264.54);
+  --sidebar-accent: oklch(0.256 0.012 264.33);
+  --sidebar-accent-foreground: oklch(0.961 0.003 264.54);
+  --sidebar-border: oklch(0.256 0.012 264.33);
+  --sidebar-ring: oklch(0.624 0.206 255.49);
+  --overlay-blue: oklch(0.624 0.206 255.49);
+  --overlay-teal: oklch(0.798 0.119 178.03);
+  --overlay-coral: oklch(0.708 0.185 30.07);
+}
+
+/* tailwind v4 bridge — maps the runtime vars above into utilities.
+ * motion tokens are literals here (not var() self-references); tailwind emits
+ * them onto :root, so bespoke css can still use var(--ease-notchtap). */
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* bespoke accents -> bg-overlay-teal, text-overlay-coral, ... */
+  --color-overlay-blue: var(--overlay-blue);
+  --color-overlay-teal: var(--overlay-teal);
+  --color-overlay-coral: var(--overlay-coral);
+
+  /* motion — signature notchtap easing + durations */
+  --ease-notchtap: cubic-bezier(.22, 1, .36, 1);
+  --duration-fast: 220ms;
+  --duration-normal: 300ms;
+  --duration-slow: 400ms;
+}
+
+/*
+ * kharcha (nativewind) token mirror — copy these hexes into
+ * kharcha/tailwind.config.js theme.extend.colors. nativewind cannot read
+ * oklch css vars, so the mobile app keeps this hex mirror in sync manually.
+ * if a value changes here, change it there in the same commit.
+ *
+ *   window:        '#050607'
+ *   sidebar:       '#090a0c'
+ *   surface:       '#0d0f12'
+ *   text:          '#f1f2f4'
+ *   textSecondary: '#a2a6ad'
+ *   divider:       '#202329'
+ *   accent:        '#0a84ff'
+ *   overlayTeal:   '#55d6bd'
+ *   overlayCoral:  '#ff6b57'
+ *   kharchaPurple: '#7c3aed'   (kharcha-only brand accent, stays mobile-side)
+ */

@@ -1,14 +1,24 @@
 /// <reference types="vitest/config" />
 
+import { fileURLToPath } from "node:url";
+import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-// @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
 export default defineConfig(async () => ({
-  plugins: [react()],
+  plugins: [react(), tailwindcss()],
+
+  resolve: {
+    alias: {
+      // plan 112: shadcn-generated components import via "@/..."; resolve
+      // ESM-safely with fileURLToPath rather than "/src" or bare
+      // __dirname (unavailable under Vite's ESM config loading).
+      "@": fileURLToPath(new URL("./src", import.meta.url)),
+    },
+  },
 
   build: {
     rollupOptions: {

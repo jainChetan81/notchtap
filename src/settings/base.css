@@ -1,0 +1,53 @@
+/* plan 112 Step 1: Tailwind v4 entry for the settings window, WITHOUT
+   preflight. This document (settings.html) hosts Plan 111's shared
+   overlay-card.css art (the Appearance preview subtree) — Tailwind's
+   normal `@import "tailwindcss";` pulls in a global preflight reset that
+   would flatten overlay-card.css's bespoke card styling sharing this
+   same document. The split theme/utilities import below is this
+   window's own no-preflight decision; it does NOT reproduce the sibling
+   shared-ui playground's `@import "tailwindcss";` + `@layer base { … }`
+   form (see plans/112-settings-shadcn-migration.md Step 1.5 for the full
+   rationale — that playground form is authoritative for style/token
+   ownership/generator config, not for this window's Tailwind entry).
+
+   Import order is load-bearing:
+     1. tailwindcss/theme.css (layer(theme))  — Tailwind's default theme
+        tokens, no preflight.
+     2. @chetanjain/shared-ui/design/tokens.css — the sole owner of
+        semantic color/radius/sidebar tokens (see vendor/shared-ui).
+     3. tw-animate-css                          — animation utilities.
+     4. shadcn/tailwind.css                     — shadcn's own utility
+        layer additions (radix-nova style requires this import to
+        resolve `@import "shadcn/tailwind.css"` generated component
+        classes).
+     5. tailwindcss/utilities.css (layer(utilities)) — Tailwind's utility
+        classes (bg-*, text-*, p-*, etc.), last so utilities win over
+        theme defaults at equal specificity.
+
+   main.tsx must import this file BEFORE ../overlay-card.css and
+   ./settings.css (fixed order, same discipline Plan 111 documented for
+   main.tsx's own import order). */
+
+@import "tailwindcss/theme.css" layer(theme);
+@import "@chetanjain/shared-ui/design/tokens.css";
+@import "tw-animate-css";
+@import "shadcn/tailwind.css";
+@import "tailwindcss/utilities.css" layer(utilities);
+
+/* plan 112 Step 1: reduced-motion is ported verbatim from the old
+   settings.css (see git history) so Tailwind/shadcn's own CSS
+   transitions and keyframes are flattened the same way settings.css's
+   bespoke transitions always were. This does NOT replace React Motion's
+   own `MotionConfig reducedMotion="user"` (SettingsApp.tsx) — that
+   still governs AnimatePresence state transitions; this rule only
+   covers plain CSS animation/transition properties. */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
