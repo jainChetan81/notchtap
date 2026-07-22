@@ -26,6 +26,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/com
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch as UiSwitch } from "@/components/ui/switch";
+import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/lib/utils";
 import { StatusRailCard } from "../components/StatusRailCard";
 import { PREVIEW_SAMPLES } from "./previewFixtures";
@@ -876,20 +877,23 @@ function TextareaControl({
   onChange: (value: string) => void;
 }) {
   return (
-    // plan 112 Step 4 (General): only the shared control-row divider
-    // rhythm moves here now (this wrapper sits in the same adjacent-row
-    // sequence as CONTROL_ROW siblings) — the textarea/caption styling
-    // itself is Football's turn below, first section to actually render
-    // one.
+    // plan 112 Step 4 (Football): the shared control-row divider rhythm
+    // landed in General's commit already — this section's own turn is
+    // the textarea + caption styling below (Football is the first
+    // section that actually renders one; News reuses the same
+    // component unchanged).
     <div className="textarea-control border-t border-border/60 pt-[11px] pb-3 first:border-t-0">
       <ControlCopy htmlFor={id} name={name} help={help} />
-      <textarea
+      <Textarea
         id={id}
         spellCheck={false}
         value={value}
         onChange={(event) => onChange(event.currentTarget.value)}
+        className="mt-2 min-h-[73px] resize-y rounded-md border-input bg-input/20 px-2.5 py-2 font-mono text-fs-secondary font-[560] leading-[1.55] text-foreground"
       />
-      <div className="field-caption">{caption}</div>
+      <div className="field-caption mt-[5px] text-fs-caption font-bold tracking-[0.08em] text-muted-foreground uppercase">
+        {caption}
+      </div>
     </div>
   );
 }

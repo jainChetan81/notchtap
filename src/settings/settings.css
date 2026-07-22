@@ -188,11 +188,10 @@
 
 /* plan 112 Step 4 (General): .number-field/.unit (rows 50-55) -> shadcn
    Input (+ a utility-styled absolutely-positioned unit span) at
-   NumberControl's call site. `textarea`/`.secret-input` styling that
-   used to share this selector list stays live here verbatim — News
-   (textarea) and Connectors (.secret-input) haven't migrated yet. */
+   NumberControl's call site. `.secret-input` styling that used to
+   share this selector list with the old bare `textarea` tag selector
+   stays live here verbatim — Connectors hasn't migrated yet. */
 
-textarea,
 .secret-input {
   width: 100%;
   border: 1px solid #2a2d34;
@@ -203,12 +202,10 @@ textarea,
   transition: border-color 140ms var(--ease), background 140ms var(--ease), box-shadow 140ms var(--ease);
 }
 
-textarea:hover,
 .secret-input:hover {
   background: var(--surface-hover);
 }
 
-textarea:focus-visible,
 .secret-input:focus-visible {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--focus-ring);
@@ -233,26 +230,14 @@ textarea:focus-visible,
    the plan's explicit carve-out — SettingsApp.test.tsx's
    rotationOrderRowNames() locates it via querySelector. */
 
-.textarea-control textarea {
-  min-height: 73px;
-  margin-top: 8px;
-  padding: 8px 9px;
-  resize: vertical;
-  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
-  font-size: var(--fs-secondary);
-  font-weight: 560;
-  font-style: normal;
-  line-height: 1.55;
-}
-
-.field-caption {
-  margin-top: 5px;
-  color: var(--text-muted);
-  font-size: var(--fs-caption);
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
+/* plan 112 Step 4 (Football): .textarea-control textarea (row 78-79)
+   -> shadcn Textarea at TextareaControl's call site (utility classes,
+   font-mono/color still supplied by the shared idx-22 mono-family
+   selector list above via the retained ".field-caption" className —
+   only its color/size/tracking/transform properties move to
+   utilities). `.field-caption` (row 80) -> utilities at the same call
+   site; its className stays in the mono-family list above since it
+   still needs font-mono and nothing else references removing it. */
 
 /* plan 112 Step 3: .relaunch-note (Step 0 CSSOM row 81) moved to
    utilities at both call sites (ConnectorHealthLine, ConnectorsSection's
