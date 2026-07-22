@@ -34,9 +34,14 @@ const siblingPath = join(here, "..", "..", "..", "shared-ui", "design", "tokens.
 
 // Reviewed upstream commit shared-ui is pinned to for this snapshot (see
 // plans/112-settings-shadcn-migration.md "Portable token snapshot").
-const UPSTREAM_SHA = "8e395a8";
+// NOTE: the plan text names 8e395a8 as the reviewed SHA, but the sibling
+// checkout legitimately advanced past that (operator-authorized) before
+// this snapshot was taken — ca4faf8 is the effective pin actually
+// vendored below (adds --font-sans/--font-mono/--font-heading tokens
+// upstream; no value changes to any token this app already consumed).
+const UPSTREAM_SHA = "ca4faf8";
 const PINNED_TOKENS_SHA256 =
-  "4d89c042f31a5175cd3cd843ffdec4be8e3531a786758c9d30b10af18a9c283b";
+  "c8416630c99a60737ff8dd9e1348b2ec771a5569501b0d5f8fbfd0ac584635c8";
 
 function sha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");

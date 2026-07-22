@@ -34,6 +34,52 @@
 @import "shadcn/tailwind.css";
 @import "tailwindcss/utilities.css" layer(utilities);
 
+/* plan 112 Step 2: `shadcn init` requires this for `dark:` utility
+   variants (unused today, harmless) to resolve against the class="dark"
+   already on <html> — kept from the generator's write. */
+@custom-variant dark (&:is(.dark *));
+
+/* plan 112 Step 2: `shadcn init --base radix` (Nova preset) also wrote a
+   `@import "@fontsource-variable/geist"` font-face import plus a
+   --font-sans: 'Geist Variable' override — removed (uninstalled the
+   package too). shared-ui's tokens.css already owns --font-sans/
+   --font-mono/--font-heading, defaulting to this app's existing macOS
+   system stack; swapping fonts is an explicit separate decision, not a
+   side effect of this migration. */
+
+/* plan 112 Step 2: reproduced from the sibling playground's index.css —
+   the radius scale is the one piece of its @theme inline that is a
+   genuine local addition (var(--radius) itself comes from shared-ui's
+   tokens.css; the playground's own comment says as much). Everything
+   else `shadcn init` generated (a full duplicate --color-* token map,
+   unused --chart-* vars, and shadcn's default light/dark neutral
+   :root/.dark blocks) was removed here: shared-ui is the sole token
+   owner (Step 2.3), and re-declaring the same names a second time here
+   risks exactly the "competing semantic token values" this plan
+   forbids. */
+@theme inline {
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* plan 112 Step 2: the generator's `@layer base { * { border-border
+   outline-ring/50 } body { bg-background text-foreground } html {
+   font-sans } }` block was deliberately NOT reproduced here (unlike the
+   playground, which owns its whole document). settings.html hosts Plan
+   111's shared overlay-card.css art in the same document (the Appearance
+   preview subtree) — a bare `*`/`body`/`html` reset is exactly the kind
+   of unscoped global rule Step 1.5 says to avoid; settings.css already
+   supplies the equivalent body background/color/font-family scoped to
+   this window today, and shared-ui's tokens already match those values,
+   so nothing is missing. If a narrowly `.settings-window`-scoped
+   equivalent turns out to be needed once shadcn primitives are actually
+   used in JSX, add it then, scoped, not as a document-wide reset. */
+
 /* plan 112 Step 1: reduced-motion is ported verbatim from the old
    settings.css (see git history) so Tailwind/shadcn's own CSS
    transitions and keyframes are flattened the same way settings.css's

@@ -6,9 +6,10 @@
  * are kept in comments so kharcha's nativewind tailwind.config.js can mirror them.
  *
  * consumption (desktop, tailwind v4 css-first):
- *   1. in your app's globals.css, import this file, then import tailwind:
- *        @import "@chetanjain/shared-ui/design/tokens.css";
+ *   1. in your app's globals.css, import tailwind first, then this file
+ *      (tokens second so their :root values win the cascade):
  *        @import "tailwindcss";
+ *        @import "@chetanjain/shared-ui/design/tokens.css";
  *      (the @theme inline block below is picked up by the tailwind vite plugin,
  *       so every --color-* token becomes a utility: bg-background, text-muted-foreground, ...)
  *   2. shadcn components added after this import are themed by these tokens from
@@ -52,6 +53,14 @@
 
   --radius: 0.625rem;
 
+  /* typography — shared defaults, overridable per app. apps that want a
+   * different face re-declare the runtime var after importing this file
+   * (e.g. transcribe: `:root { --font-sans: "Geist Variable", sans-serif; }`).
+   * default = macos system stack (notchtap settings keeps this as-is). */
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --font-heading: var(--font-sans);
+
   /* sidebar (settings-nav surfaces) */
   --sidebar: oklch(0.145 0.005 263.79);               /* sidebar   #090a0c */
   --sidebar-foreground: oklch(0.961 0.003 264.54);
@@ -91,6 +100,9 @@
   --input: oklch(0.256 0.012 264.33);
   --ring: oklch(0.624 0.206 255.49);
   --radius: 0.625rem;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --font-heading: var(--font-sans);
   --sidebar: oklch(0.145 0.005 263.79);
   --sidebar-foreground: oklch(0.961 0.003 264.54);
   --sidebar-primary: oklch(0.624 0.206 255.49);
@@ -136,6 +148,12 @@
   --color-sidebar-border: var(--sidebar-border);
   --color-sidebar-ring: var(--sidebar-ring);
 
+  /* typography -> font-sans, font-mono, font-heading utilities; runtime
+   * var(--font-*) stays the source so per-app overrides cascade through */
+  --font-sans: var(--font-sans);
+  --font-mono: var(--font-mono);
+  --font-heading: var(--font-heading);
+
   /* bespoke accents -> bg-overlay-teal, text-overlay-coral, ... */
   --color-overlay-blue: var(--overlay-blue);
   --color-overlay-teal: var(--overlay-teal);
@@ -149,10 +167,11 @@
 }
 
 /*
- * kharcha (nativewind) token mirror — copy these hexes into
- * kharcha/tailwind.config.js theme.extend.colors. nativewind cannot read
- * oklch css vars, so the mobile app keeps this hex mirror in sync manually.
- * if a value changes here, change it there in the same commit.
+ * kharcha (nativewind) hex mirror — **deferred, do not sync** (owner decision
+ * 2026-07-22; see ACTION_PLAN.md "deferred"). kept as a value reference only.
+ * when revived: map shared *values* onto kharcha's existing shadcn-style keys
+ * and re-check its documented WCAG contrast constraints — do not paste these
+ * key names into kharcha/tailwind.config.js.
  *
  *   window:        '#050607'
  *   sidebar:       '#090a0c'
