@@ -830,7 +830,11 @@ describe("SettingsApp", () => {
 
     const titles = screen
       .getAllByText(/notification$/)
-      .filter((el) => el.className === "history-title")
+      // plan 112 Step 4: history-title now carries utility classes
+      // alongside its stable "history-title" hook class, so an exact
+      // className match no longer isolates it — check for the token
+      // instead (classList.contains), same selection intent.
+      .filter((el) => el.classList.contains("history-title"))
       .map((el) => el.textContent);
     expect(titles).toEqual(["Second notification", "First notification"]);
   });

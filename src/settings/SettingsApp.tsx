@@ -1760,64 +1760,102 @@ function HistoryRow({ entry }: { entry: HistoryEntry }) {
     event.meta.published_at_ms !== null ||
     event.meta.espn !== undefined;
 
+  // plan 112 Step 4 (History): utilities only, over the native
+  // li/details/summary structure Plan 110 landed — the semantics,
+  // metadata gate, and the escaped-text (never an <a href>) discipline
+  // for `link` all stay verbatim.
+  const detailLabelClass =
+    "history-detail-label text-fs-caption tracking-[0.04em] text-muted-foreground uppercase";
+  const detailValueClass =
+    "history-detail-value min-w-0 text-fs-body text-muted-foreground [overflow-wrap:anywhere]";
+
   return (
-    <li className="history-row">
-      <span className="history-time">{new Date(entry.recorded_at_ms).toLocaleString()}</span>
-      <span className="history-origin">{event.origin}</span>
-      <span className="history-title">{event.payload.title}</span>
-      <div className="history-meta-row">
-        {source !== null && <span className="history-meta-chip">{source}</span>}
-        {category !== null && <span className="history-meta-chip">{category}</span>}
-        <span className="history-meta-chip">{PRIORITY_LABELS[event.priority]}</span>
-        <span className="history-meta-chip">{historyEventTypeLabel(event.event_type)}</span>
-        <span className="history-meta-chip">{historyRotationLabel(event.rotation)}</span>
+    <li className="history-row grid min-w-0 grid-cols-[minmax(0,1fr)] gap-0.5 border-t border-border/60 py-2.5 first:border-t-0">
+      <span className="history-time font-mono text-fs-secondary leading-none font-bold text-muted-foreground">
+        {new Date(entry.recorded_at_ms).toLocaleString()}
+      </span>
+      <span className="history-origin ml-1.5 font-mono text-fs-secondary leading-none font-bold text-muted-foreground uppercase">
+        {event.origin}
+      </span>
+      <span className="history-title text-fs-body font-[590] text-foreground">
+        {event.payload.title}
+      </span>
+      <div className="history-meta-row mt-1 flex min-w-0 flex-wrap items-center gap-[5px]">
+        {source !== null && (
+          <span className="history-meta-chip min-w-0 rounded-full border border-border px-[7px] py-0.5 font-mono text-fs-caption font-[650] leading-[1.5] text-muted-foreground [overflow-wrap:anywhere]">
+            {source}
+          </span>
+        )}
+        {category !== null && (
+          <span className="history-meta-chip min-w-0 rounded-full border border-border px-[7px] py-0.5 font-mono text-fs-caption font-[650] leading-[1.5] text-muted-foreground [overflow-wrap:anywhere]">
+            {category}
+          </span>
+        )}
+        <span className="history-meta-chip min-w-0 rounded-full border border-border px-[7px] py-0.5 font-mono text-fs-caption font-[650] leading-[1.5] text-muted-foreground [overflow-wrap:anywhere]">
+          {PRIORITY_LABELS[event.priority]}
+        </span>
+        <span className="history-meta-chip min-w-0 rounded-full border border-border px-[7px] py-0.5 font-mono text-fs-caption font-[650] leading-[1.5] text-muted-foreground [overflow-wrap:anywhere]">
+          {historyEventTypeLabel(event.event_type)}
+        </span>
+        <span className="history-meta-chip min-w-0 rounded-full border border-border px-[7px] py-0.5 font-mono text-fs-caption font-[650] leading-[1.5] text-muted-foreground [overflow-wrap:anywhere]">
+          {historyRotationLabel(event.rotation)}
+        </span>
       </div>
-      <span className="history-body">{event.payload.body}</span>
+      <span className="history-body min-w-0 text-fs-body text-muted-foreground [overflow-wrap:anywhere]">
+        {event.payload.body}
+      </span>
       {hasExpandable && (
-        <details className="history-details">
-          <summary>More details</summary>
-          <div className="history-details-content">
+        <details className="history-details mt-1.5 min-w-0">
+          <summary className="cursor-pointer text-fs-caption font-[650] text-muted-foreground">
+            More details
+          </summary>
+          <div className="history-details-content mt-1.5 flex min-w-0 flex-col gap-1.5 pl-0.5">
             {subtitle !== null && (
-              <div className="history-detail-field">
-                <span className="history-detail-label">Subtitle</span>
-                <span className="history-detail-value">{subtitle}</span>
+              <div className="history-detail-field grid min-w-0 grid-cols-[minmax(0,1fr)] gap-px">
+                <span className={detailLabelClass}>Subtitle</span>
+                <span className={detailValueClass}>{subtitle}</span>
               </div>
             )}
             {topic !== null && (
-              <div className="history-detail-field">
-                <span className="history-detail-label">Topic</span>
-                <span className="history-detail-value">{topic}</span>
+              <div className="history-detail-field grid min-w-0 grid-cols-[minmax(0,1fr)] gap-px">
+                <span className={detailLabelClass}>Topic</span>
+                <span className={detailValueClass}>{topic}</span>
               </div>
             )}
             {event.meta.published_at_ms !== null && (
-              <div className="history-detail-field">
-                <span className="history-detail-label">Published</span>
-                <span className="history-detail-value">
+              <div className="history-detail-field grid min-w-0 grid-cols-[minmax(0,1fr)] gap-px">
+                <span className={detailLabelClass}>Published</span>
+                <span className={detailValueClass}>
                   {historyPublishedLabel(event.meta.published_at_ms)}
                 </span>
               </div>
             )}
             {event.meta.espn !== undefined && (
-              <div className="history-detail-field">
-                <span className="history-detail-label">Match</span>
-                <span className="history-detail-value">{historyEspnSummary(event.meta.espn)}</span>
+              <div className="history-detail-field grid min-w-0 grid-cols-[minmax(0,1fr)] gap-px">
+                <span className={detailLabelClass}>Match</span>
+                <span className={detailValueClass}>{historyEspnSummary(event.meta.espn)}</span>
               </div>
             )}
             {details.map((detail) => (
-              <div className="history-detail-field" key={`${detail.label}:${detail.value}`}>
-                <span className="history-detail-label">{detail.label}</span>
-                <span className="history-detail-value">{detail.value}</span>
+              <div
+                className="history-detail-field grid min-w-0 grid-cols-[minmax(0,1fr)] gap-px"
+                key={`${detail.label}:${detail.value}`}
+              >
+                <span className={detailLabelClass}>{detail.label}</span>
+                <span className={detailValueClass}>{detail.value}</span>
               </div>
             ))}
             {link !== null && (
-              <div className="history-detail-field">
-                <span className="history-detail-label">Link</span>
+              <div className="history-detail-field grid min-w-0 grid-cols-[minmax(0,1fr)] gap-px">
+                <span className={detailLabelClass}>Link</span>
                 {/* plan 110 (Step A): untrusted feed data (RSS/ESPN) —
                     literal, selectable TEXT, never an <a href> or
                     in-webview navigation. No vetted external-open
                     precedent exists in this webview; adding one is a
                     separate IPC/capability plan. */}
-                <span className="history-detail-value history-link-text">{link}</span>
+                <span className={cn(detailValueClass, "history-link-text select-text")}>
+                  {link}
+                </span>
               </div>
             )}
           </div>
@@ -1893,15 +1931,15 @@ function HistorySection({ config }: { config: Config }) {
         showPending={false}
       />
       {newestFirst === null ? (
-        <p className="history-empty">Loading…</p>
+        <p className="history-empty m-0 py-3 text-fs-body text-muted-foreground">Loading…</p>
       ) : newestFirst.length === 0 ? (
-        <p className="history-empty">
+        <p className="history-empty m-0 py-3 text-fs-body text-muted-foreground">
           {config.history_enabled
             ? "History is on, but nothing has been recorded yet."
             : 'History is off. Turn on "Record notification history" in General to start recording.'}
         </p>
       ) : (
-        <ul className="history-list">
+        <ul className="history-list flex flex-col py-1 pb-[11px]">
           {newestFirst.map((entry) => (
             <HistoryRow key={entry.event.id} entry={entry} />
           ))}
