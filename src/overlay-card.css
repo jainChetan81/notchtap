@@ -84,8 +84,15 @@
      mode it shadows the part that extends below the hardware cutout. Only
      recomputes during animation — idle is cached, so no idle-CPU cost. */
   filter: drop-shadow(0 7px 18px rgba(0, 0, 0, 0.5));
-  /* plan 102: +25% pacing, operator feedback */
-  transition: width 400ms var(--ease-notchtap);
+  /* plan 102: +25% pacing, operator feedback. `transform`/`filter` added
+     for the hover "breathing" rule below (`.hovered`) — both properties
+     only ever CHANGE via that class toggle, so listing them here is what
+     makes the transition symmetric (animates in on hover AND back out on
+     un-hover, not just one direction). */
+  transition:
+    width 400ms var(--ease-notchtap),
+    transform 260ms var(--ease-notchtap),
+    filter 260ms var(--ease-notchtap);
 }
 
 /* plan 090 (Q1a/Q2b, carried forward): the cutout term
@@ -190,6 +197,59 @@
 .card-root .card-assembly:not(:has(.below-block)) .flank-right {
   border-bottom-right-radius: var(--card-radius, 14px);
   transition: border-radius 260ms var(--ease-notchtap);
+}
+
+/* ==== notch-shaped idle profile (HUD only): the operator's core
+   complaint was that the idle rail reads as a flat rounded "block," not
+   a notch. boring.notch's own NotchShape.swift draws the whole shape
+   with INDEPENDENT top/bottom corner radii (bottom ~2x top) plus a
+   concave S-curve where the shape meets the screen edge. This app's own
+   ROUNDING LAW (comment above `.card-assembly`) already forbids
+   reshaping the cutout's own corners or the flank's INNER corner — the
+   only legal canvas is the flank's OUTER bottom corner, exactly the one
+   the rule above already rounds. Elongating THAT corner (a two-value,
+   horizontal/vertical `border-radius` — an ellipse, not a circle) reads
+   as a flared, elongated "notch mouth" instead of a plain quarter-round,
+   using `--card-radius` (config, untouched) for the horizontal component
+   and a new, independent, larger value for the vertical one — layered
+   ALONGSIDE the config value, never replacing it.
+
+   Technique choice (of the plan's own safety-ordered options): a plain
+   elliptical `border-radius` over `clip-path`/an SVG mask. It is a
+   single, universally-supported box property, animates for free with
+   the existing `transition: border-radius` above (same property, just a
+   richer value — no new transition to add), and CSS's own overlapping-
+   corner algorithm automatically SCALES a too-large radius back down to
+   fit the box rather than clipping or breaking anything — so even at a
+   tiny `--card-scale` this always degrades to "fully rounded," never a
+   glitch. A full concave-then-convex compound S-curve (clip-path/SVG)
+   was evaluated and deliberately NOT used: approximating that compound
+   curve safely, in this text-only-edit environment with no live visual
+   iteration loop, risked a curve that reads as broken rather than
+   flared — the tradeoff the plan explicitly sanctions choosing safety
+   over. The elongated ellipse still reads as clearly, deliberately
+   flared rather than a plain rounded block.
+
+   Scoped like the ROUNDING LAW above (`:not(:has(.below-block))`, so it
+   hands off to `.below-block`'s own plain circular radius the instant
+   one mounts — same DOM-presence timing, zero extra state) PLUS
+   `:not(.bare)` (105's zero-app-drawn-pixels notch mode paints
+   transparent flanks — flaring an invisible shape would be a no-op at
+   best, a stray drop-shadow-catching corner at worst) PLUS the
+   `:root[data-notchtap-mode="hud"]` guard the cutout/idle-face art above
+   already uses: a real hardware notch draws its own physical bottom
+   curve, so this synthetic art would be redundant/wrong there. ==== */
+:root[data-notchtap-mode="hud"]
+  .card-root
+  .card-assembly:not(.bare):not(:has(.below-block))
+  .flank-left {
+  border-bottom-left-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 3), 28px);
+}
+:root[data-notchtap-mode="hud"]
+  .card-root
+  .card-assembly:not(.bare):not(:has(.below-block))
+  .flank-right {
+  border-bottom-right-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 3), 28px);
 }
 
 /* the notch cutout itself: real hardware empty space in notch mode
@@ -314,17 +374,29 @@
   --accent-soft: rgba(255, 107, 87, 0.28);
 }
 
-/* plan 087: the hover primitive's one diagnostic rule — proves the
-   rust-derived tracking-area signal reaches the webview end-to-end.
-   Deliberately boring (a barely-perceptible brightness lift, the
-   spike's own suggestion): this is NOT the real hover design for any
-   of the four consumers (081/082/084/idle expanded-on-hover), which
-   will each replace it with their own presentation. Mirrored in
-   src/settings/preview-overlay.css per the mirror law. Set on the
-   whole assembly (not a single block) so idle's two flanks and
-   showing's flank+below-block all lift together as one shape. */
+/* plan 087 (superseded by the hover "breathing" design below): this
+   started as a deliberately boring diagnostic rule proving the
+   rust-derived tracking-area signal reached the webview end-to-end
+   (`filter: brightness(1.04)`, no shape change). boring.notch imports
+   #4/#5 — a gentle scale-up anchored at the top edge (the notch's own
+   physical anchor never moves; only the shell "breathes" outward from
+   it) plus a deeper drop-shadow for depth, both driven by the SAME
+   `hovered` prop → `.hovered` class this rule always used (StatusRailCard
+   sets it from the live `hovered` prop, never CSS `:hover` — the window
+   is click-through, so `:hover` never fires). Set on the whole assembly
+   (not a single block) so idle's two flanks and showing's flank+below-
+   block all lift together as one shape, same as the rule this replaces.
+   `filter: drop-shadow(...)` here fully REPLACES the base rule's resting
+   drop-shadow while hovered (CSS `filter` is not additive across rules —
+   this is intentional: "deepen the shadow" means swap in a deeper one,
+   not layer a second shadow on top). Kept deliberately subtle (1.02
+   scale, not 1.05+) per the plan's own "alive, not bouncy" instruction;
+   the 260ms transitions on the base rule above make both directions
+   (hover-in and hover-out) animate smoothly. */
 .card-root .card-assembly.hovered {
-  filter: brightness(1.04);
+  transform: scale(1.02);
+  transform-origin: top center;
+  filter: drop-shadow(0 10px 26px rgba(0, 0, 0, 0.6));
 }
 
 /* signature moment #1 — Goal: a bright confetti-spray burst over the
