@@ -189,14 +189,27 @@
    promotion, `.card-assembly.high` and no `.below-block` coexist). A
    class-keyed rule would unround the flanks in that window even though
    there is no below-block yet to justify it — so DOM presence remains
-   the only condition that's correct in BOTH directions. */
+   the only condition that's correct in BOTH directions.
+
+   plan 11x: `transition-duration` dropped 260ms -> 130ms, mirroring
+   src/animationTiming.ts's `CONTENT_EXIT_MS` (must change together, same
+   discipline as that file's own SWAP_EXIT_MS pairing note) — the below-
+   block now closes (StatusRailCard.tsx's `belowBlockOpen`) CONTENT_EXIT_MS
+   after a showing->idle exit begins, instead of the old, slower
+   SWAP_EXIT_MS, so this round-in needs to keep pace or the two would
+   still read as chained rather than one motion. Entrance is unaffected
+   by this number even though it's the SAME rule: CSS only plays a
+   transition when the property's new computed value declares one, and
+   on entrance this rule STOPS matching (below-block mounts, `:has()`
+   flips), so the un-round there has never been transitioned by this
+   declaration — it snaps instantly, before and after this change alike. */
 .card-root .card-assembly:not(:has(.below-block)) .flank-left {
   border-bottom-left-radius: var(--card-radius, 14px);
-  transition: border-radius 260ms var(--ease-notchtap);
+  transition: border-radius 130ms var(--ease-notchtap);
 }
 .card-root .card-assembly:not(:has(.below-block)) .flank-right {
   border-bottom-right-radius: var(--card-radius, 14px);
-  transition: border-radius 260ms var(--ease-notchtap);
+  transition: border-radius 130ms var(--ease-notchtap);
 }
 
 /* ==== notch-shaped idle profile (HUD only): the operator's core

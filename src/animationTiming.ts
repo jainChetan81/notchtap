@@ -29,3 +29,27 @@
 //      (or just before) the geometry timer flips the shell to idle,
 //      never after.
 export const SWAP_EXIT_MS = 220;
+
+// plan 11x: the below-block's OWN exit window — deliberately shorter than
+// (and independent of) SWAP_EXIT_MS above, and exit-only (entrance is
+// untouched, still gated on the SWAP_EXIT_MS-driven `renderedShowing`
+// exactly as before). Fixes the "compact ends, then ~200ms later the
+// corner rounds" bug: previously the below-block stayed mounted at full
+// (square-cornered) shape for the FULL 220ms SWAP_EXIT_MS before
+// vanishing, so the flank corner-round (overlay-card.css) — which can
+// only safely start once the below-block is actually gone, per that
+// file's ROUNDING LAW — couldn't begin until 220ms in, then took its own
+// 260ms on top: two visibly chained acts, ~480ms total. Shortening JUST
+// the below-block's own close (this constant) to run in parallel with
+// its own opacity fade, then letting the flank round start right after,
+// collapses the two acts into one ~300ms motion. StatusRailCard.tsx
+// pairs this with a matching, shortened flank-round transition duration
+// in overlay-card.css (`:not(:has(.below-block))`'s `transition:
+// border-radius`) — both must change together, same discipline as the
+// SWAP_EXIT_MS/CSS pairing above. Not reusing SWAP_EXIT_MS itself for
+// this because that value is also the outer shell's GEOMETRY freeze
+// (plan 107, pinned by StatusRailCard.test.tsx's "compact->idle
+// geometry" describe block) and the content swap's ENTER duration —
+// shortening it directly would speed up (and change the feel of) both
+// of those, which this plan must not touch.
+export const CONTENT_EXIT_MS = 130;
