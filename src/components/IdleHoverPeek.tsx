@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { weatherArtFor } from "../lib/weatherArt";
+import { prefersReducedMotion } from "../prefersReducedMotion";
 import { useClock } from "../useClock";
 import type {
   LiveMatchSummary,
@@ -128,10 +129,7 @@ function useLiveTick(enabled: boolean) {
     if (!enabled) {
       return;
     }
-    const reducedMotion =
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reducedMotion) {
+    if (prefersReducedMotion()) {
       return;
     }
     const id = window.setInterval(() => setTick((t) => t + 1), 1000);
@@ -225,10 +223,7 @@ export function IdleHoverPeek({ status, hovered }: { status?: StatusState; hover
     if (!mounted) {
       return;
     }
-    const reducedMotion =
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reducedMotion) {
+    if (prefersReducedMotion()) {
       setMounted(false);
       setClosing(false);
       return;
