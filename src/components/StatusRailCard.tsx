@@ -1,5 +1,6 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useEffect, useMemo, useState } from "react";
+import { SWAP_EXIT_MS } from "../animationTiming";
 import { renderInlineMarkdown } from "../lib/markdown";
 import {
   ageLabel,
@@ -187,7 +188,7 @@ export function StatusRailCard({
   // (plan 105) so `bare`, below, can feed into it — `renderedShowing`/
   // `exiting` are needed before the class list is built, not after.
   const swapKey = showing ? slot.id : "idle";
-  const { value: renderedSlot, exiting } = useDelayedSwap(slot, swapKey, 220);
+  const { value: renderedSlot, exiting } = useDelayedSwap(slot, swapKey, SWAP_EXIT_MS);
   const renderedShowing = renderedSlot.state === "showing";
 
   // plan 107 Step B: the outer shell's geometry (priority accent class +

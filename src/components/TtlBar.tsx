@@ -1,4 +1,5 @@
 import { useEffect, useRef } from "react";
+import { prefersReducedMotion } from "../prefersReducedMotion";
 
 // plan 081: the thin rotation-countdown bar every showing card carries.
 // Deliberately NOT React state per frame — the prototype
@@ -63,9 +64,7 @@ export function TtlBar({
     // Idle-CPU discipline (plans 015/018): under prefers-reduced-motion, a
     // CSS rule alone can't stop a rAF loop, so the loop itself is gated in
     // JS — render a static full-width fill and never arm the loop.
-    const reducedMotion =
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const reducedMotion = prefersReducedMotion();
 
     if (reducedMotion || ttlMs <= 0) {
       fill.style.width = "100%";

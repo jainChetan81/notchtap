@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
+import { IDLE_PEEK_CLOSE_MS } from "../animationTiming";
 import { weatherArtFor } from "../lib/weatherArt";
+import { prefersReducedMotion } from "../prefersReducedMotion";
 import { useClock } from "../useClock";
 import type {
   LiveMatchSummary,
@@ -45,7 +47,11 @@ import type {
 // just while actually hovered — a real, unwanted change to 091's shell
 // behavior for the common case of "weather enabled, not currently
 // hovering."
-const CLOSE_DELAY_MS = 260;
+//
+// plan 117: the literal now lives in `animationTiming.ts`'s
+// `IDLE_PEEK_CLOSE_MS` (single-sourced alongside `useDelayedSwap`'s exit
+// window) — this alias keeps every reference below unchanged.
+const CLOSE_DELAY_MS = IDLE_PEEK_CLOSE_MS;
 
 // plan 105 (Step B): split from the old combined `WeatherPeekScene` so the
 // art (this component) can sit BEHIND the media row instead of being
@@ -128,10 +134,7 @@ function useLiveTick(enabled: boolean) {
     if (!enabled) {
       return;
     }
-    const reducedMotion =
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reducedMotion) {
+    if (prefersReducedMotion()) {
       return;
     }
     const id = window.setInterval(() => setTick((t) => t + 1), 1000);
@@ -225,10 +228,7 @@ export function IdleHoverPeek({ status, hovered }: { status?: StatusState; hover
     if (!mounted) {
       return;
     }
-    const reducedMotion =
-      typeof window.matchMedia === "function" &&
-      window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-    if (reducedMotion) {
+    if (prefersReducedMotion()) {
       setMounted(false);
       setClosing(false);
       return;

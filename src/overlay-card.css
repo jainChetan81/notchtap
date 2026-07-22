@@ -504,6 +504,10 @@
    earlier `z-index: 0` sibling in the same stacking context (source
    order alone doesn't win once ANY sibling declares a real z-index).
    see the fuller contract comment on `.card-assembly::after` above. */
+/* plan 117: the 220ms below (all four rules) must equal SWAP_EXIT_MS
+   (animationTiming.ts) — useDelayedSwap.ts's timeout waits exactly that
+   long before swapping content, so these exit animations must finish in
+   the same window. */
 .card-root .card-content {
   position: relative;
   z-index: 1;
@@ -1443,6 +1447,9 @@
     idle-peek-open 260ms var(--ease-notchtap) forwards,
     idle-peek-fade-in 200ms ease-out forwards;
 }
+/* plan 117: 260ms above must equal IDLE_PEEK_CLOSE_MS (animationTiming.ts)
+   — IdleHoverPeek.tsx's unmount timer waits exactly that long so this
+   close animation can finish before the block leaves the DOM. */
 .card-root .below-block.idle-peek.closing {
   animation:
     idle-peek-close 260ms var(--ease-notchtap) forwards,
