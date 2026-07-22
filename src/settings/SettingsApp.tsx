@@ -551,11 +551,13 @@ function SettingsGroup({
       // same Card (`.appearance-preview`/`.preview-stage`/`.card-root`
       // never declared their own font-size — they relied on inheriting
       // the browser's 16px/normal default, same as before this
-      // migration). `text-[16px] leading-[normal]` restores exactly that
+      // migration). `text-base leading-[normal]` restores exactly that
       // inherited baseline so the preview subtree's computed styles stay
       // byte-identical (caught by the settings_capture.js preview-
-      // equivalence harness before this fix landed).
-      className="gap-0 overflow-hidden rounded-md border border-border bg-card py-0 text-[16px] leading-[normal] ring-0"
+      // equivalence harness before this fix landed; plan 115 renamed
+      // this from the equivalent `text-[16px]` arbitrary onto the
+      // `text-base` scale utility — 16px either way, pixel-identical).
+      className="gap-0 overflow-hidden rounded-md border border-border bg-card py-0 text-base leading-[normal] ring-0"
     >
       <CardHeader
         // CardHeader's own default className carries a self-triggering

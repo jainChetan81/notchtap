@@ -383,6 +383,9 @@
   }
 
   .preview-label {
+    /* plan 115 Step 3: intentional preview-only exception — 12px isn't
+       on the --fs-* scale (9/10/11/19px); snapping to the nearest rung
+       would shift this label's size, so it stays a literal value. */
     font-size: 12px;
     color: var(--text-secondary);
   }
