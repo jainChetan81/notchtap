@@ -352,6 +352,91 @@
     filter 260ms var(--ease-notchtap);
 }
 
+/* plan 123: kills the "box, then rounded shape pops in" exit artifact —
+   `useExitChoreography.ts`'s `exitToBare` doc has the full "why". Bug
+   recap: `.exiting`/`.bare` are mutually exclusive by construction, so
+   the exit above always converged on the WIDE `.idle`-shaped `--cw`
+   (rule immediately above), then, at the SAME render `.exiting` clears
+   and `.bare` mounts, three things changed at once with no transition
+   bridging them — `--cw` dropped to cutout-only width, the flanks
+   snapped from painted to transparent/zero-padding, and
+   `.synthetic-cutout` (below) snapped from square to rounded. One shape
+   morphing smoothly, then a hard cut to a different shape.
+
+   This block overrides the plain `.exiting` rule above for the ONE leg
+   that's actually headed for `.bare` (`restingState === "notch"`,
+   `exitToBare` true) — `.card-root .card-assembly.exiting.exit-to-bare`
+   (4 classes) beats `.card-root .card-assembly.exiting`'s 3 by
+   specificity regardless of source order, so plain rail-mode `.exiting`
+   (`exitToBare` always false there, so `.exit-to-bare` never lands)
+   is completely untouched by everything in this block. Same `--swap-exit-
+   ms` duration as the rule above (no new literal) — the width and the
+   flank paint/padding both finish converging at the exact same t=175ms
+   tick the class flip happens, so the flip becomes visually a no-op.
+
+   INVARIANT (checkable): at t=var(--swap-exit-ms), every property this
+   block animates must already equal what `.card-assembly.bare`'s own
+   (non-hovered, no-peek) rules set, below:
+     - `--cw`                                 == `.bare`'s `--cw` (:132-134)
+     - `.flank-left`/`.flank-right` background == `.bare`'s (transparent, :135-159)
+     - `.flank-left`/`.flank-right` padding    == `.bare`'s (0, :135-159)
+     - `.synthetic-cutout` bottom-left radius  == `.bare`'s (HUD only, :501-504)
+     - `.synthetic-cutout` bottom-right radius == `.bare`'s (HUD only, :501-504)
+   `box-shadow` isn't listed: the base flank rule never sets one, so
+   `.bare`'s `box-shadow: none` is a no-op match against the default —
+   nothing to transition. */
+.card-root .card-assembly.exiting.exit-to-bare {
+  /* the bare formula (:132-134), not the wide idle/rail one above — the
+     shell shrinks straight to cutout width instead of overshooting to
+     rail width first. */
+  --cw: min(var(--notchtap-cutout-width, 200px), 100%);
+}
+.card-root .card-assembly.exiting.exit-to-bare .flank-left,
+.card-root .card-assembly.exiting.exit-to-bare .flank-right {
+  /* matches `.bare .flank-{left,right}`'s end state (:135-159) exactly —
+     transparent paint, zero inset — but ANIMATES there over the exit
+     window instead of snapping at the class flip. Redeclares the base
+     flank rule's own `background-color`/`padding` transition (:213-215)
+     with `--swap-exit-ms` in place of its 260ms, so this pairing
+     finishes in lockstep with the shell width above, not on the hover-
+     breathing rule's slower cadence. */
+  background-color: transparent;
+  padding: 0;
+  transition:
+    background-color var(--swap-exit-ms, 175ms) var(--ease-notchtap),
+    padding var(--swap-exit-ms, 175ms) var(--ease-notchtap);
+}
+/* the gills (`.notch-gill`, below) need NO rule here — deliberate choice,
+   not an oversight: they already `display: block` unconditionally
+   throughout `.exiting` (their own selector, further below, is keyed off
+   `.exiting:not(.bare)` with no resting-mode condition) and are anchored
+   to `.card-assembly`'s OWN edges (`left`/`right: -10px`), which this
+   block's `--cw` shrink is already moving — so they slide inward
+   continuously with the shell width for free, no separate fade needed. */
+
+/* HUD-only (`.synthetic-cutout` is `display: none` outside
+   `:root[data-notchtap-mode="hud"]` — real notch hardware draws its own
+   curves): transitions the cutout's bottom radii from square (their
+   value throughout plain `.exiting`, nothing sets them there) to
+   `.bare`'s rounded values (:501-504) over the same exit window, instead
+   of the discrete snap that used to happen only once `.bare` mounted.
+   Deliberately unconditional on `:has(.below-block)` (unlike `.bare`'s
+   own rule) — the below-block's own AnimatePresence exit is shorter
+   (`--content-exit-ms`) than this whole window (`--swap-exit-ms`), so
+   for the tail of the window there is no below-block left to hand
+   rounding duty to; starting the radius transition at t=0 regardless
+   just means it's already mid-flight, invisible under the still-fading
+   below-block, by the time that duty-handoff matters — and it lands on
+   the exact `.bare` value at t=175ms either way. */
+:root[data-notchtap-mode="hud"]
+  .card-root
+  .card-assembly.exiting.exit-to-bare
+  .synthetic-cutout {
+  border-bottom-left-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 2), 20px);
+  border-bottom-right-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 2), 20px);
+  transition: border-radius var(--swap-exit-ms, 175ms) var(--ease-notchtap);
+}
+
 /* ==== notch-shaped idle profile (HUD only): the operator's core
    complaint was that the idle rail reads as a flat rounded "block," not
    a real hardware notch. Native notch implementations draw the whole
