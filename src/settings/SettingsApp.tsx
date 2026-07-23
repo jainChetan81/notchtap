@@ -3,6 +3,7 @@ import {
   Command,
   History,
   KeyRound,
+  ListOrdered,
   type LucideIcon,
   Newspaper,
   Palette,
@@ -25,6 +26,7 @@ import { FootballSection } from "./sections/FootballSection";
 import { GeneralSection } from "./sections/GeneralSection";
 import { HistorySection } from "./sections/HistorySection";
 import { NewsSection } from "./sections/NewsSection";
+import { QueueSection } from "./sections/QueueSection";
 import { ShortcutsSection } from "./sections/ShortcutsSection";
 import { WeatherSection } from "./sections/WeatherSection";
 import type { Config, ConnectorHealthDto, SecretStatus } from "./types";
@@ -44,6 +46,7 @@ export type {
   HistoryEventMeta,
   HistoryRotationSpec,
   PriorityLevel,
+  QueueItemSummary,
   RestingState,
   RssFeedConfig,
   SecretStatus,
@@ -61,7 +64,8 @@ type SectionId =
   | "shortcuts"
   | "appearance"
   | "diagnostics"
-  | "history";
+  | "history"
+  | "queue";
 
 const navigation: ReadonlyArray<{
   id: SectionId;
@@ -78,6 +82,7 @@ const navigation: ReadonlyArray<{
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "diagnostics", label: "Diagnostics", icon: ScrollText },
   { id: "history", label: "History", icon: History },
+  { id: "queue", label: "Queue", icon: ListOrdered },
 ];
 
 const sectionCopy: Record<SectionId, { index: string; title: string; description: string }> = {
@@ -131,6 +136,11 @@ const sectionCopy: Record<SectionId, { index: string; title: string; description
     index: "10",
     title: "History",
     description: "Review and clear recorded past notifications.",
+  },
+  queue: {
+    index: "11",
+    title: "Queue",
+    description: "See what's waiting behind the visible card, and skip or clear it.",
   },
 };
 
@@ -484,6 +494,7 @@ export function SettingsApp() {
                     {activeSection === "shortcuts" ? <ShortcutsSection /> : null}
                     {activeSection === "diagnostics" ? <DiagnosticsSection /> : null}
                     {activeSection === "history" ? <HistorySection config={config} /> : null}
+                    {activeSection === "queue" ? <QueueSection /> : null}
                     {activeSection === "appearance" ? (
                       // AppearanceSection now reads config.appearance directly
                       // (plan 119 Step 3) — Reset/Reset-to-defaults update it

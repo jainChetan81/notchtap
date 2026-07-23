@@ -19,7 +19,7 @@ mod presentation;
 pub mod queue;
 mod rss_poller;
 mod settings;
-// The single source of truth for the eleven v5 settings-window commands
+// The single source of truth for the fourteen v5 settings-window commands
 // (see this module's own doc comment) — build.rs's AppManifest::commands
 // allowlist, the generate_handler![...] registration just below, and
 // capabilities/settings.json must all name exactly the commands listed
@@ -253,16 +253,19 @@ pub fn run() {
         // keeps them deniable to the overlay window (spec §2).
         .invoke_handler(tauri::generate_handler![
             settings::clear_history,
+            settings::clear_queue,
             settings::get_config,
             settings::get_connector_health,
             settings::get_default_config,
             settings::get_history,
+            settings::get_queue,
             settings::get_recent_log_lines,
             settings::get_secret_status,
             settings::save_config_and_relaunch,
             settings::set_secret,
             settings::send_test_notification,
             settings::set_appearance,
+            settings::skip_current,
         ])
         .setup(move |app| {
             app.set_activation_policy(ActivationPolicy::Accessory);

@@ -881,6 +881,46 @@ pub async fn clear_history(
     }
 }
 
+// The three Queue-section commands (plan 121): read-only visibility plus
+// clear/skip, none of which need a bespoke Engine method — `engine.read`/
+// `engine.apply` (engine.rs) are already the async-caller door for exactly
+// this shape. Titles/bodies inside `QueueItemSummary` are UNTRUSTED wire
+// data (same rule as History's link-as-literal-text precedent) — the
+// frontend must render them as plain text only.
+#[tauri::command]
+pub async fn get_queue(
+    window: tauri::WebviewWindow,
+    engine: tauri::State<'_, Engine>,
+) -> Result<Vec<crate::queue::QueueItemSummary>, String> {
+    ensure_settings_window(&window)?;
+    Ok(engine.read(|q| q.waiting_summaries()).await)
+}
+
+/// Drops every WAITING item (visible card untouched — it finishes its
+/// normal ttl/rotation). Returns the count dropped so the section can
+/// report an outcome message.
+#[tauri::command]
+pub async fn clear_queue(
+    window: tauri::WebviewWindow,
+    engine: tauri::State<'_, Engine>,
+) -> Result<usize, String> {
+    ensure_settings_window(&window)?;
+    Ok(engine.apply(|q, _now| q.clear_waiting()).await)
+}
+
+/// Dismisses the visible card now (routes through `skip_visible`'s
+/// existing semantics: a Recurring item requeues to the back of its own
+/// tier, a OneShot drops), promoting the next waiting item immediately.
+#[tauri::command]
+pub async fn skip_current(
+    window: tauri::WebviewWindow,
+    engine: tauri::State<'_, Engine>,
+) -> Result<(), String> {
+    ensure_settings_window(&window)?;
+    engine.apply(|q, now| q.skip_visible(now)).await;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
