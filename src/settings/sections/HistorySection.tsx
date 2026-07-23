@@ -295,24 +295,44 @@ export function HistorySection({ config }: { config: Config }) {
       />
       {newestFirst === null ? (
         <p className="history-empty m-0 py-3 text-fs-body text-muted-foreground">Loading…</p>
-      ) : newestFirst.length === 0 ? (
-        <p className="history-empty m-0 py-3 text-fs-body text-muted-foreground">
-          {config.history_enabled
-            ? "History is on, but nothing has been recorded yet."
-            : 'History is off. Turn on "Record notification history" in General to start recording.'}
-        </p>
       ) : (
-        <ul className="history-list flex flex-col py-1 pb-[11px]">
-          {/* plan 126: initial={false} so the section's own first mount (and
-              a load that happens to return the same entries) never
-              cascades — only a row genuinely appearing or leaving animates.
-              Clear collapses the rows it removes. */}
-          <AnimatePresence initial={false}>
-            {newestFirst.map((entry) => (
-              <HistoryRow key={entry.event.id} entry={entry} />
-            ))}
-          </AnimatePresence>
-        </ul>
+        <>
+          {/* plan 129 (K1): sibling of the <ul> below, not a replacement
+              for it — see the AnimatePresence comment inside the <ul> for
+              why the two can no longer share a ternary branch. */}
+          {newestFirst.length === 0 && (
+            <p className="history-empty m-0 py-3 text-fs-body text-muted-foreground">
+              {config.history_enabled
+                ? "History is on, but nothing has been recorded yet."
+                : 'History is off. Turn on "Record notification history" in General to start recording.'}
+            </p>
+          )}
+          <ul
+            className={cn("history-list flex flex-col", newestFirst.length > 0 && "py-1 pb-[11px]")}
+          >
+            {/* plan 126: initial={false} so the section's own first mount (and
+                a load that happens to return the same entries) never
+                cascades — only a row genuinely appearing or leaving animates.
+                Clear collapses the rows it removes. plan 129 (K1): the
+                <ul> + AnimatePresence themselves now stay mounted even once
+                `newestFirst` is empty — the prior
+                `newestFirst.length === 0 ? <p> : <ul>…` ternary unmounted
+                the whole list (AnimatePresence included) synchronously the
+                instant the array emptied, so nothing exited on a wholesale
+                Clear (the exact parent-level-conditional bug plan 127 Step
+                2 fixed for the peek). The empty-state <p> is now the
+                sibling above, gated on `newestFirst.length === 0` directly,
+                so it can appear immediately while the last row(s) still
+                exit. The `py-1 pb-[11px]` vertical padding is likewise
+                gated on `newestFirst.length > 0` so an empty <ul>
+                contributes no gap. */}
+            <AnimatePresence initial={false}>
+              {newestFirst.map((entry) => (
+                <HistoryRow key={entry.event.id} entry={entry} />
+              ))}
+            </AnimatePresence>
+          </ul>
+        </>
       )}
       <div className={CONTROL_ROW}>
         <ControlCopy

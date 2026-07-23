@@ -8,6 +8,7 @@
 // duplicate coverage.
 import { act, cleanup, render } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { NOTCHTAP_EASE } from "../animationTiming";
 import { IdleFace } from "./IdleFace";
 
 afterEach(cleanup);
@@ -39,9 +40,37 @@ describe("IdleFace (plan 125)", () => {
       act(() => vi.advanceTimersByTime(5999));
       expect(eyes.style.transform).toBe(initialTransform);
     });
+
+    // plan 129 (T5, deep-review fix): the test above only proves nothing
+    // happens BEFORE the sparser floor — it never actually lets a glance
+    // fire, so a gaze cycle that silently stopped scheduling altogether
+    // (e.g. a broken cleanup, or `active` read backwards) would still
+    // pass it. `randomBetween(6000, 11000)` never reaches its upper bound
+    // (`Math.random()` is exclusive of 1), so 11001ms after `visible`
+    // flips true is enough to GUARANTEE the first gaze step has fired.
+    // `GAZE_SEQUENCE`'s own first step (center -> left, IdleFace.tsx) is
+    // deterministic regardless of which random delay actually fired, so
+    // the transform is guaranteed to differ from its initial value here.
+    it("a glance actually happens — the eyes' transform changes once the gaze cycle's own floor has definitely elapsed", () => {
+      const { container } = render(<IdleFace idle={true} />);
+      act(() => vi.advanceTimersByTime(REVEAL_DELAY_MS));
+
+      const eyes = container.querySelector(".idle-face-eyes") as HTMLElement;
+      expect(eyes).not.toBeNull();
+      const initialTransform = eyes.style.transform;
+
+      act(() => vi.advanceTimersByTime(11001));
+      expect(eyes.style.transform).not.toBe(initialTransform);
+    });
   });
 
   describe("eyes: CSS transition, not a motion spring", () => {
+    // plan 129 (C6, deep-review fix): built from the NOTCHTAP_EASE import
+    // itself, not a hand-typed "0.22, 1, 0.36, 1" echo — the component
+    // now builds its own transition string the same way
+    // (`NOTCHTAP_EASE.join(", ")`), so this test would silently stop
+    // proving anything if a future edit to the constant weren't also
+    // reflected here.
     it("carries an inline transition on transform using the house curve, not a spring", () => {
       const { container } = render(<IdleFace idle={true} />);
       act(() => vi.advanceTimersByTime(REVEAL_DELAY_MS));
@@ -49,7 +78,7 @@ describe("IdleFace (plan 125)", () => {
       const eyes = container.querySelector(".idle-face-eyes") as HTMLElement;
       expect(eyes).not.toBeNull();
       expect(eyes.style.transition).toContain("transform");
-      expect(eyes.style.transition).toContain("cubic-bezier(0.22, 1, 0.36, 1)");
+      expect(eyes.style.transition).toContain(`cubic-bezier(${NOTCHTAP_EASE.join(", ")})`);
     });
 
     it("renders the eyes as a plain div (not a motion-managed node) carrying both eye dots", () => {

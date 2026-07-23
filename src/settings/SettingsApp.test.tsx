@@ -963,6 +963,48 @@ describe("SettingsApp", () => {
     await waitFor(() => expect(clearHistory).toHaveBeenCalledTimes(1));
   });
 
+  // plan 129 (K1): same fix, same test shape as QueueSection's own K1 test
+  // above — HistorySection carried the identical parent-level-conditional
+  // bug (`entries.length === 0 ? <p> : <ul>…`), so Clear history's own
+  // outgoing row never got to exit-animate either.
+  it("Clear history lets the row exit-animate instead of vanishing outright, with the empty state appearing immediately alongside it", async () => {
+    const clearHistory = vi.fn();
+    let entries: HistoryEntry[] = [historyEntryOlder];
+    mockIPC((command) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "get_history") return entries;
+      if (command === "clear_history") {
+        clearHistory();
+        entries = [];
+        return null;
+      }
+    });
+    render(<SettingsApp />);
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+
+    await screen.findByText("First notification");
+    fireEvent.click(screen.getByRole("button", { name: "Clear history" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Really clear?" }));
+    await waitFor(() => expect(clearHistory).toHaveBeenCalledTimes(1));
+
+    // the render where `entries` actually flipped to `[]`: the empty-state
+    // text is already up, but the outgoing row is STILL in the DOM,
+    // mid-exit — never both-at-once under the old parent-level ternary.
+    expect(
+      await screen.findByText("History is on, but nothing has been recorded yet."),
+    ).toBeTruthy();
+    expect(screen.getByText("First notification")).toBeTruthy();
+
+    // once the row's own 180ms exit animation actually finishes, it
+    // leaves the DOM for good.
+    await waitFor(() => {
+      expect(screen.queryByText("First notification")).toBeNull();
+    });
+  });
+
   // plan 110 (Step A): history richness — the metadata row + expandable
   // details.
   describe("history richness (plan 110)", () => {
@@ -1311,6 +1353,52 @@ describe("SettingsApp", () => {
       await waitFor(() => expect(screen.getByText("Queue is empty.")).toBeTruthy());
     });
 
+    // plan 129 (K1): the actual choreography fix, pinned directly. Before
+    // this plan, `items.length === 0 ? <p> : <ul>…` unmounted the whole
+    // `<ul>` (AnimatePresence included) the instant Clear emptied the
+    // array, so the outgoing row's own exit animation never got a chance
+    // to play — a hard cut, not a collapse. The fix keeps the `<ul>` +
+    // AnimatePresence mounted and renders the empty-state `<p>` as a
+    // sibling instead, so both can be true on the SAME render: the row is
+    // still in the DOM (exiting) AND the empty-state text has already
+    // appeared, then the row actually leaves once its own exit window
+    // elapses.
+    it("Clear queue lets the row exit-animate instead of vanishing outright, with the empty state appearing immediately alongside it", async () => {
+      const clearQueue = vi.fn();
+      let queueItems: QueueItemSummary[] = [waitingHigh];
+      mockIPC((command) => {
+        if (command === "get_config") return config;
+        if (command === "get_secret_status") return unsetSecrets;
+        if (command === "get_default_config") return rustConfigDefaults;
+        if (command === "get_queue") return queueItems;
+        if (command === "clear_queue") {
+          clearQueue();
+          queueItems = [];
+          return 1;
+        }
+      });
+      render(<SettingsApp />);
+      await screen.findByRole("heading", { level: 1, name: "General" });
+      fireEvent.click(screen.getByRole("button", { name: "Queue" }));
+      await screen.findByRole("heading", { level: 1, name: "Queue" });
+      await screen.findByText("High priority waiting item");
+
+      fireEvent.click(screen.getByRole("button", { name: "Clear queue" }));
+      await waitFor(() => expect(clearQueue).toHaveBeenCalledTimes(1));
+
+      // the render where `items` actually flipped to `[]`: the empty-state
+      // text is already up, but the outgoing row is STILL in the DOM,
+      // mid-exit — never both-at-once under the old parent-level ternary.
+      expect(await screen.findByText("Queue is empty.")).toBeTruthy();
+      expect(screen.getByText("High priority waiting item")).toBeTruthy();
+
+      // once the row's own 180ms exit animation actually finishes, it
+      // leaves the DOM for good.
+      await waitFor(() => {
+        expect(screen.queryByText("High priority waiting item")).toBeNull();
+      });
+    });
+
     it("a failed get_queue reports an error via ActionStatus", async () => {
       mockIPC((command) => {
         if (command === "get_config") return config;
@@ -1367,21 +1455,51 @@ describe("SettingsApp", () => {
     // rather than remounting every row on every Refresh. Same DOM node
     // identity (not just equal content) is the proof: a remount would
     // produce a brand-new element.
-    it("queue row keys are stable across a refetch of an identical list — no remount", async () => {
-      const queueItems: QueueItemSummary[] = [waitingHigh, waitingLow];
-      mockQueue(queueItems);
+    //
+    // plan 129 (T2, deep-review fix): the ORIGINAL version of this test
+    // refetched the exact same two-item list unchanged — a case where a
+    // positional `${index}:${item.title}` key and the content-based key
+    // above compute the IDENTICAL string for every row (nothing shifted
+    // index), so the test passed under both implementations and never
+    // actually discriminated between them. Replaced with a refetch that
+    // DROPS the first row: `waitingLow` moves from index 1 to index 0,
+    // which a positional key would compute as a different key (`1:...`
+    // -> `0:...`) for the exact same surviving row, forcing an
+    // AnimatePresence exit+enter remount — the content-based key doesn't
+    // care about position at all, so the row's identity survives. Verified
+    // this fails against the old positional-key implementation (reverted
+    // `withQueueRowKeys` locally, re-ran, saw the DOM-node-identity
+    // assertion fail as expected, then restored the fix — not committed).
+    it("a surviving row keeps its DOM node identity when a refetch drops an earlier row — no remount from a positional key", async () => {
+      let queueItems: QueueItemSummary[] = [waitingHigh, waitingLow];
+      // Not `mockQueue(queueItems)`: that helper closes over the array
+      // reference it's CALLED with, so reassigning the outer `queueItems`
+      // variable below wouldn't be visible to it. Reading `queueItems`
+      // directly inside the handler (same shape as the Skip
+      // current/Clear queue tests above) is what lets the second
+      // `get_queue` return a genuinely different list.
+      mockIPC((command) => {
+        if (command === "get_config") return config;
+        if (command === "get_secret_status") return unsetSecrets;
+        if (command === "get_default_config") return rustConfigDefaults;
+        if (command === "get_queue") return queueItems;
+      });
       await openQueue();
 
-      const rowBefore = (await screen.findByText("High priority waiting item")).closest(
+      const rowBefore = (await screen.findByText("Low priority waiting item")).closest(
         ".queue-row",
       ) as HTMLElement;
 
+      // waitingHigh (the FIRST row) is gone from this refetch — waitingLow
+      // is now at index 0, not index 1.
+      queueItems = [waitingLow];
       fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
       await waitFor(() => {
-        expect(screen.getByText("High priority waiting item")).toBeTruthy();
+        expect(screen.queryByText("High priority waiting item")).toBeNull();
       });
+
       const rowAfter = screen
-        .getByText("High priority waiting item")
+        .getByText("Low priority waiting item")
         .closest(".queue-row") as HTMLElement;
 
       expect(rowAfter).toBe(rowBefore);

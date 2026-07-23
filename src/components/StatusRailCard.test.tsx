@@ -2,9 +2,10 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath, URL as NodeURL } from "node:url";
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { CONTENT_EXIT_MS, NOTCHTAP_EASE, ROTATION_EXIT_MS } from "../animationTiming";
 import type { EspnMeta, SlotState, SourceKind } from "../useSlotState";
 import type { StatusState } from "../useStatusState";
-import { StatusRailCard } from "./StatusRailCard";
+import { contentExitVariants, StatusRailCard } from "./StatusRailCard";
 
 // plan 084: `Crest` (StatusRailCard.tsx) calls `convertFileSrc` itself —
 // the real tauri implementation isn't available under vitest/jsdom, so
@@ -390,43 +391,98 @@ describe("StatusRailCard", () => {
   // used to re-announce on every routine wire tick) onto the below-block
   // wrapper — the STATIC element that carries title/body and persists
   // across same-session rotations, never the AnimatePresence-keyed node
-  // that remounts per swap. The DOM CONDITION this test asserts (absent
-  // while idle, present while a — non-live-match — card shows) is
-  // unchanged; only which element carries it moved, per
-  // StatusRailCard.tsx's own `liveRegionActive` doc.
-  it("is not a live region while idle, and becomes one while showing", () => {
-    const { container: idleContainer } = render(<StatusRailCard slot={{ state: "empty" }} />);
-    expect(idleContainer.querySelector(".below-block")).toBeNull();
+  // that remounts per swap.
+  //
+  // plan 129 (K2/T1, deep-review fix): that placement turned out to be
+  // ITS OWN version of the same pre-populated-region bug — the
+  // below-block wrapper mounts ~175ms after a promotion (the exit-
+  // choreography settle), already carrying its title/body content in
+  // the same commit. StatusRailCard.tsx's own `liveRegionActive` doc has
+  // the full mechanism: role/aria-live now live on a NEW, always-mounted
+  // `display: contents` wrapper one level up, flipping at t=0 of the
+  // promotion (same as the pre-127 root-level placement this repoint
+  // itself replaced), never on `.below-block` itself. The three tests
+  // below are real tripwires against THAT placement — replacing, not
+  // patching, the three that used to assert directly on `.below-block`'s
+  // own attributes, which no longer carries them at all; a naive
+  // `.getAttribute` check there would now vacuously pass regardless of
+  // whether the region worked. The DOM CONDITION this describe block
+  // asserts (absent while idle, present while a — non-live-match —
+  // card shows, present before content arrives) is unchanged from the
+  // original intent; only which element carries it, and how early it
+  // shows up, are pinned precisely now.
+  describe("live region placement (plan 129 K2)", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
 
-    // fresh mount, already showing — no entrance delay to wait out (the
-    // SWAP_EXIT_MS delayed-swap only gates a POST-mount transition, not
-    // the initial render — same reasoning the rotation-timing tests
-    // above rely on).
-    const { container: showingContainer } = render(<StatusRailCard slot={GOAL} />);
-    const block = showingContainer.querySelector(".below-block") as HTMLElement;
-    expect(block.getAttribute("role")).toBe("status");
-    expect(block.getAttribute("aria-live")).toBe("polite");
-  });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
 
-  // plan 127 (Step 5): FlankClock/StatusDots are structurally OUTSIDE
-  // the below-block (they live in `.flank-left`/`.flank-right`), so
-  // moving the region there already excludes them — this pins that they
-  // never carry the role/attribute themselves, on top of the below-block
-  // assertion above.
-  it("FlankClock and StatusDots never carry the live-region role themselves", () => {
-    const { container } = render(<StatusRailCard slot={GOAL} hovered={true} />);
-    expect(container.querySelector('.flank-left [role="status"]')).toBeNull();
-    expect(container.querySelector('.flank-right [role="status"]')).toBeNull();
-  });
+    it("is not a live region while idle", () => {
+      const { container } = render(<StatusRailCard slot={{ state: "empty" }} />);
+      expect(container.querySelector('[role="status"], [aria-live]')).toBeNull();
+    });
 
-  // plan 127 (Step 5): a live-match card's own chrome (clock/score,
-  // ticking on every wire update) is excluded from the region entirely —
-  // `liveRegionActive`'s own `!isLiveCard` gate — rather than being
-  // included and re-announcing on every tick.
-  it("a live-match card's own scorecard chrome is not a live region", () => {
-    const { container } = render(<StatusRailCard slot={liveSlot()} />);
-    expect(container.querySelector(".below-block")?.getAttribute("role")).toBeNull();
-    expect(container.querySelector(".below-block")?.getAttribute("aria-live")).toBeNull();
+    // plan 127 (Step 5): FlankClock/StatusDots are structurally OUTSIDE
+    // the below-block (they live in `.flank-left`/`.flank-right`) — the
+    // wrapper the region now lives on (K2) is a sibling of those too, so
+    // this still holds under the new placement.
+    it("is exactly one live region while showing (non-live-match), and the clock/dots sit outside it", () => {
+      const { container } = render(<StatusRailCard slot={GOAL} />);
+      // content mounts ~175ms after a fresh-mount promotion too (the
+      // exit-choreography settle applies from the initial idle->showing
+      // transition, not just a later rerender) — advance past it so the
+      // below-block's own content is actually in the tree for this
+      // "sits outside it" check to mean anything.
+      act(() => vi.advanceTimersByTime(175));
+
+      const regions = container.querySelectorAll('[role="status"]');
+      expect(regions.length).toBe(1);
+
+      const clockEl = container.querySelector(".time-only");
+      expect(clockEl).not.toBeNull();
+      expect(clockEl?.closest('[role="status"]')).toBeNull();
+
+      const dotsEl = container.querySelector(".status-dots");
+      expect(dotsEl).not.toBeNull();
+      expect(dotsEl?.closest('[role="status"]')).toBeNull();
+    });
+
+    // plan 127 (Step 5): a live-match card's own chrome (clock/score,
+    // ticking on every wire update) is excluded from the region entirely
+    // — `liveRegionActive`'s own `!isLiveCard` gate — rather than being
+    // included and re-announcing on every tick.
+    it("a live-match card's own scorecard chrome is not a live region", () => {
+      const { container } = render(<StatusRailCard slot={liveSlot()} />);
+      act(() => vi.advanceTimersByTime(175));
+      expect(container.querySelector('[role="status"]')).toBeNull();
+      expect(container.querySelector("[aria-live]")).toBeNull();
+    });
+
+    // The actual K2 fix, pinned directly: the region must exist BEFORE
+    // its content, not in the same commit as it.
+    it("the live-region attribute is present at t=0 of a promotion, before the below-block content mounts ~175ms later", () => {
+      const { container, rerender } = render(<StatusRailCard slot={{ state: "empty" }} />);
+      rerender(<StatusRailCard slot={GOAL} />);
+
+      // t=0: `showing` has already flipped, so the static wrapper's
+      // role/aria-live are already in the DOM — but `belowBlockOpen`
+      // hasn't settled yet, so there is no `.below-block` content node
+      // at all yet. A real screen reader would see an EMPTY,
+      // already-live region here, never a pre-populated one.
+      expect(container.querySelector('[role="status"]')).not.toBeNull();
+      expect(container.querySelector('[aria-live="polite"]')).not.toBeNull();
+      expect(container.querySelector(".below-block")).toBeNull();
+
+      act(() => vi.advanceTimersByTime(175));
+
+      // content now mounts INTO the already-established region — the
+      // region itself was never re-created, just gained a child.
+      expect(container.querySelector(".below-block")).not.toBeNull();
+      expect(container.querySelector('[role="status"]')).not.toBeNull();
+    });
   });
 
   it("renders the priority class and expanded class when showing", () => {
@@ -1113,6 +1169,39 @@ describe("StatusRailCard", () => {
       // no remount — same node, same pattern as the queue-slider test
       // above.
       expect(after).toBe(before);
+      // plan 129 (T7, deep-review fix): the node itself proving stable
+      // (above) doesn't, on its own, prove `isRotation` stayed false for
+      // it — `wasShowingRef`'s own guard-on-key-change doc (StatusRailCard.tsx)
+      // exists specifically to stop an unrelated same-key re-render like
+      // this one from corrupting that cached value. Pin the attribute
+      // directly, on top of the node-identity check.
+      expect((after as HTMLElement | null)?.getAttribute("data-rotation-swap")).toBe("false");
+    });
+  });
+
+  // plan 129 (T3, deep-review fix): pins `contentExitVariants` (exported
+  // test-only, same precedent as `iconForBundleId` in IdleHoverPeek.tsx)
+  // directly, rather than only through rendered `data-rotation-swap`
+  // output above — jsdom/motion don't expose a committed exit
+  // animation's `transition` object back onto the DOM, so this is the
+  // only way to check the actual duration/ease values the rotation vs.
+  // non-rotation exit legs use, not just whether the boolean that picks
+  // between them landed correctly.
+  describe("contentExitVariants (plan 129 T3)", () => {
+    it("the rotation exit uses ROTATION_EXIT_MS, in seconds, with the house ease", () => {
+      const variant = contentExitVariants.exit(true) as {
+        transition: { duration: number; ease: unknown };
+      };
+      expect(variant.transition.duration).toBe(ROTATION_EXIT_MS / 1000);
+      expect(variant.transition.ease).toEqual(NOTCHTAP_EASE);
+    });
+
+    it("the non-rotation (promotion/exit) leg uses CONTENT_EXIT_MS, in seconds, with the house ease", () => {
+      const variant = contentExitVariants.exit(false) as {
+        transition: { duration: number; ease: unknown };
+      };
+      expect(variant.transition.duration).toBe(CONTENT_EXIT_MS / 1000);
+      expect(variant.transition.ease).toEqual(NOTCHTAP_EASE);
     });
   });
 

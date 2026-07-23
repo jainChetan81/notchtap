@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath, URL as NodeURL } from "node:url";
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { StatusState } from "../useStatusState";
@@ -219,6 +221,52 @@ describe("StatusDots", () => {
       for (const dot of Array.from(container.querySelectorAll(".status-dot"))) {
         expect(dot.getAttribute("aria-label")?.toLowerCase()).not.toContain("paused");
       }
+    });
+  });
+
+  // plan 129 (T6, deep-review fix): jsdom can't compute cascade from
+  // stylesheets (no layout/paint engine), so these are pinned at the
+  // STRING level against the real shared stylesheet — same technique as
+  // celebrationStacking.test.tsx's own `ruleBody` helper (this is a
+  // single-line-selector variant of it; StatusRailCard.test.tsx's own
+  // copy additionally tolerates multi-line/wrapped selectors, not needed
+  // here).
+  describe("overlay-card.css string pins (plan 129 C2/T6)", () => {
+    function readSourceCss(relativePath: string): string {
+      return readFileSync(fileURLToPath(new NodeURL(relativePath, import.meta.url)), "utf-8");
+    }
+
+    function ruleBody(css: string, selector: string): string {
+      const marker = `${selector} {`;
+      const start = css.indexOf(marker);
+      if (start === -1) {
+        throw new Error(`selector not found in stylesheet: ${selector}`);
+      }
+      const braceStart = start + marker.length - 1;
+      const braceEnd = css.indexOf("}", braceStart);
+      if (braceEnd === -1) {
+        throw new Error(`unterminated rule for selector: ${selector}`);
+      }
+      return css.slice(braceStart + 1, braceEnd);
+    }
+
+    const overlayCardCss = readSourceCss("../overlay-card.css");
+
+    it(".status-dot's transition softens border-radius AND (post-C2) background-color, not just opacity/box-shadow", () => {
+      const body = ruleBody(overlayCardCss, ".card-root .status-dot");
+      expect(body).toContain("border-radius var(--hover-ms");
+      // C2: the enabled<->disabled shape flip also changes `background`/
+      // `border` (below in the stylesheet) — without this leg those two
+      // still snapped while border-radius eased, a two-phase glitch.
+      expect(body).toContain("background-color var(--hover-ms");
+      expect(body).toContain("border-color var(--hover-ms");
+      expect(body).toContain("border-width var(--hover-ms");
+    });
+
+    it("the pause glyph's fade-in keyframe exists, and .pause-glyph references it by exact name", () => {
+      expect(overlayCardCss).toContain("@keyframes pause-glyph-fade-in");
+      const body = ruleBody(overlayCardCss, ".card-root .pause-glyph");
+      expect(body).toContain("pause-glyph-fade-in");
     });
   });
 });
