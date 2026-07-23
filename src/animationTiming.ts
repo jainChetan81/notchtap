@@ -88,3 +88,20 @@ export const CONTENT_EXIT_MS = 105;
 // token and compares it to this array, so drift fails CI instead of
 // shipping two subtly different eases.
 export const NOTCHTAP_EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
+
+// 2026-07-23 review fix (Duplicated Code finding, wave C — CSS custom-
+// property injection): the shell's own entrance width-grow (base
+// `.card-assembly`'s `transition: width`) and the manifest disclosure's
+// expand/collapse (`.manifest-wrap`'s `transition: grid-template-rows`/
+// `opacity`) used to carry two independently-hand-tuned literals, 320ms
+// and 300ms — a 20ms gap with no documented reason, just an artifact of
+// two separate polish passes touching one but not the other. Neither
+// number has ever had a JS-side consumer (unlike SWAP_EXIT_MS/
+// CONTENT_EXIT_MS above), so there was no drift RISK, only needless
+// inconsistency between two "something is opening" motions that read as
+// the same gesture. Unified onto this single constant (applied via
+// applyAnimationTiming.ts, same as the other two) rather than leaving
+// the 20ms offset undocumented — screenshot-verified
+// (docs/review-logs) that neither the shell's own promotion-grow nor the
+// manifest's expand toggle changed character at the unified 320ms.
+export const EXPAND_MS = 320;

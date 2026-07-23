@@ -92,9 +92,16 @@
      plan 12x (wave 3): width dropped 400ms -> 320ms (~20% quicker,
      operator-feedback "snappier overall" pass) — transform/filter
      (the hover breathe, unrelated to this pass's complaint) are
-     untouched. */
+     untouched.
+     2026-07-23 review fix (wave C, CSS custom-property injection): the
+     literal 320ms moved to `var(--expand-ms, 320ms)` — EXPAND_MS in
+     animationTiming.ts, injected by applyAnimationTiming.ts at both real
+     entry points. See that constant's own doc for why it's now also the
+     manifest disclosure's duration (below). The `320ms` fallback keeps
+     this rule correct even in a hypothetical context that never calls
+     applyAnimationTiming. */
   transition:
-    width 320ms var(--ease-notchtap),
+    width var(--expand-ms, 320ms) var(--ease-notchtap),
     transform 260ms var(--ease-notchtap),
     filter 260ms var(--ease-notchtap);
 }
@@ -289,20 +296,26 @@
    below, all three finishing together instead of chaining. No new
    transition-duration to keep in lockstep: both matched selectors share
    the SAME declaration block, so there are still only two
-   `transition: border-radius <N>ms` declarations in this file (the
-   CONTENT_EXIT_MS guard test's own "at least 2" check is unaffected) —
-   by the time `.exiting` clears (SWAP_EXIT_MS) the below-block is long
+   `transition: border-radius <var>ms` declarations in this file — by
+   the time `.exiting` clears (SWAP_EXIT_MS) the below-block is long
    gone and `:not(:has(.below-block))` alone keeps matching, so there is
-   no radius flip, no re-transition, at the handoff. */
+   no radius flip, no re-transition, at the handoff.
+   2026-07-23 review fix (wave C, CSS custom-property injection): the
+   literal 105ms moved to `var(--content-exit-ms, 105ms)` — CONTENT_EXIT_MS
+   in animationTiming.ts, injected by applyAnimationTiming.ts. This
+   replaces the old animationTiming.test.ts regex guard that used to parse
+   this file and compare the two numbers by hand; now there is only one
+   place the number is written (animationTiming.ts), so there is nothing
+   left to drift. */
 .card-root .card-assembly:not(:has(.below-block)) .flank-left,
 .card-root .card-assembly.exiting .flank-left {
   border-bottom-left-radius: var(--card-radius, 14px);
-  transition: border-radius 105ms var(--ease-notchtap);
+  transition: border-radius var(--content-exit-ms, 105ms) var(--ease-notchtap);
 }
 .card-root .card-assembly:not(:has(.below-block)) .flank-right,
 .card-root .card-assembly.exiting .flank-right {
   border-bottom-right-radius: var(--card-radius, 14px);
-  transition: border-radius 105ms var(--ease-notchtap);
+  transition: border-radius var(--content-exit-ms, 105ms) var(--ease-notchtap);
 }
 
 /* 2026-07-23 review fix (wave B, Task 1): the shell's own width, on the
@@ -321,16 +334,20 @@
    re-triggers a transition or jumps.
    `transition` is redeclared here (not just `width`) with the SAME
    transform/filter durations as the base rule, only `width` shortened —
-   320ms -> 175ms, matching SWAP_EXIT_MS (src/animationTiming.ts) exactly
-   (guarded by animationTiming.test.ts, same discipline as the
-   CONTENT_EXIT_MS/border-radius pairing above) so the shell has fully
-   reached idle width by the same tick the geometry-class freeze itself
-   lets go — never before (content spill) and never conspicuously after
-   (a lagging tail). */
+   320ms -> 175ms, matching SWAP_EXIT_MS (src/animationTiming.ts) exactly,
+   so the shell has fully reached idle width by the same tick the
+   geometry-class freeze itself lets go — never before (content spill)
+   and never conspicuously after (a lagging tail).
+   2026-07-23 review fix (wave C, CSS custom-property injection): the
+   literal 175ms moved to `var(--swap-exit-ms, 175ms)` — SWAP_EXIT_MS in
+   animationTiming.ts, injected by applyAnimationTiming.ts. This replaces
+   the old animationTiming.test.ts regex guard that used to parse this
+   rule's own declaration block and compare the number by hand; now there
+   is only one place the number is written. */
 .card-root .card-assembly.exiting {
   --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
   transition:
-    width 175ms var(--ease-notchtap),
+    width var(--swap-exit-ms, 175ms) var(--ease-notchtap),
     transform 260ms var(--ease-notchtap),
     filter 260ms var(--ease-notchtap);
 }
@@ -1134,14 +1151,22 @@
    the manifest content stays mounted at all times, at zero height when
    collapsed, so no re-mount/re-tokenize on every toggle. The wrapper
    carries aria-hidden when collapsed (Manifest.tsx) to replace the DOM
-   removal AnimatePresence used to provide. */
+   removal AnimatePresence used to provide.
+   2026-07-23 review fix (wave C, CSS custom-property injection): this
+   used to carry its own hand-tuned 300ms literal, 20ms off the shell's
+   own entrance width-grow (`.card-assembly`'s base `transition: width`,
+   above) for no documented reason — just two separate polish passes
+   that each touched one but not the other. Unified onto
+   `var(--expand-ms, 320ms)` (EXPAND_MS, animationTiming.ts) — see that
+   constant's own doc for the "why unify" reasoning and the screenshot
+   verification. */
 .card-root .manifest-wrap {
   display: grid;
   grid-template-rows: 0fr;
   opacity: 0;
   transition:
-    grid-template-rows 300ms var(--ease-notchtap),
-    opacity 300ms var(--ease-notchtap);
+    grid-template-rows var(--expand-ms, 320ms) var(--ease-notchtap),
+    opacity var(--expand-ms, 320ms) var(--ease-notchtap);
 }
 .card-root .manifest-wrap.expanded {
   grid-template-rows: 1fr;
@@ -1428,13 +1453,25 @@
    at its `from` state before the delayed animation starts, matching
    motion's `initial` prop. plan 092: retargeted from the old category/
    age pill classes onto their chip-converged replacements — same two
-   elements, same timing, only the selectors moved. */
+   elements, same timing, only the selectors moved.
+   2026-07-23 review fix (wave C, CSS custom-property injection): this
+   was a genuine orphan — 220ms is SWAP_EXIT_MS's PRE-retune value (plan
+   12x wave 3 dropped 220 -> 175 in animationTiming.ts, but this
+   declaration was never updated alongside it, so the chip enter had
+   quietly drifted 45ms slower than every other SWAP_EXIT_MS consumer).
+   Retied to `var(--swap-exit-ms, 175ms)` so it can never drift again.
+   The stagger below scales proportionally with it via `calc()` (the
+   original 70ms/220ms ratio, ~0.32, applied to whatever the var
+   resolves to) rather than a second hand-picked literal, so if
+   SWAP_EXIT_MS is ever retuned again the stagger keeps the same relative
+   feel automatically — screenshot-verified the chips still stagger
+   pleasantly at the new 175ms/56ms pair (docs/review-logs). */
 .card-root .chip-category,
 .card-root .notif-meta-row .notif-time-inline {
-  animation: pill-enter 220ms var(--ease-notchtap) both;
+  animation: pill-enter var(--swap-exit-ms, 175ms) var(--ease-notchtap) both;
 }
 .card-root .notif-meta-row .notif-time-inline {
-  animation-delay: 70ms;
+  animation-delay: calc(var(--swap-exit-ms, 175ms) * 0.32);
 }
 
 @keyframes pill-enter {

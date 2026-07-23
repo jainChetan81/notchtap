@@ -3,8 +3,9 @@ import { readFileSync } from "node:fs";
 // relative paths against a fake http: document location — the same trap
 // entryImportOrder.test.ts documents and dodges identically.
 import { fileURLToPath, URL as NodeURL } from "node:url";
-import { describe, expect, it } from "vitest";
-import { CONTENT_EXIT_MS, NOTCHTAP_EASE, SWAP_EXIT_MS } from "./animationTiming";
+import { describe, expect, it, vi } from "vitest";
+import { CONTENT_EXIT_MS, EXPAND_MS, NOTCHTAP_EASE, SWAP_EXIT_MS } from "./animationTiming";
+import { applyAnimationTiming } from "./applyAnimationTiming";
 
 // plan 117: pins the single-sourced duration constant to the exact value
 // every existing consumer/test already assumed (StatusRailCard's
@@ -22,47 +23,38 @@ describe("animationTiming (plan 117)", () => {
     expect(SWAP_EXIT_MS).toBe(175);
   });
 
-  // 2026-07-23 review fix: CONTENT_EXIT_MS ↔ the flank-round
-  // `transition: border-radius <N>ms` in overlay-card.css — guard it the
-  // same way the mirror/ease guards work: parse the real stylesheet,
-  // compare.
-  it("CONTENT_EXIT_MS matches overlay-card.css's flank-round transition duration", () => {
-    const css = readFileSync(
-      fileURLToPath(new NodeURL("./overlay-card.css", import.meta.url)),
-      "utf8",
-    );
-    const durations = [...css.matchAll(/transition:\s*border-radius\s+(\d+)ms/g)].map((m) =>
-      Number(m[1]),
-    );
-    expect(durations.length).toBeGreaterThanOrEqual(2); // both flanks
-    for (const d of durations) {
-      expect(d).toBe(CONTENT_EXIT_MS);
-    }
-  });
+  // 2026-07-23 review fix (wave C, CSS custom-property injection): the
+  // two regex-parsing guards that used to live here (CONTENT_EXIT_MS ↔
+  // overlay-card.css's flank-round `border-radius` duration, SWAP_EXIT_MS
+  // ↔ `.card-assembly.exiting`'s own `width` duration) are gone. They
+  // existed only because the CSS carried its OWN copy of each number,
+  // which could drift from the JS constant without either side erroring
+  // — so a test had to parse the stylesheet and compare by hand. That
+  // duplication is gone: overlay-card.css now reads these values via
+  // `var(--content-exit-ms, ...)`/`var(--swap-exit-ms, ...)`, set on the
+  // document root by `applyAnimationTiming` (below) directly from these
+  // same constants. There is exactly one place either number is written
+  // as a literal now, so there is nothing left for a parsing guard to
+  // catch — the coverage that matters is "does applyAnimationTiming
+  // actually set the properties it claims to", which the test below
+  // pins instead.
+  it("applyAnimationTiming sets the expected custom properties on the given root", () => {
+    const setProperty = vi.fn();
+    applyAnimationTiming({ setProperty });
 
-  // wave B (2026-07-23, "one overlapping collapse"): SWAP_EXIT_MS's new
-  // CSS twin — `.card-assembly.exiting`'s own `transition: width <N>ms`
-  // duration (overlay-card.css). Scoped specifically to that selector's
-  // own declaration block (not a blanket "any transition: width Nms in
-  // the file" match), because the base `.card-assembly` rule right above
-  // it also declares a `transition: width 320ms` — a deliberately
-  // DIFFERENT, unrelated duration (the entrance width-grow) that this
-  // guard must never accidentally pin against.
-  it("SWAP_EXIT_MS matches overlay-card.css's .card-assembly.exiting width transition duration", () => {
-    const css = readFileSync(
-      fileURLToPath(new NodeURL("./overlay-card.css", import.meta.url)),
-      "utf8",
-    );
-    const block = css.match(/\.card-assembly\.exiting\s*\{[^}]*\}/);
-    expect(block).not.toBeNull();
-    const widthMatch = block?.[0].match(/transition:[^;]*width\s+(\d+)ms/);
-    expect(widthMatch).not.toBeNull();
-    expect(Number(widthMatch?.[1])).toBe(SWAP_EXIT_MS);
+    expect(setProperty).toHaveBeenCalledWith("--swap-exit-ms", `${SWAP_EXIT_MS}ms`);
+    expect(setProperty).toHaveBeenCalledWith("--content-exit-ms", `${CONTENT_EXIT_MS}ms`);
+    expect(setProperty).toHaveBeenCalledWith("--expand-ms", `${EXPAND_MS}ms`);
+    expect(setProperty).toHaveBeenCalledTimes(3);
   });
 
   // 2026-07-23 review fix (Duplicated Code finding): NOTCHTAP_EASE is the
   // JS twin of shared-ui's `--ease-notchtap` cubic-bezier token. Parse the
-  // vendored token and compare numerically so the pair can't drift.
+  // vendored token and compare numerically so the pair can't drift. Kept
+  // (not folded into the custom-property injection above): motion needs
+  // the real JS array for its own consumers (this is not a CSS-only
+  // duration), so this pair is a real cross-file lockstep, unlike the two
+  // guards removed above.
   it("NOTCHTAP_EASE numerically matches the vendored --ease-notchtap token", () => {
     const tokens = readFileSync(
       fileURLToPath(new NodeURL("../vendor/shared-ui/design/tokens.css", import.meta.url)),
