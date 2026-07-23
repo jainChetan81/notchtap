@@ -1242,6 +1242,14 @@ describe("SettingsApp", () => {
         .getAllByText(/waiting item$/)
         .filter((el) => el.classList.contains("queue-title"));
       expect(rows).toHaveLength(2);
+      // plan 124 (F5a): pin the tag CONTENT, not just the row count — a tag
+      // that silently rendered the same label for every priority (or the
+      // raw enum value instead of PRIORITY_LABELS) would still pass the
+      // count-only assertion above.
+      const tags = screen
+        .getAllByText(/^(High|Low)$/)
+        .filter((el) => el.classList.contains("queue-priority-tag"));
+      expect(tags.map((el) => el.textContent)).toEqual(["High", "Low"]);
     });
 
     it("renders the empty state when nothing is waiting", async () => {
@@ -1313,6 +1321,72 @@ describe("SettingsApp", () => {
       await openQueue();
 
       expect(await screen.findByText("Couldn't load the queue")).toBeTruthy();
+      // plan 124 (F6): before this fix, a failed mount fetch left `items`
+      // at `null` forever, so "Loading…" rendered underneath the sticky
+      // ActionStatus error above it — the load never resolves into either
+      // an error-aware or an empty state. Assert it's actually gone, not
+      // merely that the error text is present alongside it.
+      expect(screen.queryByText("Loading…")).toBeNull();
+      expect(screen.getByText(/Couldn't load the queue — Refresh to retry/)).toBeTruthy();
+    });
+
+    // plan 124 (F1): the manual Refresh control — following
+    // DiagnosticsSection's own Refresh-button test precedent
+    // ("Diagnostics Refresh-button failure is announced..." below), a
+    // user-initiated call is `announce: true`, unlike the passive mount
+    // fetch.
+    it("Refresh re-invokes get_queue and announces its outcome", async () => {
+      let queueItems: QueueItemSummary[] = [waitingHigh];
+      const getQueue = vi.fn();
+      mockIPC((command) => {
+        if (command === "get_config") return config;
+        if (command === "get_secret_status") return unsetSecrets;
+        if (command === "get_default_config") return rustConfigDefaults;
+        if (command === "get_queue") {
+          getQueue();
+          return queueItems;
+        }
+      });
+      await openQueue();
+      await screen.findByText("High priority waiting item");
+      expect(getQueue).toHaveBeenCalledTimes(1);
+
+      queueItems = [waitingHigh, waitingLow];
+      fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+
+      await screen.findByText("Low priority waiting item");
+      expect(getQueue).toHaveBeenCalledTimes(2);
+    });
+
+    // plan 124 (F5b): the section's own top-of-file comment cites this
+    // exact rule — titles are UNTRUSTED wire data, rendered as plain text
+    // only. History precedent: "renders markup-like feed text literally"
+    // (above, plan 110 Step A).
+    it("renders a markup-like title literally — no img/script element ever created, no HTML injection", async () => {
+      const markupTitle = '<img src=x onerror="alert(1)">';
+      mockQueue([{ ...waitingHigh, title: markupTitle }]);
+      await openQueue();
+
+      const titleEl = await screen.findByText(markupTitle);
+      expect(titleEl.classList.contains("queue-title")).toBe(true);
+      const row = titleEl.closest(".queue-row") as HTMLElement;
+      expect(row.querySelector("script")).toBeNull();
+      expect(row.querySelector("img")).toBeNull();
+    });
+
+    // plan 124 (F5b): mirrors History's own "300-char unbroken-token body"
+    // pin (`SettingsApp.test.tsx`'s History describe block) — jsdom can't
+    // measure the CSS effect, only that `.queue-title` still carries the
+    // `[overflow-wrap:anywhere]` utility for a title with no natural break
+    // point.
+    it("renders a 300-char unbroken-token title without widening the row (pins the .queue-title overflow-wrap utility)", async () => {
+      const longToken = "x".repeat(300);
+      mockQueue([{ ...waitingHigh, title: longToken }]);
+      await openQueue();
+
+      const titleEl = await screen.findByText(longToken);
+      expect(titleEl.classList.contains("queue-title")).toBe(true);
+      expect(titleEl.classList.contains("[overflow-wrap:anywhere]")).toBe(true);
     });
   });
 });
