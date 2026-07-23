@@ -199,6 +199,20 @@ impl<R: tauri::Runtime> Engine<R> {
         *self.telegram_health.lock().unwrap()
     }
 
+    /// Read accessor for the shared history store, mirroring
+    /// `telegram_health`'s pattern: the settings window's
+    /// `get_history`/`clear_history` commands (`settings.rs`) call this
+    /// to reach the SAME `Arc<HistoryStore>` the accept path in `accept`
+    /// (above) appends through, rather than opening a second
+    /// `HistoryStore` over the same file. Two instances would mean two
+    /// independent instance-level locks guarding one file — no mutual
+    /// exclusion between an accept-path append and a settings-window
+    /// clear. `None` when history is disabled (the default), matching
+    /// `self.history`'s own meaning. Cheap: an `Option<Arc<_>>` clone.
+    pub fn history_store(&self) -> Option<Arc<HistoryStore>> {
+        self.history.clone()
+    }
+
     /// Propagating mutation — async callers (http, settings, pollers).
     /// Reads Instant::now() ONCE (the system's only wall-clock read for
     /// queue time), locks, runs `f`, captures slot_state_if_changed,
@@ -1057,5 +1071,59 @@ mod tests {
             "history_enabled off must create no history.jsonl anywhere, \
              let alone in this unrelated temp dir"
         );
+    }
+
+    // --- history_store(): the accessor settings.rs's get_history/
+    // clear_history commands now route through instead of opening a
+    // second `HistoryStore` (real review finding — two instances over
+    // one file share no lock, so a settings-window clear could interleave
+    // unguarded with an accept-path append). `Arc::ptr_eq` is the actual
+    // assertion that matters: same allocation means same instance-level
+    // `Mutex`, i.e. one lock guarding the file, not two.
+
+    #[tokio::test]
+    async fn history_store_returns_a_clone_of_the_same_arc_the_accept_path_writes_through() {
+        let app = tauri::test::mock_app();
+        let dir = history_temp_dir();
+        let store =
+            Arc::new(crate::history::HistoryStore::with_limits(&dir, 5 * 1024 * 1024, 2).unwrap());
+        let engine = Engine::new(
+            SingleSlotQueue::new(50),
+            app.handle().clone(),
+            Arc::new(Vec::new()),
+            Arc::new(StdMutex::new(ConnectorHealth::default())),
+            true,
+            true,
+            false,
+            false,
+            Some(store.clone()),
+        );
+
+        let accessed = engine
+            .history_store()
+            .expect("history_store() must return Some when the engine was built with a store");
+        assert!(
+            Arc::ptr_eq(&accessed, &store),
+            "history_store() must hand back the SAME Arc<HistoryStore> the accept path holds, \
+             not a clone of a freshly-opened instance — a distinct instance would carry its own \
+             Mutex and reintroduce the unguarded race this accessor exists to close"
+        );
+
+        // And it is genuinely the live instance: an append made directly
+        // through the accessor's handle is visible to a read through the
+        // original `store` binding, and vice versa.
+        accessed
+            .append(&test_fixtures::event("via-accessor"))
+            .unwrap();
+        let entries = store.read_recent(10).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].event.payload.title, "via-accessor");
+    }
+
+    #[tokio::test]
+    async fn history_store_is_none_when_history_is_disabled() {
+        let app = tauri::test::mock_app();
+        let engine = test_engine(&app);
+        assert!(engine.history_store().is_none());
     }
 }

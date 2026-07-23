@@ -19,6 +19,12 @@ mod presentation;
 pub mod queue;
 mod rss_poller;
 mod settings;
+// The single source of truth for the eleven v5 settings-window commands
+// (see this module's own doc comment) — build.rs's AppManifest::commands
+// allowlist, the generate_handler![...] registration just below, and
+// capabilities/settings.json must all name exactly the commands listed
+// there. Its own tests are the parity guard for that triple.
+mod settings_commands;
 mod status;
 mod weather_poller;
 

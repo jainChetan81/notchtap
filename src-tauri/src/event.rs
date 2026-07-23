@@ -330,11 +330,43 @@ impl SlotState {
     /// field would make those assertions silently meaningless. Any future
     /// continuously-varying wire field (see the module doc's "maintenance
     /// notes" pointer) must extend this method, not `PartialEq`.
+    ///
+    /// The `Showing` pattern below names every field explicitly — no `..`
+    /// wildcard. That is a deliberate compile-time guard, not tidiness: a
+    /// wildcard would let a future continuously-varying field (another
+    /// `remaining_ms`-shaped `_ms` wire value) join the struct and this
+    /// match unchanged, silently exempting it from the dedup comparison
+    /// and reintroducing the per-tick emission storm this method exists to
+    /// prevent. With every field named, adding one here is a compile error
+    /// until the author visits this method and decides in/out.
     pub(crate) fn dedup_eq(&self, other: &SlotState) -> bool {
         fn normalized(s: &SlotState) -> SlotState {
             let mut s = s.clone();
-            if let SlotState::Showing { remaining_ms, .. } = &mut s {
-                *remaining_ms = 0;
+            match &mut s {
+                SlotState::Empty => {}
+                SlotState::Showing {
+                    id: _,
+                    title: _,
+                    body: _,
+                    event_type: _,
+                    priority: _,
+                    signal: _,
+                    origin: _,
+                    expanded: _,
+                    source: _,
+                    category: _,
+                    published_at_ms: _,
+                    link: _,
+                    subtitle: _,
+                    details: _,
+                    espn: _,
+                    queue_total: _,
+                    queue_done: _,
+                    ttl_ms: _,
+                    remaining_ms,
+                } => {
+                    *remaining_ms = 0;
+                }
             }
             s
         }
