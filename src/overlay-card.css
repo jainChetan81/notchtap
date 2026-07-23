@@ -129,6 +129,26 @@
 .card-root .card-assembly.bare .flank-right {
   background: transparent;
   box-shadow: none;
+  /* 2026-07-23 (operator minimal-notch spec, Task 1.1 — real bug found
+     while screenshot-verifying the curved minimal shape): the flank rule
+     below already carries `min-width: 0` + `overflow: hidden`, which
+     SHOULD let the grid's two `1fr` flank tracks collapse fully to 0 once
+     `--cw` (above) equals the cutout's own width exactly — but each
+     flank's 16px horizontal padding (below) doesn't participate in that
+     collapse: a headless-Chrome measurement confirmed `.flank-left`/
+     `.flank-right` still render at their full 16px padding width even
+     with a 0px track, so `.card-assembly`'s real painted content (16 +
+     cutout + 16) silently overflowed its own declared `--cw` by 32px.
+     Invisible before this plan (transparent flanks, no radius/gill art
+     ever drawn at that boundary — the "square slab" bare mode had
+     nothing there to misalign), but load-bearing now: the top gills
+     (`.notch-gill-left`/`-right` below) anchor to `.card-assembly`'s OWN
+     edges, and floated disconnected from the visible cutout without this
+     fix. Zeroing padding here is what makes card-assembly's edges
+     actually equal the cutout's edges in bare mode, as the gill
+     positioning already assumed. Restored the instant real rail chrome
+     needs the inset again (`.bare.hovered` below). */
+  padding: 0;
 }
 /* plan 105: hovered bare mode reveals the peek exactly like rail mode —
    same idle width formula so `.below-block.idle-peek` (IdleHoverPeek)
@@ -137,6 +157,33 @@
    of source order once `.idle-peek` mounts. */
 .card-root .card-assembly.bare:has(.idle-peek) {
   --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
+}
+/* 2026-07-23 (operator minimal-notch spec, Task 1.2): a hovered bare
+   notch paints its flanks black again — StatusRailCard.tsx's
+   `railRevealed` mounts FlankClock/StatusDots into these cells the same
+   render `.hovered` lands, so the flanks need real paint to sit behind
+   them (transparent flanks with opaque text/dots floating over bare
+   desktop would look broken). `.bare.hovered` (two classes) beats plain
+   `.bare` (one class) above by specificity regardless of source order,
+   so this always wins once hover lands. Paired with the `transition:
+   background-color` on the base flank rule below so the paint fades in
+   rather than snapping, coordinated with the same-trigger width growth
+   (`.bare:has(.idle-peek)` above, driven by `.card-assembly`'s own
+   `transition: width 320ms` — this rule intentionally doesn't redeclare
+   that duration, it only needs its OWN property to animate smoothly). */
+.card-root .card-assembly.bare.hovered .flank-left,
+.card-root .card-assembly.bare.hovered .flank-right {
+  background: #000;
+}
+/* the padding half of the same bare<->bare-hovered swap — restores the
+   normal 16px inset (below) so FlankClock/StatusDots don't sit flush
+   against the flank's edge once revealed. Split left/right rather than a
+   shorthand `padding` so each side only ever restores its OWN edge. */
+.card-root .card-assembly.bare.hovered .flank-left {
+  padding-left: 16px;
+}
+.card-root .card-assembly.bare.hovered .flank-right {
+  padding-right: 16px;
 }
 
 .card-root .flank-left,
@@ -148,6 +195,17 @@
   align-items: center;
   background: #000;
   color: #f5f7fa;
+  /* 2026-07-23 (operator minimal-notch spec, Task 1.2): lets the bare
+     <-> bare-hovered background AND padding swap (both rules above) fade
+     rather than pop — mirrors the 260ms transform/filter duration the
+     hover "breathing" rule below already uses, so the paint/inset reads
+     as coordinated with that same hover trigger and with the width
+     growth it rides alongside. Harmless outside bare<->bare-hovered:
+     neither property ever changes in any other state, so this
+     declaration never has anything else to animate. */
+  transition:
+    background-color 260ms var(--ease-notchtap),
+    padding 260ms var(--ease-notchtap);
   /* grid items default to `min-width: auto` (their content's min-content
      size), which can force the whole grid wider than `--cw` if content
      ever doesn't wrap — the clock/dots content here is always
@@ -366,10 +424,21 @@
   height: 10px;
   pointer-events: none;
 }
-:root[data-notchtap-mode="hud"]
-  .card-root
-  .card-assembly:not(.bare):not(:has(.below-block))
-  .notch-gill,
+/* 2026-07-23 (operator minimal-notch spec, Task 1.1): `:not(.bare)`
+   RELAXED here (was excluded, like the flank-radius rule above it still
+   is) — the operator's complaint was that bare/minimal reads as a flat
+   square slab, not a real notch; these gills are exactly the concave-top
+   art that's missing there. This is safe to relax where the flank-radius
+   rule above is NOT: these gills are anchored to `.card-assembly`'s OWN
+   left/right edges (`.notch-gill-left`/`-right` below), never the
+   flank's box — and in bare mode `--cw` equals the cutout width exactly
+   (above), so the two 1fr flank columns collapse to 0 width and
+   `.card-assembly`'s own edges already coincide with the cutout's. The
+   gills need no bare-specific positioning at all; only `display: none`
+   was hiding them. `.exiting` keeps its own `:not(.bare)` (harmless,
+   since `.exiting`/`.bare` never coexist — StatusRailCard.tsx's `bare`
+   doc). */
+:root[data-notchtap-mode="hud"] .card-root .card-assembly:not(:has(.below-block)) .notch-gill,
 :root[data-notchtap-mode="hud"] .card-root .card-assembly.exiting:not(.bare) .notch-gill {
   display: block;
 }
@@ -397,6 +466,24 @@
 :root[data-notchtap-mode="hud"] .card-root .synthetic-cutout {
   display: block;
   background: #000;
+}
+/* 2026-07-23 (operator minimal-notch spec, Task 1.1): bare/minimal's
+   bottom-outer rounding — the ROUNDING LAW above says the cutout's base
+   corners stay perfectly square everywhere else, because normally the
+   flanks (or the below-block) carry the outer rounding instead. Bare
+   mode breaks that premise: the flanks ARE painted transparent there
+   (rule above), so rounding them is a no-op — the cutout rectangle is
+   the ONLY visible shape, and it needs to read as a real notch (rounded
+   bottom, like the flank's own convex round elsewhere in this file).
+   `:not(:has(.below-block))` matches the same law's own DOM-presence
+   discipline: the instant a below-block mounts (a showing card, or the
+   hover peek — `.bare:has(.idle-peek)` above), this stops applying and
+   the cutout's base corners snap back to square, handing bottom-rounding
+   duty to that below-block instead, exactly as the law requires — no
+   double-curve gap. */
+:root[data-notchtap-mode="hud"] .card-root .card-assembly.bare:not(:has(.below-block)) .synthetic-cutout {
+  border-bottom-left-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 2), 20px);
+  border-bottom-right-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 2), 20px);
 }
 
 /* the idle face — a minimal notchtap-branded face (two eyes + a soft

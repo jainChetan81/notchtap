@@ -288,6 +288,23 @@ export function StatusRailCard({
   // correctly here; the assembly only needs to keep mounting.
   const bare = restingState === "notch" && !renderedShowing && !exiting;
 
+  // 2026-07-23 (operator minimal-notch spec, Task 1.2/1.3): whether the
+  // rail's painted chrome (flank paint, clock, dots) should be showing.
+  // `bare` alone used to gate FlankClock, and `!renderedShowing && !bare`
+  // gated StatusDots — meaning a genuine notification hid the dots (idle-
+  // only furniture) and bare-hover had nothing to reveal but the peek
+  // below. The operator's spec wants the OPPOSITE on both counts:
+  // hovering a bare (minimal) notch should expand it into the full idle
+  // rail (clock + cutout + dots), and an arriving notification should
+  // keep that same rail visible above the compact/expanded card rather
+  // than hiding it — one continuous shape, never a detached slab +
+  // floating card. `bare` is already false the instant a promotion
+  // starts (see its own doc: `!exiting` flips first) and stays false for
+  // the whole showing/exiting window, so `railRevealed` is true
+  // throughout that window on its own — the `hovered` half of the OR
+  // only ever matters while genuinely bare.
+  const railRevealed = !bare || hovered;
+
   // idle face: true idle only — not while a card is showing OR still
   // exiting (the delayed-swap window), and not while hovered (the hover
   // primitive's live prop, never CSS `:hover`, matching every other hover
@@ -389,10 +406,13 @@ export function StatusRailCard({
 
   // plan 069 (folded into 078; re-scoped to live `slot` in wave 2): memoized
   // so unrelated re-renders don't re-tokenize the markdown.
-  const bodyContent = useMemo(
-    () => renderInlineMarkdown(showing ? slot.body : ""),
-    [slot, showing],
-  );
+  // 2026-07-23: dependency narrowed from the whole `slot` object to
+  // `currentBody` (the actual string fed into `renderInlineMarkdown`,
+  // already computed above) — mirrors Manifest.tsx's own `[body]`
+  // dependency. `slot` changes on every wire tick (queue counters, TTL
+  // countdowns, etc.), which was re-tokenizing this markdown on every one
+  // of those emissions even though the body text itself hadn't changed.
+  const bodyContent = useMemo(() => renderInlineMarkdown(currentBody ?? ""), [currentBody]);
 
   // plan 084: the live-match branch — `isLiveCard` (above) already reads
   // the live slot, so it doubles as both the outer shell's accent gate
@@ -501,8 +521,30 @@ export function StatusRailCard({
         {/* plan 105 (Step C): bare mode draws no clock — CSS alone can't
             hide it (the flanks going transparent still leaves text
             painted), so this is a real render-time gate, unlike the
-            synthetic-cutout's "always render, CSS decides" idiom below. */}
-        {!bare && <FlankClock />}
+            synthetic-cutout's "always render, CSS decides" idiom below.
+            2026-07-23 (operator minimal-notch spec, Task 1.2): gate moved
+            from `!bare` to `railRevealed` — a bare-hover now mounts the
+            clock too (expanding the minimal notch into the full idle
+            rail), fading in via `AnimatePresence`/`motion` rather than
+            popping, coordinated with the width growth CSS already drives
+            on `.card-assembly.bare:has(.idle-peek)` (overlay-card.css).
+            Every other case (`!bare` was already true) is unaffected —
+            `railRevealed` is true throughout showing/exiting exactly as
+            `!bare` was, so this is a pure addition, not a behavior
+            change, off bare-idle. */}
+        <AnimatePresence>
+          {railRevealed && (
+            <motion.span
+              key="flank-clock"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.26, ease: "easeOut" }}
+            >
+              <FlankClock />
+            </motion.span>
+          )}
+        </AnimatePresence>
       </div>
       {/* plan 091: the notch cutout itself — real hardware empty space in
           notch mode (nothing painted here), an app-drawn pure-#000 block
@@ -521,32 +563,43 @@ export function StatusRailCard({
           that can never be seen. */}
       {idleFaceEligible && <IdleFace idle={trueIdle} />}
       <div className="flank-right">
-        {/* plan 091: StatusDots is idle-only furniture — mounted whenever
-            idle-flavored content should be visible, so the dots fade out
-            over the same SWAP_EXIT_MS window the old idle content did, on
-            the idle->showing leg of the transition. No `key` needed:
-            unlike below-block's content, there is only ever one "flavor"
-            of dots, so a plain mount/unmount (no forced remount) is
-            enough — and no `AnimatePresence` either, since this node's
-            OWN mount/unmount is already externally timed by the
-            `renderedShowing`/`bare` condition it's wrapped in (kept
-            `useDelayedSwap`, plan 107's geometry timer).
-            plan 12x (wave 2): the fade itself is now a `motion.div`
-            controlled by `exiting`, replacing the old CSS `.swap-exit`
-            class + `card-enter-idle`/`card-exit-idle` keyframes.
-            plan 105 (Step C): also gated on `!bare` — the dots are rail
-            furniture, not part of the "looks like a native notch" bare
-            state. */}
-        {!renderedShowing && !bare && (
-          <motion.div
-            className="card-content idle"
-            initial={{ opacity: 0 }}
-            animate={{ opacity: exiting ? 0 : 1 }}
-            transition={{ duration: SWAP_EXIT_MS / 1000, ease: "easeOut" }}
-          >
-            <StatusDots status={status} />
-          </motion.div>
-        )}
+        {/* plan 091: StatusDots was idle-only furniture — mounted whenever
+            idle-flavored content should be visible, fading out over the
+            SWAP_EXIT_MS delayed-swap window on the idle->showing leg (plan
+            105 Step C added the `!bare` half: rail furniture, not part of
+            the "looks like a native notch" bare state).
+            2026-07-23 (operator minimal-notch spec, Task 1.2 + 1.3,
+            operator-requested behavior change): gate is now `railRevealed`
+            alone — the `!renderedShowing` half is REMOVED. The operator's
+            spec (`⟨time⟩⟨minimal⟩⟨dots⟩` above `⟨compact⟩` above
+            `⟨expanded⟩`) wants the dots to stay visible as constant rail
+            furniture THROUGH a showing notification, not hide the instant
+            one is promoted — "the top row stays the full rail" for both
+            configs. `railRevealed` already covers the bare-hover reveal
+            (Task 1.2) for free, since it's `!bare || hovered` and `bare`
+            is always false while genuinely showing/exiting. Now wrapped in
+            `AnimatePresence` (previously unnecessary — the old `!bare`-
+            gated mount only ever toggled off `bare`, which never combined
+            with `exiting`'s manual opacity dance below) so mount/unmount
+            still animates smoothly on the one remaining toggle: bare
+            <-> bare-hovered. Steady rail mode (`bare` always false) never
+            triggers this AnimatePresence exit/enter at all — the node
+            just stays mounted across idle<->showing, so the dots read as
+            one continuous shape, not a fade replay on every promotion. */}
+        <AnimatePresence>
+          {railRevealed && (
+            <motion.div
+              key="status-dots"
+              className="card-content idle"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.26, ease: "easeOut" }}
+            >
+              <StatusDots status={status} />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </div>
       {/* plan 093 (079 items 9/17/18): the idle hover-expanded state —
           gated on `renderedShowing` (not the live `showing`) for the same
