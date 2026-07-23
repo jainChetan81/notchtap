@@ -1169,7 +1169,7 @@ mod tests {
     // The companion case: nothing visible, nothing left waiting after the
     // clear — `current_slot_state()` was `Empty` before and stays `Empty`
     // after, so there is genuinely nothing for the wire to say and `apply`
-    // correctly emits nothing. Paused so the second enqueue stays WAITING
+    // correctly emits nothing. Paused so the enqueue below stays WAITING
     // rather than promoting into `visible` (mirrors
     // `pause_sends_enqueues_to_waiting_even_with_free_slot` in queue.rs).
     #[tokio::test]
