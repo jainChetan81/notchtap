@@ -1,5 +1,6 @@
 import { cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { Badge } from "./badge";
 import { Button } from "./button";
 
 // this project's vitest config doesn't set `test.globals`, so RTL's
@@ -27,4 +28,16 @@ describe("Button — transition-property (plan 126)", () => {
     // the press-feedback utility itself is untouched by this plan.
     expect(button.className).toContain("active:not-aria-[haspopup]:translate-y-px");
   });
+});
+
+// plan 129 (T8, deep-review fix): Badge (unlike Button above) never
+// carried a broad `transition-all` wildcard to begin with — this is a
+// one-line regression guard, next to the Button pin above since they're
+// the same class of finding, not a claim that Badge was ever touched by
+// plan 126 itself.
+it("Badge keeps the narrow transition-colors utility, never the transition-all wildcard", () => {
+  render(<Badge>New</Badge>);
+  const badge = screen.getByText("New");
+  expect(badge.className).toContain("transition-colors");
+  expect(badge.className).not.toMatch(/(?:^|\s)transition-all(?:\s|$)/);
 });

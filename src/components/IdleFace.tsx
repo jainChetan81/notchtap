@@ -175,16 +175,22 @@ export function IdleFace({ idle }: { idle: boolean }) {
               translate+scaleY string) so one transition covers both
               glance and blink with a single declaration. 200ms /
               cubic-bezier(0.22, 1, 0.36, 1) is the house curve
-              (animationTiming.ts's NOTCHTAP_EASE, [0.22, 1, 0.36, 1]) —
-              written as a literal here rather than interpolated because
-              CSS transition shorthand needs a string, and animationTiming
-              only exports the numeric array form (plan 127 owns adding a
-              string export, if one turns out to be worth it). */}
+              (animationTiming.ts's NOTCHTAP_EASE, [0.22, 1, 0.36, 1]).
+              plan 129 (C6, deep-review fix): the plan-125 comment above
+              used to claim the bezier had to be hand-typed here because
+              "animationTiming only exports the numeric array form" and a
+              string export would need a new plan to add — false:
+              `NOTCHTAP_EASE.join(", ")` turns the already-imported array
+              into exactly the comma-joined bezier-argument string CSS
+              needs, no new export required. Interpolated below; the
+              array (imported at the top of this file already, for the
+              reveal transition above) is now the only place these four
+              numbers are written. */}
           <div
             className="idle-face-eyes"
             style={{
               transform: `translate(${offset.x}px, ${offset.y}px) scaleY(${blinking ? 0.12 : 1})`,
-              transition: "transform 200ms cubic-bezier(0.22, 1, 0.36, 1)",
+              transition: `transform 200ms cubic-bezier(${NOTCHTAP_EASE.join(", ")})`,
             }}
           >
             <span className="idle-face-eye" />

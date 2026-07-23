@@ -77,6 +77,18 @@
   width: var(--cw, min(max(calc(400px * var(--card-scale)), calc(var(--notchtap-cutout-width, 200px) + (2 * 60px * var(--card-scale)))), 100%));
   margin: 0 auto;
   isolation: isolate;
+  /* plan 129 (C5, deep-review fix): lives here now, not only inside
+     `.hovered`/`.pulse-goal` (both deleted their own copy) — the notch
+     cutout never moves, so every whole-card `transform: scale(...)` this
+     shell ever plays (hover breathe, goal overshoot, any future one)
+     wants the SAME top anchor; leaving it scoped to just those two
+     modifier classes meant `.hovered` clearing mid-flight snapped the
+     origin back to the un-hovered default (`50% 50%`, center) while the
+     160ms shrink was still animating, pivoting the un-hover around the
+     wrong point. Behavior-neutral everywhere else: origin only matters
+     while `transform` isn't `none`, and every whole-card transform on
+     this shell already wanted top-center. */
+  transform-origin: top center;
   /* Depth (imported reference-app technique): a single drop-shadow on the COMPOSITE
      notch shape (drop-shadow follows the actual painted flanks+cutout+
      below-block alpha, so no seams between the grid cells the way per-cell
@@ -366,15 +378,24 @@
    is only one place the number is written.
    plan 127 (Step 4, finding #5): `filter` dropped from this list — same
    removal as the base rule above (the `.hovered` override it used to
-   pair with is gone), and this rule mirrors the base rule's REVEAL
-   pacing, not the hover breathe, so its surviving `transform` leg is
-   tokenized to `var(--reveal-ms, 260ms)` (not `--hover-ms`) — unchanged
-   in VALUE (still 260ms), just no longer hand-typed. */
+   pair with is gone).
+   plan 129 (C1, deep-review fix): the plan-127 pass above had briefly
+   retokenized the surviving `transform` leg to `var(--reveal-ms, 260ms)`
+   on the theory that this rule mirrors the base rule's REVEAL pacing —
+   wrong, and self-contradicting against this comment's own OPENING
+   paragraph ("the SAME transform duration as the base rule"): the only
+   consumer of `transform` on `.card-assembly` is the hover breathe
+   (`.hovered`, below), which plan 127 Step 4 itself moved onto
+   `var(--hover-ms, 160ms)` on the BASE rule above. Leaving this rule's
+   `transform` leg on `--reveal-ms` meant a hover-out mid-exit ran a
+   260ms breathe-settle instead of the intended 160ms one. Retokenized
+   to `var(--hover-ms, 160ms)` below, which makes the opening paragraph
+   literally true again. */
 .card-root .card-assembly.exiting {
   --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
   transition:
     width var(--swap-exit-ms, 175ms) var(--ease-notchtap),
-    transform var(--reveal-ms, 260ms) var(--ease-notchtap);
+    transform var(--hover-ms, 160ms) var(--ease-notchtap);
 }
 
 /* plan 123: kills the "box, then rounded shape pops in" exit artifact —
@@ -402,23 +423,35 @@
    INVARIANT (checkable): at t=var(--swap-exit-ms), every property this
    block animates must already equal what `.card-assembly.bare`'s own
    (non-hovered, no-peek) rules set, below:
-     - `--cw`                                 == `.bare`'s `--cw` (:132-134)
-     - `.flank-left`/`.flank-right` background == `.bare`'s (transparent, :135-159)
-     - `.flank-left`/`.flank-right` padding    == `.bare`'s (0, :135-159)
-     - `.synthetic-cutout` bottom-left radius  == `.bare`'s (HUD only, :501-504)
-     - `.synthetic-cutout` bottom-right radius == `.bare`'s (HUD only, :501-504)
+     - `--cw`                                 == `.card-root .card-assembly.bare`'s own `--cw`
+     - `.flank-left`/`.flank-right` background == `.card-root .card-assembly.bare .flank-left`/`.flank-right`'s (transparent)
+     - `.flank-left`/`.flank-right` padding    == `.card-root .card-assembly.bare .flank-left`/`.flank-right`'s (0)
+     - `.synthetic-cutout` bottom-left radius  == `:root[data-notchtap-mode="hud"] .card-root .card-assembly.bare:not(:has(.below-block)) .synthetic-cutout`'s (HUD only)
+     - `.synthetic-cutout` bottom-right radius == same selector as above (HUD only)
    `box-shadow` isn't listed: the base flank rule never sets one, so
    `.bare`'s `box-shadow: none` is a no-op match against the default —
-   nothing to transition. */
+   nothing to transition.
+   plan 129 (C3, deep-review fix): the five references above used to cite
+   hard source line numbers (`:132-134`, `:135-159` twice, `:501-504`
+   twice) instead of selector names — this wave's own comment insertions
+   elsewhere in the file shifted every one of them out from under the
+   line they used to point at. Selectors don't drift with unrelated
+   edits the way line numbers do, and this file's own F4 pin test
+   (`StatusRailCard.test.tsx`'s `ruleBody` helper, `describe("exit-to-
+   bare CSS convergence invariant (plan 124 F4)")`) already locates
+   every one of these rules the same selector-string way, never by line
+   number — substance unchanged, only how each target is named. */
 .card-root .card-assembly.exiting.exit-to-bare {
-  /* the bare formula (:132-134), not the wide idle/rail one above — the
-     shell shrinks straight to cutout width instead of overshooting to
-     rail width first. */
+  /* the bare formula (`.card-root .card-assembly.bare`'s own `--cw`
+     rule, plan 129/C3: was a `:132-134` line reference), not the wide
+     idle/rail one above — the shell shrinks straight to cutout width
+     instead of overshooting to rail width first. */
   --cw: min(var(--notchtap-cutout-width, 200px), 100%);
 }
 .card-root .card-assembly.exiting.exit-to-bare .flank-left,
 .card-root .card-assembly.exiting.exit-to-bare .flank-right {
-  /* matches `.bare .flank-{left,right}`'s end state (:135-159) exactly —
+  /* matches `.card-root .card-assembly.bare .flank-left`/`.flank-right`'s
+     end state (plan 129/C3: was a `:135-159` line reference) exactly —
      transparent paint, zero inset — but ANIMATES there over the exit
      window instead of snapping at the class flip. Redeclares the base
      flank rule's own `background-color`/`padding` transition (:213-215)
@@ -443,8 +476,11 @@
    `:root[data-notchtap-mode="hud"]` — real notch hardware draws its own
    curves): transitions the cutout's bottom radii from square (their
    value throughout plain `.exiting`, nothing sets them there) to
-   `.bare`'s rounded values (:501-504) over the same exit window, instead
-   of the discrete snap that used to happen only once `.bare` mounted.
+   `:root[data-notchtap-mode="hud"] .card-root
+   .card-assembly.bare:not(:has(.below-block)) .synthetic-cutout`'s
+   rounded values (plan 129/C3: was a `:501-504` line reference) over the
+   same exit window, instead of the discrete snap that used to happen
+   only once `.bare` mounted.
    Deliberately unconditional on `:has(.below-block)` (unlike `.bare`'s
    own rule) — the below-block's own AnimatePresence exit is shorter
    (`--content-exit-ms`) than this whole window (`--swap-exit-ms`), so
@@ -749,7 +785,12 @@
    before/after look on the hardware this shows on. */
 .card-root .card-assembly.hovered {
   transform: scale(1.02);
-  transform-origin: top center;
+  /* plan 129 (C5): `transform-origin: top center` moved to the base
+     `.card-assembly` rule above — see that declaration's own doc. Was
+     declared here (and echoed on `.pulse-goal` below) until this plan;
+     kept working for AS LONG AS `.hovered` stayed applied, but the
+     origin snapped back to the base rule's implicit `50% 50%` default
+     the instant the class cleared, mid the 160ms un-hover shrink. */
 }
 
 /* signature moment #1 — Goal: a bright confetti-spray burst over the
@@ -819,18 +860,24 @@
 /* plan 127 (Step 6, /improve-animations audit finding #7): `goal-overshoot`
    scales the WHOLE card assembly (`transform: scale(...)`, the
    `@keyframes` below) but, unlike the hover "breathe" rule
-   (`.card-assembly.hovered`, which pins `transform-origin: top center`
+   (`.card-assembly.hovered`, which pinned `transform-origin: top center`
    with its own comment explaining the physical anchor — the notch cutout
    never moves, only the shell grows outward from it), this rule had no
    `transform-origin` at all — so it defaulted to `50% 50%` (center) and
    grew symmetrically, visibly lifting the shell's TOP edge off the notch
    cutout for the celebration's duration. `transform-origin: top center`
-   matches the hover rule's own anchor for the same physical reason.
+   matched the hover rule's own anchor for the same physical reason.
    `::before`/`::after` (the ring/burst pseudo-elements just below) stay
    center-origin on purpose — they're explosions radiating from the
-   card's center, not the card shape itself growing. */
+   card's center, not the card shape itself growing.
+   plan 129 (C5, deep-review fix): the own-copy `transform-origin: top
+   center` this rule used to declare is GONE — moved to the base
+   `.card-assembly` rule (see that declaration's own doc for the "clears
+   mid-flight" bug this fixes), which this rule inherits from for free
+   now. This paragraph's own physical reasoning (matches the notch
+   cutout's fixed position) is unchanged, just no longer redeclared per
+   modifier class. */
 .card-root .card-assembly.pulse-goal {
-  transform-origin: top center;
   animation: goal-overshoot 1240ms var(--ease-notchtap);
 }
 
@@ -1242,8 +1289,14 @@
      260ms moved to `var(--reveal-ms, 260ms)` — REVEAL_MS in
      animationTiming.ts, single-sourced with the flank background/padding
      fade above (both are queue/flank paint coordination, the same
-     reveal-tier motion). */
-  transition: background var(--reveal-ms, 260ms) ease;
+     reveal-tier motion).
+     plan 129 (C4, deep-review fix): the plan-127 pass above claimed "same
+     reveal-tier motion" but left the EASING as built-in `ease` while
+     every other rule on the reveal tier (the flank background/padding
+     fade, FlankClock/StatusDots' own fades) already runs
+     `var(--ease-notchtap)` — the comment's own claim wasn't true until
+     the easing matched too. Retokenized below. */
+  transition: background var(--reveal-ms, 260ms) var(--ease-notchtap);
 }
 
 /* queue slider (plan 033): consumed segments read as a 30%-accent dim,
@@ -1431,7 +1484,17 @@
    RESTING value), not a loop — the operator's plan-105 decision to
    remove the dot-pulse (a continuous, always-running animation) stays
    fully respected here; nothing here ever runs while nothing is
-   changing. */
+   changing.
+   plan 129 (C2, deep-review fix): the enabled<->disabled shape flip
+   doesn't ONLY change `border-radius` the way the paragraph above
+   describes — `.shape-disabled`/`.shape-unavailable` (below) also flip
+   `background` (filled circle -> transparent) and `border` (none ->
+   1.5px solid), and those two were left un-softened: corners rounded
+   smoothly while the fill and outline snapped instantly, a visible two-
+   phase glitch on one logical state change. Added `background-color`,
+   `border-color`, and `border-width` legs, same `--hover-ms`/
+   `--ease-notchtap` pairing as the three already here, so every part of
+   the shape flip settles in the same single motion. */
 .card-root .status-dot {
   box-sizing: border-box;
   width: 9px;
@@ -1441,7 +1504,10 @@
   transition:
     opacity var(--hover-ms, 160ms) var(--ease-notchtap),
     box-shadow var(--hover-ms, 160ms) var(--ease-notchtap),
-    border-radius var(--hover-ms, 160ms) var(--ease-notchtap);
+    border-radius var(--hover-ms, 160ms) var(--ease-notchtap),
+    background-color var(--hover-ms, 160ms) var(--ease-notchtap),
+    border-color var(--hover-ms, 160ms) var(--ease-notchtap),
+    border-width var(--hover-ms, 160ms) var(--ease-notchtap);
 }
 
 .card-root .status-dot.football {

@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { NOTCHTAP_EASE } from "../../animationTiming";
 import { ActionStatus, useActionStatus } from "../actionStatus";
 import { CONTROL_ROW, ControlCopy, SettingsGroup } from "../controls/controls";
@@ -100,37 +101,55 @@ export function QueueSection() {
         ) : (
           <p className="queue-empty m-0 py-3 text-fs-body text-muted-foreground">Loading…</p>
         )
-      ) : items.length === 0 ? (
-        <p className="queue-empty m-0 py-3 text-fs-body text-muted-foreground">Queue is empty.</p>
       ) : (
-        <ul className="queue-list flex flex-col py-1 pb-[11px]">
-          {/* plan 126: initial={false} means the section's own first mount
-              (and a wholesale Refresh swap that happens to return the same
-              rows, since they keep their keys) never cascades — only a row
-              genuinely appearing or leaving animates, so Skip current reads
-              as "that one row left" and Clear collapses the rows it
-              removes. */}
-          <AnimatePresence initial={false}>
-            {withQueueRowKeys(items).map(({ item, rowKey }) => (
-              <motion.li
-                key={rowKey}
-                className="queue-row grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-border/60 py-2 first:border-t-0"
-                style={{ overflow: "hidden" }}
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={{ duration: 0.18, ease: NOTCHTAP_EASE }}
-              >
-                <span className="queue-title min-w-0 text-fs-body text-foreground [overflow-wrap:anywhere]">
-                  {item.title}
-                </span>
-                <span className="queue-priority-tag min-w-0 rounded-full border border-border px-[7px] py-0.5 font-mono text-fs-caption font-[650] leading-[1.5] text-muted-foreground">
-                  {PRIORITY_LABELS[item.priority]}
-                </span>
-              </motion.li>
-            ))}
-          </AnimatePresence>
-        </ul>
+        <>
+          {/* plan 129 (K1): sibling of the <ul> below, not a replacement
+              for it — see the AnimatePresence comment inside the <ul> for
+              why the two can no longer share a ternary branch. */}
+          {items.length === 0 && (
+            <p className="queue-empty m-0 py-3 text-fs-body text-muted-foreground">
+              Queue is empty.
+            </p>
+          )}
+          <ul className={cn("queue-list flex flex-col", items.length > 0 && "py-1 pb-[11px]")}>
+            {/* plan 126: initial={false} means the section's own first mount
+                (and a wholesale Refresh swap that happens to return the same
+                rows, since they keep their keys) never cascades — only a row
+                genuinely appearing or leaving animates, so Skip current reads
+                as "that one row left" and Clear collapses the rows it
+                removes. plan 129 (K1): the <ul> + AnimatePresence themselves
+                now stay mounted even once `items` is empty — the prior
+                `items.length === 0 ? <p> : <ul>…` ternary unmounted the
+                whole list (AnimatePresence included) synchronously the
+                instant the array emptied, so nothing exited on a wholesale
+                Clear (the exact parent-level-conditional bug plan 127 Step
+                2 fixed for the peek). The empty-state <p> is now the
+                sibling above, gated on `items.length === 0` directly, so it
+                can appear immediately while the last row(s) still exit.
+                The `py-1 pb-[11px]` vertical padding is likewise gated on
+                `items.length > 0` so an empty <ul> contributes no gap. */}
+            <AnimatePresence initial={false}>
+              {withQueueRowKeys(items).map(({ item, rowKey }) => (
+                <motion.li
+                  key={rowKey}
+                  className="queue-row grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-border/60 py-2 first:border-t-0"
+                  style={{ overflow: "hidden" }}
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: "auto" }}
+                  exit={{ opacity: 0, height: 0 }}
+                  transition={{ duration: 0.18, ease: NOTCHTAP_EASE }}
+                >
+                  <span className="queue-title min-w-0 text-fs-body text-foreground [overflow-wrap:anywhere]">
+                    {item.title}
+                  </span>
+                  <span className="queue-priority-tag min-w-0 rounded-full border border-border px-[7px] py-0.5 font-mono text-fs-caption font-[650] leading-[1.5] text-muted-foreground">
+                    {PRIORITY_LABELS[item.priority]}
+                  </span>
+                </motion.li>
+              ))}
+            </AnimatePresence>
+          </ul>
+        </>
       )}
       {/* plan 124 (F1): the control this section's own top-of-file comment
           ("fetch-on-open + manual Refresh") always claimed but never
