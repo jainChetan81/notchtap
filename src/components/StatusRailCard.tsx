@@ -1,7 +1,7 @@
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useState } from "react";
-import { CONTENT_EXIT_MS, SWAP_EXIT_MS } from "../animationTiming";
+import { CONTENT_EXIT_MS, NOTCHTAP_EASE, SWAP_EXIT_MS } from "../animationTiming";
 import { renderInlineMarkdown } from "../lib/markdown";
 import {
   ageLabel,
@@ -85,12 +85,13 @@ function weatherArtFromDetails(details: Detail[]) {
 // plan 12x (wave 2): mirrors shared-ui's `--ease-notchtap`
 // (vendor/shared-ui/design/tokens.css: `cubic-bezier(.22, 1, .36, 1)`) —
 // motion's `transition.ease` takes a bezier array, not a CSS var, so this
-// is the JS-side literal twin of that token for the showing-flavored
-// content swap below (mirrors card-enter-showing/card-exit-showing's old
-// `var(--ease-notchtap)`). The idle-flavored swap (StatusDots) keeps
-// motion's built-in "easeOut", matching the old card-enter-idle/
-// card-exit-idle's plain `ease-out`.
-const NOTCHTAP_EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
+// is the JS-side twin of that token for the showing-flavored content swap
+// below (mirrors card-enter-showing/card-exit-showing's old
+// `var(--ease-notchtap)`). 2026-07-23: the literal moved to
+// animationTiming.ts's exported NOTCHTAP_EASE (imported above) with a
+// token-parity guard test — no local copy here anymore. The idle-flavored
+// swap (StatusDots) keeps motion's built-in "easeOut", matching the old
+// card-enter-idle/card-exit-idle's plain `ease-out`.
 
 type Pulse = "pulse-goal" | "pulse-red" | null;
 

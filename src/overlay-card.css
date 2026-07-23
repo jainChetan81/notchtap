@@ -77,7 +77,7 @@
   width: var(--cw, min(max(calc(400px * var(--card-scale)), calc(var(--notchtap-cutout-width, 200px) + (2 * 60px * var(--card-scale)))), 100%));
   margin: 0 auto;
   isolation: isolate;
-  /* Depth (boring.notch import #4): a single drop-shadow on the COMPOSITE
+  /* Depth (imported reference-app technique): a single drop-shadow on the COMPOSITE
      notch shape (drop-shadow follows the actual painted flanks+cutout+
      below-block alpha, so no seams between the grid cells the way per-cell
      box-shadows would). Lifts the HUD notch off the wallpaper; in notch
@@ -225,7 +225,7 @@
 
 /* ==== notch-shaped idle profile (HUD only): the operator's core
    complaint was that the idle rail reads as a flat rounded "block," not
-   a notch. boring.notch's own NotchShape.swift draws the whole shape
+   a notch. Native notch implementations draw the whole shape
    with INDEPENDENT top/bottom corner radii (bottom ~2x top) plus a
    concave S-curve where the shape meets the screen edge. This app's own
    ROUNDING LAW (comment above `.card-assembly`) already forbids
@@ -419,8 +419,8 @@
 /* plan 087 (superseded by the hover "breathing" design below): this
    started as a deliberately boring diagnostic rule proving the
    rust-derived tracking-area signal reached the webview end-to-end
-   (`filter: brightness(1.04)`, no shape change). boring.notch imports
-   #4/#5 — a gentle scale-up anchored at the top edge (the notch's own
+   (`filter: brightness(1.04)`, no shape change). The imported reference
+   techniques — a gentle scale-up anchored at the top edge (the notch's own
    physical anchor never moves; only the shell "breathes" outward from
    it) plus a deeper drop-shadow for depth, both driven by the SAME
    `hovered` prop → `.hovered` class this rule always used (StatusRailCard

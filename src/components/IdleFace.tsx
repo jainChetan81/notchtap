@@ -122,7 +122,13 @@ export function IdleFace({ idle }: { idle: boolean }) {
           aria-hidden="true"
           initial={{ opacity: 0, scale: 0.85 }}
           animate={{ opacity: 1, scale: 1 }}
-          exit={{ opacity: 0, scale: 0.85 }}
+          /* Per-variant exit override: the file's contract above says a
+             card/hover must hide the face immediately — "no fade delay on
+             the way OUT, only on the way in." Without this, the 0.5s
+             reveal transition also governed exit, so the face lingered
+             half a second into every promotion/hover (2026-07-23 review
+             finding). 0.1s reads as instant without a one-frame hard cut. */
+          exit={{ opacity: 0, scale: 0.85, transition: { duration: 0.1, ease: "easeOut" } }}
           transition={{ duration: 0.5, ease: "easeOut" }}
         >
           <motion.div

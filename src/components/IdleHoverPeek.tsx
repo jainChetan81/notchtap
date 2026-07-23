@@ -229,9 +229,17 @@ export function IdleHoverPeek({ status, hovered }: { status?: StatusState; hover
         // change that constant in the same commit.
         <motion.div
           className="below-block idle-peek"
-          initial={{ height: 0, opacity: 0 }}
-          animate={{ height: 100, opacity: 1 }}
-          exit={{ height: 0, opacity: 0 }}
+          /* 2026-07-23 review fix (the "peek close pops ~25px" finding):
+             `.idle-peek`'s CSS `padding: 12px 16px 13px` + border-box means
+             a bare `height: 0` FLOORS at padding-top+bottom (25px) — the
+             box could never reach zero, so the close visibly popped at
+             unmount. Animating the vertical paddings in lockstep with the
+             height (12/13 at rest, matching the stylesheet exactly, so
+             there is zero visual change while open) lets the collapse
+             genuinely reach 0. Horizontal padding stays CSS-owned (16px). */
+          initial={{ height: 0, opacity: 0, paddingTop: 0, paddingBottom: 0 }}
+          animate={{ height: 100, opacity: 1, paddingTop: 12, paddingBottom: 13 }}
+          exit={{ height: 0, opacity: 0, paddingTop: 0, paddingBottom: 0 }}
           // plan 12x (wave 3): stiffer spring (420 -> 480) and a quicker
           // opacity fade (180ms -> 150ms), operator-feedback "snappier
           // overall" pass — damping nudged up in step (34 -> 37) to keep

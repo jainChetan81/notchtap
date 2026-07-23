@@ -63,7 +63,7 @@ const HUD_CUTOUT_H: f64 = 32.0; // App.tsx's HUD synthetic cutout height
 // compact/manifest content shape enough to make these feel wrong,
 // adjust them directly; there is no styles.css number to keep them "in
 // sync" with.
-const IDLE_PEEK_BELOW_BLOCK_H: f64 = 100.0; // styles.css .idle-peek's fixed height
+const IDLE_PEEK_BELOW_BLOCK_H: f64 = 100.0; // IdleHoverPeek.tsx motion.div `animate={{ height: 100 }}` — lockstep pair (was styles.css pre-motion-migration)
 const BELOW_BLOCK_SHOWING_H: f64 = 160.0; // conservative estimate, compact (non-expanded) content
 const BELOW_BLOCK_EXPANDED_H: f64 = 240.0; // conservative estimate, expanded (manifest) content
 

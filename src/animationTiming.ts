@@ -1,12 +1,12 @@
-// plan 117: single-sources a JS-side duration literal that was also
-// duplicated in overlay-card.css, with nothing enforcing the pair stayed
-// equal. This file only changes the JS side — the CSS value
-// (overlay-card.css) is left as a plain literal, annotated with a comment
-// pointing back here (converting it to a CSS custom property was
-// evaluated and deliberately skipped: the risk of shifting the
-// load-bearing swap timing outweighed the DRY win for one number). If the
-// value below changes, its CSS counterpart MUST change in the same
-// commit.
+// plan 117: single-sources the overlay's JS-side animation timing.
+//
+// HISTORY NOTE (2026-07-23 review fix): this header used to demand a CSS
+// counterpart for SWAP_EXIT_MS ("must change in the same commit") — that
+// contract died in wave 2, when the card-enter/exit @keyframes it referred
+// to were deleted in favor of motion's AnimatePresence. SWAP_EXIT_MS's two
+// consumers are BOTH JS-side now (see its own doc below); the only
+// remaining CSS lockstep pair in this file is CONTENT_EXIT_MS ↔ the
+// flank-round `transition: border-radius` duration in overlay-card.css.
 //
 // plan 12x: this file used to also carry `IDLE_PEEK_CLOSE_MS`, the
 // hand-rolled unmount-delay timer IdleHoverPeek.tsx used to run alongside
@@ -68,3 +68,12 @@ export const SWAP_EXIT_MS = 175;
 // which must stay numerically equal to this constant (see that rule's
 // own comment).
 export const CONTENT_EXIT_MS = 105;
+
+// 2026-07-23 review fix (Duplicated Code finding): the overlay's signature
+// easing curve, single-sourced for every JS/motion consumer. This is the
+// numeric twin of shared-ui's `--ease-notchtap: cubic-bezier(.22,1,.36,1)`
+// token (vendor/shared-ui/design/tokens.css) — a real cross-file lockstep
+// pair, now GUARDED by a test in animationTiming.test.ts that parses the
+// token and compares it to this array, so drift fails CI instead of
+// shipping two subtly different eases.
+export const NOTCHTAP_EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
