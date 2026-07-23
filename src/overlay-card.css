@@ -2106,6 +2106,23 @@
   font: 800 18px/1 var(--font-mono);
   color: #f5f7fa;
 }
+/* plan 131: hi/lo, inline with the current temp ("21° · H 24° L 16°") —
+   a flex sibling of `.wx-peek-temp`/`.wx-peek-condition`/`.wx-peek-rain`
+   in the SAME `.wx-peek-readout` row, so it adds no vertical height (the
+   row's cross-size is already dominated by the 28px icon above) — only
+   ever mounted when BOTH hi and lo are present (IdleHoverPeek.tsx). */
+.card-root .wx-peek-hilo {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: 700 9px/1 var(--font-mono);
+  color: rgba(255, 255, 255, 0.65);
+  white-space: nowrap;
+}
+.card-root .wx-peek-hilo::before {
+  content: "·";
+  opacity: 0.5;
+}
 /* plan 092 (item 10): the condition label is `.chip` — 092 retired the
    old pill vocabulary entirely; a bespoke pill here would silently undo
    that. Neutral tint, matching `.chip-league`'s treatment above (this
@@ -2125,6 +2142,60 @@
   color: rgba(180, 210, 255, 0.85);
   background: rgba(180, 210, 255, 0.12);
   border: 1px solid rgba(180, 210, 255, 0.35);
+}
+
+/* plan 131: the minimal forecast strip's outer wrapper — groups the
+   readout + strip into ONE flex child of `.peek-content`, so
+   `.peek-content`'s own `gap: 8px` still applies exactly ONCE (between
+   this whole block and `PeekTimeline`), whether or not the strip is
+   mounted, exactly as it did before this plan (IdleHoverPeek.tsx's
+   `WeatherPeekWithForecast` doc comment).
+
+   THE HEIGHT BUDGET (why the strip's type/glyph sizes below are this
+   small): the peek's outer block is a FIXED 100px (`hover.rs`'s
+   `IDLE_PEEK_BELOW_BLOCK_H` mirror, `.below-block.idle-peek`'s own doc
+   comment — untouched by this plan). Content area = 100 - 12 (padding-
+   top) - 13 (padding-bottom) = 75px. `.peek-content`'s own gap (8px)
+   plus `.idle-peek-timeline`'s box (2px margin-top + 1px height = 3px)
+   already claim 11px, leaving 64px for this stack. `.wx-peek-readout`
+   itself is a fixed 48px (10px+10px padding + the 28px icon, its
+   tallest child) — leaving 64 - 48 = 16px for [this wrapper's own gap +
+   the strip]. At `gap: 4px` that's a 12px ceiling for `.wx-forecast-
+   point`'s cross-size; the 10px icon below (its tallest child) leaves 2px
+   to spare — genuinely fits, not a redesign of the peek's height. */
+.card-root .wx-peek-weather-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.card-root .wx-forecast-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+}
+.card-root .wx-forecast-point {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+/* deliberately its own tiny size, well under `.wx-peek-icon`'s 28px —
+   see `.wx-peek-weather-stack`'s doc comment above for the exact budget
+   this was shrunk to fit. */
+.card-root .wx-forecast-icon {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
+  pointer-events: none;
+}
+.card-root .wx-forecast-temp {
+  font: 700 8px/1 var(--font-mono);
+  color: #f5f7fa;
+}
+.card-root .wx-forecast-hour {
+  font: 600 7px/1 var(--font-mono);
+  color: rgba(255, 255, 255, 0.55);
 }
 
 /* plan 104: the now-playing media row — slots between the scorecard

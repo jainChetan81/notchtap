@@ -7,7 +7,12 @@ import { fileURLToPath, URL as NodeURL } from "node:url";
 import { cleanup, render } from "@testing-library/react";
 import { Globe, Music, Play, Tv } from "lucide-react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type { NowPlayingSummary, StatusState } from "../useStatusState";
+import type {
+  NowPlayingSummary,
+  OutlookPoint,
+  StatusState,
+  WeatherSummary,
+} from "../useStatusState";
 import { IdleHoverPeek, iconForBundleId } from "./IdleHoverPeek";
 
 afterEach(cleanup);
@@ -32,16 +37,48 @@ function ruleBody(css: string, selector: string): string {
 
 const overlayCardCss = readSourceCss("../overlay-card.css");
 
+// plan 131: the shared base "current" content — every status fixture
+// below spreads this and overrides only what that fixture actually
+// varies, so a future WeatherSummary field only needs updating here.
+const WEATHER_CURRENT: WeatherSummary = {
+  tempDisplay: "27°",
+  condition: "Cloudy",
+  isDay: true,
+  rainPct: null,
+  todayHighDisplay: null,
+  todayLowDisplay: null,
+  outlook: [],
+};
+
+const OUTLOOK: OutlookPoint[] = [
+  { hourLabel: "08:00", tempDisplay: "27°", condition: "Clear", isDay: true },
+  { hourLabel: "10:00", tempDisplay: "30°", condition: "Rain", isDay: true },
+  { hourLabel: "12:00", tempDisplay: "31°", condition: "Storm", isDay: false },
+];
+
 const WEATHER_STATUS: StatusState = {
   paused: false,
   waiting: 0,
   football: { enabled: false, live: null },
   news: { enabled: false },
+  weather: { enabled: true, current: WEATHER_CURRENT },
+  media: { enabled: false, current: null },
+};
+
+// plan 131: same weather-owned peek state as WEATHER_STATUS, but with a
+// populated forecast strip + hi/lo — the fixture the strip-specific tests
+// render against.
+const WEATHER_STATUS_WITH_FORECAST: StatusState = {
+  ...WEATHER_STATUS,
   weather: {
     enabled: true,
-    current: { tempDisplay: "27°", condition: "Cloudy", isDay: true, rainPct: null },
+    current: {
+      ...WEATHER_CURRENT,
+      todayHighDisplay: "30°",
+      todayLowDisplay: "22°",
+      outlook: OUTLOOK,
+    },
   },
-  media: { enabled: false, current: null },
 };
 
 const LIVE_MATCH_STATUS: StatusState = {
@@ -49,11 +86,15 @@ const LIVE_MATCH_STATUS: StatusState = {
   waiting: 0,
   football: { enabled: true, live: { label: "MTL 1-0 TOR", minute: "63'" } },
   news: { enabled: false },
-  weather: {
-    enabled: true,
-    current: { tempDisplay: "27°", condition: "Cloudy", isDay: true, rainPct: null },
-  },
+  weather: { enabled: true, current: WEATHER_CURRENT },
   media: { enabled: false, current: null },
+};
+
+// plan 131: a live match with a forecast ALSO available — proves the
+// strip stays gone (football outranks the weather readout entirely).
+const LIVE_MATCH_STATUS_WITH_FORECAST: StatusState = {
+  ...LIVE_MATCH_STATUS,
+  weather: WEATHER_STATUS_WITH_FORECAST.weather,
 };
 
 const NOTHING_AMBIENT_STATUS: StatusState = {
@@ -81,11 +122,15 @@ const MEDIA_STATUS: StatusState = {
   waiting: 0,
   football: { enabled: false, live: null },
   news: { enabled: false },
-  weather: {
-    enabled: true,
-    current: { tempDisplay: "27°", condition: "Cloudy", isDay: true, rainPct: null },
-  },
+  weather: { enabled: true, current: WEATHER_CURRENT },
   media: { enabled: true, current: NOW_PLAYING },
+};
+
+// plan 131: media with a forecast ALSO available — proves the strip
+// stays gone (media outranks the weather readout in `.peek-content`).
+const MEDIA_STATUS_WITH_FORECAST: StatusState = {
+  ...MEDIA_STATUS,
+  weather: WEATHER_STATUS_WITH_FORECAST.weather,
 };
 
 const MEDIA_AND_LIVE_MATCH_STATUS: StatusState = {
@@ -184,7 +229,7 @@ describe("IdleHoverPeek (plan 093)", () => {
         ...WEATHER_STATUS,
         weather: {
           enabled: true,
-          current: { tempDisplay: "27°", condition: "Cloudy", isDay: true, rainPct: null },
+          current: { ...WEATHER_CURRENT, isDay: true },
         },
       };
       const { container } = render(<IdleHoverPeek status={status} hovered={true} />);
@@ -198,7 +243,7 @@ describe("IdleHoverPeek (plan 093)", () => {
         ...WEATHER_STATUS,
         weather: {
           enabled: true,
-          current: { tempDisplay: "27°", condition: "Cloudy", isDay: false, rainPct: null },
+          current: { ...WEATHER_CURRENT, isDay: false },
         },
       };
       const { container } = render(<IdleHoverPeek status={status} hovered={true} />);
@@ -249,7 +294,7 @@ describe("IdleHoverPeek (plan 093)", () => {
         ...WEATHER_STATUS,
         weather: {
           enabled: true,
-          current: { tempDisplay: "27°", condition: "Cloudy", isDay: true, rainPct: 75 },
+          current: { ...WEATHER_CURRENT, rainPct: 75 },
         },
       };
       const { container } = render(<IdleHoverPeek status={status} hovered={true} />);
@@ -278,7 +323,7 @@ describe("IdleHoverPeek (plan 093)", () => {
         ...WEATHER_STATUS,
         weather: {
           enabled: true,
-          current: { tempDisplay: "27°", condition: "Cloudy", isDay: true, rainPct: 60 },
+          current: { ...WEATHER_CURRENT, rainPct: 60 },
         },
       };
 
@@ -350,6 +395,79 @@ describe("IdleHoverPeek (plan 093)", () => {
   it("renders no media row when media.current is null (no-media renders nothing extra)", () => {
     const { container } = render(<IdleHoverPeek status={WEATHER_STATUS} hovered={true} />);
     expect(container.querySelector(".media-row")).toBeNull();
+  });
+
+  // plan 131: hi/lo inline with the current temp.
+  describe("hi/lo (plan 131)", () => {
+    it("renders hi/lo inline with the current temp when both are present", () => {
+      const { container } = render(
+        <IdleHoverPeek status={WEATHER_STATUS_WITH_FORECAST} hovered={true} />,
+      );
+      expect(container.querySelector(".wx-peek-hi")?.textContent).toBe("H 30°");
+      expect(container.querySelector(".wx-peek-lo")?.textContent).toBe("L 22°");
+    });
+
+    it("renders no hi/lo when either is absent", () => {
+      // WEATHER_STATUS carries todayHighDisplay/todayLowDisplay: null.
+      const { container } = render(<IdleHoverPeek status={WEATHER_STATUS} hovered={true} />);
+      expect(container.querySelector(".wx-peek-hi")).toBeNull();
+      expect(container.querySelector(".wx-peek-lo")).toBeNull();
+    });
+
+    it("renders no hi/lo when only one of the pair is present", () => {
+      const highOnly: StatusState = {
+        ...WEATHER_STATUS,
+        weather: {
+          enabled: true,
+          current: { ...WEATHER_CURRENT, todayHighDisplay: "30°", todayLowDisplay: null },
+        },
+      };
+      const { container } = render(<IdleHoverPeek status={highOnly} hovered={true} />);
+      expect(container.querySelector(".wx-peek-hi")).toBeNull();
+      expect(container.querySelector(".wx-peek-lo")).toBeNull();
+    });
+  });
+
+  // plan 131: the minimal forecast strip — one compact row of the 3
+  // OutlookPoints, rendered only in the weather-owned peek state.
+  describe("forecast strip (plan 131)", () => {
+    it("renders exactly 3 points (glyph/temp/hour label) when outlook is present", () => {
+      const { container } = render(
+        <IdleHoverPeek status={WEATHER_STATUS_WITH_FORECAST} hovered={true} />,
+      );
+      const points = container.querySelectorAll(".wx-forecast-point");
+      expect(points).toHaveLength(3);
+      const icons = container.querySelectorAll("img.wx-forecast-icon");
+      expect(icons).toHaveLength(3);
+      expect(container.querySelectorAll(".wx-forecast-temp")[0]?.textContent).toBe("27°");
+      expect(container.querySelectorAll(".wx-forecast-hour")[0]?.textContent).toBe("08:00");
+      expect(container.querySelectorAll(".wx-forecast-temp")[1]?.textContent).toBe("30°");
+      expect(container.querySelectorAll(".wx-forecast-hour")[1]?.textContent).toBe("10:00");
+      expect(container.querySelectorAll(".wx-forecast-temp")[2]?.textContent).toBe("31°");
+      expect(container.querySelectorAll(".wx-forecast-hour")[2]?.textContent).toBe("12:00");
+    });
+
+    it("renders no forecast strip when outlook is empty", () => {
+      // WEATHER_STATUS carries outlook: [].
+      const { container } = render(<IdleHoverPeek status={WEATHER_STATUS} hovered={true} />);
+      expect(container.querySelector(".wx-forecast-strip")).toBeNull();
+    });
+
+    it("never renders the forecast strip alongside media, even when outlook is present", () => {
+      const { container } = render(
+        <IdleHoverPeek status={MEDIA_STATUS_WITH_FORECAST} hovered={true} />,
+      );
+      expect(container.querySelector(".media-row")).not.toBeNull();
+      expect(container.querySelector(".wx-forecast-strip")).toBeNull();
+    });
+
+    it("never renders the forecast strip alongside the scorecard reveal, even when outlook is present", () => {
+      const { container } = render(
+        <IdleHoverPeek status={LIVE_MATCH_STATUS_WITH_FORECAST} hovered={true} />,
+      );
+      expect(container.querySelector(".idle-reveal-scorecard")).not.toBeNull();
+      expect(container.querySelector(".wx-forecast-strip")).toBeNull();
+    });
   });
 
   describe("iconForBundleId (plan 104 Step 7, plan 118 lucide swap)", () => {

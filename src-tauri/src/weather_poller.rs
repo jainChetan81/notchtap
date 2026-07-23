@@ -32,7 +32,7 @@ use crate::event::{
     SourceKind, Units,
 };
 use crate::poller::Backoff;
-use crate::status::WeatherSummary;
+use crate::status::{OutlookPoint, WeatherSummary};
 
 /// Open-Meteo forecast responses are tiny (one day of hourly data);
 /// 64 KiB is generous headroom over the ~2 KiB real payload.
@@ -48,6 +48,13 @@ pub struct OpenMeteoResponse {
     pub current: OpenMeteoCurrent,
     #[serde(default)]
     pub hourly: Option<OpenMeteoHourly>,
+    /// plan 131: today's hi/lo (`forecast_days=1`, so index 0 of each
+    /// array is always "today" — no date matching needed). `#[serde(default)]`
+    /// heals a response/fixture that predates this field (or a malformed
+    /// one that omits it) to `None` rather than failing to parse, same
+    /// discipline as `hourly` above.
+    #[serde(default)]
+    pub daily: Option<OpenMeteoDaily>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -73,6 +80,27 @@ pub struct OpenMeteoHourly {
     pub time: Vec<String>,
     #[serde(default)]
     pub precipitation_probability: Vec<u8>,
+    /// plan 131: the forecast-strip's temperature/condition reads. Both
+    /// `#[serde(default)]` so a response/fixture predating this plan (or
+    /// a malformed one missing either array) still parses — `build_outlook`
+    /// below treats a short/missing array the same as an out-of-window
+    /// index: the point is skipped, never fabricated.
+    #[serde(default)]
+    pub temperature_2m: Vec<f64>,
+    #[serde(default)]
+    pub weather_code: Vec<u8>,
+}
+
+/// plan 131: today's high/low (`daily=temperature_2m_max,temperature_2m_min`,
+/// `forecast_days=1`) — a separate response block from `hourly`, so its
+/// own `Option` on `OpenMeteoResponse` degrades independently: hi/lo can
+/// be `None` while the hourly outlook still populates, and vice versa.
+#[derive(Debug, Clone, Deserialize)]
+pub struct OpenMeteoDaily {
+    #[serde(default)]
+    pub temperature_2m_max: Vec<f64>,
+    #[serde(default)]
+    pub temperature_2m_min: Vec<f64>,
 }
 
 /// "Already fired for this occurrence" state per alert type, carried
@@ -127,6 +155,81 @@ fn lookahead_rain_probability(response: &OpenMeteoResponse, lookahead_mins: u16)
     hourly.precipitation_probability.get(index).copied()
 }
 
+/// plan 131: local-hour day/night heuristic for FUTURE outlook points.
+/// Open-Meteo's `hourly=` list isn't extended with `is_day` this plan (the
+/// request only adds `temperature_2m,weather_code` there) — but with
+/// `timezone=auto` now on the request, `hour` here is a genuine LOCAL hour
+/// for the forecast's own coordinates, not the machine's wall clock. That
+/// is exactly the distinction `WeatherSummary.is_day`'s own doc comment
+/// draws against the old, deleted `isDaytimeNow()` heuristic (wrong for
+/// coordinates outside the machine's timezone): this heuristic reads a
+/// LOCAL hour that Open-Meteo itself resolved for the forecast location,
+/// so a plain 6..18 daytime window is a reasonable approximation for a
+/// tiny glyph choice, not a repeat of that old mistake.
+fn outlook_is_day(local_hour: u32) -> bool {
+    (6..18).contains(&local_hour)
+}
+
+/// plan 131: the minimal forecast strip — exactly 3 points at +2h/+4h/+6h
+/// from the poll's CURRENT HOUR (`response.current.time`, floored to the
+/// hour). Unlike `lookahead_rain_probability` (which rounds an arbitrary
+/// minute offset to the NEAREST hour), every target here is already a
+/// whole-hour offset from an hour-aligned anchor, so it either lands
+/// exactly on an `hourly.time` entry or it doesn't — no rounding
+/// ambiguity. A point whose target hour has no matching entry (outside
+/// the fetched window — e.g. near the end of the single fetched day) or
+/// whose `temperature_2m`/`weather_code` arrays don't reach that index
+/// (a malformed/short response) is skipped rather than fabricated, so
+/// this returns anywhere from 0 to 3 points and never fails the caller.
+fn build_outlook(response: &OpenMeteoResponse) -> Vec<OutlookPoint> {
+    let Some(hourly) = response.hourly.as_ref() else {
+        return Vec::new();
+    };
+    let Ok(poll_time) = NaiveDateTime::parse_from_str(&response.current.time, "%Y-%m-%dT%H:%M")
+    else {
+        return Vec::new();
+    };
+    let current_hour = poll_time
+        .with_minute(0)
+        .and_then(|t| t.with_second(0))
+        .and_then(|t| t.with_nanosecond(0));
+    let Some(current_hour) = current_hour else {
+        return Vec::new();
+    };
+
+    [2i64, 4, 6]
+        .into_iter()
+        .filter_map(|offset_hours| {
+            let target = current_hour + chrono::Duration::hours(offset_hours);
+            let target_str = target.format("%Y-%m-%dT%H:%M").to_string();
+            let index = hourly.time.iter().position(|t| *t == target_str)?;
+            let temp = hourly.temperature_2m.get(index)?;
+            let code = hourly.weather_code.get(index)?;
+            Some(OutlookPoint {
+                hour_label: target.format("%H:%M").to_string(),
+                temp_display: format!("{temp:.0}°"),
+                condition: condition_word(*code).to_string(),
+                is_day: outlook_is_day(target.hour()),
+            })
+        })
+        .collect()
+}
+
+/// plan 131: today's hi/lo, same `"{:.0}°"` format `temp_display` already
+/// uses — `forecast_days=1` means index 0 of each `daily` array is always
+/// "today", no date matching needed. `None` when `daily` (or either array
+/// within it) is missing/malformed.
+fn today_hi_lo(response: &OpenMeteoResponse) -> (Option<String>, Option<String>) {
+    let daily = response.daily.as_ref();
+    let high = daily
+        .and_then(|d| d.temperature_2m_max.first())
+        .map(|t| format!("{t:.0}°"));
+    let low = daily
+        .and_then(|d| d.temperature_2m_min.first())
+        .map(|t| format!("{t:.0}°"));
+    (high, low)
+}
+
 /// Pure parse/diff/alert-state heart of the weather poller. The summary
 /// always updates (ambient); the returned events are non-empty only when
 /// a threshold newly crosses (edge-triggered). Temperature thresholds
@@ -153,6 +256,11 @@ pub fn diff_weather(
     // call, two consumers, so they can never read a different probability
     // for the same poll.
     let rain_lookahead = lookahead_rain_probability(response, rain_lookahead_mins);
+    // plan 131: one build per poll, feeding the minimal forecast strip —
+    // both degrade independently (empty outlook / None hi-lo) on
+    // missing/malformed source data rather than failing the whole summary.
+    let outlook = build_outlook(response);
+    let (today_high_display, today_low_display) = today_hi_lo(response);
     let summary = WeatherSummary {
         temp_display: format!("{:.0}°", response.current.temperature_2m),
         condition: condition.to_string(),
@@ -172,6 +280,9 @@ pub fn diff_weather(
         // floor" in one value, and the frontend's job is reduced to a
         // presence check (IdleHoverPeek.tsx).
         rain_pct: rain_lookahead.filter(|&pct| pct >= rain_threshold_pct),
+        today_high_display,
+        today_low_display,
+        outlook,
     };
 
     let mut events = Vec::new();
@@ -284,8 +395,24 @@ fn forecast_url(lat: f64, lon: f64, units: Units) -> String {
         Units::Celsius => "",
         Units::Fahrenheit => "&temperature_unit=fahrenheit",
     };
+    // plan 131: `hourly=` grows `temperature_2m,weather_code` (the
+    // forecast-strip reads, `build_outlook` above) alongside the existing
+    // `precipitation_probability` — same single call, no extra API cost.
+    // `daily=temperature_2m_max,temperature_2m_min` feeds today's hi/lo
+    // (`today_hi_lo` above). `timezone=auto` makes every `time` string
+    // (both `current.time` and `hourly.time`) a genuine LOCAL time for
+    // the forecast's own coordinates — required for the outlook's hour
+    // labels to read correctly, and it does NOT change
+    // `lookahead_rain_probability`'s pinned tests: those call
+    // `diff_weather`/`lookahead_rain_probability` directly against a
+    // static fixture `OpenMeteoResponse`, never through this URL or a
+    // live HTTP call, and the parse format string
+    // (`"%Y-%m-%dT%H:%M"`, no UTC-offset component) is identical whether
+    // the wire values happen to be GMT (today, no `timezone` param) or
+    // location-local (with `timezone=auto`) — only the STRING SHAPE
+    // matters to that parser, and `timezone=auto` doesn't change it.
     format!(
-        "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,weather_code,is_day&hourly=precipitation_probability&forecast_days=1{units_param}"
+        "https://api.open-meteo.com/v1/forecast?latitude={lat}&longitude={lon}&current=temperature_2m,weather_code,is_day&hourly=precipitation_probability,temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min&timezone=auto&forecast_days=1{units_param}"
     )
 }
 
@@ -468,6 +595,31 @@ mod tests {
                 // lookahead_rounds_to_the_nearest_hour) sits under the
                 // default 60% floor.
                 rain_pct: None,
+                // plan 131: the fixture's `daily` block (32.0°C / 21.0°C).
+                today_high_display: Some("32°".to_string()),
+                today_low_display: Some("21°".to_string()),
+                // poll time 06:30 -> current hour 06:00 -> +2/+4/+6h ==
+                // 08:00/10:00/12:00, hourly indices 8/10/12.
+                outlook: vec![
+                    OutlookPoint {
+                        hour_label: "08:00".to_string(),
+                        temp_display: "27°".to_string(),
+                        condition: "Clear".to_string(),
+                        is_day: true,
+                    },
+                    OutlookPoint {
+                        hour_label: "10:00".to_string(),
+                        temp_display: "30°".to_string(),
+                        condition: "Rain".to_string(),
+                        is_day: true,
+                    },
+                    OutlookPoint {
+                        hour_label: "12:00".to_string(),
+                        temp_display: "31°".to_string(),
+                        condition: "Storm".to_string(),
+                        is_day: true,
+                    },
+                ],
             }
         );
         // the real fixture's near-term rain probabilities are all under
@@ -509,6 +661,95 @@ mod tests {
         response.hourly = None;
         let (summary, _, _) = diff(&response, WeatherAlertState::default());
         assert_eq!(summary.rain_pct, None);
+    }
+
+    // --- outlook & hi/lo (plan 131): the minimal forecast strip ---
+
+    #[test]
+    fn outlook_selects_the_plus_2_4_6_hour_points_from_the_current_hour() {
+        // poll time 06:30 -> current hour floors to 06:00 -> +2/+4/+6h ==
+        // 08:00/10:00/12:00, hourly indices 8/10/12 in the fixture.
+        let outlook = build_outlook(&fixture());
+        assert_eq!(
+            outlook,
+            vec![
+                OutlookPoint {
+                    hour_label: "08:00".to_string(),
+                    temp_display: "27°".to_string(),
+                    condition: "Clear".to_string(),
+                    is_day: true,
+                },
+                OutlookPoint {
+                    hour_label: "10:00".to_string(),
+                    temp_display: "30°".to_string(),
+                    condition: "Rain".to_string(),
+                    is_day: true,
+                },
+                OutlookPoint {
+                    hour_label: "12:00".to_string(),
+                    temp_display: "31°".to_string(),
+                    condition: "Storm".to_string(),
+                    is_day: true,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn outlook_skips_points_past_the_end_of_the_fetched_window_rather_than_fabricating() {
+        // current hour 20:00 -> +2h == 22:00 (present, index 22) but
+        // +4h/+6h roll into the NEXT day (00:00/02:00), which this
+        // fixture's single fetched day has no entries for — those two
+        // points must be skipped, not fabricated, leaving exactly 1.
+        let mut response = fixture();
+        response.current.time = "2026-07-19T20:00".to_string();
+        let outlook = build_outlook(&response);
+        assert_eq!(
+            outlook,
+            vec![OutlookPoint {
+                hour_label: "22:00".to_string(),
+                temp_display: "22°".to_string(),
+                condition: "Cloudy".to_string(),
+                is_day: false,
+            }]
+        );
+    }
+
+    #[test]
+    fn outlook_is_empty_when_hourly_data_is_missing() {
+        let mut response = fixture();
+        response.hourly = None;
+        assert_eq!(build_outlook(&response), Vec::new());
+    }
+
+    #[test]
+    fn outlook_skips_a_point_whose_temperature_or_weather_code_arrays_are_too_short() {
+        // a malformed response where the time array is longer than the
+        // parallel temperature_2m/weather_code arrays — every index this
+        // plan targets (8/10/12) is now out of bounds, so every point is
+        // skipped rather than panicking or fabricating a value.
+        let mut response = fixture();
+        let hourly = response.hourly.as_mut().unwrap();
+        hourly.temperature_2m.truncate(4);
+        hourly.weather_code.truncate(4);
+        assert_eq!(build_outlook(&response), Vec::new());
+    }
+
+    #[test]
+    fn today_high_low_display_formats_like_temp_display() {
+        // the fixture's daily block: 32.0°C / 21.0°C.
+        let (high, low) = today_hi_lo(&fixture());
+        assert_eq!(high, Some("32°".to_string()));
+        assert_eq!(low, Some("21°".to_string()));
+    }
+
+    #[test]
+    fn today_high_low_are_none_when_daily_data_is_missing() {
+        let mut response = fixture();
+        response.daily = None;
+        let (high, low) = today_hi_lo(&response);
+        assert_eq!(high, None);
+        assert_eq!(low, None);
     }
 
     // --- is_day -> WeatherSummary.is_day (plan 110 Step B) ---
