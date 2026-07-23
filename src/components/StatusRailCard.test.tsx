@@ -413,7 +413,15 @@ describe("StatusRailCard", () => {
 
   it("renders the ttl-bar last, after the compact content and the manifest wrap, when showing", () => {
     const { container } = render(<StatusRailCard slot={GOAL} />);
-    const cardContent = container.querySelector(".card-content") as HTMLElement;
+    // 2026-07-23 (operator minimal-notch spec, Task 1.3 — deliberate
+    // MEANING change): StatusDots now stays mounted THROUGH `showing`
+    // (railRevealed, see StatusRailCard.tsx), in its own
+    // `.card-content.idle` wrapper — so a plain `.card-content` query
+    // here would find THAT one first (flank-right precedes below-block
+    // in DOM order), not the below-block's swapped content this test is
+    // actually about. Scoped to `.below-block .card-content` to keep
+    // targeting the same node as before this plan.
+    const cardContent = container.querySelector(".below-block .card-content") as HTMLElement;
     const children = Array.from(cardContent.children);
     const compactIndex = children.findIndex((el) => el.classList.contains("compact"));
     const manifestIndex = children.findIndex((el) => el.classList.contains("manifest-wrap"));
