@@ -44,8 +44,32 @@ export function TtlBar({
   // array) — a ref, not a second effect, so pause/resume never resets
   // `deadline`.
   const hoverPausedRef = useRef(hoverPaused);
+  // 2026-07-23 review fix (Performance finding — rAF loop kept running
+  // while hover-paused): `frameIdRef` is the shared handshake between the
+  // anchoring effect below and the pause-edge effect right after it.
+  // `null` means "no frame currently in flight" — either genuinely
+  // bailed out on a hover pause, or expired, or not yet armed. `resumeRef`
+  // holds a closure (set up fresh by the anchoring effect, on every
+  // slotId/ttlMs/remainingMs re-anchor) that re-arms exactly one frame;
+  // the pause-edge effect calls it on the paused->unpaused transition,
+  // and only when frameIdRef is actually null, so it never double-
+  // schedules a frame that's already in flight.
+  const frameIdRef = useRef<number | null>(null);
+  const resumeRef = useRef<(() => void) | null>(null);
+
+  // Bail/resume plumbing: while hoverPaused is true, the anchoring
+  // effect's tick() loop paints the frozen value once and then stops
+  // requesting new frames entirely (see that effect below) — no more
+  // per-frame work for as long as the pause lasts, not just a frozen
+  // number. This effect's only job is noticing the FALLING edge
+  // (paused -> not paused) and re-arming exactly one frame to resume,
+  // via the resumeRef closure the anchoring effect maintains.
   useEffect(() => {
+    const wasPaused = hoverPausedRef.current;
     hoverPausedRef.current = hoverPaused;
+    if (wasPaused && !hoverPaused && frameIdRef.current === null) {
+      resumeRef.current?.();
+    }
   }, [hoverPaused]);
 
   // Re-anchors on mount and on every slotId/ttlMs/remainingMs change: a
@@ -63,11 +87,12 @@ export function TtlBar({
 
     // Idle-CPU discipline (plans 015/018): under prefers-reduced-motion, a
     // CSS rule alone can't stop a rAF loop, so the loop itself is gated in
-    // JS — render a static full-width fill and never arm the loop.
+    // JS — render a static, un-scaled fill and never arm the loop.
     const reducedMotion = prefersReducedMotion();
 
     if (reducedMotion || ttlMs <= 0) {
-      fill.style.width = "100%";
+      fill.style.transform = "scaleX(1)";
+      resumeRef.current = null;
       return;
     }
 
@@ -80,9 +105,27 @@ export function TtlBar({
     // remainingMs to resync against (see the `hoverPaused` prop doc).
     let pausedAccumMs = 0;
     let pauseStartedAt: number | null = hoverPausedRef.current ? performance.now() : null;
-    let frame: number;
+    let cancelled = false;
 
+    // 2026-07-23 review fix (Performance finding): `.ttl-fill` sits under
+    // `.card-assembly`'s `filter: drop-shadow` — mutating a layout
+    // property (`width`) every frame forced a re-layout/re-rasterize of
+    // that whole filtered group. Animating `transform: scaleX(fraction)`
+    // instead (CSS: `transform-origin: left`, full-width base) is
+    // visually identical at this bar's 2px height and stays
+    // compositor-only.
+    //
+    // While paused, this still paints the frozen value on the FIRST tick
+    // after the pause begins (so the bar visibly holds at the right
+    // position, not whatever it happened to be mid-frame), then bails —
+    // no `requestAnimationFrame` call, so no more per-frame work at all
+    // until the pause-edge effect above calls `resumeRef.current()`.
+    // Also stops permanently once `remaining` reaches 0 (expired), same
+    // idle-CPU discipline as the reduced-motion early return above.
     function tick() {
+      if (cancelled) {
+        return;
+      }
       const fillEl = fillRef.current;
       if (!fillEl) {
         return;
@@ -97,12 +140,35 @@ export function TtlBar({
       const effectiveNow = pauseStartedAt ?? performance.now();
       const remaining = Math.max(0, deadline + pausedAccumMs - effectiveNow);
       const pct = Math.min(100, (remaining / ttlMs) * 100);
-      fillEl.style.width = `${pct}%`;
-      frame = requestAnimationFrame(tick);
+      fillEl.style.transform = `scaleX(${pct / 100})`;
+      if (remaining <= 0) {
+        frameIdRef.current = null; // stop permanently once expired
+        return;
+      }
+      if (nowPaused) {
+        frameIdRef.current = null; // bail — resumeRef re-arms on unpause
+        return;
+      }
+      frameIdRef.current = requestAnimationFrame(tick);
     }
-    frame = requestAnimationFrame(tick);
 
-    return () => cancelAnimationFrame(frame);
+    resumeRef.current = () => {
+      if (cancelled || frameIdRef.current !== null) {
+        return;
+      }
+      frameIdRef.current = requestAnimationFrame(tick);
+    };
+
+    frameIdRef.current = requestAnimationFrame(tick);
+
+    return () => {
+      cancelled = true;
+      resumeRef.current = null;
+      if (frameIdRef.current !== null) {
+        cancelAnimationFrame(frameIdRef.current);
+        frameIdRef.current = null;
+      }
+    };
   }, [slotId, ttlMs, remainingMs]);
 
   return (
