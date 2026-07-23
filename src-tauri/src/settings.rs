@@ -838,22 +838,47 @@ pub fn set_appearance(
     Ok(())
 }
 
+// Both commands below prefer `engine.history_store()` — the SAME
+// `Arc<HistoryStore>` the accept path appends through (see that method's
+// doc comment in engine.rs) — over opening a fresh `HistoryStore` for
+// this one call. That fresh-instance-per-call shape used to be the only
+// path here, and it is a real race: `HistoryStore`'s serialization is an
+// instance-level `Mutex`, so a second instance over the same file shares
+// no lock with the engine's, and a `clear_history` call could interleave
+// with an in-flight accept-path append with no mutual exclusion at all.
+// The `None` fallback (history disabled) stays on the old per-call
+// construction — with no engine-held store there is no second writer to
+// race against, so it is exactly as safe as it always was.
 #[tauri::command]
 pub async fn get_history(
     window: tauri::WebviewWindow,
+    engine: tauri::State<'_, Engine>,
 ) -> Result<Vec<crate::history::HistoryEntry>, String> {
     ensure_settings_window(&window)?;
-    let dir = notchtap_config_dir()?;
-    let store = crate::history::HistoryStore::new(dir).map_err(|e| e.to_string())?;
-    store.read_recent(200).map_err(|e| e.to_string())
+    match engine.history_store() {
+        Some(store) => store.read_recent(200).map_err(|e| e.to_string()),
+        None => {
+            let dir = notchtap_config_dir()?;
+            let store = crate::history::HistoryStore::new(dir).map_err(|e| e.to_string())?;
+            store.read_recent(200).map_err(|e| e.to_string())
+        }
+    }
 }
 
 #[tauri::command]
-pub async fn clear_history(window: tauri::WebviewWindow) -> Result<(), String> {
+pub async fn clear_history(
+    window: tauri::WebviewWindow,
+    engine: tauri::State<'_, Engine>,
+) -> Result<(), String> {
     ensure_settings_window(&window)?;
-    let dir = notchtap_config_dir()?;
-    let store = crate::history::HistoryStore::new(dir).map_err(|e| e.to_string())?;
-    store.clear().map_err(|e| e.to_string())
+    match engine.history_store() {
+        Some(store) => store.clear().map_err(|e| e.to_string()),
+        None => {
+            let dir = notchtap_config_dir()?;
+            let store = crate::history::HistoryStore::new(dir).map_err(|e| e.to_string())?;
+            store.clear().map_err(|e| e.to_string())
+        }
+    }
 }
 
 #[cfg(test)]
@@ -1848,4 +1873,17 @@ mod tests {
         assert_eq!(event.rotation, RotationSpec::OneShot { ttl_secs: 77 });
         assert_eq!(event.origin, SourceKind::Weather);
     }
+
+    // `get_history`/`clear_history` themselves are untested here by the
+    // same design note above this module's invoke-commands section: they
+    // take the concrete (Wry) `tauri::WebviewWindow`, not a
+    // `R: tauri::Runtime` generic like `get_default_config` does, so
+    // `tauri::test::mock_app()`'s `MockRuntime` windows are the wrong
+    // type and there is no seam to call them from a unit test. The
+    // testable seam for this fix is `Engine::history_store()` — see
+    // `engine::tests::history_store_returns_a_clone_of_the_same_arc_the_accept_path_writes_through`
+    // in `engine.rs`, which proves the accessor hands back the identical
+    // `Arc<HistoryStore>` (same allocation, `Arc::ptr_eq`) that
+    // `Engine::accept` appends through, i.e. the actual fix: one lock,
+    // not two.
 }
