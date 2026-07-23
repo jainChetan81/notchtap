@@ -795,7 +795,8 @@ describe("StatusRailCard", () => {
 
       rerender(<StatusRailCard slot={{ state: "empty" }} restingState="notch" />);
       // the outgoing card keeps playing its normal exit animation for the
-      // same 220ms window as "rail" mode — it must not vanish abruptly.
+      // same SWAP_EXIT_MS window as "rail" mode — it must not vanish
+      // abruptly.
       expect(container.querySelector(".below-block")).not.toBeNull();
 
       await vi.waitFor(() => {
@@ -1369,10 +1370,11 @@ describe("StatusRailCard", () => {
   // used to key off the live `showing` flag alone, which snapped straight
   // to idle the instant a card started exiting — a visible "grows before
   // shrinking" race against the still-fading below-block content (delayed
-  // by useDelayedSwap's 220ms exit window). Entrance was always correct
-  // (it already read the live slot); only the exit direction needed
-  // fixing. Uses fake timers, scoped to this describe block only, so the
-  // 220ms delayed-swap boundary is directly steppable (same pattern as
+  // by useDelayedSwap's SWAP_EXIT_MS exit window). Entrance was always
+  // correct (it already read the live slot); only the exit direction
+  // needed fixing. Uses fake timers, scoped to this describe block only,
+  // so the SWAP_EXIT_MS (175ms, plan 12x wave 3 — was 220ms) delayed-swap
+  // boundary is directly steppable (same pattern as
   // useDelayedSwap.test.ts).
   describe("compact->idle geometry as one state machine (plan 107 Step B)", () => {
     beforeEach(() => {
@@ -1399,9 +1401,9 @@ describe("StatusRailCard", () => {
     });
 
     // Exit contract: the shell must hold its showing-geometry class for
-    // the whole 220ms delayed-swap window, then flip to `.idle` in the
-    // same tick the swap completes — never before.
-    it("showing->idle exit holds the showing-geometry class until the 220ms swap, then settles idle", () => {
+    // the whole SWAP_EXIT_MS delayed-swap window, then flip to `.idle` in
+    // the same tick the swap completes — never before.
+    it("showing->idle exit holds the showing-geometry class until the SWAP_EXIT_MS swap, then settles idle", () => {
       const { container, rerender } = render(<StatusRailCard slot={GOAL} />);
       expect(container.querySelector(".card-assembly.high")).not.toBeNull();
 
@@ -1412,7 +1414,9 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".card-assembly.high")).not.toBeNull();
       expect(container.querySelector(".card-assembly.idle")).toBeNull();
 
-      act(() => vi.advanceTimersByTime(219));
+      // 174 = SWAP_EXIT_MS (175, plan 12x wave 3 — was 220/219) minus one
+      // tick.
+      act(() => vi.advanceTimersByTime(174));
       // still one tick short of the swap — geometry must not have moved.
       expect(container.querySelector(".card-assembly.high")).not.toBeNull();
       expect(container.querySelector(".card-assembly.idle")).toBeNull();
@@ -1436,7 +1440,9 @@ describe("StatusRailCard", () => {
       // mid-exit: expanded must still be held, not dropped to compact.
       expect(container.querySelector(".card-assembly.expanded")).not.toBeNull();
 
-      act(() => vi.advanceTimersByTime(219));
+      // 174 = SWAP_EXIT_MS (175, plan 12x wave 3 — was 220/219) minus one
+      // tick.
+      act(() => vi.advanceTimersByTime(174));
       expect(container.querySelector(".card-assembly.expanded")).not.toBeNull();
 
       act(() => vi.advanceTimersByTime(1));

@@ -419,6 +419,32 @@ export function StatusRailCard({
   // `:not(:has(.below-block))` flank corner-round (which can only safely
   // start once the below-block is truly gone — see that rule's ROUNDING
   // LAW comment) begins right after, not a further ~330ms late.
+  //
+  // plan 12x (wave 3, operator-feedback polish pass): the wrapper's own
+  // `exit` variant (JSX below) now also animates `height` (auto -> 0,
+  // motion measures the rendered box itself — same implicit-from-value
+  // read it already relied on for `opacity`), not opacity alone. Before
+  // this, the wrapper kept its full showing-height for the entire
+  // CONTENT_EXIT_MS fade, then vanished outright the instant it
+  // unmounted — an abrupt height "pop," not a collapse. `.below-block`'s
+  // own `overflow: hidden` (overlay-card.css) both clips the shrinking
+  // content and gives it an automatic min-height of 0 (CSS Grid: a
+  // non-visible-overflow item's auto min-size is 0), so the surrounding
+  // `.card-assembly` grid row — and the whole card — shrinks in step,
+  // frame by frame, rather than jumping straight to its post-below-block
+  // height on unmount. Paired with the inner `AnimatePresence`'s own
+  // `exit` fix just below, this also fixes the pre-pop content reflow:
+  // previously the INNER content swap's `exit` variant (`{opacity: 0, y:
+  // -4}` over SWAP_EXIT_MS) kept animating past this wrapper's own
+  // shorter CONTENT_EXIT_MS close, so the wrapper unmounted the whole
+  // subtree mid-flight through the inner fade+shift — a visible jump
+  // right before the pop. The inner exit is now `{opacity: 0}` (no
+  // y-shift — nothing to reflow) over CONTENT_EXIT_MS (matching this
+  // wrapper exactly), so the two finish in lockstep: content quietly
+  // fades in place while the box collapses around it, one motion, never
+  // cut off mid-animation. The inner `animate` (entrance) transition is
+  // untouched — still SWAP_EXIT_MS — so promotions and same-priority
+  // rotations keep their existing feel; only the true close changed.
 
   return (
     <div
@@ -489,7 +515,7 @@ export function StatusRailCard({
           <motion.div
             className={belowBlockClass}
             initial={false}
-            exit={{ opacity: 0 }}
+            exit={{ opacity: 0, height: 0 }}
             transition={{ duration: CONTENT_EXIT_MS / 1000, ease: NOTCHTAP_EASE }}
           >
             {/* plan 082: the condition glyph — a background-layer image,
@@ -523,7 +549,15 @@ export function StatusRailCard({
                   className="card-content"
                   initial={{ opacity: 0, y: -4 }}
                   animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -4 }}
+                  // plan 12x (wave 3): the exit variant carries its OWN
+                  // `transition` (overriding the shared one below, motion's
+                  // documented per-variant override mechanism) — see the
+                  // wrapper's own doc comment above for why this must match
+                  // CONTENT_EXIT_MS, not SWAP_EXIT_MS, on the exit side only.
+                  exit={{
+                    opacity: 0,
+                    transition: { duration: CONTENT_EXIT_MS / 1000, ease: NOTCHTAP_EASE },
+                  }}
                   transition={{ duration: SWAP_EXIT_MS / 1000, ease: NOTCHTAP_EASE }}
                 >
                   {isLiveCard && liveEspn !== undefined ? (

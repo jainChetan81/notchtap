@@ -232,7 +232,14 @@ export function IdleHoverPeek({ status, hovered }: { status?: StatusState; hover
           initial={{ height: 0, opacity: 0 }}
           animate={{ height: 100, opacity: 1 }}
           exit={{ height: 0, opacity: 0 }}
-          transition={{ type: "spring", stiffness: 420, damping: 34, opacity: { duration: 0.18 } }}
+          // plan 12x (wave 3): stiffer spring (420 -> 480) and a quicker
+          // opacity fade (180ms -> 150ms), operator-feedback "snappier
+          // overall" pass — damping nudged up in step (34 -> 37) to keep
+          // the same near-critically-damped feel (damping/stiffness ratio
+          // ~0.081 before, ~0.077 now) rather than trading the speed gain
+          // for extra bounce/overshoot. `height: 100` is untouched (rust's
+          // `IDLE_PEEK_BELOW_BLOCK_H` pairing, out of scope for this pass).
+          transition={{ type: "spring", stiffness: 480, damping: 37, opacity: { duration: 0.15 } }}
           style={{ overflow: "hidden" }}
         >
           {showBackdrop ? <WeatherPeekBackdrop weather={weather} /> : null}

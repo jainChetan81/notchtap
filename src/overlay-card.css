@@ -88,9 +88,13 @@
      for the hover "breathing" rule below (`.hovered`) — both properties
      only ever CHANGE via that class toggle, so listing them here is what
      makes the transition symmetric (animates in on hover AND back out on
-     un-hover, not just one direction). */
+     un-hover, not just one direction).
+     plan 12x (wave 3): width dropped 400ms -> 320ms (~20% quicker,
+     operator-feedback "snappier overall" pass) — transform/filter
+     (the hover breathe, unrelated to this pass's complaint) are
+     untouched. */
   transition:
-    width 400ms var(--ease-notchtap),
+    width 320ms var(--ease-notchtap),
     transform 260ms var(--ease-notchtap),
     filter 260ms var(--ease-notchtap);
 }
@@ -202,14 +206,21 @@
    transition when the property's new computed value declares one, and
    on entrance this rule STOPS matching (below-block mounts, `:has()`
    flips), so the un-round there has never been transitioned by this
-   declaration — it snaps instantly, before and after this change alike. */
+   declaration — it snaps instantly, before and after this change alike.
+
+   plan 12x (wave 3): `transition-duration` dropped again, 130ms -> 105ms,
+   mirroring CONTENT_EXIT_MS's own 130 -> 105 drop (animationTiming.ts) —
+   same pairing discipline, same reasoning: the below-block's own exit
+   (now also height-collapsing, not just fading — StatusRailCard.tsx)
+   still needs to finish exactly when this round-in starts, or the two
+   acts read as chained again. */
 .card-root .card-assembly:not(:has(.below-block)) .flank-left {
   border-bottom-left-radius: var(--card-radius, 14px);
-  transition: border-radius 130ms var(--ease-notchtap);
+  transition: border-radius 105ms var(--ease-notchtap);
 }
 .card-root .card-assembly:not(:has(.below-block)) .flank-right {
   border-bottom-right-radius: var(--card-radius, 14px);
-  transition: border-radius 130ms var(--ease-notchtap);
+  transition: border-radius 105ms var(--ease-notchtap);
 }
 
 /* ==== notch-shaped idle profile (HUD only): the operator's core
@@ -251,18 +262,36 @@
    best, a stray drop-shadow-catching corner at worst) PLUS the
    `:root[data-notchtap-mode="hud"]` guard the cutout/idle-face art above
    already uses: a real hardware notch draws its own physical bottom
-   curve, so this synthetic art would be redundant/wrong there. ==== */
+   curve, so this synthetic art would be redundant/wrong there.
+
+   plan 12x (wave 3): operator feedback was still "reads as a rounded
+   black bar, not a real notch" even with the plan-105 ellipse above —
+   pushed the vertical component further, multiplier 3 -> 4 and cap
+   28px -> 32px. 32px is not an arbitrary round number: it's
+   `HUD_CUTOUT_HEIGHT_PX` (App.tsx), the flank row's own height in the
+   common HUD case (no live hardware measurement) — CSS's own
+   overlapping-corner algorithm (see the technique-choice note above)
+   can never render a corner radius taller than the box it's cut from,
+   so at the shipped default `--card-radius` (8px, styles.css) this
+   multiplier already reaches that ceiling (4 * 8 = 32) and CSS clamps
+   it there for free: the flare is as pronounced as the box geometry
+   physically allows, not an arbitrary aesthetic guess. Smaller
+   `--card-radius` configs still scale the flare down proportionally
+   (unclamped, real headroom below the ceiling); larger ones and taller
+   real hardware notches alike just re-hit the same safe auto-clamp —
+   still the same single elliptical `border-radius`, still zero risk of
+   the clip-path-style glitching this plan explicitly steers clear of. */
 :root[data-notchtap-mode="hud"]
   .card-root
   .card-assembly:not(.bare):not(:has(.below-block))
   .flank-left {
-  border-bottom-left-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 3), 28px);
+  border-bottom-left-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 4), 32px);
 }
 :root[data-notchtap-mode="hud"]
   .card-root
   .card-assembly:not(.bare):not(:has(.below-block))
   .flank-right {
-  border-bottom-right-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 3), 28px);
+  border-bottom-right-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 4), 32px);
 }
 
 /* the notch cutout itself: real hardware empty space in notch mode
