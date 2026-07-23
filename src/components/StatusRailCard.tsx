@@ -1,6 +1,13 @@
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useMemo, useState } from "react";
-import { CONTENT_EXIT_MS, NOTCHTAP_EASE, SWAP_EXIT_MS } from "../animationTiming";
+import { useEffect, useMemo, useRef, useState } from "react";
+import {
+  CONTENT_EXIT_MS,
+  NOTCHTAP_EASE,
+  REVEAL_MS,
+  ROTATION_ENTER_MS,
+  ROTATION_EXIT_MS,
+  SWAP_EXIT_MS,
+} from "../animationTiming";
 import { renderInlineMarkdown } from "../lib/markdown";
 import {
   ageLabel,
@@ -86,6 +93,26 @@ const PULSE_END_ANIMATION: Record<NonNullable<Pulse>, string> = {
   "pulse-red": "red-alert",
 };
 
+// plan 127 (Step 3, /improve-animations audit finding #3): the content
+// swap's `exit` leg, as a motion `variants` function keyed on
+// `isRotation` (below) — the exiting `motion.div` (the OLD `swapKey`)
+// stops receiving fresh props from this component's own render the
+// instant its key drops out of the JSX, so there is no other way to
+// hand it the freshly-computed `isRotation` boolean than `AnimatePresence`'s
+// own `custom` prop, which motion re-evaluates variant FUNCTIONS with for
+// exiting children specifically (the documented mechanism the plan's own
+// doc names). `initial`/`animate` don't need this: the ENTERING child is
+// still live in the render tree, so they read `isRotation` directly from
+// closure, no variants indirection needed — only `exit` is a variant
+// label here, kept as a module-level constant (not per-render) since it
+// depends on nothing but its `custom` argument.
+const contentExitVariants = {
+  exit: (isRotation: boolean) =>
+    isRotation
+      ? { opacity: 0, transition: { duration: ROTATION_EXIT_MS / 1000, ease: NOTCHTAP_EASE } }
+      : { opacity: 0, transition: { duration: CONTENT_EXIT_MS / 1000, ease: NOTCHTAP_EASE } },
+};
+
 export function StatusRailCard({
   slot,
   status,
@@ -119,6 +146,19 @@ export function StatusRailCard({
   const isLiveCard = showing && slot.espn !== undefined;
 
   const [pulse, setPulse] = useState<Pulse>(null);
+
+  // plan 127 (Step 3): backs `isRotation` below (computed right where
+  // `swapKey` is, further down) — declared up here with the component's
+  // other hooks, per this file's usual convention. `key` starts at
+  // `undefined` (never equal to a real `swapKey` on the very first
+  // render, guaranteeing the guard below never mistakes mount for a
+  // same-key re-render); `isRotation`/`wasShowing` both start `false`
+  // since nothing has ever "shown" yet.
+  const wasShowingRef = useRef<{ key: unknown; isRotation: boolean; wasShowing: boolean }>({
+    key: undefined,
+    isRotation: false,
+    wasShowing: false,
+  });
 
   // Keyed on [currentId, currentSignal], never on priority — the actual
   // acceptance criterion this field exists for: a High-priority cmux
@@ -186,6 +226,46 @@ export function StatusRailCard({
   // across the hook boundary as an extra return value just for one JSX
   // consumer).
   const swapKey = showing ? slot.id : "idle";
+
+  // plan 127 (Step 3, finding #3): whether the swap THAT LANDED THIS
+  // `swapKey` was a same-slot rotation — showing(A)->showing(B) — rather
+  // than a promotion (idle->showing) or an exit (showing->idle).
+  // `wasShowingRef` holds the previous DISTINCT key's own showing-ness,
+  // updated only on the render where `swapKey` actually changes (guarded
+  // by comparing against the last key this ref saw) — deliberately NOT
+  // unconditional every render: this component re-renders for reasons
+  // that have nothing to do with the swap (e.g. the pulse/celebration
+  // effects just above call `setPulse`/`setLiveCelebration` right after
+  // mount, forcing an immediate second render with the SAME `swapKey`),
+  // and an unconditional write would let that unrelated extra render
+  // overwrite the ref before this render's own `isRotation` value is
+  // even read back on a later actual key change — corrupting the history
+  // the very next real transition depends on. Guarding on the key
+  // ensures `isRotation` stays STABLE for a given key's entire mounted
+  // lifetime (every same-key re-render — the queue-slider tick, the
+  // pulse effect, ...) reads the SAME cached value AnimatePresence's
+  // `custom` was actually given at the transition, never a stale
+  // recomputation.
+  // Mutated directly in the render body (not an effect) — the standard,
+  // React-sanctioned "remember a previous render's value" idiom (same
+  // shape as a hand-rolled `usePrevious`), safe here because the write is
+  // deterministic given this render's own `swapKey`/`showing` and has no
+  // visible side effect other than being read by a later render.
+  // The three-way split falls out for free from just two booleans:
+  // idle->showing has the previous key's `wasShowing` false (idle was
+  // never "showing"), so `isRotation` is false; showing->idle has the
+  // live `showing` itself false, so `isRotation` is false regardless of
+  // history; only showing(A)->showing(B), where both are true, yields
+  // true. Promotion and exit legs are therefore byte-identical to before
+  // this plan — only the true showing->showing case changes at all.
+  if (wasShowingRef.current.key !== swapKey) {
+    wasShowingRef.current = {
+      key: swapKey,
+      isRotation: showing && wasShowingRef.current.wasShowing,
+      wasShowing: showing,
+    };
+  }
+  const isRotation = wasShowingRef.current.isRotation;
 
   // plan 120: the showing<->idle exit-choreography state machine —
   // extracted to src/useExitChoreography.ts (see that file for every
@@ -376,13 +456,24 @@ export function StatusRailCard({
   // untouched — still SWAP_EXIT_MS — so promotions and same-priority
   // rotations keep their existing feel; only the true close changed.
 
+  // plan 127 (Step 5, /improve-animations audit finding #6): `role`/
+  // `aria-live` moved OFF the card root (see below-block's own JSX for
+  // where they landed) — this used to sit on `.card-assembly` itself,
+  // which also encloses FlankClock (a 30s-ticking clock) and, for a
+  // live-match card, the scorecard's own constantly-updating minute/
+  // score chrome, both of which would re-announce to assistive tech on
+  // every routine wire tick, not just genuine new-notification arrivals.
+  // `liveRegionActive` gates the region to exactly the case that should
+  // announce: a non-live-match card (news/generic/cmux/weather ALERT —
+  // stable title/body text that only changes on a genuine new item or
+  // rotation) that's actually mounted. `belowBlockOpen` already implies
+  // `showing` (see that field's own doc in useExitChoreography.ts), so
+  // `isLiveCard` — itself derived off the live `slot`, gated on `showing`
+  // — stays in sync with it; no staleness window between the two.
+  const liveRegionActive = belowBlockOpen && !isLiveCard;
+
   return (
-    <div
-      className={cardClass}
-      role={showing ? "status" : undefined}
-      aria-live={showing ? "polite" : undefined}
-      onAnimationEnd={clearPulseWhenItsAnimationEnds}
-    >
+    <div className={cardClass} onAnimationEnd={clearPulseWhenItsAnimationEnds}>
       {/* 2026-07-23 review fix (wave B, Task 2 — real concave S-curve):
           the top "gill" corners — real DOM siblings of the flanks, NOT
           `.card-assembly::before`/`::after` (both already claimed by the
@@ -436,7 +527,17 @@ export function StatusRailCard({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.26, ease: "easeOut" }}
+              // plan 127 (Step 1, /improve-animations audit findings #4/
+              // #9): was a hand-typed `{ duration: 0.26, ease: "easeOut" }`
+              // — now single-sourced off REVEAL_MS (the same reveal/paint
+              // coordination duration the flank background/padding fade
+              // and `.track span` background fade use, overlay-card.css)
+              // and NOTCHTAP_EASE (matching the flank paint's own
+              // `--ease-notchtap`, which this fade is coupled to — both
+              // read the exact same bare<->hovered/reveal trigger, so
+              // they should ease identically, not one bezier and one
+              // built-in "easeOut").
+              transition={{ duration: REVEAL_MS / 1000, ease: NOTCHTAP_EASE }}
             >
               <FlankClock />
             </motion.span>
@@ -501,7 +602,17 @@ export function StatusRailCard({
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: 0.26, ease: "easeOut" }}
+              // plan 127 (Step 1, /improve-animations audit findings #4/
+              // #9): was a hand-typed `{ duration: 0.26, ease: "easeOut" }`
+              // — now single-sourced off REVEAL_MS (the same reveal/paint
+              // coordination duration the flank background/padding fade
+              // and `.track span` background fade use, overlay-card.css)
+              // and NOTCHTAP_EASE (matching the flank paint's own
+              // `--ease-notchtap`, which this fade is coupled to — both
+              // read the exact same bare<->hovered/reveal trigger, so
+              // they should ease identically, not one bezier and one
+              // built-in "easeOut").
+              transition={{ duration: REVEAL_MS / 1000, ease: NOTCHTAP_EASE }}
             >
               <StatusDots status={status} />
             </motion.div>
@@ -509,15 +620,46 @@ export function StatusRailCard({
         </AnimatePresence>
       </div>
       {/* plan 093 (079 items 9/17/18): the idle hover-expanded state —
-          gated on `renderedShowing` (not the live `showing`) for the same
-          reason `StatusDots` above is: it must stay in step with the
-          delayed-swap settle, not flicker on/off mid-transition. Driven
-          by the live `hovered` prop, never CSS `:hover`. */}
-      {!renderedShowing && <IdleHoverPeek status={status} hovered={hovered} />}
+          `open` is gated on `renderedShowing` (not the live `showing`)
+          for the same reason `StatusDots` above is: it must stay in step
+          with the delayed-swap settle, not flicker on/off mid-transition.
+          Driven by the live `hovered` prop, never CSS `:hover`.
+          plan 127 (Step 2, finding #2): ALWAYS rendered now — the old
+          `{!renderedShowing && <IdleHoverPeek .../>}` conditional
+          unmounted this component (its internal AnimatePresence
+          included) the instant a promotion arrived mid-peek, tearing out
+          up to 100px of content with zero animation. The mount gate
+          moved INSIDE IdleHoverPeek as its own `open` prop (same
+          `!renderedShowing && hovered` condition, just evaluated one
+          level deeper) so a promotion now lets IdleHoverPeek's own exit
+          animation play while the card content mounts above it, instead
+          of both changes landing as one unanimated swap. See
+          IdleHoverPeek.tsx's own doc on `open` for the full mechanism. */}
+      <IdleHoverPeek status={status} hovered={hovered} open={!renderedShowing && hovered} />
       <AnimatePresence>
         {belowBlockOpen && (
           <motion.div
             className={belowBlockClass}
+            // plan 127 (Step 5, finding #6): this is the STATIC live-
+            // region wrapper `liveRegionActive`'s own doc (above) refers
+            // to — it mounts once per showing session (gated on
+            // `belowBlockOpen`, not `swapKey`) and stays mounted through
+            // every same-session rotation, so it is NOT the
+            // AnimatePresence-keyed node (the inner `motion.div key=
+            // {swapKey}` just below) that remounts per swap and would
+            // re-announce its ENTIRE content as a brand-new region on
+            // every rotation rather than reporting a content update
+            // within a stable one. Title/body text changes from a
+            // rotation still reach assistive tech exactly as before —
+            // aria-live watches for DOM mutations anywhere in its
+            // subtree, not just at its own root — so this is a strict
+            // narrowing of WHAT can trigger an announcement (excludes
+            // FlankClock/StatusDots, structurally outside this wrapper,
+            // and the live-match branch via `liveRegionActive`'s own
+            // `!isLiveCard` gate), never a loss of the rotation-announce
+            // behavior itself.
+            role={liveRegionActive ? "status" : undefined}
+            aria-live={liveRegionActive ? "polite" : undefined}
             initial={false}
             exit={{ opacity: 0, height: 0 }}
             transition={{ duration: CONTENT_EXIT_MS / 1000, ease: NOTCHTAP_EASE }}
@@ -545,24 +687,51 @@ export function StatusRailCard({
               timer did, now framework-owned — which is also why content
               below reads the LIVE `slot` directly (see the comment above
               `newsCategory`) rather than a frozen stand-in: the freeze is
-              `AnimatePresence`'s job now. */}
-            <AnimatePresence mode="wait">
+              `AnimatePresence`'s job now.
+              plan 127 (Step 3, finding #3): `custom={isRotation}` on this
+              `AnimatePresence` is what lets the EXITING child (the OLD
+              `swapKey`, already dropped out of the JSX below by the time
+              this render commits) still learn whether ITS OWN removal is
+              a rotation — see `contentExitVariants`' own doc for why this
+              is the only channel available for that. Promotion
+              (idle->showing) and exit (showing->idle) always pass
+              `isRotation: false`, so this AnimatePresence's behavior for
+              those two legs is unchanged. */}
+            <AnimatePresence mode="wait" custom={isRotation}>
               {showing && (
                 <motion.div
                   key={swapKey}
                   className="card-content"
-                  initial={{ opacity: 0, y: -4 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  // plan 12x (wave 3): the exit variant carries its OWN
-                  // `transition` (overriding the shared one below, motion's
-                  // documented per-variant override mechanism) — see the
-                  // wrapper's own doc comment above for why this must match
-                  // CONTENT_EXIT_MS, not SWAP_EXIT_MS, on the exit side only.
-                  exit={{
-                    opacity: 0,
-                    transition: { duration: CONTENT_EXIT_MS / 1000, ease: NOTCHTAP_EASE },
+                  // plan 127 (Step 3): a showing->showing rotation skips
+                  // the y-slide entirely (opacity-only) — the slide is
+                  // the part of the ceremony that reads as repetitive on
+                  // a ~10s cadence; the idle->showing promotion keeps its
+                  // slide, byte-identical to before this plan.
+                  initial={isRotation ? { opacity: 0 } : { opacity: 0, y: -4 }}
+                  animate={isRotation ? { opacity: 1 } : { opacity: 1, y: 0 }}
+                  // `data-rotation-swap` is a real DOM attribute, not
+                  // pure decoration: it's how the test suite pins this
+                  // leg-detection logic (motion's own transition/variant
+                  // props aren't otherwise inspectable from rendered
+                  // output in jsdom) — see StatusRailCard.test.tsx's
+                  // "same-slot rotation" describe block.
+                  data-rotation-swap={isRotation}
+                  // plan 12x (wave 3, exit) / plan 127 (Step 3, rotation
+                  // split): the exit variant carries its OWN `transition`
+                  // (overriding the shared one below, motion's documented
+                  // per-variant override mechanism) — see the wrapper's
+                  // own doc comment above for why the non-rotation exit
+                  // must match CONTENT_EXIT_MS, not SWAP_EXIT_MS.
+                  // `exit="exit"` (a variant label, not an inline object)
+                  // is what lets `contentExitVariants`' function read the
+                  // AnimatePresence-supplied `custom` above — see that
+                  // constant's own doc.
+                  variants={contentExitVariants}
+                  exit="exit"
+                  transition={{
+                    duration: (isRotation ? ROTATION_ENTER_MS : SWAP_EXIT_MS) / 1000,
+                    ease: NOTCHTAP_EASE,
                   }}
-                  transition={{ duration: SWAP_EXIT_MS / 1000, ease: NOTCHTAP_EASE }}
                 >
                   {isLiveCard && liveEspn !== undefined ? (
                     <LiveMatchScorecard

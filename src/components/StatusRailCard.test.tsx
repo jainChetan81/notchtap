@@ -382,15 +382,51 @@ describe("StatusRailCard", () => {
   // The idle clock re-renders every 30s (useClock) — a live region there
   // would re-announce the time to assistive tech on every tick, which
   // isn't what an arrival-alert live region is for.
+  //
+  // plan 127 (Step 5, /improve-animations audit finding #6, sanctioned
+  // repoint): the live region moved off `.card-assembly` (the card ROOT
+  // — which also encloses FlankClock's 30s tick and, for a live-match
+  // card, the scorecard's own constantly-updating chrome, both of which
+  // used to re-announce on every routine wire tick) onto the below-block
+  // wrapper — the STATIC element that carries title/body and persists
+  // across same-session rotations, never the AnimatePresence-keyed node
+  // that remounts per swap. The DOM CONDITION this test asserts (absent
+  // while idle, present while a — non-live-match — card shows) is
+  // unchanged; only which element carries it moved, per
+  // StatusRailCard.tsx's own `liveRegionActive` doc.
   it("is not a live region while idle, and becomes one while showing", () => {
-    const { container, rerender } = render(<StatusRailCard slot={{ state: "empty" }} />);
-    const card = container.querySelector(".card-assembly") as HTMLElement;
-    expect(card.getAttribute("role")).toBeNull();
-    expect(card.getAttribute("aria-live")).toBeNull();
+    const { container: idleContainer } = render(<StatusRailCard slot={{ state: "empty" }} />);
+    expect(idleContainer.querySelector(".below-block")).toBeNull();
 
-    rerender(<StatusRailCard slot={GOAL} />);
-    expect(card.getAttribute("role")).toBe("status");
-    expect(card.getAttribute("aria-live")).toBe("polite");
+    // fresh mount, already showing — no entrance delay to wait out (the
+    // SWAP_EXIT_MS delayed-swap only gates a POST-mount transition, not
+    // the initial render — same reasoning the rotation-timing tests
+    // above rely on).
+    const { container: showingContainer } = render(<StatusRailCard slot={GOAL} />);
+    const block = showingContainer.querySelector(".below-block") as HTMLElement;
+    expect(block.getAttribute("role")).toBe("status");
+    expect(block.getAttribute("aria-live")).toBe("polite");
+  });
+
+  // plan 127 (Step 5): FlankClock/StatusDots are structurally OUTSIDE
+  // the below-block (they live in `.flank-left`/`.flank-right`), so
+  // moving the region there already excludes them — this pins that they
+  // never carry the role/attribute themselves, on top of the below-block
+  // assertion above.
+  it("FlankClock and StatusDots never carry the live-region role themselves", () => {
+    const { container } = render(<StatusRailCard slot={GOAL} hovered={true} />);
+    expect(container.querySelector('.flank-left [role="status"]')).toBeNull();
+    expect(container.querySelector('.flank-right [role="status"]')).toBeNull();
+  });
+
+  // plan 127 (Step 5): a live-match card's own chrome (clock/score,
+  // ticking on every wire update) is excluded from the region entirely —
+  // `liveRegionActive`'s own `!isLiveCard` gate — rather than being
+  // included and re-announcing on every tick.
+  it("a live-match card's own scorecard chrome is not a live region", () => {
+    const { container } = render(<StatusRailCard slot={liveSlot()} />);
+    expect(container.querySelector(".below-block")?.getAttribute("role")).toBeNull();
+    expect(container.querySelector(".below-block")?.getAttribute("aria-live")).toBeNull();
   });
 
   it("renders the priority class and expanded class when showing", () => {
@@ -995,6 +1031,91 @@ describe("StatusRailCard", () => {
     expect(trackAfter?.querySelectorAll("span.cur")).toHaveLength(1);
   });
 
+  // plan 127 (Step 3, /improve-animations audit finding #3): a
+  // showing->showing content swap (a same-slot rotation — a different id
+  // arrives while the card is already showing, e.g. a news item rotating
+  // ~10s, or one live-match signal replacing another) must use the
+  // lighter rotation timings; promotion (idle->showing) and exit
+  // (showing->idle) must stay byte-untouched. Pinned via
+  // `data-rotation-swap` (see `contentExitVariants`'/the JSX's own doc in
+  // StatusRailCard.tsx for why: motion's own transition/variant props
+  // aren't otherwise inspectable from rendered DOM output in jsdom).
+  describe("same-slot rotation uses lighter timings (plan 127 Step 3)", () => {
+    // real timers + `vi.waitFor`: `mode="wait"` holds the NEW child back
+    // until the OLD child's own exit animation actually finishes (same
+    // AnimatePresence-driven-removal idiom as the "resting_state: notch"
+    // describe block and the Step 2 tests above) — an assertion made
+    // synchronously right after `rerender` would still find the OLD
+    // (exiting) node, not the new one.
+    it("a showing(A)->showing(B) key change marks the new content as a rotation", async () => {
+      const { container, rerender } = render(<StatusRailCard slot={GOAL} />);
+      expect(
+        container.querySelector(".below-block .card-content")?.getAttribute("data-rotation-swap"),
+      ).toBe("false");
+
+      rerender(<StatusRailCard slot={RED_CARD} />);
+      await vi.waitFor(() => {
+        expect(screen.getByText("Red Card")).toBeTruthy();
+      });
+      expect(
+        container.querySelector(".below-block .card-content")?.getAttribute("data-rotation-swap"),
+      ).toBe("true");
+    });
+
+    // fake timers, same pattern as the "compact->idle geometry" describe
+    // block: the entrance itself needs the SWAP_EXIT_MS delayed-swap to
+    // settle before the below-block (and its `.card-content`) mounts at
+    // all — nothing to do with rotation detection, just the existing
+    // "width-leads-content" entrance choreography.
+    describe("idle->showing promotion", () => {
+      beforeEach(() => {
+        vi.useFakeTimers();
+      });
+      afterEach(() => {
+        vi.useRealTimers();
+      });
+
+      it("is never marked a rotation", () => {
+        const { container, rerender } = render(<StatusRailCard slot={{ state: "empty" }} />);
+        rerender(<StatusRailCard slot={GOAL} />);
+        act(() => vi.advanceTimersByTime(175));
+        expect(
+          container.querySelector(".below-block .card-content")?.getAttribute("data-rotation-swap"),
+        ).toBe("false");
+      });
+    });
+
+    it("a second rotation in a row is still marked a rotation (not just the first one after idle)", async () => {
+      const { rerender } = render(<StatusRailCard slot={GOAL} />);
+      rerender(<StatusRailCard slot={RED_CARD} />);
+      await vi.waitFor(() => {
+        expect(screen.getByText("Red Card")).toBeTruthy();
+      });
+
+      rerender(<StatusRailCard slot={{ ...GOAL, id: "n4" }} />);
+      // wait for RED_CARD's own content to actually be gone (not merely
+      // for the attribute to read "true", which the still-exiting RED_CARD
+      // node would already satisfy on its own — a vacuous pass risk) so
+      // this is provably reading the NEW (n4) node, not the old one.
+      await vi.waitFor(() => {
+        expect(screen.queryByText("Red Card")).toBeNull();
+      });
+      expect(
+        screen.getByText("GOAL").closest(".card-content")?.getAttribute("data-rotation-swap"),
+      ).toBe("true");
+    });
+
+    it("a same-id update (no key change at all) is not itself a rotation swap replay — the node stays mounted, unmarked", () => {
+      const { container, rerender } = render(<StatusRailCard slot={GOAL} />);
+      const before = container.querySelector(".below-block .card-content");
+      rerender(<StatusRailCard slot={{ ...GOAL, queueDone: 1 }} />);
+      const after = container.querySelector(".below-block .card-content");
+      // no remount — same node, same pattern as the queue-slider test
+      // above.
+      expect(after).toBe(before);
+    });
+  });
+
   // plan 084: the recurring live-match scorecard — detected by the
   // structured `espn` block's presence (POST-083 contract), rendered
   // through a wholly different branch than the generic/news layouts
@@ -1318,6 +1439,83 @@ describe("StatusRailCard", () => {
       // hoverPaused would still render a ttl-bar, so absence of a crash
       // plus TtlBar's own hoverPaused tests together cover this.
     });
+  });
+
+  // plan 127 (Step 2, /improve-animations audit finding #2): the peek's
+  // own AnimatePresence exit must survive a promotion arriving mid-open,
+  // rather than the whole component (AnimatePresence included) being torn
+  // out synchronously the instant the old `{!renderedShowing &&
+  // <IdleHoverPeek .../>}` conditional flipped false. Fake timers, same
+  // pattern as the "compact->idle geometry" describe block above, to step
+  // exactly to the SWAP_EXIT_MS boundary where `renderedShowing` — and so
+  // both `belowBlockOpen` and IdleHoverPeek's own `open` prop — flip in
+  // the same tick.
+  describe("peek survives a promotion mid-open (plan 127 Step 2)", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("keeps the peek's own exit animation playing across a promotion, instead of tearing it out unanimated; the card content mounts regardless", () => {
+      const { container, rerender } = render(
+        <StatusRailCard slot={{ state: "empty" }} hovered={true} />,
+      );
+      expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
+
+      rerender(<StatusRailCard slot={GOAL} hovered={true} />);
+      // still mid-swap: the peek stays open (its own `open` prop tracks
+      // `!renderedShowing`, and `renderedShowing` hasn't flipped yet), and
+      // the card content hasn't mounted yet either — same "width-leads-
+      // content" entrance choreography as always, untouched by this
+      // step. Scoped to `.below-block .card-content` (not a bare
+      // `.card-content` query), same reasoning as the collapsed-manifest
+      // test above: `flank-right`'s StatusDots wrapper carries its own
+      // `.card-content.idle` class and precedes `.below-block` in DOM
+      // order, so an unscoped query would find THAT one first.
+      expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
+      expect(container.querySelector(".below-block .card-content")).toBeNull();
+
+      // 175 = SWAP_EXIT_MS (src/animationTiming.ts) — the swap settles
+      // here, same literal-with-comment convention as the
+      // "compact->idle geometry" describe block above. `renderedShowing`
+      // flips true in this same tick, which both mounts the card content
+      // (`belowBlockOpen`) AND flips the peek's own `open` prop false.
+      act(() => vi.advanceTimersByTime(175));
+
+      // the decisive assertion (pre-127 this would already be gone —
+      // torn out unanimated in the same render the card content
+      // appeared): the peek is STILL present, its own exit now playing,
+      // while the card content mounts regardless, in the very same tick.
+      expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
+      expect(container.querySelector(".below-block .card-content")).not.toBeNull();
+    });
+  });
+
+  // Real timers, matching the "resting_state: notch" describe block's own
+  // `vi.waitFor` idiom above (AnimatePresence-driven DOM removal in this
+  // codebase's test env needs real wall-clock time to elapse, not a fake-
+  // timer advance) — proves the peek's exit genuinely finishes and leaves
+  // the DOM, completing the Step 2 contract the fake-timer test above
+  // starts ("gone after the exit window").
+  it("the peek actually leaves the DOM once its own exit animation finishes after a mid-open promotion", async () => {
+    const { container, rerender } = render(
+      <StatusRailCard slot={{ state: "empty" }} hovered={true} />,
+    );
+    expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
+
+    rerender(<StatusRailCard slot={GOAL} hovered={true} />);
+
+    await vi.waitFor(() => {
+      expect(container.querySelector(".idle-peek")).toBeNull();
+    });
+    // the card content is the thing left behind, not an empty card
+    // (scoped to `.below-block .card-content` — see the fake-timer test
+    // above for why an unscoped query would find StatusDots's own
+    // `.card-content.idle` instead).
+    expect(container.querySelector(".below-block .card-content")).not.toBeNull();
   });
 
   // the idle face — IdleFace.tsx owns the gaze/blink animation details;

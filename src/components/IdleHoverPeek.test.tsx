@@ -264,6 +264,41 @@ describe("IdleHoverPeek (plan 093)", () => {
       const { container } = render(<IdleHoverPeek status={WEATHER_STATUS} hovered={true} />);
       expect(container.querySelector(".wx-peek-rain")).toBeNull();
     });
+
+    // plan 127 (Step 7, missed opportunity): rainPct can flip mid-peek (a
+    // live status update while already hovered), not just appear/disappear
+    // with the peek's own mount/unmount — the chip used to snap bare on
+    // that flip; it's now wrapped in its own AnimatePresence. This proves
+    // the chip mounts/unmounts correctly across a mid-peek rerender in
+    // BOTH directions (the actual bug the fix targets), independent of the
+    // peek's own open/close lifecycle.
+    it("mounts and unmounts the rain chip across a mid-peek rainPct flip (not just at peek open/close)", () => {
+      const withoutRain = WEATHER_STATUS;
+      const withRain: StatusState = {
+        ...WEATHER_STATUS,
+        weather: {
+          enabled: true,
+          current: { tempDisplay: "27°", condition: "Cloudy", isDay: true, rainPct: 60 },
+        },
+      };
+
+      const { container, rerender } = render(<IdleHoverPeek status={withoutRain} hovered={true} />);
+      expect(container.querySelector(".wx-peek-rain")).toBeNull();
+
+      rerender(<IdleHoverPeek status={withRain} hovered={true} />);
+      const chip = container.querySelector(".wx-peek-rain");
+      expect(chip).not.toBeNull();
+      expect(chip?.textContent).toBe("Rain 60%");
+
+      rerender(<IdleHoverPeek status={withoutRain} hovered={true} />);
+      // AnimatePresence keeps the exiting node mounted while its own exit
+      // plays (same idiom as StatusRailCard.test.tsx's peek/below-block
+      // exit tests) — assert eventual removal via real time, not an
+      // immediate synchronous check.
+      return vi.waitFor(() => {
+        expect(container.querySelector(".wx-peek-rain")).toBeNull();
+      });
+    });
   });
 
   // item 3's precedence rule: football outranks ambient weather, one
