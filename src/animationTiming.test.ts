@@ -23,9 +23,9 @@ describe("animationTiming (plan 117)", () => {
   });
 
   // 2026-07-23 review fix: CONTENT_EXIT_MS ↔ the flank-round
-  // `transition: border-radius <N>ms` in overlay-card.css is the one
-  // remaining JS↔CSS lockstep pair in this file — guard it the same way
-  // the mirror/ease guards work: parse the real stylesheet, compare.
+  // `transition: border-radius <N>ms` in overlay-card.css — guard it the
+  // same way the mirror/ease guards work: parse the real stylesheet,
+  // compare.
   it("CONTENT_EXIT_MS matches overlay-card.css's flank-round transition duration", () => {
     const css = readFileSync(
       fileURLToPath(new NodeURL("./overlay-card.css", import.meta.url)),
@@ -38,6 +38,26 @@ describe("animationTiming (plan 117)", () => {
     for (const d of durations) {
       expect(d).toBe(CONTENT_EXIT_MS);
     }
+  });
+
+  // wave B (2026-07-23, "one overlapping collapse"): SWAP_EXIT_MS's new
+  // CSS twin — `.card-assembly.exiting`'s own `transition: width <N>ms`
+  // duration (overlay-card.css). Scoped specifically to that selector's
+  // own declaration block (not a blanket "any transition: width Nms in
+  // the file" match), because the base `.card-assembly` rule right above
+  // it also declares a `transition: width 320ms` — a deliberately
+  // DIFFERENT, unrelated duration (the entrance width-grow) that this
+  // guard must never accidentally pin against.
+  it("SWAP_EXIT_MS matches overlay-card.css's .card-assembly.exiting width transition duration", () => {
+    const css = readFileSync(
+      fileURLToPath(new NodeURL("./overlay-card.css", import.meta.url)),
+      "utf8",
+    );
+    const block = css.match(/\.card-assembly\.exiting\s*\{[^}]*\}/);
+    expect(block).not.toBeNull();
+    const widthMatch = block?.[0].match(/transition:[^;]*width\s+(\d+)ms/);
+    expect(widthMatch).not.toBeNull();
+    expect(Number(widthMatch?.[1])).toBe(SWAP_EXIT_MS);
   });
 
   // 2026-07-23 review fix (Duplicated Code finding): NOTCHTAP_EASE is the

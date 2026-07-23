@@ -250,6 +250,29 @@ export function StatusRailCard({
       : "idle";
   const expanded = showing ? slot.expanded : renderedShowing && renderedSlot.expanded;
 
+  // 2026-07-23 review fix (wave B, Task 1 — "one overlapping collapse"):
+  // true ONLY during the genuine showing->idle exit's freeze window, never
+  // during entrance. `exiting` (from useDelayedSwap, above) alone isn't
+  // enough for this — its key changes on BOTH legs (an idle->showing
+  // promotion re-keys `swapKey` too, so `exiting` goes briefly true right
+  // after a promotion as well), and this class must never fire there. The
+  // extra `!showing` pins it to the exit leg only: on entrance `showing`
+  // is live-true from the very first render (width-leads-content, kept
+  // untouched by this plan), so `shellExiting` is false throughout.
+  // Drives the shell's `.exiting` CSS class (overlay-card.css): width
+  // shrinks to the idle formula and the flank corners start rounding
+  // IMMEDIATELY (t=0 of the exit) instead of waiting out the whole
+  // SWAP_EXIT_MS geometry-class freeze above — that freeze still holds
+  // `geometryPriority`/`expanded` (untouched; still needed for the accent
+  // color and other content that reads them), but width/corner-round no
+  // longer wait on it. Previously: content fade (0-105ms) -> corner round
+  // (105-210ms, keyed off the below-block's DOM removal) -> width shrink
+  // (175-495ms, keyed off the geometry-class flip) — three chained acts,
+  // a ~70ms dead gap, ~495ms tail. Now all three start at t=0 and finish
+  // by ~175ms. See overlay-card.css's own comment on
+  // `.card-assembly.exiting` for the full geometry/timing.
+  const shellExiting = !showing && renderedShowing;
+
   // plan 105 (Step C): narrows plan 085's original "zero app-drawn
   // pixels" promise to "zero app-drawn pixels *until hovered*" — the old
   // `return null` here made the mode a dead end: nothing painted AND
@@ -313,6 +336,10 @@ export function StatusRailCard({
     // cutout-width-only shell (styles.css), so the mode reads as the
     // native notch until hovered.
     bare && "bare",
+    // 2026-07-23 review fix (wave B, Task 1): see `shellExiting`'s own
+    // doc above — drives the immediate width-shrink + corner-round start
+    // on the true showing->idle exit leg only.
+    shellExiting && "exiting",
     // plan 084: `pulse`/`cele-*` are mutually exclusive, never stacked —
     // the live-match branch (structured espn meta) plays its own
     // `cele-goal`/`cele-yc`/`cele-rc`; every other football-signal card

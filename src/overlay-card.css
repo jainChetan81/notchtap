@@ -213,14 +213,68 @@
    same pairing discipline, same reasoning: the below-block's own exit
    (now also height-collapsing, not just fading — StatusRailCard.tsx)
    still needs to finish exactly when this round-in starts, or the two
-   acts read as chained again. */
-.card-root .card-assembly:not(:has(.below-block)) .flank-left {
+   acts read as chained again.
+
+   2026-07-23 review fix (wave B, Task 1 — "one overlapping collapse"):
+   added `.card-assembly.exiting` as a SECOND, OR'd trigger alongside the
+   `:not(:has(.below-block))` DOM-presence check above. Without it, the
+   round-in couldn't start until the below-block wrapper actually
+   unmounted from the DOM — which, thanks to its own `AnimatePresence`
+   exit animation (StatusRailCard.tsx), doesn't happen until
+   CONTENT_EXIT_MS AFTER a showing->idle exit begins (it's still present,
+   mid-fade, for that whole window) — so the corners visibly waited out
+   the content fade before starting their own transition, a second
+   chained act instead of an overlapping one. `.exiting` (StatusRailCard's
+   `shellExiting`) is set the SAME render `showing` goes false — t=0 of
+   the exit — so this rule now starts its 105ms round-in in lockstep with
+   the below-block's own CONTENT_EXIT_MS close and the width shrink
+   below, all three finishing together instead of chaining. No new
+   transition-duration to keep in lockstep: both matched selectors share
+   the SAME declaration block, so there are still only two
+   `transition: border-radius <N>ms` declarations in this file (the
+   CONTENT_EXIT_MS guard test's own "at least 2" check is unaffected) —
+   by the time `.exiting` clears (SWAP_EXIT_MS) the below-block is long
+   gone and `:not(:has(.below-block))` alone keeps matching, so there is
+   no radius flip, no re-transition, at the handoff. */
+.card-root .card-assembly:not(:has(.below-block)) .flank-left,
+.card-root .card-assembly.exiting .flank-left {
   border-bottom-left-radius: var(--card-radius, 14px);
   transition: border-radius 105ms var(--ease-notchtap);
 }
-.card-root .card-assembly:not(:has(.below-block)) .flank-right {
+.card-root .card-assembly:not(:has(.below-block)) .flank-right,
+.card-root .card-assembly.exiting .flank-right {
   border-bottom-right-radius: var(--card-radius, 14px);
   transition: border-radius 105ms var(--ease-notchtap);
+}
+
+/* 2026-07-23 review fix (wave B, Task 1): the shell's own width, on the
+   `.exiting` leg only — see StatusRailCard.tsx's `shellExiting` doc for
+   the full "why". Source order matters here: this rule shares
+   `.card-assembly.idle`/`.card-assembly.expanded` above's specificity
+   exactly (one class + `.card-assembly`), so being declared AFTER both
+   is what lets it win the `--cw` custom property regardless of which
+   (frozen) geometry class — `.high`/`.medium`/`.low`, `.expanded` or not
+   — is still sitting on the shell during the exit. `.exiting` and
+   `.idle`/`.bare` never coexist (see the JS doc), so there's no ordering
+   conflict with those.
+   The width formula is deliberately the SAME one `.idle` uses (not a new
+   number) — by the time `.exiting` clears and `.idle` actually applies,
+   `--cw` is already sitting at the identical value, so the handoff never
+   re-triggers a transition or jumps.
+   `transition` is redeclared here (not just `width`) with the SAME
+   transform/filter durations as the base rule, only `width` shortened —
+   320ms -> 175ms, matching SWAP_EXIT_MS (src/animationTiming.ts) exactly
+   (guarded by animationTiming.test.ts, same discipline as the
+   CONTENT_EXIT_MS/border-radius pairing above) so the shell has fully
+   reached idle width by the same tick the geometry-class freeze itself
+   lets go — never before (content spill) and never conspicuously after
+   (a lagging tail). */
+.card-root .card-assembly.exiting {
+  --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
+  transition:
+    width 175ms var(--ease-notchtap),
+    transform 260ms var(--ease-notchtap),
+    filter 260ms var(--ease-notchtap);
 }
 
 /* ==== notch-shaped idle profile (HUD only): the operator's core
