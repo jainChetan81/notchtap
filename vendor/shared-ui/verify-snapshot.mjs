@@ -50,7 +50,11 @@ const siblingPath = join(here, "..", "..", "..", "shared-ui", "design", "tokens.
 // near-black #050607 (white on accent blue #0a84ff was 3.26:1, fails WCAG AA
 // for normal text; dark-on-blue is 5.56:1, matching the destructive pattern).
 // token content commit b0ba7bb; pinned at upstream HEAD ef85e85. re-hashed.
-const UPSTREAM_SHA = "ef85e85";
+// 2026-07-23 refresh (round-4 two-axis review upstream): tokens.css is
+// BYTE-IDENTICAL across ef85e85..03ac81e (the range is docs, gate wording,
+// playground button cursor, plans only — version still 0.2.1), so
+// PINNED_TOKENS_SHA256 is unchanged; only the reviewed-upstream pin moves.
+const UPSTREAM_SHA = "03ac81e";
 const PINNED_TOKENS_SHA256 =
   "5b7bcefe6f89c9ed72a1487e9ac2bd15c644d56904582aa33735fcc2039e8313";
 
