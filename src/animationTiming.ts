@@ -4,9 +4,17 @@
 // counterpart for SWAP_EXIT_MS ("must change in the same commit") — that
 // contract died in wave 2, when the card-enter/exit @keyframes it referred
 // to were deleted in favor of motion's AnimatePresence. SWAP_EXIT_MS's two
-// consumers are BOTH JS-side now (see its own doc below); the only
-// remaining CSS lockstep pair in this file is CONTENT_EXIT_MS ↔ the
-// flank-round `transition: border-radius` duration in overlay-card.css.
+// consumers were both JS-side for a while (see its own doc below); wave B
+// (2026-07-23, "one overlapping collapse") reintroduced a real CSS
+// counterpart — `.card-assembly.exiting`'s `width` transition duration in
+// overlay-card.css, which must stay numerically equal to SWAP_EXIT_MS so
+// the shell's width finishes shrinking to idle by the same tick the
+// geometry-class freeze itself lets go (see StatusRailCard.tsx's
+// `shellExiting` doc for the full "why"). This file now carries TWO CSS
+// lockstep pairs, both guarded by animationTiming.test.ts: CONTENT_EXIT_MS
+// ↔ the flank-round `transition: border-radius` duration, and SWAP_EXIT_MS
+// ↔ `.card-assembly.exiting`'s `transition: width` duration, both in
+// overlay-card.css.
 //
 // plan 12x: this file used to also carry `IDLE_PEEK_CLOSE_MS`, the
 // hand-rolled unmount-delay timer IdleHoverPeek.tsx used to run alongside
@@ -17,7 +25,7 @@
 
 // plan 12x (wave 2): StatusRailCard's content-swap moved off CSS
 // `@keyframes` onto `motion` (AnimatePresence + motion.div), but this
-// constant is still load-bearing in TWO places there, and both must stay
+// constant is still load-bearing in multiple places, and all must stay
 // equal to each other:
 //   1. `useDelayedSwap(slot, swapKey, SWAP_EXIT_MS)` — kept, but now
 //      scoped to GEOMETRY only (the outer shell's priority/expanded
@@ -28,6 +36,9 @@
 //      SWAP_EXIT_MS / 1000) — so the visual content fade finishes at
 //      (or just before) the geometry timer flips the shell to idle,
 //      never after.
+//   3. (wave B, 2026-07-23) overlay-card.css's `.card-assembly.exiting`
+//      `transition: width` duration — a real CSS literal now, guarded by
+//      animationTiming.test.ts (see this file's own header note).
 // plan 12x (wave 3, operator-feedback polish pass): dropped 220 -> 175
 // (~20% quicker) for a snappier feel, per that pass's "faster overall"
 // finding — every consumer's own duration-derivation is untouched (still

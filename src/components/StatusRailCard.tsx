@@ -250,6 +250,29 @@ export function StatusRailCard({
       : "idle";
   const expanded = showing ? slot.expanded : renderedShowing && renderedSlot.expanded;
 
+  // 2026-07-23 review fix (wave B, Task 1 — "one overlapping collapse"):
+  // true ONLY during the genuine showing->idle exit's freeze window, never
+  // during entrance. `exiting` (from useDelayedSwap, above) alone isn't
+  // enough for this — its key changes on BOTH legs (an idle->showing
+  // promotion re-keys `swapKey` too, so `exiting` goes briefly true right
+  // after a promotion as well), and this class must never fire there. The
+  // extra `!showing` pins it to the exit leg only: on entrance `showing`
+  // is live-true from the very first render (width-leads-content, kept
+  // untouched by this plan), so `shellExiting` is false throughout.
+  // Drives the shell's `.exiting` CSS class (overlay-card.css): width
+  // shrinks to the idle formula and the flank corners start rounding
+  // IMMEDIATELY (t=0 of the exit) instead of waiting out the whole
+  // SWAP_EXIT_MS geometry-class freeze above — that freeze still holds
+  // `geometryPriority`/`expanded` (untouched; still needed for the accent
+  // color and other content that reads them), but width/corner-round no
+  // longer wait on it. Previously: content fade (0-105ms) -> corner round
+  // (105-210ms, keyed off the below-block's DOM removal) -> width shrink
+  // (175-495ms, keyed off the geometry-class flip) — three chained acts,
+  // a ~70ms dead gap, ~495ms tail. Now all three start at t=0 and finish
+  // by ~175ms. See overlay-card.css's own comment on
+  // `.card-assembly.exiting` for the full geometry/timing.
+  const shellExiting = !showing && renderedShowing;
+
   // plan 105 (Step C): narrows plan 085's original "zero app-drawn
   // pixels" promise to "zero app-drawn pixels *until hovered*" — the old
   // `return null` here made the mode a dead end: nothing painted AND
@@ -313,6 +336,10 @@ export function StatusRailCard({
     // cutout-width-only shell (styles.css), so the mode reads as the
     // native notch until hovered.
     bare && "bare",
+    // 2026-07-23 review fix (wave B, Task 1): see `shellExiting`'s own
+    // doc above — drives the immediate width-shrink + corner-round start
+    // on the true showing->idle exit leg only.
+    shellExiting && "exiting",
     // plan 084: `pulse`/`cele-*` are mutually exclusive, never stacked —
     // the live-match branch (structured espn meta) plays its own
     // `cele-goal`/`cele-yc`/`cele-rc`; every other football-signal card
@@ -454,6 +481,22 @@ export function StatusRailCard({
       aria-live={showing ? "polite" : undefined}
       onAnimationEnd={clearPulseWhenItsAnimationEnds}
     >
+      {/* 2026-07-23 review fix (wave B, Task 2 — real concave S-curve):
+          the top "gill" corners — real DOM siblings of the flanks, NOT
+          `.card-assembly::before`/`::after` (both already claimed by the
+          goal-celebration burst/ring — see those rules in
+          overlay-card.css) and NOT pseudo-elements on the flanks
+          themselves (`.flank-left`/`.flank-right` have `overflow:
+          hidden`, which would clip anything anchored outside their own
+          box — these gills must poke a few px past the flank's outer
+          edge to read as a flare, so they need `.card-assembly` itself,
+          which has no overflow rule, as their positioning ancestor).
+          Always rendered ("always render, CSS decides" idiom, matches
+          `.synthetic-cutout` below); pure decoration
+          (`aria-hidden` + CSS `pointer-events: none`). See
+          overlay-card.css's own comment for the concave-fillet geometry. */}
+      <span className="notch-gill notch-gill-left" aria-hidden="true" />
+      <span className="notch-gill notch-gill-right" aria-hidden="true" />
       <div className="flank-left">
         {/* plan 105 (Step C): bare mode draws no clock — CSS alone can't
             hide it (the flanks going transparent still leaves text

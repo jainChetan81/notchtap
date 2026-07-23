@@ -1451,5 +1451,59 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".card-assembly.expanded")).toBeNull();
       expect(container.querySelector(".card-assembly.idle")).not.toBeNull();
     });
+
+    // 2026-07-23 review fix (wave B, Task 1 — "one overlapping collapse"):
+    // the NEW half of this contract. `.exiting` (overlay-card.css's
+    // width-shrink + corner-round trigger) must appear on the VERY SAME
+    // render `showing` goes false — before any timer advance, same as
+    // the frozen `.high`/`.expanded` classes above — and disappear on the
+    // exact same tick the swap settles into `.idle`, never lagging behind
+    // (or leading) that handoff. This is deliberately a SEPARATE
+    // assertion from the two above, not a rewrite of them: the frozen
+    // priority/expanded contract (still driven by the full SWAP_EXIT_MS
+    // geometry freeze) is UNCHANGED by this plan — only `.exiting`, a new
+    // and independent signal layered alongside it, is new.
+    it("showing->idle exit adds `.exiting` on the same render showing goes false, and drops it exactly when the swap settles", () => {
+      const { container, rerender } = render(<StatusRailCard slot={GOAL} />);
+      expect(container.querySelector(".card-assembly.exiting")).toBeNull();
+
+      rerender(<StatusRailCard slot={{ state: "empty" }} />);
+      // t=0 of the exit — `.exiting` must already be present, not waiting
+      // on any timer (this is what lets the width/corner-round CSS start
+      // immediately instead of chaining after the geometry freeze).
+      expect(container.querySelector(".card-assembly.exiting")).not.toBeNull();
+      // still frozen at the showing-flavored geometry class too — `.exiting`
+      // is additive, not a replacement for the existing contract.
+      expect(container.querySelector(".card-assembly.high.exiting")).not.toBeNull();
+
+      // 174 = SWAP_EXIT_MS (175) minus one tick.
+      act(() => vi.advanceTimersByTime(174));
+      expect(container.querySelector(".card-assembly.exiting")).not.toBeNull();
+
+      act(() => vi.advanceTimersByTime(1));
+      // the swap has completed — `.exiting` clears in the same tick
+      // `.idle` appears, never lagging behind it.
+      expect(container.querySelector(".card-assembly.exiting")).toBeNull();
+      expect(container.querySelector(".card-assembly.idle")).not.toBeNull();
+    });
+
+    // The entrance-side guard: `useDelayedSwap`'s raw `exiting` flag (not
+    // exposed as a class itself) goes true on BOTH legs — its `key`
+    // changes on an idle->showing promotion too (swapKey flips from
+    // "idle" to the new id) — so it is not, by itself, safe to read as
+    // "showing->idle exit in progress." `shellExiting`
+    // (StatusRailCard.tsx) exists specifically to add the extra `!showing`
+    // check; this test is the regression guard for that check, pinning
+    // that `.exiting` never appears on the promotion leg, at any point
+    // during or after the delayed-swap window.
+    it("idle->showing promotion never applies `.exiting` (entrance stays untouched)", () => {
+      const { container, rerender } = render(<StatusRailCard slot={{ state: "empty" }} />);
+
+      rerender(<StatusRailCard slot={GOAL} />);
+      expect(container.querySelector(".card-assembly.exiting")).toBeNull();
+
+      act(() => vi.advanceTimersByTime(175));
+      expect(container.querySelector(".card-assembly.exiting")).toBeNull();
+    });
   });
 });
