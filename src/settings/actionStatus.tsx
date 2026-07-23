@@ -1,3 +1,4 @@
+import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
 import { cn } from "@/lib/utils";
 
@@ -138,7 +139,6 @@ export function ActionStatus({
   className?: string;
   showPending?: boolean;
 }) {
-  if (status.state === "idle") return null;
   const stateClasses =
     status.state === "pending"
       ? "text-muted-foreground"
@@ -152,16 +152,37 @@ export function ActionStatus({
     stateClasses,
     className,
   );
+
+  // Same mount/unmount pattern as SettingsApp.tsx's ErrorPanel (plan 126):
+  // presence of `content` drives an AnimatePresence enter/exit instead of an
+  // abrupt appear/disappear. Duration/ease come from the ancestor
+  // MotionConfig (SettingsApp.tsx), not a local literal — same as
+  // ErrorPanel. `live` mirrors the exact aria-live rule the two branches
+  // below used to encode directly: pending never announces (even mid a
+  // user-initiated attempt — it's a "working" flicker, not an outcome);
+  // ok/error announce only when the triggering `run()` call opted in.
+  let content: string | null = null;
+  let live = false;
   if (status.state === "pending") {
-    if (!showPending) return null;
-    return <div className={classes}>Working…</div>;
+    if (showPending) content = "Working…";
+  } else if (status.message) {
+    content = status.message;
+    live = status.announce;
   }
-  if (!status.message) return null;
-  return status.announce ? (
-    <div className={classes} aria-live="polite">
-      {status.message}
-    </div>
-  ) : (
-    <div className={classes}>{status.message}</div>
+
+  return (
+    <AnimatePresence initial={false}>
+      {content !== null ? (
+        <motion.div
+          className={classes}
+          aria-live={live ? "polite" : undefined}
+          initial={{ opacity: 0, y: -3 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -3 }}
+        >
+          {content}
+        </motion.div>
+      ) : null}
+    </AnimatePresence>
   );
 }

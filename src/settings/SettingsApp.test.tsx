@@ -1358,6 +1358,35 @@ describe("SettingsApp", () => {
       expect(getQueue).toHaveBeenCalledTimes(2);
     });
 
+    // plan 126: the row key used to be `${index}:${item.title}` — stable
+    // only as long as the list never reorders, which a refetch that lands
+    // duplicate/reordered summaries could violate. The
+    // priority:source:title:occurrenceIndex key stays stable across a
+    // refetch that returns the identical list, which is what lets
+    // AnimatePresence treat unchanged rows as "still here" (no exit+enter)
+    // rather than remounting every row on every Refresh. Same DOM node
+    // identity (not just equal content) is the proof: a remount would
+    // produce a brand-new element.
+    it("queue row keys are stable across a refetch of an identical list — no remount", async () => {
+      const queueItems: QueueItemSummary[] = [waitingHigh, waitingLow];
+      mockQueue(queueItems);
+      await openQueue();
+
+      const rowBefore = (await screen.findByText("High priority waiting item")).closest(
+        ".queue-row",
+      ) as HTMLElement;
+
+      fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+      await waitFor(() => {
+        expect(screen.getByText("High priority waiting item")).toBeTruthy();
+      });
+      const rowAfter = screen
+        .getByText("High priority waiting item")
+        .closest(".queue-row") as HTMLElement;
+
+      expect(rowAfter).toBe(rowBefore);
+    });
+
     // plan 124 (F5b): the section's own top-of-file comment cites this
     // exact rule — titles are UNTRUSTED wire data, rendered as plain text
     // only. History precedent: "renders markup-like feed text literally"
@@ -1592,33 +1621,34 @@ describe("SettingsApp — action status (plan 108)", () => {
   });
 
   it("Send test success message auto-clears", async () => {
-    // scoped to leave requestAnimationFrame real — AnimatePresence's
-    // section-swap transition depends on it, and faking it would freeze
-    // the exit animation mid-flight, so the new section would never mount.
-    vi.useFakeTimers({ toFake: ["setTimeout", "setInterval", "clearInterval", "clearTimeout"] });
-    try {
-      mockIPC((command) => {
-        if (command === "get_config") return config;
-        if (command === "get_secret_status") return unsetSecrets;
-        if (command === "get_default_config") return rustConfigDefaults;
-        if (command === "send_test_notification") return null;
-      });
-      render(<SettingsApp />);
-      await flush();
+    // No fake timers here (plan 126): ActionStatus's ok-clear now unmounts
+    // through an AnimatePresence exit fade, which runs on real
+    // requestAnimationFrame ticks. A faked setTimeout clock, even one
+    // later swapped back to real, leaves any in-flight animation that
+    // started under it wedged mid-transition (its internal scheduling
+    // captured the fake clock at start) — so this test waits out the real
+    // 2.5s ok-clear window plus the exit fade on the real clock, with a
+    // longer per-test timeout to match.
+    mockIPC((command) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "send_test_notification") return null;
+    });
+    render(<SettingsApp />);
+    await flush();
 
-      fireEvent.click(screen.getByRole("button", { name: "Send test notification" }));
-      await flush();
-      expect(screen.getByText("Queued")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Send test notification" }));
+    await flush();
+    expect(screen.getByText("Queued")).toBeTruthy();
 
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(2600);
-      });
-      await flush();
-      expect(screen.queryByText("Queued")).toBeNull();
-    } finally {
-      vi.useRealTimers();
-    }
-  });
+    await waitFor(
+      () => {
+        expect(screen.queryByText("Queued")).toBeNull();
+      },
+      { timeout: 4000 },
+    );
+  }, 6000);
 
   it("History load failure renders 'Couldn't load history' without aria-live — a passive mount read", async () => {
     mockIPC((command) => {
