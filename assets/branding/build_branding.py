@@ -34,10 +34,10 @@ sq = Image.new("RGBA", (side, side), (0, 0, 0, 0))
 sq.paste(content, ((side - cw) // 2, (side - ch) // 2), content)
 
 master = sq.resize((1024, 1024), Image.LANCZOS)
-master.save(os.path.join(ROOT, "scribetap-mark-1024.png"))
+master.save(os.path.join(ROOT, "notchtap-mark-1024.png"))
 for s in (32, 64, 128, 256, 512):
     sq.resize((s, s), Image.LANCZOS).save(
-        os.path.join(ROOT, f"scribetap-mark-{s}.png"))
+        os.path.join(ROOT, f"notchtap-mark-{s}.png"))
 print("icon sizes written")
 
 
@@ -49,7 +49,7 @@ def make_lockup(height, bg=None, path=None):
 
     font_size = int(height * 0.52)
     font = ImageFont.truetype(FONT, font_size, index=FONT_IDX)
-    word = "scribetap"
+    word = "notchtap"
     # measure text
     tmp = Image.new("RGBA", (10, 10))
     d = ImageDraw.Draw(tmp)
@@ -72,14 +72,14 @@ def make_lockup(height, bg=None, path=None):
 
 
 for hh in (128, 256, 512):
-    make_lockup(hh, path=os.path.join(ROOT, f"scribetap-lockup-{hh}.png"))
+    make_lockup(hh, path=os.path.join(ROOT, f"notchtap-lockup-{hh}.png"))
 # dark-background variant at 512
-make_lockup(512, bg=BG, path=os.path.join(ROOT, "scribetap-lockup-512-dark.png"))
+make_lockup(512, bg=BG, path=os.path.join(ROOT, "notchtap-lockup-512-dark.png"))
 
 # og-image 1200x630 on #050607: centered lockup group
 og = Image.new("RGBA", (1200, 630), BG)
 lk = make_lockup(280, path=os.path.join(ROOT, "_tmp-lockup-og.png"))
 og.paste(lk, ((1200 - lk.width) // 2, (630 - lk.height) // 2), lk)
-og.convert("RGB").save(os.path.join(ROOT, "scribetap-og-1200x630.png"))
+og.convert("RGB").save(os.path.join(ROOT, "notchtap-og-1200x630.png"))
 os.remove(os.path.join(ROOT, "_tmp-lockup-og.png"))
 print("og-image written")

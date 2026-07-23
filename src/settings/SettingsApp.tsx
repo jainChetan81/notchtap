@@ -382,7 +382,7 @@ export function SettingsApp() {
               className="brand-slot h-2 w-[17px] flex-none rounded-tl-[2px] rounded-tr-[2px] rounded-br-[5px] rounded-bl-[5px] bg-foreground opacity-[0.86]"
               aria-hidden="true"
             />
-            <span>scribetap</span>
+            <span>notchtap</span>
           </div>
           <nav className="sidebar-nav flex flex-col gap-[3px] px-2 py-3">
             {navigation.map((item) => {

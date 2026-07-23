@@ -1049,7 +1049,7 @@ fn open_settings_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
         "settings",
         tauri::WebviewUrl::App("settings.html".into()),
     )
-    .title("scribetap settings")
+    .title("notchtap settings")
     .inner_size(480.0, 600.0)
     .min_inner_size(400.0, 480.0)
     .build()
