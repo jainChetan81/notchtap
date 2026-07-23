@@ -130,7 +130,27 @@ export function useExitChoreography(
   // to `restingState === "notch"`), so `exitToBare` is always false there
   // and the plain `.exiting` rule — and every rail-mode exit test — stays
   // byte-identical.
-  const exitToBare = shellExiting && restingState === "notch";
+  //
+  // plan 124 (F2, review fix): narrowed further with `&& !hovered`. Bug
+  // (verified with the pointer resting on the card at settle): a hovered
+  // exit used to still land on `exitToBare` true, so the shell converged
+  // on `.bare`'s cutout-only geometry during the window — but the very
+  // next render is `bare && hovered` (below), which flips two more CSS
+  // rules on top of that: `.bare:has(.idle-peek)` re-widens `--cw` back to
+  // the full idle formula (overlay-card.css:165-167) and `.bare.hovered`
+  // repaints the flanks opaque again. Net effect: a 175ms shrink to
+  // cutout width immediately followed by a ~320ms rebound back out to
+  // idle width — a visible wobble the exit-to-bare mechanism exists
+  // specifically to prevent. `!hovered` routes a hovered exit back onto
+  // the plain `.exiting` rule instead (wide/idle-shaped `--cw`, the same
+  // rule rail mode always used) — that convergence target was seamless
+  // pre-123 and is exactly where a hovered bare-notch settle needs to
+  // land anyway (hover already forces the idle-width `--cw` via
+  // `.bare.hovered`/`:has(.idle-peek)`, so there is no second hop). A
+  // hover arriving or leaving mid-window flips this flag on a live
+  // render, and CSS transitions retarget continuously from whatever the
+  // computed value currently is — no snap, no replay from a fixed start.
+  const exitToBare = shellExiting && restingState === "notch" && !hovered;
 
   // 2026-07-23 (operator minimal-notch spec, Task 1.2/1.3): whether the
   // rail's painted chrome (flank paint, clock, dots) should be showing.

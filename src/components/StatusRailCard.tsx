@@ -413,9 +413,24 @@ export function StatusRailCard({
             Every other case (`!bare` was already true) is unaffected —
             `railRevealed` is true throughout showing/exiting exactly as
             `!bare` was, so this is a pure addition, not a behavior
-            change, off bare-idle. */}
+            change, off bare-idle.
+            plan 124 (F3, review fix): `&& !exitToBare` added. During the
+            exit-to-bare window (`useExitChoreography.ts`'s `exitToBare`
+            doc has the full mechanism) the flank paint itself animates to
+            transparent over overlay-card.css's `.exiting.exit-to-bare`
+            rule, but this mount was gated on `railRevealed` alone — true
+            for that entire window (bare is false throughout showing/
+            exiting) — so the clock stayed mounted fully opaque while its
+            background faded out from under it: white text sitting on a
+            see-through flank mid-window. Unmounting it the instant
+            `exitToBare` goes true lets its own 260ms exit fade (below)
+            overlap the flank's fade instead of lagging a full render
+            behind AnimatePresence's own exit trigger. Every other case is
+            unaffected: `exitToBare` is always false in rail mode (its own
+            doc pins that), so this is a pure narrowing on the notch-mode
+            exit leg only. */}
         <AnimatePresence>
-          {railRevealed && (
+          {railRevealed && !exitToBare && (
             <motion.span
               key="flank-clock"
               initial={{ opacity: 0 }}
@@ -467,9 +482,19 @@ export function StatusRailCard({
             <-> bare-hovered. Steady rail mode (`bare` always false) never
             triggers this AnimatePresence exit/enter at all — the node
             just stays mounted across idle<->showing, so the dots read as
-            one continuous shape, not a fade replay on every promotion. */}
+            one continuous shape, not a fade replay on every promotion.
+            plan 124 (F3, review fix): `&& !exitToBare` added — same
+            mismatch and same fix as FlankClock's own doc just above:
+            `railRevealed` alone stayed true through the whole exit-to-bare
+            window (bare is false throughout showing/exiting), so the dots
+            sat fully opaque while the flank painted underneath them faded
+            to transparent. Unmounting on `exitToBare` lets this node's own
+            260ms exit fade overlap the flank's fade instead of trailing
+            it. Rail mode is unaffected (`exitToBare` always false there —
+            "steady rail mode" above still never triggers this
+            AnimatePresence exit/enter). */}
         <AnimatePresence>
-          {railRevealed && (
+          {railRevealed && !exitToBare && (
             <motion.div
               key="status-dots"
               className="card-content idle"

@@ -64,7 +64,20 @@ export function QueueSection() {
     >
       <ActionStatus status={loadStatus.status} className="queue-load-status" showPending={false} />
       {items === null ? (
-        <p className="queue-empty m-0 py-3 text-fs-body text-muted-foreground">Loading…</p>
+        // plan 124 (F6): a failed mount fetch used to leave `items` at
+        // `null` forever, so "Loading…" rendered underneath the sticky
+        // ActionStatus error above it with no way to tell the two apart at
+        // a glance. `loadStatus.status.state` is the same signal the
+        // ActionStatus banner above already reads — reusing it here (not a
+        // second error flag) means this can never disagree with the
+        // banner about whether the last attempt failed.
+        loadStatus.status.state === "error" ? (
+          <p className="queue-empty m-0 py-3 text-fs-body text-muted-foreground">
+            Couldn't load the queue — Refresh to retry.
+          </p>
+        ) : (
+          <p className="queue-empty m-0 py-3 text-fs-body text-muted-foreground">Loading…</p>
+        )
       ) : items.length === 0 ? (
         <p className="queue-empty m-0 py-3 text-fs-body text-muted-foreground">Queue is empty.</p>
       ) : (
@@ -85,6 +98,30 @@ export function QueueSection() {
           ))}
         </ul>
       )}
+      {/* plan 124 (F1): the control this section's own top-of-file comment
+          ("fetch-on-open + manual Refresh") always claimed but never
+          rendered — `refresh(announce)` already existed, this just wires
+          a button to it, following DiagnosticsSection's own Refresh row
+          (`../sections/DiagnosticsSection.tsx`) exactly: `refresh(true)`
+          (announced — the plan-108 user-initiated rule), never a static
+          prop. The mount-time fetch above stays `refresh(false)`. */}
+      <div className={CONTROL_ROW}>
+        <ControlCopy
+          htmlFor="refresh-queue"
+          name="Refresh"
+          help="Re-fetch the waiting list. Not live — this is a manual pull."
+        />
+        <Button
+          id="refresh-queue"
+          type="button"
+          variant="outline"
+          size="sm"
+          className="text-fs-secondary"
+          onClick={() => refresh(true)}
+        >
+          Refresh
+        </Button>
+      </div>
       <div className={CONTROL_ROW}>
         <ControlCopy
           htmlFor="skip-current"

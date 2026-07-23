@@ -1,3 +1,5 @@
+import { readFileSync } from "node:fs";
+import { fileURLToPath, URL as NodeURL } from "node:url";
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { EspnMeta, SlotState, SourceKind } from "../useSlotState";
@@ -813,6 +815,43 @@ describe("StatusRailCard", () => {
         expect(container.querySelector(".below-block")).toBeNull();
       });
     });
+
+    // plan 124 (F3, review fix): FlankClock/StatusDots used to stay
+    // mounted, fully opaque, for the WHOLE exit-to-bare window — only
+    // gated off once `.bare` itself landed at the window's end — while
+    // the flank paint underneath them was already animating to
+    // transparent from t=0 (overlay-card.css's `.exiting.exit-to-bare`
+    // rule). White text sitting on a see-through flank mid-window. The
+    // fix (`railRevealed && !exitToBare`) drops their own mount the
+    // instant `exitToBare` goes true, before `.bare` ever lands — this
+    // pins that ordering directly: the chrome must already be gone while
+    // the shell is still `.exiting.exit-to-bare` (not yet `.bare`), not
+    // only after. Rail mode is the untouched control: it never sets
+    // `exitToBare`, so the same exit must leave the clock/dots mounted
+    // throughout.
+    it("an unhovered showing->idle exit unmounts the clock and dots before `.bare` lands (not just once it does); rail mode keeps them mounted throughout the same exit", async () => {
+      const notch = render(<StatusRailCard slot={GOAL} restingState="notch" />);
+      expect(notch.container.querySelector(".time-only")).not.toBeNull();
+      expect(notch.container.querySelector(".status-dots")).not.toBeNull();
+
+      notch.rerender(<StatusRailCard slot={{ state: "empty" }} restingState="notch" />);
+      await vi.waitFor(() => {
+        expect(notch.container.querySelector(".time-only")).toBeNull();
+        expect(notch.container.querySelector(".status-dots")).toBeNull();
+      });
+      // the chrome left BEFORE the shell settled bare — proves the gate is
+      // `exitToBare` (window start), not `bare` (window end).
+      expect(notch.container.querySelector(".card-assembly.bare")).toBeNull();
+      expect(notch.container.querySelector(".card-assembly.exit-to-bare")).not.toBeNull();
+
+      const rail = render(<StatusRailCard slot={GOAL} restingState="rail" />);
+      rail.rerender(<StatusRailCard slot={{ state: "empty" }} restingState="rail" />);
+      await vi.waitFor(() => {
+        expect(rail.container.querySelector(".card-assembly.idle")).not.toBeNull();
+      });
+      expect(rail.container.querySelector(".time-only")).not.toBeNull();
+      expect(rail.container.querySelector(".status-dots")).not.toBeNull();
+    });
   });
 
   // plan 085: explicit regression pin for the default/unset cases — the
@@ -1559,5 +1598,201 @@ describe("StatusRailCard", () => {
       act(() => vi.advanceTimersByTime(175));
       expect(container.querySelector(".card-assembly.exit-to-bare")).toBeNull();
     });
+
+    // plan 124 (F2, review fix): `exitToBare` narrowed with `&& !hovered`
+    // — see `useExitChoreography.ts`'s own doc for the wobble mechanism
+    // (`.bare:has(.idle-peek)`/`.bare.hovered` re-widening `--cw` and
+    // repainting the flanks the instant `bare` mounts with `hovered`
+    // already true). A hovered notch-mode exit must fall back to the
+    // plain `.exiting` rule instead, at every point through the window
+    // and after it settles `.bare`.
+    it("notch resting mode: a hovered showing->idle exit never applies `exit-to-bare`, at any point in or after the exit window", () => {
+      const { container, rerender } = render(
+        <StatusRailCard slot={GOAL} restingState="notch" hovered={true} />,
+      );
+
+      rerender(<StatusRailCard slot={{ state: "empty" }} restingState="notch" hovered={true} />);
+      // t=0 of the exit — plain `.exiting`, never `.exit-to-bare`.
+      expect(container.querySelector(".card-assembly.exiting")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.exit-to-bare")).toBeNull();
+
+      act(() => vi.advanceTimersByTime(174));
+      expect(container.querySelector(".card-assembly.exit-to-bare")).toBeNull();
+
+      act(() => vi.advanceTimersByTime(1));
+      // settles `.bare` (still hovered) with no `exit-to-bare` ever having
+      // applied.
+      expect(container.querySelector(".card-assembly.bare")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.exit-to-bare")).toBeNull();
+    });
+
+    // The mid-window flip: a hover arriving partway through an
+    // already-in-progress unhovered notch exit must drop `exit-to-bare`
+    // on the very render the hover lands, not wait for the window to
+    // finish — CSS transitions retarget continuously from whatever the
+    // computed value currently is, so there is no snap to guard against
+    // here, only that the class itself tracks the live `hovered` prop.
+    it("notch resting mode: a hover arriving mid-window drops `exit-to-bare` immediately", () => {
+      const { container, rerender } = render(<StatusRailCard slot={GOAL} restingState="notch" />);
+
+      rerender(<StatusRailCard slot={{ state: "empty" }} restingState="notch" />);
+      expect(container.querySelector(".card-assembly.exit-to-bare")).not.toBeNull();
+
+      act(() => vi.advanceTimersByTime(100));
+      expect(container.querySelector(".card-assembly.exit-to-bare")).not.toBeNull();
+
+      // the hover primitive fires mid-window — same render shape as a
+      // real `hover-changed` event flipping the live `hovered` prop.
+      rerender(<StatusRailCard slot={{ state: "empty" }} restingState="notch" hovered={true} />);
+      expect(container.querySelector(".card-assembly.exit-to-bare")).toBeNull();
+      // still mid-exit (window hasn't elapsed) — `.exiting` alone now.
+      expect(container.querySelector(".card-assembly.exiting")).not.toBeNull();
+    });
+  });
+});
+
+// plan 124 (F4): string-pins the plan-123 CSS convergence invariant —
+// `overlay-card.css`'s own INVARIANT comment on `.card-root
+// .card-assembly.exiting.exit-to-bare` (above the rule) spells out five
+// properties that must equal `.card-assembly.bare`'s own end-state values
+// so the exit-to-bare animation has nothing left to jump when the class
+// flip to `.bare` actually lands. jsdom has no layout/paint engine, so
+// this is pinned at the string level against the real stylesheet source,
+// same technique as `celebrationStacking.test.tsx`/`IdleHoverPeek.test.tsx`.
+//
+// Read via `node:fs`, not a `?raw`/`?inline` Vite import — see
+// `celebrationStacking.test.tsx`'s own comment on `readSourceCss` for why
+// (Vite's css plugin intercepts `.css` imports under vitest's SSR-consumer
+// transform and hands back an empty module).
+function readSourceCss(relativePath: string): string {
+  return readFileSync(fileURLToPath(new NodeURL(relativePath, import.meta.url)), "utf-8");
+}
+
+// A variant of `celebrationStacking.test.tsx`/`IdleHoverPeek.test.tsx`'s own
+// `ruleBody` helper: this file's target selectors span multiple
+// source lines (e.g. the exit-to-bare synthetic-cutout rule's
+// `:root[...]\n  .card-root\n  .card-assembly...` wrap), so the marker is
+// matched with the selector's OWN whitespace collapsed to `\s+` rather than
+// requiring an exact byte-for-byte multi-line reproduction here — same
+// "throw on no match" contract as the single-line original, just tolerant
+// of how the source happens to be wrapped.
+function ruleBody(css: string, selector: string): string {
+  const pattern = selector
+    .split(/\s+/)
+    .map((part) => part.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"))
+    .join("\\s+");
+  const match = css.match(new RegExp(`${pattern}\\s*\\{`));
+  if (!match || match.index === undefined) {
+    throw new Error(`selector not found in stylesheet: ${selector}`);
+  }
+  const braceStart = match.index + match[0].length - 1;
+  // Scan for the matching close brace by hand, skipping over `/* ... */`
+  // comment spans rather than a plain `indexOf("}")` — several of this
+  // file's own rule comments quote a class-selector list in prose (e.g.
+  // "`.bare .flank-{left,right}`"), and a naive scan closes the rule on
+  // that literal `}` inside the comment instead of the rule's real one.
+  let i = braceStart + 1;
+  let inComment = false;
+  while (i < css.length) {
+    if (!inComment && css.startsWith("/*", i)) {
+      inComment = true;
+      i += 2;
+      continue;
+    }
+    if (inComment && css.startsWith("*/", i)) {
+      inComment = false;
+      i += 2;
+      continue;
+    }
+    if (!inComment && css[i] === "}") {
+      return css.slice(braceStart + 1, i);
+    }
+    i++;
+  }
+  throw new Error(`unterminated rule for selector: ${selector}`);
+}
+
+// Extracts one declaration's value out of an already-sliced rule body.
+// Throws rather than returning `undefined` on a miss — same "no vacuous
+// pass" discipline as `ruleBody` itself; a typo'd property name must fail
+// loudly, not silently compare `undefined === undefined`.
+function propValue(body: string, prop: string): string {
+  const escaped = prop.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  // no anchor on what precedes `prop` (a comment, a semicolon, the rule's
+  // opening brace) — the `\s*:\s*` right after it is enough of a guard:
+  // a hyphenated sibling like `padding-left` can never match the bare
+  // `padding` pattern, since there is no whitespace-only gap between
+  // `padding` and its own colon in that case.
+  const match = body.match(new RegExp(`${escaped}\\s*:\\s*([^;]+);`));
+  if (!match) {
+    throw new Error(`property not found: ${prop}`);
+  }
+  return match[1].trim();
+}
+
+describe("exit-to-bare CSS convergence invariant (plan 124 F4)", () => {
+  const overlayCardCss = readSourceCss("../overlay-card.css");
+
+  const exitShellBody = ruleBody(overlayCardCss, ".card-root .card-assembly.exiting.exit-to-bare");
+  const bareShellBody = ruleBody(overlayCardCss, ".card-root .card-assembly.bare");
+
+  const exitFlankBody = ruleBody(
+    overlayCardCss,
+    ".card-root .card-assembly.exiting.exit-to-bare .flank-left, .card-root .card-assembly.exiting.exit-to-bare .flank-right",
+  );
+  const bareFlankBody = ruleBody(
+    overlayCardCss,
+    ".card-root .card-assembly.bare .flank-left, .card-root .card-assembly.bare .flank-right",
+  );
+
+  const exitCutoutBody = ruleBody(
+    overlayCardCss,
+    ':root[data-notchtap-mode="hud"] .card-root .card-assembly.exiting.exit-to-bare .synthetic-cutout',
+  );
+  const bareCutoutBody = ruleBody(
+    overlayCardCss,
+    ':root[data-notchtap-mode="hud"] .card-root .card-assembly.bare:not(:has(.below-block)) .synthetic-cutout',
+  );
+
+  it("--cw: the exit-to-bare shell converges on `.bare`'s own value", () => {
+    expect(propValue(exitShellBody, "--cw")).toBe(propValue(bareShellBody, "--cw"));
+  });
+
+  it("flank background: the exit-to-bare animation's end state matches `.bare`'s (both transparent)", () => {
+    // the exit rule uses the longhand `background-color`, `.bare` uses the
+    // `background` shorthand — different property names, same resulting
+    // value, so each is read off its own rule rather than compared by
+    // property name.
+    expect(propValue(exitFlankBody, "background-color")).toBe(
+      propValue(bareFlankBody, "background"),
+    );
+  });
+
+  it("flank padding: the exit-to-bare animation's end state matches `.bare`'s (both zero)", () => {
+    expect(propValue(exitFlankBody, "padding")).toBe(propValue(bareFlankBody, "padding"));
+  });
+
+  it("synthetic-cutout bottom-left radius: the exit-to-bare animation's end state matches `.bare`'s", () => {
+    expect(propValue(exitCutoutBody, "border-bottom-left-radius")).toBe(
+      propValue(bareCutoutBody, "border-bottom-left-radius"),
+    );
+  });
+
+  it("synthetic-cutout bottom-right radius: the exit-to-bare animation's end state matches `.bare`'s", () => {
+    expect(propValue(exitCutoutBody, "border-bottom-right-radius")).toBe(
+      propValue(bareCutoutBody, "border-bottom-right-radius"),
+    );
+  });
+
+  it("ruleBody throws on a selector that doesn't exist — no vacuous pass", () => {
+    expect(() => ruleBody(overlayCardCss, ".card-root .this-selector-does-not-exist")).toThrow(
+      /selector not found/,
+    );
+  });
+
+  it("propValue throws on a property that doesn't exist in the rule — no vacuous pass", () => {
+    expect(() => propValue(bareShellBody, "--this-property-does-not-exist")).toThrow(
+      /property not found/,
+    );
   });
 });
