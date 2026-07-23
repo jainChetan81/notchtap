@@ -3,6 +3,22 @@
 <head>
 <meta charset="utf-8" />
 <title>notchtap — system stats placement prototype</title>
+<!-- 2026-07-23 truth-sync verification: options A/B/C (CPU/MEM/LOAD system-stats gauges, in any
+     placement) never shipped — there is no such feature anywhere in src/. No system-stats data
+     channel exists on StatusState, no sysinfo crate dependency in src-tauri/Cargo.toml. Flagged
+     as NOT SHIPPED below, left in place as a still-open concept per this file's own instruction.
+     Option D (now-playing row) WAS the design spike that preceded the real thing — plan 103's
+     mediaremote-adapter spike went GO, and 104/105/118 shipped a now-playing media row for real
+     (IdleHoverPeek.tsx's MediaPeekRow, .media-row in overlay-card.css) — but the shipped version
+     differs from this mock in real ways (lucide icon glyphs, not ▶/⏸ text; real
+     .media-row/.media-track/.media-art/.media-transport/.media-bar class vocabulary; sits behind
+     a weather-art backdrop layer per plan 105). Flagged below as a PRECURSOR, not verbatim-shipped
+     — see prototype/weather-art.html's idle-peek section for a class-accurate reproduction of what
+     actually shipped. -->
+<style>
+  .not-shipped-flag { display: inline-block; margin-left: 8px; padding: 2px 7px; border-radius: 999px; font: 700 8.5px/1 ui-monospace, monospace; letter-spacing: 0.06em; text-transform: uppercase; color: #ff9d9d; background: rgba(255, 107, 87, 0.14); border: 1px solid rgba(255, 107, 87, 0.4); vertical-align: middle; }
+  .precursor-flag { display: inline-block; margin-left: 8px; padding: 2px 7px; border-radius: 999px; font: 700 8.5px/1 ui-monospace, monospace; letter-spacing: 0.06em; text-transform: uppercase; color: #f0c46a; background: rgba(240, 196, 106, 0.14); border: 1px solid rgba(240, 196, 106, 0.4); vertical-align: middle; }
+</style>
 <style>
   :root {
     --cutout-w: 200px;
@@ -91,13 +107,13 @@
 </style>
 </head>
 <body>
-  <h1>system stats in the shell — three placements
-    <small>live-animated fake data · shipped card-assembly vocabulary · pick one (or A+C)</small>
+  <h1>system stats in the shell — three placements <span class="not-shipped-flag" style="margin-left:10px;">Not shipped — concept only</span>
+    <small>live-animated fake data · card-assembly SHAPE vocabulary reused, but the actual gauges/strip/spark-line below never shipped · pick one (or A+C)</small>
   </h1>
 
   <!-- OPTION A -->
   <div class="variant">
-    <label>A — flank micro-gauges · showing/expanded (fills the empty right flank)</label>
+    <label>A — flank micro-gauges · showing/expanded (fills the empty right flank)<span class="not-shipped-flag">Not shipped</span></label>
     <div class="card-assembly">
       <div class="flank left"><span class="clock" id="clock">21:47</span></div>
       <div class="cutout"></div>
@@ -116,7 +132,7 @@
 
   <!-- OPTION B -->
   <div class="variant">
-    <label>B — stats strip at the foot of the expanded manifest</label>
+    <label>B — stats strip at the foot of the expanded manifest<span class="not-shipped-flag">Not shipped</span></label>
     <div class="card-assembly">
       <div class="flank left"><span class="clock">21:47</span></div>
       <div class="cutout"></div>
@@ -139,7 +155,7 @@
 
   <!-- OPTION C -->
   <div class="variant peek">
-    <label>C — idle hover-peek row (joins weather/timeline in the peek)</label>
+    <label>C — idle hover-peek row (joins weather/timeline in the peek)<span class="not-shipped-flag">Not shipped</span></label>
     <div class="card-assembly" style="width:370px; grid-template-columns: 1fr var(--cutout-w) 1fr;">
       <div class="flank left"><span class="clock">21:47</span></div>
       <div class="cutout"></div>
@@ -157,7 +173,7 @@
 
   <!-- OPTION D -->
   <div class="variant peek">
-    <label>D — basic now-playing row (mediaremote-adapter spike, plan 103) · idle peek</label>
+    <label>D — basic now-playing row (mediaremote-adapter spike, plan 103) · idle peek<span class="precursor-flag">Precursor — real shipped version differs, see weather-art.html</span></label>
     <div class="card-assembly" style="width:370px;">
       <div class="flank left"><span class="clock">21:47</span></div>
       <div class="cutout"></div>

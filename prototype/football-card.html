@@ -39,21 +39,34 @@
   .status-dot.news { background: #ff5c5c; }
   .status-dot.weather { background: #f0c46a; }
   .status-dot.dim { opacity: 0.22; }
-  @keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+  /* 2026-07-23 truth-sync: plan 105 removed the pulsing status/live-dot animations repo-wide
+     (distracting in peripheral vision) — steady glow only now; no @keyframes dot-pulse survives. */
 
-  /* ==== the compact scorecard — resting presentation ==== */
+  /* ==== the compact scorecard — resting presentation ====
+     2026-07-23 truth-sync (plan 092 chip convergence): `.league-chip`/`.live-pill` were the
+     PRE-092 names. Shipped code (overlay-card.css) converged every pill/chip surface onto one
+     `.chip` base + a per-surface tint class — `.chip-league`/`.chip-live` here — so this file's
+     own class vocabulary now matches src/components/StatusRailCard.tsx's live-match branch
+     verbatim (`chip chip-league`, `chip chip-live`). Renamed below AND in every HTML use in this
+     file; visual shape (padding/radius/font) now lives on the shared `.chip` base rule instead of
+     being duplicated per surface. */
+  .chip { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px; font: 700 8px/1 ui-monospace, monospace; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
   .notif-block { padding: 12px 16px 13px; }
   .sc-head { display: flex; align-items: center; gap: 8px; }
-  .league-chip { flex: none; padding: 3px 7px; border-radius: 999px; font: 700 8px/1 ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); }
-  .live-pill { flex: none; display: inline-flex; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 999px; font: 700 8px/1 ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: #7fe08d; background: rgba(127,224,141,0.12); border: 1px solid rgba(127,224,141,0.35); }
-  .live-pill .live-dot { width: 5px; height: 5px; border-radius: 50%; background: #7fe08d; box-shadow: 0 0 6px rgba(127,224,141,0.9); animation: live-dot-pulse 1.6s ease-in-out infinite; }
-  @keyframes live-dot-pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
-  .live-pill.break { color: #f0c46a; background: rgba(240,196,106,0.12); border-color: rgba(240,196,106,0.35); }
-  .live-pill.break .live-dot { background: #f0c46a; box-shadow: 0 0 6px rgba(240,196,106,0.9); animation: none; }
-  .live-pill.final { color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.12); }
-  .live-pill.final .live-dot { display: none; }
-  .live-pill.soon { color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.14); }
-  .live-pill.soon .live-dot { display: none; }
+  .chip-league { flex: none; color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); }
+  .chip-live { flex: none; gap: 5px; color: #7fe08d; background: rgba(127,224,141,0.12); border: 1px solid rgba(127,224,141,0.35); }
+  .chip-live .live-dot { width: 5px; height: 5px; border-radius: 50%; background: #7fe08d; box-shadow: 0 0 6px rgba(127,224,141,0.9); }
+  .chip-live.break { color: #f0c46a; background: rgba(240,196,106,0.12); border-color: rgba(240,196,106,0.35); }
+  .chip-live.break .live-dot { background: #f0c46a; box-shadow: 0 0 6px rgba(240,196,106,0.9); }
+  .chip-live.final { color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.12); }
+  .chip-live.final .live-dot { display: none; }
+  /* NOT SHIPPED: overlay-card.css's own comment on `.chip-live` is explicit — "There is no 'Soon'
+     (pre-match) variant here: no wire signal exists for it… so it's omitted rather than half-built
+     against a state the backend never sends." Kept below as a still-open proposal (pre-match is a
+     real, useful state to design for), just honestly flagged as not implemented, unlike its
+     siblings which all shipped verbatim. */
+  .chip-live.soon { color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.14); }
+  .chip-live.soon .live-dot { display: none; }
   .clock-pill { margin-left: auto; flex: none; font: 800 10px/1 ui-monospace, monospace; color: rgba(255,255,255,0.75); padding: 3px 7px; border-radius: 999px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); }
 
   .score-row { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 10px; }
@@ -114,7 +127,7 @@
   .fb-rig[data-fb="showing"] .flank-left,
   .fb-rig[data-fb="showing"] .flank-right { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
   .fb-rig[data-fb="live"] .status-dot.football,
-  .fb-rig[data-fb="showing"] .status-dot.football { box-shadow: 0 0 7px 1px #3ddc70; animation: dot-pulse 1.8s ease-in-out infinite; }
+  .fb-rig[data-fb="showing"] .status-dot.football { box-shadow: 0 0 8px 1px #3ddc70; }
   .fb-rig[data-fb="paused"] .status-dot.football { opacity: 0.22; }
 
   /* celebrations: goal = green glow+ring · yellow = amber ring · red =
@@ -141,6 +154,7 @@
 </head>
 <body>
 <div style="background:#7a2d2d;color:#fff;padding:6px 12px;font:12px/1.4 monospace">HISTORICAL PROTOTYPE — design exploration that preceded implementation. The shipped overlay deliberately diverged (CSS-grid .card-assembly — see src/styles.css). Not a reference for current behavior.</div>
+<div style="background:#1c2a1f;color:#cfe8d4;padding:6px 12px;font:12px/1.4 monospace;border-top:1px solid #2f4a36">2026-07-23 truth-sync: chip language converged onto `.chip`/`.chip-league`/`.chip-live` (plan 092, matches src/components/StatusRailCard.tsx's live-match branch verbatim); pulsing status/live dots replaced with the static glow shipped by plan 105; `.chip-live.soon` explicitly flagged NOT SHIPPED (see its own comment) since overlay-card.css documents that no pre-match wire signal exists.</div>
 <main>
   <h1>Football card — sticky presence, event-driven expansion</h1>
   <p class="lede">
@@ -174,7 +188,7 @@
           <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
             <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
             <div class="below-block"><div class="notif-block">
-              <div class="sc-head"><span class="league-chip">UCL</span><span class="live-pill"><span class="live-dot"></span>Live</span><span class="clock-pill">78'</span></div>
+              <div class="sc-head"><span class="chip chip-league">UCL</span><span class="chip chip-live"><span class="live-dot"></span>Live</span><span class="clock-pill">78'</span></div>
               <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score">2<span class="dash">–</span>1</span><div class="side"><span class="crest">PSG</span></div></div>
               <div class="event-line tint-goal"><span class="ev-ico goal"></span>Goal — K. Havertz 78'</div>
             </div></div>
@@ -189,7 +203,7 @@
           <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
             <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
             <div class="below-block"><div class="notif-block">
-              <div class="sc-head"><span class="league-chip">EPL</span><span class="live-pill"><span class="live-dot"></span>Live</span><span class="clock-pill">44'</span></div>
+              <div class="sc-head"><span class="chip chip-league">EPL</span><span class="chip chip-live"><span class="live-dot"></span>Live</span><span class="clock-pill">44'</span></div>
               <div class="score-row"><div class="side"><span class="crest">MCI</span></div><span class="score">1<span class="dash">–</span>1</span><div class="side"><span class="crest">LIV</span></div></div>
               <div class="event-line tint-goal"><span class="ev-ico pen"></span>Penalty - Scored — Mohamed Salah 44'</div>
             </div></div>
@@ -204,7 +218,7 @@
           <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
             <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
             <div class="below-block"><div class="notif-block">
-              <div class="sc-head"><span class="league-chip">UCL</span><span class="live-pill"><span class="live-dot"></span>Live</span><span class="clock-pill">12'</span></div>
+              <div class="sc-head"><span class="chip chip-league">UCL</span><span class="chip chip-live"><span class="live-dot"></span>Live</span><span class="clock-pill">12'</span></div>
               <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score">0<span class="dash">–</span>1</span><div class="side"><span class="crest">PSG</span></div></div>
               <div class="event-line"><span class="ev-ico og"></span>Own Goal — W. Saliba 12'</div>
             </div></div>
@@ -219,7 +233,7 @@
           <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
             <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
             <div class="below-block"><div class="notif-block">
-              <div class="sc-head"><span class="league-chip">UCL</span><span class="live-pill"><span class="live-dot"></span>Live</span><span class="clock-pill">54'</span></div>
+              <div class="sc-head"><span class="chip chip-league">UCL</span><span class="chip chip-live"><span class="live-dot"></span>Live</span><span class="clock-pill">54'</span></div>
               <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score">1<span class="dash">–</span>1</span><div class="side"><span class="crest">PSG</span></div></div>
               <div class="event-line tint-yc"><span class="ev-ico yc"></span>Yellow Card — B. Saka 54'</div>
               <div class="cards-line">ARS 1Y0R · PSG 2Y0R</div>
@@ -235,7 +249,7 @@
           <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
             <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
             <div class="below-block"><div class="notif-block">
-              <div class="sc-head"><span class="league-chip">UCL</span><span class="live-pill"><span class="live-dot"></span>Live</span><span class="clock-pill">71'</span></div>
+              <div class="sc-head"><span class="chip chip-league">UCL</span><span class="chip chip-live"><span class="live-dot"></span>Live</span><span class="clock-pill">71'</span></div>
               <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score">1<span class="dash">–</span>1</span><div class="side"><span class="crest">PSG</span></div></div>
               <div class="event-line tint-rc"><span class="ev-ico rc"></span>Red Card — M. Dembélé 71'</div>
               <div class="cards-line">ARS 1Y0R · PSG 2Y1R</div>
@@ -251,7 +265,7 @@
           <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
             <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
             <div class="below-block"><div class="notif-block">
-              <div class="sc-head"><span class="league-chip">UCL</span><span class="live-pill"><span class="live-dot"></span>Live</span><span class="clock-pill">62'</span></div>
+              <div class="sc-head"><span class="chip chip-league">UCL</span><span class="chip chip-live"><span class="live-dot"></span>Live</span><span class="clock-pill">62'</span></div>
               <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score">1<span class="dash">–</span>1</span><div class="side"><span class="crest">PSG</span></div></div>
               <div class="event-line"><span class="ev-ico foul"></span>Foul — D. Rice 62'</div>
             </div></div>
@@ -266,7 +280,7 @@
           <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
             <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
             <div class="below-block"><div class="notif-block">
-              <div class="sc-head"><span class="league-chip">UCL</span><span class="live-pill"><span class="live-dot"></span>Live</span><span class="clock-pill">55'</span></div>
+              <div class="sc-head"><span class="chip chip-league">UCL</span><span class="chip chip-live"><span class="live-dot"></span>Live</span><span class="clock-pill">55'</span></div>
               <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score">1<span class="dash">–</span>1</span><div class="side"><span class="crest">PSG</span></div></div>
               <div class="event-line"><span class="ev-ico off"></span>Offside — K. Mbappé 55'</div>
             </div></div>
@@ -281,7 +295,7 @@
           <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
             <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
             <div class="below-block"><div class="notif-block">
-              <div class="sc-head"><span class="league-chip">UCL</span><span class="live-pill"><span class="live-dot"></span>Live</span><span class="clock-pill">67'</span></div>
+              <div class="sc-head"><span class="chip chip-league">UCL</span><span class="chip chip-live"><span class="live-dot"></span>Live</span><span class="clock-pill">67'</span></div>
               <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score">1<span class="dash">–</span>1</span><div class="side"><span class="crest">PSG</span></div></div>
               <div class="event-line"><span class="ev-ico var"></span>VAR check — possible penalty 67'</div>
             </div></div>
@@ -296,7 +310,7 @@
           <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
             <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
             <div class="below-block"><div class="notif-block">
-              <div class="sc-head"><span class="league-chip">UCL</span><span class="live-pill"><span class="live-dot"></span>Live</span><span class="clock-pill">70'</span></div>
+              <div class="sc-head"><span class="chip chip-league">UCL</span><span class="chip chip-live"><span class="live-dot"></span>Live</span><span class="clock-pill">70'</span></div>
               <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score">1<span class="dash">–</span>1</span><div class="side"><span class="crest">PSG</span></div></div>
               <div class="event-line"><span class="ev-ico sub"></span>Substitution — L. Trossard for G. Martinelli 70'</div>
             </div></div>
@@ -318,7 +332,7 @@
           <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
             <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
             <div class="below-block"><div class="notif-block">
-              <div class="sc-head"><span class="league-chip">UCL</span><span class="live-pill soon">Soon</span><span class="clock-pill">15:00</span></div>
+              <div class="sc-head"><span class="chip chip-league">UCL</span><span class="chip chip-live soon">Soon</span><span class="clock-pill">15:00</span></div>
               <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score vs">vs</span><div class="side"><span class="crest">PSG</span></div></div>
               <div class="event-line">Kickoff in 28 min — Emirates Stadium</div>
             </div></div>
@@ -333,7 +347,7 @@
           <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
             <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
             <div class="below-block"><div class="notif-block">
-              <div class="sc-head"><span class="league-chip">EPL</span><span class="live-pill break"><span class="live-dot"></span>Break</span><span class="clock-pill">HT</span></div>
+              <div class="sc-head"><span class="chip chip-league">EPL</span><span class="chip chip-live break"><span class="live-dot"></span>Break</span><span class="clock-pill">HT</span></div>
               <div class="score-row"><div class="side"><span class="crest">MCI</span></div><span class="score">1<span class="dash">–</span>1</span><div class="side"><span class="crest">LIV</span></div></div>
               <div class="event-line">Half-time at the Etihad</div>
             </div></div>
@@ -348,7 +362,7 @@
           <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
             <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
             <div class="below-block"><div class="notif-block">
-              <div class="sc-head"><span class="league-chip">La Liga</span><span class="live-pill final">Final</span><span class="clock-pill">FT</span></div>
+              <div class="sc-head"><span class="chip chip-league">La Liga</span><span class="chip chip-live final">Final</span><span class="clock-pill">FT</span></div>
               <div class="score-row"><div class="side"><span class="crest">RMA</span></div><span class="score">3<span class="dash">–</span>0</span><div class="side"><span class="crest">SEV</span></div></div>
               <div class="event-line"><span class="ev-ico goal"></span>Goal — Vinícius Júnior 89'</div>
             </div></div>
@@ -394,8 +408,8 @@
           <div class="below-block fb-peek peek">
             <div class="notif-block">
               <div class="sc-head">
-                <span class="league-chip">UCL</span>
-                <span class="live-pill" id="fb-pill"><span class="live-dot"></span>Live</span>
+                <span class="chip chip-league">UCL</span>
+                <span class="chip chip-live" id="fb-pill"><span class="live-dot"></span>Live</span>
                 <span class="clock-pill" id="fb-clock">78'</span>
               </div>
               <div class="score-row">

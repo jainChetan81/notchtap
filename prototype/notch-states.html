@@ -1,5 +1,12 @@
 <!doctype html>
-<!-- Source: Claude artifact 4bbff819-d3d4-48c4-9934-2e1b3641632a ("notch states — collapsed / idle / expanded"), extracted 2026-07-20. Locked design reference for plan 079. -->
+<!-- Source: Claude artifact 4bbff819-d3d4-48c4-9934-2e1b3641632a ("notch states — collapsed / idle / expanded"), extracted 2026-07-20. Locked design reference for plan 079.
+     2026-07-23 truth-sync pass: corrected against src/overlay-card.css/StatusRailCard.tsx as of the same day's
+     minimal-notch merge (89b2184) — bare-notch now shows the curved bottom round + concave top "gill" flares,
+     a hover-reveal demo was added (bare -> full rail), section 4's status-dots no longer hide while showing
+     (dots persist through the showing state as one continuous shape, per that merge), and the dot-pulse/
+     manifest-wrap timing constants were brought current (plan 105 static glow; current expand duration).
+     This remains a design-exploration snapshot, not a byte-accurate mirror — see src/overlay-card.css for the
+     real grid/gill implementation. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -30,6 +37,29 @@
      case that needs its own rounding. */
   .hw-notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: 26px; width: 150px; background: #000; z-index: 2; }
   .hw-notch.solo { border-bottom-left-radius: 10px; border-bottom-right-radius: 10px; }
+  /* 2026-07-23 truth-sync: the real bare/minimal notch (overlay-card.css
+     ":root[data-notchtap-mode='hud'] .card-assembly.bare:not(:has(.below-block)) .synthetic-cutout")
+     also carries a genuinely CONCAVE top fillet where the cutout meets the menu bar — a real
+     hardware-notch "gill" flare, not just the bottom convex round already modeled above.
+     border-radius can't carve a concave corner, so the shipped code uses two small corner-anchored
+     elements painted with an inverse-fillet radial-gradient; reproduced here verbatim (10x10,
+     transparent-near-anchor / opaque beyond). */
+  .notch-gill { position: absolute; top: 0; width: 10px; height: 10px; pointer-events: none; }
+  .notch-gill-left { left: -10px; background: radial-gradient(circle at bottom left, transparent 10px, #000 10px); }
+  .notch-gill-right { right: -10px; background: radial-gradient(circle at bottom right, transparent 10px, #000 10px); }
+  /* 2026-07-23 truth-sync (minimal-notch spec, Task 1.2): hovering a bare notch now grows it
+     straight into the full idle rail — same shape, same element, width animates out and the
+     flank content fades in, rather than a detached rail appearing beside it. Mirrors
+     .card-assembly.bare:has(.idle-peek)'s width formula (idle rest-rail width) and
+     .bare.hovered's flank repaint (overlay-card.css) in miniature — this demo approximates both
+     with one element for clarity, not a literal DOM match. */
+  .bare-hover-demo { overflow: visible; transition: width 320ms cubic-bezier(0.22,1,0.36,1); }
+  .bare-hover-demo .bare-rail-content {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 16px; opacity: 0; transition: opacity 260ms cubic-bezier(0.22,1,0.36,1);
+  }
+  .bare-hover-demo:hover { width: 320px !important; }
+  .bare-hover-demo:hover .bare-rail-content { opacity: 1; }
   .stage { position: relative; min-height: 90px; background: repeating-linear-gradient(45deg, #08090c 0 2px, #0c0d10 2px 4px); }
 
   /* three-block shape instead of clip-path — plain border-radius works
@@ -66,12 +96,14 @@
   .status-dot.football { background: #3ddc70; }
   .status-dot.news { background: #ff5c5c; }
   .status-dot.weather { background: #f0c46a; }
-  .status-dot.active { box-shadow: 0 0 7px 1px currentColor; animation: dot-pulse 1.8s ease-in-out infinite; }
+  /* 2026-07-23 truth-sync: plan 105 removed the pulsing status-dot animation repo-wide (it read as
+     distracting in peripheral vision) — steady glow only now, box-shadow strengthened slightly to
+     compensate. No `animation` property survives on `.active`. */
+  .status-dot.active { box-shadow: 0 0 8px 1px currentColor; }
   .status-dot.football.active { color: #3ddc70; }
   .status-dot.news.active { color: #ff5c5c; }
   .status-dot.weather.active { color: #f0c46a; }
-  .status-dot.dim { opacity: 0.22; box-shadow: none; animation: none; }
-  @keyframes dot-pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+  .status-dot.dim { opacity: 0.22; box-shadow: none; }
 
   /* --- expanded (hover) content: each status dot grows into a full
      labeled row (name, status text, polling timer) --- */
@@ -146,7 +178,11 @@
   .flow-card .stamp-word { font: 800 10px/1 ui-monospace, monospace; letter-spacing: 0.1em; color: #ff6b57; display: none; }
   .flow-card[data-phase="expanded"] .priority-dot, .flow-card[data-phase="compact"] .priority-dot,
   .flow-card[data-phase="expanded"] .stamp-word, .flow-card[data-phase="compact"] .stamp-word { display: inline-block; }
-  .flow-card[data-phase="expanded"] .status-dots, .flow-card[data-phase="compact"] .status-dots { display: none; }
+  /* 2026-07-23 truth-sync: the status dots used to hide once a card was showing/expanded — the
+     minimal-notch merge (89b2184) reversed this. StatusRailCard.tsx's `railRevealed` (`!bare ||
+     hovered`) now gates StatusDots, and `bare` is always false the instant a promotion starts, so
+     the dots stay mounted through the whole showing/exiting window: "one continuous shape, never a
+     detached slab + floating card" (that commit's own words). No display:none rule survives here. */
 
   .notif-body-wrap { display: none; background: #000; }
   .ttl-bar { height: 2px; background: rgba(255,255,255,0.08); }
@@ -169,7 +205,11 @@
   .notif-track span.done { background: color-mix(in srgb, #ff6b57 30%, transparent); }
   .notif-track span.cur { background: #ff6b57; box-shadow: 0 -2px 8px rgba(255,107,87,0.35); }
 
-  .manifest-wrap { max-height: 0; opacity: 0; overflow: hidden; background: #000; border-top: 1px solid rgba(255,255,255,0.1); border-bottom-left-radius: 14px; border-bottom-right-radius: 14px; transition: max-height 320ms cubic-bezier(0.22,1,0.36,1), opacity 220ms cubic-bezier(0.22,1,0.36,1); }
+  /* 2026-07-23 truth-sync: shipped code (overlay-card.css .manifest-wrap) animates a
+     grid-template-rows 0fr->1fr, not max-height, and both properties share the SAME 300ms
+     duration (plan 078) — this demo keeps the max-height technique (equivalent result for a
+     static mock) but the duration numbers below are corrected to match (were 320ms/220ms). */
+  .manifest-wrap { max-height: 0; opacity: 0; overflow: hidden; background: #000; border-top: 1px solid rgba(255,255,255,0.1); border-bottom-left-radius: 14px; border-bottom-right-radius: 14px; transition: max-height 300ms cubic-bezier(0.22,1,0.36,1), opacity 300ms cubic-bezier(0.22,1,0.36,1); }
   .flow-card[data-phase="expanded"] .manifest-wrap { max-height: 500px; opacity: 1; }
   .flow-card[data-phase="compact"]:hover .manifest-wrap { max-height: 500px; opacity: 1; }
   .manifest-block { padding: 12px 16px 14px; }
@@ -200,11 +240,22 @@
 
   <section>
     <h2>1 — collapsed (fully idle, no card at all)</h2>
-    <p class="section-sub">Indistinguishable from a bare real notch — nothing rendered beyond the cutout itself. This is the resting state before anything expands.</p>
-    <div class="rig-label">Bare notch</div>
+    <p class="section-sub">Indistinguishable from a bare real notch — nothing rendered beyond the cutout itself. This is the resting state before anything expands. <b>Hover it</b> — 2026-07-23's minimal-notch spec grows this straight into the full idle rail (see section 6b).</p>
+    <div class="rig-label">Bare notch — bottom convex round + top concave gills</div>
     <div class="rig">
       <div class="menubar"></div>
-      <div class="hw-notch solo" style="width:150px;"></div>
+      <div class="hw-notch solo bare-hover-demo" style="width:150px;">
+        <div class="notch-gill notch-gill-left"></div>
+        <div class="notch-gill notch-gill-right"></div>
+        <div class="bare-rail-content">
+          <span class="time-only">14:32</span>
+          <div class="status-dots">
+            <span class="status-dot football active"></span>
+            <span class="status-dot news active"></span>
+            <span class="status-dot weather dim"></span>
+          </div>
+        </div>
+      </div>
       <div class="stage" style="min-height:70px;"></div>
     </div>
   </section>
@@ -437,15 +488,37 @@
     <div class="rig-label">Resting: bare notch (option on) vs idle rail (option off, default)</div>
     <div class="rig">
       <div class="menubar"></div>
-      <div class="hw-notch solo" style="width:150px;"></div>
+      <div class="hw-notch solo" style="width:150px;">
+        <div class="notch-gill notch-gill-left"></div>
+        <div class="notch-gill notch-gill-right"></div>
+      </div>
+      <div class="stage" style="min-height:70px;"></div>
+    </div>
+    <div class="rig-label" style="margin-top:22px;">6b — hover the bare notch, live (shipped 2026-07-23): it grows into the same time+dots rail as section 2, in place, instead of staying invisible</div>
+    <div class="rig">
+      <div class="menubar"></div>
+      <div class="hw-notch solo bare-hover-demo" style="width:150px;">
+        <div class="notch-gill notch-gill-left"></div>
+        <div class="notch-gill notch-gill-right"></div>
+        <div class="bare-rail-content">
+          <span class="time-only">14:32</span>
+          <div class="status-dots">
+            <span class="status-dot football active"></span>
+            <span class="status-dot news active"></span>
+            <span class="status-dot weather dim"></span>
+          </div>
+        </div>
+      </div>
       <div class="stage" style="min-height:70px;"></div>
     </div>
     <p class="section-sub" style="margin-top:14px;">
-      Engineering note: this is the cheap half of plan 079 item 17. It
-      needs no hover detection (resting state is a render choice), only
-      a config flag read by the overlay. The expensive half — revealing
-      the rail/card on hover when nothing is showing — is the same
-      cursor-tracking work every other hover needs.
+      Engineering note (2026-07-23 update): both halves of plan 079 item 17 are now shipped. The
+      cheap half — the config flag / render choice above — landed with the hover primitive
+      (plan 093). The "expensive half" this note used to describe as future cursor-tracking work
+      — revealing the rail on hover when nothing is showing — shipped 2026-07-23 as the
+      minimal-notch spec (6b above): the rust-derived tracking area already existed by then, so it
+      only needed the bare-notch shell to grow into the rail on the existing `hovered` signal, not
+      new detection work.
     </p>
   </section>
 

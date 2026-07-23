@@ -1,10 +1,11 @@
 <!doctype html>
-<!-- Control panel (Settings window) mockup — today's 9-section window including the newest additions: Telegram connector health line (plan 076) and the Diagnostics log viewer (plan 077), which DESIGN.html §06 predates. Visual tokens mirror src/settings/settings.css (--window #050607, --accent #0a84ff, tiny SF Pro Text + ui-monospace). Static: sidebar + the two newest panes; the other seven sections are unchanged since DESIGN.html §06 and noted as such. -->
+<!-- Control panel (Settings window) mockup — originally a 9-section window (Telegram connector health line, plan 076, and the Diagnostics log viewer, plan 077, which DESIGN.html §06 predates). Visual tokens mirror src/settings/settings.css (--window #050607, --accent #0a84ff, tiny SF Pro Text + ui-monospace). Static: sidebar + the two newest panes; the other seven sections are unchanged since DESIGN.html §06 and noted as such.
+     2026-07-23 truth-sync: plan 089 added a 10th sidebar section (History) after this mockup was drawn — both sidebar navs below now include it; the Switch mock was resized to the current 22px/36px, 2px-inset, muted-unchecked-thumb proportions (src/components/ui/switch.tsx, restyled the same day); the sidebar wordmark now reads "scribetap" (today's user-facing rebrand — bundle id/config paths/CLI name are unchanged, see the branding commit). -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>control panel — 9 sections as of its era (production now has 10), with connector health + diagnostics</title>
+<title>control panel — 10 sections (History added, plan 089), with connector health + diagnostics</title>
 <style>
   :root {
     --bg: #101318; --ink: #e8ecf1; --dim: #8b95a3; --rule: rgba(255,255,255,0.09); --green: #7fe08d;
@@ -54,10 +55,18 @@
   .health-ok { color: #7dc98a; }
   .health-bad { color: #d6a1a5; }
 
-  .switch { width: 32px; height: 19px; border-radius: 999px; background: #60656d; position: relative; flex: none; }
-  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #fff; }
-  .switch.on { background: #60656d; }
-  .switch.on::after { left: 15px; }
+  /* 2026-07-23 truth-sync: src/components/ui/switch.tsx was restyled the same day — clean
+     iOS-like proportion, track h-[22px]/w-9 (36px), thumb 18px with a consistent 2px inset on
+     every side in both states, 150ms transitions, and the UNCHECKED thumb moved off bright white
+     onto a muted gray (dark:data-unchecked:bg-muted-foreground) so an off switch doesn't read as a
+     blown-out white blob against the now fully-visible (no more half-opacity dimming) track.
+     Dimensions/insets below are exact; the two colors are this mock's own token approximation of
+     `--muted-foreground`/`--primary`, not literal shared-ui hex — cross-check those two hexes
+     against the live app if pixel-exact color match is ever needed here. */
+  .switch { width: 36px; height: 22px; border-radius: 999px; background: #2a2e35; position: relative; flex: none; transition: background-color 150ms ease-out; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #9aa0ab; transition: left 150ms ease-out, background-color 150ms ease-out; }
+  .switch.on { background: var(--accent); }
+  .switch.on::after { left: 16px; background: #fff; }
 
   .secret-row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 12px; min-height: 46px; padding: 8px 14px; }
   .secret-row + .secret-row { border-top: 1px solid var(--divider-soft); }
@@ -89,15 +98,16 @@
 <body>
 <div style="background:#7a2d2d;color:#fff;padding:6px 12px;font:12px/1.4 monospace">HISTORICAL PROTOTYPE — design exploration that preceded implementation. The shipped overlay deliberately diverged (CSS-grid .card-assembly — see src/styles.css). Not a reference for current behavior.</div>
 <main>
-  <h1>Control panel — the 9-section window as of its era, not current state (production now has 10 — see the app)</h1>
+  <h1>Control panel — the settings window, sidebar now 10 sections (History, plan 089, added since this mockup's era)</h1>
   <p class="lede">
-    The Settings window as it exists <b>today</b>, including the two
-    additions DESIGN.html §06 predates: the Telegram
+    The Settings window's sidebar order is on record here at its current
+    10 sections; two of the panes are drawn out in full — the Telegram
     <b>connector health</b> line (plan 076) and the
-    <b>Diagnostics</b> log viewer (plan 077). Sections 01–05, 07 and 08
-    are unchanged since DESIGN.html's control-panel section — only the
-    two new surfaces are drawn out here, plus the sidebar so the
-    section order is on record.
+    <b>Diagnostics</b> log viewer (plan 077), which DESIGN.html §06
+    predates. Sections 01–05, 07 and 08 are unchanged since
+    DESIGN.html's control-panel section; 10 (History, plan 089) postdates
+    this whole mockup and isn't drawn out below either — see "Sections
+    not re-drawn here".
   </p>
   <p class="note">
     Tokens mirror <code>src/settings/settings.css</code>: window
@@ -119,7 +129,7 @@
     <div class="rig-label">Connectors &amp; Keys pane — health: delivering</div>
     <div class="window">
       <div class="sidebar">
-        <div class="brand"><span class="brand-slot"></span>notchtap</div>
+        <div class="brand"><span class="brand-slot"></span>scribetap</div>
         <div class="nav">
           <div class="nav-item"><span class="idx">01</span>General</div>
           <div class="nav-item"><span class="idx">02</span>Football</div>
@@ -130,6 +140,7 @@
           <div class="nav-item"><span class="idx">07</span>Shortcuts</div>
           <div class="nav-item"><span class="idx">08</span>Appearance</div>
           <div class="nav-item"><span class="idx">09</span>Diagnostics</div>
+          <div class="nav-item"><span class="idx">10</span>History</div>
         </div>
         <div class="sidebar-meta">settings / v5</div>
       </div>
@@ -213,7 +224,7 @@
     <div class="rig-label">Diagnostics pane</div>
     <div class="window">
       <div class="sidebar">
-        <div class="brand"><span class="brand-slot"></span>notchtap</div>
+        <div class="brand"><span class="brand-slot"></span>scribetap</div>
         <div class="nav">
           <div class="nav-item"><span class="idx">01</span>General</div>
           <div class="nav-item"><span class="idx">02</span>Football</div>
@@ -224,6 +235,7 @@
           <div class="nav-item"><span class="idx">07</span>Shortcuts</div>
           <div class="nav-item"><span class="idx">08</span>Appearance</div>
           <div class="nav-item active"><span class="idx">09</span>Diagnostics</div>
+          <div class="nav-item"><span class="idx">10</span>History</div>
         </div>
         <div class="sidebar-meta">settings / v5</div>
       </div>
@@ -266,25 +278,33 @@
       01 General (engine / rotation &amp; priority / rotation-order
       list), 02 Football, 03 News, 04 Cmux, 05 Weather — all form
       sections using the same toggle / number-field-with-unit /
-      priority-toggle controls; 07 Shortcuts (6-row cheatsheet with
+      priority-toggle controls (Weather's units toggle is a 2-option
+      segmented control, 2 columns — plan 119 fixed a dead 3rd grid
+      column it used to hardcode); 07 Shortcuts (6-row cheatsheet with
       raised kbd caps, all <code>active</code>); 08 Appearance (card
       shape segmented controls + live preview rendering the real
-      StatusRailCard, plus per-source test buttons). These are
-      documented in DESIGN.html §06 and unchanged. One watch-out for
-      whoever touches card visuals next: the Appearance preview renders
-      the real <code>StatusRailCard</code> through
-      <code>src/settings/preview-overlay.css</code>, a scoped mirror of
-      <code>src/styles.css</code> — any 079 card change must update
-      both in the same commit (DESIGN.html Law #7).
+      StatusRailCard, plus per-source test buttons); 10 History (plan
+      089, postdates this whole mockup — a plain reverse-chronological
+      list of past notifications with a Clear action). These are
+      documented in DESIGN.html §06 and unchanged except where noted.
+      2026-07-23 correction: the old watch-out here — that the
+      Appearance preview renders <code>StatusRailCard</code> through a
+      hand-maintained scoped copy, <code>src/settings/preview-overlay.css</code>,
+      needing a matching edit on every card change (DESIGN.html Law #7)
+      — is gone. Plan 111 killed that "mirror law" entirely:
+      <code>src/overlay-card.css</code> is now the single stylesheet
+      both the overlay and the Appearance preview import directly (each
+      wraps its instance in a shared, neutral <code>.card-root</code>
+      class), so there is nothing left to keep in sync by hand.
     </p>
   </section>
 
   <footer class="page-foot">
-    Open control-panel items on record: plan 059 (notification history —
-    would add a 10th sidebar section, privacy decision unresolved, P3
-    spike), plan 068 (test-notification coverage — Rust tests only, no
-    UI), plan 071 (docs truth pass — test counts). Everything else
-    settings-related is shipped.
+    Historical open-items list, since resolved: plan 059 (notification
+    history) shipped as the 10th sidebar section (plan 089, "History" —
+    now in both sidebar navs above); plan 068 (test-notification
+    coverage) and plan 071 (docs truth pass) are also done. Everything
+    settings-related is shipped as of 2026-07-23.
   </footer>
 </main>
 </body>

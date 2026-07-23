@@ -392,18 +392,15 @@
   border-color: rgba(127, 224, 141, 0.28);
 }
 
+/* 2026-07-23 truth-sync: plan 105 removed the pulsing live-dot animation repo-wide (it read as
+   distracting in peripheral vision) — steady glow only now. No `animation` property or
+   `@keyframes live-dot-pulse` survives. */
 .src-chip .live-dot {
   width: 4px;
   height: 4px;
   border-radius: 50%;
   background: #7fe08d;
   box-shadow: 0 0 6px rgba(127, 224, 141, 0.9);
-  animation: live-dot-pulse 1.6s ease-in-out infinite;
-}
-
-@keyframes live-dot-pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.35; }
 }
 
 /* ==== news card v5: category system ==== */
@@ -551,8 +548,18 @@ button.ctl.active { background: #3b4757; border-color: #5b7089; }
   This page mirrored the shipped overlay <b>as of the <code>89850b6</code> sync commit above</b> —
   <code>src/styles.css</code> was copied verbatim above and the DOM matched <code>StatusRailCard.tsx</code> /
   <code>Track.tsx</code> / <code>Manifest.tsx</code> / <code>IdleView.tsx</code> at that point. The overlay has
-  since moved on (CSS-grid <code>.card-assembly</code>); see the HISTORICAL banner above — <code>src/styles.css</code>
+  since moved on (CSS-grid <code>.card-assembly</code>); see the HISTORICAL banner above — <code>src/overlay-card.css</code>
   is the current authority, not this page.
+</p>
+<p class="note">
+  2026-07-23 truth-sync pass: this <code>.rail-card</code> single-shell shape predates plan 091's
+  cutout/flank grid entirely (no <code>.flank-left</code>/<code>.flank-right</code>/<code>.below-block</code>/
+  gill vocabulary here at all), so today's minimal-notch merge (bare curved shape, hover-reveal, dots
+  persisting through showing) cannot be represented in this DOM without a structural rewrite — out of scope
+  for a surgical pass, and plan 106 already decided against re-syncing this file's CSS wholesale. The one
+  narrow, verifiable fix applied: the <code>.live-dot</code> pulsing animation (plan 105 removed pulsing
+  status/live dots repo-wide, steady glow only) is now static here too. Everything else on this page should
+  still be read as historical, per the banner above.
 </p>
 
 <div class="appearance-bar" id="appearance-bar">
