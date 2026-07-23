@@ -1,6 +1,7 @@
 use std::collections::VecDeque;
 use std::time::{Duration, Instant};
 
+use serde::Serialize;
 use uuid::Uuid;
 
 use crate::error::QueueError;
@@ -11,6 +12,49 @@ pub struct QueueItem {
     pub enqueued_at: Instant,
     pub promoted_at: Option<Instant>,
     pub extension_secs: u64,
+}
+
+/// Read-only wire summary of a single WAITING item — the settings
+/// window's Queue section (plan 121). Deliberately a projection, not
+/// `QueueItem` itself: `QueueItem` carries `Instant`s (not serializable)
+/// and internal bookkeeping the settings window has no business seeing.
+/// `priority`/`source` are plain lowercase strings rather than the
+/// `Priority`/`SourceKind` enums directly — see `priority_tier_label`/
+/// `source_kind_label` just below.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub struct QueueItemSummary {
+    pub title: String,
+    pub priority: String,
+    pub source: String,
+}
+
+/// `Priority` already derives `Serialize` (`rename_all = "snake_case"`),
+/// but `QueueItemSummary.priority` is a plain `String` field (plan 121),
+/// not the enum itself — an explicit, exhaustive match keeps this in
+/// lockstep with `Priority`'s own wire spelling without round-tripping
+/// through `serde_json` for a three-variant enum. Exhaustive on purpose:
+/// a future `Priority` variant fails to compile here until labeled.
+fn priority_tier_label(priority: Priority) -> String {
+    match priority {
+        Priority::Low => "low",
+        Priority::Medium => "medium",
+        Priority::High => "high",
+    }
+    .to_string()
+}
+
+/// Same rationale as `priority_tier_label`, for `SourceKind` (event.rs's
+/// `origin` field is the "source-ish field" `QueueItemSummary.source`
+/// derives from — plan 121 step 1).
+fn source_kind_label(source: SourceKind) -> String {
+    match source {
+        SourceKind::Football => "football",
+        SourceKind::News => "news",
+        SourceKind::Manual => "manual",
+        SourceKind::Cmux => "cmux",
+        SourceKind::Weather => "weather",
+    }
+    .to_string()
 }
 
 /// A single-slot, priority-ordered notification queue with bounded
@@ -601,6 +645,52 @@ impl SingleSlotQueue {
 
     pub fn total_waiting(&self) -> usize {
         self.waiting.iter().map(|t| t.len()).sum()
+    }
+
+    /// Read-only summary of every WAITING item (never `visible`) for the
+    /// settings window's Queue section (plan 121). Ordered tiers
+    /// high -> normal -> low — the same order `pop_highest_priority_waiting`
+    /// promotes from — then FIFO (arrival order) within each tier: display
+    /// order, not `rotation_order`-aware pick order, since every waiting
+    /// item is shown at once rather than picked one at a time.
+    pub fn waiting_summaries(&self) -> Vec<QueueItemSummary> {
+        let mut out = Vec::with_capacity(self.total_waiting());
+        for tier in (0..3).rev() {
+            for item in &self.waiting[tier] {
+                out.push(QueueItemSummary {
+                    title: item.event.payload.title.clone(),
+                    priority: priority_tier_label(item.event.priority),
+                    source: source_kind_label(item.event.origin),
+                });
+            }
+        }
+        out
+    }
+
+    /// Drops every WAITING item across all three tiers — the settings
+    /// window's "Clear queue" action (plan 121). The visible card is
+    /// untouched; it finishes its normal ttl/rotation. Returns the count
+    /// dropped.
+    ///
+    /// `batch_total` is recomputed rather than left stale: the invariant
+    /// `current_slot_state` depends on ("done never reaches total while an
+    /// item is visible") is preserved by pinning `batch_total` to
+    /// `batch_done` plus one more if something is still visible — mirrors
+    /// `reset_batch_if_idle`'s reasoning (drained -> counters reflect
+    /// "nothing left to do") one step further: drained-of-WAITING, with a
+    /// visible item still mid-turn, reads as "on the last segment" rather
+    /// than stalling at whatever `batch_total` happened to be before the
+    /// clear. `reset_batch_if_idle` still runs after, for the fully-idle
+    /// case (nothing visible either) — it zeroes both counters, superseding
+    /// the pin below.
+    pub fn clear_waiting(&mut self) -> usize {
+        let dropped = self.total_waiting();
+        for tier in self.waiting.iter_mut() {
+            tier.clear();
+        }
+        self.batch_total = self.batch_done + usize::from(self.visible.is_some());
+        self.reset_batch_if_idle();
+        dropped
     }
 
     /// plan 033 decision 4: fully idle (nothing visible, every tier empty)
@@ -3108,6 +3198,118 @@ mod tests {
         q.skip_visible(t0 + Duration::from_secs(5));
         assert_eq!(visible_title(&q), Some("r"));
         assert_eq!(queue_progress(&q), (3, 2));
+    }
+
+    // ------------------------------------------------------------------
+    // plan 121: waiting_summaries / clear_waiting (settings window Queue
+    // section)
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn waiting_summaries_orders_tiers_high_to_low_then_fifo_within_tier() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        // visible slot takes the first enqueue regardless of tier — fill
+        // it with something distinct so every summary below is genuinely
+        // a WAITING item, never `visible`.
+        q.enqueue(event("visible", Priority::High, 8), t0).unwrap();
+        q.enqueue(event("low-1", Priority::Low, 8), t0).unwrap();
+        q.enqueue(event("low-2", Priority::Low, 8), t0).unwrap();
+        q.enqueue(event("high-1", Priority::High, 8), t0).unwrap();
+        q.enqueue(event("medium-1", Priority::Medium, 8), t0)
+            .unwrap();
+        q.enqueue(event("high-2", Priority::High, 8), t0).unwrap();
+
+        let summaries = q.waiting_summaries();
+        let titles: Vec<&str> = summaries.iter().map(|s| s.title.as_str()).collect();
+        assert_eq!(titles, ["high-1", "high-2", "medium-1", "low-1", "low-2"]);
+        assert_eq!(summaries[0].priority, "high");
+        assert_eq!(summaries[2].priority, "medium");
+        assert_eq!(summaries[3].priority, "low");
+        // every summary in this test shares one origin (`event()`'s
+        // fixture default) — pins that `source` round-trips at all.
+        assert!(summaries.iter().all(|s| s.source == "manual"));
+    }
+
+    #[test]
+    fn waiting_summaries_is_empty_when_nothing_is_waiting() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue(event("only-visible", Priority::Medium, 8), t0)
+            .unwrap();
+        assert!(q.waiting_summaries().is_empty());
+    }
+
+    #[test]
+    fn clear_waiting_empties_every_tier_and_returns_the_dropped_count() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue(event("visible", Priority::Medium, 8), t0)
+            .unwrap();
+        q.enqueue(event("low", Priority::Low, 8), t0).unwrap();
+        q.enqueue(event("medium", Priority::Medium, 8), t0).unwrap();
+        q.enqueue(event("high", Priority::High, 8), t0).unwrap();
+
+        assert_eq!(q.clear_waiting(), 3);
+        assert!(q.waiting_summaries().is_empty());
+        // the visible card is untouched by a clear
+        assert_eq!(visible_title(&q), Some("visible"));
+    }
+
+    #[test]
+    fn clear_waiting_is_a_noop_returning_zero_when_nothing_is_waiting() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue(event("visible", Priority::Medium, 8), t0)
+            .unwrap();
+        assert_eq!(q.clear_waiting(), 0);
+        assert_eq!(visible_title(&q), Some("visible"));
+    }
+
+    #[test]
+    fn clear_waiting_preserves_the_done_never_reaches_total_invariant() {
+        // Three enqueued (batch_total 3), one already completed
+        // (batch_done 1), one visible, one still waiting — clearing the
+        // one waiting item must not leave `batch_total` stale at 3 (which
+        // would make the dots look like there's still a second item to
+        // go): with the visible item still up, `total` becomes
+        // `done + 1` so the current segment reads as the last one.
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue(event("a", Priority::Medium, 1), t0).unwrap();
+        q.enqueue(event("b", Priority::Medium, 8), t0).unwrap();
+        q.enqueue(event("c", Priority::Medium, 8), t0).unwrap();
+        q.tick(t0 + Duration::from_secs(2)); // a completes, b promotes
+        assert_eq!(visible_title(&q), Some("b"));
+        assert_eq!(queue_progress(&q), (3, 1));
+
+        let dropped = q.clear_waiting();
+        assert_eq!(dropped, 1); // only "c" was waiting
+        assert_eq!(visible_title(&q), Some("b")); // untouched
+        assert_eq!(queue_progress(&q), (2, 1)); // done never reaches total
+    }
+
+    #[test]
+    fn clear_waiting_resets_batch_counters_to_zero_when_nothing_is_visible_either() {
+        // Paused with nothing promoted: visible is None, waiting nonempty.
+        // Clearing drains to fully idle, so `reset_batch_if_idle` zeroes
+        // both counters rather than pinning `batch_total` to `batch_done
+        // + 0` (which would read the same here, but this pins the actual
+        // mechanism, not just the resulting numbers).
+        let mut q = SingleSlotQueue::new(50);
+        q.pause();
+        let t0 = Instant::now();
+        q.enqueue(event("a", Priority::Medium, 8), t0).unwrap();
+        q.enqueue(event("b", Priority::Medium, 8), t0).unwrap();
+        assert_eq!(visible_title(&q), None);
+        // Nothing is visible (paused), so `current_slot_state()` is
+        // `Empty` — `queue_progress`'s Showing-only match would panic
+        // here, hence the direct field reads (private fields are
+        // reachable from this same-file `tests` submodule).
+        assert_eq!((q.batch_total, q.batch_done), (2, 0));
+
+        assert_eq!(q.clear_waiting(), 2);
+        assert_eq!((q.batch_total, q.batch_done), (0, 0));
     }
 }
 

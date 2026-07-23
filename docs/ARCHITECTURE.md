@@ -579,6 +579,11 @@ acl) is unchanged; only the count grew. `src-tauri/build.rs` and
 ×2, connector-health, log-lines added); `src-tauri/build.rs` is the
 authority.
 
+**amended 2026-07-23**: as of 2026-07-23 the count is fourteen (plan
+121 added `get_queue`, `clear_queue`, `skip_current` — queue
+visibility and controls in the settings window); `src-tauri/build.rs`
+is the authority.
+
 this boundary matters if the app ever processes untrusted content (e.g.,
 whatsapp messages from unknown senders in v3). establishing the
 one-way data flow in v1 means v3 doesn't accidentally open a hole.

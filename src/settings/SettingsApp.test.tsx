@@ -8,6 +8,7 @@ import {
   type HistoryEntry,
   type HistoryRotationSpec,
   type PriorityLevel,
+  type QueueItemSummary,
   type SecretStatus,
   SettingsApp,
 } from "./SettingsApp";
@@ -1200,6 +1201,119 @@ describe("SettingsApp", () => {
     await screen.findByLabelText("Enable now playing");
     expect(screen.queryByText(/adapter.enabled/i)).toBeNull();
     expect(screen.queryByLabelText(/kill switch/i)).toBeNull();
+  });
+
+  // plan 121: settings-window queue visibility + clear/skip.
+  describe("Queue section (plan 121)", () => {
+    const waitingHigh: QueueItemSummary = {
+      title: "High priority waiting item",
+      priority: "high",
+      source: "football",
+    };
+    const waitingLow: QueueItemSummary = {
+      title: "Low priority waiting item",
+      priority: "low",
+      source: "manual",
+    };
+
+    function mockQueue(items: QueueItemSummary[]) {
+      mockIPC((command) => {
+        if (command === "get_config") return config;
+        if (command === "get_secret_status") return unsetSecrets;
+        if (command === "get_default_config") return rustConfigDefaults;
+        if (command === "get_queue") return items;
+      });
+    }
+
+    async function openQueue() {
+      render(<SettingsApp />);
+      await screen.findByRole("heading", { level: 1, name: "General" });
+      fireEvent.click(screen.getByRole("button", { name: "Queue" }));
+      await screen.findByRole("heading", { level: 1, name: "Queue" });
+    }
+
+    it("renders waiting items with a title and a priority tag, from a mocked get_queue", async () => {
+      mockQueue([waitingHigh, waitingLow]);
+      await openQueue();
+
+      expect(await screen.findByText("High priority waiting item")).toBeTruthy();
+      expect(screen.getByText("Low priority waiting item")).toBeTruthy();
+      const rows = screen
+        .getAllByText(/waiting item$/)
+        .filter((el) => el.classList.contains("queue-title"));
+      expect(rows).toHaveLength(2);
+    });
+
+    it("renders the empty state when nothing is waiting", async () => {
+      mockQueue([]);
+      await openQueue();
+
+      expect(await screen.findByText("Queue is empty.")).toBeTruthy();
+    });
+
+    it("Skip current invokes skip_current and refetches the list", async () => {
+      const skipCurrent = vi.fn();
+      let queueItems: QueueItemSummary[] = [waitingHigh];
+      mockIPC((command) => {
+        if (command === "get_config") return config;
+        if (command === "get_secret_status") return unsetSecrets;
+        if (command === "get_default_config") return rustConfigDefaults;
+        if (command === "get_queue") return queueItems;
+        if (command === "skip_current") {
+          skipCurrent();
+          queueItems = [];
+          return null;
+        }
+      });
+      render(<SettingsApp />);
+      await screen.findByRole("heading", { level: 1, name: "General" });
+      fireEvent.click(screen.getByRole("button", { name: "Queue" }));
+      await screen.findByRole("heading", { level: 1, name: "Queue" });
+      await screen.findByText("High priority waiting item");
+
+      fireEvent.click(screen.getByRole("button", { name: "Skip current" }));
+      await waitFor(() => expect(skipCurrent).toHaveBeenCalledTimes(1));
+      expect(await screen.findByText("Skipped")).toBeTruthy();
+      await waitFor(() => expect(screen.getByText("Queue is empty.")).toBeTruthy());
+    });
+
+    it("Clear queue invokes clear_queue and refetches the list", async () => {
+      const clearQueue = vi.fn();
+      let queueItems: QueueItemSummary[] = [waitingHigh, waitingLow];
+      mockIPC((command) => {
+        if (command === "get_config") return config;
+        if (command === "get_secret_status") return unsetSecrets;
+        if (command === "get_default_config") return rustConfigDefaults;
+        if (command === "get_queue") return queueItems;
+        if (command === "clear_queue") {
+          clearQueue();
+          queueItems = [];
+          return 2;
+        }
+      });
+      render(<SettingsApp />);
+      await screen.findByRole("heading", { level: 1, name: "General" });
+      fireEvent.click(screen.getByRole("button", { name: "Queue" }));
+      await screen.findByRole("heading", { level: 1, name: "Queue" });
+      await screen.findByText("High priority waiting item");
+
+      fireEvent.click(screen.getByRole("button", { name: "Clear queue" }));
+      await waitFor(() => expect(clearQueue).toHaveBeenCalledTimes(1));
+      expect(await screen.findByText("Queue cleared")).toBeTruthy();
+      await waitFor(() => expect(screen.getByText("Queue is empty.")).toBeTruthy());
+    });
+
+    it("a failed get_queue reports an error via ActionStatus", async () => {
+      mockIPC((command) => {
+        if (command === "get_config") return config;
+        if (command === "get_secret_status") return unsetSecrets;
+        if (command === "get_default_config") return rustConfigDefaults;
+        if (command === "get_queue") return Promise.reject("disk error");
+      });
+      await openQueue();
+
+      expect(await screen.findByText("Couldn't load the queue")).toBeTruthy();
+    });
   });
 });
 

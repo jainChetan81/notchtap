@@ -148,6 +148,20 @@ export interface HistoryEntry {
   event: HistoryEvent;
 }
 
+// Wire shape of get_queue (plan 121) — mirrors QueueItemSummary in
+// src-tauri/src/queue.rs. `priority`/`source` are plain lowercase
+// strings on the rust side, produced by an exhaustive match rather than
+// serialized from the `Priority`/`SourceKind` enums directly — but the
+// wire spelling is identical to `PriorityLevel`/`SourceKind` elsewhere
+// in this file, so those existing types (and their label maps) apply
+// here unchanged rather than duplicating a third "priority string"
+// type.
+export interface QueueItemSummary {
+  title: string;
+  priority: PriorityLevel;
+  source: SourceKind;
+}
+
 export type SecretField = keyof SecretStatus;
 
 export type TestSource = "football" | "news" | "cmux" | "manual" | "weather";

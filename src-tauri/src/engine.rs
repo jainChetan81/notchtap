@@ -218,11 +218,12 @@ impl<R: tauri::Runtime> Engine<R> {
     /// queue time), locks, runs `f`, captures slot_state_if_changed,
     /// unlocks, notify_waiters, emits. Emit stays after unlock — the
     /// known deferred reordering (plans/README.md); now one site.
-    // Today every async mutation is an ingest (`accept`); `apply` is the
-    // door the next async mutation site must walk through — the seam only
-    // works if it exists before it's needed. Exercised by this module's
-    // tests.
-    #[allow(dead_code)]
+    // The seam this doc comment predicted before it had a second caller
+    // (`accept` was the only async mutation): plan 121's `clear_queue`/
+    // `skip_current` settings commands are the next async mutation sites,
+    // walking through this same door rather than hand-rolling their own
+    // lock/mutate/wake/emit — no bespoke Engine wrapper method needed for
+    // either, `apply` IS the wrapper.
     pub async fn apply<T>(&self, f: impl FnOnce(&mut SingleSlotQueue, Instant) -> T) -> T {
         let now = Instant::now();
         let (out, slot_change) = {
@@ -1126,5 +1127,75 @@ mod tests {
         let app = tauri::test::mock_app();
         let engine = test_engine(&app);
         assert!(engine.history_store().is_none());
+    }
+
+    // plan 121: settings-window Queue section — `clear_waiting`, called
+    // through `apply` (no bespoke Engine method needed; see `apply`'s own
+    // doc comment above), must reach the overlay as a fresh slot-state
+    // emit so the visible card's progress dots update. This is
+    // `apply`'s existing `slot_state_if_changed`-gated emit, exercised
+    // here specifically for a mutation that changes `queue_total`
+    // without touching `visible` at all — the case `apply_wakes_and_emits`
+    // above doesn't cover.
+    #[tokio::test]
+    async fn clear_queue_apply_emits_a_fresh_slot_state_for_the_progress_dots() {
+        let app = tauri::test::mock_app();
+        let engine = test_engine(&app);
+
+        // one promotes to visible, one is left WAITING.
+        engine.accept(event(Priority::Medium), false).await.unwrap();
+        engine.accept(event(Priority::Medium), false).await.unwrap();
+
+        let emit_count = Arc::new(AtomicUsize::new(0));
+        {
+            use tauri::Listener;
+            let counter = emit_count.clone();
+            app.handle().listen(SLOT_STATE_EVENT, move |_| {
+                counter.fetch_add(1, Ordering::SeqCst);
+            });
+        }
+
+        let dropped = engine.apply(|q, _now| q.clear_waiting()).await;
+        assert_eq!(dropped, 1);
+        assert_eq!(
+            emit_count.load(Ordering::SeqCst),
+            1,
+            "clear_waiting changing queue_total (batch_total) while a card is still visible \
+             must produce exactly one fresh slot-state emit — the settings window's Clear \
+             queue action has no other way to update the overlay's progress dots"
+        );
+    }
+
+    // The companion case: nothing visible, nothing left waiting after the
+    // clear — `current_slot_state()` was `Empty` before and stays `Empty`
+    // after, so there is genuinely nothing for the wire to say and `apply`
+    // correctly emits nothing. Paused so the second enqueue stays WAITING
+    // rather than promoting into `visible` (mirrors
+    // `pause_sends_enqueues_to_waiting_even_with_free_slot` in queue.rs).
+    #[tokio::test]
+    async fn clear_queue_apply_emits_nothing_when_nothing_was_ever_visible() {
+        let app = tauri::test::mock_app();
+        let engine = test_engine(&app);
+        engine.apply(|q, _now| q.pause()).await;
+
+        engine.accept(event(Priority::Medium), false).await.unwrap();
+
+        let emit_count = Arc::new(AtomicUsize::new(0));
+        {
+            use tauri::Listener;
+            let counter = emit_count.clone();
+            app.handle().listen(SLOT_STATE_EVENT, move |_| {
+                counter.fetch_add(1, Ordering::SeqCst);
+            });
+        }
+
+        let dropped = engine.apply(|q, _now| q.clear_waiting()).await;
+        assert_eq!(dropped, 1);
+        assert_eq!(
+            emit_count.load(Ordering::SeqCst),
+            0,
+            "Empty -> Empty is not a slot-state change; get_queue's own refetch (not a wire \
+             emit) is how the settings window learns the list is now empty"
+        );
     }
 }
