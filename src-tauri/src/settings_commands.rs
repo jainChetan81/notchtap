@@ -76,21 +76,25 @@ mod tests {
         assert!(SETTINGS_COMMANDS.contains(&"skip_current"));
     }
 
-    // Parity guard #1: capabilities/settings.json's `allow-*` permissions
-    // must be exactly `allow-<kebab-case(name)>` for every name in
-    // SETTINGS_COMMANDS — nothing missing, nothing extra. A command added
-    // to SETTINGS_COMMANDS (and therefore to build.rs's allowlist and
-    // lib.rs's generate_handler!, per the other guard below) but never
-    // granted here would compile clean and pass every other test while
-    // being unreachable at runtime — a quieter failure than the fail-open
-    // case this whole triple exists to prevent, but still drift this test
-    // exists to catch in either direction.
+    // Parity guard #1: capabilities/settings.json's FULL permissions array
+    // (plan 124 R5(a) — not just the entries that happen to start with
+    // "allow-", the previous version's filter) must be exactly the
+    // command permissions derived from SETTINGS_COMMANDS plus the two
+    // pinned event extras below, nothing missing and nothing extra. The
+    // previous filtered version had a blind spot: a namespaced plugin
+    // grant like "shell:allow-execute" does not start with the literal
+    // "allow-" this test used to filter on, so it would silently pass
+    // through unaudited — widening the window's real capability grant
+    // (e.g. shell access) without this test ever noticing. Comparing the
+    // WHOLE set against the WHOLE expected set closes that: any such
+    // grant now fails loudly as "extra" rather than being invisible to
+    // the filter.
     #[test]
     fn settings_json_permissions_match_exactly() {
         let raw = include_str!("../capabilities/settings.json");
         let doc: serde_json::Value =
             serde_json::from_str(raw).expect("capabilities/settings.json must parse as JSON");
-        let permissions: Vec<String> = doc["permissions"]
+        let permissions: BTreeSet<String> = doc["permissions"]
             .as_array()
             .expect("capabilities/settings.json must have a top-level \"permissions\" array")
             .iter()
@@ -101,30 +105,25 @@ mod tests {
             })
             .collect();
 
-        let command_permissions: BTreeSet<String> = permissions
-            .iter()
-            .filter(|p| p.starts_with("allow-"))
-            .cloned()
-            .collect();
-
-        let expected: BTreeSet<String> = SETTINGS_COMMANDS
+        let mut expected: BTreeSet<String> = SETTINGS_COMMANDS
             .iter()
             .map(|name| format!("allow-{}", name.replace('_', "-")))
             .collect();
-
-        assert_eq!(
-            command_permissions, expected,
-            "capabilities/settings.json's allow-* permissions have drifted from \
-             SETTINGS_COMMANDS (src/settings_commands.rs) — every command in that canonical \
-             list must have exactly one allow-<kebab-case> permission here, and nothing extra"
-        );
-
         // Not part of the command triple, but losing either of these
         // silently breaks the settings window in a different, quieter
         // way (no event delivery) — pinned here too since this test
         // already owns settings.json's full permission list.
-        assert!(permissions.iter().any(|p| p == "core:event:allow-listen"));
-        assert!(permissions.iter().any(|p| p == "core:event:allow-unlisten"));
+        expected.insert("core:event:allow-listen".to_string());
+        expected.insert("core:event:allow-unlisten".to_string());
+
+        assert_eq!(
+            permissions, expected,
+            "capabilities/settings.json's full permissions array has drifted from \
+             SETTINGS_COMMANDS (src/settings_commands.rs) plus the pinned core:event extras — \
+             every entry must be either allow-<kebab-case> for a command in that canonical \
+             list, or one of the two event-channel extras, and nothing else (a namespaced \
+             plugin grant like shell:allow-execute must fail here)"
+        );
     }
 
     // Parity guard #2: lib.rs's `generate_handler![...]` must register
@@ -137,6 +136,22 @@ mod tests {
     fn generate_handler_registers_exactly_the_canonical_commands() {
         let lib_src = include_str!("lib.rs");
         let marker = "tauri::generate_handler![";
+
+        // plan 124 R5(b): this test's own `.find(marker)` below only ever
+        // parses the FIRST occurrence — a second, accidental
+        // `generate_handler![...]` invocation (e.g. a copy-pasted
+        // registration for a future window) could register an
+        // unauthorized command in a SECOND block this test would never
+        // even look at, passing clean. Pinning the occurrence count to
+        // exactly one closes that blind spot before the parse below ever
+        // runs.
+        assert_eq!(
+            lib_src.matches(marker).count(),
+            1,
+            "lib.rs must contain exactly one tauri::generate_handler![...] invocation — a \
+             second occurrence would register commands this parity test never inspects"
+        );
+
         let start = lib_src
             .find(marker)
             .expect("lib.rs must have a tauri::generate_handler![...] invocation");

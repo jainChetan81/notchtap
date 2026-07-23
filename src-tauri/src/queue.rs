@@ -616,6 +616,61 @@ impl SingleSlotQueue {
         }
         self.promote_next(now);
         self.reset_batch_if_idle();
+        self.reanchor_wire_if_skip_repromoted_the_last_emitted_item();
+    }
+
+    /// plan 124 R1: a skip's re-promotion can land the exact same item id
+    /// that was already the last thing sent over the wire — the only path
+    /// is a Recurring item that's the sole occupant of its Priority tier,
+    /// so `skip_visible`'s requeue-then-`promote_next` pulls it straight
+    /// back out with a fresh `promoted_at` (the plan's scenario: a lone
+    /// Recurring item skipped mid-turn, after it auto-expanded at the
+    /// half-window mark). `SlotState::dedup_eq` deliberately excludes
+    /// `remaining_ms` (the CLAUDE.md rule — continuously-varying wire
+    /// fields must never fall into derived `PartialEq`) and every OTHER
+    /// field of the re-promoted Showing state is identical to what's
+    /// cached in `last_emitted` (same id, same ttl_ms once
+    /// `set_expanded_for_promotion` resets `window_expanded`/
+    /// `extension_secs`, same `expanded`/`queue_total`/`queue_done`) — so
+    /// without this, `slot_state_if_changed` would read "unchanged" and
+    /// never re-emit; the overlay's TTL bar would sit stale at wherever it
+    /// was on skip, for up to half a window, until some unrelated real
+    /// change forced the next emit.
+    ///
+    /// The fix lives here, not in `dedup_eq` itself: clearing
+    /// `last_emitted` forces the NEXT `slot_state_if_changed` call to hit
+    /// its `None` arm (its "first-ever emission" case), re-anchoring the
+    /// wire with the restarted `remaining_ms` — `dedup_eq`'s own
+    /// `remaining_ms` exclusion is untouched and still guards every other
+    /// tick against the plan-081 double-emission bug.
+    ///
+    /// `ttl_sample` is cleared in the same breath, for the ttl-restart
+    /// detector's sake (`observe_emission_for_ttl_restart`, below):  that
+    /// function already treats "no previous sample for this id" as
+    /// "nothing to compare, don't warn" — its `_ => false` arm, the same
+    /// path a fresh promotion (different id) or an Empty state takes. A
+    /// skip's restart is INTENTIONAL (skip means "start this item's turn
+    /// over"), not the backend-wire bug the detector exists to catch, so
+    /// resetting the sample here keeps it silent for exactly this case
+    /// without touching `is_ttl_restart` or any other call site — a
+    /// genuine restart (no skip in between) still finds its `ttl_sample`
+    /// intact and still warns.
+    ///
+    /// Only fires when the freshly promoted item's id actually matches
+    /// `last_emitted`'s: every other skip outcome (a different waiting
+    /// item promoted, the OneShot-drop case, nothing left to promote)
+    /// leaves both caches untouched.
+    fn reanchor_wire_if_skip_repromoted_the_last_emitted_item(&mut self) {
+        let Some(SlotState::Showing { id: last_id, .. }) = self.last_emitted.as_ref() else {
+            return;
+        };
+        let Some(visible) = self.visible.as_ref() else {
+            return;
+        };
+        if visible.event.id == *last_id {
+            self.last_emitted = None;
+            self.ttl_sample = None;
+        }
     }
 
     pub fn current_priority(&self) -> Option<Priority> {
@@ -1951,6 +2006,121 @@ mod tests {
         assert_eq!(waiting_titles(&q, Priority::Medium as usize), vec!["recur"]);
     }
 
+    // plan 124 R1: skipping the sole Recurring item in its tier requeues
+    // it then immediately re-promotes it (`promote_next` has nothing else
+    // to pick) — the exact re-anchor scenario
+    // `reanchor_wire_if_skip_repromoted_the_last_emitted_item` exists for.
+    // `promoted_at` is backdated off a REAL `Instant::now()` anchor, same
+    // technique as `remaining_ms_freezes_during_a_hover_session_and_
+    // resumes_after` — `current_slot_state`'s non-hovering branch always
+    // reads the real clock for `remaining_ms`, so a simulated/offset clock
+    // here would desync from it.
+    #[test]
+    fn skip_of_a_lone_recurring_item_forces_a_fresh_emit_with_restarted_remaining_ms() {
+        let mut q = SingleSlotQueue::new(50);
+        q.enqueue(
+            recurring_event("recur", Priority::Medium, 8),
+            Instant::now(),
+        )
+        .unwrap();
+
+        // seed last_emitted/ttl_sample exactly as the real wire path would.
+        let first = q.slot_state_if_changed().expect("promotion must emit");
+        let first_id = match first {
+            SlotState::Showing { id, .. } => id,
+            SlotState::Empty => panic!("expected a showing slot"),
+        };
+
+        // 4s of the 8s window has already "elapsed" — mimics the plan's
+        // "auto-expanded first half-window" scenario.
+        let backdated = Instant::now() - Duration::from_secs(4);
+        q.visible.as_mut().unwrap().promoted_at = Some(backdated);
+
+        q.skip_visible(Instant::now());
+
+        // dedup_eq alone would suppress this (id/ttl_ms/expanded/queue
+        // fields are all unchanged) — the fix must force it through.
+        let second = q.slot_state_if_changed().expect(
+            "skip's re-promotion of the same item must force a fresh emit, not be dedup-suppressed",
+        );
+        let (second_id, second_remaining) = match second {
+            SlotState::Showing {
+                id, remaining_ms, ..
+            } => (id, remaining_ms),
+            SlotState::Empty => panic!("expected a showing slot"),
+        };
+        assert_eq!(second_id, first_id, "same item, re-promoted");
+        assert!(
+            second_remaining >= 7_800,
+            "expected remaining_ms to have restarted to ~8000ms after the skip, got {second_remaining}"
+        );
+    }
+
+    // plan 124 R1: the ttl-restart detector must stay silent for exactly
+    // this intentional case — the restart it would otherwise see is skip's
+    // own doing, not a backend-wire bug.
+    #[test]
+    fn skip_of_a_lone_recurring_item_never_warns_the_ttl_restart_detector() {
+        let mut q = SingleSlotQueue::new(50);
+        q.enqueue(
+            recurring_event("recur", Priority::Medium, 8),
+            Instant::now(),
+        )
+        .unwrap();
+
+        // seed BOTH `last_emitted` (what makes the reanchor guard fire at
+        // all) and `ttl_sample` — the real wire path, same as
+        // `skip_of_a_lone_recurring_item_forces_a_fresh_emit_with_
+        // restarted_remaining_ms` above.
+        assert!(q.slot_state_if_changed().is_some(), "promotion must emit");
+        assert!(
+            q.ttl_sample.is_some(),
+            "the seeding emission must have populated the ttl sample"
+        );
+
+        let backdated = Instant::now() - Duration::from_secs(4);
+        q.visible.as_mut().unwrap().promoted_at = Some(backdated);
+
+        q.skip_visible(Instant::now());
+        assert!(
+            q.ttl_sample.is_none(),
+            "skip's re-anchor must reset the sample so the next observation has nothing \
+             (mismatched) to compare against"
+        );
+
+        let second = q.current_slot_state();
+        assert!(
+            !q.observe_emission_for_ttl_restart(&second, Instant::now()),
+            "an intentional skip-triggered restart must never trip the ttl-restart warning"
+        );
+    }
+
+    // plan 124 R1: proves the reset above is scoped to the skip site only —
+    // a genuine backend-wire restart of the SAME item id, with no skip in
+    // between, must still warn.
+    #[test]
+    fn a_genuine_restart_with_no_skip_in_between_still_warns() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue(recurring_event("recur", Priority::Medium, 8), t0)
+            .unwrap();
+
+        let first = q.current_slot_state();
+        assert!(!q.observe_emission_for_ttl_restart(&first, t0));
+
+        // 5s pass, unhovered — a bug re-emits the full window again,
+        // without a skip anywhere in the sequence.
+        let t1 = t0 + Duration::from_secs(5);
+        let mut restarted_state = first.clone();
+        if let SlotState::Showing { remaining_ms, .. } = &mut restarted_state {
+            *remaining_ms = 8000;
+        }
+        assert!(
+            q.observe_emission_for_ttl_restart(&restarted_state, t1),
+            "a genuine restart with no intervening skip must still warn"
+        );
+    }
+
     #[test]
     fn pause_resume_pause_interleaving_never_double_promotes() {
         // single-slot model: only one item is ever visible at a time, so
@@ -3231,6 +3401,80 @@ mod tests {
         assert!(summaries.iter().all(|s| s.source == "manual"));
     }
 
+    // plan 124 R3: `source_kind_label` (used by `waiting_summaries`'
+    // `source` field) has five variants — until now only "manual" was
+    // pinned by name (the assertion above). `types.ts` claims this
+    // five-string union as a typed wire contract, so every spelling needs
+    // its own assert, not just coverage-by-coincidence of whichever
+    // origin a fixture happened to use.
+    #[test]
+    fn waiting_summaries_source_pins_all_five_source_kind_label_spellings() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        // visible slot absorbs the first enqueue — everything below stays
+        // WAITING, same technique as the test above.
+        q.enqueue(
+            event_from("visible", Priority::High, 8, SourceKind::Manual),
+            t0,
+        )
+        .unwrap();
+        q.enqueue(
+            event_from("f", Priority::Medium, 8, SourceKind::Football),
+            t0,
+        )
+        .unwrap();
+        q.enqueue(event_from("n", Priority::Medium, 8, SourceKind::News), t0)
+            .unwrap();
+        q.enqueue(event_from("m", Priority::Medium, 8, SourceKind::Manual), t0)
+            .unwrap();
+        q.enqueue(event_from("c", Priority::Medium, 8, SourceKind::Cmux), t0)
+            .unwrap();
+        q.enqueue(
+            event_from("w", Priority::Medium, 8, SourceKind::Weather),
+            t0,
+        )
+        .unwrap();
+
+        let summaries = q.waiting_summaries();
+        let by_title: std::collections::HashMap<&str, &str> = summaries
+            .iter()
+            .map(|s| (s.title.as_str(), s.source.as_str()))
+            .collect();
+        assert_eq!(by_title.get("f"), Some(&"football"));
+        assert_eq!(by_title.get("n"), Some(&"news"));
+        assert_eq!(by_title.get("m"), Some(&"manual"));
+        assert_eq!(by_title.get("c"), Some(&"cmux"));
+        assert_eq!(by_title.get("w"), Some(&"weather"));
+    }
+
+    // plan 124 R4(b): the settings window's Queue section shows WAITING
+    // items via `waiting_summaries` — a skipped Recurring item must stay
+    // visible there (requeued, not dropped), last in its own tier. Before
+    // this test the UI mock only encoded the OneShot intuition (skip =
+    // gone); this pins the Recurring contract at the queue layer, the
+    // settings window's actual data source.
+    #[test]
+    fn skip_of_a_recurring_visible_leaves_it_present_and_last_in_its_tier_in_waiting_summaries() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue(recurring_event("recur", Priority::Medium, 8), t0)
+            .unwrap(); // promotes immediately (fast path, empty queue)
+        q.enqueue(event("w1", Priority::Medium, 8), t0).unwrap();
+        q.enqueue(event("w2", Priority::Medium, 8), t0).unwrap();
+
+        q.skip_visible(t0);
+
+        assert_eq!(visible_title(&q), Some("w1"));
+        let summaries = q.waiting_summaries();
+        let titles: Vec<&str> = summaries.iter().map(|s| s.title.as_str()).collect();
+        assert_eq!(
+            titles,
+            ["w2", "recur"],
+            "a skipped Recurring item must requeue to the BACK of its own tier, still present \
+             in waiting_summaries — not dropped, the OneShot behavior"
+        );
+    }
+
     #[test]
     fn waiting_summaries_is_empty_when_nothing_is_waiting() {
         let mut q = SingleSlotQueue::new(50);
@@ -3287,6 +3531,17 @@ mod tests {
         assert_eq!(dropped, 1); // only "c" was waiting
         assert_eq!(visible_title(&q), Some("b")); // untouched
         assert_eq!(queue_progress(&q), (2, 1)); // done never reaches total
+
+        // plan 124 R4(a): a fresh enqueue AFTER the clear must not read the
+        // pinned `batch_total` from `clear_waiting` as though it were
+        // permanent bookkeeping — it's a one-shot pin for the
+        // already-cleared state, and a genuinely new item queued behind
+        // the still-visible "b" grows the batch normally from there:
+        // `batch_total` 2 -> 3, `batch_done` stays 1, i.e. `(done + 2,
+        // done)`.
+        q.enqueue(event("d", Priority::Medium, 8), t0).unwrap();
+        assert_eq!(visible_title(&q), Some("b")); // still untouched
+        assert_eq!(queue_progress(&q), (3, 1));
     }
 
     #[test]
@@ -3555,6 +3810,13 @@ mod proptest_queue {
         skipped_oneshot_dropped: u64,
         // invariant 7 probe state
         last_some_state: Option<SlotState>,
+        // plan 124 R1: set by `apply_skip` when Skip re-anchors the SAME
+        // visible item id (the `reanchor_wire_if_skip_repromoted_the_last_
+        // emitted_item` case) — see invariant 7's own comment for why this
+        // narrowly exempts exactly that step from the "never repeats"
+        // check. Reset to `false` at the top of every `apply` call so it
+        // only ever describes the step just taken.
+        last_op_was_skip_reanchor: bool,
     }
 
     impl Harness {
@@ -3570,6 +3832,7 @@ mod proptest_queue {
                 dismissed: 0,
                 skipped_oneshot_dropped: 0,
                 last_some_state: None,
+                last_op_was_skip_reanchor: false,
             }
         }
 
@@ -3589,6 +3852,7 @@ mod proptest_queue {
         }
 
         fn apply(&mut self, op: &Op) {
+            self.last_op_was_skip_reanchor = false;
             match op {
                 Op::Enqueue(spec) => self.apply_enqueue(spec),
                 Op::Tick(secs) => self.apply_tick(*secs),
@@ -3734,6 +3998,16 @@ mod proptest_queue {
                 }
             }
             let after_id = current_vis_id(&self.q);
+            // plan 124 R1: Skip re-anchoring the SAME id (a lone Recurring
+            // item requeued then immediately re-promoted, nothing else
+            // waiting to take its place) is the one case
+            // `reanchor_wire_if_skip_repromoted_the_last_emitted_item`
+            // forces a fresh wire emission for even when the new
+            // SlotState is otherwise dedup_eq to the last one emitted —
+            // see invariant 7 below for why that step is exempted from
+            // the "never repeats" check.
+            self.last_op_was_skip_reanchor =
+                matches!((&vis_before, after_id), (Some(v), Some(a)) if v.id == a);
             if paused {
                 assert!(
                     after_id.is_none(),
@@ -3802,13 +4076,33 @@ mod proptest_queue {
                 "invariant 5/6: enqueued-accepted count conservation violated"
             );
 
-            // invariant 7: slot_state_if_changed never repeats a state.
+            // invariant 7: slot_state_if_changed never repeats a state —
+            // EXCEPT the one plan-124-R1 case flagged above. That fix
+            // intentionally clears `last_emitted` (not weakens
+            // `dedup_eq`) so the wire re-anchors after a skip re-promotes
+            // the same item id; the resulting SlotState is normally still
+            // dedup_eq-DIFFERENT from the last one in production (real
+            // wall-clock time separates the original promotion from the
+            // skip, so `remaining_ms` — the one field dedup_eq excludes —
+            // is never the only thing that moved). This harness can run
+            // an Enqueue immediately followed by a Skip within the same
+            // real-time millisecond, though, since `remaining_ms` is
+            // always computed from the REAL clock (`current_slot_state`'s
+            // non-hovering branch), not the harness's own injected `now`
+            // — producing two byte-identical emissions purely by timing
+            // coincidence, not the plan-081 double-emission bug this
+            // invariant otherwise exists to catch. The guard below only
+            // exempts that one flagged step; every other op (including a
+            // Skip that does NOT re-anchor the same id) is still held to
+            // the full check.
             if let Some(state) = self.q.slot_state_if_changed() {
                 if let Some(prev) = &self.last_some_state {
-                    assert_ne!(
-                        &state, prev,
-                        "invariant 7: slot_state_if_changed returned the same state twice in a row"
-                    );
+                    if !self.last_op_was_skip_reanchor {
+                        assert_ne!(
+                            &state, prev,
+                            "invariant 7: slot_state_if_changed returned the same state twice in a row"
+                        );
+                    }
                 }
                 self.last_some_state = Some(state);
             }

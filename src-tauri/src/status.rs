@@ -327,6 +327,35 @@ mod tests {
         assert!(json["weather"]["current"].get("rain_pct").is_none());
     }
 
+    // plan 124 R2: pins `rain_pct: None`'s wire SHAPE, not just its value —
+    // same precedent as `serializes_live_as_null_when_nothing_in_play`
+    // (plan 104). The key assertion is `.get("rainPct").is_some()`: a
+    // future `#[serde(skip_serializing_if = "Option::is_none")]` added to
+    // `rain_pct` would make this field vanish from the JSON entirely on
+    // `None` rather than serialize as an explicit `null`, and the
+    // frontend's runtime validator (`useStatusState.ts`) rejects a
+    // MISSING key differently than an explicit `null` one — this guards
+    // against that regression landing silently.
+    #[test]
+    fn rain_pct_none_serializes_as_an_explicit_null_key_not_a_missing_one() {
+        let mut s = status(None);
+        s.weather = WeatherStatus {
+            enabled: true,
+            current: Some(WeatherSummary {
+                temp_display: "27°".to_string(),
+                condition: "Cloudy".to_string(),
+                is_day: true,
+                rain_pct: None,
+            }),
+        };
+        let json = serde_json::to_value(s).unwrap();
+        assert!(
+            json["weather"]["current"].get("rainPct").is_some(),
+            "rainPct key must be PRESENT (as an explicit null) even when rain_pct is None"
+        );
+        assert!(json["weather"]["current"]["rainPct"].is_null());
+    }
+
     #[test]
     fn change_guard_emits_once_then_stays_silent_until_a_real_change() {
         let mut last = None;
