@@ -81,6 +81,41 @@ pub struct WeatherSummary {
     /// most once per poll — never per tick — so a value change is a
     /// genuine content change the derived `PartialEq` must catch.
     pub rain_pct: Option<u8>,
+    /// plan 131: today's high/low, same `"{:.0}°"` format as
+    /// `temp_display` — `weather_poller.rs::diff_weather` reads these off
+    /// Open-Meteo's `daily` block (`forecast_days=1`, so index 0 is
+    /// always "today"). `None` when the `daily` block is missing or
+    /// malformed — never fails the whole summary for a missing forecast.
+    /// Same non-`dedup_eq` reasoning as `rain_pct`/`is_day` above: this
+    /// changes at most once per poll, so it belongs in the ordinary
+    /// derived `PartialEq` this struct already uses.
+    pub today_high_display: Option<String>,
+    pub today_low_display: Option<String>,
+    /// plan 131: the minimal forecast strip — exactly 3 points at +2h/
+    /// +4h/+6h from the poll's current hour (nearest hourly slots;
+    /// `weather_poller.rs::build_outlook` skips a point rather than
+    /// fabricating one when its target hour falls outside the fetched
+    /// window). Empty when hourly data is missing/malformed, same
+    /// "degrade to nothing, never fail the summary" discipline as
+    /// `rain_pct`. Same non-`dedup_eq` reasoning as the other fields on
+    /// this struct: changes at most once per poll.
+    pub outlook: Vec<OutlookPoint>,
+}
+
+/// plan 131: one point on the minimal forecast strip. `hour_label` is a
+/// local "HH:MM" string (`weather_poller.rs::build_outlook`, local
+/// because the request now carries `timezone=auto`) — the frontend
+/// renders it verbatim, never reformats a `Date`. `condition` is the
+/// same `condition_word()` mapping `WeatherSummary.condition` already
+/// uses, so `IdleHoverPeek.tsx` can feed it straight into the existing
+/// `weatherArtFor(condition, isDay)` lookup without a second table.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct OutlookPoint {
+    pub hour_label: String,
+    pub temp_display: String,
+    pub condition: String,
+    pub is_day: bool,
 }
 
 /// "News paused" in the idle rail means `enabled == false`: the polling
@@ -262,6 +297,18 @@ mod tests {
             condition: "Cloudy".to_string(),
             is_day: true,
             rain_pct: Some(40),
+            today_high_display: Some("30°".to_string()),
+            today_low_display: Some("22°".to_string()),
+            outlook: vec![outlook_point()],
+        }
+    }
+
+    fn outlook_point() -> OutlookPoint {
+        OutlookPoint {
+            hour_label: "15:00".to_string(),
+            temp_display: "29°".to_string(),
+            condition: "Rain".to_string(),
+            is_day: true,
         }
     }
 
@@ -325,6 +372,52 @@ mod tests {
         // plan 122: same camelCase discipline for the new field.
         assert_eq!(json["weather"]["current"]["rainPct"], 40);
         assert!(json["weather"]["current"].get("rain_pct").is_none());
+        // plan 131: same camelCase discipline for the forecast-strip fields.
+        assert_eq!(json["weather"]["current"]["todayHighDisplay"], "30°");
+        assert_eq!(json["weather"]["current"]["todayLowDisplay"], "22°");
+        assert!(json["weather"]["current"]
+            .get("today_high_display")
+            .is_none());
+        assert!(json["weather"]["current"]
+            .get("today_low_display")
+            .is_none());
+        let outlook = json["weather"]["current"]["outlook"].as_array().unwrap();
+        assert_eq!(outlook.len(), 1);
+        assert_eq!(outlook[0]["hourLabel"], "15:00");
+        assert_eq!(outlook[0]["tempDisplay"], "29°");
+        assert_eq!(outlook[0]["condition"], "Rain");
+        assert_eq!(outlook[0]["isDay"], true);
+        assert!(outlook[0].get("hour_label").is_none());
+    }
+
+    // plan 131: pins `today_high_display`/`today_low_display: None`'s wire
+    // SHAPE, not just its value — same precedent as `rain_pct`'s own null
+    // pin above (plan 124 R2). A future `skip_serializing_if` on either
+    // field would make it vanish entirely rather than serialize as an
+    // explicit `null`, and the frontend's validator rejects a MISSING key
+    // differently than an explicit `null` one.
+    #[test]
+    fn today_high_low_none_serializes_as_explicit_null_keys_not_missing_ones() {
+        let mut s = status(None);
+        s.weather = WeatherStatus {
+            enabled: true,
+            current: Some(WeatherSummary {
+                temp_display: "27°".to_string(),
+                condition: "Cloudy".to_string(),
+                is_day: true,
+                rain_pct: None,
+                today_high_display: None,
+                today_low_display: None,
+                outlook: Vec::new(),
+            }),
+        };
+        let json = serde_json::to_value(s).unwrap();
+        assert!(json["weather"]["current"].get("todayHighDisplay").is_some());
+        assert!(json["weather"]["current"]["todayHighDisplay"].is_null());
+        assert!(json["weather"]["current"].get("todayLowDisplay").is_some());
+        assert!(json["weather"]["current"]["todayLowDisplay"].is_null());
+        // an empty outlook still serializes as an array, never a missing key.
+        assert_eq!(json["weather"]["current"]["outlook"], serde_json::json!([]));
     }
 
     // plan 124 R2: pins `rain_pct: None`'s wire SHAPE, not just its value —
@@ -346,6 +439,9 @@ mod tests {
                 condition: "Cloudy".to_string(),
                 is_day: true,
                 rain_pct: None,
+                today_high_display: None,
+                today_low_display: None,
+                outlook: Vec::new(),
             }),
         };
         let json = serde_json::to_value(s).unwrap();
@@ -394,6 +490,9 @@ mod tests {
                 condition: "Cloudy".to_string(),
                 is_day: true,
                 rain_pct: None,
+                today_high_display: None,
+                today_low_display: None,
+                outlook: Vec::new(),
             }),
         };
         // first sighting emits
@@ -412,6 +511,9 @@ mod tests {
                 condition: "Cloudy".to_string(),
                 is_day: false,
                 rain_pct: None,
+                today_high_display: None,
+                today_low_display: None,
+                outlook: Vec::new(),
             }),
         };
         // is_day alone flipping emits once
@@ -439,6 +541,9 @@ mod tests {
                 condition: "Cloudy".to_string(),
                 is_day: true,
                 rain_pct: None,
+                today_high_display: None,
+                today_low_display: None,
+                outlook: Vec::new(),
             }),
         };
         // first sighting emits
@@ -457,6 +562,9 @@ mod tests {
                 condition: "Cloudy".to_string(),
                 is_day: true,
                 rain_pct: Some(75),
+                today_high_display: None,
+                today_low_display: None,
+                outlook: Vec::new(),
             }),
         };
         // rain_pct alone crossing into Some(_) emits once
@@ -466,6 +574,56 @@ mod tests {
         );
         // repeating the same rain_pct value: silent again
         assert_eq!(status_state_if_changed(&mut last, rain), None);
+    }
+
+    // plan 131: `outlook` is the same shape of field as `rain_pct` above —
+    // changes at most once per poll, never per tick — so a lone outlook
+    // change (every other field held constant) must be caught by the SAME
+    // ordinary derived-`PartialEq` guard, no `dedup_eq`-style special case.
+    #[test]
+    fn outlook_change_emits_once_then_stays_silent() {
+        let mut last = None;
+        let mut no_outlook = status(None);
+        no_outlook.weather = WeatherStatus {
+            enabled: true,
+            current: Some(WeatherSummary {
+                temp_display: "27°".to_string(),
+                condition: "Cloudy".to_string(),
+                is_day: true,
+                rain_pct: None,
+                today_high_display: None,
+                today_low_display: None,
+                outlook: Vec::new(),
+            }),
+        };
+        // first sighting emits
+        assert_eq!(
+            status_state_if_changed(&mut last, no_outlook.clone()),
+            Some(no_outlook.clone())
+        );
+        // identical weather (including an empty outlook): silent
+        assert_eq!(status_state_if_changed(&mut last, no_outlook.clone()), None);
+
+        let mut with_outlook = no_outlook.clone();
+        with_outlook.weather = WeatherStatus {
+            enabled: true,
+            current: Some(WeatherSummary {
+                temp_display: "27°".to_string(),
+                condition: "Cloudy".to_string(),
+                is_day: true,
+                rain_pct: None,
+                today_high_display: None,
+                today_low_display: None,
+                outlook: vec![outlook_point()],
+            }),
+        };
+        // outlook alone going from empty to populated emits once
+        assert_eq!(
+            status_state_if_changed(&mut last, with_outlook.clone()),
+            Some(with_outlook.clone())
+        );
+        // repeating the same outlook value: silent again
+        assert_eq!(status_state_if_changed(&mut last, with_outlook), None);
     }
 
     fn generic_event() -> Event {

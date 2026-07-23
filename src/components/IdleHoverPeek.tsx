@@ -7,6 +7,7 @@ import { useClock } from "../useClock";
 import type {
   LiveMatchSummary,
   NowPlayingSummary,
+  OutlookPoint,
   StatusState,
   WeatherSummary,
 } from "../useStatusState";
@@ -112,10 +113,21 @@ function WeatherPeekBackdrop({ weather }: { weather: WeatherSummary }) {
 // or comparing against the floor itself.
 function WeatherPeekReadout({ weather }: { weather: WeatherSummary }) {
   const art = weatherArtFor(weather.condition, weather.isDay);
+  // plan 131: hi/lo, inline with the current temp ("21° · H 24° L 16°") —
+  // only when BOTH are present (rust's `today_hi_lo` degrades them
+  // together on a missing/malformed `daily` block; there is no
+  // meaningful "just a high, no low" render).
+  const hasHiLo = weather.todayHighDisplay !== null && weather.todayLowDisplay !== null;
   return (
     <div className="wx-peek-readout">
       <img className="wx-peek-icon" src={art.glyphUrl} alt="" />
       <span className="wx-peek-temp">{weather.tempDisplay}</span>
+      {hasHiLo ? (
+        <span className="wx-peek-hilo">
+          <span className="wx-peek-hi">H {weather.todayHighDisplay}</span>
+          <span className="wx-peek-lo">L {weather.todayLowDisplay}</span>
+        </span>
+      ) : null}
       {/* plan 092 (item 10): reuse `.chip` for the condition label —
           092 retired `.pill` entirely; a new pill here would silently
           undo that. */}
@@ -153,6 +165,62 @@ function WeatherPeekReadout({ weather }: { weather: WeatherSummary }) {
             Rain {weather.rainPct}%
           </motion.span>
         ) : null}
+      </AnimatePresence>
+    </div>
+  );
+}
+
+// plan 131: the minimal forecast strip — one compact row of the 3
+// `OutlookPoint`s rust selects (+2h/+4h/+6h from the poll's current
+// hour), each a tiny glyph (`weatherArtFor`, the SAME lookup the readout
+// above uses — no second table) + temp + hour label. Deliberately a
+// SINGLE horizontal row, not 3 stacked rows: the peek's outer block is a
+// fixed 100px (`hover.rs`'s `IDLE_PEEK_BELOW_BLOCK_H` mirror, untouched
+// by this plan) with very little vertical room left below the readout —
+// see `.wx-peek-weather-stack`'s own comment (overlay-card.css) for the
+// exact budget this row's type/glyph sizes were shrunk to fit.
+function WxForecastStrip({ outlook }: { outlook: OutlookPoint[] }) {
+  return (
+    <motion.div
+      key="wx-forecast-strip"
+      className="wx-forecast-strip"
+      initial={{ opacity: 0 }}
+      animate={{ opacity: 1 }}
+      exit={{ opacity: 0 }}
+      transition={{ duration: ROTATION_ENTER_MS / 1000, ease: NOTCHTAP_EASE }}
+    >
+      {outlook.map((point) => {
+        const art = weatherArtFor(point.condition, point.isDay);
+        return (
+          <span className="wx-forecast-point" key={point.hourLabel}>
+            <img className="wx-forecast-icon" src={art.glyphUrl} alt="" />
+            <span className="wx-forecast-temp">{point.tempDisplay}</span>
+            <span className="wx-forecast-hour">{point.hourLabel}</span>
+          </span>
+        );
+      })}
+    </motion.div>
+  );
+}
+
+// plan 131: groups the readout + forecast strip into ONE flex child of
+// `.peek-content` (a real DOM wrapper, not a fragment) — `.peek-content`
+// itself only ever has 1 gap between "the weather block" and
+// `PeekTimeline` this way, exactly as it did before this plan, whether
+// or not the strip is mounted. That preserves the existing readout/
+// timeline spacing untouched, and keeps the strip's own budget scoped to
+// THIS wrapper's internal gap rather than growing `.peek-content`'s gap
+// (which would also nudge the scorecard/media branches' spacing — out of
+// scope for this plan). Mirrors the rain chip's own `AnimatePresence
+// initial={false}` idiom (`WeatherPeekReadout` above) for the outlook
+// empty<->present flip: full opacity immediately if already present on
+// the peek's own open, a real fade on a later mid-peek flip.
+function WeatherPeekWithForecast({ weather }: { weather: WeatherSummary }) {
+  return (
+    <div className="wx-peek-weather-stack">
+      <WeatherPeekReadout weather={weather} />
+      <AnimatePresence initial={false}>
+        {weather.outlook.length > 0 ? <WxForecastStrip outlook={weather.outlook} /> : null}
       </AnimatePresence>
     </div>
   );
@@ -360,7 +428,7 @@ export function IdleHoverPeek({
             ) : media !== null ? (
               <MediaPeekRow media={media} />
             ) : weather !== null ? (
-              <WeatherPeekReadout weather={weather} />
+              <WeatherPeekWithForecast weather={weather} />
             ) : null}
             <PeekTimeline />
           </div>

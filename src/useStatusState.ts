@@ -25,11 +25,34 @@ export type LiveMatchSummary = {
 // access to config. `null` covers both "no lookahead read" and "below
 // the operator's floor" in one value, so the frontend's only job is a
 // presence check (IdleHoverPeek.tsx), never a floor comparison of its own.
+//
+// plan 131: `todayHighDisplay`/`todayLowDisplay`/`outlook` ride along too
+// — the minimal forecast strip. `todayHighDisplay`/`todayLowDisplay` are
+// already `"{:.0}°"`-formatted rust-side, same convention as
+// `tempDisplay`. `outlook` is exactly 0..3 `OutlookPoint`s (rust skips a
+// point rather than fabricating one past the fetched window) — the
+// frontend never re-derives point selection, only renders what arrives.
 export type WeatherSummary = {
   tempDisplay: string;
   condition: string;
   isDay: boolean;
   rainPct: number | null;
+  todayHighDisplay: string | null;
+  todayLowDisplay: string | null;
+  outlook: OutlookPoint[];
+};
+
+// plan 131: one point on the minimal forecast strip. `hourLabel` is a
+// local "HH:MM" string (rust's `timezone=auto` request) — rendered
+// verbatim, never reformatted through a `Date`. `condition` is the same
+// `condition_word()` vocabulary `WeatherSummary.condition` already uses,
+// so it feeds straight into the existing `weatherArtFor(condition, isDay)`
+// lookup (IdleHoverPeek.tsx) without a second table.
+export type OutlookPoint = {
+  hourLabel: string;
+  tempDisplay: string;
+  condition: string;
+  isDay: boolean;
 };
 
 // plan 104: the ambient now-playing snapshot. Unlike WeatherSummary
@@ -89,6 +112,23 @@ function isValidLiveMatch(v: unknown): v is LiveMatchSummary {
   return typeof obj.label === "string" && typeof obj.minute === "string";
 }
 
+// plan 131: every field checked, same defense-in-depth as
+// isValidWeatherSummary below — a malformed point must reject the WHOLE
+// weather summary (via `.every()` in that function), never reach
+// `weatherArtFor` with an `undefined` condition/isDay.
+function isValidOutlookPoint(v: unknown): v is OutlookPoint {
+  if (typeof v !== "object" || v === null) {
+    return false;
+  }
+  const obj = v as Record<string, unknown>;
+  return (
+    typeof obj.hourLabel === "string" &&
+    typeof obj.tempDisplay === "string" &&
+    typeof obj.condition === "string" &&
+    typeof obj.isDay === "boolean"
+  );
+}
+
 function isValidWeatherSummary(v: unknown): v is WeatherSummary {
   if (typeof v !== "object" || v === null) {
     return false;
@@ -98,11 +138,22 @@ function isValidWeatherSummary(v: unknown): v is WeatherSummary {
   // missing or mistyping it must fall back to FALLBACK_STATUS whole, not
   // reach weatherArtFor as `undefined` (a silently wrong night/day guess
   // instead of a rejected payload).
+  //
+  // plan 131: `todayHighDisplay`/`todayLowDisplay`/`outlook` follow the
+  // SAME strictness convention `rainPct` set — required keys (missing ->
+  // reject), nullable string values for the hi/lo pair (mirroring
+  // `rainPct`'s nullable-number wire-shape pin), and `outlook` must be an
+  // array of valid points (an empty array is valid — "no forecast data
+  // yet" is a real, expected state, not a malformed payload).
   return (
     typeof obj.tempDisplay === "string" &&
     typeof obj.condition === "string" &&
     typeof obj.isDay === "boolean" &&
-    (obj.rainPct === null || typeof obj.rainPct === "number")
+    (obj.rainPct === null || typeof obj.rainPct === "number") &&
+    (obj.todayHighDisplay === null || typeof obj.todayHighDisplay === "string") &&
+    (obj.todayLowDisplay === null || typeof obj.todayLowDisplay === "string") &&
+    Array.isArray(obj.outlook) &&
+    obj.outlook.every(isValidOutlookPoint)
   );
 }
 

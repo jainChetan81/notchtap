@@ -1490,7 +1490,15 @@ describe("StatusRailCard", () => {
       news: { enabled: false },
       weather: {
         enabled: true,
-        current: { tempDisplay: "27°", condition: "Cloudy", isDay: true, rainPct: null },
+        current: {
+          tempDisplay: "27°",
+          condition: "Cloudy",
+          isDay: true,
+          rainPct: null,
+          todayHighDisplay: null,
+          todayLowDisplay: null,
+          outlook: [],
+        },
       },
       media: { enabled: false, current: null },
     };

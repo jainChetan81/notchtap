@@ -177,7 +177,15 @@ describe("useStatusState", () => {
       ...LIVE,
       weather: {
         enabled: true,
-        current: { tempDisplay: "27°", condition: "Cloudy", isDay: true, rainPct: null },
+        current: {
+          tempDisplay: "27°",
+          condition: "Cloudy",
+          isDay: true,
+          rainPct: null,
+          todayHighDisplay: null,
+          todayLowDisplay: null,
+          outlook: [],
+        },
       },
     };
     window.__NOTCHTAP_STATUS_STATE__ = withWeather;
@@ -192,12 +200,113 @@ describe("useStatusState", () => {
       ...LIVE,
       weather: {
         enabled: true,
-        current: { tempDisplay: "27°", condition: "Cloudy", isDay: true, rainPct: 75 },
+        current: {
+          tempDisplay: "27°",
+          condition: "Cloudy",
+          isDay: true,
+          rainPct: 75,
+          todayHighDisplay: null,
+          todayLowDisplay: null,
+          outlook: [],
+        },
       },
     };
     window.__NOTCHTAP_STATUS_STATE__ = withRain;
     const { result } = renderHook(() => useStatusState());
     expect(result.current).toEqual(withRain);
+  });
+
+  // --- plan 131: the todayHighDisplay/todayLowDisplay/outlook guards ---
+
+  it("accepts a weather summary with hi/lo and a populated outlook", () => {
+    const withForecast: StatusState = {
+      ...LIVE,
+      weather: {
+        enabled: true,
+        current: {
+          tempDisplay: "27°",
+          condition: "Cloudy",
+          isDay: true,
+          rainPct: null,
+          todayHighDisplay: "30°",
+          todayLowDisplay: "22°",
+          outlook: [
+            { hourLabel: "08:00", tempDisplay: "27°", condition: "Clear", isDay: true },
+            { hourLabel: "10:00", tempDisplay: "30°", condition: "Rain", isDay: true },
+            { hourLabel: "12:00", tempDisplay: "31°", condition: "Storm", isDay: true },
+          ],
+        },
+      },
+    };
+    window.__NOTCHTAP_STATUS_STATE__ = withForecast;
+    const { result } = renderHook(() => useStatusState());
+    expect(result.current).toEqual(withForecast);
+  });
+
+  it("ignores a weather summary missing todayHighDisplay/todayLowDisplay/outlook", () => {
+    window.__NOTCHTAP_STATUS_STATE__ = {
+      ...LIVE,
+      weather: {
+        enabled: true,
+        current: { tempDisplay: "27°", condition: "Cloudy", isDay: true, rainPct: null },
+      },
+    };
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
+  });
+
+  it("ignores a weather summary with a non-array outlook or a malformed point in it", () => {
+    window.__NOTCHTAP_STATUS_STATE__ = {
+      ...LIVE,
+      weather: {
+        enabled: true,
+        current: {
+          tempDisplay: "27°",
+          condition: "Cloudy",
+          isDay: true,
+          rainPct: null,
+          todayHighDisplay: null,
+          todayLowDisplay: null,
+          outlook: "nope",
+        },
+      },
+    };
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
+
+    window.__NOTCHTAP_STATUS_STATE__ = {
+      ...LIVE,
+      weather: {
+        enabled: true,
+        current: {
+          tempDisplay: "27°",
+          condition: "Cloudy",
+          isDay: true,
+          rainPct: null,
+          todayHighDisplay: null,
+          todayLowDisplay: null,
+          outlook: [{ hourLabel: "08:00", tempDisplay: "27°", condition: "Clear" }],
+        },
+      },
+    };
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
+  });
+
+  it("ignores a weather summary with a non-string, non-null todayHighDisplay or todayLowDisplay", () => {
+    window.__NOTCHTAP_STATUS_STATE__ = {
+      ...LIVE,
+      weather: {
+        enabled: true,
+        current: {
+          tempDisplay: "27°",
+          condition: "Cloudy",
+          isDay: true,
+          rainPct: null,
+          todayHighDisplay: 30,
+          todayLowDisplay: null,
+          outlook: [],
+        },
+      },
+    };
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
   });
 
   it("ignores a weather summary missing rainPct, rather than reaching the renderer as undefined", () => {

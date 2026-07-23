@@ -940,6 +940,9 @@ mod tests {
             condition: "Cloudy".to_string(),
             is_day: true,
             rain_pct: None,
+            today_high_display: None,
+            today_low_display: None,
+            outlook: Vec::new(),
         }
     }
 
