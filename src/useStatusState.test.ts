@@ -175,11 +175,51 @@ describe("useStatusState", () => {
   it("accepts a valid weather summary with isDay", () => {
     const withWeather: StatusState = {
       ...LIVE,
-      weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy", isDay: true } },
+      weather: {
+        enabled: true,
+        current: { tempDisplay: "27°", condition: "Cloudy", isDay: true, rainPct: null },
+      },
     };
     window.__NOTCHTAP_STATUS_STATE__ = withWeather;
     const { result } = renderHook(() => useStatusState());
     expect(result.current).toEqual(withWeather);
+  });
+
+  // --- plan 122: the rainPct guard ---
+
+  it("accepts a weather summary with a numeric rainPct", () => {
+    const withRain: StatusState = {
+      ...LIVE,
+      weather: {
+        enabled: true,
+        current: { tempDisplay: "27°", condition: "Cloudy", isDay: true, rainPct: 75 },
+      },
+    };
+    window.__NOTCHTAP_STATUS_STATE__ = withRain;
+    const { result } = renderHook(() => useStatusState());
+    expect(result.current).toEqual(withRain);
+  });
+
+  it("ignores a weather summary missing rainPct, rather than reaching the renderer as undefined", () => {
+    window.__NOTCHTAP_STATUS_STATE__ = {
+      ...LIVE,
+      weather: {
+        enabled: true,
+        current: { tempDisplay: "27°", condition: "Cloudy", isDay: true },
+      },
+    };
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
+  });
+
+  it("ignores a weather summary with a non-numeric, non-null rainPct", () => {
+    window.__NOTCHTAP_STATUS_STATE__ = {
+      ...LIVE,
+      weather: {
+        enabled: true,
+        current: { tempDisplay: "27°", condition: "Cloudy", isDay: true, rainPct: "75" },
+      },
+    };
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
   });
 
   it("ignores a weather summary missing isDay, rather than reaching the renderer as undefined", () => {

@@ -19,10 +19,17 @@ export type LiveMatchSummary = {
 // flag (status.rs's `WeatherSummary.is_day`), so the idle hover-peek's
 // mood art keys off the real value instead of guessing from the wall
 // clock (the old `isDaytimeNow()` in IdleHoverPeek.tsx, now deleted).
+// plan 122: `rainPct` rides along too — already floor-filtered rust-side
+// against `weather_rain_threshold_pct` (status.rs's `WeatherSummary.rain_pct`
+// doc comment) since this overlay window is receive-only and has no
+// access to config. `null` covers both "no lookahead read" and "below
+// the operator's floor" in one value, so the frontend's only job is a
+// presence check (IdleHoverPeek.tsx), never a floor comparison of its own.
 export type WeatherSummary = {
   tempDisplay: string;
   condition: string;
   isDay: boolean;
+  rainPct: number | null;
 };
 
 // plan 104: the ambient now-playing snapshot. Unlike WeatherSummary
@@ -94,7 +101,8 @@ function isValidWeatherSummary(v: unknown): v is WeatherSummary {
   return (
     typeof obj.tempDisplay === "string" &&
     typeof obj.condition === "string" &&
-    typeof obj.isDay === "boolean"
+    typeof obj.isDay === "boolean" &&
+    (obj.rainPct === null || typeof obj.rainPct === "number")
   );
 }
 

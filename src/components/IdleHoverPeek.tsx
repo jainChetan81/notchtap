@@ -61,28 +61,60 @@ import type {
 // Same binary serves both rust and this frontend (a Tauri app, not two
 // deployables that could skew), so there is no "old rust / new frontend"
 // window to guard with a clock fallback.
+//
+// plan 122: this backdrop is now PURE art (mood gradient + texture) — the
+// condition glyph moved out to `WeatherPeekReadout` below. It used to be
+// absolutely positioned in this block's top-right corner
+// (`overlay-card.css`'s old `.wx-icon` rule), the SAME corner the media
+// row's transport (play/pause + bar + elapsed time) is flex-pinned to —
+// whenever media played, the two occupied the same region. Moving the
+// glyph into the readout's in-flow row makes that collision impossible
+// by construction: the readout (and its glyph) simply doesn't render at
+// all while media/football own the content slot below, so there is
+// nothing left to overlap the transport with.
 function WeatherPeekBackdrop({ weather }: { weather: WeatherSummary }) {
   const art = weatherArtFor(weather.condition, weather.isDay);
   const backdropClass = ["wx-peek-backdrop", "wx-card", art.moodClass, art.textureClass]
     .filter(Boolean)
     .join(" ");
-  return (
-    <div className={backdropClass} aria-hidden="true">
-      <img className="wx-icon" src={art.glyphUrl} alt="" />
-    </div>
-  );
+  return <div className={backdropClass} aria-hidden="true" />;
 }
 
-// plan 105 (Step B): the data half of the old `WeatherPeekScene` — markup
-// unchanged from before the split, just no longer carries the art classes.
+// plan 105 (Step B): the data half of the old `WeatherPeekScene`.
+//
+// plan 122: the condition glyph now lives here too, in flow as a flex
+// sibling of `.wx-peek-temp`/`.wx-peek-condition` — `.wx-peek-icon` is a
+// class DEDICATED to this context, deliberately not the `.wx-icon` the
+// weather ALERT card (`StatusRailCard.tsx`) still uses: that card's own
+// glyph stays absolutely positioned in its own corner (untouched,
+// non-goal), and the two usages share nothing beyond "a weather glyph
+// image" — reusing the class would have meant either breaking the alert
+// card's layout or fighting its absolute-positioning rule with an
+// override, so this gets its own name and its own in-flow rule instead
+// (`overlay-card.css`). Sized smaller (28px) than the alert card's 48px
+// so the row doesn't grow taller than the readout's previous height —
+// this peek's outer block is a fixed 100px (`hover.rs`'s
+// `IDLE_PEEK_BELOW_BLOCK_H` mirror), not intrinsic to content.
+//
+// The rain-chance chip is also new (plan 122): `weather.rainPct` already
+// arrives floor-filtered against the operator's configured
+// `weather_rain_threshold_pct` (status.rs's `WeatherSummary.rain_pct` doc
+// comment) — this window has no config access (receive-only, no
+// invoke), so the only job here is a presence check, never re-deriving
+// or comparing against the floor itself.
 function WeatherPeekReadout({ weather }: { weather: WeatherSummary }) {
+  const art = weatherArtFor(weather.condition, weather.isDay);
   return (
     <div className="wx-peek-readout">
+      <img className="wx-peek-icon" src={art.glyphUrl} alt="" />
       <span className="wx-peek-temp">{weather.tempDisplay}</span>
       {/* plan 092 (item 10): reuse `.chip` for the condition label —
           092 retired `.pill` entirely; a new pill here would silently
           undo that. */}
       <span className="chip wx-peek-condition">{weather.condition}</span>
+      {weather.rainPct !== null ? (
+        <span className="chip wx-peek-rain">Rain {weather.rainPct}%</span>
+      ) : null}
     </div>
   );
 }

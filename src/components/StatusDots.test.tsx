@@ -12,7 +12,10 @@ const ALL_ON: StatusState = {
   waiting: 3,
   football: { enabled: true, live: { label: "Arsenal 2–0 Chelsea", minute: "45'" } },
   news: { enabled: true },
-  weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy", isDay: true } },
+  weather: {
+    enabled: true,
+    current: { tempDisplay: "27°", condition: "Cloudy", isDay: true, rainPct: null },
+  },
   media: { enabled: false, current: null },
 };
 
