@@ -148,6 +148,11 @@ pub fn diff_weather(
 ) -> (WeatherSummary, Vec<Event>, WeatherAlertState) {
     let condition = condition_word(response.current.weather_code);
     let is_day = response.current.is_day;
+    // plan 122: the single lookahead read is shared by both the alert
+    // edge-trigger below and the ambient `rain_pct` display field — one
+    // call, two consumers, so they can never read a different probability
+    // for the same poll.
+    let rain_lookahead = lookahead_rain_probability(response, rain_lookahead_mins);
     let summary = WeatherSummary {
         temp_display: format!("{:.0}°", response.current.temperature_2m),
         condition: condition.to_string(),
@@ -159,6 +164,14 @@ pub fn diff_weather(
         // validation) specifically to pin the 0->false/1->true mapping in
         // isolation.
         is_day: is_day == 1,
+        // plan 122: floor-filtered SERVER-SIDE against the same
+        // `rain_threshold_pct` the alert path already uses — the overlay
+        // window is receive-only (no invoke, no config access), so the
+        // floor decision cannot be made on the frontend; `None` here
+        // covers both "no lookahead read" and "below the operator's
+        // floor" in one value, and the frontend's job is reduced to a
+        // presence check (IdleHoverPeek.tsx).
+        rain_pct: rain_lookahead.filter(|&pct| pct >= rain_threshold_pct),
     };
 
     let mut events = Vec::new();
@@ -167,7 +180,7 @@ pub fn diff_weather(
     // Rain-incoming: a missing/unparseable lookahead read leaves the
     // fired flag untouched — transient bad data must not re-arm an alert
     // that is still legitimately holding.
-    if let Some(probability) = lookahead_rain_probability(response, rain_lookahead_mins) {
+    if let Some(probability) = rain_lookahead {
         let crossed = probability >= rain_threshold_pct;
         if crossed && !prev.rain_fired {
             events.push(alert_event(
@@ -451,11 +464,51 @@ mod tests {
                 temp_display: "27°".to_string(),
                 condition: "Cloudy".to_string(),
                 is_day: true,
+                // the fixture's 30-min-lookahead probability (16%, see
+                // lookahead_rounds_to_the_nearest_hour) sits under the
+                // default 60% floor.
+                rain_pct: None,
             }
         );
         // the real fixture's near-term rain probabilities are all under
         // the 60% threshold and 26.7°C is between 14/36 — no alerts.
         assert!(events.is_empty());
+    }
+
+    // --- rain_pct (plan 122): the ambient display field, floor-filtered
+    // server-side against the same rain_threshold_pct the alert path
+    // uses. Shares lookahead_rain_probability with the alert edge-trigger
+    // (one read, two consumers) rather than a new range-max algorithm. ---
+
+    #[test]
+    fn rain_pct_is_none_when_the_lookahead_probability_is_below_the_floor() {
+        // default_args' threshold is 60; 59% must not surface.
+        let below_floor = fixture_with_rain_probability(59);
+        let (summary, _, _) = diff(&below_floor, WeatherAlertState::default());
+        assert_eq!(summary.rain_pct, None);
+    }
+
+    #[test]
+    fn rain_pct_is_some_at_exactly_the_floor() {
+        // inclusive boundary, same `>=` comparison the alert path uses.
+        let at_floor = fixture_with_rain_probability(60);
+        let (summary, _, _) = diff(&at_floor, WeatherAlertState::default());
+        assert_eq!(summary.rain_pct, Some(60));
+    }
+
+    #[test]
+    fn rain_pct_is_some_above_the_floor() {
+        let above_floor = fixture_with_rain_probability(75);
+        let (summary, _, _) = diff(&above_floor, WeatherAlertState::default());
+        assert_eq!(summary.rain_pct, Some(75));
+    }
+
+    #[test]
+    fn rain_pct_is_none_when_hourly_data_is_missing() {
+        let mut response = fixture();
+        response.hourly = None;
+        let (summary, _, _) = diff(&response, WeatherAlertState::default());
+        assert_eq!(summary.rain_pct, None);
     }
 
     // --- is_day -> WeatherSummary.is_day (plan 110 Step B) ---

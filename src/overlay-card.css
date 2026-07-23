@@ -1885,11 +1885,18 @@
    `.peek-content`, instead of being replaced by it — the operator wanted
    the mood art kept once the media row took over the readout slot.
    Reuses `.wx-card`'s mood-gradient `::before`/texture `::after` (weather
-   ALERT card block, above) and `.wx-icon`'s glyph placement verbatim.
-   `inset: 0` fills `.below-block.idle-peek`'s own animated height (that
-   block is already `position: relative` — see its rule above), so no
-   min-height is needed here the way `.wx-peek-scene` used to carry one:
-   this layer is the full block, not a sub-box inside it. */
+   ALERT card block, above). `inset: 0` fills `.below-block.idle-peek`'s
+   own animated height (that block is already `position: relative` — see
+   its rule above), so no min-height is needed here the way
+   `.wx-peek-scene` used to carry one: this layer is the full block, not
+   a sub-box inside it.
+
+   plan 122: this is now PURE art — no glyph. The condition icon used to
+   live here too (absolutely positioned via the shared `.wx-icon` rule
+   above), which put it in the SAME top-right corner the media row's
+   transport occupies — whenever media played, the two collided. The
+   glyph moved to `.wx-peek-icon` below, in flow inside `.wx-peek-readout`
+   instead. */
 .card-root .wx-peek-backdrop {
   position: absolute;
   inset: 0;
@@ -1913,6 +1920,25 @@
   gap: 8px;
   padding: 10px 12px;
 }
+/* plan 122: the condition glyph, relocated here from the backdrop
+   (`.wx-peek-backdrop`, above) — a flex sibling of `.wx-peek-temp`/
+   `.wx-peek-condition`/`.wx-peek-rain`, in normal layout flow so it can
+   never overlap the media row's transport region by construction. This
+   is a DEDICATED class, deliberately not the shared `.wx-icon` the
+   weather ALERT card still uses absolutely-positioned in its own corner
+   (untouched — non-goal): reusing that class here would mean either an
+   override fighting its `position: absolute` or breaking the alert
+   card's own layout. Sized well under the alert card's 48px (28px) so
+   this row doesn't grow past the readout's pre-plan-122 height — the
+   peek's own outer block is a fixed 100px regardless of content
+   (`hover.rs`'s `IDLE_PEEK_BELOW_BLOCK_H` mirror), not intrinsic. */
+.card-root .wx-peek-icon {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45));
+  pointer-events: none;
+}
 .card-root .wx-peek-temp {
   font: 800 18px/1 var(--font-mono);
   color: #f5f7fa;
@@ -1925,6 +1951,17 @@
   color: rgba(255, 255, 255, 0.7);
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.14);
+}
+/* plan 122 (Part B): the rain-chance chip — same `.chip` base, tinted
+   with the same light blue the weather ALERT card's own rain-streaks
+   texture already uses (`.wx-rain-streaks::after`, above), rather than
+   inventing a new color for "rain" in this one spot. Only ever mounted
+   when `weather.rainPct` is non-null (already floor-filtered rust-side
+   — IdleHoverPeek.tsx). */
+.card-root .wx-peek-rain {
+  color: rgba(180, 210, 255, 0.85);
+  background: rgba(180, 210, 255, 0.12);
+  border: 1px solid rgba(180, 210, 255, 0.35);
 }
 
 /* plan 104: the now-playing media row — slots between the scorecard

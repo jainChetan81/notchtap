@@ -938,6 +938,7 @@ mod tests {
             temp_display: temp.to_string(),
             condition: "Cloudy".to_string(),
             is_day: true,
+            rain_pct: None,
         }
     }
 

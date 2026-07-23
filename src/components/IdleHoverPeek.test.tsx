@@ -1,3 +1,9 @@
+// plan 122: same technique celebrationStacking.test.tsx uses — jsdom has
+// no layout/paint engine, so a "no rule keeps it position:absolute"
+// assertion has to be pinned at the string level against the real
+// stylesheet source, not computed style.
+import { readFileSync } from "node:fs";
+import { fileURLToPath, URL as NodeURL } from "node:url";
 import { cleanup, render } from "@testing-library/react";
 import { Globe, Music, Play, Tv } from "lucide-react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
@@ -6,12 +12,35 @@ import { IdleHoverPeek, iconForBundleId } from "./IdleHoverPeek";
 
 afterEach(cleanup);
 
+function readSourceCss(relativePath: string): string {
+  return readFileSync(fileURLToPath(new NodeURL(relativePath, import.meta.url)), "utf-8");
+}
+
+function ruleBody(css: string, selector: string): string {
+  const marker = `${selector} {`;
+  const start = css.indexOf(marker);
+  if (start === -1) {
+    throw new Error(`selector not found in stylesheet: ${selector}`);
+  }
+  const braceStart = start + marker.length - 1;
+  const braceEnd = css.indexOf("}", braceStart);
+  if (braceEnd === -1) {
+    throw new Error(`unterminated rule for selector: ${selector}`);
+  }
+  return css.slice(braceStart + 1, braceEnd);
+}
+
+const overlayCardCss = readSourceCss("../overlay-card.css");
+
 const WEATHER_STATUS: StatusState = {
   paused: false,
   waiting: 0,
   football: { enabled: false, live: null },
   news: { enabled: false },
-  weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy", isDay: true } },
+  weather: {
+    enabled: true,
+    current: { tempDisplay: "27°", condition: "Cloudy", isDay: true, rainPct: null },
+  },
   media: { enabled: false, current: null },
 };
 
@@ -20,7 +49,10 @@ const LIVE_MATCH_STATUS: StatusState = {
   waiting: 0,
   football: { enabled: true, live: { label: "MTL 1-0 TOR", minute: "63'" } },
   news: { enabled: false },
-  weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy", isDay: true } },
+  weather: {
+    enabled: true,
+    current: { tempDisplay: "27°", condition: "Cloudy", isDay: true, rainPct: null },
+  },
   media: { enabled: false, current: null },
 };
 
@@ -49,7 +81,10 @@ const MEDIA_STATUS: StatusState = {
   waiting: 0,
   football: { enabled: false, live: null },
   news: { enabled: false },
-  weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy", isDay: true } },
+  weather: {
+    enabled: true,
+    current: { tempDisplay: "27°", condition: "Cloudy", isDay: true, rainPct: null },
+  },
   media: { enabled: true, current: NOW_PLAYING },
 };
 
@@ -92,10 +127,46 @@ describe("IdleHoverPeek (plan 093)", () => {
   it("renders the weather mood backdrop and readout when weather data is available", () => {
     const { container } = render(<IdleHoverPeek status={WEATHER_STATUS} hovered={true} />);
     expect(container.querySelector(".wx-peek-backdrop.wx-card")).not.toBeNull();
-    expect(container.querySelector("img.wx-icon")).not.toBeNull();
+    expect(container.querySelector("img.wx-peek-icon")).not.toBeNull();
     expect(container.querySelector(".wx-peek-temp")?.textContent).toBe("27°");
     expect(container.querySelector(".wx-peek-condition")?.textContent).toBe("Cloudy");
     expect(container.querySelector(".idle-peek-timeline")).not.toBeNull();
+  });
+
+  // plan 122 (Part A): the glyph moved out of the absolute backdrop into
+  // the readout's own in-flow row — structural proof it's a descendant
+  // of the weather header row (`.wx-peek-readout`), never of the
+  // backdrop, and that the backdrop itself carries no image at all
+  // anymore (jsdom has no layout, so this is what "impossible by
+  // construction" is checked as here).
+  it("places the weather icon inside the readout row, never inside the backdrop", () => {
+    const { container } = render(<IdleHoverPeek status={WEATHER_STATUS} hovered={true} />);
+    const icon = container.querySelector(".wx-peek-icon");
+    expect(icon).not.toBeNull();
+    expect(icon?.closest(".wx-peek-readout")).not.toBeNull();
+    expect(icon?.closest(".wx-peek-backdrop")).toBeNull();
+    expect(container.querySelector(".wx-peek-backdrop img")).toBeNull();
+  });
+
+  // plan 122 (Part A): the ALERT card's own `.wx-icon` (StatusRailCard.tsx,
+  // untouched — non-goal) must never leak into this peek's markup; the
+  // peek uses the dedicated `.wx-peek-icon` class exclusively.
+  it("never renders the shared .wx-icon class in the peek (that's the ALERT card's own class)", () => {
+    const { container } = render(<IdleHoverPeek status={WEATHER_STATUS} hovered={true} />);
+    expect(container.querySelector("img.wx-icon")).toBeNull();
+  });
+
+  // plan 122 (Part A): class-level assertion (jsdom can't compute layout,
+  // see this file's own readSourceCss/ruleBody helpers, same technique as
+  // celebrationStacking.test.tsx) that the peek's own icon rule is
+  // in-flow. The shared `.wx-icon` rule (the ALERT card's, untouched —
+  // non-goal) is deliberately NOT asserted against here: it is expected
+  // to keep `position: absolute` for that card, which is exactly why
+  // this peek uses a separate class instead of overriding it.
+  it("overlay-card.css: .wx-peek-icon carries no position:absolute rule", () => {
+    const body = ruleBody(overlayCardCss, ".card-root .wx-peek-icon");
+    expect(body).not.toContain("position: absolute");
+    expect(body).not.toContain("position:absolute");
   });
 
   // plan 110 (Step B): the mood art must key off the wire's `isDay`, never
@@ -113,7 +184,7 @@ describe("IdleHoverPeek (plan 093)", () => {
         ...WEATHER_STATUS,
         weather: {
           enabled: true,
-          current: { tempDisplay: "27°", condition: "Cloudy", isDay: true },
+          current: { tempDisplay: "27°", condition: "Cloudy", isDay: true, rainPct: null },
         },
       };
       const { container } = render(<IdleHoverPeek status={status} hovered={true} />);
@@ -127,7 +198,7 @@ describe("IdleHoverPeek (plan 093)", () => {
         ...WEATHER_STATUS,
         weather: {
           enabled: true,
-          current: { tempDisplay: "27°", condition: "Cloudy", isDay: false },
+          current: { tempDisplay: "27°", condition: "Cloudy", isDay: false, rainPct: null },
         },
       };
       const { container } = render(<IdleHoverPeek status={status} hovered={true} />);
@@ -146,6 +217,13 @@ describe("IdleHoverPeek (plan 093)", () => {
     // the readout itself still yields to the media row — one visible
     // "content" slot at a time, per the existing precedence rule.
     expect(container.querySelector(".wx-peek-readout")).toBeNull();
+    // plan 122 (Part A): with the readout gone, its icon is gone too —
+    // the media row's transport region has NOTHING absolutely positioned
+    // (or otherwise) over it. This is the actual collision the operator
+    // hit: before the fix, the glyph rendered here via the backdrop
+    // regardless of the readout, overlapping the transport below.
+    expect(container.querySelector(".wx-peek-icon")).toBeNull();
+    expect(container.querySelector("img.wx-icon")).toBeNull();
   });
 
   it("has no weather backdrop when a live match is showing (scorecard keeps its own visual)", () => {
@@ -161,6 +239,31 @@ describe("IdleHoverPeek (plan 093)", () => {
     const label = container.querySelector(".wx-peek-condition");
     expect(label?.classList.contains("chip")).toBe(true);
     expect(container.querySelector(".pill")).toBeNull();
+  });
+
+  // plan 122 (Part B): rain-chance chip — already floor-filtered
+  // rust-side, so the frontend's only job is a presence check.
+  describe("rain-chance chip (plan 122)", () => {
+    it("renders the rain chip when rainPct is present", () => {
+      const status: StatusState = {
+        ...WEATHER_STATUS,
+        weather: {
+          enabled: true,
+          current: { tempDisplay: "27°", condition: "Cloudy", isDay: true, rainPct: 75 },
+        },
+      };
+      const { container } = render(<IdleHoverPeek status={status} hovered={true} />);
+      const chip = container.querySelector(".wx-peek-rain");
+      expect(chip).not.toBeNull();
+      expect(chip?.textContent).toBe("Rain 75%");
+      expect(chip?.classList.contains("chip")).toBe(true);
+    });
+
+    it("hides the rain chip entirely when rainPct is null (absent or below the operator's floor)", () => {
+      // WEATHER_STATUS already carries rainPct: null.
+      const { container } = render(<IdleHoverPeek status={WEATHER_STATUS} hovered={true} />);
+      expect(container.querySelector(".wx-peek-rain")).toBeNull();
+    });
   });
 
   // item 3's precedence rule: football outranks ambient weather, one

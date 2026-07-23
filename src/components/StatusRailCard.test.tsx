@@ -1239,7 +1239,10 @@ describe("StatusRailCard", () => {
       waiting: 0,
       football: { enabled: false, live: null },
       news: { enabled: false },
-      weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy", isDay: true } },
+      weather: {
+        enabled: true,
+        current: { tempDisplay: "27°", condition: "Cloudy", isDay: true, rainPct: null },
+      },
       media: { enabled: false, current: null },
     };
 

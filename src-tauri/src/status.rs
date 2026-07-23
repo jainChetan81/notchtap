@@ -69,6 +69,18 @@ pub struct WeatherSummary {
     pub temp_display: String,
     pub condition: String,
     pub is_day: bool,
+    /// plan 122: the rain-chance display for the idle hover-peek, already
+    /// floor-filtered against `weather_rain_threshold_pct` by
+    /// `weather_poller.rs::diff_weather` — `None` covers both "no
+    /// lookahead read" and "below the operator's floor" in one value, so
+    /// the frontend's job is reduced to a presence check
+    /// (`IdleHoverPeek.tsx`). Like `is_day` above, this is NOT
+    /// `SlotState::dedup_eq` territory: `WeatherSummary` never rides a
+    /// `SlotState`, its own change-guard is `status_state_if_changed`
+    /// below (ordinary derived `PartialEq`), and this field changes at
+    /// most once per poll — never per tick — so a value change is a
+    /// genuine content change the derived `PartialEq` must catch.
+    pub rain_pct: Option<u8>,
 }
 
 /// "News paused" in the idle rail means `enabled == false`: the polling
@@ -249,6 +261,7 @@ mod tests {
             temp_display: "27°".to_string(),
             condition: "Cloudy".to_string(),
             is_day: true,
+            rain_pct: Some(40),
         }
     }
 
@@ -309,6 +322,9 @@ mod tests {
         // checks for `isDay` specifically (useStatusState.ts).
         assert_eq!(json["weather"]["current"]["isDay"], true);
         assert!(json["weather"]["current"].get("is_day").is_none());
+        // plan 122: same camelCase discipline for the new field.
+        assert_eq!(json["weather"]["current"]["rainPct"], 40);
+        assert!(json["weather"]["current"].get("rain_pct").is_none());
     }
 
     #[test]
@@ -348,6 +364,7 @@ mod tests {
                 temp_display: "27°".to_string(),
                 condition: "Cloudy".to_string(),
                 is_day: true,
+                rain_pct: None,
             }),
         };
         // first sighting emits
@@ -365,6 +382,7 @@ mod tests {
                 temp_display: "27°".to_string(),
                 condition: "Cloudy".to_string(),
                 is_day: false,
+                rain_pct: None,
             }),
         };
         // is_day alone flipping emits once
@@ -374,6 +392,51 @@ mod tests {
         );
         // repeating the flipped value: silent again
         assert_eq!(status_state_if_changed(&mut last, night), None);
+    }
+
+    // plan 122: `rain_pct` is the same shape of field as `is_day` above —
+    // changes at most once per poll, never per tick — so it belongs in
+    // the SAME ordinary derived-`PartialEq` guard, no `dedup_eq`-style
+    // special case. This test pins that a lone `rain_pct` change (with
+    // every other field held constant) is itself a real content change.
+    #[test]
+    fn rain_pct_change_emits_once_then_stays_silent() {
+        let mut last = None;
+        let mut no_rain = status(None);
+        no_rain.weather = WeatherStatus {
+            enabled: true,
+            current: Some(WeatherSummary {
+                temp_display: "27°".to_string(),
+                condition: "Cloudy".to_string(),
+                is_day: true,
+                rain_pct: None,
+            }),
+        };
+        // first sighting emits
+        assert_eq!(
+            status_state_if_changed(&mut last, no_rain.clone()),
+            Some(no_rain.clone())
+        );
+        // identical weather (including rain_pct: None): silent
+        assert_eq!(status_state_if_changed(&mut last, no_rain.clone()), None);
+
+        let mut rain = no_rain.clone();
+        rain.weather = WeatherStatus {
+            enabled: true,
+            current: Some(WeatherSummary {
+                temp_display: "27°".to_string(),
+                condition: "Cloudy".to_string(),
+                is_day: true,
+                rain_pct: Some(75),
+            }),
+        };
+        // rain_pct alone crossing into Some(_) emits once
+        assert_eq!(
+            status_state_if_changed(&mut last, rain.clone()),
+            Some(rain.clone())
+        );
+        // repeating the same rain_pct value: silent again
+        assert_eq!(status_state_if_changed(&mut last, rain), None);
     }
 
     fn generic_event() -> Event {
