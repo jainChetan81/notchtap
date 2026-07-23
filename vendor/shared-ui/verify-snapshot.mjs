@@ -54,7 +54,12 @@ const siblingPath = join(here, "..", "..", "..", "shared-ui", "design", "tokens.
 // BYTE-IDENTICAL across ef85e85..03ac81e (the range is docs, gate wording,
 // playground button cursor, plans only — version still 0.2.1), so
 // PINNED_TOKENS_SHA256 is unchanged; only the reviewed-upstream pin moves.
-const UPSTREAM_SHA = "03ac81e";
+// 2026-07-23 close-out refresh: sibling checkout advanced to 2321f37
+// (main); tokens.css is BYTE-IDENTICAL to the 03ac81e snapshot (verified
+// via this script's own sibling-diff check — "matches the vendored
+// snapshot exactly. No drift."), so PINNED_TOKENS_SHA256 is unchanged;
+// only the reviewed-upstream pin moves.
+const UPSTREAM_SHA = "2321f37";
 const PINNED_TOKENS_SHA256 =
   "5b7bcefe6f89c9ed72a1487e9ac2bd15c644d56904582aa33735fcc2039e8313";
 

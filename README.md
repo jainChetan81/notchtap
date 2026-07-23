@@ -108,11 +108,7 @@ command — `brew install just` first.
 | [`docs/V5_TECHNICAL_SPEC.md`](docs/V5_TECHNICAL_SPEC.md) | v0 draft: settings window |
 | [`docs/design/`](docs/design/) | spike/design docs from `/improve` sessions — read alongside `plans/README.md` |
 | [`docs/recipes/kuma-webhook.md`](docs/recipes/kuma-webhook.md) | recipe: wiring an Uptime Kuma webhook into notchtap's `/notify` endpoint (docs only, verified against kuma v2.4.0) |
-| [`docs/archive/V1_TECHNICAL_SPEC.md`](docs/archive/V1_TECHNICAL_SPEC.md) | archived — v1 shipped; superseded by the specs above |
-| [`docs/archive/V2_TECHNICAL_SPEC.md`](docs/archive/V2_TECHNICAL_SPEC.md) | archived — v2 shipped; superseded by the specs above |
-| [`docs/archive/V3_TECHNICAL_SPEC.md`](docs/archive/V3_TECHNICAL_SPEC.md) | archived — v3 shipped; superseded by the specs above |
-| [`docs/archive/BLIND_REVIEW.md`](docs/archive/BLIND_REVIEW.md) | planning-pass audit, folded into the docs above |
-| [`docs/archive/CHANGES_SUMMARY.md`](docs/archive/CHANGES_SUMMARY.md) | changelog of the planning-pass edits |
+| `docs/archive/` (removed 2026-07-23) | v1/v2/v3 specs + planning-pass audit (`BLIND_REVIEW.md`, `CHANGES_SUMMARY.md`) — all three phases shipped, superseded by the specs above; removed at repo close-out, retrievable via `git log -- docs/archive/` |
 | [`CONTEXT.md`](CONTEXT.md) | glossary / ubiquitous language (Promotion, Visible/Waiting, Paused, …) |
 | [`CLAUDE.md`](CLAUDE.md) | guidance for Claude Code when working in this repo |
 | [`AGENTS.md`](AGENTS.md) | guidance for Codex when working in this repo |

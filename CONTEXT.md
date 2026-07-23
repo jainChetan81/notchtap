@@ -2,7 +2,8 @@
 
 glossary only. no implementation details — those live in
 `docs/V3_6_TECHNICAL_SPEC.md` / `docs/V5_TECHNICAL_SPEC.md` (the v1/v2/v3
-equivalents shipped and are archived at `docs/archive/`). decisions live
+equivalents shipped; their specs were removed at repo close-out
+(2026-07-23), retrievable via `git log -- docs/archive/`). decisions live
 in `docs/ARCHITECTURE.md`.
 
 ## terms

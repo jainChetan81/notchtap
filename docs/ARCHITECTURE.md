@@ -363,8 +363,9 @@ reopened and reversed 2026-07-16: twilio's sandbox needs a 72h re-join
 and meta's template rules block freeform alerts — wrong fit for an
 always-on personal notifier. whatsapp is "maybe later", re-evaluated
 only if telegram proves insufficient. decisions in
-`IMPLEMENTATION_PLAN.md` §3; contract in `archive/V3_TECHNICAL_SPEC.md`
-(archived — v3 shipped).
+`IMPLEMENTATION_PLAN.md` §3; contract was `archive/V3_TECHNICAL_SPEC.md`
+(v3 shipped; removed at repo close-out 2026-07-23,
+see `git log -- docs/archive/`).
 
 ---
 
@@ -459,8 +460,9 @@ v2 adds (locked 2026-07-16, §16): `espn_enabled` (default `true`),
 `espn_leagues` (default `["eng.1", "uefa.champions", "esp.1"]`),
 `espn_poll_secs` (default `30`). posture module remains future, not
 v2. api keys / bot tokens (telegram, etc.) live in a separate secrets
-file (`secrets.toml`, see `archive/V3_TECHNICAL_SPEC.md` §4 (archived —
-v3 shipped) — not env vars;
+file (`secrets.toml`, see `archive/V3_TECHNICAL_SPEC.md` §4 — v3
+shipped; removed at repo close-out 2026-07-23,
+see `git log -- docs/archive/` for the removed text — not env vars;
 login items don't inherit shell env) — never in the committed config.
 
 v3.6 (locked 2026-07-17, see `V3_6_TECHNICAL_SPEC.md` §4.6) removes
@@ -621,8 +623,9 @@ the phased build sequence and exit criteria.
   surfaced through the overlay). only the macbook's cmux setting
   remains to configure.
 
-code-level detail for all of the above: `archive/V2_TECHNICAL_SPEC.md`
-(archived — v2 shipped; was a v0 draft, same rules as the v1 spec).
+code-level detail for all of the above was `archive/V2_TECHNICAL_SPEC.md`
+(v2 shipped; was a v0 draft, same rules as the v1 spec; removed at
+repo close-out 2026-07-23, see `git log -- docs/archive/`).
 
 ---
 

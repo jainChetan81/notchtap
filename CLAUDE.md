@@ -11,6 +11,9 @@ don't tell you.
 
 - the docs folder isn't part of the app build; the tauri/rust/web
   project lives at repo root alongside `docs/`.
+- `prototype/*.html` are static design mocks, not wired into the
+  build — they drift from the shipped UI unless deliberately synced
+  (plan 106 was one such sync).
 - the test suite must stay green (`cargo test` from `src-tauri/`,
   `npx vitest run` from repo root, all gated by ci). current test
   counts live in `docs/TESTING_STRATEGY.md` §0 and only there — don't
@@ -34,13 +37,15 @@ don't tell you.
 037–087) lived here. it was reconstructible from plans/done/ and git
 log, so it was cut to keep this file cheap to load every session. -->
 
-`docs/archive/BLIND_REVIEW.md` and `docs/archive/CHANGES_SUMMARY.md` are
+`docs/archive/BLIND_REVIEW.md` and `docs/archive/CHANGES_SUMMARY.md` were
 changelog/audit artifacts from the planning pass, not sources of
 truth — the decisions they describe are already folded into the three
 docs below. `docs/archive/V1_TECHNICAL_SPEC.md`,
 `docs/archive/V2_TECHNICAL_SPEC.md`, and `docs/archive/V3_TECHNICAL_SPEC.md`
-are likewise archived: those phases shipped, and `docs/V3_6_TECHNICAL_SPEC.md`
-/ `docs/V5_TECHNICAL_SPEC.md` are the active working-draft specs now.
+were likewise archived: those phases shipped. all five were removed at
+repo close-out (2026-07-23), retrievable via `git log -- docs/archive/`.
+`docs/V3_6_TECHNICAL_SPEC.md` / `docs/V5_TECHNICAL_SPEC.md` are the
+active working-draft specs now.
 
 the dev machine is the mac mini (no notch), user `chetanjain`, home
 `/Users/chetanjain`; the rust toolchain is installed. notch-mode
@@ -70,10 +75,11 @@ config/logging paths, error-to-status-code mapping. unlike
 `ARCHITECTURE.md`, neither is locked — adjust them freely as
 implementation surfaces friction. if a change there is actually a
 *decision* change (a default, a scope boundary), make that edit in
-`ARCHITECTURE.md` instead. the equivalent v1/v2/v3 specs are archived
-at `docs/archive/` — those phases already shipped, so they're historical
-records now, not active contracts (same status as `BLIND_REVIEW.md`/
-`CHANGES_SUMMARY.md` above).
+`ARCHITECTURE.md` instead. the equivalent v1/v2/v3 specs were archived
+at `docs/archive/` — those phases already shipped, so they were historical
+records, not active contracts (same status as `BLIND_REVIEW.md`/
+`CHANGES_SUMMARY.md` above). all five were removed at repo close-out
+(2026-07-23); retrievable via `git log -- docs/archive/`.
 
 ## commands (once scaffolded)
 
@@ -98,7 +104,10 @@ the non-obvious ones:
   `.github/workflows/ci.yml` exactly (see `justfile` at repo root for
   the full recipe list: `setup`, `dev`, `test-rust`, `check-rust`,
   `test-web`, `check-web`, `audit-web`, `build-web`, `check-cli`,
-  `check-swift`). on a fresh clone, run `just setup` (`npm ci`) first —
+  `check-swift`, `build-media-adapter` — that last one compiles the
+  vendored MediaRemote framework and installs it under
+  `~/Library/Application Support/notchtap/`, no sudo). on a fresh
+  clone, run `just setup` (`npm ci`) first —
   `test-all` does not install web deps for you.
   `just push "title" "body"` wraps the `./notchtap` cli call above.
   `just` is not installed on the dev machine yet — `brew install just`
@@ -125,8 +134,11 @@ electron and not pure native swift (see `docs/ARCHITECTURE.md` §8 for why).
   positioning. this is the only process that talks to the outside
   world (cli pushes, and in v2, the espn scoreboard poller and cmux's
   notification-command relay).
-- **react/ts frontend** (`src/App.tsx`, `src/styles.css`) owns
-  rendering only: it receives queued events via tauri's event system
+- **react/ts frontend** owns rendering only. two vite entries: the
+  overlay (`index.html` → `src/App.tsx`, `src/styles.css`) and the
+  settings window (`settings.html` → `src/settings/`), see
+  `vite.config.ts`. the overlay
+  receives queued events via tauri's event system
   and renders them through an animation template. v1 has exactly one
   template (enter/hold/exit); v2 replaces this with a config table
   keyed by event type — that should stay a data change, not a new

@@ -8,11 +8,14 @@ implementation surfaces friction; if a change is a *decision* change
 still-needed: *"a code-level technical spec (mirroring
 `archive/V3_TECHNICAL_SPEC.md`'s precedent) for the wire schema change, the
 `NSWindowCollectionBehavior` call, and the global-hotkey registration
-mechanism."* This is that spec.
+mechanism."* This is that spec. (`archive/V3_TECHNICAL_SPEC.md` was
+removed at repo close-out 2026-07-23;
+retrievable via `git log -- docs/archive/`.)
 
 this is the **biggest architectural change since v1**. it does not
 replace `archive/V3_TECHNICAL_SPEC.md` (telegram/notifier — shipped, tested,
-unrelated seam) — it replaces the *display* half of v1/v2/v3.5: the
+unrelated seam; removed at repo close-out 2026-07-23,
+see `git log -- docs/archive/`) — it replaces the *display* half of v1/v2/v3.5: the
 3-item TTL stack, the pill/grow/mini shape table, and the frontend's
 self-timed dismissal.
 
@@ -1188,7 +1191,8 @@ Spaces/fullscreen behavior (§8's last two rows).
 **depends on**: nothing functionally; best done last so it reflects
 what actually landed rather than what was planned. **owns**:
 `CONTEXT.md` glossary pass (§2/§9), `TESTING_STRATEGY.md` crosswalk
-entry mirroring §3's `archive/V3_TECHNICAL_SPEC.md` precedent (a `§4.10 single-
+entry mirroring §3's `archive/V3_TECHNICAL_SPEC.md` precedent (removed
+at repo close-out 2026-07-23, see `git log -- docs/archive/`) (a `§4.10 single-
 slot rotating overlay` section, same shape as `§4.9`'s), and
 `IMPLEMENTATION_PLAN.md` §3.6's own exit-criteria checklist (currently
 absent — §3.6 has no `### 3.6.1 exit criteria` subsection the way
