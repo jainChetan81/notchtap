@@ -16,6 +16,7 @@ import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { type FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { NOTCHTAP_EASE } from "../animationTiming";
 import { ActionStatus, useActionStatus } from "./actionStatus";
 import { settingsInvoke } from "./ipc";
 import { AppearanceSection } from "./sections/AppearanceSection";
@@ -378,7 +379,7 @@ export function SettingsApp() {
   const currentSection = sectionCopy[activeSection];
 
   return (
-    <MotionConfig reducedMotion="user" transition={{ duration: 0.16, ease: [0.22, 1, 0.36, 1] }}>
+    <MotionConfig reducedMotion="user" transition={{ duration: 0.16, ease: NOTCHTAP_EASE }}>
       <main
         className="settings-window grid h-full w-full min-h-[480px] grid-cols-[140px_minmax(0,1fr)] overflow-hidden bg-background max-[430px]:grid-cols-[122px_minmax(0,1fr)]"
         aria-labelledby="section-title"

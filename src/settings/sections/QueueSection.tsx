@@ -1,10 +1,32 @@
+import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { NOTCHTAP_EASE } from "../../animationTiming";
 import { ActionStatus, useActionStatus } from "../actionStatus";
 import { CONTROL_ROW, ControlCopy, SettingsGroup } from "../controls/controls";
 import { settingsInvoke } from "../ipc";
 import type { QueueItemSummary } from "../types";
 import { PRIORITY_LABELS } from "../types";
+
+// plan 126: `get_queue` returns plain summaries with no id, and a refresh
+// wholesale-replaces the array — so the only stable identity available is
+// the row's own content. `occurrenceIndex` disambiguates duplicate
+// identical summaries (same priority/source/title waiting twice) so two
+// such rows don't collide on the same React key; a running Map keeps it
+// deterministic across a refetch that returns the same list (so those rows
+// don't remount, which is what lets AnimatePresence tell "still here" from
+// "this one left").
+function withQueueRowKeys(
+  items: QueueItemSummary[],
+): Array<{ item: QueueItemSummary; rowKey: string }> {
+  const seen = new Map<string, number>();
+  return items.map((item) => {
+    const base = `${item.priority}:${item.source}:${item.title}`;
+    const occurrenceIndex = seen.get(base) ?? 0;
+    seen.set(base, occurrenceIndex + 1);
+    return { item, rowKey: `${base}:${occurrenceIndex}` };
+  });
+}
 
 // plan 121: read-only visibility into the WAITING items behind the
 // visible card (the queue_total/queue_done dots on the overlay are the
@@ -82,20 +104,32 @@ export function QueueSection() {
         <p className="queue-empty m-0 py-3 text-fs-body text-muted-foreground">Queue is empty.</p>
       ) : (
         <ul className="queue-list flex flex-col py-1 pb-[11px]">
-          {items.map((item, index) => (
-            <li
-              // biome-ignore lint/suspicious/noArrayIndexKey: `get_queue` returns plain summaries with no id — this list is always replaced wholesale by the next refresh() (never reordered or spliced in place), so the index is a stable-enough positional identity for one fetched snapshot.
-              key={`${index}:${item.title}`}
-              className="queue-row grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-border/60 py-2 first:border-t-0"
-            >
-              <span className="queue-title min-w-0 text-fs-body text-foreground [overflow-wrap:anywhere]">
-                {item.title}
-              </span>
-              <span className="queue-priority-tag min-w-0 rounded-full border border-border px-[7px] py-0.5 font-mono text-fs-caption font-[650] leading-[1.5] text-muted-foreground">
-                {PRIORITY_LABELS[item.priority]}
-              </span>
-            </li>
-          ))}
+          {/* plan 126: initial={false} means the section's own first mount
+              (and a wholesale Refresh swap that happens to return the same
+              rows, since they keep their keys) never cascades — only a row
+              genuinely appearing or leaving animates, so Skip current reads
+              as "that one row left" and Clear collapses the rows it
+              removes. */}
+          <AnimatePresence initial={false}>
+            {withQueueRowKeys(items).map(({ item, rowKey }) => (
+              <motion.li
+                key={rowKey}
+                className="queue-row grid min-w-0 grid-cols-[minmax(0,1fr)_auto] items-center gap-2 border-t border-border/60 py-2 first:border-t-0"
+                style={{ overflow: "hidden" }}
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={{ duration: 0.18, ease: NOTCHTAP_EASE }}
+              >
+                <span className="queue-title min-w-0 text-fs-body text-foreground [overflow-wrap:anywhere]">
+                  {item.title}
+                </span>
+                <span className="queue-priority-tag min-w-0 rounded-full border border-border px-[7px] py-0.5 font-mono text-fs-caption font-[650] leading-[1.5] text-muted-foreground">
+                  {PRIORITY_LABELS[item.priority]}
+                </span>
+              </motion.li>
+            ))}
+          </AnimatePresence>
         </ul>
       )}
       {/* plan 124 (F1): the control this section's own top-of-file comment

@@ -1,6 +1,8 @@
+import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import { NOTCHTAP_EASE } from "../../animationTiming";
 import { ActionStatus, useActionStatus } from "../actionStatus";
 import { CONTROL_ROW, ControlCopy, SettingsGroup } from "../controls/controls";
 import { settingsInvoke } from "../ipc";
@@ -124,7 +126,14 @@ function HistoryRow({ entry }: { entry: HistoryEntry }) {
     "history-detail-value min-w-0 text-fs-body text-muted-foreground [overflow-wrap:anywhere]";
 
   return (
-    <li className="history-row grid min-w-0 grid-cols-[minmax(0,1fr)] gap-0.5 border-t border-border/60 py-2.5 first:border-t-0">
+    <motion.li
+      className="history-row grid min-w-0 grid-cols-[minmax(0,1fr)] gap-0.5 border-t border-border/60 py-2.5 first:border-t-0"
+      style={{ overflow: "hidden" }}
+      initial={{ opacity: 0, height: 0 }}
+      animate={{ opacity: 1, height: "auto" }}
+      exit={{ opacity: 0, height: 0 }}
+      transition={{ duration: 0.18, ease: NOTCHTAP_EASE }}
+    >
       <span className="history-time font-mono text-fs-secondary leading-none font-bold text-muted-foreground">
         {new Date(entry.recorded_at_ms).toLocaleString()}
       </span>
@@ -215,7 +224,7 @@ function HistoryRow({ entry }: { entry: HistoryEntry }) {
           </div>
         </details>
       )}
-    </li>
+    </motion.li>
   );
 }
 
@@ -294,9 +303,15 @@ export function HistorySection({ config }: { config: Config }) {
         </p>
       ) : (
         <ul className="history-list flex flex-col py-1 pb-[11px]">
-          {newestFirst.map((entry) => (
-            <HistoryRow key={entry.event.id} entry={entry} />
-          ))}
+          {/* plan 126: initial={false} so the section's own first mount (and
+              a load that happens to return the same entries) never
+              cascades — only a row genuinely appearing or leaving animates.
+              Clear collapses the rows it removes. */}
+          <AnimatePresence initial={false}>
+            {newestFirst.map((entry) => (
+              <HistoryRow key={entry.event.id} entry={entry} />
+            ))}
+          </AnimatePresence>
         </ul>
       )}
       <div className={CONTROL_ROW}>
