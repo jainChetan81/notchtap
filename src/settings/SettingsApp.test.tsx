@@ -71,6 +71,7 @@ const config: Config = {
     },
     { url: "https://example.com/tech.xml", source: null, category: null },
   ],
+  rss_topics: ["aston villa transfers"],
   rss_poll_secs: 90,
   rss_priority: "high",
   rss_ttl_secs: 18,
@@ -120,6 +121,7 @@ const rustConfigDefaults: Config = {
       category: null,
     },
   ],
+  rss_topics: [],
   rss_poll_secs: 60,
   rss_priority: "low",
   rss_ttl_secs: 10,
@@ -770,6 +772,138 @@ describe("SettingsApp", () => {
       },
       { url: "https://example.com/tech.xml", source: null, category: null },
     ]);
+  });
+
+  // --- plan 130: Topics textarea (merges with Feeds, not either/or) ---
+
+  it("loads Topics from config and saves edited lines back, trimmed and empty lines dropped", async () => {
+    let savedConfig: Config | null = null;
+    mockIPC((command, payload) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "save_config_and_relaunch") {
+        savedConfig = (payload as { config: Config }).config;
+        return null;
+      }
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "News" }));
+    const topics = (await screen.findByLabelText("Topics")) as HTMLTextAreaElement;
+    expect(topics.value).toBe("aston villa transfers");
+
+    fireEvent.change(topics, {
+      target: { value: "  formula 1  \n\n   \nnvidia earnings" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "Save & Relaunch" }));
+
+    await waitFor(() => expect(savedConfig).not.toBeNull());
+    // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above; the suggested ?. fix breaks tsc (CFA narrows savedConfig to null → never).
+    expect(savedConfig!.rss_topics).toEqual(["formula 1", "nvidia earnings"]);
+  });
+
+  // --- plan 130 Step 3: on-the-go search (search_news_now) ---
+
+  describe("Search now (plan 130 Step 3)", () => {
+    async function openNews() {
+      render(<SettingsApp />);
+      await screen.findByRole("heading", { level: 1, name: "General" });
+      fireEvent.click(screen.getByRole("button", { name: "News" }));
+      // Waits for the News section's own content (not just the header,
+      // which updates a render ahead of the AnimatePresence-keyed content
+      // swap) — mirrors the existing feed tests' `findByLabelText("Feeds")`
+      // pattern above.
+      await screen.findByLabelText("Topics");
+    }
+
+    it("the Search button is disabled while the input is empty", async () => {
+      mockLoads();
+      await openNews();
+
+      const button = screen.getByRole("button", { name: "Search" }) as HTMLButtonElement;
+      expect(button.disabled).toBe(true);
+    });
+
+    it("invokes search_news_now with the typed query and announces the count on success", async () => {
+      let invokedQuery: string | null = null;
+      mockIPC((command, payload) => {
+        if (command === "get_config") return config;
+        if (command === "get_secret_status") return unsetSecrets;
+        if (command === "get_default_config") return rustConfigDefaults;
+        if (command === "search_news_now") {
+          invokedQuery = (payload as { query: string }).query;
+          return 3;
+        }
+      });
+      await openNews();
+
+      const input = screen.getByPlaceholderText("e.g. aston villa transfers") as HTMLInputElement;
+      fireEvent.change(input, { target: { value: "aston villa transfers" } });
+      fireEvent.click(screen.getByRole("button", { name: "Search" }));
+
+      await waitFor(() => expect(invokedQuery).toBe("aston villa transfers"));
+      expect(await screen.findByText("3 stories queued")).toBeTruthy();
+      // input clears on success
+      await waitFor(() => expect(input.value).toBe(""));
+    });
+
+    it("shows the singular form for a single result", async () => {
+      mockIPC((command) => {
+        if (command === "get_config") return config;
+        if (command === "get_secret_status") return unsetSecrets;
+        if (command === "get_default_config") return rustConfigDefaults;
+        if (command === "search_news_now") return 1;
+      });
+      await openNews();
+
+      const input = screen.getByPlaceholderText("e.g. aston villa transfers") as HTMLInputElement;
+      fireEvent.change(input, { target: { value: "formula 1" } });
+      fireEvent.click(screen.getByRole("button", { name: "Search" }));
+
+      expect(await screen.findByText("1 story queued")).toBeTruthy();
+    });
+
+    it("surfaces a rejection as an error and leaves the input for retry", async () => {
+      mockIPC((command) => {
+        if (command === "get_config") return config;
+        if (command === "get_secret_status") return unsetSecrets;
+        if (command === "get_default_config") return rustConfigDefaults;
+        if (command === "search_news_now") return Promise.reject("already searching");
+      });
+      await openNews();
+
+      const input = screen.getByPlaceholderText("e.g. aston villa transfers") as HTMLInputElement;
+      fireEvent.change(input, { target: { value: "formula 1" } });
+      fireEvent.click(screen.getByRole("button", { name: "Search" }));
+
+      expect(await screen.findByText("already searching")).toBeTruthy();
+      expect(input.value).toBe("formula 1");
+    });
+
+    it("never invokes search_news_now for a whitespace-only query", async () => {
+      const searchNow = vi.fn();
+      mockIPC((command) => {
+        if (command === "get_config") return config;
+        if (command === "get_secret_status") return unsetSecrets;
+        if (command === "get_default_config") return rustConfigDefaults;
+        if (command === "search_news_now") {
+          searchNow();
+          return 0;
+        }
+      });
+      await openNews();
+
+      const input = screen.getByPlaceholderText("e.g. aston villa transfers") as HTMLInputElement;
+      fireEvent.change(input, { target: { value: "   " } });
+      const button = screen.getByRole("button", { name: "Search" }) as HTMLButtonElement;
+      expect(button.disabled).toBe(true);
+      fireEvent.click(button);
+
+      await flush();
+      expect(searchNow).not.toHaveBeenCalled();
+    });
   });
 
   it("rotation order loads in the saved order and reorders with edge-disabled buttons", async () => {

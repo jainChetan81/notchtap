@@ -783,6 +783,80 @@ pub async fn send_test_notification(
     engine.accept(event, true).await.map_err(|e| e.to_string())
 }
 
+/// On-the-go news search (plan 130 Step 3): expands `query` via the SAME
+/// `rss_poller::expand_topic_url` a configured topic line uses (one
+/// shared path, no fork), fetches it ONCE, dedups against the SAME
+/// `SeenStore` the continuous poller shares (app-managed state — see
+/// `lib.rs`'s `.setup()`), and enqueues every new story through the SAME
+/// `Engine::accept` ingest path — never persisted anywhere, works live
+/// with no relaunch, and works even when `rss_enabled` is off.
+///
+/// Concurrency (executor decision, sanctioned by the plan): a second
+/// call arriving while one is already in flight errors "already
+/// searching" rather than queueing behind it or racing the same
+/// SeenStore/http client — simpler and safer than either, and a second
+/// click is rare enough that surfacing the error (the button re-enables
+/// the instant the first call settles) costs nothing in practice.
+#[tauri::command]
+pub async fn search_news_now(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, StdMutex<Config>>,
+    engine: tauri::State<'_, Engine>,
+    seen: tauri::State<'_, StdMutex<crate::rss_poller::SeenStore>>,
+    in_flight: tauri::State<'_, std::sync::atomic::AtomicBool>,
+    query: String,
+) -> Result<usize, String> {
+    ensure_settings_window(&window)?;
+    let trimmed = query.trim();
+    if trimmed.is_empty() {
+        return Err("query must not be empty".to_string());
+    }
+
+    if in_flight.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return Err("already searching".to_string());
+    }
+    // Resets the flag on every exit path — the early-return error arms
+    // above included, since a fetch error must not wedge the flag
+    // permanently "in flight".
+    struct ResetInFlight<'a>(&'a std::sync::atomic::AtomicBool);
+    impl Drop for ResetInFlight<'_> {
+        fn drop(&mut self) {
+            self.0.store(false, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+    let _reset = ResetInFlight(in_flight.inner());
+
+    let (ttl_secs, max_per_poll, priority) = {
+        let config = state.inner().lock().unwrap();
+        (
+            config.rss_ttl_secs,
+            config.rss_max_per_poll,
+            config.rss_priority,
+        )
+    };
+    let url = crate::rss_poller::expand_topic_url(trimmed);
+    let client = crate::net::build_poll_client().map_err(|e| e.to_string())?;
+    let events = crate::rss_poller::search_once(
+        &client,
+        seen.inner(),
+        &url,
+        trimmed,
+        max_per_poll,
+        ttl_secs,
+        priority,
+    )
+    .await
+    .map_err(|e| e.to_string())?;
+
+    let mut enqueued = 0usize;
+    for event in events {
+        if engine.accept(event, false).await.is_ok() {
+            enqueued += 1;
+        }
+    }
+    Ok(enqueued)
+}
+
 #[tauri::command]
 pub async fn get_connector_health(
     window: tauri::WebviewWindow,

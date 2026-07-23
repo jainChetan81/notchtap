@@ -192,6 +192,7 @@ pub fn run() {
         });
     let rss_enabled = config.rss_enabled;
     let rss_feeds = config.rss_feeds.clone();
+    let rss_topics = config.rss_topics.clone();
     let rss_poll_secs = config.rss_poll_secs;
     let rss_priority = config.rss_priority;
     let rss_ttl_secs = config.rss_ttl_secs;
@@ -262,6 +263,7 @@ pub fn run() {
             settings::get_recent_log_lines,
             settings::get_secret_status,
             settings::save_config_and_relaunch,
+            settings::search_news_now,
             settings::set_secret,
             settings::send_test_notification,
             settings::set_appearance,
@@ -270,6 +272,20 @@ pub fn run() {
         .setup(move |app| {
             app.set_activation_policy(ActivationPolicy::Accessory);
             app.manage(StdMutex::new(config_for_state));
+            // plan 130: the ONE SeenStore both the rss poller loop (below)
+            // and the settings window's `search_news_now` one-shot command
+            // dedup against — app-managed state (same mechanism as Config
+            // above), reached by the poller via its AppHandle and by the
+            // command via `tauri::State`. Always managed regardless of
+            // `rss_enabled`: an ad-hoc search should work even with
+            // continuous polling off.
+            app.manage(StdMutex::new(rss_poller::SeenStore::default()));
+            // plan 130: serializes concurrent `search_news_now` calls — a
+            // second call while one is in flight errors "already
+            // searching" rather than racing the same SeenStore/http
+            // client (settings.rs's own doc comment on the command has
+            // the full rationale).
+            app.manage(std::sync::atomic::AtomicBool::new(false));
             // plan 037: the ONE Engine. By-value construction means `run()`
             // holds no queue/wake/live binding after this line — a retained
             // alias is a compile error, not a convention. Managed as state
@@ -560,7 +576,9 @@ pub fn run() {
             if rss_enabled {
                 rss_poller::spawn_rss_poller(
                     engine.clone(),
+                    app.handle().clone(),
                     rss_feeds,
+                    rss_topics,
                     rss_poll_secs,
                     rss_ttl_secs,
                     rss_max_per_poll,

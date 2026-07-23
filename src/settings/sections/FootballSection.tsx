@@ -41,7 +41,7 @@ export function FootballSection({
       <NumberControl
         id="espn-poll-secs"
         name="Poll interval"
-        help="How often enabled leagues are checked."
+        help="How often enabled leagues are checked — new score cards appear in a burst after each check."
         value={config.espn_poll_secs}
         min={5}
         max={3600}

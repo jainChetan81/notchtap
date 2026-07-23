@@ -31,6 +31,7 @@ export interface SettingsCommands {
   get_recent_log_lines: { args: undefined; result: string[] };
   get_secret_status: { args: undefined; result: SecretStatus };
   save_config_and_relaunch: { args: { config: Config }; result: null };
+  search_news_now: { args: { query: string }; result: number };
   send_test_notification: { args: { source: TestSource }; result: null };
   set_appearance: { args: { scale: number; radius: number; opacity: number }; result: null };
   set_secret: { args: { field: SecretField; value: string }; result: null };
