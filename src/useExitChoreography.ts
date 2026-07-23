@@ -113,6 +113,25 @@ export function useExitChoreography(
   // correctly here; the assembly only needs to keep mounting.
   const bare = restingState === "notch" && !renderedShowing && !exiting;
 
+  // plan 123: kills the "box, then rounded shape pops in" exit artifact —
+  // full mechanism in overlay-card.css's own `.exiting.exit-to-bare`
+  // comment. `shellExiting` alone (above) drives IDENTICAL exit
+  // choreography regardless of resting-mode look, converging on the WIDE
+  // idle/rail geometry either way — correct for `restingState === "rail"`
+  // (there is no bare shape to converge on), wrong for `restingState ===
+  // "notch"` (the shell was always going to land on `.bare`'s cutout-only
+  // geometry the instant the swap settles, so shrinking to the wide rail
+  // width first, then jumping to cutout width at the class flip, is
+  // exactly the discrete pop the operator flagged). This flag narrows
+  // `shellExiting` to "exiting AND about to land on `.bare`, not `.idle`"
+  // so overlay-card.css can converge the shell's width/flank paint/cutout
+  // radii on the BARE geometry DURING the exit window instead of at the
+  // flip. Rail mode never sets `bare` true (its own doc, above, pins that
+  // to `restingState === "notch"`), so `exitToBare` is always false there
+  // and the plain `.exiting` rule — and every rail-mode exit test — stays
+  // byte-identical.
+  const exitToBare = shellExiting && restingState === "notch";
+
   // 2026-07-23 (operator minimal-notch spec, Task 1.2/1.3): whether the
   // rail's painted chrome (flank paint, clock, dots) should be showing.
   // `bare` alone used to gate FlankClock, and `!renderedShowing && !bare`
@@ -165,6 +184,7 @@ export function useExitChoreography(
     expanded,
     shellExiting,
     bare,
+    exitToBare,
     railRevealed,
     trueIdle,
     idleFaceEligible,

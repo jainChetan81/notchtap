@@ -203,6 +203,7 @@ export function StatusRailCard({
     expanded,
     shellExiting,
     bare,
+    exitToBare,
     railRevealed,
     trueIdle,
     idleFaceEligible,
@@ -234,6 +235,10 @@ export function StatusRailCard({
     // doc above — drives the immediate width-shrink + corner-round start
     // on the true showing->idle exit leg only.
     shellExiting && "exiting",
+    // plan 123: see `exitToBare`'s own doc above — only ever paired with
+    // `exiting` (never appears alone), so it's a pure narrowing modifier,
+    // not a separate state; `restingState === "rail"` never sets it.
+    exitToBare && "exit-to-bare",
     // plan 084: `pulse`/`cele-*` are mutually exclusive, never stacked —
     // the live-match branch (structured espn meta) plays its own
     // `cele-goal`/`cele-yc`/`cele-rc`; every other football-signal card

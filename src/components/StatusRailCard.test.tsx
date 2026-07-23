@@ -1513,5 +1513,48 @@ describe("StatusRailCard", () => {
       act(() => vi.advanceTimersByTime(175));
       expect(container.querySelector(".card-assembly.exiting")).toBeNull();
     });
+
+    // plan 123: `exitToBare` — the "box, then rounded shape pops in" fix.
+    // notch resting mode's exit must carry BOTH `exiting` and
+    // `exit-to-bare` for the whole SWAP_EXIT_MS window (never `.bare`
+    // until the swap actually settles), then flip to `.bare` with both
+    // exit classes gone, exactly like the plain `.exiting`->`.idle`
+    // handoff pinned above.
+    it("notch resting mode: showing->idle exit carries `exiting exit-to-bare` (not `.bare`) for the whole window, then settles `.bare` with both exit classes gone", () => {
+      const { container, rerender } = render(<StatusRailCard slot={GOAL} restingState="notch" />);
+
+      rerender(<StatusRailCard slot={{ state: "empty" }} restingState="notch" />);
+      // t=0 of the exit — both classes present together, `.bare` not yet.
+      expect(container.querySelector(".card-assembly.exiting.exit-to-bare")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.bare")).toBeNull();
+
+      // 174 = SWAP_EXIT_MS (175) minus one tick.
+      act(() => vi.advanceTimersByTime(174));
+      expect(container.querySelector(".card-assembly.exiting.exit-to-bare")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.bare")).toBeNull();
+
+      act(() => vi.advanceTimersByTime(1));
+      // the swap has completed — `.bare` appears, both exit classes gone
+      // in the same tick, never lagging behind it.
+      expect(container.querySelector(".card-assembly.bare")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.exiting")).toBeNull();
+      expect(container.querySelector(".card-assembly.exit-to-bare")).toBeNull();
+    });
+
+    // Rail mode's own regression guard, mirroring the notch-mode test
+    // above: `exit-to-bare` must NEVER appear on the rail leg, at any
+    // point during or after the exit window — `restingState === "rail"`
+    // never lands on `.bare` at all, so there is nothing for this
+    // modifier to converge on. Existing rail-mode exit assertions above
+    // this test are untouched by this plan.
+    it("rail resting mode: showing->idle exit never applies `exit-to-bare`, at any point in or after the exit window", () => {
+      const { container, rerender } = render(<StatusRailCard slot={GOAL} restingState="rail" />);
+
+      rerender(<StatusRailCard slot={{ state: "empty" }} restingState="rail" />);
+      expect(container.querySelector(".card-assembly.exit-to-bare")).toBeNull();
+
+      act(() => vi.advanceTimersByTime(175));
+      expect(container.querySelector(".card-assembly.exit-to-bare")).toBeNull();
+    });
   });
 });
