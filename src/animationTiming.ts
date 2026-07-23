@@ -105,3 +105,42 @@ export const NOTCHTAP_EASE: [number, number, number, number] = [0.22, 1, 0.36, 1
 // (docs/review-logs) that neither the shell's own promotion-grow nor the
 // manifest's expand toggle changed character at the unified 320ms.
 export const EXPAND_MS = 320;
+
+// plan 127 (Step 1, /improve-animations audit finding #4): the bare<->
+// hovered rail's own reveal/paint coordination duration — StatusRailCard's
+// FlankClock/StatusDots mount fades (each a bare `AnimatePresence` +
+// `motion.span`/`motion.div`, not a hover-driven CSS transition) and
+// overlay-card.css's flank background/padding fade + `.track span`
+// background fade all used to hand-type the same 260ms/0.26 literal in
+// four independent spots with no lockstep guard between them — the exact
+// "desynced clocks" shape this file exists to prevent, just one this
+// plan's audit was the first to name explicitly. Single-sourced here and
+// injected as `--reveal-ms` (see `applyAnimationTiming.ts`); every CSS
+// consumer keeps a `260ms` fallback for the same defense-in-depth reason
+// EXPAND_MS's own fallback does.
+export const REVEAL_MS = 260;
+
+// plan 127 (Step 1, finding #5 groundwork): the hover "breathe" response
+// (the `.card-assembly.hovered` scale, overlay-card.css) used to ride
+// REVEAL_MS's 260ms — comfortably outside the ~125-200ms budget a hover
+// response should land in (see Step 4's own doc for the audit finding).
+// A dedicated, faster constant rather than repurposing REVEAL_MS, since
+// the two now diverge: REVEAL_MS still governs the bare<->hovered PAINT
+// coordination (chrome fading in/out), HOVER_MS governs the whole-card
+// scale response layered on top of that paint.
+export const HOVER_MS = 160;
+
+// plan 127 (Step 1, finding #3 groundwork): the same-slot content
+// rotation swap (StatusRailCard's inner `AnimatePresence mode="wait"`,
+// keyed `swapKey`) — a LIGHTER pair of durations used only for
+// showing->showing rotations (news items rotating every ~10s, live-match
+// signal updates, ...), never for the idle<->showing promotion/exit legs,
+// which keep CONTENT_EXIT_MS/SWAP_EXIT_MS untouched (see Step 3's own
+// doc in StatusRailCard.tsx for the full "why"). Deliberately two
+// separate constants (not a single "rotation" duration split arithmetically
+// in half) since exit and enter play genuinely different roles here: the
+// exit is a quick fade-away of stale content, the enter is a slightly
+// longer settle of the fresh content — asymmetric on purpose, unlike the
+// promotion/exit legs' shared NOTCHTAP_EASE-only symmetry.
+export const ROTATION_EXIT_MS = 70;
+export const ROTATION_ENTER_MS = 120;

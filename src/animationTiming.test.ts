@@ -4,7 +4,16 @@ import { readFileSync } from "node:fs";
 // entryImportOrder.test.ts documents and dodges identically.
 import { fileURLToPath, URL as NodeURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
-import { CONTENT_EXIT_MS, EXPAND_MS, NOTCHTAP_EASE, SWAP_EXIT_MS } from "./animationTiming";
+import {
+  CONTENT_EXIT_MS,
+  EXPAND_MS,
+  HOVER_MS,
+  NOTCHTAP_EASE,
+  REVEAL_MS,
+  ROTATION_ENTER_MS,
+  ROTATION_EXIT_MS,
+  SWAP_EXIT_MS,
+} from "./animationTiming";
 import { applyAnimationTiming } from "./applyAnimationTiming";
 
 // plan 117: pins the single-sourced duration constant to the exact value
@@ -45,7 +54,13 @@ describe("animationTiming (plan 117)", () => {
     expect(setProperty).toHaveBeenCalledWith("--swap-exit-ms", `${SWAP_EXIT_MS}ms`);
     expect(setProperty).toHaveBeenCalledWith("--content-exit-ms", `${CONTENT_EXIT_MS}ms`);
     expect(setProperty).toHaveBeenCalledWith("--expand-ms", `${EXPAND_MS}ms`);
-    expect(setProperty).toHaveBeenCalledTimes(3);
+    // plan 127 (Step 1): the four new timing tokens, same injection
+    // discipline as the three above.
+    expect(setProperty).toHaveBeenCalledWith("--reveal-ms", `${REVEAL_MS}ms`);
+    expect(setProperty).toHaveBeenCalledWith("--hover-ms", `${HOVER_MS}ms`);
+    expect(setProperty).toHaveBeenCalledWith("--rotation-exit-ms", `${ROTATION_EXIT_MS}ms`);
+    expect(setProperty).toHaveBeenCalledWith("--rotation-enter-ms", `${ROTATION_ENTER_MS}ms`);
+    expect(setProperty).toHaveBeenCalledTimes(7);
   });
 
   // 2026-07-23 review fix (Duplicated Code finding): NOTCHTAP_EASE is the

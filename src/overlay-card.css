@@ -84,26 +84,37 @@
      mode it shadows the part that extends below the hardware cutout. Only
      recomputes during animation — idle is cached, so no idle-CPU cost. */
   filter: drop-shadow(0 7px 18px rgba(0, 0, 0, 0.5));
-  /* plan 102: +25% pacing, operator feedback. `transform`/`filter` added
-     for the hover "breathing" rule below (`.hovered`) — both properties
-     only ever CHANGE via that class toggle, so listing them here is what
-     makes the transition symmetric (animates in on hover AND back out on
-     un-hover, not just one direction).
+  /* plan 102: +25% pacing, operator feedback. `transform` added for the
+     hover "breathing" rule below (`.hovered`) — it only ever CHANGES via
+     that class toggle, so listing it here is what makes the transition
+     symmetric (animates in on hover AND back out on un-hover, not just
+     one direction).
      plan 12x (wave 3): width dropped 400ms -> 320ms (~20% quicker,
-     operator-feedback "snappier overall" pass) — transform/filter
-     (the hover breathe, unrelated to this pass's complaint) are
-     untouched.
+     operator-feedback "snappier overall" pass) — transform (the hover
+     breathe, unrelated to this pass's complaint) was untouched.
      2026-07-23 review fix (wave C, CSS custom-property injection): the
      literal 320ms moved to `var(--expand-ms, 320ms)` — EXPAND_MS in
      animationTiming.ts, injected by applyAnimationTiming.ts at both real
      entry points. See that constant's own doc for why it's now also the
      manifest disclosure's duration (below). The `320ms` fallback keeps
      this rule correct even in a hypothetical context that never calls
-     applyAnimationTiming. */
+     applyAnimationTiming.
+     plan 127 (Step 4, /improve-animations audit finding #5): TWO changes.
+     (1) `transform`'s own duration moved off the shared 260ms onto a
+     dedicated `var(--hover-ms, 160ms)` — HOVER_MS in animationTiming.ts —
+     landing the hover scale response inside the ~125-200ms budget a
+     snappy hover reaction should live in, rather than sharing REVEAL_MS
+     (a slower, unrelated paint-coordination duration the two used to tie
+     together only by accident, see REVEAL_MS's own doc). (2) `filter` is
+     REMOVED from this list entirely — the `.hovered` rule below no
+     longer overrides it (see that rule's own doc for the "why": an
+     animated `filter` re-rasterizes the whole ~500px composite every
+     frame, both directions, on a many-times/day hover; the base
+     drop-shadow now stays static and the scale alone carries the
+     breathe). */
   transition:
     width var(--expand-ms, 320ms) var(--ease-notchtap),
-    transform 260ms var(--ease-notchtap),
-    filter 260ms var(--ease-notchtap);
+    transform var(--hover-ms, 160ms) var(--ease-notchtap);
 }
 
 /* plan 090 (Q1a/Q2b, carried forward): the cutout term
@@ -204,15 +215,24 @@
   color: #f5f7fa;
   /* 2026-07-23 (operator minimal-notch spec, Task 1.2): lets the bare
      <-> bare-hovered background AND padding swap (both rules above) fade
-     rather than pop — mirrors the 260ms transform/filter duration the
-     hover "breathing" rule below already uses, so the paint/inset reads
-     as coordinated with that same hover trigger and with the width
-     growth it rides alongside. Harmless outside bare<->bare-hovered:
-     neither property ever changes in any other state, so this
-     declaration never has anything else to animate. */
+     rather than pop — mirrors the reveal/paint coordination duration the
+     hover "breathing" rule below already used at the time this was
+     written, so the paint/inset reads as coordinated with that same
+     hover trigger and with the width growth it rides alongside. Harmless
+     outside bare<->bare-hovered: neither property ever changes in any
+     other state, so this declaration never has anything else to animate.
+     plan 127 (Step 1, /improve-animations audit finding #4): the literal
+     260ms moved to `var(--reveal-ms, 260ms)` — REVEAL_MS in
+     animationTiming.ts, injected by applyAnimationTiming.ts, same
+     single-source discipline as SWAP_EXIT_MS/CONTENT_EXIT_MS/EXPAND_MS.
+     This is now a genuinely SEPARATE constant from the hover breathe's
+     own duration (Step 4 retunes `.hovered`'s transform to a faster
+     `--hover-ms`) — the two used to share one hand-typed 260ms by
+     accident, not by design; this rule governs paint/inset coordination,
+     not the hover scale response. */
   transition:
-    background-color 260ms var(--ease-notchtap),
-    padding 260ms var(--ease-notchtap);
+    background-color var(--reveal-ms, 260ms) var(--ease-notchtap),
+    padding var(--reveal-ms, 260ms) var(--ease-notchtap);
   /* grid items default to `min-width: auto` (their content's min-content
      size), which can force the whole grid wider than `--cw` if content
      ever doesn't wrap — the clock/dots content here is always
@@ -333,23 +353,28 @@
    `--cw` is already sitting at the identical value, so the handoff never
    re-triggers a transition or jumps.
    `transition` is redeclared here (not just `width`) with the SAME
-   transform/filter durations as the base rule, only `width` shortened —
-   320ms -> 175ms, matching SWAP_EXIT_MS (src/animationTiming.ts) exactly,
-   so the shell has fully reached idle width by the same tick the
-   geometry-class freeze itself lets go — never before (content spill)
-   and never conspicuously after (a lagging tail).
+   transform duration as the base rule, only `width` shortened — 320ms ->
+   175ms, matching SWAP_EXIT_MS (src/animationTiming.ts) exactly, so the
+   shell has fully reached idle width by the same tick the geometry-class
+   freeze itself lets go — never before (content spill) and never
+   conspicuously after (a lagging tail).
    2026-07-23 review fix (wave C, CSS custom-property injection): the
    literal 175ms moved to `var(--swap-exit-ms, 175ms)` — SWAP_EXIT_MS in
    animationTiming.ts, injected by applyAnimationTiming.ts. This replaces
    the old animationTiming.test.ts regex guard that used to parse this
    rule's own declaration block and compare the number by hand; now there
-   is only one place the number is written. */
+   is only one place the number is written.
+   plan 127 (Step 4, finding #5): `filter` dropped from this list — same
+   removal as the base rule above (the `.hovered` override it used to
+   pair with is gone), and this rule mirrors the base rule's REVEAL
+   pacing, not the hover breathe, so its surviving `transform` leg is
+   tokenized to `var(--reveal-ms, 260ms)` (not `--hover-ms`) — unchanged
+   in VALUE (still 260ms), just no longer hand-typed. */
 .card-root .card-assembly.exiting {
   --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
   transition:
     width var(--swap-exit-ms, 175ms) var(--ease-notchtap),
-    transform 260ms var(--ease-notchtap),
-    filter 260ms var(--ease-notchtap);
+    transform var(--reveal-ms, 260ms) var(--ease-notchtap);
 }
 
 /* plan 123: kills the "box, then rounded shape pops in" exit artifact —
@@ -697,25 +722,34 @@
    started as a deliberately boring diagnostic rule proving the
    rust-derived tracking-area signal reached the webview end-to-end
    (`filter: brightness(1.04)`, no shape change). The imported reference
-   techniques — a gentle scale-up anchored at the top edge (the notch's own
+   technique — a gentle scale-up anchored at the top edge (the notch's own
    physical anchor never moves; only the shell "breathes" outward from
-   it) plus a deeper drop-shadow for depth, both driven by the SAME
-   `hovered` prop → `.hovered` class this rule always used (StatusRailCard
-   sets it from the live `hovered` prop, never CSS `:hover` — the window
-   is click-through, so `:hover` never fires). Set on the whole assembly
-   (not a single block) so idle's two flanks and showing's flank+below-
-   block all lift together as one shape, same as the rule this replaces.
-   `filter: drop-shadow(...)` here fully REPLACES the base rule's resting
-   drop-shadow while hovered (CSS `filter` is not additive across rules —
-   this is intentional: "deepen the shadow" means swap in a deeper one,
-   not layer a second shadow on top). Kept deliberately subtle (1.02
-   scale, not 1.05+) per the plan's own "alive, not bouncy" instruction;
-   the 260ms transitions on the base rule above make both directions
-   (hover-in and hover-out) animate smoothly. */
+   it), driven by the SAME `hovered` prop → `.hovered` class this rule
+   always used (StatusRailCard sets it from the live `hovered` prop,
+   never CSS `:hover` — the window is click-through, so `:hover` never
+   fires). Set on the whole assembly (not a single block) so idle's two
+   flanks and showing's flank+below-block all lift together as one shape,
+   same as the rule this replaces. Kept deliberately subtle (1.02 scale,
+   not 1.05+) per the plan's own "alive, not bouncy" instruction; the
+   `var(--hover-ms, 160ms)` transition on the base rule above makes both
+   directions (hover-in and hover-out) animate smoothly.
+   plan 127 (Step 4, /improve-animations audit finding #5): the deepened
+   `filter: drop-shadow(...)` override is GONE — audit finding: animating
+   `filter` (even just swapping in a new static value across a CSS
+   transition) forces the browser to re-rasterize the FULL composited
+   card — flanks, cutout, below-block, everything drop-shadow follows —
+   every frame, in BOTH directions, on a many-times/day hover trigger.
+   The base rule's resting drop-shadow (`:86` above) now stays static
+   through hover; the 1.02 scale alone carries the "breathe." Tradeoff,
+   screenshot-compared before landing: the deepened-shadow version read
+   as very slightly more "lifted," but the static-shadow + scale version
+   reads nearly identical at this subtle a scale delta, for zero ongoing
+   re-rasterize cost. FEEL-CHECK flag for the operator — this is a
+   genuine visual tradeoff, not a pure improvement, and is worth a real
+   before/after look on the hardware this shows on. */
 .card-root .card-assembly.hovered {
   transform: scale(1.02);
   transform-origin: top center;
-  filter: drop-shadow(0 10px 26px rgba(0, 0, 0, 0.6));
 }
 
 /* signature moment #1 — Goal: a bright confetti-spray burst over the
@@ -782,12 +816,33 @@
   pointer-events: none;
 }
 
+/* plan 127 (Step 6, /improve-animations audit finding #7): `goal-overshoot`
+   scales the WHOLE card assembly (`transform: scale(...)`, the
+   `@keyframes` below) but, unlike the hover "breathe" rule
+   (`.card-assembly.hovered`, which pins `transform-origin: top center`
+   with its own comment explaining the physical anchor — the notch cutout
+   never moves, only the shell grows outward from it), this rule had no
+   `transform-origin` at all — so it defaulted to `50% 50%` (center) and
+   grew symmetrically, visibly lifting the shell's TOP edge off the notch
+   cutout for the celebration's duration. `transform-origin: top center`
+   matches the hover rule's own anchor for the same physical reason.
+   `::before`/`::after` (the ring/burst pseudo-elements just below) stay
+   center-origin on purpose — they're explosions radiating from the
+   card's center, not the card shape itself growing. */
 .card-root .card-assembly.pulse-goal {
+  transform-origin: top center;
   animation: goal-overshoot 1240ms var(--ease-notchtap);
 }
 
+/* plan 127 (Step 6, audit finding #8): `ease-out` -> `var(--ease-notchtap)`
+   — unifies this burst's easing with the card-shape scale (`goal-overshoot`
+   above, already on `--ease-notchtap`) it plays alongside; the two used to
+   ease on two different curves for no documented reason, a small but real
+   "two things happening at once, animated on two different feels" split.
+   Duration untouched (operator-tuned — plan 100; see
+   celebrationStacking.test.tsx's own durations-byte-unchanged pin). */
 .card-root .card-assembly.pulse-goal::after {
-  animation: goal-burst 1240ms ease-out;
+  animation: goal-burst 1240ms var(--ease-notchtap);
 }
 
 /* the expanding ring — a thin bright hoop that shoots out from the
@@ -806,7 +861,11 @@
   border: 2px solid rgba(255, 224, 130, 0.9);
   opacity: 0;
   pointer-events: none;
-  animation: goal-ring 1240ms ease-out;
+  /* plan 127 (Step 6, finding #8): `ease-out` -> `var(--ease-notchtap)`,
+     same unification and same reasoning as `::after`'s own comment
+     above. Duration untouched (operator-tuned — plan 100; see
+     celebrationStacking.test.tsx's own durations-byte-unchanged pin). */
+  animation: goal-ring 1240ms var(--ease-notchtap);
 }
 
 @keyframes goal-overshoot {
@@ -1179,7 +1238,12 @@
 
 .card-root .track span {
   background: rgba(255, 255, 255, 0.09);
-  transition: background 260ms ease;
+  /* plan 127 (Step 1, /improve-animations audit finding #4): the literal
+     260ms moved to `var(--reveal-ms, 260ms)` — REVEAL_MS in
+     animationTiming.ts, single-sourced with the flank background/padding
+     fade above (both are queue/flank paint coordination, the same
+     reveal-tier motion). */
+  transition: background var(--reveal-ms, 260ms) ease;
 }
 
 /* queue slider (plan 033): consumed segments read as a 30%-accent dim,
@@ -1359,12 +1423,25 @@
   flex: none;
 }
 
+/* plan 127 (Step 7, /improve-animations audit — missed opportunity): a
+   pause/config flip (active<->dim opacity+glow, or a shape change —
+   circle<->square via `border-radius` — on the source enabled/disabled
+   toggle) used to snap instantly, no transition at all. This is a
+   state-FLIP soften (opacity/box-shadow/border-radius settling to a new
+   RESTING value), not a loop — the operator's plan-105 decision to
+   remove the dot-pulse (a continuous, always-running animation) stays
+   fully respected here; nothing here ever runs while nothing is
+   changing. */
 .card-root .status-dot {
   box-sizing: border-box;
   width: 9px;
   height: 9px;
   border-radius: 50%;
   flex: none;
+  transition:
+    opacity var(--hover-ms, 160ms) var(--ease-notchtap),
+    box-shadow var(--hover-ms, 160ms) var(--ease-notchtap),
+    border-radius var(--hover-ms, 160ms) var(--ease-notchtap);
 }
 
 .card-root .status-dot.football {
@@ -1439,12 +1516,29 @@
    indicator, never a button. Retires the old "News paused" idle text
    remnant (091 already removed IdleView; this is its replacement).
    plan 110 (Step D): `role="img"` + `aria-label="Notifications paused"`
-   now (was `aria-hidden`) — a sighted-only signal before this. */
+   now (was `aria-hidden`) — a sighted-only signal before this.
+   plan 127 (Step 7, missed opportunity): the glyph mounts/unmounts via a
+   React conditional (`{paused && (...)}`, StatusDots.tsx), not a class
+   toggle on an always-present node — a CSS `transition` has nothing to
+   animate FROM on a fresh mount. A one-shot `animation` fade-in instead:
+   rare (only fires on a genuine pause-state flip) and self-ending (no
+   loop, same "flip, not loop" discipline as the dots' own transition
+   above), so it doesn't reopen plan 105's removed dot-pulse decision. */
 .card-root .pause-glyph {
   display: inline-flex;
   align-items: center;
   gap: 2px;
   flex: none;
+  animation: pause-glyph-fade-in var(--hover-ms, 160ms) var(--ease-notchtap);
+}
+
+@keyframes pause-glyph-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
 }
 
 .card-root .pause-glyph span {
@@ -1562,23 +1656,26 @@
    declaration was never updated alongside it, so the chip enter had
    quietly drifted 45ms slower than every other SWAP_EXIT_MS consumer).
    Retied to `var(--swap-exit-ms, 175ms)` so it can never drift again.
-   The stagger below scales proportionally with it via `calc()` (the
-   original 70ms/220ms ratio, ~0.32, applied to whatever the var
-   resolves to) rather than a second hand-picked literal, so if
-   SWAP_EXIT_MS is ever retuned again the stagger keeps the same relative
-   feel automatically — screenshot-verified the chips still stagger
-   pleasantly at the new 175ms/56ms pair (docs/review-logs). */
+   plan 127 (Step 3, /improve-animations audit finding #3): the stagger
+   (`.notif-time-inline`'s own `animation-delay`, previously `calc(...)`
+   below) and the keyframe's `transform: translateY(3px)` leg are BOTH
+   gone. This pair replays on EVERY same-slot rotation (news items
+   rotating ~10s, live-match signal updates, ...), not just the initial
+   idle->showing promotion — so a stagger+slide tuned to read as a nice
+   one-time flourish on first arrival became a small but real ceremony
+   tax paid every ~10s. The fade alone (still `var(--swap-exit-ms,
+   175ms)`, untouched — this file has no way to distinguish a rotation
+   from a promotion the way StatusRailCard.tsx's own inner content swap
+   now can, see that file's `isRotation`) reads identically pleasant on
+   both legs and costs nothing extra on repeat. */
 .card-root .chip-category,
 .card-root .notif-meta-row .notif-time-inline {
   animation: pill-enter var(--swap-exit-ms, 175ms) var(--ease-notchtap) both;
 }
-.card-root .notif-meta-row .notif-time-inline {
-  animation-delay: calc(var(--swap-exit-ms, 175ms) * 0.32);
-}
 
 @keyframes pill-enter {
-  from { opacity: 0; transform: translateY(3px); }
-  to { opacity: 1; transform: translateY(0); }
+  from { opacity: 0; }
+  to { opacity: 1; }
 }
 
 @media (prefers-reduced-motion: reduce) {

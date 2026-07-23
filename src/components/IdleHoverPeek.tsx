@@ -1,6 +1,7 @@
 import { Globe, type LucideIcon, Music, Pause, Play, Tv } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
+import { NOTCHTAP_EASE, ROTATION_ENTER_MS } from "../animationTiming";
 import { weatherArtFor } from "../lib/weatherArt";
 import { useClock } from "../useClock";
 import type {
@@ -25,14 +26,21 @@ import type {
 // home on weather/football being configured would make it permanently
 // unreachable for anyone without either).
 //
-// Mount lifecycle: this component mounts/unmounts on `hovered` via
+// Mount lifecycle: the CONTENT below opens/closes on the `open` prop via
 // `AnimatePresence` + `motion.div` (plan 12x — migrated off a hand-rolled
 // mounted/closing `useState` + `setTimeout` state machine and matching CSS
 // `@keyframes`, this codebase's animation-law now routes all animation
 // through the `motion` library rather than hand-drawn keyframes or manual
 // layout-prop tweening). `AnimatePresence` owns the exit window itself
 // (`exit={...}` plays out before the node actually leaves the DOM) — no
-// purpose-built timer needed here anymore.
+// purpose-built timer needed here anymore. `IdleHoverPeek` ITSELF is now
+// always mounted by StatusRailCard (plan 127, Step 2, finding #2) — only
+// `open` (defaulting to `hovered` for standalone callers, see the prop's
+// own doc below) gates this AnimatePresence child, so a promotion
+// arriving mid-peek (which flips `open` false without ever unmounting
+// this component) lets the exit actually play instead of the whole
+// subtree — AnimatePresence included — being torn out synchronously by a
+// parent-level conditional.
 //
 // This is also why the block is NOT always-mounted whenever ambient data
 // exists: `.below-block`'s mere DOM presence is what 091's
@@ -112,9 +120,40 @@ function WeatherPeekReadout({ weather }: { weather: WeatherSummary }) {
           092 retired `.pill` entirely; a new pill here would silently
           undo that. */}
       <span className="chip wx-peek-condition">{weather.condition}</span>
-      {weather.rainPct !== null ? (
-        <span className="chip wx-peek-rain">Rain {weather.rainPct}%</span>
-      ) : null}
+      {/* plan 127 (Step 7, missed opportunity): `rainPct` can flip
+          null<->number mid-peek (a live status update, not just on
+          mount/unmount of the peek itself) — the chip used to
+          mount/unmount bare on that flip. `AnimatePresence` with
+          `initial={false}` (a SIBLING instance, not the outer peek
+          container's own — this window opening/closing is a separate
+          gesture from the chip appearing/disappearing within an
+          already-open peek): `initial={false}` means the chip renders at
+          full opacity immediately if it's already present the very
+          render the peek itself opens (no double animation stacking the
+          chip's own fade on top of the container's spring), while a
+          LATER flip (peek already open, rainPct newly arrives or
+          clears) still fades. Duration reuses ROTATION_ENTER_MS
+          (animationTiming.ts) — not a new token: a fast, light UI-chip
+          fade calls for the same ~120ms feel Step 3's rotation enter
+          already established, and this codebase's animation-law
+          (desynced clocks are the bug class, not "one token per call
+          site") is satisfied by sharing an existing single-sourced
+          duration rather than minting a near-duplicate one for a single
+          low-traffic consumer. */}
+      <AnimatePresence initial={false}>
+        {weather.rainPct !== null ? (
+          <motion.span
+            key="wx-peek-rain"
+            className="chip wx-peek-rain"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: ROTATION_ENTER_MS / 1000, ease: NOTCHTAP_EASE }}
+          >
+            Rain {weather.rainPct}%
+          </motion.span>
+        ) : null}
+      </AnimatePresence>
     </div>
   );
 }
@@ -241,7 +280,34 @@ function PeekTimeline() {
   );
 }
 
-export function IdleHoverPeek({ status, hovered }: { status?: StatusState; hovered: boolean }) {
+export function IdleHoverPeek({
+  status,
+  hovered,
+  // plan 127 (Step 2, /improve-animations audit finding #2): the mount
+  // gate used to be StatusRailCard's own `{!renderedShowing && <IdleHoverPeek
+  // hovered={hovered} />}` conditional — which unmounted this WHOLE
+  // component (AnimatePresence included) the instant a promotion arrived
+  // mid-peek, tearing out up to 100px of content with zero animation
+  // (React drops a component tree synchronously; an AnimatePresence
+  // inside the removed subtree never gets the chance to run its own
+  // `exit`). `open` is the new, dedicated mount-gate signal — sourced by
+  // the caller from `!renderedShowing && hovered` exactly as before, but
+  // now read INSIDE the always-mounted component's own AnimatePresence
+  // condition, so a promotion flipping `open` false lets THIS
+  // AnimatePresence play the existing `exit={...}` collapse for real
+  // while the caller's card content enters above it, instead of
+  // vanishing instantly. Defaults to `hovered` (this component's
+  // original, pre-127 gate) so every standalone caller — this file's own
+  // tests, the settings preview, any future direct usage — keeps
+  // identical behavior without having to pass a redundant `open` prop
+  // when there's no separate "peek should survive a promotion" caller to
+  // coordinate with.
+  open = hovered,
+}: {
+  status?: StatusState;
+  hovered: boolean;
+  open?: boolean;
+}) {
   const live = status?.football.live ?? null;
   const media = status?.media.current ?? null;
   const weather = status?.weather.current ?? null;
@@ -254,7 +320,7 @@ export function IdleHoverPeek({ status, hovered }: { status?: StatusState; hover
 
   return (
     <AnimatePresence>
-      {hovered ? (
+      {open ? (
         // plan 093: `height: 100` mirrors `hover.rs`'s `IDLE_PEEK_BELOW_BLOCK_H`
         // constant exactly — a real duplicated-constants pair (see that
         // constant's own doc comment). Any change to this height MUST
