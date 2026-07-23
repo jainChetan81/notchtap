@@ -481,6 +481,22 @@ export function StatusRailCard({
       aria-live={showing ? "polite" : undefined}
       onAnimationEnd={clearPulseWhenItsAnimationEnds}
     >
+      {/* 2026-07-23 review fix (wave B, Task 2 — real concave S-curve):
+          the top "gill" corners — real DOM siblings of the flanks, NOT
+          `.card-assembly::before`/`::after` (both already claimed by the
+          goal-celebration burst/ring — see those rules in
+          overlay-card.css) and NOT pseudo-elements on the flanks
+          themselves (`.flank-left`/`.flank-right` have `overflow:
+          hidden`, which would clip anything anchored outside their own
+          box — these gills must poke a few px past the flank's outer
+          edge to read as a flare, so they need `.card-assembly` itself,
+          which has no overflow rule, as their positioning ancestor).
+          Always rendered ("always render, CSS decides" idiom, matches
+          `.synthetic-cutout` below); pure decoration
+          (`aria-hidden` + CSS `pointer-events: none`). See
+          overlay-card.css's own comment for the concave-fillet geometry. */}
+      <span className="notch-gill notch-gill-left" aria-hidden="true" />
+      <span className="notch-gill notch-gill-right" aria-hidden="true" />
       <div className="flank-left">
         {/* plan 105 (Step C): bare mode draws no clock — CSS alone can't
             hide it (the flanks going transparent still leaves text

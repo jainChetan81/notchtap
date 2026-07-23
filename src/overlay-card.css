@@ -279,73 +279,107 @@
 
 /* ==== notch-shaped idle profile (HUD only): the operator's core
    complaint was that the idle rail reads as a flat rounded "block," not
-   a notch. Native notch implementations draw the whole shape
-   with INDEPENDENT top/bottom corner radii (bottom ~2x top) plus a
-   concave S-curve where the shape meets the screen edge. This app's own
-   ROUNDING LAW (comment above `.card-assembly`) already forbids
-   reshaping the cutout's own corners or the flank's INNER corner — the
-   only legal canvas is the flank's OUTER bottom corner, exactly the one
-   the rule above already rounds. Elongating THAT corner (a two-value,
-   horizontal/vertical `border-radius` — an ellipse, not a circle) reads
-   as a flared, elongated "notch mouth" instead of a plain quarter-round,
-   using `--card-radius` (config, untouched) for the horizontal component
-   and a new, independent, larger value for the vertical one — layered
-   ALONGSIDE the config value, never replacing it.
+   a real hardware notch. Native notch implementations draw the whole
+   shape with a genuinely CONCAVE fillet where the notch meets the top
+   screen/bezel edge (a small "gill" — the boundary sweeps outward before
+   curving down into the notch's vertical wall) plus a plain CONVEX round
+   at the bottom, where the notch hangs into the display.
 
-   Technique choice (of the plan's own safety-ordered options): a plain
-   elliptical `border-radius` over `clip-path`/an SVG mask. It is a
-   single, universally-supported box property, animates for free with
-   the existing `transition: border-radius` above (same property, just a
-   richer value — no new transition to add), and CSS's own overlapping-
-   corner algorithm automatically SCALES a too-large radius back down to
-   fit the box rather than clipping or breaking anything — so even at a
-   tiny `--card-scale` this always degrades to "fully rounded," never a
-   glitch. A full concave-then-convex compound S-curve (clip-path/SVG)
-   was evaluated and deliberately NOT used: approximating that compound
-   curve safely, in this text-only-edit environment with no live visual
-   iteration loop, risked a curve that reads as broken rather than
-   flared — the tradeoff the plan explicitly sanctions choosing safety
-   over. The elongated ellipse still reads as clearly, deliberately
-   flared rather than a plain rounded block.
+   2026-07-23 review fix (wave B, Task 2 — REAL concave S-curve): the
+   previous approach here (an elongated ELLIPTICAL `border-radius` on the
+   flank's bottom-outer corner, pushed hard enough to read as "flared")
+   was explicitly a convex-only compromise — `border-radius`, at any
+   aspect ratio, can only ever bow a corner OUTWARD, never carve a true
+   concave dent. Operator feedback (still "reads as a rounded black bar,
+   not a real notch" after that push) confirmed it: a convex ellipse
+   cannot fake a concave curve no matter how exaggerated. This block now
+   does two independent, honest things instead of one dishonest one:
 
-   Scoped like the ROUNDING LAW above (`:not(:has(.below-block))`, so it
-   hands off to `.below-block`'s own plain circular radius the instant
-   one mounts — same DOM-presence timing, zero extra state) PLUS
-   `:not(.bare)` (105's zero-app-drawn-pixels notch mode paints
-   transparent flanks — flaring an invisible shape would be a no-op at
-   best, a stray drop-shadow-catching corner at worst) PLUS the
-   `:root[data-notchtap-mode="hud"]` guard the cutout/idle-face art above
-   already uses: a real hardware notch draws its own physical bottom
-   curve, so this synthetic art would be redundant/wrong there.
+   1. BOTTOM (below): kept a plain, modest CONVEX round on the flank's
+      outer-bottom corner — still `border-radius`, still legitimate (this
+      really is where the shape wants to bow outward, hanging into the
+      display), just no longer doing double duty as a fake flare. Ties
+      into the SAME `transition: border-radius` declared by the rounding
+      law above (same property, richer value) — no new transition.
 
-   plan 12x (wave 3): operator feedback was still "reads as a rounded
-   black bar, not a real notch" even with the plan-105 ellipse above —
-   pushed the vertical component further, multiplier 3 -> 4 and cap
-   28px -> 32px. 32px is not an arbitrary round number: it's
-   `HUD_CUTOUT_HEIGHT_PX` (App.tsx), the flank row's own height in the
-   common HUD case (no live hardware measurement) — CSS's own
-   overlapping-corner algorithm (see the technique-choice note above)
-   can never render a corner radius taller than the box it's cut from,
-   so at the shipped default `--card-radius` (8px, styles.css) this
-   multiplier already reaches that ceiling (4 * 8 = 32) and CSS clamps
-   it there for free: the flare is as pronounced as the box geometry
-   physically allows, not an arbitrary aesthetic guess. Smaller
-   `--card-radius` configs still scale the flare down proportionally
-   (unclamped, real headroom below the ceiling); larger ones and taller
-   real hardware notches alike just re-hit the same safe auto-clamp —
-   still the same single elliptical `border-radius`, still zero risk of
-   the clip-path-style glitching this plan explicitly steers clear of. */
+   2. TOP (further below, the `.notch-gill-*` rules): a genuinely concave
+      fillet at each top-OUTER corner (where the flank meets the card's
+      own top/outer edge — the "screen edge" analog in this floating HUD
+      card, mirroring where a real notch meets the bezel). `border-radius`
+      cannot produce this, so these are real DOM elements (StatusRailCard
+      Task-2 comment explains why not pseudo-elements) painted with a
+      corner-anchored `radial-gradient`: `transparent` near the anchor
+      point, opaque `#000` beyond it — the classic inverse-fillet/"anti-
+      radius" trick. Positioned to poke a few px past the flank's own
+      box, extending the black shape outward at the very top row, then
+      the gradient's arc sweeps it back to the flank's actual edge by the
+      gill's own height — exactly the hardware profile: wider right at
+      the top, narrowing into the constant-width vertical wall. A plain
+      SVG corner piece is the sanctioned fallback if this ever glitches
+      (unclamped by CSS's own corner-overlap algorithm the way
+      `border-radius` was) — not needed after screenshot verification
+      (see docs/review-logs).
+
+   Both stay scoped like the ROUNDING LAW above (`:not(:has(.below-block))`,
+   handing off to `.below-block`'s own plain circular radius the instant
+   one mounts — same DOM-presence timing, zero extra state — OR mid-
+   `.exiting`, same reasoning as that law's own Task-1 extension: the top/
+   bottom notch profile should appear in lockstep with the rest of the
+   collapse, not lag behind it) PLUS `:not(.bare)` (105's zero-app-drawn-
+   pixels notch mode paints transparent flanks — flaring an invisible
+   shape would be a no-op at best, a stray drop-shadow-catching artifact
+   at worst) PLUS the `:root[data-notchtap-mode="hud"]` guard the cutout/
+   idle-face art above already uses: a real hardware notch draws its own
+   physical curves, so this synthetic art would be redundant/wrong there. */
 :root[data-notchtap-mode="hud"]
   .card-root
   .card-assembly:not(.bare):not(:has(.below-block))
-  .flank-left {
-  border-bottom-left-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 4), 32px);
+  .flank-left,
+:root[data-notchtap-mode="hud"] .card-root .card-assembly.exiting:not(.bare) .flank-left {
+  border-bottom-left-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 2), 20px);
 }
 :root[data-notchtap-mode="hud"]
   .card-root
   .card-assembly:not(.bare):not(:has(.below-block))
-  .flank-right {
-  border-bottom-right-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 4), 32px);
+  .flank-right,
+:root[data-notchtap-mode="hud"] .card-root .card-assembly.exiting:not(.bare) .flank-right {
+  border-bottom-right-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 2), 20px);
+}
+
+/* the top concave "gill" corners themselves — see the big comment block
+   above for the technique and why. `.notch-gill` is the shared box
+   (hidden by default, everywhere except HUD idle/exiting); `-left`/
+   `-right` each own their position + gradient. Anchored to
+   `.card-assembly`'s OWN edges (`left`/`right: -R`, not anything flank-
+   width-derived), so they track every width change (idle vs exiting,
+   `--card-scale`, appearance radius) for free. `z-index` left at auto —
+   they paint outside the flank's own box, over empty space, so there is
+   nothing in this stacking context for them to compete with even during
+   the goal-celebration burst (`.card-assembly::after`, `inset: -60px`,
+   `z-index: 0` — that only ever plays while a below-block is mounted,
+   i.e. exactly when these are hidden). */
+.card-root .notch-gill {
+  display: none;
+  position: absolute;
+  top: 0;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+}
+:root[data-notchtap-mode="hud"]
+  .card-root
+  .card-assembly:not(.bare):not(:has(.below-block))
+  .notch-gill,
+:root[data-notchtap-mode="hud"] .card-root .card-assembly.exiting:not(.bare) .notch-gill {
+  display: block;
+}
+.card-root .notch-gill-left {
+  left: -10px;
+  background: radial-gradient(circle at bottom left, transparent 10px, #000 10px);
+}
+.card-root .notch-gill-right {
+  right: -10px;
+  background: radial-gradient(circle at bottom right, transparent 10px, #000 10px);
 }
 
 /* the notch cutout itself: real hardware empty space in notch mode
