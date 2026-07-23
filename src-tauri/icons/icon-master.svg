@@ -1,9 +1,0 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
-  <!-- notchtap app icon: dark rounded square, notch-bite cutout, live accent dot -->
-  <!-- card: ~824px safe area, ~185px corner radius (macOS icon-grid squircle proportions) -->
-  <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="#0b0c10"/>
-  <!-- notch bite: centered on the top edge, pure black, square bottom corners (overlay's sharp-bite language) -->
-  <rect x="342" y="100" width="340" height="230" fill="#000000"/>
-  <!-- live accent dot -->
-  <circle cx="512" cy="420" r="28" fill="#7fe08d"/>
-</svg>
