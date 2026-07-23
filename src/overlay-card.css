@@ -1110,7 +1110,7 @@
 }
 
 /* plan 081: the TTL progress bar (TtlBar.tsx) on every showing card.
-   `.ttl-fill`'s width is JS-driven per animation frame (TtlBar.tsx),
+   `.ttl-fill`'s scale is JS-driven per animation frame (TtlBar.tsx),
    never a CSS transition — no `transition` here to fight the rAF loop.
    Accent color is deliberate on every card type (priority accent, not
    the news `--cat` var) — the bar is card chrome, like the priority
@@ -1130,17 +1130,34 @@
   background: rgba(255, 255, 255, 0.08);
 }
 
+/* 2026-07-23 review fix (Performance finding — per-frame layout width):
+   TtlBar.tsx used to mutate `style.width` every rAF frame. `.ttl-fill`
+   sits under `.card-assembly`'s own `filter: drop-shadow` (base rule,
+   above in this file) — a width change is a LAYOUT property, so every
+   single frame forced the browser to re-run layout and re-rasterize the
+   whole filtered group the drop-shadow belongs to, not just repaint a
+   2px bar. Fixed by rendering the fill at its full, unchanging width and
+   animating `transform: scaleX(<fraction>)` instead (visually identical
+   at 2px tall) — a compositor-only property that never touches layout.
+   `transform-origin: left` keeps the shrink anchored to the bar's start
+   (the LTR reading direction the countdown drains toward), matching the
+   old `width`-based drain exactly. `will-change: transform` hints the
+   browser to keep this layer composited independently, same reasoning
+   as any other every-frame transform in this file. */
 .card-root .ttl-fill {
   height: 100%;
   width: 100%;
   background: var(--accent);
+  transform-origin: left;
+  will-change: transform;
 }
 
 @media (prefers-reduced-motion: reduce) {
   /* belt-and-braces: the rAF loop itself is gated off in JS under
-     reduced-motion (TtlBar.tsx renders a static full-width fill and never
-     arms the loop), but a CSS transition would still animate a later
-     width change if one were ever added here — keep it inert. */
+     reduced-motion (TtlBar.tsx renders a static, un-scaled fill and
+     never arms the loop), but a CSS transition would still animate a
+     later transform change if one were ever added here — keep it
+     inert. */
   .card-root .ttl-fill {
     transition: none;
   }

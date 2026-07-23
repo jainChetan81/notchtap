@@ -7,10 +7,23 @@ import { TtlBar } from "./TtlBar";
 // without this, DOM from one test's render leaks into the next.
 afterEach(cleanup);
 
-function fillWidth(container: HTMLElement): string {
+// 2026-07-23 review fix (Performance finding): TtlBar.tsx now animates
+// `.ttl-fill` via `transform: scaleX(<fraction>)` instead of mutating
+// `style.width` every frame (see that file's own doc for the "why" — a
+// layout property under `.card-assembly`'s `filter: drop-shadow` was
+// forcing a re-layout/re-rasterize every frame). This helper reads the
+// scaleX fraction back out and reports it on the SAME 0-100 percentage
+// scale every existing assertion below already expects, so the
+// assertions' MEANING (a percentage of remaining time) is unchanged —
+// only the DOM property being read moved from `style.width` to
+// `style.transform`.
+function fillScalePercent(container: HTMLElement): number {
   const fill = container.querySelector(".ttl-fill") as HTMLElement | null;
   expect(fill).not.toBeNull();
-  return (fill as HTMLElement).style.width;
+  const transform = (fill as HTMLElement).style.transform;
+  const match = transform.match(/^scaleX\(([\d.]+)\)$/);
+  expect(match).not.toBeNull();
+  return Number(match?.[1]) * 100;
 }
 
 function mockReducedMotion(matches: boolean) {
@@ -50,7 +63,7 @@ describe("TtlBar (plan 081)", () => {
     act(() => {
       vi.advanceTimersByTime(16);
     });
-    const firstPct = Number.parseFloat(fillWidth(container));
+    const firstPct = fillScalePercent(container);
     expect(firstPct).toBeGreaterThan(0);
     expect(firstPct).toBeLessThanOrEqual(50);
 
@@ -58,7 +71,7 @@ describe("TtlBar (plan 081)", () => {
     act(() => {
       vi.advanceTimersByTime(2000);
     });
-    const laterPct = Number.parseFloat(fillWidth(container));
+    const laterPct = fillScalePercent(container);
     expect(laterPct).toBeLessThan(firstPct);
     expect(laterPct).toBeCloseTo(25, 0);
   });
@@ -68,7 +81,7 @@ describe("TtlBar (plan 081)", () => {
     act(() => {
       vi.advanceTimersByTime(5000);
     });
-    expect(fillWidth(container)).toBe("0%");
+    expect(fillScalePercent(container)).toBe(0);
   });
 
   it("re-anchors the countdown when slotId changes (a new promotion)", () => {
@@ -77,7 +90,7 @@ describe("TtlBar (plan 081)", () => {
     act(() => {
       vi.advanceTimersByTime(900);
     });
-    expect(Number.parseFloat(fillWidth(container))).toBeLessThan(15);
+    expect(fillScalePercent(container)).toBeLessThan(15);
 
     // a new slot (new id) with a fresh full window must restart at ~100%,
     // not continue counting down from n1's near-zero remainder.
@@ -85,7 +98,7 @@ describe("TtlBar (plan 081)", () => {
     act(() => {
       vi.advanceTimersByTime(16);
     });
-    expect(Number.parseFloat(fillWidth(container))).toBeGreaterThan(90);
+    expect(fillScalePercent(container)).toBeGreaterThan(90);
   });
 
   it("re-anchors on a same-id re-emit with a fresh remainingMs (supersede/extension)", () => {
@@ -93,7 +106,7 @@ describe("TtlBar (plan 081)", () => {
     act(() => {
       vi.advanceTimersByTime(90);
     });
-    expect(Number.parseFloat(fillWidth(container))).toBeLessThan(20);
+    expect(fillScalePercent(container)).toBeLessThan(20);
 
     // same slotId, but a supersede top-up granted a fresh, larger window —
     // the bar must jump back up, not keep counting toward zero.
@@ -101,15 +114,15 @@ describe("TtlBar (plan 081)", () => {
     act(() => {
       vi.advanceTimersByTime(16);
     });
-    expect(Number.parseFloat(fillWidth(container))).toBeGreaterThan(90);
+    expect(fillScalePercent(container)).toBeGreaterThan(90);
   });
 
-  it("renders a static full-width fill and skips the rAF loop under prefers-reduced-motion", () => {
+  it("renders a static, un-scaled fill and skips the rAF loop under prefers-reduced-motion", () => {
     mockReducedMotion(true);
     const rafSpy = vi.spyOn(window, "requestAnimationFrame");
     const { container } = render(<TtlBar slotId="n1" ttlMs={8000} remainingMs={4000} />);
 
-    expect(fillWidth(container)).toBe("100%");
+    expect(fillScalePercent(container)).toBe(100);
     expect(rafSpy).not.toHaveBeenCalled();
 
     // advancing time must not start ticking it down either — the loop was
@@ -117,7 +130,7 @@ describe("TtlBar (plan 081)", () => {
     act(() => {
       vi.advanceTimersByTime(5000);
     });
-    expect(fillWidth(container)).toBe("100%");
+    expect(fillScalePercent(container)).toBe(100);
   });
 
   it("cancels the rAF loop on unmount", () => {
@@ -154,12 +167,12 @@ describe("TtlBar (plan 081)", () => {
       act(() => {
         vi.advanceTimersByTime(16);
       });
-      const frozenAt = fillWidth(container);
+      const frozenAt = fillScalePercent(container);
 
       act(() => {
         vi.advanceTimersByTime(3000);
       });
-      expect(fillWidth(container)).toBe(frozenAt);
+      expect(fillScalePercent(container)).toBe(frozenAt);
 
       // still frozen across a re-render with the same props too — not
       // just a one-shot skip.
@@ -167,7 +180,7 @@ describe("TtlBar (plan 081)", () => {
       act(() => {
         vi.advanceTimersByTime(3000);
       });
-      expect(fillWidth(container)).toBe(frozenAt);
+      expect(fillScalePercent(container)).toBe(frozenAt);
     });
 
     it("resumes counting down from where it froze once hoverPaused clears, granting no extra time", () => {
@@ -178,21 +191,21 @@ describe("TtlBar (plan 081)", () => {
       act(() => {
         vi.advanceTimersByTime(2000);
       });
-      const beforePause = Number.parseFloat(fillWidth(container));
+      const beforePause = fillScalePercent(container);
       expect(beforePause).toBeCloseTo(75, 0);
 
       rerender(<TtlBar slotId="n1" ttlMs={8000} remainingMs={8000} hoverPaused={true} />);
       act(() => {
         vi.advanceTimersByTime(16);
       });
-      const duringPause = Number.parseFloat(fillWidth(container));
+      const duringPause = fillScalePercent(container);
       expect(duringPause).toBeCloseTo(beforePause, 0);
 
       // 5s spent hovering — must not count against the countdown at all.
       act(() => {
         vi.advanceTimersByTime(5000);
       });
-      expect(Number.parseFloat(fillWidth(container))).toBeCloseTo(beforePause, 0);
+      expect(fillScalePercent(container)).toBeCloseTo(beforePause, 0);
 
       rerender(<TtlBar slotId="n1" ttlMs={8000} remainingMs={8000} hoverPaused={false} />);
       act(() => {
@@ -200,13 +213,13 @@ describe("TtlBar (plan 081)", () => {
       });
       // resumes from ~75%, not from wherever an un-paused countdown would
       // have reached after the same 7s of real wall-clock time (~12.5%).
-      expect(Number.parseFloat(fillWidth(container))).toBeCloseTo(beforePause, 0);
+      expect(fillScalePercent(container)).toBeCloseTo(beforePause, 0);
 
       // and it keeps counting down normally from there.
       act(() => {
         vi.advanceTimersByTime(2000);
       });
-      expect(Number.parseFloat(fillWidth(container))).toBeCloseTo(50, 0);
+      expect(fillScalePercent(container)).toBeCloseTo(50, 0);
     });
 
     it("does not reset the countdown when only hoverPaused toggles (no re-anchor)", () => {
@@ -216,7 +229,7 @@ describe("TtlBar (plan 081)", () => {
       act(() => {
         vi.advanceTimersByTime(1000);
       });
-      const before = Number.parseFloat(fillWidth(container));
+      const before = fillScalePercent(container);
 
       // toggling hoverPaused true then immediately false again, with zero
       // time elapsed in between, must not perturb the reading at all —
@@ -226,7 +239,37 @@ describe("TtlBar (plan 081)", () => {
       act(() => {
         vi.advanceTimersByTime(16);
       });
-      expect(Number.parseFloat(fillWidth(container))).toBeCloseTo(before, 0);
+      expect(fillScalePercent(container)).toBeCloseTo(before, 0);
+    });
+
+    // 2026-07-23 review fix (Performance finding): the actual bail-out
+    // behavior FIX B adds — no new `requestAnimationFrame` calls while
+    // hoverPaused, not merely a frozen visual value. Distinct from
+    // "freezes the fill" above, which only pins the OUTPUT; this pins the
+    // MECHANISM (spy on rAF itself) so a regression that keeps looping
+    // but happens to keep painting the same number would still be
+    // caught.
+    it("stops requesting new animation frames while hoverPaused (no idle-CPU loop)", () => {
+      const { rerender } = render(
+        <TtlBar slotId="n1" ttlMs={8000} remainingMs={8000} hoverPaused={false} />,
+      );
+      act(() => {
+        vi.advanceTimersByTime(100);
+      });
+
+      rerender(<TtlBar slotId="n1" ttlMs={8000} remainingMs={8000} hoverPaused={true} />);
+      act(() => {
+        // let the in-flight frame (scheduled before the pause) fire and
+        // bail out.
+        vi.advanceTimersByTime(16);
+      });
+
+      const rafSpy = vi.spyOn(window, "requestAnimationFrame");
+      act(() => {
+        vi.advanceTimersByTime(3000);
+      });
+      expect(rafSpy).not.toHaveBeenCalled();
+      rafSpy.mockRestore();
     });
 
     it("byte-identical when hoverPaused is omitted (regression pin)", () => {
