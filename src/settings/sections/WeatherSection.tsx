@@ -54,7 +54,7 @@ export function WeatherSection({
       <NumberControl
         id="weather-poll-secs"
         name="Poll interval"
-        help="How often conditions are refreshed."
+        help="How often conditions are checked — the idle chip and any threshold alert update in a burst after each check."
         value={config.weather_poll_secs}
         min={5}
         max={3600}

@@ -1,7 +1,9 @@
 use std::collections::{HashSet, VecDeque};
+use std::sync::Mutex as StdMutex;
 use std::time::{Duration, Instant};
 
 use reqwest::header::{IF_MODIFIED_SINCE, IF_NONE_MATCH};
+use tauri::Manager;
 use uuid::Uuid;
 
 use crate::config::RssFeedConfig;
@@ -13,6 +15,10 @@ use crate::poller::Backoff;
 
 const TITLE_MAX_CHARS: usize = 120;
 const BODY_MAX_CHARS: usize = 240;
+// plan 130: matches http.rs's SUBTITLE_MAX_CHARS (same fixed-window
+// display-safety rationale) — the topic label rides the same subtitle
+// slot a `/notify` caller's rich-relay subtitle uses.
+const TOPIC_SUBTITLE_MAX_CHARS: usize = 120;
 const MAX_FEED_BYTES: usize = 1024 * 1024;
 const CATEGORY_KEYWORDS: &[(&str, &str)] = &[
     ("politic", "politics"),
@@ -74,6 +80,69 @@ impl SeenStore {
     pub fn contains(&self, key: &str) -> bool {
         self.keys.contains(key)
     }
+}
+
+/// Expands a plain-language topic ("aston villa transfers") into a
+/// Google News query-feed URL (plan 130 Step 1). The `hl`/`gl`/`ceid`
+/// triple is required, not decorative: Google News's RSS search
+/// endpoint is a documented quirk here — omitting any of the three
+/// yields empty or inconsistent results. Shared verbatim by the
+/// continuous poller's topic list (`merge_feed_sources`, below) and the
+/// one-shot `search_once` — a query typed into "Search now" expands
+/// exactly the same way as a configured topic line, one path, no fork.
+pub(crate) fn expand_topic_url(topic: &str) -> String {
+    let mut url =
+        reqwest::Url::parse("https://news.google.com/rss/search").expect("static url must parse");
+    url.query_pairs_mut()
+        .append_pair("q", topic)
+        .append_pair("hl", "en-US")
+        .append_pair("gl", "US")
+        .append_pair("ceid", "US:en");
+    url.to_string()
+}
+
+/// One poll unit: either a configured feed (`topic: None`) or a
+/// topic-expanded query feed (`topic: Some(label)`). `diff_feed` uses
+/// the label to stamp `meta.subtitle` on every event it produces from
+/// this source — a plain feed keeps today's no-subtitle behavior
+/// unchanged.
+pub(crate) struct PollSource {
+    pub(crate) config: RssFeedConfig,
+    pub(crate) topic: Option<String>,
+}
+
+/// Merges configured feeds with topic-expanded query feeds into ONE
+/// poll list (plan 130 Step 1): feeds first, then topics in configured
+/// order — an operator reading their own config top-to-bottom sees the
+/// same order reflected in poll sequence. Each topic line is trimmed;
+/// an empty (or whitespace-only) line is skipped rather than expanding
+/// to a nonsense query.
+pub(crate) fn merge_feed_sources(feeds: &[RssFeedConfig], topics: &[String]) -> Vec<PollSource> {
+    let mut sources: Vec<PollSource> = feeds
+        .iter()
+        .cloned()
+        .map(|config| PollSource {
+            config,
+            topic: None,
+        })
+        .collect();
+
+    for topic in topics {
+        let trimmed = topic.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        sources.push(PollSource {
+            config: RssFeedConfig {
+                url: expand_topic_url(trimmed),
+                source: None,
+                category: None,
+            },
+            topic: Some(trimmed.to_string()),
+        });
+    }
+
+    sources
 }
 
 fn dedup_key(guid: Option<&str>, link: Option<&str>) -> Option<String> {
@@ -253,9 +322,10 @@ fn derive_source(configured_source: Option<&str>, feed: &feed_rs::model::Feed) -
 /// Pure set-difference and event-building heart of the RSS poller. All new
 /// keys enter the shared store before baseline/display filtering, so skipped
 /// or rate-limited stories cannot replay on a later tick.
-// 8 args trips clippy 1.97's too_many_arguments — this is the pure,
-// exhaustively-tested core and every argument is a distinct test axis;
-// bundling them would only obscure the test call sites.
+// 9 args (plan 130 added `topic`) trips clippy 1.97's too_many_arguments —
+// this is the pure, exhaustively-tested core and every argument is a
+// distinct test axis; bundling them would only obscure the test call
+// sites.
 #[allow(clippy::too_many_arguments)]
 pub fn diff_feed(
     seen: &mut SeenStore,
@@ -266,6 +336,10 @@ pub fn diff_feed(
     ttl_secs: u64,
     priority: Priority,
     now: Instant,
+    // plan 130: `Some(label)` for a topic-expanded source — stamped onto
+    // every event's `meta.subtitle`. `None` for a plain configured feed,
+    // which keeps the pre-130 no-subtitle behavior byte-identical.
+    topic: Option<&str>,
 ) -> Vec<Event> {
     let mut candidates = Vec::new();
     let source = derive_source(feed_config.source.as_deref(), feed);
@@ -331,8 +405,11 @@ pub fn diff_feed(
                 category,
                 published_at_ms: published,
                 link: link.map(str::to_string),
-                // plan 035: rss items carry no subtitle/details.
-                subtitle: None,
+                // plan 035: rss items carry no details. plan 130: a
+                // topic-derived item's subtitle carries the topic label
+                // that produced it; a plain configured feed still has
+                // none.
+                subtitle: topic.map(|label| sanitize(label, TOPIC_SUBTITLE_MAX_CHARS)),
                 details: Vec::new(),
                 // plan 083: espn-only field; rss never populates it.
                 espn: None,
@@ -424,9 +501,23 @@ async fn fetch_feed(
 // plan 037: ingest goes through `Engine::accept`, same as the espn
 // poller — rss's deliberately offer-less inline loop is subsumed by
 // accept's origin gate (News events are never offered to connectors).
+//
+// plan 130: `topics` merges with `feeds` (via `merge_feed_sources`) into
+// ONE poll list — same SeenStore, same TTL/priority/max-per-poll, same
+// News tier as a configured feed. `app_handle` reaches the
+// `StdMutex<SeenStore>` tauri manages as app state (`lib.rs`'s
+// `.setup()`), the SAME instance `settings::search_news_now`'s one-shot
+// search dedups against — sharing an app-managed value rather than
+// threading a new field through `Engine::new` (whose ~dozen call sites,
+// mostly test doubles, would otherwise all need updating for a poller
+// this deliberately isn't unit-tested — see this module's own top
+// comment referenced from `weather_poller.rs`).
+#[allow(clippy::too_many_arguments)]
 pub fn spawn_rss_poller(
     engine: Engine,
+    app_handle: tauri::AppHandle,
     feeds: Vec<crate::config::RssFeedConfig>,
+    topics: Vec<String>,
     poll_secs: u64,
     ttl_secs: u64,
     max_per_poll: usize,
@@ -440,22 +531,27 @@ pub fn spawn_rss_poller(
                 return;
             }
         };
-        let mut states: Vec<FeedState> = feeds.iter().map(|_| FeedState::default()).collect();
-        let mut seen = SeenStore::default();
+        let sources = merge_feed_sources(&feeds, &topics);
+        let mut states: Vec<FeedState> = sources.iter().map(|_| FeedState::default()).collect();
         let mut interval = tokio::time::interval(Duration::from_secs(poll_secs.max(15)));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
-        tracing::info!(?feeds, poll_secs, "rss poller started");
+        tracing::info!(
+            feed_count = feeds.len(),
+            topic_count = topics.len(),
+            poll_secs,
+            "rss poller started"
+        );
 
         loop {
             interval.tick().await;
 
-            for (feed_config, state) in feeds.iter().zip(&mut states) {
+            for (source, state) in sources.iter().zip(&mut states) {
                 let now = Instant::now();
                 if !state.backoff.ready(now) {
                     continue;
                 }
 
-                let feed = match fetch_feed(&client, &feed_config.url, state).await {
+                let feed = match fetch_feed(&client, &source.config.url, state).await {
                     Ok(Some(feed)) => {
                         state.backoff.on_success();
                         feed
@@ -465,32 +561,82 @@ pub fn spawn_rss_poller(
                         continue;
                     }
                     Err(error) => {
-                        tracing::warn!(feed = %feed_config.url, "rss poll failed: {error}");
+                        tracing::warn!(feed = %source.config.url, "rss poll failed: {error}");
                         state.backoff.on_failure(now);
                         continue;
                     }
                 };
 
-                let events = diff_feed(
-                    &mut seen,
-                    &feed,
-                    feed_config,
-                    state.baseline,
-                    max_per_poll,
-                    ttl_secs,
-                    priority,
-                    now,
-                );
+                let events = {
+                    let seen_state = app_handle.state::<StdMutex<SeenStore>>();
+                    let mut seen = seen_state.lock().unwrap();
+                    diff_feed(
+                        &mut seen,
+                        &feed,
+                        &source.config,
+                        state.baseline,
+                        max_per_poll,
+                        ttl_secs,
+                        priority,
+                        now,
+                        source.topic.as_deref(),
+                    )
+                };
                 state.baseline = false;
 
                 for event in events {
                     if let Err(error) = engine.accept(event, false).await {
-                        tracing::warn!(feed = %feed_config.url, "rss event dropped: {error}");
+                        tracing::warn!(feed = %source.config.url, "rss event dropped: {error}");
                     }
                 }
             }
         }
     });
+}
+
+/// One-shot fetch+diff for an ad-hoc search (`settings::search_news_now`,
+/// plan 130 Step 3). The caller is expected to have built `url` via the
+/// SAME `expand_topic_url` the continuous poller's topic list uses (one
+/// shared path, no fork — see `search_news_now`'s own body) and to pass
+/// the exact (trimmed) query back in as `topic_label`, stamped onto
+/// every returned event's `meta.subtitle` the same way a configured
+/// topic line's label is. Does a single fresh GET (a throwaway
+/// `FeedState` — no etag/last-modified persists across calls, so a
+/// repeated search always re-fetches rather than 304ing forever), and
+/// dedups through the SAME `seen` store the poller loop above shares
+/// via app-managed state — a story the background poller already
+/// showed won't be re-enqueued by a search, and vice versa.
+pub async fn search_once(
+    client: &reqwest::Client,
+    seen: &StdMutex<SeenStore>,
+    url: &str,
+    topic_label: &str,
+    max_per_poll: usize,
+    ttl_secs: u64,
+    priority: Priority,
+) -> anyhow::Result<Vec<Event>> {
+    let mut state = FeedState::default();
+    let feed = fetch_feed(client, url, &mut state)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("no response"))?;
+    let feed_config = RssFeedConfig {
+        url: url.to_string(),
+        source: None,
+        category: None,
+    };
+    let now = Instant::now();
+    let mut guard = seen.lock().unwrap();
+    Ok(diff_feed(
+        &mut guard,
+        &feed,
+        &feed_config,
+        false,
+        max_per_poll,
+        ttl_secs,
+        priority,
+        now,
+        Some(topic_label),
+    ))
 }
 
 #[cfg(test)]
@@ -696,6 +842,82 @@ mod tests {
         assert_eq!(derive_source(None, &feed), None);
     }
 
+    // --- plan 130 Step 1: topic expansion + merge ---
+
+    #[test]
+    fn expand_topic_url_shape_encodes_the_query_and_carries_the_locale_triple() {
+        let url = expand_topic_url("aston villa transfers");
+        assert_eq!(
+            url,
+            "https://news.google.com/rss/search?q=aston+villa+transfers&hl=en-US&gl=US&ceid=US%3Aen"
+        );
+    }
+
+    #[test]
+    fn expand_topic_url_percent_encodes_reserved_query_characters() {
+        let url = expand_topic_url("cmd & control?");
+        assert!(url.starts_with("https://news.google.com/rss/search?q="));
+        assert!(url.contains("cmd+%26+control%3F"));
+        assert!(!url.contains(' '));
+    }
+
+    #[test]
+    fn merge_feed_sources_puts_feeds_first_then_topics_in_order() {
+        let feeds = vec![
+            RssFeedConfig {
+                url: "https://example.com/a.xml".to_string(),
+                source: Some("A".to_string()),
+                category: None,
+            },
+            RssFeedConfig {
+                url: "https://example.com/b.xml".to_string(),
+                source: None,
+                category: None,
+            },
+        ];
+        let topics = vec!["aston villa transfers".to_string(), "formula 1".to_string()];
+
+        let merged = merge_feed_sources(&feeds, &topics);
+
+        assert_eq!(merged.len(), 4);
+        assert_eq!(merged[0].config.url, "https://example.com/a.xml");
+        assert_eq!(merged[0].topic, None);
+        assert_eq!(merged[1].config.url, "https://example.com/b.xml");
+        assert_eq!(merged[1].topic, None);
+        assert_eq!(
+            merged[2].config.url,
+            expand_topic_url("aston villa transfers")
+        );
+        assert_eq!(merged[2].topic, Some("aston villa transfers".to_string()));
+        assert_eq!(merged[3].config.url, expand_topic_url("formula 1"));
+        assert_eq!(merged[3].topic, Some("formula 1".to_string()));
+    }
+
+    #[test]
+    fn merge_feed_sources_trims_and_skips_empty_topic_lines() {
+        let topics = vec![
+            "  aston villa transfers  ".to_string(),
+            "".to_string(),
+            "   ".to_string(),
+            "formula 1".to_string(),
+        ];
+
+        let merged = merge_feed_sources(&[], &topics);
+
+        assert_eq!(merged.len(), 2);
+        assert_eq!(merged[0].topic, Some("aston villa transfers".to_string()));
+        assert_eq!(
+            merged[0].config.url,
+            expand_topic_url("aston villa transfers")
+        );
+        assert_eq!(merged[1].topic, Some("formula 1".to_string()));
+    }
+
+    #[test]
+    fn merge_feed_sources_with_no_feeds_and_no_topics_is_empty() {
+        assert!(merge_feed_sources(&[], &[]).is_empty());
+    }
+
     #[test]
     fn diff_feed_baseline_records_without_emitting() {
         let feed = parse_feed(
@@ -712,6 +934,7 @@ mod tests {
             10,
             Priority::Low,
             now,
+            None,
         )
         .is_empty());
         assert!(seen.contains("a"));
@@ -724,6 +947,7 @@ mod tests {
             10,
             Priority::Low,
             now,
+            None,
         )
         .is_empty());
     }
@@ -750,6 +974,7 @@ mod tests {
             17,
             Priority::Low,
             now,
+            None,
         );
         let events = diff_feed(
             &mut seen,
@@ -760,6 +985,7 @@ mod tests {
             17,
             Priority::Low,
             now,
+            None,
         );
         assert_eq!(events.len(), 1);
         let event = &events[0];
@@ -769,6 +995,7 @@ mod tests {
         assert_eq!(event.topic, None);
         assert_eq!(event.payload.title, "Second & Latest");
         assert_eq!(event.payload.body, "Details");
+        assert_eq!(event.meta.subtitle, None);
     }
 
     #[test]
@@ -794,6 +1021,7 @@ mod tests {
             10,
             Priority::Low,
             Instant::now(),
+            None,
         );
 
         assert_eq!(events.len(), 1);
@@ -812,6 +1040,56 @@ mod tests {
     }
 
     #[test]
+    fn diff_feed_topic_source_stamps_the_topic_as_subtitle() {
+        let feed = parse_feed(
+            r#"<item><guid>story</guid><title>Aston Villa sign new midfielder</title><link>https://example.com/story</link></item>"#,
+        );
+
+        let events = diff_feed(
+            &mut SeenStore::default(),
+            &feed,
+            &feed_config(None, None),
+            false,
+            10,
+            10,
+            Priority::Low,
+            Instant::now(),
+            Some("aston villa transfers"),
+        );
+
+        assert_eq!(events.len(), 1);
+        assert_eq!(
+            events[0].meta.subtitle,
+            Some("aston villa transfers".to_string())
+        );
+    }
+
+    #[test]
+    fn diff_feed_topic_subtitle_is_truncated_like_any_other_field() {
+        let feed = parse_feed(
+            r#"<item><guid>story</guid><title>Story</title><link>https://example.com/story</link></item>"#,
+        );
+        let long_topic = "x".repeat(TOPIC_SUBTITLE_MAX_CHARS + 10);
+
+        let events = diff_feed(
+            &mut SeenStore::default(),
+            &feed,
+            &feed_config(None, None),
+            false,
+            10,
+            10,
+            Priority::Low,
+            Instant::now(),
+            Some(&long_topic),
+        );
+
+        assert_eq!(events.len(), 1);
+        let subtitle = events[0].meta.subtitle.as_ref().unwrap();
+        assert_eq!(subtitle.chars().count(), TOPIC_SUBTITLE_MAX_CHARS + 1); // +1 for the ellipsis
+        assert!(subtitle.ends_with('…'));
+    }
+
+    #[test]
     fn diff_feed_guid_without_link_carries_no_link() {
         let feed = parse_feed(r#"<item><guid>story</guid><title>Story</title></item>"#);
 
@@ -824,6 +1102,7 @@ mod tests {
             10,
             Priority::Low,
             Instant::now(),
+            None,
         );
 
         assert_eq!(events.len(), 1);
@@ -849,6 +1128,7 @@ mod tests {
             10,
             Priority::Low,
             Instant::now(),
+            None,
         );
         let titles: Vec<_> = events
             .iter()
@@ -876,6 +1156,7 @@ mod tests {
             10,
             Priority::Low,
             Instant::now(),
+            None,
         );
         let titles: Vec<_> = events
             .iter()
@@ -902,6 +1183,7 @@ mod tests {
             10,
             Priority::Low,
             Instant::now(),
+            None,
         );
         assert!(events.is_empty());
         assert!(seen.contains("empty"));
@@ -932,6 +1214,7 @@ mod tests {
                 10,
                 Priority::Low,
                 now,
+                None,
             )
             .len(),
             1
@@ -945,6 +1228,7 @@ mod tests {
             10,
             Priority::Low,
             now,
+            None,
         )
         .is_empty());
     }
@@ -1088,6 +1372,123 @@ mod tests {
             // no `.and(header(..))` matcher registered without validators, so
             // a match here proves the request actually carried both headers.
             assert!(result.is_none());
+        }
+    }
+
+    // --- plan 130 Step 3: search_once's fetch-once/dedup/subtitle
+    // contract, same wiremock-not-live-fetch discipline as
+    // fetch_feed_tests above. ---
+
+    mod search_once_tests {
+        use super::*;
+        use wiremock::matchers::{method, path};
+        use wiremock::{Mock, MockServer, ResponseTemplate};
+
+        const VALID_FEED: &str = r#"<?xml version="1.0" encoding="UTF-8"?>
+<rss version="2.0">
+  <channel>
+    <title>Test News</title>
+    <link>https://example.com</link>
+    <description>Fixture feed</description>
+    <item><guid>a</guid><title>Aston Villa sign new midfielder</title><link>https://example.com/a</link></item>
+  </channel>
+</rss>"#;
+
+        fn client() -> reqwest::Client {
+            reqwest::Client::new()
+        }
+
+        #[tokio::test]
+        async fn fetches_once_and_stamps_the_topic_label_as_subtitle() {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/feed"))
+                .respond_with(
+                    ResponseTemplate::new(200).set_body_raw(VALID_FEED, "application/rss+xml"),
+                )
+                .mount(&server)
+                .await;
+
+            let url = format!("{}/feed", server.uri());
+            let seen = StdMutex::new(SeenStore::default());
+            let events = search_once(
+                &client(),
+                &seen,
+                &url,
+                "aston villa transfers",
+                10,
+                10,
+                Priority::Low,
+            )
+            .await
+            .unwrap();
+
+            assert_eq!(events.len(), 1);
+            assert_eq!(
+                events[0].meta.subtitle,
+                Some("aston villa transfers".to_string())
+            );
+        }
+
+        #[tokio::test]
+        async fn dedups_against_a_seen_store_a_prior_call_already_populated() {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/feed"))
+                .respond_with(
+                    ResponseTemplate::new(200).set_body_raw(VALID_FEED, "application/rss+xml"),
+                )
+                .mount(&server)
+                .await;
+
+            let url = format!("{}/feed", server.uri());
+            let seen = StdMutex::new(SeenStore::default());
+
+            let first = search_once(
+                &client(),
+                &seen,
+                &url,
+                "aston villa transfers",
+                10,
+                10,
+                Priority::Low,
+            )
+            .await
+            .unwrap();
+            assert_eq!(first.len(), 1);
+
+            // Same story, second search (poller-shared SeenStore semantics):
+            // already-seen keys never re-emit, mirroring the poller loop's
+            // own tick-over-tick behavior.
+            let second = search_once(
+                &client(),
+                &seen,
+                &url,
+                "aston villa transfers",
+                10,
+                10,
+                Priority::Low,
+            )
+            .await
+            .unwrap();
+            assert!(second.is_empty());
+        }
+
+        #[tokio::test]
+        async fn propagates_a_fetch_error_as_err() {
+            let server = MockServer::start().await;
+            Mock::given(method("GET"))
+                .and(path("/feed"))
+                .respond_with(ResponseTemplate::new(500))
+                .mount(&server)
+                .await;
+
+            let url = format!("{}/feed", server.uri());
+            let seen = StdMutex::new(SeenStore::default());
+            let result =
+                search_once(&client(), &seen, &url, "formula 1", 10, 10, Priority::Low).await;
+
+            assert!(result.is_err());
         }
     }
 }

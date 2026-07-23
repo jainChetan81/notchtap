@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "settings",
-  "description": "Settings window only: the fourteen v5 settings commands plus event listen (V5_TECHNICAL_SPEC.md §2). The overlay's default.json must never gain any of these.",
+  "description": "Settings window only: the fifteen v5 settings commands plus event listen (V5_TECHNICAL_SPEC.md §2). The overlay's default.json must never gain any of these.",
   "windows": ["settings"],
   "permissions": [
     "allow-clear-history",
@@ -14,6 +14,7 @@
     "allow-get-recent-log-lines",
     "allow-get-secret-status",
     "allow-save-config-and-relaunch",
+    "allow-search-news-now",
     "allow-set-secret",
     "allow-send-test-notification",
     "allow-set-appearance",

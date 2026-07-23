@@ -36,6 +36,7 @@ export interface Config {
   espn_rich_events: boolean;
   rss_enabled: boolean;
   rss_feeds: RssFeedConfig[];
+  rss_topics: string[];
   rss_poll_secs: number;
   rss_priority: PriorityLevel;
   rss_ttl_secs: number;

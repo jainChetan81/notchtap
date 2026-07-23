@@ -150,6 +150,7 @@ function copyConfig(config: Config): Config {
     ...config,
     espn_leagues: [...config.espn_leagues],
     rss_feeds: config.rss_feeds.map((feed) => ({ ...feed })),
+    rss_topics: [...config.rss_topics],
     rotation_order: [...config.rotation_order],
     connectors: { telegram: { ...config.connectors.telegram } },
   };
@@ -230,6 +231,7 @@ export function SettingsApp() {
   const [connectorHealth, setConnectorHealth] = useState<ConnectorHealthDto | null>(null);
   const [espnLeaguesText, setEspnLeaguesText] = useState("");
   const [rssFeedsText, setRssFeedsText] = useState("");
+  const [rssTopicsText, setRssTopicsText] = useState("");
   const [errors, setErrors] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
   // Owned here, not inside AppearanceSection — so a reset's own live-apply
@@ -254,6 +256,7 @@ export function SettingsApp() {
     setConfig(next);
     setEspnLeaguesText(next.espn_leagues.join("\n"));
     setRssFeedsText(next.rss_feeds.map((feed) => feed.url).join("\n"));
+    setRssTopicsText(next.rss_topics.join("\n"));
     setErrors([]);
   }
 
@@ -365,6 +368,7 @@ export function SettingsApp() {
           ? { url, source: match.source, category: match.category }
           : { url, source: null, category: null };
       }),
+      rss_topics: lines(rssTopicsText),
     };
     setSaving(true);
     setErrors([]);
@@ -472,8 +476,10 @@ export function SettingsApp() {
                       <NewsSection
                         config={config}
                         feedsText={rssFeedsText}
+                        topicsText={rssTopicsText}
                         patchConfig={patchConfig}
                         setFeedsText={setRssFeedsText}
+                        setTopicsText={setRssTopicsText}
                       />
                     ) : null}
                     {activeSection === "cmux" ? (

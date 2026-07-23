@@ -20,11 +20,17 @@ export interface ActionStatusValue {
   announce: boolean;
 }
 
-export interface RunOptions {
+export interface RunOptions<T = unknown> {
   /** true only for a user-initiated attempt whose result should be announced via aria-live. */
   announce: boolean;
-  /** message to show (and, if announce, speak) on success; omit to skip the ok phase entirely — a silent success. */
-  okMessage?: string;
+  /**
+   * message to show (and, if announce, speak) on success; omit to skip the
+   * ok phase entirely — a silent success. A function derives the message
+   * from the resolved value (plan 130: `search_news_now`'s "N stories
+   * queued", where N isn't known until the invoke settles) — every
+   * pre-130 caller passes a plain string, unaffected.
+   */
+  okMessage?: string | ((result: T) => string);
   /** ms before an ok status clears back to idle. */
   okClearMs?: number;
   /** whether to surface a pending status at all while the action is in flight (default true). */
@@ -82,7 +88,7 @@ export function useActionStatus(label?: string) {
     });
   }
 
-  async function run<T>(action: () => Promise<T>, options: RunOptions): Promise<T | undefined> {
+  async function run<T>(action: () => Promise<T>, options: RunOptions<T>): Promise<T | undefined> {
     const {
       announce,
       okMessage,
@@ -94,8 +100,9 @@ export function useActionStatus(label?: string) {
     if (showPending) applyStatus({ state: "pending", announce });
     try {
       const result = await action();
-      if (okMessage) {
-        applyStatus({ state: "ok", message: okMessage, announce });
+      const message = typeof okMessage === "function" ? okMessage(result) : okMessage;
+      if (message) {
+        applyStatus({ state: "ok", message, announce });
         clearTimerRef.current = window.setTimeout(() => {
           applyStatus({ state: "idle", announce: false });
         }, okClearMs);

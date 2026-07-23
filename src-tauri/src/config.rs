@@ -46,6 +46,16 @@ pub struct Config {
     /// category = "politics"
     /// ```
     pub rss_feeds: Vec<RssFeedConfig>,
+    /// plan 130: plain-language search topics ("aston villa transfers"),
+    /// one per configured line — MERGED with `rss_feeds` (not an
+    /// either/or mode) into one poll list at poller-spawn time. Each
+    /// entry expands to a Google News query-feed URL
+    /// (`rss_poller::expand_topic_url`) and rides the exact same
+    /// SeenStore/TTL/priority/max-per-poll/News-tier path as a
+    /// configured feed. Default empty — an install with no topics
+    /// behaves exactly as before this field existed.
+    #[serde(default)]
+    pub rss_topics: Vec<String>,
     pub rss_poll_secs: u64,
     /// v6: was hardcoded `Priority::Low` in `rss_poller.rs`.
     pub rss_priority: Priority,
@@ -438,6 +448,7 @@ impl Default for Config {
             espn_rich_events: default_espn_rich_events(),
             rss_enabled: default_rss_enabled(),
             rss_feeds: default_rss_feeds(),
+            rss_topics: Vec::new(),
             rss_poll_secs: default_rss_poll_secs(),
             rss_priority: default_rss_priority(),
             rss_ttl_secs: default_rss_ttl_secs(),
@@ -623,6 +634,7 @@ mod tests {
         assert_eq!(c.rss_priority, Priority::Low);
         assert_eq!(c.rss_ttl_secs, 10);
         assert_eq!(c.rss_max_per_poll, 10);
+        assert!(c.rss_topics.is_empty());
         assert_eq!(c.manual_default_priority, Priority::Medium);
         assert_eq!(c.cmux_priority, Priority::High);
         assert_eq!(c.cmux_ttl_secs, 8);
@@ -754,6 +766,18 @@ mod tests {
         assert_eq!(c.rss_poll_secs, 120);
         assert_eq!(c.rss_ttl_secs, 10);
         assert_eq!(c.rss_max_per_poll, 10);
+    }
+
+    #[test]
+    fn rss_topics_default_empty_and_overridable() {
+        let default = Config::parse("").unwrap();
+        assert!(default.rss_topics.is_empty());
+
+        let c = Config::parse("rss_topics = [\"aston villa transfers\", \"formula 1\"]\n").unwrap();
+        assert_eq!(
+            c.rss_topics,
+            ["aston villa transfers".to_string(), "formula 1".to_string()]
+        );
     }
 
     #[test]

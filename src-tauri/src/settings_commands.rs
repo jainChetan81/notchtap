@@ -3,13 +3,13 @@
 // build.rs's `AppManifest::commands` allowlist, `lib.rs`'s
 // `generate_handler!` registration, and `capabilities/settings.json`'s
 // `allow-<kebab-name>` permission list must all name exactly these
-// fourteen commands (plan 121 added get_queue/clear_queue/skip_current
-// to the original eleven). Until now only convention (plus a CLAUDE.md
-// sentence) held that triple together, and the failure mode is
-// FAIL-OPEN: a command added to `generate_handler!` and forgotten here
-// would silently become callable from the overlay (`main`) window too,
-// breaking the receive-only guarantee that's the whole point of the
-// split.
+// fifteen commands (plan 121 added get_queue/clear_queue/skip_current
+// to the original eleven; plan 130 added search_news_now). Until now
+// only convention (plus a CLAUDE.md sentence) held that triple
+// together, and the failure mode is FAIL-OPEN: a command added to
+// `generate_handler!` and forgotten here would silently become
+// callable from the overlay (`main`) window too, breaking the
+// receive-only guarantee that's the whole point of the split.
 //
 // `build.rs` is a SEPARATE compilation from this crate — it runs before
 // the crate even exists as a build artifact, so it cannot `use` this
@@ -52,6 +52,7 @@ pub(crate) const SETTINGS_COMMANDS: &[&str] = &[
     "get_recent_log_lines",
     "get_secret_status",
     "save_config_and_relaunch",
+    "search_news_now",
     "set_secret",
     "send_test_notification",
     "set_appearance",
@@ -67,13 +68,14 @@ mod tests {
     // array literal itself (typo, duplicate, stray removal) doesn't slip
     // by unnoticed alongside the two parity checks below.
     #[test]
-    fn canonical_list_has_the_documented_fourteen_commands() {
-        assert_eq!(SETTINGS_COMMANDS.len(), 14);
+    fn canonical_list_has_the_documented_fifteen_commands() {
+        assert_eq!(SETTINGS_COMMANDS.len(), 15);
         assert!(SETTINGS_COMMANDS.contains(&"get_history"));
         assert!(SETTINGS_COMMANDS.contains(&"clear_history"));
         assert!(SETTINGS_COMMANDS.contains(&"get_queue"));
         assert!(SETTINGS_COMMANDS.contains(&"clear_queue"));
         assert!(SETTINGS_COMMANDS.contains(&"skip_current"));
+        assert!(SETTINGS_COMMANDS.contains(&"search_news_now"));
     }
 
     // Parity guard #1: capabilities/settings.json's FULL permissions array
