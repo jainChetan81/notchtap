@@ -66,7 +66,7 @@ case "$event" in
       detail2_value="$file"
     else
       detail2_label="Input"
-      detail2_value=$(printf '%s' "$input" | jq -r '(.tool_input // {}) | tostring' | cut -c1-200)
+      detail2_value=$(printf '%s' "$input" | jq -r '(.tool_input // {}) | tostring | .[0:200]')
     fi
     detail_project=$(printf '%s' "$input" | jq -r '.cwd // ""')
     ;;

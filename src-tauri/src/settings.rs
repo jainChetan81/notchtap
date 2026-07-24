@@ -675,7 +675,11 @@ pub fn get_config(
     state: tauri::State<'_, StdMutex<Config>>,
 ) -> Result<Config, String> {
     ensure_settings_window(&window)?;
-    let config = state.inner().lock().unwrap().clone();
+    let config = state
+        .inner()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
     Ok(config)
 }
 
@@ -744,7 +748,11 @@ pub fn save_config_and_relaunch(
     config: Config,
 ) -> Result<(), Vec<String>> {
     ensure_settings_window(&window).map_err(|e| vec![e])?;
-    let booted = state.inner().lock().unwrap().clone();
+    let booted = state
+        .inner()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
     let config = pin_uneditable_fields(config, &booted);
     validate(&config)?;
     preflight_port(config.port, booted.port).map_err(|e| vec![e])?;
@@ -774,7 +782,11 @@ pub async fn send_test_notification(
     source: SourceKind,
 ) -> Result<(), String> {
     ensure_settings_window(&window)?;
-    let config = state.inner().lock().unwrap().clone();
+    let config = state
+        .inner()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .clone();
     let event = build_test_event(&config, source);
     // plan 037: Engine::accept performs the enqueue with the one
     // mutate→wake→emit protocol (a test notification pushed from the
@@ -827,7 +839,7 @@ pub async fn search_news_now(
     let _reset = ResetInFlight(in_flight.inner());
 
     let (ttl_secs, max_per_poll, priority) = {
-        let config = state.inner().lock().unwrap();
+        let config = state.inner().lock().unwrap_or_else(|e| e.into_inner());
         (
             config.rss_ttl_secs,
             config.rss_max_per_poll,
@@ -900,14 +912,20 @@ pub fn set_appearance(
     };
     validate_appearance(&appearance).map_err(|errors| errors.join("; "))?;
 
+    // plan 132: ONE guard held across clone -> disk write -> memory mutate,
+    // not two separate lock/unlock pairs — two rapid calls could otherwise
+    // interleave into a stale disk write (the second call's disk write
+    // landing between the first call's write and its memory update).
+    // Disk-write-first is preserved: a failed write returns before
+    // `managed` is ever mutated, so a write failure leaves managed state
+    // untouched, matching the pre-existing failure semantics.
     let dir = notchtap_config_dir()?;
-    let mut config = state.inner().lock().unwrap().clone();
+    let mut managed = state.inner().lock().unwrap_or_else(|e| e.into_inner());
+    let mut config = managed.clone();
     config.appearance = appearance.clone();
     write_config_atomic(&dir, &config).map_err(|e| format!("could not write config.toml: {e}"))?;
-    {
-        let mut managed = state.inner().lock().unwrap();
-        managed.appearance = appearance.clone();
-    }
+    managed.appearance = appearance;
+    drop(managed);
     broadcast_appearance_change(&app, &config);
     Ok(())
 }
