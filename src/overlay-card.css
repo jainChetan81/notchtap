@@ -2009,7 +2009,11 @@
   position: absolute;
   inset: 0;
   z-index: 0;
-  border-radius: 10px;
+  /* top corners square — the backdrop meets card content above, not an
+     outer edge, so rounding there reads as a floating chip instead of a
+     section of the card. Only the bottom corners round, where the
+     backdrop coincides with the card's own bottom edge. */
+  border-radius: 0 0 10px 10px;
   overflow: hidden;
 }
 /* the real content (scorecard/media/weather readout + timeline) sits
