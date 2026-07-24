@@ -291,17 +291,25 @@
      overflow-y-auto, overscroll-contain — applied at the JSX call site
      instead of duplicated here). `var(--border)` replaces the old
      hardcoded thumb hex (#2a2d33/#30333a) — close in value, no raw
-     palette literal. */
-  .section-scroll {
+     palette literal.
+
+     `.sidebar-nav` shares this rule (footer-clip fix): the nav column
+     now scrolls when the sidebar's min-content (brand + 12 items +
+     wrapping label + meta) exceeds the window, same scrollbar treatment
+     as the section pane so the two scroll surfaces read as one system. */
+  .section-scroll,
+  .sidebar-nav {
     scrollbar-color: var(--border) transparent;
     scrollbar-width: thin;
   }
 
-  .section-scroll::-webkit-scrollbar {
+  .section-scroll::-webkit-scrollbar,
+  .sidebar-nav::-webkit-scrollbar {
     width: 7px;
   }
 
-  .section-scroll::-webkit-scrollbar-thumb {
+  .section-scroll::-webkit-scrollbar-thumb,
+  .sidebar-nav::-webkit-scrollbar-thumb {
     border: 2px solid transparent;
     border-radius: 8px;
     background: var(--border);

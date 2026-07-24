@@ -1013,6 +1013,22 @@ pub async fn skip_current(
     Ok(())
 }
 
+/// System/build info for the settings window's About section
+/// (`docs/V5_TECHNICAL_SPEC.md` §2). Data gathering itself (bundle-root
+/// derivation, the recursive size walk, the `sw_vers` shell-out, sysinfo
+/// reads) lives in `about.rs` as pure/near-pure functions so it's
+/// unit-testable without a live window — this wrapper only adds the
+/// standard settings-window gate.
+#[tauri::command]
+pub async fn get_about_info(
+    window: tauri::WebviewWindow,
+    app: tauri::AppHandle,
+    started_at: tauri::State<'_, std::time::Instant>,
+) -> Result<crate::about::AboutInfo, String> {
+    ensure_settings_window(&window)?;
+    Ok(crate::about::gather_about_info(&app, *started_at.inner()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

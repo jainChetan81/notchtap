@@ -3,7 +3,6 @@ import type { SlotState, SourceKind } from "../useSlotState";
 import { Manifest } from "./Manifest";
 import { Stamp } from "./Stamp";
 import type { Detail } from "./StatusRailCard";
-import { Track } from "./Track";
 import { TtlBar } from "./TtlBar";
 
 // 2026-07-24 (declutter fix): the generic branch serves ALL non-news
@@ -140,7 +139,6 @@ export function NotificationBody({
             <kbd>⌃⇧N</kbd> more
           </div>
         )}
-        <Track total={slot.queueTotal} done={slot.queueDone} />
       </div>
       <Manifest
         title={slot.title}
@@ -152,7 +150,11 @@ export function NotificationBody({
       {/* plan 100: last in DOM order within .below-block — the bar
         is the card's floor, absolutely positioned to its bottom
         edge (styles.css), clipped to the rounded corners by
-        .below-block's own overflow: hidden. */}
+        .below-block's own overflow: hidden.
+        stories merge (2026-07-24): the standalone `<Track>` queue slider that used to sit
+        inside `.compact` above is gone — the two strips read as a double
+        border. TtlBar now takes `total`/`done` directly and renders the
+        queue segmentation itself, folded into this same floor bar. */}
       <TtlBar
         key={slot.id}
         slotId={slot.id}
@@ -163,6 +165,8 @@ export function NotificationBody({
         // signal) is exactly "is THIS card hovered right now,"
         // no extra gating needed.
         hoverPaused={hovered}
+        total={slot.queueTotal}
+        done={slot.queueDone}
       />
     </>
   );

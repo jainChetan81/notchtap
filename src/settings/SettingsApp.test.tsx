@@ -4,6 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
+  type AboutInfo,
   type Config,
   type HistoryEntry,
   type HistoryRotationSpec,
@@ -1682,6 +1683,79 @@ describe("SettingsApp", () => {
       const titleEl = await screen.findByText(longToken);
       expect(titleEl.classList.contains("queue-title")).toBe(true);
       expect(titleEl.classList.contains("[overflow-wrap:anywhere]")).toBe(true);
+    });
+  });
+
+  // About section: the 12th settings section — identity/version/system
+  // stats, sourced from a mocked get_about_info. Byte/uptime formatting
+  // itself is covered independently in byteFormat.test.ts; these tests
+  // only check that the section wires the fetched fields into the right
+  // places.
+  describe("About section", () => {
+    const aboutInfo: AboutInfo = {
+      version: "0.1.0",
+      bundleId: "com.notchtap.app",
+      bundleSizeBytes: 52_428_800, // 50 MiB
+      platform: "macOS 14.5",
+      arch: "aarch64",
+      processMemoryBytes: 41_943_040, // 40 MiB
+      systemMemoryUsedBytes: 8_589_934_592, // 8 GiB
+      systemMemoryTotalBytes: 17_179_869_184, // 16 GiB
+      diskUsedBytes: 214_748_364_800, // 200 GiB
+      diskTotalBytes: 536_870_912_000, // 500 GiB
+      uptimeSecs: 3725, // 1h 2m
+    };
+
+    function mockAbout() {
+      mockIPC((command) => {
+        if (command === "get_config") return config;
+        if (command === "get_secret_status") return unsetSecrets;
+        if (command === "get_default_config") return rustConfigDefaults;
+        if (command === "get_about_info") return aboutInfo;
+      });
+    }
+
+    it("the About nav item exists and clicking it renders the section", async () => {
+      mockAbout();
+      render(<SettingsApp />);
+
+      await screen.findByRole("heading", { level: 1, name: "General" });
+      fireEvent.click(screen.getByRole("button", { name: "About" }));
+
+      expect(await screen.findByRole("heading", { level: 1, name: "About" })).toBeTruthy();
+    });
+
+    it("renders stat tiles from a mocked get_about_info", async () => {
+      mockAbout();
+      render(<SettingsApp />);
+
+      await screen.findByRole("heading", { level: 1, name: "General" });
+      fireEvent.click(screen.getByRole("button", { name: "About" }));
+
+      expect(await screen.findByText("v0.1.0 · com.notchtap.app")).toBeTruthy();
+      expect(screen.getByText("40.0 MB")).toBeTruthy(); // app memory
+      expect(screen.getByText("8.0 / 16.0 GB")).toBeTruthy(); // system memory
+      expect(screen.getByText("200.0 / 500.0 GB")).toBeTruthy(); // disk
+      expect(screen.getByText("macOS 14.5 · aarch64")).toBeTruthy(); // platform
+      expect(screen.getByText("50.0 MB")).toBeTruthy(); // bundle size
+      expect(screen.getByText("1h 2m")).toBeTruthy(); // uptime
+    });
+
+    it("shows a loading state before get_about_info resolves and an error state if it rejects", async () => {
+      mockIPC((command) => {
+        if (command === "get_config") return config;
+        if (command === "get_secret_status") return unsetSecrets;
+        if (command === "get_default_config") return rustConfigDefaults;
+        if (command === "get_about_info") return Promise.reject("engine unavailable");
+      });
+      render(<SettingsApp />);
+
+      await screen.findByRole("heading", { level: 1, name: "General" });
+      fireEvent.click(screen.getByRole("button", { name: "About" }));
+
+      expect(
+        await screen.findByText("Couldn't load system info — it will retry automatically."),
+      ).toBeTruthy();
     });
   });
 });

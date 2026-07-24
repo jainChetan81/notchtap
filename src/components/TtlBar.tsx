@@ -1,6 +1,19 @@
 import { useEffect, useRef } from "react";
 import { prefersReducedMotion } from "../prefersReducedMotion";
 
+// stories merge (2026-07-24): the two thin strips a compact card
+// used to carry — this bar (rotation countdown) and Track.tsx's separate
+// queue slider — read as a double border stacked on top of each other.
+// Track is gone; its segment-count/proportional-index math is folded in
+// here verbatim (ported from Track.tsx before its deletion, same
+// MAX_SEGMENTS=10 ceiling, same `floor(done * MAX / total)` mapping past
+// it) so the floor bar's segments now ARE the queue slider. `total`/`done`
+// default to 1/0 (a single, un-segmented bar) so every caller that never
+// had a queue to report — including every existing test below that
+// predates this merge — keeps rendering the pre-merge single-segment
+// shape without needing to pass anything new.
+const MAX_SEGMENTS = 10;
+
 // plan 081: the thin rotation-countdown bar every showing card carries.
 // Deliberately NOT React state per frame — the prototype
 // (prototype/notch-states.html §4's ttlTick) mutates the fill node's
@@ -20,6 +33,8 @@ export function TtlBar({
   ttlMs,
   remainingMs,
   hoverPaused = false,
+  total = 1,
+  done = 0,
 }: {
   slotId: string;
   ttlMs: number;
@@ -37,6 +52,12 @@ export function TtlBar({
   // visual mirror of that hold, decoupled from it but kept honest because
   // both sides pause/resume off the same tracking-area transition.
   hoverPaused?: boolean;
+  // stories merge (2026-07-24): former Track.tsx props, absorbed. `total` = current batch
+  // size (`slot.queueTotal`), `done` = items already consumed
+  // (`slot.queueDone`). See the module-level comment above for the
+  // default-to-single-segment rationale.
+  total?: number;
+  done?: number;
 }) {
   const fillRef = useRef<HTMLDivElement | null>(null);
   // Read inside the rAF loop below without re-running the anchoring
@@ -171,9 +192,43 @@ export function TtlBar({
     };
   }, [slotId, ttlMs, remainingMs]);
 
+  // stories merge (2026-07-24): segment count/current-index math ported verbatim from
+  // Track.tsx (deleted by this plan) — same MAX_SEGMENTS ceiling, same
+  // proportional mapping past it. `current` is additionally clamped to
+  // `n - 1`: Track never needed this (its own formula never produced an
+  // out-of-range index for the totals it was ever called with), but this
+  // bar's `total`/`done` now default independently of each other, so the
+  // clamp is cheap insurance against an index that would otherwise point
+  // at a segment past the grid's last column.
+  const segmentCount = Math.min(Math.max(total, 1), MAX_SEGMENTS);
+  const rawCurrent = total > MAX_SEGMENTS ? Math.floor((done * MAX_SEGMENTS) / total) : done;
+  const current = Math.min(rawCurrent, segmentCount - 1);
+
   return (
-    <div className="ttl-bar">
-      <div className="ttl-fill" ref={fillRef} />
+    <div
+      className="ttl-bar"
+      // segment count is data, not theme — same `--queue-n` custom
+      // property Track.tsx fed its grid template with, so overlay-card.css
+      // stays static.
+      style={{ "--queue-n": segmentCount } as React.CSSProperties}
+    >
+      {Array.from({ length: segmentCount }, (_, i) => (
+        // biome-ignore lint/suspicious/noArrayIndexKey: anonymous positional queue-segment slots (0..n), same reasoning Track.tsx's own (now-removed) segment row documented — index is the only identity there is, and the sequence is always rendered fresh, never reordered or spliced.
+        <span key={i} className={i < current ? "ttl-seg done" : "ttl-seg"} />
+      ))}
+      <div
+        className="ttl-fill"
+        ref={fillRef}
+        // Placed via `grid-column` rather than nested inside the `current`
+        // segment's own mapped `<span>` above — that would put fillRef's
+        // node behind a conditional (`i === current ? <div ref .../> :
+        // null`), which unmounts/remounts it on every queue advance. This
+        // way the fill is ALWAYS the same DOM node across renders; only
+        // this one inline style value changes when `current` moves, so
+        // the rAF loop above (which re-reads `fillRef.current` fresh every
+        // frame regardless) never has to survive losing its node mid-tick.
+        style={{ gridColumn: current + 1 }}
+      />
     </div>
   );
 }

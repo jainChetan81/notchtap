@@ -280,4 +280,124 @@ describe("TtlBar (plan 081)", () => {
       expect(withDefault.container.innerHTML).toBe(withFalse.container.innerHTML);
     });
   });
+
+  // stories merge (2026-07-24): Track.tsx's queue slider absorbed
+  // into this bar — `total`/`done` now drive a segmented floor instead of
+  // a separate `.track` row. Segment-count/proportional-mapping math is
+  // ported straight from Track.test.tsx (deleted alongside Track.tsx),
+  // rephrased against `.ttl-seg`/`.ttl-fill` instead of `.track span`.
+  describe("queue segments (stories merge)", () => {
+    function segs(container: HTMLElement) {
+      return Array.from(container.querySelectorAll(".ttl-bar .ttl-seg"));
+    }
+
+    it("renders one segment per batch item when the batch is at most 10", () => {
+      const { container } = render(
+        <TtlBar slotId="n1" ttlMs={8000} remainingMs={8000} total={5} done={2} />,
+      );
+      const all = segs(container);
+      expect(all).toHaveLength(5);
+      // done segments (before current) are marked; current (index 2)
+      // hosts the fill instead of carrying a static class of its own;
+      // everything after current is a plain, empty trough.
+      expect(all.slice(0, 2).every((s) => s.classList.contains("done"))).toBe(true);
+      expect(all[2].classList.contains("done")).toBe(false);
+      expect(all.slice(2).every((s) => s.className === "ttl-seg")).toBe(true);
+
+      const fill = container.querySelector(".ttl-fill") as HTMLElement;
+      expect(fill).not.toBeNull();
+      // grid-column is 1-indexed; current=2 -> column 3.
+      expect(fill.style.gridColumn).toBe("3");
+    });
+
+    it("defaults to a single, un-segmented bar when total/done are omitted", () => {
+      const { container } = render(<TtlBar slotId="n1" ttlMs={8000} remainingMs={8000} />);
+      const all = segs(container);
+      expect(all).toHaveLength(1);
+      expect(all[0].classList.contains("done")).toBe(false);
+      const fill = container.querySelector(".ttl-fill") as HTMLElement;
+      expect(fill.style.gridColumn).toBe("1");
+    });
+
+    it("renders exactly one segment (hosting the fill) for a single-item batch", () => {
+      const { container } = render(
+        <TtlBar slotId="n1" ttlMs={8000} remainingMs={8000} total={1} done={0} />,
+      );
+      const all = segs(container);
+      expect(all).toHaveLength(1);
+      expect(all[0].classList.contains("done")).toBe(false);
+      expect(container.querySelector(".ttl-fill")).not.toBeNull();
+    });
+
+    it("caps the segment count at 10 for batches beyond the ceiling", () => {
+      const { container } = render(
+        <TtlBar slotId="n1" ttlMs={8000} remainingMs={8000} total={15} done={0} />,
+      );
+      const all = segs(container);
+      expect(all).toHaveLength(10);
+      expect(container.querySelectorAll(".ttl-bar .ttl-seg.done")).toHaveLength(0);
+    });
+
+    it("maps the current index proportionally past the 10-segment ceiling", () => {
+      // total=20: each segment is 2 items. floor(done * 10 / total).
+      const mid = render(
+        <TtlBar slotId="n1" ttlMs={8000} remainingMs={8000} total={20} done={10} />,
+      );
+      const midSegs = segs(mid.container);
+      expect(midSegs).toHaveLength(10);
+      expect(midSegs.slice(0, 5).every((s) => s.classList.contains("done"))).toBe(true);
+      expect(midSegs[5].classList.contains("done")).toBe(false);
+      expect((mid.container.querySelector(".ttl-fill") as HTMLElement).style.gridColumn).toBe("6");
+
+      // the last item of the batch lights the final segment (floor(19*10/20)=9)
+      const last = render(
+        <TtlBar slotId="n2" ttlMs={8000} remainingMs={8000} total={20} done={19} />,
+      );
+      const lastSegs = segs(last.container);
+      expect(lastSegs.slice(0, 9).every((s) => s.classList.contains("done"))).toBe(true);
+      expect(lastSegs[9].classList.contains("done")).toBe(false);
+      expect((last.container.querySelector(".ttl-fill") as HTMLElement).style.gridColumn).toBe(
+        "10",
+      );
+    });
+
+    it("hands the segment count to the grid via the --queue-n custom property", () => {
+      const { container } = render(
+        <TtlBar slotId="n1" ttlMs={8000} remainingMs={8000} total={4} done={0} />,
+      );
+      const bar = container.querySelector(".ttl-bar") as HTMLElement;
+      expect(bar.style.getPropertyValue("--queue-n")).toBe("4");
+    });
+
+    it("keeps the fill node itself stable when the current segment changes (no remount)", () => {
+      const { container, rerender } = render(
+        <TtlBar slotId="n1" ttlMs={8000} remainingMs={8000} total={5} done={0} />,
+      );
+      const fillBefore = container.querySelector(".ttl-fill");
+      rerender(<TtlBar slotId="n1" ttlMs={8000} remainingMs={8000} total={5} done={2} />);
+      const fillAfter = container.querySelector(".ttl-fill");
+      expect(fillAfter).toBe(fillBefore);
+      expect((fillAfter as HTMLElement).style.gridColumn).toBe("3");
+    });
+
+    it("keeps the fill's own scaleX animation running when total/done change (same clock, unaffected)", () => {
+      const { container, rerender } = render(
+        <TtlBar slotId="n1" ttlMs={8000} remainingMs={4000} total={3} done={0} />,
+      );
+      act(() => {
+        vi.advanceTimersByTime(16);
+      });
+      const before = fillScalePercent(container);
+      expect(before).toBeGreaterThan(0);
+
+      // queue depth changes, ttlMs/remainingMs don't -> no re-anchor, the
+      // countdown keeps counting from where it was, just relocated to a
+      // new segment.
+      rerender(<TtlBar slotId="n1" ttlMs={8000} remainingMs={4000} total={5} done={1} />);
+      act(() => {
+        vi.advanceTimersByTime(16);
+      });
+      expect(fillScalePercent(container)).toBeLessThanOrEqual(before);
+    });
+  });
 });

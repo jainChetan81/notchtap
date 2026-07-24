@@ -163,6 +163,27 @@ export interface QueueItemSummary {
   source: SourceKind;
 }
 
+// Wire shape of get_about_info (About section) — mirrors AboutInfo in
+// src-tauri/src/about.rs. camelCase throughout, same convention as
+// ConnectorHealthDto above. The two "None on best-effort failure" fields
+// (bundleSizeBytes for a dev build, disk*Bytes if no disk mounts at "/")
+// stay nullable here rather than defaulting to 0 — a real zero-byte
+// bundle isn't a state this app can be in, so `null` unambiguously means
+// "not available" instead of colliding with a real reading.
+export interface AboutInfo {
+  version: string;
+  bundleId: string;
+  bundleSizeBytes: number | null;
+  platform: string;
+  arch: string;
+  processMemoryBytes: number;
+  systemMemoryUsedBytes: number;
+  systemMemoryTotalBytes: number;
+  diskUsedBytes: number | null;
+  diskTotalBytes: number | null;
+  uptimeSecs: number;
+}
+
 export type SecretField = keyof SecretStatus;
 
 export type TestSource = "football" | "news" | "cmux" | "manual" | "weather";

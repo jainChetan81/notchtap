@@ -1118,25 +1118,45 @@ describe("StatusRailCard", () => {
     });
   });
 
-  // plan 033: the track is now the queue slider — an enqueue while the
-  // card is visible re-renders the track (the rust core re-emits the slot
-  // state with new queueTotal/queueDone), but the card itself must not
-  // re-animate: the motion key is the item id, unchanged by a
-  // waiting-count change.
-  it("updates the queue slider on a waiting-count change without remounting the card", () => {
+  // plan 033: the queue slider — an enqueue while the card is visible
+  // re-renders the segments (the rust core re-emits the slot state with
+  // new queueTotal/queueDone), but the card itself must not re-animate:
+  // the motion key is the item id, unchanged by a waiting-count change.
+  // stories merge (2026-07-24): the slider merged into the ttl-bar itself (former `.track`
+  // row deleted) — `.ttl-bar` now carries `n` `.ttl-seg` children (one
+  // fewer than the segment count is "done", the current one is plain
+  // since it hosts `.ttl-fill` instead of a `.done` class of its own) plus
+  // the single `.ttl-fill` node.
+  it("updates the queue segments on a waiting-count change without remounting the card", () => {
     const { container, rerender } = render(<StatusRailCard slot={GOAL} />);
-    const trackBefore = container.querySelector(".track");
-    expect(trackBefore?.querySelectorAll("span")).toHaveLength(3);
-    expect(trackBefore?.querySelectorAll("span.cur")).toHaveLength(1);
-    expect(trackBefore?.querySelectorAll("span.done")).toHaveLength(0);
+    const barBefore = container.querySelector(".ttl-bar");
+    expect(barBefore?.querySelectorAll(".ttl-seg")).toHaveLength(3);
+    expect(barBefore?.querySelectorAll(".ttl-seg.done")).toHaveLength(0);
+    expect(barBefore?.querySelector(".ttl-fill")).not.toBeNull();
 
-    // same id, deeper queue — the track re-renders in place
+    // same id, deeper queue — the bar re-renders in place
     rerender(<StatusRailCard slot={{ ...GOAL, queueTotal: 5, queueDone: 1 }} />);
-    const trackAfter = container.querySelector(".track");
-    expect(trackAfter).toBe(trackBefore);
-    expect(trackAfter?.querySelectorAll("span")).toHaveLength(5);
-    expect(trackAfter?.querySelectorAll("span.done")).toHaveLength(1);
-    expect(trackAfter?.querySelectorAll("span.cur")).toHaveLength(1);
+    const barAfter = container.querySelector(".ttl-bar");
+    expect(barAfter).toBe(barBefore);
+    expect(barAfter?.querySelectorAll(".ttl-seg")).toHaveLength(5);
+    expect(barAfter?.querySelectorAll(".ttl-seg.done")).toHaveLength(1);
+    // the fill node itself is stable across the update too (see
+    // TtlBar.tsx's own doc on why it's placed via `grid-column` rather
+    // than nested inside the mapped-segment array).
+    expect(barAfter?.querySelector(".ttl-fill")).toBe(barBefore?.querySelector(".ttl-fill"));
+  });
+
+  // stories merge (2026-07-24): the compact card used to carry the queue slider as its OWN
+  // row (`.compact .track`) plus the ttl-bar floor beneath it — two thin
+  // strips that read as a double border. The slider is gone as a
+  // standalone element; its job is now done by `.ttl-bar`'s own segments
+  // (see the test above).
+  it("no longer renders a standalone .track row in the compact card", () => {
+    const { container } = render(<StatusRailCard slot={GOAL} />);
+    expect(container.querySelector(".track")).toBeNull();
+    expect(container.querySelector(".compact .track")).toBeNull();
+    // the compact block itself is still there, just without that child.
+    expect(container.querySelector(".compact")).not.toBeNull();
   });
 
   // plan 127 (Step 3, /improve-animations audit finding #3): a
@@ -1439,13 +1459,20 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".cards-line")).toBeNull();
     });
 
-    it("renders no Track (queue slider) on the live card, while a generic card in the same run still gets one", () => {
+    // stories merge (2026-07-24): the standalone `.track` queue slider is gone — queue
+    // segmentation now lives inside `.ttl-bar` itself (TtlBar.tsx's
+    // `total`/`done` props). The live card renders no `.ttl-bar` at all
+    // (see the "renders no TtlBar" test right below, and
+    // LiveMatchScorecard.tsx's own doc on why), so it necessarily carries
+    // no queue segments either; a generic card in the same run still gets
+    // a segmented bar (GOAL's queueTotal: 3 → 3 `.ttl-seg` children).
+    it("renders no ttl-bar (queue segments included) on the live card, while a generic card in the same run still gets segments", () => {
       const { container: liveContainer } = render(<StatusRailCard slot={liveSlot()} />);
-      expect(liveContainer.querySelector(".track")).toBeNull();
+      expect(liveContainer.querySelector(".ttl-bar")).toBeNull();
       cleanup();
 
       const { container: genericContainer } = render(<StatusRailCard slot={GOAL} />);
-      expect(genericContainer.querySelector(".track")).not.toBeNull();
+      expect(genericContainer.querySelectorAll(".ttl-bar .ttl-seg")).toHaveLength(3);
     });
 
     it("renders no TtlBar and no Manifest on the live card", () => {

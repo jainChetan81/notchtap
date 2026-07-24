@@ -728,14 +728,16 @@
    on `.card-assembly` (the shell that owns the priority accent) — origin
    and priority are orthogonal and must never share a paint channel; this
    rule touches none of the `--accent`/`--accent-soft` vars the priority
-   edge (`.compact::before`, `.stamp`, `.track span.cur`) reads from. */
+   edge (`.compact::before`, `.stamp`, `.ttl-fill`/`.ttl-seg.done`) reads
+   from. */
 .card-root .below-block.cmux-origin {
   border-top: 1px solid rgba(240, 196, 106, 0.55);
 }
 
 /* priority accent — a single named color per tier, consumed by the
    compact row's accent edge (.compact::before), the stamp pill, and the
-   track rail. deliberately NOT signal-driven
+   ttl-bar's fill/done segments (stories merge (2026-07-24); formerly the separate
+   track rail). deliberately NOT signal-driven
    (goal/red_card share "high" accent with any other high-priority
    source) — see lib/presentation.ts's stamp table for where signal does
    change what's shown. */
@@ -1224,46 +1226,6 @@
   text-transform: none;
 }
 
-.card-root .track {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 4px;
-  display: grid;
-  grid-template-columns: repeat(var(--queue-n, 3), 1fr);
-  gap: 3px;
-  padding: 0 3px;
-}
-
-.card-root .track span {
-  background: rgba(255, 255, 255, 0.09);
-  /* plan 127 (Step 1, /improve-animations audit finding #4): the literal
-     260ms moved to `var(--reveal-ms, 260ms)` — REVEAL_MS in
-     animationTiming.ts, single-sourced with the flank background/padding
-     fade above (both are queue/flank paint coordination, the same
-     reveal-tier motion).
-     plan 129 (C4, deep-review fix): the plan-127 pass above claimed "same
-     reveal-tier motion" but left the EASING as built-in `ease` while
-     every other rule on the reveal tier (the flank background/padding
-     fade, FlankClock/StatusDots' own fades) already runs
-     `var(--ease-notchtap)` — the comment's own claim wasn't true until
-     the easing matched too. Retokenized below. */
-  transition: background var(--reveal-ms, 260ms) var(--ease-notchtap);
-}
-
-/* queue slider (plan 033): consumed segments read as a 30%-accent dim,
-   the current segment is full accent with the same soft glow the old
-   priority-load rail used. */
-.card-root .track span.done {
-  background: color-mix(in srgb, var(--accent) 30%, transparent);
-}
-
-.card-root .track span.cur {
-  background: var(--accent);
-  box-shadow: 0 -3px 14px var(--accent-soft);
-}
-
 /* plan 081: the TTL progress bar (TtlBar.tsx) on every showing card.
    `.ttl-fill`'s scale is JS-driven per animation frame (TtlBar.tsx),
    never a CSS transition — no `transition` here to fight the rAF loop.
@@ -1275,14 +1237,49 @@
    edges. `.below-block`'s `overflow: hidden` + bottom-corner radii clip
    it to the rounded corners for free. It must never regain static-flow
    position — that recreates the double-border artifact above the
-   manifest wrap that this plan fixed. */
+   manifest wrap that this plan fixed.
+   stories merge (2026-07-24): this bar and the old separate
+   `.track` queue slider (plan 033, formerly here) read as a double
+   border stacked on top of each other — `.track` is gone, and this bar
+   is now segmented BY the same queue batch `.track` used to visualize
+   (TtlBar.tsx's `total`/`done` props). Still a single absolutely-
+   positioned floor strip — segmentation is a `display: grid` over the
+   same footprint, `--queue-n` fed by TtlBar.tsx exactly as it fed
+   `.track`'s grid template before. No `padding`/base `gap` inset at the
+   container level: at the degenerate `--queue-n: 1` case (no queue to
+   show) this must stay pixel-identical to the old unsegmented bar — a
+   single grid cell already fills the full 0-to-100% span with nothing to
+   gap against. */
 .card-root .ttl-bar {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
   height: 2px;
+  display: grid;
+  grid-template-columns: repeat(var(--queue-n, 1), 1fr);
+  gap: 2px;
+}
+
+/* the per-segment trough — `.track span`'s old role, ported onto the
+   merged bar. Plain (no `.done`) is the "not reached yet" empty trough;
+   the CURRENT segment is ALSO plain (no `.done`) since it hosts the live
+   `.ttl-fill` on top of it, not a static color of its own. */
+.card-root .ttl-seg {
   background: rgba(255, 255, 255, 0.08);
+  /* plan 127 (Step 1, /improve-animations audit finding #4)/129 (C4):
+     `.track span`'s own reveal-tier transition, ported — a queue advance
+     re-renders `done` classes across segments and this fades the change
+     in on the same reveal-tier timing/easing as the flank background and
+     FlankClock/StatusDots fades (REVEAL_MS/`--ease-notchtap`,
+     animationTiming.ts). */
+  transition: background var(--reveal-ms, 260ms) var(--ease-notchtap);
+}
+
+/* queue slider (plan 033, ported by 132): consumed segments read as a
+   30%-accent dim, matching the old priority-load rail's dim treatment. */
+.card-root .ttl-seg.done {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
 }
 
 /* 2026-07-23 review fix (Performance finding — per-frame layout width):
@@ -1298,7 +1295,15 @@
    (the LTR reading direction the countdown drains toward), matching the
    old `width`-based drain exactly. `will-change: transform` hints the
    browser to keep this layer composited independently, same reasoning
-   as any other every-frame transform in this file. */
+   as any other every-frame transform in this file.
+   stories merge (2026-07-24): `.ttl-fill` is now a grid item placed via an inline
+   `grid-column` (TtlBar.tsx), not a lone full-bar child — `width: 100%`
+   therefore resolves against its OWN assigned column (one queue segment),
+   not the whole bar, so `scaleX` still drains that segment left-to-right
+   exactly as it drained the whole bar pre-merge, just scoped to whichever
+   segment is current. Grid's default `justify-self: stretch` is what
+   makes `width: 100%` redundant-but-harmless here; kept explicit to match
+   this rule's pre-merge shape. */
 .card-root .ttl-fill {
   height: 100%;
   width: 100%;

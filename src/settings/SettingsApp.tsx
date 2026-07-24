@@ -2,6 +2,7 @@ import {
   CloudSun,
   Command,
   History,
+  Info,
   KeyRound,
   ListOrdered,
   type LucideIcon,
@@ -16,10 +17,11 @@ import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { type FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
-import brandMark from "../../assets/branding/notchtap-mark-64.png";
+import brandMark from "../../assets/branding/notchtap-mark-128.png";
 import { NOTCHTAP_EASE } from "../animationTiming";
 import { ActionStatus, useActionStatus } from "./actionStatus";
 import { settingsInvoke } from "./ipc";
+import { AboutSection } from "./sections/AboutSection";
 import { AppearanceSection } from "./sections/AppearanceSection";
 import { CmuxSection } from "./sections/CmuxSection";
 import { ConnectorsSection } from "./sections/ConnectorsSection";
@@ -38,6 +40,7 @@ import type { Config, ConnectorHealthDto, SecretStatus } from "./types";
 // import them without pulling in the whole shell. Re-exporting here keeps
 // every external import path (notably SettingsApp.test.tsx) unchanged.
 export type {
+  AboutInfo,
   AppearanceConfig,
   Config,
   ConnectorHealthDto,
@@ -67,7 +70,8 @@ type SectionId =
   | "appearance"
   | "diagnostics"
   | "history"
-  | "queue";
+  | "queue"
+  | "about";
 
 const navigation: ReadonlyArray<{
   id: SectionId;
@@ -85,6 +89,7 @@ const navigation: ReadonlyArray<{
   { id: "diagnostics", label: "Diagnostics", icon: ScrollText },
   { id: "history", label: "History", icon: History },
   { id: "queue", label: "Queue", icon: ListOrdered },
+  { id: "about", label: "About", icon: Info },
 ];
 
 const sectionCopy: Record<SectionId, { index: string; title: string; description: string }> = {
@@ -143,6 +148,11 @@ const sectionCopy: Record<SectionId, { index: string; title: string; description
     index: "11",
     title: "Queue",
     description: "See what's waiting behind the visible card, and skip or clear it.",
+  },
+  about: {
+    index: "12",
+    title: "About",
+    description: "What notchtap is, how to use it, and live process/system stats.",
   },
 };
 
@@ -386,23 +396,23 @@ export function SettingsApp() {
   return (
     <MotionConfig reducedMotion="user" transition={{ duration: 0.16, ease: NOTCHTAP_EASE }}>
       <main
-        className="settings-window grid h-full w-full grid-cols-[140px_minmax(0,1fr)] overflow-hidden bg-background max-[430px]:grid-cols-[122px_minmax(0,1fr)]"
+        className="settings-window grid h-full w-full grid-cols-[140px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden bg-background max-[430px]:grid-cols-[122px_minmax(0,1fr)]"
         aria-labelledby="section-title"
       >
         <aside
-          className="settings-sidebar grid min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] border-r border-border bg-sidebar"
+          className="settings-sidebar grid min-h-0 min-w-0 grid-rows-[auto_minmax(0,1fr)_auto] border-r border-border bg-sidebar"
           aria-label="Settings sections"
         >
-          <div className="sidebar-brand flex min-h-[71px] items-center gap-2 border-b border-border/60 px-3.5 pt-[17px] pb-3.5 font-mono text-fs-body leading-none font-bold tracking-[0.09em] text-foreground uppercase not-italic max-[430px]:px-[10px]">
+          <div className="sidebar-brand flex min-h-[71px] items-center gap-2.5 border-b border-border/60 px-3.5 pt-[17px] pb-3.5 font-mono text-fs-body leading-none font-bold tracking-[0.09em] text-foreground uppercase not-italic max-[430px]:px-[10px]">
             <img
               src={brandMark}
               alt=""
               aria-hidden="true"
-              className="brand-mark h-[17px] w-[17px] flex-none"
+              className="brand-mark h-[26px] w-[26px] flex-none"
             />
             <span>notchtap</span>
           </div>
-          <nav className="sidebar-nav flex flex-col gap-[3px] px-2 py-3">
+          <nav className="sidebar-nav flex min-h-0 flex-col gap-[3px] overflow-y-auto overscroll-contain px-2 py-3">
             {navigation.map((item) => {
               const Icon = item.icon;
               const selected = item.id === activeSection;
@@ -505,6 +515,7 @@ export function SettingsApp() {
                     {activeSection === "diagnostics" ? <DiagnosticsSection /> : null}
                     {activeSection === "history" ? <HistorySection config={config} /> : null}
                     {activeSection === "queue" ? <QueueSection /> : null}
+                    {activeSection === "about" ? <AboutSection /> : null}
                     {activeSection === "appearance" ? (
                       // AppearanceSection now reads config.appearance directly
                       // (plan 119 Step 3) — Reset/Reset-to-defaults update it

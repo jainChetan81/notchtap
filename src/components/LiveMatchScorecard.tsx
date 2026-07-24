@@ -25,13 +25,13 @@ function Crest({ abbrev, path }: { abbrev: string; path: string | null }) {
 // the slot's `expanded` flag arrives true, there is no
 // manual-expand affordance for football, so this branch
 // always renders this same compact scorecard rather than
-// switching to a richer layout. No `Track` (a batch-position
-// slider is meaningless for a single recurring presence —
-// prototype lock) and no `TtlBar` either: the bar's
-// countdown-to-rotation framing would visually contradict
-// "sticky" (see plan 084's report for the reasoning). No
-// generic `<Stamp>` — the live chip above already carries
-// that role (Live/Break/Final) with more precision.
+// switching to a richer layout. No `TtlBar` (a batch-position
+// slider is meaningless for a single recurring presence — prototype
+// lock — and since the stories merge (2026-07-24) the queue segmentation lives INSIDE TtlBar,
+// omitting TtlBar omits both): the bar's countdown-to-rotation framing
+// would visually contradict "sticky" (see plan 084's report for the
+// reasoning). No generic `<Stamp>` — the live chip above already
+// carries that role (Live/Break/Final) with more precision.
 //
 // plan 120: extracted verbatim from StatusRailCard.tsx's JSX
 // (`:660-710` at 2a840c4) — every free variable the block read is now a

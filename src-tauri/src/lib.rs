@@ -1,3 +1,4 @@
+mod about;
 mod config;
 mod crests;
 mod engine;
@@ -19,7 +20,7 @@ mod presentation;
 pub mod queue;
 mod rss_poller;
 mod settings;
-// The single source of truth for the fourteen v5 settings-window commands
+// The single source of truth for the sixteen v5 settings-window commands
 // (see this module's own doc comment) — build.rs's AppManifest::commands
 // allowlist, the generate_handler![...] registration just below, and
 // capabilities/settings.json must all name exactly the commands listed
@@ -268,9 +269,14 @@ pub fn run() {
             settings::send_test_notification,
             settings::set_appearance,
             settings::skip_current,
+            settings::get_about_info,
         ])
         .setup(move |app| {
             app.set_activation_policy(ActivationPolicy::Accessory);
+            // About section (plan: get_about_info) reports process uptime
+            // from this, not system uptime — captured once, here, before
+            // anything else in setup can meaningfully delay boot.
+            app.manage(std::time::Instant::now());
             app.manage(StdMutex::new(config_for_state));
             // plan 130: the ONE SeenStore both the rss poller loop (below)
             // and the settings window's `search_news_now` one-shot command
@@ -1071,8 +1077,8 @@ fn open_settings_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
         tauri::WebviewUrl::App("settings.html".into()),
     )
     .title("notchtap settings")
-    .inner_size(480.0, 600.0)
-    .min_inner_size(400.0, 480.0)
+    .inner_size(480.0, 700.0)
+    .min_inner_size(420.0, 520.0)
     .build()
     {
         Ok(window) => {

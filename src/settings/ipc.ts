@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
+  AboutInfo,
   Config,
   ConnectorHealthDto,
   HistoryEntry,
@@ -23,6 +24,7 @@ import type {
 export interface SettingsCommands {
   clear_history: { args: undefined; result: null };
   clear_queue: { args: undefined; result: number };
+  get_about_info: { args: undefined; result: AboutInfo };
   get_config: { args: undefined; result: Config };
   get_connector_health: { args: undefined; result: ConnectorHealthDto };
   get_default_config: { args: undefined; result: Config };

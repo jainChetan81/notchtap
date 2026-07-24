@@ -37,6 +37,11 @@ smappservice-rs = "0.1"
 reqwest = { version = "0.13.4", features = ["json", "gzip"] }
 chrono = "0.4"
 feed-rs = "2"
+# About section (get_about_info, settings.rs/about.rs): process + system
+# memory and root-disk stats. Targeted refresh only (memory + current
+# process, not System::new_all()'s full sweep) — see about.rs's own doc
+# comment.
+sysinfo = "0.32"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 tauri-plugin-global-shortcut = "2.3.2"
