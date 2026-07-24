@@ -271,11 +271,27 @@
   background: rgba(255, 255, 255, 0.12);
   overflow: hidden;
 }
+/* item 4 (media progress glide): was a per-tick inline `width: NN%` that
+   jumped once a second (`useLiveTick`, IdleHoverPeek.tsx); now a static
+   full-width bar scaled with `transform: scaleX(fraction)` (inline style,
+   set by the component) — same visual grammar as `.ttl-fill`'s own
+   compositor-only drain (ttl-bar.css). `transition: transform 1s linear`
+   lets it glide continuously between ticks instead of snapping;
+   `transform-origin: left` anchors the scale to the bar's start, matching
+   the old width-based drain's LTR shrink. `border-radius` is intentionally
+   NOT redeclared here (was `2px` when this was width-based): scaling a
+   rounded corner horizontally distorts it into a flattened ellipse at
+   small fractions. `.media-bar` (above) already clips with its own
+   `overflow: hidden` + matching `border-radius`, so the fill's visible
+   shape is rounded by the track's clip at every fraction instead. */
 .card-root .media-bar-fill {
   display: block;
+  width: 100%;
   height: 100%;
   background: #b6f5e5;
-  border-radius: 2px;
+  transform-origin: left;
+  transition: transform 1s linear;
+  will-change: transform;
 }
 .card-root .media-time {
   font-variant-numeric: tabular-nums;
@@ -443,16 +459,27 @@
    ring, like pulse-goal's confetti does — mutually exclusive in practice
    (isLiveCard vs the generic pulse path never both apply to one card),
    so `background: transparent` here simply neutralizes the inherited
-   confetti gradient rather than fighting it. */
+   confetti gradient rather than fighting it.
+   item 5 (celebration ease cohesion): `ease-out` -> `var(--ease-notchtap)`
+   on all four animations below (`.cele-goal`, `.cele-goal::after`,
+   `.cele-yc::after`, `.cele-rc`) — the same unification plan 127 (Step 6)
+   already did for the generic `pulse-goal`/`pulse-red` set just above
+   (`goal-overshoot`/`goal-burst`/`goal-ring` all moved off stock
+   `ease-out` onto the house ease for the same "two things happening at
+   once, animated on two different feels" reason). This live-match set was
+   the one signature-moment family plan 127 didn't touch; there was no
+   documented reason for the two families to ease differently, just an
+   accumulated gap. Durations are untouched — operator-tuned, plan
+   084/100 — only the timing function changes. */
 .card-root .card-assembly.cele-goal {
-  animation: goal-glow 1800ms ease-out;
+  animation: goal-glow 1800ms var(--ease-notchtap);
 }
 .card-root .card-assembly.cele-goal::after {
   background: transparent;
   inset: -6px;
   border-radius: 18px;
   border: 2px solid rgba(127, 224, 141, 0.7);
-  animation: cele-ring 1800ms ease-out;
+  animation: cele-ring 1800ms var(--ease-notchtap);
 }
 
 @keyframes goal-glow {
@@ -483,11 +510,11 @@
   inset: -6px;
   border-radius: 18px;
   border: 2px solid rgba(240, 196, 106, 0.65);
-  animation: cele-ring 1400ms ease-out;
+  animation: cele-ring 1400ms var(--ease-notchtap);
 }
 
 .card-root .card-assembly.cele-rc {
-  animation: red-strobe 1800ms ease-out;
+  animation: red-strobe 1800ms var(--ease-notchtap);
 }
 
 @keyframes red-strobe {

@@ -115,14 +115,36 @@
    rotating ~10s, live-match signal updates, ...), not just the initial
    idle->showing promotion — so a stagger+slide tuned to read as a nice
    one-time flourish on first arrival became a small but real ceremony
-   tax paid every ~10s. The fade alone (still `var(--swap-exit-ms,
-   175ms)`, untouched — this file has no way to distinguish a rotation
+   tax paid every ~10s. At the time, the fade alone (still
+   `var(--swap-exit-ms, 175ms)`) was judged to read identically pleasant
+   on both legs, since this file had no way to distinguish a rotation
    from a promotion the way StatusRailCard.tsx's own inner content swap
-   now can, see that file's `isRotation`) reads identically pleasant on
-   both legs and costs nothing extra on repeat. */
+   could.
+   item 3 (rotation de-noise): that distinction now exists —
+   StatusRailCard.tsx puts a `rotation-swap` class on the swap content
+   container (`.card-content`) whenever `isRotation` is true, mirroring
+   its own `data-rotation-swap` test hook. This base rule is unchanged —
+   it still declares the entrance for every chip — but the override rule
+   immediately below it wins under `.rotation-swap` (one extra class, so
+   higher specificity regardless of source order) and turns the
+   animation off there: a same-slot rotation no longer replays this fade
+   at all, the chip/age-label simply rides the parent `.card-content`'s
+   own opacity fade (StatusRailCard.tsx's `contentExitVariants`/rotation
+   `initial`/`animate`) instead of paying a second, redundant fade on top
+   of it. A genuine promotion (idle->showing) still gets this entrance in
+   full — `isRotation` is always false there, so `.rotation-swap` never
+   applies. */
 .card-root .chip-category,
 .card-root .notif-meta-row .notif-time-inline {
   animation: pill-enter var(--swap-exit-ms, 175ms) var(--ease-notchtap) both;
+}
+
+/* item 3: the rotation-leg off-switch — higher specificity than the base
+   rule above (one extra class), so it wins unconditionally once
+   `.rotation-swap` is present, regardless of source order. */
+.card-root .rotation-swap .chip-category,
+.card-root .rotation-swap .notif-meta-row .notif-time-inline {
+  animation: none;
 }
 
 @keyframes pill-enter {

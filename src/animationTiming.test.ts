@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 // `URL as NodeURL` (not the ambient global): jsdom's URL shadow resolves
 // relative paths against a fake http: document location — the same trap
 // entryImportOrder.test.ts documents and dodges identically.
@@ -81,5 +81,125 @@ describe("animationTiming (plan 117)", () => {
     expect(m).not.toBeNull();
     const tokenValues = m ? m.slice(1, 5).map(Number) : [];
     expect(tokenValues).toEqual([...NOTCHTAP_EASE]);
+  });
+});
+
+// item 6 (timing-parity enforcement): a scanner over every `src/overlay/*.css`
+// source, string-level like `overlayCardMirror.test.ts`'s own selector
+// scanner (no CSS parser — "cheap but effective", same register that file's
+// own doc calls out). The invariant: every `transition:` declaration's
+// duration must be sourced from an animationTiming.ts constant via
+// `var(--*-ms, <fallback>)` (the injection discipline
+// `applyAnimationTiming.ts` + this file's other describe block already
+// guard), never a raw hand-typed ms/s literal sitting directly in the
+// property list — that's exactly the "two things quietly drift apart"
+// shape this whole file exists to prevent, just for CSS `transition:`
+// durations specifically rather than JS constants.
+describe("overlay CSS timing-parity (item 6): every transition duration is var(--*-ms, ...)", () => {
+  const OVERLAY_DIR_URL = new NodeURL("./overlay/", import.meta.url);
+
+  function stripComments(css: string): string {
+    return css.replace(/\/\*[\s\S]*?\*\//g, "");
+  }
+
+  // matches a reference to an animationTiming-fed duration var, fallback
+  // included (e.g. `var(--expand-ms, 320ms)`) — removed wholesale before
+  // scanning for leftover raw literals, so a var's own ms-literal FALLBACK
+  // (defense-in-depth for a context that skips applyAnimationTiming, same
+  // reasoning as EXPAND_MS's own doc above) is never mistaken for a
+  // hand-typed duration.
+  const MS_VAR_REF = /var\(\s*--[\w-]+-ms\s*(?:,[^()]*)?\)/g;
+  // a bare CSS time literal — digits, optional decimal, then `ms` or `s`
+  // at a word boundary. Deliberately doesn't match plain numbers (e.g.
+  // cubic-bezier's `0.3, 1.36, 0.44, 1`) or other units (`16px`): those
+  // never end in a bare "s"/"ms" suffix immediately after the digits.
+  const RAW_DURATION = /\b\d+(?:\.\d+)?m?s\b/g;
+
+  function findRawDurations(transitionValue: string): string[] {
+    return transitionValue.replace(MS_VAR_REF, "").match(RAW_DURATION) ?? [];
+  }
+
+  /** Extracts every `transition: <value>;` declaration's value (comment-
+   * stripped, whitespace-normalized to one line for stable allowlist keys
+   * and legible failure messages) from a CSS source. Deliberately matches
+   * `transition:` only, not `transition-duration:`/`-property:`/
+   * `-timing-function:` — grepping the real files found no standalone use
+   * of those longhands anywhere in `src/overlay/*.css` today; if one is
+   * ever added, this scanner should grow a matching extractor rather than
+   * silently missing it. */
+  function findTransitionDeclarations(css: string): string[] {
+    const stripped = stripComments(css);
+    const declarations: string[] = [];
+    const re = /transition\s*:\s*([^;]+);/g;
+    for (const m of stripped.matchAll(re)) {
+      declarations.push(m[1].trim().replace(/\s+/g, " "));
+    }
+    return declarations;
+  }
+
+  // Reviewed, explicit allowlist — a whitespace-normalized `transition:`
+  // VALUE (not a selector, not a file) that's permitted to carry a raw
+  // duration literal instead of an animationTiming var. Every entry must
+  // carry its own justification comment; an unjustified addition here
+  // defeats the point of this test.
+  const ALLOWLISTED_TRANSITIONS: ReadonlySet<string> = new Set([
+    // item 4 (media progress glide): idle-peek.css's `.media-bar-fill`
+    // glides continuously between IdleHoverPeek.tsx's own `useLiveTick`
+    // ticks, which re-render on a hand-typed `window.setInterval(..., 1000)`
+    // — the 1s transition duration IS that polling cadence, a structural
+    // pairing with a JS interval literal that lives in a component file,
+    // not an animation-feel pacing choice that belongs in
+    // animationTiming.ts alongside the enter/exit/hover/reveal timings it
+    // single-sources. Genuinely self-contained: there is no second CSS or
+    // JS copy of "1s" this could drift from.
+    "transform 1s linear",
+  ]);
+
+  it("sanity check: the scanner finds a nonzero number of transition declarations", () => {
+    const cardChromeCss = readFileSync(
+      fileURLToPath(new NodeURL("card-chrome.css", OVERLAY_DIR_URL)),
+      "utf8",
+    );
+    expect(findTransitionDeclarations(cardChromeCss).length).toBeGreaterThan(0);
+  });
+
+  it("every overlay CSS transition duration is var(--*-ms, ...) or an explicit, justified allowlist entry", () => {
+    const overlayDir = fileURLToPath(OVERLAY_DIR_URL);
+    const files = readdirSync(overlayDir)
+      .filter((name) => name.endsWith(".css"))
+      .sort();
+    expect(files.length).toBeGreaterThan(0);
+
+    const violations: string[] = [];
+    for (const file of files) {
+      const css = readFileSync(fileURLToPath(new NodeURL(file, OVERLAY_DIR_URL)), "utf8");
+      for (const decl of findTransitionDeclarations(css)) {
+        if (ALLOWLISTED_TRANSITIONS.has(decl)) {
+          continue;
+        }
+        const raw = findRawDurations(decl);
+        if (raw.length > 0) {
+          violations.push(
+            `${file}: \`transition: ${decl};\` has raw duration(s) [${raw.join(", ")}] not sourced from a var(--*-ms, ...) reference`,
+          );
+        }
+      }
+    }
+
+    expect(
+      violations,
+      [
+        "Found overlay CSS `transition:` declaration(s) with a raw ms/s literal duration instead",
+        "of a var(--*-ms, ...) reference sourced from animationTiming.ts. Either:",
+        "  (a) feed the duration from a new or existing animationTiming.ts constant, injected via",
+        "      applyAnimationTiming.ts and consumed here as var(--your-const-ms, <fallback>ms); or",
+        "  (b) if the literal is genuinely self-contained (not an animation-feel/pacing choice —",
+        "      see ALLOWLISTED_TRANSITIONS's own entries for the bar this has to clear), add the",
+        "      exact, whitespace-normalized transition VALUE text to ALLOWLISTED_TRANSITIONS above",
+        "      with a comment justifying why it's exempt.",
+        "",
+        ...violations,
+      ].join("\n"),
+    ).toEqual([]);
   });
 });

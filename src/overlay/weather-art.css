@@ -61,6 +61,16 @@
   z-index: 0;
   pointer-events: none;
 }
+/* ambient weather life (item 1): both textures now drift, transform-only
+   (`translate`, never `background-position` — a compositor-only property,
+   same discipline `.ttl-fill`'s own doc explains for why a per-frame
+   layout property would be wrong here) so the browser never re-lays-out
+   the card on every tick. Both parents already clip the overflow this
+   relies on: `.below-block` (card-chrome.css) and `.wx-peek-backdrop`
+   (idle-peek.css) both carry `overflow: hidden`, and this class is shared
+   by both (StatusRailCard.tsx's `belowBlockClass`, IdleHoverPeek.tsx's
+   `WeatherPeekBackdrop`) — the loop reads identically "alive" in either
+   home for free, no per-consumer CSS needed. */
 .card-root .wx-card.wx-rain-streaks::after {
   background-image: repeating-linear-gradient(
     115deg,
@@ -69,9 +79,53 @@
     transparent 1px,
     transparent 10px
   );
+  /* the streaks repeat every 10px measured ALONG the 115deg gradient
+     axis, not vertically — a pure `translateY` is only seamless if its
+     length is an integer multiple of the period projected onto that
+     axis. Axis unit vector at 115deg is (sin 115°, -cos 115°) ≈ (0.906,
+     0.423); a vertical-only translation's projection onto it is
+     `Ty * 0.423`, so one full period (10px) needs `Ty = 10 / 0.423 ≈
+     23.66px`. `rain-fall` below travels exactly that distance, so frame
+     0 and frame 100% are pixel-identical — a genuinely seamless loop,
+     not an approximate one. */
+  animation: rain-fall 2.6s linear infinite;
+  will-change: transform;
 }
 .card-root .wx-card.wx-snow-dots::after {
   background-image: radial-gradient(circle, rgba(255, 255, 255, 0.35) 1px, transparent 1.6px);
   background-size: 22px 22px;
+  /* the dot grid tiles independently on each axis at its own 22px
+     `background-size`, so any integer multiple of 22px in x AND in y is
+     seamless — no trig needed here, unlike the diagonal rain streaks
+     above. `snow-drift` travels one period right (22px) and three down
+     (66px), a gentle diagonal sway rather than a straight fall, over a
+     slow 14s cycle so it reads as light drifting snow, not a downpour. */
+  animation: snow-drift 14s linear infinite;
+  will-change: transform;
+}
+
+@keyframes rain-fall {
+  from {
+    transform: translateY(0);
+  }
+  to {
+    transform: translateY(23.66px);
+  }
+}
+
+@keyframes snow-drift {
+  from {
+    transform: translate(0, 0);
+  }
+  to {
+    transform: translate(22px, 66px);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-root .wx-card.wx-rain-streaks::after,
+  .card-root .wx-card.wx-snow-dots::after {
+    animation: none;
+  }
 }
 

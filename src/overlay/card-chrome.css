@@ -87,9 +87,21 @@
      animated `filter` re-rasterizes the whole ~500px composite every
      frame, both directions, on a many-times/day hover; the base
      drop-shadow now stays static and the scale alone carries the
-     breathe). */
+     breathe).
+     FEEL-CHECK (item 2, card-entry mass): the `width` leg's timing
+     function is now `--ease-notchtap-pop` (styles.css's `:root`, with the
+     same value repeated here as an inline fallback since this shared
+     file also renders in the settings preview, which never loads
+     styles.css) — a slight overshoot so promotion/expand width growth
+     lands with a touch of physical mass, instead of the house ease's
+     pure settle. `transform` (the hover breathe) is untouched: hover
+     never animates `width` at all, so this can never be felt as part of
+     the hover response — only a real promotion or manual expand feels
+     it. `.exiting`'s own width transition (below) deliberately keeps
+     `--ease-notchtap` — exits must not bounce. Revert = swap
+     `--ease-notchtap-pop` back to `--ease-notchtap` here. */
   transition:
-    width var(--expand-ms, 320ms) var(--ease-notchtap),
+    width var(--expand-ms, 320ms) var(--ease-notchtap-pop, cubic-bezier(0.3, 1.36, 0.44, 1)),
     transform var(--hover-ms, 160ms) var(--ease-notchtap);
 }
 
@@ -354,7 +366,11 @@
    `transform` leg on `--reveal-ms` meant a hover-out mid-exit ran a
    260ms breathe-settle instead of the intended 160ms one. Retokenized
    to `var(--hover-ms, 160ms)` below, which makes the opening paragraph
-   literally true again. */
+   literally true again.
+   FEEL-CHECK (item 2, card-entry mass): `width` here deliberately stays on
+   `--ease-notchtap`, NOT the base rule's new `--ease-notchtap-pop` — exits
+   must settle, never overshoot/bounce, so the pop ease is scoped to the
+   entrance (base rule above) only. */
 .card-root .card-assembly.exiting {
   --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
   transition:

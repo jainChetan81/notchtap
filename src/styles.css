@@ -2,6 +2,16 @@
   --card-scale: 1;
   --card-radius: 8px;
   --card-opacity: 1;
+  /* FEEL-CHECK (item 2, card-entry mass): a dedicated ease with a slight
+     overshoot (vs. the house `--ease-notchtap`'s pure settle), used ONLY
+     by `.card-assembly`'s base width transition (card-chrome.css) so
+     promotion/expand width growth lands with a touch of physical mass.
+     Also declared with an inline fallback at its one consumer (shared
+     file, read by the settings preview too, which never loads this
+     stylesheet) — same defense-in-depth convention animationTiming.ts's
+     own injected vars use. Revert = swap that consumer's timing function
+     back to `var(--ease-notchtap)`. */
+  --ease-notchtap-pop: cubic-bezier(0.3, 1.36, 0.44, 1);
 }
 
 html,

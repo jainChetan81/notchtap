@@ -772,7 +772,15 @@ export function StatusRailCard({
                 {showing && (
                   <motion.div
                     key={swapKey}
-                    className="card-content"
+                    // item 3 (rotation de-noise): `rotation-swap` (only on a
+                    // same-slot rotation, never a promotion) gates off the
+                    // news chips' own `pill-enter` replay
+                    // (news-category.css) — see that rule's own doc for
+                    // why. Plain string concatenation, not the
+                    // array-join idiom this file uses elsewhere
+                    // (`cardClass`/`belowBlockClass`), since there are only
+                    // ever these two fixed tokens.
+                    className={isRotation ? "card-content rotation-swap" : "card-content"}
                     // plan 127 (Step 3): a showing->showing rotation skips
                     // the y-slide entirely (opacity-only) — the slide is
                     // the part of the ceremony that reads as repetitive on

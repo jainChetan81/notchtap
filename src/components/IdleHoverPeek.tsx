@@ -333,7 +333,15 @@ function MediaPeekRow({ media }: { media: NowPlayingSummary }) {
           )}
         </span>
         <span className="media-bar">
-          <span className="media-bar-fill" style={{ width: `${progressPct}%` }} />
+          {/* item 4 (media progress glide): `transform: scaleX(...)` (a
+              compositor-only property, same reasoning as `.ttl-fill`'s own
+              doc in ttl-bar.css) instead of a per-tick `width` — CSS's own
+              `transition: transform 1s linear` (idle-peek.css) then glides
+              continuously between this component's 1s `useLiveTick` ticks,
+              rather than jumping. `transform-origin: left` (CSS) anchors
+              the shrink/grow to the bar's start, matching the old
+              `width`-based drain. */}
+          <span className="media-bar-fill" style={{ transform: `scaleX(${progressPct / 100})` }} />
         </span>
         <span className="media-time">{formatElapsed(clampedElapsedMs)}</span>
       </div>
