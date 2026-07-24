@@ -35,6 +35,38 @@ function fireAnimationEnd(el: HTMLElement, animationName: string) {
   });
 }
 
+// NumberFlow (LiveMatchScorecard.tsx's `.score`) renders its digits inside
+// a shadow root — and jsdom applies no CSS at all, so a naive
+// `shadowRoot.textContent` read picks up every candidate digit 0-9 the
+// library keeps in the DOM for its roll animation (concealed only by a
+// `[inert] { display: none }` rule jsdom never applies), plus the
+// injected `<style>` text itself. The element's own `_data.valueAsString`
+// — a plain, non-private instance field NumberFlow sets from the exact
+// formatted string it renders (`number-flow/lite`'s `set data()`) — is
+// the reliable read instead. This walks the wrapper in document order,
+// using that field for any `number-flow-react` host and light-DOM
+// textContent for everything else, reproducing what a user actually sees
+// on screen.
+function renderedText(el: Element | null): string {
+  if (el === null) {
+    return "";
+  }
+  let out = "";
+  for (const node of Array.from(el.childNodes)) {
+    if (node.nodeType === Node.TEXT_NODE) {
+      out += node.textContent ?? "";
+    } else if (node instanceof Element) {
+      if (node.tagName.toLowerCase() === "number-flow-react") {
+        const data = (node as unknown as { _data?: { valueAsString?: string } })._data;
+        out += data?.valueAsString ?? "";
+      } else {
+        out += renderedText(node);
+      }
+    }
+  }
+  return out;
+}
+
 const GOAL: SlotState = {
   state: "showing",
   id: "n1",
@@ -1296,7 +1328,7 @@ describe("StatusRailCard", () => {
       expect(crests).toHaveLength(2);
       expect(crests[0].textContent).toBe("ARS");
       expect(crests[1].textContent).toBe("PSG");
-      expect(container.querySelector(".score")?.textContent).toBe("1–1");
+      expect(renderedText(container.querySelector(".score"))).toBe("1–1");
     });
 
     it("goal: tints the event line green, plays cele-goal (not pulse-goal), never the ripple", () => {
@@ -1334,7 +1366,7 @@ describe("StatusRailCard", () => {
           })}
         />,
       );
-      expect(container.querySelector(".score")?.textContent).toBe("0–1");
+      expect(renderedText(container.querySelector(".score"))).toBe("0–1");
       const eventLine = container.querySelector(".event-line");
       expect(eventLine?.className).toBe("event-line");
       expect(eventLine?.querySelector(".ev-ico.og")).not.toBeNull();

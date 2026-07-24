@@ -18,6 +18,13 @@ const formatter = new Intl.DateTimeFormat(undefined, {
 
 export type ClockReading = {
   display: string;
+  // Same 0-23/0-59 local reading `display` formats, exposed as plain
+  // numbers too — for FlankClock's NumberFlow digit-roll (each needs its
+  // own numeric `value`, not a re-parse of the formatted string). Both
+  // come off this one `read()` call, so there's no risk of the digits and
+  // the formatted string ever disagreeing.
+  hours: number;
+  minutes: number;
   // 0-100, how far through the local day "now" is — the idle view's
   // day-progress timeline dot, ported from the status-rail prototype.
   dayProgress: number;
@@ -25,9 +32,13 @@ export type ClockReading = {
 
 function read(): ClockReading {
   const now = new Date();
-  const minutesIntoDay = now.getHours() * 60 + now.getMinutes();
+  const hours = now.getHours();
+  const minutes = now.getMinutes();
+  const minutesIntoDay = hours * 60 + minutes;
   return {
     display: formatter.format(now),
+    hours,
+    minutes,
     dayProgress: (minutesIntoDay / 1440) * 100,
   };
 }
