@@ -385,6 +385,14 @@ fn matchup(league: &str, s: &MatchSnapshot) -> String {
 /// off the raw feed (not off `MatchSnapshot`, which doesn't carry team
 /// ids) so a crest fetch can be scheduled even for matches this poll
 /// won't otherwise emit an event for.
+///
+/// plan 132: `team.logo` is untrusted feed input (SSRF hardening) — a
+/// URL that doesn't pass `crest_url_allowed` is filtered out here, at
+/// the map-building side, so it never reaches the fetch-scheduling
+/// loop and never reaches `CrestCache::fetch_and_store`. This is
+/// deliberately NOT enforced inside `crests.rs::try_fetch` — that
+/// function's wiremock tests fetch from `http://127.0.0.1:<port>` mock
+/// servers and must keep exercising fetch/cache mechanics unmodified.
 fn team_logos(fetched: &Scoreboard) -> HashMap<String, String> {
     let mut out = HashMap::new();
     for event in &fetched.events {
@@ -397,7 +405,19 @@ fn team_logos(fetched: &Scoreboard) -> HashMap<String, String> {
                 continue;
             }
             if let Some(logo) = &team.logo {
-                out.insert(team.id.clone(), logo.clone());
+                if crate::crests::crest_url_allowed(logo) {
+                    out.insert(team.id.clone(), logo.clone());
+                } else {
+                    let rejected_host = reqwest::Url::parse(logo)
+                        .ok()
+                        .and_then(|u| u.host_str().map(str::to_string))
+                        .unwrap_or_else(|| "<unparseable>".to_string());
+                    tracing::debug!(
+                        team_id = %team.id,
+                        rejected_host,
+                        "crest logo url rejected by allowlist — not fetched"
+                    );
+                }
             }
         }
     }
@@ -1504,6 +1524,44 @@ mod tests {
         assert_eq!(
             logos.get("2922").map(String::as_str),
             Some("https://a.espncdn.com/i/teamlogos/soccer/500/2922.png")
+        );
+    }
+
+    #[test]
+    fn team_logos_filters_out_non_espncdn_or_non_https_logo_urls() {
+        // plan 132: a team whose `logo` fails the crest URL allowlist
+        // (wrong scheme, wrong host) must not enter the id->logo map —
+        // that map is what directly feeds the fetch-scheduling loop, so
+        // this also proves the disallowed URL never gets scheduled.
+        let json = r#"{
+            "events": [{
+                "id": "1",
+                "status": {"type": {"state": "pre"}},
+                "competitions": [{
+                    "competitors": [
+                        {
+                            "homeAway": "home",
+                            "team": {"id": "1", "logo": "https://a.espncdn.com/x.png"}
+                        },
+                        {
+                            "homeAway": "away",
+                            "team": {"id": "2", "logo": "http://evil.com/x.png"}
+                        }
+                    ]
+                }]
+            }]
+        }"#;
+        let sb = parse_scoreboard(json).unwrap();
+        let logos = team_logos(&sb);
+        assert_eq!(
+            logos.get("1").map(String::as_str),
+            Some("https://a.espncdn.com/x.png"),
+            "allowed espncdn https url must enter the map"
+        );
+        assert_eq!(
+            logos.get("2"),
+            None,
+            "disallowed http/non-espncdn url must be filtered out"
         );
     }
 

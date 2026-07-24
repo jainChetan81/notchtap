@@ -316,10 +316,7 @@ impl SingleSlotQueue {
                 // comment explaining this rather than silently changing
                 // the return contract.
                 return true;
-            } else {
-                let mut existing = self.waiting[tier_idx]
-                    .remove(pos)
-                    .expect("position just found");
+            } else if let Some(mut existing) = self.waiting[tier_idx].remove(pos) {
                 apply_fresh_content(&mut existing.event, fresh);
                 self.waiting[new_tier_idx].push_back(existing);
             }
@@ -371,7 +368,15 @@ impl SingleSlotQueue {
             return;
         }
         let Some(item) = &self.visible else { return };
-        let promoted_at = item.promoted_at.expect("visible items have promoted_at");
+        // Defensive, mirroring `current_slot_state`'s posture for the same
+        // invariant: every real promotion path sets `promoted_at`. If a
+        // future bug ever leaves it unset, log and skip this tick's
+        // rotation check rather than panicking the rotation task and
+        // silently freezing the overlay.
+        let Some(promoted_at) = item.promoted_at else {
+            tracing::warn!("visible item missing promoted_at — rotation check skipped");
+            return;
+        };
         let window = item.event.rotation_window(self.window_expanded) + item.extension_secs;
         let elapsed = self.hover_frozen_rotation_elapsed(promoted_at, now);
         if elapsed.as_secs() < window {
@@ -2829,6 +2834,34 @@ mod tests {
         // the remaining 0.2s of active time passes — now it rotates out.
         q.tick(t0 + Duration::from_secs(12) + Duration::from_millis(200));
         assert_eq!(q.current_slot_state(), SlotState::Empty);
+    }
+
+    // plan 132: a visible item with a missing `promoted_at` must degrade
+    // to a skipped rotation check (logged), never a panic — mirrors
+    // `current_slot_state`'s existing graceful posture for the same
+    // invariant. Constructed directly (bypassing `enqueue`/`promote_next`,
+    // which always set `promoted_at`) since that's the only way to reach
+    // this defensive branch at all.
+    #[test]
+    fn rotate_out_skips_gracefully_when_promoted_at_is_missing() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        let ev = event("no-promoted-at", Priority::Medium, 2);
+        let id = ev.id;
+        q.visible = Some(QueueItem {
+            event: ev,
+            enqueued_at: t0,
+            promoted_at: None,
+            extension_secs: 0,
+        });
+        // way past any plausible window — must not panic, and (since
+        // there's no promoted_at to measure elapsed time from) must not
+        // rotate out either.
+        q.tick(t0 + Duration::from_secs(50));
+        match q.current_slot_state() {
+            SlotState::Showing { id: cur, .. } => assert_eq!(cur, id),
+            SlotState::Empty => panic!("missing promoted_at must skip rotation, not rotate out"),
+        }
     }
 
     // plan 097: `dismiss_visible` (and `skip_visible`) promote the next

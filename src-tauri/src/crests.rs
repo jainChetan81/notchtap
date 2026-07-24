@@ -30,6 +30,25 @@ use std::sync::{Arc, Mutex};
 /// Generous for a club crest PNG — real-world ESPN crests are a few KB.
 const MAX_CREST_BYTES: usize = 256 * 1024;
 
+/// A crest URL is fetchable only if it is https and points at ESPN's
+/// own CDN — the URL arrives from a network feed, so it is untrusted
+/// input, not a trusted fetch target (same posture as `path_for`'s
+/// team-id sanitization). Enforced by the caller at the map-building/
+/// scheduling side (`poller.rs::team_logos`), NOT here — this function
+/// is pure policy, not a fetch gate, so it never touches `try_fetch`.
+pub fn crest_url_allowed(url: &str) -> bool {
+    let Ok(parsed) = reqwest::Url::parse(url) else {
+        return false;
+    };
+    if parsed.scheme() != "https" {
+        return false;
+    }
+    match parsed.host_str() {
+        Some(host) => host == "espncdn.com" || host.ends_with(".espncdn.com"),
+        None => false,
+    }
+}
+
 /// Runtime cache of club crest PNGs, keyed by ESPN's numeric team id.
 /// Cheaply `Clone`-able (an `Arc` around the shared attempted-set) so the
 /// espn poller can hand a handle to each spawned background fetch task.
@@ -41,6 +60,11 @@ pub struct CrestCache {
 
 impl CrestCache {
     pub fn new(dir: PathBuf) -> Self {
+        // Best-effort at construction time — `try_fetch` still does its own
+        // `create_dir_all` per fetch, which is the correctness backstop if
+        // the dir is deleted mid-run. This one just saves that syscall on
+        // the common path.
+        let _ = std::fs::create_dir_all(&dir);
         Self {
             dir,
             attempted: Arc::new(Mutex::new(HashSet::new())),
@@ -256,6 +280,32 @@ mod tests {
         cache.fetch_and_store(&client, "111", &url).await;
 
         assert_eq!(cache.cached_path("111"), None);
+    }
+
+    #[test]
+    fn crest_url_allowed_accepts_espncdn_https_hosts() {
+        assert!(crest_url_allowed(
+            "https://a.espncdn.com/i/teamlogos/soccer/500/360.png"
+        ));
+        assert!(crest_url_allowed("https://espncdn.com/x.png"));
+    }
+
+    #[test]
+    fn crest_url_allowed_rejects_non_https_and_non_espncdn_hosts() {
+        assert!(
+            !crest_url_allowed("http://a.espncdn.com/x.png"),
+            "non-https scheme"
+        );
+        assert!(!crest_url_allowed("https://evil.com/x.png"), "wrong host");
+        assert!(
+            !crest_url_allowed("https://espncdn.com.evil.com/x.png"),
+            "suffix-spoofed host must not pass the ends_with check"
+        );
+        assert!(
+            !crest_url_allowed("https://127.0.0.1/x.png"),
+            "raw ip is not the espncdn host"
+        );
+        assert!(!crest_url_allowed("not a url"), "unparseable url");
     }
 
     #[test]
