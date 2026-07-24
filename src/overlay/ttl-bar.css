@@ -27,10 +27,15 @@
   bottom: 0;
   left: 0;
   right: 0;
-  height: 2px;
+  /* 2026-07-24 visibility fix: the merge initially kept the old ttl-bar's
+     2px hairline, which made the queue slider read as REMOVED — the old
+     `.track` was 4px with 3px gaps and that presence is the slider's
+     whole job. The merged bar inherits the track's metrics, not the
+     hairline's. */
+  height: 4px;
   display: grid;
   grid-template-columns: repeat(var(--queue-n, 1), 1fr);
-  gap: 2px;
+  gap: 3px;
 }
 
 /* the per-segment trough — `.track span`'s old role, ported onto the
