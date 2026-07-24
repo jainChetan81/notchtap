@@ -1,4 +1,3 @@
-import NumberFlow from "@number-flow/react";
 import { Globe, type LucideIcon, Music, Pause, Play, Tv } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
@@ -112,24 +111,6 @@ function WeatherPeekBackdrop({ weather }: { weather: WeatherSummary }) {
 // comment) — this window has no config access (receive-only, no
 // invoke), so the only job here is a presence check, never re-deriving
 // or comparing against the floor itself.
-// NumberFlow digit-roll for the temp readout below: `weather.tempDisplay`
-// arrives pre-formatted off the wire (`weather_poller.rs`'s
-// `temp_display: format!("{:.0}°", ...)` — status.rs's own doc comment
-// promises an integer plus a literal trailing "°", never a free-form
-// string), so splitting the leading integer out is a fixed-format parse
-// of a guaranteed shape, not a guess at an ambiguous one. A non-matching
-// string would mean the wire contract itself changed underneath this —
-// falling back to rendering the raw string keeps that case a silent
-// no-op rather than a wrong or crashing render.
-function splitTempDisplay(tempDisplay: string): { value: number; suffix: string } | null {
-  const match = /^(-?\d+)(.*)$/.exec(tempDisplay);
-  if (match === null) {
-    return null;
-  }
-  const value = Number(match[1]);
-  return Number.isFinite(value) ? { value, suffix: match[2] } : null;
-}
-
 function WeatherPeekReadout({ weather }: { weather: WeatherSummary }) {
   const art = weatherArtFor(weather.condition, weather.isDay);
   // plan 131: hi/lo, inline with the current temp ("21° · H 24° L 16°") —
@@ -137,17 +118,10 @@ function WeatherPeekReadout({ weather }: { weather: WeatherSummary }) {
   // together on a missing/malformed `daily` block; there is no
   // meaningful "just a high, no low" render).
   const hasHiLo = weather.todayHighDisplay !== null && weather.todayLowDisplay !== null;
-  const temp = splitTempDisplay(weather.tempDisplay);
   return (
     <div className="wx-peek-readout">
       <img className="wx-peek-icon" src={art.glyphUrl} alt="" />
-      <span className="wx-peek-temp">
-        {temp !== null ? (
-          <NumberFlow value={temp.value} suffix={temp.suffix} />
-        ) : (
-          weather.tempDisplay
-        )}
-      </span>
+      <span className="wx-peek-temp">{weather.tempDisplay}</span>
       {hasHiLo ? (
         <span className="wx-peek-hilo">
           <span className="wx-peek-hi">H {weather.todayHighDisplay}</span>

@@ -17,38 +17,6 @@ import { IdleHoverPeek, iconForBundleId } from "./IdleHoverPeek";
 
 afterEach(cleanup);
 
-// NumberFlow (this file's `.wx-peek-temp`) renders its digits inside a
-// shadow root — and jsdom applies no CSS at all, so a naive
-// `shadowRoot.textContent` read picks up every candidate digit 0-9 the
-// library keeps in the DOM for its roll animation (concealed only by a
-// `[inert] { display: none }` rule jsdom never applies), plus the
-// injected `<style>` text itself. The element's own `_data.valueAsString`
-// — a plain, non-private instance field NumberFlow sets from the exact
-// formatted string it renders (`number-flow/lite`'s `set data()`) — is
-// the reliable read instead. This walks the wrapper in document order,
-// using that field for any `number-flow-react` host and light-DOM
-// textContent for everything else, reproducing what a user actually sees
-// on screen.
-function renderedText(el: Element | null): string {
-  if (el === null) {
-    return "";
-  }
-  let out = "";
-  for (const node of Array.from(el.childNodes)) {
-    if (node.nodeType === Node.TEXT_NODE) {
-      out += node.textContent ?? "";
-    } else if (node instanceof Element) {
-      if (node.tagName.toLowerCase() === "number-flow-react") {
-        const data = (node as unknown as { _data?: { valueAsString?: string } })._data;
-        out += data?.valueAsString ?? "";
-      } else {
-        out += renderedText(node);
-      }
-    }
-  }
-  return out;
-}
-
 // css split (2026-07-24): overlay-card.css split into src/overlay/*.css chunks, pulled
 // back together via plain `@import "./relative.css";` lines — inlined here
 // so this still returns the full literal stylesheet text callers expect,
@@ -214,45 +182,9 @@ describe("IdleHoverPeek (plan 093)", () => {
     const { container } = render(<IdleHoverPeek status={WEATHER_STATUS} hovered={true} />);
     expect(container.querySelector(".wx-peek-backdrop.wx-card")).not.toBeNull();
     expect(container.querySelector("img.wx-peek-icon")).not.toBeNull();
-    expect(renderedText(container.querySelector(".wx-peek-temp"))).toBe("27°");
+    expect(container.querySelector(".wx-peek-temp")?.textContent).toBe("27°");
     expect(container.querySelector(".wx-peek-condition")?.textContent).toBe("Cloudy");
     expect(container.querySelector(".idle-peek-timeline")).not.toBeNull();
-  });
-
-  // NumberFlow digit-roll: `tempDisplay` is a fixed-format wire string
-  // (an integer plus a literal "°", `weather_poller.rs`'s own contract —
-  // see `splitTempDisplay`'s doc comment in IdleHoverPeek.tsx), so a
-  // negative reading must still split and render correctly, not just the
-  // common positive case above.
-  it("rolls a negative temperature reading correctly", () => {
-    const { container } = render(
-      <IdleHoverPeek
-        status={{
-          ...WEATHER_STATUS,
-          weather: { enabled: true, current: { ...WEATHER_CURRENT, tempDisplay: "-5°" } },
-        }}
-        hovered={true}
-      />,
-    );
-    expect(renderedText(container.querySelector(".wx-peek-temp"))).toBe("-5°");
-  });
-
-  // If the wire ever sends something `splitTempDisplay` can't parse as a
-  // fixed-format "<int><suffix>" string, the readout must fall back to
-  // rendering the raw text rather than crashing or silently dropping it —
-  // the declared "report, don't guess" behavior for an unstructured value.
-  it("falls back to the raw string when tempDisplay isn't the expected fixed format", () => {
-    const { container } = render(
-      <IdleHoverPeek
-        status={{
-          ...WEATHER_STATUS,
-          weather: { enabled: true, current: { ...WEATHER_CURRENT, tempDisplay: "—" } },
-        }}
-        hovered={true}
-      />,
-    );
-    expect(container.querySelector(".wx-peek-temp")?.textContent).toBe("—");
-    expect(container.querySelector(".wx-peek-temp number-flow-react")).toBeNull();
   });
 
   // plan 122 (Part A): the glyph moved out of the absolute backdrop into

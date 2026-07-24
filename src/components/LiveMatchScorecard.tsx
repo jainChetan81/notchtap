@@ -1,4 +1,3 @@
-import NumberFlow from "@number-flow/react";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { useState } from "react";
 import type { EventKindPresentation, LivePillVariant } from "../lib/presentation";
@@ -66,17 +65,10 @@ export function LiveMatchScorecard({
         <div className="side">
           <Crest abbrev={liveEspn.homeAbbrev} path={liveEspn.homeCrest} />
         </div>
-        {/* NumberFlow digit-roll (see this component's own doc above): a
-            goal rolls the changed digit instead of the text node just
-            swapping — `homeScore`/`awayScore` are already plain numbers on
-            the wire (`EspnMeta`, useSlotState.ts), not a preformatted
-            string, so no parsing is needed. `.score`'s font is already
-            `var(--font-mono)` (live-scorecard.css), so the roll doesn't
-            shift the card's width. */}
         <span className="score">
-          <NumberFlow value={liveEspn.homeScore} />
+          {liveEspn.homeScore}
           <span className="dash">–</span>
-          <NumberFlow value={liveEspn.awayScore} />
+          {liveEspn.awayScore}
         </span>
         <div className="side">
           <Crest abbrev={liveEspn.awayAbbrev} path={liveEspn.awayCrest} />
