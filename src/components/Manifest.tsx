@@ -1,43 +1,45 @@
-import { Fragment, useMemo } from "react";
+import { useMemo } from "react";
 import { renderInlineMarkdown } from "../lib/markdown";
-import { categoryLabel, type EventType, publishedLabel, sourceLabelFor } from "../lib/presentation";
+import type { EventType } from "../lib/presentation";
 
 // The hardcoded "⌃⇧N" hint mirrors EXPAND_TOGGLE_SHORTCUT in lib.rs (a
 // hardcoded rust constant itself, since v3.6 spec §7.1 explicitly defers
 // the exact combo) — restated here rather than threaded through the wire,
 // since both sides are already hardcoded placeholders in lockstep.
+//
+// 2026-07-24 (compact/expanded declutter): the expanded panel's ONLY job
+// now is the summary/message rendering — label + body + the keyboard
+// hint footer. Everything else that used to live here (news's
+// `.manifest-meta` source/published/category footer; the generic
+// branch's `.manifest-meta` source label and its `.manifest-fields`
+// subtitle/detail cells) is compact-card metadata now — NotificationBody
+// already surfaces all of it (masthead/meta row for news, masthead +
+// subtitle row + detail cells for generic), so repeating it here was
+// pure duplication. Both branches converge on the exact same
+// `.manifest-block` shape below; only the label text and the summary
+// source differ.
 export function Manifest({
+  title,
   body,
   eventType,
   expanded,
-  source,
-  category,
-  publishedAtMs,
   hasLink,
-  subtitle,
-  details = [],
 }: {
+  title: string;
   body: string;
   eventType: EventType;
   expanded: boolean;
-  source?: string | null;
-  category?: string | null;
-  publishedAtMs?: number | null;
   hasLink: boolean;
-  // plan 035 (Layout A): subtitle renders as its own manifest cell, and
-  // each detail pair as one more cell — plain text, never markdown (they
-  // originate in untrusted hook input). Only the generic branch shows them.
-  subtitle?: string | null;
-  details?: { label: string; value: string }[];
 }) {
-  const newsPublished = publishedLabel(publishedAtMs ?? null, Date.now());
-  const newsCategory = categoryLabel(category ?? null);
-  const metaSegments = [
-    <b key="src">{source ?? "RSS"}</b>,
-    ...(newsPublished !== null ? [<span key="pub">published {newsPublished}</span>] : []),
-    ...(newsCategory !== null ? [<span key="cat">{newsCategory}</span>] : []),
-  ];
-  const genericSourceLabel = sourceLabelFor(eventType);
+  const isNews = eventType === "news_item";
+
+  // Change C: the rust side now sends an empty `body` for a redundant
+  // Google-News summary (one that adds nothing beyond the headline) —
+  // fall back to the full, untruncated title as the summary text rather
+  // than showing an empty panel. Plain text either way, same as news's
+  // summary always was (never markdown — that's the generic branch's
+  // `messageContent` below).
+  const newsSummary = body.trim() !== "" ? body : title;
 
   // plan 069 (folded into 078): memoized on `body` so unrelated re-renders
   // don't re-tokenize the markdown.
@@ -50,81 +52,23 @@ export function Manifest({
     // tree (AnimatePresence used to remove it from the DOM entirely).
     <div className={`manifest-wrap${expanded ? " expanded" : ""}`} aria-hidden={!expanded}>
       <div className="manifest">
-        {eventType === "news_item" ? (
-          <div className="manifest-block">
-            <div className="manifest-label">Summary</div>
-            <div className="manifest-text">{body}</div>
-            <div className="manifest-meta">
-              {metaSegments.map((segment, index) => (
-                <Fragment key={segment.key}>
-                  {index > 0 && <span className="sep">·</span>}
-                  {segment}
-                </Fragment>
-              ))}
-            </div>
-            <div className="manifest-footer">
-              <span className="manifest-hint">
-                {hasLink ? (
-                  <>
-                    <kbd>⌃⇧O</kbd> read · <kbd>⌃⇧N</kbd> collapse
-                  </>
-                ) : (
-                  <>
-                    <kbd>⌃⇧N</kbd> collapse
-                  </>
-                )}
-              </span>
-            </div>
+        <div className="manifest-block">
+          <div className="manifest-label">{isNews ? "Summary" : "Message"}</div>
+          <div className="manifest-text">{isNews ? newsSummary : messageContent}</div>
+          <div className="manifest-footer">
+            <span className="manifest-hint">
+              {hasLink ? (
+                <>
+                  <kbd>⌃⇧O</kbd> read · <kbd>⌃⇧N</kbd> collapse
+                </>
+              ) : (
+                <>
+                  <kbd>⌃⇧N</kbd> collapse
+                </>
+              )}
+            </span>
           </div>
-        ) : (
-          // plan 092 (Step 3): the generic branch's expanded manifest
-          // converges onto the SAME full-width `.manifest-block`
-          // vocabulary news already ships (080/090) — Message gets
-          // `.manifest-label`/`.manifest-text` like news's Summary, the
-          // source label moves into an inline `.manifest-meta` row (like
-          // news's `<b>{source}</b>` segment), and the hotkey hint moves
-          // to `.manifest-footer` (also matching news). Subtitle and each
-          // detail pair keep their own `.detail-label`/`.detail-value`
-          // heading+value cell — content semantics unchanged, only the
-          // container went from a 2-column grid to a full-width stack
-          // (`.manifest-fields`).
-          <div className="manifest-block">
-            <div className="manifest-label">Message</div>
-            <div className="manifest-text">{messageContent}</div>
-            <div className="manifest-meta">
-              <b>{genericSourceLabel}</b>
-            </div>
-            {(subtitle || details.length > 0) && (
-              <div className="manifest-fields">
-                {subtitle ? (
-                  <div>
-                    <div className="detail-label">Subtitle</div>
-                    <div className="detail-value">{subtitle}</div>
-                  </div>
-                ) : null}
-                {details.map((detail) => (
-                  <div key={`${detail.label}:${detail.value}`}>
-                    <div className="detail-label">{detail.label}</div>
-                    <div className="detail-value">{detail.value}</div>
-                  </div>
-                ))}
-              </div>
-            )}
-            <div className="manifest-footer">
-              <span className="manifest-hint">
-                {hasLink ? (
-                  <>
-                    <kbd>⌃⇧O</kbd> read · <kbd>⌃⇧N</kbd> collapse
-                  </>
-                ) : (
-                  <>
-                    <kbd>⌃⇧N</kbd> collapse
-                  </>
-                )}
-              </span>
-            </div>
-          </div>
-        )}
+        </div>
       </div>
     </div>
   );

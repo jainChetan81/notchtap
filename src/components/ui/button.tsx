@@ -12,15 +12,19 @@ const buttonVariants = cva(
         // plan 112 Step 3: stock shadcn white-text-on-`--primary` fails
         // AA (computed ~3.3-3.65:1 vs the 4.5:1 floor Plan 109 set for
         // notchtap settings — `--primary` is the same #0a84ff accent
-        // that pairing already failed against there). Darkened toward
-        // `--background` via `color-mix` (same token-composition
-        // technique the `secondary` variant below already uses for its
-        // hover state, not a new raw palette literal) so the app's one
-        // `default`-variant consumer (the Save & Relaunch CTA) clears
-        // AA: rest ~5.4:1, hover ~4.7:1 (computed against
-        // `--primary-foreground`, which is `--foreground`'s value).
+        // that pairing already failed against there). Upstream
+        // `--primary-foreground` stays deliberately dark (5.56:1) —
+        // it's meant for the undarkened `--primary` surface, where
+        // light text would fail AA (white on raw #0a84ff is 3.26:1) —
+        // so we don't touch that shared token. Instead this variant
+        // darkens the background toward `--background` via `color-mix`
+        // (same token-composition technique the `secondary` variant
+        // below already uses for its hover state, not a new raw
+        // palette literal) and pairs it with the local `text-foreground`
+        // (light) so the app's one `default`-variant consumer (the
+        // Save & Relaunch CTA) clears AA: rest ~5.4:1, hover ~4.7:1.
         default:
-          "bg-[color-mix(in_oklch,var(--primary),var(--background)_25%)] text-primary-foreground hover:bg-[color-mix(in_oklch,var(--primary),var(--background)_18%)]",
+          "bg-[color-mix(in_oklch,var(--primary),var(--background)_25%)] text-foreground hover:bg-[color-mix(in_oklch,var(--primary),var(--background)_18%)]",
         outline:
           "border-border bg-background hover:bg-muted hover:text-foreground aria-expanded:bg-muted aria-expanded:text-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
         secondary:

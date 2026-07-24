@@ -16,6 +16,7 @@ import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { type FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
+import brandMark from "../../assets/branding/notchtap-mark-64.png";
 import { NOTCHTAP_EASE } from "../animationTiming";
 import { ActionStatus, useActionStatus } from "./actionStatus";
 import { settingsInvoke } from "./ipc";
@@ -385,7 +386,7 @@ export function SettingsApp() {
   return (
     <MotionConfig reducedMotion="user" transition={{ duration: 0.16, ease: NOTCHTAP_EASE }}>
       <main
-        className="settings-window grid h-full w-full min-h-[480px] grid-cols-[140px_minmax(0,1fr)] overflow-hidden bg-background max-[430px]:grid-cols-[122px_minmax(0,1fr)]"
+        className="settings-window grid h-full w-full grid-cols-[140px_minmax(0,1fr)] overflow-hidden bg-background max-[430px]:grid-cols-[122px_minmax(0,1fr)]"
         aria-labelledby="section-title"
       >
         <aside
@@ -393,9 +394,11 @@ export function SettingsApp() {
           aria-label="Settings sections"
         >
           <div className="sidebar-brand flex min-h-[71px] items-center gap-2 border-b border-border/60 px-3.5 pt-[17px] pb-3.5 font-mono text-fs-body leading-none font-bold tracking-[0.09em] text-foreground uppercase not-italic max-[430px]:px-[10px]">
-            <span
-              className="brand-slot h-2 w-[17px] flex-none rounded-tl-[2px] rounded-tr-[2px] rounded-br-[5px] rounded-bl-[5px] bg-foreground opacity-[0.86]"
+            <img
+              src={brandMark}
+              alt=""
               aria-hidden="true"
+              className="brand-mark h-[17px] w-[17px] flex-none"
             />
             <span>notchtap</span>
           </div>
@@ -422,7 +425,7 @@ export function SettingsApp() {
               );
             })}
           </nav>
-          <div className="sidebar-meta border-t border-border/60 px-3.5 pt-[11px] pb-[13px] font-mono text-fs-secondary font-bold tracking-[0.1em] text-muted-foreground uppercase max-[430px]:px-[10px]">
+          <div className="sidebar-meta border-t border-border/60 px-3.5 pt-[11px] pb-5 font-mono text-fs-secondary font-bold tracking-[0.1em] text-muted-foreground uppercase max-[430px]:px-[10px]">
             settings / v5
           </div>
         </aside>

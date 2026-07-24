@@ -210,6 +210,33 @@ fn decode_entity(entity: &str) -> Option<char> {
         "gt" => Some('>'),
         "quot" => Some('"'),
         "apos" => Some('\''),
+        // Whitespace-like named entities decode to a plain ASCII space (not
+        // U+00A0/U+2002/etc) so the whitespace-collapse pass in `sanitize`
+        // merges runs of them like any other space — Google News RSS in
+        // particular emits `&nbsp;&nbsp;` between title and source.
+        "nbsp" | "ensp" | "emsp" | "thinsp" => Some(' '),
+        "ndash" => Some('–'),
+        "mdash" => Some('—'),
+        "hellip" => Some('…'),
+        "lsquo" => Some('‘'),
+        "rsquo" => Some('’'),
+        "ldquo" => Some('“'),
+        "rdquo" => Some('”'),
+        "middot" => Some('·'),
+        "bull" => Some('•'),
+        "copy" => Some('©'),
+        "reg" => Some('®'),
+        "trade" => Some('™'),
+        "deg" => Some('°'),
+        "plusmn" => Some('±'),
+        "times" => Some('×'),
+        "laquo" => Some('«'),
+        "raquo" => Some('»'),
+        "euro" => Some('€'),
+        "pound" => Some('£'),
+        "cent" => Some('¢'),
+        "sect" => Some('§'),
+        "para" => Some('¶'),
         _ => {
             let value = if let Some(hex) = entity
                 .strip_prefix("#x")
@@ -293,6 +320,56 @@ fn sanitize(text: &str, max_chars: usize) -> String {
     }
 }
 
+/// True when a feed's URL is a Google News RSS endpoint — including the
+/// topic-expanded query feeds `expand_topic_url` builds, which always
+/// point at `news.google.com`. Google News is the ONE source whose
+/// `<description>` is a documented, fixed shape (`title + source name`,
+/// nothing else); an arbitrary configured feed offers no such guarantee,
+/// so this gates the title-prefix-plus-short-tail rule in
+/// `body_is_redundant` below.
+fn is_google_news_feed(url: &str) -> bool {
+    reqwest::Url::parse(url)
+        .map(|parsed| parsed.host_str() == Some("news.google.com"))
+        .unwrap_or(false)
+}
+
+/// Detects a body that adds nothing over the title, so `diff_feed` can
+/// suppress it instead of rendering a duplicate of the headline back at
+/// the reader. Two rules are universally safe: (a) an empty body, and
+/// (b) a body fully contained in the title. A third rule — body equals
+/// title plus a short (<24 char) tail — is gated by `allow_title_prefix_tail`:
+/// it's only valid for Google News, whose `<description>` is always
+/// `title + source name` verbatim (see `is_google_news_feed`). Applied to
+/// an arbitrary configured feed, that rule would wrongly erase a genuine
+/// short summary like title "Earthquake hits city" / body "Earthquake
+/// hits city; 12 dead".
+fn body_is_redundant(title: &str, body: &str, allow_title_prefix_tail: bool) -> bool {
+    fn normalize(text: &str) -> String {
+        text.chars()
+            .filter(|ch| ch.is_alphanumeric())
+            .flat_map(char::to_lowercase)
+            .collect()
+    }
+
+    let title = normalize(title);
+    let body = normalize(body);
+
+    if body.is_empty() {
+        return true;
+    }
+    if title.contains(&body) {
+        return true;
+    }
+    if allow_title_prefix_tail {
+        if let Some(remainder) = body.strip_prefix(title.as_str()) {
+            if !title.is_empty() && remainder.chars().count() < 24 {
+                return true;
+            }
+        }
+    }
+    false
+}
+
 fn derive_category(entry_categories: &[String], feed_default: Option<&str>) -> Option<String> {
     let entry_categories: Vec<String> = entry_categories
         .iter()
@@ -343,6 +420,7 @@ pub fn diff_feed(
 ) -> Vec<Event> {
     let mut candidates = Vec::new();
     let source = derive_source(feed_config.source.as_deref(), feed);
+    let google_news = is_google_news_feed(&feed_config.url);
 
     for (order, entry) in feed.entries.iter().enumerate() {
         let guid = (!entry.id.trim().is_empty()).then_some(entry.id.as_str());
@@ -371,7 +449,7 @@ pub fn diff_feed(
         if title.is_empty() {
             continue;
         }
-        let body = sanitize(
+        let mut body = sanitize(
             entry
                 .summary
                 .as_ref()
@@ -379,6 +457,15 @@ pub fn diff_feed(
                 .unwrap_or_default(),
             BODY_MAX_CHARS,
         );
+        // Google News RSS `<description>` is just the title (and source)
+        // repeated, not a real summary; suppress it rather than echo the
+        // headline back in the body slot. The frontend falls back to the
+        // headline in the expanded panel when body is empty. The
+        // title-prefix-plus-short-tail rule only fires for Google News
+        // feeds (`google_news`) — see `body_is_redundant`'s doc comment.
+        if body_is_redundant(&title, &body, google_news) {
+            body = String::new();
+        }
         let published = entry
             .published
             .as_ref()
@@ -666,6 +753,14 @@ mod tests {
         }
     }
 
+    fn google_news_feed_config() -> RssFeedConfig {
+        RssFeedConfig {
+            url: "https://news.google.com/rss/search?q=rodri".to_string(),
+            source: None,
+            category: None,
+        }
+    }
+
     #[test]
     fn seen_store_contains_and_insert_basics() {
         let mut seen = SeenStore::default();
@@ -759,6 +854,19 @@ mod tests {
     }
 
     #[test]
+    fn sanitize_decodes_named_entities_and_leaves_unknown_ones_verbatim() {
+        assert_eq!(
+            sanitize("Title&nbsp;&nbsp;Source", 100),
+            "Title Source"
+        );
+        assert_eq!(
+            sanitize("Wait&mdash;really&hellip;", 100),
+            "Wait—really…"
+        );
+        assert_eq!(sanitize("Unknown &xyzzy; entity", 100), "Unknown &xyzzy; entity");
+    }
+
+    #[test]
     fn sanitize_truncates_multibyte_text_on_a_char_boundary() {
         assert_eq!(sanitize("éclair", 2), "éc…");
         assert_eq!(sanitize("📰news", 1), "📰…");
@@ -796,6 +904,88 @@ mod tests {
         // existing-behavior regression guard, copied from
         // sanitize_decodes_numeric_entities_and_collapses_whitespace.
         assert_eq!(sanitize("A&#39;B &#x1F4F0;", 100), "A'B 📰");
+    }
+
+    #[test]
+    fn body_is_redundant_when_equal_after_normalization() {
+        // rules (a)/(b) are universal — the flag must not matter here.
+        assert!(body_is_redundant(
+            "Real Madrid win the league",
+            "Real Madrid, win the league!",
+            false
+        ));
+        assert!(body_is_redundant(
+            "Real Madrid win the league",
+            "Real Madrid, win the league!",
+            true
+        ));
+    }
+
+    #[test]
+    fn body_is_redundant_when_body_is_a_subset_of_title() {
+        // rule (b) is universal — the flag must not matter here.
+        assert!(body_is_redundant(
+            "Real Madrid win the league - full report",
+            "Real Madrid win the league",
+            false
+        ));
+        assert!(body_is_redundant(
+            "Real Madrid win the league - full report",
+            "Real Madrid win the league",
+            true
+        ));
+    }
+
+    #[test]
+    fn body_is_redundant_when_title_followed_by_short_source_tail_and_flag_set() {
+        assert!(body_is_redundant(
+            "Real Madrid win the league",
+            "Real Madrid win the league  Yahoo Sports",
+            true
+        ));
+    }
+
+    #[test]
+    fn body_is_not_redundant_when_title_followed_by_short_tail_and_flag_unset() {
+        // rule (c) — title-prefix-plus-short-tail — is Google-News-only.
+        // For a generic feed a short genuine tail must survive.
+        assert!(!body_is_redundant(
+            "Real Madrid win the league",
+            "Real Madrid win the league  Yahoo Sports",
+            false
+        ));
+    }
+
+    #[test]
+    fn body_is_not_redundant_when_title_followed_by_a_real_paragraph() {
+        assert!(!body_is_redundant(
+            "Real Madrid win the league",
+            "Real Madrid win the league after a dramatic final matchday \
+             that saw three separate title contenders drop points",
+            true
+        ));
+    }
+
+    #[test]
+    fn body_is_not_redundant_when_unrelated_to_title() {
+        assert!(!body_is_redundant(
+            "Real Madrid win the league",
+            "Weather forecast calls for rain across the region tomorrow",
+            true
+        ));
+    }
+
+    #[test]
+    fn is_google_news_feed_matches_only_the_news_google_com_host() {
+        assert!(is_google_news_feed(
+            "https://news.google.com/rss/search?q=formula+1"
+        ));
+        assert!(is_google_news_feed(&expand_topic_url("aston villa")));
+        assert!(!is_google_news_feed("https://example.com/feed"));
+        assert!(!is_google_news_feed(
+            "https://notnews.google.com/rss/search?q=x"
+        ));
+        assert!(!is_google_news_feed("not a url"));
     }
 
     #[test]
@@ -996,6 +1186,59 @@ mod tests {
         assert_eq!(event.payload.title, "Second & Latest");
         assert_eq!(event.payload.body, "Details");
         assert_eq!(event.meta.subtitle, None);
+    }
+
+    #[test]
+    fn diff_feed_suppresses_google_news_style_redundant_body() {
+        let feed = parse_feed(
+            r##"<item><guid>rodri</guid><title>Real Madrid make final decision on Rodri's transfer - Yahoo Sports</title><link>https://example.com/rodri</link><description><![CDATA[<a href="https://news.google.com/rss/articles/x">Real Madrid make final decision on Rodri's transfer - Yahoo Sports</a>&nbsp;&nbsp;<font color="#6f6f6f">Yahoo Sports</font>]]></description></item>"##,
+        );
+        let mut seen = SeenStore::default();
+        let events = diff_feed(
+            &mut seen,
+            &feed,
+            &google_news_feed_config(),
+            false,
+            10,
+            10,
+            Priority::Low,
+            Instant::now(),
+            None,
+        );
+        assert_eq!(events.len(), 1);
+        let event = &events[0];
+        assert_eq!(
+            event.payload.title,
+            "Real Madrid make final decision on Rodri's transfer - Yahoo Sports"
+        );
+        assert_eq!(event.payload.body, "");
+    }
+
+    #[test]
+    fn diff_feed_keeps_short_genuine_summary_on_a_non_google_news_feed() {
+        // Regression for the external-review finding: rule (c)
+        // (title-prefix-plus-short-tail) must NOT fire for an arbitrary
+        // configured feed — only Google News's `<description>` is
+        // guaranteed to be title+source with no real content.
+        let feed = parse_feed(
+            r#"<item><guid>quake</guid><title>Earthquake hits city</title><link>https://example.com/quake</link><description>Earthquake hits city; 12 dead</description></item>"#,
+        );
+        let mut seen = SeenStore::default();
+        let events = diff_feed(
+            &mut seen,
+            &feed,
+            &feed_config(None, None),
+            false,
+            10,
+            10,
+            Priority::Low,
+            Instant::now(),
+            None,
+        );
+        assert_eq!(events.len(), 1);
+        let event = &events[0];
+        assert_eq!(event.payload.title, "Earthquake hits city");
+        assert_eq!(event.payload.body, "Earthquake hits city; 12 dead");
     }
 
     #[test]

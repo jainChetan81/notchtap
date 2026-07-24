@@ -1,10 +1,27 @@
 import type { ReactNode } from "react";
-import type { SlotState } from "../useSlotState";
+import type { SlotState, SourceKind } from "../useSlotState";
 import { Manifest } from "./Manifest";
 import { Stamp } from "./Stamp";
 import type { Detail } from "./StatusRailCard";
 import { Track } from "./Track";
 import { TtlBar } from "./TtlBar";
+
+// 2026-07-24 (declutter fix): the generic branch serves ALL non-news
+// origins, not just cmux — `origin` is the five-value `SourceKind` union
+// (`src/useSlotState.ts`'s `SOURCE_KINDS`). An exhaustive per-origin
+// lookup (not a `=== "cmux"` ternary) keeps a future SourceKind addition
+// a compile error here until this table is updated, same discipline as
+// lib/presentation.ts's own exhaustive tables. "manual" is the `/notify`
+// CLI push path, hence "cli"; "news" never reaches this branch (the
+// `news` boolean above routes it to the news branch instead), so its
+// entry is a defensive fallback, never actually read.
+const GENERIC_MASTHEAD_KICKER: Record<SourceKind, string> = {
+  cmux: "cmux",
+  manual: "cli",
+  football: "football",
+  weather: "weather",
+  news: "news",
+};
 
 // plan 120: extracted verbatim from StatusRailCard.tsx's JSX (`:711-838`
 // at 2a840c4) — the whole non-live-match content fragment (compact +
@@ -75,40 +92,40 @@ export function NotificationBody({
               )}
             </>
           ) : (
-            // plan 092 (item 19, this plan's core): the general
-            // card's header row (title + the badge cluster) +
-            // subtitle row (plan 035's `subtitle`, surfaced in
-            // compact for the first time) + full-width clamped
-            // body. There is no inline-time value here (no
-            // non-news event carries a publishedAtMs), so the
-            // subtitle row's time slot simply never renders.
-            // plan 096: the badge cluster is the priority Stamp
-            // PLUS the cmux chip, conditional on `origin` (now on
-            // the wire — 092 deferred this exact spot pending
-            // that wire change).
+            // 2026-07-24 (compact/expanded declutter): the generic
+            // branch's header converged onto the SAME masthead-row/
+            // `.title.headline` markup news uses above — the kicker
+            // reads the origin-derived label (`GENERIC_MASTHEAD_KICKER`
+            // above) instead of a source name, and the old separate
+            // `.notif-header-row`/`.notif-title`/`.notif-header-badges`/
+            // `chip-cmux` "Agent" chip are gone (the kicker already says
+            // cmux for that origin, so the chip was pure duplication).
+            // Subtitle row (plan 035's `subtitle`,
+            // surfaced in compact) and the full-width body stay
+            // generic-only — news never carries either. Detail pairs
+            // (plan 035's `details` channel) now always render
+            // compactly here, expanded or not — metadata belongs in
+            // the compact card, never duplicated into the expanded
+            // panel (see Manifest.tsx, which no longer renders them at
+            // all).
             <>
-              <div className="notif-header-row">
-                <span className="notif-title">{slot.title}</span>
-                <div className="notif-header-badges">
-                  {slot.origin === "cmux" && <span className="chip chip-cmux">Agent</span>}
-                  <Stamp priority={slot.priority} signal={slot.signal} eventType={slot.eventType} />
+              <div className="masthead-row">
+                <div className="masthead">
+                  <span className="dot" />
+                  {GENERIC_MASTHEAD_KICKER[slot.origin]}
                 </div>
+                <Stamp priority={slot.priority} signal={slot.signal} eventType={slot.eventType} />
               </div>
+              <div className="title headline">{slot.title}</div>
               {slot.subtitle !== null && (
                 <div className="notif-subtitle-row">
                   <span className="notif-subtitle">{slot.subtitle}</span>
                 </div>
               )}
-              <div className="notif-body">{bodyContent}</div>
-              {/* plan 042: collapsed scorecard cells (Clock,
-                per-side Cards) — only a live-match card with
-                `espn_live_card` on populates `details`, so
-                every other card renders exactly as before.
-                Same detail-label/detail-value classes as the
-                expanded Manifest view; collapsed-only, so the
-                pairs never render twice when expanded. */}
-              {!expanded &&
-                liveVisibleDetails.length > 0 &&
+              {/* an empty body (e.g. a cmux push with no body text)
+                must not leave a blank `.notif-body` node in the card. */}
+              {slot.body.trim() !== "" && <div className="notif-body">{bodyContent}</div>}
+              {liveVisibleDetails.length > 0 &&
                 liveVisibleDetails.map((detail) => (
                   <div key={`${detail.label}:${detail.value}`}>
                     <div className="detail-label">{detail.label}</div>
@@ -126,15 +143,11 @@ export function NotificationBody({
         <Track total={slot.queueTotal} done={slot.queueDone} />
       </div>
       <Manifest
+        title={slot.title}
         body={slot.body}
         eventType={slot.eventType}
         expanded={expanded}
-        source={slot.source}
-        category={slot.category}
-        publishedAtMs={slot.publishedAtMs}
         hasLink={slot.link !== null}
-        subtitle={slot.subtitle}
-        details={liveVisibleDetails}
       />
       {/* plan 100: last in DOM order within .below-block — the bar
         is the card's floor, absolutely positioned to its bottom

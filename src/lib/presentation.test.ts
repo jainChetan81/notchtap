@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ageLabel, categoryClass, publishedLabel, sourceLabelFor, stampFor } from "./presentation";
+import { ageLabel, categoryClass, stampFor } from "./presentation";
 
 describe("stampFor", () => {
   it("uses the fixed per-signal table when signal is not generic, regardless of priority", () => {
@@ -20,21 +20,6 @@ describe("stampFor", () => {
 
   it("uses Wire for a generic news signal", () => {
     expect(stampFor("low", "generic", "news_item")).toBe("Wire");
-  });
-});
-
-describe("sourceLabelFor", () => {
-  it("labels generic events as cmux/CLI", () => {
-    expect(sourceLabelFor("generic")).toBe("cmux / CLI · local");
-  });
-
-  it("labels espn-derived event types as football", () => {
-    expect(sourceLabelFor("score_update")).toBe("ESPN · football");
-    expect(sourceLabelFor("match_state")).toBe("ESPN · football");
-  });
-
-  it("labels news items as the RSS news wire", () => {
-    expect(sourceLabelFor("news_item")).toBe("RSS · news wire");
   });
 });
 
@@ -68,16 +53,5 @@ describe("ageLabel", () => {
     expect(ageLabel(NOW - 23 * 60 * 60_000, NOW)).toBe("23h ago");
     expect(ageLabel(NOW - 24 * 60 * 60_000, NOW)).toBe("1d ago");
     expect(ageLabel(NOW - 3 * 24 * 60 * 60_000, NOW)).toBe("3d ago");
-  });
-});
-
-describe("publishedLabel", () => {
-  it("formats a publication timestamp as local 24-hour time", () => {
-    const published = new Date(2026, 6, 17, 14, 32).getTime();
-    expect(publishedLabel(published, published + 60_000)).toBe("14:32");
-  });
-
-  it("returns null without a published timestamp", () => {
-    expect(publishedLabel(null, Date.now())).toBeNull();
   });
 });

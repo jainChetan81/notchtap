@@ -84,11 +84,19 @@ function Switch({
           "pointer-events-none block translate-x-px rounded-full bg-background ring-0 transition-transform duration-150 ease-out",
           "group-data-[size=default]/switch:size-[18px] group-data-[size=default]/switch:data-checked:translate-x-[15px]",
           "group-data-[size=sm]/switch:size-3 group-data-[size=sm]/switch:data-checked:translate-x-[13px]",
-          // checked keeps the existing AA-safe primary-on-primary pair;
+          // checked keeps the existing AA-safe dark-thumb-on-blue-track
+          // pair, unchanged. Pinned to `bg-background` rather than
+          // `bg-primary-foreground` so the switch doesn't ride on
+          // `--primary-foreground`'s meaning — the two are currently
+          // byte-identical (`oklch(0.121 0.004 245.47)`), but
+          // `--primary-foreground` is upstream's shared, deliberately
+          // dark token (see button.tsx's default-variant comment and
+          // tokens.css), and this thumb's own color choice shouldn't
+          // depend on it.
           // unchecked moves off the old bright-white `bg-foreground` to
           // a muted light gray, so an off switch doesn't read as a
           // blown-out white blob against its (now-visible) dark track.
-          "dark:data-checked:bg-primary-foreground dark:data-unchecked:bg-muted-foreground",
+          "dark:data-checked:bg-background dark:data-unchecked:bg-muted-foreground",
         )}
       />
     </SwitchPrimitive.Root>

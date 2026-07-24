@@ -1100,11 +1100,13 @@
   min-width: 0;
 }
 
-/* the news headline reuses this rule via the `.title.headline` combo
-   below (`.headline` overrides size/line-clamp specifics but inherits
-   `display`/`overflow`/`font-weight`/`box-orient` from here) — kept for
-   that reason even though the generic branch now uses `.notif-title`
-   instead of this bare class. */
+/* shared headline treatment for both card types — 2026-07-24's
+   compact/expanded declutter converged the generic branch's title onto
+   this SAME `.title.headline` combo news already used (replacing its
+   old separate `.notif-header-row`/`.notif-title`/`.notif-header-badges`
+   trio, see `.masthead-row` below). `.headline` only overrides size/
+   line-clamp specifics; `display`/`overflow`/`font-weight`/`box-orient`
+   come from here. */
 .card-root .title {
   display: -webkit-box;
   overflow: hidden;
@@ -1116,69 +1118,20 @@
   -webkit-line-clamp: 2;
 }
 
-/* ==== plan 092 (item 19): the general card's header/subtitle-row
+/* ==== plan 092 (item 19): the general card's subtitle-row/body
    language, ported from the locked reference
-   (`prototype/notch-states.html:158-166`, `.notif-header-row`/
-   `.notif-title`/`.notif-subtitle-row`/`.notif-subtitle`/
-   `.notif-time-inline`/`.notif-body`). `.notif-header-row` pairs the
-   title with the badge cluster on the right (priority Stamp, plus the
-   plan-096 cmux chip when present — see `.notif-header-badges` below);
+   (`prototype/notch-states.html:158-166`, `.notif-subtitle-row`/
+   `.notif-subtitle`/`.notif-time-inline`/`.notif-body`). The header row
+   itself (title + priority Stamp +, until the 2026-07-24 declutter, a
+   plan-096 cmux "Agent" chip) converged onto news's own `.masthead-row`/
+   `.title.headline` treatment below — the chip is gone entirely now that
+   the masthead kicker already reads "cmux" for that origin, so only the
+   subtitle row and body stay unique to this branch.
    `.notif-subtitle-row` pairs plan 035's `subtitle` field (surfaced in
    compact for the first time — previously expanded-manifest-only) with
    an inline-time slot. News reuses `.notif-time-inline` too (Decision 5
    — ageLabel moves here, out of the old age pill) via its own
-   `.masthead-row`/meta-row below, not this header row. ==== */
-.card-root .notif-header-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-
-.card-root .notif-title {
-  display: -webkit-box;
-  overflow: hidden;
-  min-width: 0;
-  font-size: 14px;
-  font-weight: 680;
-  line-height: 1.2;
-  white-space: normal;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-/* plan 096: the header row's right-hand badge cluster — today just the
-   cmux chip (conditional) beside the always-present Stamp; a plain flex
-   row keeps `.notif-header-row`'s own `justify-content: space-between`
-   working with exactly two children (title, this cluster) regardless of
-   how many badges are inside it. */
-.card-root .notif-header-badges {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: none;
-}
-
-/* plan 096 (079 item 8): the cmux accent, part (a)+(b) — cards whose
-   `origin` is `"cmux"` (the field 096 added to the wire) get this tinted
-   chip with a small glyph prefix INSIDE it (the `::before`), reusing the
-   shared `.chip` shape from plan 092's chip language. Deliberately its
-   own color (not the priority accent vars) — `--accent`/`--accent-soft`
-   must stay reserved for priority alone (see `.card-assembly.low/medium/
-   high` above); origin and priority are orthogonal and must never share
-   a channel. See `.below-block.cmux-origin` below for part (c), the
-   hairline. */
-.card-root .chip-cmux {
-  color: #f0c46a;
-  background: rgba(240, 196, 106, 0.14);
-  border: 1px solid color-mix(in srgb, #f0c46a 35%, transparent);
-}
-
-.card-root .chip-cmux::before {
-  content: "⌁";
-  margin-right: 3px;
-}
-
+   `.masthead-row`/meta-row below, not this row. ==== */
 .card-root .notif-subtitle-row {
   display: flex;
   align-items: baseline;
@@ -1408,22 +1361,12 @@
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent);
 }
 
-/* plan 092: the generic branch's expanded manifest converged onto the
-   same full-width `.manifest-block`/`.manifest-label`/`.manifest-text`/
-   `.manifest-meta`/`.manifest-footer` vocabulary news already shipped
-   (080/090) instead of this 2-column grid — `.manifest-fields` is the
-   new stacking wrapper for the subtitle/detail-pair cells that used to
-   live in this grid's second column; each cell keeps its own
-   `.detail-label`/`.detail-value` heading+value pair (Content semantics
-   unchanged — only the container went from a 2-up grid to a full-width
-   stack). */
-.card-root .manifest-fields {
-  margin-top: 10px;
-  display: flex;
-  flex-direction: column;
-  gap: 10px;
-}
-
+/* `.detail-label`/`.detail-value` used to also back a `.manifest-fields`
+   stacking wrapper inside the expanded manifest (subtitle + each detail
+   pair, plan 092). The 2026-07-24 declutter moved that content
+   compact-only (NotificationBody.tsx renders these same two classes
+   directly, unwrapped, in `.compact`) and removed `.manifest-fields`
+   along with it — the expanded panel never repeats metadata now. */
 .card-root .detail-label {
   margin-bottom: 5px;
   color: var(--accent);
@@ -1648,12 +1591,14 @@
 .card-root .news-shade .manifest { position: relative; z-index: 1; }
 
 /* plan 092: `.masthead-row` pairs the masthead with the priority Stamp
-   badge — the same header-row shape the generic branch's
-   `.notif-header-row` uses (Stamp moved out of `.compact`'s old grid
-   column into the header, for both card types). `.masthead` itself grows
-   to fill the row (`flex: 1`) so its own trailing hairline (`::after`)
-   still fills exactly the space before the Stamp badge, same visual as
-   before this plan moved Stamp next to it. */
+   badge (Stamp moved out of `.compact`'s old grid column into the
+   header, for both card types). 2026-07-24: the generic branch's title
+   row converged onto this SAME masthead-row/`.masthead` markup too
+   (kicker text "cmux"/"cli" instead of a source name), replacing its old
+   separate `.notif-header-row`/`.notif-title`/`.notif-header-badges`
+   trio — so this is no longer news-only. `.masthead` itself grows to
+   fill the row (`flex: 1`) so its own trailing hairline (`::after`)
+   still fills exactly the space before the Stamp badge. */
 .card-root .masthead-row {
   display: flex;
   align-items: center;
@@ -1766,17 +1711,12 @@
   line-height: 1.5;
   color: rgba(255, 255, 255, 0.85);
 }
-.card-root .manifest-meta {
-  margin-top: 10px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex-wrap: wrap;
-  font: 600 9.5px/1.5 var(--font-mono);
-  color: rgba(255, 255, 255, 0.4);
-}
-.card-root .manifest-meta b { color: rgba(255, 255, 255, 0.7); font-weight: 700; }
-.card-root .manifest-meta .sep { color: rgba(255, 255, 255, 0.18); }
+/* `.manifest-meta` (source/published-time/category for news; the source
+   label for generic) was removed in the 2026-07-24 declutter — that
+   metadata is compact-card-only now (masthead + meta row / subtitle row),
+   never repeated in the expanded panel. Manifest.tsx's `.manifest-block`
+   is exactly label + `.manifest-text` + `.manifest-footer` for both
+   branches now. */
 .card-root .manifest-footer {
   margin-top: 10px;
   display: flex;

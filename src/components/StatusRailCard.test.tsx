@@ -539,8 +539,8 @@ describe("StatusRailCard", () => {
     // `.chip.chip-category`; the age pill moved OUT of the chip row
     // entirely into the plain `.notif-time-inline` slot (same ageLabel
     // computation/thresholds, new location — no longer chip-shaped).
-    // "Politics" legitimately appears twice while expanded (compact chip +
-    // manifest meta segment), so scope to the compact chip specifically.
+    // 2026-07-24: "Politics" now appears exactly once — the expanded
+    // manifest's meta segment that used to repeat it is gone (declutter).
     const categoryChip = container.querySelector(".chip-category") as HTMLElement;
     expect(categoryChip.textContent).toBe("Politics");
     expect(categoryChip.classList.contains("chip")).toBe(true);
@@ -563,9 +563,10 @@ describe("StatusRailCard", () => {
     expect(screen.getByText("Wire").classList.contains("stamp")).toBe(true);
     expect(screen.getByText("Summary").classList.contains("manifest-label")).toBe(true);
     expect(container.querySelector(".manifest-inner.news")).toBeNull();
-    expect(container.querySelector(".manifest-meta")?.textContent).toContain("NDTV");
-    expect(container.querySelector(".manifest-meta")?.textContent).toContain("published 03:28");
-    expect(container.querySelector(".manifest-meta")?.textContent).toContain("Politics");
+    // 2026-07-24 (declutter): the expanded manifest's source/published/
+    // category footer is gone — that metadata lives in the compact
+    // masthead + meta row above (already asserted), never repeated here.
+    expect(container.querySelector(".manifest-meta")).toBeNull();
     expect(container.querySelector(".manifest-footer")?.textContent).toContain(
       "⌃⇧O read · ⌃⇧N collapse",
     );
@@ -629,41 +630,47 @@ describe("StatusRailCard", () => {
     now.mockRestore();
   });
 
-  // plan 110 (Step C): the pin this plan's own comment promises —
-  // Manifest's expanded "published HH:MM" segment must survive the
-  // compact-row deletion above unchanged, so a future edit can't
-  // "simplify" the compact fix into deleting the expanded rendering too.
-  it("renders the expanded news manifest as a full-width summary with an inline meta row", () => {
-    const now = vi.spyOn(Date, "now").mockReturnValue(2_000_000_000_000);
+  // plan 110 (Step C) established the compact row's single-time-
+  // expression contract (pinned above); the 2026-07-24 declutter then
+  // removed the expanded manifest's "published HH:MM" segment entirely
+  // (along with the rest of `.manifest-meta`) — source/category/
+  // published-time are compact-only now, never repeated in the expanded
+  // panel. This pin now covers that: the expanded manifest is summary +
+  // hints only.
+  it("renders the expanded news manifest as a full-width summary with no meta duplication", () => {
     const { container } = render(<StatusRailCard slot={{ ...NEWS, link: null }} />);
 
     expect(container.querySelector(".manifest-inner.news")).toBeNull();
     expect(container.querySelector(".manifest-block")).not.toBeNull();
     expect(screen.getByText("Summary").classList.contains("manifest-label")).toBe(true);
     expect(screen.getByText(NEWS.body).classList.contains("manifest-text")).toBe(true);
-
-    const meta = container.querySelector(".manifest-meta") as HTMLElement;
-    expect(meta).not.toBeNull();
-    expect(within(meta).getByText("NDTV")?.tagName).toBe("B");
-    expect(meta.textContent).toContain("published 03:28");
-    expect(meta.textContent).toContain("Politics");
-    expect(meta.textContent?.split("·").length).toBeGreaterThanOrEqual(2);
+    expect(container.querySelector(".manifest-meta")).toBeNull();
 
     const footer = container.querySelector(".manifest-footer") as HTMLElement;
     expect(footer).not.toBeNull();
     expect(footer.textContent).toContain("⌃⇧N collapse");
     expect(footer.textContent).not.toContain("⌃⇧O read");
+  });
 
-    now.mockRestore();
+  // item D4 / Change C: the rust side now sends an empty `body` for a
+  // redundant Google-News summary — the expanded manifest falls back to
+  // the full (untruncated) title as the summary text rather than showing
+  // an empty panel.
+  it("renders the news title as the summary when body is empty (redundant-summary fallback)", () => {
+    const { container } = render(<StatusRailCard slot={{ ...NEWS, body: "" }} />);
+    const manifest = container.querySelector(".manifest") as HTMLElement;
+
+    const summary = within(manifest).getByText(NEWS.title);
+    expect(summary.classList.contains("manifest-text")).toBe(true);
   });
 
   // plan 092 (Step 3): the generic manifest converged onto news's
-  // full-width `.manifest-block` vocabulary — the old "Source / Control"
-  // detail-label heading is gone; the source label now sits in
-  // `.manifest-meta` (unlabeled, like news's) and the hotkey hint moved
-  // to `.manifest-footer` (also like news's), so these two assertions now
-  // read directly off `.manifest-footer`, mirroring the news manifest
-  // test above exactly.
+  // full-width `.manifest-block` vocabulary, and the 2026-07-24 declutter
+  // later dropped its `.manifest-meta` source label entirely (compact-
+  // only now, see the `cmux accent` masthead-kicker tests below) — the
+  // hotkey hint still lives in `.manifest-footer` (like news's), so these
+  // two assertions read directly off it, mirroring the news manifest test
+  // above exactly.
   it("shows only the collapse control in an expanded manifest without a link", () => {
     const { container } = render(<StatusRailCard slot={{ ...CMUX_NEEDS_INPUT, link: null }} />);
 
@@ -687,51 +694,74 @@ describe("StatusRailCard", () => {
     expect(footer.textContent).toContain("⌃⇧O read · ⌃⇧N collapse");
   });
 
-  // plan 035 (Layout A): subtitle and each detail pair render as ordinary
-  // manifest cells in the generic branch — exercised through StatusRailCard,
-  // the real render path, not a bare <Manifest>.
-  // plan 092: subtitle now ALSO renders in the compact header's
-  // `.notif-subtitle-row` (Decision 1 — surfaced there for the first
-  // time), so "Permission request" legitimately appears twice while
-  // expanded — once in the header, once in the manifest's Subtitle cell.
-  // Scope the manifest-cell assertions to the manifest specifically, like
-  // the goal fixture's "Arsenal 2-0"-appears-twice test above does.
-  it("renders the subtitle and each detail pair as manifest cells when expanded", () => {
+  // plan 035 (Layout A) originally put subtitle and each detail pair in
+  // the expanded manifest as ordinary cells; the 2026-07-24 declutter
+  // moved them compact-only instead (metadata belongs in the compact
+  // card, per the restructure — see NotificationBody.tsx) and removed
+  // Manifest's `.manifest-fields`/Subtitle/detail cells entirely, so
+  // they now render identically whether the card is expanded or not
+  // (item D3: generic compact card renders detail cells when present).
+  // Exercised through StatusRailCard, the real render path, not a bare
+  // <Manifest>.
+  it("renders the subtitle and each detail pair as compact cells, not duplicated in the manifest", () => {
     const { container } = render(<StatusRailCard slot={CMUX_RICH} />);
-    const manifest = container.querySelector(".manifest") as HTMLElement;
-
-    expect(within(manifest).getByText("Subtitle")).toBeTruthy();
-    expect(within(manifest).getByText("Permission request")).toBeTruthy();
-    expect(within(manifest).getByText("Tool")).toBeTruthy();
-    expect(within(manifest).getByText("Bash")).toBeTruthy();
-    expect(within(manifest).getByText("Command")).toBeTruthy();
-    // detail values are plain text (not markdown) — the literal string shows.
-    expect(within(manifest).getByText("git push origin master")).toBeTruthy();
-    expect(within(manifest).getByText("Project")).toBeTruthy();
-    expect(within(manifest).getByText("/Users/x/proj")).toBeTruthy();
-    // and the compact header does carry the subtitle too (new in this plan).
     const compact = container.querySelector(".compact") as HTMLElement;
+
     expect(within(compact).getByText("Permission request")).toBeTruthy();
+    expect(within(compact).getByText("Tool")).toBeTruthy();
+    expect(within(compact).getByText("Bash")).toBeTruthy();
+    expect(within(compact).getByText("Command")).toBeTruthy();
+    // detail values are plain text (not markdown) — the literal string shows.
+    expect(within(compact).getByText("git push origin master")).toBeTruthy();
+    expect(within(compact).getByText("Project")).toBeTruthy();
+    expect(within(compact).getByText("/Users/x/proj")).toBeTruthy();
+
+    // the expanded manifest is summary-only now — no Subtitle cell, no
+    // detail cells, nothing duplicated from the compact card above.
+    const manifest = container.querySelector(".manifest") as HTMLElement;
+    expect(within(manifest).queryByText("Subtitle")).toBeNull();
+    expect(within(manifest).queryByText("Tool")).toBeNull();
+    expect(within(manifest).queryByText("Bash")).toBeNull();
+    expect(manifest.querySelector(".manifest-fields")).toBeNull();
   });
 
-  // plan 042 changed the collapsed contract: detail pairs now render below
-  // the body (a live-match card's Clock/Cards must be readable without
-  // expanding). the subtitle stays expanded-only.
-  // plan 078: the manifest stays mounted (aria-hidden, zero-height) when
-  // collapsed, so "subtitle hidden" is now asserted via the wrapper's
-  // aria-hidden, and the detail-pair assertions are scoped to the compact
-  // view (the manifest cells carry the same text).
-  it("hides the subtitle but shows detail pairs when collapsed", () => {
+  // plan 042 changed the collapsed contract: detail pairs render below the
+  // body regardless of expansion (a live-match card's Clock/Cards must be
+  // readable without expanding). The 2026-07-24 declutter extended that
+  // "always compact" rule to the subtitle too — it no longer has an
+  // expanded-only manifest cell to hide.
+  it("shows the same subtitle and detail pairs in the compact card whether collapsed or expanded", () => {
     const { container } = render(<StatusRailCard slot={{ ...CMUX_RICH, expanded: false }} />);
 
     const wrap = container.querySelector(".manifest-wrap") as HTMLElement;
     expect(wrap.getAttribute("aria-hidden")).toBe("true");
-    expect(within(wrap).getByText("Subtitle")).toBeTruthy();
     const compact = container.querySelector(".compact") as HTMLElement;
-    expect(within(compact).queryByText("Subtitle")).toBeNull();
+    expect(within(compact).getByText("Permission request")).toBeTruthy();
     expect(within(compact).getByText("Tool")).toBeTruthy();
     expect(within(compact).getByText("Bash")).toBeTruthy();
     expect(within(compact).getByText("Project")).toBeTruthy();
+  });
+
+  // item D2: the expanded manifest for a cmux slot (even a "rich" one
+  // carrying a subtitle and detail pairs) contains only the message body
+  // and the keyboard-hint footer — no subtitle cell, no meta line, no
+  // detail cells. Those are all compact-card metadata now.
+  it("renders only the message body and hints in a cmux slot's expanded manifest", () => {
+    const { container } = render(<StatusRailCard slot={CMUX_RICH} />);
+    const manifest = container.querySelector(".manifest") as HTMLElement;
+
+    expect(within(manifest).getByText("Message").classList.contains("manifest-label")).toBe(true);
+    expect(within(manifest).getByText(CMUX_RICH.body)).toBeTruthy();
+    expect(manifest.querySelector(".manifest-meta")).toBeNull();
+    expect(manifest.querySelector(".manifest-fields")).toBeNull();
+    expect(manifest.querySelector(".detail-label")).toBeNull();
+    expect(manifest.querySelector(".detail-value")).toBeNull();
+    expect(within(manifest).queryByText("Subtitle")).toBeNull();
+
+    // CMUX_RICH has no link, so the footer shows only the collapse hint.
+    const footer = manifest.querySelector(".manifest-footer") as HTMLElement;
+    expect(footer.textContent).toContain("⌃⇧N collapse");
+    expect(footer.textContent).not.toContain("⌃⇧O read");
   });
 
   // plan 078 (Step 6): the collapsed manifest's aria-hidden replaces the
@@ -788,10 +818,14 @@ describe("StatusRailCard", () => {
   });
 
   // plan 096 (079 item 8, the wire addition + accent build): the cmux
-  // accent — a chip (tint + glyph) in the header badge cluster, plus a
-  // hairline on `.below-block`, gated strictly on the now-wire `origin`
-  // field. Byte-absent for the other four SourceKind values; must never
-  // touch the priority accent channel (origin and priority are orthogonal).
+  // accent — originally a chip (tint + glyph) in the header badge
+  // cluster, plus a hairline on `.below-block`, gated strictly on the
+  // now-wire `origin` field. The 2026-07-24 declutter removed the chip
+  // (it duplicated the masthead kicker, which now reads an origin-
+  // derived label — `GENERIC_MASTHEAD_KICKER` in NotificationBody.tsx —
+  // directly); the hairline is untouched. Byte-absent for the other four
+  // SourceKind values; must never touch the priority accent channel
+  // (origin and priority are orthogonal).
   describe("cmux accent (plan 096)", () => {
     // cast to the narrower "showing" branch before spreading: spreading a
     // `SlotState`-typed (union) variable and overriding one field produces
@@ -802,20 +836,36 @@ describe("StatusRailCard", () => {
       return { ...(CMUX_NEEDS_INPUT as Extract<SlotState, { state: "showing" }>), origin };
     }
 
-    it("renders the chip and the below-block hairline for origin: cmux", () => {
+    // item D1: cmux slot compact card renders the masthead kicker "cmux"
+    // and no Agent chip (the chip was pure duplication once the kicker
+    // said it).
+    it('renders the masthead kicker "cmux" (no Agent chip) and the below-block hairline for origin: cmux', () => {
       const { container } = render(<StatusRailCard slot={genericSlot("cmux")} />);
-      const chip = container.querySelector(".chip-cmux");
-      expect(chip).not.toBeNull();
-      expect(chip?.textContent).toBe("Agent");
-      // lives inside the header badge cluster, alongside the Stamp — not
-      // some separate unrelated location.
-      expect(container.querySelector(".notif-header-badges .chip-cmux")).not.toBeNull();
+      expect(container.querySelector(".masthead")?.textContent).toContain("cmux");
+      expect(container.querySelector(".chip-cmux")).toBeNull();
+      expect(screen.queryByText("Agent")).toBeNull();
       expect(container.querySelector(".below-block.cmux-origin")).not.toBeNull();
     });
 
-    it("is byte-absent for every other origin", () => {
+    // review fix (spec was wrong, not the implementation): the generic
+    // branch serves ALL non-news origins, not just cmux — a bare
+    // `origin === "cmux" ? "cmux" : "cli"` ternary mislabeled football
+    // live cards and weather cards as "cli". The kicker now maps every
+    // `SourceKind` explicitly (`GENERIC_MASTHEAD_KICKER`); "manual" is
+    // the `/notify` CLI path (-> "cli"), "football"/"weather" get their
+    // own label, and "news" (reachable here only because this fixture's
+    // `eventType` stays "generic" regardless of the origin override) is
+    // the defensive fallback that just echoes the origin string.
+    it("shows the origin-derived kicker (never the removed Agent chip) for every non-cmux origin", () => {
+      const expectedKicker: Record<Exclude<SourceKind, "cmux">, string> = {
+        football: "football",
+        news: "news",
+        manual: "cli",
+        weather: "weather",
+      };
       for (const origin of ["football", "news", "manual", "weather"] as const) {
         const { container, unmount } = render(<StatusRailCard slot={genericSlot(origin)} />);
+        expect(container.querySelector(".masthead")?.textContent).toContain(expectedKicker[origin]);
         expect(container.querySelector(".chip-cmux")).toBeNull();
         expect(container.querySelector(".below-block.cmux-origin")).toBeNull();
         expect(container.innerHTML).not.toContain("chip-cmux");
@@ -1060,9 +1110,11 @@ describe("StatusRailCard", () => {
       const block = container.querySelector(".below-block");
       expect(block?.className).not.toContain("wx-card");
       expect(container.querySelector("img.wx-icon")).toBeNull();
-      const manifest = container.querySelector(".manifest") as HTMLElement;
-      expect(within(manifest).getByText("Tool")).toBeTruthy();
-      expect(within(manifest).getByText("Bash")).toBeTruthy();
+      // detail pairs are compact-only now (2026-07-24 declutter) — assert
+      // on `.compact`, not the manifest.
+      const compact = container.querySelector(".compact") as HTMLElement;
+      expect(within(compact).getByText("Tool")).toBeTruthy();
+      expect(within(compact).getByText("Bash")).toBeTruthy();
     });
   });
 

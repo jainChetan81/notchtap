@@ -301,6 +301,20 @@ describe("SettingsApp", () => {
     expect(screen.queryAllByText("planned · not implemented")).toHaveLength(0);
   });
 
+  it("sidebar brand renders the real mark as an image, not the old CSS placeholder blob", async () => {
+    mockLoads();
+    const { container } = render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+
+    expect(container.querySelector(".brand-slot")).toBeNull();
+    const mark = container.querySelector(".sidebar-brand img.brand-mark") as HTMLImageElement;
+    expect(mark).toBeTruthy();
+    expect(mark.getAttribute("alt")).toBe("");
+    expect(mark.getAttribute("aria-hidden")).toBe("true");
+    expect(mark.getAttribute("src")).toBeTruthy();
+  });
+
   it("Appearance section is enabled and renders all eight preview cards", async () => {
     mockLoads();
     render(<SettingsApp />);

@@ -201,20 +201,6 @@ export function livePillVariantFor(signal: EventSignal): LivePillVariant {
   }
 }
 
-export function sourceLabelFor(eventType: EventType): string {
-  switch (eventType) {
-    case "generic":
-      return "cmux / CLI · local";
-    case "score_update":
-    case "match_state":
-      return "ESPN · football";
-    case "news_item":
-      return "RSS · news wire";
-    default:
-      return assertNever(eventType);
-  }
-}
-
 const CATEGORY_CLASSES = {
   politics: "cat-politics",
   tech: "cat-tech",
@@ -269,14 +255,4 @@ export function ageLabel(publishedAtMs: number | null, nowMs: number): string | 
     return `${ageHours}h ago`;
   }
   return `${Math.floor(ageHours / 24)}d ago`;
-}
-
-export function publishedLabel(publishedAtMs: number | null, _nowMs: number): string | null {
-  if (publishedAtMs === null) {
-    return null;
-  }
-  const published = new Date(publishedAtMs);
-  const hours = published.getHours().toString().padStart(2, "0");
-  const minutes = published.getMinutes().toString().padStart(2, "0");
-  return `${hours}:${minutes}`;
 }

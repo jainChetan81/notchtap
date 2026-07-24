@@ -345,6 +345,14 @@ export function StatusRailCard({
     "below-block",
     news && "news-shade",
     news && categoryClass(slot.category),
+    // 2026-07-24: the generic branch's compact masthead now reuses news's
+    // `.masthead .dot` markup (see NotificationBody.tsx), whose color
+    // reads the same `--cat`/`--cat-deep` custom properties `categoryClass`
+    // sets — without a class here they're unset for every non-news card,
+    // leaving the dot invisible. `cat-generic` is the same neutral-gray
+    // fallback `categoryClass(null)` already returns for uncategorized
+    // news, reused rather than forking a second "no category" class.
+    !news && "cat-generic",
     wxArt && "wx-card",
     wxArt?.moodClass,
     wxArt?.textureClass,
