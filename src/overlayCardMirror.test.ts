@@ -33,8 +33,21 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath, URL as NodeURL } from "node:url";
 import { describe, expect, it } from "vitest";
 
+// css split (2026-07-24): overlay-card.css split into src/overlay/*.css chunks, pulled
+// back together via plain `@import "./relative.css";` lines — inlined here
+// so this still returns the full literal stylesheet text the selector
+// scanner below expects, unchanged from before the split (imports are one
+// level deep; no chunk file itself contains an @import).
 function readSourceCss(relativePath: string): string {
-  return readFileSync(fileURLToPath(new NodeURL(relativePath, import.meta.url)), "utf-8");
+  const url = new NodeURL(relativePath, import.meta.url);
+  const raw = readFileSync(fileURLToPath(url), "utf-8");
+  // Only inline RELATIVE imports (the overlay-card.css split) — bare-specifier
+  // imports (e.g. base.css's `@import "@chetanjain/shared-ui/..."`,
+  // `"tailwindcss/..."`) are left as literal text, same as before this
+  // function learned to resolve anything.
+  return raw.replace(/^@import\s+["'](\.[^"']+)["'];\s*$/gm, (_match, importPath: string) =>
+    readFileSync(fileURLToPath(new NodeURL(importPath, url)), "utf-8"),
+  );
 }
 
 // ---- the scanner (exercised directly by its own fixtures below, then

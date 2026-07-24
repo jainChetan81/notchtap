@@ -41,8 +41,17 @@ afterEach(cleanup);
 // confirmed empirically (`?raw` and `?inline` both resolved to a 0-length
 // string here), so a real filesystem read is the only reliable path to
 // the literal source text.
+// css split (2026-07-24): overlay-card.css split into src/overlay/*.css chunks, pulled
+// back together via plain `@import "./relative.css";` lines — inlined here
+// so this still returns the full literal stylesheet text callers expect,
+// unchanged from before the split (imports are one level deep; no chunk
+// file itself contains an @import).
 function readSourceCss(relativePath: string): string {
-  return readFileSync(fileURLToPath(new NodeURL(relativePath, import.meta.url)), "utf-8");
+  const url = new NodeURL(relativePath, import.meta.url);
+  const raw = readFileSync(fileURLToPath(url), "utf-8");
+  return raw.replace(/^@import\s+["'](\.[^"']+)["'];\s*$/gm, (_match, importPath: string) =>
+    readFileSync(fileURLToPath(new NodeURL(importPath, url)), "utf-8"),
+  );
 }
 
 const overlayCardCss = readSourceCss("./overlay-card.css");

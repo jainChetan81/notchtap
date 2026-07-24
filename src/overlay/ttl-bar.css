@@ -1,0 +1,97 @@
+/* plan 081: the TTL progress bar (TtlBar.tsx) on every showing card.
+   `.ttl-fill`'s scale is JS-driven per animation frame (TtlBar.tsx),
+   never a CSS transition — no `transition` here to fight the rAF loop.
+   Accent color is deliberate on every card type (priority accent, not
+   the news `--cat` var) — the bar is card chrome, like the priority
+   border, not news content.
+   plan 100: moved to be the card's bottom edge — last child of
+   `.below-block`, absolutely positioned to its bottom, left, and right
+   edges. `.below-block`'s `overflow: hidden` + bottom-corner radii clip
+   it to the rounded corners for free. It must never regain static-flow
+   position — that recreates the double-border artifact above the
+   manifest wrap that this plan fixed.
+   stories merge (2026-07-24): this bar and the old separate
+   `.track` queue slider (plan 033, formerly here) read as a double
+   border stacked on top of each other — `.track` is gone, and this bar
+   is now segmented BY the same queue batch `.track` used to visualize
+   (TtlBar.tsx's `total`/`done` props). Still a single absolutely-
+   positioned floor strip — segmentation is a `display: grid` over the
+   same footprint, `--queue-n` fed by TtlBar.tsx exactly as it fed
+   `.track`'s grid template before. No `padding`/base `gap` inset at the
+   container level: at the degenerate `--queue-n: 1` case (no queue to
+   show) this must stay pixel-identical to the old unsegmented bar — a
+   single grid cell already fills the full 0-to-100% span with nothing to
+   gap against. */
+.card-root .ttl-bar {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  display: grid;
+  grid-template-columns: repeat(var(--queue-n, 1), 1fr);
+  gap: 2px;
+}
+
+/* the per-segment trough — `.track span`'s old role, ported onto the
+   merged bar. Plain (no `.done`) is the "not reached yet" empty trough;
+   the CURRENT segment is ALSO plain (no `.done`) since it hosts the live
+   `.ttl-fill` on top of it, not a static color of its own. */
+.card-root .ttl-seg {
+  background: rgba(255, 255, 255, 0.08);
+  /* plan 127 (Step 1, /improve-animations audit finding #4)/129 (C4):
+     `.track span`'s own reveal-tier transition, ported — a queue advance
+     re-renders `done` classes across segments and this fades the change
+     in on the same reveal-tier timing/easing as the flank background and
+     FlankClock/StatusDots fades (REVEAL_MS/`--ease-notchtap`,
+     animationTiming.ts). */
+  transition: background var(--reveal-ms, 260ms) var(--ease-notchtap);
+}
+
+/* queue slider (plan 033, ported by 132): consumed segments read as a
+   30%-accent dim, matching the old priority-load rail's dim treatment. */
+.card-root .ttl-seg.done {
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
+}
+
+/* 2026-07-23 review fix (Performance finding — per-frame layout width):
+   TtlBar.tsx used to mutate `style.width` every rAF frame. `.ttl-fill`
+   sits under `.card-assembly`'s own `filter: drop-shadow` (base rule,
+   above in this file) — a width change is a LAYOUT property, so every
+   single frame forced the browser to re-run layout and re-rasterize the
+   whole filtered group the drop-shadow belongs to, not just repaint a
+   2px bar. Fixed by rendering the fill at its full, unchanging width and
+   animating `transform: scaleX(<fraction>)` instead (visually identical
+   at 2px tall) — a compositor-only property that never touches layout.
+   `transform-origin: left` keeps the shrink anchored to the bar's start
+   (the LTR reading direction the countdown drains toward), matching the
+   old `width`-based drain exactly. `will-change: transform` hints the
+   browser to keep this layer composited independently, same reasoning
+   as any other every-frame transform in this file.
+   stories merge (2026-07-24): `.ttl-fill` is now a grid item placed via an inline
+   `grid-column` (TtlBar.tsx), not a lone full-bar child — `width: 100%`
+   therefore resolves against its OWN assigned column (one queue segment),
+   not the whole bar, so `scaleX` still drains that segment left-to-right
+   exactly as it drained the whole bar pre-merge, just scoped to whichever
+   segment is current. Grid's default `justify-self: stretch` is what
+   makes `width: 100%` redundant-but-harmless here; kept explicit to match
+   this rule's pre-merge shape. */
+.card-root .ttl-fill {
+  height: 100%;
+  width: 100%;
+  background: var(--accent);
+  transform-origin: left;
+  will-change: transform;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  /* belt-and-braces: the rAF loop itself is gated off in JS under
+     reduced-motion (TtlBar.tsx renders a static, un-scaled fill and
+     never arms the loop), but a CSS transition would still animate a
+     later transform change if one were ever added here — keep it
+     inert. */
+  .card-root .ttl-fill {
+    transition: none;
+  }
+}
+

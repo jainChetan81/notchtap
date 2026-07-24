@@ -1,0 +1,152 @@
+/* ==== plan 091 (079 item 2): the idle right flank's three status dots —
+   replaces the old text-pill `.src-rail`/`.src-chip` rail entirely
+   (rewritten, not restyled — <StatusDots>). Fixed Football/News/Weather
+   order and coloring, straight from the locked reference
+   (`prototype/notch-states.html:62-74`). `active` = enabled (glow + a
+   1.8s pulse); `dim` = disabled (flat, low opacity) — plain color/glow
+   state, no text content at all now that the pill labels are gone. ==== */
+.card-root .status-dots {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: none;
+}
+
+/* plan 127 (Step 7, /improve-animations audit — missed opportunity): a
+   pause/config flip (active<->dim opacity+glow, or a shape change —
+   circle<->square via `border-radius` — on the source enabled/disabled
+   toggle) used to snap instantly, no transition at all. This is a
+   state-FLIP soften (opacity/box-shadow/border-radius settling to a new
+   RESTING value), not a loop — the operator's plan-105 decision to
+   remove the dot-pulse (a continuous, always-running animation) stays
+   fully respected here; nothing here ever runs while nothing is
+   changing.
+   plan 129 (C2, deep-review fix): the enabled<->disabled shape flip
+   doesn't ONLY change `border-radius` the way the paragraph above
+   describes — `.shape-disabled`/`.shape-unavailable` (below) also flip
+   `background` (filled circle -> transparent) and `border` (none ->
+   1.5px solid), and those two were left un-softened: corners rounded
+   smoothly while the fill and outline snapped instantly, a visible two-
+   phase glitch on one logical state change. Added `background-color`,
+   `border-color`, and `border-width` legs, same `--hover-ms`/
+   `--ease-notchtap` pairing as the three already here, so every part of
+   the shape flip settles in the same single motion. */
+.card-root .status-dot {
+  box-sizing: border-box;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+  transition:
+    opacity var(--hover-ms, 160ms) var(--ease-notchtap),
+    box-shadow var(--hover-ms, 160ms) var(--ease-notchtap),
+    border-radius var(--hover-ms, 160ms) var(--ease-notchtap),
+    background-color var(--hover-ms, 160ms) var(--ease-notchtap),
+    border-color var(--hover-ms, 160ms) var(--ease-notchtap),
+    border-width var(--hover-ms, 160ms) var(--ease-notchtap);
+}
+
+.card-root .status-dot.football {
+  background: #3ddc70;
+}
+.card-root .status-dot.news {
+  background: #ff5c5c;
+}
+.card-root .status-dot.weather {
+  background: #f0c46a;
+}
+
+/* plan 105 (item A): steady glow, not a blink — the pulse read as
+   distracting in peripheral vision during live use. Strengthened the
+   resting glow slightly to compensate for losing the animated emphasis. */
+.card-root .status-dot.active {
+  box-shadow: 0 0 8px 1px currentColor;
+}
+.card-root .status-dot.football.active {
+  color: #3ddc70;
+}
+.card-root .status-dot.news.active {
+  color: #ff5c5c;
+}
+.card-root .status-dot.weather.active {
+  color: #f0c46a;
+}
+
+.card-root .status-dot.dim {
+  opacity: 0.22;
+  box-shadow: none;
+  animation: none;
+}
+
+/* plan 110 (Step D): the non-color configured-state shape — independent
+   of the active/dim pause-luminance treatment above (pause changes
+   brightness only; it never overrides these). `shape-enabled` is the
+   pre-091 default filled circle (no override needed, listed here only
+   for completeness); `shape-disabled` is a hollow square, per-source
+   outline; `shape-unavailable` is a hollow circle with a neutral outline
+   (no known source state to color it by). Same 9x9 footprint throughout
+   — `box-sizing: border-box` above keeps the border from growing the box. */
+.card-root .status-dot.shape-disabled,
+.card-root .status-dot.shape-unavailable {
+  background: transparent;
+}
+
+.card-root .status-dot.shape-disabled {
+  border-radius: 2px;
+}
+
+.card-root .status-dot.football.shape-disabled {
+  border: 1.5px solid #3ddc70;
+}
+.card-root .status-dot.news.shape-disabled {
+  border: 1.5px solid #ff5c5c;
+}
+.card-root .status-dot.weather.shape-disabled {
+  border: 1.5px solid #f0c46a;
+}
+
+.card-root .status-dot.shape-unavailable {
+  border: 1.5px solid rgba(255, 255, 255, 0.35);
+}
+
+/* plan 092 (item 11): the paused indicator — while `status.paused` is
+   true, every dot renders forced-dim (StatusDots.tsx overrides the
+   per-source active/dim read) plus this small static two-bar glyph
+   beside the dot row. Nested INSIDE `.status-dots` (StatusDots.tsx), so
+   the existing `gap: 8px` on that flex row spaces it from the last dot —
+   no extra margin needed here. Receive-only, like the dots themselves: an
+   indicator, never a button. Retires the old "News paused" idle text
+   remnant (091 already removed IdleView; this is its replacement).
+   plan 110 (Step D): `role="img"` + `aria-label="Notifications paused"`
+   now (was `aria-hidden`) — a sighted-only signal before this.
+   plan 127 (Step 7, missed opportunity): the glyph mounts/unmounts via a
+   React conditional (`{paused && (...)}`, StatusDots.tsx), not a class
+   toggle on an always-present node — a CSS `transition` has nothing to
+   animate FROM on a fresh mount. A one-shot `animation` fade-in instead:
+   rare (only fires on a genuine pause-state flip) and self-ending (no
+   loop, same "flip, not loop" discipline as the dots' own transition
+   above), so it doesn't reopen plan 105's removed dot-pulse decision. */
+.card-root .pause-glyph {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  flex: none;
+  animation: pause-glyph-fade-in var(--hover-ms, 160ms) var(--ease-notchtap);
+}
+
+@keyframes pause-glyph-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+.card-root .pause-glyph span {
+  width: 2px;
+  height: 9px;
+  border-radius: 1px;
+  background: rgba(255, 255, 255, 0.5);
+}
+

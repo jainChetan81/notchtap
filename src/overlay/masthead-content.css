@@ -1,0 +1,160 @@
+/* plan 092: `.compact` dropped its old 2-column grid (`.copy` | `Stamp`
+   as siblings) — the Stamp badge now sits INSIDE the header row (see
+   `.notif-header-row`/`.masthead-row` below) for both card types, so
+   `.compact` is plain block flow. `Track`/`.compact-hint` stay absolutely
+   positioned against this element (unchanged), and the accent edge below
+   is unaffected by the display-mode change. */
+.card-root .compact {
+  position: relative;
+  box-sizing: border-box;
+  min-height: 74px;
+  padding: 12px 18px 14px 20px;
+}
+
+.card-root .expanded .compact {
+  min-height: 82px;
+}
+
+/* priority now reads from a 3px accent edge on the compact row's left
+   (plan 032 — replaces the deleted L1/M2/H3 tier chip; the Stamp pill and
+   Track rail survive as the other two non-color cues). */
+.card-root .compact::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 12px;
+  bottom: 12px;
+  width: 3px;
+  border-radius: 0 2px 2px 0;
+  background: var(--accent);
+  box-shadow: 0 0 12px var(--accent-soft);
+}
+
+.card-root .copy {
+  min-width: 0;
+}
+
+/* shared headline treatment for both card types — 2026-07-24's
+   compact/expanded declutter converged the generic branch's title onto
+   this SAME `.title.headline` combo news already used (replacing its
+   old separate `.notif-header-row`/`.notif-title`/`.notif-header-badges`
+   trio, see `.masthead-row` below). `.headline` only overrides size/
+   line-clamp specifics; `display`/`overflow`/`font-weight`/`box-orient`
+   come from here. */
+.card-root .title {
+  display: -webkit-box;
+  overflow: hidden;
+  font-size: 14px;
+  font-weight: 680;
+  line-height: 1.2;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* ==== plan 092 (item 19): the general card's subtitle-row/body
+   language, ported from the locked reference
+   (`prototype/notch-states.html:158-166`, `.notif-subtitle-row`/
+   `.notif-subtitle`/`.notif-time-inline`/`.notif-body`). The header row
+   itself (title + priority Stamp +, until the 2026-07-24 declutter, a
+   plan-096 cmux "Agent" chip) converged onto news's own `.masthead-row`/
+   `.title.headline` treatment below — the chip is gone entirely now that
+   the masthead kicker already reads "cmux" for that origin, so only the
+   subtitle row and body stay unique to this branch.
+   `.notif-subtitle-row` pairs plan 035's `subtitle` field (surfaced in
+   compact for the first time — previously expanded-manifest-only) with
+   an inline-time slot. News reuses `.notif-time-inline` too (Decision 5
+   — ageLabel moves here, out of the old age pill) via its own
+   `.masthead-row`/meta-row below, not this row. ==== */
+.card-root .notif-subtitle-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 3px;
+}
+
+.card-root .notif-subtitle {
+  min-width: 0;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 10.5px;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* shared by news's meta row (ageLabel, Decision 5) and the generic
+   header's subtitle row (no data today — no non-news event carries a
+   publishedAtMs, so this slot simply never renders there). */
+.card-root .notif-time-inline {
+  flex: none;
+  color: rgba(255, 255, 255, 0.35);
+  font: 700 10px/1 var(--font-mono);
+}
+
+.card-root .notif-body {
+  display: -webkit-box;
+  margin-top: 8px;
+  overflow: hidden;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 11.5px;
+  line-height: 1.35;
+  white-space: normal;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+/* inline-markdown code spans (plan 032): rendered by
+   lib/markdown.tsx in .notif-body and the manifest's .detail-value cells. */
+.card-root .notif-body code,
+.card-root .detail-value code {
+  padding: 1px 5px;
+  background: rgba(255, 255, 255, 0.08);
+  color: var(--accent);
+  /* plan 114: adopt shared-ui's --font-mono (byte-identical value). */
+  font-family: var(--font-mono);
+}
+
+.card-root .stamp {
+  align-self: center;
+  padding: 4px 6px;
+  border: 1px solid var(--accent);
+  color: var(--accent);
+  font: 700 8px/1 var(--font-mono);
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.card-root .compact-hint {
+  position: absolute;
+  right: 18px;
+  bottom: 8px;
+  color: rgba(255, 255, 255, 0.4);
+  font: 700 8px/1 var(--font-mono);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+/* hotkey hints — same raised-key look as the Settings shortcuts
+   cheatsheet (src/settings/settings.css .shortcut-row kbd), scaled down
+   to fit inline in a 400-500px card instead of a dedicated table cell. */
+.card-root .compact-hint kbd,
+.card-root .detail-value kbd {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 15px;
+  margin: 0 1px;
+  padding: 0 4px;
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-bottom-color: rgba(255, 255, 255, 0.34);
+  border-radius: 3px;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: 0 1px 0 rgba(0, 0, 0, 0.35);
+  color: inherit;
+  font: 700 9px/1 var(--font-mono);
+  letter-spacing: 0;
+  text-transform: none;
+}
+

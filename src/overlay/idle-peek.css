@@ -1,0 +1,514 @@
+/* ==== plan 093 (079 items 9/17/18): the idle hover-expanded state —
+   weather peek / scorecard reveal / day-progress timeline, all sharing
+   ONE below-block (`IdleHoverPeek.tsx`). Mounted ONLY while `hovered` is
+   true (never continuously whenever ambient data merely exists) — see
+   that component's own doc comment for why: `.card-assembly`'s existing,
+   UNTOUCHED `:not(:has(.below-block))` rounding law (above) is what makes
+   "flanks un-round while the peek is open" true, and that only works if
+   this block's mere DOM presence tracks "open," not "data available."
+
+   plan 12x: the mount/unmount animation (height 0->100px, opacity/fade)
+   moved to `motion` (`AnimatePresence` + `motion.div`, IdleHoverPeek.tsx)
+   — this app's animation law now routes all animation through that
+   library rather than hand-drawn CSS `@keyframes`, and never hand-tweens
+   layout props. `height`/`opacity` are set inline by `motion` now; this
+   rule only carries the non-animated box model. */
+.card-root .below-block.idle-peek {
+  padding: 12px 16px 13px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: hidden;
+}
+
+/* plan 105 (Step B): the weather art, split out of the old combined
+   `.wx-peek-scene` into its own backdrop layer so it can sit BEHIND
+   whatever the precedence chain (football/media/weather) puts in
+   `.peek-content`, instead of being replaced by it — the operator wanted
+   the mood art kept once the media row took over the readout slot.
+   Reuses `.wx-card`'s mood-gradient `::before`/texture `::after` (weather
+   ALERT card block, above). `inset: 0` fills `.below-block.idle-peek`'s
+   own animated height (that block is already `position: relative` — see
+   its rule above), so no min-height is needed here the way
+   `.wx-peek-scene` used to carry one: this layer is the full block, not
+   a sub-box inside it.
+
+   plan 122: this is now PURE art — no glyph. The condition icon used to
+   live here too (absolutely positioned via the shared `.wx-icon` rule
+   above), which put it in the SAME top-right corner the media row's
+   transport occupies — whenever media played, the two collided. The
+   glyph moved to `.wx-peek-icon` below, in flow inside `.wx-peek-readout`
+   instead. */
+.card-root .wx-peek-backdrop {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  /* top corners square — the backdrop meets card content above, not an
+     outer edge, so rounding there reads as a floating chip instead of a
+     section of the card. Only the bottom corners round, where the
+     backdrop coincides with the card's own bottom edge. */
+  border-radius: 0 0 10px 10px;
+  overflow: hidden;
+}
+/* the real content (scorecard/media/weather readout + timeline) sits
+   above the backdrop, same z-order discipline as `.wx-card .compact`
+   above. */
+.card-root .peek-content {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.card-root .wx-peek-readout {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+}
+/* plan 122: the condition glyph, relocated here from the backdrop
+   (`.wx-peek-backdrop`, above) — a flex sibling of `.wx-peek-temp`/
+   `.wx-peek-condition`/`.wx-peek-rain`, in normal layout flow so it can
+   never overlap the media row's transport region by construction. This
+   is a DEDICATED class, deliberately not the shared `.wx-icon` the
+   weather ALERT card still uses absolutely-positioned in its own corner
+   (untouched — non-goal): reusing that class here would mean either an
+   override fighting its `position: absolute` or breaking the alert
+   card's own layout. Sized well under the alert card's 48px (28px) so
+   this row doesn't grow past the readout's pre-plan-122 height — the
+   peek's own outer block is a fixed 100px regardless of content
+   (`hover.rs`'s `IDLE_PEEK_BELOW_BLOCK_H` mirror), not intrinsic. */
+.card-root .wx-peek-icon {
+  width: 28px;
+  height: 28px;
+  flex: none;
+  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45));
+  pointer-events: none;
+}
+.card-root .wx-peek-temp {
+  font: 800 18px/1 var(--font-mono);
+  color: #f5f7fa;
+}
+/* plan 131: hi/lo, inline with the current temp ("21° · H 24° L 16°") —
+   a flex sibling of `.wx-peek-temp`/`.wx-peek-condition`/`.wx-peek-rain`
+   in the SAME `.wx-peek-readout` row, so it adds no vertical height (the
+   row's cross-size is already dominated by the 28px icon above) — only
+   ever mounted when BOTH hi and lo are present (IdleHoverPeek.tsx). */
+.card-root .wx-peek-hilo {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font: 700 9px/1 var(--font-mono);
+  color: rgba(255, 255, 255, 0.65);
+  white-space: nowrap;
+}
+.card-root .wx-peek-hilo::before {
+  content: "·";
+  opacity: 0.5;
+}
+/* plan 092 (item 10): the condition label is `.chip` — 092 retired the
+   old pill vocabulary entirely; a bespoke pill here would silently undo
+   that. Neutral tint, matching `.chip-league`'s treatment above (this
+   isn't a priority/category signal, just a plain label). */
+.card-root .wx-peek-condition {
+  color: rgba(255, 255, 255, 0.7);
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+}
+/* plan 122 (Part B): the rain-chance chip — same `.chip` base, tinted
+   with the same light blue the weather ALERT card's own rain-streaks
+   texture already uses (`.wx-rain-streaks::after`, above), rather than
+   inventing a new color for "rain" in this one spot. Only ever mounted
+   when `weather.rainPct` is non-null (already floor-filtered rust-side
+   — IdleHoverPeek.tsx). */
+.card-root .wx-peek-rain {
+  color: rgba(180, 210, 255, 0.85);
+  background: rgba(180, 210, 255, 0.12);
+  border: 1px solid rgba(180, 210, 255, 0.35);
+}
+
+/* plan 131: the minimal forecast strip's outer wrapper — groups the
+   readout + strip into ONE flex child of `.peek-content`, so
+   `.peek-content`'s own `gap: 8px` still applies exactly ONCE (between
+   this whole block and `PeekTimeline`), whether or not the strip is
+   mounted, exactly as it did before this plan (IdleHoverPeek.tsx's
+   `WeatherPeekWithForecast` doc comment).
+
+   THE HEIGHT BUDGET (why the strip's type/glyph sizes below are this
+   small): the peek's outer block is a FIXED 100px (`hover.rs`'s
+   `IDLE_PEEK_BELOW_BLOCK_H` mirror, `.below-block.idle-peek`'s own doc
+   comment — untouched by this plan). Content area = 100 - 12 (padding-
+   top) - 13 (padding-bottom) = 75px. `.peek-content`'s own gap (8px)
+   plus `.idle-peek-timeline`'s box (2px margin-top + 1px height = 3px)
+   already claim 11px, leaving 64px for this stack. `.wx-peek-readout`
+   itself is a fixed 48px (10px+10px padding + the 28px icon, its
+   tallest child) — leaving 64 - 48 = 16px for [this wrapper's own gap +
+   the strip]. At `gap: 4px` that's a 12px ceiling for `.wx-forecast-
+   point`'s cross-size; the 10px icon below (its tallest child) leaves 2px
+   to spare — genuinely fits, not a redesign of the peek's height. */
+.card-root .wx-peek-weather-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.card-root .wx-forecast-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+}
+.card-root .wx-forecast-point {
+  display: flex;
+  align-items: center;
+  gap: 3px;
+}
+/* deliberately its own tiny size, well under `.wx-peek-icon`'s 28px —
+   see `.wx-peek-weather-stack`'s doc comment above for the exact budget
+   this was shrunk to fit. */
+.card-root .wx-forecast-icon {
+  width: 10px;
+  height: 10px;
+  flex: none;
+  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
+  pointer-events: none;
+}
+.card-root .wx-forecast-temp {
+  font: 700 8px/1 var(--font-mono);
+  color: #f5f7fa;
+}
+.card-root .wx-forecast-hour {
+  font: 600 7px/1 var(--font-mono);
+  color: rgba(255, 255, 255, 0.55);
+}
+
+/* plan 104: the now-playing media row — slots between the scorecard
+   reveal and the weather scene in `IdleHoverPeek.tsx`'s precedence
+   (football > media > weather > timeline). Text glyphs only (no artwork
+   transport, per the plan's own decision 6) — `.media-art`'s tile reuses
+   `.wx-peek-condition`'s exact neutral chip tint (above) rather than
+   inventing a new color; `.media-bar-fill` reuses `.idle-peek-timeline`'s
+   own teal (below) for the same reason — no new colors beyond existing
+   tokens, per this step's own constraint. Chip/gauge sizing stays
+   consistent with the rest of `.idle-peek`'s vocabulary. */
+.card-root .media-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+.card-root .media-track {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  min-width: 0;
+}
+.card-root .media-art {
+  width: 26px;
+  height: 26px;
+  flex: none;
+  border-radius: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  line-height: 1;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  color: #f5f7fa;
+}
+/* plan 118: the source-app glyph is now a lucide icon (svg), not a text
+   character — sized to match the `.media-art` font-size above (13px) so
+   the 26x26 tile's centered content keeps the same visual footprint and
+   the media row doesn't shift. Color still inherits via currentColor,
+   same as the text glyph it replaces. */
+.card-root .media-art-icon {
+  width: 13px;
+  height: 13px;
+}
+.card-root .media-meta {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.card-root .media-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #f5f7fa;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-root .media-subtitle {
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card-root .media-transport {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: none;
+  font-size: 10.5px;
+  color: rgba(255, 255, 255, 0.85);
+}
+.card-root .media-state {
+  font-size: 12px;
+  line-height: 1;
+}
+/* plan 118: play/pause is now a lucide icon (svg), not a text glyph —
+   sized to match the `.media-state` font-size above (12px) so it doesn't
+   grow the `.media-transport` row. Color inherits via currentColor. */
+.card-root .media-state-icon {
+  width: 12px;
+  height: 12px;
+}
+.card-root .media-bar {
+  width: 56px;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+}
+.card-root .media-bar-fill {
+  display: block;
+  height: 100%;
+  background: #b6f5e5;
+  border-radius: 2px;
+}
+.card-root .media-time {
+  font-variant-numeric: tabular-nums;
+  min-width: 30px;
+  text-align: right;
+}
+
+/* the football scorecard-reveal half — a lighter render than the
+   recurring live card above (`.notif-block`/`.sc-head`/`.score-row`):
+   `status.football.live` (the ambient `LiveMatchSummary`) carries only
+   `label`/`minute`, not the full structured espn meta, so there are no
+   crests/per-side scores to lay out. Reuses `.sc-head`/`.chip-live`/
+   `.clock-pill` verbatim for the header row. */
+.card-root .idle-reveal-scorecard {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.card-root .idle-reveal-label {
+  text-align: center;
+  font: 700 13px/1.3 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  color: #f5f7fa;
+}
+
+/* item 18: the day-progress timeline, relocated from the deleted
+   `.idle-view .timeline` (091 removed the old always-on idle view along
+   with this rule) into its new, sole home — same thin-line-plus-dot
+   shape, rebuilt fresh since the original selector no longer exists
+   anywhere to reuse. */
+.card-root .idle-peek-timeline {
+  position: relative;
+  display: block;
+  height: 1px;
+  margin-top: 2px;
+  background: rgba(255, 255, 255, 0.14);
+}
+.card-root .idle-peek-timeline::before {
+  content: "";
+  position: absolute;
+  top: -2px;
+  left: var(--day-progress, 50%);
+  width: 5px;
+  height: 5px;
+  transform: translateX(-50%);
+  border-radius: 50%;
+  background: #b6f5e5;
+  box-shadow: 0 0 10px rgba(182, 245, 229, 0.75);
+}
+
+/* event icon set (item 6 + plan 043's richer events): CSS shapes, no
+   emoji — goal = filled green ball, penalty = green ring, own goal =
+   hollow grey ball, yellow/red = slips, foul = whistle triangle, offside
+   = flag, VAR = monitor, substitution = up/down triangles. Adapted
+   verbatim from prototype/football-card.html. */
+.card-root .ev-ico {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex: none;
+}
+.card-root .ev-ico.goal {
+  background: #7fe08d;
+  box-shadow: 0 0 6px rgba(127, 224, 141, 0.7);
+}
+.card-root .ev-ico.pen {
+  background: transparent;
+  border: 2px solid #7fe08d;
+  width: 7px;
+  height: 7px;
+}
+.card-root .ev-ico.og {
+  background: transparent;
+  border: 2px solid rgba(255, 255, 255, 0.4);
+  width: 7px;
+  height: 7px;
+}
+.card-root .ev-ico.yc,
+.card-root .ev-ico.rc {
+  width: 7px;
+  height: 10px;
+  border-radius: 1.5px;
+}
+.card-root .ev-ico.yc {
+  background: #f0c46a;
+}
+.card-root .ev-ico.rc {
+  background: #ff6b57;
+}
+.card-root .ev-ico.foul {
+  width: 0;
+  height: 0;
+  border-radius: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-bottom: 8px solid rgba(255, 255, 255, 0.55);
+}
+.card-root .ev-ico.off {
+  position: relative;
+  width: 3px;
+  height: 12px;
+  border-radius: 0;
+  background: rgba(255, 255, 255, 0.5);
+}
+.card-root .ev-ico.off::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  left: 3px;
+  width: 7px;
+  height: 5px;
+  background: #f0c46a;
+  border-radius: 0 2px 2px 0;
+}
+.card-root .ev-ico.var {
+  width: 11px;
+  height: 8px;
+  border-radius: 2px;
+  background: transparent;
+  border: 1.5px solid #7c9df5;
+}
+.card-root .ev-ico.sub {
+  position: relative;
+  width: 12px;
+  height: 11px;
+  border-radius: 0;
+  background: transparent;
+}
+.card-root .ev-ico.sub::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-bottom: 5px solid #7fe08d;
+}
+.card-root .ev-ico.sub::after {
+  content: "";
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  border-left: 4px solid transparent;
+  border-right: 4px solid transparent;
+  border-top: 5px solid #ff6b57;
+}
+
+.card-root .event-line.tint-goal {
+  color: #7fe08d;
+  font-weight: 600;
+}
+.card-root .event-line.tint-yc {
+  color: #f0c46a;
+  font-weight: 600;
+}
+.card-root .event-line.tint-rc {
+  color: #ff6b57;
+  font-weight: 600;
+}
+
+/* celebrations (plan 084): goal/penalty = green glow + ring, yellow =
+   amber ring, red = two-pulse coral strobe — visually echo pulse-goal/
+   pulse-red (signature moments #1/#2 above) without replacing them; the
+   two never stack (StatusRailCard.tsx gates pulse-goal/pulse-red off
+   while `isLiveCard`). Reuses `.card-assembly`'s own `::after` for the
+   ring, like pulse-goal's confetti does — mutually exclusive in practice
+   (isLiveCard vs the generic pulse path never both apply to one card),
+   so `background: transparent` here simply neutralizes the inherited
+   confetti gradient rather than fighting it. */
+.card-root .card-assembly.cele-goal {
+  animation: goal-glow 1800ms ease-out;
+}
+.card-root .card-assembly.cele-goal::after {
+  background: transparent;
+  inset: -6px;
+  border-radius: 18px;
+  border: 2px solid rgba(127, 224, 141, 0.7);
+  animation: cele-ring 1800ms ease-out;
+}
+
+@keyframes goal-glow {
+  0% {
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+  }
+  30% {
+    box-shadow: 0 0 34px rgba(127, 224, 141, 0.45);
+  }
+  100% {
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+  }
+}
+
+@keyframes cele-ring {
+  from {
+    opacity: 1;
+    transform: scale(0.98);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.12);
+  }
+}
+
+.card-root .card-assembly.cele-yc::after {
+  background: transparent;
+  inset: -6px;
+  border-radius: 18px;
+  border: 2px solid rgba(240, 196, 106, 0.65);
+  animation: cele-ring 1400ms ease-out;
+}
+
+.card-root .card-assembly.cele-rc {
+  animation: red-strobe 1800ms ease-out;
+}
+
+@keyframes red-strobe {
+  0%,
+  45% {
+    box-shadow: 0 0 30px rgba(255, 107, 87, 0.55);
+  }
+  20%,
+  70% {
+    box-shadow: 0 0 4px rgba(255, 107, 87, 0.1);
+  }
+  100% {
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-root .card-assembly.cele-goal,
+  .card-root .card-assembly.cele-goal::after,
+  .card-root .card-assembly.cele-yc::after,
+  .card-root .card-assembly.cele-rc {
+    animation: none;
+  }
+}

@@ -1,0 +1,175 @@
+/* ==== news card v5: category system (shader + masthead + pills) ==== */
+.card-root .cat-politics { --cat: #7c9df5; --cat-deep: rgba(124,157,245,0.16); --cat-pill: rgba(124,157,245,0.14); }
+.card-root .cat-tech     { --cat: #5fd4e8; --cat-deep: rgba(95,212,232,0.15);  --cat-pill: rgba(95,212,232,0.13); }
+.card-root .cat-sports   { --cat: #7fe08d; --cat-deep: rgba(127,224,141,0.15); --cat-pill: rgba(127,224,141,0.13); }
+.card-root .cat-business { --cat: #f0c46a; --cat-deep: rgba(240,196,106,0.15); --cat-pill: rgba(240,196,106,0.13); }
+.card-root .cat-world    { --cat: #c99df0; --cat-deep: rgba(201,157,240,0.15); --cat-pill: rgba(201,157,240,0.13); }
+.card-root .cat-generic  { --cat: #aab3bd; --cat-deep: rgba(170,179,189,0.10); --cat-pill: rgba(170,179,189,0.10); }
+
+/* plan 105 (scope extension to Step A): deliberately KEPT — reviewed
+   alongside the status-dot and live-dot pulses the operator asked to
+   remove, but this one is a different category of motion: a single
+   12s-per-leg (24s round trip) positional drift of an oversized (-30%
+   inset), already-translucent gradient, not a brightness/opacity blink.
+   It reads as ambient "alive" background texture, not a distracting
+   flicker in peripheral vision — the operator's actual complaint was
+   about the latter. Kept as is. */
+.card-root .news-shade::before {
+  content: ""; position: absolute; inset: -30% -30% -30% -30%; z-index: 0;
+  background:
+    radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%),
+    linear-gradient(135deg, var(--cat-deep) 0%, transparent 46%);
+  animation: shade-drift 12s ease-in-out infinite alternate;
+  pointer-events: none;
+  will-change: transform;
+}
+@keyframes shade-drift {
+  from { transform: translate3d(0, 0, 0); }
+  to   { transform: translate3d(-8%, -6%, 0); }
+}
+
+.card-root .news-shade .compact,
+.card-root .news-shade .manifest { position: relative; z-index: 1; }
+
+/* plan 092: `.masthead-row` pairs the masthead with the priority Stamp
+   badge (Stamp moved out of `.compact`'s old grid column into the
+   header, for both card types). 2026-07-24: the generic branch's title
+   row converged onto this SAME masthead-row/`.masthead` markup too
+   (kicker text "cmux"/"cli" instead of a source name), replacing its old
+   separate `.notif-header-row`/`.notif-title`/`.notif-header-badges`
+   trio — so this is no longer news-only. `.masthead` itself grows to
+   fill the row (`flex: 1`) so its own trailing hairline (`::after`)
+   still fills exactly the space before the Stamp badge. */
+.card-root .masthead-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 4px;
+}
+
+.card-root .masthead {
+  display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0;
+  font: 700 8px/1 var(--font-mono);
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: rgba(255, 255, 255, 0.38);
+}
+.card-root .masthead::after { content: ""; flex: 1; height: 1px; background: rgba(255,255,255,0.12); }
+.card-root .masthead .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--cat); box-shadow: 0 0 6px var(--cat); flex: none; }
+
+.card-root .title.headline {
+  white-space: normal;
+  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+  font-size: 13px; line-height: 1.3;
+}
+
+/* ==== plan 092 (item 10): the unified chip language, ported from the
+   locked reference (`prototype/notch-states.html:161-162`, `.chip`) —
+   REPLACES the old per-surface pill classes (news's category/age pill,
+   football's `.league-chip`/`.live-pill`). `.notif-meta-row` is the
+   renamed old pills container; `.chip-category` is the renamed old
+   category-pill class. The old age-pill class does NOT converge to
+   `.chip` — Decision 5 moves it out of the chip row entirely, into the
+   plain `.notif-time-inline` slot (defined above) instead, so there is
+   no `.chip-age`. ==== */
+.card-root .chip {
+  display: inline-flex;
+  align-items: center;
+  padding: 3px 8px;
+  border-radius: 999px;
+  font: 700 8px/1 var(--font-mono);
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+.card-root .notif-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 6px;
+}
+
+.card-root .chip-category {
+  color: var(--cat);
+  background: var(--cat-pill);
+  border: 1px solid color-mix(in srgb, var(--cat) 35%, transparent);
+}
+
+/* plan 078: the news meta row's enter animations, formerly motion.span
+   (enter-only even then — they were never wrapped in an AnimatePresence,
+   so they had no exit to replicate). `both` fill-mode keeps the element
+   at its `from` state before the delayed animation starts, matching
+   motion's `initial` prop. plan 092: retargeted from the old category/
+   age pill classes onto their chip-converged replacements — same two
+   elements, same timing, only the selectors moved.
+   2026-07-23 review fix (wave C, CSS custom-property injection): this
+   was a genuine orphan — 220ms is SWAP_EXIT_MS's PRE-retune value (plan
+   12x wave 3 dropped 220 -> 175 in animationTiming.ts, but this
+   declaration was never updated alongside it, so the chip enter had
+   quietly drifted 45ms slower than every other SWAP_EXIT_MS consumer).
+   Retied to `var(--swap-exit-ms, 175ms)` so it can never drift again.
+   plan 127 (Step 3, /improve-animations audit finding #3): the stagger
+   (`.notif-time-inline`'s own `animation-delay`, previously `calc(...)`
+   below) and the keyframe's `transform: translateY(3px)` leg are BOTH
+   gone. This pair replays on EVERY same-slot rotation (news items
+   rotating ~10s, live-match signal updates, ...), not just the initial
+   idle->showing promotion — so a stagger+slide tuned to read as a nice
+   one-time flourish on first arrival became a small but real ceremony
+   tax paid every ~10s. The fade alone (still `var(--swap-exit-ms,
+   175ms)`, untouched — this file has no way to distinguish a rotation
+   from a promotion the way StatusRailCard.tsx's own inner content swap
+   now can, see that file's `isRotation`) reads identically pleasant on
+   both legs and costs nothing extra on repeat. */
+.card-root .chip-category,
+.card-root .notif-meta-row .notif-time-inline {
+  animation: pill-enter var(--swap-exit-ms, 175ms) var(--ease-notchtap) both;
+}
+
+@keyframes pill-enter {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-root .chip-category,
+  .card-root .notif-meta-row .notif-time-inline {
+    animation: none;
+  }
+}
+
+.card-root .manifest-block {
+  padding: 12px 16px 13px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+.card-root .manifest-label {
+  font: 700 8.5px/1 var(--font-mono);
+  letter-spacing: 0.1em; text-transform: uppercase;
+  color: var(--cat);
+  margin-bottom: 7px;
+}
+.card-root .manifest-text {
+  font-size: 12px;
+  line-height: 1.5;
+  color: rgba(255, 255, 255, 0.85);
+}
+/* `.manifest-meta` (source/published-time/category for news; the source
+   label for generic) was removed in the 2026-07-24 declutter — that
+   metadata is compact-card-only now (masthead + meta row / subtitle row),
+   never repeated in the expanded panel. Manifest.tsx's `.manifest-block`
+   is exactly label + `.manifest-text` + `.manifest-footer` for both
+   branches now. */
+.card-root .manifest-footer {
+  margin-top: 10px;
+  display: flex;
+  justify-content: flex-end;
+}
+.card-root .manifest-hint {
+  font: 700 9px/1 var(--font-mono);
+  letter-spacing: 0.06em;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-root .news-shade::before { animation: none; }
+}
+

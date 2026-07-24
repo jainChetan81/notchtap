@@ -1,0 +1,310 @@
+/* plan 087 (superseded by the hover "breathing" design below): this
+   started as a deliberately boring diagnostic rule proving the
+   rust-derived tracking-area signal reached the webview end-to-end
+   (`filter: brightness(1.04)`, no shape change). The imported reference
+   technique — a gentle scale-up anchored at the top edge (the notch's own
+   physical anchor never moves; only the shell "breathes" outward from
+   it), driven by the SAME `hovered` prop → `.hovered` class this rule
+   always used (StatusRailCard sets it from the live `hovered` prop,
+   never CSS `:hover` — the window is click-through, so `:hover` never
+   fires). Set on the whole assembly (not a single block) so idle's two
+   flanks and showing's flank+below-block all lift together as one shape,
+   same as the rule this replaces. Kept deliberately subtle (1.02 scale,
+   not 1.05+) per the plan's own "alive, not bouncy" instruction; the
+   `var(--hover-ms, 160ms)` transition on the base rule above makes both
+   directions (hover-in and hover-out) animate smoothly.
+   plan 127 (Step 4, /improve-animations audit finding #5): the deepened
+   `filter: drop-shadow(...)` override is GONE — audit finding: animating
+   `filter` (even just swapping in a new static value across a CSS
+   transition) forces the browser to re-rasterize the FULL composited
+   card — flanks, cutout, below-block, everything drop-shadow follows —
+   every frame, in BOTH directions, on a many-times/day hover trigger.
+   The base rule's resting drop-shadow (`:86` above) now stays static
+   through hover; the 1.02 scale alone carries the "breathe." Tradeoff,
+   screenshot-compared before landing: the deepened-shadow version read
+   as very slightly more "lifted," but the static-shadow + scale version
+   reads nearly identical at this subtle a scale delta, for zero ongoing
+   re-rasterize cost. FEEL-CHECK flag for the operator — this is a
+   genuine visual tradeoff, not a pure improvement, and is worth a real
+   before/after look on the hardware this shows on. */
+.card-root .card-assembly.hovered {
+  transform: scale(1.02);
+  /* plan 129 (C5): `transform-origin: top center` moved to the base
+     `.card-assembly` rule above — see that declaration's own doc. Was
+     declared here (and echoed on `.pulse-goal` below) until this plan;
+     kept working for AS LONG AS `.hovered` stayed applied, but the
+     origin snapped back to the base rule's implicit `50% 50%` default
+     the instant the class cleared, mid the 160ms un-hover shrink. */
+}
+
+/* signature moment #1 — Goal: a bright confetti-spray burst over the
+   card surface, an expanding ring, plus a quick scale overshoot on the
+   card itself. plays once, never loops (this sits in a persistent
+   overlay). keyed by <StatusRailCard> off slot.signal, never
+   slot.priority.
+   pure CSS — no lottie, nothing to fetch or lazy-load (2026-07-18,
+   plan 023): the confetti is built from layered radial gradients on
+   ::after and an expanding ::before ring, so the whole moment is
+   self-contained and can't fail to mount.
+   z-index 0, NOT -1 (2026-07-17 live smoke): the card background is
+   opaque, so a negative-z layer paints behind it — rendered but
+   invisible. effects at 0 (over the surface, briefly), background below.
+   `isolation` pins the stacking context so 0/-1 mean the card, not the
+   page. (plan 091: `.card-assembly` already declares `isolation: isolate`
+   in its own definition above — this used to be a second, separate
+   single-purpose rule on the old shell class purely for that one
+   property; folded away as a duplicate now that both live in the same
+   block.)
+
+   plan 107: the FULL stacking contract, low to high — card background
+   (bottom), burst/ring effects at z-index 0 (over the surface, briefly),
+   `.card-content` at z-index 1 (its own rule below, `:card-content`)
+   above BOTH. The z-index-0 argument above only ever proved "over the
+   background" — it never addressed the burst painting over the card's
+   TEXT, which it did (title/body unreadable for roughly the first half
+   of the animation). `.card-content` now gets `position: relative;
+   z-index: 1` specifically so it wins paint order against this
+   non-positioned-by-default pseudo-element. Peak burst opacity is also
+   cut (core alpha 0.95 -> 0.55, the `goal-burst` keyframe capped at 0.7
+   instead of 1) so even the brief top layer never fully washes the card
+   out. jsdom can't compute cascade from stylesheets, so this is pinned
+   at the string level (both this file and the mirror) plus a DOM check
+   that `.card-content` mounts during a goal celebration —
+   `celebrationStacking.test.ts`, cross-referenced here by name.
+
+   plan 091: these effects stay on the outer `.card-assembly` (not
+   below-block) — a full-card celebration reads better than one confined
+   to just the content block, and it exactly preserves the pre-091
+   visual (the burst/ring/box-shadow always spanned the whole card). */
+
+/* the confetti spray: a warm core, six offset color sparks, and an
+   outer coral glow, all in one layered background so a single ::after
+   reads as a full particle field on the dark 400px card. */
+.card-root .card-assembly::after {
+  content: "";
+  position: absolute;
+  inset: -60px;
+  z-index: 0;
+  border-radius: 50%;
+  background:
+    /* plan 107: bright core 0.95 -> 0.55 — the brightest layer, dialed
+       back so the burst never fully washes out the card text it now sits
+       under (z-index 1, see the comment above). */
+    radial-gradient(circle at 50% 50%, rgba(255, 224, 130, 0.55), transparent 40%),
+    radial-gradient(circle at 22% 32%, rgba(255, 107, 87, 0.9), transparent 12%),
+    radial-gradient(circle at 78% 30%, rgba(120, 224, 200, 0.85), transparent 12%),
+    radial-gradient(circle at 30% 74%, rgba(124, 157, 245, 0.85), transparent 12%),
+    radial-gradient(circle at 72% 72%, rgba(255, 196, 106, 0.9), transparent 12%),
+    radial-gradient(circle at 50% 16%, rgba(255, 255, 255, 0.9), transparent 10%),
+    radial-gradient(circle at 50% 50%, rgba(255, 107, 87, 0.55), transparent 68%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+/* plan 127 (Step 6, /improve-animations audit finding #7): `goal-overshoot`
+   scales the WHOLE card assembly (`transform: scale(...)`, the
+   `@keyframes` below) but, unlike the hover "breathe" rule
+   (`.card-assembly.hovered`, which pinned `transform-origin: top center`
+   with its own comment explaining the physical anchor — the notch cutout
+   never moves, only the shell grows outward from it), this rule had no
+   `transform-origin` at all — so it defaulted to `50% 50%` (center) and
+   grew symmetrically, visibly lifting the shell's TOP edge off the notch
+   cutout for the celebration's duration. `transform-origin: top center`
+   matched the hover rule's own anchor for the same physical reason.
+   `::before`/`::after` (the ring/burst pseudo-elements just below) stay
+   center-origin on purpose — they're explosions radiating from the
+   card's center, not the card shape itself growing.
+   plan 129 (C5, deep-review fix): the own-copy `transform-origin: top
+   center` this rule used to declare is GONE — moved to the base
+   `.card-assembly` rule (see that declaration's own doc for the "clears
+   mid-flight" bug this fixes), which this rule inherits from for free
+   now. This paragraph's own physical reasoning (matches the notch
+   cutout's fixed position) is unchanged, just no longer redeclared per
+   modifier class. */
+.card-root .card-assembly.pulse-goal {
+  animation: goal-overshoot 1240ms var(--ease-notchtap);
+}
+
+/* plan 127 (Step 6, audit finding #8): `ease-out` -> `var(--ease-notchtap)`
+   — unifies this burst's easing with the card-shape scale (`goal-overshoot`
+   above, already on `--ease-notchtap`) it plays alongside; the two used to
+   ease on two different curves for no documented reason, a small but real
+   "two things happening at once, animated on two different feels" split.
+   Duration untouched (operator-tuned — plan 100; see
+   celebrationStacking.test.tsx's own durations-byte-unchanged pin). */
+.card-root .card-assembly.pulse-goal::after {
+  animation: goal-burst 1240ms var(--ease-notchtap);
+}
+
+/* the expanding ring — a thin bright hoop that shoots out from the
+   card centre. ::before only becomes a box under .pulse-goal, so news
+   cards (which own .news-shade::before) are never touched. */
+.card-root .card-assembly.pulse-goal::before {
+  content: "";
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 40px;
+  height: 40px;
+  margin: -20px 0 0 -20px;
+  z-index: 0;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 224, 130, 0.9);
+  opacity: 0;
+  pointer-events: none;
+  /* plan 127 (Step 6, finding #8): `ease-out` -> `var(--ease-notchtap)`,
+     same unification and same reasoning as `::after`'s own comment
+     above. Duration untouched (operator-tuned — plan 100; see
+     celebrationStacking.test.tsx's own durations-byte-unchanged pin). */
+  animation: goal-ring 1240ms var(--ease-notchtap);
+}
+
+@keyframes goal-overshoot {
+  0% {
+    transform: scale(1);
+  }
+  30% {
+    transform: scale(1.06);
+  }
+  55% {
+    transform: scale(0.995);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+/* plan 107: peak opacity capped at 0.7 (was 1) — same proportional shape
+   (35%/70% stops scaled by the same ~0.7 factor: 1->0.7, 0.85->0.6), just
+   never bright enough to obscure `.card-content` (z-index 1) above it. */
+@keyframes goal-burst {
+  0% {
+    opacity: 0;
+    transform: scale(0.5) rotate(-8deg);
+  }
+  35% {
+    opacity: 0.7;
+    transform: scale(1.15) rotate(0deg);
+  }
+  70% {
+    opacity: 0.6;
+    transform: scale(1.4) rotate(4deg);
+  }
+  100% {
+    opacity: 0;
+    transform: scale(1.7) rotate(6deg);
+  }
+}
+
+@keyframes goal-ring {
+  0% {
+    opacity: 0;
+    transform: scale(0.3);
+  }
+  25% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    transform: scale(6);
+  }
+}
+
+/* goal celebration, part B (plan 032): three staggered concentric accent
+   rings rippling out from the card centre — the prototype's ripple
+   candidate, layered over the same z-0 effects surface as the burst.
+   mounted by <StatusRailCard> only while the goal pulse is live. */
+.card-root .cele-ripple {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+}
+
+.card-root .cele-ripple span {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--accent);
+  border-radius: 50%;
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.4);
+  animation: ripple-out 1440ms ease-out forwards;
+}
+
+.card-root .cele-ripple span:nth-child(2) {
+  animation-delay: 280ms;
+}
+
+.card-root .cele-ripple span:nth-child(3) {
+  animation-delay: 560ms;
+}
+
+@keyframes ripple-out {
+  0% {
+    opacity: 0.85;
+    transform: translate(-50%, -50%) scale(0.4);
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(9);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .card-root .cele-ripple span {
+    animation: none;
+  }
+}
+
+/* signature moment #2 — Red Card: a sharp two-pulse alert strobe,
+   different register from Goal's celebration — urgent, not festive. */
+.card-root .card-assembly.pulse-red {
+  animation: red-alert 920ms steps(1, end) 2;
+}
+
+@keyframes red-alert {
+  0%,
+  100% {
+    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+  }
+  50% {
+    box-shadow:
+      0 14px 32px rgba(0, 0, 0, 0.32),
+      0 0 0 2px #ff6b57,
+      0 0 26px 4px rgba(255, 107, 87, 0.65);
+  }
+}
+
+/* the two pulses above are plain CSS and were never covered by any
+   reduced-motion mechanism — they need this override in their own right. */
+@media (prefers-reduced-motion: reduce) {
+  .card-root .card-assembly.pulse-goal,
+  .card-root .card-assembly.pulse-goal::before,
+  .card-root .card-assembly.pulse-goal::after,
+  .card-root .card-assembly.pulse-red {
+    animation: none;
+  }
+}
+
+/* plan 12x (wave 2): the idle/showing content-swap moved off this
+   file's hand-rolled `@keyframes` and onto `motion` (`motion/react`,
+   `AnimatePresence` + `motion.div` in StatusRailCard.tsx) — the same
+   migration IdleHoverPeek.tsx made in wave 1. `.card-content` no longer
+   carries its own `animation`; motion inline-styles opacity/transform
+   on the node directly. `position: relative; z-index: 1` stays a plain
+   rule below, unrelated to the swap itself. */
+/* plan 107: `position: relative; z-index: 1` is the decisive stacking
+   declaration against the celebration burst (`.card-assembly::after`,
+   `z-index: 0`, above) — `position: relative` alone leaves `z-index:
+   auto`, and an auto-z-index positioned box still paints below an
+   earlier `z-index: 0` sibling in the same stacking context (source
+   order alone doesn't win once ANY sibling declares a real z-index).
+   see the fuller contract comment on `.card-assembly::after` above. */
+.card-root .card-content {
+  position: relative;
+  z-index: 1;
+}
+

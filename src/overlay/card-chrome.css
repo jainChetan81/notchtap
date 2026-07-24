@@ -1,0 +1,722 @@
+/* ==== plan 091: the cutout card shape — three plain geometry blocks,
+   deliberately never a single masked/cut shape. Ported from the locked
+   reference (`prototype/notch-states.html:36-60`), operator-approved
+   across two rounds of real macOS photos: `.flank-left`/`.flank-right`
+   sit either side of the
+   permanent notch cutout at the notch's own height; `.below-block` (when
+   present) carries everything underneath, full width. Grid, not the
+   prototype's absolute positioning: this app's window is a fixed-size,
+   content-flow-sized canvas (no outer "stage" element the way the
+   prototype's demo page has one), so an absolutely-positioned flank row
+   would leave `.card-assembly`'s own auto height at zero during idle
+   (nothing else in normal flow to size it) — a zero-height ancestor
+   under this app's own `overflow: hidden` (html/body/#root) would clip
+   everything painted inside it, flanks included. A 3-column/2-row grid
+   sizes identically to the prototype's math (the two flank columns are
+   `1fr` each, so they automatically split whatever width remains after
+   the fixed-width cutout column — exactly `(--cw - --notchtap-cutout-
+   width) / 2` per side, the prototype's own formula) while keeping every
+   block in normal flow, so `.card-assembly`'s height is always the real
+   sum of its rows: never zero, never at odds with `overflow: hidden`.
+
+   ROUNDING LAW (read before touching any radius here): the cutout's own
+   base corners stay perfectly SQUARE — a sharp rectangular bite, never
+   rounded on either side. Outer rounding lives ONLY at the two true
+   outer ends of the whole assembly: on `.flank-left`/`.flank-right`
+   themselves when there is no below-block (idle — they ARE the bottom
+   edge), or on `.below-block` when there is one (showing/exiting —
+   below-block owns the outer rounding then, and the flanks above it go
+   square). Rounding both at once is the documented double-curve gap bug
+   — see the prototype's own comment blocks at
+   `prototype/notch-states.html:25-31` (the collapsed `.hw-notch.solo`
+   case) and `:35-45`/`:138-144` (the flank/below-block handoff). Never
+   round the flank's INNER corner (the one touching the cutout) in any
+   state — only ever the outer one. ==== */
+.card-root .card-assembly {
+  position: relative;
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 1fr var(--notchtap-cutout-width, 200px) 1fr;
+  grid-template-rows: var(--notchtap-cutout-height, 32px) auto;
+  width: var(--cw, min(max(calc(400px * var(--card-scale)), calc(var(--notchtap-cutout-width, 200px) + (2 * 60px * var(--card-scale)))), 100%));
+  margin: 0 auto;
+  isolation: isolate;
+  /* plan 129 (C5, deep-review fix): lives here now, not only inside
+     `.hovered`/`.pulse-goal` (both deleted their own copy) — the notch
+     cutout never moves, so every whole-card `transform: scale(...)` this
+     shell ever plays (hover breathe, goal overshoot, any future one)
+     wants the SAME top anchor; leaving it scoped to just those two
+     modifier classes meant `.hovered` clearing mid-flight snapped the
+     origin back to the un-hovered default (`50% 50%`, center) while the
+     160ms shrink was still animating, pivoting the un-hover around the
+     wrong point. Behavior-neutral everywhere else: origin only matters
+     while `transform` isn't `none`, and every whole-card transform on
+     this shell already wanted top-center. */
+  transform-origin: top center;
+  /* Depth (imported reference-app technique): a single drop-shadow on the COMPOSITE
+     notch shape (drop-shadow follows the actual painted flanks+cutout+
+     below-block alpha, so no seams between the grid cells the way per-cell
+     box-shadows would). Lifts the HUD notch off the wallpaper; in notch
+     mode it shadows the part that extends below the hardware cutout. Only
+     recomputes during animation — idle is cached, so no idle-CPU cost. */
+  filter: drop-shadow(0 7px 18px rgba(0, 0, 0, 0.5));
+  /* plan 102: +25% pacing, operator feedback. `transform` added for the
+     hover "breathing" rule below (`.hovered`) — it only ever CHANGES via
+     that class toggle, so listing it here is what makes the transition
+     symmetric (animates in on hover AND back out on un-hover, not just
+     one direction).
+     plan 12x (wave 3): width dropped 400ms -> 320ms (~20% quicker,
+     operator-feedback "snappier overall" pass) — transform (the hover
+     breathe, unrelated to this pass's complaint) was untouched.
+     2026-07-23 review fix (wave C, CSS custom-property injection): the
+     literal 320ms moved to `var(--expand-ms, 320ms)` — EXPAND_MS in
+     animationTiming.ts, injected by applyAnimationTiming.ts at both real
+     entry points. See that constant's own doc for why it's now also the
+     manifest disclosure's duration (below). The `320ms` fallback keeps
+     this rule correct even in a hypothetical context that never calls
+     applyAnimationTiming.
+     plan 127 (Step 4, /improve-animations audit finding #5): TWO changes.
+     (1) `transform`'s own duration moved off the shared 260ms onto a
+     dedicated `var(--hover-ms, 160ms)` — HOVER_MS in animationTiming.ts —
+     landing the hover scale response inside the ~125-200ms budget a
+     snappy hover reaction should live in, rather than sharing REVEAL_MS
+     (a slower, unrelated paint-coordination duration the two used to tie
+     together only by accident, see REVEAL_MS's own doc). (2) `filter` is
+     REMOVED from this list entirely — the `.hovered` rule below no
+     longer overrides it (see that rule's own doc for the "why": an
+     animated `filter` re-rasterizes the whole ~500px composite every
+     frame, both directions, on a many-times/day hover; the base
+     drop-shadow now stays static and the scale alone carries the
+     breathe). */
+  transition:
+    width var(--expand-ms, 320ms) var(--ease-notchtap),
+    transform var(--hover-ms, 160ms) var(--ease-notchtap);
+}
+
+/* plan 090 (Q1a/Q2b, carried forward): the cutout term
+   (`--notchtap-cutout-width`) is a hardware measurement (or, in HUD
+   mode, its synthetic stand-in — App.tsx) — `--card-scale` must NEVER
+   multiply it. Every OTHER width in these three formulas (the flank
+   px figures) IS a cosmetic design width and does scale. Every formula
+   is capped at the window via `min(..., 100%)` — 090's Q2b, unchanged. */
+.card-root .card-assembly.idle {
+  --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
+}
+
+.card-root .card-assembly.expanded {
+  --cw: min(max(calc(500px * var(--card-scale)), calc(var(--notchtap-cutout-width, 200px) + (2 * 60px * var(--card-scale)))), 100%);
+}
+
+/* plan 105 (Step C, fixing the plan-085 bug): bare notch mode
+   (`resting_state: "notch"`, idle, not hovered) — the shell mounts (so
+   the rust-derived tracking area still exists and hover keeps working)
+   but paints zero app-drawn pixels: transparent flanks, cutout-width-only
+   shell so there's no wide invisible blocker sitting over the desktop.
+   `.idle`'s wider rest-rail formula still applies underneath (source
+   order below it), so this narrows it back down; `:has(.idle-peek)`
+   (below) restores the normal idle width the instant the peek opens on
+   hover, since the below-block needs real room to render into. */
+.card-root .card-assembly.bare {
+  --cw: min(var(--notchtap-cutout-width, 200px), 100%);
+}
+.card-root .card-assembly.bare .flank-left,
+.card-root .card-assembly.bare .flank-right {
+  background: transparent;
+  box-shadow: none;
+  /* 2026-07-23 (operator minimal-notch spec, Task 1.1 — real bug found
+     while screenshot-verifying the curved minimal shape): the flank rule
+     below already carries `min-width: 0` + `overflow: hidden`, which
+     SHOULD let the grid's two `1fr` flank tracks collapse fully to 0 once
+     `--cw` (above) equals the cutout's own width exactly — but each
+     flank's 16px horizontal padding (below) doesn't participate in that
+     collapse: a headless-Chrome measurement confirmed `.flank-left`/
+     `.flank-right` still render at their full 16px padding width even
+     with a 0px track, so `.card-assembly`'s real painted content (16 +
+     cutout + 16) silently overflowed its own declared `--cw` by 32px.
+     Invisible before this plan (transparent flanks, no radius/gill art
+     ever drawn at that boundary — the "square slab" bare mode had
+     nothing there to misalign), but load-bearing now: the top gills
+     (`.notch-gill-left`/`-right` below) anchor to `.card-assembly`'s OWN
+     edges, and floated disconnected from the visible cutout without this
+     fix. Zeroing padding here is what makes card-assembly's edges
+     actually equal the cutout's edges in bare mode, as the gill
+     positioning already assumed. Restored the instant real rail chrome
+     needs the inset again (`.bare.hovered` below). */
+  padding: 0;
+}
+/* plan 105: hovered bare mode reveals the peek exactly like rail mode —
+   same idle width formula so `.below-block.idle-peek` (IdleHoverPeek)
+   has room to render, not the cutout-only width above. Higher
+   specificity than `.card-assembly.bare` above, so this wins regardless
+   of source order once `.idle-peek` mounts. */
+.card-root .card-assembly.bare:has(.idle-peek) {
+  --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
+}
+/* 2026-07-23 (operator minimal-notch spec, Task 1.2): a hovered bare
+   notch paints its flanks black again — StatusRailCard.tsx's
+   `railRevealed` mounts FlankClock/StatusDots into these cells the same
+   render `.hovered` lands, so the flanks need real paint to sit behind
+   them (transparent flanks with opaque text/dots floating over bare
+   desktop would look broken). `.bare.hovered` (two classes) beats plain
+   `.bare` (one class) above by specificity regardless of source order,
+   so this always wins once hover lands. Paired with the `transition:
+   background-color` on the base flank rule below so the paint fades in
+   rather than snapping, coordinated with the same-trigger width growth
+   (`.bare:has(.idle-peek)` above, driven by `.card-assembly`'s own
+   `transition: width 320ms` — this rule intentionally doesn't redeclare
+   that duration, it only needs its OWN property to animate smoothly). */
+.card-root .card-assembly.bare.hovered .flank-left,
+.card-root .card-assembly.bare.hovered .flank-right {
+  background: #000;
+}
+/* the padding half of the same bare<->bare-hovered swap — restores the
+   normal 16px inset (below) so FlankClock/StatusDots don't sit flush
+   against the flank's edge once revealed. Split left/right rather than a
+   shorthand `padding` so each side only ever restores its OWN edge. */
+.card-root .card-assembly.bare.hovered .flank-left {
+  padding-left: 16px;
+}
+.card-root .card-assembly.bare.hovered .flank-right {
+  padding-right: 16px;
+}
+
+.card-root .flank-left,
+.card-root .flank-right {
+  box-sizing: border-box;
+  grid-row: 1;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  background: #000;
+  color: #f5f7fa;
+  /* 2026-07-23 (operator minimal-notch spec, Task 1.2): lets the bare
+     <-> bare-hovered background AND padding swap (both rules above) fade
+     rather than pop — mirrors the reveal/paint coordination duration the
+     hover "breathing" rule below already used at the time this was
+     written, so the paint/inset reads as coordinated with that same
+     hover trigger and with the width growth it rides alongside. Harmless
+     outside bare<->bare-hovered: neither property ever changes in any
+     other state, so this declaration never has anything else to animate.
+     plan 127 (Step 1, /improve-animations audit finding #4): the literal
+     260ms moved to `var(--reveal-ms, 260ms)` — REVEAL_MS in
+     animationTiming.ts, injected by applyAnimationTiming.ts, same
+     single-source discipline as SWAP_EXIT_MS/CONTENT_EXIT_MS/EXPAND_MS.
+     This is now a genuinely SEPARATE constant from the hover breathe's
+     own duration (Step 4 retunes `.hovered`'s transform to a faster
+     `--hover-ms`) — the two used to share one hand-typed 260ms by
+     accident, not by design; this rule governs paint/inset coordination,
+     not the hover scale response. */
+  transition:
+    background-color var(--reveal-ms, 260ms) var(--ease-notchtap),
+    padding var(--reveal-ms, 260ms) var(--ease-notchtap);
+  /* grid items default to `min-width: auto` (their content's min-content
+     size), which can force the whole grid wider than `--cw` if content
+     ever doesn't wrap — the clock/dots content here is always
+     short/fixed-format, but this is the standard safe default for any
+     grid item carrying inline content, at zero visual cost. */
+  min-width: 0;
+}
+
+.card-root .flank-left {
+  grid-column: 1;
+  justify-content: flex-start;
+  padding-left: 16px;
+}
+
+.card-root .flank-right {
+  grid-column: 3;
+  justify-content: flex-end;
+  padding-right: 16px;
+}
+
+/* the flanks are the true bottom edge ONLY when there is no below-block
+   beneath them — round their own OUTER corner then. Once a below-block
+   exists, IT owns the bottom rounding instead and the flanks must go
+   square, or it's the double-curve gap bug documented above.
+
+   Keyed on actual DOM presence of `.below-block` (`:has()`), NOT on the
+   `.idle`/priority class. Reading real DOM structure sidesteps any
+   live-vs-delayed mismatch entirely: the flanks are rounded exactly when
+   `.below-block` is genuinely absent, in every state, with no separate
+   timing to keep in sync. `:has()` has shipped in Safari/WebKit since
+   15.4 (2022), well within this app's WKWebView target.
+
+   plan 107 Step B evaluated dropping this in favor of keying off the
+   priority/`.idle` class directly (StatusRailCard.tsx's `geometryPriority`
+   now tracks `renderedShowing` — i.e. `.below-block`'s own mount
+   condition — for the EXIT direction, so that half of the original
+   mismatch this comment used to describe is gone). It's still required,
+   for the OTHER (entrance) direction: on an idle->showing promotion the
+   shell's class flips to the priority class on the SAME render (reading
+   the live slot, by design — the width-leads-content choreography), but
+   `.below-block` itself is still absent for the whole 220ms delayed-swap
+   window that follows (confirmed empirically: immediately after a
+   promotion, `.card-assembly.high` and no `.below-block` coexist). A
+   class-keyed rule would unround the flanks in that window even though
+   there is no below-block yet to justify it — so DOM presence remains
+   the only condition that's correct in BOTH directions.
+
+   plan 11x: `transition-duration` dropped 260ms -> 130ms, mirroring
+   src/animationTiming.ts's `CONTENT_EXIT_MS` (must change together, same
+   discipline as that file's own SWAP_EXIT_MS pairing note) — the below-
+   block now closes (StatusRailCard.tsx's `belowBlockOpen`) CONTENT_EXIT_MS
+   after a showing->idle exit begins, instead of the old, slower
+   SWAP_EXIT_MS, so this round-in needs to keep pace or the two would
+   still read as chained rather than one motion. Entrance is unaffected
+   by this number even though it's the SAME rule: CSS only plays a
+   transition when the property's new computed value declares one, and
+   on entrance this rule STOPS matching (below-block mounts, `:has()`
+   flips), so the un-round there has never been transitioned by this
+   declaration — it snaps instantly, before and after this change alike.
+
+   plan 12x (wave 3): `transition-duration` dropped again, 130ms -> 105ms,
+   mirroring CONTENT_EXIT_MS's own 130 -> 105 drop (animationTiming.ts) —
+   same pairing discipline, same reasoning: the below-block's own exit
+   (now also height-collapsing, not just fading — StatusRailCard.tsx)
+   still needs to finish exactly when this round-in starts, or the two
+   acts read as chained again.
+
+   2026-07-23 review fix (wave B, Task 1 — "one overlapping collapse"):
+   added `.card-assembly.exiting` as a SECOND, OR'd trigger alongside the
+   `:not(:has(.below-block))` DOM-presence check above. Without it, the
+   round-in couldn't start until the below-block wrapper actually
+   unmounted from the DOM — which, thanks to its own `AnimatePresence`
+   exit animation (StatusRailCard.tsx), doesn't happen until
+   CONTENT_EXIT_MS AFTER a showing->idle exit begins (it's still present,
+   mid-fade, for that whole window) — so the corners visibly waited out
+   the content fade before starting their own transition, a second
+   chained act instead of an overlapping one. `.exiting` (StatusRailCard's
+   `shellExiting`) is set the SAME render `showing` goes false — t=0 of
+   the exit — so this rule now starts its 105ms round-in in lockstep with
+   the below-block's own CONTENT_EXIT_MS close and the width shrink
+   below, all three finishing together instead of chaining. No new
+   transition-duration to keep in lockstep: both matched selectors share
+   the SAME declaration block, so there are still only two
+   `transition: border-radius <var>ms` declarations in this file — by
+   the time `.exiting` clears (SWAP_EXIT_MS) the below-block is long
+   gone and `:not(:has(.below-block))` alone keeps matching, so there is
+   no radius flip, no re-transition, at the handoff.
+   2026-07-23 review fix (wave C, CSS custom-property injection): the
+   literal 105ms moved to `var(--content-exit-ms, 105ms)` — CONTENT_EXIT_MS
+   in animationTiming.ts, injected by applyAnimationTiming.ts. This
+   replaces the old animationTiming.test.ts regex guard that used to parse
+   this file and compare the two numbers by hand; now there is only one
+   place the number is written (animationTiming.ts), so there is nothing
+   left to drift. */
+.card-root .card-assembly:not(:has(.below-block)) .flank-left,
+.card-root .card-assembly.exiting .flank-left {
+  border-bottom-left-radius: var(--card-radius, 14px);
+  transition: border-radius var(--content-exit-ms, 105ms) var(--ease-notchtap);
+}
+.card-root .card-assembly:not(:has(.below-block)) .flank-right,
+.card-root .card-assembly.exiting .flank-right {
+  border-bottom-right-radius: var(--card-radius, 14px);
+  transition: border-radius var(--content-exit-ms, 105ms) var(--ease-notchtap);
+}
+
+/* 2026-07-23 review fix (wave B, Task 1): the shell's own width, on the
+   `.exiting` leg only — see StatusRailCard.tsx's `shellExiting` doc for
+   the full "why". Source order matters here: this rule shares
+   `.card-assembly.idle`/`.card-assembly.expanded` above's specificity
+   exactly (one class + `.card-assembly`), so being declared AFTER both
+   is what lets it win the `--cw` custom property regardless of which
+   (frozen) geometry class — `.high`/`.medium`/`.low`, `.expanded` or not
+   — is still sitting on the shell during the exit. `.exiting` and
+   `.idle`/`.bare` never coexist (see the JS doc), so there's no ordering
+   conflict with those.
+   The width formula is deliberately the SAME one `.idle` uses (not a new
+   number) — by the time `.exiting` clears and `.idle` actually applies,
+   `--cw` is already sitting at the identical value, so the handoff never
+   re-triggers a transition or jumps.
+   `transition` is redeclared here (not just `width`) with the SAME
+   transform duration as the base rule, only `width` shortened — 320ms ->
+   175ms, matching SWAP_EXIT_MS (src/animationTiming.ts) exactly, so the
+   shell has fully reached idle width by the same tick the geometry-class
+   freeze itself lets go — never before (content spill) and never
+   conspicuously after (a lagging tail).
+   2026-07-23 review fix (wave C, CSS custom-property injection): the
+   literal 175ms moved to `var(--swap-exit-ms, 175ms)` — SWAP_EXIT_MS in
+   animationTiming.ts, injected by applyAnimationTiming.ts. This replaces
+   the old animationTiming.test.ts regex guard that used to parse this
+   rule's own declaration block and compare the number by hand; now there
+   is only one place the number is written.
+   plan 127 (Step 4, finding #5): `filter` dropped from this list — same
+   removal as the base rule above (the `.hovered` override it used to
+   pair with is gone).
+   plan 129 (C1, deep-review fix): the plan-127 pass above had briefly
+   retokenized the surviving `transform` leg to `var(--reveal-ms, 260ms)`
+   on the theory that this rule mirrors the base rule's REVEAL pacing —
+   wrong, and self-contradicting against this comment's own OPENING
+   paragraph ("the SAME transform duration as the base rule"): the only
+   consumer of `transform` on `.card-assembly` is the hover breathe
+   (`.hovered`, below), which plan 127 Step 4 itself moved onto
+   `var(--hover-ms, 160ms)` on the BASE rule above. Leaving this rule's
+   `transform` leg on `--reveal-ms` meant a hover-out mid-exit ran a
+   260ms breathe-settle instead of the intended 160ms one. Retokenized
+   to `var(--hover-ms, 160ms)` below, which makes the opening paragraph
+   literally true again. */
+.card-root .card-assembly.exiting {
+  --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
+  transition:
+    width var(--swap-exit-ms, 175ms) var(--ease-notchtap),
+    transform var(--hover-ms, 160ms) var(--ease-notchtap);
+}
+
+/* plan 123: kills the "box, then rounded shape pops in" exit artifact —
+   `useExitChoreography.ts`'s `exitToBare` doc has the full "why". Bug
+   recap: `.exiting`/`.bare` are mutually exclusive by construction, so
+   the exit above always converged on the WIDE `.idle`-shaped `--cw`
+   (rule immediately above), then, at the SAME render `.exiting` clears
+   and `.bare` mounts, three things changed at once with no transition
+   bridging them — `--cw` dropped to cutout-only width, the flanks
+   snapped from painted to transparent/zero-padding, and
+   `.synthetic-cutout` (below) snapped from square to rounded. One shape
+   morphing smoothly, then a hard cut to a different shape.
+
+   This block overrides the plain `.exiting` rule above for the ONE leg
+   that's actually headed for `.bare` (`restingState === "notch"`,
+   `exitToBare` true) — `.card-root .card-assembly.exiting.exit-to-bare`
+   (4 classes) beats `.card-root .card-assembly.exiting`'s 3 by
+   specificity regardless of source order, so plain rail-mode `.exiting`
+   (`exitToBare` always false there, so `.exit-to-bare` never lands)
+   is completely untouched by everything in this block. Same `--swap-exit-
+   ms` duration as the rule above (no new literal) — the width and the
+   flank paint/padding both finish converging at the exact same t=175ms
+   tick the class flip happens, so the flip becomes visually a no-op.
+
+   INVARIANT (checkable): at t=var(--swap-exit-ms), every property this
+   block animates must already equal what `.card-assembly.bare`'s own
+   (non-hovered, no-peek) rules set, below:
+     - `--cw`                                 == `.card-root .card-assembly.bare`'s own `--cw`
+     - `.flank-left`/`.flank-right` background == `.card-root .card-assembly.bare .flank-left`/`.flank-right`'s (transparent)
+     - `.flank-left`/`.flank-right` padding    == `.card-root .card-assembly.bare .flank-left`/`.flank-right`'s (0)
+     - `.synthetic-cutout` bottom-left radius  == `:root[data-notchtap-mode="hud"] .card-root .card-assembly.bare:not(:has(.below-block)) .synthetic-cutout`'s (HUD only)
+     - `.synthetic-cutout` bottom-right radius == same selector as above (HUD only)
+   `box-shadow` isn't listed: the base flank rule never sets one, so
+   `.bare`'s `box-shadow: none` is a no-op match against the default —
+   nothing to transition.
+   plan 129 (C3, deep-review fix): the five references above used to cite
+   hard source line numbers (`:132-134`, `:135-159` twice, `:501-504`
+   twice) instead of selector names — this wave's own comment insertions
+   elsewhere in the file shifted every one of them out from under the
+   line they used to point at. Selectors don't drift with unrelated
+   edits the way line numbers do, and this file's own F4 pin test
+   (`StatusRailCard.test.tsx`'s `ruleBody` helper, `describe("exit-to-
+   bare CSS convergence invariant (plan 124 F4)")`) already locates
+   every one of these rules the same selector-string way, never by line
+   number — substance unchanged, only how each target is named. */
+.card-root .card-assembly.exiting.exit-to-bare {
+  /* the bare formula (`.card-root .card-assembly.bare`'s own `--cw`
+     rule, plan 129/C3: was a `:132-134` line reference), not the wide
+     idle/rail one above — the shell shrinks straight to cutout width
+     instead of overshooting to rail width first. */
+  --cw: min(var(--notchtap-cutout-width, 200px), 100%);
+}
+.card-root .card-assembly.exiting.exit-to-bare .flank-left,
+.card-root .card-assembly.exiting.exit-to-bare .flank-right {
+  /* matches `.card-root .card-assembly.bare .flank-left`/`.flank-right`'s
+     end state (plan 129/C3: was a `:135-159` line reference) exactly —
+     transparent paint, zero inset — but ANIMATES there over the exit
+     window instead of snapping at the class flip. Redeclares the base
+     flank rule's own `background-color`/`padding` transition (:213-215)
+     with `--swap-exit-ms` in place of its 260ms, so this pairing
+     finishes in lockstep with the shell width above, not on the hover-
+     breathing rule's slower cadence. */
+  background-color: transparent;
+  padding: 0;
+  transition:
+    background-color var(--swap-exit-ms, 175ms) var(--ease-notchtap),
+    padding var(--swap-exit-ms, 175ms) var(--ease-notchtap);
+}
+/* the gills (`.notch-gill`, below) need NO rule here — deliberate choice,
+   not an oversight: they already `display: block` unconditionally
+   throughout `.exiting` (their own selector, further below, is keyed off
+   `.exiting:not(.bare)` with no resting-mode condition) and are anchored
+   to `.card-assembly`'s OWN edges (`left`/`right: -10px`), which this
+   block's `--cw` shrink is already moving — so they slide inward
+   continuously with the shell width for free, no separate fade needed. */
+
+/* HUD-only (`.synthetic-cutout` is `display: none` outside
+   `:root[data-notchtap-mode="hud"]` — real notch hardware draws its own
+   curves): transitions the cutout's bottom radii from square (their
+   value throughout plain `.exiting`, nothing sets them there) to
+   `:root[data-notchtap-mode="hud"] .card-root
+   .card-assembly.bare:not(:has(.below-block)) .synthetic-cutout`'s
+   rounded values (plan 129/C3: was a `:501-504` line reference) over the
+   same exit window, instead of the discrete snap that used to happen
+   only once `.bare` mounted.
+   Deliberately unconditional on `:has(.below-block)` (unlike `.bare`'s
+   own rule) — the below-block's own AnimatePresence exit is shorter
+   (`--content-exit-ms`) than this whole window (`--swap-exit-ms`), so
+   for the tail of the window there is no below-block left to hand
+   rounding duty to; starting the radius transition at t=0 regardless
+   just means it's already mid-flight, invisible under the still-fading
+   below-block, by the time that duty-handoff matters — and it lands on
+   the exact `.bare` value at t=175ms either way. */
+:root[data-notchtap-mode="hud"]
+  .card-root
+  .card-assembly.exiting.exit-to-bare
+  .synthetic-cutout {
+  border-bottom-left-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 2), 20px);
+  border-bottom-right-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 2), 20px);
+  transition: border-radius var(--swap-exit-ms, 175ms) var(--ease-notchtap);
+}
+
+/* ==== notch-shaped idle profile (HUD only): the operator's core
+   complaint was that the idle rail reads as a flat rounded "block," not
+   a real hardware notch. Native notch implementations draw the whole
+   shape with a genuinely CONCAVE fillet where the notch meets the top
+   screen/bezel edge (a small "gill" — the boundary sweeps outward before
+   curving down into the notch's vertical wall) plus a plain CONVEX round
+   at the bottom, where the notch hangs into the display.
+
+   2026-07-23 review fix (wave B, Task 2 — REAL concave S-curve): the
+   previous approach here (an elongated ELLIPTICAL `border-radius` on the
+   flank's bottom-outer corner, pushed hard enough to read as "flared")
+   was explicitly a convex-only compromise — `border-radius`, at any
+   aspect ratio, can only ever bow a corner OUTWARD, never carve a true
+   concave dent. Operator feedback (still "reads as a rounded black bar,
+   not a real notch" after that push) confirmed it: a convex ellipse
+   cannot fake a concave curve no matter how exaggerated. This block now
+   does two independent, honest things instead of one dishonest one:
+
+   1. BOTTOM (below): kept a plain, modest CONVEX round on the flank's
+      outer-bottom corner — still `border-radius`, still legitimate (this
+      really is where the shape wants to bow outward, hanging into the
+      display), just no longer doing double duty as a fake flare. Ties
+      into the SAME `transition: border-radius` declared by the rounding
+      law above (same property, richer value) — no new transition.
+
+   2. TOP (further below, the `.notch-gill-*` rules): a genuinely concave
+      fillet at each top-OUTER corner (where the flank meets the card's
+      own top/outer edge — the "screen edge" analog in this floating HUD
+      card, mirroring where a real notch meets the bezel). `border-radius`
+      cannot produce this, so these are real DOM elements (StatusRailCard
+      Task-2 comment explains why not pseudo-elements) painted with a
+      corner-anchored `radial-gradient`: `transparent` near the anchor
+      point, opaque `#000` beyond it — the classic inverse-fillet/"anti-
+      radius" trick. Positioned to poke a few px past the flank's own
+      box, extending the black shape outward at the very top row, then
+      the gradient's arc sweeps it back to the flank's actual edge by the
+      gill's own height — exactly the hardware profile: wider right at
+      the top, narrowing into the constant-width vertical wall. A plain
+      SVG corner piece is the sanctioned fallback if this ever glitches
+      (unclamped by CSS's own corner-overlap algorithm the way
+      `border-radius` was) — not needed after screenshot verification
+      (see docs/review-logs).
+
+   Both stay scoped like the ROUNDING LAW above (`:not(:has(.below-block))`,
+   handing off to `.below-block`'s own plain circular radius the instant
+   one mounts — same DOM-presence timing, zero extra state — OR mid-
+   `.exiting`, same reasoning as that law's own Task-1 extension: the top/
+   bottom notch profile should appear in lockstep with the rest of the
+   collapse, not lag behind it) PLUS `:not(.bare)` (105's zero-app-drawn-
+   pixels notch mode paints transparent flanks — flaring an invisible
+   shape would be a no-op at best, a stray drop-shadow-catching artifact
+   at worst) PLUS the `:root[data-notchtap-mode="hud"]` guard the cutout/
+   idle-face art above already uses: a real hardware notch draws its own
+   physical curves, so this synthetic art would be redundant/wrong there. */
+:root[data-notchtap-mode="hud"]
+  .card-root
+  .card-assembly:not(.bare):not(:has(.below-block))
+  .flank-left,
+:root[data-notchtap-mode="hud"] .card-root .card-assembly.exiting:not(.bare) .flank-left {
+  border-bottom-left-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 2), 20px);
+}
+:root[data-notchtap-mode="hud"]
+  .card-root
+  .card-assembly:not(.bare):not(:has(.below-block))
+  .flank-right,
+:root[data-notchtap-mode="hud"] .card-root .card-assembly.exiting:not(.bare) .flank-right {
+  border-bottom-right-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 2), 20px);
+}
+
+/* the top concave "gill" corners themselves — see the big comment block
+   above for the technique and why. `.notch-gill` is the shared box
+   (hidden by default, everywhere except HUD idle/exiting); `-left`/
+   `-right` each own their position + gradient. Anchored to
+   `.card-assembly`'s OWN edges (`left`/`right: -R`, not anything flank-
+   width-derived), so they track every width change (idle vs exiting,
+   `--card-scale`, appearance radius) for free. `z-index` left at auto —
+   they paint outside the flank's own box, over empty space, so there is
+   nothing in this stacking context for them to compete with even during
+   the goal-celebration burst (`.card-assembly::after`, `inset: -60px`,
+   `z-index: 0` — that only ever plays while a below-block is mounted,
+   i.e. exactly when these are hidden). */
+.card-root .notch-gill {
+  display: none;
+  position: absolute;
+  top: 0;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+}
+/* 2026-07-23 (operator minimal-notch spec, Task 1.1): `:not(.bare)`
+   RELAXED here (was excluded, like the flank-radius rule above it still
+   is) — the operator's complaint was that bare/minimal reads as a flat
+   square slab, not a real notch; these gills are exactly the concave-top
+   art that's missing there. This is safe to relax where the flank-radius
+   rule above is NOT: these gills are anchored to `.card-assembly`'s OWN
+   left/right edges (`.notch-gill-left`/`-right` below), never the
+   flank's box — and in bare mode `--cw` equals the cutout width exactly
+   (above), so the two 1fr flank columns collapse to 0 width and
+   `.card-assembly`'s own edges already coincide with the cutout's. The
+   gills need no bare-specific positioning at all; only `display: none`
+   was hiding them. `.exiting` keeps its own `:not(.bare)` (harmless,
+   since `.exiting`/`.bare` never coexist — StatusRailCard.tsx's `bare`
+   doc). */
+:root[data-notchtap-mode="hud"] .card-root .card-assembly:not(:has(.below-block)) .notch-gill,
+:root[data-notchtap-mode="hud"] .card-root .card-assembly.exiting:not(.bare) .notch-gill {
+  display: block;
+}
+.card-root .notch-gill-left {
+  left: -10px;
+  background: radial-gradient(circle at bottom left, transparent 10px, #000 10px);
+}
+.card-root .notch-gill-right {
+  right: -10px;
+  background: radial-gradient(circle at bottom right, transparent 10px, #000 10px);
+}
+
+/* the notch cutout itself: real hardware empty space in notch mode
+   (nothing painted — the hardware notch already reads as black), an
+   app-drawn pure-#000 rectangle in HUD mode (Decision 6 — the shape is
+   identical in both modes, so a notchless mac must draw its own cutout
+   rather than branch the shape). `.card-assembly`'s middle grid column
+   is already sized to `--notchtap-cutout-width`, so this block only
+   needs to fill that cell — no separate width/position math. */
+.card-root .synthetic-cutout {
+  grid-column: 2;
+  grid-row: 1;
+  display: none;
+}
+:root[data-notchtap-mode="hud"] .card-root .synthetic-cutout {
+  display: block;
+  background: #000;
+}
+/* 2026-07-23 (operator minimal-notch spec, Task 1.1): bare/minimal's
+   bottom-outer rounding — the ROUNDING LAW above says the cutout's base
+   corners stay perfectly square everywhere else, because normally the
+   flanks (or the below-block) carry the outer rounding instead. Bare
+   mode breaks that premise: the flanks ARE painted transparent there
+   (rule above), so rounding them is a no-op — the cutout rectangle is
+   the ONLY visible shape, and it needs to read as a real notch (rounded
+   bottom, like the flank's own convex round elsewhere in this file).
+   `:not(:has(.below-block))` matches the same law's own DOM-presence
+   discipline: the instant a below-block mounts (a showing card, or the
+   hover peek — `.bare:has(.idle-peek)` above), this stops applying and
+   the cutout's base corners snap back to square, handing bottom-rounding
+   duty to that below-block instead, exactly as the law requires — no
+   double-curve gap. */
+:root[data-notchtap-mode="hud"] .card-root .card-assembly.bare:not(:has(.below-block)) .synthetic-cutout {
+  border-bottom-left-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 2), 20px);
+  border-bottom-right-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 2), 20px);
+}
+
+/* the idle face — a minimal notchtap-branded face (two eyes + a soft
+   smile) that IdleFace.tsx fades into the CENTER of the idle rail after
+   a few seconds of true idle. Shares `.synthetic-cutout`'s own grid cell
+   and its "always render, CSS decides" idiom (Decision 6, comment above):
+   hidden by default, painted only in HUD mode — in real notch mode this
+   cell sits behind the physical camera housing, so there's nothing to
+   gain by painting it there, same reasoning as the cutout rectangle
+   itself. Stacks on top of `.synthetic-cutout` for free (later in DOM
+   order, same stacking context — `.card-assembly` already sets
+   `isolation: isolate`, see its own rule above). `pointer-events: none`
+   so the face can never intercept the rust-derived hover tracking area;
+   `aria-hidden` (component) covers assistive tech. */
+.card-root .idle-face {
+  grid-column: 2;
+  grid-row: 1;
+  display: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  pointer-events: none;
+}
+:root[data-notchtap-mode="hud"] .card-root .idle-face {
+  display: flex;
+}
+
+.card-root .idle-face-eyes {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.card-root .idle-face-eye {
+  width: 3px;
+  height: 4px;
+  border-radius: 1.5px;
+  background: rgba(245, 247, 250, 0.92);
+}
+
+.card-root .idle-face-mouth {
+  display: block;
+  overflow: visible;
+}
+.card-root .idle-face-mouth path {
+  fill: none;
+  stroke: rgba(245, 247, 250, 0.75);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.card-root .below-block {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  position: relative;
+  box-sizing: border-box;
+  overflow: hidden;
+  width: 100%;
+  min-width: 0; /* see the flank rule above — same grid-blowout guard */
+  /* opacity (the Settings Glass/Default/Solid control, App.tsx
+     --card-opacity) applies ONLY here — the flanks and synthetic cutout
+     above are the shell and stay solid #000 so the drawn shape matches
+     the hardware notch (plan 091 decision; re-scoped by plan 098). */
+  background: rgba(0, 0, 0, var(--card-opacity, 1));
+  color: #f5f7fa;
+  /* depth now comes from the single `.card-assembly` drop-shadow above
+     (composite shape, no double shadow) — removed the per-block box-shadow. */
+  /* the cutout's base corners stay square at this seam too (rounding law
+     above) — only the two BOTTOM corners round; no top-radius here. */
+  border-bottom-left-radius: var(--card-radius, 14px);
+  border-bottom-right-radius: var(--card-radius, 14px);
+}
+
+/* plan 096 (079 item 8, part (c)): the cmux accent's hairline — a plain
+   `border-top`, not a `::before`/`::after` pseudo-element, because
+   `.news-shade::before` already claims `.below-block`'s `::before` for
+   its background wash. Lives on `.below-block` (content chrome), never
+   on `.card-assembly` (the shell that owns the priority accent) — origin
+   and priority are orthogonal and must never share a paint channel; this
+   rule touches none of the `--accent`/`--accent-soft` vars the priority
+   edge (`.compact::before`, `.stamp`, `.ttl-fill`/`.ttl-seg.done`) reads
+   from. */
+.card-root .below-block.cmux-origin {
+  border-top: 1px solid rgba(240, 196, 106, 0.55);
+}
+
+/* priority accent — a single named color per tier, consumed by the
+   compact row's accent edge (.compact::before), the stamp pill, and the
+   ttl-bar's fill/done segments (stories merge (2026-07-24); formerly the separate
+   track rail). deliberately NOT signal-driven
+   (goal/red_card share "high" accent with any other high-priority
+   source) — see lib/presentation.ts's stamp table for where signal does
+   change what's shown. */
+.card-root .card-assembly.low {
+  --accent: #aab3bd;
+  --accent-soft: rgba(170, 179, 189, 0.2);
+}
+
+.card-root .card-assembly.medium {
+  --accent: #55d6bd;
+  --accent-soft: rgba(85, 214, 189, 0.24);
+}
+
+.card-root .card-assembly.high {
+  --accent: #ff6b57;
+  --accent-soft: rgba(255, 107, 87, 0.28);
+}
+

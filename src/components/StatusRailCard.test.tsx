@@ -2038,8 +2038,17 @@ describe("StatusRailCard", () => {
 // `celebrationStacking.test.tsx`'s own comment on `readSourceCss` for why
 // (Vite's css plugin intercepts `.css` imports under vitest's SSR-consumer
 // transform and hands back an empty module).
+// css split (2026-07-24): overlay-card.css split into src/overlay/*.css chunks, pulled
+// back together via plain `@import "./relative.css";` lines — inlined here
+// so this still returns the full literal stylesheet text callers expect,
+// unchanged from before the split (imports are one level deep; no chunk
+// file itself contains an @import).
 function readSourceCss(relativePath: string): string {
-  return readFileSync(fileURLToPath(new NodeURL(relativePath, import.meta.url)), "utf-8");
+  const url = new NodeURL(relativePath, import.meta.url);
+  const raw = readFileSync(fileURLToPath(url), "utf-8");
+  return raw.replace(/^@import\s+["'](\.[^"']+)["'];\s*$/gm, (_match, importPath: string) =>
+    readFileSync(fileURLToPath(new NodeURL(importPath, url)), "utf-8"),
+  );
 }
 
 // A variant of `celebrationStacking.test.tsx`/`IdleHoverPeek.test.tsx`'s own
