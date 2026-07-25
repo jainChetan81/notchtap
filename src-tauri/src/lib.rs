@@ -135,6 +135,15 @@ pub fn run() {
         Err(e) => {
             tracing::error!("{e}");
             eprintln!("notchtap: {e}");
+            // this process is a login item with no terminal attached in
+            // the normal case — `eprintln!`/`tracing::error!` above are
+            // both invisible to a user who launched it from the Dock or
+            // at login. A blocking native dialog is the only way this
+            // failure is ever actually seen, so it must be shown BEFORE
+            // the exit below, not logged only.
+            show_boot_error_dialog(&format!(
+                "notchtap couldn't start: config.toml is malformed ({e})"
+            ));
             std::process::exit(1);
         }
     };
@@ -442,6 +451,52 @@ pub fn run() {
                 }
 
                 panel.set_event_handler(Some(hover_handler.as_ref()));
+
+                // Generic hover-latch reset (M5): plan 097 reset
+                // `was_hovered` back to false after the dismiss/skip
+                // hotkeys specifically, because those replace the visible
+                // card with no mouse event firing to trip the
+                // transitions-only gate naturally. That fix enumerated
+                // caller sites and missed two others that also replace the
+                // visible item with no mouse event: an idle-peek card
+                // promoting under an already-hovering cursor (the idle
+                // rect and the new Showing rect can both contain the
+                // cursor, so `hovered` reads true before AND after the
+                // promotion — the gate sees no transition and
+                // `hover_enter` never fires for the new item, so the TTL
+                // hover-pause stays dead and the card rotates out under a
+                // moving cursor), and the settings window's `skip_current`
+                // command (which mutates through `Engine::apply`, nowhere
+                // near this AppKit event handler at all).
+                //
+                // Rather than chase every current and future caller that
+                // can change the visible item, listen for the one channel
+                // EVERY such change already flows through regardless of
+                // origin: the `slot-state` wire event itself. Whenever the
+                // emitted item's id differs from the last one observed,
+                // force `was_hovered` back to false — the transitions-only
+                // gate then treats the cursor's hover state as unknown
+                // again, so the next real mouse-move (the cursor is, per
+                // the bug report, already moving in the case this exists
+                // to fix) recomputes fresh for the new item instead of
+                // staying latched true from the old one and never firing.
+                // Same accepted residual as plan 097's resets: a perfectly
+                // stationary cursor doesn't recompute until it moves 1px.
+                {
+                    use tauri::Listener;
+                    let was_hovered = was_hovered.clone();
+                    let last_visible_id: Arc<StdMutex<Option<String>>> =
+                        Arc::new(StdMutex::new(None));
+                    app.handle()
+                        .listen(crate::event::SLOT_STATE_EVENT, move |event| {
+                            let new_id = visible_id_from_slot_state_payload(event.payload());
+                            let mut last = last_visible_id.lock().unwrap();
+                            if *last != new_id {
+                                *last = new_id;
+                                *was_hovered.lock().unwrap() = false;
+                            }
+                        });
+                }
             }
 
             // v3.6 spec §7.2: survive Spaces switches and fullscreen apps.
@@ -653,25 +708,44 @@ pub fn run() {
                 // blocking_lock is safe here, same as the tray menu
                 // handler below: this callback runs off the tokio runtime,
                 // not on it.
+                //
+                // Ordering fix: the global is planted BEFORE the wire emit
+                // fires, not after. Emitting first left a real gap — a
+                // webview that finishes mounting its `slot-state` listener
+                // between the emit and the eval call would see neither (the
+                // emit already fired with no listener yet, and the global
+                // isn't set yet either), landing on `undefined` until the
+                // next real content change. Planting first means the two
+                // now overlap instead: a late-mounting react reads the
+                // global either way, and an already-mounted listener still
+                // gets the emit a moment later — the frontend's own dedup
+                // is what makes that harmless double-land a no-op.
+                // `current_slot_state_blocking`/`status_snapshot_blocking`
+                // (engine.rs) are the non-emitting halves that make this
+                // ordering possible; `emit_slot_state`/`emit_status_state`
+                // below are then called explicitly, after the eval.
                 {
-                    let current_state = engine.emit_current_blocking();
+                    let current_state = engine.current_slot_state_blocking();
                     let state_json =
                         serde_json::to_string(&current_state).unwrap_or_else(|_| "null".into());
                     let safe_json = escape_for_eval_splice(&state_json);
                     let _ = webview.eval(format!("window.__NOTCHTAP_SLOT_STATE__ = {safe_json};"));
+                    crate::event::emit_slot_state(&app_handle, current_state);
                 }
 
                 // plan 034: the status rail gets the identical dual-path
                 // race shield — eval-planted global for late-mounting
                 // react, one emit for an already-registered listener, same
-                // escaping helper.
+                // escaping helper, same plant-before-emit ordering as the
+                // slot-state block above.
                 {
-                    let current_status = engine.emit_current_status_blocking();
+                    let current_status = engine.status_snapshot_blocking();
                     let status_json =
                         serde_json::to_string(&current_status).unwrap_or_else(|_| "null".into());
                     let safe_json = escape_for_eval_splice(&status_json);
                     let _ =
                         webview.eval(format!("window.__NOTCHTAP_STATUS_STATE__ = {safe_json};"));
+                    crate::status::emit_status_state(&app_handle, current_status);
                 }
 
                 // Double-shield the initial appearance values the same way as
@@ -755,6 +829,52 @@ pub fn run() {
         })
         .run(tauri::generate_context!())
         .expect("error while running notchtap");
+}
+
+/// Blocking native error dialog for boot-time failures that happen
+/// BEFORE any window (or even the tauri runtime) exists — `Config::load`
+/// failing is the only caller today. This process is normally a login
+/// item with no attached terminal, so `tracing::error!`/`eprintln!` are
+/// invisible to the user; without this, a malformed `config.toml` looks
+/// like the app silently refusing to launch, with no way to learn why.
+///
+/// No new dependency: neither `rfd` nor `tauri-plugin-dialog` is in
+/// Cargo.toml, and adding one is out of scope here (see this fix's own
+/// instructions) — `osascript` is a system binary already reachable via
+/// `std::process::Command`, the same mechanism `open_current_story`
+/// already uses to shell out to `/usr/bin/open`. `.status()` blocks this
+/// thread until the dialog is dismissed, which is exactly what "shown
+/// BEFORE the exit" requires — `run()` calls this and then
+/// `std::process::exit(1)` immediately after, so there is nothing else
+/// for this thread to do in the meantime anyway.
+#[cfg(target_os = "macos")]
+fn show_boot_error_dialog(message: &str) {
+    let script = format!(
+        "display dialog \"{}\" with title \"notchtap\" buttons {{\"Quit\"}} default button \"Quit\" with icon stop",
+        escape_for_osascript(message)
+    );
+    // best-effort: if osascript itself can't be spawned (e.g. a stripped
+    // CI sandbox with no Foundation/Carbon frameworks reachable), the
+    // process still exits below via the caller's own std::process::exit —
+    // this dialog is a courtesy, not the actual failure signal.
+    let _ = std::process::Command::new("/usr/bin/osascript")
+        .arg("-e")
+        .arg(&script)
+        .status();
+}
+
+#[cfg(not(target_os = "macos"))]
+fn show_boot_error_dialog(_message: &str) {}
+
+/// Escapes a string for embedding inside an AppleScript double-quoted
+/// string literal (the `display dialog "..."` argument above): backslash
+/// and double-quote are AppleScript's own escape-needing characters
+/// inside a quoted string, same rule as any shell-adjacent quoting —
+/// config-load error text can contain arbitrary path/TOML-parser text
+/// (e.g. a quoted TOML key), so this must not be skipped.
+#[cfg(target_os = "macos")]
+fn escape_for_osascript(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
 }
 
 /// Makes a serde_json string safe to splice into eval'd JS source:
@@ -963,6 +1083,24 @@ fn emit_hover_changed_if_transitioned(
     });
 }
 
+/// The pure half of the generic hover-latch reset (M5, see the
+/// `slot-state` listener registered alongside `hover_handler` in
+/// `setup`, above): extracts the visible item's `id` from a raw
+/// `slot-state` wire payload (`SlotState::Showing`'s `id` field —
+/// `crate::event::SLOT_STATE_EVENT`'s JSON), or `None` for `SlotState::
+/// Empty` or a payload that fails to parse at all. Factored out of the
+/// listener closure specifically so this parsing step is unit-testable
+/// without a live window/AppKit event handler — the listener itself
+/// (a mutex compare-and-swap around this call) is not.
+#[cfg(target_os = "macos")]
+fn visible_id_from_slot_state_payload(payload: &str) -> Option<String> {
+    serde_json::from_str::<serde_json::Value>(payload)
+        .ok()?
+        .get("id")
+        .and_then(|id| id.as_str())
+        .map(str::to_string)
+}
+
 // notch-morph nudge (plan §3.5): anchor to the reported cutout when we have
 // notch-precise geometry, else fall back to screen-center (covers hud mode,
 // and notch mode when the shim couldn't report a cutout).
@@ -1144,7 +1282,12 @@ fn open_current_story<R: tauri::Runtime>(engine: &Engine<R>) {
     // argument is the parser's own serialization — what was validated is
     // exactly what executes. The child is reaped off-thread: a dropped,
     // un-waited Child is a zombie until this 24/7 process exits.
-    match std::process::Command::new("open")
+    // absolute path (never a bare "open" resolved through $PATH): this
+    // process is a 24/7 login item, so trusting the ambient PATH to
+    // still resolve to the real system `open` is unnecessary risk for
+    // zero benefit — /usr/bin/open is the fixed, non-configurable
+    // location on every supported macOS version.
+    match std::process::Command::new("/usr/bin/open")
         .arg("-u")
         .arg(&normalized)
         .spawn()
@@ -1393,6 +1536,75 @@ mod tests {
         ] {
             assert_eq!(openable_http_url(raw), None, "should reject: {raw:?}");
         }
+    }
+
+    #[test]
+    fn visible_id_from_slot_state_payload_extracts_the_showing_id() {
+        let state = SlotState::Showing {
+            id: uuid::Uuid::new_v4(),
+            title: "t".to_string(),
+            body: "b".to_string(),
+            event_type: EventType::Generic,
+            priority: Priority::Medium,
+            signal: EventSignal::Generic,
+            origin: SourceKind::Manual,
+            expanded: false,
+            source: None,
+            category: None,
+            published_at_ms: None,
+            link: None,
+            subtitle: None,
+            details: Vec::new(),
+            queue_total: 1,
+            queue_done: 0,
+            ttl_ms: 8000,
+            remaining_ms: 8000,
+            espn: None,
+        };
+        let SlotState::Showing { id, .. } = &state else {
+            unreachable!()
+        };
+        let expected = id.to_string();
+        let payload = serde_json::to_string(&state).unwrap();
+
+        assert_eq!(
+            visible_id_from_slot_state_payload(&payload),
+            Some(expected)
+        );
+    }
+
+    #[test]
+    fn visible_id_from_slot_state_payload_is_none_for_empty() {
+        let payload = serde_json::to_string(&SlotState::Empty).unwrap();
+        assert_eq!(visible_id_from_slot_state_payload(&payload), None);
+    }
+
+    #[test]
+    fn visible_id_from_slot_state_payload_is_none_for_malformed_json() {
+        assert_eq!(visible_id_from_slot_state_payload("not json"), None);
+        assert_eq!(visible_id_from_slot_state_payload(""), None);
+        assert_eq!(visible_id_from_slot_state_payload("{}"), None);
+    }
+
+    #[test]
+    fn escape_for_osascript_escapes_backslash_and_quote() {
+        // config-load error text can carry a quoted TOML key or a windows-
+        // style path segment (backslash) verbatim — both must be escaped
+        // or they'd break out of the AppleScript string literal
+        // `show_boot_error_dialog` splices this into.
+        assert_eq!(
+            escape_for_osascript(r#"bad key "port" at line 3"#),
+            r#"bad key \"port\" at line 3"#
+        );
+        assert_eq!(escape_for_osascript(r"C:\config"), r"C:\\config");
+    }
+
+    #[test]
+    fn escape_for_osascript_leaves_plain_text_untouched() {
+        assert_eq!(
+            escape_for_osascript("config.toml is malformed (missing field)"),
+            "config.toml is malformed (missing field)"
+        );
     }
 
     #[test]

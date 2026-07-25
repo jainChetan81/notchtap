@@ -1,8 +1,12 @@
-/* ==== news card v5: category system (shader + masthead + pills) ==== */
+/* ==== news card v5: category system (shader + masthead + pills) ====
+   O3: sports/business converged onto --overlay-green/--overlay-amber (same
+   values, color-mix in place of the hand-computed rgba alphas) — the other
+   four categories have no shared-inventory token to point at yet, so they
+   keep their own literal hex/rgba pairs unchanged. */
 .card-root .cat-politics { --cat: #7c9df5; --cat-deep: rgba(124,157,245,0.16); --cat-pill: rgba(124,157,245,0.14); }
 .card-root .cat-tech     { --cat: #5fd4e8; --cat-deep: rgba(95,212,232,0.15);  --cat-pill: rgba(95,212,232,0.13); }
-.card-root .cat-sports   { --cat: #7fe08d; --cat-deep: rgba(127,224,141,0.15); --cat-pill: rgba(127,224,141,0.13); }
-.card-root .cat-business { --cat: #f0c46a; --cat-deep: rgba(240,196,106,0.15); --cat-pill: rgba(240,196,106,0.13); }
+.card-root .cat-sports   { --cat: var(--overlay-green); --cat-deep: color-mix(in srgb, var(--overlay-green) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-green) 13%, transparent); }
+.card-root .cat-business { --cat: var(--overlay-amber); --cat-deep: color-mix(in srgb, var(--overlay-amber) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-amber) 13%, transparent); }
 .card-root .cat-world    { --cat: #c99df0; --cat-deep: rgba(201,157,240,0.15); --cat-pill: rgba(201,157,240,0.13); }
 .card-root .cat-generic  { --cat: #aab3bd; --cat-deep: rgba(170,179,189,0.10); --cat-pill: rgba(170,179,189,0.10); }
 
@@ -50,7 +54,9 @@
 .card-root .masthead {
   display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0;
   font: 700 8px/1 var(--font-mono);
-  letter-spacing: 0.14em; text-transform: uppercase;
+  /* O9: was 0.14em — collapsed onto the 3-step 0.08/0.12/0.16em scale
+     every 8-9px mono uppercase label in the overlay now shares. */
+  letter-spacing: 0.16em; text-transform: uppercase;
   color: rgba(255, 255, 255, 0.38);
 }
 .card-root .masthead::after { content: ""; flex: 1; height: 1px; background: rgba(255,255,255,0.12); }
@@ -164,8 +170,11 @@
   border-top: 1px solid rgba(255, 255, 255, 0.1);
 }
 .card-root .manifest-label {
-  font: 700 8.5px/1 var(--font-mono);
-  letter-spacing: 0.1em; text-transform: uppercase;
+  /* O9: was 8.5px — unified onto .detail-label's 8px (manifest.css), the
+     same field-label role in a different render (compact vs expanded). */
+  font: 700 8px/1 var(--font-mono);
+  /* O9: was 0.1em — collapsed onto the 3-step 0.08/0.12/0.16em scale. */
+  letter-spacing: 0.08em; text-transform: uppercase;
   color: var(--cat);
   margin-bottom: 7px;
 }
@@ -173,6 +182,15 @@
   font-size: 12px;
   line-height: 1.5;
   color: rgba(255, 255, 255, 0.85);
+  /* M13: unbounded before — a worst-case server payload (body up to
+     ~500 chars, or a long news summary) could push the manifest block's
+     content past the fixed 300px window, clipping the ttl-bar floor
+     below it (`.below-block`'s own `overflow: hidden` just hard-crops
+     instead). Same -webkit-box clamp idiom as `.title.headline`. */
+  display: -webkit-box;
+  -webkit-line-clamp: 6;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 /* `.manifest-meta` (source/published-time/category for news; the source
    label for generic) was removed in the 2026-07-24 declutter — that
@@ -187,7 +205,8 @@
 }
 .card-root .manifest-hint {
   font: 700 9px/1 var(--font-mono);
-  letter-spacing: 0.06em;
+  /* O9: was 0.06em — collapsed onto the 3-step 0.08/0.12/0.16em scale. */
+  letter-spacing: 0.08em;
   color: rgba(255, 255, 255, 0.4);
 }
 

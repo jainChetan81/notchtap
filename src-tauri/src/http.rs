@@ -152,6 +152,36 @@ pub async fn bind_listener(port: u16) -> std::io::Result<tokio::net::TcpListener
     tokio::net::TcpListener::bind(("127.0.0.1", port)).await
 }
 
+/// Strips a trailing `:<port>` from a `Host` header value, handling the
+/// IPv6 bracket form (`[::1]:9789`) as well as the plain `host:port`
+/// form. A value with no colon (or an IPv6 literal with no port suffix)
+/// is returned unchanged.
+fn host_header_without_port(host_header: &str) -> &str {
+    if let Some(rest) = host_header.strip_prefix('[') {
+        // IPv6 literal: `[::1]` or `[::1]:9789` — the host is everything
+        // up to the closing bracket.
+        return rest.split(']').next().unwrap_or(rest);
+    }
+    match host_header.rsplit_once(':') {
+        // only split on a trailing numeric port — a bare IPv6 literal
+        // with no brackets (unusual in a Host header, but defensive)
+        // contains colons that are not a port separator.
+        Some((host, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => {
+            host
+        }
+        _ => host_header,
+    }
+}
+
+/// See the DNS-rebinding comment at the call site in `notify_handler`:
+/// only these three loopback literals are accepted, port suffix ignored.
+fn is_loopback_host(host_header: &str) -> bool {
+    matches!(
+        host_header_without_port(host_header),
+        "127.0.0.1" | "localhost" | "::1"
+    )
+}
+
 async fn notify_handler<R: tauri::Runtime>(
     State(state): State<AppState<R>>,
     headers: HeaderMap,
@@ -166,6 +196,30 @@ async fn notify_handler<R: tauri::Runtime>(
         return Err(HttpError::BadRequest(
             "content-type must be application/json",
         ));
+    }
+
+    // DNS-rebinding defense: the loopback bind (`bind_listener`, above)
+    // stops a remote attacker from reaching this socket at all, but a
+    // page served from a *legitimate* remote origin can rebind its own
+    // hostname's DNS to 127.0.0.1 after the browser's same-origin checks
+    // already passed, then issue a same-origin `fetch` that lands here
+    // over a genuinely local TCP connection. The one thing that request
+    // can't forge convincingly is the `Host` header — a browser sets it
+    // from the URL's origin, which is the attacker's domain, not
+    // `127.0.0.1`. The legitimate `notchtap` CLI and cmux relay always
+    // talk to `http://127.0.0.1:<port>/notify`, so they always send a
+    // loopback Host. Reject anything else (including a missing header).
+    let host_header = headers
+        .get(axum::http::header::HOST)
+        .and_then(|v| v.to_str().ok());
+    match host_header {
+        Some(h) if is_loopback_host(h) => {}
+        _ => {
+            tracing::warn!(host = ?host_header, "notify: rejected — host header is not a loopback literal");
+            return Err(HttpError::BadRequest(
+                "host header must be a loopback literal",
+            ));
+        }
     }
 
     let req: NotifyRequest = serde_json::from_slice(&body).map_err(|e| {
@@ -307,10 +361,14 @@ mod tests {
     }
 
     fn json_request(body: &str) -> Request<Body> {
+        // a hand-built `Request` (unlike a real hyper client) doesn't get
+        // a `Host` header for free, so every test that expects to reach
+        // past the Host check sets a loopback one explicitly here.
         Request::builder()
             .method("POST")
             .uri("/notify")
             .header("content-type", "application/json")
+            .header("host", "127.0.0.1:9789")
             .body(Body::from(body.to_string()))
             .unwrap()
     }
@@ -363,6 +421,78 @@ mod tests {
             .method("POST")
             .uri("/notify")
             .header("content-type", "text/plain")
+            .body(Body::from(r#"{"title":"t","body":"b"}"#))
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    // --- M1: Host-header validation (DNS-rebinding defense) ---
+
+    #[test]
+    fn is_loopback_host_accepts_the_three_loopback_literals_with_or_without_port() {
+        for host in ["127.0.0.1", "127.0.0.1:9789", "localhost", "localhost:9789"] {
+            assert!(is_loopback_host(host), "{host:?} should be accepted");
+        }
+        // IPv6 loopback, bracketed (the only valid Host-header form for a
+        // literal IPv6 address), with and without a port suffix.
+        for host in ["[::1]", "[::1]:9789"] {
+            assert!(is_loopback_host(host), "{host:?} should be accepted");
+        }
+    }
+
+    #[test]
+    fn is_loopback_host_rejects_foreign_hosts() {
+        for host in [
+            "attacker-domain",
+            "attacker-domain:9789",
+            "evil.com",
+            "127.0.0.1.evil.com",
+            "0.0.0.0",
+            "[::2]",
+        ] {
+            assert!(!is_loopback_host(host), "{host:?} should be rejected");
+        }
+    }
+
+    #[tokio::test]
+    async fn valid_loopback_host_header_passes() {
+        let app = router(test_state(SingleSlotQueue::new(50)));
+        let request = Request::builder()
+            .method("POST")
+            .uri("/notify")
+            .header("content-type", "application/json")
+            .header("host", "127.0.0.1:9789")
+            .body(Body::from(r#"{"title":"t","body":"b"}"#))
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn foreign_host_header_is_rejected() {
+        // the DNS-rebinding scenario: a rebound browser's same-origin
+        // fetch still carries the attacker's own domain as Host, even
+        // though the TCP connection lands on loopback.
+        let app = router(test_state(SingleSlotQueue::new(50)));
+        let request = Request::builder()
+            .method("POST")
+            .uri("/notify")
+            .header("content-type", "application/json")
+            .header("host", "attacker-domain:9789")
+            .body(Body::from(r#"{"title":"t","body":"b"}"#))
+            .unwrap();
+        let response = app.oneshot(request).await.unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    }
+
+    #[tokio::test]
+    async fn missing_host_header_is_rejected() {
+        let app = router(test_state(SingleSlotQueue::new(50)));
+        let request = Request::builder()
+            .method("POST")
+            .uri("/notify")
+            .header("content-type", "application/json")
             .body(Body::from(r#"{"title":"t","body":"b"}"#))
             .unwrap();
         let response = app.oneshot(request).await.unwrap();

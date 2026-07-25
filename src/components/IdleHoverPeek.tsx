@@ -331,7 +331,7 @@ function ScorecardRevealContent({ live }: { live: LiveMatchSummary }) {
           <span className="live-dot" aria-hidden="true" />
           Live
         </span>
-        <span className="clock-pill">{live.minute}</span>
+        <span className="chip clock-pill">{live.minute}</span>
       </div>
       <div className="idle-reveal-label">{live.label}</div>
     </div>

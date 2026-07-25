@@ -265,15 +265,26 @@
   animation: red-alert 920ms steps(1, end) 2;
 }
 
+/* H4 (phantom celebration shadow): the rest endpoints used to restate
+   the card's OLD per-block resting shadow (`0 14px 32px rgba(0,0,0,0.32)`)
+   — that shadow hasn't been the card's real resting depth since depth
+   moved onto `.card-assembly`'s own `filter: drop-shadow(...)` (see that
+   rule's own comment); the real rest value is no shadow at all. Restating
+   the stale value here meant every red-card alert snapped a phantom
+   second shadow on at frame 0 and off at frame end, on top of the
+   filter's own drop-shadow. `steps(1, end)` (the animation's own timing
+   function) makes this a hard discrete swap either way — no interpolation
+   to preserve by keeping a non-`none` rest value. The 50% frame (the
+   actual strobe) is untouched. */
 @keyframes red-alert {
   0%,
   100% {
-    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+    box-shadow: none;
   }
   50% {
     box-shadow:
       0 14px 32px rgba(0, 0, 0, 0.32),
-      0 0 0 2px #ff6b57,
+      0 0 0 2px var(--overlay-coral),
       0 0 26px 4px rgba(255, 107, 87, 0.65);
   }
 }

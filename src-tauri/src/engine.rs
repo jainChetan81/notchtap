@@ -61,7 +61,11 @@ impl<T: Clone + PartialEq> AmbientSlot<T> {
     /// never the queue).
     fn update(&self, value: Option<T>, wake: &tokio::sync::Notify) {
         let changed = {
-            let mut guard = self.inner.lock().unwrap();
+            // poison-tolerant (codebase convention, see settings.rs): a
+            // panic while a poller holds this lock must not wedge every
+            // other ambient-channel caller behind a poisoned Mutex —
+            // recover the inner guard instead of propagating the panic.
+            let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
             if *guard == value {
                 false
             } else {
@@ -78,7 +82,8 @@ impl<T: Clone + PartialEq> AmbientSlot<T> {
     /// already follows: read the ambient handles BEFORE locking the
     /// queue, so nobody ever holds both locks at once.
     fn snapshot(&self) -> Option<T> {
-        self.inner.lock().unwrap().clone()
+        // poison-tolerant, same rationale as `update` above.
+        self.inner.lock().unwrap_or_else(|e| e.into_inner()).clone()
     }
 }
 
@@ -196,7 +201,13 @@ impl<R: tauri::Runtime> Engine<R> {
     /// `connectors`). Clones the guarded value out; `ConnectorHealth` is
     /// `Copy`.
     pub fn telegram_health(&self) -> ConnectorHealth {
-        *self.telegram_health.lock().unwrap()
+        // poison-tolerant (codebase convention, see settings.rs): a panic
+        // in the notifier worker while it holds this lock must not wedge
+        // the settings window's health read behind a poisoned Mutex.
+        *self
+            .telegram_health
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
     }
 
     /// Read accessor for the shared history store, mirroring
@@ -216,21 +227,28 @@ impl<R: tauri::Runtime> Engine<R> {
     /// Propagating mutation — async callers (http, settings, pollers).
     /// Reads Instant::now() ONCE (the system's only wall-clock read for
     /// queue time), locks, runs `f`, captures slot_state_if_changed,
-    /// unlocks, notify_waiters, emits. Emit stays after unlock — the
-    /// known deferred reordering (plans/README.md); now one site.
-    // The seam this doc comment predicted before it had a second caller
-    // (`accept` was the only async mutation): plan 121's `clear_queue`/
-    // `skip_current` settings commands are the next async mutation sites,
-    // walking through this same door rather than hand-rolling their own
-    // lock/mutate/wake/emit — no bespoke Engine wrapper method needed for
-    // either, `apply` IS the wrapper.
+    /// notify_waiters, emits, THEN unlocks — matching the rotation loop's
+    /// own precedent (`spawn_rotation`, below) of emitting while still
+    /// holding the queue lock. This used to emit after unlock, which left
+    /// a gap: two concurrent `apply`/`accept` calls could compute their
+    /// slot_change under the lock, unlock, and then race to call
+    /// `emit_slot_state` in whichever order the scheduler happened to
+    /// resume them — a preempted caller could deliver a stale S1 on the
+    /// wire after a newer S2 had already landed, parking the frontend on
+    /// stale/ghost state until the next content change (the "known
+    /// deferred reordering" this comment used to describe). Emitting
+    /// under the lock serializes emission order with lock-acquisition
+    /// order (the queue mutex is the only ordering authority here), so
+    /// that race is closed. This is safe specifically because
+    /// `emit_slot_state`/`app.emit` is a synchronous, non-blocking post
+    /// (no `.await` anywhere in this scope) — the exact property that
+    /// already let the rotation loop emit under its own lock; do not add
+    /// an `.await` inside this block.
     pub async fn apply<T>(&self, f: impl FnOnce(&mut SingleSlotQueue, Instant) -> T) -> T {
         let now = Instant::now();
-        let (out, slot_change) = {
-            let mut q = self.queue.lock().await;
-            let out = f(&mut q, now);
-            (out, q.slot_state_if_changed())
-        };
+        let mut q = self.queue.lock().await;
+        let out = f(&mut q, now);
+        let slot_change = q.slot_state_if_changed();
         self.wake.notify_waiters();
         if let Some(state) = slot_change {
             emit_slot_state(&self.app, state);
@@ -238,8 +256,9 @@ impl<R: tauri::Runtime> Engine<R> {
         out
     }
 
-    /// Propagating mutation — main-thread callers (tray, hotkeys).
-    /// Same body with blocking_lock; keeps toggle_pause's
+    /// Propagating mutation — main-thread callers (tray, hotkeys). Same
+    /// body with blocking_lock, same under-the-lock emit as `apply`
+    /// above (see its doc comment for why); keeps toggle_pause's
     /// debug_assert!(Handle::try_current().is_err()) guard.
     pub fn apply_blocking<T>(&self, f: impl FnOnce(&mut SingleSlotQueue, Instant) -> T) -> T {
         // menu events and global-shortcut handlers arrive on the main
@@ -250,11 +269,9 @@ impl<R: tauri::Runtime> Engine<R> {
             "tray/hotkey handlers must arrive off the tokio runtime; blocking_lock would deadlock"
         );
         let now = Instant::now();
-        let (out, slot_change) = {
-            let mut q = self.queue.blocking_lock();
-            let out = f(&mut q, now);
-            (out, q.slot_state_if_changed())
-        };
+        let mut q = self.queue.blocking_lock();
+        let out = f(&mut q, now);
+        let slot_change = q.slot_state_if_changed();
         self.wake.notify_waiters();
         if let Some(state) = slot_change {
             emit_slot_state(&self.app, state);
@@ -294,7 +311,7 @@ impl<R: tauri::Runtime> Engine<R> {
     ) -> Result<(), QueueError> {
         let to_offer = event.clone();
         let now = Instant::now();
-        let slot_change = {
+        {
             let mut q = self.queue.lock().await;
             let enqueue_result = if bypass_pause_when_slot_empty {
                 q.enqueue_test(event, now)
@@ -306,11 +323,15 @@ impl<R: tauri::Runtime> Engine<R> {
             }
             enqueue_result?;
             tracing::debug!(id = %to_offer.id, origin = ?to_offer.origin, priority = ?to_offer.priority, "accept: enqueued");
-            q.slot_state_if_changed()
-        };
-        self.wake.notify_waiters();
-        if let Some(state) = slot_change {
-            emit_slot_state(&self.app, state);
+            // emit under the lock, same fix and rationale as `apply`
+            // above (see its doc comment) — a preempted `accept`/`apply`
+            // must never be able to deliver a stale slot-state after a
+            // newer one has already landed on the wire.
+            let slot_change = q.slot_state_if_changed();
+            self.wake.notify_waiters();
+            if let Some(state) = slot_change {
+                emit_slot_state(&self.app, state);
+            }
         }
         if to_offer.origin != SourceKind::News {
             for connector in self.connectors.iter() {
@@ -443,21 +464,37 @@ impl<R: tauri::Runtime> Engine<R> {
         });
     }
 
+    /// Non-emitting read of the current `SlotState` for the on_page_load
+    /// boot-shield site (`lib.rs`) — split out of `emit_current_blocking`
+    /// below so the caller can plant the `window.__NOTCHTAP_SLOT_STATE__`
+    /// eval-splice global BEFORE the wire `slot-state` emit fires, closing
+    /// the boot-shield gap where a webview that mounts between an
+    /// unconditional emit and the global assignment reads `undefined`
+    /// (see `emit_current_blocking`'s doc for the emit half). Still routes
+    /// through `current_slot_state_for_emission` (plan 107 Step C), not
+    /// the plain `current_slot_state`, so this counts as a real emission
+    /// for the TTL-restart sampler even though the actual `app.emit` call
+    /// now happens separately, at the caller's chosen moment. No wake:
+    /// nothing mutated.
+    pub fn current_slot_state_blocking(&self) -> SlotState {
+        let mut q = self.queue.blocking_lock();
+        q.current_slot_state_for_emission(Instant::now())
+    }
+
     /// Webview-reload re-emit (the on_page_load slot-state site): reads
     /// current_slot_state and emits it UNCONDITIONALLY (dedup
     /// deliberately bypassed — a freshly reloaded webview has no state,
     /// so it must be re-sent even if unchanged), returns it for the
     /// eval-splice global seed. No wake: nothing mutated.
     ///
-    /// plan 107 Step C: routes through `current_slot_state_for_emission`
-    /// (not the plain `current_slot_state`) so this one wire-emission
-    /// path that bypasses `slot_state_if_changed`'s dedup gate still
-    /// feeds the TTL-restart sampler — see that method's doc.
+    /// Built from `current_slot_state_blocking` above rather than
+    /// inlining the same body — kept as its own atomic compute+emit
+    /// method for callers (and this module's own test) that don't need
+    /// the two halves independently ordered; `lib.rs`'s on_page_load site
+    /// calls the split halves directly instead of this method, precisely
+    /// because it DOES need that ordering (see the other method's doc).
     pub fn emit_current_blocking(&self) -> SlotState {
-        let state = {
-            let mut q = self.queue.blocking_lock();
-            q.current_slot_state_for_emission(Instant::now())
-        };
+        let state = self.current_slot_state_blocking();
         emit_slot_state(&self.app, state.clone());
         state
     }
@@ -475,10 +512,13 @@ impl<R: tauri::Runtime> Engine<R> {
     /// `hover::active_card_rect`'s doc). This non-emitting shape (no
     /// re-emitting `status-state` on every read, which would flood the
     /// webview and defeat `hover-changed`'s own transitions-only idle-cost
-    /// discipline, plans 015/018) is kept as `pub` for its current real
-    /// caller, `emit_current_status_blocking` below. Lock discipline
-    /// matches that caller: live/weather locked and dropped before the
-    /// queue lock.
+    /// discipline, plans 015/018) is kept as `pub` for its callers:
+    /// `emit_current_status_blocking` below, and (for the same
+    /// boot-shield-ordering reason `current_slot_state_blocking` exists
+    /// above) `lib.rs`'s on_page_load site, which calls this directly so
+    /// it can plant the `window.__NOTCHTAP_STATUS_STATE__` global before
+    /// emitting rather than after. Lock discipline matches every caller:
+    /// live/weather locked and dropped before the queue lock.
     pub fn status_snapshot_blocking(&self) -> StatusState {
         let live_summary = self.live.snapshot();
         let weather_summary = self.weather.snapshot();
@@ -498,14 +538,17 @@ impl<R: tauri::Runtime> Engine<R> {
         )
     }
 
-    /// The on_page_load StatusState twin of `emit_current_blocking` —
-    /// same shape, over StatusState instead of SlotState, using the
-    /// Engine's own `live`/`espn_enabled`/`rss_enabled`. Also bypasses
-    /// the rotation loop's `last_status` dedup (that guard belongs to
-    /// the loop's task, not to this method) for the same reload reason.
-    /// No wake. Lock discipline: the live-match handle is read/cloned/
-    /// dropped BEFORE the queue lock (nobody holds both at once), same
-    /// as the rotation loop.
+    /// The StatusState twin of `emit_current_blocking` — same atomic
+    /// compute+emit shape, over StatusState instead of SlotState, using
+    /// the Engine's own `live`/`espn_enabled`/`rss_enabled`. Also
+    /// bypasses the rotation loop's `last_status` dedup (that guard
+    /// belongs to the loop's task, not to this method) for the same
+    /// reload reason. No wake. Lock discipline: the live-match handle is
+    /// read/cloned/dropped BEFORE the queue lock (nobody holds both at
+    /// once), same as the rotation loop. `lib.rs`'s on_page_load site
+    /// calls `status_snapshot_blocking` directly instead of this method
+    /// (see that method's doc) — this one is kept for callers (and this
+    /// module's own test) that don't need the plant/emit ordering split.
     pub fn emit_current_status_blocking(&self) -> StatusState {
         let state = self.status_snapshot_blocking();
         emit_status_state(&self.app, state.clone());
@@ -856,6 +899,44 @@ mod tests {
             2,
             "dedup is bypassed: both calls emit"
         );
+    }
+
+    #[test]
+    fn current_slot_state_blocking_returns_without_emitting() {
+        // The boot-shield-ordering fix's split half: `lib.rs`'s
+        // on_page_load site needs the state BEFORE the wire emit fires
+        // (to plant the eval-splice global first) — this proves the split
+        // method really is non-emitting, so that ordering is achievable
+        // at all. `emit_current_blocking` (tested above) still emits;
+        // this is its silent twin.
+        let app = tauri::test::mock_app();
+        let engine = test_engine(&app);
+
+        let emit_count = Arc::new(AtomicUsize::new(0));
+        {
+            use tauri::Listener;
+            let counter = emit_count.clone();
+            app.handle().listen(SLOT_STATE_EVENT, move |_| {
+                counter.fetch_add(1, Ordering::SeqCst);
+            });
+        }
+
+        engine.apply_blocking(|q, now| q.enqueue(event(Priority::Medium), now).unwrap());
+        emit_count.store(0, Ordering::SeqCst);
+
+        let state = engine.current_slot_state_blocking();
+        assert!(matches!(state, SlotState::Showing { .. }));
+        assert_eq!(
+            emit_count.load(Ordering::SeqCst),
+            0,
+            "current_slot_state_blocking must not emit — the caller controls when/if it does"
+        );
+
+        // and emit_current_blocking, built from it, still emits exactly
+        // once per call — the split didn't change that method's contract.
+        let emitted = engine.emit_current_blocking();
+        assert_eq!(emitted, state);
+        assert_eq!(emit_count.load(Ordering::SeqCst), 1);
     }
 
     #[test]

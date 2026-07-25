@@ -74,4 +74,4 @@ test-all: check-rust test-rust check-web audit-web test-web build-web check-cli 
 
 # manual push against the local endpoint
 push title body:
-    ./notchtap --title "{{title}}" --body "{{body}}"
+    ./notchtap --title {{quote(title)}} --body {{quote(body)}}

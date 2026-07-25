@@ -1,5 +1,6 @@
 import { motion } from "motion/react";
 import { useEffect, useState } from "react";
+import { MetaChip } from "@/components/ui/meta-chip";
 import brandMark from "../../../assets/branding/notchtap-mark-128.png";
 import { NOTCHTAP_EASE } from "../../animationTiming";
 import { ActionStatus, useActionStatus } from "../actionStatus";
@@ -123,12 +124,7 @@ export function AboutSection() {
       <SettingsGroup title="Tech stack">
         <div className="tech-stack-chips flex flex-wrap gap-1.5 py-2">
           {TECH_STACK.map((item) => (
-            <span
-              key={item}
-              className="rounded-full border border-border px-[9px] py-[3px] font-mono text-fs-caption text-muted-foreground"
-            >
-              {item}
-            </span>
+            <MetaChip key={item}>{item}</MetaChip>
           ))}
         </div>
         <p className="m-0 pb-1 text-fs-caption text-muted-foreground">

@@ -936,34 +936,28 @@ describe("SettingsApp", () => {
 
     const rows = screen.getAllByRole("listitem");
     const [newsRow, cmuxRow, manualRow, , footballRow] = rows;
+    // M12: the boundary buttons are marked `aria-disabled` rather than
+    // native `disabled`, so they stay in the tab order (a boundary move
+    // no longer strands keyboard focus on <body>); `move` no-ops when the
+    // target is out of range.
     expect(
-      (
-        within(newsRow).getByRole("button", {
-          name: /earlier/,
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(true);
+      within(newsRow)
+        .getByRole("button", { name: /earlier/ })
+        .getAttribute("aria-disabled"),
+    ).toBe("true");
     expect(
-      (
-        within(footballRow).getByRole("button", {
-          name: /later/,
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(true);
+      within(footballRow).getByRole("button", { name: /later/ }).getAttribute("aria-disabled"),
+    ).toBe("true");
     expect(
-      (
-        within(manualRow).getByRole("button", {
-          name: /earlier/,
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(false);
+      within(manualRow)
+        .getByRole("button", { name: /earlier/ })
+        .getAttribute("aria-disabled"),
+    ).toBe("false");
     expect(
-      (
-        within(cmuxRow).getByRole("button", {
-          name: /earlier/,
-        }) as HTMLButtonElement
-      ).disabled,
-    ).toBe(false);
+      within(cmuxRow)
+        .getByRole("button", { name: /earlier/ })
+        .getAttribute("aria-disabled"),
+    ).toBe("false");
 
     fireEvent.click(within(manualRow).getByRole("button", { name: /earlier/ }));
     expect(rotationOrderRowNames()).toEqual([
@@ -1203,7 +1197,9 @@ describe("SettingsApp", () => {
       expect(within(row).getByText("arsenal-vs-chelsea")).toBeTruthy();
       expect(within(row).getByText("Attendance")).toBeTruthy();
       expect(within(row).getByText("60,000")).toBeTruthy();
-      expect(within(row).getByText("22:13")).toBeTruthy(); // published_at_ms (1700000000000 = 22:13 UTC)
+      // published_at_ms (1700000000000 = 22:13 UTC), now rendered via the
+      // pinned en-US 12-hour formatter shared with the overlay clock (S3).
+      expect(within(row).getByText("10:13 PM")).toBeTruthy();
       expect(within(row).getByText(/ENG\.1: ARS 2–0 CHE \(FT\)/)).toBeTruthy();
       expect(within(row).getByText("https://example.com/story")).toBeTruthy();
     });

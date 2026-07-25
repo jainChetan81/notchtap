@@ -1,8 +1,7 @@
 import { useState } from "react";
-import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { cn } from "@/lib/utils";
+import { MetaChip } from "@/components/ui/meta-chip";
 import type { ActionStatusValue } from "../actionStatus";
 import { ActionStatus, useActionStatus } from "../actionStatus";
 import { SettingsGroup, ToggleControl } from "../controls/controls";
@@ -78,20 +77,9 @@ function SecretRow({
         >
           {label}
         </label>
-        <Badge
-          aria-live="polite"
-          variant="outline"
-          className={cn(
-            // plan 115: rounded-[4px] is intentionally off-scale (no
-            // --radius-* rung is 4px; --radius-sm is 6px) — left as a
-            // literal arbitrary value rather than shifting the visible
-            // corner radius.
-            "status-chip h-auto flex-none rounded-[4px] border-input px-[5px] py-[3px] font-mono text-fs-caption font-bold tracking-[0.06em] text-muted-foreground uppercase",
-            status && "is-set border-ring/40 bg-input/40 text-foreground",
-          )}
-        >
+        <MetaChip aria-live="polite" uppercase active={!!status} className="status-chip flex-none">
           {status ?? "unset"}
-        </Badge>
+        </MetaChip>
       </div>
       <div className="secret-controls grid grid-cols-[minmax(0,1fr)_auto] gap-[7px]">
         <Input

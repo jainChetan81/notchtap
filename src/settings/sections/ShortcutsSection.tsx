@@ -1,3 +1,4 @@
+import { MetaChip } from "@/components/ui/meta-chip";
 import { cn } from "@/lib/utils";
 import { SettingsGroup } from "../controls/controls";
 
@@ -83,14 +84,13 @@ export function ShortcutsSection() {
                 {shortcut.action}
               </th>
               <td className={cn(SHORTCUT_CELL, index === shortcuts.length - 1 && "border-b-0")}>
-                <span
-                  className={cn(
-                    "shortcut-status inline-block w-max rounded-[3px] border border-border/80 px-1 py-0.5 font-mono text-fs-caption font-bold tracking-[0.06em] text-muted-foreground uppercase",
-                    shortcut.status === "active" && "active border-ring/40 text-foreground",
-                  )}
+                <MetaChip
+                  uppercase
+                  active={shortcut.status === "active"}
+                  className="shortcut-status inline-block w-max"
                 >
                   {shortcut.status === "active" ? "active" : "planned · not implemented"}
-                </span>
+                </MetaChip>
               </td>
             </tr>
           ))}

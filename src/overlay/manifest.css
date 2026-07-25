@@ -51,7 +51,9 @@
   margin-bottom: 5px;
   color: var(--accent);
   font: 700 8px/1 var(--font-mono);
-  letter-spacing: 0.14em;
+  /* O9: was 0.14em — collapsed onto the 3-step 0.08/0.12/0.16em scale
+     every 8-9px mono uppercase label in the overlay now shares. */
+  letter-spacing: 0.16em;
   text-transform: uppercase;
 }
 
@@ -62,12 +64,22 @@
   /* plan 035: detail values (e.g. a long command or file path from a hook)
      must wrap inside the fixed 500x300 window instead of overflowing. */
   overflow-wrap: anywhere;
+  /* M13: unbounded before — paired with NotificationBody.tsx's own cap on
+     how many detail pairs render at all, this bounds each individual
+     pair's height too, so a single very long value can't alone push the
+     ttl-bar floor out of the fixed 300px window. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* the Message cell is the one manifest field that carries full prose —
    it gets the same prominence treatment as the compact .body (plan 032). */
 .card-root .detail-value.message {
-  color: rgba(255, 255, 255, 0.84);
+  /* O9: was 0.84 — matches `.manifest-text`'s identical role/alpha
+     (news-category.css) now instead of a one-off neighbor value. */
+  color: rgba(255, 255, 255, 0.85);
   font-size: 12px;
   line-height: 1.5;
 }
@@ -81,7 +93,7 @@
 .card-root .time-only {
   font: 800 15px/1 var(--font-mono);
   letter-spacing: 0.02em;
-  color: #f5f7fa;
+  color: var(--overlay-fg);
   white-space: nowrap;
 }
 

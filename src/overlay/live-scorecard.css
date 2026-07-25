@@ -32,7 +32,9 @@
 .card-root .chip-live {
   flex: none;
   gap: 5px;
-  color: #7fe08d;
+  /* O3/H5: tokenized onto --overlay-green (same value) — unifies with the
+     status dot's own football color and the ev-ico/tint-goal green. */
+  color: var(--overlay-green);
   background: rgba(127, 224, 141, 0.12);
   border: 1px solid rgba(127, 224, 141, 0.35);
 }
@@ -45,18 +47,20 @@
   width: 5px;
   height: 5px;
   border-radius: 50%;
-  background: #7fe08d;
+  background: var(--overlay-green);
   box-shadow: 0 0 6px rgba(127, 224, 141, 0.9);
 }
 
 .card-root .chip-live.break {
-  color: #f0c46a;
+  /* O3: tokenized onto --overlay-amber (same value) — same "Break state"
+     meaning the amber-consolidation finding named explicitly. */
+  color: var(--overlay-amber);
   background: rgba(240, 196, 106, 0.12);
   border-color: rgba(240, 196, 106, 0.35);
 }
 
 .card-root .chip-live.break .live-dot {
-  background: #f0c46a;
+  background: var(--overlay-amber);
   box-shadow: 0 0 6px rgba(240, 196, 106, 0.9);
   animation: none;
 }
@@ -67,13 +71,20 @@
   border-color: rgba(255, 255, 255, 0.12);
 }
 
+/* O12: was a hand-rolled pill (own padding/border-radius/display) outside
+   the `.chip` language `.chip-league`/`.chip-live` beside it already use —
+   now carries the `chip` class too (LiveMatchScorecard.tsx,
+   IdleHoverPeek.tsx) and this rule only overrides what's genuinely
+   different: the larger/bolder numeric-clock font (`.chip`'s own font is
+   for short uppercase labels) and the neutral tint, with letter-spacing/
+   text-transform reset since a clock reading isn't a label. */
 .card-root .clock-pill {
   margin-left: auto;
   flex: none;
   font: 800 10px/1 var(--font-mono);
+  letter-spacing: normal;
+  text-transform: none;
   color: rgba(255, 255, 255, 0.75);
-  padding: 3px 7px;
-  border-radius: 999px;
   background: rgba(255, 255, 255, 0.06);
   border: 1px solid rgba(255, 255, 255, 0.1);
 }
@@ -110,7 +121,7 @@
   letter-spacing: 0.03em;
   background: rgba(255, 255, 255, 0.07);
   border: 1px solid rgba(255, 255, 255, 0.16);
-  color: #f5f7fa;
+  color: var(--overlay-fg);
 }
 
 .card-root .crest img {
@@ -121,7 +132,7 @@
 
 .card-root .score {
   font: 800 24px/1 var(--font-mono);
-  color: #f5f7fa;
+  color: var(--overlay-fg);
   letter-spacing: 0.02em;
 }
 
@@ -144,7 +155,8 @@
   margin-top: 6px;
   text-align: center;
   font: 600 9px/1 var(--font-mono);
-  letter-spacing: 0.06em;
+  /* O9: was 0.06em — collapsed onto the 3-step 0.08/0.12/0.16em scale. */
+  letter-spacing: 0.08em;
   color: rgba(255, 255, 255, 0.38);
 }
 

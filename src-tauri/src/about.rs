@@ -88,7 +88,12 @@ pub fn bundle_size_bytes(root: &Path) -> Option<u64> {
 /// failure (missing binary, non-zero exit, empty/unparseable stdout) —
 /// the caller falls back to a bare "macOS" label.
 pub fn macos_product_version() -> Option<String> {
-    let output = std::process::Command::new("sw_vers")
+    // absolute path, not a bare `sw_vers` looked up on `$PATH` — this
+    // process's `PATH` isn't attacker-controlled in the way a setuid
+    // binary's would be, but pinning the path is free and rules out any
+    // ambiguity about which `sw_vers` runs (a malicious or shadowing
+    // entry earlier on `PATH`, an unusual launchd environment, ...).
+    let output = std::process::Command::new("/usr/bin/sw_vers")
         .arg("-productVersion")
         .output()
         .ok()?;

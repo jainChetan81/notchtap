@@ -59,7 +59,7 @@ export function LiveMatchScorecard({
           {pillVariant !== "final" && <span className="live-dot" />}
           {pillLabel}
         </span>
-        <span className="clock-pill">{liveEspn.clock}</span>
+        <span className="chip clock-pill">{liveEspn.clock}</span>
       </div>
       <div className="score-row">
         <div className="side">

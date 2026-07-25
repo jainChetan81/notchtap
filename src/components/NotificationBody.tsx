@@ -14,6 +14,19 @@ import { TtlBar } from "./TtlBar";
 // CLI push path, hence "cli"; "news" never reaches this branch (the
 // `news` boolean above routes it to the news branch instead), so its
 // entry is a defensive fallback, never actually read.
+// M13 (layout overflow in the fixed 500x300 window): `liveVisibleDetails`
+// used to render every pair the payload carried, uncapped — a worst-case
+// server push (up to ~8 detail pairs, per the wire contract's own
+// generous allowance) could grow `.compact` tall enough to push the
+// TTL bar's floor strip out of the window (`.below-block`'s `overflow:
+// hidden` just hard-crops instead of scrolling). Paired with
+// `.detail-value`'s own 2-line clamp (manifest.css), this cap bounds the
+// worst case to a knowable height instead of an unbounded one. Chosen
+// well above every existing fixture's real usage (3 pairs, the richest
+// StatusRailCard.test.tsx case) so no legitimate payload is ever visibly
+// truncated in practice.
+const MAX_VISIBLE_DETAIL_PAIRS = 4;
+
 const GENERIC_MASTHEAD_KICKER: Record<SourceKind, string> = {
   cmux: "cmux",
   manual: "cli",
@@ -125,7 +138,7 @@ export function NotificationBody({
                 must not leave a blank `.notif-body` node in the card. */}
               {slot.body.trim() !== "" && <div className="notif-body">{bodyContent}</div>}
               {liveVisibleDetails.length > 0 &&
-                liveVisibleDetails.map((detail) => (
+                liveVisibleDetails.slice(0, MAX_VISIBLE_DETAIL_PAIRS).map((detail) => (
                   <div key={`${detail.label}:${detail.value}`}>
                     <div className="detail-label">{detail.label}</div>
                     <div className="detail-value">{detail.value}</div>

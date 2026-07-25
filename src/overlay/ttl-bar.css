@@ -87,6 +87,25 @@
   background: var(--accent);
   transform-origin: left;
   will-change: transform;
+  /* O13: the transition (not just the `.paused` values below) lives here
+     on the base rule — same "declare the transition on the base rule, the
+     modifier class only overrides values" shape `.card-assembly`'s own
+     `.hovered` scale uses (card-chrome.css) — so the fade-in on pause AND
+     the fade-back-out on resume both animate, not just one direction. */
+  transition:
+    opacity var(--hover-ms, 160ms) var(--ease-notchtap),
+    background var(--hover-ms, 160ms) var(--ease-notchtap);
+}
+
+/* O13 (TTL hover-pause affordance): `hoverPaused` used to freeze the fill
+   with zero visual change — indistinguishable from a stall. Dims slightly
+   and shifts toward `--accent-soft` (the same per-tier "consumed" tint
+   `.ttl-seg.done` already reads, ttl-bar.css above) so a paused countdown
+   reads as deliberately held, not stuck. Kept subtle on purpose — this is
+   a passive status cue, not a new attention-grabbing element. */
+.card-root .ttl-fill.paused {
+  opacity: 0.72;
+  background: color-mix(in srgb, var(--accent) 65%, var(--accent-soft) 35%);
 }
 
 @media (prefers-reduced-motion: reduce) {

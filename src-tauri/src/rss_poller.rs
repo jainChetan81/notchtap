@@ -585,6 +585,23 @@ async fn fetch_feed(
     Ok(Some(feed))
 }
 
+/// L-sec2 fix: a feed's `config.url` is operator-supplied and may embed a
+/// token in its query string (a private feed URL, an API key param,
+/// etc.) — logging it verbatim would put a secret into a world-readable
+/// log file. Prefers the feed's own `source` label when the operator set
+/// one; otherwise falls back to just the URL's host (query string,
+/// userinfo, and path all stripped) so the log line still identifies
+/// WHICH feed failed without leaking whatever the query string carries.
+fn feed_log_ref(config: &RssFeedConfig) -> String {
+    if let Some(source) = config.source.as_deref().filter(|s| !s.trim().is_empty()) {
+        return source.to_string();
+    }
+    reqwest::Url::parse(&config.url)
+        .ok()
+        .and_then(|u| u.host_str().map(str::to_string))
+        .unwrap_or_else(|| "<unparseable feed url>".to_string())
+}
+
 // plan 037: ingest goes through `Engine::accept`, same as the espn
 // poller — rss's deliberately offer-less inline loop is subsumed by
 // accept's origin gate (News events are never offered to connectors).
@@ -648,7 +665,10 @@ pub fn spawn_rss_poller(
                         continue;
                     }
                     Err(error) => {
-                        tracing::warn!(feed = %source.config.url, "rss poll failed: {error}");
+                        // L-sec2: never log the full feed url (it may
+                        // embed a token) — `feed_log_ref` reduces it to
+                        // the operator's `source` label or the bare host.
+                        tracing::warn!(feed = %feed_log_ref(&source.config), "rss poll failed: {error}");
                         state.backoff.on_failure(now);
                         continue;
                     }
@@ -656,7 +676,10 @@ pub fn spawn_rss_poller(
 
                 let events = {
                     let seen_state = app_handle.state::<StdMutex<SeenStore>>();
-                    let mut seen = seen_state.lock().unwrap();
+                    // R6: poison-tolerant — a panic while holding this
+                    // lock elsewhere must not permanently kill the rss
+                    // poller task, same convention as settings.rs/crests.rs.
+                    let mut seen = seen_state.lock().unwrap_or_else(|e| e.into_inner());
                     diff_feed(
                         &mut seen,
                         &feed,
@@ -673,7 +696,7 @@ pub fn spawn_rss_poller(
 
                 for event in events {
                     if let Err(error) = engine.accept(event, false).await {
-                        tracing::warn!(feed = %source.config.url, "rss event dropped: {error}");
+                        tracing::warn!(feed = %feed_log_ref(&source.config), "rss event dropped: {error}");
                     }
                 }
             }
@@ -712,7 +735,9 @@ pub async fn search_once(
         category: None,
     };
     let now = Instant::now();
-    let mut guard = seen.lock().unwrap();
+    // R6: poison-tolerant, same convention as settings.rs/crests.rs and
+    // the poller loop's own lock above.
+    let mut guard = seen.lock().unwrap_or_else(|e| e.into_inner());
     Ok(diff_feed(
         &mut guard,
         &feed,
@@ -759,6 +784,41 @@ mod tests {
             source: None,
             category: None,
         }
+    }
+
+    // --- L-sec2: `feed_log_ref` must never leak the full feed url (which
+    // may embed a token in its query string) into a log line ---
+
+    #[test]
+    fn feed_log_ref_prefers_the_operator_supplied_source_label() {
+        let config = feed_config(Some("My Private Feed"), None);
+        assert_eq!(feed_log_ref(&config), "My Private Feed");
+    }
+
+    #[test]
+    fn feed_log_ref_falls_back_to_the_bare_host_with_no_source_label() {
+        let mut config = feed_config(None, None);
+        config.url = "https://example.com/feed?token=super-secret-value".to_string();
+        let logged = feed_log_ref(&config);
+        assert_eq!(logged, "example.com");
+        assert!(
+            !logged.contains("super-secret-value"),
+            "the query string (and any token in it) must never appear in the log-safe ref"
+        );
+    }
+
+    #[test]
+    fn feed_log_ref_treats_a_blank_source_label_as_absent() {
+        let config = feed_config(Some("   "), None);
+        let logged = feed_log_ref(&config);
+        assert_eq!(logged, "example.com", "a whitespace-only source must fall through to the host");
+    }
+
+    #[test]
+    fn feed_log_ref_never_panics_on_an_unparseable_url() {
+        let mut config = feed_config(None, None);
+        config.url = "not a url".to_string();
+        assert_eq!(feed_log_ref(&config), "<unparseable feed url>");
     }
 
     #[test]

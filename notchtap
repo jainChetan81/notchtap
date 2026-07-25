@@ -53,6 +53,17 @@ run_usage() {
   exit 2
 }
 
+# a port value is interpolated raw into a curl URL below (both here and
+# in the flags path further down) — validated the same way --min-secs
+# already was, plus a range check, so a stray non-numeric or out-of-range
+# $NOTCHTAP_PORT/--port can't smuggle anything into that URL.
+port_is_valid() {
+  case "$1" in
+    ''|*[!0-9]*) return 1 ;;
+  esac
+  [ "$1" -ge 1 ] && [ "$1" -le 65535 ]
+}
+
 if [ "${1:-}" = "run" ]; then
   shift
   run_label=""
@@ -60,6 +71,7 @@ if [ "${1:-}" = "run" ]; then
   run_priority_success="medium"
   run_priority_failure="high"
   run_port="${NOTCHTAP_PORT:-9789}"
+  port_is_valid "$run_port" || run_usage
 
   while [ $# -gt 0 ]; do
     case "$1" in
@@ -85,6 +97,7 @@ if [ "${1:-}" = "run" ]; then
         shift 2 ;;
       --port)
         [ $# -ge 2 ] || run_usage
+        port_is_valid "$2" || run_usage
         run_port="$2"; shift 2 ;;
       --)
         shift; break ;;
@@ -135,6 +148,7 @@ priority=""
 signal=""
 source=""
 port="${NOTCHTAP_PORT:-9789}"
+port_is_valid "$port" || usage
 # details accumulates as a JSON array; each --detail appends one {label,value}
 # pair via jq (safe escaping), capped at 8 (the server caps too — this is the
 # earlier, courtesy cap decision 4 mentions).
@@ -191,6 +205,7 @@ while [ $# -gt 0 ]; do
       shift 2 ;;
     --port)
       [ $# -ge 2 ] || usage
+      port_is_valid "$2" || usage
       port="$2"; shift 2 ;;
     *)
       usage ;;

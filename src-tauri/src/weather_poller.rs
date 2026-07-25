@@ -116,6 +116,35 @@ pub struct WeatherAlertState {
     pub cold_fired: bool,
 }
 
+impl WeatherAlertState {
+    /// M7 fix: a `prev` state with every flag already `true` blocks
+    /// every `crossed && !prev.*_fired` edge check in `diff_weather`
+    /// below, so passing this as `prev` on a poll computes the correct
+    /// per-alert `_fired` baseline from the response's ACTUAL current
+    /// conditions (each field is assigned unconditionally further down,
+    /// independent of `prev`) while guaranteeing zero events are
+    /// emitted. Used for the poll loop's first poll (`spawn_weather_
+    /// poller`) — a restart mid-condition must seed the flag as already
+    /// fired (silently) rather than treat the ongoing condition as a
+    /// brand-new crossing and re-alert for something the user was
+    /// already notified about before the restart.
+    fn already_fired() -> Self {
+        Self {
+            rain_fired: true,
+            hot_fired: true,
+            cold_fired: true,
+        }
+    }
+}
+
+/// Title constants shared between `diff_weather` (event creation) and
+/// `spawn_weather_poller` (accept-outcome routing back to the specific
+/// `_fired` flag, M7 fix) — matching on a duplicated literal string
+/// would silently drift if either side changed the wording.
+const RAIN_ALERT_TITLE: &str = "Rain expected soon";
+const HOT_ALERT_TITLE: &str = "High temperature";
+const COLD_ALERT_TITLE: &str = "Low temperature";
+
 /// WMO weather-code → condition word (Design decision 3). Presentation-
 /// only: this never feeds any alert threshold. Unknown codes fall back
 /// to "—" rather than panicking or dropping the chip.
@@ -295,7 +324,7 @@ pub fn diff_weather(
         let crossed = probability >= rain_threshold_pct;
         if crossed && !prev.rain_fired {
             events.push(alert_event(
-                "Rain expected soon".to_string(),
+                RAIN_ALERT_TITLE.to_string(),
                 format!("{probability}% chance of rain within ~{rain_lookahead_mins} min"),
                 ttl_secs,
                 priority,
@@ -314,7 +343,7 @@ pub fn diff_weather(
     let hot = temp_c >= temp_hot_c;
     if hot && !prev.hot_fired {
         events.push(alert_event(
-            "High temperature".to_string(),
+            HOT_ALERT_TITLE.to_string(),
             format!(
                 "{:.0}° — above your {:.0}°C hot threshold",
                 response.current.temperature_2m, temp_hot_c
@@ -330,7 +359,7 @@ pub fn diff_weather(
     let cold = temp_c <= temp_cold_c;
     if cold && !prev.cold_fired {
         events.push(alert_event(
-            "Low temperature".to_string(),
+            COLD_ALERT_TITLE.to_string(),
             format!(
                 "{:.0}° — below your {:.0}°C cold threshold",
                 response.current.temperature_2m, temp_cold_c
@@ -389,6 +418,42 @@ fn alert_event(
     }
 }
 
+/// M7 fix (2026-07-25): given `diff_weather`'s freshly-computed `next`
+/// state and the per-event accept outcome `(title, accepted)` for
+/// everything it returned, computes the state to actually commit as
+/// `alert_state` for the next poll. A FAILED accept reverts just that
+/// one alert's flag back to its `prev` (pre-transition) value so the
+/// identical edge condition re-triggers (and re-attempts `accept`) on a
+/// later tick — `diff_weather` itself has no notion of `accept` and
+/// computes `next` unconditionally, so committing it as-is regardless of
+/// outcome (the old behavior) permanently "consumed" the edge on a
+/// `QueueFull` drop even though the notification never reached the
+/// queue. Every flag the outcome list doesn't mention (no event this
+/// poll — either nothing crossed, or the condition cleared) keeps
+/// `next`'s value untouched, exactly as before this fix.
+///
+/// Pure and directly unit-testable without `Engine` or the async poll
+/// loop.
+fn commit_alert_state(
+    prev: WeatherAlertState,
+    next: WeatherAlertState,
+    outcomes: &[(String, bool)],
+) -> WeatherAlertState {
+    let mut committed = next;
+    for (title, accepted) in outcomes {
+        if *accepted {
+            continue;
+        }
+        match title.as_str() {
+            RAIN_ALERT_TITLE => committed.rain_fired = prev.rain_fired,
+            HOT_ALERT_TITLE => committed.hot_fired = prev.hot_fired,
+            COLD_ALERT_TITLE => committed.cold_fired = prev.cold_fired,
+            _ => {}
+        }
+    }
+    committed
+}
+
 fn forecast_url(lat: f64, lon: f64, units: Units) -> String {
     let units_param = match units {
         // Celsius is Open-Meteo's default — omit the param entirely.
@@ -443,6 +508,15 @@ pub fn spawn_weather_poller(
         let url = forecast_url(lat, lon, units);
         let mut backoff = Backoff::default();
         let mut alert_state = WeatherAlertState::default();
+        // M7 fix (2026-07-25): true until the first poll SUCCEEDS (not
+        // just the first tick — a failed fetch doesn't count). Unlike
+        // the ESPN/RSS pollers, weather had no first-poll baseline: with
+        // `alert_state` starting at all-false and `interval.tick()`
+        // firing immediately, a relaunch mid-condition (e.g. app
+        // restarted while it's still raining) read as a brand-new edge
+        // crossing and re-fired the identical alert the user was
+        // already notified about before the restart.
+        let mut first_poll = true;
         let mut interval = tokio::time::interval(Duration::from_secs(poll_secs.max(15)));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
         tracing::info!(lat, lon, poll_secs, "weather poller started");
@@ -466,9 +540,24 @@ pub fn spawn_weather_poller(
                 }
             };
 
+            // M7 fix: on the first successful poll, diff against a prev
+            // state where every alert is already-fired — this blocks
+            // every `crossed && !prev.*_fired` edge check in
+            // `diff_weather` (so `events` is guaranteed empty: nothing
+            // to alert on), while `next_state`'s three flags are still
+            // assigned unconditionally from the response's ACTUAL
+            // current conditions. That baseline becomes the running
+            // `alert_state` — only a genuinely NEW crossing after this
+            // poll fires anything.
+            let effective_prev = if first_poll {
+                WeatherAlertState::already_fired()
+            } else {
+                alert_state
+            };
+
             let (summary, events, next_state) = diff_weather(
                 &response,
-                alert_state,
+                effective_prev,
                 units,
                 rain_threshold_pct,
                 rain_lookahead_mins,
@@ -477,14 +566,38 @@ pub fn spawn_weather_poller(
                 WEATHER_ALERT_TTL_SECS,
                 priority,
             );
-            alert_state = next_state;
 
             engine.update_weather(Some(summary));
-            for event in events {
-                if let Err(error) = engine.accept(event, false).await {
-                    tracing::warn!("weather alert dropped: {error}");
-                }
+
+            if first_poll {
+                first_poll = false;
+                debug_assert!(
+                    events.is_empty(),
+                    "already_fired() prev must suppress every alert on the baseline poll"
+                );
+                alert_state = next_state;
+                continue;
             }
+
+            // M7 fix: commit each alert's `_fired` flag only when its
+            // event was actually accepted — see `commit_alert_state`'s
+            // doc. `prev` here is the still-un-advanced `alert_state`
+            // (this poll's `effective_prev`, not the baseline substitute
+            // — `first_poll` already `continue`d above, so on this path
+            // `effective_prev == alert_state`).
+            let mut outcomes = Vec::with_capacity(events.len());
+            for event in events {
+                let title = event.payload.title.clone();
+                let accepted = match engine.accept(event, false).await {
+                    Ok(()) => true,
+                    Err(error) => {
+                        tracing::warn!("weather alert dropped: {error}");
+                        false
+                    }
+                };
+                outcomes.push((title, accepted));
+            }
+            alert_state = commit_alert_state(alert_state, next_state, &outcomes);
         }
     });
 }
@@ -934,6 +1047,110 @@ mod tests {
         let (_, events, _) = diff(&cold, rearmed);
         assert_eq!(events.len(), 1);
         assert_eq!(events[0].payload.title, "Low temperature");
+    }
+
+    // --- M7 fix: commit-only-on-accept (a QueueFull drop must not
+    // permanently consume the edge) ---
+
+    #[test]
+    fn commit_alert_state_reverts_only_the_failed_alerts_flag() {
+        let prev = WeatherAlertState::default(); // all false
+        let next = WeatherAlertState {
+            rain_fired: false,
+            hot_fired: true,
+            cold_fired: false,
+        };
+        let outcomes = vec![("High temperature".to_string(), false)]; // accept failed
+        let committed = commit_alert_state(prev, next, &outcomes);
+        assert!(
+            !committed.hot_fired,
+            "a failed accept must not set the flag — the alert must re-fire next tick"
+        );
+        assert_eq!(committed.rain_fired, next.rain_fired);
+        assert_eq!(committed.cold_fired, next.cold_fired);
+    }
+
+    #[test]
+    fn commit_alert_state_keeps_the_flag_when_accept_succeeds() {
+        let prev = WeatherAlertState::default();
+        let next = WeatherAlertState {
+            rain_fired: false,
+            hot_fired: true,
+            cold_fired: false,
+        };
+        let outcomes = vec![("High temperature".to_string(), true)];
+        let committed = commit_alert_state(prev, next, &outcomes);
+        assert!(
+            committed.hot_fired,
+            "a succeeded accept must commit the flag as usual"
+        );
+    }
+
+    #[test]
+    fn dropped_alert_is_re_attempted_next_tick() {
+        // end-to-end (minus the network/Engine): a QueueFull-style
+        // accept failure must not swallow the alert — the SAME crossing
+        // must produce the SAME event again on the next poll.
+        let hot = fixture_with_temp(37.5);
+        let prev = WeatherAlertState::default();
+        let (_, events1, next1) = diff(&hot, prev);
+        assert_eq!(events1.len(), 1);
+
+        // simulate a QueueFull drop of that one event
+        let outcomes = vec![(events1[0].payload.title.clone(), false)];
+        let committed = commit_alert_state(prev, next1, &outcomes);
+        assert!(!committed.hot_fired, "the dropped alert's flag must not advance");
+
+        // next tick, condition still holds — must fire again, not stay silent
+        let (_, events2, _) = diff(&hot, committed);
+        assert_eq!(
+            events2.len(),
+            1,
+            "a delta dropped by QueueFull must re-emit next tick, not vanish"
+        );
+        assert_eq!(events2[0].payload.title, "High temperature");
+    }
+
+    // --- M7 fix: first-poll baseline (a relaunch mid-condition must not
+    // re-alert for something already announced before the restart) ---
+
+    #[test]
+    fn already_fired_baseline_suppresses_alerts_but_reflects_actual_conditions() {
+        let hot = fixture_with_temp(37.5);
+        let (_, events, next) = diff(&hot, WeatherAlertState::already_fired());
+        assert!(
+            events.is_empty(),
+            "the baseline poll must never alert, regardless of current conditions"
+        );
+        assert!(
+            next.hot_fired,
+            "but the baseline state must still reflect the ACTUAL current condition"
+        );
+        assert!(!next.cold_fired);
+        assert!(!next.rain_fired);
+    }
+
+    #[test]
+    fn already_fired_baseline_still_lets_a_later_new_crossing_fire() {
+        // simulate a restart mid-hot-condition: the baseline poll seeds
+        // hot_fired = true silently. If the condition later CLEARS and
+        // then crosses hot again, that IS a genuinely new alert and must
+        // fire — the baseline fix must not permanently mute the alert.
+        let hot = fixture_with_temp(37.5);
+        let (_, baseline_events, baseline_state) = diff(&hot, WeatherAlertState::already_fired());
+        assert!(baseline_events.is_empty());
+        assert!(baseline_state.hot_fired);
+
+        let (_, cleared_events, cleared_state) = diff(&fixture(), baseline_state);
+        assert!(cleared_events.is_empty(), "clearing never fires an event either");
+        assert!(!cleared_state.hot_fired);
+
+        let (_, refired_events, _) = diff(&hot, cleared_state);
+        assert_eq!(
+            refired_events.len(),
+            1,
+            "a genuinely new crossing after the baseline poll must still fire"
+        );
     }
 
     // --- inclusive-threshold boundaries: the comparisons are `>=`/`<=`,

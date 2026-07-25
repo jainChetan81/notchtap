@@ -46,14 +46,21 @@
     border-width var(--hover-ms, 160ms) var(--ease-notchtap);
 }
 
+/* H5: was #3ddc70/#ff5c5c — a SECOND green/red the dots alone used,
+   diverging from the #7fe08d/#ff6b57 every football/news CARD element
+   already reads (live-scorecard.css, idle-peek.css, news-category.css).
+   Unified onto the same --overlay-green/--overlay-coral tokens (O3) the
+   cards use, so the dot and the card it summons are always the same
+   color. Weather's #f0c46a already matched --overlay-amber's value —
+   tokenized here too, for the same drift-proofing reason. */
 .card-root .status-dot.football {
-  background: #3ddc70;
+  background: var(--overlay-green);
 }
 .card-root .status-dot.news {
-  background: #ff5c5c;
+  background: var(--overlay-coral);
 }
 .card-root .status-dot.weather {
-  background: #f0c46a;
+  background: var(--overlay-amber);
 }
 
 /* plan 105 (item A): steady glow, not a blink — the pulse read as
@@ -63,13 +70,13 @@
   box-shadow: 0 0 8px 1px currentColor;
 }
 .card-root .status-dot.football.active {
-  color: #3ddc70;
+  color: var(--overlay-green);
 }
 .card-root .status-dot.news.active {
-  color: #ff5c5c;
+  color: var(--overlay-coral);
 }
 .card-root .status-dot.weather.active {
-  color: #f0c46a;
+  color: var(--overlay-amber);
 }
 
 .card-root .status-dot.dim {
@@ -96,13 +103,13 @@
 }
 
 .card-root .status-dot.football.shape-disabled {
-  border: 1.5px solid #3ddc70;
+  border: 1.5px solid var(--overlay-green);
 }
 .card-root .status-dot.news.shape-disabled {
-  border: 1.5px solid #ff5c5c;
+  border: 1.5px solid var(--overlay-coral);
 }
 .card-root .status-dot.weather.shape-disabled {
-  border: 1.5px solid #f0c46a;
+  border: 1.5px solid var(--overlay-amber);
 }
 
 .card-root .status-dot.shape-unavailable {

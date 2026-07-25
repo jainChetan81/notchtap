@@ -93,7 +93,16 @@ export function Segmented<T extends string | number>({
               // literal arbitrary value rather than shifting the
               // visible corner radius.
               buttonClass,
-              "rounded-[4px] border-0 bg-transparent px-1.5 py-px font-mono text-fs-secondary font-[620] tracking-[0.03em] text-muted-foreground outline-none transition-colors duration-[140ms] ease-notchtap hover:bg-accent hover:text-foreground focus-visible:shadow-[0_0_0_2px_var(--ring)]",
+              // S3 consistency fix: was a hard, opaque 2px
+              // `shadow-[0_0_0_2px_var(--ring)]` ring — the only focus
+              // treatment in the settings window that didn't match the
+              // soft 3px/50%-opacity ring every shadcn primitive
+              // (button.tsx, switch.tsx, input/textarea) uses via
+              // `focus-visible:border-ring focus-visible:ring-3
+              // focus-visible:ring-ring/50`. Same vocabulary here so
+              // keyboard-tabbing reads as one consistent focus style
+              // across the whole window.
+              "rounded-[4px] border border-transparent bg-transparent px-1.5 py-px font-mono text-fs-secondary font-[620] tracking-[0.03em] text-muted-foreground outline-none transition-colors duration-[140ms] ease-notchtap hover:bg-accent hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
               value === option.value &&
                 "is-selected bg-accent text-foreground shadow-[var(--shadow-selected)]",
             )}

@@ -217,7 +217,13 @@ export function TtlBar({
         <span key={i} className={i < current ? "ttl-seg done" : "ttl-seg"} />
       ))}
       <div
-        className="ttl-fill"
+        // O13: `paused` is a pure CSS hook (ttl-bar.css) giving the freeze
+        // a subtle, legible look — without it, a hover-pause is visually
+        // identical to a stall (both just stop moving). Driven straight
+        // off the `hoverPaused` prop, not the rAF loop's own internal
+        // pause bookkeeping, so it flips in lockstep with the freeze/
+        // resume the loop above already performs.
+        className={hoverPaused ? "ttl-fill paused" : "ttl-fill"}
         ref={fillRef}
         // Placed via `grid-column` rather than nested inside the `current`
         // segment's own mapped `<span>` above — that would put fillRef's

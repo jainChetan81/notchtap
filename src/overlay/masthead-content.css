@@ -8,7 +8,15 @@
   position: relative;
   box-sizing: border-box;
   min-height: 74px;
-  padding: 12px 18px 14px 20px;
+  /* O6 (content inset rhythm): right/bottom were 18px/14px, drifted from
+     every other content block's 16px/13px (`.notif-block`, `.manifest-
+     block`, `.below-block.idle-peek`) — normalized so the news<->football
+     rotation and the compact<->manifest handoff never shift the content
+     margin. Left stays wider (20px, not 16px) on purpose: `.compact::before`
+     (below) is a 3px accent edge flush against this block's own left
+     edge, so its content needs the extra 4px to clear it — none of the
+     other blocks carry that edge. */
+  padding: 12px 16px 13px 20px;
 }
 
 .card-root .expanded .compact {
@@ -44,7 +52,10 @@
 .card-root .title {
   display: -webkit-box;
   overflow: hidden;
-  font-size: 14px;
+  /* O9: the old base `font-size: 14px` here is gone — `.title` never
+     renders alone (NotificationBody.tsx always pairs it with `.headline`,
+     news-category.css, which overrides to 13px), so the 14px value was
+     dead, never-painted weight. */
   font-weight: 680;
   line-height: 1.2;
   white-space: normal;
@@ -136,11 +147,22 @@
   text-transform: uppercase;
 }
 
-/* hotkey hints — same raised-key look as the Settings shortcuts
-   cheatsheet (src/settings/settings.css .shortcut-row kbd), scaled down
-   to fit inline in a 400-500px card instead of a dedicated table cell. */
+/* hotkey hints — the raised-key look for every inline `<kbd>` the overlay
+   renders. (M15: this used to cross-reference a Settings shortcuts
+   cheatsheet at `src/settings/settings.css .shortcut-row kbd` — that file
+   was deleted in plan 112's settings-css consolidation, and its
+   shortcuts-table markup doesn't use `<kbd>` today, so the comparison no
+   longer applies; this is now the overlay's own, standalone raised-key
+   treatment, scaled to fit inline in a 400-500px card instead of a
+   dedicated table cell.)
+   M15: `.manifest-hint kbd` added — the expanded manifest's own hint
+   footer (Manifest.tsx's `.manifest-hint`, news-category.css) renders
+   `<kbd>` too and was rendering unstyled, having been left off this list.
+   `.detail-value kbd` removed — detail values render as plain strings
+   (NotificationBody.tsx), never markdown, so no `<kbd>` can ever appear
+   there; the selector was dead. */
 .card-root .compact-hint kbd,
-.card-root .detail-value kbd {
+.card-root .manifest-hint kbd {
   display: inline-flex;
   align-items: center;
   justify-content: center;

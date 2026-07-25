@@ -160,6 +160,25 @@ describe("TtlBar (plan 081)", () => {
 
   // plan 093: 081's deferred hover-pause half.
   describe("hoverPaused (plan 093)", () => {
+    // O13 (visual-consistency sweep, finding "TTL hover-pause affordance"):
+    // freezing the fill alone read as indistinguishable from a stall — no
+    // visual change at all marked the pause. `.paused` is the CSS hook
+    // (ttl-bar.css) for the subtle dim/tint that now marks it; pinned here
+    // at the class-presence level since jsdom can't compute the resulting
+    // computed style.
+    it("marks the fill .paused exactly while hoverPaused is true", () => {
+      const { container, rerender } = render(
+        <TtlBar slotId="n1" ttlMs={8000} remainingMs={8000} hoverPaused={false} />,
+      );
+      expect(container.querySelector(".ttl-fill")?.classList.contains("paused")).toBe(false);
+
+      rerender(<TtlBar slotId="n1" ttlMs={8000} remainingMs={8000} hoverPaused={true} />);
+      expect(container.querySelector(".ttl-fill")?.classList.contains("paused")).toBe(true);
+
+      rerender(<TtlBar slotId="n1" ttlMs={8000} remainingMs={8000} hoverPaused={false} />);
+      expect(container.querySelector(".ttl-fill")?.classList.contains("paused")).toBe(false);
+    });
+
     it("freezes the fill while hoverPaused is true", () => {
       const { container, rerender } = render(
         <TtlBar slotId="n1" ttlMs={8000} remainingMs={8000} hoverPaused={true} />,

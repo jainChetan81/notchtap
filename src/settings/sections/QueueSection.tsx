@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { MetaChip } from "@/components/ui/meta-chip";
 import { cn } from "@/lib/utils";
 import { NOTCHTAP_EASE } from "../../animationTiming";
 import { ActionStatus, useActionStatus } from "../actionStatus";
@@ -142,9 +143,9 @@ export function QueueSection() {
                   <span className="queue-title min-w-0 text-fs-body text-foreground [overflow-wrap:anywhere]">
                     {item.title}
                   </span>
-                  <span className="queue-priority-tag min-w-0 rounded-full border border-border px-[7px] py-0.5 font-mono text-fs-caption font-[650] leading-[1.5] text-muted-foreground">
+                  <MetaChip className="queue-priority-tag">
                     {PRIORITY_LABELS[item.priority]}
-                  </span>
+                  </MetaChip>
                 </motion.li>
               ))}
             </AnimatePresence>

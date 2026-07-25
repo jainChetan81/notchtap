@@ -3,6 +3,9 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
+#[cfg(unix)]
+use std::os::unix::fs::{OpenOptionsExt, PermissionsExt};
+
 use tracing_appender::non_blocking::WorkerGuard;
 use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt, EnvFilter, Layer};
 
@@ -29,6 +32,12 @@ fn log_dir() -> anyhow::Result<PathBuf> {
         dirs::home_dir().ok_or_else(|| anyhow::anyhow!("could not determine home directory"))?;
     let dir = home.join("Library").join("Logs").join("notchtap");
     fs::create_dir_all(&dir)?;
+    // notchtap.log can carry sensitive notification content (titles/
+    // bodies relayed through `/notify`) — same posture as `history.rs`'s
+    // `history.jsonl` (0700 dir / 0600 file, see `SizeRotatingAppender`
+    // below) rather than trusting the umask-derived default (0755).
+    #[cfg(unix)]
+    fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
     Ok(dir)
 }
 
@@ -82,9 +91,26 @@ impl SizeRotatingAppender {
     ) -> io::Result<Self> {
         let dir = dir.as_ref().to_path_buf();
         fs::create_dir_all(&dir)?;
+        // matches `log_dir`'s own 0700 (this constructor is also reached
+        // directly by this module's tests, with their own temp dirs, not
+        // just via `log_dir`'s call path).
+        #[cfg(unix)]
+        fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
         let filename = filename.as_ref().to_string();
         let path = dir.join(&filename);
-        let file = OpenOptions::new().create(true).append(true).open(&path)?;
+        let mut open_options = OpenOptions::new();
+        open_options.create(true).append(true);
+        #[cfg(unix)]
+        open_options.mode(0o600);
+        let file = open_options.open(&path)?;
+        // `.mode()` on `OpenOptions` only governs the permissions a *new*
+        // file is created with — a no-op against a file that already
+        // existed (e.g. one written before this hardening landed, umask
+        // 0644). Force 0600 unconditionally so a pre-existing permissive
+        // file gets fixed rather than staying world-readable forever
+        // (same reasoning as `history.rs`'s `HistoryStore::append`).
+        #[cfg(unix)]
+        file.set_permissions(fs::Permissions::from_mode(0o600))?;
         let size = file.metadata()?.len();
         Ok(Self {
             inner: Mutex::new(Inner {
@@ -119,10 +145,13 @@ impl SizeRotatingAppender {
         let backup = inner.dir.join(format!("{}.{}", inner.filename, 1));
         fs::rename(&current, &backup)?;
 
-        inner.file = OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&current)?;
+        let mut open_options = OpenOptions::new();
+        open_options.create(true).append(true);
+        #[cfg(unix)]
+        open_options.mode(0o600);
+        inner.file = open_options.open(&current)?;
+        #[cfg(unix)]
+        inner.file.set_permissions(fs::Permissions::from_mode(0o600))?;
         inner.size = 0;
         Ok(())
     }
@@ -152,6 +181,60 @@ mod tests {
     // silently shift the threshold arithmetic.
     fn temp_dir() -> PathBuf {
         std::env::temp_dir().join(format!("notchtap-logtest-{}", Uuid::new_v4()))
+    }
+
+    // --- L-sec2: log dir/file must not be world-readable ---
+
+    #[cfg(unix)]
+    #[test]
+    fn new_log_dir_and_file_are_0700_and_0600() {
+        let dir = temp_dir();
+        let app = SizeRotatingAppender::new(&dir, "notchtap.log", 100, 3).unwrap();
+        drop(app);
+
+        let dir_mode = fs::metadata(&dir).unwrap().permissions().mode() & 0o777;
+        assert_eq!(dir_mode, 0o700, "log dir must not be world-readable");
+
+        let file_mode = fs::metadata(dir.join("notchtap.log"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(file_mode, 0o600, "log file must not be world-readable");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn preexisting_permissive_log_file_is_fixed_to_0600_on_open() {
+        let dir = temp_dir();
+        fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("notchtap.log");
+        // simulate a file written before this hardening landed (umask 0644)
+        fs::write(&path, "").unwrap();
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o644)).unwrap();
+
+        let _app = SizeRotatingAppender::new(&dir, "notchtap.log", 100, 3).unwrap();
+
+        let mode = fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(mode, 0o600);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn rotated_log_file_is_still_0600() {
+        let dir = temp_dir();
+        let mut app = SizeRotatingAppender::new(&dir, "notchtap.log", 100, 3).unwrap();
+
+        app.write_all(&[b'a'; 60]).unwrap();
+        app.write_all(&[b'b'; 60]).unwrap(); // triggers a rotation
+        app.flush().unwrap();
+
+        let mode = fs::metadata(dir.join("notchtap.log"))
+            .unwrap()
+            .permissions()
+            .mode()
+            & 0o777;
+        assert_eq!(mode, 0o600, "the post-rotation file must still be 0600");
     }
 
     #[test]

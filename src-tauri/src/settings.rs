@@ -46,6 +46,35 @@ fn feed_key(url: &str) -> String {
     }
 }
 
+/// M2 SSRF guard: true for a literal loopback/link-local/private-network
+/// ip, `localhost`, or any `.local` domain. Literal-ip checks use std's
+/// own `is_loopback`/`is_link_local`/`is_private` (the latter is exactly
+/// RFC 1918: 10/8, 172.16/12, 192.168/16) rather than hand-rolled range
+/// math. A bare domain check (not a resolve-and-check) is deliberate —
+/// resolving here would add a network call to a pure validation function
+/// and still not close the TOCTOU gap a determined attacker could exploit
+/// via DNS rebinding; this is a best-effort save-time guard, not a
+/// runtime fetch-time sandbox.
+fn feed_host_is_internal(url: &reqwest::Url) -> bool {
+    // `host_str()` over `host()` deliberately (2026-07-25): the typed
+    // `url::Host` enum isn't nameable here — `url` is only a transitive
+    // dependency via reqwest, which re-exports `Url` but not `Host` — so
+    // this works off the string form instead. An IPv6 literal comes back
+    // bracketed (`"[::1]"`); strip the brackets before the `IpAddr` parse.
+    let Some(host) = url.host_str() else {
+        return false;
+    };
+    let bare = host.trim_start_matches('[').trim_end_matches(']');
+    if let Ok(ip) = bare.parse::<std::net::IpAddr>() {
+        return match ip {
+            std::net::IpAddr::V4(v4) => v4.is_loopback() || v4.is_link_local() || v4.is_private(),
+            std::net::IpAddr::V6(v6) => v6.is_loopback(),
+        };
+    }
+    let domain = host.trim_end_matches('.').to_ascii_lowercase();
+    domain == "localhost" || domain.ends_with(".local")
+}
+
 /// Every rule violated contributes one human-readable message — the
 /// settings form renders the whole list, not just the first failure.
 pub fn validate(c: &Config) -> Result<(), Vec<String>> {
@@ -88,9 +117,19 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
         ));
     }
     for league in &c.espn_leagues {
-        if league.is_empty() || league.chars().any(char::is_whitespace) {
+        // L-sec4: leagues feed straight into an ESPN scoreboard url path
+        // segment (poller.rs) — beyond "non-empty, no whitespace", reject
+        // anything outside `^[A-Za-z0-9._-]+$` so a slug can't smuggle a
+        // path traversal (`../`) or a query/fragment break-out (`?`, `#`,
+        // `/`). Implemented as a manual char scan rather than pulling in
+        // the `regex` crate for one anchored character-class check.
+        let valid = !league.is_empty()
+            && league
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'));
+        if !valid {
             errors.push(format!(
-                "league {league:?} is invalid — entries must be non-empty with no whitespace"
+                "league {league:?} is invalid — entries must be non-empty and match ^[A-Za-z0-9._-]+$ (letters, digits, '.', '_', '-' only)"
             ));
         }
     }
@@ -121,15 +160,33 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
         // alone or a host-less url would pass a starts_with test and then
         // fail on every poll. whitespace is rejected explicitly because
         // the url parser is lenient enough to percent-encode some of it.
-        let parsed_ok = !feed.url.chars().any(char::is_whitespace)
-            && reqwest::Url::parse(&feed.url)
-                .map(|u| (u.scheme() == "http" || u.scheme() == "https") && u.host_str().is_some())
-                .unwrap_or(false);
-        if !parsed_ok {
+        let parsed = if feed.url.chars().any(char::is_whitespace) {
+            None
+        } else {
+            reqwest::Url::parse(&feed.url).ok()
+        };
+        let scheme_and_host_ok = parsed
+            .as_ref()
+            .map(|u| (u.scheme() == "http" || u.scheme() == "https") && u.host_str().is_some())
+            .unwrap_or(false);
+        if !scheme_and_host_ok {
             errors.push(format!(
                 "feed {:?} is invalid — entries must be full http(s) urls with a host and no whitespace",
                 feed.url
             ));
+        } else if let Some(parsed) = &parsed {
+            // M2 SSRF guard: the rss poller fetches this url from the
+            // rust core itself (server-side), so an internal/loopback
+            // target would let a settings-window caller use the poller as
+            // a probe against localhost services or cloud metadata
+            // endpoints (169.254.169.254) — reject at save time rather
+            // than trusting the network layer to refuse.
+            if feed_host_is_internal(parsed) {
+                errors.push(format!(
+                    "feed {:?} is invalid — loopback, link-local, and private-network hosts are not allowed",
+                    feed.url
+                ));
+            }
         }
     }
     if c.rss_enabled && c.rss_feeds.is_empty() {
@@ -435,18 +492,39 @@ fn write_then_rename(
     attempt
 }
 
+/// Create `dir` (config/secrets/history all share `Config::dir_from_home`)
+/// and pin it to `0700` (L-sec1): `create_dir_all` only applies the
+/// umask-derived default, which on a stock macOS install is world-
+/// readable+executable — mirrors `history.rs`'s `HistoryStore::with_limits`
+/// posture exactly, except that store only ever ran (and only ever locked
+/// the dir down) when `history_enabled` was set. Calling this from both
+/// write paths below means the dir is locked down the first time EITHER
+/// config.toml or secrets.toml is written, not conditionally on history
+/// ever having been turned on.
+fn ensure_config_dir(dir: &Path) -> anyhow::Result<()> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::create_dir_all(dir)?;
+    std::fs::set_permissions(dir, std::fs::Permissions::from_mode(0o700))?;
+    Ok(())
+}
+
 /// Serialize the whole config and atomically replace `config.toml` in
 /// `dir`. Same-dir temp file + rename — rename across filesystems isn't
 /// atomic, and a torn `config.toml` is a bricked boot. Known, accepted
 /// loss (spec §3): hand-written comments in the file don't survive.
+///
+/// L-sec1: written `0600` like `secrets.toml` — config.toml can carry
+/// feed urls, coordinates, etc; nothing here is as sensitive as
+/// `secrets.toml`'s credentials, but there's no reason to leave it
+/// world-readable either.
 pub fn write_config_atomic(dir: &Path, config: &Config) -> anyhow::Result<()> {
-    std::fs::create_dir_all(dir)?;
+    ensure_config_dir(dir)?;
     let serialized = toml::to_string_pretty(config)?;
     write_then_rename(
         &unique_tmp(dir, "config.toml"),
         &dir.join("config.toml"),
         &serialized,
-        None,
+        Some(0o600),
     )
 }
 
@@ -454,7 +532,7 @@ pub fn write_config_atomic(dir: &Path, config: &Config) -> anyhow::Result<()> {
 /// byte — the temp file is `create_new` with the final permissions, so
 /// there is no window where secret content sits with any other mode.
 pub fn write_secrets_atomic(dir: &Path, doc: &SecretsDoc) -> anyhow::Result<()> {
-    std::fs::create_dir_all(dir)?;
+    ensure_config_dir(dir)?;
     let serialized = toml::to_string_pretty(doc)?;
     write_then_rename(
         &unique_tmp(dir, "secrets.toml"),
@@ -740,6 +818,18 @@ pub fn preflight_port(new: u16, booted: u16) -> Result<(), String> {
 /// Validate → atomic write → relaunch. The `Err` arm carries the whole
 /// per-field message list for the form; on success the process is gone
 /// before a reply could matter.
+///
+/// C9: ONE guard held across clone(booted) -> validate -> preflight ->
+/// disk write -> memory mutate, matching `set_appearance`'s (plan 132)
+/// discipline — two separate lock/unlock pairs let a concurrent
+/// `set_appearance` call (which already holds the lock across its own
+/// clone->write->mutate) interleave between this command's read of
+/// `booted` and its write, so the loser's disk write could land after the
+/// winner's memory mutate, leaving disk and memory disagreeing about
+/// which caller's change is current. `save_config_and_relaunch` is a
+/// plain sync fn (not `async`) and `app.restart()` never returns
+/// (`-> !`), so there is no `.await` point the guard could be held across
+/// — it's dropped explicitly right before the restart call regardless.
 #[tauri::command]
 pub fn save_config_and_relaunch(
     window: tauri::WebviewWindow,
@@ -748,17 +838,18 @@ pub fn save_config_and_relaunch(
     config: Config,
 ) -> Result<(), Vec<String>> {
     ensure_settings_window(&window).map_err(|e| vec![e])?;
-    let booted = state
-        .inner()
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
+
+    let mut managed = state.inner().lock().unwrap_or_else(|e| e.into_inner());
+    let booted = managed.clone();
     let config = pin_uneditable_fields(config, &booted);
     validate(&config)?;
     preflight_port(config.port, booted.port).map_err(|e| vec![e])?;
     let dir = notchtap_config_dir().map_err(|e| vec![e])?;
     write_config_atomic(&dir, &config)
         .map_err(|e| vec![format!("could not write config.toml: {e}")])?;
+    *managed = config;
+    drop(managed);
+
     tracing::info!("config saved from settings window — relaunching");
     app.restart();
 }
@@ -860,9 +951,15 @@ pub async fn search_news_now(
     .await
     .map_err(|e| e.to_string())?;
 
+    // R4: `.is_ok()` alone silently discarded a queue-full/rejected story
+    // with no trace anywhere — mirror the continuous pollers' per-drop
+    // warn (rss_poller.rs, poller.rs) so a search that under-delivers
+    // shows up in the log instead of just a lower-than-expected count.
     let mut enqueued = 0usize;
     for event in events {
-        if engine.accept(event, false).await.is_ok() {
+        if let Err(e) = engine.accept(event, false).await {
+            tracing::warn!(query = %trimmed, "search_news_now event dropped: {e}");
+        } else {
             enqueued += 1;
         }
     }
@@ -1206,6 +1303,25 @@ mod tests {
     }
 
     #[test]
+    fn league_entries_must_match_the_allowed_character_set() {
+        // L-sec4: leagues feed straight into an ESPN scoreboard url path
+        // segment — reject anything that could smuggle a path traversal
+        // or break out of the path into a query/fragment.
+        for junk in ["../etc/passwd", "eng.1/../../x", "eng?1", "eng#1"] {
+            let c = Config {
+                espn_leagues: vec![junk.into()],
+                ..Config::default()
+            };
+            assert!(validate(&c).is_err(), "{junk:?} must be rejected");
+        }
+        let c = Config {
+            espn_leagues: vec!["usa_1-league.2".into()],
+            ..Config::default()
+        };
+        assert!(validate(&c).is_ok());
+    }
+
+    #[test]
     fn empty_league_list_rejected_only_while_espn_enabled() {
         let mut c = Config {
             espn_leagues: vec![],
@@ -1428,6 +1544,36 @@ mod tests {
         assert!(validate(&c).is_ok());
     }
 
+    #[test]
+    fn feed_urls_reject_loopback_link_local_and_private_hosts() {
+        // M2: the poller fetches these server-side — an internal target
+        // would let the settings window use the app as an SSRF probe.
+        for internal in [
+            "http://127.0.0.1/feed",
+            "http://127.0.0.1:8080/feed",
+            "http://169.254.169.254/x", // cloud metadata endpoint
+            "http://10.0.0.5/feed",
+            "http://172.16.0.1/feed",
+            "http://192.168.1.1/feed",
+            "http://localhost/feed",
+            "http://LOCALHOST/feed",
+            "http://printer.local/feed",
+            "http://[::1]/feed",
+        ] {
+            let c = Config {
+                rss_feeds: vec![internal.into()],
+                ..Config::default()
+            };
+            assert!(validate(&c).is_err(), "{internal:?} must be rejected");
+        }
+
+        let c = Config {
+            rss_feeds: vec!["https://example.com/feed".into()],
+            ..Config::default()
+        };
+        assert!(validate(&c).is_ok());
+    }
+
     // --- mask ---
 
     #[test]
@@ -1592,6 +1738,7 @@ mod tests {
 
     #[test]
     fn config_write_is_atomic_parseable_and_creates_the_dir() {
+        use std::os::unix::fs::PermissionsExt;
         let dir = temp_dir(); // deliberately not created — the writer must
         let c = Config {
             port: 4242,
@@ -1599,9 +1746,20 @@ mod tests {
         };
         write_config_atomic(&dir, &c).unwrap();
 
-        let on_disk = std::fs::read_to_string(dir.join("config.toml")).unwrap();
+        let path = dir.join("config.toml");
+        let on_disk = std::fs::read_to_string(&path).unwrap();
         let reparsed = Config::parse(&on_disk).unwrap();
         assert_eq!(reparsed.port, 4242);
+
+        // L-sec1: config.toml is 0600 like secrets.toml, and the shared
+        // config dir is 0700 like history.rs's HistoryStore — locked down
+        // the first time config.toml is written, not only when history is
+        // enabled.
+        let file_mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
+        assert_eq!(file_mode, 0o600, "config.toml must not be world-readable");
+        let dir_mode = std::fs::metadata(&dir).unwrap().permissions().mode() & 0o777;
+        assert_eq!(dir_mode, 0o700, "config dir must not be world-readable");
+
         assert!(
             no_tmp_leftovers(&dir),
             "temp files must be gone after the rename"

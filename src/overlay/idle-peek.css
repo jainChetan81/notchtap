@@ -46,8 +46,12 @@
   /* top corners square — the backdrop meets card content above, not an
      outer edge, so rounding there reads as a floating chip instead of a
      section of the card. Only the bottom corners round, where the
-     backdrop coincides with the card's own bottom edge. */
-  border-radius: 0 0 10px 10px;
+     backdrop coincides with the card's own bottom edge.
+     M14: was a hardcoded `10px` — undershoots/overshoots the user-
+     configurable `--card-radius` (default 8px, styles.css) the parent
+     shape actually rounds by. Reads the same var so the backdrop's own
+     corner always matches the card's, whatever the setting. */
+  border-radius: 0 0 var(--card-radius, 8px) var(--card-radius, 8px);
   overflow: hidden;
 }
 /* the real content (scorecard/media/weather readout + timeline) sits
@@ -87,7 +91,7 @@
 }
 .card-root .wx-peek-temp {
   font: 800 18px/1 var(--font-mono);
-  color: #f5f7fa;
+  color: var(--overlay-fg);
 }
 /* plan 131: hi/lo, inline with the current temp ("21° · H 24° L 16°") —
    a flex sibling of `.wx-peek-temp`/`.wx-peek-condition`/`.wx-peek-rain`
@@ -174,7 +178,7 @@
 }
 .card-root .wx-forecast-temp {
   font: 700 8px/1 var(--font-mono);
-  color: #f5f7fa;
+  color: var(--overlay-fg);
 }
 .card-root .wx-forecast-hour {
   font: 600 7px/1 var(--font-mono);
@@ -214,7 +218,7 @@
   line-height: 1;
   background: rgba(255, 255, 255, 0.08);
   border: 1px solid rgba(255, 255, 255, 0.14);
-  color: #f5f7fa;
+  color: var(--overlay-fg);
 }
 /* plan 118: the source-app glyph is now a lucide icon (svg), not a text
    character — sized to match the `.media-art` font-size above (13px) so
@@ -233,7 +237,7 @@
 .card-root .media-title {
   font-size: 12px;
   font-weight: 600;
-  color: #f5f7fa;
+  color: var(--overlay-fg);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -312,8 +316,18 @@
 }
 .card-root .idle-reveal-label {
   text-align: center;
-  font: 700 13px/1.3 -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
-  color: #f5f7fa;
+  /* O11: was a hand-copied font stack that dropped "Helvetica Neue" from
+     the fallback chain — reads the shared --font-sans instead so this
+     never drifts from the house stack again. */
+  font: 700 13px/1.3 var(--font-sans);
+  color: var(--overlay-fg);
+  /* O11: a long team-name label (e.g. two full club names either side of
+     a score) could otherwise grow past the fixed 100px peek — same
+     -webkit-box clamp idiom used everywhere else in this file. */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
 }
 
 /* item 18: the day-progress timeline, relocated from the deleted
@@ -353,12 +367,12 @@
   flex: none;
 }
 .card-root .ev-ico.goal {
-  background: #7fe08d;
+  background: var(--overlay-green);
   box-shadow: 0 0 6px rgba(127, 224, 141, 0.7);
 }
 .card-root .ev-ico.pen {
   background: transparent;
-  border: 2px solid #7fe08d;
+  border: 2px solid var(--overlay-green);
   width: 7px;
   height: 7px;
 }
@@ -375,10 +389,10 @@
   border-radius: 1.5px;
 }
 .card-root .ev-ico.yc {
-  background: #f0c46a;
+  background: var(--overlay-amber);
 }
 .card-root .ev-ico.rc {
-  background: #ff6b57;
+  background: var(--overlay-coral);
 }
 .card-root .ev-ico.foul {
   width: 0;
@@ -402,7 +416,7 @@
   left: 3px;
   width: 7px;
   height: 5px;
-  background: #f0c46a;
+  background: var(--overlay-amber);
   border-radius: 0 2px 2px 0;
 }
 .card-root .ev-ico.var {
@@ -426,7 +440,7 @@
   top: 0;
   border-left: 4px solid transparent;
   border-right: 4px solid transparent;
-  border-bottom: 5px solid #7fe08d;
+  border-bottom: 5px solid var(--overlay-green);
 }
 .card-root .ev-ico.sub::after {
   content: "";
@@ -435,19 +449,19 @@
   bottom: 0;
   border-left: 4px solid transparent;
   border-right: 4px solid transparent;
-  border-top: 5px solid #ff6b57;
+  border-top: 5px solid var(--overlay-coral);
 }
 
 .card-root .event-line.tint-goal {
-  color: #7fe08d;
+  color: var(--overlay-green);
   font-weight: 600;
 }
 .card-root .event-line.tint-yc {
-  color: #f0c46a;
+  color: var(--overlay-amber);
   font-weight: 600;
 }
 .card-root .event-line.tint-rc {
-  color: #ff6b57;
+  color: var(--overlay-coral);
   font-weight: 600;
 }
 
@@ -482,15 +496,21 @@
   animation: cele-ring 1800ms var(--ease-notchtap);
 }
 
+/* H4 (phantom celebration shadow): the 0%/100% rest endpoints used to
+   restate the card's OLD per-block resting shadow — stale since depth
+   moved onto `.card-assembly`'s own `filter: drop-shadow(...)`
+   (card-chrome.css). `none` lets the 30% glow fade in/out from nothing
+   instead of cross-fading with a phantom second shadow the filter already
+   supplies. The 30% frame (the actual glow) is untouched. */
 @keyframes goal-glow {
   0% {
-    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+    box-shadow: none;
   }
   30% {
     box-shadow: 0 0 34px rgba(127, 224, 141, 0.45);
   }
   100% {
-    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+    box-shadow: none;
   }
 }
 
@@ -517,6 +537,10 @@
   animation: red-strobe 1800ms var(--ease-notchtap);
 }
 
+/* H4 (phantom celebration shadow): only the 100% rest endpoint restated
+   the card's OLD per-block resting shadow — same stale-value bug as
+   `goal-glow` above (see its own comment). The two strobe pulses (0%/45%
+   and 20%/70%) are untouched. */
 @keyframes red-strobe {
   0%,
   45% {
@@ -527,7 +551,7 @@
     box-shadow: 0 0 4px rgba(255, 107, 87, 0.1);
   }
   100% {
-    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
+    box-shadow: none;
   }
 }
 

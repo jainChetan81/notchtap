@@ -200,7 +200,7 @@
   display: flex;
   align-items: center;
   background: #000;
-  color: #f5f7fa;
+  color: var(--overlay-fg);
   /* 2026-07-23 (operator minimal-notch spec, Task 1.2): lets the bare
      <-> bare-hovered background AND padding swap (both rules above) fade
      rather than pop — mirrors the reveal/paint coordination duration the
@@ -317,12 +317,12 @@
    left to drift. */
 .card-root .card-assembly:not(:has(.below-block)) .flank-left,
 .card-root .card-assembly.exiting .flank-left {
-  border-bottom-left-radius: var(--card-radius, 14px);
+  border-bottom-left-radius: var(--card-radius, 8px);
   transition: border-radius var(--content-exit-ms, 105ms) var(--ease-notchtap);
 }
 .card-root .card-assembly:not(:has(.below-block)) .flank-right,
 .card-root .card-assembly.exiting .flank-right {
-  border-bottom-right-radius: var(--card-radius, 14px);
+  border-bottom-right-radius: var(--card-radius, 8px);
   transition: border-radius var(--content-exit-ms, 105ms) var(--ease-notchtap);
 }
 
@@ -473,8 +473,8 @@
   .card-root
   .card-assembly.exiting.exit-to-bare
   .synthetic-cutout {
-  border-bottom-left-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 2), 20px);
-  border-bottom-right-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 2), 20px);
+  border-bottom-left-radius: var(--card-radius, 8px) min(calc(var(--card-radius, 8px) * 2), 20px);
+  border-bottom-right-radius: var(--card-radius, 8px) min(calc(var(--card-radius, 8px) * 2), 20px);
   transition: border-radius var(--swap-exit-ms, 175ms) var(--ease-notchtap);
 }
 
@@ -537,14 +537,14 @@
   .card-assembly:not(.bare):not(:has(.below-block))
   .flank-left,
 :root[data-notchtap-mode="hud"] .card-root .card-assembly.exiting:not(.bare) .flank-left {
-  border-bottom-left-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 2), 20px);
+  border-bottom-left-radius: var(--card-radius, 8px) min(calc(var(--card-radius, 8px) * 2), 20px);
 }
 :root[data-notchtap-mode="hud"]
   .card-root
   .card-assembly:not(.bare):not(:has(.below-block))
   .flank-right,
 :root[data-notchtap-mode="hud"] .card-root .card-assembly.exiting:not(.bare) .flank-right {
-  border-bottom-right-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 2), 20px);
+  border-bottom-right-radius: var(--card-radius, 8px) min(calc(var(--card-radius, 8px) * 2), 20px);
 }
 
 /* the top concave "gill" corners themselves — see the big comment block
@@ -625,8 +625,8 @@
    duty to that below-block instead, exactly as the law requires — no
    double-curve gap. */
 :root[data-notchtap-mode="hud"] .card-root .card-assembly.bare:not(:has(.below-block)) .synthetic-cutout {
-  border-bottom-left-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 2), 20px);
-  border-bottom-right-radius: var(--card-radius, 14px) min(calc(var(--card-radius, 14px) * 2), 20px);
+  border-bottom-left-radius: var(--card-radius, 8px) min(calc(var(--card-radius, 8px) * 2), 20px);
+  border-bottom-right-radius: var(--card-radius, 8px) min(calc(var(--card-radius, 8px) * 2), 20px);
 }
 
 /* the idle face — a minimal notchtap-branded face (two eyes + a soft
@@ -665,7 +665,10 @@
   width: 3px;
   height: 4px;
   border-radius: 1.5px;
-  background: rgba(245, 247, 250, 0.92);
+  /* O10: was a standalone `rgb(245, 247, 250, ...)` spelling of the same
+     white every other full-strength overlay text now reads off
+     --overlay-fg — color-mix carries the alpha the var alone can't. */
+  background: color-mix(in srgb, var(--overlay-fg) 92%, transparent);
 }
 
 .card-root .idle-face-mouth {
@@ -674,7 +677,7 @@
 }
 .card-root .idle-face-mouth path {
   fill: none;
-  stroke: rgba(245, 247, 250, 0.75);
+  stroke: color-mix(in srgb, var(--overlay-fg) 75%, transparent);
   stroke-width: 1.4;
   stroke-linecap: round;
 }
@@ -692,13 +695,13 @@
      above are the shell and stay solid #000 so the drawn shape matches
      the hardware notch (plan 091 decision; re-scoped by plan 098). */
   background: rgba(0, 0, 0, var(--card-opacity, 1));
-  color: #f5f7fa;
+  color: var(--overlay-fg);
   /* depth now comes from the single `.card-assembly` drop-shadow above
      (composite shape, no double shadow) — removed the per-block box-shadow. */
   /* the cutout's base corners stay square at this seam too (rounding law
      above) — only the two BOTTOM corners round; no top-radius here. */
-  border-bottom-left-radius: var(--card-radius, 14px);
-  border-bottom-right-radius: var(--card-radius, 14px);
+  border-bottom-left-radius: var(--card-radius, 8px);
+  border-bottom-right-radius: var(--card-radius, 8px);
 }
 
 /* plan 096 (079 item 8, part (c)): the cmux accent's hairline — a plain
@@ -711,7 +714,10 @@
    edge (`.compact::before`, `.stamp`, `.ttl-fill`/`.ttl-seg.done`) reads
    from. */
 .card-root .below-block.cmux-origin {
-  border-top: 1px solid rgba(240, 196, 106, 0.55);
+  /* O3: one of the amber color's 5 meanings — tokenized onto
+     --overlay-amber (same value, color-mix for the alpha) alongside the
+     weather dot/business category/yellow-card/Break-state uses. */
+  border-top: 1px solid color-mix(in srgb, var(--overlay-amber) 55%, transparent);
 }
 
 /* priority accent — a single named color per tier, consumed by the
@@ -727,12 +733,16 @@
 }
 
 .card-root .card-assembly.medium {
-  --accent: #55d6bd;
+  /* O3: was a re-hardcoded #55d6bd — now points at shared-ui's own
+     --overlay-teal token (same value) instead of drifting its own copy. */
+  --accent: var(--overlay-teal);
   --accent-soft: rgba(85, 214, 189, 0.24);
 }
 
 .card-root .card-assembly.high {
-  --accent: #ff6b57;
+  /* O3: was a re-hardcoded #ff6b57 — now points at shared-ui's own
+     --overlay-coral token (same value) instead of drifting its own copy. */
+  --accent: var(--overlay-coral);
   --accent-soft: rgba(255, 107, 87, 0.28);
 }
 

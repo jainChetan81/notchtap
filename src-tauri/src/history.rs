@@ -94,7 +94,12 @@ impl HistoryStore {
     /// 0` — an oversized single line lands whole in an empty file rather
     /// than rotating forever), then append it.
     pub fn append(&self, event: &Event) -> io::Result<()> {
-        let _guard = self.lock.lock().unwrap();
+        // poison-tolerant (codebase convention, see settings.rs): a panic
+        // while one caller holds this lock must not wedge every other
+        // caller (append/read_recent/clear) behind a poisoned Mutex for
+        // the rest of the process's life — recover the inner guard
+        // instead of propagating the panic here too.
+        let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
 
         let entry = HistoryEntry {
             recorded_at_ms: now_ms(),
@@ -151,7 +156,8 @@ impl HistoryStore {
     /// (plan 089, `settings.rs`); also exercised directly by this
     /// module's own tests and `engine.rs`'s history-hook tests.
     pub fn read_recent(&self, n: usize) -> io::Result<Vec<HistoryEntry>> {
-        let _guard = self.lock.lock().unwrap();
+        // poison-tolerant, same rationale as `append` above.
+        let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
 
         let contents = match fs::read_to_string(self.path()) {
             Ok(contents) => contents,
@@ -175,7 +181,8 @@ impl HistoryStore {
     /// `clear_history` invoke command (plan 089, `settings.rs`; plan
     /// 059 decision #2).
     pub fn clear(&self) -> io::Result<()> {
-        let _guard = self.lock.lock().unwrap();
+        // poison-tolerant, same rationale as `append` above.
+        let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());
 
         remove_if_exists(&self.path())?;
         for i in 1..=self.max_files {

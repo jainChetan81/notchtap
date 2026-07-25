@@ -33,9 +33,12 @@ const MAX_CREST_BYTES: usize = 256 * 1024;
 /// A crest URL is fetchable only if it is https and points at ESPN's
 /// own CDN — the URL arrives from a network feed, so it is untrusted
 /// input, not a trusted fetch target (same posture as `path_for`'s
-/// team-id sanitization). Enforced by the caller at the map-building/
-/// scheduling side (`poller.rs::team_logos`), NOT here — this function
-/// is pure policy, not a fetch gate, so it never touches `try_fetch`.
+/// team-id sanitization). Enforced pre-fetch by the caller at the
+/// map-building/scheduling side (`poller.rs::team_logos`) against the
+/// initial URL; `crest_client`'s redirect policy (below) additionally
+/// re-applies this same check to every redirect hop `try_fetch` follows,
+/// since a legitimate initial URL passing this check says nothing about
+/// where that server's response might then 302 to.
 pub fn crest_url_allowed(url: &str) -> bool {
     let Ok(parsed) = reqwest::Url::parse(url) else {
         return false;
@@ -132,15 +135,49 @@ impl CrestCache {
 
     async fn try_fetch(
         &self,
-        client: &reqwest::Client,
+        // deliberately unused for the actual request below — see
+        // `crest_client`'s doc comment for why a crest fetch needs its
+        // own client rather than the shared poll client passed in here.
+        // The parameter stays so `fetch_and_store`'s signature (and thus
+        // `poller.rs`'s call site, which shares one client across every
+        // fetch it makes) doesn't need to change.
+        _client: &reqwest::Client,
         team_id: &str,
         url: &str,
     ) -> anyhow::Result<()> {
         std::fs::create_dir_all(&self.dir)?;
+        let client = crest_client()?;
         let response = client.get(url).send().await?.error_for_status()?;
         let bytes = crate::net::read_body_capped(response, MAX_CREST_BYTES).await?;
         write_atomic(&self.path_for(team_id), &bytes)
     }
+}
+
+/// A client dedicated to crest fetches, with a redirect policy stricter
+/// than the shared poll client's (`net::build_poll_client`): every hop —
+/// not just the initial URL — must both clear the general SSRF/rebinding
+/// check ([`crate::net::host_is_blocked`]) AND pass [`crest_url_allowed`].
+/// `crest_url_allowed` is otherwise applied only pre-fetch
+/// (`poller.rs::team_logos`), which stops a malicious feed URL from ever
+/// being requested but does nothing to stop a *legitimate* espncdn URL's
+/// server from 302-ing the request somewhere else entirely (internal
+/// host, or just off ESPN's CDN) once the request is already in flight.
+/// Built fresh per fetch rather than cached: crest fetches happen at most
+/// once per team per process lifetime (`should_fetch`), a couple dozen
+/// times total, so there's no pooling benefit worth a shared static.
+fn crest_client() -> reqwest::Result<reqwest::Client> {
+    crate::net::client_builder()
+        .redirect(reqwest::redirect::Policy::custom(|attempt| {
+            if attempt.previous().len() > 3 {
+                return attempt.error("too many redirects");
+            }
+            let url = attempt.url();
+            if crate::net::host_is_blocked(url) || !crest_url_allowed(url.as_str()) {
+                return attempt.error("redirect target is not an allowed espncdn host");
+            }
+            attempt.follow()
+        }))
+        .build()
 }
 
 /// Same-dir temp-file + rename atomic write (matches `settings.rs`'s
@@ -262,6 +299,51 @@ mod tests {
         cache.fetch_and_store(&client, "999", &url).await;
 
         assert_eq!(cache.cached_path("999"), None);
+    }
+
+    #[tokio::test]
+    async fn redirect_to_a_non_espncdn_host_is_rejected_and_leaves_no_cache_entry() {
+        // M2: crest_client's redirect policy must enforce crest_url_allowed
+        // on every hop, not just the pre-fetch URL — a 302 off espncdn
+        // (here, simulated by a mock 302 pointing anywhere non-espncdn)
+        // must never be followed.
+        let (_dir, cache) = temp_cache();
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/redirect.png"))
+            .respond_with(
+                ResponseTemplate::new(302).insert_header("Location", "https://evil.com/x.png"),
+            )
+            .mount(&server)
+            .await;
+
+        let client = crate::net::build_poll_client().unwrap();
+        let url = format!("{}/redirect.png", server.uri());
+        cache.fetch_and_store(&client, "222", &url).await;
+
+        assert_eq!(cache.cached_path("222"), None);
+    }
+
+    #[tokio::test]
+    async fn redirect_to_a_loopback_or_private_host_is_rejected() {
+        // same enforcement, exercising the `host_is_blocked` half of the
+        // combined check (an SSRF attempt via a crest redirect).
+        let (_dir, cache) = temp_cache();
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/redirect.png"))
+            .respond_with(
+                ResponseTemplate::new(302)
+                    .insert_header("Location", "http://169.254.169.254/latest/meta-data"),
+            )
+            .mount(&server)
+            .await;
+
+        let client = crate::net::build_poll_client().unwrap();
+        let url = format!("{}/redirect.png", server.uri());
+        cache.fetch_and_store(&client, "223", &url).await;
+
+        assert_eq!(cache.cached_path("223"), None);
     }
 
     #[tokio::test]

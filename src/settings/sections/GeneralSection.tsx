@@ -1,5 +1,6 @@
 import { ChevronDown, ChevronUp } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { cn } from "@/lib/utils";
 import { NumberControl, SettingsGroup, TestButtonRow, ToggleControl } from "../controls/controls";
 import { Segmented } from "../controls/Segmented";
 import type { Config, SourceKind } from "../types";
@@ -13,8 +14,18 @@ function RotationOrderList({
   onChange: (order: SourceKind[]) => void;
 }) {
   function move(index: number, delta: number) {
-    const next = [...order];
     const target = index + delta;
+    // M12 fix: the boundary rows used to key this off native `disabled`
+    // on the button instead — the instant a boundary move fired, the
+    // button re-rendered disabled and focus dropped to <body>,
+    // stranding a keyboard user. The buttons stay focusable at every
+    // row now (see below); guarding here instead means an
+    // already-at-the-boundary button is a harmless no-op rather than an
+    // out-of-bounds swap.
+    if (target < 0 || target >= order.length) {
+      return;
+    }
+    const next = [...order];
     [next[index], next[target]] = [next[target], next[index]];
     onChange(next);
   }
@@ -41,13 +52,20 @@ function RotationOrderList({
             {SOURCE_LABELS[source]}
           </span>
           <div className="rotation-order-controls inline-flex flex-none gap-1">
+            {/* M12 fix: `aria-disabled` (not native `disabled`) at the
+                boundary rows — a natively-disabled button is dropped
+                from the tab order the instant it re-renders disabled,
+                which is exactly what stranded keyboard focus on `body`
+                after a boundary move. Staying focusable (with `move`
+                above now a no-op past the boundary) keeps the keyboard
+                user's focus on this same button in its new position. */}
             <Button
               type="button"
               variant="outline"
               size="icon-xs"
-              className="text-muted-foreground"
+              className={cn("text-muted-foreground", index === 0 && "opacity-50")}
               aria-label={`Move ${SOURCE_LABELS[source]} earlier`}
-              disabled={index === 0}
+              aria-disabled={index === 0}
               onClick={() => move(index, -1)}
             >
               <ChevronUp className="size-4" />
@@ -56,9 +74,9 @@ function RotationOrderList({
               type="button"
               variant="outline"
               size="icon-xs"
-              className="text-muted-foreground"
+              className={cn("text-muted-foreground", index === order.length - 1 && "opacity-50")}
               aria-label={`Move ${SOURCE_LABELS[source]} later`}
-              disabled={index === order.length - 1}
+              aria-disabled={index === order.length - 1}
               onClick={() => move(index, 1)}
             >
               <ChevronDown className="size-4" />

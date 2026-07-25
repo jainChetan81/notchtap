@@ -1,11 +1,13 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { MetaChip } from "@/components/ui/meta-chip";
 import { cn } from "@/lib/utils";
 import { NOTCHTAP_EASE } from "../../animationTiming";
 import { ActionStatus, useActionStatus } from "../actionStatus";
 import { CONTROL_ROW, ControlCopy, SettingsGroup } from "../controls/controls";
 import { settingsInvoke } from "../ipc";
+import { formatClockTime, formatRecordedAt } from "../timeFormat";
 import type { Config, HistoryEntry, HistoryEspnMeta, HistoryRotationSpec } from "../types";
 import { PRIORITY_LABELS } from "../types";
 
@@ -54,17 +56,6 @@ function historyRotationLabel(rotation: HistoryRotationSpec): string {
   // render nothing.
   const raw = rotation as unknown as { kind?: unknown };
   return typeof raw.kind === "string" ? raw.kind : "unknown rotation";
-}
-
-// Same HH:MM shape as lib/presentation.ts's publishedLabel (local
-// getHours/getMinutes, not toLocaleTimeString, so this stays
-// deterministic under a mocked Date in tests) — duplicated locally rather
-// than imported, per this section's no-presentation.ts rule.
-function historyPublishedLabel(publishedAtMs: number): string {
-  const published = new Date(publishedAtMs);
-  const hours = published.getHours().toString().padStart(2, "0");
-  const minutes = published.getMinutes().toString().padStart(2, "0");
-  return `${hours}:${minutes}`;
 }
 
 // Text only, no crest artwork (Step A's explicit field disposition) — a
@@ -135,7 +126,7 @@ function HistoryRow({ entry }: { entry: HistoryEntry }) {
       transition={{ duration: 0.18, ease: NOTCHTAP_EASE }}
     >
       <span className="history-time font-mono text-fs-secondary leading-none font-bold text-muted-foreground">
-        {new Date(entry.recorded_at_ms).toLocaleString()}
+        {formatRecordedAt(entry.recorded_at_ms)}
       </span>
       <span className="history-origin ml-1.5 font-mono text-fs-secondary leading-none font-bold text-muted-foreground uppercase">
         {event.origin}
@@ -145,24 +136,20 @@ function HistoryRow({ entry }: { entry: HistoryEntry }) {
       </span>
       <div className="history-meta-row mt-1 flex min-w-0 flex-wrap items-center gap-[5px]">
         {source !== null && (
-          <span className="history-meta-chip min-w-0 rounded-full border border-border px-[7px] py-0.5 font-mono text-fs-caption font-[650] leading-[1.5] text-muted-foreground [overflow-wrap:anywhere]">
-            {source}
-          </span>
+          <MetaChip className="history-meta-chip [overflow-wrap:anywhere]">{source}</MetaChip>
         )}
         {category !== null && (
-          <span className="history-meta-chip min-w-0 rounded-full border border-border px-[7px] py-0.5 font-mono text-fs-caption font-[650] leading-[1.5] text-muted-foreground [overflow-wrap:anywhere]">
-            {category}
-          </span>
+          <MetaChip className="history-meta-chip [overflow-wrap:anywhere]">{category}</MetaChip>
         )}
-        <span className="history-meta-chip min-w-0 rounded-full border border-border px-[7px] py-0.5 font-mono text-fs-caption font-[650] leading-[1.5] text-muted-foreground [overflow-wrap:anywhere]">
+        <MetaChip className="history-meta-chip [overflow-wrap:anywhere]">
           {historyPriorityLabel(event.priority)}
-        </span>
-        <span className="history-meta-chip min-w-0 rounded-full border border-border px-[7px] py-0.5 font-mono text-fs-caption font-[650] leading-[1.5] text-muted-foreground [overflow-wrap:anywhere]">
+        </MetaChip>
+        <MetaChip className="history-meta-chip [overflow-wrap:anywhere]">
           {historyEventTypeLabel(event.event_type)}
-        </span>
-        <span className="history-meta-chip min-w-0 rounded-full border border-border px-[7px] py-0.5 font-mono text-fs-caption font-[650] leading-[1.5] text-muted-foreground [overflow-wrap:anywhere]">
+        </MetaChip>
+        <MetaChip className="history-meta-chip [overflow-wrap:anywhere]">
           {historyRotationLabel(event.rotation)}
-        </span>
+        </MetaChip>
       </div>
       <span className="history-body min-w-0 text-fs-body text-muted-foreground [overflow-wrap:anywhere]">
         {event.payload.body}
@@ -189,7 +176,7 @@ function HistoryRow({ entry }: { entry: HistoryEntry }) {
               <div className="history-detail-field grid min-w-0 grid-cols-[minmax(0,1fr)] gap-px">
                 <span className={detailLabelClass}>Published</span>
                 <span className={detailValueClass}>
-                  {historyPublishedLabel(event.meta.published_at_ms)}
+                  {formatClockTime(event.meta.published_at_ms)}
                 </span>
               </div>
             )}
