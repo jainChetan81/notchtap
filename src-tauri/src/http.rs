@@ -166,9 +166,7 @@ fn host_header_without_port(host_header: &str) -> &str {
         // only split on a trailing numeric port — a bare IPv6 literal
         // with no brackets (unusual in a Host header, but defensive)
         // contains colons that are not a port separator.
-        Some((host, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => {
-            host
-        }
+        Some((host, port)) if !port.is_empty() && port.bytes().all(|b| b.is_ascii_digit()) => host,
         _ => host_header,
     }
 }

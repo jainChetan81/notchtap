@@ -1099,7 +1099,10 @@ mod tests {
         // simulate a QueueFull drop of that one event
         let outcomes = vec![(events1[0].payload.title.clone(), false)];
         let committed = commit_alert_state(prev, next1, &outcomes);
-        assert!(!committed.hot_fired, "the dropped alert's flag must not advance");
+        assert!(
+            !committed.hot_fired,
+            "the dropped alert's flag must not advance"
+        );
 
         // next tick, condition still holds — must fire again, not stay silent
         let (_, events2, _) = diff(&hot, committed);
@@ -1142,7 +1145,10 @@ mod tests {
         assert!(baseline_state.hot_fired);
 
         let (_, cleared_events, cleared_state) = diff(&fixture(), baseline_state);
-        assert!(cleared_events.is_empty(), "clearing never fires an event either");
+        assert!(
+            cleared_events.is_empty(),
+            "clearing never fires an event either"
+        );
         assert!(!cleared_state.hot_fired);
 
         let (_, refired_events, _) = diff(&hot, cleared_state);

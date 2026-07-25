@@ -811,7 +811,10 @@ mod tests {
     fn feed_log_ref_treats_a_blank_source_label_as_absent() {
         let config = feed_config(Some("   "), None);
         let logged = feed_log_ref(&config);
-        assert_eq!(logged, "example.com", "a whitespace-only source must fall through to the host");
+        assert_eq!(
+            logged, "example.com",
+            "a whitespace-only source must fall through to the host"
+        );
     }
 
     #[test]
@@ -915,15 +918,12 @@ mod tests {
 
     #[test]
     fn sanitize_decodes_named_entities_and_leaves_unknown_ones_verbatim() {
+        assert_eq!(sanitize("Title&nbsp;&nbsp;Source", 100), "Title Source");
+        assert_eq!(sanitize("Wait&mdash;really&hellip;", 100), "Wait—really…");
         assert_eq!(
-            sanitize("Title&nbsp;&nbsp;Source", 100),
-            "Title Source"
+            sanitize("Unknown &xyzzy; entity", 100),
+            "Unknown &xyzzy; entity"
         );
-        assert_eq!(
-            sanitize("Wait&mdash;really&hellip;", 100),
-            "Wait—really…"
-        );
-        assert_eq!(sanitize("Unknown &xyzzy; entity", 100), "Unknown &xyzzy; entity");
     }
 
     #[test]

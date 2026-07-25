@@ -611,12 +611,7 @@ fn diff_match(
                         label: "Cards".to_string(),
                         value: format!(
                             "{} {}Y{}R · {} {}Y{}R",
-                            v.snap.away_abbrev,
-                            away_y,
-                            away_r,
-                            v.snap.home_abbrev,
-                            home_y,
-                            home_r
+                            v.snap.away_abbrev, away_y, away_r, v.snap.home_abbrev, home_y, home_r
                         ),
                     });
                 }
@@ -789,6 +784,11 @@ fn carry_forward_absent(prev: &Snapshot, fetched: &Scoreboard, next: &mut Snapsh
 /// loop in `spawn_espn_poller` calls `diff_match` itself instead of this
 /// function so it can commit per match only on full acceptance — see
 /// `diff_match`'s doc, M4 fix).
+///
+/// Production now calls `diff_match` per match directly (to commit only
+/// accepted deltas); this whole-league wrapper survives only as the
+/// fixture tests' entry point, hence `#[cfg(test)]`.
+#[cfg(test)]
 pub fn diff_scoreboard(
     prev: &Snapshot,
     fetched: &Scoreboard,
@@ -1133,13 +1133,19 @@ fn dedup_key(candidate: &RichEventCandidate) -> String {
 
 /// Filters `candidates` down to ones not already in `seen`, inserting
 /// each survivor's key so a later call (next poll) drops the repeat.
+// Returns the candidates whose dedup key is not already in `seen`, WITHOUT
+// mutating `seen`. Committing a key is deferred to the caller, which only
+// records it AFTER `engine.accept` succeeds (M4-class fix, 2026-07-25): the
+// old version inserted the key as it filtered, so a `QueueFull` drop of a
+// rich event consumed its dedup key and the event was lost forever instead
+// of re-emitting on a later poll.
 fn filter_new(
-    seen: &mut HashSet<String>,
+    seen: &HashSet<String>,
     candidates: Vec<RichEventCandidate>,
 ) -> Vec<RichEventCandidate> {
     candidates
         .into_iter()
-        .filter(|c| seen.insert(dedup_key(c)))
+        .filter(|c| !seen.contains(&dedup_key(c)))
         .collect()
 }
 
@@ -1502,11 +1508,21 @@ pub fn spawn_espn_poller(
                             let seen = rich_seen
                                 .entry((league.clone(), match_id.clone()))
                                 .or_default();
+                            // M4-class fix: commit the dedup key ONLY after a
+                            // successful accept, so a `QueueFull` drop re-emits
+                            // on a later poll instead of being silently lost
+                            // (mirrors the scoreboard/weather paths).
                             for candidate in filter_new(seen, candidates) {
+                                let key = dedup_key(&candidate);
                                 let event =
                                     make_rich_event(league, &snap, &candidate, ttl_secs, priority);
-                                if let Err(e) = engine.accept(event, false).await {
-                                    tracing::warn!(league, match_id, "rich event dropped: {e}");
+                                match engine.accept(event, false).await {
+                                    Ok(()) => {
+                                        seen.insert(key);
+                                    }
+                                    Err(e) => {
+                                        tracing::warn!(league, match_id, "rich event dropped: {e}");
+                                    }
                                 }
                             }
                         }
@@ -2505,9 +2521,12 @@ mod tests {
             text: "Foul by X".to_string(),
             clock: "12'".to_string(),
         };
-        let first_poll = filter_new(&mut seen, vec![candidate.clone()]);
+        let first_poll = filter_new(&seen, vec![candidate.clone()]);
         assert_eq!(first_poll.len(), 1, "first sighting must pass through");
-        let second_poll = filter_new(&mut seen, vec![candidate]);
+        // filter_new no longer commits the key itself — the caller records
+        // it only after a successful accept; simulate that here.
+        seen.insert(dedup_key(&candidate));
+        let second_poll = filter_new(&seen, vec![candidate]);
         assert!(
             second_poll.is_empty(),
             "same (kind, clock) key on a re-poll must be deduped away"
@@ -2527,9 +2546,10 @@ mod tests {
             text: "Foul by Y".to_string(),
             clock: "50'".to_string(),
         };
-        assert_eq!(filter_new(&mut seen, vec![first]).len(), 1);
+        assert_eq!(filter_new(&seen, vec![first.clone()]).len(), 1);
+        seen.insert(dedup_key(&first));
         assert_eq!(
-            filter_new(&mut seen, vec![second]).len(),
+            filter_new(&seen, vec![second]).len(),
             1,
             "a genuinely different event (different clock) must not be deduped"
         );
@@ -2604,7 +2624,10 @@ mod tests {
 
         evict_rich_seen(&mut rich_seen, &snapshots);
 
-        assert!(rich_seen.is_empty(), "a match absent everywhere must be evicted");
+        assert!(
+            rich_seen.is_empty(),
+            "a match absent everywhere must be evicted"
+        );
     }
 
     #[test]
@@ -2639,7 +2662,10 @@ mod tests {
             "a delta dropped by QueueFull must re-emit next tick, not vanish"
         );
         assert_eq!(events2[0].payload.body, events1[0].payload.body);
-        assert_eq!(entry2, entry1, "the re-diff must land on the same snapshot entry");
+        assert_eq!(
+            entry2, entry1,
+            "the re-diff must land on the same snapshot entry"
+        );
     }
 
     #[test]

@@ -120,10 +120,7 @@ pub fn macos_product_version() -> Option<String> {
 pub fn gather_about_info<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     started_at: Instant,
-) -> AboutInfo
-where
-    R: tauri::Runtime,
-{
+) -> AboutInfo {
     let package_info = app.package_info();
     let version = package_info.version.to_string();
     let bundle_id = app.config().identifier.clone();
@@ -203,7 +200,8 @@ mod tests {
 
     #[test]
     fn bundle_size_bytes_sums_nested_files() {
-        let dir = std::env::temp_dir().join(format!("notchtap-about-test-{}", uuid::Uuid::new_v4()));
+        let dir =
+            std::env::temp_dir().join(format!("notchtap-about-test-{}", uuid::Uuid::new_v4()));
         let nested = dir.join("Contents/MacOS");
         std::fs::create_dir_all(&nested).unwrap();
         std::fs::write(dir.join("Contents/Info.plist"), b"12345").unwrap();
@@ -217,7 +215,8 @@ mod tests {
 
     #[test]
     fn bundle_size_bytes_is_none_for_a_missing_root() {
-        let missing = std::env::temp_dir().join(format!("notchtap-about-missing-{}", uuid::Uuid::new_v4()));
+        let missing =
+            std::env::temp_dir().join(format!("notchtap-about-missing-{}", uuid::Uuid::new_v4()));
         assert_eq!(bundle_size_bytes(&missing), None);
     }
 }

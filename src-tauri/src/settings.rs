@@ -68,7 +68,16 @@ fn feed_host_is_internal(url: &reqwest::Url) -> bool {
     if let Ok(ip) = bare.parse::<std::net::IpAddr>() {
         return match ip {
             std::net::IpAddr::V4(v4) => v4.is_loopback() || v4.is_link_local() || v4.is_private(),
-            std::net::IpAddr::V6(v6) => v6.is_loopback(),
+            // IPv4-mapped v6 (`::ffff:a.b.c.d`) unmapped to its v4 form,
+            // else native-v6 loopback / link-local (fe80::/10) / ULA
+            // (fc00::/7) — `is_loopback()` alone missed all of these.
+            std::net::IpAddr::V6(v6) => match v6.to_ipv4_mapped() {
+                Some(v4) => v4.is_loopback() || v4.is_link_local() || v4.is_private(),
+                None => {
+                    let first = v6.segments()[0];
+                    v6.is_loopback() || (first & 0xffc0) == 0xfe80 || (first & 0xfe00) == 0xfc00
+                }
+            },
         };
     }
     let domain = host.trim_end_matches('.').to_ascii_lowercase();

@@ -490,10 +490,11 @@ pub fn run() {
                     app.handle()
                         .listen(crate::event::SLOT_STATE_EVENT, move |event| {
                             let new_id = visible_id_from_slot_state_payload(event.payload());
-                            let mut last = last_visible_id.lock().unwrap();
+                            let mut last =
+                                last_visible_id.lock().unwrap_or_else(|e| e.into_inner());
                             if *last != new_id {
                                 *last = new_id;
-                                *was_hovered.lock().unwrap() = false;
+                                *was_hovered.lock().unwrap_or_else(|e| e.into_inner()) = false;
                             }
                         });
                 }
@@ -1567,10 +1568,7 @@ mod tests {
         let expected = id.to_string();
         let payload = serde_json::to_string(&state).unwrap();
 
-        assert_eq!(
-            visible_id_from_slot_state_payload(&payload),
-            Some(expected)
-        );
+        assert_eq!(visible_id_from_slot_state_payload(&payload), Some(expected));
     }
 
     #[test]

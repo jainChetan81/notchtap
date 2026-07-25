@@ -68,7 +68,18 @@ pub(crate) fn host_is_blocked(url: &reqwest::Url) -> bool {
         .unwrap_or(&host_lower);
     match host_ip.parse::<IpAddr>() {
         Ok(IpAddr::V4(v4)) => v4.is_loopback() || v4.is_link_local() || v4.is_private(),
-        Ok(IpAddr::V6(v6)) => v6.is_loopback(),
+        // An IPv4-mapped v6 address (`::ffff:a.b.c.d`) reaches the same
+        // hosts as its v4 form, so unmap and re-run the v4 ranges;
+        // otherwise cover native-v6 loopback, link-local (fe80::/10) and
+        // unique-local (fc00::/7). `is_loopback()` alone (the original)
+        // let `::ffff:127.0.0.1`, `fe80::1` and `fc00::1` straight through.
+        Ok(IpAddr::V6(v6)) => match v6.to_ipv4_mapped() {
+            Some(v4) => v4.is_loopback() || v4.is_link_local() || v4.is_private(),
+            None => {
+                let first = v6.segments()[0];
+                v6.is_loopback() || (first & 0xffc0) == 0xfe80 || (first & 0xfe00) == 0xfc00
+            }
+        },
         // not a literal IP — a normal DNS hostname (e.g. `espncdn.com`),
         // not blocked by this predicate (DNS-resolution-time rebinding
         // is out of scope for a same-process string check; the

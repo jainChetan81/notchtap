@@ -151,7 +151,9 @@ impl SizeRotatingAppender {
         open_options.mode(0o600);
         inner.file = open_options.open(&current)?;
         #[cfg(unix)]
-        inner.file.set_permissions(fs::Permissions::from_mode(0o600))?;
+        inner
+            .file
+            .set_permissions(fs::Permissions::from_mode(0o600))?;
         inner.size = 0;
         Ok(())
     }

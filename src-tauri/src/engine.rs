@@ -493,6 +493,11 @@ impl<R: tauri::Runtime> Engine<R> {
     /// the two halves independently ordered; `lib.rs`'s on_page_load site
     /// calls the split halves directly instead of this method, precisely
     /// because it DOES need that ordering (see the other method's doc).
+    ///
+    /// Now exercised only by this module's tests (the reload path uses the
+    /// split halves), so it's `#[cfg(test)]` to stay off the production
+    /// build without losing the compute-and-emit coverage.
+    #[cfg(test)]
     pub fn emit_current_blocking(&self) -> SlotState {
         let state = self.current_slot_state_blocking();
         emit_slot_state(&self.app, state.clone());
@@ -549,6 +554,7 @@ impl<R: tauri::Runtime> Engine<R> {
     /// calls `status_snapshot_blocking` directly instead of this method
     /// (see that method's doc) — this one is kept for callers (and this
     /// module's own test) that don't need the plant/emit ordering split.
+    #[cfg(test)]
     pub fn emit_current_status_blocking(&self) -> StatusState {
         let state = self.status_snapshot_blocking();
         emit_status_state(&self.app, state.clone());

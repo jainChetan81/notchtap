@@ -57,23 +57,6 @@ const BACKOFF_SCHEDULE_SECS: [u64; 4] = [5, 10, 30, 60];
 /// the floor backoff again, instead of continuing to escalate.
 const HEALTHY_RESET_SECS: u64 = 5 * 60;
 
-/// R7/C10 fix (2026-07-25): the longest stretch `run_stream_once`'s read
-/// loop will wait for ANY line (not just a content change) before
-/// deciding the child is wedged rather than merely quiet. 90s is
-/// deliberately generous — the adapter's own `stream` mode has no
-/// heartbeat/keepalive (`docs/design/now-playing-adapter.md` — nothing
-/// idle-signals beyond the payload itself), so "no media playing at
-/// all" and "the adapter silently hung" look IDENTICAL from here; this
-/// bound only needs to be long enough that a real (if boring) idle
-/// stretch doesn't trip it constantly, not long enough to rule out
-/// genuine wedging quickly. On expiry the child is killed and this
-/// function returns exactly the way a clean stdout close already does
-/// (`Ok(())`, no distinct error variant) — so a run that goes idle
-/// reconnects through the SAME restart/backoff schedule every other
-/// exit already uses, rather than a bespoke path that could escalate
-/// (or reset) differently and thrash.
-const INACTIVITY_TIMEOUT: Duration = Duration::from_secs(90);
-
 /// The restart-backoff state machine, decoupled from any real subprocess
 /// so it's unit-testable the same way `presentation::presentation_mode`
 /// is (`docs/design/now-playing-adapter.md` §11's own suggestion).
@@ -434,9 +417,8 @@ fn adapter_permission_violation(_pl_path: &Path) -> Option<String> {
 /// the same whether the child also exited nonzero or is still exiting),
 /// pushing each CHANGED summary through `engine.update_now_playing`.
 /// `kill_on_drop(true)` covers the main-path clean shutdown (app exit
-/// drops the `Child`); this function's own loop exit (stdout closed, or
-/// the inactivity watchdog firing — R7/C10 fix, below) covers the
-/// restart path via the caller's supervision loop.
+/// drops the `Child`); this function's own loop exit (stdout closed)
+/// covers the restart path via the caller's supervision loop.
 async fn run_stream_once(
     pl_path: &Path,
     framework_path: &Path,
@@ -468,32 +450,18 @@ async fn run_stream_once(
     let mut lines = BufReader::new(stdout).lines();
 
     let mut current: Option<NowPlayingSummary> = None;
-    loop {
-        // R7/C10 fix: an unbounded `lines.next_line().await` parks this
-        // supervisor forever if the child is alive but silently wedged
-        // (never closes stdout, never prints another line) — the row
-        // stays stuck on whatever was last applied. This 90s bound (see
-        // `INACTIVITY_TIMEOUT`'s doc) treats "no line at all in that
-        // window" as wedged and restarts, same as any other exit —
-        // genuine "nothing is playing" silence is expected to recur
-        // after the restart too, which is fine (cheap, and NOT routed
-        // through a different/escalating path — see the const's doc for
-        // why that matters).
-        let next_line = match tokio::time::timeout(INACTIVITY_TIMEOUT, lines.next_line()).await {
-            Ok(read_result) => read_result?,
-            Err(_elapsed) => {
-                tracing::warn!(
-                    timeout_secs = INACTIVITY_TIMEOUT.as_secs(),
-                    "now-playing adapter produced no output within the inactivity window — \
-                     treating as wedged, restarting"
-                );
-                let _ = child.start_kill();
-                break;
-            }
-        };
-        let Some(line) = next_line else {
-            break; // stdout closed
-        };
+    // Wait UNBOUNDED for each next line. The adapter's `stream` mode
+    // emits only on registration *change* events (docs/design/
+    // now-playing-adapter.md: the connection payload is empty, and there
+    // is no heartbeat) — so a single track playing steadily produces no
+    // line for minutes at a time. That quiet is indistinguishable from a
+    // wedged child by output alone, so an inactivity timeout can't tell
+    // them apart: an earlier 90s watchdog was reverted because it fired
+    // mid-playback and killed+respawned the adapter every 90s for the
+    // whole listening session. A genuinely dead child instead closes
+    // stdout, ending this loop and routing through the restart/backoff
+    // path below — the failure mode we can actually detect.
+    while let Some(line) = lines.next_line().await? {
         let before = current.clone();
         apply_event(&mut current, &line);
         if changed(&before, &current) {
@@ -501,9 +469,8 @@ async fn run_stream_once(
         }
     }
 
-    // stdout closed (or the watchdog above killed the child): reap it so
-    // it never lingers as a zombie, then return — the caller's loop
-    // treats this the same as an error return.
+    // stdout closed: reap the child so it never lingers as a zombie, then
+    // return — the caller's loop treats this the same as an error return.
     let _ = child.wait().await;
     Ok(())
 }
@@ -559,7 +526,10 @@ mod tests {
         older.captured_at_ms = 1_000;
         let mut newer = summary("t");
         newer.captured_at_ms = 2_000;
-        assert_ne!(older, newer, "sanity: the two summaries are not literally equal");
+        assert_ne!(
+            older, newer,
+            "sanity: the two summaries are not literally equal"
+        );
         assert!(
             !changed(&Some(older), &Some(newer)),
             "captured_at_ms alone must never trip change-detection"
@@ -796,7 +766,10 @@ mod tests {
             std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
 
             let violation = adapter_permission_violation(&pl);
-            assert!(violation.is_some(), "a world-writable script must be refused");
+            assert!(
+                violation.is_some(),
+                "a world-writable script must be refused"
+            );
             assert!(violation.unwrap().contains("mediaremote-adapter.pl"));
             std::fs::remove_dir_all(&dir).ok();
         }
