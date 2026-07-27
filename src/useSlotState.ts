@@ -29,7 +29,10 @@ const EVENT_TYPES = ["generic", "score_update", "match_state", "news_item", "age
 type EventType = (typeof EVENT_TYPES)[number];
 
 const PRIORITIES = ["low", "medium", "high"] as const;
-type Priority = (typeof PRIORITIES)[number];
+// plan 146b: exported — StatusRailCard.tsx's interrupt-vs-rotation
+// detection needs the plain Priority union to type its rank map and
+// countdown-anchor bookkeeping (see that file's `PRIORITY_RANK` doc).
+export type Priority = (typeof PRIORITIES)[number];
 
 // plan 096: mirrors rust's `SourceKind` (event.rs) — a closed set, same
 // rigor as EVENT_TYPES/EVENT_SIGNALS above (unrecognized values reject the

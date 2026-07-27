@@ -784,3 +784,46 @@ code-level contract: `V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`. build
 sequence: `IMPLEMENTATION_PLAN.md` §9. test contract:
 `TESTING_STRATEGY.md` §4.13.
 
+## 21. silenced state & priority preemption (locked 2026-07-27)
+
+grilled and ratified 2026-07-27; spec/PRD at `plans/146-silenced-and-
+preemption.md`; glossary terms already in `CONTEXT.md` (Silenced,
+Silent Period, Timed Mute, Skip, Breakthrough; Priority and Expanded
+rewritten).
+
+- **Silenced is a second quiet state, distinct from Paused, and
+  Paused stays absolute.** while Silenced, Medium/Low pushes buffer
+  exactly as under Paused (nothing dropped) but a High Event still
+  promotes (Breakthrough) as a compact card. the tray Pause toggle and
+  the `start_paused` Kill Switch keep their show-nothing meaning —
+  Breakthrough does not apply to them. rationale: one lever that is
+  priority-gated for routine quiet, one that is absolute for "kill
+  it"; merging them would let a spammy High source defeat the kill
+  switch.
+- **silence is display-only.** Connectors (telegram) forward
+  everything as before — Connector-observes-acceptance is preserved;
+  phone quiet hours are the phone's job. pollers keep observing; the
+  idle surface (clock, weather, Agent Board) is unchanged. the HTTP
+  contract is unchanged.
+- **two silence sources, unioned**: the daily Silent Period (default
+  ON, `00:00-10:00`, one window per day, local wall clock, persisted
+  in the `[silence]` config block) and tray Timed Mutes (30m/1h/2h
+  presets, auto-resume, session-only). Skip ends today's window early
+  and re-arms at the next window start. calendar-driven silence was
+  rejected: it would pull OAuth/network into a loopback-only app.
+- **strictly-higher priority preempts the Visible card.** this
+  reverses the v3.6 "a Priority arrival never interrupts the
+  currently-Visible item" contract. High preempts Medium/Low, Medium
+  preempts Low, equal never preempts. the preempted card re-queues at
+  the head of its own tier with its remaining turn intact — an
+  interruption costs the card time, never existence. the handover is
+  a deliberate interrupt exit animation (no reduced-motion variant,
+  per the standing non-goal).
+- **expansion becomes a Medium/High privilege**: Low Promotions and
+  Breakthrough Promotions start compact; the manual expand hotkey
+  still grows any visible card. (narrows plan 033's expand-all.)
+- **default priorities are unchanged.** football goals deliberately
+  stay High — a goal preempts the screen and breaks sleep by explicit
+  operator choice. manual Medium, news Low, agent
+  permission/input/failure High, completion Medium; all remain
+  per-source configurable.

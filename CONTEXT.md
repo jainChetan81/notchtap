@@ -28,9 +28,14 @@ in `docs/ARCHITECTURE.md`.
   tier's own cap are rejected, independent of the other two tiers.
 - **Priority** — `Low | Medium | High` on every Event (v3.6),
   independent of `EventType` — not every high-priority thing is a
-  score. governs Promotion order only: higher-priority Waiting items
-  are promoted next, but a Priority arrival never interrupts the
-  currently-Visible item — it always finishes its own turn.
+  score. governs Promotion order and **Preemption**: higher-priority
+  Waiting items are promoted next, and a strictly-higher-priority
+  arrival cuts the currently-Visible item short — the preempted card
+  re-queues at the head of its own tier with its remaining turn
+  intact, and shows again once every higher-priority card has
+  finished. equal priority never preempts; it waits its turn.
+  (pre-silence contract was no-interruption ever; rewritten with the
+  Silenced work, 2026-07-27.)
 - **Origin** — which source category produced an Event (v6): `Football |
   News | Manual | Agent | Weather`. orthogonal to Priority and `EventType` —
   a source's Origin
@@ -129,8 +134,10 @@ in `docs/ARCHITECTURE.md`.
   extension if remaining time was already low, but never mutates when
   it was first promoted.
 - **Expanded** — a Slot's optional grown state (v3.6; plan 033 made it
-  universal): every Promotion starts Expanded, regardless of Priority,
-  and auto-collapses at half the base Rotation window — the grown first
+  universal, the Silenced work carved out two exceptions): a Medium or
+  High Promotion starts Expanded and auto-collapses at half the base
+  Rotation window; a Low Promotion and a Breakthrough Promotion start
+  compact (the manual expand hotkey still grows either on demand) — the grown first
   half of the turn is display-only and never extends the Rotation. only
   a manual expand (global hotkey) extends the Rotation window, and any
   hotkey press disarms the auto-collapse — a press on an auto-Expanded
@@ -143,6 +150,26 @@ in `docs/ARCHITECTURE.md`.
   formerly gated a 3-item cap. v5: the tray toggle stays session-only,
   but the persisted `start_paused` config flag — the **Kill Switch** —
   makes the app *launch* Paused.)
+- **Silenced** — engine state in which Promotion is priority-gated:
+  Medium/Low pushes buffer into Waiting exactly as under Paused, but a
+  High Event still promotes (**Breakthrough**). display-layer only —
+  Connectors are untouched, pollers keep running, and the overlay's
+  idle surface (clock, weather, Agent Board) behaves as normal. ends by
+  schedule, timer, or Skip; the backlog then drains under normal
+  Rotation. distinct from Paused, which is absolute and sits above
+  Silenced — a Paused engine shows nothing, Breakthrough included.
+- **Silent Period** — a Silenced span that starts and ends on the
+  daily schedule (default 00:00–10:00, one window per day, local wall
+  clock). **Skip** — the tray action that ends today's Silent Period
+  early; the schedule re-arms at the next window start.
+- **Timed Mute** — a Silenced span started manually from the tray with
+  a fixed duration (the "meeting mode": preset lengths, auto-resume
+  when the timer ends). independent of the Silent Period; overlapping
+  silences union — the engine is Silenced until the last one ends.
+- **Breakthrough** — the promotion of a High-priority Event while
+  Silenced. any High Event qualifies, whatever its Origin; the card
+  renders compact (no auto-Expanded opening), and after its Rotation
+  ends the engine returns to Silenced.
 - **Polling Pause** — historical: a Poller-level state (per source) in
   which the Poller stopped checking its external service; no Events
   were produced and changes during the pause were never seen. distinct

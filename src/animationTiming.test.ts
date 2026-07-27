@@ -8,6 +8,7 @@ import {
   CONTENT_EXIT_MS,
   EXPAND_MS,
   HOVER_MS,
+  INTERRUPT_EXIT_MS,
   NOTCHTAP_EASE,
   REVEAL_MS,
   ROTATION_ENTER_MS,
@@ -60,7 +61,10 @@ describe("animationTiming (plan 117)", () => {
     expect(setProperty).toHaveBeenCalledWith("--hover-ms", `${HOVER_MS}ms`);
     expect(setProperty).toHaveBeenCalledWith("--rotation-exit-ms", `${ROTATION_EXIT_MS}ms`);
     expect(setProperty).toHaveBeenCalledWith("--rotation-enter-ms", `${ROTATION_ENTER_MS}ms`);
-    expect(setProperty).toHaveBeenCalledTimes(7);
+    // plan 146b: the interrupt-exit timing token, same injection
+    // discipline as the two rotation tokens above.
+    expect(setProperty).toHaveBeenCalledWith("--interrupt-exit-ms", `${INTERRUPT_EXIT_MS}ms`);
+    expect(setProperty).toHaveBeenCalledTimes(8);
   });
 
   // 2026-07-23 review fix (Duplicated Code finding): NOTCHTAP_EASE is the

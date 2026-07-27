@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use serde::{Deserialize, Serialize};
 
 use crate::event::{Priority, SourceKind, Units};
+use crate::silence::Window;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
@@ -165,6 +166,12 @@ pub struct Config {
     /// an executed subprocess path, not a display preference.
     #[serde(default = "default_now_playing_adapter_dir")]
     pub now_playing_adapter_dir: PathBuf,
+    /// plan 146a: the `[silence]` block — the daily Silent Period
+    /// (`CONTEXT.md`'s Silenced/Silent Period entries). Queue-level gate,
+    /// evaluated beside `start_paused`/the tray Pause toggle (Paused wins
+    /// unconditionally over Silenced). See [`SilenceConfig`].
+    #[serde(default)]
+    pub silence: SilenceConfig,
 }
 
 /// See [`Config::resting_state`].
@@ -576,6 +583,32 @@ impl Default for Config {
             now_playing_enabled: default_now_playing_enabled(),
             now_playing_adapter_enabled: default_now_playing_adapter_enabled(),
             now_playing_adapter_dir: default_now_playing_adapter_dir(),
+            silence: SilenceConfig::default(),
+        }
+    }
+}
+
+/// `[silence]` — plan 146a's daily Silent Period schedule
+/// (`CONTEXT.md`'s Silenced/Silent Period glossary entries).
+/// `enabled`/`window` feed `silence::SilenceController::new` at boot
+/// (`lib.rs`'s wiring); Skip and Timed Mutes are session-only tray state,
+/// never persisted here. Default on, `00:00`-`10:00` local — quiet
+/// overnight from first launch with no setup (spec user story #17).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct SilenceConfig {
+    pub enabled: bool,
+    pub window: Window,
+}
+
+impl Default for SilenceConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            // Unwrap is safe: this literal is covered by
+            // `default_silence_window_parses` below, so a typo here fails
+            // the test suite rather than panicking at runtime.
+            window: Window::parse("00:00-10:00").expect("default silence window must parse"),
         }
     }
 }
@@ -1307,5 +1340,54 @@ url = "https://example.com/without-meta"
         assert_eq!(c.appearance.card_scale, 1.1);
         assert_eq!(c.appearance.card_radius, 12.0);
         assert_eq!(c.appearance.card_opacity, 0.75);
+    }
+
+    // ---- [silence] (plan 146a) ----
+
+    #[test]
+    fn default_silence_window_parses() {
+        // Guards `SilenceConfig::default`'s `.expect(...)` — if this literal
+        // is ever mistyped, this test fails instead of the app panicking at
+        // boot.
+        assert!(crate::silence::Window::parse("00:00-10:00").is_ok());
+    }
+
+    #[test]
+    fn silence_defaults_to_enabled_with_the_overnight_window() {
+        let c = Config::parse("").unwrap();
+        assert!(c.silence.enabled);
+        assert_eq!(
+            c.silence.window,
+            crate::silence::Window::parse("00:00-10:00").unwrap()
+        );
+    }
+
+    #[test]
+    fn silence_window_is_overridable() {
+        let c = Config::parse("[silence]\nwindow = \"23:00-07:30\"\n").unwrap();
+        assert_eq!(
+            c.silence.window,
+            crate::silence::Window::parse("23:00-07:30").unwrap()
+        );
+        // enabled wasn't touched, so it keeps its default
+        assert!(c.silence.enabled);
+    }
+
+    #[test]
+    fn silence_can_be_disabled() {
+        let c = Config::parse("[silence]\nenabled = false\n").unwrap();
+        assert!(!c.silence.enabled);
+        // window keeps its default when only `enabled` is set
+        assert_eq!(
+            c.silence.window,
+            crate::silence::Window::parse("00:00-10:00").unwrap()
+        );
+    }
+
+    #[test]
+    fn malformed_silence_window_is_a_parse_error() {
+        assert!(Config::parse("[silence]\nwindow = \"garbage\"\n").is_err());
+        assert!(Config::parse("[silence]\nwindow = \"25:00-10:00\"\n").is_err());
+        assert!(Config::parse("[silence]\nwindow = \"10:00-10:00\"\n").is_err());
     }
 }

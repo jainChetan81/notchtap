@@ -2,6 +2,7 @@ import {
   CONTENT_EXIT_MS,
   EXPAND_MS,
   HOVER_MS,
+  INTERRUPT_EXIT_MS,
   REVEAL_MS,
   ROTATION_ENTER_MS,
   ROTATION_EXIT_MS,
@@ -57,4 +58,9 @@ export function applyAnimationTiming(
   root.setProperty("--hover-ms", `${HOVER_MS}ms`);
   root.setProperty("--rotation-exit-ms", `${ROTATION_EXIT_MS}ms`);
   root.setProperty("--rotation-enter-ms", `${ROTATION_ENTER_MS}ms`);
+  // plan 146b: same "inject anyway for symmetry" precedent as
+  // ROTATION_EXIT_MS/ROTATION_ENTER_MS above — StatusRailCard.tsx reads
+  // the JS constant directly for motion's `transition.duration`, no CSS
+  // rule consumes this yet.
+  root.setProperty("--interrupt-exit-ms", `${INTERRUPT_EXIT_MS}ms`);
 }

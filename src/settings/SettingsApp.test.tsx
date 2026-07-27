@@ -113,6 +113,7 @@ const config: Config = {
   resting_state: "notch",
   history_enabled: true,
   now_playing_enabled: true,
+  silence: { enabled: true, window: "00:00-10:00" },
 };
 
 // Mirrors src-tauri/src/config.rs::Config::default() (served over IPC by
@@ -179,6 +180,7 @@ const rustConfigDefaults: Config = {
   resting_state: "rail",
   history_enabled: false,
   now_playing_enabled: false,
+  silence: { enabled: true, window: "00:00-10:00" },
 };
 
 const unsetSecrets: SecretStatus = {
@@ -469,9 +471,13 @@ describe("SettingsApp", () => {
     expect(isChecked(screen.getByLabelText("Hide overlay when idle"))).toBe(true);
     expect(
       screen.getByText(
-        "Waiting items promote high → medium → low. Priority chooses the next turn; it never interrupts the visible item.",
+        "Waiting items promote high → medium → low. A strictly-higher-priority arrival interrupts the visible item immediately; equal priority never preempts.",
       ),
     ).toBeTruthy();
+    // plan 146a: the Silenced group's toggle/window reflect the loaded
+    // config fixture (enabled: true, window: "00:00-10:00").
+    expect(isChecked(screen.getByLabelText("Enable silent period"))).toBe(true);
+    expect(screen.getByDisplayValue("00:00-10:00")).toBeTruthy();
   });
 
   // plan 085: the hide-when-idle toggle patches resting_state and it rides
@@ -501,6 +507,66 @@ describe("SettingsApp", () => {
     await waitFor(() => expect(savedConfig).not.toBeNull());
     // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
     expect(savedConfig!.resting_state).toBe("rail");
+  });
+
+  // plan 146a: the Silenced group's toggle and window field both round-trip
+  // into the saved `[silence]` config block, same Save & Relaunch path as
+  // every other General-section field.
+  it("toggling Silent period and editing the window both patch config.silence in the saved payload", async () => {
+    let savedConfig: Config | null = null;
+    mockIPC((command, payload) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "save_config_and_relaunch") {
+        savedConfig = (payload as { config: Config }).config;
+        return null;
+      }
+    });
+    render(<SettingsApp />);
+
+    const toggle = await screen.findByLabelText("Enable silent period");
+    expect(isChecked(toggle)).toBe(true); // fixture config has silence.enabled: true
+    fireEvent.click(toggle);
+    expect(isChecked(toggle)).toBe(false);
+
+    const windowInput = screen.getByDisplayValue("00:00-10:00");
+    fireEvent.change(windowInput, { target: { value: "23:00-07:30" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save & Relaunch" }));
+
+    await waitFor(() => expect(savedConfig).not.toBeNull());
+    // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
+    expect(savedConfig!.silence).toEqual({ enabled: false, window: "23:00-07:30" });
+  });
+
+  // plan 146a: an in-progress invalid window string must NOT reach
+  // patchConfig (the last valid value stays committed) and must surface an
+  // inline error — the client-side mirror of `Window::parse`'s rules, ahead
+  // of the server-side ErrorPanel round-trip.
+  it("an invalid silent-period window shows an inline error and never patches config.silence.window", async () => {
+    let savedConfig: Config | null = null;
+    mockIPC((command, payload) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "save_config_and_relaunch") {
+        savedConfig = (payload as { config: Config }).config;
+        return null;
+      }
+    });
+    render(<SettingsApp />);
+
+    const windowInput = await screen.findByDisplayValue("00:00-10:00");
+    fireEvent.change(windowInput, { target: { value: "not-a-window" } });
+
+    expect(await screen.findByText("invalid — expected HH:MM-HH:MM, start ≠ end")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save & Relaunch" }));
+
+    await waitFor(() => expect(savedConfig).not.toBeNull());
+    // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
+    expect(savedConfig!.silence.window).toBe("00:00-10:00");
   });
 
   it("renders every save rejection message", async () => {

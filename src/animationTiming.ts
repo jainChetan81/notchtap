@@ -144,3 +144,23 @@ export const HOVER_MS = 160;
 // promotion/exit legs' shared NOTCHTAP_EASE-only symmetry.
 export const ROTATION_EXIT_MS = 70;
 export const ROTATION_ENTER_MS = 120;
+
+// plan 146b (Priority Preemption, spec `docs/ARCHITECTURE.md` §21 / plan
+// 146's "interrupt exit" deliverable): the ONE new timing pair this plan
+// adds. A strictly-higher-priority arrival now cuts the Visible card's
+// turn short (queue.rs's `try_preempt_visible`, rust-side, no wire flag —
+// see StatusRailCard.tsx's own doc on how the frontend infers this from
+// existing fields) — that handover must read as "yanked because
+// something more important arrived," not as an ordinary end-of-turn
+// rotation (ROTATION_EXIT_MS/ROTATION_ENTER_MS above) or a glitch.
+// INTERRUPT_EXIT_MS is deliberately SHORTER than ROTATION_EXIT_MS itself
+// (70ms) — the fastest, sharpest leg on the card — paired with
+// INTERRUPT_EASE (a snap-in ease-in curve, not the house NOTCHTAP_EASE
+// glide) and a small y/scale "yank" in `contentExitVariants` (see that
+// export's own doc). The ENTER leg deliberately reuses SWAP_EXIT_MS/
+// NOTCHTAP_EASE — the ordinary PROMOTION entrance, not the lighter
+// rotation-enter — because the incoming card is a genuine new Promotion
+// taking the Slot, not a same-tier rotation; only the OUTGOING leg needs
+// its own distinct treatment.
+export const INTERRUPT_EXIT_MS = 60;
+export const INTERRUPT_EASE: [number, number, number, number] = [0.4, 0, 1, 1];

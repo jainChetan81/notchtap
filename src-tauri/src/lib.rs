@@ -40,6 +40,7 @@ mod settings;
 // capabilities/settings.json must all name exactly the commands listed
 // there. Its own tests are the parity guard for that triple.
 mod settings_commands;
+pub mod silence;
 mod status;
 mod weather_poller;
 
@@ -262,6 +263,11 @@ pub fn run() {
     let now_playing_enabled = config.now_playing_enabled;
     let now_playing_adapter_enabled = config.now_playing_adapter_enabled;
     let now_playing_adapter_dir = config.now_playing_adapter_dir.clone();
+    // plan 146a: the `[silence]` block feeds `SilenceController::new` at
+    // boot (below, in `setup`) — session-only mute/skip state is never
+    // read from config, only the daily schedule.
+    let silence_schedule_enabled = config.silence.enabled;
+    let silence_window = config.silence.window;
 
     // v3 outbound connectors: built here (channel needs no runtime), the
     // worker future is spawned in setup once the runtime exists. missing
@@ -378,6 +384,21 @@ pub fn run() {
                 history,
             );
             app.manage(engine.clone());
+
+            // plan 146a: the one SilenceController, managed the same way as
+            // `engine` above (an `Arc<StdMutex<_>>` rather than the
+            // Engine's own `Arc<Mutex<_>>` because this is read/mutated
+            // from the tray's main-thread handlers as well as the async
+            // schedule task below — `StdMutex` avoids requiring an async
+            // context just to check a mute deadline). Session-only
+            // skip/mute state starts empty every boot by construction
+            // (`SilenceController::new` takes no such state); only the
+            // daily schedule comes from config.
+            let silence_controller = Arc::new(StdMutex::new(silence::SilenceController::new(
+                silence_schedule_enabled,
+                silence_window,
+            )));
+            app.manage(silence_controller.clone());
 
             // v7 (plan 133/134/137): the one Agent Registry, managed exactly
             // like `engine` above so both the HTTP layer (`http::AppState`,
@@ -656,7 +677,12 @@ pub fn run() {
             apply_overlay_native_config(&window)?;
 
             position_window(&window, mode, cutout)?;
-            let pause_item = build_tray(app.handle(), engine.clone(), start_paused)?;
+            let (pause_item, silenced_indicator_item) = build_tray(
+                app.handle(),
+                engine.clone(),
+                start_paused,
+                silence_controller.clone(),
+            )?;
 
             // v3.6 spec §7.1: manual expand toggle, rust-side only — the
             // frontend never calls the plugin's JS api (receive-only
@@ -808,6 +834,17 @@ pub fn run() {
             // inside the Engine — it is the consumer of the wake, so the
             // wake never escapes engine.rs.
             engine.spawn_rotation();
+
+            // plan 146a: the Silenced schedule/mute timer — always spawned
+            // (unlike the pollers below, which are config-gated) because
+            // even a disabled schedule can still have a tray mute started
+            // against it; the task itself is what makes a disabled
+            // schedule with no mute running a permanent no-op.
+            spawn_silence_task(
+                engine.clone(),
+                silence_controller.clone(),
+                silenced_indicator_item,
+            );
 
             // espn poller (v2 spec §3) — config-gated: `espn_enabled =
             // false` means it never spawns. first poll only baselines
@@ -1502,6 +1539,180 @@ fn toggle_pause<R: tauri::Runtime>(engine: &Engine<R>, pause_item: &MenuItem<R>)
     let _ = pause_item.set_text(if now_paused { "Resume" } else { "Pause" });
 }
 
+/// Current wall-clock instant expressed the way `silence::SilenceController`
+/// needs it. The one (and only) place `chrono::Local::now()` is read for
+/// silence purposes — every other silence function in this file takes an
+/// `AbsoluteMinute` in, mirroring `silence.rs`'s own "the caller passes
+/// time in, nothing here reads the clock" discipline.
+fn now_abs_minute() -> silence::AbsoluteMinute {
+    silence::absolute_minute(chrono::Local::now().naive_local())
+}
+
+/// Pure decision: does the queue's `silenced` flag need to change to match
+/// the controller's verdict? `None` (the common case on most wakes/clicks —
+/// nothing actually flipped) means no-op. Mirrors `toggle_pause`'s "pure
+/// decision, thin apply wrapper" split, generalized to two apply wrappers
+/// here (blocking for tray handlers, async for the schedule task) instead
+/// of one, since this is called from both a main-thread context and a
+/// tokio task.
+fn silence_should_flip(queue_silenced: bool, verdict_silenced: bool) -> Option<bool> {
+    (queue_silenced != verdict_silenced).then_some(verdict_silenced)
+}
+
+/// The tray's Silenced indicator text — a disabled, unclickable menu item
+/// is the cheapest widget this tray idiom has for a status label (no
+/// separate "status text" concept), same "reuse a MenuItem, drive it with
+/// set_text" idiom `toggle_pause` already uses for Pause/Resume.
+fn silence_indicator_label(silenced: bool) -> &'static str {
+    if silenced {
+        "Silenced"
+    } else {
+        "Not Silenced"
+    }
+}
+
+/// The tray icon's title glyph while Silenced — spec story 14 wants the
+/// state glanceable from the menu bar itself, not only inside the opened
+/// menu (which is all the disabled-MenuItem indicator above can give).
+/// macOS renders a tray title as text beside the icon; `None` removes it
+/// entirely, so the un-Silenced menu bar looks exactly as before.
+fn silence_tray_title(silenced: bool) -> Option<&'static str> {
+    silenced.then_some("☾")
+}
+
+/// Pushes both Silenced indicators — the disabled menu item's text and
+/// the tray icon's title glyph — to match `verdict`. The tray handle is
+/// looked up by id from the menu item's own app handle so every caller
+/// (tray handlers and the schedule task) stays signature-stable.
+fn set_silence_indicators<R: tauri::Runtime>(indicator_item: &MenuItem<R>, verdict: bool) {
+    let _ = indicator_item.set_text(silence_indicator_label(verdict));
+    if let Some(tray) = indicator_item.app_handle().tray_by_id(TRAY_ID) {
+        let _ = tray.set_title(silence_tray_title(verdict));
+    }
+}
+
+/// The one tray icon's stable id — needed so the Silenced glyph updaters
+/// can find it again after `build_tray` hands the icon to tauri.
+const TRAY_ID: &str = "notchtap-tray";
+
+/// Main-thread apply wrapper (tray handlers, off the tokio runtime — same
+/// context `toggle_pause` runs in). Silences/unsilences the queue only on
+/// an actual flip, logs the change, and never logs event content (this
+/// path never touches an Event).
+fn apply_silence_verdict_blocking<R: tauri::Runtime>(engine: &Engine<R>, verdict_silenced: bool) {
+    engine.apply_blocking(|q, _now| {
+        if let Some(new_state) = silence_should_flip(q.is_silenced(), verdict_silenced) {
+            if new_state {
+                q.silence();
+            } else {
+                q.unsilence();
+            }
+            tracing::info!(silenced = new_state, "silence state changed (tray)");
+        }
+    });
+}
+
+/// The async twin of `apply_silence_verdict_blocking` — the schedule task
+/// (`spawn_silence_task`, below) lives on the tokio runtime, so it goes
+/// through `Engine::apply` instead of `apply_blocking`.
+async fn apply_silence_verdict<R: tauri::Runtime>(engine: &Engine<R>, verdict_silenced: bool) {
+    engine
+        .apply(|q, _now| {
+            if let Some(new_state) = silence_should_flip(q.is_silenced(), verdict_silenced) {
+                if new_state {
+                    q.silence();
+                } else {
+                    q.unsilence();
+                }
+                tracing::info!(silenced = new_state, "silence state changed (schedule)");
+            }
+        })
+        .await;
+}
+
+/// Recomputes the verdict from the current wall clock, applies it to the
+/// queue, and refreshes the tray label — the shared tail every tray
+/// mute/cancel/skip handler runs after mutating the `SilenceController`,
+/// so a click takes effect immediately rather than waiting for
+/// `spawn_silence_task`'s next scheduled wake.
+fn refresh_silence_indicator<R: tauri::Runtime>(
+    engine: &Engine<R>,
+    controller: &StdMutex<silence::SilenceController>,
+    indicator_item: &MenuItem<R>,
+) {
+    let now = now_abs_minute();
+    let verdict = controller
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .is_silenced(now);
+    apply_silence_verdict_blocking(engine, verdict);
+    set_silence_indicators(indicator_item, verdict);
+}
+
+/// Shared body for the three tray mute presets — only the duration
+/// differs.
+fn start_mute_from_tray<R: tauri::Runtime>(
+    engine: &Engine<R>,
+    controller: &StdMutex<silence::SilenceController>,
+    indicator_item: &MenuItem<R>,
+    duration_minutes: u64,
+) {
+    let now = now_abs_minute();
+    controller
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .start_mute(duration_minutes, now);
+    refresh_silence_indicator(engine, controller, indicator_item);
+}
+
+/// plan 146a: the Silenced schedule/mute timer. Computes the verdict from
+/// the CURRENT wall clock on every wake — never from a stored deadline —
+/// so a clock jump (system sleep, DST, a manual date change) self-heals on
+/// the very next iteration instead of needing dedicated handling; this is
+/// exactly the "sleep, recompute, sleep again" contract
+/// `SilenceController::next_boundary`'s own doc comment describes for its
+/// conservative-wake callers. Tray mute/skip clicks (`refresh_silence_indicator`,
+/// above) apply their own verdict immediately rather than waiting for this
+/// loop to wake — this task only needs to catch the schedule's own
+/// boundaries (window start/end) and a mute's natural expiry.
+fn spawn_silence_task<R: tauri::Runtime>(
+    engine: Engine<R>,
+    controller: Arc<StdMutex<silence::SilenceController>>,
+    indicator_item: MenuItem<R>,
+) {
+    tauri::async_runtime::spawn(async move {
+        loop {
+            let now = now_abs_minute();
+            let (verdict, boundary) = {
+                let c = controller.lock().unwrap_or_else(|e| e.into_inner());
+                (c.is_silenced(now), c.next_boundary(now))
+            };
+            apply_silence_verdict(&engine, verdict).await;
+            set_silence_indicators(&indicator_item, verdict);
+
+            // `next_boundary` is conservative — it may wake this loop at a
+            // boundary where the verdict doesn't actually flip (e.g. a
+            // schedule window ending while a longer mute is still
+            // running) — hence recomputing from scratch above rather than
+            // trusting the boundary to mean "flip now". `None` (schedule
+            // disabled, no mute running) falls back to an hourly
+            // re-check: nothing is expected to change the verdict in that
+            // state on its own, but re-evaluating from the wall clock
+            // periodically rather than sleeping forever means a tray mute
+            // started moments after this reaches the `None` arm is caught
+            // within the hour even in the pathological case where
+            // `refresh_silence_indicator`'s immediate apply somehow didn't
+            // run (e.g. a future caller that mutates the controller
+            // without going through the tray helpers).
+            let sleep_for = match boundary {
+                Some(b) => std::time::Duration::from_secs(b.saturating_sub(now).max(1) * 60),
+                None => std::time::Duration::from_secs(3600),
+            };
+            tokio::time::sleep(sleep_for).await;
+        }
+    });
+}
+
 /// v6: the tray is deliberately minimal — Pause/Resume, Settings…, Quit.
 /// It previously also carried "Pause Football Scores"/"Pause News" items,
 /// but those duplicated the `espn_enabled`/`rss_enabled` toggles already in
@@ -1509,36 +1720,110 @@ fn toggle_pause<R: tauri::Runtime>(engine: &Engine<R>, pause_item: &MenuItem<R>)
 /// order — richer than a toggle belongs there, per ARCHITECTURE.md §17's
 /// "everything richer than a toggle lives [in Settings], not in more tray
 /// items" rule, which this tray had not yet caught up to).
+///
+/// plan 146a added the Silenced indicator and the mute/skip items beside
+/// Pause — still rust-side only (no new invoke commands, `CLAUDE.md`'s ipc
+/// & security section): every one of these mutates the session-only
+/// `SilenceController` and applies the result to the queue the exact same
+/// way `toggle_pause` above already does for Pause.
 fn build_tray<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     engine: Engine<R>,
     start_paused: bool,
-) -> tauri::Result<MenuItem<R>> {
+    silence_controller: Arc<StdMutex<silence::SilenceController>>,
+) -> tauri::Result<(MenuItem<R>, MenuItem<R>)> {
     // v5 kill switch: a start_paused boot renders the toggle as "Resume"
     // from the first open — the label always names the *next* action.
     let initial_pause_label = if start_paused { "Resume" } else { "Pause" };
     let pause_item = MenuItem::with_id(app, "pause", initial_pause_label, true, None::<&str>)?;
+
+    let initial_silenced = {
+        let c = silence_controller.lock().unwrap_or_else(|e| e.into_inner());
+        c.is_silenced(now_abs_minute())
+    };
+    let silenced_indicator_item = MenuItem::with_id(
+        app,
+        "silenced_indicator",
+        silence_indicator_label(initial_silenced),
+        false,
+        None::<&str>,
+    )?;
+    let mute_30_item = MenuItem::with_id(app, "mute_30", "Mute 30 min", true, None::<&str>)?;
+    let mute_60_item = MenuItem::with_id(app, "mute_60", "Mute 1 hour", true, None::<&str>)?;
+    let mute_120_item = MenuItem::with_id(app, "mute_120", "Mute 2 hours", true, None::<&str>)?;
+    // Always enabled: `SilenceController::cancel_mute` is already a
+    // documented no-op when nothing is running, so a click while no mute
+    // is active is harmless — simpler than an enabled/disabled dance kept
+    // in sync with mute state across three separate handlers.
+    let cancel_mute_item =
+        MenuItem::with_id(app, "cancel_mute", "Cancel mute", true, None::<&str>)?;
+    let skip_item = MenuItem::with_id(
+        app,
+        "skip_silence",
+        "Skip today's silence",
+        true,
+        None::<&str>,
+    )?;
     let settings_item = MenuItem::with_id(app, "settings", "Settings…", true, None::<&str>)?;
     let quit_item = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
     let pause_item_for_handler = pause_item.clone();
+    let indicator_for_handler = silenced_indicator_item.clone();
+    let controller_for_handler = silence_controller;
     let menu = Menu::new(app)?;
     menu.append(&pause_item)?;
+    menu.append(&silenced_indicator_item)?;
+    menu.append(&mute_30_item)?;
+    menu.append(&mute_60_item)?;
+    menu.append(&mute_120_item)?;
+    menu.append(&cancel_mute_item)?;
+    menu.append(&skip_item)?;
     menu.append(&settings_item)?;
     menu.append(&quit_item)?;
 
-    TrayIconBuilder::new()
+    let tray = TrayIconBuilder::with_id(TRAY_ID)
         .icon(app.default_window_icon().expect("bundled icon").clone())
         .menu(&menu)
         .show_menu_on_left_click(true)
         .on_menu_event(move |app, event| match event.id().as_ref() {
             "pause" => toggle_pause(&engine, &pause_item_for_handler),
+            "mute_30" => {
+                start_mute_from_tray(&engine, &controller_for_handler, &indicator_for_handler, 30)
+            }
+            "mute_60" => {
+                start_mute_from_tray(&engine, &controller_for_handler, &indicator_for_handler, 60)
+            }
+            "mute_120" => start_mute_from_tray(
+                &engine,
+                &controller_for_handler,
+                &indicator_for_handler,
+                120,
+            ),
+            "cancel_mute" => {
+                controller_for_handler
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .cancel_mute();
+                refresh_silence_indicator(&engine, &controller_for_handler, &indicator_for_handler);
+            }
+            "skip_silence" => {
+                let now = now_abs_minute();
+                controller_for_handler
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner())
+                    .skip_current_window(now);
+                refresh_silence_indicator(&engine, &controller_for_handler, &indicator_for_handler);
+            }
             "settings" => open_settings_window(app),
             "quit" => app.exit(0),
             _ => {}
         })
         .build(app)?;
+    // A Silenced boot (mid-window launch) shows the glyph from the first
+    // frame — the schedule task's first wake would set it anyway, but
+    // that races the menu bar's first paint.
+    let _ = tray.set_title(silence_tray_title(initial_silenced));
 
-    Ok(pause_item)
+    Ok((pause_item, silenced_indicator_item))
 }
 
 /// v5 spec §1: lazy creation, focus-if-open. A normal decorated window —
@@ -1652,6 +1937,32 @@ mod tests {
 
     fn event(priority: Priority) -> Event {
         test_fixtures::with_priority(test_fixtures::event("t"), priority)
+    }
+
+    // ---- plan 146a: silence_should_flip / silence_indicator_label ----
+
+    #[test]
+    fn silence_should_flip_is_none_when_already_matching() {
+        assert_eq!(silence_should_flip(false, false), None);
+        assert_eq!(silence_should_flip(true, true), None);
+    }
+
+    #[test]
+    fn silence_should_flip_reports_the_new_state_on_a_mismatch() {
+        assert_eq!(silence_should_flip(false, true), Some(true));
+        assert_eq!(silence_should_flip(true, false), Some(false));
+    }
+
+    #[test]
+    fn silence_indicator_label_names_the_current_state() {
+        assert_eq!(silence_indicator_label(true), "Silenced");
+        assert_eq!(silence_indicator_label(false), "Not Silenced");
+    }
+
+    #[test]
+    fn silence_tray_title_shows_a_glyph_only_while_silenced() {
+        assert_eq!(silence_tray_title(true), Some("☾"));
+        assert_eq!(silence_tray_title(false), None);
     }
 
     #[test]

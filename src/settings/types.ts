@@ -39,6 +39,15 @@ export interface AgentRuntimesConfig {
 
 export type AgentAdapterRuntime = "claude_code" | "codex" | "kimi" | "opencode";
 
+// plan 146a: mirrors rust's `SilenceConfig` (config.rs) — the `[silence]`
+// block. `window` is a plain `"HH:MM-HH:MM"` (24h) string on the wire —
+// `silence::Window`'s own `Serialize`/`Deserialize` impls round-trip it
+// through `Display`/`parse`, never a structured `{start, end}` object.
+export interface SilenceConfig {
+  enabled: boolean;
+  window: string;
+}
+
 // Mirrors rust's `AgentsConfig` (config.rs) — the `[agents]` v7 config
 // block: global enable, registry retention/staleness, the
 // informational-card toggle, four per-kind Notification priorities, and
@@ -114,6 +123,10 @@ export interface Config {
   // costs nothing functionally, unlike `detect_path` above, which stays
   // in this type only because nothing in this plan required removing it.
   now_playing_enabled: boolean;
+  // plan 146a: the `[silence]` block — always present on the wire
+  // (`#[serde(default)]` on the rust side), same "required, not optional"
+  // discipline as `agents` above.
+  silence: SilenceConfig;
 }
 
 export interface SecretStatus {

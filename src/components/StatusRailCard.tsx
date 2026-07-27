@@ -2,6 +2,8 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   CONTENT_EXIT_MS,
+  INTERRUPT_EASE,
+  INTERRUPT_EXIT_MS,
   NOTCHTAP_EASE,
   REVEAL_MS,
   ROTATION_ENTER_MS,
@@ -20,7 +22,7 @@ import {
 } from "../lib/presentation";
 import { weatherArtFor } from "../lib/weatherArt";
 import { useExitChoreography } from "../useExitChoreography";
-import type { EspnMeta, SlotState } from "../useSlotState";
+import type { EspnMeta, Priority, SlotState } from "../useSlotState";
 import type { StatusState } from "../useStatusState";
 import { FlankClock } from "./FlankClock";
 import { IdleFace } from "./IdleFace";
@@ -114,12 +116,57 @@ const PULSE_END_ANIMATION: Record<NonNullable<Pulse>, string> = {
 // `transition` back onto the DOM the way plain CSS values are
 // inspectable, so the variant function itself is the only place these
 // three values are actually checkable.
+// plan 146b: `custom` widened from a plain `isRotation` boolean to
+// `{ isRotation, isInterrupt }` — a Priority Preemption handover is
+// ALWAYS also a showing(A)->showing(B) rotation (`isRotation` true, see
+// `isInterrupt`'s own doc further down for why), but it must NOT play
+// the gentle rotation fade: it needs its own faster, sharper "yanked"
+// exit (INTERRUPT_EXIT_MS + INTERRUPT_EASE, plus a small downward/scale
+// pull so it reads as cut short, not merely quicker). `isInterrupt` is
+// checked first and wins outright — the plain `isRotation` branch below
+// only ever runs for an ordinary end-of-turn rotation.
 export const contentExitVariants = {
-  exit: (isRotation: boolean) =>
-    isRotation
+  exit: (custom: { isRotation: boolean; isInterrupt: boolean }) => {
+    if (custom.isInterrupt) {
+      return {
+        opacity: 0,
+        y: 8,
+        scale: 0.96,
+        transition: { duration: INTERRUPT_EXIT_MS / 1000, ease: INTERRUPT_EASE },
+      };
+    }
+    return custom.isRotation
       ? { opacity: 0, transition: { duration: ROTATION_EXIT_MS / 1000, ease: NOTCHTAP_EASE } }
-      : { opacity: 0, transition: { duration: CONTENT_EXIT_MS / 1000, ease: NOTCHTAP_EASE } },
+      : { opacity: 0, transition: { duration: CONTENT_EXIT_MS / 1000, ease: NOTCHTAP_EASE } };
+  },
 };
+
+// plan 146b: rank map backing `isInterrupt`'s "strictly higher priority"
+// check below — mirrors rust's `Priority` ordering (`event.rs`/`queue.rs`
+// derive `Ord` with declaration order Low < Medium < High). Kept local
+// to this file (not exported from useSlotState.ts) since nothing else
+// needs a numeric Priority rank today.
+const PRIORITY_RANK: Record<"low" | "medium" | "high", number> = {
+  low: 0,
+  medium: 1,
+  high: 2,
+};
+
+// plan 146b: how much of the OUTGOING item's Rotation window must still
+// plausibly remain, estimated client-side, before a showing(A)->
+// showing(B) swap is treated as a genuine Priority Preemption rather
+// than an ordinary end-of-turn Promotion. The wire carries no explicit
+// "preempted" flag (queue.rs's `try_preempt_visible` is rust-internal —
+// spec's deliberate "no wire change"), so this is inferred from the same
+// ttl/remaining fields TtlBar.tsx already anchors locally: an ordinary
+// rotation only ever happens once the outgoing item's countdown has
+// actually run out (estimated remaining ~0, modulo the engine's own
+// small tick-to-emission latency), while a preemption cuts the item off
+// with real time still on the clock. 400ms comfortably clears that
+// tick/emission jitter (the rotation loop wakes ~10ms past its own
+// deadline — see engine.rs) without requiring a preemption to land in
+// the very same instant as the interrupting enqueue to be recognized.
+const INTERRUPT_MIN_REMAINING_MS = 400;
 
 export function StatusRailCard({
   slot,
@@ -162,10 +209,25 @@ export function StatusRailCard({
   // render, guaranteeing the guard below never mistakes mount for a
   // same-key re-render); `isRotation`/`wasShowing` both start `false`
   // since nothing has ever "shown" yet.
-  const wasShowingRef = useRef<{ key: unknown; isRotation: boolean; wasShowing: boolean }>({
+  // plan 146b: `isInterrupt` and `anchor` added alongside. `anchor` is
+  // THIS key's own countdown snapshot (priority + the wall-clock instant
+  // it was last (re)anchored + the `remainingMs` it was anchored at) —
+  // read back only once, at the render where a DIFFERENT key eventually
+  // replaces this one, to estimate how much of ITS turn was actually left
+  // at that instant (see `isInterrupt`'s own doc below for why that's the
+  // only signal available). `null` until the first showing render sets it.
+  const wasShowingRef = useRef<{
+    key: unknown;
+    isRotation: boolean;
+    isInterrupt: boolean;
+    wasShowing: boolean;
+    anchor: { priority: Priority; anchoredAt: number; remainingMs: number } | null;
+  }>({
     key: undefined,
     isRotation: false,
+    isInterrupt: false,
     wasShowing: false,
+    anchor: null,
   });
 
   // Keyed on [currentId, currentSignal], never on priority — the actual
@@ -268,14 +330,75 @@ export function StatusRailCard({
   // history; only showing(A)->showing(B), where both are true, yields
   // true. Promotion and exit legs are therefore byte-identical to before
   // this plan — only the true showing->showing case changes at all.
+  // plan 146b: `isInterrupt` — computed in the SAME guarded block, at the
+  // SAME instant `isRotation` is (the render where `swapKey` actually
+  // changes), for the same "must stay stable for the whole mounted
+  // lifetime of this key" reason documented above. A Priority Preemption
+  // is, structurally, ALWAYS a showing(A)->showing(B) rotation too (the
+  // Slot never empties in between) — the wire gives no other signal that
+  // distinguishes "cut short by something more important" from "finished
+  // its turn, next item promoted," including when that next item happens
+  // to outrank the one it replaced by ordinary priority-drain order (the
+  // queue always promotes its highest-priority Waiting item, so a plain
+  // priority INCREASE across a rotation is common and unremarkable on its
+  // own). The two extra facts that jointly and only hold for a genuine
+  // preemption: (1) the arriving item's priority is STRICTLY higher than
+  // the outgoing one's (queue.rs's own `try_preempt_visible` contract —
+  // equal or lower never preempts), and (2) the outgoing item's own
+  // countdown, estimated from its last anchor, still had real time left
+  // (an ordinary end-of-turn rotation only ever fires once that countdown
+  // has actually run out). `previous.anchor` is the OUTGOING key's own
+  // last-anchored snapshot — see the ref's declaration doc above and the
+  // re-anchor block just below for how it's kept fresh across supersede
+  // top-ups/manual-expand extensions on the same key.
   if (wasShowingRef.current.key !== swapKey) {
+    const previous = wasShowingRef.current;
+    const isRotationNow = showing && previous.wasShowing;
+    let isInterruptNow = false;
+    if (isRotationNow && previous.anchor) {
+      const elapsedMs = performance.now() - previous.anchor.anchoredAt;
+      const estimatedRemainingMs = previous.anchor.remainingMs - elapsedMs;
+      isInterruptNow =
+        PRIORITY_RANK[slot.priority] > PRIORITY_RANK[previous.anchor.priority] &&
+        estimatedRemainingMs > INTERRUPT_MIN_REMAINING_MS;
+    }
     wasShowingRef.current = {
       key: swapKey,
-      isRotation: showing && wasShowingRef.current.wasShowing,
+      isRotation: isRotationNow,
+      isInterrupt: isInterruptNow,
       wasShowing: showing,
+      anchor: showing
+        ? { priority: slot.priority, anchoredAt: performance.now(), remainingMs: slot.remainingMs }
+        : null,
+    };
+  } else if (showing && wasShowingRef.current.anchor?.remainingMs !== slot.remainingMs) {
+    // plan 146b: re-anchor THIS key's own countdown snapshot whenever its
+    // remainingMs actually changes without the key itself changing — a
+    // topic supersede's top-up or a manual-expand extension (same
+    // re-anchor triggers TtlBar.tsx's own effect uses: `[slotId, ttlMs,
+    // remainingMs]`). Deliberately does NOT touch `isRotation`/
+    // `isInterrupt`/`wasShowing` — those are pinned for this key's whole
+    // mounted lifetime (see the guard's own doc above); only the anchor
+    // used to judge the NEXT key's swap needs to stay current.
+    wasShowingRef.current = {
+      ...wasShowingRef.current,
+      anchor: {
+        priority: slot.priority,
+        anchoredAt: performance.now(),
+        remainingMs: slot.remainingMs,
+      },
     };
   }
   const isRotation = wasShowingRef.current.isRotation;
+  const isInterrupt = wasShowingRef.current.isInterrupt;
+  // plan 146b: the entering child's own animation should treat a Priority
+  // Preemption's incoming card exactly like an ordinary promotion (the
+  // full slide-in), never like the lighter same-tier rotation, even
+  // though `isRotation` is structurally true for it too (see
+  // `isInterrupt`'s own doc above). Named once here so every consumer in
+  // the JSX below (initial/animate/duration/rotation-swap class/data
+  // attribute) reads the same derived value.
+  const enterAsPromotion = !isRotation || isInterrupt;
 
   // plan 120: the showing<->idle exit-choreography state machine —
   // extracted to src/useExitChoreography.ts (see that file for every
@@ -761,42 +884,61 @@ export function StatusRailCard({
               below reads the LIVE `slot` directly (see the comment above
               `newsCategory`) rather than a frozen stand-in: the freeze is
               `AnimatePresence`'s job now.
-              plan 127 (Step 3, finding #3): `custom={isRotation}` on this
-              `AnimatePresence` is what lets the EXITING child (the OLD
-              `swapKey`, already dropped out of the JSX below by the time
-              this render commits) still learn whether ITS OWN removal is
-              a rotation — see `contentExitVariants`' own doc for why this
-              is the only channel available for that. Promotion
-              (idle->showing) and exit (showing->idle) always pass
-              `isRotation: false`, so this AnimatePresence's behavior for
-              those two legs is unchanged. */}
-              <AnimatePresence mode="wait" custom={isRotation}>
+              plan 127 (Step 3, finding #3): `custom={{ isRotation,
+              isInterrupt }}` on this `AnimatePresence` is what lets the
+              EXITING child (the OLD `swapKey`, already dropped out of the
+              JSX below by the time this render commits) still learn
+              whether ITS OWN removal is a rotation (or, per plan 146b, a
+              Priority Preemption's interrupt) — see `contentExitVariants`'
+              own doc for why this is the only channel available for that.
+              Promotion (idle->showing) and exit (showing->idle) always
+              pass `{ isRotation: false, isInterrupt: false }`, so this
+              AnimatePresence's behavior for those two legs is unchanged.
+              plan 146b: the ENTERING child's own `initial`/`animate` below
+              additionally check `isInterrupt` — a preemption's incoming
+              card is a genuine new Promotion taking the Slot (spec: "the
+              new card enters with the normal enter animation"), so it
+              must use the slide-in promotion entrance even though
+              `isRotation` is (structurally) also true for it, never the
+              lighter opacity-only rotation entrance. `enterAsPromotion`
+              names that combined condition once so every prop below
+              reads it consistently. */}
+              <AnimatePresence mode="wait" custom={{ isRotation, isInterrupt }}>
                 {showing && (
                   <motion.div
                     key={swapKey}
                     // item 3 (rotation de-noise): `rotation-swap` (only on a
-                    // same-slot rotation, never a promotion) gates off the
-                    // news chips' own `pill-enter` replay
-                    // (news-category.css) — see that rule's own doc for
-                    // why. Plain string concatenation, not the
+                    // ordinary same-slot rotation, never a promotion OR an
+                    // interrupt) gates off the news chips' own `pill-enter`
+                    // replay (news-category.css) — see that rule's own doc
+                    // for why. Plain string concatenation, not the
                     // array-join idiom this file uses elsewhere
                     // (`cardClass`/`belowBlockClass`), since there are only
                     // ever these two fixed tokens.
-                    className={isRotation ? "card-content rotation-swap" : "card-content"}
+                    className={
+                      isRotation && !isInterrupt ? "card-content rotation-swap" : "card-content"
+                    }
                     // plan 127 (Step 3): a showing->showing rotation skips
                     // the y-slide entirely (opacity-only) — the slide is
                     // the part of the ceremony that reads as repetitive on
                     // a ~10s cadence; the idle->showing promotion keeps its
                     // slide, byte-identical to before this plan.
-                    initial={isRotation ? { opacity: 0 } : { opacity: 0, y: -4 }}
-                    animate={isRotation ? { opacity: 1 } : { opacity: 1, y: 0 }}
-                    // `data-rotation-swap` is a real DOM attribute, not
-                    // pure decoration: it's how the test suite pins this
-                    // leg-detection logic (motion's own transition/variant
-                    // props aren't otherwise inspectable from rendered
-                    // output in jsdom) — see StatusRailCard.test.tsx's
-                    // "same-slot rotation" describe block.
-                    data-rotation-swap={isRotation}
+                    // plan 146b: `enterAsPromotion` (declared just above the
+                    // JSX return, doc there) routes a Priority Preemption's
+                    // incoming card through this same slide-in branch, not
+                    // the rotation's opacity-only one — see this
+                    // AnimatePresence's own doc comment above.
+                    initial={enterAsPromotion ? { opacity: 0, y: -4 } : { opacity: 0 }}
+                    animate={enterAsPromotion ? { opacity: 1, y: 0 } : { opacity: 1 }}
+                    // `data-rotation-swap`/`data-interrupt-swap` are real DOM
+                    // attributes, not pure decoration: they're how the test
+                    // suite pins this leg-detection logic (motion's own
+                    // transition/variant props aren't otherwise inspectable
+                    // from rendered output in jsdom) — see
+                    // StatusRailCard.test.tsx's "same-slot rotation" and
+                    // "Priority Preemption interrupt" describe blocks.
+                    data-rotation-swap={isRotation && !isInterrupt}
+                    data-interrupt-swap={isInterrupt}
                     // plan 12x (wave 3, exit) / plan 127 (Step 3, rotation
                     // split): the exit variant carries its OWN `transition`
                     // (overriding the shared one below, motion's documented
@@ -810,7 +952,7 @@ export function StatusRailCard({
                     variants={contentExitVariants}
                     exit="exit"
                     transition={{
-                      duration: (isRotation ? ROTATION_ENTER_MS : SWAP_EXIT_MS) / 1000,
+                      duration: (enterAsPromotion ? SWAP_EXIT_MS : ROTATION_ENTER_MS) / 1000,
                       ease: NOTCHTAP_EASE,
                     }}
                   >

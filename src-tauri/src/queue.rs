@@ -5,13 +5,23 @@ use serde::Serialize;
 use uuid::Uuid;
 
 use crate::error::QueueError;
-use crate::event::{Event, Priority, RotationSpec, SlotState, SourceKind};
+use crate::event::{Event, Priority, RotationSpec, SlotState, SourceKind, EXPANDED_MULTIPLIER};
 
 pub struct QueueItem {
     pub event: Event,
     pub enqueued_at: Instant,
     pub promoted_at: Option<Instant>,
     pub extension_secs: u64,
+    /// plan 146b: set only by `try_preempt_visible` at the moment a
+    /// higher-priority arrival cuts this item's turn short. Holds the
+    /// item's WHOLE remaining turn length in seconds (base window,
+    /// window-expanded multiplier, and any supersede extension already
+    /// folded in — see `try_preempt_visible`'s doc), so `base_window_secs`
+    /// can substitute it for `event.rotation_window(..)` at every
+    /// subsequent deadline computation until this item is re-promoted.
+    /// `None` for every item that has never been preempted — the
+    /// overwhelmingly common case, and the only one before this plan.
+    pub preempted_remaining_secs: Option<u64>,
 }
 
 /// Read-only wire summary of a single WAITING item — the settings
@@ -96,6 +106,16 @@ pub struct SingleSlotQueue {
     waiting: [VecDeque<QueueItem>; 3],
     max_queued_per_tier: usize,
     paused: bool,
+    /// plan 146a: a second, independent gate beside `paused`. While
+    /// Silenced, `enqueue_new`'s fast path and `pop_highest_priority_
+    /// waiting` both refuse to promote Medium/Low — they buffer exactly
+    /// as under Paused — but a High arrival still promotes (a
+    /// Breakthrough, always compact — see `set_expanded_for_promotion`).
+    /// `paused` is checked FIRST everywhere it matters (`try_preempt_
+    /// visible`, `promote_next`'s guard, `enqueue_new`'s fast path) and
+    /// wins unconditionally: a Paused engine promotes nothing, High
+    /// included, silenced or not.
+    silenced: bool,
     /// Render state — what the visible card looks like. Set `true` at every
     /// promotion (plan 033 expand-all), flipped by the auto-retract and by
     /// manual toggles. Never consulted by rotation arithmetic.
@@ -189,6 +209,7 @@ impl SingleSlotQueue {
             waiting: [VecDeque::new(), VecDeque::new(), VecDeque::new()],
             max_queued_per_tier,
             paused: false,
+            silenced: false,
             expanded: false,
             window_expanded: false,
             auto_retract_armed: false,
@@ -255,9 +276,42 @@ impl SingleSlotQueue {
         now: Instant,
         bypass_pause_when_slot_empty: bool,
     ) -> Result<(), QueueError> {
+        // plan 146b: a strictly-higher-priority arrival cuts the current
+        // Visible item's turn short and takes the Slot immediately — see
+        // `try_preempt_visible`'s doc for the full contract (equal/lower
+        // never preempts, Paused wins unconditionally, and why Silenced
+        // needs no extra check here). This is a genuine promotion, not the
+        // ordinary `can_promote_now` fast path below (which requires
+        // `all_tiers_empty` and is deliberately NOT reused: an incoming
+        // preempting item is entitled to the Slot right now regardless of
+        // what else happens to be waiting in its own tier).
+        if let Some(preempted) = self.try_preempt_visible(event.priority, now) {
+            let priority = event.priority;
+            self.batch_total += 1;
+            let preempted_tier = preempted.event.priority as usize;
+            self.waiting[preempted_tier].push_front(preempted);
+            let item = QueueItem {
+                event,
+                enqueued_at: now,
+                promoted_at: Some(now),
+                extension_secs: 0,
+                preempted_remaining_secs: None,
+            };
+            self.set_expanded_for_promotion(priority);
+            self.visible = Some(item);
+            return Ok(());
+        }
+
         let tier = event.priority as usize;
+        // plan 146a: Silenced blocks the fast path for Medium/Low exactly
+        // like Paused does — only a High arrival (a Breakthrough) can
+        // promote straight into an empty, fully-idle slot while Silenced.
+        // `bypass_pause_when_slot_empty` (the test-enqueue escape hatch)
+        // bypasses both gates identically — a manual test push isn't
+        // subject to either.
         let can_promote_now = self.visible.is_none()
             && (bypass_pause_when_slot_empty || !self.paused)
+            && (bypass_pause_when_slot_empty || !self.silenced || event.priority == Priority::High)
             && self.all_tiers_empty();
         if !can_promote_now && self.waiting[tier].len() >= self.max_queued_per_tier {
             return Err(QueueError::QueueFull);
@@ -276,15 +330,76 @@ impl SingleSlotQueue {
             enqueued_at: now,
             promoted_at: None,
             extension_secs: 0,
+            preempted_remaining_secs: None,
         };
         if can_promote_now {
             item.promoted_at = Some(now);
-            self.set_expanded_for_promotion();
+            self.set_expanded_for_promotion(item.event.priority);
             self.visible = Some(item);
         } else {
             self.waiting[tier].push_back(item);
         }
         Ok(())
+    }
+
+    /// plan 146b: the preemption check. A strictly-higher-priority
+    /// `incoming_priority` than the currently-Visible item's cuts that
+    /// item's turn short right now — returns it (NOT yet re-queued
+    /// anywhere; the caller pushes it to the HEAD of its own tier) with
+    /// `preempted_remaining_secs` set to exactly how much of its turn was
+    /// left, so a later re-promotion picks up where it was cut off rather
+    /// than starting a fresh full turn. Equal or lower priority returns
+    /// `None` — the existing finish-your-turn contract holds for those.
+    ///
+    /// Gated on `!self.paused` (Paused wins unconditionally over
+    /// everything — nothing promotes while Paused, preemption included)
+    /// AND on the Silenced promotion rule: while Silenced only a High
+    /// arrival may take the Slot, so only High may preempt. The Silenced
+    /// check cannot be skipped on only-High-can-be-Visible grounds:
+    /// entering silence does not evict the current card (it finishes its
+    /// natural turn, same as Paused), so for that onset window a
+    /// Medium/Low can be Visible while Silenced — and a Medium arrival
+    /// over a leftover Low must buffer, not promote.
+    fn try_preempt_visible(
+        &mut self,
+        incoming_priority: Priority,
+        now: Instant,
+    ) -> Option<QueueItem> {
+        if self.paused {
+            return None;
+        }
+        if self.silenced && incoming_priority != Priority::High {
+            return None;
+        }
+        let visible_priority = self.visible.as_ref()?.event.priority;
+        if incoming_priority <= visible_priority {
+            return None;
+        }
+        let mut item = self.visible.take().expect("checked Some above");
+        // Remaining turn time at the instant of interruption — the same
+        // hover-frozen elapsed/window math `top_up_visible_remaining_
+        // time` uses, so this is exactly what the countdown bar would
+        // have shown at this moment. Read before resetting the hover
+        // fields below (they're what `hover_frozen_rotation_elapsed`
+        // reads).
+        let elapsed = item
+            .promoted_at
+            .map(|promoted_at| {
+                self.hover_frozen_rotation_elapsed(promoted_at, now)
+                    .as_secs()
+            })
+            .unwrap_or(0);
+        let window = self.full_window_secs(&item);
+        item.preempted_remaining_secs = Some(window.saturating_sub(elapsed));
+        item.promoted_at = None;
+        item.extension_secs = 0;
+        // A hover session (if any) on the interrupted item ends the
+        // instant it's cut short — nothing to carry onto whatever item is
+        // Visible next (mirrors `set_expanded_for_promotion`'s own reset
+        // for the same reason: hover state is strictly per-turn).
+        self.hover_started_at = None;
+        self.hover_paused_total = Duration::ZERO;
+        Some(item)
     }
 
     fn supersede_if_topic_matches(&mut self, topic: &str, fresh: &Event, now: Instant) -> bool {
@@ -351,7 +466,7 @@ impl SingleSlotQueue {
         };
         // Duration math, not seconds truncation: a 1s base window retracts
         // at 500ms, which `as_secs()` halving would round down to 0.
-        let retract_after = Duration::from_secs(item.event.rotation_window(false)) / 2;
+        let retract_after = Duration::from_secs(self.base_window_secs(item)) / 2;
         if now.saturating_duration_since(promoted_at) < retract_after {
             return;
         }
@@ -377,13 +492,20 @@ impl SingleSlotQueue {
             tracing::warn!("visible item missing promoted_at — rotation check skipped");
             return;
         };
-        let window = item.event.rotation_window(self.window_expanded) + item.extension_secs;
+        let window = self.full_window_secs(item);
         let elapsed = self.hover_frozen_rotation_elapsed(promoted_at, now);
         if elapsed.as_secs() < window {
             return;
         }
-        let item = self.visible.take().expect("checked Some above");
+        let mut item = self.visible.take().expect("checked Some above");
         if let RotationSpec::Recurring { .. } = item.event.rotation {
+            // plan 146b: a preemption override only ever covers ONE
+            // interrupted turn. This item just finished a full turn
+            // naturally (whether that was its original window or a
+            // preemption's `preempted_remaining_secs`), so the override is
+            // spent — clear it, or its NEXT promotion would wrongly reuse
+            // the exhausted remaining-time instead of a fresh full window.
+            item.preempted_remaining_secs = None;
             let tier = item.event.priority as usize;
             self.waiting[tier].push_back(item);
         } else {
@@ -473,7 +595,8 @@ impl SingleSlotQueue {
         if let Some(mut item) = self.pop_highest_priority_waiting() {
             item.promoted_at = Some(now);
             item.extension_secs = 0;
-            self.set_expanded_for_promotion();
+            let priority = item.event.priority;
+            self.set_expanded_for_promotion(priority);
             self.visible = Some(item);
         }
     }
@@ -482,23 +605,46 @@ impl SingleSlotQueue {
     // base rotation window (auto-expansion never extends the turn — the
     // 3× window is manual-expand-only) and the auto-retract armed. The
     // per-turn reset also means a leftover manual expand/window can never
-    // leak onto the next item. Called from both promotion sites
-    // (promote_next and enqueue_new's immediate-promote fast path) so
-    // neither can drift from the other.
+    // leak onto the next item. Called from every promotion site
+    // (promote_next, enqueue_new's immediate-promote fast path, and
+    // enqueue_new's preemption path) so none of the three can drift from
+    // the others.
     //
     // plan 093: the hover-hold fields reset here too, for the same
     // reason — a hover session (or banked pause total) from the PREVIOUS
     // visible item must never leak onto the new one's rotation deadline.
-    fn set_expanded_for_promotion(&mut self) {
-        self.expanded = true;
+    //
+    // plan 146a/146b: NOT every promotion starts expanded anymore. A
+    // Low-priority promotion, or ANY promotion landing while the engine is
+    // Silenced (a Breakthrough — only a High item can reach this while
+    // Silenced; see the gates in `promote_next`'s own guard and
+    // `enqueue_new`'s fast path), starts compact instead: `expanded`
+    // false and no auto-retract armed — there's nothing expanded to
+    // retract FROM. Medium/High promotions while not Silenced keep the
+    // plan-033 expand-all opening. The manual expand hotkey
+    // (`toggle_expanded`) is unaffected either way.
+    fn set_expanded_for_promotion(&mut self, priority: Priority) {
+        let compact = priority == Priority::Low || self.silenced;
+        self.expanded = !compact;
         self.window_expanded = false;
-        self.auto_retract_armed = true;
+        self.auto_retract_armed = !compact;
         self.hover_started_at = None;
         self.hover_paused_total = Duration::ZERO;
     }
 
+    /// plan 146a: while Silenced, only the High tier is eligible to
+    /// promote — Medium/Low stay buffered in Waiting exactly as under
+    /// Paused. `Priority::High as usize == 2`, the top of the `(0..3)`
+    /// range this function otherwise walks, so restricting the range's
+    /// start to it is sufficient; the loop still walks high-to-low, so
+    /// non-Silenced behavior (the full `0..3` range) is untouched.
     fn pop_highest_priority_waiting(&mut self) -> Option<QueueItem> {
-        for tier in (0..3).rev() {
+        let min_tier = if self.silenced {
+            Priority::High as usize
+        } else {
+            0
+        };
+        for tier in (min_tier..3).rev() {
             if self.waiting[tier].is_empty() {
                 continue;
             }
@@ -538,6 +684,38 @@ impl SingleSlotQueue {
     }
 
     // ------------------------------------------------------------------
+    // window math — centralizes what used to be
+    // `item.event.rotation_window(...) + item.extension_secs` inline at
+    // every call site (plan 146b), so the preemption override
+    // (`preempted_remaining_secs`) only needs to be threaded through once.
+    // ------------------------------------------------------------------
+
+    /// The item's un-expanded base window in seconds: its `preempted_
+    /// remaining_secs` override if a preemption cut it short (that number
+    /// already IS its whole remaining turn — extensions included, see
+    /// `try_preempt_visible`'s doc), otherwise the plain rotation-spec
+    /// window (`Event::rotation_window(false)`).
+    fn base_window_secs(&self, item: &QueueItem) -> u64 {
+        item.preempted_remaining_secs
+            .unwrap_or_else(|| item.event.rotation_window(false))
+    }
+
+    /// The full rotation window in seconds: `base_window_secs` above,
+    /// tripled if `window_expanded` (the manual-expand multiplier) is
+    /// armed, plus any supersede extension. Equivalent to the old
+    /// `item.event.rotation_window(self.window_expanded) +
+    /// item.extension_secs` for every item that was never preempted.
+    fn full_window_secs(&self, item: &QueueItem) -> u64 {
+        let base = self.base_window_secs(item);
+        let window = if self.window_expanded {
+            base.saturating_mul(EXPANDED_MULTIPLIER)
+        } else {
+            base
+        };
+        window + item.extension_secs
+    }
+
+    // ------------------------------------------------------------------
     // supersede time top-up
     // ------------------------------------------------------------------
 
@@ -557,11 +735,17 @@ impl SingleSlotQueue {
         let elapsed = self
             .hover_frozen_rotation_elapsed(promoted_at, now)
             .as_secs();
+        // `full_window_secs` takes `&self`, so it must run before the
+        // `&mut self.visible` borrow below (same ordering constraint the
+        // comment above already calls out for `hover_frozen_rotation_
+        // elapsed`).
+        let effective_window = match self.visible.as_ref() {
+            Some(item) => self.full_window_secs(item),
+            None => return,
+        };
         let Some(item) = &mut self.visible else {
             return;
         };
-        let base_window = item.event.rotation_window(self.window_expanded);
-        let effective_window = base_window + item.extension_secs;
         let remaining = effective_window.saturating_sub(elapsed);
         if remaining < MIN_REMAINING_ON_SUPERSEDE_SECS {
             let deficit = MIN_REMAINING_ON_SUPERSEDE_SECS - remaining;
@@ -584,6 +768,28 @@ impl SingleSlotQueue {
 
     pub fn is_paused(&self) -> bool {
         self.paused
+    }
+
+    /// plan 146a: enters Silenced — Medium/Low buffer into Waiting exactly
+    /// like Paused (same 202-style acceptance, per-tier cap, topic
+    /// supersede still applies), but a High arrival still promotes
+    /// (Breakthrough, always compact). Unlike `pause`, silencing an engine
+    /// with an already-Visible item never interrupts it — Silenced only
+    /// changes what's eligible to promote NEXT, once the slot frees up.
+    /// `paused` is checked first everywhere it matters and wins
+    /// unconditionally over this.
+    pub fn silence(&mut self) {
+        self.silenced = true;
+    }
+
+    /// Leaves Silenced — normal (every-tier) promotion resumes immediately,
+    /// same relationship `resume()` has to `pause()`.
+    pub fn unsilence(&mut self) {
+        self.silenced = false;
+    }
+
+    pub fn is_silenced(&self) -> bool {
+        self.silenced
     }
 
     /// Manually dismiss the current visible item, if any, and promote the
@@ -788,14 +994,14 @@ impl SingleSlotQueue {
         let item = self.visible.as_ref()?;
         let promoted_at = item.promoted_at?;
         let retract_deadline = if self.auto_retract_armed && self.expanded {
-            Some(promoted_at + Duration::from_secs(item.event.rotation_window(false)) / 2)
+            Some(promoted_at + Duration::from_secs(self.base_window_secs(item)) / 2)
         } else {
             None
         };
         let rotation_deadline = if self.hover_started_at.is_some() {
             None
         } else {
-            let window = item.event.rotation_window(self.window_expanded) + item.extension_secs;
+            let window = self.full_window_secs(item);
             let anchor = self.hover_adjusted_promoted_at(promoted_at);
             Some(anchor + Duration::from_secs(window))
         };
@@ -979,8 +1185,7 @@ impl SingleSlotQueue {
                 // `hover_adjusted_promoted_at` folds the now-banked session
                 // into the deadline permanently, matching `next_deadline`'s
                 // own adjustment exactly.
-                let window_secs =
-                    item.event.rotation_window(self.window_expanded) + item.extension_secs;
+                let window_secs = self.full_window_secs(item);
                 let ttl_ms = window_secs.saturating_mul(1000);
                 let remaining_ms = match item.promoted_at {
                     Some(promoted_at) => {
@@ -1321,17 +1526,21 @@ mod tests {
         assert_eq!(visible_title(&q), Some("news-high"));
     }
 
+    // plan 146b: the old contract ("a Priority arrival never interrupts
+    // the currently-Visible item") is DELETED — a strictly-higher-priority
+    // arrival now preempts immediately. See the `preemption` test module
+    // below for the full suite (chained preemption, head-of-tier requeue,
+    // remaining-time restoration, equal/lower no-preempt, silenced
+    // interaction).
     #[test]
-    fn high_enqueue_does_not_interrupt_currently_visible() {
+    fn high_enqueue_preempts_currently_visible_medium() {
         let mut q = SingleSlotQueue::new(50);
         q.enqueue(event("a", Priority::Medium, 4), Instant::now())
             .unwrap();
         q.enqueue(event("b", Priority::High, 2), Instant::now())
             .unwrap();
-        assert_eq!(visible_title(&q), Some("a"));
-        // tick before a's window elapses keeps a visible
-        q.tick(Instant::now() + Duration::from_secs(2));
-        assert_eq!(visible_title(&q), Some("a"));
+        assert_eq!(visible_title(&q), Some("b"));
+        assert_eq!(waiting_titles(&q, Priority::Medium as usize), vec!["a"]);
     }
 
     #[test]
@@ -1358,6 +1567,13 @@ mod tests {
 
     #[test]
     fn recurring_requeues_not_to_front_or_different_tier() {
+        // plan 146b: a High enqueue now PREEMPTS a Visible Low item
+        // immediately rather than waiting out its turn — see the
+        // dedicated `preemption` test module for the full contract. The
+        // preempted "recur" lands at the HEAD of its own tier (ahead of
+        // "low2", which arrived earlier but was never Visible) — the
+        // point this test still pins is that a Recurring item's requeue
+        // never crosses tiers, whichever end of the tier it lands at.
         let mut q = SingleSlotQueue::new(50);
         q.enqueue(recurring_event("recur", Priority::Low, 1), Instant::now())
             .unwrap();
@@ -1365,12 +1581,11 @@ mod tests {
             .unwrap();
         q.enqueue(event("high", Priority::High, 8), Instant::now())
             .unwrap();
-        q.tick(Instant::now() + Duration::from_secs(2));
-        // high promotes first; recur requeued behind low2 in the Low tier
+        // "high" preempted "recur" immediately, on enqueue — no tick needed.
         assert_eq!(visible_title(&q), Some("high"));
         assert_eq!(
             waiting_titles(&q, Priority::Low as usize),
-            vec!["low2", "recur"]
+            vec!["recur", "low2"]
         );
     }
 
@@ -1778,6 +1993,12 @@ mod tests {
             t0,
         )
         .unwrap();
+        // plan 146b: a High enqueue now preempts a Visible Medium item —
+        // irrelevant to what THIS test is pinning (cross-tier supersede
+        // dropping fresh content when the destination tier is full), so
+        // pause first to keep "visible" pinned in the Slot and "match-a"
+        // undisturbed at the front of the Medium tier.
+        q.pause();
         // fill the High tier to its cap of 1
         q.enqueue(event("filler", Priority::High, 60), t0).unwrap();
         // a fresh event for the same Topic, now High priority — destination
@@ -2302,25 +2523,30 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // plan 008's expanded-semantics cases, rewritten for plan 033:
-    // auto-expand for every priority, half-window auto-retract, manual-only
-    // window extension, per-item reset, idle no-op
+    // plan 008's expanded-semantics cases, rewritten for plan 033, then
+    // again for plan 146b: Medium/High auto-expand, Low ALWAYS promotes
+    // compact (plan 146b decision — "Low cards promote compact
+    // everywhere"), half-window auto-retract, manual-only window
+    // extension, per-item reset, idle no-op.
     // ------------------------------------------------------------------
 
     #[test]
-    fn every_priority_auto_expands_on_immediate_enqueue() {
+    fn medium_and_high_auto_expand_on_immediate_enqueue_low_stays_compact() {
         // Exercises enqueue_new's can_promote_now fast path directly (no
         // tick()/promote_next involved) — the more common of the two
-        // promotion call sites in production. plan 033: expand-all, not
-        // plan 008's High-only.
-        for priority in [Priority::Low, Priority::Medium, Priority::High] {
+        // promotion call sites in production.
+        for (priority, expect_expanded) in [
+            (Priority::Low, false),
+            (Priority::Medium, true),
+            (Priority::High, true),
+        ] {
             let mut q = SingleSlotQueue::new(50);
             q.enqueue(event("x", priority, 8), Instant::now()).unwrap();
             match q.current_slot_state() {
                 SlotState::Showing { expanded, .. } => {
-                    assert!(
-                        expanded,
-                        "{priority:?} must auto-expand on immediate promotion"
+                    assert_eq!(
+                        expanded, expect_expanded,
+                        "{priority:?} expanded-on-promotion mismatch"
                     )
                 }
                 SlotState::Empty => panic!("expected Showing"),
@@ -2329,11 +2555,11 @@ mod tests {
     }
 
     #[test]
-    fn low_priority_promoted_from_waiting_auto_expands() {
+    fn low_priority_promoted_from_waiting_stays_compact() {
         // A Medium item occupies the slot, so the Low item queues behind
         // it. Ticking past the Medium item's window drives promote_next,
-        // not the enqueue fast path — and the promotion must still start
-        // expanded (Low is the case plan 008 never auto-expanded).
+        // not the enqueue fast path — and a Low promotion must start
+        // compact regardless of which promotion path it took (plan 146b).
         let mut q = SingleSlotQueue::new(50);
         q.enqueue(event("medium", Priority::Medium, 1), Instant::now())
             .unwrap();
@@ -2347,7 +2573,7 @@ mod tests {
         assert_eq!(visible_title(&q), Some("l"));
         match q.current_slot_state() {
             SlotState::Showing { expanded, .. } => {
-                assert!(expanded, "every priority must auto-expand on promote_next")
+                assert!(!expanded, "Low must promote compact even via promote_next")
             }
             SlotState::Empty => panic!("expected Showing"),
         }
@@ -2853,6 +3079,7 @@ mod tests {
             enqueued_at: t0,
             promoted_at: None,
             extension_secs: 0,
+            preempted_remaining_secs: None,
         });
         // way past any plausible window — must not panic, and (since
         // there's no promoted_at to measure elapsed time from) must not
@@ -3523,6 +3750,11 @@ mod tests {
         let t0 = Instant::now();
         q.enqueue(event("visible", Priority::Medium, 8), t0)
             .unwrap();
+        // plan 146b: pause first — a High enqueue would otherwise preempt
+        // "visible" immediately, which is irrelevant to what this test
+        // pins (clear_waiting emptying every waiting tier without
+        // touching the Visible card).
+        q.pause();
         q.enqueue(event("low", Priority::Low, 8), t0).unwrap();
         q.enqueue(event("medium", Priority::Medium, 8), t0).unwrap();
         q.enqueue(event("high", Priority::High, 8), t0).unwrap();
@@ -3599,6 +3831,411 @@ mod tests {
         assert_eq!(q.clear_waiting(), 2);
         assert_eq!((q.batch_total, q.batch_done), (0, 0));
     }
+
+    // ------------------------------------------------------------------
+    // plan 146a: Silenced gate
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn silenced_buffers_medium_and_low_but_high_breaks_through() {
+        let mut q = SingleSlotQueue::new(50);
+        q.silence();
+        q.enqueue(event("m", Priority::Medium, 8), Instant::now())
+            .unwrap();
+        q.enqueue(event("l", Priority::Low, 8), Instant::now())
+            .unwrap();
+        assert_eq!(
+            visible_title(&q),
+            None,
+            "Medium/Low must buffer while Silenced, exactly like Paused"
+        );
+        assert_eq!(waiting_titles(&q, Priority::Medium as usize), vec!["m"]);
+        assert_eq!(waiting_titles(&q, Priority::Low as usize), vec!["l"]);
+
+        // the fast path never jumps waiting items (pre-existing rule,
+        // unrelated to Silenced) — with Medium/Low already waiting, "h"
+        // lands in the High tier and needs a `tick` to promote via
+        // `promote_next`, exactly like any other tier-non-empty arrival.
+        let now = Instant::now();
+        q.enqueue(event("h", Priority::High, 8), now).unwrap();
+        q.tick(now);
+        assert_eq!(
+            visible_title(&q),
+            Some("h"),
+            "a High arrival must still promote (Breakthrough) while Silenced"
+        );
+    }
+
+    #[test]
+    fn breakthrough_promotion_is_compact() {
+        let mut q = SingleSlotQueue::new(50);
+        q.silence();
+        q.enqueue(event("h", Priority::High, 8), Instant::now())
+            .unwrap();
+        match q.current_slot_state() {
+            SlotState::Showing { expanded, .. } => {
+                assert!(!expanded, "a Breakthrough card must promote compact")
+            }
+            SlotState::Empty => panic!("expected Showing"),
+        }
+    }
+
+    #[test]
+    fn silenced_promotion_only_pulls_high_from_waiting_medium_and_low_stay_buffered() {
+        // A Breakthrough card's turn ending must not open the door for
+        // Medium/Low to promote while still Silenced — only the next
+        // waiting High (if any) is eligible; Medium/Low stay buffered even
+        // once the Slot is empty.
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.pause();
+        q.enqueue(event("h1", Priority::High, 1), t0).unwrap();
+        q.enqueue(event("h2", Priority::High, 8), t0).unwrap();
+        q.enqueue(event("m", Priority::Medium, 8), t0).unwrap();
+        q.enqueue(event("l", Priority::Low, 8), t0).unwrap();
+        q.silence();
+        q.resume();
+        q.tick(t0);
+
+        assert_eq!(visible_title(&q), Some("h1"));
+        assert_eq!(waiting_titles(&q, Priority::High as usize), vec!["h2"]);
+        assert_eq!(waiting_titles(&q, Priority::Medium as usize), vec!["m"]);
+        assert_eq!(waiting_titles(&q, Priority::Low as usize), vec!["l"]);
+
+        // h1's 1s turn elapses: the next High (h2) promotes, not m/l.
+        q.tick(t0 + Duration::from_secs(2));
+        assert_eq!(visible_title(&q), Some("h2"));
+        assert_eq!(waiting_titles(&q, Priority::Medium as usize), vec!["m"]);
+        assert_eq!(waiting_titles(&q, Priority::Low as usize), vec!["l"]);
+
+        // h2 finishes too, and the High tier is now empty: the Slot goes
+        // empty rather than pulling Medium/Low while still Silenced.
+        q.tick(t0 + Duration::from_secs(20));
+        assert_eq!(visible_title(&q), None);
+        assert_eq!(waiting_titles(&q, Priority::Medium as usize), vec!["m"]);
+        assert_eq!(waiting_titles(&q, Priority::Low as usize), vec!["l"]);
+    }
+
+    #[test]
+    fn paused_wins_unconditionally_over_silenced_high_included() {
+        let mut q = SingleSlotQueue::new(50);
+        q.pause();
+        q.silence();
+        q.enqueue(event("h", Priority::High, 8), Instant::now())
+            .unwrap();
+        assert_eq!(
+            visible_title(&q),
+            None,
+            "Paused must block even a High Breakthrough"
+        );
+        assert_eq!(waiting_titles(&q, Priority::High as usize), vec!["h"]);
+    }
+
+    #[test]
+    fn unsilencing_resumes_normal_promotion_immediately() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.pause();
+        q.enqueue(event("m", Priority::Medium, 8), t0).unwrap();
+        q.silence();
+        q.resume();
+        q.tick(t0);
+        assert_eq!(
+            visible_title(&q),
+            None,
+            "still Silenced — Medium must stay buffered"
+        );
+
+        q.unsilence();
+        q.tick(t0);
+        assert_eq!(
+            visible_title(&q),
+            Some("m"),
+            "unsilencing must let normal (every-tier) promotion resume immediately"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // plan 146b: Priority preemption
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn high_preempts_visible_low() {
+        let mut q = SingleSlotQueue::new(50);
+        q.enqueue(event("low", Priority::Low, 8), Instant::now())
+            .unwrap();
+        q.enqueue(event("high", Priority::High, 8), Instant::now())
+            .unwrap();
+        assert_eq!(visible_title(&q), Some("high"));
+        assert_eq!(waiting_titles(&q, Priority::Low as usize), vec!["low"]);
+    }
+
+    #[test]
+    fn medium_preempts_visible_low() {
+        let mut q = SingleSlotQueue::new(50);
+        q.enqueue(event("low", Priority::Low, 8), Instant::now())
+            .unwrap();
+        q.enqueue(event("medium", Priority::Medium, 8), Instant::now())
+            .unwrap();
+        assert_eq!(visible_title(&q), Some("medium"));
+        assert_eq!(waiting_titles(&q, Priority::Low as usize), vec!["low"]);
+    }
+
+    #[test]
+    fn equal_priority_never_preempts() {
+        for priority in [Priority::Low, Priority::Medium, Priority::High] {
+            let mut q = SingleSlotQueue::new(50);
+            let t0 = Instant::now();
+            q.enqueue(event("first", priority, 10), t0).unwrap();
+            q.enqueue(event("second", priority, 10), t0 + Duration::from_secs(1))
+                .unwrap();
+            assert_eq!(
+                visible_title(&q),
+                Some("first"),
+                "{priority:?}: equal priority must never preempt"
+            );
+            assert_eq!(waiting_titles(&q, priority as usize), vec!["second"]);
+        }
+    }
+
+    #[test]
+    fn lower_priority_never_preempts() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue(event("high", Priority::High, 10), t0).unwrap();
+        q.enqueue(
+            event("medium", Priority::Medium, 10),
+            t0 + Duration::from_secs(1),
+        )
+        .unwrap();
+        q.enqueue(event("low", Priority::Low, 10), t0 + Duration::from_secs(2))
+            .unwrap();
+        assert_eq!(visible_title(&q), Some("high"));
+        assert_eq!(
+            waiting_titles(&q, Priority::Medium as usize),
+            vec!["medium"]
+        );
+        assert_eq!(waiting_titles(&q, Priority::Low as usize), vec!["low"]);
+    }
+
+    #[test]
+    fn paused_blocks_preemption_of_an_already_visible_item() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue(event("medium", Priority::Medium, 10), t0)
+            .unwrap();
+        q.pause();
+        q.enqueue(
+            event("high", Priority::High, 10),
+            t0 + Duration::from_secs(1),
+        )
+        .unwrap();
+        assert_eq!(
+            visible_title(&q),
+            Some("medium"),
+            "Paused wins unconditionally — nothing preempts while Paused"
+        );
+        assert_eq!(waiting_titles(&q, Priority::High as usize), vec!["high"]);
+    }
+
+    #[test]
+    fn preempted_item_requeues_ahead_of_existing_waiting_items_in_its_tier() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue(event("low-visible", Priority::Low, 10), t0)
+            .unwrap();
+        q.enqueue(event("low-waiting", Priority::Low, 10), t0)
+            .unwrap();
+        assert_eq!(
+            waiting_titles(&q, Priority::Low as usize),
+            vec!["low-waiting"]
+        );
+
+        q.enqueue(
+            event("high", Priority::High, 10),
+            t0 + Duration::from_secs(1),
+        )
+        .unwrap();
+        assert_eq!(visible_title(&q), Some("high"));
+        assert_eq!(
+            waiting_titles(&q, Priority::Low as usize),
+            vec!["low-visible", "low-waiting"],
+            "a preempted item must jump ahead of items that were already waiting in its tier"
+        );
+    }
+
+    #[test]
+    fn preempted_item_restores_remaining_time_on_repromotion() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        // base window 10s.
+        q.enqueue(event("low", Priority::Low, 10), t0).unwrap();
+        // preempt after 4s elapsed -> 6s of the low item's turn remains.
+        let preempt_at = t0 + Duration::from_secs(4);
+        q.enqueue(event("high", Priority::High, 5), preempt_at)
+            .unwrap();
+        assert_eq!(visible_title(&q), Some("high"));
+        assert_eq!(waiting_titles(&q, Priority::Low as usize), vec!["low"]);
+
+        // high's own 5s window elapses -> low re-promotes, carrying its
+        // remaining 6s (not a fresh 10s window).
+        let repromoted_at = preempt_at + Duration::from_secs(5);
+        q.tick(repromoted_at);
+        assert_eq!(visible_title(&q), Some("low"));
+
+        // 5s into the re-promoted turn: still inside the 6s remaining budget.
+        q.tick(repromoted_at + Duration::from_secs(5));
+        assert!(
+            q.visible.is_some(),
+            "6s remained at re-promotion; only 5s have since elapsed"
+        );
+        // past the 6s remaining budget: rotates out — a fresh 10s window
+        // would still have time left here, so this pins the restored value.
+        q.tick(repromoted_at + Duration::from_secs(7));
+        assert!(
+            q.visible.is_none(),
+            "remaining time (6s) must have been exhausted, not a fresh 10s window"
+        );
+    }
+
+    #[test]
+    fn repromoted_preempted_medium_item_still_auto_expands() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue(event("medium", Priority::Medium, 10), t0)
+            .unwrap();
+        q.enqueue(
+            event("high", Priority::High, 5),
+            t0 + Duration::from_secs(2),
+        )
+        .unwrap();
+        assert_eq!(visible_title(&q), Some("high"));
+
+        // high finishes -> medium re-promotes with the normal expand rule
+        // for its priority (Medium, not Silenced): auto-expanded.
+        q.tick(t0 + Duration::from_secs(7));
+        assert_eq!(visible_title(&q), Some("medium"));
+        match q.current_slot_state() {
+            SlotState::Showing { expanded, .. } => assert!(
+                expanded,
+                "a re-promoted Medium item keeps the normal expand-on-promotion rule"
+            ),
+            SlotState::Empty => panic!("expected Showing"),
+        }
+    }
+
+    #[test]
+    fn repromoted_preempted_low_item_stays_compact() {
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue(event("low", Priority::Low, 10), t0).unwrap();
+        q.enqueue(
+            event("high", Priority::High, 5),
+            t0 + Duration::from_secs(2),
+        )
+        .unwrap();
+        assert_eq!(visible_title(&q), Some("high"));
+
+        q.tick(t0 + Duration::from_secs(7));
+        assert_eq!(visible_title(&q), Some("low"));
+        match q.current_slot_state() {
+            SlotState::Showing { expanded, .. } => {
+                assert!(
+                    !expanded,
+                    "Low must promote compact even after a re-promotion"
+                )
+            }
+            SlotState::Empty => panic!("expected Showing"),
+        }
+    }
+
+    #[test]
+    fn chained_preemption_returns_items_in_priority_order() {
+        // Low visible -> Medium preempts -> High preempts the Medium; both
+        // preempted items sit at the heads of their tiers and return in
+        // priority order (Medium before Low) once the High card is done.
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue(event("low", Priority::Low, 10), t0).unwrap();
+        q.enqueue(
+            event("medium", Priority::Medium, 10),
+            t0 + Duration::from_secs(1),
+        )
+        .unwrap();
+        assert_eq!(visible_title(&q), Some("medium"));
+        assert_eq!(waiting_titles(&q, Priority::Low as usize), vec!["low"]);
+
+        q.enqueue(
+            event("high", Priority::High, 10),
+            t0 + Duration::from_secs(2),
+        )
+        .unwrap();
+        assert_eq!(visible_title(&q), Some("high"));
+        assert_eq!(
+            waiting_titles(&q, Priority::Medium as usize),
+            vec!["medium"]
+        );
+        assert_eq!(waiting_titles(&q, Priority::Low as usize), vec!["low"]);
+
+        // high's 10s window (from t0+2s) elapses well past t0+30s: medium
+        // (the higher remaining tier) returns first, not low.
+        q.tick(t0 + Duration::from_secs(30));
+        assert_eq!(visible_title(&q), Some("medium"));
+
+        // medium's restored remaining turn (9s, from its 1s-elapsed
+        // preemption) elapses from its t0+30s re-promotion: low returns.
+        q.tick(t0 + Duration::from_secs(40));
+        assert_eq!(visible_title(&q), Some("low"));
+    }
+
+    #[test]
+    fn silenced_second_high_does_not_preempt_the_breakthrough_visible() {
+        // While Silenced, only High can ever be Visible — a second High
+        // arrival is EQUAL priority, so it must not preempt either,
+        // exercising the interaction between Silenced and preemption
+        // explicitly rather than resting on the general equal-never-
+        // preempts case alone.
+        let mut q = SingleSlotQueue::new(50);
+        q.silence();
+        let t0 = Instant::now();
+        q.enqueue(event("h1", Priority::High, 10), t0).unwrap();
+        assert_eq!(visible_title(&q), Some("h1"));
+
+        q.enqueue(event("h2", Priority::High, 10), t0 + Duration::from_secs(1))
+            .unwrap();
+        assert_eq!(visible_title(&q), Some("h1"));
+        assert_eq!(waiting_titles(&q, Priority::High as usize), vec!["h2"]);
+    }
+
+    #[test]
+    fn silence_onset_leaves_visible_low_and_a_medium_arrival_buffers_not_preempts() {
+        // Silenced does NOT evict the card that was Visible when silence
+        // began (it finishes its natural turn, same as Paused) — so for
+        // that onset window a Medium/Low CAN be Visible while Silenced,
+        // and a strictly-higher-but-not-High arrival must buffer, not
+        // preempt: only High promotes while Silenced, preemption
+        // included.
+        let mut q = SingleSlotQueue::new(50);
+        let t0 = Instant::now();
+        q.enqueue(event("l1", Priority::Low, 10), t0).unwrap();
+        assert_eq!(visible_title(&q), Some("l1"));
+
+        q.silence();
+        q.enqueue(
+            event("m1", Priority::Medium, 10),
+            t0 + Duration::from_secs(1),
+        )
+        .unwrap();
+        assert_eq!(visible_title(&q), Some("l1"));
+        assert_eq!(waiting_titles(&q, Priority::Medium as usize), vec!["m1"]);
+
+        // A High arrival, by contrast, still preempts the leftover Low —
+        // Breakthrough applies to preemption too.
+        q.enqueue(event("h1", Priority::High, 10), t0 + Duration::from_secs(2))
+            .unwrap();
+        assert_eq!(visible_title(&q), Some("h1"));
+        assert_eq!(waiting_titles(&q, Priority::Low as usize), vec!["l1"]);
+    }
 }
 
 // ----------------------------------------------------------------------
@@ -3653,6 +4290,10 @@ mod proptest_queue {
         ToggleExpanded,
         Pause,
         Resume,
+        // plan 146a: one variant per new state-mutating pub fn, same rule
+        // this enum's own doc states above.
+        Silence,
+        Unsilence,
     }
 
     fn arb_priority() -> impl Strategy<Value = Priority> {
@@ -3726,6 +4367,8 @@ mod proptest_queue {
             1 => Just(Op::ToggleExpanded),
             1 => Just(Op::Pause),
             1 => Just(Op::Resume),
+            1 => Just(Op::Silence),
+            1 => Just(Op::Unsilence),
         ]
     }
 
@@ -3778,9 +4421,13 @@ mod proptest_queue {
     // comparison, so a rank tie keeps the earliest (lowest-index) item,
     // and an origin absent from rotation_order (or an empty order) ranks
     // last via `unwrap_or(rotation_order.len())`.
+    // plan 146a: `min_tier` restricts the scan to `Priority::High as usize`
+    // (2) while Silenced — mirrors production `pop_highest_priority_
+    // waiting`'s own `min_tier` gate. `0` (every tier) otherwise.
     fn predict_promoted(
         snap: &[Vec<(Uuid, SourceKind)>; 3],
         rotation_order: &[SourceKind],
+        min_tier: usize,
     ) -> Option<Uuid> {
         let rank = |origin: SourceKind| {
             rotation_order
@@ -3788,7 +4435,7 @@ mod proptest_queue {
                 .position(|o| *o == origin)
                 .unwrap_or(rotation_order.len())
         };
-        for tier in (0..3).rev() {
+        for tier in (min_tier..3).rev() {
             let items = &snap[tier];
             if items.is_empty() {
                 continue;
@@ -3816,13 +4463,29 @@ mod proptest_queue {
         origin: SourceKind,
     }
 
+    // plan 146b: mirrors production `SingleSlotQueue::full_window_secs`
+    // independently (this module already mirrors `best_index_in_tier` the
+    // same way) — a preempted item's `preempted_remaining_secs` override
+    // substitutes for the plain rotation-spec window.
+    fn window_secs_mirror(q: &SingleSlotQueue, item: &QueueItem) -> u64 {
+        let base = item
+            .preempted_remaining_secs
+            .unwrap_or_else(|| item.event.rotation_window(false));
+        let window = if q.window_expanded {
+            base.saturating_mul(EXPANDED_MULTIPLIER)
+        } else {
+            base
+        };
+        window + item.extension_secs
+    }
+
     fn vis_snapshot(q: &SingleSlotQueue) -> Option<VisSnap> {
         q.visible.as_ref().map(|item| VisSnap {
             id: item.event.id,
             tier: item.event.priority as usize,
             recurring: matches!(item.event.rotation, RotationSpec::Recurring { .. }),
             promoted_at: item.promoted_at.expect("visible items have promoted_at"),
-            window: item.event.rotation_window(q.window_expanded) + item.extension_secs,
+            window: window_secs_mirror(q, item),
             origin: item.event.origin,
         })
     }
@@ -3873,13 +4536,26 @@ mod proptest_queue {
             (self.q.visible.is_some() as u64) + self.q.total_waiting() as u64
         }
 
-        // Invariant 8, called at every detected promotion site.
+        // Invariant 8, called at every detected promotion site. plan
+        // 146a/146b rewrite: no longer "every promotion starts expanded" —
+        // a Low priority (everywhere) or ANY priority while Silenced (a
+        // Breakthrough) must start COMPACT instead; everything else keeps
+        // the plan-033 expand-all opening. Reads the promoted item's own
+        // priority via `current_priority()` rather than taking one as a
+        // parameter, so every call site (Enqueue/Tick/Dismiss/Skip alike)
+        // stays untouched.
         fn assert_expanded_at_promotion(&self, promoted_id: Option<Uuid>) {
             let Some(id) = promoted_id else { return };
+            let Some(priority) = self.q.current_priority() else {
+                return;
+            };
             if let SlotState::Showing { expanded, .. } = self.q.current_slot_state() {
-                assert!(
+                let expect_compact = priority == Priority::Low || self.q.is_silenced();
+                assert_eq!(
                     expanded,
-                    "invariant 8: every promotion starts expanded (id={id:?})"
+                    !expect_compact,
+                    "invariant 8: promotion expanded-flag mismatch (id={id:?}, priority={priority:?}, silenced={})",
+                    self.q.is_silenced()
                 );
             }
         }
@@ -3894,8 +4570,21 @@ mod proptest_queue {
                 Op::ToggleExpanded => self.q.toggle_expanded(),
                 Op::Pause => self.q.pause(),
                 Op::Resume => self.q.resume(),
+                Op::Silence => self.q.silence(),
+                Op::Unsilence => self.q.unsilence(),
             }
             self.check_blanket_invariants();
+        }
+
+        // plan 146a/146b: `min_tier` for `predict_promoted` — restricted to
+        // `Priority::High as usize` while Silenced, mirroring production
+        // `pop_highest_priority_waiting`'s own gate.
+        fn predict_min_tier(&self) -> usize {
+            if self.q.is_silenced() {
+                Priority::High as usize
+            } else {
+                0
+            }
         }
 
         fn apply_enqueue(&mut self, spec: &EnqueueSpec) {
@@ -3903,6 +4592,25 @@ mod proptest_queue {
             let event_id = event.id;
             let tier = spec.priority as usize;
             let before_total = self.total_in_queue();
+            let vis_before = self
+                .q
+                .visible
+                .as_ref()
+                .map(|v| (v.event.id, v.event.priority));
+            let paused = self.q.is_paused();
+            // plan 146b: a strictly-higher-priority arrival preempts the
+            // Visible item — unless Paused (absolute), and while Silenced
+            // only a High arrival may preempt (the silence-onset window
+            // can leave a Medium/Low Visible; anything below High must
+            // buffer then, not promote). Mirrors `try_preempt_visible`.
+            let should_preempt = match vis_before {
+                Some((_, vis_priority)) => {
+                    !paused
+                        && spec.priority > vis_priority
+                        && (!self.q.is_silenced() || spec.priority == Priority::High)
+                }
+                None => false,
+            };
 
             let result = self.q.enqueue(event, self.now);
 
@@ -3923,7 +4631,33 @@ mod proptest_queue {
             let promoted = current_vis_id(&self.q) == Some(event_id);
             if promoted {
                 self.assert_expanded_at_promotion(Some(event_id));
+                if should_preempt {
+                    // invariant P1 (plan 146b): the interrupted item must
+                    // land at the HEAD of its own tier, carrying its
+                    // remaining turn — checked precisely (remaining-time
+                    // restoration) by the dedicated preemption test suite;
+                    // this proptest invariant only pins the ordering.
+                    let (old_id, old_priority) =
+                        vis_before.expect("should_preempt implies a Visible item existed");
+                    let old_tier = old_priority as usize;
+                    assert_eq!(
+                        self.q.waiting[old_tier].front().map(|i| i.event.id),
+                        Some(old_id),
+                        "invariant P1: a preempted item must requeue at the head of its own tier"
+                    );
+                }
             } else {
+                assert!(
+                    !should_preempt,
+                    "invariant P1: an eligible preemption must always promote the arriving item"
+                );
+                if let Some((old_id, _)) = vis_before {
+                    assert_eq!(
+                        current_vis_id(&self.q),
+                        Some(old_id),
+                        "invariant 3: a non-preempting Enqueue must never disturb the Visible item"
+                    );
+                }
                 assert_eq!(
                     self.q.waiting[tier].back().map(|i| i.event.id),
                     Some(event_id),
@@ -3979,7 +4713,11 @@ mod proptest_queue {
                 return;
             }
 
-            let predicted = predict_promoted(&waiting_before, &self.rotation_order);
+            let predicted = predict_promoted(
+                &waiting_before,
+                &self.rotation_order,
+                self.predict_min_tier(),
+            );
             assert_eq!(
                 after_id, predicted,
                 "invariant 4: tick promotion did not pick the highest-tier, best-rotation_order-rank, FIFO-tie front"
@@ -4007,7 +4745,11 @@ mod proptest_queue {
                 );
                 return;
             }
-            let predicted = predict_promoted(&waiting_before, &self.rotation_order);
+            let predicted = predict_promoted(
+                &waiting_before,
+                &self.rotation_order,
+                self.predict_min_tier(),
+            );
             assert_eq!(
                 after_id, predicted,
                 "invariant 4: dismiss promotion did not pick the highest-tier, best-rotation_order-rank, FIFO-tie front"
@@ -4048,7 +4790,11 @@ mod proptest_queue {
                 );
                 return;
             }
-            let predicted = predict_promoted(&waiting_before, &self.rotation_order);
+            let predicted = predict_promoted(
+                &waiting_before,
+                &self.rotation_order,
+                self.predict_min_tier(),
+            );
             assert_eq!(
                 after_id, predicted,
                 "invariant 4: skip promotion did not pick the highest-tier, best-rotation_order-rank, FIFO-tie front"
@@ -4081,14 +4827,13 @@ mod proptest_queue {
                         .as_ref()
                         .expect("next_deadline Some implies a visible item");
                     let promoted_at = item.promoted_at.expect("visible has promoted_at");
-                    let rotation_deadline = promoted_at
-                        + Duration::from_secs(
-                            item.event.rotation_window(self.q.window_expanded)
-                                + item.extension_secs,
-                        );
+                    let rotation_deadline =
+                        promoted_at + Duration::from_secs(window_secs_mirror(&self.q, item));
                     let expected = if self.q.auto_retract_armed && self.q.expanded {
-                        let retract_deadline = promoted_at
-                            + Duration::from_secs(item.event.rotation_window(false)) / 2;
+                        let base = item
+                            .preempted_remaining_secs
+                            .unwrap_or_else(|| item.event.rotation_window(false));
+                        let retract_deadline = promoted_at + Duration::from_secs(base) / 2;
                         retract_deadline.min(rotation_deadline)
                     } else {
                         rotation_deadline

@@ -1,10 +1,119 @@
 import { ChevronDown, ChevronUp } from "lucide-react";
+import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import { NumberControl, SettingsGroup, TestButtonRow, ToggleControl } from "../controls/controls";
+import {
+  ControlCopy,
+  NumberControl,
+  SettingsGroup,
+  TestButtonRow,
+  ToggleControl,
+} from "../controls/controls";
 import { Segmented } from "../controls/Segmented";
 import type { Config, SourceKind } from "../types";
 import { PRIORITY_SEGMENT_OPTIONS, SOURCE_LABELS } from "../types";
+
+// plan 146a (docs/ARCHITECTURE.md §21, CONTEXT.md's Silenced/Silent Period
+// entries): validates a `"HH:MM-HH:MM"` (24h) silence window string with
+// the EXACT rules `src-tauri/src/silence.rs`'s `Window::parse` enforces —
+// split on the first `-`, split each half on the first `:`, both halves
+// digits-only in range (hours 0-23, minutes 0-59), start != end (a
+// zero-length/24h window has no unambiguous meaning in this format).
+// Midnight-crossing (start > end) is deliberately NOT rejected here —
+// `Window::in_window` handles it, same as the rust side.
+// `isValidSilenceWindow` returns `true`/`false` only; this control never
+// needs the parsed minutes themselves, just whether the current text is
+// save-able — `parseHhMm` yields minutes solely for that comparison.
+function parseHhMm(part: string): number | null {
+  const colonIdx = part.indexOf(":");
+  if (colonIdx === -1) {
+    return null;
+  }
+  const hStr = part.slice(0, colonIdx);
+  const mStr = part.slice(colonIdx + 1);
+  if (!/^\d+$/.test(hStr) || !/^\d+$/.test(mStr)) {
+    return null;
+  }
+  const h = Number(hStr);
+  const m = Number(mStr);
+  if (h > 23 || m > 59) {
+    return null;
+  }
+  return h * 60 + m;
+}
+
+export function isValidSilenceWindow(raw: string): boolean {
+  const dashIdx = raw.indexOf("-");
+  if (dashIdx === -1) {
+    return false;
+  }
+  const start = parseHhMm(raw.slice(0, dashIdx));
+  const end = parseHhMm(raw.slice(dashIdx + 1));
+  return start !== null && end !== null && start !== end;
+}
+
+// plan 146a: the one new text field this plan adds, following
+// `NumberControl`'s own established idiom exactly (controls.tsx) — a
+// local raw-string mirror of the committed value, re-synced via `useEffect`
+// only when the EXTERNAL value changes (Reset, a fresh `get_config`), so
+// mid-edit keystrokes are never fought. Unlike `NumberControl`, an invalid
+// in-progress value is never silently discarded: `raw` always reflects
+// exactly what's typed, `patchConfig` only fires once the text parses per
+// `isValidSilenceWindow` above, and an inline error replaces the caption
+// while invalid — the server-side `ErrorPanel` (SettingsApp.tsx) remains
+// the final backstop (e.g. if this validator and the rust one ever drift),
+// but this gives immediate feedback without a save round-trip.
+function SilenceWindowControl({
+  value,
+  onChange,
+}: {
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  const [raw, setRaw] = useState(value);
+  const valid = isValidSilenceWindow(raw);
+
+  useEffect(() => {
+    setRaw(value);
+  }, [value]);
+
+  return (
+    <div className="textarea-control border-t border-border/60 pt-[11px] pb-3 first:border-t-0">
+      <ControlCopy
+        htmlFor="silence-window"
+        name="Silent period window"
+        help="24h local time, HH:MM-HH:MM. May cross midnight (e.g. 23:00-07:30)."
+      />
+      <Input
+        id="silence-window"
+        spellCheck={false}
+        aria-invalid={!valid}
+        value={raw}
+        placeholder="00:00-10:00"
+        onChange={(event) => {
+          const next = event.currentTarget.value;
+          setRaw(next);
+          if (isValidSilenceWindow(next)) {
+            onChange(next);
+          }
+        }}
+        className={cn(
+          "mt-2 h-[31px] w-32 rounded-sm border-input bg-input/20 font-mono text-fs-body font-[650] text-foreground",
+          !valid && "border-destructive/60 text-destructive",
+        )}
+      />
+      <div
+        className={cn(
+          "field-caption mt-[5px] text-fs-caption font-bold tracking-[0.08em] uppercase",
+          valid ? "text-muted-foreground" : "text-destructive",
+        )}
+      >
+        {valid ? "start-end, 24h" : "invalid — expected HH:MM-HH:MM, start ≠ end"}
+      </div>
+    </div>
+  );
+}
 
 function RotationOrderList({
   order,
@@ -151,7 +260,12 @@ export function GeneralSection({
 
       <SettingsGroup
         title="Rotation and priority"
-        description="Waiting items promote high → medium → low. Priority chooses the next turn; it never interrupts the visible item."
+        // plan 146b (docs/ARCHITECTURE.md §21): reverses the old "priority
+        // never interrupts the visible item" contract — a strictly-higher
+        // arrival now cuts the visible card's turn short (Priority
+        // Preemption); it re-queues at the head of its own tier with its
+        // remaining time intact. Equal priority still never preempts.
+        description="Waiting items promote high → medium → low. A strictly-higher-priority arrival interrupts the visible item immediately; equal priority never preempts."
       >
         <NumberControl
           id="default-ttl"
@@ -190,6 +304,30 @@ export function GeneralSection({
         <RotationOrderList
           order={config.rotation_order}
           onChange={(rotation_order) => patchConfig({ rotation_order })}
+        />
+      </SettingsGroup>
+
+      {/* plan 146a (docs/ARCHITECTURE.md §21, CONTEXT.md's Silenced/Silent
+          Period entries): the persisted daily schedule only — the tray's
+          own Timed Mutes/Skip are session-only live controls, not edited
+          here (see the group description below). A High Event still
+          promotes compact (Breakthrough) while Silenced regardless of
+          this schedule; that's queue behavior, not a setting. */}
+      <SettingsGroup
+        title="Silenced"
+        description="Medium/Low events buffer during this daily window; a High event still promotes (Breakthrough). Tray mutes and Skip are live controls for right now — this schedule is only the persisted default."
+      >
+        <ToggleControl
+          id="silence-enabled"
+          name="Silent period"
+          help="Buffer Medium/Low notifications during the window below, every day."
+          label="Enable silent period"
+          checked={config.silence.enabled}
+          onChange={(enabled) => patchConfig({ silence: { ...config.silence, enabled } })}
+        />
+        <SilenceWindowControl
+          value={config.silence.window}
+          onChange={(window) => patchConfig({ silence: { ...config.silence, window } })}
         />
       </SettingsGroup>
     </div>

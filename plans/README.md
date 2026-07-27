@@ -1,5 +1,18 @@
 # Implementation Plans
 
+**Silenced + Preemption spec (2026-07-27, grilled + operator-ratified):**
+plan 146 is a `/to-spec` PRD from the 2026-07-27 grilling session:
+**Silenced** (scheduled daily Silent Period default 00:00–10:00, tray
+Timed Mutes 30m/1h/2h, Skip-today, High-only Breakthrough as compact
+cards, Paused stays absolute above it, display-only — Connectors and
+pollers untouched) and **Priority Preemption** (strictly-higher
+preempts the Visible card, preempted card re-queues at head of tier
+with remaining time; Low promotes compact everywhere). Glossary terms
+already landed in `CONTEXT.md` (Silenced, Silent Period, Timed Mute,
+Skip, Breakthrough; Priority and Expanded rewritten). Seams
+operator-approved: queue-level gate + pure schedule function. Ships as
+two halves (146a Silenced, 146b Preemption); status ready-for-agent.
+
 **v7 agent-integrations breakdown (2026-07-26, operator-approved):**
 plans 133–145 file the `docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`
 v0 draft (product decisions grilled 2026-07-26) as thirteen

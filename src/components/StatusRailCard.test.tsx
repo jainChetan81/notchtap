@@ -2,7 +2,13 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath, URL as NodeURL } from "node:url";
 import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { CONTENT_EXIT_MS, NOTCHTAP_EASE, ROTATION_EXIT_MS } from "../animationTiming";
+import {
+  CONTENT_EXIT_MS,
+  INTERRUPT_EASE,
+  INTERRUPT_EXIT_MS,
+  NOTCHTAP_EASE,
+  ROTATION_EXIT_MS,
+} from "../animationTiming";
 import type { EspnMeta, SlotState, SourceKind } from "../useSlotState";
 import type { StatusState } from "../useStatusState";
 import { contentExitVariants, StatusRailCard } from "./StatusRailCard";
@@ -1256,6 +1262,131 @@ describe("StatusRailCard", () => {
     });
   });
 
+  // plan 146b (Priority Preemption): a strictly-higher-priority arrival now
+  // cuts the Visible card's turn short instead of waiting it out — the
+  // handover must read as "yanked", not as an ordinary end-of-turn
+  // rotation. The wire carries no explicit "preempted" flag (see
+  // StatusRailCard.tsx's own doc on `isInterrupt`), so the frontend infers
+  // it from priority + the outgoing item's own estimated remaining time:
+  // strictly-higher incoming priority AND the outgoing item still had real
+  // time left. Both conditions are required — a plain priority increase
+  // across an ordinary rotation (the queue always drains its
+  // highest-priority Waiting item next) must NOT be marked an interrupt.
+  describe("Priority Preemption interrupt detection (plan 146b)", () => {
+    const LOW_WITH_TIME_LEFT: SlotState = {
+      ...GOAL,
+      id: "low-fresh",
+      priority: "low",
+      ttlMs: 8000,
+      remainingMs: 8000,
+    };
+    const LOW_ALMOST_DONE: SlotState = {
+      ...GOAL,
+      id: "low-almost-done",
+      priority: "low",
+      ttlMs: 8000,
+      remainingMs: 50,
+    };
+    const HIGH_ARRIVAL: SlotState = {
+      ...RED_CARD,
+      id: "high-arrival",
+      priority: "high",
+      ttlMs: 5000,
+      remainingMs: 5000,
+    };
+    const HIGH_VISIBLE: SlotState = {
+      ...GOAL,
+      id: "high-visible",
+      priority: "high",
+      ttlMs: 8000,
+      remainingMs: 8000,
+    };
+    const LOW_ARRIVAL: SlotState = {
+      ...RED_CARD,
+      id: "low-arrival",
+      priority: "low",
+      ttlMs: 5000,
+      remainingMs: 5000,
+    };
+    const MEDIUM_ARRIVAL: SlotState = {
+      ...RED_CARD,
+      id: "medium-arrival",
+      priority: "medium",
+      ttlMs: 5000,
+      remainingMs: 5000,
+    };
+
+    it("a strictly-higher-priority arrival that cuts a Low card short (real time left) is marked an interrupt, not a plain rotation", async () => {
+      const { container, rerender } = render(<StatusRailCard slot={LOW_WITH_TIME_LEFT} />);
+      rerender(<StatusRailCard slot={HIGH_ARRIVAL} />);
+      await vi.waitFor(() => {
+        expect(screen.getByText("Red Card")).toBeTruthy();
+      });
+      const content = container.querySelector(".below-block .card-content");
+      expect(content?.getAttribute("data-interrupt-swap")).toBe("true");
+      expect(content?.getAttribute("data-rotation-swap")).toBe("false");
+    });
+
+    it("a higher-priority arrival after the outgoing item's own turn had already run out is an ordinary rotation, not an interrupt", async () => {
+      const { container, rerender } = render(<StatusRailCard slot={LOW_ALMOST_DONE} />);
+      rerender(<StatusRailCard slot={HIGH_ARRIVAL} />);
+      await vi.waitFor(() => {
+        expect(screen.getByText("Red Card")).toBeTruthy();
+      });
+      const content = container.querySelector(".below-block .card-content");
+      expect(content?.getAttribute("data-interrupt-swap")).toBe("false");
+      expect(content?.getAttribute("data-rotation-swap")).toBe("true");
+    });
+
+    it("equal priority never interrupts, even with plenty of time left on the outgoing card", async () => {
+      const { container, rerender } = render(<StatusRailCard slot={GOAL} />);
+      rerender(<StatusRailCard slot={RED_CARD} />);
+      await vi.waitFor(() => {
+        expect(screen.getByText("Red Card")).toBeTruthy();
+      });
+      const content = container.querySelector(".below-block .card-content");
+      expect(content?.getAttribute("data-interrupt-swap")).toBe("false");
+      expect(content?.getAttribute("data-rotation-swap")).toBe("true");
+    });
+
+    it("a lower-priority arrival is never an interrupt", async () => {
+      const { container, rerender } = render(<StatusRailCard slot={HIGH_VISIBLE} />);
+      rerender(<StatusRailCard slot={LOW_ARRIVAL} />);
+      await vi.waitFor(() => {
+        expect(screen.getByText("Red Card")).toBeTruthy();
+      });
+      const content = container.querySelector(".below-block .card-content");
+      expect(content?.getAttribute("data-interrupt-swap")).toBe("false");
+      expect(content?.getAttribute("data-rotation-swap")).toBe("true");
+    });
+
+    it("Medium preempting a Low card with time left is also marked an interrupt (not just High)", async () => {
+      const { container, rerender } = render(<StatusRailCard slot={LOW_WITH_TIME_LEFT} />);
+      rerender(<StatusRailCard slot={MEDIUM_ARRIVAL} />);
+      await vi.waitFor(() => {
+        expect(screen.getByText("Red Card")).toBeTruthy();
+      });
+      const content = container.querySelector(".below-block .card-content");
+      expect(content?.getAttribute("data-interrupt-swap")).toBe("true");
+    });
+
+    it("an idle->showing promotion is never marked an interrupt", () => {
+      vi.useFakeTimers();
+      try {
+        const { container, rerender } = render(<StatusRailCard slot={{ state: "empty" }} />);
+        rerender(<StatusRailCard slot={HIGH_ARRIVAL} />);
+        act(() => vi.advanceTimersByTime(175));
+        expect(
+          container
+            .querySelector(".below-block .card-content")
+            ?.getAttribute("data-interrupt-swap"),
+        ).toBe("false");
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
+
   // plan 129 (T3, deep-review fix): pins `contentExitVariants` (exported
   // test-only, same precedent as `iconForBundleId` in IdleHoverPeek.tsx)
   // directly, rather than only through rendered `data-rotation-swap`
@@ -1266,7 +1397,7 @@ describe("StatusRailCard", () => {
   // between them landed correctly.
   describe("contentExitVariants (plan 129 T3)", () => {
     it("the rotation exit uses ROTATION_EXIT_MS, in seconds, with the house ease", () => {
-      const variant = contentExitVariants.exit(true) as {
+      const variant = contentExitVariants.exit({ isRotation: true, isInterrupt: false }) as {
         transition: { duration: number; ease: unknown };
       };
       expect(variant.transition.duration).toBe(ROTATION_EXIT_MS / 1000);
@@ -1274,11 +1405,31 @@ describe("StatusRailCard", () => {
     });
 
     it("the non-rotation (promotion/exit) leg uses CONTENT_EXIT_MS, in seconds, with the house ease", () => {
-      const variant = contentExitVariants.exit(false) as {
+      const variant = contentExitVariants.exit({ isRotation: false, isInterrupt: false }) as {
         transition: { duration: number; ease: unknown };
       };
       expect(variant.transition.duration).toBe(CONTENT_EXIT_MS / 1000);
       expect(variant.transition.ease).toEqual(NOTCHTAP_EASE);
+    });
+
+    // plan 146b: the interrupt leg wins outright over the plain rotation
+    // branch — faster (INTERRUPT_EXIT_MS < ROTATION_EXIT_MS), its own
+    // sharp ease (not NOTCHTAP_EASE), and a small y/scale "yank" so the
+    // handover reads as cut short, not just quicker.
+    it("the interrupt exit uses INTERRUPT_EXIT_MS with its own sharp ease and a yank, even when isRotation is also true", () => {
+      const variant = contentExitVariants.exit({ isRotation: true, isInterrupt: true }) as {
+        opacity: number;
+        y: number;
+        scale: number;
+        transition: { duration: number; ease: unknown };
+      };
+      expect(variant.transition.duration).toBe(INTERRUPT_EXIT_MS / 1000);
+      expect(variant.transition.duration).toBeLessThan(ROTATION_EXIT_MS / 1000);
+      expect(variant.transition.ease).toEqual(INTERRUPT_EASE);
+      expect(variant.transition.ease).not.toEqual(NOTCHTAP_EASE);
+      expect(variant.opacity).toBe(0);
+      expect(variant.y).toBeGreaterThan(0);
+      expect(variant.scale).toBeLessThan(1);
     });
   });
 
@@ -1826,6 +1977,30 @@ describe("StatusRailCard", () => {
       // synchronous — zero timer advance — entrance never waits on the
       // delayed swap.
       expect(container.querySelector(".card-assembly.high.expanded")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.idle")).toBeNull();
+    });
+
+    // plan 146 (Priority and Expanded glossary rewrite, docs/ARCHITECTURE.md
+    // §21): a Low Promotion or a Breakthrough (High-while-Silenced)
+    // Promotion now starts compact — the queue-owned `expanded` flag on the
+    // wire is already `false` for those from the very first emission (no
+    // frontend change needed for the flag itself, per `useExitChoreography`'s
+    // `expanded = showing ? slot.expanded : ...` already reading the live
+    // slot on entrance). The regression this guards against: `expanded`
+    // starting `true` for one render and THEN collapsing (a visible
+    // expand-then-collapse flash) — it must read compact on the exact same
+    // render the promotion arrives, same "no timer advance needed" contract
+    // as the expanded case just above.
+    it("a promotion arriving with expanded:false renders compact on the very first render — no expand-then-collapse flash", () => {
+      const { container, rerender } = render(<StatusRailCard slot={{ state: "empty" }} />);
+      expect(container.querySelector(".card-assembly.idle")).not.toBeNull();
+
+      rerender(<StatusRailCard slot={{ ...GOAL, expanded: false }} />);
+      // synchronous — zero timer advance — the very first render already
+      // reflects the wire's expanded:false, never a transient expanded
+      // class.
+      expect(container.querySelector(".card-assembly.high")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.expanded")).toBeNull();
       expect(container.querySelector(".card-assembly.idle")).toBeNull();
     });
 
