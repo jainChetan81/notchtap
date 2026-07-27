@@ -1,6 +1,7 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
+import { NOTCHTAP_EASE, SURFACE_SWAP_MS } from "./animationTiming";
 import { AgentBoard } from "./components/AgentBoard";
 import { StatusRailCard } from "./components/StatusRailCard";
 import { presentationMode } from "./lib/presentation";
@@ -161,7 +162,7 @@ function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.18 }}
+            transition={{ duration: SURFACE_SWAP_MS / 1000, ease: NOTCHTAP_EASE }}
           >
             <AgentBoard
               sessions={agentState.sessions}
@@ -182,7 +183,7 @@ function App() {
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
-            transition={{ duration: 0.18 }}
+            transition={{ duration: SURFACE_SWAP_MS / 1000, ease: NOTCHTAP_EASE }}
           >
             <StatusRailCard
               slot={slot}

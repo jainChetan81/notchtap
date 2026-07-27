@@ -401,6 +401,90 @@ describe("IdleHoverPeek (plan 093)", () => {
     expect(container.querySelector(".media-row")).toBeNull();
   });
 
+  // plan 151 (item C): the progress bar's 1s linear glide belongs to
+  // steady playback only. Every discontinuity (pause, seek backwards,
+  // track change) must snap, which the component expresses as an inline
+  // `transition: none` for exactly that render — so these assert on the
+  // inline style, the one thing jsdom can see (the glide itself lives in
+  // the CSS rule, asserted separately below).
+  describe("media progress-bar discontinuities (plan 151)", () => {
+    function mediaStatus(overrides: Partial<NowPlayingSummary>): StatusState {
+      return {
+        ...MEDIA_STATUS,
+        media: {
+          enabled: true,
+          current: { ...NOW_PLAYING, capturedAtMs: Date.now(), ...overrides },
+        },
+      };
+    }
+    function barTransition(container: HTMLElement): string {
+      const fill = container.querySelector(".media-bar-fill") as HTMLElement | null;
+      if (fill === null) {
+        throw new Error("no .media-bar-fill rendered");
+      }
+      return fill.style.transition;
+    }
+
+    it("glides (no inline override) on a steady forward playback tick", () => {
+      const { container, rerender } = render(
+        <IdleHoverPeek status={mediaStatus({ elapsedMs: 30_000 })} hovered={true} />,
+      );
+      // first render has nothing to glide FROM, so it snaps ...
+      expect(barTransition(container)).toBe("none");
+      // ... the next steady tick hands the fill back to the CSS rule.
+      rerender(<IdleHoverPeek status={mediaStatus({ elapsedMs: 31_000 })} hovered={true} />);
+      expect(barTransition(container)).toBe("");
+    });
+
+    it("snaps when the transport pauses (no post-pause creep)", () => {
+      const { container, rerender } = render(
+        <IdleHoverPeek status={mediaStatus({ elapsedMs: 30_000 })} hovered={true} />,
+      );
+      rerender(<IdleHoverPeek status={mediaStatus({ elapsedMs: 31_000 })} hovered={true} />);
+      expect(barTransition(container)).toBe("");
+      rerender(
+        <IdleHoverPeek
+          status={mediaStatus({ elapsedMs: 31_000, playing: false })}
+          hovered={true}
+        />,
+      );
+      expect(barTransition(container)).toBe("none");
+    });
+
+    it("snaps on a track change, even when the new track starts further along", () => {
+      const { container, rerender } = render(
+        <IdleHoverPeek status={mediaStatus({ elapsedMs: 30_000 })} hovered={true} />,
+      );
+      rerender(<IdleHoverPeek status={mediaStatus({ elapsedMs: 31_000 })} hovered={true} />);
+      expect(barTransition(container)).toBe("");
+      // a FORWARD progress jump — the progress check alone would miss
+      // this one; the title is what gives it away.
+      rerender(
+        <IdleHoverPeek
+          status={mediaStatus({ elapsedMs: 90_000, title: "Reunion" })}
+          hovered={true}
+        />,
+      );
+      expect(barTransition(container)).toBe("none");
+    });
+
+    it("snaps when progress goes backwards (seek, or a new track starting at 0)", () => {
+      const { container, rerender } = render(
+        <IdleHoverPeek status={mediaStatus({ elapsedMs: 90_000 })} hovered={true} />,
+      );
+      rerender(<IdleHoverPeek status={mediaStatus({ elapsedMs: 91_000 })} hovered={true} />);
+      expect(barTransition(container)).toBe("");
+      rerender(<IdleHoverPeek status={mediaStatus({ elapsedMs: 2_000 })} hovered={true} />);
+      expect(barTransition(container)).toBe("none");
+    });
+
+    it("keeps the 1s linear glide in the CSS rule (the steady-playback case)", () => {
+      expect(ruleBody(overlayCardCss, ".card-root .media-bar-fill")).toContain(
+        "transition: transform 1s linear;",
+      );
+    });
+  });
+
   it("renders no media row when media.current is null (no-media renders nothing extra)", () => {
     const { container } = render(<IdleHoverPeek status={WEATHER_STATUS} hovered={true} />);
     expect(container.querySelector(".media-row")).toBeNull();

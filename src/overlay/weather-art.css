@@ -97,11 +97,31 @@
   /* the dot grid tiles independently on each axis at its own 22px
      `background-size`, so any integer multiple of 22px in x AND in y is
      seamless — no trig needed here, unlike the diagonal rain streaks
-     above. `snow-drift` travels one period right (22px) and three down
-     (66px), a gentle diagonal sway rather than a straight fall, over a
-     slow 14s cycle so it reads as light drifting snow, not a downpour. */
-  animation: snow-drift 14s linear infinite;
-  will-change: transform;
+     above.
+     plan 151 (item D2): the comment here used to promise "a gentle
+     diagonal sway rather than a straight fall" while a single
+     `translate(0,0) -> (22px,66px)` keyframe delivered exactly a
+     straight fall on a diagonal rail. The sway is real now: the two axes
+     run as SEPARATE animations on non-harmonic periods (6.6s fall vs a
+     14s half-sway, i.e. a 28s round trip — 28/6.6 is not an integer, so
+     the flakes never retrace the same visual path twice in a row).
+     Composing them needs two DIFFERENT properties, not two animations on
+     one: `translate` and `transform` are distinct CSS properties that
+     the engine multiplies together (individual transform properties
+     apply before `transform`), so each axis keeps its own clock instead
+     of the later animation simply winning. Both remain compositor-only,
+     and there is only one element here to work with — this is a
+     pseudo-element on a tiled background, so nesting a wrapper isn't
+     available, and animating `background-position` would put the work
+     back on the main thread.
+     Seamlessness, per axis: the fall travels 66px = 3 tiles, so its loop
+     boundary is pixel-identical; the sway travels 22px = 1 tile AND runs
+     `alternate`, so it reverses rather than jumping, seamless at both
+     ends. */
+  animation:
+    snow-fall-y 6.6s linear infinite,
+    snow-sway-x 14s ease-in-out infinite alternate;
+  will-change: translate, transform;
 }
 
 @keyframes rain-fall {
@@ -113,12 +133,26 @@
   }
 }
 
-@keyframes snow-drift {
+/* plan 151 (item D2): the fall (y) and the sway (x) are split across the
+   `translate` and `transform` properties on purpose — see the
+   `.wx-snow-dots::after` comment above. Two animations both targeting
+   `transform` would NOT compose; the second would simply override the
+   first. */
+@keyframes snow-fall-y {
   from {
-    transform: translate(0, 0);
+    translate: 0 0;
   }
   to {
-    transform: translate(22px, 66px);
+    translate: 0 66px;
+  }
+}
+
+@keyframes snow-sway-x {
+  from {
+    transform: translateX(0);
+  }
+  to {
+    transform: translateX(22px);
   }
 }
 

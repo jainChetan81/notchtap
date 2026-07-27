@@ -1,7 +1,10 @@
-import { cleanup, fireEvent, render } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { fileURLToPath, URL as NodeURL } from "node:url";
+import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import { DISCLOSURE_SPRING, NOTCHTAP_EASE } from "../animationTiming";
 import type { AgentSessionView } from "../useAgentState";
-import { AgentBoard, ROW_TRANSITION } from "./AgentBoard";
+import { AgentBoard, HERO_SWAP_TRANSITION, nowTickIntervalMs, ROW_TRANSITION } from "./AgentBoard";
 
 // this project's vitest config doesn't set `test.globals`, so RTL's
 // auto-cleanup (hooked off a global `afterEach`) never registers.
@@ -594,5 +597,192 @@ describe("AgentBoard row removal/insertion/reorder fluidity", () => {
         (row) => row.querySelector(".agent-row-runtime")?.textContent,
       ),
     ).toEqual(["Codex", "Claude Code"]);
+  });
+});
+
+// Plan 149 (motion vitals): the four fixes this plan lands — a BOUNDED
+// dot pulse that restarts on state change, an accent that morphs instead
+// of snapping, a hero that swaps on IDENTITY change only, and a wall-clock
+// tick that adapts to what `elapsedLabel` can actually render. These pin
+// structure and const values, never mid-flight styles (jsdom runs no real
+// spring — same discipline as the row-fluidity block above).
+describe("AgentBoard motion vitals", () => {
+  const AGENT_BOARD_TSX = readFileSync(
+    fileURLToPath(new NodeURL("./AgentBoard.tsx", import.meta.url)),
+    "utf8",
+  );
+  const AGENT_BOARD_CSS = readFileSync(
+    fileURLToPath(new NodeURL("../overlay/agent-board.css", import.meta.url)),
+    "utf8",
+  );
+
+  it("the dot's breathe animation is BOUNDED, never infinite (plan-105 precedent)", () => {
+    // an `infinite` opacity loop on a `waiting_for_input` session that
+    // persists for hours is the exact always-on pulse plan 105 removed
+    // from the status dots. 4 iterations ≈ 8.8s per state change.
+    expect(AGENT_BOARD_CSS).toMatch(
+      /animation:\s*\n?\s*agent-dot-state-tick[^;]*agent-dot-breathe/,
+    );
+    expect(AGENT_BOARD_CSS).toMatch(/agent-dot-breathe 2\.2s ease-in-out 4;/);
+    expect(AGENT_BOARD_CSS).not.toMatch(/agent-dot-breathe[^;]*infinite/);
+  });
+
+  it("the dot morphs its accent colour and the one-shot tick is scoped to .pulse only", () => {
+    // base rule: colour morph for every state (including completed/
+    // failed/stale); the scale tick lives under `.pulse` so quiet states
+    // stay quiet.
+    expect(AGENT_BOARD_CSS).toMatch(
+      /\.card-root \.agent-dot \{[^}]*transition: background-color var\(--hover-ms, 160ms\) var\(--ease-notchtap\);/s,
+    );
+    expect(AGENT_BOARD_CSS).toMatch(/@keyframes agent-dot-state-tick/);
+    expect(AGENT_BOARD_CSS).not.toMatch(/\.card-root \.agent-dot \{[^}]*agent-dot-state-tick/s);
+  });
+
+  it("every disclosure uses the shared DISCLOSURE_SPRING — no hand-copied spring literals remain", () => {
+    expect(AGENT_BOARD_TSX).not.toMatch(/stiffness:/);
+    expect(AGENT_BOARD_TSX).not.toMatch(/opacity: \{ duration/);
+    // three sites: the per-row history disclosure, the expanded list, the
+    // resting rows block.
+    expect(AGENT_BOARD_TSX.match(/transition=\{DISCLOSURE_SPRING\}/g)).toHaveLength(3);
+    // ...and it is genuinely the exported token, not a look-alike.
+    expect(DISCLOSURE_SPRING).toEqual({ type: "spring", stiffness: 480, damping: 37 });
+  });
+
+  it("HERO_SWAP_TRANSITION is a short house-eased tween (no spring overshoot on a text block)", () => {
+    expect(HERO_SWAP_TRANSITION).toEqual({ duration: 0.16, ease: NOTCHTAP_EASE });
+  });
+
+  it("a state change on the SAME session keeps the hero mounted but remounts its dot", () => {
+    const { container, rerender } = render(
+      <AgentBoard
+        sessions={[session({ id: "a", state: "working" })]}
+        capturedAtMs={CAPTURED_AT_MS}
+      />,
+    );
+    const heroBefore = container.querySelector(".agent-board-primary");
+    const dotBefore = container.querySelector(".agent-board-primary .agent-dot");
+    expect(heroBefore).not.toBeNull();
+    expect(dotBefore?.classList.contains("pulse")).toBe(true);
+
+    rerender(
+      <AgentBoard
+        sessions={[session({ id: "a", state: "completed" })]}
+        capturedAtMs={CAPTURED_AT_MS}
+      />,
+    );
+
+    // the hero block itself is keyed on `primary.id` ONLY — a state change
+    // must morph in place, not replay the whole swap.
+    expect(container.querySelector(".agent-board-primary")).toBe(heroBefore);
+    // the DOT, though, is keyed on the state, so it genuinely remounts —
+    // that remount is what restarts the bounded pulse/tick.
+    const dotAfter = container.querySelector(".agent-board-primary .agent-dot");
+    expect(dotAfter).not.toBe(dotBefore);
+    expect(dotAfter?.classList.contains("pulse")).toBe(false);
+  });
+
+  it("a compact row's dot also remounts on state change (bounded pulse restart)", () => {
+    const rows = (state: AgentSessionView["state"]) => [
+      session({ id: "primary" }),
+      session({ id: "b", runtime: "kimi", state }),
+    ];
+    const { container, rerender } = render(
+      <AgentBoard sessions={rows("working")} capturedAtMs={CAPTURED_AT_MS} />,
+    );
+    const dotBefore = container.querySelector(".agent-row .agent-dot");
+    rerender(<AgentBoard sessions={rows("waiting_for_input")} capturedAtMs={CAPTURED_AT_MS} />);
+    const dotAfter = container.querySelector(".agent-row .agent-dot");
+    expect(dotAfter).not.toBe(dotBefore);
+    // both states pulse, so the class is unchanged — only the remount
+    // (and the CSS colour morph) marks the change.
+    expect(dotAfter?.classList.contains("pulse")).toBe(true);
+  });
+
+  it("a DIFFERENT session becoming primary swaps the hero (identity change, not a state change)", async () => {
+    const { container, rerender } = render(
+      <AgentBoard
+        sessions={[session({ id: "a", runtime: "claude-code" })]}
+        capturedAtMs={CAPTURED_AT_MS}
+      />,
+    );
+    const heroBefore = container.querySelector(".agent-board-primary");
+    expect(heroBefore?.querySelector(".agent-board-runtime")?.textContent).toBe("Claude Code");
+
+    rerender(
+      <AgentBoard
+        sessions={[session({ id: "b", runtime: "opencode" })]}
+        capturedAtMs={CAPTURED_AT_MS}
+      />,
+    );
+
+    // `mode="wait"` means the outgoing hero holds the slot until its exit
+    // completes, so the new content arrives asynchronously — the swap is
+    // a real animation, not a same-frame content replacement.
+    await waitFor(() => {
+      const heroAfter = container.querySelector(".agent-board-primary");
+      expect(heroAfter?.querySelector(".agent-board-runtime")?.textContent).toBe("OpenCode");
+      expect(heroAfter).not.toBe(heroBefore);
+    });
+  });
+
+  it("nowTickIntervalMs: fast while any session is inside elapsedLabel's second-granular window", () => {
+    const now = CAPTURED_AT_MS;
+    expect(nowTickIntervalMs([session({ elapsedMs: 5_000 })], CAPTURED_AT_MS, now)).toBe(1000);
+    // one slow session doesn't drag the board off the fast tick
+    expect(
+      nowTickIntervalMs(
+        [session({ id: "a", elapsedMs: 900_000 }), session({ id: "b", elapsedMs: 1_000 })],
+        CAPTURED_AT_MS,
+        now,
+      ),
+    ).toBe(1000);
+  });
+
+  it("nowTickIntervalMs: slow once every session is past the 60s minute boundary", () => {
+    const now = CAPTURED_AT_MS;
+    expect(
+      nowTickIntervalMs(
+        [session({ id: "a", elapsedMs: 60_000 }), session({ id: "b", elapsedMs: 3_600_000 })],
+        CAPTURED_AT_MS,
+        now,
+      ),
+    ).toBe(15_000);
+    // and the LIVE elapsed is what counts, not the wire snapshot: a 59s
+    // snapshot captured 5s ago is already past the boundary.
+    expect(
+      nowTickIntervalMs([session({ elapsedMs: 59_000 })], CAPTURED_AT_MS, CAPTURED_AT_MS + 5_000),
+    ).toBe(15_000);
+  });
+
+  it("the board subscribes at the slow rate when nothing is second-granular", () => {
+    const setInterval = vi.spyOn(window, "setInterval");
+    try {
+      render(
+        <AgentBoard
+          sessions={[session({ id: "a", elapsedMs: 300_000 })]}
+          capturedAtMs={Date.now()}
+        />,
+      );
+      const delays = setInterval.mock.calls.map((call) => call[1]);
+      expect(delays).toContain(15_000);
+      expect(delays).not.toContain(1000);
+    } finally {
+      setInterval.mockRestore();
+    }
+  });
+
+  it("the board subscribes at the fast rate while a session is fresh", () => {
+    const setInterval = vi.spyOn(window, "setInterval");
+    try {
+      render(
+        <AgentBoard
+          sessions={[session({ id: "a", elapsedMs: 2_000 })]}
+          capturedAtMs={Date.now()}
+        />,
+      );
+      expect(setInterval.mock.calls.map((call) => call[1])).toContain(1000);
+    } finally {
+      setInterval.mockRestore();
+    }
   });
 });

@@ -6,13 +6,17 @@ import { fileURLToPath, URL as NodeURL } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import {
   CONTENT_EXIT_MS,
+  DISCLOSURE_SPRING,
   EXPAND_MS,
   HOVER_MS,
+  IDLE_GLANCE_MS,
+  IDLE_REVEAL_MS,
   INTERRUPT_EXIT_MS,
   NOTCHTAP_EASE,
   REVEAL_MS,
   ROTATION_ENTER_MS,
   ROTATION_EXIT_MS,
+  SURFACE_SWAP_MS,
   SWAP_EXIT_MS,
 } from "./animationTiming";
 import { applyAnimationTiming } from "./applyAnimationTiming";
@@ -31,6 +35,38 @@ import { applyAnimationTiming } from "./applyAnimationTiming";
 describe("animationTiming (plan 117)", () => {
   it("SWAP_EXIT_MS matches useDelayedSwap's 175ms exit window", () => {
     expect(SWAP_EXIT_MS).toBe(175);
+  });
+
+  // plan 148: the four tokens that replaced hand-typed literals in
+  // App.tsx / IdleHoverPeek.tsx / IdleFace.tsx. Pinned to the exact
+  // values those literals carried — plan 148 was tokenization, NOT a
+  // retune, so a diff here means someone changed the feel.
+  it("SURFACE_SWAP_MS matches App.tsx's previous 0.18s board<->rail crossfade", () => {
+    expect(SURFACE_SWAP_MS).toBe(180);
+  });
+
+  it("IDLE_REVEAL_MS and IDLE_GLANCE_MS match IdleFace's previous literals", () => {
+    expect(IDLE_REVEAL_MS).toBe(240);
+    expect(IDLE_GLANCE_MS).toBe(200);
+  });
+
+  it("DISCLOSURE_SPRING matches the hover-disclosure spring's previous config", () => {
+    expect(DISCLOSURE_SPRING).toEqual({ type: "spring", stiffness: 480, damping: 37 });
+  });
+
+  // plan 148 regression guard. The four hand-copied call sites this
+  // spring replaced each carried a separate `opacity: { duration: 0.15 }`
+  // per-property override, which ran on its own clock and so desynced
+  // from the spring whenever a hover flip interrupted it mid-open —
+  // height still collapsing after opacity hit 0 (ghost box), or height
+  // at 0 while still partly opaque. The fix is precisely the ABSENCE of
+  // any per-property override: one spring drives every animated
+  // property, so an interruption retargets them together. Re-adding an
+  // `opacity` key (or any other per-property override) reintroduces the
+  // bug, so assert there is none.
+  it("DISCLOSURE_SPRING carries no per-property opacity override (interruption desync guard)", () => {
+    expect(DISCLOSURE_SPRING).not.toHaveProperty("opacity");
+    expect(Object.keys(DISCLOSURE_SPRING).sort()).toEqual(["damping", "stiffness", "type"]);
   });
 
   // 2026-07-23 review fix (wave C, CSS custom-property injection): the

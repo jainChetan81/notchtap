@@ -32,9 +32,21 @@
   pointer-events: none;
   will-change: transform;
 }
+/* plan 151 (item D1): SHAPE only — duration, `ease-in-out`, `alternate`
+   and the endpoints are all unchanged (the existence/ease decisions were
+   settled in plan 105's comment above). What changed is that the path is
+   no longer a straight line: the old two-stop keyframe walked (0,0) to
+   (-8%,-6%) and then retraced the identical rail backwards, which reads
+   as a pendulum rather than a wander. The intermediate stops are
+   deliberately NOT collinear with the endpoints (33% leans further left
+   than its share, 66% further up), so the return leg traces the same
+   curve in reverse rather than a line — same cost, same GPU work, one
+   composited transform either way. */
 @keyframes shade-drift {
-  from { transform: translate3d(0, 0, 0); }
-  to   { transform: translate3d(-8%, -6%, 0); }
+  0%   { transform: translate3d(0, 0, 0); }
+  33%  { transform: translate3d(-7%, -2%, 0); }
+  66%  { transform: translate3d(-3%, -5%, 0); }
+  100% { transform: translate3d(-8%, -6%, 0); }
 }
 
 .card-root .news-shade .compact,

@@ -41,6 +41,21 @@ function fireAnimationEnd(el: HTMLElement, animationName: string) {
   });
 }
 
+// plan 150 (Step 2): the same-signal pulse replay re-applies its class
+// inside a `requestAnimationFrame` callback (clear-then-reapply is what
+// actually restarts a CSS animation past React's identity bailout), so
+// tests for it have to let one real frame pass. jsdom under vitest runs
+// with `pretendToBeVisual`, so rAF genuinely fires (~16ms) — no fake
+// timers here, deliberately: this describe block uses none, and vitest's
+// default `toFake` set doesn't cover rAF anyway.
+async function flushFrame() {
+  await act(async () => {
+    await new Promise<void>((resolve) => {
+      requestAnimationFrame(() => resolve());
+    });
+  });
+}
+
 const GOAL: SlotState = {
   state: "showing",
   id: "n1",
@@ -277,24 +292,70 @@ describe("StatusRailCard", () => {
       expect(container.querySelectorAll(".cele-ripple span")).toHaveLength(3);
     });
 
-    // The ripple rides the pulse state, so the same animationend that
-    // retires the burst unmounts the rings — no separate cleanup path.
-    it("unmounts the ripple when the goal pulse's animation ends", () => {
+    // plan 150 (Step 1): the ripple rides the pulse state, and the pulse
+    // now lives until the LAST of the three staggered rings finishes —
+    // NOT until the 1240ms shell keyframe (`goal-overshoot`) ends, which
+    // used to tear ring 3 out mid-expansion at 62% of its life. Each ring
+    // reports its own `ripple-out` end; only the third retires the layer.
+    it("keeps the ripple mounted until the THIRD ripple-out ends", () => {
       const { container } = render(<StatusRailCard slot={GOAL} />);
       const card = container.querySelector(".card-assembly") as HTMLElement;
       expect(container.querySelector(".cele-ripple")).not.toBeNull();
+
+      // the shell finishing first must no longer retire anything
       fireAnimationEnd(card, "goal-overshoot");
+      expect(container.querySelector(".cele-ripple")).not.toBeNull();
+
+      fireAnimationEnd(card, "ripple-out");
+      expect(container.querySelector(".cele-ripple")).not.toBeNull();
+      fireAnimationEnd(card, "ripple-out");
+      expect(container.querySelector(".cele-ripple")).not.toBeNull();
+      fireAnimationEnd(card, "ripple-out");
       expect(container.querySelector(".cele-ripple")).toBeNull();
     });
 
     // The pulse clears on the CSS animation's own animationend, not a
     // JS-side timer — there's no duration to keep in sync with styles.css
     // this way. jsdom never runs the animation itself, so tests simulate
-    // its natural completion.
-    it("clears pulse-goal when its animation ends", () => {
+    // its natural completion. plan 150: for the goal pulse that endpoint
+    // is the third `ripple-out`, per the test above.
+    it("clears pulse-goal when its last ripple ring ends", () => {
       const { container } = render(<StatusRailCard slot={GOAL} />);
       const card = container.querySelector(".card-assembly") as HTMLElement;
-      fireAnimationEnd(card, "goal-overshoot");
+      fireAnimationEnd(card, "ripple-out");
+      fireAnimationEnd(card, "ripple-out");
+      expect(container.querySelector(".pulse-goal")).not.toBeNull();
+      fireAnimationEnd(card, "ripple-out");
+      expect(container.querySelector(".pulse-goal")).toBeNull();
+    });
+
+    // plan 150 (Step 2): two goals in a row compute the SAME class
+    // string, so `setPulse("pulse-goal")` on the second one is a React
+    // `Object.is` bailout — the class attribute is never rewritten and
+    // the CSS animation never replays. The fix clears the class and
+    // re-applies it on the next frame; this pins both halves (gone for a
+    // frame, back after it) rather than just the end state, which the
+    // buggy no-op would also satisfy.
+    it("replays the goal pulse for a second goal arriving during the first", async () => {
+      const { container, rerender } = render(<StatusRailCard slot={GOAL} />);
+      expect(container.querySelector(".card-assembly.pulse-goal")).not.toBeNull();
+
+      // a NEW item id, same goal signal, while the first is still pulsing
+      rerender(<StatusRailCard slot={{ ...GOAL, id: "n2", body: "Arsenal 3-0" }} />);
+      expect(container.querySelector(".card-assembly.pulse-goal")).toBeNull();
+      expect(container.querySelector(".cele-ripple")).toBeNull();
+
+      await flushFrame();
+      expect(container.querySelector(".card-assembly.pulse-goal")).not.toBeNull();
+      expect(container.querySelectorAll(".cele-ripple span")).toHaveLength(3);
+
+      // and the restarted celebration counts its OWN three rings from
+      // scratch — no partial tally inherited from the interrupted one
+      const card = container.querySelector(".card-assembly") as HTMLElement;
+      fireAnimationEnd(card, "ripple-out");
+      fireAnimationEnd(card, "ripple-out");
+      expect(container.querySelector(".pulse-goal")).not.toBeNull();
+      fireAnimationEnd(card, "ripple-out");
       expect(container.querySelector(".pulse-goal")).toBeNull();
     });
 
@@ -319,14 +380,22 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".pulse-goal")).not.toBeNull();
     });
 
-    it("does not replay the pulse on an unrelated re-render of the same notification", () => {
+    // The counterpart to the same-signal REPLAY test above: a new id
+    // replays, a mere re-render of the same id must not — the plan-150
+    // rAF restart is keyed on the effect firing, and the effect is still
+    // keyed on [currentId, currentSignal] only.
+    it("does not replay the pulse on an unrelated re-render of the same notification", async () => {
       const { container, rerender } = render(<StatusRailCard slot={GOAL} />);
       const card = container.querySelector(".card-assembly") as HTMLElement;
-      fireAnimationEnd(card, "goal-overshoot");
+      fireAnimationEnd(card, "ripple-out");
+      fireAnimationEnd(card, "ripple-out");
+      fireAnimationEnd(card, "ripple-out");
       expect(container.querySelector(".pulse-goal")).toBeNull();
 
       // same id + signal, only `expanded` flips — must not replay the burst
       rerender(<StatusRailCard slot={{ ...GOAL, expanded: false }} />);
+      expect(container.querySelector(".pulse-goal")).toBeNull();
+      await flushFrame();
       expect(container.querySelector(".pulse-goal")).toBeNull();
     });
   });
@@ -1658,7 +1727,13 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".clock-pill")?.textContent).toBe("HT");
     });
 
-    it("full-time: Final pill (no live-dot) and the FT clock", () => {
+    // plan 151 (item A): the dot no longer UNMOUNTS at full-time — it
+    // stays in the DOM and fades/collapses under `.chip-live.final
+    // .live-dot` (live-scorecard.css) so it leaves in step with the
+    // chip's colour morph instead of blinking out a frame early. The
+    // user-visible contract ("no live dot on a finished match") is
+    // therefore asserted on the CSS rule, not on the node's absence.
+    it("full-time: Final pill (live-dot fades out, not unmounted) and the FT clock", () => {
       const { container } = render(
         <StatusRailCard
           slot={liveSlot({
@@ -1671,7 +1746,7 @@ describe("StatusRailCard", () => {
       const pill = container.querySelector(".chip-live");
       expect(pill?.textContent).toBe("Final");
       expect(pill?.classList.contains("final")).toBe(true);
-      expect(pill?.querySelector(".live-dot")).toBeNull();
+      expect(pill?.querySelector(".live-dot")).not.toBeNull();
       expect(container.querySelector(".clock-pill")?.textContent).toBe("FT");
     });
 

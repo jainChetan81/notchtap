@@ -1,5 +1,34 @@
 # Implementation Plans
 
+**Motion audit batch 148–151 (2026-07-27, improve-animations audit,
+operator pre-authorized execution):** a three-auditor sweep (easing/
+cohesion, purpose/origin/interruptibility, performance/opportunities)
+of the overlay's motion, vetted finding-by-finding. Filed as four
+executor plans — run 148 FIRST (it exports `DISCLOSURE_SPRING` that
+149 imports); 149/150/151 are then parallel-safe (disjoint files):
+
+| plan | title | severity | status |
+|---|---|---|---|
+| 148 | motion token cohesion (App crossfade ease, disclosure spring dedup, idle-face tokens) | HIGH | DONE |
+| 149 | agent board vitals (bounded pulse, accent morph, hero swap, adaptive tick) | HIGH | DONE |
+| 150 | celebration integrity (rings cut mid-flight, same-signal replay bug) | HIGH | DONE |
+| 151 | scorecard morphs + score odometer + media-bar truthfulness + drift shape | MEDIUM | DONE |
+
+Parked findings (documented here, deliberately NOT planned):
+**P1 drop-shadow re-rasterization** — every ambient loop animates
+inside `.card-assembly`'s `filter: drop-shadow` subtree, plausibly
+re-rasterizing the full blurred surface per frame on WebKit; needs
+Safari Web Inspector profiling on a live card BEFORE restructuring
+(the fix would move depth off the animated subtree). **F3 hover-expand
+320ms overshoot tween** — reversal cost is constant not
+distance-proportional, and it plausibly explains the documented
+idle-hover left-shift; needs live-webview inspection and touches the
+feel-checked `--ease-notchtap-pop` decision. **F4 interrupt
+serialization** — `mode="wait"` means the preemption "yank" plays to
+an empty stage; freshly operator-ratified choreography, revisit only
+on operator feedback. P4/P5 (grid-rows + container height layout
+costs) ride on P1's confirmation.
+
 **Source identity colours + parity spec (2026-07-27, operator-ratified):**
 plan 147 is a `/to-spec` PRD from the trim-and-sync session: fixed
 per-source brand colours on the card/board/Settings (Claude Code

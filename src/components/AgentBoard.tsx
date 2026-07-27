@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
+import { DISCLOSURE_SPRING, NOTCHTAP_EASE } from "../animationTiming";
 import {
   abbreviateHome,
   agentRuntimeClass,
@@ -28,7 +29,21 @@ import { StatusDots } from "./StatusDots";
 // elaborate showing<->idle exit choreography) — `App.tsx` swaps between
 // the two based on `lib/presentation.ts::presentationMode`.
 
-const NOW_TICK_MS = 1000;
+// Plan 149 (adaptive tick): the board's local wall-clock only needs to
+// tick as fast as the fastest label it drives can actually CHANGE.
+// `elapsedLabel` (lib/presentation.ts) is second-granular below 60s and
+// MINUTE-granular above it — so past a minute, 59 of every 60 one-second
+// re-renders produced byte-identical output (~3,600 pointless full-board
+// re-renders an hour, all day, on a surface nobody is looking at). The
+// fast rate is kept for the sub-minute window (where every second is a
+// visible change) and the slow rate takes over otherwise; 15s is well
+// under the 60s minute boundary, so a label can never look more than a
+// quarter-minute stale.
+const FAST_NOW_TICK_MS = 1000;
+const SLOW_NOW_TICK_MS = 15_000;
+// The granularity boundary in `elapsedLabel` itself — above this, the
+// label only changes once a minute.
+const SECOND_GRANULAR_BELOW_MS = 60_000;
 
 // Operator feedback (plan 147 follow-up, 2026-07-27): session rows used
 // to pop in/out of the DOM with no exit animation, so a removal (retention
@@ -48,18 +63,54 @@ const NOW_TICK_MS = 1000;
 // exactly the "desynced clocks" drift risk this const exists to avoid).
 export const ROW_TRANSITION = { type: "spring", bounce: 0, duration: 0.35 } as const;
 
-/// Local wall-clock tick — re-renders the board once a second so every
-/// row's elapsed-in-state label stays live, WITHOUT rust publishing a
+// Plan 149: the hero's IDENTITY swap — played only when a DIFFERENT
+// session becomes primary (keyed on `primary.id`), never when the same
+// session merely changes state (that morphs in place: the dot's colour
+// transition + state tick, agent-board.css). Same one-const discipline
+// as ROW_TRANSITION above, and exported for the same reason (the test
+// pins this object rather than hand-copying its numbers).
+// A short tween, not a spring: this is a content SWAP (out, then in via
+// `mode="wait"`), not a physical object being moved, so there's no
+// momentum to preserve and an overshoot would read as a wobble on a
+// block of text. 6px of travel — enough to give the swap a direction
+// (old content leaves upward, new content arrives from below) without
+// reading as a slide.
+export const HERO_SWAP_TRANSITION = { duration: 0.16, ease: NOTCHTAP_EASE } as const;
+
+/// Local wall-clock tick — re-renders the board so every row's
+/// elapsed-in-state label stays live, WITHOUT rust publishing a
 /// per-second `agent-state` event (CLAUDE.md's `dedup_eq` rule: a
 /// continuously-varying field must never drive a wire emission). Mirrors
 /// `useClock`'s own "local interval, not a wire tick" shape.
-function useNowTick(intervalMs: number): number {
+///
+/// Plan 149: the rate is now ADAPTIVE rather than a flat 1s — see
+/// `nowTickIntervalMs` below for the why. The interval is re-derived on
+/// every render (so a session crossing the 60s boundary, or a new
+/// session arriving, re-evaluates it), but the effect only re-subscribes
+/// when the chosen interval actually changes.
+function useNowTick(sessions: AgentSessionView[], capturedAtMs: number): number {
   const [now, setNow] = useState(() => Date.now());
+  const intervalMs = nowTickIntervalMs(sessions, capturedAtMs, now);
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), intervalMs);
     return () => window.clearInterval(id);
   }, [intervalMs]);
   return now;
+}
+
+/// Plan 149: fast tick only while at least ONE session's live elapsed is
+/// still inside `elapsedLabel`'s second-granular window; slow otherwise.
+/// Exported so the test can pin the selection directly rather than
+/// inferring it from fake-timer render counts alone.
+export function nowTickIntervalMs(
+  sessions: AgentSessionView[],
+  capturedAtMs: number,
+  nowMs: number,
+): number {
+  const anySecondGranular = sessions.some(
+    (session) => liveElapsedMs(session, capturedAtMs, nowMs) < SECOND_GRANULAR_BELOW_MS,
+  );
+  return anySecondGranular ? FAST_NOW_TICK_MS : SLOW_NOW_TICK_MS;
 }
 
 /// `session.elapsedMs` is a snapshot as of `capturedAtMs` (the wire
@@ -96,7 +147,16 @@ function AgentRow({
       style={{ overflow: "hidden" }}
       className={`agent-row ${presentation.className} ${agentRuntimeClass(session.runtime)}`}
     >
-      <span className={`agent-dot ${presentation.pulse ? "pulse" : ""}`} aria-hidden="true" />
+      {/* `key={session.state}`: see `agent-board.css`'s bounded-pulse
+          rule — the breathe/tick animations are BOUNDED, so they only
+          replay if the span genuinely remounts. Keying on the state
+          makes every state change (and only a state change) restart
+          them, which is precisely what "this just changed" should mean. */}
+      <span
+        key={session.state}
+        className={`agent-dot ${presentation.pulse ? "pulse" : ""}`}
+        aria-hidden="true"
+      />
       <span className="agent-runtime-tick" aria-hidden="true" />
       <span className="agent-row-runtime">{agentRuntimeLabel(session.runtime)}</span>
       {projectName && <span className="agent-row-project">{projectName}</span>}
@@ -164,7 +224,13 @@ function ExpandedAgentRow({
       onMouseLeave={() => setHistoryOpen(false)}
     >
       <div className="agent-expanded-row-head">
-        <span className={`agent-dot ${presentation.pulse ? "pulse" : ""}`} aria-hidden="true" />
+        {/* state-keyed for the bounded pulse/tick restart — same reason
+            as `AgentRow`'s own dot above. */}
+        <span
+          key={session.state}
+          className={`agent-dot ${presentation.pulse ? "pulse" : ""}`}
+          aria-hidden="true"
+        />
         <span className="agent-runtime-tick" aria-hidden="true" />
         <span className="agent-row-runtime">{agentRuntimeLabel(session.runtime)}</span>
         {projectName && <span className="agent-row-project">{projectName}</span>}
@@ -213,12 +279,7 @@ function ExpandedAgentRow({
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             exit={{ height: 0, opacity: 0 }}
-            transition={{
-              type: "spring",
-              stiffness: 480,
-              damping: 37,
-              opacity: { duration: 0.15 },
-            }}
+            transition={DISCLOSURE_SPRING}
             style={{ overflow: "hidden" }}
           >
             <ul className="agent-expanded-history-list">
@@ -264,7 +325,7 @@ export function AgentBoard({
   status?: StatusState;
   expanded?: boolean;
 }) {
-  const nowMs = useNowTick(NOW_TICK_MS);
+  const nowMs = useNowTick(sessions, capturedAtMs);
 
   // Defense in depth: `App.tsx` only mounts this component when
   // `presentationMode` already found at least one session, but a
@@ -304,21 +365,47 @@ export function AgentBoard({
             expanded list (which already includes the primary session as
             its first `ExpandedAgentRow`, so `primary.details`/`history`
             stay reachable there instead). */}
+        {/* Plan 149: the hero used to swap in a single frame when a
+            DIFFERENT session took the top rank — five lines of content
+            teleporting, with nothing distinguishing "a new session is
+            now primary" from "the same session changed state". Keyed on
+            `primary.id` ONLY, so an identity change plays the swap while
+            a state change within the same session morphs in place (the
+            dot's colour transition + state tick, agent-board.css) —
+            keying on state too would make an ordinary state change
+            re-animate the whole block, which is exactly the noise this
+            is meant to remove. `mode="wait"` because the hero is a
+            single block: an overlap would double its height mid-flight,
+            and a 160ms out-then-in reads cleanly as one swap. */}
         {!expanded && (
-          <div className="agent-board-primary">
-            <div className={`agent-board-primary-head ${agentRuntimeClass(primary.runtime)}`}>
-              <span
-                className={`agent-dot large ${primaryPresentation.pulse ? "pulse" : ""}`}
-                aria-hidden="true"
-              />
-              <span className="agent-runtime-tick" aria-hidden="true" />
-              <span className="agent-board-runtime">{agentRuntimeLabel(primary.runtime)}</span>
-              <span className="agent-board-state-pill">{primaryPresentation.label}</span>
-            </div>
-            {primaryProjectName && <div className="agent-board-project">{primaryProjectName}</div>}
-            {primary.summary && <div className="agent-board-summary">{primary.summary}</div>}
-            <div className="agent-board-elapsed">{primaryElapsed}</div>
-          </div>
+          <AnimatePresence initial={false} mode="wait">
+            <motion.div
+              key={primary.id}
+              className="agent-board-primary"
+              initial={{ opacity: 0, y: 6 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -6 }}
+              transition={HERO_SWAP_TRANSITION}
+            >
+              <div className={`agent-board-primary-head ${agentRuntimeClass(primary.runtime)}`}>
+                {/* state-keyed for the bounded pulse/tick restart — same
+                    reason as `AgentRow`'s own dot. */}
+                <span
+                  key={primary.state}
+                  className={`agent-dot large ${primaryPresentation.pulse ? "pulse" : ""}`}
+                  aria-hidden="true"
+                />
+                <span className="agent-runtime-tick" aria-hidden="true" />
+                <span className="agent-board-runtime">{agentRuntimeLabel(primary.runtime)}</span>
+                <span className="agent-board-state-pill">{primaryPresentation.label}</span>
+              </div>
+              {primaryProjectName && (
+                <div className="agent-board-project">{primaryProjectName}</div>
+              )}
+              {primary.summary && <div className="agent-board-summary">{primary.summary}</div>}
+              <div className="agent-board-elapsed">{primaryElapsed}</div>
+            </motion.div>
+          </AnimatePresence>
         )}
         {/* Plan 142 (spec §6.2 expanded): while `expanded`, the hero +
             compact `rest`-only rows swap for a bounded, scrollable list
@@ -343,12 +430,7 @@ export function AgentBoard({
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              transition={{
-                type: "spring",
-                stiffness: 420,
-                damping: 38,
-                opacity: { duration: 0.15 },
-              }}
+              transition={DISCLOSURE_SPRING}
               style={{ overflow: "hidden" }}
             >
               <div className="agent-board-expanded-scroll">
@@ -401,12 +483,7 @@ export function AgentBoard({
                 initial={{ opacity: 0, height: 0 }}
                 animate={{ opacity: 1, height: "auto" }}
                 exit={{ opacity: 0, height: 0 }}
-                transition={{
-                  type: "spring",
-                  stiffness: 420,
-                  damping: 38,
-                  opacity: { duration: 0.15 },
-                }}
+                transition={DISCLOSURE_SPRING}
                 style={{ overflow: "hidden" }}
               >
                 {/* `initial={false}` (matching the outer swap this block

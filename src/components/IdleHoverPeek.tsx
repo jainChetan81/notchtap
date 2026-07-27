@@ -1,7 +1,7 @@
 import { Globe, type LucideIcon, Music, Pause, Play, Tv } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useState } from "react";
-import { NOTCHTAP_EASE, ROTATION_ENTER_MS } from "../animationTiming";
+import { useEffect, useRef, useState } from "react";
+import { DISCLOSURE_SPRING, NOTCHTAP_EASE, ROTATION_ENTER_MS } from "../animationTiming";
 import { weatherArtFor } from "../lib/weatherArt";
 import { useClock } from "../useClock";
 import type {
@@ -287,6 +287,33 @@ function MediaPeekRow({ media }: { media: NowPlayingSummary }) {
   const subtitle = media.artist ?? media.album ?? null;
   const MediaIcon = iconForBundleId(media.appBundleId);
 
+  // plan 151 (item C): THE RULE — the CSS `transition: transform 1s
+  // linear` (idle-peek.css) exists for ONE thing, the steady 1s playback
+  // tick above, where a continuous glide is exactly right. Applied to a
+  // discontinuity it lies: a track change slid the fill leftward across a
+  // full second (as if the song were rewinding), and a pause let it keep
+  // creeping for up to a second AFTER the transport glyph had already
+  // flipped to Pause. Resets must read as resets, so the transition is
+  // suppressed inline for exactly the render that carries one, and
+  // cleared again on the next steady tick (dropping the inline property
+  // hands the element straight back to the CSS rule).
+  //
+  // Three discontinuity signals: a paused transport (the snapshot's
+  // elapsed can sit BEHIND the last locally-derived value), progress
+  // going backwards (a seek, or a new track's 0), and a title change (a
+  // new track that happens to start at a similar fraction, which the
+  // progress check alone would miss). The first render has nothing to
+  // glide from, so it counts too. `prev` is a ref written in an effect —
+  // never during render — so a re-render for any other reason can't
+  // mistake itself for a tick.
+  const prevRef = useRef<{ progressPct: number; title: string } | null>(null);
+  const prev = prevRef.current;
+  const discontinuity =
+    !media.playing || prev === null || prev.title !== media.title || progressPct < prev.progressPct;
+  useEffect(() => {
+    prevRef.current = { progressPct, title: media.title };
+  });
+
   return (
     <div className="media-row">
       <div className="media-track">
@@ -314,8 +341,16 @@ function MediaPeekRow({ media }: { media: NowPlayingSummary }) {
               continuously between this component's 1s `useLiveTick` ticks,
               rather than jumping. `transform-origin: left` (CSS) anchors
               the shrink/grow to the bar's start, matching the old
-              `width`-based drain. */}
-          <span className="media-bar-fill" style={{ transform: `scaleX(${progressPct / 100})` }} />
+              `width`-based drain. plan 151 (item C): with the inline
+              `transition: none` escape hatch above for discontinuities —
+              see that comment for the rule. */}
+          <span
+            className="media-bar-fill"
+            style={{
+              transform: `scaleX(${progressPct / 100})`,
+              ...(discontinuity ? { transition: "none" } : {}),
+            }}
+          />
         </span>
         <span className="media-time">{formatElapsed(clampedElapsedMs)}</span>
       </div>
@@ -414,14 +449,20 @@ export function IdleHoverPeek({
           initial={{ height: 0, opacity: 0, paddingTop: 0, paddingBottom: 0 }}
           animate={{ height: 100, opacity: 1, paddingTop: 12, paddingBottom: 13 }}
           exit={{ height: 0, opacity: 0, paddingTop: 0, paddingBottom: 0 }}
-          // plan 12x (wave 3): stiffer spring (420 -> 480) and a quicker
-          // opacity fade (180ms -> 150ms), operator-feedback "snappier
-          // overall" pass — damping nudged up in step (34 -> 37) to keep
-          // the same near-critically-damped feel (damping/stiffness ratio
-          // ~0.081 before, ~0.077 now) rather than trading the speed gain
-          // for extra bounce/overshoot. `height: 100` is untouched (rust's
-          // `IDLE_PEEK_BELOW_BLOCK_H` pairing, out of scope for this pass).
-          transition={{ type: "spring", stiffness: 480, damping: 37, opacity: { duration: 0.15 } }}
+          // plan 12x (wave 3): stiffer spring (420 -> 480) and damping
+          // nudged up in step (34 -> 37), operator-feedback "snappier
+          // overall" pass — keeping the same near-critically-damped feel
+          // rather than trading the speed gain for extra bounce.
+          // `height: 100` is untouched (rust's `IDLE_PEEK_BELOW_BLOCK_H`
+          // pairing, out of scope for that pass).
+          //
+          // plan 148: those numbers now live in animationTiming.ts as
+          // DISCLOSURE_SPRING, shared with AgentBoard's disclosures (they
+          // were byte-identical hand-copies). The wave-3 pass's separate
+          // `opacity: { duration: 0.15 }` override is gone with them —
+          // see that constant's own doc for why a fixed opacity tween
+          // desynced from the spring on interrupted hover flips.
+          transition={DISCLOSURE_SPRING}
           style={{ overflow: "hidden" }}
         >
           {showBackdrop ? <WeatherPeekBackdrop weather={weather} /> : null}

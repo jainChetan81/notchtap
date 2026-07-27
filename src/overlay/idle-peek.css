@@ -287,7 +287,13 @@
    rounded corner horizontally distorts it into a flattened ellipse at
    small fractions. `.media-bar` (above) already clips with its own
    `overflow: hidden` + matching `border-radius`, so the fill's visible
-   shape is rounded by the track's clip at every fraction instead. */
+   shape is rounded by the track's clip at every fraction instead.
+   plan 151 (item C): the 1s linear glide below is for STEADY PLAYBACK
+   ONLY. IdleHoverPeek.tsx suppresses it with an inline `transition:
+   none` on any discontinuity (pause, seek/backwards jump, track change)
+   — a reset must read as a reset, not as a leisurely slide back to the
+   start. Keep that rule in mind before widening what this transition
+   covers. */
 .card-root .media-bar-fill {
   display: block;
   width: 100%;
@@ -530,7 +536,13 @@
   inset: -6px;
   border-radius: 18px;
   border: 2px solid rgba(240, 196, 106, 0.65);
-  animation: cele-ring 1400ms var(--ease-notchtap);
+  /* plan 150 (Step 4): 1400ms -> 1800ms — `cele-ring` is a SHARED
+     keyframe (`.cele-goal::after` above uses it too) and it was running
+     at two different speeds with nothing at either site explaining the
+     split, so the same ring visibly expanded at two rates depending on
+     which card played it. One keyframe, one speed; the yellow-card ring
+     stays distinct through its own colour, not a covert tempo change. */
+  animation: cele-ring 1800ms var(--ease-notchtap);
 }
 
 .card-root .card-assembly.cele-rc {

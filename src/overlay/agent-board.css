@@ -173,13 +173,24 @@
    plays a slow, non-alarming breathing opacity animation on the two
    "actively doing something" states (working/waiting) only. Failure and
    completed are deliberately static — a failed/finished session isn't
-   still happening, so it shouldn't still be visibly animating. */
+   still happening, so it shouldn't still be visibly animating.
+
+   Plan 149: the accent MORPHS rather than snaps. `--agent-accent` is
+   rebound by a state-class flip on the row/hero container, so
+   working->waiting (blue->amber) used to change in a single frame —
+   exactly the moment the operator most needs to notice it. Riding
+   `--hover-ms` (the house "direct response" budget, animationTiming.ts's
+   HOVER_MS) keeps this in the same family as every other state-response
+   in the overlay instead of minting a fifth hand-tuned duration. Only
+   background-color transitions here: the tick keyframe below is scoped
+   to `.pulse` so completed/failed/stale changes stay quiet. */
 .card-root .agent-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
   background: var(--agent-accent, var(--overlay-fg));
+  transition: background-color var(--hover-ms, 160ms) var(--ease-notchtap);
 }
 
 .card-root .agent-dot.large {
@@ -187,8 +198,36 @@
   height: 8px;
 }
 
+/* Plan 149 (bounded pulse): the breathe is BOUNDED — 4 cycles ≈ 8.8s per
+   state change, then the dot rests steady. `waiting_for_input` can
+   persist for hours, and an `infinite` 60fps opacity loop inside the
+   card's `filter: drop-shadow` subtree burns compositor work all day
+   while nobody looks. Plan 105 already removed exactly this class of
+   always-on pulse from the status dots ("read as distracting in
+   peripheral vision", status-dots.css:73-76): the information value of a
+   pulse is "this just changed", not "this is still true 40 minutes
+   later". AgentBoard.tsx keys every `.agent-dot` span on the session
+   state so a genuine state change REMOUNTS the span and restarts this
+   bounded run — that key is what makes a bounded animation still say
+   "this just changed" on every change, not only the first.
+
+   The one-shot tick is stacked BEFORE the breathe on the same remount: a
+   240ms scale settle from 1.35 reads as "something happened here" and
+   hands off into the breathing. Deliberately outside the base rule so
+   non-pulse states (completed/failed/stale) get only the colour morph. */
 .card-root .agent-dot.pulse {
-  animation: agent-dot-breathe 2.2s ease-in-out infinite;
+  animation:
+    agent-dot-state-tick 240ms var(--ease-notchtap),
+    agent-dot-breathe 2.2s ease-in-out 4;
+}
+
+@keyframes agent-dot-state-tick {
+  from {
+    transform: scale(1.35);
+  }
+  to {
+    transform: scale(1);
+  }
 }
 
 @keyframes agent-dot-breathe {

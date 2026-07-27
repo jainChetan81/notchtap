@@ -1,6 +1,6 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
-import { NOTCHTAP_EASE } from "../animationTiming";
+import { IDLE_GLANCE_MS, IDLE_REVEAL_MS, NOTCHTAP_EASE } from "../animationTiming";
 
 // The idle face: a minimal, notchtap-branded bit of personality that fades
 // into the CENTER of the idle rail (the `.synthetic-cutout` grid cell —
@@ -160,7 +160,11 @@ export function IdleFace({ idle }: { idle: boolean }) {
              (0.85/easeOut/0.1s) — this override is a documented review
              fix, not part of plan 125's scope. */
           exit={{ opacity: 0, scale: 0.85, transition: { duration: 0.1, ease: "easeOut" } }}
-          transition={{ duration: 0.24, ease: NOTCHTAP_EASE }}
+          /* plan 148: was a bare `0.24` — same value, now named
+             (animationTiming.ts's IDLE_REVEAL_MS) so the gap between it
+             and its neighbouring tokens is documented rather than
+             looking like an untracked near-miss. */
+          transition={{ duration: IDLE_REVEAL_MS / 1000, ease: NOTCHTAP_EASE }}
         >
           {/* plan 125 (perf finding #1): was a `motion.div` animating via
               a `{ type: "spring", stiffness: 140, damping: 16 }` spring —
@@ -185,12 +189,14 @@ export function IdleFace({ idle }: { idle: boolean }) {
               needs, no new export required. Interpolated below; the
               array (imported at the top of this file already, for the
               reveal transition above) is now the only place these four
-              numbers are written. */}
+              numbers are written.
+              plan 148: the 200ms is likewise no longer hand-typed here —
+              it's animationTiming.ts's IDLE_GLANCE_MS, same value. */}
           <div
             className="idle-face-eyes"
             style={{
               transform: `translate(${offset.x}px, ${offset.y}px) scaleY(${blinking ? 0.12 : 1})`,
-              transition: `transform 200ms cubic-bezier(${NOTCHTAP_EASE.join(", ")})`,
+              transition: `transform ${IDLE_GLANCE_MS}ms cubic-bezier(${NOTCHTAP_EASE.join(", ")})`,
             }}
           >
             <span className="idle-face-eye" />

@@ -164,3 +164,51 @@ export const ROTATION_ENTER_MS = 120;
 // its own distinct treatment.
 export const INTERRUPT_EXIT_MS = 60;
 export const INTERRUPT_EASE: [number, number, number, number] = [0.4, 0, 1, 1];
+
+// plan 148 (motion token cohesion): the OUTERMOST transition in the
+// product — App.tsx's Agent Board <-> status-rail crossfade — used to
+// hand-type `{ duration: 0.18 }` at both of its `motion.div` sites, with
+// NO `ease` at all, so motion's default tween curve applied there and
+// only there while every other motion call in the repo passes
+// NOTCHTAP_EASE. Same value as before (0.18s, this is tokenization, not
+// a retune), now named and house-eased. Distinct from SWAP_EXIT_MS
+// (which is a WITHIN-card content swap plus a geometry freeze) because
+// this one swaps the whole top-level SURFACE: neither card is
+// "continuing" into the other, so it's a plain symmetric crossfade with
+// no geometry leg to stay in lockstep with.
+export const SURFACE_SWAP_MS = 180;
+
+// plan 148: the shared hover-disclosure spring. One config used to be
+// hand-copied byte-for-byte across four call sites in two files
+// (IdleHoverPeek's idle-peek below-block, AgentBoard's three expanded
+// disclosures) — the "same gesture, independently tuned" drift risk this
+// file exists to prevent. Values unchanged from those copies
+// (ζ ≈ 0.84): the slight overshoot is deliberate, since these
+// disclosures follow a hover gesture and should feel like they're being
+// pulled open rather than eased open.
+//
+// The old `opacity: { duration: 0.15 }` per-property override that rode
+// alongside it is REMOVED on purpose: a fixed opacity tween runs on its
+// own clock, so an INTERRUPTED hover flip (cursor flicked away
+// mid-open) desynced the two — the box still visibly collapsing after
+// opacity had already hit 0 (ghost box), or arrived at height 0 while
+// still partly opaque. Letting the spring drive every animated property,
+// opacity included, means an interruption retargets them all on one
+// clock (Apple's interruptibility rule: one animation, one clock).
+// Browsers clamp opacity to [0, 1], so the spring's slight overshoot is
+// harmless on that property. Do not reintroduce a per-property
+// duration override here.
+export const DISCLOSURE_SPRING = { type: "spring", stiffness: 480, damping: 37 } as const;
+
+// plan 148: IdleFace's two durations, previously hand-typed at their use
+// sites as bare `0.24` and `200ms` — near-misses sitting between
+// existing tokens (HOVER_MS 160, REVEAL_MS 260) with nothing saying
+// whether the gap was deliberate. It is: IDLE_REVEAL_MS is the face's
+// whole-element entrance (opacity + scale, a one-shot mount that should
+// read slower and softer than a hover response), while IDLE_GLANCE_MS is
+// the eyes' own CSS `transform` transition — every gaze shift and blink
+// — which has to be quicker than the entrance or the face looks sedated.
+// Both values are unchanged from the literals they replace; this is
+// tokenization, not a retune.
+export const IDLE_REVEAL_MS = 240;
+export const IDLE_GLANCE_MS = 200;

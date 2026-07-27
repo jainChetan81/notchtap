@@ -37,6 +37,17 @@
   color: var(--overlay-green);
   background: rgba(127, 224, 141, 0.12);
   border: 1px solid rgba(127, 224, 141, 0.35);
+  /* plan 151 (item A): LIVE -> HT -> FT used to be a hard cut — the
+     `.break`/`.final` rules below only ever swap colours, and with no
+     transition declared here the chip changed identity in a single
+     frame. The match state is a real, meaningful transition (the game
+     stopped), so it morphs over the standard reveal window instead.
+     Colour-only, so this stays paint-work: no layout property is
+     transitioned on the chip itself. */
+  transition:
+    color var(--reveal-ms, 260ms) var(--ease-notchtap),
+    background-color var(--reveal-ms, 260ms) var(--ease-notchtap),
+    border-color var(--reveal-ms, 260ms) var(--ease-notchtap);
 }
 
 /* plan 105 (scope extension to Step A): steady glow, not a blink — same
@@ -46,9 +57,22 @@
 .card-root .chip-live .live-dot {
   width: 5px;
   height: 5px;
+  flex: none;
   border-radius: 50%;
   background: var(--overlay-green);
   box-shadow: 0 0 6px rgba(127, 224, 141, 0.9);
+  /* plan 151 (item A): the dot is now mounted in EVERY variant
+     (LiveMatchScorecard.tsx) so full-time can fade it out in step with
+     the chip's colour morph above instead of unmounting it a frame
+     early. `width`/`margin-right` ride along in the `.final` rule so the
+     chip doesn't keep a phantom 5px + 5px-gap hole where the dot was —
+     a one-shot 260ms collapse on a chip this small, not a per-frame
+     layout loop. */
+  transition:
+    opacity var(--reveal-ms, 260ms) var(--ease-notchtap),
+    background var(--reveal-ms, 260ms) var(--ease-notchtap),
+    width var(--reveal-ms, 260ms) var(--ease-notchtap),
+    margin-right var(--reveal-ms, 260ms) var(--ease-notchtap);
 }
 
 .card-root .chip-live.break {
@@ -69,6 +93,17 @@
   color: rgba(255, 255, 255, 0.5);
   background: rgba(255, 255, 255, 0.06);
   border-color: rgba(255, 255, 255, 0.12);
+}
+
+/* plan 151 (item A): full-time's dot leaves by fading + collapsing, not
+   by unmounting. `margin-right: -5px` cancels `.chip-live`'s own 5px
+   flex gap as the width reaches 0, so the label ends up exactly where a
+   dot-less chip would have put it. */
+.card-root .chip-live.final .live-dot {
+  opacity: 0;
+  width: 0;
+  margin-right: -5px;
+  box-shadow: none;
 }
 
 /* O12: was a hand-rolled pill (own padding/border-radius/display) outside
@@ -131,9 +166,37 @@
 }
 
 .card-root .score {
+  /* plan 151 (item B): inline-flex so the two odometer clips and the
+     dash sit on one centred row — the clips are fixed-height blocks, and
+     baseline alignment across an `overflow: hidden` box is not reliable
+     the way plain inline text was. Visually identical at rest. */
+  display: inline-flex;
+  align-items: center;
   font: 800 24px/1 var(--font-mono);
   color: var(--overlay-fg);
   letter-spacing: 0.02em;
+}
+
+/* plan 151 (item B): the odometer clip — one per side. Height is exactly
+   the score's own line box (`font: .../1`, so 1em = 24px), which is what
+   makes a `y: ±100%` translate on the inner span move it exactly one
+   digit-height: the incoming digit rises from directly below the clip,
+   the outgoing one leaves through the top. `overflow: hidden` is the
+   whole illusion. */
+.card-root .score-digit {
+  display: block;
+  position: relative;
+  height: 1em;
+  overflow: hidden;
+}
+
+.card-root .score-digit-roll {
+  display: block;
+  line-height: 1;
+  /* `will-change` is deliberately absent: unlike the ambient loops in
+     this codebase (`.media-bar-fill`, the weather textures) this moves
+     only on a goal, so permanently promoting two layers for a
+     once-a-match 360ms roll would be the wrong trade. */
 }
 
 .card-root .score .dash {

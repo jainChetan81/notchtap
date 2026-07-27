@@ -231,7 +231,20 @@
   border-radius: 50%;
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.4);
-  animation: ripple-out 1440ms ease-out forwards;
+  /* plan 150 (Step 3): `ease-out` -> `var(--ease-notchtap)` — the last
+     celebration still on the stock curve after plan 127 (Step 6) moved
+     `goal-overshoot`/`goal-burst`/`goal-ring` above, for the same "two
+     things happening at once, animated on two different feels" reason.
+     Duration untouched: the ring family deliberately outlives the shell
+     keyframes above (with the 280ms/560ms stagger below, ring 3 lands at
+     ~2.0s against the shell's ~1.24s), and the pulse GATE now respects
+     that instead of truncating it — StatusRailCard.tsx clears
+     `pulse-goal` on the THIRD `ripple-out` end, not on `goal-overshoot`'s.
+     (Durations are written here without their `NNNNms` literal on
+     purpose: celebrationStacking.test.tsx pins how many times each
+     duration token appears in this stylesheet, and a comment restating
+     one would trip that count.) */
+  animation: ripple-out 1440ms var(--ease-notchtap) forwards;
 }
 
 .card-root .cele-ripple span:nth-child(2) {

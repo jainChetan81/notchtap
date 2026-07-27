@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CONTENT_EXIT_MS,
   INTERRUPT_EASE,
@@ -91,10 +91,30 @@ type Pulse = "pulse-goal" | "pulse-red" | null;
 // Which @keyframes name (styles.css) ends each pulse — the *only* place
 // either duration lives is the CSS animation itself; clearing on
 // animationend means there's no JS-side duration to keep in sync with it.
+// plan 150 (Step 1): `pulse-goal` moved off `goal-overshoot` (the 1240ms
+// SHELL keyframe) onto `ripple-out` — the LAST thing the goal celebration
+// plays. The three `.cele-ripple` rings run 1440ms with 280ms/560ms
+// stagger, so the family only truly finishes at ~2000ms; clearing on the
+// shell's end tore ring 3 out at 62% of its life, mid-expansion (the
+// `.cele-ripple` layer is mounted by the `pulse === "pulse-goal"` gate
+// further down, so clearing the state unmounts the rings outright).
+// Holding the class the extra ~760ms is safe: `goal-overshoot`/
+// `goal-burst`/`goal-ring` are all one-shot, finite, and fill-mode-less
+// (choreography.css) — once they end they revert to their base rules
+// (`::after`/`::before` both rest at `opacity: 0`), and a class that
+// merely stays applied never re-runs an animation.
 const PULSE_END_ANIMATION: Record<NonNullable<Pulse>, string> = {
-  "pulse-goal": "goal-overshoot",
+  "pulse-goal": "ripple-out",
   "pulse-red": "red-alert",
 };
+
+// plan 150 (Step 1): how many `.cele-ripple` rings the goal celebration
+// mounts (the three <span>s below) — `ripple-out` therefore ends three
+// times per celebration, staggered, and only the THIRD one means "the
+// celebration is over". Kept next to the table above because the two are
+// read together in `clearPulseWhenItsAnimationEnds`; the JSX below must
+// mount exactly this many spans.
+const RIPPLE_RING_COUNT = 3;
 
 // plan 127 (Step 3, /improve-animations audit finding #3): the content
 // swap's `exit` leg, as a motion `variants` function keyed on
@@ -203,6 +223,23 @@ export function StatusRailCard({
 
   const [pulse, setPulse] = useState<Pulse>(null);
 
+  // plan 150 (Step 2): a render-independent mirror of `pulse`, so the
+  // re-trigger effect below can ask "is the class I'm about to apply the
+  // one that's already on the element?" WITHOUT taking `pulse` as a
+  // dependency (which would make the effect re-run on its own writes).
+  // Every write to `pulse` goes through `setPulseNow` so the two can't
+  // drift.
+  const pulseRef = useRef<Pulse>(null);
+  const setPulseNow = useCallback((next: Pulse) => {
+    pulseRef.current = next;
+    setPulse(next);
+  }, []);
+
+  // plan 150 (Step 1): how many `ripple-out` animationend events this
+  // celebration has seen so far — reset whenever a goal pulse is (re)armed
+  // below, counted up in `clearPulseWhenItsAnimationEnds`.
+  const rippleEndsSeenRef = useRef(0);
+
   // plan 127 (Step 3): backs `isRotation` below (computed right where
   // `swapKey` is, further down) — declared up here with the component's
   // other hooks, per this file's usual convention. `key` starts at
@@ -238,14 +275,34 @@ export function StatusRailCard({
   // hotkey on an already-visible item doesn't replay the burst.
   // biome-ignore lint/correctness/useExhaustiveDependencies: currentId is the deliberate re-trigger key documented above — a new item with the same signal must replay the pulse; dropping it would change that behavior.
   useEffect(() => {
-    if (currentSignal === "goal") {
-      setPulse("pulse-goal");
-    } else if (currentSignal === "red_card") {
-      setPulse("pulse-red");
-    } else {
-      setPulse(null);
+    const nextPulse: Pulse =
+      currentSignal === "goal" ? "pulse-goal" : currentSignal === "red_card" ? "pulse-red" : null;
+
+    // plan 150 (Step 1): a fresh celebration starts its ring count over —
+    // otherwise a second goal arriving mid-flight would inherit the first
+    // one's partial tally and clear early.
+    rippleEndsSeenRef.current = 0;
+
+    // plan 150 (Step 2): the same-signal replay fix. Two goals in a row
+    // (a NEW `currentId`, same `signal`) compute the SAME class string,
+    // and `setPulse("pulse-goal")` while `pulse` is already "pulse-goal"
+    // is a React `Object.is` state bailout — no re-render, so the DOM
+    // `class` attribute is never rewritten and the CSS animations neither
+    // restart nor replay: the second goal celebrated nothing. Clearing to
+    // `null` and re-applying on the NEXT frame remounts the class (and
+    // the `.cele-ripple` layer with it), which is what actually restarts a
+    // CSS animation. The one blank frame this costs is ~16ms, invisible at
+    // 60fps, and is the standard restart technique. Only taken when the
+    // class is genuinely unchanged — a first goal (from `null`) or a
+    // goal-after-red-card applies synchronously, exactly as before.
+    if (nextPulse !== null && pulseRef.current === nextPulse) {
+      setPulseNow(null);
+      const frame = requestAnimationFrame(() => setPulseNow(nextPulse));
+      return () => cancelAnimationFrame(frame);
     }
-  }, [currentId, currentSignal]);
+
+    setPulseNow(nextPulse);
+  }, [currentId, currentSignal, setPulseNow]);
 
   const [liveCelebration, setLiveCelebration] = useState<Celebration>(null);
 
@@ -267,7 +324,19 @@ export function StatusRailCard({
 
   function clearPulseWhenItsAnimationEnds(event: React.AnimationEvent<HTMLDivElement>) {
     if (pulse && event.animationName === PULSE_END_ANIMATION[pulse]) {
-      setPulse(null);
+      // plan 150 (Step 1): `ripple-out` ends once per ring (three rings,
+      // staggered 0/280/560ms) and they all bubble to this one handler —
+      // only the LAST one means the goal celebration is actually over.
+      // `pulse-red` has no ripple layer at all (the `.cele-ripple` mount
+      // below is gated on `pulse === "pulse-goal"`), so its own end
+      // keyframe still clears on the first arrival.
+      const isGoal = pulse === "pulse-goal";
+      if (isGoal) {
+        rippleEndsSeenRef.current += 1;
+      }
+      if (!isGoal || rippleEndsSeenRef.current >= RIPPLE_RING_COUNT) {
+        setPulseNow(null);
+      }
     }
     if (liveCelebration && event.animationName === CELEBRATION_END_ANIMATION[liveCelebration]) {
       setLiveCelebration(null);
