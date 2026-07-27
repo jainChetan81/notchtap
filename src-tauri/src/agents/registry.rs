@@ -21,8 +21,9 @@ use super::model::{
 pub const MAX_TRANSITIONS_PER_SESSION: usize = 50;
 /// Remembered event ids, LRU (spec §3.2 caps table).
 pub const MAX_REMEMBERED_EVENT_IDS: usize = 2048;
-/// Default `agents.terminal_retention_secs` (spec §2.1).
-pub const DEFAULT_TERMINAL_RETENTION: Duration = Duration::from_secs(600);
+/// Default `agents.terminal_retention_secs` (spec §2.1; 600 -> 60 by
+/// operator decision 2026-07-27 — see `AgentsConfig`'s field doc).
+pub const DEFAULT_TERMINAL_RETENTION: Duration = Duration::from_secs(60);
 /// Default `agents.stale_retention_secs` (plan 146 follow-up).
 pub const DEFAULT_STALE_RETENTION: Duration = Duration::from_secs(1800);
 

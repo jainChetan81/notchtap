@@ -181,8 +181,9 @@ or do neither when it is a duplicate/stale event.
 - a non-terminal session with no accepted event for
   `agents.stale_after_secs` → `Stale`.
 - terminal sessions remain on the board for
-  `agents.terminal_retention_secs`, default 600, then leave the live
-  registry view.
+  `agents.terminal_retention_secs`, default 60 (originally 600; lowered
+  2026-07-27 by operator decision — a ten-minute completed row reads as
+  a stuck notification), then leave the live registry view.
 - waiting sessions do not rotate out or expire like Notifications.
   they can become Stale only through the explicit stale threshold.
 
@@ -509,7 +510,7 @@ new config block:
 ```toml
 [agents]
 enabled = true
-terminal_retention_secs = 600
+terminal_retention_secs = 60
 stale_after_secs = 900
 informational_notifications = false
 permission_priority = "high"

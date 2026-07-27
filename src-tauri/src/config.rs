@@ -219,6 +219,10 @@ impl Default for Appearance {
 #[serde(default)]
 pub struct AgentsConfig {
     pub enabled: bool,
+    /// Operator decision 2026-07-27: 60, down from the spec's original
+    /// 600 — a finished session lingering ten minutes on the board reads
+    /// as a stuck notification; board exit should feel close to a card's
+    /// own dismissal, not an order of magnitude slower.
     pub terminal_retention_secs: u64,
     pub stale_after_secs: u64,
     /// How long a `Stale` session sits on the Agent Board before the
@@ -239,7 +243,7 @@ impl Default for AgentsConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            terminal_retention_secs: 600,
+            terminal_retention_secs: 60,
             stale_after_secs: 900,
             stale_retention_secs: 1800,
             informational_notifications: false,
@@ -791,7 +795,7 @@ mod tests {
         assert_eq!(c.agent_priority, Priority::High);
         assert_eq!(c.agent_ttl_secs, 8);
         assert!(c.agents.enabled);
-        assert_eq!(c.agents.terminal_retention_secs, 600);
+        assert_eq!(c.agents.terminal_retention_secs, 60);
         assert_eq!(c.agents.stale_after_secs, 900);
         assert_eq!(c.agents.stale_retention_secs, 1800);
         assert!(!c.agents.informational_notifications);
