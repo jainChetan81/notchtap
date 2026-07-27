@@ -235,7 +235,7 @@ describe("useSlotState", () => {
   });
 
   it("ignores a showing payload with an unrecognized origin value", () => {
-    window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, origin: "telegram" };
+    window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, origin: "pigeon" };
     const { result } = renderHook(() => useSlotState());
     expect(result.current).toEqual({ state: "empty" });
   });

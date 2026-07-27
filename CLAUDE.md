@@ -193,9 +193,9 @@ the rust core sends it.
 
 **v5 settings window is the one exception, and it's opt-in-gated,
 not default-safe.** tauri v2 grants app-defined commands to *every*
-window by default — the settings window's eighteen invoke commands
+window by default — the settings window's seventeen invoke commands
 (`clear_history`, `clear_queue`, `get_about_info`, `get_agent_health`,
-`get_config`, `get_connector_health`, `get_default_config`, `get_history`,
+`get_config`, `get_default_config`, `get_history`,
 `get_queue`, `get_recent_log_lines`, `get_secret_status`,
 `save_config_and_relaunch`, `search_news_now`, `send_agent_test_event`,
 `set_secret`, `send_test_notification`, `set_appearance`,

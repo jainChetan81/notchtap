@@ -210,4 +210,137 @@ describe("AgentBoard expanded render", () => {
     expect(getByText("Tool")).toBeTruthy();
     expect(getByText("Bash")).toBeTruthy();
   });
+
+  // Operator feedback (2026-07-27): with the OLD implementation the hero
+  // block (resting's primary-session summary) rendered unconditionally,
+  // so at N=1 the same session appeared twice — once as the hero, once
+  // as the first (only) expanded row. `expanded` must replace the hero
+  // entirely, not sit alongside it.
+  it("hides the hero block while expanded, showing sessions[0] only once, as an expanded row", () => {
+    const { container } = render(
+      <AgentBoard
+        sessions={[session({ id: "only", summary: "Investigating a flaky test" })]}
+        capturedAtMs={CAPTURED_AT_MS}
+        expanded
+      />,
+    );
+    expect(container.querySelector(".agent-board-primary")).toBeNull();
+    const rows = container.querySelectorAll('[data-testid="agent-expanded-row"]');
+    expect(rows).toHaveLength(1);
+    expect(container.textContent?.match(/Investigating a flaky test/g)).toHaveLength(1);
+  });
+
+  it("renders each session exactly once across a larger expanded board", () => {
+    const sessions = manySessions(5);
+    const { container } = render(
+      <AgentBoard sessions={sessions} capturedAtMs={CAPTURED_AT_MS} expanded />,
+    );
+    expect(container.querySelector(".agent-board-primary")).toBeNull();
+    expect(container.querySelectorAll('[data-testid="agent-expanded-row"]')).toHaveLength(5);
+  });
+
+  it("shows the hero block again once expanded flips back to false (resting unchanged)", () => {
+    const { container, rerender } = render(
+      <AgentBoard
+        sessions={[session({ id: "a" }), session({ id: "b" })]}
+        capturedAtMs={CAPTURED_AT_MS}
+        expanded
+      />,
+    );
+    expect(container.querySelector(".agent-board-primary")).toBeNull();
+    rerender(
+      <AgentBoard
+        sessions={[session({ id: "a" }), session({ id: "b" })]}
+        capturedAtMs={CAPTURED_AT_MS}
+        expanded={false}
+      />,
+    );
+    // The hero reappears synchronously; the compact `rest` row swap is
+    // behind `AnimatePresence mode="wait"`'s exit-then-enter animation
+    // (async, a real spring — same reason the history-disclosure test
+    // above asserts closing INTENT rather than an immediate DOM state),
+    // so only the hero's presence is asserted here.
+    expect(container.querySelector(".agent-board-primary")).not.toBeNull();
+  });
+
+  // Plan 146 follow-up: richer expanded-row detail — project.cwd (home-
+  // abbreviated, and only when it says more than project.name already
+  // does), host.name, and a terminal-only "clears in" retention hint.
+  it("renders an abbreviated cwd distinct from the project name", () => {
+    const { getByText, queryByText } = render(
+      <AgentBoard
+        sessions={[
+          session({ project: { name: "notchtap", cwd: "/Users/chetanjain/code/notchtap" } }),
+        ]}
+        capturedAtMs={CAPTURED_AT_MS}
+        expanded
+      />,
+    );
+    expect(getByText("~/code/notchtap")).toBeTruthy();
+    expect(queryByText("/Users/chetanjain/code/notchtap")).toBeNull();
+  });
+
+  it("omits the cwd line when it duplicates the project name", () => {
+    const { container, queryByText } = render(
+      <AgentBoard
+        sessions={[session({ project: { name: "notchtap", cwd: "notchtap" } })]}
+        capturedAtMs={CAPTURED_AT_MS}
+        expanded
+      />,
+    );
+    expect(queryByText("notchtap")).toBeTruthy();
+    // no duplicate rendering of the (identical) cwd string as a second node
+    expect(container.querySelectorAll(".agent-expanded-meta-item")).toHaveLength(0);
+  });
+
+  it("omits the cwd line entirely when project metadata has no cwd", () => {
+    const { container } = render(
+      <AgentBoard
+        sessions={[session({ project: { name: "notchtap", cwd: null } })]}
+        capturedAtMs={CAPTURED_AT_MS}
+        expanded
+      />,
+    );
+    expect(container.querySelector(".agent-expanded-row-meta")).toBeNull();
+  });
+
+  it("renders host.name when present", () => {
+    const { getByText } = render(
+      <AgentBoard
+        sessions={[session({ host: { name: "chetans-mac-mini", bundleId: null } })]}
+        capturedAtMs={CAPTURED_AT_MS}
+        expanded
+      />,
+    );
+    expect(getByText("chetans-mac-mini")).toBeTruthy();
+  });
+
+  it("omits host metadata cleanly when absent", () => {
+    const { container } = render(
+      <AgentBoard sessions={[session({ host: null })]} capturedAtMs={CAPTURED_AT_MS} expanded />,
+    );
+    expect(container.querySelector(".agent-expanded-row-meta")).toBeNull();
+  });
+
+  it("shows a 'clears in' hint for terminal sessions with a retention countdown", () => {
+    const { getByText } = render(
+      <AgentBoard
+        sessions={[session({ state: "completed", retentionRemainingMs: 125_000 })]}
+        capturedAtMs={CAPTURED_AT_MS}
+        expanded
+      />,
+    );
+    expect(getByText("clears in 2m")).toBeTruthy();
+  });
+
+  it("omits the 'clears in' hint for non-terminal sessions (retentionRemainingMs null)", () => {
+    const { container } = render(
+      <AgentBoard
+        sessions={[session({ state: "working", retentionRemainingMs: null })]}
+        capturedAtMs={CAPTURED_AT_MS}
+        expanded
+      />,
+    );
+    expect(container.querySelector(".agent-expanded-row-meta")).toBeNull();
+  });
 });

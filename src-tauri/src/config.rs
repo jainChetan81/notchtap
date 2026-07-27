@@ -117,7 +117,6 @@ pub struct Config {
     /// order. Must be a permutation of all five `SourceKind` variants —
     /// enforced by `settings::validate`.
     pub rotation_order: Vec<SourceKind>,
-    pub connectors: Connectors,
     pub appearance: Appearance,
     /// plan 085: the overlay's RESTING (idle) render choice — the cheap
     /// half of plan 079 item 17. `Rail` (default) is today's time+dots
@@ -182,21 +181,6 @@ pub enum RestingState {
     Notch,
 }
 
-/// `[connectors.*]` tables — non-secret on/off switches only; credentials
-/// live in `secrets.toml` (v3 spec §4) so `config.toml` stays paste-safe.
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[serde(default)]
-pub struct Connectors {
-    pub telegram: TelegramToggle,
-}
-
-#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
-#[serde(default)]
-pub struct TelegramToggle {
-    /// default off — v3 outbound is opt-in per machine
-    pub enabled: bool,
-}
-
 /// plan 097: shared bounds for the `[appearance]` fields, so the save path
 /// (`settings::validate_appearance`) and the load path (`Config::parse`'s
 /// self-heal, below) can never drift apart.
@@ -237,6 +221,11 @@ pub struct AgentsConfig {
     pub enabled: bool,
     pub terminal_retention_secs: u64,
     pub stale_after_secs: u64,
+    /// How long a `Stale` session sits on the Agent Board before the
+    /// registry's tick sweep evicts it (mirrors `terminal_retention_secs`'s
+    /// role for terminal sessions, so a stale session doesn't suppress
+    /// the idle face forever — see `agents::registry::AgentRegistry::tick`).
+    pub stale_retention_secs: u64,
     pub informational_notifications: bool,
     pub permission_priority: Priority,
     pub input_priority: Priority,
@@ -252,6 +241,7 @@ impl Default for AgentsConfig {
             enabled: true,
             terminal_retention_secs: 600,
             stale_after_secs: 900,
+            stale_retention_secs: 1800,
             informational_notifications: false,
             permission_priority: Priority::High,
             input_priority: Priority::High,
@@ -576,7 +566,6 @@ impl Default for Config {
             weather_temp_cold_c: default_weather_temp_cold_c(),
             weather_priority: default_weather_priority(),
             rotation_order: default_rotation_order(),
-            connectors: Connectors::default(),
             appearance: default_appearance(),
             resting_state: default_resting_state(),
             history_enabled: default_history_enabled(),
@@ -804,6 +793,7 @@ mod tests {
         assert!(c.agents.enabled);
         assert_eq!(c.agents.terminal_retention_secs, 600);
         assert_eq!(c.agents.stale_after_secs, 900);
+        assert_eq!(c.agents.stale_retention_secs, 1800);
         assert!(!c.agents.informational_notifications);
         assert_eq!(c.agents.permission_priority, Priority::High);
         assert_eq!(c.agents.input_priority, Priority::High);
@@ -996,17 +986,14 @@ url = "https://example.com/without-meta"
     }
 
     #[test]
-    fn telegram_connector_defaults_to_disabled() {
-        // v3 exit criteria (IMPLEMENTATION_PLAN.md §3.1): outbound is
-        // opt-in per machine — absent table means off.
-        let c = Config::parse("").unwrap();
-        assert!(!c.connectors.telegram.enabled);
-    }
-
-    #[test]
-    fn telegram_connector_can_be_enabled() {
-        let c = Config::parse("[connectors.telegram]\nenabled = true\n").unwrap();
-        assert!(c.connectors.telegram.enabled);
+    fn leftover_connectors_telegram_table_is_ignored_not_a_parse_error() {
+        // the telegram connector (and the `[connectors]` field) was
+        // removed, but an operator's existing config.toml on disk may
+        // still have a `[connectors.telegram]` table left over from
+        // before — serde's default (no `deny_unknown_fields`) must keep
+        // ignoring it rather than fail to load the rest of the file.
+        let c = Config::parse("port = 1234\n[connectors.telegram]\nenabled = true\n").unwrap();
+        assert_eq!(c.port, 1234);
     }
 
     #[test]
@@ -1302,7 +1289,7 @@ url = "https://example.com/without-meta"
     #[test]
     fn unknown_priority_or_source_kind_string_is_a_parse_error() {
         assert!(Config::parse("espn_priority = \"urgent\"").is_err());
-        assert!(Config::parse("rotation_order = [\"telegram\"]").is_err());
+        assert!(Config::parse("rotation_order = [\"pigeon\"]").is_err());
     }
 
     // plan 097: `validate_appearance` (settings.rs) only guards the

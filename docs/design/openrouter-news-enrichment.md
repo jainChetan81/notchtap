@@ -14,6 +14,15 @@
 > inline-loop-plus-connector-offer shape the original plan described.
 > This doc quotes the current shape throughout; nothing below depends
 > on the pre-037 ingestion path.
+>
+> **Further drift note (2026-07-27, telegram since removed)**: this
+> doc repeatedly cites `notifier.rs` (its `load_secrets`,
+> `on_send_failure`, telegram gate) and `[connectors.telegram]` config
+> keys as exemplars to mirror. The telegram connector was removed
+> 2026-07-27; those specific files/tables no longer exist. Read them
+> as "the pattern that existed at the time" — the openrouter secrets
+> path this spike proposes ended up living alongside `secrets.toml`'s
+> surviving machinery instead (see `ARCHITECTURE.md` §7, §17).
 
 ## Why this matters
 

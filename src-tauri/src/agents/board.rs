@@ -324,9 +324,8 @@ impl<R: tauri::Runtime> AgentBoardPublisher<R> {
     pub async fn publish_if_changed(&self, now: Instant) -> bool {
         let states = self.registry.ordered_states(now).await;
         // poison-tolerant, matching this codebase's other `StdMutex`
-        // guards (e.g. `engine.rs::telegram_health`) — a panic elsewhere
-        // while holding this lock must not permanently wedge every later
-        // publish attempt.
+        // guards — a panic elsewhere while holding this lock must not
+        // permanently wedge every later publish attempt.
         let mut guard = self.state.lock().unwrap_or_else(|e| e.into_inner());
         let changed = match &guard.last {
             None => true,
@@ -452,6 +451,7 @@ mod tests {
         let registry = AgentRegistryHandle::new(AgentRegistry::new(
             Duration::from_secs(300),
             Duration::from_secs(600),
+            Duration::from_secs(1800),
         ));
         AgentBoardPublisher::new(
             app.handle().clone(),

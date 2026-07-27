@@ -1554,7 +1554,7 @@ pub fn spawn_espn_poller(
 mod tests {
     use super::*;
     use crate::event::{test_fixtures, EventType, Priority, SlotState};
-    use crate::notifier::{ConnectorHandle, ConnectorHealth};
+    use crate::notifier::ConnectorHandle;
     use crate::queue::SingleSlotQueue;
     use std::sync::Arc;
     use wiremock::matchers::{method, path, query_param};
@@ -1593,7 +1593,6 @@ mod tests {
             SingleSlotQueue::new(0),
             app.handle().clone(),
             Arc::new(vec![connector]),
-            Arc::new(std::sync::Mutex::new(ConnectorHealth::default())),
             true,
             true,
             false,
@@ -2343,7 +2342,6 @@ mod tests {
             SingleSlotQueue::new(0),
             app.handle().clone(),
             Arc::new(vec![connector]),
-            Arc::new(std::sync::Mutex::new(ConnectorHealth::default())),
             true,
             true,
             false,

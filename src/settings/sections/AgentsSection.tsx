@@ -428,6 +428,18 @@ export function AgentsSection({
           unit="SEC"
           onChange={(stale_after_secs) => patchAgents(config, patchConfig, { stale_after_secs })}
         />
+        <NumberControl
+          id="agents-stale-retention"
+          name="Stale retention"
+          help="How long a Stale session stays on the Agent Board before it's dropped."
+          value={config.agents.stale_retention_secs}
+          min={0}
+          max={86400}
+          unit="SEC"
+          onChange={(stale_retention_secs) =>
+            patchAgents(config, patchConfig, { stale_retention_secs })
+          }
+        />
         <ToggleControl
           id="agents-informational"
           name="Informational cards"

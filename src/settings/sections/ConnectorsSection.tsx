@@ -2,11 +2,10 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MetaChip } from "@/components/ui/meta-chip";
-import type { ActionStatusValue } from "../actionStatus";
 import { ActionStatus, useActionStatus } from "../actionStatus";
-import { SettingsGroup, ToggleControl } from "../controls/controls";
+import { SettingsGroup } from "../controls/controls";
 import { settingsInvoke } from "../ipc";
-import type { Config, ConnectorHealthDto, SecretField, SecretStatus } from "../types";
+import type { SecretField, SecretStatus } from "../types";
 
 const secretRows: ReadonlyArray<{
   field: SecretField;
@@ -19,18 +18,6 @@ const secretRows: ReadonlyArray<{
     id: "openrouter-key",
     label: "OpenRouter API key",
     placeholder: "Enter a new key",
-  },
-  {
-    field: "telegram_bot_token",
-    id: "telegram-token",
-    label: "Telegram bot token",
-    placeholder: "Enter a replacement token",
-  },
-  {
-    field: "telegram_chat_id",
-    id: "telegram-chat-id",
-    label: "Telegram chat ID",
-    placeholder: "Enter a new chat ID",
   },
 ];
 
@@ -108,74 +95,15 @@ function SecretRow({
   );
 }
 
-function formatDeliveryAgo(ms: number): string {
-  const minutes = Math.floor(ms / 60000);
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours} h ago`;
-  return `${Math.floor(hours / 24)} d ago`;
-}
-
-// Read-only delivery-health line for the Telegram connector (plan 076) —
-// advisory, like the SecretStatus fetch: a failed/unknown fetch renders
-// nothing rather than an error.
-function ConnectorHealthLine({ health }: { health: ConnectorHealthDto | null }) {
-  if (!health) return null;
-  let text: string;
-  if (health.consecutiveFailures > 0) {
-    text = `${health.consecutiveFailures} consecutive failure${health.consecutiveFailures === 1 ? "" : "s"} — check your bot token`;
-  } else if (health.lastSuccessMs !== null) {
-    text = `Last delivered: ${formatDeliveryAgo(health.lastSuccessMs)}`;
-  } else {
-    text = "No deliveries yet.";
-  }
-  return (
-    <div className="relaunch-note mt-[-2px] mb-[11px] text-fs-caption tracking-[0.06em] text-muted-foreground uppercase">
-      {text}
-    </div>
-  );
-}
-
 export function ConnectorsSection({
-  config,
   secretStatus,
-  connectorHealth,
-  connectorHealthStatus,
-  patchConfig,
   refreshSecretStatus,
 }: {
-  config: Config;
   secretStatus: SecretStatus | null;
-  connectorHealth: ConnectorHealthDto | null;
-  connectorHealthStatus: ActionStatusValue;
-  patchConfig: (patch: Partial<Config>) => void;
   refreshSecretStatus: () => Promise<void>;
 }) {
   return (
     <div className="section-stack">
-      <SettingsGroup title="Telegram">
-        <ToggleControl
-          id="telegram-enabled"
-          name="Enable connector"
-          help="Forward every accepted event after Save & Relaunch."
-          label="Enable Telegram connector"
-          checked={config.connectors.telegram.enabled}
-          onChange={(enabled) => patchConfig({ connectors: { telegram: { enabled } } })}
-        />
-        <div className="relaunch-note mt-[-2px] mb-[11px] text-fs-caption tracking-[0.06em] text-muted-foreground uppercase">
-          Config change · applied after relaunch
-        </div>
-        <ConnectorHealthLine health={connectorHealth} />
-        {/* Transition-only (plan 108): renders only on an ok<->failed flip,
-            never aria-live — a passive setInterval poll must never chant. */}
-        <ActionStatus
-          status={connectorHealthStatus}
-          className="connector-health-status"
-          showPending={false}
-        />
-      </SettingsGroup>
-
       <SettingsGroup
         title="Write-only keys"
         description="Values never come back across IPC. Status reveals only whether a value is set and, when safe, its masked suffix."

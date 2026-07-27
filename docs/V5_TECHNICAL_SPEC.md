@@ -22,8 +22,10 @@ scoped to that window alone.
 
 - **in**: a second webview window (`settings` label), a fourth tray
   item, fifteen invoke commands, config validation + atomic write +
-  relaunch, a secrets write path (openrouter api key now, telegram
-  folded in), a persisted `start_paused` kill switch, the `build.rs`
+  relaunch, a secrets write path (openrouter api key; a telegram
+  bot-token/chat-id pair was folded in at the time this was written,
+  removed 2026-07-27 along with the connector — see `ARCHITECTURE.md`
+  §7), a persisted `start_paused` kill switch, the `build.rs`
   command-acl opt-in that keeps the overlay receive-only, an
   Appearance section with live card-shape controls and static
   animation previews, and per-source test-notification buttons
@@ -126,7 +128,7 @@ commands" note in the ipc docs is superseded for this window only):
 |---|---|---|
 | `get_config` | `() -> Config` | returns the **booted** config (managed `Mutex<Config>` state), not a fresh file read — "what is running". appearance changes made via `set_appearance` mutate the managed state immediately so the next panel open reflects them. `Config` gains `#[derive(Serialize, Clone)]`. |
 | `get_default_config` | `() -> Config` | returns `Config::default()` — read-only, no side effects. Serves as the single source of truth for the panel's "Reset to defaults" button (plan 020), replacing a hand-maintained frontend mirror of `config.rs`'s defaults. |
-| `get_secret_status` | `() -> SecretStatus { openrouter_api_key: Option<String>, telegram_bot_token: Option<String>, telegram_chat_id: Option<String> }` | masked display strings only (§4), one per settable field (resolves §8's completeness question in favour of per-field status). never the value. |
+| `get_secret_status` | `() -> SecretStatus { openrouter_api_key: Option<String> }` | masked display strings only (§4), one per settable field (resolves §8's completeness question in favour of per-field status). never the value. (originally also carried `telegram_bot_token`/`telegram_chat_id`; both removed 2026-07-27 with the connector.) |
 | `save_config_and_relaunch` | `(Config) -> Result<(), Vec<String>>` | validate (§3) → atomic write (§3) → `app.restart()`. the `Err` arm carries human-readable per-field messages for the form; on `Ok` the process is already gone. |
 | `set_secret` | `(SecretField, String) -> Result<(), String>` | write-only merge into `secrets.toml` (§4). |
 | `send_test_notification` | `({ source: "football" | "news" | "cmux" | "manual" }) -> Result<(), String>` | enqueues a canned test event with a timestamped body through the same path `/notify` uses; bypasses pause only when the visible slot is empty, otherwise queues normally. priority and TTL are taken from the running config for the selected source. |
@@ -138,10 +140,11 @@ commands" note in the ipc docs is superseded for this window only):
 #[serde(rename_all = "snake_case")]
 pub enum SecretField {
     OpenrouterApiKey,
-    TelegramBotToken,
-    TelegramChatId,
 }
 ```
+
+(this enum originally also carried `TelegramBotToken`/`TelegramChatId`;
+both removed 2026-07-27 with the connector.)
 
 ## 3. config: validation, atomic write, relaunch
 
@@ -213,13 +216,23 @@ chat_id = "..."
 api_key = "..."
 ```
 
-- `SecretsDoc` carries optional `telegram` and `openrouter` tables plus
+**2026-07-27 update**: the telegram connector was removed, so
+`SecretsDoc` today carries only the `openrouter` table as a known
+field — `SecretField` is a single-variant enum (§2). an existing
+user's `[telegram]` table is not a known field anymore, but it is
+never clobbered: it round-trips through the document-level
+serde-flattened extra map like any other unrecognized table, the same
+never-clobber guarantee that always covered content a given version
+doesn't understand.
+
+- `SecretsDoc` carries an optional `openrouter` table plus
   serde-flattened extra maps at the document and known-table levels.
   unknown tables and fields therefore survive a settings write; the
   never-clobber guarantee covers content the current version does not
-  understand too. the existing `load_secrets` keeps its exact contract
-  (telegram present and well-formed or a `SecretsError`) through its
-  connector-specific loader.
+  understand too — including a leftover `[telegram]` table from before
+  its removal. the connector-specific `load_secrets` loader that used
+  to enforce "telegram present and well-formed or a `SecretsError`"
+  was removed along with the connector.
 - **`set_secret` is read-modify-write**: load the existing file (if
   any), set the one field, write the whole file atomically (unique
   same-dir temp + `create_new` + rename, as §3) with mode `0600` set
@@ -229,14 +242,16 @@ api_key = "..."
   (plus parent dir). **malformed existing file → hard error back to the
   ui** ("fix or delete secrets.toml by hand") — never silently clobber
   a file the user hand-edited wrong.
-- malformed-file messages are fixed strings in both the settings loader
-  and the telegram connector's `SecretsError::Malformed` display. the
-  `toml::de::Error` detail is deliberately withheld because its
+- malformed-file messages are a fixed string in the settings loader
+  (previously also mirrored in the telegram connector's
+  `SecretsError::Malformed` display, before its 2026-07-27 removal).
+  the `toml::de::Error` detail is deliberately withheld because its
   `Display` can echo the offending source line, which may be the secret
   itself; parse detail must never cross ipc or enter logs.
-- a partial telegram pair (token set, chat_id not yet) is fine at
-  rest; the connector's own loader already treats an incomplete
-  telegram table as "disabled, warn" at boot.
+- (historical: a partial telegram pair — token set, chat_id not yet —
+  was fine at rest; the connector's own loader treated an incomplete
+  telegram table as "disabled, warn" at boot. moot since the connector's
+  removal.)
 - **masking** (pure, unit-tested):
 
   ```rust
@@ -275,43 +290,50 @@ opens a blank window (accepted interim state,
 
 - react form on the post-migration stack: number inputs for
   ttl/port/cap/poll-secs, checkboxes for `start_paused` /
-  `espn_enabled` / `rss_enabled` / `connectors.telegram.enabled`, a
-  textarea (one league per line) for `espn_leagues` and one (one url
-  per line) for `rss_feeds`, number inputs for `rss_poll_secs` /
-  `rss_ttl_secs` / `rss_max_per_poll`, password-type inputs +
-  "save key" buttons for the three secret fields, masked status text
-  from `get_secret_status` beside each.
+  `espn_enabled` / `rss_enabled` (the `connectors.telegram.enabled`
+  checkbox this line originally listed was removed 2026-07-27 with the
+  connector), a textarea (one league per line) for `espn_leagues` and
+  one (one url per line) for `rss_feeds`, number inputs for
+  `rss_poll_secs` / `rss_ttl_secs` / `rss_max_per_poll`, a password-type
+  input + "save key" button for the openrouter secret field, masked
+  status text from `get_secret_status` beside it.
 - load once on mount (`invoke("get_config")`, `invoke("get_secret_status")`);
   "Save & Relaunch" button calls `save_config_and_relaunch` and renders
   the returned `Vec<String>` as an error list when validation fails.
   no optimistic state, no dirty-tracking cleverness — the window dies
   with the relaunch anyway.
-- secret inputs are independent of the config form: each writes
-  immediately via `set_secret` (no relaunch needed — secrets are read
-  at boot by the connector, so a relaunch prompt is shown only if the
-  telegram *enable* toggle also changed; the openrouter key has no
-  consumer yet).
+- the secret input is independent of the config form: it writes
+  immediately via `set_secret` (no relaunch needed — the openrouter key
+  has no consumer yet). (originally this also covered telegram's
+  enable-toggle-triggers-a-relaunch-prompt case; moot since its
+  2026-07-27 removal.)
 - the overlay's `App.tsx` / `useSlotState` / css are untouched.
 
 ## 7. testing crosswalk (`TESTING_STRATEGY.md` §4.11)
 
 tdd'd first (pure): `validate` — every rule's accept/reject boundary;
 `mask` — long / short / exact-8 values; config serialize→parse
-round-trip; secrets merge — set openrouter preserves telegram and vice
-versa, malformed existing file errors instead of clobbering,
-`SecretField` covers exactly three fields.
+round-trip; secrets merge — setting openrouter never clobbers an
+unrecognized extra table in the file (originally phrased as "preserves
+telegram and vice versa" while telegram was still a known field;
+telegram's own field and loader were removed 2026-07-27, but an
+existing `[telegram]` table still survives a write via the extra-map
+mechanism), malformed existing file errors instead of clobbering,
+`SecretField` covers exactly one field (`openrouter_api_key`; down
+from three before telegram's removal).
 
 temp-dir integration (never `$HOME`): atomic config write — file
 parseable by `Config::parse` after write, tmp file gone, parent dir
-created; secrets write — resulting file is `0600` and loads via the
-existing `load_secrets`. the 2026-07-17 review round added sentinel
-tests proving malformed parse errors never echo secret material through
-either loader; unknown tables/fields survive a secret write; pasted
-values are trimmed; a stale permissive fixed-name temp file is never
-written into; submitted `detect_path` is pinned to the booted value;
-rss feeds require a parsed http(s) url with a real host; and
-`ensure_settings_window` accepts only the `settings` label using a tauri
-mock app + `WebviewWindowBuilder`.
+created; secrets write — resulting file is `0600` and loads correctly.
+(the `load_secrets` connector-specific loader this line originally
+named was removed with telegram 2026-07-27.) the 2026-07-17 review
+round added sentinel tests proving malformed parse errors never echo
+secret material through the loader; unknown tables/fields survive a
+secret write; pasted values are trimmed; a stale permissive fixed-name
+temp file is never written into; submitted `detect_path` is pinned to
+the booted value; rss feeds require a parsed http(s) url with a real
+host; and `ensure_settings_window` accepts only the `settings` label
+using a tauri mock app + `WebviewWindowBuilder`.
 
 frontend (vitest, small): form renders values from a mocked
 `get_config`; validation errors from a mocked rejection render as a
@@ -331,8 +353,9 @@ discipline as v4's break-the-ci check).
   later will want room).
 - whether `get_secret_status` also reports the telegram table's
   *completeness* (token set but chat_id missing) or just presence —
-  **resolved during implementation**: per-field status (§2's three
-  `Option<String>` fields), so completeness is visible for free.
+  **resolved during implementation**: per-field status (§2's fields —
+  three while telegram shipped, one (`openrouter_api_key`) since its
+  2026-07-27 removal), so completeness is visible for free.
 - whether the espn tray item's presence (gated on `espn_enabled`)
   needs a "changed after relaunch" hint in the ui, or whether
   relaunch-makes-it-true is self-explanatory. lean: self-explanatory.

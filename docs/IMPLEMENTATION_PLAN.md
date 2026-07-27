@@ -188,6 +188,15 @@ config, hook, and UI. no remaining macbook relay setup is required.
 decisions locked 2026-07-16 (grilling session; code-level contract was
 `docs/archive/V3_TECHNICAL_SPEC.md`, removed at repo close-out 2026-07-23, see `git log -- docs/archive/`):
 
+**shipped-then-removed, 2026-07-27**: the telegram connector this
+section describes shipped in v3 and ran for about a week, then was
+removed by operator decision — the external bot setup it required felt
+unnecessary, and there are better ways to get notifications on the
+phone. the section below is left intact as history. what survives:
+the generic `ConnectorHandle` fan-out framework (zero connectors now,
+kept for plan 128's Tavily connector) and the `secrets.toml` machinery
+(now serving only the openrouter api key).
+
 - **the seam sits at acceptance, not promotion**: once a push passes
   validation and `enqueue` succeeds, it fans out to every connector.
   the queue (cap/ttl/pause/promotion) is a *display* concern owned by
@@ -555,10 +564,10 @@ frontend→rust invoke surface, scoped to that window alone via the
 `build.rs` command-acl opt-in + a dedicated capability file (the
 overlay's `default.json` stays byte-for-byte). saving validates
 rust-side, writes `config.toml` atomically, and relaunches the app
-(no hot-reload, ever). secrets (openrouter api key now, telegram
-folded in) are write-only across ipc into `secrets.toml` (0600) with
-masked status display. a persisted `start_paused` flag becomes the
-master kill switch.
+(no hot-reload, ever). secrets (openrouter api key now; telegram was
+folded in at the time, removed 2026-07-27) are write-only across ipc
+into `secrets.toml` (0600) with masked status display. a persisted
+`start_paused` flag becomes the master kill switch.
 
 build order (each step leaves the suite green):
 

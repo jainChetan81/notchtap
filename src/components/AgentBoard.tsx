@@ -1,6 +1,11 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
-import { agentRuntimeLabel, agentStatePresentationFor, elapsedLabel } from "../lib/presentation";
+import {
+  abbreviateHome,
+  agentRuntimeLabel,
+  agentStatePresentationFor,
+  elapsedLabel,
+} from "../lib/presentation";
 import type { AgentSessionView } from "../useAgentState";
 import type { StatusState } from "../useStatusState";
 import { FlankClock } from "./FlankClock";
@@ -95,6 +100,18 @@ function ExpandedAgentRow({
   const presentation = agentStatePresentationFor(session.state);
   const projectName = session.project?.name ?? null;
   const hasHistory = session.history.length > 0;
+  // `cwd` only earns its own line when it says something `projectName`
+  // doesn't already — an adapter that sets both to the same directory
+  // name shouldn't get a redundant second line.
+  const cwd = session.project?.cwd ?? null;
+  const showCwd = cwd !== null && cwd !== projectName;
+  const hostName = session.host?.name ?? null;
+  // Only non-null for terminal sessions (`AgentSession::to_state`,
+  // model.rs) — a live/stale session has nothing "clearing," so this
+  // doubles as the terminal-only guard, no separate state check needed.
+  const clearsIn =
+    session.retentionRemainingMs !== null ? elapsedLabel(session.retentionRemainingMs) : null;
+  const hasMeta = showCwd || hostName !== null || clearsIn !== null;
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: a purely supplementary hover disclosure (recent transition history), not a control — nothing here is keyboard-reachable in this receive-only, mouse-only overlay (no focusable elements or click handlers exist anywhere in this app; see CLAUDE.md's ipc/security section).
     <div
@@ -113,6 +130,20 @@ function ExpandedAgentRow({
         </span>
       </div>
       {session.summary && <div className="agent-expanded-row-summary">{session.summary}</div>}
+      {/* Plan 146 follow-up (operator feedback, 2026-07-27): a restrained
+          extra line of small muted mono chips for wire fields the row
+          never surfaced before (`project.cwd`, `host.name`, terminal
+          retention) — same "nothing renders if absent" discipline the
+          detail cells below already follow, no placeholder chips. */}
+      {hasMeta && (
+        <div className="agent-expanded-row-meta">
+          {showCwd && <span className="agent-expanded-meta-item">{abbreviateHome(cwd)}</span>}
+          {hostName !== null && <span className="agent-expanded-meta-item">{hostName}</span>}
+          {clearsIn !== null && (
+            <span className="agent-expanded-meta-item">clears in {clearsIn}</span>
+          )}
+        </div>
+      )}
       {/* Capability-dependent detail cells (spec §6.2's own words) — an
           adapter that never declared/observed a detail simply has an
           empty `details` array; there is no placeholder cell to omit,
@@ -216,33 +247,43 @@ export function AgentBoard({
         </div>
       </div>
       <div className={`below-block agent-board ${primaryPresentation.className}`}>
-        <div className="agent-board-primary">
-          <div className="agent-board-primary-head">
-            <span
-              className={`agent-dot large ${primaryPresentation.pulse ? "pulse" : ""}`}
-              aria-hidden="true"
-            />
-            <span className="agent-board-runtime">{agentRuntimeLabel(primary.runtime)}</span>
-            <span className="agent-board-state-pill">{primaryPresentation.label}</span>
+        {/* Plan 142 fix (operator feedback, 2026-07-27): the hero block
+            below and the expanded list's own first row both used to
+            render `sessions[0]` — at N=1 that put the identical session
+            on screen twice. The hero is the RESTING-only summary for the
+            top session; while `expanded`, it's replaced entirely by the
+            expanded list (which already includes the primary session as
+            its first `ExpandedAgentRow`, so `primary.details`/`history`
+            stay reachable there instead). */}
+        {!expanded && (
+          <div className="agent-board-primary">
+            <div className="agent-board-primary-head">
+              <span
+                className={`agent-dot large ${primaryPresentation.pulse ? "pulse" : ""}`}
+                aria-hidden="true"
+              />
+              <span className="agent-board-runtime">{agentRuntimeLabel(primary.runtime)}</span>
+              <span className="agent-board-state-pill">{primaryPresentation.label}</span>
+            </div>
+            {primaryProjectName && <div className="agent-board-project">{primaryProjectName}</div>}
+            {primary.summary && <div className="agent-board-summary">{primary.summary}</div>}
+            <div className="agent-board-elapsed">{primaryElapsed}</div>
           </div>
-          {primaryProjectName && <div className="agent-board-project">{primaryProjectName}</div>}
-          {primary.summary && <div className="agent-board-summary">{primary.summary}</div>}
-          <div className="agent-board-elapsed">{primaryElapsed}</div>
-        </div>
-        {/* Plan 142 (spec §6.2 expanded): while `expanded`, the compact
-            `rest`-only rows swap for a bounded, scrollable list of EVERY
-            retained session (primary included) — rust has already grown
-            the real window to `agents::expand::expanded_board_frame`'s
-            screen-bounded frame and opened pointer delivery for exactly
-            this rect by the time this prop flips true
-            (`try_expand_board_for_hover`), so the scroll container below
-            genuinely has room to scroll and genuinely receives wheel
-            events. `AnimatePresence`/`motion` morphs between the two
-            shapes rather than a hard swap, same guideline every other
-            shipped expand/collapse in this app already follows (the
-            failure class to avoid is desynced clocks, not a specific
-            library — `IdleHoverPeek.tsx`'s own spring is the precedent
-            this mirrors). */}
+        )}
+        {/* Plan 142 (spec §6.2 expanded): while `expanded`, the hero +
+            compact `rest`-only rows swap for a bounded, scrollable list
+            of EVERY retained session (primary included) — rust has
+            already grown the real window to
+            `agents::expand::expanded_board_frame`'s screen-bounded frame
+            and opened pointer delivery for exactly this rect by the time
+            this prop flips true (`try_expand_board_for_hover`), so the
+            scroll container below genuinely has room to scroll and
+            genuinely receives wheel events. `AnimatePresence`/`motion`
+            morphs between the two shapes rather than a hard swap, same
+            guideline every other shipped expand/collapse in this app
+            already follows (the failure class to avoid is desynced
+            clocks, not a specific library — `IdleHoverPeek.tsx`'s own
+            spring is the precedent this mirrors). */}
         <AnimatePresence initial={false} mode="wait">
           {expanded ? (
             <motion.div

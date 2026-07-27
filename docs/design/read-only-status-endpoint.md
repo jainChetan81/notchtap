@@ -60,12 +60,14 @@ full (`src-tauri/src/status.rs:1-270`), the complete field tree is:
 | `WeatherSummary` (`status.rs:54-57`) | `temp_display: String`, `condition: String` | display-formatted "27°", WMO-code word |
 
 Every leaf is a `bool`, `usize`, or display `String` built from public
-API responses (ESPN, RSS presence, Open-Meteo). The actual secrets —
-telegram `bot_token` and openrouter `api_key` — live in `secrets.toml`
-and are only referenced in `notifier.rs` (`notifier.rs:132`,
-`settings.rs:312-313`); no type in the `StatusState` tree is
-constructed from, or can reach, either. **No secret data is reachable.
-The STOP condition does not fire.**
+API responses (ESPN, RSS presence, Open-Meteo). The actual secret —
+openrouter `api_key` — lives in `secrets.toml` and is only referenced
+in `settings.rs` (`settings.rs:312-313`); no type in the `StatusState`
+tree is constructed from, or can reach, it. (at the time this was
+written, a telegram `bot_token` secret and its `notifier.rs:132`
+reference lived here too; the telegram connector was removed
+2026-07-27, so that leg no longer applies.) **No secret data is
+reachable. The STOP condition does not fire.**
 
 ---
 

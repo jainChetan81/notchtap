@@ -52,9 +52,12 @@ headlines. Plus an on-demand "Fetch now" button ("at call").
 1. **Secret.** Extend the existing secrets mechanism
    (`~/.config/notchtap/secrets.toml`, `set_secret`/
    `get_secret_status`): new `SecretField::TavilyApiKey` variant
-   (follow the telegram/openrouter variants everywhere they appear:
-   rust enum + storage key + status struct + frontend `SecretField`
-   union + `SecretStatus` type). NO new invoke command needed for the
+   (follow the openrouter variant everywhere it appears: rust enum +
+   storage key + status struct + frontend `SecretField` union +
+   `SecretStatus` type — the telegram variant this line originally
+   pointed at as a second exemplar was removed 2026-07-27; openrouter
+   is now the sole surviving reference idiom). NO new invoke command
+   needed for the
    key — `set_secret` already takes the field enum. The key must never
    appear in any log line (the notifier's token-redaction precedent).
 2. **Config.** New fields on `Config` (all `#[serde(default)]`,
@@ -132,9 +135,12 @@ headlines. Plus an on-demand "Fetch now" button ("at call").
 ## Non-goals / constraints
 
 - No `include_answer`/`extract`/crawl endpoints; search only.
-- No connector-health DTO change in this plan (telegram-shaped;
-  extending it is a separate decision) — diagnostics via log lines +
-  the 432 self-card.
+- No connector-health DTO change in this plan (the telegram-shaped
+  `ConnectorHealth`/`get_connector_health` this line originally pointed
+  at was removed along with the connector, 2026-07-27; the surviving
+  reference is the generic `ConnectorHandle` fan-out framework —
+  extending health reporting for a new connector is a separate
+  decision) — diagnostics via log lines + the 432 self-card.
 - No API key in config.toml, logs, error messages, or test fixtures
   (use `tvly-test-…` fakes in wiremock only).
 - Frontend renders result titles/snippets/links as literal text —

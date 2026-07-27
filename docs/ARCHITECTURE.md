@@ -15,7 +15,7 @@ external branding, code, or assets are used.
 | animation | one generic template | per-event-type variety | — |
 | live football scores (espn public api) | — | yes | — |
 | posture module (airpods motion, optional) | — | optional | — |
-| outbound connectors (telegram first) | — | — | yes |
+| outbound connector framework (telegram shipped v3, removed 2026-07-27; zero connectors currently) | — | — | yes |
 | notch overlay / mac mini hud | yes (both machines from day one) | — | — |
 
 v1 was deliberately thin: engine + queue + one animation + cli push.
@@ -68,8 +68,11 @@ a background utility that:
     └───────────────────────────────┘
 ```
 
-v3 adds a connectors layer at event *acceptance* (telegram first) —
-deliberately not drawn here, it's out of scope until v3.
+v3 adds a connectors layer at event *acceptance* — telegram shipped
+first, then was removed 2026-07-27 (see §7); the generic
+`ConnectorHandle` fan-out framework remains, currently with zero
+connectors, kept for plan 128 (Tavily). deliberately not drawn here,
+it's out of scope until v3.
 
 the same core (rust) and ui (react/ts webview) run unmodified on both
 machines. only one module differs: **window placement** — notch-aware
@@ -315,6 +318,16 @@ only if telegram proves insufficient. decisions in
 (v3 shipped; removed at repo close-out 2026-07-23,
 see `git log -- docs/archive/`).
 
+**reversal, 2026-07-27**: the telegram connector itself was removed by
+operator decision — a week of use showed it felt unnecessary given the
+external bot setup it required, and there are better ways to get
+notifications on the phone. the generic `ConnectorHandle` fan-out
+framework and the `secrets.toml` design it depends on are unaffected
+and remain (currently zero connectors; kept for plan 128's Tavily
+connector). the worker/notifier code, `[connectors.telegram]` config,
+and telegram secret fields are gone; see `git log` for the removal
+commit.
+
 ---
 
 ## 8. tech stack recommendation
@@ -407,11 +420,13 @@ chosen rust deserializer).
 v2 adds (locked 2026-07-16, §16): `espn_enabled` (default `true`),
 `espn_leagues` (default `["eng.1", "uefa.champions", "esp.1"]`),
 `espn_poll_secs` (default `30`). posture module remains future, not
-v2. api keys / bot tokens (telegram, etc.) live in a separate secrets
+v2. api keys (the openrouter key today) live in a separate secrets
 file (`secrets.toml`, see `archive/V3_TECHNICAL_SPEC.md` §4 — v3
 shipped; removed at repo close-out 2026-07-23,
 see `git log -- docs/archive/` for the removed text — not env vars;
 login items don't inherit shell env) — never in the committed config.
+(v3 also introduced a telegram bot token in this file; telegram was
+removed 2026-07-27 and its secret field with it — see §7.)
 
 v3.6 (locked 2026-07-17, see `V3_6_TECHNICAL_SPEC.md` §4.6) removes
 `max_concurrent` outright (no longer meaningful — see §3's addendum
@@ -613,13 +628,15 @@ unchanged and permanent). code-level contract in
   boot given §10's fail-fast rule), then relaunches the app. **no
   hot-reload plumbing, ever** — restart is the reload mechanism; no
   file-watcher.
-- **secrets stay in `secrets.toml` (0600), plaintext**: same pattern
-  and loader lineage as the telegram token (§10, v3). "hash the key"
-  was raised and rejected — hashing is one-way; an outbound api key
-  must be sent as-is, so hashing would destroy it. macos keychain was
-  evaluated and declined: encryption-at-rest buys little on a
-  single-user machine and costs a dependency plus prompts. the honest
-  security model here is file permissions.
+- **secrets stay in `secrets.toml` (0600), plaintext**: the same
+  file-permissions pattern the v3 telegram bot token established
+  (§10, v3; telegram itself removed 2026-07-27, but the loader and file
+  design it proved out survive and now serve the openrouter api key).
+  "hash the key" was raised and rejected — hashing is one-way; an
+  outbound api key must be sent as-is, so hashing would destroy it.
+  macos keychain was evaluated and declined: encryption-at-rest buys
+  little on a single-user machine and costs a dependency plus prompts.
+  the honest security model here is file permissions.
 - **keys are write-only across ipc**: the settings window can *set* a
   secret and read a masked status ("set (…a1b2)"); a full secret
   value never crosses ipc outbound. an **openrouter api key** field
@@ -633,7 +650,8 @@ unchanged and permanent). code-level contract in
   queue states.
 - **panel scope (v5)**: `start_paused`, espn on/off + leagues + poll
   interval, `default_ttl` / `port` / `max_queued_per_tier`, openrouter
-  key, telegram enable + token/chat-id. `detect_path` stays
+  key. (telegram enable + token/chat-id were in-scope here too; removed
+  2026-07-27 along with the connector.) `detect_path` stays
   file-only. **extended 2026-07-17** (same day, after the
   `v5-news-backend` merge landed rss config): news on/off + feeds +
   poll interval + ttl + max-per-poll (`rss_*` fields) join the panel —
@@ -800,11 +818,13 @@ rewritten).
   priority-gated for routine quiet, one that is absolute for "kill
   it"; merging them would let a spammy High source defeat the kill
   switch.
-- **silence is display-only.** Connectors (telegram) forward
-  everything as before — Connector-observes-acceptance is preserved;
-  phone quiet hours are the phone's job. pollers keep observing; the
-  idle surface (clock, weather, Agent Board) is unchanged. the HTTP
-  contract is unchanged.
+- **silence is display-only.** it only affects what promotes to the
+  overlay. the HTTP contract is unchanged, and any future connector
+  fan-out (the generic `ConnectorHandle` framework, currently with
+  zero connectors since telegram's 2026-07-27 removal) would observe
+  acceptance the same way it always did, unaffected by silence.
+  pollers keep observing; the idle surface (clock, weather, Agent
+  Board) is unchanged.
 - **two silence sources, unioned**: the daily Silent Period (default
   ON, `00:00-10:00`, one window per day, local wall clock, persisted
   in the `[silence]` config block) and tray Timed Mutes (30m/1h/2h

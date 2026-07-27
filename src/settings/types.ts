@@ -56,6 +56,7 @@ export interface AgentsConfig {
   enabled: boolean;
   terminal_retention_secs: number;
   stale_after_secs: number;
+  stale_retention_secs: number;
   informational_notifications: boolean;
   permission_priority: PriorityLevel;
   input_priority: PriorityLevel;
@@ -103,11 +104,6 @@ export interface Config {
   weather_temp_cold_c: number;
   weather_priority: PriorityLevel;
   rotation_order: SourceKind[];
-  connectors: {
-    telegram: {
-      enabled: boolean;
-    };
-  };
   appearance: AppearanceConfig;
   resting_state: RestingState;
   history_enabled: boolean;
@@ -131,22 +127,11 @@ export interface Config {
 
 export interface SecretStatus {
   openrouter_api_key: string | null;
-  telegram_bot_token: string | null;
-  telegram_chat_id: string | null;
-}
-
-// Wire shape of get_connector_health (plan 076) — mirrors
-// ConnectorHealthDto in src-tauri/src/settings.rs: elapsed-ms timestamps,
-// not instants.
-export interface ConnectorHealthDto {
-  lastAttemptMs: number | null;
-  lastSuccessMs: number | null;
-  consecutiveFailures: number;
 }
 
 // Wire shape of get_history (plan 089) — mirrors HistoryEntry/Event in
-// src-tauri/src/history.rs and event.rs. Unlike ConnectorHealthDto above
-// and unlike the camelCase SlotState wire (useSlotState.ts), this shape
+// src-tauri/src/history.rs and event.rs. Unlike AboutInfo/AdapterHealthDto
+// below and unlike the camelCase SlotState wire (useSlotState.ts), this shape
 // is snake_case throughout, INCLUDING `meta` — the one camelCase island
 // is the optional `meta.espn` block (EspnMeta derives
 // `rename_all = "camelCase"`), absent entirely unless the espn live card
@@ -217,7 +202,7 @@ export interface QueueItemSummary {
 
 // Wire shape of get_about_info (About section) — mirrors AboutInfo in
 // src-tauri/src/about.rs. camelCase throughout, same convention as
-// ConnectorHealthDto above. The two "None on best-effort failure" fields
+// AdapterHealthDto below. The two "None on best-effort failure" fields
 // (bundleSizeBytes for a dev build, disk*Bytes if no disk mounts at "/")
 // stay nullable here rather than defaulting to 0 — a real zero-byte
 // bundle isn't a state this app can be in, so `null` unambiguously means
@@ -248,7 +233,7 @@ export type AgentWireRuntime = "claude-code" | "codex" | "kimi" | "opencode";
 // `agents::board::AdapterHealthView` in src-tauri/src/agents/board.rs,
 // the same conversion the `agent-state` overlay channel's Adapter Health
 // rows use (`health_to_view`). camelCase throughout, same convention as
-// `ConnectorHealthDto`/`AboutInfo` above.
+// `AboutInfo` above.
 export type AdapterAvailability = "available" | "partial" | "unavailable";
 export type AdapterErrorCategory = "malformed_payload" | "unsupported_runtime" | "internal";
 

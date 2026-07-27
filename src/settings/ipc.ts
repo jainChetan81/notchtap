@@ -4,7 +4,6 @@ import type {
   AdapterHealthDto,
   AgentWireRuntime,
   Config,
-  ConnectorHealthDto,
   HistoryEntry,
   QueueItemSummary,
   SecretField,
@@ -29,7 +28,6 @@ export interface SettingsCommands {
   get_about_info: { args: undefined; result: AboutInfo };
   get_agent_health: { args: undefined; result: AdapterHealthDto[] };
   get_config: { args: undefined; result: Config };
-  get_connector_health: { args: undefined; result: ConnectorHealthDto };
   get_default_config: { args: undefined; result: Config };
   get_history: { args: undefined; result: HistoryEntry[] };
   get_queue: { args: undefined; result: QueueItemSummary[] };

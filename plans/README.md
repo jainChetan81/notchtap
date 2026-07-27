@@ -1,5 +1,19 @@
 # Implementation Plans
 
+**Telegram connector removed (2026-07-27, operator decision):** a week
+after shipping (plan 076 gave it health visibility), the telegram
+connector was removed outright — the external bot setup it required
+felt unnecessary, and there are better ways to get notifications on the
+phone. Removed: the telegram worker/notifier, `[connectors.telegram]`
+config, the telegram secret fields, and the `get_connector_health`
+invoke command (settings-window command count drops 18 → 17). Kept:
+the generic `secrets.toml` machinery (0600, atomic write, now serving
+only the openrouter key), the generic `ConnectorHandle` fan-out
+framework (zero connectors, kept for plan 128's Tavily), and
+`set_secret`/`get_secret_status`. `ARCHITECTURE.md` §7 carries the
+dated reversal note; plans 076/128/146 and this README's own historical
+rows for telegram are left as filed history, not rewritten.
+
 **Silenced + Preemption spec (2026-07-27, grilled + operator-ratified):**
 plan 146 is a `/to-spec` PRD from the 2026-07-27 grilling session:
 **Silenced** (scheduled daily Silent Period default 00:00–10:00, tray

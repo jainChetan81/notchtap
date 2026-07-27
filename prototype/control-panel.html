@@ -1,12 +1,13 @@
 <!doctype html>
 <!-- plan 137 (v7 ticket 5, spec §7/§12) archived-note: this static mockup predates the cmux relay's removal — every "cmux"/"Cmux" label below is a historical artifact from when v6's cmux relay was the agent-notification source; the shipped app now sources these as the v7 Agent Adapter layer (Origin/SourceKind::Agent). Not resynced, per this repo's prototype-drift convention (CLAUDE.md). -->
 <!-- Control panel (Settings window) mockup — originally a 9-section window (Telegram connector health line, plan 076, and the Diagnostics log viewer, plan 077, which DESIGN.html §06 predates). Visual tokens mirror src/settings/settings.css (--window #050607, --accent #0a84ff, tiny SF Pro Text + ui-monospace). Static: sidebar + the two newest panes; the other seven sections are unchanged since DESIGN.html §06 and noted as such.
-     2026-07-23 truth-sync: plan 089 added a 10th sidebar section (History) after this mockup was drawn — both sidebar navs below now include it; the Switch mock was resized to the current 22px/36px, 2px-inset, muted-unchecked-thumb proportions (src/components/ui/switch.tsx, restyled the same day); the sidebar wordmark now reads "notchtap" (today's user-facing rebrand — bundle id/config paths/CLI name are unchanged, see the branding commit). -->
+     2026-07-23 truth-sync: plan 089 added a 10th sidebar section (History) after this mockup was drawn — both sidebar navs below now include it; the Switch mock was resized to the current 22px/36px, 2px-inset, muted-unchecked-thumb proportions (src/components/ui/switch.tsx, restyled the same day); the sidebar wordmark now reads "notchtap" (today's user-facing rebrand — bundle id/config paths/CLI name are unchanged, see the branding commit).
+     2026-07-27 truth-sync: the telegram connector (and its plan-076 connector-health line / get_connector_health command) was removed by operator decision. This mockup's Connectors & Keys section is resynced to show only the surviving OpenRouter key row; the health-states variant block and the telegram log line are gone. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>control panel — 10 sections (History added, plan 089), with connector health + diagnostics</title>
+<title>control panel — 10 sections (History added, plan 089), with diagnostics (telegram + connector health removed 2026-07-27)</title>
 <style>
   :root {
     --bg: #101318; --ink: #e8ecf1; --dim: #8b95a3; --rule: rgba(255,255,255,0.09); --green: #7fe08d;
@@ -102,8 +103,10 @@
   <h1>Control panel — the settings window, sidebar now 10 sections (History, plan 089, added since this mockup's era)</h1>
   <p class="lede">
     The Settings window's sidebar order is on record here at its current
-    10 sections; two of the panes are drawn out in full — the Telegram
-    <b>connector health</b> line (plan 076) and the
+    10 sections; two of the panes are drawn out in full — the
+    <b>Connectors &amp; Keys</b> pane (now just the surviving OpenRouter
+    key row; the telegram connector and its plan-076 connector-health
+    line were removed 2026-07-27) and the
     <b>Diagnostics</b> log viewer (plan 077), which DESIGN.html §06
     predates. Sections 01–05, 07 and 08 are unchanged since
     DESIGN.html's control-panel section; 10 (History, plan 089) postdates
@@ -120,14 +123,16 @@
   </p>
 
   <section>
-    <h2>06 — Connectors &amp; Keys, with health line</h2>
+    <h2>06 — Connectors &amp; Keys</h2>
     <p class="section-sub">
-      The Telegram group now answers "is it actually working?" in one
-      read-only line under the enable toggle — polled every 5s via
-      <code>get_connector_health</code>, hidden entirely if the fetch
-      fails. All three states drawn below.
+      Telegram shipped here as the first outbound connector (plan 076
+      added a "is it actually working?" health line polled via
+      <code>get_connector_health</code>) and was removed 2026-07-27 by
+      operator decision — the external bot setup felt unnecessary, and
+      there are better ways to get notifications on the phone. The pane
+      today has just the one write-only key.
     </p>
-    <div class="rig-label">Connectors &amp; Keys pane — health: delivering</div>
+    <div class="rig-label">Connectors &amp; Keys pane</div>
     <div class="window">
       <div class="sidebar">
         <div class="brand"><span class="brand-slot"></span>notchtap</div>
@@ -152,35 +157,10 @@
           <p class="pane-desc">Outbound connectors and their write-only credentials. Keys are never read back across IPC — you can only replace them.</p>
 
           <div class="settings-group">
-            <div class="group-heading">Telegram<div class="group-desc">Forward accepted events to a Telegram chat.</div></div>
-            <div class="control-row">
-              <div>
-                <div class="control-name">Enable connector</div>
-                <div class="control-help">Forward every accepted event after Save &amp; Relaunch.</div>
-              </div>
-              <span class="switch on"></span>
-            </div>
-            <div class="control-row">
-              <div>
-                <span class="relaunch-note">Config change · applied after relaunch</span><br>
-                <span class="relaunch-note health-ok">Last delivered: 2 min ago</span>
-              </div>
-            </div>
-          </div>
-
-          <div class="settings-group">
             <div class="group-heading">Write-only keys<div class="group-desc">Values never come back across IPC.</div></div>
             <div class="secret-row">
               <div><span class="control-name">OpenRouter API key</span><span class="status-chip">unset</span></div>
               <div class="secret-controls"><input class="secret-input" type="password" placeholder="Enter a new key"><button class="secondary-button" disabled>Save</button></div>
-            </div>
-            <div class="secret-row">
-              <div><span class="control-name">Telegram bot token</span><span class="status-chip is-set">…9f3a</span></div>
-              <div class="secret-controls"><input class="secret-input" type="password" placeholder="Enter a replacement token"><button class="secondary-button" disabled>Save</button></div>
-            </div>
-            <div class="secret-row">
-              <div><span class="control-name">Telegram chat ID</span><span class="status-chip is-set">…4217</span></div>
-              <div class="secret-controls"><input class="secret-input" type="password" placeholder="Enter a new chat ID"><button class="secondary-button" disabled>Save</button></div>
             </div>
           </div>
         </div>
@@ -192,25 +172,6 @@
         </div>
       </div>
     </div>
-
-    <div class="rig-label" style="margin-top:22px;">The three health states, side by side</div>
-    <div class="variants">
-      <div class="variant-card">
-        <div class="variant-title">Failing</div>
-        <span class="relaunch-note">Config change · applied after relaunch</span><br>
-        <span class="relaunch-note health-bad">3 consecutive failures — check your bot token</span>
-      </div>
-      <div class="variant-card">
-        <div class="variant-title">Delivering</div>
-        <span class="relaunch-note">Config change · applied after relaunch</span><br>
-        <span class="relaunch-note health-ok">Last delivered: 2 min ago</span>
-      </div>
-      <div class="variant-card">
-        <div class="variant-title">Never sent</div>
-        <span class="relaunch-note">Config change · applied after relaunch</span><br>
-        <span class="relaunch-note">No deliveries yet.</span>
-      </div>
-    </div>
   </section>
 
   <section>
@@ -219,8 +180,10 @@
       The newest sidebar section (plan 077): a read-only tail of the
       active log file — last 200 lines of
       <code>~/Library/Logs/notchtap/notchtap.log</code>, fetched when the
-      section opens, manual Refresh, no live tail. Tokens are already
-      redacted at write time by the notifier.
+      section opens, manual Refresh, no live tail. Secret material is
+      never logged in the first place (the telegram notifier this line
+      once credited with redaction was removed 2026-07-27; the
+      no-secrets-in-logs rule now rests on the loaders alone).
     </p>
     <div class="rig-label">Diagnostics pane</div>
     <div class="window">
@@ -254,7 +217,6 @@
 <span class="ts">2026-07-20T14:28:14Z</span> <span class="lvl-info">INFO</span> espn_poller: match 6849211 score 2-1 clock 78'
 <span class="ts">2026-07-20T14:28:14Z</span> <span class="lvl-info">INFO</span> engine: accepted event src=espn priority=high topic=espn:uefa.champions:6849211
 <span class="ts">2026-07-20T14:28:14Z</span> <span class="lvl-info">INFO</span> engine: superseded topic=espn:uefa.champions:6849211
-<span class="ts">2026-07-20T14:28:15Z</span> <span class="lvl-info">INFO</span> notifier: telegram delivered in 412ms
 <span class="ts">2026-07-20T14:29:02Z</span> <span class="lvl-err">WARN</span> weather_poller: open-meteo 502, retrying next interval</pre>
               <div class="control-row" style="border-top:none; padding-left:0; padding-right:0; min-height:38px;">
                 <div class="control-help">Fetched on section open — no live tail.</div>

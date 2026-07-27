@@ -28,7 +28,7 @@ class ResizeObserverStub {
 (globalThis as any).ResizeObserver ??= ResizeObserverStub;
 
 // Several plan-108 tests drive setInterval/setTimeout-based status transitions
-// (connector-health poll, ok-message auto-clear) with fake timers. Those
+// (ok-message auto-clear) with fake timers. Those
 // timers must be created UNDER the fake clock, so fake timers are engaged
 // before render — which means we can't rely on RTL's findBy/waitFor (their
 // internal polling assumes real timers). This flushes the microtask queue
@@ -85,6 +85,7 @@ const config: Config = {
     enabled: true,
     terminal_retention_secs: 400,
     stale_after_secs: 600,
+    stale_retention_secs: 1200,
     informational_notifications: true,
     permission_priority: "high",
     input_priority: "medium",
@@ -108,7 +109,6 @@ const config: Config = {
   weather_temp_cold_c: 14,
   weather_priority: "medium",
   rotation_order: ["news", "agent", "manual", "weather", "football"],
-  connectors: { telegram: { enabled: true } },
   appearance: { card_scale: 1, card_radius: 8, card_opacity: 0.9 },
   resting_state: "notch",
   history_enabled: true,
@@ -152,6 +152,7 @@ const rustConfigDefaults: Config = {
     enabled: true,
     terminal_retention_secs: 600,
     stale_after_secs: 900,
+    stale_retention_secs: 1800,
     informational_notifications: false,
     permission_priority: "high",
     input_priority: "high",
@@ -175,7 +176,6 @@ const rustConfigDefaults: Config = {
   weather_temp_cold_c: 14,
   weather_priority: "medium",
   rotation_order: ["football", "manual", "weather", "agent", "news"],
-  connectors: { telegram: { enabled: false } },
   appearance: { card_scale: 1, card_radius: 16, card_opacity: 0.9 },
   resting_state: "rail",
   history_enabled: false,
@@ -185,8 +185,6 @@ const rustConfigDefaults: Config = {
 
 const unsetSecrets: SecretStatus = {
   openrouter_api_key: null,
-  telegram_bot_token: null,
-  telegram_chat_id: null,
 };
 
 // get_history's wire shape (plan 089) — snake_case throughout, including
@@ -286,9 +284,9 @@ function mockLoads(status: SecretStatus = unsetSecrets) {
 afterEach(() => {
   cleanup();
   clearMocks();
-  // defensive: a test that enables fake timers (plan 108's connector-health
-  // and auto-clear tests) always restores real timers itself, but this
-  // guards against a leak into later tests if one fails mid-test.
+  // defensive: a test that enables fake timers (plan 108's auto-clear
+  // tests) always restores real timers itself, but this guards against a
+  // leak into later tests if one fails mid-test.
   vi.useRealTimers();
 });
 
@@ -1060,27 +1058,8 @@ describe("SettingsApp", () => {
     ]);
   });
 
-  it("renders the Telegram delivery-health line from get_connector_health", async () => {
-    // same mock-and-assert shape as the SecretStatus-fetch tests above:
-    // the health fetch is advisory and resolves on its own microtask.
-    mockIPC((command) => {
-      if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
-      if (command === "get_default_config") return rustConfigDefaults;
-      if (command === "get_connector_health") {
-        return { lastAttemptMs: 1000, lastSuccessMs: 120000, consecutiveFailures: 0 };
-      }
-    });
-    render(<SettingsApp />);
-
-    await screen.findByRole("heading", { level: 1, name: "General" });
-    fireEvent.click(screen.getByRole("button", { name: "Connectors & Keys" }));
-
-    expect(await screen.findByText("Last delivered: 2 min ago")).toBeTruthy();
-  });
-
   it("Diagnostics section renders the lines returned by get_recent_log_lines", async () => {
-    // same advisory-fetch shape as the connector-health test above: the
+    // same advisory-fetch shape as the other section-open fetches: the
     // fetch fires on section-open and resolves on its own microtask.
     mockIPC((command) => {
       if (command === "get_config") return config;
@@ -1916,6 +1895,7 @@ describe("SettingsApp", () => {
       expect(isChecked(informational)).toBe(true); // fixture: agents.informational_notifications true
       expect(screen.getByDisplayValue("400")).toBeTruthy(); // terminal_retention_secs
       expect(screen.getByDisplayValue("600")).toBeTruthy(); // stale_after_secs
+      expect(screen.getByDisplayValue("1200")).toBeTruthy(); // stale_retention_secs
     });
 
     function findAdapterCard(label: string): HTMLElement {
@@ -2356,76 +2336,6 @@ describe("SettingsApp — action status (plan 108)", () => {
     expect(
       (screen.getByRole("button", { name: "Reset to defaults" }) as HTMLButtonElement).disabled,
     ).toBe(true);
-  });
-
-  it("connector-health poll: repeated identical failures collapse to one transition; recovery is a second transition (transition-only)", async () => {
-    // Fake timers from before render, scoped to setInterval/clearInterval
-    // only — this test never navigates sections, so AnimatePresence's
-    // exit/enter transition (which needs real setTimeout/requestAnimationFrame
-    // ticks) is never in the picture. Only the poll's own setInterval cadence
-    // needs to be under our control. The state transitions asserted below
-    // happen in SettingsApp regardless of which section is mounted to
-    // visualize them — the DOM-visible wiring itself gets its own test below.
-    vi.useFakeTimers({ toFake: ["setInterval", "clearInterval"] });
-    try {
-      const debugSpy = vi.spyOn(console, "debug").mockImplementation(() => {});
-      let healthCalls = 0;
-      mockIPC((command) => {
-        if (command === "get_config") return config;
-        if (command === "get_secret_status") return unsetSecrets;
-        if (command === "get_default_config") return rustConfigDefaults;
-        if (command === "get_connector_health") {
-          healthCalls += 1;
-          if (healthCalls <= 2) return Promise.reject("network down");
-          return { lastAttemptMs: 1000, lastSuccessMs: 1000, consecutiveFailures: 0 };
-        }
-      });
-
-      render(<SettingsApp />);
-      await flush();
-
-      const transitionCalls = () =>
-        debugSpy.mock.calls.filter((call) => call[0] === "[action-status:connector-health]").length;
-
-      // mount-time fetchHealth() is the first poll — already failed.
-      expect(healthCalls).toBe(1);
-      expect(transitionCalls()).toBe(1);
-
-      // second poll, 5s later: identical failure — must NOT add a transition.
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(5000);
-      });
-      await flush();
-      expect(healthCalls).toBe(2);
-      expect(transitionCalls()).toBe(1);
-
-      // third poll, 5s later: succeeds — exactly one recovery transition.
-      await act(async () => {
-        await vi.advanceTimersByTimeAsync(5000);
-      });
-      await flush();
-      expect(healthCalls).toBe(3);
-      expect(transitionCalls()).toBe(2);
-    } finally {
-      vi.useRealTimers();
-    }
-  });
-
-  it("connector-health read failure renders 'Health unavailable' inline, with no aria-live (a poll is never user-initiated)", async () => {
-    mockIPC((command) => {
-      if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
-      if (command === "get_default_config") return rustConfigDefaults;
-      if (command === "get_connector_health") return Promise.reject("network down");
-    });
-    render(<SettingsApp />);
-
-    await screen.findByRole("heading", { level: 1, name: "General" });
-    fireEvent.click(screen.getByRole("button", { name: "Connectors & Keys" }));
-    await screen.findByRole("heading", { level: 1, name: "Connectors & Keys" });
-
-    const message = await screen.findByText("Health unavailable");
-    expect(message.getAttribute("aria-live")).toBeNull();
   });
 });
 

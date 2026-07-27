@@ -196,12 +196,16 @@ in `docs/ARCHITECTURE.md`.
 - **Relay** — an external tool forwarding its own notifications into
   notchtap. a Relay is heads-up only: it can never answer back into the
   tool that raised the alert.
-- **Connector** — an outbound sink (telegram in v3) that receives
-  every accepted Event *except News items, which are overlay-only by
-  design* — see `IMPLEMENTATION_PLAN.md` §4.6 — and forwards the rest
-  off the machine, best-effort. a Connector observes acceptance, not
+- **Connector** — an outbound sink that would receive every accepted
+  Event *except News items, which are overlay-only by design* — see
+  `IMPLEMENTATION_PLAN.md` §4.6 — and forward the rest off the
+  machine, best-effort. a Connector observes acceptance, not
   Promotion: the queue's display rules (cap, Rotation, Paused) never
   apply to it, and its failures never affect the pusher's response.
+  telegram shipped as the first (and, so far, only) Connector in v3,
+  then was removed 2026-07-27 by operator decision; the generic
+  `ConnectorHandle` fan-out framework remains with zero connectors,
+  kept for plan 128's Tavily connector.
 - **Notifier** — the outbound half of notchtap as a whole: the seam
   through which accepted Events leave the machine. Connectors are its
   members; the overlay is not one. a seam, not a code interface —

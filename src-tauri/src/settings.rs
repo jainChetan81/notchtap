@@ -334,31 +334,20 @@ pub fn mask(value: &str) -> String {
 
 /// The whole-file shape of `secrets.toml` as the settings writer sees it:
 /// every table and field optional, so setting one field never demands the
-/// others exist. The telegram *connector* keeps its own strict loader
-/// (`notifier::load_secrets`) — incomplete telegram secrets disable the
-/// connector at boot with a warning, same as always.
+/// others exist.
 ///
-/// The `extra` maps (2026-07-17 review) preserve unknown tables and
+/// The `extra` map (2026-07-17 review) preserves unknown tables and
 /// unknown fields inside known tables across a read-modify-write —
-/// without them, serde would silently drop anything this struct doesn't
+/// without it, serde would silently drop anything this struct doesn't
 /// model, and "setting one key deletes a hand-added table" would violate
-/// the never-clobber rule this module promises.
+/// the never-clobber rule this module promises. That also means a
+/// leftover `[telegram]` table from before the telegram connector was
+/// removed round-trips untouched through `extra` — nothing here needs to
+/// know its shape anymore.
 #[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct SecretsDoc {
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub telegram: Option<TelegramTable>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub openrouter: Option<OpenRouterTable>,
-    #[serde(default, flatten)]
-    pub extra: toml::Table,
-}
-
-#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct TelegramTable {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub bot_token: Option<String>,
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub chat_id: Option<String>,
     #[serde(default, flatten)]
     pub extra: toml::Table,
 }
@@ -371,14 +360,12 @@ pub struct OpenRouterTable {
     pub extra: toml::Table,
 }
 
-/// The three settable fields — a closed set, so the ipc surface can never
+/// The one settable field — a closed set, so the ipc surface can never
 /// be steered at an arbitrary toml path.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SecretField {
     OpenrouterApiKey,
-    TelegramBotToken,
-    TelegramChatId,
 }
 
 /// Masked per-field status for the settings form (spec §2) — presence and
@@ -386,24 +373,6 @@ pub enum SecretField {
 #[derive(Debug, PartialEq, Serialize)]
 pub struct SecretStatus {
     pub openrouter_api_key: Option<String>,
-    pub telegram_bot_token: Option<String>,
-    pub telegram_chat_id: Option<String>,
-}
-
-/// Wire shape for the telegram connector's delivery health (plan 076).
-/// `ConnectorHealth` keeps `Instant`s internal; this DTO converts them to
-/// elapsed-milliseconds-since-now at the boundary (`status.rs` has no
-/// existing Instant-to-wire precedent to mirror — its only `Instant`
-/// uses are in tests). camelCase on the wire, matching status.rs's
-/// convention.
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ConnectorHealthDto {
-    /// ms since the last send attempt, success or failure
-    pub last_attempt_ms: Option<i64>,
-    /// ms since the last confirmed delivery
-    pub last_success_ms: Option<i64>,
-    pub consecutive_failures: u32,
 }
 
 // ---------------------------------------------------------------------------
@@ -411,18 +380,12 @@ pub struct ConnectorHealthDto {
 // ---------------------------------------------------------------------------
 
 /// Sets exactly one field, materializing its table if needed and touching
-/// nothing else — "set openrouter preserves telegram" is the tested
+/// nothing else — "set openrouter preserves other tables" is the tested
 /// contract (spec §7).
 pub fn merge_secret(doc: &mut SecretsDoc, field: SecretField, value: String) {
     match field {
         SecretField::OpenrouterApiKey => {
             doc.openrouter.get_or_insert_with(Default::default).api_key = Some(value);
-        }
-        SecretField::TelegramBotToken => {
-            doc.telegram.get_or_insert_with(Default::default).bot_token = Some(value);
-        }
-        SecretField::TelegramChatId => {
-            doc.telegram.get_or_insert_with(Default::default).chat_id = Some(value);
         }
     }
 }
@@ -433,16 +396,6 @@ pub fn secret_status(doc: &SecretsDoc) -> SecretStatus {
             .openrouter
             .as_ref()
             .and_then(|t| t.api_key.as_deref())
-            .map(mask),
-        telegram_bot_token: doc
-            .telegram
-            .as_ref()
-            .and_then(|t| t.bot_token.as_deref())
-            .map(mask),
-        telegram_chat_id: doc
-            .telegram
-            .as_ref()
-            .and_then(|t| t.chat_id.as_deref())
             .map(mask),
     }
 }
@@ -984,22 +937,6 @@ pub async fn search_news_now(
         }
     }
     Ok(enqueued)
-}
-
-#[tauri::command]
-pub async fn get_connector_health(
-    window: tauri::WebviewWindow,
-    engine: tauri::State<'_, Engine>,
-) -> Result<ConnectorHealthDto, String> {
-    ensure_settings_window(&window)?;
-    let health = engine.telegram_health();
-    let elapsed_ms =
-        |t: std::time::Instant| i64::try_from(t.elapsed().as_millis()).unwrap_or(i64::MAX);
-    Ok(ConnectorHealthDto {
-        last_attempt_ms: health.last_attempt.map(elapsed_ms),
-        last_success_ms: health.last_success.map(elapsed_ms),
-        consecutive_failures: health.consecutive_failures,
-    })
 }
 
 #[tauri::command]
@@ -1780,9 +1717,6 @@ mod tests {
                 crate::event::SourceKind::Football,
                 crate::event::SourceKind::Weather,
             ],
-            connectors: crate::config::Connectors {
-                telegram: crate::config::TelegramToggle { enabled: true },
-            },
             ..Config::default()
         };
 
@@ -1794,23 +1728,35 @@ mod tests {
     // --- secrets merge (pure) ---
 
     #[test]
-    fn setting_openrouter_preserves_telegram() {
+    fn setting_openrouter_preserves_extra_tables() {
+        // a leftover `[telegram]` table (or any other unmodeled table)
+        // must survive untouched through `extra` when a different field
+        // is set — the never-clobber contract (spec §7), now proven
+        // against the generic extra map rather than a modeled telegram
+        // table.
+        let mut extra = toml::Table::new();
+        let mut telegram = toml::Table::new();
+        telegram.insert("bot_token".into(), toml::Value::String("tok".into()));
+        telegram.insert("chat_id".into(), toml::Value::String("42".into()));
+        extra.insert("telegram".into(), toml::Value::Table(telegram));
+
         let mut doc = SecretsDoc {
-            telegram: Some(TelegramTable {
-                bot_token: Some("tok".into()),
-                chat_id: Some("42".into()),
-                ..Default::default()
-            }),
             openrouter: None,
-            ..Default::default()
+            extra,
         };
         merge_secret(&mut doc, SecretField::OpenrouterApiKey, "sk-or-key1".into());
         assert_eq!(
-            doc.telegram.as_ref().unwrap().bot_token.as_deref(),
+            doc.extra
+                .get("telegram")
+                .and_then(|v| v.get("bot_token"))
+                .and_then(|v| v.as_str()),
             Some("tok")
         );
         assert_eq!(
-            doc.telegram.as_ref().unwrap().chat_id.as_deref(),
+            doc.extra
+                .get("telegram")
+                .and_then(|v| v.get("chat_id"))
+                .and_then(|v| v.as_str()),
             Some("42")
         );
         assert_eq!(
@@ -1820,45 +1766,11 @@ mod tests {
     }
 
     #[test]
-    fn setting_telegram_token_preserves_openrouter_and_chat_id() {
-        let mut doc = SecretsDoc {
-            telegram: Some(TelegramTable {
-                bot_token: None,
-                chat_id: Some("42".into()),
-                ..Default::default()
-            }),
-            openrouter: Some(OpenRouterTable {
-                api_key: Some("sk-or-key1".into()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        merge_secret(&mut doc, SecretField::TelegramBotToken, "newtok".into());
-        assert_eq!(
-            doc.telegram.as_ref().unwrap().bot_token.as_deref(),
-            Some("newtok")
-        );
-        assert_eq!(
-            doc.telegram.as_ref().unwrap().chat_id.as_deref(),
-            Some("42")
-        );
-        assert_eq!(
-            doc.openrouter.as_ref().unwrap().api_key.as_deref(),
-            Some("sk-or-key1")
-        );
-    }
-
-    #[test]
-    fn secret_field_deserializes_exactly_three_names() {
-        for (name, expected) in [
-            ("\"openrouter_api_key\"", SecretField::OpenrouterApiKey),
-            ("\"telegram_bot_token\"", SecretField::TelegramBotToken),
-            ("\"telegram_chat_id\"", SecretField::TelegramChatId),
-        ] {
-            let parsed: SecretField = serde_json::from_str(name).unwrap();
-            assert_eq!(parsed, expected);
-        }
+    fn secret_field_deserializes_exactly_one_name() {
+        let parsed: SecretField = serde_json::from_str("\"openrouter_api_key\"").unwrap();
+        assert_eq!(parsed, SecretField::OpenrouterApiKey);
         assert!(serde_json::from_str::<SecretField>("\"detect_path\"").is_err());
+        assert!(serde_json::from_str::<SecretField>("\"telegram_bot_token\"").is_err());
     }
 
     #[test]
@@ -1874,18 +1786,14 @@ mod tests {
     #[test]
     fn status_reports_per_field_masked_presence() {
         let doc = SecretsDoc {
-            telegram: Some(TelegramTable {
-                bot_token: Some("longtoken1234".into()),
-                chat_id: None,
+            openrouter: Some(OpenRouterTable {
+                api_key: Some("longtoken1234".into()),
                 ..Default::default()
             }),
-            openrouter: None,
             ..Default::default()
         };
         let status = secret_status(&doc);
-        assert_eq!(status.telegram_bot_token.as_deref(), Some("set (…1234)"));
-        assert_eq!(status.telegram_chat_id, None);
-        assert_eq!(status.openrouter_api_key, None);
+        assert_eq!(status.openrouter_api_key.as_deref(), Some("set (…1234)"));
     }
 
     // --- write paths (temp dirs, never $HOME) ---
@@ -1926,35 +1834,56 @@ mod tests {
     }
 
     #[test]
-    fn secrets_write_is_0600_and_loads_via_the_strict_loader() {
+    fn secrets_write_is_0600_and_re_reads_via_load_secrets_doc() {
+        // the strict per-connector loader (`notifier::load_secrets`) was
+        // removed along with the telegram connector; this test now proves
+        // the write path's round-trip consumer contract through the
+        // generic doc loader instead: what the writer wrote, the reader
+        // reads back, on a 0600 file.
         use std::os::unix::fs::PermissionsExt;
         let dir = temp_dir();
-        set_secret_in(&dir, SecretField::TelegramBotToken, "tok12345".into()).unwrap();
-        set_secret_in(&dir, SecretField::TelegramChatId, "42".into()).unwrap();
+        set_secret_in(&dir, SecretField::OpenrouterApiKey, "sk-or-key12345".into()).unwrap();
 
         let path = dir.join("secrets.toml");
         let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
         assert_eq!(mode, 0o600);
 
-        // the v3 connector's own loader accepts what the v5 writer wrote
-        let secrets = crate::notifier::load_secrets(&path).unwrap();
-        assert_eq!(secrets.bot_token, "tok12345");
-        assert_eq!(secrets.chat_id, "42");
+        let doc = load_secrets_doc(&dir).unwrap();
+        assert_eq!(
+            doc.openrouter.unwrap().api_key.as_deref(),
+            Some("sk-or-key12345")
+        );
         assert!(no_tmp_leftovers(&dir));
         std::fs::remove_dir_all(&dir).ok();
     }
 
     #[test]
-    fn second_secret_write_preserves_the_first_on_disk() {
+    fn setting_openrouter_preserves_a_leftover_telegram_table_on_disk() {
+        // an operator's secrets.toml may still hold a `[telegram]` table
+        // left over from before the connector was removed — writing a
+        // different field must never clobber it (spec §7's never-clobber
+        // rule, now proven end-to-end through the write path rather than
+        // only against an in-memory doc).
+        use std::os::unix::fs::PermissionsExt;
         let dir = temp_dir();
-        set_secret_in(&dir, SecretField::TelegramBotToken, "tok12345".into()).unwrap();
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("secrets.toml");
+        std::fs::write(&path, "[telegram]\nbot_token = \"tok12345\"\n").unwrap();
+        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
+
         set_secret_in(&dir, SecretField::OpenrouterApiKey, "sk-or-key9".into()).unwrap();
 
         let doc = load_secrets_doc(&dir).unwrap();
-        assert_eq!(doc.telegram.unwrap().bot_token.as_deref(), Some("tok12345"));
         assert_eq!(
             doc.openrouter.unwrap().api_key.as_deref(),
             Some("sk-or-key9")
+        );
+        assert_eq!(
+            doc.extra
+                .get("telegram")
+                .and_then(|v| v.get("bot_token"))
+                .and_then(|v| v.as_str()),
+            Some("tok12345")
         );
         std::fs::remove_dir_all(&dir).ok();
     }

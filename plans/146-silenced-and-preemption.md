@@ -9,6 +9,13 @@ review passed — one real finding, the glanceable tray glyph, fixed.
 manual checks pending: tray mute/skip feel, interrupt animation look on
 real hardware, macbook notch pass)
 
+> **Note, 2026-07-27 (same day, after this plan shipped)**: the
+> telegram connector this plan references (Solution paragraph, story
+> 11, Out of Scope) was removed by operator decision shortly after.
+> silence remains display-only — it was never a connector concern to
+> begin with, and there is currently no shipped connector for it to
+> affect. read the telegram mentions below as historical.
+
 ## Problem Statement
 
 notchtap treats every hour the same. Overnight, cards rotate to an
@@ -28,8 +35,10 @@ Two connected changes.
 
 **Silenced** — a scheduled/timed quiet state distinct from Paused.
 While Silenced, Medium and Low events buffer exactly as under Paused
-(nothing dropped, Telegram and pollers untouched, idle clock/weather/
-Agent Board unchanged); a High event still promotes (**Breakthrough**)
+(nothing dropped; pollers untouched, idle clock/weather/Agent Board
+unchanged; silence is display-only and any connector fan-out — none
+shipped today — would be unaffected the same way); a High event still
+promotes (**Breakthrough**)
 as a compact card. Silence arrives two ways: the daily **Silent
 Period** (default on, 00:00–10:00 local wall clock) and manual **Timed
 Mutes** from the tray (30m / 1h / 2h presets, auto-resume). A tray
@@ -57,7 +66,7 @@ hotkey still works).
 8. As the operator, I want a Skip action when I sit down at 9:00, so that one click ends today's Silent Period without touching config.
 9. As the operator, I want the schedule to re-arm at the next midnight after a Skip, so that skipping today never disables tomorrow.
 10. As the operator, I want the tray Pause toggle and the `start_paused` Kill Switch to stay absolute, so that "show nothing" still means nothing — Breakthrough included.
-11. As the operator, I want Telegram forwarding untouched by silence, so that my phone (with its own night mode) remains the complete off-machine trail.
+11. As the operator, I want silence to be display-only, so that any outbound connector (Telegram, at the time this was written; removed 2026-07-27) forwards independently of the overlay's quiet hours — my phone (with its own night mode) remains the complete off-machine trail.
 12. As the operator, I want pollers to keep observing during silence, so that no score or news change is missed, only deferred.
 13. As the operator, I want the idle clock, weather peek, and Agent Board to behave normally while Silenced, so that the overlay stays alive as a status surface even when notifications are quiet.
 14. As the operator, I want the tray icon to tell me the engine is Silenced, so that a quiet overlay is distinguishable from a broken one.
@@ -154,7 +163,9 @@ hotkey still works).
 - Calendar-driven silence (Google Calendar busy blocks) — rejected:
   pulls OAuth/network into a loopback-only app.
 - Weekday/weekend schedule matrix and multiple daily windows.
-- Silencing Connectors — Telegram forwards everything, always.
+- Silencing Connectors — silence is display-only; a Connector (Telegram
+  shipped as the only one, then was removed 2026-07-27) would forward
+  everything, always, unaffected by it.
 - Dropping events (any tier) during silence or at wake; digest cards.
 - Hiding the overlay window during silence.
 - Per-source breakthrough exclusion lists.

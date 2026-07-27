@@ -93,6 +93,17 @@
   gap: 3px;
   border-top: 1px solid color-mix(in srgb, var(--overlay-fg) 14%, transparent);
   padding-top: 6px;
+  /* Bounded to the resting window frame — the fixed-size resting canvas
+     rust renders this into (`hover::WINDOW_HEIGHT`/`expand.rs`'s
+     `RESTING_WINDOW_HEIGHT`, 300px total) minus the hero block/shell
+     chrome above it (`expand.rs`'s own `HEADER_HEIGHT` conservative
+     estimate for that same content, 150px). This surface is NOT
+     interactive-scrollable (the expanded state is the scroll surface,
+     `.agent-board-expanded-scroll` above); rows past the cap are simply
+     clipped rather than growing the resting card taller or overflowing
+     the fixed frame. */
+  max-height: 150px;
+  overflow: hidden;
 }
 
 .card-root .agent-row {
@@ -185,7 +196,11 @@
 }
 
 .card-root .agent-stale {
-  --agent-accent: color-mix(in srgb, var(--overlay-fg) 40%, transparent);
+  /* 40% read as too low-contrast against the card background (operator
+     feedback, 2026-07-27) — raised to 62%, still visibly dimmer/more
+     desaturated than the four active-state accents above (Stale is
+     deliberately not one of them), but legible. */
+  --agent-accent: color-mix(in srgb, var(--overlay-fg) 62%, transparent);
 }
 
 /* Plan 142 (v7 ticket 10 of 13, spec §6.2 expanded): the hover-expanded
@@ -237,6 +252,19 @@
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* Plan 146 follow-up: a restrained line of small muted mono chips for
+   `project.cwd`/`host.name`/terminal "clears in" — same visual language
+   as the detail chips just below (wrapped row, small/muted), monospace
+   because these are path/host-like tokens rather than prose. */
+.card-root .agent-expanded-row-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 10px;
+  font-family: var(--font-mono);
+  color: color-mix(in srgb, var(--overlay-fg) 45%, transparent);
 }
 
 /* Capability-dependent detail cells (spec §6.2's own words): a wrapped

@@ -23,6 +23,8 @@ pub const MAX_TRANSITIONS_PER_SESSION: usize = 50;
 pub const MAX_REMEMBERED_EVENT_IDS: usize = 2048;
 /// Default `agents.terminal_retention_secs` (spec §2.1).
 pub const DEFAULT_TERMINAL_RETENTION: Duration = Duration::from_secs(600);
+/// Default `agents.stale_retention_secs` (plan 146 follow-up).
+pub const DEFAULT_STALE_RETENTION: Duration = Duration::from_secs(1800);
 
 /// The registry-internal normalized event — the input to
 /// [`AgentRegistry::apply_event`]. This is deliberately a superset of
@@ -143,21 +145,28 @@ pub struct AgentRegistry {
     /// so repeated collisions on the same id keep producing distinct
     /// keys.
     reuse_generations: HashMap<AgentSessionKey, u32>,
-    // Both read by `tick`/`ordered_states`, which ticket 136 wires into
-    // the live `agent-state` publish path (`agents/board.rs`'s
-    // `AgentBoardPublisher`) — `stale_after`/`terminal_retention_secs`
-    // config wiring (currently hardcoded spec defaults at the `lib.rs`
-    // construction site) is still plan 137's job.
+    // Both read by `tick`/`ordered_states`, wired into the live
+    // `agent-state` publish path (`agents/board.rs`'s
+    // `AgentBoardPublisher`) from real `[agents]` config at the
+    // `lib.rs` construction site (plan 137). `stale_retention` mirrors
+    // `terminal_retention`'s role for `Stale` sessions (plan 146
+    // follow-up) — see `tick`'s doc.
     stale_after: Duration,
     terminal_retention: Duration,
+    stale_retention: Duration,
 }
 
 impl AgentRegistry {
-    /// `stale_after` and `terminal_retention` are both injected
-    /// constructor parameters — config wiring (`agents.stale_after_secs`,
-    /// `agents.terminal_retention_secs`) lands in plan 137. Use
-    /// [`DEFAULT_TERMINAL_RETENTION`] for the spec's default retention.
-    pub fn new(stale_after: Duration, terminal_retention: Duration) -> Self {
+    /// `stale_after`, `terminal_retention`, and `stale_retention` are all
+    /// injected constructor parameters, sourced from `agents.stale_after_secs`,
+    /// `agents.terminal_retention_secs`, and `agents.stale_retention_secs`
+    /// respectively. Use [`DEFAULT_TERMINAL_RETENTION`] for the spec's
+    /// default terminal retention.
+    pub fn new(
+        stale_after: Duration,
+        terminal_retention: Duration,
+        stale_retention: Duration,
+    ) -> Self {
         Self {
             sessions: HashMap::new(),
             seen_event_ids: HashSet::new(),
@@ -165,6 +174,7 @@ impl AgentRegistry {
             reuse_generations: HashMap::new(),
             stale_after,
             terminal_retention,
+            stale_retention,
         }
     }
 
@@ -286,7 +296,12 @@ impl AgentRegistry {
     /// this same rule applies to them too, just not any TTL-style
     /// rotation). Terminal sessions past `terminal_retention` since
     /// going terminal are purged from the live registry entirely (spec:
-    /// "then leave the live registry view").
+    /// "then leave the live registry view"), and — mirroring that —
+    /// `Stale` sessions past `stale_retention` since entering `Stale`
+    /// are purged too, using `state_entered_at` (reset the instant a
+    /// session goes `Stale`, above) as the stale-entry timestamp. Without
+    /// this a stale session would sit on the board forever, permanently
+    /// suppressing the idle face.
     ///
     /// Driven by `agents::board::AgentBoardPublisher::spawn_tick`'s
     /// periodic loop (ticket 136), mirroring the Engine's own rotation
@@ -304,13 +319,16 @@ impl AgentRegistry {
             }
         }
         let terminal_retention = self.terminal_retention;
-        self.sessions
-            .retain(|_, session| match session.terminal_at {
-                Some(terminal_at) => {
-                    now.saturating_duration_since(terminal_at) < terminal_retention
-                }
-                None => true,
-            });
+        let stale_retention = self.stale_retention;
+        self.sessions.retain(|_, session| {
+            if let Some(terminal_at) = session.terminal_at {
+                return now.saturating_duration_since(terminal_at) < terminal_retention;
+            }
+            if session.state == AgentSessionState::Stale {
+                return now.saturating_duration_since(session.state_entered_at) < stale_retention;
+            }
+            true
+        });
     }
 
     /// The Agent Board ordering (spec §2.2): urgency class, then
@@ -415,7 +433,11 @@ mod tests {
     }
 
     fn registry() -> AgentRegistry {
-        AgentRegistry::new(Duration::from_secs(300), DEFAULT_TERMINAL_RETENTION)
+        AgentRegistry::new(
+            Duration::from_secs(300),
+            DEFAULT_TERMINAL_RETENTION,
+            DEFAULT_STALE_RETENTION,
+        )
     }
 
     // --- §2.1 transition rules -------------------------------------
@@ -676,7 +698,11 @@ mod tests {
 
     #[test]
     fn terminal_sessions_are_purged_after_retention() {
-        let mut reg = AgentRegistry::new(Duration::from_secs(300), Duration::from_secs(600));
+        let mut reg = AgentRegistry::new(
+            Duration::from_secs(300),
+            Duration::from_secs(600),
+            DEFAULT_STALE_RETENTION,
+        );
         let now = Instant::now();
         let k = key(AgentRuntime::Codex, "s1");
         reg.apply_event(event(k.clone(), "e1", AgentEventKind::Completed, true), now);
@@ -685,6 +711,56 @@ mod tests {
         assert_eq!(reg.session_count(), 1);
         reg.tick(now + Duration::from_secs(600));
         assert_eq!(reg.session_count(), 0);
+    }
+
+    #[test]
+    fn stale_sessions_are_purged_after_stale_retention() {
+        // stale_after=300, stale_retention=600: a session goes Stale at
+        // t=300 (no events since t=0) and must be purged once it has
+        // been Stale for 600s, i.e. at t=900 — not before.
+        let mut reg = AgentRegistry::new(
+            Duration::from_secs(300),
+            DEFAULT_TERMINAL_RETENTION,
+            Duration::from_secs(600),
+        );
+        let now = Instant::now();
+        let k = key(AgentRuntime::Codex, "s1");
+        reg.apply_event(
+            event(k.clone(), "e1", AgentEventKind::Informational, false),
+            now,
+        );
+        reg.tick(now + Duration::from_secs(300));
+        assert_eq!(reg.get(&k).unwrap().state, AgentSessionState::Stale);
+        reg.tick(now + Duration::from_secs(899));
+        assert_eq!(reg.session_count(), 1);
+        reg.tick(now + Duration::from_secs(900));
+        assert_eq!(reg.session_count(), 0);
+    }
+
+    #[test]
+    fn live_non_stale_sessions_are_never_purged_by_stale_retention() {
+        // stale_after=300 > stale_retention=100: were `stale_retention`
+        // mistakenly applied to every non-terminal session rather than
+        // only ones already `Stale`, this session would be purged well
+        // before it ever goes stale. It must survive untouched.
+        let mut reg = AgentRegistry::new(
+            Duration::from_secs(300),
+            DEFAULT_TERMINAL_RETENTION,
+            Duration::from_secs(100),
+        );
+        let now = Instant::now();
+        let k = key(AgentRuntime::Codex, "s1");
+        reg.apply_event(
+            event(k.clone(), "e1", AgentEventKind::Informational, false),
+            now,
+        );
+        reg.apply_event(
+            event(k.clone(), "e2", AgentEventKind::Informational, false),
+            now,
+        );
+        reg.tick(now + Duration::from_secs(299));
+        assert_eq!(reg.session_count(), 1);
+        assert_eq!(reg.get(&k).unwrap().state, AgentSessionState::Working);
     }
 
     #[test]

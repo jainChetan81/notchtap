@@ -15,7 +15,7 @@ use tokio::sync::Mutex;
 use crate::error::QueueError;
 use crate::event::{emit_slot_state, Event, RotationSpec, SlotState, SourceKind};
 use crate::history::HistoryStore;
-use crate::notifier::{ConnectorHandle, ConnectorHealth};
+use crate::notifier::ConnectorHandle;
 use crate::queue::SingleSlotQueue;
 use crate::status::{
     emit_status_state, status_state_if_changed, LiveMatchSummary, NowPlayingSummary, StatusInputs,
@@ -98,7 +98,6 @@ pub struct Engine<R: tauri::Runtime = tauri::Wry> {
     wake: Arc<tokio::sync::Notify>,
     app: tauri::AppHandle<R>,
     connectors: Arc<Vec<ConnectorHandle>>,
-    telegram_health: Arc<StdMutex<ConnectorHealth>>,
     live: AmbientSlot<LiveMatchSummary>,
     weather: AmbientSlot<WeatherSummary>,
     /// plan 104: the now-playing ambient summary — same `AmbientSlot`
@@ -131,7 +130,6 @@ impl<R: tauri::Runtime> Clone for Engine<R> {
             wake: self.wake.clone(),
             app: self.app.clone(),
             connectors: self.connectors.clone(),
-            telegram_health: self.telegram_health.clone(),
             live: self.live.clone(),
             weather: self.weather.clone(),
             now_playing: self.now_playing.clone(),
@@ -169,7 +167,6 @@ impl<R: tauri::Runtime> Engine<R> {
         queue: SingleSlotQueue,
         app: tauri::AppHandle<R>,
         connectors: Arc<Vec<ConnectorHandle>>,
-        telegram_health: Arc<StdMutex<ConnectorHealth>>,
         espn_enabled: bool,
         rss_enabled: bool,
         weather_enabled: bool,
@@ -181,7 +178,6 @@ impl<R: tauri::Runtime> Engine<R> {
             wake: Arc::new(tokio::sync::Notify::new()),
             app,
             connectors,
-            telegram_health,
             live: AmbientSlot::new(),
             weather: AmbientSlot::new(),
             now_playing: AmbientSlot::new(),
@@ -193,25 +189,7 @@ impl<R: tauri::Runtime> Engine<R> {
         }
     }
 
-    /// Read accessor for the telegram connector's delivery health
-    /// (plan 076): the notifier worker writes through the shared `Arc`,
-    /// the settings window's `get_connector_health` command reads it
-    /// here. Unlike `live`/`weather` the `Arc` is passed in — the worker
-    /// lives outside `Engine` and needs a writable clone (same shape as
-    /// `connectors`). Clones the guarded value out; `ConnectorHealth` is
-    /// `Copy`.
-    pub fn telegram_health(&self) -> ConnectorHealth {
-        // poison-tolerant (codebase convention, see settings.rs): a panic
-        // in the notifier worker while it holds this lock must not wedge
-        // the settings window's health read behind a poisoned Mutex.
-        *self
-            .telegram_health
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-    }
-
-    /// Read accessor for the shared history store, mirroring
-    /// `telegram_health`'s pattern: the settings window's
+    /// Read accessor for the shared history store: the settings window's
     /// `get_history`/`clear_history` commands (`settings.rs`) call this
     /// to reach the SAME `Arc<HistoryStore>` the accept path in `accept`
     /// (above) appends through, rather than opening a second
@@ -586,7 +564,6 @@ mod tests {
             SingleSlotQueue::new(50),
             app.handle().clone(),
             Arc::new(Vec::new()),
-            Arc::new(StdMutex::new(ConnectorHealth::default())),
             true,
             true,
             false,
@@ -657,7 +634,6 @@ mod tests {
             SingleSlotQueue::new(50),
             app.handle().clone(),
             Arc::new(vec![connector]),
-            Arc::new(StdMutex::new(ConnectorHealth::default())),
             true,
             true,
             false,
@@ -688,7 +664,6 @@ mod tests {
             SingleSlotQueue::new(1),
             app.handle().clone(),
             Arc::new(vec![connector]),
-            Arc::new(StdMutex::new(ConnectorHealth::default())),
             true,
             true,
             false,
@@ -955,7 +930,6 @@ mod tests {
             SingleSlotQueue::new(50),
             app.handle().clone(),
             Arc::new(Vec::new()),
-            Arc::new(StdMutex::new(ConnectorHealth::default())),
             true,
             false,
             false,
@@ -1088,7 +1062,6 @@ mod tests {
             SingleSlotQueue::new(50),
             app.handle().clone(),
             Arc::new(Vec::new()),
-            Arc::new(StdMutex::new(ConnectorHealth::default())),
             true,
             true,
             false,
@@ -1119,7 +1092,6 @@ mod tests {
             SingleSlotQueue::new(50),
             app.handle().clone(),
             Arc::new(Vec::new()),
-            Arc::new(StdMutex::new(ConnectorHealth::default())),
             true,
             true,
             false,
@@ -1183,7 +1155,6 @@ mod tests {
             SingleSlotQueue::new(50),
             app.handle().clone(),
             Arc::new(Vec::new()),
-            Arc::new(StdMutex::new(ConnectorHealth::default())),
             true,
             true,
             false,

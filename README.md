@@ -25,7 +25,6 @@ branches at runtime.
   plain arrival order
 - news items render as status-rail cards and are overlay-only — never
   relayed outbound
-- outbound: accepted events (except news) are relayed to Telegram
 - a settings window (opened from the tray) edits config and secrets;
   saving relaunches the app — there's no hot-reload
 - renders as a slick, animated overlay — notch-cutout-aware on the

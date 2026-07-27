@@ -249,6 +249,7 @@ pub fn run() {
     let agent_stale_after = std::time::Duration::from_secs(agents_config.stale_after_secs);
     let agent_terminal_retention =
         std::time::Duration::from_secs(agents_config.terminal_retention_secs);
+    let agent_stale_retention = std::time::Duration::from_secs(agents_config.stale_retention_secs);
     let weather_enabled = config.weather_enabled;
     let weather_lat = config.weather_lat;
     let weather_lon = config.weather_lon;
@@ -269,35 +270,11 @@ pub fn run() {
     let silence_schedule_enabled = config.silence.enabled;
     let silence_window = config.silence.window;
 
-    // v3 outbound connectors: built here (channel needs no runtime), the
-    // worker future is spawned in setup once the runtime exists. missing
-    // or badly-permissioned secrets disable the connector with a warning —
-    // the app runs overlay-only (v3 spec §4).
-    let mut connector_handles = Vec::new();
-    let mut telegram_worker = None;
-    // plan 076: the connector-health Arc exists even when the connector is
-    // disabled — Engine::new requires a value either way, and for a
-    // disabled connector the accessor reads as "no deliveries yet".
-    let telegram_health = Arc::new(StdMutex::new(notifier::ConnectorHealth::default()));
-    if config.connectors.telegram.enabled {
-        match notifier::default_secrets_path() {
-            Some(path) => match notifier::load_secrets(&path) {
-                Ok(secrets) => {
-                    let (handle, worker) = notifier::telegram_connector(
-                        secrets,
-                        notifier::TELEGRAM_API_BASE.to_string(),
-                        notifier::RETRY_DELAY,
-                        telegram_health.clone(),
-                    );
-                    connector_handles.push(handle);
-                    telegram_worker = Some(worker);
-                    tracing::info!("telegram connector enabled");
-                }
-                Err(e) => tracing::warn!("telegram connector disabled: {e}"),
-            },
-            None => tracing::warn!("telegram connector disabled: no home directory"),
-        }
-    }
+    // v3 outbound connectors: built here (channel needs no runtime), any
+    // worker future would be spawned in setup once the runtime exists. no
+    // connectors are wired up currently — the fan-out framework
+    // (`ConnectorHandle`) stays in place for a future connector (plan 128).
+    let connector_handles: Vec<notifier::ConnectorHandle> = Vec::new();
     let connectors = Arc::new(connector_handles);
     let server_once = Arc::new(Once::new());
 
@@ -310,7 +287,6 @@ pub fn run() {
             settings::clear_history,
             settings::clear_queue,
             settings::get_config,
-            settings::get_connector_health,
             settings::get_default_config,
             settings::get_history,
             settings::get_queue,
@@ -376,7 +352,6 @@ pub fn run() {
                 initial_queue,
                 app.handle().clone(),
                 connectors.clone(),
-                telegram_health.clone(),
                 espn_enabled,
                 rss_enabled,
                 weather_enabled,
@@ -404,13 +379,18 @@ pub fn run() {
             // like `engine` above so both the HTTP layer (`http::AppState`,
             // below) and later tickets (IPC, settings) can reach the same
             // instance via `AppHandle::state`. `stale_after`/
-            // `terminal_retention` now come from real `[agents]` config
-            // (`agent_stale_after`/`agent_terminal_retention`, hoisted
-            // above from `config.agents.stale_after_secs`/
-            // `terminal_retention_secs`) rather than the spec-default
+            // `terminal_retention`/`stale_retention` now come from real
+            // `[agents]` config (`agent_stale_after`/`agent_terminal_retention`/
+            // `agent_stale_retention`, hoisted above from
+            // `config.agents.stale_after_secs`/`terminal_retention_secs`/
+            // `stale_retention_secs`) rather than the spec-default
             // hardcodes plan 134 shipped with.
             let agent_registry = agents::registry::AgentRegistryHandle::new(
-                agents::registry::AgentRegistry::new(agent_stale_after, agent_terminal_retention),
+                agents::registry::AgentRegistry::new(
+                    agent_stale_after,
+                    agent_terminal_retention,
+                    agent_stale_retention,
+                ),
             );
             app.manage(agent_registry.clone());
 
@@ -820,9 +800,6 @@ pub fn run() {
             }
 
             login_item::register();
-            if let Some(worker) = telegram_worker {
-                tauri::async_runtime::spawn(worker);
-            }
             // v6: polling is enabled/disabled once at boot from Config and
             // never flipped again (no longer tray-toggleable — the tray's
             // "Pause Football Scores"/"Pause News" items were redundant
@@ -2005,7 +1982,6 @@ mod tests {
             SingleSlotQueue::new(50),
             app.handle().clone(),
             Arc::new(Vec::new()),
-            Arc::new(StdMutex::new(notifier::ConnectorHealth::default())),
             false,
             false,
             false,

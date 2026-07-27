@@ -33,7 +33,7 @@ import { NewsSection } from "./sections/NewsSection";
 import { QueueSection } from "./sections/QueueSection";
 import { ShortcutsSection } from "./sections/ShortcutsSection";
 import { WeatherSection } from "./sections/WeatherSection";
-import type { Config, ConnectorHealthDto, SecretStatus } from "./types";
+import type { Config, SecretStatus } from "./types";
 
 // Type re-exports (plan 119): SettingsApp.tsx used to define every wire
 // type inline; they now live in ./types so sections/controls/ipc can
@@ -43,7 +43,6 @@ export type {
   AboutInfo,
   AppearanceConfig,
   Config,
-  ConnectorHealthDto,
   HistoryDetailItem,
   HistoryEntry,
   HistoryEspnMeta,
@@ -117,7 +116,7 @@ const sectionCopy: Record<SectionId, { index: string; title: string; description
   connectors: {
     index: "05",
     title: "Connectors & Keys",
-    description: "Configure outbound Telegram delivery and write-only credentials.",
+    description: "Manage write-only credentials for outbound integrations.",
   },
   agents: {
     index: "06",
@@ -164,7 +163,6 @@ function copyConfig(config: Config): Config {
     rss_feeds: config.rss_feeds.map((feed) => ({ ...feed })),
     rss_topics: [...config.rss_topics],
     rotation_order: [...config.rotation_order],
-    connectors: { telegram: { ...config.connectors.telegram } },
   };
 }
 
@@ -240,7 +238,6 @@ export function SettingsApp() {
   const [lastLoadedConfig, setLastLoadedConfig] = useState<Config | null>(null);
   const [defaults, setDefaults] = useState<Config | null>(null);
   const [secretStatus, setSecretStatus] = useState<SecretStatus | null>(null);
-  const [connectorHealth, setConnectorHealth] = useState<ConnectorHealthDto | null>(null);
   const [espnLeaguesText, setEspnLeaguesText] = useState("");
   const [rssFeedsText, setRssFeedsText] = useState("");
   const [rssTopicsText, setRssTopicsText] = useState("");
@@ -250,10 +247,9 @@ export function SettingsApp() {
   // failure survives regardless of which section is open. See
   // AppearanceSection's applyAppearanceLive prop.
   const appearanceStatus = useActionStatus("appearance-live-apply");
-  // Defaults-fetch and connector-health are both passive, mount/poll-only
-  // reads (plan 108) — never announced.
+  // Defaults-fetch is a passive, mount-only read (plan 108) — never
+  // announced.
   const defaultsStatus = useActionStatus("defaults");
-  const connectorHealthStatus = useActionStatus("connector-health");
 
   function runAppearanceApply(scale: number, radius: number, opacity: number) {
     void appearanceStatus.run(() => settingsInvoke("set_appearance", { scale, radius, opacity }), {
@@ -308,38 +304,6 @@ export function SettingsApp() {
     );
     return () => {
       active = false;
-    };
-  }, []);
-
-  // Connector health is advisory like get_default_config — fetched on its
-  // own, isolated from the critical panel load, and refreshed on a light
-  // polling interval so a run of drops surfaces without a window reopen.
-  // A failed or unknown fetch leaves the data-driven line hidden, same as
-  // before — but the read failure itself is now transition-only inline
-  // status (plan 108): connectorHealthStatus's dedup (see useActionStatus)
-  // means back-to-back identical poll failures collapse into a single
-  // render/transition, never aria-live (a poll is never user-initiated).
-  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only poll setup — connectorHealthStatus.run is a fresh closure every render, adding it would tear down and restart the interval on every render.
-  useEffect(() => {
-    let active = true;
-    const fetchHealth = () => {
-      void connectorHealthStatus.run(
-        () =>
-          settingsInvoke("get_connector_health").then((health) => {
-            if (active && health) setConnectorHealth(health);
-          }),
-        {
-          announce: false,
-          showPending: false,
-          errorMessage: () => "Health unavailable",
-        },
-      );
-    };
-    fetchHealth();
-    const interval = setInterval(fetchHealth, 5000);
-    return () => {
-      active = false;
-      clearInterval(interval);
     };
   }, []);
 
@@ -501,11 +465,7 @@ export function SettingsApp() {
                     ) : null}
                     {activeSection === "connectors" ? (
                       <ConnectorsSection
-                        config={config}
                         secretStatus={secretStatus}
-                        connectorHealth={connectorHealth}
-                        connectorHealthStatus={connectorHealthStatus.status}
-                        patchConfig={patchConfig}
                         refreshSecretStatus={refreshSecretStatus}
                       />
                     ) : null}

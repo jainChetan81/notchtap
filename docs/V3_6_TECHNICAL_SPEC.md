@@ -21,7 +21,8 @@ retrievable via `git log -- docs/archive/`.)
 this is the **biggest architectural change since v1**. it does not
 replace `archive/V3_TECHNICAL_SPEC.md` (telegram/notifier — shipped, tested,
 unrelated seam; removed at repo close-out 2026-07-23,
-see `git log -- docs/archive/`) — it replaces the *display* half of v1/v2/v3.5: the
+see `git log -- docs/archive/`; the telegram connector itself was later
+removed 2026-07-27, see `ARCHITECTURE.md` §7) — it replaces the *display* half of v1/v2/v3.5: the
 3-item TTL stack, the pill/grow/mini shape table, and the frontend's
 self-timed dismissal.
 

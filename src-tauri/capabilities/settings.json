@@ -1,7 +1,7 @@
 {
   "$schema": "../gen/schemas/desktop-schema.json",
   "identifier": "settings",
-  "description": "Settings window only: the eighteen settings commands (v5's sixteen plus v7 ticket 143's get_agent_health/send_agent_test_event) plus event listen (V5_TECHNICAL_SPEC.md §2, V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md §8). The overlay's default.json must never gain any of these.",
+  "description": "Settings window only: the seventeen settings commands (v5's sixteen plus v7 ticket 143's get_agent_health/send_agent_test_event, minus the telegram-connector removal's get_connector_health) plus event listen (V5_TECHNICAL_SPEC.md §2, V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md §8). The overlay's default.json must never gain any of these.",
   "windows": ["settings"],
   "permissions": [
     "allow-clear-history",
@@ -9,7 +9,6 @@
     "allow-get-about-info",
     "allow-get-agent-health",
     "allow-get-config",
-    "allow-get-connector-health",
     "allow-get-default-config",
     "allow-get-history",
     "allow-get-queue",

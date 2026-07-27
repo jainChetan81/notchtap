@@ -175,22 +175,26 @@ async fn deliver_kimi(stdin: &[u8]) -> ExitCode {
 
 const KNOWN_RUNTIMES: [&str; 4] = ["claude-code", "codex", "kimi", "opencode"];
 
-/// `notchtap-agent test <runtime>` posts a synthetic, non-terminal
-/// `completed` schema-v1 event — a per-turn "Stop" stand-in — so a user
+/// `notchtap-agent test <runtime>` posts a synthetic, terminal
+/// `completed` schema-v1 event — a session-end stand-in — so a user
 /// can verify their notchtap install/wiring produces an actual VISIBLE
 /// card, not just a silent registry update. Fix 2 (review batch,
 /// 2026-07-26): this used to post an `informational` event, which is
 /// suppressed by default (spec §5's table: Informational is "off by
 /// default") — a user running this command would see nothing happen and
-/// have no way to tell working from broken. `completed`+`terminal:false`
+/// have no way to tell working from broken. `completed`+`terminal:true`
 /// is always noteworthy (spec §5: "Completed | Medium | one-shot (both
-/// per-turn Stop and session end)") and, per the operator's 2026-07-26
-/// per-turn-Stop decision, lands the session in `WaitingForInput` on the
-/// Agent Board rather than a terminal row — matching what a real Stop
-/// hook now does. Unlike `hook`, this is an interactive command: it
-/// prints its outcome and returns a non-zero exit code on failure (a user
-/// running this by hand wants to know it didn't work, unlike a hook that
-/// must never block a provider).
+/// per-turn Stop and session end)"). Fix (operator feedback, 2026-07-27):
+/// this used to post `terminal:false`, which never sets `terminal_at` —
+/// the registry's terminal sweep (`agents::registry::AgentRegistry::tick`)
+/// only evicts sessions that have gone terminal, so a `terminal:false`
+/// test event sat on the Agent Board forever, permanently suppressing
+/// the idle face. Posting a genuinely terminal `Completed` state instead
+/// makes the test session evict after `agents.terminal_retention_secs`
+/// like any real completed turn. Unlike `hook`, this is an interactive
+/// command: it prints its outcome and returns a non-zero exit code on
+/// failure (a user running this by hand wants to know it didn't work,
+/// unlike a hook that must never block a provider).
 async fn run_test(runtime: Option<&str>) -> ExitCode {
     let Some(runtime) = runtime else {
         eprintln!("usage: notchtap-agent test <claude-code|codex|kimi|opencode>");
@@ -214,10 +218,10 @@ async fn run_test(runtime: Option<&str>) -> ExitCode {
         "occurredAtMs": occurred_at_ms(),
         "nativeEvent": "notchtap-agent test",
         "kind": "completed",
-        "state": "waiting_for_input",
+        "state": "completed",
         "summary": format!("Test event from `notchtap-agent test {runtime}` — turn completed"),
         "capabilities": ["session_lifecycle", "completion"],
-        "terminal": false,
+        "terminal": true,
     });
 
     let port = delivery::resolve_port();

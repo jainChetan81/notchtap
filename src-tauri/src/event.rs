@@ -519,7 +519,7 @@ mod tests {
 
     #[test]
     fn unknown_source_kind_is_rejected_at_deserialization() {
-        assert!(serde_json::from_str::<SourceKind>(r#""telegram""#).is_err());
+        assert!(serde_json::from_str::<SourceKind>(r#""pigeon""#).is_err());
     }
 
     // plan 137 (spec §7): the legacy `"cmux"` literal is a one-release

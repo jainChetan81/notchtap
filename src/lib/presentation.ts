@@ -341,6 +341,23 @@ export function elapsedLabel(elapsedMs: number): string {
   return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
 }
 
+// Plan 146 follow-up (operator feedback, 2026-07-27): the Agent Board's
+// expanded rows surface `project.cwd` verbatim — an absolute path is
+// wide and mostly noise once you already know it's under the user's
+// home directory. This is a display-only heuristic, not a real
+// `$HOME` lookup: the receive-only overlay has no OS/env access (no
+// invoke commands ride the main window, CLAUDE.md's ipc/security
+// section), so it pattern-matches the two conventional per-user home
+// prefixes (`/Users/<name>` macOS, `/home/<name>` Linux) rather than
+// resolving an actual home directory.
+export function abbreviateHome(path: string): string {
+  const match = path.match(/^\/(?:Users|home)\/[^/]+(\/.*)?$/);
+  if (!match) {
+    return path;
+  }
+  return `~${match[1] ?? ""}`;
+}
+
 export function ageLabel(publishedAtMs: number | null, nowMs: number): string | null {
   if (publishedAtMs === null) {
     return null;
