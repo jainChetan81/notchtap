@@ -4,6 +4,9 @@ version = "0.1.0"
 description = "macOS notch/hud notification overlay"
 authors = ["chetanjain"]
 edition = "2021"
+# Two binary targets exist since plan 138 added `notchtap-agent`; tauri's
+# bundler needs to know which one is the app.
+default-run = "notchtap"
 
 [lib]
 name = "notchtap_lib"
