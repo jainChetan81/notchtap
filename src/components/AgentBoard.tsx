@@ -30,6 +30,24 @@ import { StatusDots } from "./StatusDots";
 
 const NOW_TICK_MS = 1000;
 
+// Operator feedback (plan 147 follow-up, 2026-07-27): session rows used
+// to pop in/out of the DOM with no exit animation, so a removal (retention
+// expiry, stale eviction, a session dropping out of the snapshot) made
+// siblings jump instead of gliding into the vacated space. Apple's
+// "Designing Fluid Interfaces": these rows carry no gesture momentum to
+// preserve on exit (nothing here is a flung/dragged object), so the spring
+// is CRITICALLY DAMPED (`bounce: 0` — no overshoot), with a settle time
+// (`duration: 0.35`) fast enough to read as a direct response to the
+// underlying state change rather than a lingering flourish. One shared
+// const drives enter, exit, AND layout (sibling reflow) — this is the
+// same failure class CLAUDE.md calls out for `dedup_eq`ish drift bugs:
+// three hand-copied transition literals invite desynced clocks, one
+// const can't.
+// Exported so the test file can pin these exact values without
+// duplicating them (a second hand-copied literal in the test would be
+// exactly the "desynced clocks" drift risk this const exists to avoid).
+export const ROW_TRANSITION = { type: "spring", bounce: 0, duration: 0.35 } as const;
+
 /// Local wall-clock tick — re-renders the board once a second so every
 /// row's elapsed-in-state label stays live, WITHOUT rust publishing a
 /// per-second `agent-state` event (CLAUDE.md's `dedup_eq` rule: a
@@ -65,7 +83,19 @@ function AgentRow({
   const presentation = agentStatePresentationFor(session.state);
   const projectName = session.project?.name ?? null;
   return (
-    <div className={`agent-row ${presentation.className} ${agentRuntimeClass(session.runtime)}`}>
+    // `layout="position"` (not the full `layout` prop) — this row's own
+    // height is already explicitly driven by `initial`/`animate`/`exit`
+    // below, so layout only needs to smooth the sibling REFLOW (position),
+    // not fight that explicit height animation for the same property.
+    <motion.div
+      layout="position"
+      initial={{ height: 0, opacity: 0 }}
+      animate={{ height: "auto", opacity: 1 }}
+      exit={{ height: 0, opacity: 0 }}
+      transition={ROW_TRANSITION}
+      style={{ overflow: "hidden" }}
+      className={`agent-row ${presentation.className} ${agentRuntimeClass(session.runtime)}`}
+    >
       <span className={`agent-dot ${presentation.pulse ? "pulse" : ""}`} aria-hidden="true" />
       <span className="agent-runtime-tick" aria-hidden="true" />
       <span className="agent-row-runtime">{agentRuntimeLabel(session.runtime)}</span>
@@ -74,7 +104,7 @@ function AgentRow({
       <span className="agent-row-elapsed">
         {elapsedLabel(liveElapsedMs(session, capturedAtMs, nowMs))}
       </span>
-    </div>
+    </motion.div>
   );
 }
 
@@ -322,22 +352,45 @@ export function AgentBoard({
               style={{ overflow: "hidden" }}
             >
               <div className="agent-board-expanded-scroll">
-                {sessions.map((session, index) => (
-                  <motion.div
-                    key={session.id}
-                    initial={{ opacity: 0, y: -6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    // plan 142: a light per-row stagger (organic, not
-                    // mechanical — capped so a 30-session board doesn't
-                    // take seconds to finish entering) mirrors the
-                    // "rows animate in staggered/organically" guideline;
-                    // exit skips the stagger (collapsing should feel
-                    // immediate, not trickle out row by row).
-                    transition={{ delay: Math.min(index, 8) * 0.02, duration: 0.16 }}
-                  >
-                    <ExpandedAgentRow session={session} capturedAtMs={capturedAtMs} nowMs={nowMs} />
-                  </motion.div>
-                ))}
+                {/* `initial={false}` mirrors the two outer `AnimatePresence`
+                    blocks in this file (the resting/expanded swap above,
+                    the per-row history disclosure in `ExpandedAgentRow`) —
+                    the whole board mounting (or `expanded` flipping true
+                    for the first time) shouldn't stagger-animate every
+                    already-present row in; only a genuine per-session
+                    add/remove/reorder after that should animate. Default
+                    ("sync") mode, not "wait" — an exit and its siblings'
+                    reflow must play concurrently, not sequentially, or a
+                    removal reads as two separate beats instead of one
+                    fluid motion. */}
+                <AnimatePresence initial={false}>
+                  {sessions.map((session) => (
+                    // Row exit/enter/reflow share ONE transition
+                    // (`ROW_TRANSITION`, see its own comment above) — same
+                    // spring for a departing row's collapse, an arriving
+                    // row's expand, and `layout="position"`'s reflow of
+                    // everything in between, per the "mirror the exit path
+                    // exactly" spatial-consistency rule. Overflow hidden on
+                    // THIS row (not the `.agent-board-expanded-scroll`
+                    // container, which keeps its own `overflow-y: auto`)
+                    // so the collapsing row doesn't spill during animation.
+                    <motion.div
+                      key={session.id}
+                      layout="position"
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      transition={ROW_TRANSITION}
+                      style={{ overflow: "hidden" }}
+                    >
+                      <ExpandedAgentRow
+                        session={session}
+                        capturedAtMs={capturedAtMs}
+                        nowMs={nowMs}
+                      />
+                    </motion.div>
+                  ))}
+                </AnimatePresence>
               </div>
             </motion.div>
           ) : (
@@ -356,14 +409,26 @@ export function AgentBoard({
                 }}
                 style={{ overflow: "hidden" }}
               >
-                {rest.map((session) => (
-                  <AgentRow
-                    key={session.id}
-                    session={session}
-                    capturedAtMs={capturedAtMs}
-                    nowMs={nowMs}
-                  />
-                ))}
+                {/* `initial={false}` (matching the outer swap this block
+                    lives inside, and `ExpandedAgentRow`'s inner list above)
+                    — this block itself already fades/grows in as a whole
+                    on first mount, so the individual rows inside it
+                    shouldn't ALSO stagger-animate in on top of that; only
+                    a genuine per-session add/remove/reorder afterward
+                    should trigger `AgentRow`'s own enter/exit. Default
+                    ("sync") mode so an exit and the resulting sibling
+                    reflow (via `AgentRow`'s `layout="position"`) play
+                    concurrently, same reasoning as the expanded list. */}
+                <AnimatePresence initial={false}>
+                  {rest.map((session) => (
+                    <AgentRow
+                      key={session.id}
+                      session={session}
+                      capturedAtMs={capturedAtMs}
+                      nowMs={nowMs}
+                    />
+                  ))}
+                </AnimatePresence>
               </motion.div>
             )
           )}

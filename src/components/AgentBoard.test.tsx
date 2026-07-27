@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AgentSessionView } from "../useAgentState";
-import { AgentBoard } from "./AgentBoard";
+import { AgentBoard, ROW_TRANSITION } from "./AgentBoard";
 
 // this project's vitest config doesn't set `test.globals`, so RTL's
 // auto-cleanup (hooked off a global `afterEach`) never registers.
@@ -450,5 +450,149 @@ describe("AgentBoard expanded render", () => {
       />,
     );
     expect(container.querySelector(".agent-expanded-row-meta")).toBeNull();
+  });
+});
+
+// Plan 147 follow-up (operator feedback, 2026-07-27): removal (and by
+// symmetry insertion/reorder) of a session row used to pop — the row
+// unmounted instantly and siblings jumped into place. `AgentRow` and the
+// expanded list's per-row wrapper now go through `AnimatePresence` with a
+// shared `ROW_TRANSITION`, mirroring how the `agent-expanded-history`
+// disclosure above already asserts CLOSING INTENT (a real, async spring)
+// rather than an immediate unmount.
+describe("AgentBoard row removal/insertion/reorder fluidity", () => {
+  // Pins the one shared const so enter/exit/layout can never hand-copy-drift
+  // apart from each other (CLAUDE.md's `dedup_eq` desynced-clocks failure
+  // class, generalized to motion transitions) — critically damped
+  // (`bounce: 0`, no overshoot) because rows carry no gesture momentum to
+  // preserve on exit, per the apple-design "Designing Fluid Interfaces"
+  // derivation cited on the const itself.
+  it("ROW_TRANSITION is a critically damped spring (no overshoot) shared by enter/exit/layout", () => {
+    expect(ROW_TRANSITION).toEqual({ type: "spring", bounce: 0, duration: 0.35 });
+  });
+
+  it("a removed resting row leaves its siblings' stable keys/content intact, and either unmounts or is visibly closing", () => {
+    const sessions = [
+      session({ id: "primary" }),
+      session({ id: "a", runtime: "claude-code" }),
+      session({ id: "b", runtime: "codex" }),
+      session({ id: "c", runtime: "kimi" }),
+    ];
+    const { container, rerender } = render(
+      <AgentBoard sessions={sessions} capturedAtMs={CAPTURED_AT_MS} />,
+    );
+    expect(container.querySelectorAll(".agent-row")).toHaveLength(3);
+
+    // remove "b" (a stale-eviction / retention-expiry / snapshot-drop
+    // shaped update — the same session set minus one entry)
+    rerender(
+      <AgentBoard
+        sessions={[sessions[0], sessions[1], sessions[3]]}
+        capturedAtMs={CAPTURED_AT_MS}
+      />,
+    );
+
+    const rows = container.querySelectorAll(".agent-row");
+    const runtimes = Array.from(rows).map(
+      (row) => row.querySelector(".agent-row-runtime")?.textContent,
+    );
+    // "b" (Codex) is either already gone (AnimatePresence's exit completed
+    // synchronously in this environment) or still present but rendered
+    // through the motion-controlled wrapper (an inline `style` attribute —
+    // jsdom doesn't run the actual spring, so the exact opacity/height
+    // mid-flight isn't assertable, but a plain instantly-popped `<div>`
+    // would carry no such style at all).
+    if (runtimes.includes("Codex")) {
+      expect(runtimes).toEqual(["Claude Code", "Codex", "Kimi"]);
+      const exitingRow = Array.from(rows).find(
+        (row) => row.querySelector(".agent-row-runtime")?.textContent === "Codex",
+      );
+      expect(exitingRow?.getAttribute("style")).toBeTruthy();
+    } else {
+      expect(runtimes).toEqual(["Claude Code", "Kimi"]);
+    }
+  });
+
+  it("an inserted resting row is present with the new session's content (mirrors exit path — no instant pop-in check possible in jsdom, structure only)", () => {
+    const sessions = [session({ id: "primary" }), session({ id: "a", runtime: "claude-code" })];
+    const { container, rerender } = render(
+      <AgentBoard sessions={sessions} capturedAtMs={CAPTURED_AT_MS} />,
+    );
+    expect(container.querySelectorAll(".agent-row")).toHaveLength(1);
+
+    rerender(
+      <AgentBoard
+        sessions={[...sessions, session({ id: "new", runtime: "opencode" })]}
+        capturedAtMs={CAPTURED_AT_MS}
+      />,
+    );
+
+    const rows = container.querySelectorAll(".agent-row");
+    const runtimes = Array.from(rows).map(
+      (row) => row.querySelector(".agent-row-runtime")?.textContent,
+    );
+    expect(runtimes).toEqual(["Claude Code", "OpenCode"]);
+  });
+
+  it("a removed expanded row leaves its siblings' stable keys/content intact, and either unmounts or is visibly closing", () => {
+    const sessions = [
+      session({ id: "a", runtime: "claude-code" }),
+      session({ id: "b", runtime: "codex" }),
+      session({ id: "c", runtime: "kimi" }),
+    ];
+    const { container, rerender } = render(
+      <AgentBoard sessions={sessions} capturedAtMs={CAPTURED_AT_MS} expanded />,
+    );
+    expect(container.querySelectorAll('[data-testid="agent-expanded-row"]')).toHaveLength(3);
+
+    rerender(
+      <AgentBoard sessions={[sessions[0], sessions[2]]} capturedAtMs={CAPTURED_AT_MS} expanded />,
+    );
+
+    const rows = container.querySelectorAll('[data-testid="agent-expanded-row"]');
+    if (rows.length === 3) {
+      const exitingRow = Array.from(rows).find(
+        (row) => row.querySelector(".agent-row-runtime")?.textContent === "Codex",
+      );
+      // the motion-controlled `style` attribute lives on the row's
+      // motion.div WRAPPER, not the `agent-expanded-row` element itself
+      // (see `AgentBoard.tsx`'s `sessions.map` — the wrapper carries
+      // `initial`/`animate`/`exit`, `ExpandedAgentRow` renders the content
+      // inside it unchanged). jsdom doesn't run the actual spring, so only
+      // presence of that style (motion-controlled, not an instant pop) is
+      // assertable here.
+      expect(exitingRow?.parentElement?.getAttribute("style")).toBeTruthy();
+    } else {
+      expect(rows).toHaveLength(2);
+    }
+  });
+
+  it("reordered sessions (rank change) render in the new Rust-given order with stable per-session content", () => {
+    const sessions = [
+      session({ id: "primary" }),
+      session({ id: "a", runtime: "claude-code" }),
+      session({ id: "b", runtime: "codex" }),
+    ];
+    const { container, rerender } = render(
+      <AgentBoard sessions={sessions} capturedAtMs={CAPTURED_AT_MS} />,
+    );
+    expect(
+      Array.from(container.querySelectorAll(".agent-row")).map(
+        (row) => row.querySelector(".agent-row-runtime")?.textContent,
+      ),
+    ).toEqual(["Claude Code", "Codex"]);
+
+    // rust re-ranked: "b" now outranks "a" among the `rest` sessions
+    rerender(
+      <AgentBoard
+        sessions={[sessions[0], sessions[2], sessions[1]]}
+        capturedAtMs={CAPTURED_AT_MS}
+      />,
+    );
+    expect(
+      Array.from(container.querySelectorAll(".agent-row")).map(
+        (row) => row.querySelector(".agent-row-runtime")?.textContent,
+      ),
+    ).toEqual(["Codex", "Claude Code"]);
   });
 });
