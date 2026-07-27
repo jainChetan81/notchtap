@@ -1,6 +1,8 @@
 import { invoke } from "@tauri-apps/api/core";
 import type {
   AboutInfo,
+  AdapterHealthDto,
+  AgentWireRuntime,
   Config,
   ConnectorHealthDto,
   HistoryEntry,
@@ -25,6 +27,7 @@ export interface SettingsCommands {
   clear_history: { args: undefined; result: null };
   clear_queue: { args: undefined; result: number };
   get_about_info: { args: undefined; result: AboutInfo };
+  get_agent_health: { args: undefined; result: AdapterHealthDto[] };
   get_config: { args: undefined; result: Config };
   get_connector_health: { args: undefined; result: ConnectorHealthDto };
   get_default_config: { args: undefined; result: Config };
@@ -34,6 +37,7 @@ export interface SettingsCommands {
   get_secret_status: { args: undefined; result: SecretStatus };
   save_config_and_relaunch: { args: { config: Config }; result: null };
   search_news_now: { args: { query: string }; result: number };
+  send_agent_test_event: { args: { runtime: AgentWireRuntime }; result: null };
   send_test_notification: { args: { source: TestSource }; result: null };
   set_appearance: { args: { scale: number; radius: number; opacity: number }; result: null };
   set_secret: { args: { field: SecretField; value: string }; result: null };

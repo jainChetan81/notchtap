@@ -1,0 +1,9 @@
+{
+  "session_id": "sess-redacted-0001",
+  "hook_event_name": "Notification",
+  "transcript_path": "/Users/example/.claude/projects/redacted/transcript.jsonl",
+  "cwd": "/Users/example/code/notchtap",
+  "permission_mode": "default",
+  "notification_type": "auth_success",
+  "message": "REDACTED — Claude Code's own generated notification text is intentionally withheld from this fixture"
+}

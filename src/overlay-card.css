@@ -61,3 +61,10 @@
 @import "./overlay/weather-art.css";
 @import "./overlay/live-scorecard.css";
 @import "./overlay/idle-peek.css";
+/* plan 136: NOT part of the original single-file split (2026-07-24) this
+   file's own top comment describes — appended after it, same `.card-root`
+   scope convention, so the Agent Board's below-block content is styled
+   consistently wherever `.card-root` renders it (overlay only today; the
+   settings preview never mounts AgentBoard, but scoping it here costs
+   nothing and keeps one import list for every card-shape rule). */
+@import "./overlay/agent-board.css";

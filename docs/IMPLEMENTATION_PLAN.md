@@ -84,8 +84,8 @@ visible, animated notification on both target machines.
   curl) at repo root posting to the `/notify` endpoint (port: `--port`
   → `$NOTCHTAP_PORT` → `9789`). flags only, no positional form; a
   non-empty `--subtitle` folds into the body cli-side (spec §12)
-- this is the manual trigger; the cmux-relayed trigger point (see v2 §2.2)
-  hits the same endpoint, no separate code path
+- this is the manual trigger; v2's now-historical terminal relay hit the
+  same endpoint with no separate code path
 
 ### 1.5 v1 exit criteria
 - `npx tsc --noEmit` and `npx vite build` run clean
@@ -140,39 +140,16 @@ animation table lands before the poller so it's testable with plain
   for the corresponding fixture-based test cases (malformed response,
   http timeout/5xx)
 
-### 2.2 cmux notification relay — ✅ verified early (2026-07-16)
-- **already working on the mac mini**: during v1's live test a real
-  claude code "needs input" alert surfaced through the overlay via
-  cmux's notification command — this section's integration work is
-  done there. remaining: configure the same one setting on the
-  macbook.
-- cmux (terminal) has a built-in "settings > app > notification command"
-  hook that fires on every notification it raises, including claude
-  code / copilot cli / opencode "agent needs input" alerts — documented
-  at cmux.com/docs/notifications
-- point that setting at the same `/notify` endpoint from v1 §1.4:
-  `notchtap --title "$CMUX_NOTIFICATION_TITLE" --subtitle "$CMUX_NOTIFICATION_SUBTITLE" --body "$CMUX_NOTIFICATION_BODY" --priority high`
-- **`--priority high` added 2026-07-17** (v3.6 grilling session): cmux's
-  own notification-command hook exposes no kind/type/urgency signal —
-  confirmed against `cmux.com/docs/notifications`, which lists only
-  the three variables above. rather than guess at urgency by
-  pattern-matching title/body text (fragile, breaks silently if
-  cmux's wording changes), every cmux-relayed notification is treated
-  as `High` uniformly — matches actual usage (frequent, time-sensitive
-  "claude code needs input"/"finished" alerts the user wants full,
-  auto-expanded detail on, not partial attention). **this setting lives
-  in cmux itself** (`settings > app > notification command`), not in
-  this repo — update it on both machines, mac mini done, macbook still
-  pending same as the base relay setup above.
-- no custom claude code hook needed — this is a heads-up relay, not an
-  approval gate. it does not let the ui answer back into claude code's
-  permission prompt. that would need claude code's own
-  `PreToolUse`/`PermissionRequest` hooks — explicitly out of scope for
-  this project.
+### 2.2 historical terminal relay — ✅ shipped, superseded by v7
+
+the original terminal-specific relay was live-verified on the mac mini
+on 2026-07-16 and proved the heads-up use case. v7 §9 replaces it with
+provider-native Agent Adapters and deletes the relay's active code,
+config, hook, and UI. no remaining macbook relay setup is required.
 
 ### 2.3 animation variety
 - replace the single v1 template with a config table: event type →
-  animation (e.g. score-update = bounce, cmux-generic = simple slide,
+  animation (e.g. score-update = bounce, agent-generic = simple slide,
   posture-alert = shake)
 - css keyframes only — framer motion declined (`ARCHITECTURE.md` §16).
   the table is the stylesheet keyed by event type: the wire payload
@@ -192,19 +169,17 @@ animation table lands before the poller so it's testable with plain
 ### 2.5 v2 exit criteria
 - `cargo test` passes — every example case in `TESTING_STRATEGY.md`
   §4.7 (espn poller: fixture-based `diff_scoreboard` + failure modes,
-  no live api calls in tests) has a written, passing test. §4.8 (cmux
-  env-var handling) is reduced by the flags-only cli — the shell
-  expands the env vars; the script's fold/empty-subtitle behaviour
-  stays manually verified (v2 spec §7/§8)
+  no live api calls in tests) has a written, passing test. historical
+  relay ingestion was manual-by-design and is superseded by §9
 - `npx vitest run` passes — including the new wall-clock deadline
   sweep case (v2 spec §6.1)
 - the three hardening fixes (§2.0) are in and `cargo test` /
   `npx vitest run` stay clean
-- a live espn score change produces a distinct animation from a cmux
-  relay event
-- cmux "agent needs input" alerts visibly surface through the app
-  without any claude code hook configuration — ✅ already verified on
-  the mac mini (2026-07-16); re-verify once on the macbook
+- a live espn score change produced a distinct animation from the
+  historical relay event
+- the historical "agent needs input" relay visibly surfaced through the
+  app — ✅ verified on the mac mini (2026-07-16); no v7/macbook relay
+  setup remains
 
 ---
 
@@ -286,7 +261,7 @@ selected by event type:
   terse/status content: `ScoreUpdate`, `MatchState`.
 - **grow (variant A's motion)**: drops down and widens simultaneously,
   gaining height. used for richer content that needs multi-line body
-  text: `Generic` (cmux relay, cli pushes).
+  text: `Generic` (relays at the time, cli pushes).
 - this composes with the existing v2.3 animation-type table (event
   type → animation) rather than replacing it — morph shape becomes
   another column keyed by event type, the same data-not-code move,
@@ -374,17 +349,16 @@ promotes on a timer — is not thrown away. what changes:
   higher-priority is pending. the architecture must stay generic
   enough to accept these later sources without a redesign — this
   section does not scope or build any of them now.
-- **every source feeds this one queue**: the espn poller, the cmux
-  relay, and cli pushes all produce events for the same
+- **every source feeds this one queue**: internal pollers, Agent
+  Adapters, and cli pushes all produce events for the same
   priority-ordered queue — no separate transient path for "urgent"
-  content. an urgent cmux "needs input" alert does not interrupt or
+  content. an urgent Agent "needs input" alert does not interrupt or
   bypass the slot; it's a high-priority item that gets promoted next,
   same as a goal.
 - **cli gains `--priority low|medium|high`** (default: unspecified →
-  treated as `medium`... **open detail, not blocking**: exact default
-  and whether cmux's relay path needs its own default separately from
-  raw cli pushes is an implementation-time call, not re-litigated
-  here). the poller sets `high` on goals/cards itself.
+  treated as `medium`... **historical detail**: v7 replaces the old
+  relay-specific default with per-Agent-Event policy (§9). the poller
+  sets `high` on goals/cards itself.
 
 **display**: single fixed-position slot, edge-flush to the top of the
 screen, no padding/gap — crossbar-style, notch-integrated on notch
@@ -551,7 +525,8 @@ reopens it.
   - frontend: wall-clock deadline sweep timing cases (v2 spec §6.1)
     beyond the happy path
 - what stays manual stays manual: notch geometry, hud placement,
-  animation look, real cmux/espn end-to-end (`TESTING_STRATEGY.md`
+  animation look, the historical relay/real espn end-to-end
+  (`TESTING_STRATEGY.md`
   §5's reasoning is unchanged by ci)
 
 ### 4.4 v4 exit criteria
@@ -708,7 +683,7 @@ against a frozen `slot-state` contract, merged sequentially onto
   truncation on non-news title/body) closes the gap where the expand
   affordance had zero cue before you'd already found it once
 - [ ] manual: `rss_enabled = true`, wait for a headline, ⌃⇧O opens the
-  article in the browser; ⌃⇧O with the idle pill or a cmux card does
+  article in the browser; ⌃⇧O with the idle pill or an Agent card does
   nothing; hint text visible in the expanded news manifest
 
 ---
@@ -781,9 +756,9 @@ v3.6's rewritten queue/frontend — see `TESTING_STRATEGY.md` §4.10.
       first poll re-baselines silently (no burst of stale score
       alerts), and a subsequent real score change still surfaces; item
       absent when `espn_enabled = false`
-- [x] cmux relay (v2): trigger a real claude code "needs input" moment,
-      confirm it surfaces without manual intervention — ✅ verified
-      2026-07-16 on the mac mini, see §2.2
+- [x] historical terminal relay (v2): real "needs input" alert surfaced
+      without manual intervention — ✅ verified 2026-07-16 on the mac
+      mini; superseded by the v7 Agent Adapter checklist below
 - [ ] notch-cutout anchoring looks correct on the macbook; hud placement
       looks correct on the mac mini
 - [ ] v3.6: the global hotkey toggles expand on the macbook (manual
@@ -879,3 +854,132 @@ no timeline, no owner, not blocking any phase above — recorded here so
 the idea isn't lost, same treatment as §2.4's posture module.
 
 step-by-step recipe written: `docs/recipes/kuma-webhook.md`.
+
+---
+
+## 9. v7 — agent integrations and Agent Board — code-complete, manual verification pending (plan 145, 2026-07-26)
+
+decision contract: `ARCHITECTURE.md` §20. code-level contract:
+`V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`. this phase fully retires the
+terminal-specific relay and makes coding agents the primary rich source.
+plans 133–144 landed every checkbox below in code, with the automated
+suite green (`TESTING_STRATEGY.md` §4.13, recounted live by plan 145);
+the boxes are checked on that basis. what they do NOT certify is real
+provider behavior or real hardware — see §9.7's still-open rows and
+`plans/145-v7-verification-closeout.md`, which stay unchecked until the
+operator runs them.
+
+### 9.1 normalized model and registry — code-complete
+
+- [x] add `src-tauri/src/agents/` with provider-neutral Runtime,
+      Capability, Event Kind, Session State, Session Key, Host, event,
+      registry, health, and focus types
+- [x] key sessions only by Runtime + native session ID; implement a
+      process/start-time fallback for providers lacking a native ID;
+      reject project-path identity
+- [x] implement explicit transition rules, urgency/FIFO ordering,
+      duplicate event IDs, optional sequence rejection, stale timeout,
+      terminal retention (default ten minutes), and 50-transition
+      per-session history
+- [x] handwrite Agent-state semantic equality so last-seen/elapsed-time
+      ticks do not publish content changes
+- [x] write the registry and ordering tests first
+
+### 9.2 ingestion and Engine bridge — code-complete
+
+- [x] add bounded, versioned `POST /agent/events` on the existing
+      loopback listener with the `/notify` Host-header defense
+- [x] sanitize input and prohibit raw prompts, tool output, environment
+      values, complete commands, and adapter-provided executable actions
+- [x] publish `agent-state` independently of `slot-state` and
+      `status-state`
+- [x] map Permission Requested, Input Required, Failed, and Completed to
+      ordinary `Origin::Agent` Notifications; keep routine progress on
+      the Agent Board only
+- [x] prove registry state survives even if the corresponding
+      Notification cannot enter a full queue tier
+
+### 9.3 config migration and complete relay deletion
+
+- [x] replace `SourceKind::Cmux` with `SourceKind::Agent` (plan 137)
+- [x] migrate legacy enum/config/history values on read for one release,
+      write only Agent names, and rewrite the Rotation Order entry in
+      place before healing/deduping (plan 137)
+- [x] remove the terminal-specific request source, CLI environment
+      autodetection/flag, committed hook, Settings section, source
+      labels, styles, previews, fixtures, and tests (plan 137)
+- [x] set default Rotation Order to
+      `[Football, Manual, Weather, Agent, News]` (plan 137)
+- [x] use Git history as the recovery path; leave no disabled relay
+      adapter or compatibility UI (plan 137)
+
+### 9.4 provider adapters — code-complete (fixtures/synthetic only; no real-provider run yet)
+
+- [x] add the `notchtap-agent` Rust helper with `hook`, `test`, and
+      `status` commands, a maximum 750 ms loopback timeout, fail-open
+      exit behavior, no stdout, and no shell/`jq` dependency
+- [x] Claude Code: cover documented session, permission, notification,
+      stop/failure, tool, and subagent lifecycle events
+- [x] Codex: cover documented session, permission, stop, tool, and
+      subagent events; keep Input Required and terminal-failure gaps
+      explicitly partial until the provider exposes/verifies them
+- [x] Kimi: install equivalent hooks only for compatible versions and
+      report unsupported versions as unavailable
+- [x] OpenCode: add a TypeScript event plugin for permission, session
+      status/idle/error, and tool lifecycle events
+- [x] give every provider native redacted fixtures and capability
+      assertions; never infer state from title/body wording
+
+### 9.5 Agent Board — code-complete
+
+- [x] add `useAgentState` and render Rust-provided order without
+      frontend lifecycle inference
+- [x] presentation precedence: Visible Notification → Agent Board →
+      existing clock/weather/media idle surface
+- [x] resting Board: richest highest-ranked session plus an individual
+      representation for every remaining session (no compact `+N`)
+- [x] hover Board: morph to a screen-bounded scrollable list with an
+      independent bounded timeline per row and reduced-motion behavior
+- [x] extend the native tracking rect while expanded and enable pointer
+      delivery only inside it; immediately restore pass-through on exit
+- [x] preserve the overlay's receive-only IPC contract and leave
+      `capabilities/default.json` byte-for-byte unchanged
+
+### 9.6 Settings and Open/Focus — code-complete
+
+- [x] replace the old relay tab with Agents: global policy,
+      event-kind priorities, four adapter cards, capability/health/last
+      seen, compatibility notes, setup snippets, test events, and rich
+      previews
+- [x] do not edit global provider configs automatically in v7
+- [x] register `⌃⇧A` to Open/Focus the highest-ranked session using
+      code-owned Host/bundle-ID and deep-link allowlists only
+- [x] add any new Settings command to `build.rs`,
+      `capabilities/settings.json`, the label guard, and ACL tests in
+      the same change
+- [x] use neutral runtime names only; no provider logos, copied trade
+      dress, or implied affiliation
+
+### 9.7 v7 exit criteria — automatable rows done; hardware/real-session rows still open (operator-owed, plan 145)
+
+- [x] all automated cases in `TESTING_STRATEGY.md` §4.13 pass
+- [ ] real Claude Code, Codex, Kimi, and OpenCode sessions each update
+      an independent Board row and surface every capability the adapter
+      claims
+- [ ] T3 Code smoke test passes for at least Claude Code and Codex
+      without a T3-specific adapter
+- [x] simultaneous sessions in the same project/runtime remain separate
+      and urgency/FIFO ordering is stable
+- [x] waiting sessions remain until state change/stale; terminal
+      sessions retire after the configured grace period
+- [ ] expanded Board scroll and menu-bar click pass-through are verified
+      on the mac mini; notch geometry is verified on the macbook
+- [x] Open/Focus never executes adapter-provided commands/paths and
+      fails quietly for an unknown Host
+- [x] repository-wide search finds no active cmux-specific code, config,
+      UI, hook, or current-doc contract (historical Git commits excluded)
+- [ ] `just test-all` is green and §6's still-open hardware/manual rows
+      remain accurately checked or unchecked — `just` is not installed on
+      this machine; plan 145 mirrored the CI steps manually instead (all
+      green except `npm audit --audit-level=high`, a pre-existing
+      dependency finding — see `TESTING_STRATEGY.md` §0/plan 145 notes)

@@ -500,6 +500,8 @@ pub fn diff_feed(
                 details: Vec::new(),
                 // plan 083: espn-only field; rss never populates it.
                 espn: None,
+                // plan 135: agent-only field; rss never populates it.
+                agent: None,
             },
             origin: SourceKind::News,
         };
@@ -1338,6 +1340,7 @@ mod tests {
                 subtitle: None,
                 details: Vec::new(),
                 espn: None,
+                agent: None,
             }
         );
     }

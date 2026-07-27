@@ -1,5 +1,20 @@
 # Implementation Plans
 
+**v7 agent-integrations breakdown (2026-07-26, operator-approved):**
+plans 133–145 file the `docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`
+v0 draft (product decisions grilled 2026-07-26) as thirteen
+tracer-bullet tickets via a `/to-tickets` session — the operator
+approved the granularity and blocking edges as proposed. Dependency
+frontier: 133 → 134 → {135, 136, 141} in parallel, 138 after 134,
+139/140 after 138, 137 after 135, 142 after 136, 144 after 136, 143
+after {137, 138, 141}, 145 (manual verification + closeout) last.
+Each plan file carries its own "Blocked by" line and acceptance
+criteria; spec section references are authoritative for details. Two
+repo-policy overrides baked into the tickets: spec §6.2's
+reduced-motion line is QUESTIONED per the standing no-reduced-motion
+policy (see plan 142), and plan 137 notes the mac mini's live cmux
+relay will post as Origin `Manual` after the deletion lands.
+
 **Close-out filing (2026-07-23, operator-requested):** the plans
 pipeline is fully drained — every numbered plan is terminal. Plan files
 112–118 (long DONE in the table below, merged 2026-07-22) were filed

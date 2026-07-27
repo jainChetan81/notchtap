@@ -1,0 +1,7 @@
+{
+  "session_id": "kimi-sess-redacted-0001",
+  "hook_event_name": "StopFailure",
+  "cwd": "/Users/example/code/notchtap",
+  "error_type": "rate_limit",
+  "error_message": "REDACTED — the full API error message is intentionally withheld from this fixture"
+}

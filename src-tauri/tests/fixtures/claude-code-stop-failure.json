@@ -1,0 +1,10 @@
+{
+  "session_id": "sess-redacted-0001",
+  "prompt_id": "33333333-3333-4333-8333-333333333333",
+  "hook_event_name": "StopFailure",
+  "transcript_path": "/Users/example/.claude/projects/redacted/transcript.jsonl",
+  "cwd": "/Users/example/code/notchtap",
+  "permission_mode": "default",
+  "error_type": "rate_limit",
+  "error_message": "REDACTED — the full API error message is intentionally withheld from this fixture"
+}

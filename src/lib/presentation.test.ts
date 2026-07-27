@@ -1,5 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { ageLabel, categoryClass, stampFor } from "./presentation";
+import type { SlotState } from "../useSlotState";
+import {
+  ageLabel,
+  agentRuntimeLabel,
+  agentStatePresentationFor,
+  categoryClass,
+  elapsedLabel,
+  presentationMode,
+  stampFor,
+} from "./presentation";
 
 describe("stampFor", () => {
   it("uses the fixed per-signal table when signal is not generic, regardless of priority", () => {
@@ -53,5 +62,105 @@ describe("ageLabel", () => {
     expect(ageLabel(NOW - 23 * 60 * 60_000, NOW)).toBe("23h ago");
     expect(ageLabel(NOW - 24 * 60 * 60_000, NOW)).toBe("1d ago");
     expect(ageLabel(NOW - 3 * 24 * 60 * 60_000, NOW)).toBe("3d ago");
+  });
+});
+
+// Plan 136 (v7 ticket 4 of 13, spec §6.1): the presentation precedence
+// machine's own unit coverage — a Visible Notification always wins;
+// otherwise a non-empty Agent Board session count shows the board;
+// otherwise idle.
+describe("presentationMode", () => {
+  const empty: SlotState = { state: "empty" };
+  const showing: SlotState = {
+    state: "showing",
+    id: "n1",
+    title: "t",
+    body: "b",
+    eventType: "generic",
+    priority: "medium",
+    signal: "generic",
+    origin: "manual",
+    expanded: false,
+    source: null,
+    category: null,
+    publishedAtMs: null,
+    link: null,
+    subtitle: null,
+    details: [],
+    queueTotal: 1,
+    queueDone: 0,
+    ttlMs: 8000,
+    remainingMs: 8000,
+  };
+
+  it("a Visible Notification always wins, regardless of session count", () => {
+    expect(presentationMode(showing, 0)).toBe("notification");
+    expect(presentationMode(showing, 3)).toBe("notification");
+  });
+
+  it("shows the board when the slot is empty and at least one session exists", () => {
+    expect(presentationMode(empty, 1)).toBe("board");
+    expect(presentationMode(empty, 5)).toBe("board");
+  });
+
+  it("falls back to idle when the slot is empty and no session exists", () => {
+    expect(presentationMode(empty, 0)).toBe("idle");
+  });
+});
+
+describe("elapsedLabel", () => {
+  it("formats seconds under a minute", () => {
+    expect(elapsedLabel(0)).toBe("0s");
+    expect(elapsedLabel(45_000)).toBe("45s");
+    expect(elapsedLabel(59_999)).toBe("59s");
+  });
+
+  it("formats minutes under an hour, floored", () => {
+    expect(elapsedLabel(60_000)).toBe("1m");
+    expect(elapsedLabel(119_999)).toBe("1m");
+    expect(elapsedLabel(59 * 60_000)).toBe("59m");
+  });
+
+  it("formats hours, with and without a remaining minutes component", () => {
+    expect(elapsedLabel(60 * 60_000)).toBe("1h");
+    expect(elapsedLabel(90 * 60_000)).toBe("1h 30m");
+  });
+
+  it("clamps a negative duration to 0s rather than going negative", () => {
+    expect(elapsedLabel(-500)).toBe("0s");
+  });
+});
+
+describe("agentStatePresentationFor", () => {
+  it("groups both waiting states under the same non-alarming amber family", () => {
+    expect(agentStatePresentationFor("waiting_for_permission").className).toBe("agent-waiting");
+    expect(agentStatePresentationFor("waiting_for_input").className).toBe("agent-waiting");
+  });
+
+  it("gives failed and completed their own distinct, non-pulsing classes", () => {
+    const failed = agentStatePresentationFor("failed");
+    expect(failed.className).toBe("agent-failed");
+    expect(failed.pulse).toBe(false);
+    const completed = agentStatePresentationFor("completed");
+    expect(completed.className).toBe("agent-completed");
+    expect(completed.pulse).toBe(false);
+  });
+
+  it("working and starting pulse as the active-work family", () => {
+    expect(agentStatePresentationFor("working")).toEqual({
+      label: "Working",
+      className: "agent-working",
+      pulse: true,
+    });
+    expect(agentStatePresentationFor("starting").className).toBe("agent-working");
+  });
+});
+
+describe("agentRuntimeLabel", () => {
+  it("maps every wire runtime token to its display label", () => {
+    expect(agentRuntimeLabel("claude-code")).toBe("Claude Code");
+    expect(agentRuntimeLabel("codex")).toBe("Codex");
+    expect(agentRuntimeLabel("kimi")).toBe("Kimi");
+    expect(agentRuntimeLabel("opencode")).toBe("OpenCode");
   });
 });

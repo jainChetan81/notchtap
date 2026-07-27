@@ -54,6 +54,11 @@ pub enum EventType {
     ScoreUpdate,
     MatchState,
     NewsItem,
+    /// v7 (plan 135, spec §5): a noteworthy Agent Event promoted into the
+    /// existing Notification Slot. Always paired with `origin:
+    /// SourceKind::Agent` and a populated `EventMeta.agent` — see
+    /// `agents::notification::build_notification`, the one constructor.
+    AgentEvent,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -84,8 +89,22 @@ pub enum SourceKind {
     Football,
     News,
     Manual,
-    Cmux,
     Weather,
+    /// v7 (plan 135/137, spec §0/§7): the provider-neutral Agent Adapter
+    /// origin, and — as of plan 137 — the sole successor to the removed
+    /// `Cmux` variant. `#[serde(alias = "cmux")]` is the one-release
+    /// migration path spec §7 requires ("legacy `"cmux"` deserializes as
+    /// `Agent` for one release"): it accepts the old wire/TOML/history
+    /// literal `"cmux"` as an alternate spelling of this variant on
+    /// deserialization only — serialization always writes `"agent"`, never
+    /// `"cmux"` (serde aliases are deserialize-only, so this is automatic,
+    /// not something the `Serialize` impl has to special-case). Covers
+    /// `config.toml`'s `rotation_order` entries, persisted
+    /// `history.jsonl` `Origin` values, and any other spot a `SourceKind`
+    /// is deserialized — all share this one enum, so one alias covers all
+    /// three per spec §7's bullet list.
+    #[serde(alias = "cmux")]
+    Agent,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -109,9 +128,10 @@ pub enum RotationSpec {
 /// assert!(serde_json::from_str::<EventSignal>(r#""confetti""#).is_err());
 /// ```
 ///
-/// Sources that can't know a specific signal (the CLI, cmux) omit the
-/// field on the wire and get `Generic` via `#[serde(default)]` on the
-/// containing struct — see `http.rs`'s `NotifyRequest`.
+/// Sources that can't know a specific signal (the CLI, the Agent Adapter
+/// layer — superseded in v7's cmux relay, plan 137) omit the field on the
+/// wire and get `Generic` via `#[serde(default)]` on the containing
+/// struct — see `http.rs`'s `NotifyRequest`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum EventSignal {
@@ -150,6 +170,35 @@ pub struct DetailItem {
     pub value: String,
 }
 
+/// Presentation metadata for a noteworthy Agent Event's Notification
+/// (plan 135, spec §5: "the generated existing-domain `Event` uses
+/// `EventType::AgentEvent` and an `AgentSignal` carrying runtime, session
+/// key, kind, and sanitized summary"). Built exactly once, by
+/// `agents::notification::build_notification`.
+///
+/// `runtime`/`kind` are the same wire tokens an adapter itself would send
+/// (`agents::adapter::runtime_wire_label`/`kind_wire_label` — the inverse
+/// of `parse_runtime`/`parse_kind`), not a display label; a display label
+/// is a frontend/Settings concern, not this backend struct's job.
+///
+/// `session_key` is deliberately NOT the raw `AgentSessionKey` — spec §9
+/// forbids persisting raw provider identity, and this struct rides on
+/// `Event`, which `history.rs` serializes to disk verbatim when
+/// `history_enabled`. `session_hash` is the same stable, non-reversible,
+/// per-process hash already used for the §10 `agent.session_hash` log
+/// field (`agents::model::session_hash_hex`) — safe to persist/display
+/// because it never round-trips back to the provider's own session id.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSignal {
+    pub runtime: String,
+    pub kind: String,
+    pub session_hash: String,
+    /// Already sanitized/capped upstream by `agents::adapter::parse_wire_event`
+    /// — this struct never re-derives or further truncates it.
+    pub summary: Option<String>,
+}
+
 /// News-source metadata (v5) plus the rich-relay fields (plan 035:
 /// `subtitle`/`details`): the rss poller populates source/category/
 /// published/link, and `/notify` callers populate subtitle/details;
@@ -174,11 +223,23 @@ pub struct EventMeta {
     /// itself with the flag off, leaves this `None`. `skip_serializing_if`
     /// is deliberate here (unlike every other `Option` field above, which
     /// serializes explicit `null`): without it, EVERY payload — manual,
-    /// cmux, news, flag-off espn — would gain a literal `"espn": null` key
+    /// agent (superseded cmux relay, plan 137), news, flag-off espn —
+    /// would gain a literal `"espn": null` key
     /// on the wire, breaking the flag-off byte-identical pin at the JSON
     /// level (see `espn_field_is_omitted_from_wire_when_absent` below).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub espn: Option<EspnMeta>,
+    /// v7 (plan 135): populated only on an Agent-originated Notification's
+    /// `Event` (see [`AgentSignal`]'s own doc). `skip_serializing_if` for
+    /// the same reason as `espn` above — every non-agent payload (and an
+    /// agent payload built before this ticket's own tests were written)
+    /// must keep an identical wire shape, no literal `"agent": null` key.
+    /// NOT mirrored onto `SlotState::Showing` — this ticket's scope is the
+    /// registry→Notification mapping and the `Event`/history shape, not
+    /// overlay rendering (a future ticket's job if the Agent Board or
+    /// per-runtime card styling needs it on the wire).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub agent: Option<AgentSignal>,
 }
 
 /// plan 083: structured live-match fields (079 item 4 — decided
@@ -245,9 +306,10 @@ pub enum SlotState {
         /// Which source produced this item (plan 096) — mirrors
         /// `Event.origin` (v6, rotation-order tie-break) onto the wire so
         /// the frontend can style/label cards by their origin; today's only
-        /// consumer is the cmux accent in `StatusRailCard.tsx`, but any
-        /// future per-source presentation can key off this without another
-        /// wire change. Time-invariant: it's assigned once when the event
+        /// consumer is the agent accent in `StatusRailCard.tsx` (plan 137:
+        /// this superseded the earlier cmux accent), but any future
+        /// per-source presentation can key off this without another wire
+        /// change. Time-invariant: it's assigned once when the event
         /// is accepted and never changes for that item's lifetime, so
         /// unlike `remaining_ms` it stays IN `dedup_eq`'s comparison below
         /// (see that method's doc for the general rule).
@@ -446,8 +508,8 @@ mod tests {
             (SourceKind::Football, "football"),
             (SourceKind::News, "news"),
             (SourceKind::Manual, "manual"),
-            (SourceKind::Cmux, "cmux"),
             (SourceKind::Weather, "weather"),
+            (SourceKind::Agent, "agent"),
         ] {
             assert_eq!(serde_json::to_value(kind).unwrap(), wire);
             let parsed: SourceKind = serde_json::from_str(&format!("\"{wire}\"")).unwrap();
@@ -458,6 +520,17 @@ mod tests {
     #[test]
     fn unknown_source_kind_is_rejected_at_deserialization() {
         assert!(serde_json::from_str::<SourceKind>(r#""telegram""#).is_err());
+    }
+
+    // plan 137 (spec §7): the legacy `"cmux"` literal is a one-release
+    // deserialize-only alias for `Agent` — it must parse successfully but
+    // must never come back out of `Serialize`.
+    #[test]
+    fn legacy_cmux_string_deserializes_as_agent_but_never_serializes_back() {
+        let parsed: SourceKind = serde_json::from_str(r#""cmux""#).unwrap();
+        assert_eq!(parsed, SourceKind::Agent);
+        assert_eq!(serde_json::to_value(parsed).unwrap(), "agent");
+        assert_ne!(serde_json::to_value(parsed).unwrap(), "cmux");
     }
 
     #[test]
@@ -498,10 +571,10 @@ mod tests {
             signal: EventSignal::Goal,
             // plan 096: origin deliberately doesn't match event_type/source
             // here — this test pins the WIRE SHAPE (every field's JSON key
-            // and value), not a semantically-coherent payload; Cmux is
-            // chosen because "origin":"cmux" is the exact literal this
-            // step's verify requires pinning.
-            origin: SourceKind::Cmux,
+            // and value), not a semantically-coherent payload; Weather is
+            // chosen (plan 137: Cmux no longer exists) because it's a
+            // variant unrelated to the ScoreUpdate/NDTV fixture around it.
+            origin: SourceKind::Weather,
             expanded: false,
             source: Some("NDTV".to_string()),
             category: Some("politics".to_string()),
@@ -535,7 +608,7 @@ mod tests {
         // plan 096: origin joins the wire, camelCase key (no rename needed —
         // the field name is already one word), snake_case value per
         // SourceKind's own serde attr.
-        assert_eq!(json["origin"], "cmux");
+        assert_eq!(json["origin"], "weather");
         assert_eq!(json["expanded"], false);
         assert_eq!(json["source"], "NDTV");
         assert_eq!(json["category"], "politics");
@@ -795,7 +868,7 @@ mod tests {
 
         let before = showing_with_origin(SourceKind::Manual);
         let after_same_origin = showing_with_origin(SourceKind::Manual);
-        let after_new_origin = showing_with_origin(SourceKind::Cmux);
+        let after_new_origin = showing_with_origin(SourceKind::Weather);
 
         assert!(
             before.dedup_eq(&after_same_origin),

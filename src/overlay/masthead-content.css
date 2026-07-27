@@ -70,8 +70,9 @@
    itself (title + priority Stamp +, until the 2026-07-24 declutter, a
    plan-096 cmux "Agent" chip) converged onto news's own `.masthead-row`/
    `.title.headline` treatment below — the chip is gone entirely now that
-   the masthead kicker already reads "cmux" for that origin, so only the
-   subtitle row and body stay unique to this branch.
+   the masthead kicker already reads a source label for that origin (was
+   "cmux", now "agent" — plan 137), so only the subtitle row and body
+   stay unique to this branch.
    `.notif-subtitle-row` pairs plan 035's `subtitle` field (surfaced in
    compact for the first time — previously expanded-manifest-only) with
    an inline-time slot. News reuses `.notif-time-inline` too (Decision 5

@@ -1,0 +1,10 @@
+{
+  "session_id": "kimi-sess-redacted-0001",
+  "hook_event_name": "PermissionRequest",
+  "cwd": "/Users/example/code/notchtap",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "REDACTED — the full shell command is intentionally withheld from this fixture",
+    "description": "Run project tests"
+  }
+}

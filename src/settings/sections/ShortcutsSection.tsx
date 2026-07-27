@@ -16,6 +16,7 @@ const shortcuts = [
   },
   { keys: "⌃⇧P", action: "Pause or resume promotion", status: "active" },
   { keys: "⌃⇧]", action: "Skip to the next waiting item", status: "active" },
+  { keys: "⌃⇧A", action: "Open or focus the front Agent Session's host app", status: "active" },
   { keys: "⌃⇧,", action: "Open settings", status: "active" },
 ] as const;
 

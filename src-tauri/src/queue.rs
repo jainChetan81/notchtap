@@ -51,8 +51,8 @@ fn source_kind_label(source: SourceKind) -> String {
         SourceKind::Football => "football",
         SourceKind::News => "news",
         SourceKind::Manual => "manual",
-        SourceKind::Cmux => "cmux",
         SourceKind::Weather => "weather",
+        SourceKind::Agent => "agent",
     }
     .to_string()
 }
@@ -3460,7 +3460,7 @@ mod tests {
             .unwrap();
         q.enqueue(event_from("m", Priority::Medium, 8, SourceKind::Manual), t0)
             .unwrap();
-        q.enqueue(event_from("c", Priority::Medium, 8, SourceKind::Cmux), t0)
+        q.enqueue(event_from("a", Priority::Medium, 8, SourceKind::Agent), t0)
             .unwrap();
         q.enqueue(
             event_from("w", Priority::Medium, 8, SourceKind::Weather),
@@ -3476,7 +3476,7 @@ mod tests {
         assert_eq!(by_title.get("f"), Some(&"football"));
         assert_eq!(by_title.get("n"), Some(&"news"));
         assert_eq!(by_title.get("m"), Some(&"manual"));
-        assert_eq!(by_title.get("c"), Some(&"cmux"));
+        assert_eq!(by_title.get("a"), Some(&"agent"));
         assert_eq!(by_title.get("w"), Some(&"weather"));
     }
 
@@ -3668,7 +3668,7 @@ mod proptest_queue {
             Just(SourceKind::Football),
             Just(SourceKind::News),
             Just(SourceKind::Manual),
-            Just(SourceKind::Cmux),
+            Just(SourceKind::Agent),
             Just(SourceKind::Weather),
         ]
     }
@@ -3690,7 +3690,7 @@ mod proptest_queue {
             SourceKind::Football,
             SourceKind::News,
             SourceKind::Manual,
-            SourceKind::Cmux,
+            SourceKind::Agent,
             SourceKind::Weather,
         ];
         (Just(all).prop_shuffle(), 0usize..=5).prop_map(|(mut v, len)| {

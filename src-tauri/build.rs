@@ -5,7 +5,7 @@
 // declarations only works cleanly here, not spliced inside a function
 // body), which brings `SETTINGS_COMMANDS` into scope for `fn main` below.
 // See settings_commands.rs's own doc comment for the full rationale:
-// single source of truth for the sixteen v5 settings-window commands,
+// single source of truth for the eighteen settings-window commands,
 // plus the parity tests there that check it against
 // capabilities/settings.json and lib.rs's generate_handler![...].
 include!("src/settings_commands.rs");

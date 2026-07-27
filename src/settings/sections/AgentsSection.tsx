@@ -1,0 +1,520 @@
+import { useEffect, useState } from "react";
+import { Button } from "@/components/ui/button";
+import { MetaChip } from "@/components/ui/meta-chip";
+import { ActionStatus, useActionStatus } from "../actionStatus";
+import {
+  CONTROL_ROW,
+  ControlCopy,
+  NumberControl,
+  SettingsGroup,
+  ToggleControl,
+} from "../controls/controls";
+import { Segmented } from "../controls/Segmented";
+import { settingsInvoke } from "../ipc";
+import type {
+  AdapterAvailability,
+  AdapterErrorCategory,
+  AdapterHealthDto,
+  AgentRuntimesConfig,
+  AgentsConfig,
+  AgentWireRuntime,
+  Config,
+} from "../types";
+import { PRIORITY_SEGMENT_OPTIONS } from "../types";
+
+// --- adapter card static content (plan 143, spec §4.6/§8) --------------
+//
+// Sourced from the committed `adapters/*/README.md` setup snippets (and
+// the OpenCode plugin's own header comment) — inlined as constants so
+// the section works with no extra IPC round trip, per this ticket's
+// "keep it simple and truthful" instruction. Each snippet is the EXACT
+// text a user copies into the EXACT target file named alongside it;
+// notchtap never writes these itself (spec §4.6: "v7 does not silently
+// edit a user's global provider configuration").
+
+type AdapterConfigKey = keyof AgentRuntimesConfig;
+
+interface AdapterCardCopy {
+  configKey: AdapterConfigKey;
+  wireRuntime: AgentWireRuntime;
+  label: string;
+  targetFile: string;
+  snippet: string;
+  uninstall: string;
+}
+
+const CLAUDE_CODE_SNIPPET = `{
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook claude-code" }] }],
+    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook claude-code" }] }],
+    "PermissionRequest": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook claude-code" }] }],
+    "Notification": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook claude-code" }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook claude-code" }] }],
+    "StopFailure": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook claude-code" }] }],
+    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook claude-code" }] }],
+    "PostToolUseFailure": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook claude-code" }] }],
+    "SubagentStart": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook claude-code" }] }],
+    "SubagentStop": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook claude-code" }] }]
+  }
+}`;
+
+const CODEX_SNIPPET = `{
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook codex" }] }],
+    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook codex" }] }],
+    "PermissionRequest": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook codex" }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook codex" }] }],
+    "SubagentStart": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook codex" }] }],
+    "SubagentStop": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook codex" }] }],
+    "PreToolUse": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook codex" }] }],
+    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook codex" }] }]
+  }
+}`;
+
+const KIMI_SNIPPET = `[[hooks]]
+event = "SessionStart"
+command = "notchtap-agent hook kimi"
+
+[[hooks]]
+event = "SessionEnd"
+command = "notchtap-agent hook kimi"
+
+[[hooks]]
+event = "PermissionRequest"
+command = "notchtap-agent hook kimi"
+
+[[hooks]]
+event = "Notification"
+command = "notchtap-agent hook kimi"
+
+[[hooks]]
+event = "Stop"
+command = "notchtap-agent hook kimi"
+
+[[hooks]]
+event = "StopFailure"
+command = "notchtap-agent hook kimi"
+
+[[hooks]]
+event = "PostToolUse"
+command = "notchtap-agent hook kimi"
+
+[[hooks]]
+event = "PostToolUseFailure"
+command = "notchtap-agent hook kimi"
+
+[[hooks]]
+event = "SubagentStart"
+command = "notchtap-agent hook kimi"
+
+[[hooks]]
+event = "SubagentStop"
+command = "notchtap-agent hook kimi"`;
+
+const OPENCODE_SNIPPET = `// copy (or symlink) adapters/opencode/notchtap.ts from the notchtap
+// repo into this project's .opencode/plugins/ directory — no build
+// step, no extra dependency.`;
+
+const ADAPTER_CARDS: readonly AdapterCardCopy[] = [
+  {
+    configKey: "claude_code",
+    wireRuntime: "claude-code",
+    label: "Claude Code",
+    targetFile: "~/.claude/settings.json (or a project's .claude/settings.json)",
+    snippet: CLAUDE_CODE_SNIPPET,
+    uninstall: "Remove the ten hook entries above from settings.json, or delete the whole file.",
+  },
+  {
+    configKey: "codex",
+    wireRuntime: "codex",
+    label: "Codex",
+    targetFile: "~/.codex/hooks.json (or a project's .codex/hooks.json)",
+    snippet: CODEX_SNIPPET,
+    uninstall: "Remove the eight hook entries above from hooks.json, or delete the whole file.",
+  },
+  {
+    configKey: "kimi",
+    wireRuntime: "kimi",
+    label: "Kimi",
+    targetFile: "~/.kimi-code/config.toml",
+    snippet: KIMI_SNIPPET,
+    uninstall: "Remove the ten [[hooks]] tables above from config.toml.",
+  },
+  {
+    configKey: "opencode",
+    wireRuntime: "opencode",
+    label: "OpenCode",
+    targetFile: ".opencode/plugins/notchtap.ts (project) or ~/.config/opencode/plugins/ (global)",
+    snippet: OPENCODE_SNIPPET,
+    uninstall: "Delete notchtap.ts from the plugins directory it was copied into.",
+  },
+];
+
+const AVAILABILITY_LABELS: Record<AdapterAvailability, string> = {
+  available: "Available",
+  partial: "Partial",
+  unavailable: "Unavailable",
+};
+
+const ERROR_CATEGORY_LABELS: Record<AdapterErrorCategory, string> = {
+  malformed_payload: "Malformed payload",
+  unsupported_runtime: "Unsupported runtime",
+  internal: "Internal error",
+};
+
+function formatLastSeen(ms: number | null): string {
+  if (ms === null) return "Never";
+  const elapsed = Date.now() - ms;
+  if (elapsed < 0) return "Just now";
+  const minutes = Math.floor(elapsed / 60000);
+  if (minutes < 1) return "Just now";
+  if (minutes < 60) return `${minutes} min ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 24) return `${hours} h ago`;
+  return `${Math.floor(hours / 24)} d ago`;
+}
+
+function patchAgents(
+  config: Config,
+  patchConfig: (patch: Partial<Config>) => void,
+  patch: Partial<AgentsConfig>,
+) {
+  patchConfig({ agents: { ...config.agents, ...patch } });
+}
+
+function patchRuntime(
+  config: Config,
+  patchConfig: (patch: Partial<Config>) => void,
+  key: AdapterConfigKey,
+  enabled: boolean,
+) {
+  patchConfig({
+    agents: {
+      ...config.agents,
+      runtimes: { ...config.agents.runtimes, [key]: { enabled } },
+    },
+  });
+}
+
+function AdapterCard({
+  copy,
+  config,
+  patchConfig,
+  health,
+}: {
+  copy: AdapterCardCopy;
+  config: Config;
+  patchConfig: (patch: Partial<Config>) => void;
+  health: AdapterHealthDto | undefined;
+}) {
+  const { status: copyStatus, run: runCopy } = useActionStatus(`agent-copy-${copy.configKey}`);
+  const { status: testStatus, run: runTest } = useActionStatus(`agent-test-${copy.configKey}`);
+  const enabled = config.agents.runtimes[copy.configKey].enabled;
+
+  async function copySnippet() {
+    await runCopy(
+      async () => {
+        await navigator.clipboard.writeText(copy.snippet);
+      },
+      { announce: true, okMessage: "Copied", errorMessage: () => "Couldn't copy to clipboard" },
+    );
+  }
+
+  async function sendTest() {
+    await runTest(() => settingsInvoke("send_agent_test_event", { runtime: copy.wireRuntime }), {
+      announce: true,
+      okMessage: "Sent",
+      errorMessage: (reason) =>
+        typeof reason === "string" ? reason : "couldn't send a test event",
+    });
+  }
+
+  return (
+    <div className="agent-card border-t border-border/60 py-3 first:border-t-0">
+      <div className="agent-card-header mb-2 flex items-center justify-between gap-2">
+        <span className="text-fs-body font-[590] text-foreground">{copy.label}</span>
+        <div className="flex items-center gap-1.5">
+          {health ? (
+            <MetaChip uppercase active={health.status === "available"}>
+              {AVAILABILITY_LABELS[health.status]}
+            </MetaChip>
+          ) : null}
+          <MetaChip>{enabled ? "Enabled" : "Disabled"}</MetaChip>
+        </div>
+      </div>
+
+      <ToggleControl
+        id={`agent-runtime-${copy.configKey}`}
+        name={`Enable ${copy.label}`}
+        help={`Accept ${copy.label} events over the loopback /agent/events endpoint.`}
+        label={`Enable ${copy.label}`}
+        checked={enabled}
+        onChange={(next) => patchRuntime(config, patchConfig, copy.configKey, next)}
+      />
+
+      {health ? (
+        <div className="agent-health-meta mt-[-2px] mb-2 flex flex-col gap-1 text-fs-caption text-muted-foreground">
+          <span>Last seen: {formatLastSeen(health.lastAcceptedEventMs)}</span>
+          {health.capabilities.length > 0 ? (
+            <span>Capabilities: {health.capabilities.join(", ")}</span>
+          ) : null}
+          {health.lastErrorCategory ? (
+            <span>Last error: {ERROR_CATEGORY_LABELS[health.lastErrorCategory]}</span>
+          ) : null}
+          {health.compatibilityMessage ? <span>{health.compatibilityMessage}</span> : null}
+        </div>
+      ) : null}
+
+      <div className="agent-setup mb-2">
+        <div className="mb-1 text-fs-caption font-bold tracking-[0.06em] text-muted-foreground uppercase">
+          Target file
+        </div>
+        <div className="mb-2 font-mono text-fs-secondary text-foreground [overflow-wrap:anywhere]">
+          {copy.targetFile}
+        </div>
+        <pre className="agent-snippet m-0 max-h-[160px] overflow-auto rounded-sm border border-border bg-input/20 p-2 font-mono text-fs-caption whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]">
+          {copy.snippet}
+        </pre>
+      </div>
+
+      <div className={CONTROL_ROW}>
+        {/* `htmlFor` deliberately does not match any element id below —
+            same convention `TestButtonRow` (controls.tsx) already uses:
+            these two rows label a plain <Button> by its own visible
+            text, not a form control a <label for> should actually
+            associate with (associating would make the LABEL text win as
+            the button's accessible name over its own text content). */}
+        <ControlCopy
+          htmlFor={`agent-copy-${copy.configKey}-label`}
+          name="Setup snippet"
+          help="Copy the block above into the target file shown."
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="text-fs-secondary"
+          onClick={() => void copySnippet()}
+        >
+          Copy snippet
+        </Button>
+      </div>
+      <ActionStatus status={copyStatus} className="agent-copy-status" />
+
+      <div className={CONTROL_ROW}>
+        <ControlCopy
+          htmlFor={`agent-test-${copy.configKey}-label`}
+          name="Test event"
+          help="Post one synthetic completed event so you can see it land on the Agent Board."
+        />
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="text-fs-secondary"
+          disabled={testStatus.state === "pending"}
+          onClick={() => void sendTest()}
+        >
+          {testStatus.state === "pending" ? "Sending…" : "Send test event"}
+        </Button>
+      </div>
+      <ActionStatus status={testStatus} className="agent-test-status" />
+
+      <p className="agent-uninstall m-0 mt-1.5 text-fs-caption text-muted-foreground">
+        Uninstall: {copy.uninstall}
+      </p>
+    </div>
+  );
+}
+
+// Plan 143 (spec §8): static preview rows for the five Agent Board
+// states the plan names — a simple, truthful text summary (runtime /
+// state / summary), not a full card mockup. The Agent Board itself lives
+// in the overlay (`App.tsx`), which the settings window never renders —
+// see AppearanceSection's own preview-fixture doc for why the settings
+// window's previews are always a lighter stand-in, never the live
+// component.
+const PREVIEW_FIXTURES: ReadonlyArray<{ label: string; runtime: string; summary: string }> = [
+  {
+    label: "Waiting on permission",
+    runtime: "Claude Code",
+    summary: "Approval needed to run a command",
+  },
+  {
+    label: "Working, with a subagent",
+    runtime: "Codex",
+    summary: "Running tests — subagent: test runner (working)",
+  },
+  {
+    label: "Completed",
+    runtime: "Kimi",
+    summary: "Turn completed — awaiting input",
+  },
+  {
+    label: "Failed",
+    runtime: "OpenCode",
+    summary: "Session ended with an error",
+  },
+  {
+    label: "Multiple independent sessions",
+    runtime: "Claude Code + Codex",
+    summary: "Two sessions active in different projects — each keeps its own history",
+  },
+];
+
+export function AgentsSection({
+  config,
+  patchConfig,
+}: {
+  config: Config;
+  patchConfig: (patch: Partial<Config>) => void;
+}) {
+  const [health, setHealth] = useState<AdapterHealthDto[] | null>(null);
+  const { status: healthStatus, run: runHealthFetch } = useActionStatus("agent-health-load");
+
+  function refreshHealth(announce: boolean) {
+    void runHealthFetch(() => settingsInvoke("get_agent_health").then((rows) => setHealth(rows)), {
+      announce,
+      showPending: false,
+      errorMessage: () => "Couldn't load adapter health",
+    });
+  }
+
+  // biome-ignore lint/correctness/useExhaustiveDependencies: mount-time fetch + a fixed poll interval — refreshHealth is re-created every render, so listing it would re-fire the effect every render.
+  useEffect(() => {
+    refreshHealth(false);
+    const interval = setInterval(() => refreshHealth(false), 5000);
+    return () => clearInterval(interval);
+  }, []);
+
+  function healthFor(configKey: AdapterConfigKey): AdapterHealthDto | undefined {
+    const wireRuntime = ADAPTER_CARDS.find((c) => c.configKey === configKey)?.wireRuntime;
+    return health?.find((h) => h.runtime === wireRuntime);
+  }
+
+  return (
+    <div className="section-stack">
+      <SettingsGroup
+        title="Agent Adapters"
+        description="Accept lifecycle events from coding-agent runtimes over the loopback /agent/events endpoint and show them on the Agent Board."
+      >
+        <ToggleControl
+          id="agents-enabled"
+          name="Enable Agent Adapters"
+          help="Master switch — off skips every runtime's events regardless of the per-adapter toggles below."
+          label="Enable Agent Adapters"
+          checked={config.agents.enabled}
+          onChange={(enabled) => patchAgents(config, patchConfig, { enabled })}
+        />
+        <NumberControl
+          id="agents-terminal-retention"
+          name="Terminal retention"
+          help="How long a completed or failed session stays on the Agent Board before it's dropped."
+          value={config.agents.terminal_retention_secs}
+          min={0}
+          max={86400}
+          unit="SEC"
+          onChange={(terminal_retention_secs) =>
+            patchAgents(config, patchConfig, { terminal_retention_secs })
+          }
+        />
+        <NumberControl
+          id="agents-stale-after"
+          name="Stale threshold"
+          help="A session with no accepted event for this long is marked Stale on the Agent Board."
+          value={config.agents.stale_after_secs}
+          min={0}
+          max={86400}
+          unit="SEC"
+          onChange={(stale_after_secs) => patchAgents(config, patchConfig, { stale_after_secs })}
+        />
+        <ToggleControl
+          id="agents-informational"
+          name="Informational cards"
+          help="Also show a card for ordinary progress/tool events, not just permission/input/failure/completion."
+          label="Show informational cards"
+          checked={config.agents.informational_notifications}
+          onChange={(informational_notifications) =>
+            patchAgents(config, patchConfig, { informational_notifications })
+          }
+        />
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="Notification priority"
+        description="Which rotation tier each kind of Agent event promotes in."
+      >
+        <Segmented
+          id="agents-permission-priority"
+          name="Permission requested"
+          help="Priority for a permission-request event."
+          options={PRIORITY_SEGMENT_OPTIONS}
+          value={config.agents.permission_priority}
+          onChange={(permission_priority) =>
+            patchAgents(config, patchConfig, { permission_priority })
+          }
+        />
+        <Segmented
+          id="agents-input-priority"
+          name="Input required"
+          help="Priority for an explicit-input-required event."
+          options={PRIORITY_SEGMENT_OPTIONS}
+          value={config.agents.input_priority}
+          onChange={(input_priority) => patchAgents(config, patchConfig, { input_priority })}
+        />
+        <Segmented
+          id="agents-failure-priority"
+          name="Failed"
+          help="Priority for a terminal failure event."
+          options={PRIORITY_SEGMENT_OPTIONS}
+          value={config.agents.failure_priority}
+          onChange={(failure_priority) => patchAgents(config, patchConfig, { failure_priority })}
+        />
+        <Segmented
+          id="agents-completion-priority"
+          name="Completed"
+          help="Priority for a completion event (per-turn Stop or session end)."
+          options={PRIORITY_SEGMENT_OPTIONS}
+          value={config.agents.completion_priority}
+          onChange={(completion_priority) =>
+            patchAgents(config, patchConfig, { completion_priority })
+          }
+        />
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="Adapters"
+        description="One card per supported runtime — setup snippet, declared capabilities, and live health."
+      >
+        <ActionStatus status={healthStatus} className="agent-health-status" showPending={false} />
+        {ADAPTER_CARDS.map((copy) => (
+          <AdapterCard
+            key={copy.configKey}
+            copy={copy}
+            config={config}
+            patchConfig={patchConfig}
+            health={healthFor(copy.configKey)}
+          />
+        ))}
+      </SettingsGroup>
+
+      <SettingsGroup
+        title="Preview"
+        description="What each Agent Board state looks like — a text summary, not the live card (the Agent Board itself renders in the overlay)."
+      >
+        {PREVIEW_FIXTURES.map((sample) => (
+          <div
+            key={sample.label}
+            className="agent-preview-row border-t border-border/60 py-2 first:border-t-0"
+          >
+            <div className="mb-0.5 flex items-center gap-1.5">
+              <span className="text-fs-body font-[590] text-foreground">{sample.label}</span>
+              <MetaChip>{sample.runtime}</MetaChip>
+            </div>
+            <p className="m-0 text-fs-secondary text-muted-foreground">{sample.summary}</p>
+          </div>
+        ))}
+      </SettingsGroup>
+    </div>
+  );
+}

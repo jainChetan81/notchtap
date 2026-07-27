@@ -1,0 +1,7 @@
+{
+  "session_id": "sess-redacted-0001",
+  "hook_event_name": "SessionEnd",
+  "transcript_path": "/Users/example/.claude/projects/redacted/transcript.jsonl",
+  "cwd": "/Users/example/code/notchtap",
+  "end_reason": "clear"
+}

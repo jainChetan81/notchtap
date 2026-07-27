@@ -3,9 +3,10 @@
 // build.rs's `AppManifest::commands` allowlist, `lib.rs`'s
 // `generate_handler!` registration, and `capabilities/settings.json`'s
 // `allow-<kebab-name>` permission list must all name exactly these
-// sixteen commands (plan 121 added get_queue/clear_queue/skip_current
+// eighteen commands (plan 121 added get_queue/clear_queue/skip_current
 // to the original eleven; plan 130 added search_news_now; the About
-// section batch added get_about_info). Until now
+// section batch added get_about_info; plan 143 added
+// get_agent_health/send_agent_test_event). Until now
 // only convention (plus a CLAUDE.md sentence) held that triple
 // together, and the failure mode is FAIL-OPEN: a command added to
 // `generate_handler!` and forgotten here would silently become
@@ -51,6 +52,7 @@ pub(crate) const SETTINGS_COMMANDS: &[&str] = &[
     "clear_history",
     "clear_queue",
     "get_about_info",
+    "get_agent_health",
     "get_config",
     "get_connector_health",
     "get_default_config",
@@ -60,6 +62,7 @@ pub(crate) const SETTINGS_COMMANDS: &[&str] = &[
     "get_secret_status",
     "save_config_and_relaunch",
     "search_news_now",
+    "send_agent_test_event",
     "set_secret",
     "send_test_notification",
     "set_appearance",
@@ -75,8 +78,8 @@ mod tests {
     // array literal itself (typo, duplicate, stray removal) doesn't slip
     // by unnoticed alongside the two parity checks below.
     #[test]
-    fn canonical_list_has_the_documented_sixteen_commands() {
-        assert_eq!(SETTINGS_COMMANDS.len(), 16);
+    fn canonical_list_has_the_documented_eighteen_commands() {
+        assert_eq!(SETTINGS_COMMANDS.len(), 18);
         assert!(SETTINGS_COMMANDS.contains(&"get_history"));
         assert!(SETTINGS_COMMANDS.contains(&"clear_history"));
         assert!(SETTINGS_COMMANDS.contains(&"get_queue"));
@@ -84,6 +87,8 @@ mod tests {
         assert!(SETTINGS_COMMANDS.contains(&"skip_current"));
         assert!(SETTINGS_COMMANDS.contains(&"search_news_now"));
         assert!(SETTINGS_COMMANDS.contains(&"get_about_info"));
+        assert!(SETTINGS_COMMANDS.contains(&"get_agent_health"));
+        assert!(SETTINGS_COMMANDS.contains(&"send_agent_test_event"));
     }
 
     // Parity guard #1: capabilities/settings.json's FULL permissions array
@@ -180,7 +185,7 @@ mod tests {
                 s.strip_prefix("settings::").unwrap_or_else(|| {
                     panic!(
                         "generate_handler![...] entry {s:?} is not a settings:: command — \
-                         every entry in this block is expected to be one of the sixteen v5 \
+                         every entry in this block is expected to be one of the eighteen \
                          settings commands"
                     )
                 })

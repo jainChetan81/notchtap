@@ -1,5 +1,10 @@
 # notchtap — v5 technical spec (v0 draft): settings window
 
+> v7 supersession note (2026-07-26): the settings window's security/ACL
+> contract remains active, but its cmux-specific section, config fields,
+> labels, and previews are replaced by the Agents section in
+> `V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`.
+
 operationalizes `ARCHITECTURE.md` §17 and `IMPLEMENTATION_PLAN.md` §4.5
 into code-level specifics. like the v1–v3.6 specs, this is a working
 draft — adjust freely as implementation surfaces friction; if a change

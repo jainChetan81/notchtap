@@ -22,7 +22,10 @@ export type EventSignal = (typeof EVENT_SIGNALS)[number];
 // (rss_poller.rs) — the frontend rejects unrecognized eventType values, so
 // this list must stay in sync with the rust enum or real payloads silently
 // fall back to empty.
-const EVENT_TYPES = ["generic", "score_update", "match_state", "news_item"] as const;
+// "agent_event" added (plan 135) to track the backend's
+// `EventType::AgentEvent` (event.rs) — same rejection discipline as
+// "news_item"'s own doc above.
+const EVENT_TYPES = ["generic", "score_update", "match_state", "news_item", "agent_event"] as const;
 type EventType = (typeof EVENT_TYPES)[number];
 
 const PRIORITIES = ["low", "medium", "high"] as const;
@@ -33,7 +36,12 @@ type Priority = (typeof PRIORITIES)[number];
 // whole payload, never silently coerce). `origin` is rust-internal-turned-
 // wire-field as of this plan; it did not exist on `SlotState::Showing`
 // before.
-const SOURCE_KINDS = ["football", "news", "manual", "cmux", "weather"] as const;
+// plan 137 (spec §7/§12): "cmux" is gone — the wire's `SourceKind` no
+// longer has a `Cmux` variant (rust's `event.rs` migrated it onto
+// `Agent`, with `"cmux"` accepted only as a one-release deserialize-only
+// alias server-side). The frontend's own closed set drops it outright:
+// nothing on the wire ever sends `"origin":"cmux"` anymore.
+const SOURCE_KINDS = ["football", "news", "manual", "weather", "agent"] as const;
 export type SourceKind = (typeof SOURCE_KINDS)[number];
 
 // plan 083: structured live-match fields (mirrors rust's `EspnMeta`) —

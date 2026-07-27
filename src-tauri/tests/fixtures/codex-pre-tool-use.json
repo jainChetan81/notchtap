@@ -1,0 +1,12 @@
+{
+  "session_id": "codex-sess-redacted-0001",
+  "hook_event_name": "PreToolUse",
+  "transcript_path": "/Users/example/.codex/sessions/redacted/transcript.jsonl",
+  "cwd": "/Users/example/code/notchtap",
+  "turn_id": "turn-redacted-0002",
+  "permission_mode": "default",
+  "tool_name": "apply_patch",
+  "tool_input": {
+    "file_path": "/Users/example/code/notchtap/src-tauri/src/agents/mod.rs"
+  }
+}

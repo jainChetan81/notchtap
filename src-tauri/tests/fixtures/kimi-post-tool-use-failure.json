@@ -1,0 +1,11 @@
+{
+  "session_id": "kimi-sess-redacted-0001",
+  "hook_event_name": "PostToolUseFailure",
+  "cwd": "/Users/example/code/notchtap",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "REDACTED — the full shell command is intentionally withheld from this fixture"
+  },
+  "tool_result": "REDACTED — raw stderr is intentionally withheld from this fixture",
+  "tool_use_succeeded": false
+}

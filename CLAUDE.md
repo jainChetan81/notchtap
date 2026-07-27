@@ -44,8 +44,9 @@ docs below. `docs/archive/V1_TECHNICAL_SPEC.md`,
 `docs/archive/V2_TECHNICAL_SPEC.md`, and `docs/archive/V3_TECHNICAL_SPEC.md`
 were likewise archived: those phases shipped. all five were removed at
 repo close-out (2026-07-23), retrievable via `git log -- docs/archive/`.
-`docs/V3_6_TECHNICAL_SPEC.md` / `docs/V5_TECHNICAL_SPEC.md` are the
-active working-draft specs now.
+`docs/V3_6_TECHNICAL_SPEC.md`, `docs/V5_TECHNICAL_SPEC.md`, and
+`docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md` are the active
+working-draft specs now.
 
 the dev machine is the mac mini (no notch), user `chetanjain`, home
 `/Users/chetanjain`; the rust toolchain is installed. notch-mode
@@ -61,14 +62,15 @@ details.
 `docs/ARCHITECTURE.md` holds the locked decisions (scope phasing, tech
 stack, cross-device behaviour, distribution model) — do not re-litigate
 these without the user explicitly reopening them. `docs/IMPLEMENTATION_PLAN.md`
-holds the phased build sequence and exit criteria for v1–v5.
+holds the phased build sequence and exit criteria through v7.
 `docs/TESTING_STRATEGY.md` holds the testing approach — frameworks, what's
 tdd'd first vs written after, per-component test plan, and what's
 deliberately left as manual-only verification. read all three before
 starting implementation work.
 
-`docs/V3_6_TECHNICAL_SPEC.md` and `docs/V5_TECHNICAL_SPEC.md` are v0
-drafts that operationalize those three into code-level specifics for
+`docs/V3_6_TECHNICAL_SPEC.md`, `docs/V5_TECHNICAL_SPEC.md`, and
+`docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md` are v0 drafts that
+operationalize those three into code-level specifics for
 the currently-active phases — exact file layout, struct/type shapes,
 the `/notify` json schema, the `notchtap-detect` subprocess contract,
 config/logging paths, error-to-status-code mapping. unlike
@@ -132,8 +134,8 @@ electron and not pure native swift (see `docs/ARCHITECTURE.md` §8 for why).
   `127.0.0.1:9789` (`/notify`), a typed event bus, a fifo notification queue
   (capped concurrent visible items, per-item ttl), and window
   positioning. this is the only process that talks to the outside
-  world (cli pushes, and in v2, the espn scoreboard poller and cmux's
-  notification-command relay).
+  world (cli pushes, internal pollers, and v7's loopback Agent Adapter
+  events).
 - **react/ts frontend** owns rendering only. two vite entries: the
   overlay (`index.html` → `src/App.tsx`, `src/styles.css`) and the
   settings window (`settings.html` → `src/settings/`), see
@@ -158,19 +160,22 @@ electron and not pure native swift (see `docs/ARCHITECTURE.md` §8 for why).
   call — the function is unit-testable, the subprocess call is not
   (`docs/TESTING_STRATEGY.md` §4.4).
 - **v1 has no approve/deny action.** notifications are display-only,
-  auto-dismissed by ttl. do not add a "respond back into claude code"
-  loop without reading `docs/ARCHITECTURE.md` §7 first — that requires
-  claude code's own `PreToolUse`/`PermissionRequest` hooks, which is a
+  auto-dismissed by ttl. do not add a "respond back into the agent
+  cli" loop without reading `docs/ARCHITECTURE.md` §20 first — that
+  requires the agent cli's own permission/pre-tool hooks, which is a
   deliberately separate, harder problem, out of scope until explicitly
   requested.
 
 ## naming
 
-this project has no association with, and does not reference, any
-third-party app's name, branding, or code. keep it that way in
-identifiers, comments, and commit messages — use the product name
-(`notchtap`), this repo's own name (`mac-notification-nudge`), or
-generic terms (the engine, the cli, the notify endpoint).
+this project has no association with, and does not use, any third-party
+app's branding or code. use the product name (`notchtap`), this repo's
+own name (`mac-notification-nudge`), or generic terms by default. v7's
+one narrow exception: supported coding-runtime names (Claude Code,
+Codex, Kimi, OpenCode) may appear neutrally in adapter identifiers,
+setup docs, tests/fixtures, and UI labels because compatibility requires
+them. no third-party logos/assets, copied trade dress, or implied
+affiliation.
 
 ## ipc & security (once scaffolded)
 
@@ -188,10 +193,11 @@ the rust core sends it.
 
 **v5 settings window is the one exception, and it's opt-in-gated,
 not default-safe.** tauri v2 grants app-defined commands to *every*
-window by default — the settings window's fifteen invoke commands
-(`clear_history`, `clear_queue`, `get_config`, `get_connector_health`,
-`get_default_config`, `get_history`, `get_queue`, `get_recent_log_lines`,
-`get_secret_status`, `save_config_and_relaunch`, `search_news_now`,
+window by default — the settings window's eighteen invoke commands
+(`clear_history`, `clear_queue`, `get_about_info`, `get_agent_health`,
+`get_config`, `get_connector_health`, `get_default_config`, `get_history`,
+`get_queue`, `get_recent_log_lines`, `get_secret_status`,
+`save_config_and_relaunch`, `search_news_now`, `send_agent_test_event`,
 `set_secret`, `send_test_notification`, `set_appearance`,
 `skip_current`) are scoped to it alone only because `src-tauri/build.rs`
 opts into `tauri_build::AppManifest::commands(&[...])`

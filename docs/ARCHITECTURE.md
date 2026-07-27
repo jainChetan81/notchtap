@@ -11,16 +11,16 @@ external branding, code, or assets are used.
 | | v1 | v2 | v3 |
 |---|---|---|---|
 | core engine + notification queue | yes | — | — |
-| cli push (manual + cmux-relayed) | yes | + push to other sources | — |
+| cli push (manual + historical relay) | yes | + push to other sources | — |
 | animation | one generic template | per-event-type variety | — |
 | live football scores (espn public api) | — | yes | — |
 | posture module (airpods motion, optional) | — | optional | — |
 | outbound connectors (telegram first) | — | — | yes |
 | notch overlay / mac mini hud | yes (both machines from day one) | — | — |
 
-v1 is deliberately thin: engine + queue + one animation + cli push,
-wired to cmux so claude code (and anything else cmux watches) flows
-straight in. everything else stacks on top without touching the core.
+v1 was deliberately thin: engine + queue + one animation + cli push.
+its original terminal-specific relay shipped, then was superseded by
+the provider-neutral Agent Adapter architecture in §20.
 
 ---
 
@@ -29,8 +29,8 @@ straight in. everything else stacks on top without touching the core.
 a background utility that:
 
 - runs a notification queue engine, permanently, as a menu-bar/notch app
-- accepts pushes from the command line — either invoked directly, or
-  relayed automatically through cmux's notification hook (§7)
+- accepts manual pushes from the command line; v7 additionally accepts
+  normalized provider-native Agent Adapter events (§20)
 - renders each push as a notch-anchored overlay on the macbook, and an
   equivalent floating hud on the mac mini (no notch) — same build, both
   machines
@@ -42,12 +42,9 @@ a background utility that:
 
 ```
 ┌───────────────────────────────────────────────────────────┐
-│                      v1 input sources                       │
-│   direct cli invocation      │   cmux notification command   │
-│   (manual / any script)      │   (auto-relays cmux's own      │
-│                               │    desktop notifications,      │
-│                               │    incl. claude code / copilot │
-│                               │    "agent needs input")        │
+│                     current input sources                    │
+│ direct cli │ provider-native Agent Adapters │ internal pollers│
+│  (manual)  │  (structured lifecycle hooks)  │ (score/news/wx) │
 └───────────────┬───────────────────────────┬─────────────────┘
                 │                           │
                 ▼                           ▼
@@ -106,8 +103,8 @@ each event enqueues as:
   only the launch state changes.
 - v1 is info-only — auto-dismiss after ttl, no approve/deny action wired
   to anything. an interactive "this blocks until you respond" model is
-  a v2+ concern if true remote-approve is ever wanted (see §7 note on
-  cmux's limits).
+  a separately approved future concern if true remote-approve is ever
+  wanted (see §20's heads-up-only boundary).
 
 **default values (v1)**:
 
@@ -143,7 +140,7 @@ gets the pipe working end to end before investing in variety.
 
 v2: swap the single template for a config table (event type →
 animation), e.g. goal = confetti + bounce, posture-alert = shake,
-generic/cmux = simple slide. **css keyframes** (locked — framer motion
+generic/agent = simple slide. **css keyframes** (locked — framer motion
 was the alternative, evaluated and declined 2026-07-16 in favour of
 zero new dependencies, see §16) keeps this a config change, not a new
 code path.
@@ -298,63 +295,14 @@ processes — anything running on the machine can post notifications.
 that's acceptable by design for a single-user personal tool; revisit
 only if that assumption ever changes.
 
-**cmux relay:**
-
-cmux (the terminal running claude code) already has the integration
-point for this, documented at cmux.com/docs/notifications:
-
-- **settings > app > notification command** — a shell command cmux
-  runs on *every* notification it fires (including its own claude code
-  / copilot cli / opencode "agent needs input" alerts), with
-  `CMUX_NOTIFICATION_TITLE`, `CMUX_NOTIFICATION_SUBTITLE`,
-  `CMUX_NOTIFICATION_BODY` as env vars.
-- point that one setting at the engine's cli entrypoint: `notchtap`
-  `--title "$CMUX_NOTIFICATION_TITLE" --subtitle "$CMUX_NOTIFICATION_SUBTITLE"`
-  `--body "$CMUX_NOTIFICATION_BODY"`. cmux already does the work of
-  hooking into claude code (and copilot cli, and opencode) — no
-  `PreToolUse`/`PermissionRequest` hook is written at all, just
-  consuming cmux's existing output. this is also why it
-  generalizes for v2 ("push to different stuff"): anything cmux already
-  notifies on flows through this one setting, no per-tool integration
-  work required.
-
-the `notchtap` cli self-identifies a cmux-relayed push when the
-`CMUX_NOTIFICATION_BODY` environment variable is present, adding
-`source: "cmux"` on the wire. cmux priority and rotation seconds are
-configured independently in settings.
-
-**precise about the limit, so v1 scope stays honest**: cmux's
-notification command is a **heads-up relay**, not an approval gate. it
-fires *after* cmux decides to show a notification — it doesn't hand
-back a way to answer into claude code's permission prompt from this
-app's ui. that "click approve here, claude code proceeds" loop is a
-separate, harder problem (it needs claude code's own
-`PreToolUse`/`PermissionRequest` hook to actually block and wait for a
-decision — see code.claude.com/docs/en/hooks if wanted later). for v1,
-this isn't needed — the goal is just knowing claude needs input, via
-one cli command. that's fully solved by the notification-command relay
-alone.
-
-**optional richer hook sources (plan 035)**: two committed hook scripts
-in `hooks/` give the overlay real structure beyond cmux's three plain
-strings. `hooks/notchtap-cmux-hook.sh` is a cmux *notification hook*
-(the stdin-JSON form, distinct from the notification-command above): it
-echoes cmux's json back **unchanged** first — so cmux's own
-banner/history/sound behaviour is untouched — then relays
-`title`/`body`/`subtitle` plus the workspace `cwd` as a `Project`
-detail. `hooks/notchtap-claude-hook.sh` is a claude code hook that maps
-`Notification`, `PermissionRequest` (both real, documented events;
-`tool_name`/`tool_input`/`cwd` become Tool / Command-or-File / Project
-detail cells), `Stop`, and `PostToolUse`(`Task`). both are
-**observational only**: they post to the cli in the background and exit
-0 without writing any decision to stdout — and per the hooks contract,
-staying silent means "no decision", so claude code's real permission
-prompt still shows. this is the same heads-up boundary as the relay
-above: the respond-back loop (clicking approve here to unblock the
-agent) stays out of scope and unchanged. the operator wires these in
-`~/.claude/settings.json` and cmux's `notifications.hooks`; each script
-does nothing and exits 0 when the `notchtap` cli is not on PATH, so it
-can never block a session.
+**historical agent relay — superseded by §20:** v1/v2 accepted a
+terminal-specific notification command and later optional hook scripts.
+that proved the heads-up use case, but flattened independent agent
+sessions into generic strings and coupled the product to a Host instead
+of the Agent Runtime. v7 removes that relay, its Origin/config/UI/hook
+surfaces, and replaces it with provider-native Agent Adapters. Git
+history retains the shipped implementation; it is not an active
+compatibility target.
 
 **v3**: outbound connectors sit here as additional sinks observing
 accepted events — telegram first (bot api: free, instant, no approval
@@ -527,10 +475,11 @@ the swift shim to find the notch-bearing display explicitly.
 
 ## 13. deduplication
 
-v1 has **no deduplication** — if cmux fires the same "agent needs input"
-notification twice in rapid succession, or a script loops with the same
-message, the queue will contain duplicates. this is acceptable for a
-personal tool with trusted, local sources.
+v1 has **no content-hash deduplication** — if a producer fires the same
+notification twice in rapid succession, or a script loops with the
+same message, the queue will contain duplicates. this is acceptable for
+a personal tool with trusted, local sources. v7's Agent endpoint adds
+identity-level event-ID/sequence idempotency, not fuzzy content dedup.
 
 if duplicate spam becomes a problem in practice, v2 can add a
 `(title, body)` hash deduplication window (e.g., 5 seconds): identical
@@ -623,10 +572,9 @@ the phased build sequence and exit criteria.
   guard before the tray's `blocking_lock`). notch-precise positioning
   stays deferred (`IMPLEMENTATION_PLAN.md` §5) — it needs the macbook
   physically present.
-- the cmux relay needed no v2 work at all: it was live-verified on the
-  mac mini on 2026-07-16 (a real claude code "needs input" alert
-  surfaced through the overlay). only the macbook's cmux setting
-  remains to configure.
+- the original terminal relay needed no v2 work and was live-verified
+  on the mac mini on 2026-07-16. it is a historical result only;
+  §20 supersedes the integration and removes the macbook setup item.
 
 code-level detail for all of the above was `archive/V2_TECHNICAL_SPEC.md`
 (v2 shipped; was a v0 draft, same rules as the v1 spec; removed at
@@ -764,8 +712,75 @@ agent-notification purpose.
 - **defaults**: `weather_poll_secs` = 900, rain = 30-min lookahead @
   60% probability, `weather_priority` = Medium (bracketed by espn High
   and rss Low), rotation-order slot right after Manual:
-  `[Football, Manual, Weather, Cmux, News]`.
+  `[Football, Manual, Weather, Agent, News]` after v7's migration.
 - **no new ipc**: `get_config`/`get_default_config` serialize the whole
   `Config`; the overlay stays receive-only. settings window gains a
   Weather section and a per-source test-notification button (the
   existing `send_test_notification` command, no new `#[tauri::command]`).
+
+## 20. agent integrations and Agent Board (locked 2026-07-26)
+
+v7 restores the product's original coding-agent focus without coupling
+it to a terminal or IDE. the initial Agent Runtimes are Claude Code,
+Codex, Kimi, and OpenCode. each runtime integrates through its own
+documented lifecycle hooks/plugin and normalizes into one Agent model.
+T3 Code needs no special adapter: it launches those ordinary runtimes,
+so their normal hook configuration remains the integration surface.
+
+- **one Origin, separate Runtime and Host**: every adapter-produced
+  Event has Origin `Agent`. Runtime selects compatibility and
+  presentation policy. optional Host metadata (T3 Code, terminal, IDE)
+  exists only for display/Open-or-Focus behavior and never participates
+  in identity or Rotation Order.
+- **independent sessions forever**: identity is Runtime + the provider's
+  native session ID. project path is metadata, never identity. every
+  session owns its own bounded transition history; two histories are
+  never merged even when runtime/project match.
+- **capability-declared adapters**: partial provider support is valid
+  and visible. the UI omits unsupported data rather than inferring it
+  from notification wording. Kimi support is version-gated; Codex's
+  currently undocumented input/terminal-failure gaps remain explicit.
+- **hooks, not MCP**: lifecycle delivery is proactive and deterministic.
+  v7 adds no MCP server. an MCP control plane is reconsidered only if a
+  future standardized proactive event surface or separately approved
+  model-invoked query/control use case justifies it.
+- **heads-up only**: Permission Requested and Input Required are
+  high-priority heads-up states. notchtap never approves, rejects,
+  replies, launches, supervises, or scrapes the runtime. Open/Focus
+  Session is allowed only through code-owned Host allowlists.
+- **two presentation paths**: noteworthy Agent Events use the existing
+  Notification Queue/Slot. session lifecycle/progress updates the
+  separate Rust-owned Agent Registry and Agent Board without creating a
+  card for every tick.
+- **Agent Board**: when the Slot is empty, live/retained Agent Sessions
+  take precedence over ordinary idle content. resting shows the
+  highest-ranked session richly and represents every other session
+  individually. hover expands to a screen-bounded scrollable list.
+  ordering is urgency first, FIFO within equal urgency. terminal
+  retention is configurable and defaults to ten minutes; waiting
+  states do not expire like Notifications.
+- **overlay security remains locked**: the overlay still receives only
+  Rust-published state/hover events; `capabilities/default.json` does
+  not change. initial Open/Focus is a global shortcut targeting the
+  highest-ranked session. native pointer delivery is enabled only
+  inside the expanded Board's tracked rect for scrolling, then restored
+  to pass-through on exit.
+- **loopback structured ingestion**: Agent Adapters post a versioned,
+  bounded normalized schema to `POST /agent/events`. raw hook payloads,
+  prompts, tool output, secrets, and arbitrary executable actions never
+  enter frontend IPC or persistence.
+- **cmux is retired completely**: v7 removes its Origin, request source,
+  config keys after migration aliases, CLI autodetection, hook, Settings
+  section, labels, fixtures, and active documentation. old serialized
+  values migrate to `Agent`; Git history is the only recovery path.
+
+the project remains an independent clean-room product. runtime names are
+a narrow compatibility exception to the no-third-party-names rule:
+neutral names are allowed only in adapter identifiers, setup docs,
+fixtures/tests, and UI labels. no third-party branding, logos, assets,
+copied trade dress, or implied affiliation.
+
+code-level contract: `V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`. build
+sequence: `IMPLEMENTATION_PLAN.md` §9. test contract:
+`TESTING_STRATEGY.md` §4.13.
+

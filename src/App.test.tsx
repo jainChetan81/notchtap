@@ -2,11 +2,51 @@ import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import { emitTo, resetHandlers } from "./test-support/tauriEventMock";
+import type { AgentState } from "./useAgentState";
 import type { SlotState } from "./useSlotState";
 
 vi.mock("@tauri-apps/api/event", () => import("./test-support/tauriEventMock"));
 
 const emit = (payload: SlotState) => act(() => emitTo("slot-state", payload));
+const emitAgentState = (payload: AgentState) => act(() => emitTo("agent-state", payload));
+
+const SHOWING: SlotState = {
+  state: "showing",
+  id: "n1",
+  title: "t",
+  body: "b",
+  eventType: "generic",
+  priority: "medium",
+  signal: "generic",
+  origin: "manual",
+  expanded: false,
+  source: null,
+  category: null,
+  publishedAtMs: null,
+  link: null,
+  subtitle: null,
+  details: [],
+  queueTotal: 1,
+  queueDone: 0,
+  ttlMs: 8000,
+  remainingMs: 8000,
+};
+
+function agentSession(id: string): AgentState["sessions"][number] {
+  return {
+    id,
+    runtime: "codex",
+    state: "waiting_for_permission",
+    capabilities: [],
+    summary: null,
+    details: [],
+    project: null,
+    host: null,
+    elapsedMs: 0,
+    retentionRemainingMs: null,
+    history: [],
+  };
+}
 
 describe("App", () => {
   beforeEach(() => {
@@ -276,6 +316,71 @@ describe("App", () => {
       expect(document.documentElement.style.getPropertyValue("--notchtap-cutout-height")).toBe(
         "32px",
       );
+    });
+  });
+
+  // Plan 136 (v7 ticket 4 of 13, spec §6.1): the presentation precedence
+  // machine's own integration coverage — App.tsx is `presentationMode`'s
+  // one call site, so this is where "slot-occupied hides the board",
+  // "board over idle", and "empty registry falls back to idle" actually
+  // get exercised end to end, not just as a pure-function unit test.
+  describe("Agent Board precedence (plan 136)", () => {
+    it("an empty registry falls back to the existing idle rail, never mounting the board", () => {
+      const { container } = render(<App />);
+      emitAgentState({ revision: 1, capturedAtMs: Date.now(), sessions: [], adapterHealth: [] });
+      expect(container.querySelector(".card-assembly.idle")).not.toBeNull();
+      expect(container.querySelector('[data-testid="agent-board"]')).toBeNull();
+    });
+
+    it("shows the board over idle once at least one session exists", async () => {
+      const { container } = render(<App />);
+      emitAgentState({
+        revision: 1,
+        capturedAtMs: Date.now(),
+        sessions: [agentSession("s1")],
+        adapterHealth: [],
+      });
+      await vi.waitFor(() => {
+        expect(container.querySelector('[data-testid="agent-board"]')).not.toBeNull();
+      });
+    });
+
+    it("a Visible Notification hides the board even while sessions exist", async () => {
+      const { container } = render(<App />);
+      emitAgentState({
+        revision: 1,
+        capturedAtMs: Date.now(),
+        sessions: [agentSession("s1")],
+        adapterHealth: [],
+      });
+      await vi.waitFor(() => {
+        expect(container.querySelector('[data-testid="agent-board"]')).not.toBeNull();
+      });
+
+      emit(SHOWING);
+      await screen.findByText("t");
+      expect(container.querySelector('[data-testid="agent-board"]')).toBeNull();
+      expect(
+        container.querySelector(".card-assembly.high, .card-assembly.medium, .card-assembly.low"),
+      ).not.toBeNull();
+    });
+
+    it("returns to the still-current board once the notification finishes", async () => {
+      const { container } = render(<App />);
+      emitAgentState({
+        revision: 1,
+        capturedAtMs: Date.now(),
+        sessions: [agentSession("s1")],
+        adapterHealth: [],
+      });
+      emit(SHOWING);
+      await screen.findByText("t");
+      expect(container.querySelector('[data-testid="agent-board"]')).toBeNull();
+
+      emit({ state: "empty" });
+      await vi.waitFor(() => {
+        expect(container.querySelector('[data-testid="agent-board"]')).not.toBeNull();
+      });
     });
   });
 });

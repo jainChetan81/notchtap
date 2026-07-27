@@ -6,14 +6,16 @@ import type { Detail } from "./StatusRailCard";
 import { TtlBar } from "./TtlBar";
 
 // 2026-07-24 (declutter fix): the generic branch serves ALL non-news
-// origins, not just cmux — `origin` is the five-value `SourceKind` union
+// origins — `origin` is the five-value `SourceKind` union
 // (`src/useSlotState.ts`'s `SOURCE_KINDS`). An exhaustive per-origin
-// lookup (not a `=== "cmux"` ternary) keeps a future SourceKind addition
-// a compile error here until this table is updated, same discipline as
-// lib/presentation.ts's own exhaustive tables. "manual" is the `/notify`
-// CLI push path, hence "cli"; "news" never reaches this branch (the
-// `news` boolean above routes it to the news branch instead), so its
-// entry is a defensive fallback, never actually read.
+// lookup (not a string-equality ternary) keeps a future SourceKind
+// addition a compile error here until this table is updated, same
+// discipline as lib/presentation.ts's own exhaustive tables. "manual" is
+// the `/notify` CLI push path, hence "cli"; "news" never reaches this
+// branch (the `news` boolean above routes it to the news branch
+// instead), so its entry is a defensive fallback, never actually read.
+// plan 137 (spec §7/§12): the "cmux" entry is gone — `SourceKind` no
+// longer has that variant (superseded by "agent").
 // M13 (layout overflow in the fixed 500x300 window): `liveVisibleDetails`
 // used to render every pair the payload carried, uncapped — a worst-case
 // server push (up to ~8 detail pairs, per the wire contract's own
@@ -28,11 +30,13 @@ import { TtlBar } from "./TtlBar";
 const MAX_VISIBLE_DETAIL_PAIRS = 4;
 
 const GENERIC_MASTHEAD_KICKER: Record<SourceKind, string> = {
-  cmux: "cmux",
   manual: "cli",
   football: "football",
   weather: "weather",
   news: "news",
+  // plan 135: agent-originated cards (`SourceKind::Agent`) get their own
+  // kicker label, same table-driven discipline as every other origin here.
+  agent: "agent",
 };
 
 // plan 120: extracted verbatim from StatusRailCard.tsx's JSX (`:711-838`
@@ -110,8 +114,9 @@ export function NotificationBody({
             // reads the origin-derived label (`GENERIC_MASTHEAD_KICKER`
             // above) instead of a source name, and the old separate
             // `.notif-header-row`/`.notif-title`/`.notif-header-badges`/
-            // `chip-cmux` "Agent" chip are gone (the kicker already says
-            // cmux for that origin, so the chip was pure duplication).
+            // `chip-cmux` "Agent" chip are gone (the kicker already said
+            // cmux for that origin, so the chip was pure duplication;
+            // plan 137 renamed that kicker entry to "agent").
             // Subtitle row (plan 035's `subtitle`,
             // surfaced in compact) and the full-width body stay
             // generic-only — news never carries either. Detail pairs
@@ -134,7 +139,7 @@ export function NotificationBody({
                   <span className="notif-subtitle">{slot.subtitle}</span>
                 </div>
               )}
-              {/* an empty body (e.g. a cmux push with no body text)
+              {/* an empty body (e.g. an agent push with no body text)
                 must not leave a blank `.notif-body` node in the card. */}
               {slot.body.trim() !== "" && <div className="notif-body">{bodyContent}</div>}
               {liveVisibleDetails.length > 0 &&

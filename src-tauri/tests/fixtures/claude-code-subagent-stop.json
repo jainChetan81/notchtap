@@ -1,0 +1,11 @@
+{
+  "session_id": "sess-redacted-0001",
+  "prompt_id": "77777777-7777-4777-8777-777777777777",
+  "hook_event_name": "SubagentStop",
+  "transcript_path": "/Users/example/.claude/projects/redacted/transcript.jsonl",
+  "cwd": "/Users/example/code/notchtap",
+  "permission_mode": "default",
+  "agent_id": "agent-redacted-01",
+  "agent_type": "general-purpose",
+  "last_assistant_message": "REDACTED — the full assistant message text is intentionally withheld from this fixture"
+}

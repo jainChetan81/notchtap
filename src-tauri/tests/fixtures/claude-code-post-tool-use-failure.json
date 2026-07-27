@@ -1,0 +1,15 @@
+{
+  "session_id": "sess-redacted-0001",
+  "prompt_id": "55555555-5555-4555-8555-555555555555",
+  "hook_event_name": "PostToolUseFailure",
+  "transcript_path": "/Users/example/.claude/projects/redacted/transcript.jsonl",
+  "cwd": "/Users/example/code/notchtap",
+  "permission_mode": "default",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "REDACTED — the full shell command is intentionally withheld from this fixture"
+  },
+  "tool_use_id": "toolu_redacted_0003",
+  "tool_result": "REDACTED — raw stderr is intentionally withheld from this fixture",
+  "tool_use_succeeded": false
+}

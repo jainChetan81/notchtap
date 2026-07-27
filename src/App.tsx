@@ -1,7 +1,11 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
+import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
+import { AgentBoard } from "./components/AgentBoard";
 import { StatusRailCard } from "./components/StatusRailCard";
+import { presentationMode } from "./lib/presentation";
 import { presentationFacts } from "./lib/presentationFacts";
+import { useAgentState } from "./useAgentState";
 import { useSlotState } from "./useSlotState";
 import { useStatusState } from "./useStatusState";
 
@@ -27,6 +31,14 @@ function applyAppearance(scale: number, radius: number, opacity: number) {
 function App() {
   const slot = useSlotState();
   const status = useStatusState();
+  // Plan 136 (spec §6.1's presentation precedence): a Visible
+  // Notification always wins; otherwise the Agent Board shows whenever
+  // the independently-updating `agent-state` channel currently holds at
+  // least one session; otherwise the existing clock/weather/media idle.
+  // `presentationMode` is pure data (lib/presentation.ts) — this is its
+  // one call site.
+  const agentState = useAgentState();
+  const mode = presentationMode(slot, agentState.sessions.length);
   // plan 085: the RESTING (idle) render choice, seeded like scale/radius/
   // opacity and hot-updated by the same appearance-changed listener below.
   // Missing on the seed (an old boot payload) means "rail" — the default,
@@ -131,9 +143,56 @@ function App() {
   // host that scope. `display: contents` (styles.css, overlay-only
   // residue) makes it a layout-neutral scoping node: it changes zero
   // overlay geometry, only which selectors match.
+  // Plan 136: the Agent Board is its own top-level swap, not a mode
+  // grafted into StatusRailCard's own showing<->idle exit choreography
+  // (see AgentBoard.tsx's own doc for why). `initial={false}` skips the
+  // entrance fade on first mount — every existing "renders synchronously"
+  // assertion (App.test.tsx) stays true; only a genuine board<->rail
+  // SWAP crossfades. `mode === "board"`'s own key never changes across a
+  // notification<->idle transition (both map to "status-rail"), so
+  // StatusRailCard itself is never remounted by this wrapper — its own
+  // `.card-assembly` identity stays stable exactly as before this plan.
   return (
     <div className="card-root">
-      <StatusRailCard slot={slot} status={status} restingState={restingState} hovered={hovered} />
+      <AnimatePresence initial={false}>
+        {mode === "board" ? (
+          <motion.div
+            key="agent-board"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+          >
+            <AgentBoard
+              sessions={agentState.sessions}
+              capturedAtMs={agentState.capturedAtMs}
+              status={status}
+              // Plan 142 (v7 ticket 10 of 13, spec §6.2 expanded): the
+              // SAME `hover-changed`-sourced boolean StatusRailCard's own
+              // hover consumers already use — meaningful here because
+              // this component is only ever mounted while
+              // `mode === "board"`, so `hovered` always means "over the
+              // Board" in this branch, never some other card.
+              expanded={hovered}
+            />
+          </motion.div>
+        ) : (
+          <motion.div
+            key="status-rail"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            transition={{ duration: 0.18 }}
+          >
+            <StatusRailCard
+              slot={slot}
+              status={status}
+              restingState={restingState}
+              hovered={hovered}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

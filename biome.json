@@ -1,7 +1,7 @@
 {
   "$schema": "./node_modules/@biomejs/biome/configuration_schema.json",
   "files": {
-    "includes": ["src/**/*.ts", "src/**/*.tsx", "vite.config.ts"],
+    "includes": ["src/**/*.ts", "src/**/*.tsx", "adapters/**/*.ts", "vite.config.ts"],
     "ignoreUnknown": true
   },
   "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },

@@ -11,7 +11,10 @@ export interface RssFeedConfig {
 }
 
 export type PriorityLevel = "low" | "medium" | "high";
-export type SourceKind = "football" | "manual" | "news" | "cmux" | "weather";
+// plan 137 (spec §7/§12): "cmux" is gone — migrated onto "agent"
+// (rust's `SourceKind::Cmux` was removed and its slot taken by
+// `SourceKind::Agent`, the v7 Agent Adapter's origin).
+export type SourceKind = "football" | "manual" | "news" | "weather" | "agent";
 export type Units = "celsius" | "fahrenheit";
 export type RestingState = "rail" | "notch";
 
@@ -19,6 +22,37 @@ export interface AppearanceConfig {
   card_scale: number;
   card_radius: number;
   card_opacity: number;
+}
+
+// Plan 143 (v7 ticket 11 of 13): mirrors rust's `AgentRuntimesConfig`
+// (config.rs) — one enable flag per supported runtime.
+export interface AgentRuntimeToggle {
+  enabled: boolean;
+}
+
+export interface AgentRuntimesConfig {
+  claude_code: AgentRuntimeToggle;
+  codex: AgentRuntimeToggle;
+  kimi: AgentRuntimeToggle;
+  opencode: AgentRuntimeToggle;
+}
+
+export type AgentAdapterRuntime = "claude_code" | "codex" | "kimi" | "opencode";
+
+// Mirrors rust's `AgentsConfig` (config.rs) — the `[agents]` v7 config
+// block: global enable, registry retention/staleness, the
+// informational-card toggle, four per-kind Notification priorities, and
+// the four per-runtime enable flags above.
+export interface AgentsConfig {
+  enabled: boolean;
+  terminal_retention_secs: number;
+  stale_after_secs: number;
+  informational_notifications: boolean;
+  permission_priority: PriorityLevel;
+  input_priority: PriorityLevel;
+  failure_priority: PriorityLevel;
+  completion_priority: PriorityLevel;
+  runtimes: AgentRuntimesConfig;
 }
 
 export interface Config {
@@ -42,8 +76,13 @@ export interface Config {
   rss_ttl_secs: number;
   rss_max_per_poll: number;
   manual_default_priority: PriorityLevel;
-  cmux_priority: PriorityLevel;
-  cmux_ttl_secs: number;
+  agent_priority: PriorityLevel;
+  agent_ttl_secs: number;
+  // plan 143 (v7 ticket 11 of 13): the `[agents]` config block — see
+  // `AgentsConfig`'s own doc. Always present on the wire
+  // (`#[serde(default)]` on the rust side), so this field is required,
+  // not optional, here.
+  agents: AgentsConfig;
   weather_enabled: boolean;
   weather_lat: number;
   weather_lon: number;
@@ -184,9 +223,35 @@ export interface AboutInfo {
   uptimeSecs: number;
 }
 
+// Plan 143 (v7 ticket 11 of 13): the wire-token spelling
+// (`agents::adapter::runtime_wire_label`) — kebab-case, distinct from
+// `AgentsConfig.runtimes`'s snake_case config-field keys above. Mirrors
+// `src/useAgentState.ts`'s own `AgentRuntime` union (kept as a separate
+// local type here rather than importing across the overlay/settings
+// entry-point boundary — see `vite.config.ts`'s two-entry split).
+export type AgentWireRuntime = "claude-code" | "codex" | "kimi" | "opencode";
+
+// Wire shape of `get_agent_health` (plan 143) — mirrors
+// `agents::board::AdapterHealthView` in src-tauri/src/agents/board.rs,
+// the same conversion the `agent-state` overlay channel's Adapter Health
+// rows use (`health_to_view`). camelCase throughout, same convention as
+// `ConnectorHealthDto`/`AboutInfo` above.
+export type AdapterAvailability = "available" | "partial" | "unavailable";
+export type AdapterErrorCategory = "malformed_payload" | "unsupported_runtime" | "internal";
+
+export interface AdapterHealthDto {
+  runtime: AgentWireRuntime;
+  status: AdapterAvailability;
+  enabled: boolean;
+  capabilities: string[];
+  lastAcceptedEventMs: number | null;
+  lastErrorCategory: AdapterErrorCategory | null;
+  compatibilityMessage: string | null;
+}
+
 export type SecretField = keyof SecretStatus;
 
-export type TestSource = "football" | "news" | "cmux" | "manual" | "weather";
+export type TestSource = "football" | "news" | "manual" | "weather" | "agent";
 
 export const PRIORITY_LABELS: Record<PriorityLevel, string> = {
   low: "Low",
@@ -203,10 +268,10 @@ export const UNITS_OPTIONS: Units[] = ["celsius", "fahrenheit"];
 
 export const SOURCE_LABELS: Record<SourceKind, string> = {
   football: "Football",
-  cmux: "Cmux (agent relay)",
   manual: "Manual / CLI push",
   news: "News",
   weather: "Weather",
+  agent: "Agent",
 };
 
 // Segmented option lists for the priority and units controls (plan 119:

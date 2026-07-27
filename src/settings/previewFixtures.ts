@@ -89,19 +89,21 @@ export const PREVIEW_SAMPLES: ReadonlyArray<PreviewSample> = [
     },
   },
   {
-    label: "Generic alert (High priority, cmux)",
+    label: "Generic alert (High priority, agent)",
     slot: {
       state: "showing",
-      id: "preview-cmux",
+      id: "preview-agent",
       title: "Agent needs input",
       body: "run `git push origin master`?",
       eventType: "generic",
       priority: "high",
       signal: "generic",
-      // this sample is the cmux accent's own preview vehicle (plan 096) —
-      // it's the one origin the settings preview can actually show the
-      // accent for; label above says "cmux" for exactly this reason.
-      origin: "cmux",
+      // this sample is the agent accent's own preview vehicle (plan 096,
+      // renamed by plan 137: cmux relay superseded by the v7 Agent
+      // Adapter layer) — it's the one origin the settings preview can
+      // actually show the accent for; label above says "agent" for
+      // exactly this reason.
+      origin: "agent",
       expanded: true,
       source: null,
       category: null,

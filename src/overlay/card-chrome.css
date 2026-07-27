@@ -704,16 +704,17 @@
   border-bottom-right-radius: var(--card-radius, 8px);
 }
 
-/* plan 096 (079 item 8, part (c)): the cmux accent's hairline — a plain
-   `border-top`, not a `::before`/`::after` pseudo-element, because
-   `.news-shade::before` already claims `.below-block`'s `::before` for
-   its background wash. Lives on `.below-block` (content chrome), never
-   on `.card-assembly` (the shell that owns the priority accent) — origin
-   and priority are orthogonal and must never share a paint channel; this
-   rule touches none of the `--accent`/`--accent-soft` vars the priority
-   edge (`.compact::before`, `.stamp`, `.ttl-fill`/`.ttl-seg.done`) reads
-   from. */
-.card-root .below-block.cmux-origin {
+/* plan 096 (079 item 8, part (c)), renamed by plan 137 (spec §7/§12: the
+   cmux relay is superseded by the v7 Agent Adapter layer, so this is now
+   the agent accent's hairline): a plain `border-top`, not a
+   `::before`/`::after` pseudo-element, because `.news-shade::before`
+   already claims `.below-block`'s `::before` for its background wash.
+   Lives on `.below-block` (content chrome), never on `.card-assembly`
+   (the shell that owns the priority accent) — origin and priority are
+   orthogonal and must never share a paint channel; this rule touches
+   none of the `--accent`/`--accent-soft` vars the priority edge
+   (`.compact::before`, `.stamp`, `.ttl-fill`/`.ttl-seg.done`) reads from. */
+.card-root .below-block.agent-origin {
   /* O3: one of the amber color's 5 meanings — tokenized onto
      --overlay-amber (same value, color-mix for the alpha) alongside the
      weather dot/business category/yellow-card/Break-state uses. */

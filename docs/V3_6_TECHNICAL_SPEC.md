@@ -1,5 +1,11 @@
 # notchtap — v3.6 technical spec: permanent rotating overlay (v0 draft)
 
+> v7 supersession note (2026-07-26): this shipped spec's queue/Slot
+> contracts remain active, but every cmux-specific Origin, request,
+> priority/rotation, and setup detail is replaced by
+> `V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`. v7's migration section is
+> authoritative where the two documents overlap.
+
 operationalizes `IMPLEMENTATION_PLAN.md` §3.6 into code-level specifics.
 like the v1/v2/v3 specs, this is a working draft — adjust freely as
 implementation surfaces friction; if a change is a *decision* change

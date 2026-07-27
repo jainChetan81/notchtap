@@ -1,4 +1,5 @@
 import {
+  Bot,
   CloudSun,
   Command,
   History,
@@ -10,7 +11,6 @@ import {
   Palette,
   ScrollText,
   SlidersHorizontal,
-  Terminal,
   Trophy,
 } from "lucide-react";
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
@@ -22,8 +22,8 @@ import { NOTCHTAP_EASE } from "../animationTiming";
 import { ActionStatus, useActionStatus } from "./actionStatus";
 import { settingsInvoke } from "./ipc";
 import { AboutSection } from "./sections/AboutSection";
+import { AgentsSection } from "./sections/AgentsSection";
 import { AppearanceSection } from "./sections/AppearanceSection";
-import { CmuxSection } from "./sections/CmuxSection";
 import { ConnectorsSection } from "./sections/ConnectorsSection";
 import { DiagnosticsSection } from "./sections/DiagnosticsSection";
 import { FootballSection } from "./sections/FootballSection";
@@ -63,9 +63,9 @@ type SectionId =
   | "general"
   | "football"
   | "news"
-  | "cmux"
   | "weather"
   | "connectors"
+  | "agents"
   | "shortcuts"
   | "appearance"
   | "diagnostics"
@@ -81,9 +81,9 @@ const navigation: ReadonlyArray<{
   { id: "general", label: "General", icon: SlidersHorizontal },
   { id: "football", label: "Football", icon: Trophy },
   { id: "news", label: "News", icon: Newspaper },
-  { id: "cmux", label: "Cmux", icon: Terminal },
   { id: "weather", label: "Weather", icon: CloudSun },
   { id: "connectors", label: "Connectors & Keys", icon: KeyRound },
+  { id: "agents", label: "Agents", icon: Bot },
   { id: "shortcuts", label: "Shortcuts", icon: Command },
   { id: "appearance", label: "Appearance", icon: Palette },
   { id: "diagnostics", label: "Diagnostics", icon: ScrollText },
@@ -108,21 +108,22 @@ const sectionCopy: Record<SectionId, { index: string; title: string; description
     title: "News",
     description: "Manage RSS sources and the pace of headline delivery.",
   },
-  cmux: {
-    index: "04",
-    title: "Cmux",
-    description: "Set the priority and rotation time for notifications relayed by cmux.",
-  },
   weather: {
-    index: "05",
+    index: "04",
     title: "Weather",
     description:
       "Show ambient conditions in the idle rail and alert on rain and temperature thresholds.",
   },
   connectors: {
-    index: "06",
+    index: "05",
     title: "Connectors & Keys",
     description: "Configure outbound Telegram delivery and write-only credentials.",
+  },
+  agents: {
+    index: "06",
+    title: "Agents",
+    description:
+      "Accept coding-agent lifecycle events, tune notification priority, and set up each adapter.",
   },
   shortcuts: {
     index: "07",
@@ -495,9 +496,6 @@ export function SettingsApp() {
                         setTopicsText={setRssTopicsText}
                       />
                     ) : null}
-                    {activeSection === "cmux" ? (
-                      <CmuxSection config={config} patchConfig={patchConfig} />
-                    ) : null}
                     {activeSection === "weather" ? (
                       <WeatherSection config={config} patchConfig={patchConfig} />
                     ) : null}
@@ -510,6 +508,9 @@ export function SettingsApp() {
                         patchConfig={patchConfig}
                         refreshSecretStatus={refreshSecretStatus}
                       />
+                    ) : null}
+                    {activeSection === "agents" ? (
+                      <AgentsSection config={config} patchConfig={patchConfig} />
                     ) : null}
                     {activeSection === "shortcuts" ? <ShortcutsSection /> : null}
                     {activeSection === "diagnostics" ? <DiagnosticsSection /> : null}

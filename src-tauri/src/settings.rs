@@ -119,10 +119,10 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
             c.espn_ttl_secs
         ));
     }
-    if !(1..=3600).contains(&c.cmux_ttl_secs) {
+    if !(1..=3600).contains(&c.agent_ttl_secs) {
         errors.push(format!(
-            "cmux_ttl_secs must be 1–3600 seconds (got {})",
-            c.cmux_ttl_secs
+            "agent_ttl_secs must be 1–3600 seconds (got {})",
+            c.agent_ttl_secs
         ));
     }
     for league in &c.espn_leagues {
@@ -260,7 +260,7 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
         crate::event::SourceKind::Manual,
         crate::event::SourceKind::Weather,
         crate::event::SourceKind::News,
-        crate::event::SourceKind::Cmux,
+        crate::event::SourceKind::Agent,
     ];
     let is_permutation = c.rotation_order.len() == expected_sources.len()
         && expected_sources
@@ -268,7 +268,7 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
             .all(|source| c.rotation_order.contains(source));
     if !is_permutation {
         errors.push(
-            "rotation_order must contain each of football, manual, weather, news, and cmux exactly once"
+            "rotation_order must contain each of football, manual, weather, news, and agent exactly once"
                 .into(),
         );
     }
@@ -699,25 +699,10 @@ fn build_test_event(config: &Config, source: SourceKind) -> Event {
                 subtitle: None,
                 details: Vec::new(),
                 espn: None,
+                agent: None,
             },
             signal: EventSignal::Generic,
             origin: SourceKind::News,
-        },
-        SourceKind::Cmux => Event {
-            id: uuid::Uuid::new_v4(),
-            event_type: EventType::Generic,
-            priority: config.cmux_priority,
-            rotation: RotationSpec::OneShot {
-                ttl_secs: config.cmux_ttl_secs,
-            },
-            topic: None,
-            payload: EventPayload {
-                title: "Test · agent relay".into(),
-                body: "This is how cmux alerts look".into(),
-            },
-            meta: EventMeta::default(),
-            signal: EventSignal::Generic,
-            origin: SourceKind::Cmux,
         },
         SourceKind::Manual => Event {
             id: uuid::Uuid::new_v4(),
@@ -750,6 +735,32 @@ fn build_test_event(config: &Config, source: SourceKind) -> Event {
             meta: EventMeta::default(),
             signal: EventSignal::Generic,
             origin: SourceKind::Weather,
+        },
+        // plan 137 (spec §7): the flat `agent_priority`/`agent_ttl_secs`
+        // config now exists (the one-release migration target for the
+        // former `cmux_priority`/`cmux_ttl_secs`) — this preview arm reads
+        // them directly, same role the removed `Cmux` arm's
+        // `config.cmux_priority`/`config.cmux_ttl_secs` reads used to
+        // play. A REAL `PermissionRequested`/`InputRequired`/terminal
+        // `Failed` mapping instead reads `[agents]`'s four kind-specific
+        // priorities via `NotificationPolicy` (`agents/notification.rs`) —
+        // this settings preview has no kind of its own to pick one of
+        // those four, so it stays on the flat field, same as before.
+        SourceKind::Agent => Event {
+            id: uuid::Uuid::new_v4(),
+            event_type: EventType::AgentEvent,
+            priority: config.agent_priority,
+            rotation: RotationSpec::OneShot {
+                ttl_secs: config.agent_ttl_secs,
+            },
+            topic: None,
+            payload: EventPayload {
+                title: "Test · agent event".into(),
+                body: "This is how agent notifications look".into(),
+            },
+            meta: EventMeta::default(),
+            signal: EventSignal::Generic,
+            origin: SourceKind::Agent,
         },
     }
 }
@@ -1135,6 +1146,144 @@ pub async fn get_about_info(
     Ok(crate::about::gather_about_info(&app, *started_at.inner()))
 }
 
+/// Plan 143 (v7 ticket 11 of 13, spec §4.6/§8/§10): the Agents section's
+/// four adapter cards read Adapter Health through this command — a live
+/// [`crate::agents::health::HealthTracker::snapshot`] read, mapped
+/// through the exact same [`crate::agents::board::health_to_view`]
+/// conversion the `agent-state` overlay channel uses, so both surfaces
+/// describe one Adapter Health, never two independently-derived views.
+/// `[agents.runtimes.*]` is read from the BOOTED config (same "what is
+/// running" rule `get_config` documents) rather than the four-runtime
+/// snapshot cached at process start, since a runtime's enable toggle
+/// can't change without `save_config_and_relaunch` restarting the whole
+/// process anyway — reading it fresh here costs nothing and avoids a
+/// second stale-config source of truth.
+#[tauri::command]
+pub fn get_agent_health(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, StdMutex<Config>>,
+    health: tauri::State<'_, std::sync::Arc<crate::agents::health::HealthTracker>>,
+) -> Result<Vec<crate::agents::board::AdapterHealthView>, String> {
+    ensure_settings_window(&window)?;
+    let runtimes = state
+        .inner()
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+        .agents
+        .runtimes;
+    let snapshot = health
+        .inner()
+        .snapshot(&runtimes, std::time::Instant::now());
+    Ok(snapshot
+        .iter()
+        .map(crate::agents::board::health_to_view)
+        .collect())
+}
+
+/// Plan 143 (spec §4.6's "a test event" adapter-card action; mirrors
+/// `notchtap-agent test <runtime>`, `src/bin/notchtap_agent.rs`, exactly
+/// — same synthetic non-terminal `completed` schema-v1 event, "turn
+/// completed, agent awaiting input" (spec §2.1's per-turn-Stop rule), not
+/// a fabricated `informational` event that the default policy would
+/// silently suppress). Deliberately does NOT loop back over HTTP the way
+/// a real hook does: this command already runs inside the same process
+/// that owns the Agent Registry/Notification Engine, so it drives them
+/// directly through the identical wire-parse -> apply -> publish ->
+/// notify path `http.rs`'s `agent_events_handler` uses for a real
+/// `/agent/events` POST — the "simpler, honest" option (CLAUDE.md ipc
+/// rule's own instruction for this ticket) over adding a loopback POST
+/// dependency from inside the app on itself.
+#[tauri::command]
+pub async fn send_agent_test_event(
+    window: tauri::WebviewWindow,
+    state: tauri::State<'_, StdMutex<Config>>,
+    registry: tauri::State<'_, crate::agents::registry::AgentRegistryHandle>,
+    board: tauri::State<'_, crate::agents::board::AgentBoardPublisher>,
+    engine: tauri::State<'_, Engine>,
+    health: tauri::State<'_, std::sync::Arc<crate::agents::health::HealthTracker>>,
+    runtime: String,
+) -> Result<(), String> {
+    ensure_settings_window(&window)?;
+
+    const KNOWN_RUNTIMES: [&str; 4] = ["claude-code", "codex", "kimi", "opencode"];
+    if !KNOWN_RUNTIMES.contains(&runtime.as_str()) {
+        return Err(format!(
+            "unknown runtime {runtime:?} — expected one of {}",
+            KNOWN_RUNTIMES.join(", ")
+        ));
+    }
+
+    let event_id = uuid::Uuid::new_v4().to_string();
+    let session_id = format!("settings-test-{event_id}");
+    let occurred_at_ms = chrono::Utc::now().timestamp_millis();
+    let body = serde_json::json!({
+        "schemaVersion": 1,
+        "eventId": event_id,
+        "runtime": runtime,
+        "sessionId": session_id,
+        "occurredAtMs": occurred_at_ms,
+        "nativeEvent": "settings test event",
+        "kind": "completed",
+        "state": "waiting_for_input",
+        "summary": format!("Test event from Settings — {runtime} turn completed"),
+        "capabilities": ["session_lifecycle", "completion"],
+        "terminal": false,
+    })
+    .to_string();
+
+    let parsed = crate::agents::adapter::parse_wire_event(body.as_bytes())
+        .map_err(|e| format!("could not build test event: {e}"))?;
+    let event = parsed.event;
+    let kind = event.kind;
+    let terminal = event.terminal;
+    let session_key = event.session_key.clone();
+    let summary = event.summary.clone();
+
+    // Plan 143: a test event is exactly the "adapter is delivering"
+    // signal Adapter Health's own last-accepted-event field means — the
+    // Agents section card should reflect a manual test the same way it
+    // would a real hook delivery, not go stale until the next real
+    // `/agent/events` POST.
+    health
+        .inner()
+        .record_accepted(session_key.runtime, occurred_at_ms);
+
+    let now = std::time::Instant::now();
+    registry.inner().apply_event(event, now).await;
+    board.inner().publish_if_changed(now).await;
+
+    let (agent_ttl_secs, policy) = {
+        let config = state.inner().lock().unwrap_or_else(|e| e.into_inner());
+        (
+            config.agent_ttl_secs,
+            crate::agents::notification::NotificationPolicy {
+                informational_notifications: config.agents.informational_notifications,
+                permission_priority: config.agents.permission_priority,
+                input_priority: config.agents.input_priority,
+                failure_priority: config.agents.failure_priority,
+                completion_priority: config.agents.completion_priority,
+            },
+        )
+    };
+
+    if let Some(notification) = crate::agents::notification::build_notification(
+        &session_key,
+        kind,
+        terminal,
+        summary.as_deref(),
+        agent_ttl_secs,
+        &policy,
+    ) {
+        engine
+            .inner()
+            .accept(notification, true)
+            .await
+            .map_err(|e| e.to_string())?;
+    }
+
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1204,17 +1353,17 @@ mod tests {
     }
 
     #[test]
-    fn cmux_ttl_boundaries() {
+    fn agent_ttl_boundaries() {
         let mut c = Config {
-            cmux_ttl_secs: 0,
+            agent_ttl_secs: 0,
             ..Config::default()
         };
         assert!(validate(&c).is_err());
-        c.cmux_ttl_secs = 1;
+        c.agent_ttl_secs = 1;
         assert!(validate(&c).is_ok());
-        c.cmux_ttl_secs = 3600;
+        c.agent_ttl_secs = 3600;
         assert!(validate(&c).is_ok());
-        c.cmux_ttl_secs = 3601;
+        c.agent_ttl_secs = 3601;
         assert!(validate(&c).is_err());
     }
 
@@ -1235,7 +1384,7 @@ mod tests {
             SourceKind::Football,
             SourceKind::Manual,
             SourceKind::Weather,
-            SourceKind::Cmux,
+            SourceKind::Agent,
         ];
         assert!(validate(&c).is_err());
 
@@ -1243,7 +1392,7 @@ mod tests {
         c.rotation_order = vec![
             SourceKind::News,
             SourceKind::Football,
-            SourceKind::Cmux,
+            SourceKind::Agent,
             SourceKind::Weather,
             SourceKind::Manual,
         ];
@@ -1622,12 +1771,12 @@ mod tests {
             rss_ttl_secs: 15,
             rss_max_per_poll: 5,
             manual_default_priority: crate::event::Priority::Low,
-            cmux_priority: crate::event::Priority::High,
-            cmux_ttl_secs: 9,
+            agent_priority: crate::event::Priority::High,
+            agent_ttl_secs: 9,
             rotation_order: vec![
                 crate::event::SourceKind::News,
                 crate::event::SourceKind::Manual,
-                crate::event::SourceKind::Cmux,
+                crate::event::SourceKind::Agent,
                 crate::event::SourceKind::Football,
                 crate::event::SourceKind::Weather,
             ],
@@ -2079,10 +2228,10 @@ mod tests {
             espn_ttl_secs: 42,
             // pin every sibling to a contrasting value so this assertion
             // fails if the arm reads someone else's priority field (espn
-            // and cmux share the same High default, so without this the
+            // and agent share the same High default, so without this the
             // swap is invisible)
             rss_priority: Priority::Low,
-            cmux_priority: Priority::Low,
+            agent_priority: Priority::Low,
             manual_default_priority: Priority::Low,
             weather_priority: Priority::Low,
             ..Config::default()
@@ -2104,7 +2253,7 @@ mod tests {
             // pin every sibling to a contrasting value (see Football's
             // test for why) so a swap onto any of them is caught
             espn_priority: Priority::High,
-            cmux_priority: Priority::High,
+            agent_priority: Priority::High,
             manual_default_priority: Priority::High,
             weather_priority: Priority::High,
             ..Config::default()
@@ -2118,12 +2267,12 @@ mod tests {
     }
 
     #[test]
-    fn build_test_event_cmux_uses_cmux_config() {
+    fn build_test_event_agent_uses_agent_config() {
         use crate::event::{EventType, Priority, RotationSpec, SourceKind};
 
         let config = Config {
-            cmux_priority: Priority::High,
-            cmux_ttl_secs: 23,
+            agent_priority: Priority::High,
+            agent_ttl_secs: 23,
             // pin every sibling to a contrasting value (see Football's
             // test for why) so a swap onto any of them is caught
             espn_priority: Priority::Low,
@@ -2132,11 +2281,11 @@ mod tests {
             weather_priority: Priority::Low,
             ..Config::default()
         };
-        let event = build_test_event(&config, SourceKind::Cmux);
-        assert_eq!(event.event_type, EventType::Generic);
+        let event = build_test_event(&config, SourceKind::Agent);
+        assert_eq!(event.event_type, EventType::AgentEvent);
         assert_eq!(event.priority, Priority::High);
         assert_eq!(event.rotation, RotationSpec::OneShot { ttl_secs: 23 });
-        assert_eq!(event.origin, SourceKind::Cmux);
+        assert_eq!(event.origin, SourceKind::Agent);
     }
 
     #[test]
@@ -2153,7 +2302,7 @@ mod tests {
             // test for why) so a swap onto any of them is caught
             espn_priority: Priority::High,
             rss_priority: Priority::High,
-            cmux_priority: Priority::High,
+            agent_priority: Priority::High,
             weather_priority: Priority::High,
             ..Config::default()
         };
@@ -2178,7 +2327,7 @@ mod tests {
             // test for why) so a swap onto any of them is caught
             espn_priority: Priority::Low,
             rss_priority: Priority::Low,
-            cmux_priority: Priority::Low,
+            agent_priority: Priority::Low,
             manual_default_priority: Priority::Low,
             ..Config::default()
         };

@@ -119,7 +119,7 @@ export function GeneralSection({
         <ToggleControl
           id="history-enabled"
           name="Record notification history"
-          help="Records notification content (including cmux payloads) to ~/.config/notchtap/history.jsonl. Applies after Save & Relaunch."
+          help="Records notification content (including agent-originated payloads) to ~/.config/notchtap/history.jsonl. Applies after Save & Relaunch."
           label="Record notification history"
           checked={config.history_enabled}
           onChange={(history_enabled) => patchConfig({ history_enabled })}

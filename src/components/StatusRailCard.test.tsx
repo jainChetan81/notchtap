@@ -79,7 +79,7 @@ const RED_CARD: SlotState = {
   remainingMs: 6000,
 };
 
-const CMUX_NEEDS_INPUT: SlotState = {
+const AGENT_NEEDS_INPUT: SlotState = {
   state: "showing",
   id: "n3",
   title: "Claude Code needs input",
@@ -87,7 +87,7 @@ const CMUX_NEEDS_INPUT: SlotState = {
   eventType: "generic",
   priority: "high",
   signal: "generic",
-  origin: "cmux",
+  origin: "agent",
   expanded: true,
   source: null,
   category: null,
@@ -150,9 +150,9 @@ const NEWS: SlotState = {
   remainingMs: 6000,
 };
 
-// plan 035: a generic (cmux/claude-relay) card carrying a subtitle and
+// plan 035: a generic (agent/claude-relay) card carrying a subtitle and
 // detail pairs — the manifest renders each as its own cell (Layout A).
-const CMUX_RICH: SlotState = {
+const AGENT_RICH: SlotState = {
   state: "showing",
   id: "n5",
   title: "Claude Code needs input",
@@ -160,7 +160,7 @@ const CMUX_RICH: SlotState = {
   eventType: "generic",
   priority: "high",
   signal: "generic",
-  origin: "cmux",
+  origin: "agent",
   expanded: true,
   source: null,
   category: null,
@@ -318,10 +318,10 @@ describe("StatusRailCard", () => {
   });
 
   // The actual reason EventSignal exists: a High-priority alert from a
-  // non-football source (cmux) must never be mistaken for a goal just
+  // non-football source (agent) must never be mistaken for a goal just
   // because both happen to be High priority.
   it("never plays a goal or red-card pulse for a High-priority generic signal", () => {
-    const { container } = render(<StatusRailCard slot={CMUX_NEEDS_INPUT} />);
+    const { container } = render(<StatusRailCard slot={AGENT_NEEDS_INPUT} />);
     expect(container.querySelector(".pulse-goal")).toBeNull();
     expect(container.querySelector(".pulse-red")).toBeNull();
     expect(container.querySelector(".cele-ripple")).toBeNull();
@@ -667,12 +667,12 @@ describe("StatusRailCard", () => {
   // plan 092 (Step 3): the generic manifest converged onto news's
   // full-width `.manifest-block` vocabulary, and the 2026-07-24 declutter
   // later dropped its `.manifest-meta` source label entirely (compact-
-  // only now, see the `cmux accent` masthead-kicker tests below) — the
+  // only now, see the `agent accent` masthead-kicker tests below) — the
   // hotkey hint still lives in `.manifest-footer` (like news's), so these
   // two assertions read directly off it, mirroring the news manifest test
   // above exactly.
   it("shows only the collapse control in an expanded manifest without a link", () => {
-    const { container } = render(<StatusRailCard slot={{ ...CMUX_NEEDS_INPUT, link: null }} />);
+    const { container } = render(<StatusRailCard slot={{ ...AGENT_NEEDS_INPUT, link: null }} />);
 
     const footer = container.querySelector(".manifest-footer") as HTMLElement;
     expect(footer.textContent).toContain("⌃⇧N collapse");
@@ -684,7 +684,7 @@ describe("StatusRailCard", () => {
     const { container } = render(
       <StatusRailCard
         slot={{
-          ...CMUX_NEEDS_INPUT,
+          ...AGENT_NEEDS_INPUT,
           link: "https://example.com/local-notification",
         }}
       />,
@@ -704,7 +704,7 @@ describe("StatusRailCard", () => {
   // Exercised through StatusRailCard, the real render path, not a bare
   // <Manifest>.
   it("renders the subtitle and each detail pair as compact cells, not duplicated in the manifest", () => {
-    const { container } = render(<StatusRailCard slot={CMUX_RICH} />);
+    const { container } = render(<StatusRailCard slot={AGENT_RICH} />);
     const compact = container.querySelector(".compact") as HTMLElement;
 
     expect(within(compact).getByText("Permission request")).toBeTruthy();
@@ -731,7 +731,7 @@ describe("StatusRailCard", () => {
   // "always compact" rule to the subtitle too — it no longer has an
   // expanded-only manifest cell to hide.
   it("shows the same subtitle and detail pairs in the compact card whether collapsed or expanded", () => {
-    const { container } = render(<StatusRailCard slot={{ ...CMUX_RICH, expanded: false }} />);
+    const { container } = render(<StatusRailCard slot={{ ...AGENT_RICH, expanded: false }} />);
 
     const wrap = container.querySelector(".manifest-wrap") as HTMLElement;
     expect(wrap.getAttribute("aria-hidden")).toBe("true");
@@ -742,23 +742,23 @@ describe("StatusRailCard", () => {
     expect(within(compact).getByText("Project")).toBeTruthy();
   });
 
-  // item D2: the expanded manifest for a cmux slot (even a "rich" one
+  // item D2: the expanded manifest for an agent slot (even a "rich" one
   // carrying a subtitle and detail pairs) contains only the message body
   // and the keyboard-hint footer — no subtitle cell, no meta line, no
   // detail cells. Those are all compact-card metadata now.
-  it("renders only the message body and hints in a cmux slot's expanded manifest", () => {
-    const { container } = render(<StatusRailCard slot={CMUX_RICH} />);
+  it("renders only the message body and hints in an agent slot's expanded manifest", () => {
+    const { container } = render(<StatusRailCard slot={AGENT_RICH} />);
     const manifest = container.querySelector(".manifest") as HTMLElement;
 
     expect(within(manifest).getByText("Message").classList.contains("manifest-label")).toBe(true);
-    expect(within(manifest).getByText(CMUX_RICH.body)).toBeTruthy();
+    expect(within(manifest).getByText(AGENT_RICH.body)).toBeTruthy();
     expect(manifest.querySelector(".manifest-meta")).toBeNull();
     expect(manifest.querySelector(".manifest-fields")).toBeNull();
     expect(manifest.querySelector(".detail-label")).toBeNull();
     expect(manifest.querySelector(".detail-value")).toBeNull();
     expect(within(manifest).queryByText("Subtitle")).toBeNull();
 
-    // CMUX_RICH has no link, so the footer shows only the collapse hint.
+    // AGENT_RICH has no link, so the footer shows only the collapse hint.
     const footer = manifest.querySelector(".manifest-footer") as HTMLElement;
     expect(footer.textContent).toContain("⌃⇧N collapse");
     expect(footer.textContent).not.toContain("⌃⇧O read");
@@ -769,11 +769,11 @@ describe("StatusRailCard", () => {
   // stay out of the accessibility tree, expanded content must not.
   it("carries aria-hidden on the manifest wrapper only while collapsed", () => {
     const { container, rerender } = render(
-      <StatusRailCard slot={{ ...CMUX_RICH, expanded: false }} />,
+      <StatusRailCard slot={{ ...AGENT_RICH, expanded: false }} />,
     );
     expect(container.querySelector(".manifest-wrap")?.getAttribute("aria-hidden")).toBe("true");
 
-    rerender(<StatusRailCard slot={CMUX_RICH} />);
+    rerender(<StatusRailCard slot={AGENT_RICH} />);
     expect(container.querySelector(".manifest-wrap")?.getAttribute("aria-hidden")).toBe("false");
   });
 
@@ -809,7 +809,7 @@ describe("StatusRailCard", () => {
     render(
       <StatusRailCard
         slot={{
-          ...CMUX_RICH,
+          ...AGENT_RICH,
           details: [{ label: "Command", value: "FOO=bar make build" }],
         }}
       />,
@@ -817,47 +817,52 @@ describe("StatusRailCard", () => {
     expect(screen.getByText("FOO=bar make build")).toBeTruthy();
   });
 
-  // plan 096 (079 item 8, the wire addition + accent build): the cmux
-  // accent — originally a chip (tint + glyph) in the header badge
-  // cluster, plus a hairline on `.below-block`, gated strictly on the
-  // now-wire `origin` field. The 2026-07-24 declutter removed the chip
+  // plan 096 (079 item 8, the wire addition + accent build), renamed by
+  // plan 137 (spec §7/§12: the cmux relay is superseded by the v7 Agent
+  // Adapter layer, and `SourceKind::Cmux` itself is gone — everything
+  // that used to arrive as `origin: "cmux"` is `origin: "agent"` now):
+  // the agent accent — originally a chip (tint + glyph) in the header
+  // badge cluster, plus a hairline on `.below-block`, gated strictly on
+  // the wire `origin` field. The 2026-07-24 declutter removed the chip
   // (it duplicated the masthead kicker, which now reads an origin-
   // derived label — `GENERIC_MASTHEAD_KICKER` in NotificationBody.tsx —
-  // directly); the hairline is untouched. Byte-absent for the other four
-  // SourceKind values; must never touch the priority accent channel
-  // (origin and priority are orthogonal).
-  describe("cmux accent (plan 096)", () => {
+  // directly); the hairline is untouched (just renamed, `.cmux-origin`
+  // → `.agent-origin`). Byte-absent for the other four SourceKind
+  // values; must never touch the priority accent channel (origin and
+  // priority are orthogonal).
+  describe("agent accent (plan 096, renamed by plan 137)", () => {
     // cast to the narrower "showing" branch before spreading: spreading a
     // `SlotState`-typed (union) variable and overriding one field produces
     // a spurious excess-property error against the `{ state: "empty" }`
     // branch — an existing TS quirk with union spreads, unrelated to this
     // plan's own logic.
     function genericSlot(origin: SourceKind): SlotState {
-      return { ...(CMUX_NEEDS_INPUT as Extract<SlotState, { state: "showing" }>), origin };
+      return { ...(AGENT_NEEDS_INPUT as Extract<SlotState, { state: "showing" }>), origin };
     }
 
-    // item D1: cmux slot compact card renders the masthead kicker "cmux"
-    // and no Agent chip (the chip was pure duplication once the kicker
-    // said it).
-    it('renders the masthead kicker "cmux" (no Agent chip) and the below-block hairline for origin: cmux', () => {
-      const { container } = render(<StatusRailCard slot={genericSlot("cmux")} />);
-      expect(container.querySelector(".masthead")?.textContent).toContain("cmux");
+    // item D1: agent slot compact card renders the masthead kicker
+    // "agent" and no Agent chip (the chip was pure duplication once the
+    // kicker said it).
+    it('renders the masthead kicker "agent" (no Agent chip) and the below-block hairline for origin: agent', () => {
+      const { container } = render(<StatusRailCard slot={genericSlot("agent")} />);
+      expect(container.querySelector(".masthead")?.textContent).toContain("agent");
       expect(container.querySelector(".chip-cmux")).toBeNull();
       expect(screen.queryByText("Agent")).toBeNull();
-      expect(container.querySelector(".below-block.cmux-origin")).not.toBeNull();
+      expect(container.querySelector(".below-block.agent-origin")).not.toBeNull();
     });
 
     // review fix (spec was wrong, not the implementation): the generic
-    // branch serves ALL non-news origins, not just cmux — a bare
-    // `origin === "cmux" ? "cmux" : "cli"` ternary mislabeled football
-    // live cards and weather cards as "cli". The kicker now maps every
-    // `SourceKind` explicitly (`GENERIC_MASTHEAD_KICKER`); "manual" is
-    // the `/notify` CLI path (-> "cli"), "football"/"weather" get their
-    // own label, and "news" (reachable here only because this fixture's
-    // `eventType` stays "generic" regardless of the origin override) is
-    // the defensive fallback that just echoes the origin string.
-    it("shows the origin-derived kicker (never the removed Agent chip) for every non-cmux origin", () => {
-      const expectedKicker: Record<Exclude<SourceKind, "cmux">, string> = {
+    // branch serves ALL non-news origins, not just agent — a bare
+    // `origin === "agent" ? "agent" : "cli"` ternary would mislabel
+    // football live cards and weather cards as "cli". The kicker maps
+    // every `SourceKind` explicitly (`GENERIC_MASTHEAD_KICKER`); "manual"
+    // is the `/notify` CLI path (-> "cli"), "football"/"weather" get
+    // their own label, and "news" (reachable here only because this
+    // fixture's `eventType` stays "generic" regardless of the origin
+    // override) is the defensive fallback that just echoes the origin
+    // string.
+    it("shows the origin-derived kicker (never the removed Agent chip) for every non-agent origin", () => {
+      const expectedKicker: Record<Exclude<SourceKind, "agent">, string> = {
         football: "football",
         news: "news",
         manual: "cli",
@@ -867,9 +872,9 @@ describe("StatusRailCard", () => {
         const { container, unmount } = render(<StatusRailCard slot={genericSlot(origin)} />);
         expect(container.querySelector(".masthead")?.textContent).toContain(expectedKicker[origin]);
         expect(container.querySelector(".chip-cmux")).toBeNull();
-        expect(container.querySelector(".below-block.cmux-origin")).toBeNull();
+        expect(container.querySelector(".below-block.agent-origin")).toBeNull();
         expect(container.innerHTML).not.toContain("chip-cmux");
-        expect(container.innerHTML).not.toContain("cmux-origin");
+        expect(container.innerHTML).not.toContain("agent-origin");
         unmount();
       }
     });
@@ -879,14 +884,14 @@ describe("StatusRailCard", () => {
     // — the shell's class list (which is exactly where the priority accent
     // classes live, `.card-assembly.low/medium/high`) must be identical.
     it("never touches the priority accent channel — same priority, different origin, identical shell classes", () => {
-      const { container: cmuxContainer } = render(<StatusRailCard slot={genericSlot("cmux")} />);
+      const { container: agentContainer } = render(<StatusRailCard slot={genericSlot("agent")} />);
       const { container: manualContainer } = render(
         <StatusRailCard slot={genericSlot("manual")} />,
       );
-      const cmuxShell = cmuxContainer.querySelector(".card-assembly") as HTMLElement;
+      const agentShell = agentContainer.querySelector(".card-assembly") as HTMLElement;
       const manualShell = manualContainer.querySelector(".card-assembly") as HTMLElement;
-      expect(cmuxShell.className).toBe(manualShell.className);
-      expect(cmuxShell.className).not.toContain("cmux");
+      expect(agentShell.className).toBe(manualShell.className);
+      expect(agentShell.className).not.toContain("agent");
     });
   });
 
@@ -1102,11 +1107,11 @@ describe("StatusRailCard", () => {
     });
 
     // Regression pin: a generic card WITHOUT wx markers (the existing
-    // CMUX_RICH fixture) must render exactly as it did before this plan —
+    // AGENT_RICH fixture) must render exactly as it did before this plan —
     // no wx-card class, no glyph image, and its own (non-wx) detail pairs
     // still render normally.
     it("renders a non-weather generic card byte-identically (no wx classes, no glyph, own details intact)", () => {
-      const { container } = render(<StatusRailCard slot={CMUX_RICH} />);
+      const { container } = render(<StatusRailCard slot={AGENT_RICH} />);
       const block = container.querySelector(".below-block");
       expect(block?.className).not.toContain("wx-card");
       expect(container.querySelector("img.wx-icon")).toBeNull();

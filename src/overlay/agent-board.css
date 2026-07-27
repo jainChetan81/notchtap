@@ -1,0 +1,300 @@
+/* Plan 136 (v7 ticket 4 of 13, spec §6.2 resting): the Agent Board's
+   below-block content — mounted by `AgentBoard.tsx` inside the SAME
+   `.card-assembly`/`.below-block` shell every other card content uses
+   (card-chrome.css), so it inherits the notch/HUD cutout shape, the
+   rounding law, the drop-shadow, and the `--card-opacity`/`--card-radius`
+   Appearance controls for free — this stylesheet only adds the AGENT
+   content's own layout and the four state accent colors (waiting /
+   failure / working / completed), never touches the shell itself.
+
+   Color language reuses the shared bespoke overlay palette
+   (vendor/shared-ui/design/tokens.css) rather than minting new colors:
+   --overlay-amber (waiting — same "needs attention" meaning it already
+   carries for the agent-origin hairline (plan 137: renamed from
+   cmux-origin) and the weather/business category dot), --overlay-coral
+   (failure), --overlay-blue (working —
+   the same blue as Settings' primary accent), --overlay-green
+   (completed). Stale reads as a dim, desaturated neutral — deliberately
+   NOT one of the four accent colors, since "provider went quiet" is a
+   different kind of fact than any of the four active states. */
+
+.card-root .agent-board {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px 12px;
+}
+
+.card-root .agent-board-primary {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.card-root .agent-board-primary-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.card-root .agent-board-runtime {
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--overlay-fg);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-root .agent-board-state-pill {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  padding: 2px 7px;
+  border-radius: 999px;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--agent-accent, var(--overlay-fg)) 18%, transparent);
+  color: var(--agent-accent, var(--overlay-fg));
+}
+
+.card-root .agent-board-project {
+  font-size: 11.5px;
+  color: color-mix(in srgb, var(--overlay-fg) 62%, transparent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.card-root .agent-board-summary {
+  font-size: 12px;
+  line-height: 1.35;
+  color: color-mix(in srgb, var(--overlay-fg) 82%, transparent);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.card-root .agent-board-elapsed {
+  font-size: 10.5px;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--overlay-fg) 48%, transparent);
+}
+
+/* Every OTHER session — individual compact rows, never a "+N" collapse
+   (spec §6.2's own explicit rule). One line each: dot, runtime, project
+   (if any), state word, elapsed — truncated, never wrapped, so N rows
+   stay a fixed-height stack rather than reflowing the card taller per
+   row's content length. */
+.card-root .agent-board-rows {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border-top: 1px solid color-mix(in srgb, var(--overlay-fg) 14%, transparent);
+  padding-top: 6px;
+}
+
+.card-root .agent-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--overlay-fg) 70%, transparent);
+  white-space: nowrap;
+}
+
+.card-root .agent-row-runtime {
+  font-weight: 600;
+  color: var(--overlay-fg);
+  flex-shrink: 0;
+}
+
+.card-root .agent-row-project {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  color: color-mix(in srgb, var(--overlay-fg) 55%, transparent);
+}
+
+.card-root .agent-row-state {
+  margin-left: auto;
+  flex-shrink: 0;
+  color: var(--agent-accent, var(--overlay-fg));
+}
+
+.card-root .agent-row-elapsed {
+  flex-shrink: 0;
+  font-variant-numeric: tabular-nums;
+  color: color-mix(in srgb, var(--overlay-fg) 45%, transparent);
+  min-width: 2.4em;
+  text-align: right;
+}
+
+/* The status dot — solid fill in the state's accent color; `.pulse`
+   plays a slow, non-alarming breathing opacity animation on the two
+   "actively doing something" states (working/waiting) only. Failure and
+   completed are deliberately static — a failed/finished session isn't
+   still happening, so it shouldn't still be visibly animating. */
+.card-root .agent-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  background: var(--agent-accent, var(--overlay-fg));
+}
+
+.card-root .agent-dot.large {
+  width: 8px;
+  height: 8px;
+}
+
+.card-root .agent-dot.pulse {
+  animation: agent-dot-breathe 2.2s ease-in-out infinite;
+}
+
+@keyframes agent-dot-breathe {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+/* The four (+ stale) accent bindings — set `--agent-accent` once per
+   row/card via a class on that element, consumed by the dot/pill/state
+   text above. `agent-waiting` covers both waiting_for_permission and
+   waiting_for_input (agentStatePresentationFor, lib/presentation.ts) —
+   spec's own resting-layout wording groups them as one "waiting"
+   visual family. */
+.card-root .agent-waiting {
+  --agent-accent: var(--overlay-amber);
+}
+
+.card-root .agent-failed {
+  --agent-accent: var(--overlay-coral);
+}
+
+.card-root .agent-working {
+  --agent-accent: var(--overlay-blue);
+}
+
+.card-root .agent-completed {
+  --agent-accent: var(--overlay-green);
+}
+
+.card-root .agent-stale {
+  --agent-accent: color-mix(in srgb, var(--overlay-fg) 40%, transparent);
+}
+
+/* Plan 142 (v7 ticket 10 of 13, spec §6.2 expanded): the hover-expanded
+   scrollable session list. Rust has already grown the real window frame
+   to `agents::expand::expanded_board_frame`'s screen-bounded size by the
+   time `expanded` flips true (`lib.rs`'s `try_expand_board_for_hover`) —
+   `calc(100vh - ...)` therefore tracks the ACTUAL (now larger) window,
+   not the small resting canvas, so the scrollbar only ever engages past
+   that same screen-bounded cap, never before it. Momentum/inertial
+   scrolling is the webview's own native behavior — this deliberately
+   adds no JS scroll handling of its own (CLAUDE.md/plan brief: "don't
+   fight it"). */
+.card-root .agent-board-expanded-list {
+  margin-top: 4px;
+}
+
+.card-root .agent-board-expanded-scroll {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: calc(100vh - 170px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+.card-root .agent-expanded-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 8px 10px;
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--overlay-fg) 5%, transparent);
+}
+
+.card-root .agent-expanded-row-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11.5px;
+  color: color-mix(in srgb, var(--overlay-fg) 78%, transparent);
+  white-space: nowrap;
+}
+
+.card-root .agent-expanded-row-summary {
+  font-size: 11px;
+  line-height: 1.3;
+  color: color-mix(in srgb, var(--overlay-fg) 68%, transparent);
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+/* Capability-dependent detail cells (spec §6.2's own words): a wrapped
+   row of label/value chips, present only for whatever the adapter
+   actually declared+observed (`AgentBoard.tsx` never renders a
+   placeholder for an absent one). */
+.card-root .agent-expanded-row-details {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 8px;
+  font-size: 10px;
+}
+
+.card-root .agent-expanded-detail {
+  display: inline-flex;
+  gap: 3px;
+  color: color-mix(in srgb, var(--overlay-fg) 55%, transparent);
+}
+
+.card-root .agent-expanded-detail-label {
+  font-weight: 600;
+  color: color-mix(in srgb, var(--overlay-fg) 72%, transparent);
+}
+
+/* The per-row transition history disclosure — opens on the ROW's own
+   mouse-enter (real pointer events, not a rust `hover-changed` boolean;
+   see `ExpandedAgentRow`'s own doc comment for why). Oldest first,
+   exactly the order the wire sent it. */
+.card-root .agent-expanded-history {
+  margin-top: 2px;
+  border-top: 1px solid color-mix(in srgb, var(--overlay-fg) 12%, transparent);
+  padding-top: 4px;
+}
+
+.card-root .agent-expanded-history-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.card-root .agent-expanded-history-entry {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 10px;
+  color: color-mix(in srgb, var(--overlay-fg) 50%, transparent);
+}
+
+.card-root .agent-expanded-history-state {
+  font-weight: 600;
+  color: color-mix(in srgb, var(--overlay-fg) 65%, transparent);
+}
+
+.card-root .agent-expanded-history-elapsed {
+  font-variant-numeric: tabular-nums;
+  flex-shrink: 0;
+}

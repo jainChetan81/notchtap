@@ -1,7 +1,8 @@
 # notchtap — ubiquitous language
 
 glossary only. no implementation details — those live in
-`docs/V3_6_TECHNICAL_SPEC.md` / `docs/V5_TECHNICAL_SPEC.md` (the v1/v2/v3
+`docs/V3_6_TECHNICAL_SPEC.md` / `docs/V5_TECHNICAL_SPEC.md` /
+`docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md` (the v1/v2/v3
 equivalents shipped; their specs were removed at repo close-out
 (2026-07-23), retrievable via `git log -- docs/archive/`). decisions live
 in `docs/ARCHITECTURE.md`.
@@ -30,10 +31,69 @@ in `docs/ARCHITECTURE.md`.
   score. governs Promotion order only: higher-priority Waiting items
   are promoted next, but a Priority arrival never interrupts the
   currently-Visible item — it always finishes its own turn.
-- **Origin** — which source produced an Event (v6): `Football | News |
-  Manual | Cmux`. orthogonal to Priority and `EventType` — a source's Origin
+- **Origin** — which source category produced an Event (v6): `Football |
+  News | Manual | Agent | Weather`. orthogonal to Priority and `EventType` —
+  a source's Origin
   never changes, but its Priority is user-configurable per source. the
   only thing Origin governs is Rotation Order.
+- **Agent Runtime** — the coding agent that produced an Event whose Origin
+  is **Agent**, initially `Claude Code | Codex | Kimi | OpenCode`. Runtime
+  identifies the producer for presentation and runtime-specific policy; it
+  does not create a separate Origin or Rotation Order category.
+- **Agent Adapter** — the heads-up-only bridge from one Agent Runtime's
+  lifecycle hooks into notchtap. an Agent Adapter translates the runtime's
+  native event into an Agent Event; notchtap does not launch, supervise, or
+  scrape the runtime, and the adapter never answers on the user's behalf.
+- **Agent Adapter Capability** — one kind of structured information or
+  behavior an Agent Adapter can provide, such as completion, failure,
+  permission requests, progress, tool details, subagents, or opening the
+  originating session. adapters declare their capabilities; partial support
+  is explicit, and unsupported information is omitted rather than invented.
+- **Agent Event Kind** — the runtime-independent meaning assigned by an
+  Agent Adapter: `Permission Requested | Input Required | Completed |
+  Failed | Informational`. runtime-native event names remain diagnostic
+  detail, not presentation branches.
+- **Agent Session** — one active coding-agent session reported by an Agent
+  Adapter. its continuously updated state can appear on the idle surface
+  without producing a Notification for every progress tick; only noteworthy
+  Agent Events enter the Slot. every session has an independent identity and
+  history, even when multiple sessions share an Agent Runtime or project;
+  histories are never merged. identity is the Agent Runtime plus its native
+  session identifier; an adapter may provide a degraded process/start-time
+  fallback, but a project path alone is never a session identity.
+- **Agent Session State** — the runtime-independent lifecycle of an Agent
+  Session: `Starting | Working | Waiting For Permission | Waiting For Input |
+  Completed | Failed | Stale`. adapters translate native lifecycle names into
+  these states. Informational is an Agent Event Kind, not a Session State;
+  Stale means reporting ended without a clean terminal event.
+- **Agent Registry** — the in-process store of every live and recently
+  terminal Agent Session, keyed by Agent Runtime plus native session
+  identity. it applies Agent Events to advance Session State, enforces
+  Agent Session Order and Terminal Retention, and is the source the Agent
+  Board and Origin::Agent Notifications both read from; it updates
+  independently of whether the corresponding Notification can enter the
+  Slot.
+- **Adapter Health** — the presented status of one Agent Adapter:
+  available, partial, or unavailable, alongside its declared Agent Adapter
+  Capabilities, last-accepted-event time, and any compatibility note. it
+  reflects whether the adapter is actually delivering events, not whether
+  the underlying Agent Runtime happens to be running.
+- **Agent Host** — the application presenting an Agent Session, such as T3
+  Code, a terminal, or an IDE. Host is optional presentation and open/focus
+  metadata; it is not part of Agent Session identity or an Origin.
+- **Agent Session Order** — urgency first, then arrival order among sessions
+  at equal urgency. a session needing input or permission ranks ahead of a
+  passive Working session; equal-urgency sessions remain FIFO.
+- **Terminal Retention** — how long a terminal Agent Session remains on the
+  Agent Board before moving to its history: configurable, default 10 minutes.
+  Failed and Stale rank ahead of Completed during this grace period. Waiting
+  states do not expire as ordinary Notifications; they remain until the
+  runtime reports a new state or the session becomes Stale.
+- **Agent Board** — the idle presentation of active Agent Sessions. its
+  resting state shows the highest-ranked session richly and represents other
+  sessions individually; hover/expand grows it into a screen-bounded,
+  scrollable list of every active session. noteworthy Agent Events still use
+  the Slot, after which presentation returns to the Agent Board.
 - **Rotation Order** — the configured tie-break (v6) among Waiting
   Notifications that share a Priority tier: a ranking over Origin,
   checked before arrival order. it never overrides Priority — a
@@ -106,9 +166,9 @@ in `docs/ARCHITECTURE.md`.
 - **notchtap-detect** — the standalone swift helper that reports
   screen safe-area geometry so the engine can pick a Presentation
   Mode.
-- **Relay** — an external tool (cmux in v2) forwarding its own
-  notifications into notchtap. a Relay is heads-up only: it can never
-  answer back into the tool that raised the alert.
+- **Relay** — an external tool forwarding its own notifications into
+  notchtap. a Relay is heads-up only: it can never answer back into the
+  tool that raised the alert.
 - **Connector** — an outbound sink (telegram in v3) that receives
   every accepted Event *except News items, which are overlay-only by
   design* — see `IMPLEMENTATION_PLAN.md` §4.6 — and forwards the rest

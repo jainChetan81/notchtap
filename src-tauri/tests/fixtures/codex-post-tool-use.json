@@ -1,0 +1,13 @@
+{
+  "session_id": "codex-sess-redacted-0001",
+  "hook_event_name": "PostToolUse",
+  "transcript_path": "/Users/example/.codex/sessions/redacted/transcript.jsonl",
+  "cwd": "/Users/example/code/notchtap",
+  "turn_id": "turn-redacted-0002",
+  "tool_name": "apply_patch",
+  "tool_use_id": "toolu-redacted-0002",
+  "tool_input": {
+    "file_path": "/Users/example/code/notchtap/src-tauri/src/agents/mod.rs"
+  },
+  "tool_response": "REDACTED — raw tool-facing output is intentionally withheld from this fixture"
+}

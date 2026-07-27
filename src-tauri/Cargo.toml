@@ -9,6 +9,14 @@ edition = "2021"
 name = "notchtap_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# Plan 138 (v7 ticket 6 of 13, `docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`
+# §4.1): the shared hook-delivery binary installed alongside the app. Kept
+# thin on purpose — its logic lives in `agents::providers` (this crate's
+# lib target), so this is just an entry point + argv dispatch.
+[[bin]]
+name = "notchtap-agent"
+path = "src/bin/notchtap_agent.rs"
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

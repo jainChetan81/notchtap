@@ -1,0 +1,15 @@
+{
+  "session_id": "sess-redacted-0001",
+  "prompt_id": "11111111-1111-4111-8111-111111111111",
+  "hook_event_name": "PermissionRequest",
+  "transcript_path": "/Users/example/.claude/projects/redacted/transcript.jsonl",
+  "cwd": "/Users/example/code/notchtap",
+  "permission_mode": "default",
+  "tool_name": "Bash",
+  "tool_input": {
+    "command": "REDACTED — the full shell command is intentionally withheld from this fixture",
+    "description": "Run project tests"
+  },
+  "tool_use_id": "toolu_redacted_0001",
+  "request_type": "tool_permission"
+}

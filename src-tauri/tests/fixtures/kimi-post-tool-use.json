@@ -1,0 +1,11 @@
+{
+  "session_id": "kimi-sess-redacted-0001",
+  "hook_event_name": "PostToolUse",
+  "cwd": "/Users/example/code/notchtap",
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "/Users/example/code/notchtap/src-tauri/src/agents/mod.rs"
+  },
+  "tool_result": "REDACTED — raw tool output is intentionally withheld from this fixture",
+  "tool_use_succeeded": true
+}

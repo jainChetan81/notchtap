@@ -1,0 +1,7 @@
+# Seeds for failure cases proptest has generated in the past. It is
+# automatically read and these particular cases re-run before any
+# novel cases are generated.
+#
+# It is recommended to check this file in to source control so that
+# everyone who runs the test benefits from these saved cases.
+cc e1b2e93b6e21547d7bcfc233b3ad0c7bba971d702f9fdae27e7b9a3a437cca35 # shrinks to max_queued_per_tier = 1, rotation_order = [], ops = [Enqueue(EnqueueSpec { priority: Low, rotation: OneShot(1), topic: None, origin: Football }), Silence, Enqueue(EnqueueSpec { priority: Low, rotation: OneShot(1), topic: None, origin: Football }), Enqueue(EnqueueSpec { priority: Medium, rotation: OneShot(1), topic: None, origin: Football })]

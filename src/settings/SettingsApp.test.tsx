@@ -13,6 +13,7 @@ import {
   type SecretStatus,
   SettingsApp,
 } from "./SettingsApp";
+import type { AdapterHealthDto } from "./types";
 
 // plan 112 Step 4: jsdom has no ResizeObserver; the shadcn Switch
 // (radix-ui's useSize hook, used to size its thumb) reads one on mount.
@@ -78,8 +79,24 @@ const config: Config = {
   rss_ttl_secs: 18,
   rss_max_per_poll: 6,
   manual_default_priority: "low",
-  cmux_priority: "medium",
-  cmux_ttl_secs: 16,
+  agent_priority: "medium",
+  agent_ttl_secs: 16,
+  agents: {
+    enabled: true,
+    terminal_retention_secs: 400,
+    stale_after_secs: 600,
+    informational_notifications: true,
+    permission_priority: "high",
+    input_priority: "medium",
+    failure_priority: "high",
+    completion_priority: "low",
+    runtimes: {
+      claude_code: { enabled: true },
+      codex: { enabled: false },
+      kimi: { enabled: true },
+      opencode: { enabled: false },
+    },
+  },
   weather_enabled: true,
   weather_lat: 12.97,
   weather_lon: 77.59,
@@ -90,7 +107,7 @@ const config: Config = {
   weather_temp_hot_c: 36,
   weather_temp_cold_c: 14,
   weather_priority: "medium",
-  rotation_order: ["news", "cmux", "manual", "weather", "football"],
+  rotation_order: ["news", "agent", "manual", "weather", "football"],
   connectors: { telegram: { enabled: true } },
   appearance: { card_scale: 1, card_radius: 8, card_opacity: 0.9 },
   resting_state: "notch",
@@ -128,8 +145,24 @@ const rustConfigDefaults: Config = {
   rss_ttl_secs: 10,
   rss_max_per_poll: 10,
   manual_default_priority: "medium",
-  cmux_priority: "high",
-  cmux_ttl_secs: 8,
+  agent_priority: "high",
+  agent_ttl_secs: 8,
+  agents: {
+    enabled: true,
+    terminal_retention_secs: 600,
+    stale_after_secs: 900,
+    informational_notifications: false,
+    permission_priority: "high",
+    input_priority: "high",
+    failure_priority: "high",
+    completion_priority: "medium",
+    runtimes: {
+      claude_code: { enabled: true },
+      codex: { enabled: true },
+      kimi: { enabled: true },
+      opencode: { enabled: true },
+    },
+  },
   weather_enabled: false,
   weather_lat: 0,
   weather_lon: 0,
@@ -140,7 +173,7 @@ const rustConfigDefaults: Config = {
   weather_temp_hot_c: 36,
   weather_temp_cold_c: 14,
   weather_priority: "medium",
-  rotation_order: ["football", "manual", "weather", "cmux", "news"],
+  rotation_order: ["football", "manual", "weather", "agent", "news"],
   connectors: { telegram: { enabled: false } },
   appearance: { card_scale: 1, card_radius: 16, card_opacity: 0.9 },
   resting_state: "rail",
@@ -266,8 +299,12 @@ describe("SettingsApp", () => {
     expect(screen.getByRole("button", { name: "General" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Football" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "News" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Cmux" })).toBeTruthy();
+    // plan 137 (spec §7/§12): the Cmux tab is gone — the cmux relay is
+    // superseded by the v7 Agent Adapter layer; plan 143 replaces it
+    // with the Agents section asserted below.
+    expect(screen.queryByRole("button", { name: "Cmux" })).toBeNull();
     expect(screen.getByRole("button", { name: "Connectors & Keys" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Agents" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Shortcuts" })).toBeTruthy();
 
     const appearance = screen.getByRole("button", {
@@ -280,9 +317,6 @@ describe("SettingsApp", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "News" }));
     expect(await screen.findByRole("heading", { level: 1, name: "News" })).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "Cmux" }));
-    expect(await screen.findByRole("heading", { level: 1, name: "Cmux" })).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Connectors & Keys" }));
     expect(
@@ -298,7 +332,7 @@ describe("SettingsApp", () => {
     const shortcutTable = screen.getByRole("table", {
       name: "Keyboard shortcuts",
     });
-    expect(within(shortcutTable).getAllByText("active")).toHaveLength(6);
+    expect(within(shortcutTable).getAllByText("active")).toHaveLength(7);
     expect(screen.queryAllByText("planned · not implemented")).toHaveLength(0);
   });
 
@@ -330,7 +364,7 @@ describe("SettingsApp", () => {
     expect(await screen.findByRole("heading", { level: 1, name: "Appearance" })).toBeTruthy();
     expect(await screen.findByText("Goal (High priority, football)")).toBeTruthy();
     expect(await screen.findByText("Red card (High priority, football)")).toBeTruthy();
-    expect(await screen.findByText("Generic alert (High priority, cmux)")).toBeTruthy();
+    expect(await screen.findByText("Generic alert (High priority, agent)")).toBeTruthy();
     expect(await screen.findByText("News headline (Low priority)")).toBeTruthy();
     // plan 111 Step 3: the four states the old four-sample gallery could
     // never show — the ones most sensitive to CSS drift.
@@ -342,7 +376,7 @@ describe("SettingsApp", () => {
     expect(
       await screen.findByText("Parliament passes the landmark digital rights bill"),
     ).toBeTruthy();
-    // the cmux sample's body carries inline markdown (plan 032 step 6) —
+    // the agent sample's body carries inline markdown (plan 032 step 6) —
     // the command must render as <code> elements, not literal backticks.
     // it shows twice on the expanded sample: compact .body + manifest
     // Message cell both run renderInlineMarkdown.
@@ -618,7 +652,7 @@ describe("SettingsApp", () => {
       "Football",
       "Manual / CLI push",
       "Weather",
-      "Cmux (agent relay)",
+      "Agent",
       "News",
     ]);
 
@@ -702,19 +736,10 @@ describe("SettingsApp", () => {
     expect(selectedPriorityLabel(rssToggle)).toBe("High");
   });
 
-  it("shows the loaded Cmux priority and reflects a click immediately", async () => {
-    mockLoads();
-    render(<SettingsApp />);
-
-    await screen.findByRole("heading", { level: 1, name: "General" });
-    fireEvent.click(screen.getByRole("button", { name: "Cmux" }));
-
-    const cmuxToggle = await screen.findByLabelText("Priority");
-    expect(selectedPriorityLabel(cmuxToggle)).toBe("Medium");
-    fireEvent.click(within(cmuxToggle).getByRole("button", { name: "High" }));
-    expect(selectedPriorityLabel(cmuxToggle)).toBe("High");
-    expect((screen.getByLabelText("Rotation seconds") as HTMLInputElement).value).toBe("16");
-  });
+  // plan 137 (spec §7/§12): the Cmux tab (and its Priority/Rotation
+  // seconds controls for what's now `agent_priority`/`agent_ttl_secs`) is
+  // gone — no replacement UI exists until ticket 143's Agents section, so
+  // there is no settings-window surface left to exercise here.
 
   it("preserves a feed's source/category when its url is edited by a trailing slash", async () => {
     let savedConfig: Config | null = null;
@@ -928,14 +953,14 @@ describe("SettingsApp", () => {
     await screen.findByRole("heading", { level: 1, name: "General" });
     expect(rotationOrderRowNames()).toEqual([
       "News",
-      "Cmux (agent relay)",
+      "Agent",
       "Manual / CLI push",
       "Weather",
       "Football",
     ]);
 
     const rows = screen.getAllByRole("listitem");
-    const [newsRow, cmuxRow, manualRow, , footballRow] = rows;
+    const [newsRow, agentRow, manualRow, , footballRow] = rows;
     // M12: the boundary buttons are marked `aria-disabled` rather than
     // native `disabled`, so they stay in the tab order (a boundary move
     // no longer strands keyboard focus on <body>); `move` no-ops when the
@@ -954,7 +979,7 @@ describe("SettingsApp", () => {
         .getAttribute("aria-disabled"),
     ).toBe("false");
     expect(
-      within(cmuxRow)
+      within(agentRow)
         .getByRole("button", { name: /earlier/ })
         .getAttribute("aria-disabled"),
     ).toBe("false");
@@ -963,7 +988,7 @@ describe("SettingsApp", () => {
     expect(rotationOrderRowNames()).toEqual([
       "News",
       "Manual / CLI push",
-      "Cmux (agent relay)",
+      "Agent",
       "Weather",
       "Football",
     ]);
@@ -1754,6 +1779,162 @@ describe("SettingsApp", () => {
       ).toBeTruthy();
     });
   });
+
+  // Agents section (plan 143, v7 ticket 11 of 13): global/priority
+  // controls bind config.agents.*, four adapter cards read a mocked
+  // get_agent_health, and the test-event button invokes
+  // send_agent_test_event.
+  describe("Agents section (plan 143)", () => {
+    const health: AdapterHealthDto[] = [
+      {
+        runtime: "claude-code",
+        status: "available",
+        enabled: true,
+        capabilities: ["session_lifecycle", "completion"],
+        lastAcceptedEventMs: Date.now() - 5000,
+        lastErrorCategory: null,
+        compatibilityMessage: null,
+      },
+      {
+        runtime: "codex",
+        status: "partial",
+        enabled: true,
+        capabilities: ["session_lifecycle"],
+        lastAcceptedEventMs: null,
+        lastErrorCategory: null,
+        compatibilityMessage: "Codex has known gaps.",
+      },
+      {
+        runtime: "kimi",
+        status: "unavailable",
+        enabled: false,
+        capabilities: [],
+        lastAcceptedEventMs: null,
+        lastErrorCategory: "malformed_payload",
+        compatibilityMessage: "Disabled in Settings.",
+      },
+      {
+        runtime: "opencode",
+        status: "partial",
+        enabled: true,
+        capabilities: ["session_lifecycle"],
+        lastAcceptedEventMs: null,
+        lastErrorCategory: null,
+        compatibilityMessage: null,
+      },
+    ];
+
+    function mockAgents() {
+      mockIPC((command) => {
+        if (command === "get_config") return config;
+        if (command === "get_secret_status") return unsetSecrets;
+        if (command === "get_default_config") return rustConfigDefaults;
+        if (command === "get_agent_health") return health;
+      });
+    }
+
+    async function openAgents() {
+      render(<SettingsApp />);
+      await screen.findByRole("heading", { level: 1, name: "General" });
+      fireEvent.click(screen.getByRole("button", { name: "Agents" }));
+      await screen.findByRole("heading", { level: 1, name: "Agents" });
+    }
+
+    it("renders the global/priority controls with loaded config values", async () => {
+      mockAgents();
+      await openAgents();
+
+      const enableToggle = await screen.findByLabelText("Enable Agent Adapters");
+      expect(isChecked(enableToggle)).toBe(true);
+      const informational = screen.getByLabelText("Show informational cards");
+      expect(isChecked(informational)).toBe(true); // fixture: agents.informational_notifications true
+      expect(screen.getByDisplayValue("400")).toBeTruthy(); // terminal_retention_secs
+      expect(screen.getByDisplayValue("600")).toBeTruthy(); // stale_after_secs
+    });
+
+    function findAdapterCard(label: string): HTMLElement {
+      const header = screen
+        .getAllByText(label)
+        .find((el) => el.closest(".agent-card") !== null) as HTMLElement;
+      return header.closest(".agent-card") as HTMLElement;
+    }
+
+    it("renders all four adapter cards with their mocked health", async () => {
+      mockAgents();
+      await openAgents();
+
+      await screen.findAllByText("Claude Code");
+      const claudeCard = findAdapterCard("Claude Code");
+      const codexCard = findAdapterCard("Codex");
+      const kimiCard = findAdapterCard("Kimi");
+      const opencodeCard = findAdapterCard("OpenCode");
+      expect(within(claudeCard).getByText("Available")).toBeTruthy();
+      expect(within(codexCard).getByText("Partial")).toBeTruthy();
+      expect(within(kimiCard).getByText("Unavailable")).toBeTruthy();
+      expect(within(opencodeCard).getByText("Partial")).toBeTruthy();
+    });
+
+    it("renders the five named preview fixtures", async () => {
+      mockAgents();
+      await openAgents();
+
+      const previewGroup = (await screen.findByText("Preview")).closest(".gap-0") as HTMLElement;
+      expect(within(previewGroup).getByText("Waiting on permission")).toBeTruthy();
+      expect(within(previewGroup).getByText("Working, with a subagent")).toBeTruthy();
+      expect(within(previewGroup).getByText("Completed")).toBeTruthy();
+      expect(within(previewGroup).getByText("Failed")).toBeTruthy();
+      expect(within(previewGroup).getByText("Multiple independent sessions")).toBeTruthy();
+    });
+
+    it("the Send test event button invokes send_agent_test_event with the card's runtime", async () => {
+      let sentRuntime: string | null = null;
+      mockIPC((command, payload) => {
+        if (command === "get_config") return config;
+        if (command === "get_secret_status") return unsetSecrets;
+        if (command === "get_default_config") return rustConfigDefaults;
+        if (command === "get_agent_health") return health;
+        if (command === "send_agent_test_event") {
+          sentRuntime = (payload as { runtime: string }).runtime;
+          return null;
+        }
+      });
+      await openAgents();
+
+      await screen.findAllByText("Claude Code");
+      const claudeCard = findAdapterCard("Claude Code");
+      fireEvent.click(within(claudeCard).getByRole("button", { name: "Send test event" }));
+
+      await waitFor(() => expect(sentRuntime).toBe("claude-code"));
+    });
+
+    it("the enabled-runtime toggle round-trips into the saved config payload", async () => {
+      let savedConfig: Config | null = null;
+      mockIPC((command, payload) => {
+        if (command === "get_config") return config;
+        if (command === "get_secret_status") return unsetSecrets;
+        if (command === "get_default_config") return rustConfigDefaults;
+        if (command === "get_agent_health") return health;
+        if (command === "save_config_and_relaunch") {
+          savedConfig = (payload as { config: Config }).config;
+          return null;
+        }
+      });
+      await openAgents();
+
+      const toggle = await screen.findByLabelText("Enable Codex");
+      expect(isChecked(toggle)).toBe(false); // fixture: agents.runtimes.codex.enabled false
+      fireEvent.click(toggle);
+      expect(isChecked(toggle)).toBe(true);
+
+      fireEvent.click(screen.getByRole("button", { name: "Save & Relaunch" }));
+
+      await waitFor(() => expect(savedConfig).not.toBeNull());
+      // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
+      expect(savedConfig!.agents.runtimes.codex.enabled).toBe(true);
+      // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
+      expect(savedConfig!.agents.runtimes.claude_code.enabled).toBe(true); // untouched sibling
+    });
+  });
 });
 
 // Plan 108: resets hot-apply the live overlay, and every operation that can
@@ -2209,8 +2390,11 @@ describe("SettingsApp — native semantic markup (plan 109)", () => {
     render(<SettingsApp />);
 
     await screen.findByRole("heading", { level: 1, name: "General" });
-    fireEvent.click(screen.getByRole("button", { name: "Cmux" }));
-    await screen.findByRole("heading", { level: 1, name: "Cmux" });
+    // plan 137: this used to navigate to the (now-removed) Cmux tab —
+    // any section's Priority `Segmented` fieldset exercises the same
+    // native-markup contract, so Football's stands in for it.
+    fireEvent.click(screen.getByRole("button", { name: "Football" }));
+    await screen.findByRole("heading", { level: 1, name: "Football" });
 
     const priorityToggle = await screen.findByLabelText("Priority");
     expect(priorityToggle.tagName).toBe("FIELDSET");

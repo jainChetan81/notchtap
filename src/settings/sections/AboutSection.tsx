@@ -111,8 +111,8 @@ export function AboutSection() {
             completion card when it finishes.
           </li>
           <li>
-            Connectors for football scores, personalized news topics, weather, and the cmux agent
-            relay are configured in their own tabs.
+            Connectors for football scores, personalized news topics, and weather are configured in
+            their own tabs.
           </li>
           <li>
             <Snippet>⌃⇧N</Snippet> expands a card, <Snippet>⌃⇧O</Snippet> opens its link,{" "}

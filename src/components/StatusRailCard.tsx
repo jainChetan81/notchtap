@@ -169,7 +169,7 @@ export function StatusRailCard({
   });
 
   // Keyed on [currentId, currentSignal], never on priority — the actual
-  // acceptance criterion this field exists for: a High-priority cmux
+  // acceptance criterion this field exists for: a High-priority agent
   // "needs input" alert (signal: "generic") must never play the goal
   // celebration. Not keyed on `expanded` either, so toggling the manual
   // hotkey on an already-visible item doesn't replay the burst.
@@ -218,12 +218,14 @@ export function StatusRailCard({
   // delayed by the 220ms content swap. `null` for every non-weather card,
   // so it renders byte-identical to today.
   const wxArt = showing ? weatherArtFromDetails(slot.details) : null;
-  // plan 096: the cmux accent's below-block hairline gate — same live-slot
-  // basis as `news`/`wxArt` above, for the same lockstep-with-below-block
-  // reason. Deliberately NOT part of `cardClass` (the shell): the shell
-  // owns the priority accent channel only, and origin must never share
-  // that channel (see the CSS comment on `.below-block.cmux-origin`).
-  const cmuxOrigin = showing && slot.origin === "cmux";
+  // plan 096, renamed by plan 137 (cmux relay superseded by the v7 Agent
+  // Adapter layer, spec §7/§12): the agent accent's below-block hairline
+  // gate — same live-slot basis as `news`/`wxArt` above, for the same
+  // lockstep-with-below-block reason. Deliberately NOT part of
+  // `cardClass` (the shell): the shell owns the priority accent channel
+  // only, and origin must never share that channel (see the CSS comment
+  // on `.below-block.agent-origin`).
+  const agentOrigin = showing && slot.origin === "agent";
 
   // plan 120: `swapKey` also feeds the below-block's AnimatePresence
   // `key` directly (JSX further down), not just `useExitChoreography`'s
@@ -356,7 +358,7 @@ export function StatusRailCard({
     wxArt && "wx-card",
     wxArt?.moodClass,
     wxArt?.textureClass,
-    cmuxOrigin && "cmux-origin",
+    agentOrigin && "agent-origin",
   ]
     .filter(Boolean)
     .join(" ");
@@ -480,7 +482,7 @@ export function StatusRailCard({
   // score chrome, both of which would re-announce to assistive tech on
   // every routine wire tick, not just genuine new-notification arrivals.
   // `liveRegionActive` gates the region to exactly the case that should
-  // announce: a non-live-match card (news/generic/cmux/weather ALERT —
+  // announce: a non-live-match card (news/generic/agent/weather ALERT —
   // stable title/body text that only changes on a genuine new item or
   // rotation) that's actually mounted.
   //

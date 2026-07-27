@@ -1,0 +1,7 @@
+{
+  "session_id": "kimi-sess-redacted-0001",
+  "hook_event_name": "Notification",
+  "cwd": "/Users/example/code/notchtap",
+  "notification_type": "task.completed",
+  "message": "REDACTED — Kimi Code's own generated notification text is intentionally withheld from this fixture"
+}

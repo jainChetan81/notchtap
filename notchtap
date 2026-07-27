@@ -1,7 +1,7 @@
 #!/bin/sh
 # notchtap — cli push for the notchtap notification engine (spec §12).
 # flags only, no positional form:
-#   notchtap --title <title> --body <body> [--subtitle <s>] [--detail Label=Value]... [--priority low|medium|high] [--signal <s>] [--source cmux] [--port <p>]
+#   notchtap --title <title> --body <body> [--subtitle <s>] [--detail Label=Value]... [--priority low|medium|high] [--signal <s>] [--port <p>]
 # second, distinct mode — the one exception to "flags only": `notchtap run`
 # wraps a command and pushes a completion notification (see below).
 # --subtitle and --detail are first-class wire fields (plan 035): --subtitle
@@ -9,29 +9,26 @@
 # repeatable --detail Label=Value adds a {label,value} pair to a details array
 # (max 8; the value may itself contain '=' — the split is on the FIRST '='; the
 # label must be non-empty). the server caps/truncates both for display safety.
-# --priority, --signal, and --source
-# fold into the posted json as-is; when omitted, the field is left off the
-# payload entirely and the server's own default applies — v3.6 spec §6:
-# there is exactly one place "what does unspecified mean" lives, not two
-# kept in sync. --signal is mainly a manual-testing aid (real football
-# signals come from the espn poller, which knows the specific event
-# structurally — cmux/CLI callers can't) — see IMPLEMENTATION_PLAN.md's
-# manual verification section for its use.
-# --source cmux (v6): cmux's own "settings > app > notification command"
-# always sets CMUX_NOTIFICATION_TITLE/SUBTITLE/BODY when it runs this
-# script (ARCHITECTURE.md's cmux relay section) — a plain manual
-# invocation never has CMUX_NOTIFICATION_BODY set, so it's auto-detected
-# below and cmux's own notification-command setting needs no change.
-# --source is still accepted explicitly for manual testing.
+# --priority and --signal fold into the posted json as-is; when omitted, the
+# field is left off the payload entirely and the server's own default applies
+# — v3.6 spec §6: there is exactly one place "what does unspecified mean"
+# lives, not two kept in sync. --signal is mainly a manual-testing aid (real
+# football signals come from the espn poller, which knows the specific event
+# structurally — CLI callers can't) — see IMPLEMENTATION_PLAN.md's manual
+# verification section for its use.
+# plan 137 (v7 ticket 5, spec §7/§12): the v6 cmux relay's `--source cmux`
+# flag and its CMUX_NOTIFICATION_BODY env-var autodetection are gone —
+# superseded by the v7 Agent Adapter layer (`notchtap-agent`, a separate
+# binary posting to `/agent/events`). every push from this script is an
+# ordinary Origin Manual push now.
 # port resolution: --port flag → $NOTCHTAP_PORT → 9789. never reads
 # config.toml. exits non-zero on connection failure or any non-2xx
-# response so relay callers (cmux) surface failures instead of
-# swallowing them.
+# response so callers surface failures instead of swallowing them.
 
 set -u
 
 usage() {
-  echo "usage: notchtap --title <title> --body <body> [--subtitle <s>] [--detail Label=Value]... [--priority low|medium|high] [--signal <s>] [--source cmux] [--port <p>]" >&2
+  echo "usage: notchtap --title <title> --body <body> [--subtitle <s>] [--detail Label=Value]... [--priority low|medium|high] [--signal <s>] [--port <p>]" >&2
   exit 2
 }
 
@@ -146,7 +143,6 @@ body=""
 subtitle=""
 priority=""
 signal=""
-source=""
 port="${NOTCHTAP_PORT:-9789}"
 port_is_valid "$port" || usage
 # details accumulates as a JSON array; each --detail appends one {label,value}
@@ -196,13 +192,6 @@ while [ $# -gt 0 ]; do
         *) usage ;;
       esac
       shift 2 ;;
-    --source)
-      [ $# -ge 2 ] || usage
-      case "$2" in
-        cmux) source="$2" ;;
-        *) usage ;;
-      esac
-      shift 2 ;;
     --port)
       [ $# -ge 2 ] || usage
       port_is_valid "$2" || usage
@@ -218,30 +207,21 @@ done
 # plan 035: --subtitle no longer folds into the body — it posts as its own
 # wire field below (the manifest renders it as a dedicated cell).
 
-# auto-detect a cmux-relayed push: only cmux's notification command sets
-# this env var, so its presence means "cmux invoked us" without cmux's own
-# settings needing to pass --source explicitly. an explicit --source
-# always wins over the guess.
-if [ -z "$source" ] && [ -n "${CMUX_NOTIFICATION_BODY+x}" ]; then
-  source="cmux"
-fi
-
 # jq -n --arg gives safe escaping for quotes/newlines in relayed bodies.
-# subtitle/priority/signal/source are merged in only when set, so an
-# unspecified field is genuinely absent from the wire (not sent as an empty
-# string) — the server's own default is the single source of truth for
-# "unspecified". details is merged only when non-empty (plan 035); it is
-# already a JSON array built safely via jq per --detail above.
+# subtitle/priority/signal are merged in only when set, so an unspecified
+# field is genuinely absent from the wire (not sent as an empty string) —
+# the server's own default is the single source of truth for "unspecified".
+# details is merged only when non-empty (plan 035); it is already a JSON
+# array built safely via jq per --detail above.
 payload=$(jq -n \
   --arg title "$title" --arg body "$body" --arg subtitle "$subtitle" \
-  --arg priority "$priority" --arg signal "$signal" --arg source "$source" \
+  --arg priority "$priority" --arg signal "$signal" \
   --argjson details "$details" \
   '{title: $title, body: $body}
    + (if $subtitle != "" then {subtitle: $subtitle} else {} end)
    + (if ($details | length) > 0 then {details: $details} else {} end)
    + (if $priority != "" then {priority: $priority} else {} end)
-   + (if $signal != "" then {signal: $signal} else {} end)
-   + (if $source != "" then {source: $source} else {} end)') || exit 1
+   + (if $signal != "" then {signal: $signal} else {} end)') || exit 1
 
 status=$(curl --silent --show-error --output /dev/null --write-out '%{http_code}' \
   --max-time 5 \

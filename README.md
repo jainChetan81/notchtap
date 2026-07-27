@@ -15,11 +15,11 @@ branches at runtime.
 - runs permanently as a menu-bar app (no dock icon)
 - a **single visible slot**: at most one notification on screen at a
   time, permanently rotating — not a stacked queue
-- accepts pushes from five sources: the `notchtap` cli, cmux's
-  notification relay (including claude code "agent needs input"
-  alerts), an ESPN live-football poller, an rss news poller, and an
-  Open-Meteo weather poller (ambient idle-rail chip plus
-  rain/temperature threshold alerts)
+- accepts pushes from five sources: the `notchtap` cli, the v7 Agent
+  Adapter layer (superseded the v6 cmux notification relay; includes
+  claude code "agent needs input" alerts), an ESPN live-football
+  poller, an rss news poller, and an Open-Meteo weather poller (ambient
+  idle-rail chip plus rain/temperature threshold alerts)
 - each source has a configurable Priority (`Low`/`Medium`/`High`);
   within a tier, a configurable Rotation Order breaks ties ahead of
   plain arrival order
@@ -45,6 +45,7 @@ focused:
 | ⌃⇧O | open the story/link for the visible item (news only) |
 | ⌃⇧X | dismiss the visible item now |
 | ⌃⇧P | toggle pause (stop/resume promotion) |
+| ⌃⇧A | open/focus the highest-ranked Agent Session's Host app |
 
 ## tech stack
 
@@ -102,10 +103,11 @@ command — `brew install just` first.
 | doc | purpose |
 |---|---|
 | [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | locked decisions: scope phasing, stack, cross-device behavior, distribution |
-| [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) | phased build sequence, exit criteria for v1–v5 |
+| [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) | phased build sequence and exit criteria through v7 |
 | [`docs/TESTING_STRATEGY.md`](docs/TESTING_STRATEGY.md) | what gets automated vs. manual, framework choices, per-component test plan |
 | [`docs/V3_6_TECHNICAL_SPEC.md`](docs/V3_6_TECHNICAL_SPEC.md) | v0 draft: permanent rotating overlay — single-slot queue, priority tiers, global hotkeys |
 | [`docs/V5_TECHNICAL_SPEC.md`](docs/V5_TECHNICAL_SPEC.md) | v0 draft: settings window |
+| [`docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`](docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md) | v0 draft: provider-neutral coding-agent adapters and the Agent Board |
 | [`docs/design/`](docs/design/) | spike/design docs from `/improve` sessions — read alongside `plans/README.md` |
 | [`docs/recipes/kuma-webhook.md`](docs/recipes/kuma-webhook.md) | recipe: wiring an Uptime Kuma webhook into notchtap's `/notify` endpoint (docs only, verified against kuma v2.4.0) |
 | `docs/archive/` (removed 2026-07-23) | v1/v2/v3 specs + planning-pass audit (`BLIND_REVIEW.md`, `CHANGES_SUMMARY.md`) — all three phases shipped, superseded by the specs above; removed at repo close-out, retrievable via `git log -- docs/archive/` |

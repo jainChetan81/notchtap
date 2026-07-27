@@ -1,0 +1,6 @@
+{
+  "session_id": "kimi-sess-redacted-0001",
+  "hook_event_name": "SessionStart",
+  "cwd": "/Users/example/code/notchtap",
+  "source": "startup"
+}

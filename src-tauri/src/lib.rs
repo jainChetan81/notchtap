@@ -1,4 +1,18 @@
 mod about;
+// v7 (plan 133/134/138): provider-neutral Agent domain model + registry
+// (`model.rs`/`registry.rs`, plan 133) plus wire parsing and the
+// `/agent/events` route (`adapter.rs`, plan 134) — see `agents/mod.rs`'s
+// doc for the ticket boundary. `pub` (plan 138, otherwise this module's
+// comment above `error`/`event`/`queue` would still hold: "nothing else
+// consumes this crate as a library") is the one-line exception those
+// three already carved out — the `notchtap-agent` bin target
+// (`src/bin/notchtap_agent.rs`, its own separate crate within this same
+// package) calls `agents::providers::*` and `agents::adapter::*`, which
+// is unreachable across a crate boundary while this stays a private
+// `mod`. Nothing under `agents` gained new internal-to-this-crate
+// visibility — every item this exposes was already `pub` within the
+// crate; only the outermost `mod` keyword changed.
+pub mod agents;
 mod config;
 mod crests;
 mod engine;
@@ -20,7 +34,7 @@ mod presentation;
 pub mod queue;
 mod rss_poller;
 mod settings;
-// The single source of truth for the sixteen v5 settings-window commands
+// The single source of truth for the eighteen settings-window commands
 // (see this module's own doc comment) — build.rs's AppManifest::commands
 // allowlist, the generate_handler![...] registration just below, and
 // capabilities/settings.json must all name exactly the commands listed
@@ -115,6 +129,13 @@ const OPEN_SETTINGS_SHORTCUT: (Option<Modifiers>, Code) = (
     Code::Comma,
 );
 
+// plan 144 (v7 ticket 12 of 13, spec §6.3): the Open/Focus Session
+// shortcut — ⌃⇧A, chosen by the same "avoid the combos already listed
+// above and common ⌘-based shortcuts" rule as SKIP/OPEN_SETTINGS.
+#[cfg(target_os = "macos")]
+const FOCUS_SESSION_SHORTCUT: (Option<Modifiers>, Code) =
+    (Some(Modifiers::CONTROL.union(Modifiers::SHIFT)), Code::KeyA);
+
 // tracing-appender flushes through this guard; it must live as long as
 // the process, so it's parked in a static rather than dropped at the
 // end of run()'s setup.
@@ -208,8 +229,25 @@ pub fn run() {
     let rss_ttl_secs = config.rss_ttl_secs;
     let rss_max_per_poll = config.rss_max_per_poll;
     let manual_default_priority = config.manual_default_priority;
-    let cmux_priority = config.cmux_priority;
-    let cmux_ttl_secs = config.cmux_ttl_secs;
+    let agent_priority = config.agent_priority;
+    let agent_ttl_secs = config.agent_ttl_secs;
+    // v7 (plan 137, spec §7): `[agents]` config drives both the Agent
+    // Registry's stale/retention durations (below, at registry
+    // construction) and the `agent_events_handler`'s `NotificationPolicy`/
+    // per-runtime gate (`http::AppState`, further down in `setup`).
+    let agents_config = config.agents.clone();
+    let agent_notification_policy = agents::notification::NotificationPolicy {
+        informational_notifications: agents_config.informational_notifications,
+        permission_priority: agents_config.permission_priority,
+        input_priority: agents_config.input_priority,
+        failure_priority: agents_config.failure_priority,
+        completion_priority: agents_config.completion_priority,
+    };
+    let agent_runtimes = agents_config.runtimes;
+    let agent_enabled = agents_config.enabled;
+    let agent_stale_after = std::time::Duration::from_secs(agents_config.stale_after_secs);
+    let agent_terminal_retention =
+        std::time::Duration::from_secs(agents_config.terminal_retention_secs);
     let weather_enabled = config.weather_enabled;
     let weather_lat = config.weather_lat;
     let weather_lon = config.weather_lon;
@@ -279,6 +317,8 @@ pub fn run() {
             settings::set_appearance,
             settings::skip_current,
             settings::get_about_info,
+            settings::get_agent_health,
+            settings::send_agent_test_event,
         ])
         .setup(move |app| {
             app.set_activation_policy(ActivationPolicy::Accessory);
@@ -339,6 +379,47 @@ pub fn run() {
             );
             app.manage(engine.clone());
 
+            // v7 (plan 133/134/137): the one Agent Registry, managed exactly
+            // like `engine` above so both the HTTP layer (`http::AppState`,
+            // below) and later tickets (IPC, settings) can reach the same
+            // instance via `AppHandle::state`. `stale_after`/
+            // `terminal_retention` now come from real `[agents]` config
+            // (`agent_stale_after`/`agent_terminal_retention`, hoisted
+            // above from `config.agents.stale_after_secs`/
+            // `terminal_retention_secs`) rather than the spec-default
+            // hardcodes plan 134 shipped with.
+            let agent_registry = agents::registry::AgentRegistryHandle::new(
+                agents::registry::AgentRegistry::new(agent_stale_after, agent_terminal_retention),
+            );
+            app.manage(agent_registry.clone());
+
+            // Plan 143 (v7 ticket 11 of 13, spec §4.6/§8/§10): the shared
+            // Adapter Health tracker — managed exactly like
+            // `agent_registry` above so `server_once`'s `http::AppState`
+            // (below), `agent_board`'s own publish path, and the Settings
+            // `get_agent_health` command all reach the same instance,
+            // never independent copies (an `Arc` handle, same "one
+            // instance" discipline `AgentBoardPublisher`'s doc gives for
+            // its own dedup bookkeeping).
+            let agent_health = std::sync::Arc::new(agents::health::HealthTracker::new());
+            app.manage(agent_health.clone());
+
+            // v7 (plan 136, spec §6): the `agent-state` IPC publisher —
+            // managed the same way as `engine`/`agent_registry` above so
+            // `server_once`'s `http::AppState` (below) can reach the same
+            // instance the periodic tick (`spawn_tick`, right after) also
+            // publishes through; both call sites must share one
+            // dedup/revision bookkeeping instance, never two independent
+            // ones (see `AgentBoardPublisher`'s own doc for why).
+            let agent_board = agents::board::AgentBoardPublisher::new(
+                app.handle().clone(),
+                agent_registry,
+                agent_health.clone(),
+                agent_runtimes,
+            );
+            app.manage(agent_board.clone());
+            agent_board.spawn_tick(agents::board::DEFAULT_TICK_INTERVAL);
+
             let window = app
                 .get_webview_window("main")
                 .expect("main window missing from tauri.conf.json");
@@ -353,6 +434,18 @@ pub fn run() {
             // call sites in the shortcut handler).
             #[cfg(target_os = "macos")]
             let was_hovered = Arc::new(StdMutex::new(false));
+
+            // plan 142 (v7 ticket 10 of 13, spec §6.2 expanded): whether
+            // the Agent Board's window frame is CURRENTLY the expanded
+            // one (and pointer delivery is temporarily enabled) — set the
+            // instant a board hover-entry expands it, cleared the instant
+            // a hover-exit (or any other `emit_hover_changed_if_transitioned`
+            // call site going false) collapses it back. Gates the
+            // collapse path so a hover-exit over a NON-board card (which
+            // never expanded anything) doesn't do needless window-frame
+            // churn.
+            #[cfg(target_os = "macos")]
+            let board_expanded = Arc::new(StdMutex::new(false));
 
             // permanent-overlay pass: a plain NSWindow is never composited
             // into another app's fullscreen Space, regardless of level or
@@ -397,6 +490,9 @@ pub fn run() {
                     let engine = engine.clone();
                     let app_handle = app.handle().clone();
                     let was_hovered = was_hovered.clone();
+                    let agent_board = agent_board.clone();
+                    let board_expanded = board_expanded.clone();
+                    let window = window.clone();
                     hover_handler.on_mouse_entered(move |event| {
                         let loc = event.locationInWindow();
                         // plan 093: read BEFORE this event can overwrite
@@ -412,16 +508,30 @@ pub fn run() {
                             hover_cutout_width,
                             hover_cutout_height,
                             idle_peek_open,
+                            agent_board.last_session_count(),
                             loc.x,
                             loc.y,
                         );
-                        emit_hover_changed_if_transitioned(&engine, &app_handle, &was_hovered, hovered);
+                        emit_hover_changed_if_transitioned(
+                            &engine,
+                            &app_handle,
+                            &was_hovered,
+                            hovered,
+                            &window,
+                            mode,
+                            cutout,
+                            &agent_board,
+                            &board_expanded,
+                        );
                     });
                 }
                 {
                     let engine = engine.clone();
                     let app_handle = app.handle().clone();
                     let was_hovered = was_hovered.clone();
+                    let agent_board = agent_board.clone();
+                    let board_expanded = board_expanded.clone();
+                    let window = window.clone();
                     hover_handler.on_mouse_moved(move |event| {
                         let loc = event.locationInWindow();
                         let idle_peek_open = *was_hovered.lock().unwrap();
@@ -432,21 +542,45 @@ pub fn run() {
                             hover_cutout_width,
                             hover_cutout_height,
                             idle_peek_open,
+                            agent_board.last_session_count(),
                             loc.x,
                             loc.y,
                         );
-                        emit_hover_changed_if_transitioned(&engine, &app_handle, &was_hovered, hovered);
+                        emit_hover_changed_if_transitioned(
+                            &engine,
+                            &app_handle,
+                            &was_hovered,
+                            hovered,
+                            &window,
+                            mode,
+                            cutout,
+                            &agent_board,
+                            &board_expanded,
+                        );
                     });
                 }
                 {
                     let engine = engine.clone();
                     let app_handle = app.handle().clone();
                     let was_hovered = was_hovered.clone();
+                    let agent_board = agent_board.clone();
+                    let board_expanded = board_expanded.clone();
+                    let window = window.clone();
                     // Leaving the window's tracking area is never "still
                     // hovered" regardless of where the cursor lands next —
                     // no rect comparison needed.
                     hover_handler.on_mouse_exited(move |_event| {
-                        emit_hover_changed_if_transitioned(&engine, &app_handle, &was_hovered, false);
+                        emit_hover_changed_if_transitioned(
+                            &engine,
+                            &app_handle,
+                            &was_hovered,
+                            false,
+                            &window,
+                            mode,
+                            cutout,
+                            &agent_board,
+                            &board_expanded,
+                        );
                     });
                 }
 
@@ -487,14 +621,31 @@ pub fn run() {
                     let was_hovered = was_hovered.clone();
                     let last_visible_id: Arc<StdMutex<Option<String>>> =
                         Arc::new(StdMutex::new(None));
+                    // plan 142: also clone in the board-collapse inputs — a
+                    // new Notification taking the Slot (a real `id` arriving
+                    // here) means the overlay's own `presentationMode`
+                    // switches away from the Board entirely (spec §6.1's
+                    // precedence: Visible Notification always wins), so any
+                    // still-expanded Board window frame must collapse right
+                    // alongside the existing hover-latch reset — this path
+                    // deliberately never emits `hover-changed` (see the
+                    // paragraph above), so it can't route through
+                    // `emit_hover_changed_if_transitioned` itself; it calls
+                    // the same idempotent collapse helper directly instead.
+                    let board_expanded = board_expanded.clone();
+                    let window = window.clone();
                     app.handle()
                         .listen(crate::event::SLOT_STATE_EVENT, move |event| {
                             let new_id = visible_id_from_slot_state_payload(event.payload());
+                            let is_real_notification = new_id.is_some();
                             let mut last =
                                 last_visible_id.lock().unwrap_or_else(|e| e.into_inner());
                             if *last != new_id {
                                 *last = new_id;
                                 *was_hovered.lock().unwrap_or_else(|e| e.into_inner()) = false;
+                                if is_real_notification {
+                                    collapse_board_if_expanded(&window, mode, cutout, &board_expanded);
+                                }
                             }
                         });
                 }
@@ -516,6 +667,9 @@ pub fn run() {
                 let engine_for_handler = engine.clone();
                 let pause_item_for_handler = pause_item.clone();
                 let was_hovered_for_handler = was_hovered.clone();
+                let agent_board_for_handler = agent_board.clone();
+                let board_expanded_for_handler = board_expanded.clone();
+                let window_for_handler = window.clone();
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
                         .with_handler(move |app, shortcut, event| {
@@ -549,6 +703,11 @@ pub fn run() {
                                         app,
                                         &was_hovered_for_handler,
                                         false,
+                                        &window_for_handler,
+                                        mode,
+                                        cutout,
+                                        &agent_board_for_handler,
+                                        &board_expanded_for_handler,
                                     );
                                 } else if *shortcut
                                     == Shortcut::new(
@@ -570,6 +729,11 @@ pub fn run() {
                                         app,
                                         &was_hovered_for_handler,
                                         false,
+                                        &window_for_handler,
+                                        mode,
+                                        cutout,
+                                        &agent_board_for_handler,
+                                        &board_expanded_for_handler,
                                     );
                                 } else if *shortcut
                                     == Shortcut::new(
@@ -578,6 +742,28 @@ pub fn run() {
                                     )
                                 {
                                     open_settings_window(app);
+                                } else if *shortcut
+                                    == Shortcut::new(
+                                        FOCUS_SESSION_SHORTCUT.0,
+                                        FOCUS_SESSION_SHORTCUT.1,
+                                    )
+                                {
+                                    // plan 144 (spec §6.3): Rust-only, no
+                                    // overlay involvement — the overlay
+                                    // stays receive-only. The registry
+                                    // lock is async, so the lookup +
+                                    // activation runs on the async
+                                    // runtime rather than blocking this
+                                    // (synchronous) shortcut callback.
+                                    let registry = app
+                                        .state::<agents::registry::AgentRegistryHandle>()
+                                        .inner()
+                                        .clone();
+                                    tauri::async_runtime::spawn(async move {
+                                        let now = std::time::Instant::now();
+                                        let states = registry.ordered_states(now).await;
+                                        agents::focus::focus_highest_ranked(&states);
+                                    });
                                 }
                             }
                         })
@@ -600,6 +786,10 @@ pub fn run() {
                 app.global_shortcut().register(Shortcut::new(
                     OPEN_SETTINGS_SHORTCUT.0,
                     OPEN_SETTINGS_SHORTCUT.1,
+                ))?;
+                app.global_shortcut().register(Shortcut::new(
+                    FOCUS_SESSION_SHORTCUT.0,
+                    FOCUS_SESSION_SHORTCUT.1,
                 ))?;
             }
 
@@ -805,8 +995,23 @@ pub fn run() {
                         engine: app_handle.state::<Engine>().inner().clone(),
                         default_ttl,
                         manual_default_priority,
-                        cmux_priority,
-                        cmux_ttl_secs,
+                        agent_priority,
+                        agent_ttl_secs,
+                        agent_notification_policy,
+                        agent_runtimes,
+                        agent_enabled,
+                        agent_registry: app_handle
+                            .state::<agents::registry::AgentRegistryHandle>()
+                            .inner()
+                            .clone(),
+                        agent_board: app_handle
+                            .state::<agents::board::AgentBoardPublisher>()
+                            .inner()
+                            .clone(),
+                        agent_health: app_handle
+                            .state::<std::sync::Arc<agents::health::HealthTracker>>()
+                            .inner()
+                            .clone(),
                     };
                     tauri::async_runtime::spawn(async move {
                         let listener = match http::bind_listener(port).await {
@@ -880,7 +1085,8 @@ fn escape_for_osascript(s: &str) -> String {
 
 /// Makes a serde_json string safe to splice into eval'd JS source:
 /// payloads may carry arbitrary caller text (espn scoring-play strings,
-/// cmux titles). U+2028/U+2029 are legal in JSON but illegal raw in JS
+/// agent titles — superseded the earlier cmux relay, plan 137).
+/// U+2028/U+2029 are legal in JSON but illegal raw in JS
 /// source, and `<` closes the gap JSON leaves (it doesn't escape `/`,
 /// so a literal "</script>" would otherwise break out of the script
 /// context).
@@ -1002,6 +1208,19 @@ fn cutout_height_js_value(inset: f64) -> String {
 // a named-field params struct is a bigger surface change than this plan's
 // scope for a function with exactly two call sites, both in this same
 // file.
+//
+// plan 142 (v7 ticket 10 of 13, spec §6.2): `board_session_count` — when
+// the Slot reads `Empty` (`!visible`), that alone can't tell this
+// function whether the ambient idle surface is showing or the Agent
+// Board is (the Slot has no concept of the Board at all — spec §6.1's
+// precedence lives entirely in the FRONTEND's `presentationMode`). The
+// caller supplies the answer via `AgentBoardPublisher::last_session_count`
+// (a cheap synchronous read, not a registry round-trip) — a nonzero
+// count while `!visible` means the Board is what's actually rendered
+// under the cursor, so `hover::board_rect` (sized off the Board's own
+// shape) is used instead of `hover::active_card_rect`'s idle formula
+// (sized off the small ambient clock/weather card, which is NOT what's
+// on screen in that case).
 #[allow(clippy::too_many_arguments)]
 #[cfg(target_os = "macos")]
 fn hover_point_is_over_card(
@@ -1011,6 +1230,7 @@ fn hover_point_is_over_card(
     cutout_width: f64,
     cutout_height: f64,
     idle_peek_open: bool,
+    board_session_count: usize,
     point_x: f64,
     point_y: f64,
 ) -> bool {
@@ -1026,15 +1246,25 @@ fn hover_point_is_over_card(
         .unwrap()
         .appearance
         .card_scale;
-    let rect = hover::active_card_rect(
-        mode,
-        cutout_width,
-        cutout_height,
-        scale,
-        visible,
-        expanded,
-        idle_peek_open,
-    );
+    let rect = if !visible && board_session_count > 0 {
+        hover::board_rect(
+            mode,
+            cutout_width,
+            cutout_height,
+            scale,
+            board_session_count,
+        )
+    } else {
+        hover::active_card_rect(
+            mode,
+            cutout_width,
+            cutout_height,
+            scale,
+            visible,
+            expanded,
+            idle_peek_open,
+        )
+    };
     hover::point_in_rect(&rect, point_x, point_y)
 }
 
@@ -1053,12 +1283,23 @@ fn hover_point_is_over_card(
 // queue lock per mouse-move when nothing changed). `apply_blocking`
 // carries the mutate→wake→emit protocol (plan 036/037) — no new side
 // channel, no second wake path: this is the existing protocol, reused.
+// plan 142: pushed well past clippy's default arg threshold by the five
+// new board-expand parameters — same "named-field params struct is a
+// bigger surface change than this ticket's scope" call as
+// `hover_point_is_over_card`'s own `#[allow]` just above, and for the
+// same reason (every call site is in this one file).
+#[allow(clippy::too_many_arguments)]
 #[cfg(target_os = "macos")]
 fn emit_hover_changed_if_transitioned(
     engine: &Engine,
     app_handle: &tauri::AppHandle,
     was_hovered: &StdMutex<bool>,
     hovered: bool,
+    window: &tauri::WebviewWindow,
+    mode: presentation::Mode,
+    cutout: Option<presentation::CutoutGeometry>,
+    agent_board: &agents::board::AgentBoardPublisher,
+    board_expanded: &StdMutex<bool>,
 ) {
     use tauri::Emitter;
 
@@ -1082,6 +1323,104 @@ fn emit_hover_changed_if_transitioned(
             q.hover_exit(now);
         }
     });
+
+    // plan 142 (v7 ticket 10 of 13, spec §6.2 expanded): the Agent
+    // Board's hover-expand orchestration piggybacks on this SAME
+    // transitions-only gate — a hover entry over the Board (`!visible`,
+    // at least one retained session) grows the real window frame and
+    // opens pointer delivery; ANY transition to `hovered == false`
+    // restores both immediately, whether or not this specific call is
+    // the one that expanded it (`collapse_board_if_expanded` is a no-op
+    // when `board_expanded` is already false).
+    if hovered {
+        try_expand_board_for_hover(engine, window, agent_board, board_expanded);
+    } else {
+        collapse_board_if_expanded(window, mode, cutout, board_expanded);
+    }
+}
+
+/// plan 142: on a hover ENTRY, expand the Board's window frame + open
+/// pointer delivery — but ONLY when the Slot is empty and the Board
+/// actually has sessions to show (a hover entry over an ordinary
+/// showing/idle card must never touch the window frame at all). Reads
+/// `agent_board.last_session_count()` — the same synchronous,
+/// non-registry read `hover_point_is_over_card` already uses to decide
+/// which hover RECT to compare against, reused here for the same "is
+/// the Board what's actually on screen" question.
+#[cfg(target_os = "macos")]
+fn try_expand_board_for_hover(
+    engine: &Engine,
+    window: &tauri::WebviewWindow,
+    agent_board: &agents::board::AgentBoardPublisher,
+    board_expanded: &StdMutex<bool>,
+) {
+    use crate::event::SlotState;
+
+    let visible =
+        engine.read_blocking(|q| matches!(q.current_slot_state(), SlotState::Showing { .. }));
+    let session_count = agent_board.last_session_count();
+    if visible || session_count == 0 {
+        return;
+    }
+    let Ok(Some(monitor)) = window.current_monitor() else {
+        tracing::warn!("board hover-expand: no current monitor; skipping");
+        return;
+    };
+    let scale_factor = window.scale_factor().unwrap_or(1.0);
+    let screen_size = monitor.size().to_logical::<f64>(scale_factor);
+    let frame =
+        agents::expand::expanded_board_frame(screen_size.width, screen_size.height, session_count);
+    // Order matters: grow the frame FIRST, then open pointer delivery —
+    // never the reverse, which would briefly make the SMALL (resting)
+    // frame clickable before it has grown to the rect the cursor is
+    // actually over.
+    if let Err(e) = window.set_size(tauri::LogicalSize::new(frame.width, frame.height)) {
+        tracing::warn!("board hover-expand: set_size failed: {e}");
+        return;
+    }
+    if let Err(e) = window.set_position(tauri::LogicalPosition::new(frame.x, frame.y)) {
+        tracing::warn!("board hover-expand: set_position failed: {e}");
+    }
+    if let Err(e) = window.set_ignore_cursor_events(false) {
+        tracing::warn!("board hover-expand: set_ignore_cursor_events(false) failed: {e}");
+        return;
+    }
+    *board_expanded.lock().unwrap_or_else(|e| e.into_inner()) = true;
+}
+
+/// plan 142: the exit-side restore — IMMEDIATE (this runs synchronously
+/// inside the same AppKit callback/shortcut handler as the transition
+/// itself, never deferred), and idempotent: a hover-exit over a card
+/// that never expanded anything (`*board_expanded == false` already)
+/// does nothing, so this is safe to call from every `hovered == false`
+/// path unconditionally.
+#[cfg(target_os = "macos")]
+fn collapse_board_if_expanded(
+    window: &tauri::WebviewWindow,
+    mode: presentation::Mode,
+    cutout: Option<presentation::CutoutGeometry>,
+    board_expanded: &StdMutex<bool>,
+) {
+    let mut expanded = board_expanded.lock().unwrap_or_else(|e| e.into_inner());
+    if !*expanded {
+        return;
+    }
+    // Reverse order from the expand path: restore click-through FIRST,
+    // then shrink/reposition — never leave the enlarged frame clickable
+    // for even one frame after the cursor has already left it.
+    if let Err(e) = window.set_ignore_cursor_events(true) {
+        tracing::warn!("board hover-collapse: set_ignore_cursor_events(true) failed: {e}");
+    }
+    if let Err(e) = window.set_size(tauri::LogicalSize::new(
+        hover::WINDOW_WIDTH,
+        hover::WINDOW_HEIGHT,
+    )) {
+        tracing::warn!("board hover-collapse: set_size failed: {e}");
+    }
+    if let Err(e) = position_window(window, mode, cutout) {
+        tracing::warn!("board hover-collapse: position_window failed: {e}");
+    }
+    *expanded = false;
 }
 
 /// The pure half of the generic hover-latch reset (M5, see the

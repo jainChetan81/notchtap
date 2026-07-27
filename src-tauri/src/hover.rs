@@ -19,8 +19,13 @@ use crate::presentation::Mode;
 /// table below). Duplicated here as named constants (not read from the
 /// conf file at runtime) because this module takes no I/O — it is pure
 /// numbers in, pure `Rect` out.
-const WINDOW_WIDTH: f64 = 500.0;
-const WINDOW_HEIGHT: f64 = 300.0;
+// plan 142: `pub(crate)` (was private) — `lib.rs`'s board hover-expand
+// call site needs these two to restore the RESTING window frame exactly
+// (`agents::expand::RESTING_WINDOW_HEIGHT`/`EXPANDED_BOARD_WIDTH` are
+// that module's own duplicated-constants copies of these two, per that
+// module's doc).
+pub(crate) const WINDOW_WIDTH: f64 = 500.0;
+pub(crate) const WINDOW_HEIGHT: f64 = 300.0;
 
 // Geometry-contract constants — duplicated-constants pair with
 // `src/styles.css`'s `.card-assembly`/`.card-assembly.idle`/
@@ -248,6 +253,60 @@ pub fn active_card_rect(
     } else {
         BELOW_BLOCK_SHOWING_H
     };
+    let raw_height = effective_cutout_height + below_block_h;
+    let height = raw_height.min(WINDOW_HEIGHT);
+
+    let x_min = (WINDOW_WIDTH - width) / 2.0;
+    let (y_min, y_max) = css_top_down_to_appkit_y(WINDOW_HEIGHT, 0.0, height);
+
+    Rect {
+        x_min,
+        x_max: x_min + width,
+        y_min,
+        y_max,
+    }
+}
+
+// plan 142 (v7 ticket 10 of 13, spec §6.2): the Agent Board's RESTING
+// hover-detection rect — a card conservatively estimated the same way
+// every other formula above is, but sized off the board's own shape
+// (`AgentBoard.tsx`'s permanent `.card-assembly.expanded` class, plus
+// one compact `.agent-row` per non-primary session) instead of the
+// Notification queue's `visible`/`expanded` state, which
+// `hover_point_is_over_card` (`lib.rs`) can't derive board-ness from at
+// all — the Slot reads `Empty` the whole time the Board is showing.
+// Unlike the expanded WINDOW frame (`agents::expand::
+// expanded_board_frame`), this rect stays within the fixed
+// `WINDOW_WIDTH`/`WINDOW_HEIGHT` canvas — the RESTING board never
+// resizes the real window; only a hover transition does that
+// (`lib.rs`'s hover-transition call site).
+const BOARD_PRIMARY_H: f64 = 150.0; // conservative estimate, agent-board.css's `.agent-board-primary` block
+const BOARD_ROW_H: f64 = 18.0; // conservative estimate, agent-board.css's `.agent-row`
+
+/// `session_count` is every session the Board currently renders (primary
+/// + rows) — `lib.rs` reads this from `AgentBoardPublisher::last_session_count`.
+pub fn board_rect(
+    mode: Mode,
+    cutout_width: f64,
+    cutout_height: f64,
+    scale: f64,
+    session_count: usize,
+) -> Rect {
+    let effective_cutout_width = match mode {
+        Mode::Notch => cutout_width,
+        Mode::Hud => HUD_CUTOUT_W,
+    };
+    let effective_cutout_height = match mode {
+        Mode::Notch => cutout_height,
+        Mode::Hud => HUD_CUTOUT_H,
+    };
+
+    let raw_width =
+        (BASE_EXPANDED * scale).max(effective_cutout_width + 2.0 * MIN_FLANK_SHOWING * scale);
+    let width = raw_width.min(WINDOW_WIDTH);
+
+    let extra_rows = session_count.saturating_sub(1);
+    let below_block_h = BOARD_PRIMARY_H + BOARD_ROW_H * extra_rows as f64;
     let raw_height = effective_cutout_height + below_block_h;
     let height = raw_height.min(WINDOW_HEIGHT);
 
@@ -622,5 +681,46 @@ mod tests {
         assert!(!point_in_rect(&r, WINDOW_WIDTH / 2.0, 200.0));
         // sanity: a point actually inside the real idle rect still hovers.
         assert!(point_in_rect(&r, WINDOW_WIDTH / 2.0, 280.0));
+    }
+
+    // --- plan 142: board_rect ---
+
+    #[test]
+    fn board_rect_width_matches_the_expanded_formula() {
+        let expanded = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, true, false);
+        let board = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 3);
+        assert_eq!(expanded.x_max - expanded.x_min, board.x_max - board.x_min);
+    }
+
+    #[test]
+    fn board_rect_one_session_is_the_primary_block_alone() {
+        let r = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 1);
+        assert_eq!(r.y_max - r.y_min, HUD_CUTOUT_H + BOARD_PRIMARY_H);
+    }
+
+    #[test]
+    fn board_rect_grows_by_one_row_height_per_extra_session() {
+        let three = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 3);
+        let four = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 4);
+        assert_eq!(
+            (four.y_max - four.y_min) - (three.y_max - three.y_min),
+            BOARD_ROW_H
+        );
+    }
+
+    #[test]
+    fn board_rect_zero_sessions_matches_one_session_saturating() {
+        // Defense in depth: `session_count` should never legitimately be
+        // 0 while the Board renders at all, but `saturating_sub` must not
+        // panic or produce a nonsensical (negative) row count.
+        let zero = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 0);
+        let one = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 1);
+        assert_eq!(zero, one);
+    }
+
+    #[test]
+    fn board_rect_caps_at_the_window_height_for_many_sessions() {
+        let r = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 50);
+        assert_eq!(r.y_max - r.y_min, WINDOW_HEIGHT);
     }
 }

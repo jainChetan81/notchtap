@@ -1,0 +1,12 @@
+{
+  "session_id": "codex-sess-redacted-0001",
+  "hook_event_name": "SubagentStop",
+  "transcript_path": "/Users/example/.codex/sessions/redacted/transcript.jsonl",
+  "cwd": "/Users/example/code/notchtap",
+  "turn_id": "turn-redacted-0005",
+  "agent_id": "codex-agent-redacted-01",
+  "agent_type": "general-purpose",
+  "agent_transcript_path": "/Users/example/.codex/sessions/redacted/subagent-transcript.jsonl",
+  "stop_hook_active": false,
+  "last_assistant_message": "REDACTED — the full assistant message text is intentionally withheld from this fixture"
+}

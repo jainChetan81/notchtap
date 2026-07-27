@@ -1,0 +1,15 @@
+{
+  "session_id": "sess-redacted-0001",
+  "prompt_id": "44444444-4444-4444-8444-444444444444",
+  "hook_event_name": "PostToolUse",
+  "transcript_path": "/Users/example/.claude/projects/redacted/transcript.jsonl",
+  "cwd": "/Users/example/code/notchtap",
+  "permission_mode": "default",
+  "tool_name": "Edit",
+  "tool_input": {
+    "file_path": "/Users/example/code/notchtap/src-tauri/src/agents/mod.rs"
+  },
+  "tool_use_id": "toolu_redacted_0002",
+  "tool_result": "REDACTED — raw tool output is intentionally withheld from this fixture",
+  "tool_use_succeeded": true
+}

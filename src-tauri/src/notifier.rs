@@ -114,6 +114,7 @@ pub fn format_message(event: &Event) -> String {
         EventType::MatchState => "🕐 ",
         EventType::Generic => "🤖 ",
         EventType::NewsItem => "📰 ",
+        EventType::AgentEvent => "🤖 ",
     };
     format!("{icon}<b>{title}</b>\n{body}")
 }

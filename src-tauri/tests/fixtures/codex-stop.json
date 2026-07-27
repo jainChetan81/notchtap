@@ -1,0 +1,9 @@
+{
+  "session_id": "codex-sess-redacted-0001",
+  "hook_event_name": "Stop",
+  "transcript_path": "/Users/example/.codex/sessions/redacted/transcript.jsonl",
+  "cwd": "/Users/example/code/notchtap",
+  "turn_id": "turn-redacted-0004",
+  "stop_hook_active": false,
+  "last_assistant_message": "REDACTED — the full assistant message text is intentionally withheld from this fixture"
+}

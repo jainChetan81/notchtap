@@ -65,17 +65,34 @@ pub struct Config {
     /// (was the hardcoded `Priority::Medium` in `http.rs`). A request that
     /// sets `priority` explicitly still overrides this.
     pub manual_default_priority: Priority,
-    /// v6.1: fallback priority for a `/notify` request that self-identifies
-    /// as `source: "cmux"` (see `notchtap` CLI's `--source`/auto-detect) —
-    /// same override rule as `manual_default_priority`. Defaults to `High`
-    /// to match the documented cmux notification-command convention
-    /// (`--priority high`), so a cmux push that omits `priority` resolves
-    /// identically to before this field existed.
-    pub cmux_priority: Priority,
-    /// v6.1: rotation window for a cmux-originated push — previously
-    /// indistinguishable from any other manual `/notify` caller, so it
-    /// silently used `default_ttl`.
-    pub cmux_ttl_secs: u64,
+    /// plan 137 (spec §7): renamed from v6.1's `cmux_priority` — the cmux
+    /// relay and its `/notify` self-declared `source: "cmux"` are gone
+    /// (superseded by the v7 Agent Adapter layer), but the flat field
+    /// itself survives as the one-release migration target: `cmux_priority`
+    /// aliases onto this field when the file has no `agent_priority` key of
+    /// its own (`Config::parse`'s heal step, mirroring the
+    /// `default_ttl`→`espn_ttl_secs`/`agent_ttl_secs` inheritance pattern
+    /// already below). `[agents]`'s four kind-specific priorities
+    /// (`permission_priority`/`input_priority`/`failure_priority`/
+    /// `completion_priority`) take precedence for every adapter-generated
+    /// Notification — this flat field has no direct consumer of its own
+    /// today, it exists purely so an upgrading install's customized
+    /// `cmux_priority` value is never silently dropped on the floor.
+    pub agent_priority: Priority,
+    /// plan 137 (spec §7): renamed from v6.1's `cmux_ttl_secs` — same
+    /// migration story as `agent_priority` above, but this one DOES have a
+    /// live consumer: it's the one-shot rotation window `http.rs`'s
+    /// `agent_events_handler` passes to
+    /// `agents::notification::build_notification` for every noteworthy
+    /// Agent Notification, exactly the role `cmux_ttl_secs` played for a
+    /// cmux-originated `/notify` push.
+    pub agent_ttl_secs: u64,
+    /// plan 137 (spec §7): the v7 `[agents]` config block — global
+    /// enable, registry retention/staleness, the informational-card
+    /// toggle, four per-kind Notification priorities, and four
+    /// per-runtime enable flags. See [`AgentsConfig`].
+    #[serde(default)]
+    pub agents: AgentsConfig,
     /// plan 040 Part B: weather source (Open-Meteo, keyless). default
     /// false — ambient sources are opt-in per machine, same rule as rss.
     pub weather_enabled: bool,
@@ -114,8 +131,8 @@ pub struct Config {
     /// later browsing. Defaults to `false` like every other opt-in surface
     /// here (`rss_enabled`, `weather_enabled`, `espn_live_card`,
     /// `espn_rich_events`) — this one writes notification CONTENT to disk,
-    /// including cmux payloads, so off-by-default is load-bearing, not
-    /// stylistic.
+    /// including agent-originated payloads (formerly cmux relay ones), so
+    /// off-by-default is load-bearing, not stylistic.
     #[serde(default = "default_history_enabled")]
     pub history_enabled: bool,
     /// plan 104: user feature toggle for the ambient now-playing peek row.
@@ -195,6 +212,86 @@ pub struct Appearance {
 impl Default for Appearance {
     fn default() -> Self {
         default_appearance()
+    }
+}
+
+/// `[agents]` — v7's Agent Adapter config surface (spec §7). Global
+/// enable/retention/staleness/informational-toggle plus the four
+/// per-kind Notification priorities that
+/// `agents::notification::NotificationPolicy` is built from
+/// (`lib.rs`'s `setup`), and `[agents.runtimes.*]`'s four per-runtime
+/// enable flags gating `/agent/events` (`http.rs`'s `agent_events_handler`
+/// — a disabled runtime's event is accepted (`202`) but skipped for BOTH
+/// the Agent Registry and the Notification Engine; see that handler's own
+/// doc for why this isn't a `400`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AgentsConfig {
+    pub enabled: bool,
+    pub terminal_retention_secs: u64,
+    pub stale_after_secs: u64,
+    pub informational_notifications: bool,
+    pub permission_priority: Priority,
+    pub input_priority: Priority,
+    pub failure_priority: Priority,
+    pub completion_priority: Priority,
+    pub runtimes: AgentRuntimesConfig,
+}
+
+impl Default for AgentsConfig {
+    /// Spec §7's toml block, verbatim.
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            terminal_retention_secs: 600,
+            stale_after_secs: 900,
+            informational_notifications: false,
+            permission_priority: Priority::High,
+            input_priority: Priority::High,
+            failure_priority: Priority::High,
+            completion_priority: Priority::Medium,
+            runtimes: AgentRuntimesConfig::default(),
+        }
+    }
+}
+
+/// `[agents.runtimes.*]` — one enable flag per supported runtime (spec
+/// §7). All four default to `true`: installing v7 doesn't silently
+/// disable a runtime a user hasn't touched.
+#[derive(Debug, Clone, Copy, PartialEq, Default, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AgentRuntimesConfig {
+    pub claude_code: AgentRuntimeToggle,
+    pub codex: AgentRuntimeToggle,
+    pub kimi: AgentRuntimeToggle,
+    pub opencode: AgentRuntimeToggle,
+}
+
+impl AgentRuntimesConfig {
+    /// Whether `runtime`'s own `[agents.runtimes.*]` toggle is on —
+    /// `http.rs`'s `AppState::agent_runtimes` field is this type directly
+    /// (the same flattened-fields-not-whole-`Config` convention every
+    /// other `AppState` field already follows).
+    pub fn runtime_enabled(&self, runtime: crate::agents::model::AgentRuntime) -> bool {
+        use crate::agents::model::AgentRuntime;
+        match runtime {
+            AgentRuntime::ClaudeCode => self.claude_code.enabled,
+            AgentRuntime::Codex => self.codex.enabled,
+            AgentRuntime::Kimi => self.kimi.enabled,
+            AgentRuntime::OpenCode => self.opencode.enabled,
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct AgentRuntimeToggle {
+    pub enabled: bool,
+}
+
+impl Default for AgentRuntimeToggle {
+    fn default() -> Self {
+        Self { enabled: true }
     }
 }
 
@@ -282,11 +379,11 @@ fn default_manual_default_priority() -> Priority {
     Priority::Medium
 }
 
-fn default_cmux_priority() -> Priority {
+fn default_agent_priority() -> Priority {
     Priority::High
 }
 
-fn default_cmux_ttl_secs() -> u64 {
+fn default_agent_ttl_secs() -> u64 {
     8
 }
 
@@ -372,21 +469,25 @@ fn default_now_playing_adapter_dir() -> PathBuf {
 }
 
 fn default_rotation_order() -> Vec<SourceKind> {
-    // v6.1 review fix: Manual ranks ahead of Cmux — at default priorities
-    // (Football/Cmux both High, Manual Medium, News Low) this never
-    // actually breaks a tie, since Cmux and Manual don't share a tier
+    // v6.1 review fix (superseded by plan 137's cmux→Agent migration,
+    // spec §7): Manual ranks ahead of Agent — at default priorities
+    // (Football/Agent both High, Manual Medium, News Low) this never
+    // actually breaks a tie, since Agent and Manual don't share a tier
     // unless the user manually equalizes their priorities. Still, an
     // install already running both should see the pre-existing, more
     // established Manual path win any such tie by default, not the
-    // newer Cmux origin.
+    // Agent origin (formerly Cmux).
     // plan 040 Part B: Weather sits right after Manual — it shares
     // Manual's Medium tier by default, and the more established Manual
     // path wins that tie.
+    // plan 137 (spec §7): new default order is
+    // `[Football, Manual, Weather, Agent, News]` — Cmux's old slot is
+    // now Agent's, in place.
     vec![
         SourceKind::Football,
         SourceKind::Manual,
         SourceKind::Weather,
-        SourceKind::Cmux,
+        SourceKind::Agent,
         SourceKind::News,
     ]
 }
@@ -454,8 +555,9 @@ impl Default for Config {
             rss_ttl_secs: default_rss_ttl_secs(),
             rss_max_per_poll: default_rss_max_per_poll(),
             manual_default_priority: default_manual_default_priority(),
-            cmux_priority: default_cmux_priority(),
-            cmux_ttl_secs: default_cmux_ttl_secs(),
+            agent_priority: default_agent_priority(),
+            agent_ttl_secs: default_agent_ttl_secs(),
+            agents: AgentsConfig::default(),
             weather_enabled: default_weather_enabled(),
             weather_lat: default_weather_lat(),
             weather_lon: default_weather_lon(),
@@ -504,30 +606,58 @@ impl Config {
 
     pub fn parse(content: &str) -> Result<Self, toml::de::Error> {
         let mut config: Config = toml::from_str(content)?;
-        // v6.1 review fix: espn_ttl_secs/cmux_ttl_secs were split out of
-        // the one shared default_ttl. serde's whole-struct #[serde(default)]
-        // can't express "inherit sibling field X when absent" — only "use
-        // Config::default()'s value" — so an install that had already
-        // customized default_ttl before this split would otherwise see
-        // football/cmux silently revert to the new fields' own hardcoded
-        // default instead of keeping the value it actually configured.
-        // Re-parsing as a raw table to see which keys the file itself set
-        // (not what serde defaulted them to) lets us inherit the file's
-        // effective default_ttl exactly where the old shared-field
-        // behavior would have applied it.
+        // v6.1 review fix: espn_ttl_secs/agent_ttl_secs (formerly
+        // cmux_ttl_secs) were split out of the one shared default_ttl.
+        // serde's whole-struct #[serde(default)] can't express "inherit
+        // sibling field X when absent" — only "use Config::default()'s
+        // value" — so an install that had already customized default_ttl
+        // before this split would otherwise see football/agent silently
+        // revert to the new fields' own hardcoded default instead of
+        // keeping the value it actually configured. Re-parsing as a raw
+        // table to see which keys the file itself set (not what serde
+        // defaulted them to) lets us inherit the file's effective
+        // default_ttl exactly where the old shared-field behavior would
+        // have applied it.
         //
         // plan 101: the espn arm is conditional on the file ALSO having
         // customized default_ttl — the inherit exists only for configs
         // that customized the old shared default_ttl; a config that never
         // touched it gets espn's own default (15) instead of silently
-        // re-inheriting the generic default. The cmux arm stays
-        // unconditional (its default intentionally tracks default_ttl).
+        // re-inheriting the generic default. The agent arm stays
+        // unconditional (its default intentionally tracks default_ttl),
+        // same as the cmux arm it replaces.
+        //
+        // plan 137 (spec §7): `cmux_priority`/`cmux_ttl_secs` are the
+        // one-release migration aliases for `agent_priority`/
+        // `agent_ttl_secs` — consulted ONLY when the new key is absent
+        // from the file (a config carrying both, however unlikely, lets
+        // the new key win outright: the raw legacy read is skipped
+        // entirely once the new key is present, so there's no
+        // "duplicate field" ambiguity the way a `#[serde(alias)]` on a
+        // struct field would raise). Serialization never re-emits either
+        // legacy key — only `Serialize`'s own field names
+        // (`agent_priority`/`agent_ttl_secs`) ever reach the file again.
         if let Ok(raw) = content.parse::<toml::Table>() {
             if !raw.contains_key("espn_ttl_secs") && raw.contains_key("default_ttl") {
                 config.espn_ttl_secs = config.default_ttl;
             }
-            if !raw.contains_key("cmux_ttl_secs") {
-                config.cmux_ttl_secs = config.default_ttl;
+            if raw.contains_key("agent_ttl_secs") {
+                // new key present — already parsed by serde above, nothing to do.
+            } else if let Some(legacy) = raw
+                .get("cmux_ttl_secs")
+                .and_then(|v| v.clone().try_into::<u64>().ok())
+            {
+                config.agent_ttl_secs = legacy;
+            } else {
+                config.agent_ttl_secs = config.default_ttl;
+            }
+            if !raw.contains_key("agent_priority") {
+                if let Some(legacy) = raw
+                    .get("cmux_priority")
+                    .and_then(|v| v.clone().try_into::<Priority>().ok())
+                {
+                    config.agent_priority = legacy;
+                }
             }
         }
         // heal a `rotation_order` written before a `SourceKind` variant
@@ -636,8 +766,20 @@ mod tests {
         assert_eq!(c.rss_max_per_poll, 10);
         assert!(c.rss_topics.is_empty());
         assert_eq!(c.manual_default_priority, Priority::Medium);
-        assert_eq!(c.cmux_priority, Priority::High);
-        assert_eq!(c.cmux_ttl_secs, 8);
+        assert_eq!(c.agent_priority, Priority::High);
+        assert_eq!(c.agent_ttl_secs, 8);
+        assert!(c.agents.enabled);
+        assert_eq!(c.agents.terminal_retention_secs, 600);
+        assert_eq!(c.agents.stale_after_secs, 900);
+        assert!(!c.agents.informational_notifications);
+        assert_eq!(c.agents.permission_priority, Priority::High);
+        assert_eq!(c.agents.input_priority, Priority::High);
+        assert_eq!(c.agents.failure_priority, Priority::High);
+        assert_eq!(c.agents.completion_priority, Priority::Medium);
+        assert!(c.agents.runtimes.claude_code.enabled);
+        assert!(c.agents.runtimes.codex.enabled);
+        assert!(c.agents.runtimes.kimi.enabled);
+        assert!(c.agents.runtimes.opencode.enabled);
         assert!(!c.weather_enabled);
         assert_eq!(c.weather_lat, 0.0);
         assert_eq!(c.weather_lon, 0.0);
@@ -654,7 +796,7 @@ mod tests {
                 SourceKind::Football,
                 SourceKind::Manual,
                 SourceKind::Weather,
-                SourceKind::Cmux,
+                SourceKind::Agent,
                 SourceKind::News
             ]
         );
@@ -871,47 +1013,127 @@ url = "https://example.com/without-meta"
     #[test]
     fn per_source_priority_and_ttl_are_overridable() {
         let c = Config::parse(
-            "espn_priority = \"medium\"\nespn_ttl_secs = 12\nrss_priority = \"high\"\nmanual_default_priority = \"low\"\ncmux_priority = \"low\"\ncmux_ttl_secs = 20\n",
+            "espn_priority = \"medium\"\nespn_ttl_secs = 12\nrss_priority = \"high\"\nmanual_default_priority = \"low\"\nagent_priority = \"low\"\nagent_ttl_secs = 20\n",
         )
         .unwrap();
         assert_eq!(c.espn_priority, Priority::Medium);
         assert_eq!(c.espn_ttl_secs, 12);
         assert_eq!(c.rss_priority, Priority::High);
         assert_eq!(c.manual_default_priority, Priority::Low);
-        assert_eq!(c.cmux_priority, Priority::Low);
-        assert_eq!(c.cmux_ttl_secs, 20);
+        assert_eq!(c.agent_priority, Priority::Low);
+        assert_eq!(c.agent_ttl_secs, 20);
     }
 
     #[test]
-    fn espn_and_cmux_ttl_inherit_a_customized_default_ttl_when_absent() {
+    fn espn_and_agent_ttl_inherit_a_customized_default_ttl_when_absent() {
         // v6.1 review fix: an install that already had `default_ttl = 20`
-        // before espn_ttl_secs/cmux_ttl_secs existed must not silently
-        // revert football/cmux to the new fields' own hardcoded default.
+        // before espn_ttl_secs/agent_ttl_secs (formerly cmux_ttl_secs)
+        // existed must not silently revert football/agent to the new
+        // fields' own hardcoded default.
         let c = Config::parse("default_ttl = 20\n").unwrap();
         assert_eq!(c.default_ttl, 20);
         assert_eq!(c.espn_ttl_secs, 20);
-        assert_eq!(c.cmux_ttl_secs, 20);
+        assert_eq!(c.agent_ttl_secs, 20);
     }
 
     #[test]
-    fn explicit_espn_or_cmux_ttl_is_not_overridden_by_inheritance() {
-        let c = Config::parse("default_ttl = 20\nespn_ttl_secs = 5\ncmux_ttl_secs = 6\n").unwrap();
+    fn explicit_espn_or_agent_ttl_is_not_overridden_by_inheritance() {
+        let c = Config::parse("default_ttl = 20\nespn_ttl_secs = 5\nagent_ttl_secs = 6\n").unwrap();
         assert_eq!(c.default_ttl, 20);
         assert_eq!(c.espn_ttl_secs, 5);
-        assert_eq!(c.cmux_ttl_secs, 6);
+        assert_eq!(c.agent_ttl_secs, 6);
     }
 
     #[test]
     fn absent_default_ttl_still_yields_the_shared_default_of_eight() {
         // no default_ttl in the file at all: default_ttl resolves to its
-        // own default (8), and cmux inherits that same resolved value —
+        // own default (8), and agent inherits that same resolved value —
         // identical to today's fresh-install behavior. plan 101: espn no
         // longer inherits here — with default_ttl untouched, espn gets
         // its own default (15) instead.
         let c = Config::parse("").unwrap();
         assert_eq!(c.default_ttl, 8);
         assert_eq!(c.espn_ttl_secs, 15);
-        assert_eq!(c.cmux_ttl_secs, 8);
+        assert_eq!(c.agent_ttl_secs, 8);
+    }
+
+    // --- plan 137 (spec §7): cmux-era config migration ---
+
+    #[test]
+    fn legacy_cmux_priority_and_ttl_alias_to_agent_fields_when_new_keys_absent() {
+        let c = Config::parse("cmux_priority = \"low\"\ncmux_ttl_secs = 20\n").unwrap();
+        assert_eq!(c.agent_priority, Priority::Low);
+        assert_eq!(c.agent_ttl_secs, 20);
+    }
+
+    #[test]
+    fn new_agent_keys_win_over_legacy_cmux_keys_when_both_present() {
+        // spec §7 / plan 137: "aliases to the new keys only when the new
+        // key is absent" — both present in the same file must never error
+        // and must resolve to the NEW key's value, not the legacy one.
+        let c = Config::parse(
+            "cmux_priority = \"low\"\nagent_priority = \"high\"\ncmux_ttl_secs = 5\nagent_ttl_secs = 30\n",
+        )
+        .unwrap();
+        assert_eq!(c.agent_priority, Priority::High);
+        assert_eq!(c.agent_ttl_secs, 30);
+    }
+
+    #[test]
+    fn legacy_cmux_ttl_alias_is_not_overridden_by_default_ttl_inheritance() {
+        // the legacy alias must win over the plain default_ttl inheritance
+        // rule above — an explicit (even if legacy-spelled) customization
+        // must not be silently discarded in favor of the generic fallback.
+        let c = Config::parse("default_ttl = 99\ncmux_ttl_secs = 6\n").unwrap();
+        assert_eq!(c.default_ttl, 99);
+        assert_eq!(c.agent_ttl_secs, 6);
+    }
+
+    #[test]
+    fn full_legacy_config_migrates_and_reserializes_with_new_names_only() {
+        // the full-fidelity migration contract: an old config with every
+        // legacy field/value set (cmux_priority, cmux_ttl_secs, rotation
+        // Cmux entry) loads cleanly, resolves to the new names, and
+        // re-serializes with ONLY the new names — never "cmux" anywhere on
+        // the wire again.
+        let legacy = "cmux_priority = \"low\"\ncmux_ttl_secs = 42\nrotation_order = [\"football\", \"manual\", \"weather\", \"cmux\", \"news\"]\n";
+        let c = Config::parse(legacy).unwrap();
+        assert_eq!(c.agent_priority, Priority::Low);
+        assert_eq!(c.agent_ttl_secs, 42);
+        assert_eq!(
+            c.rotation_order,
+            [
+                SourceKind::Football,
+                SourceKind::Manual,
+                SourceKind::Weather,
+                SourceKind::Agent,
+                SourceKind::News,
+            ]
+        );
+
+        let reserialized = toml::to_string_pretty(&c).unwrap();
+        assert!(!reserialized.contains("cmux"), "{reserialized}");
+        assert!(reserialized.contains("agent_priority"));
+        assert!(reserialized.contains("agent_ttl_secs"));
+
+        // idempotent: re-parsing the migrated-and-reserialized output must
+        // be a byte-for-byte no-op the second time through.
+        let reparsed = Config::parse(&reserialized).unwrap();
+        assert_eq!(reparsed, c);
+        let reserialized_again = toml::to_string_pretty(&reparsed).unwrap();
+        assert_eq!(reserialized_again, reserialized);
+    }
+
+    #[test]
+    fn double_migration_is_a_no_op() {
+        // running Config::parse twice over the same legacy content (e.g. a
+        // process that re-loads its own already-migrated-in-memory config)
+        // must not double-apply or drift.
+        let legacy = "cmux_priority = \"high\"\ncmux_ttl_secs = 11\n";
+        let once = Config::parse(legacy).unwrap();
+        let reserialized = toml::to_string_pretty(&once).unwrap();
+        let twice = Config::parse(&reserialized).unwrap();
+        assert_eq!(once, twice);
     }
 
     #[test]
@@ -954,6 +1176,30 @@ url = "https://example.com/without-meta"
     #[test]
     fn rotation_order_is_overridable() {
         let c = Config::parse(
+            "rotation_order = [\"news\", \"football\", \"agent\", \"manual\", \"weather\"]\n",
+        )
+        .unwrap();
+        assert_eq!(
+            c.rotation_order,
+            [
+                SourceKind::News,
+                SourceKind::Football,
+                SourceKind::Agent,
+                SourceKind::Manual,
+                SourceKind::Weather,
+            ]
+        );
+    }
+
+    // plan 137 (spec §7): the legacy "cmux" literal must still deserialize
+    // in a `rotation_order` array (via `SourceKind`'s `#[serde(alias =
+    // "cmux")]`), rewritten in place to `Agent` — exercised here through
+    // the same "missing a source"/"duplicate" heal paths the two tests
+    // below already cover, so the alias and the heal are proven together
+    // rather than in isolation.
+    #[test]
+    fn legacy_cmux_rotation_entry_is_rewritten_in_place_to_agent() {
+        let c = Config::parse(
             "rotation_order = [\"news\", \"football\", \"cmux\", \"manual\", \"weather\"]\n",
         )
         .unwrap();
@@ -962,7 +1208,7 @@ url = "https://example.com/without-meta"
             [
                 SourceKind::News,
                 SourceKind::Football,
-                SourceKind::Cmux,
+                SourceKind::Agent,
                 SourceKind::Manual,
                 SourceKind::Weather,
             ]
@@ -975,14 +1221,14 @@ url = "https://example.com/without-meta"
         // the settings UI's rotation-order list can't add a missing source
         // back on its own, so `Config::parse` must heal it at load time or
         // every save attempt fails `validate`'s permutation check forever.
-        let c = Config::parse("rotation_order = [\"news\", \"football\", \"cmux\", \"manual\"]\n")
+        let c = Config::parse("rotation_order = [\"news\", \"football\", \"agent\", \"manual\"]\n")
             .unwrap();
         assert_eq!(
             c.rotation_order,
             [
                 SourceKind::News,
                 SourceKind::Football,
-                SourceKind::Cmux,
+                SourceKind::Agent,
                 SourceKind::Manual,
                 SourceKind::Weather,
             ]
@@ -991,7 +1237,7 @@ url = "https://example.com/without-meta"
 
     #[test]
     fn rotation_order_with_duplicate_and_missing_sources_heals_to_exactly_five() {
-        // a malformed config: `football` appears twice, `news` and `cmux`
+        // a malformed config: `football` appears twice, `news` and `agent`
         // are both missing entirely. The heal must both dedupe the
         // duplicate AND append the two missing sources, landing at exactly
         // 5 unique entries — not 6, which would still fail `validate`'s
@@ -1008,13 +1254,13 @@ url = "https://example.com/without-meta"
             SourceKind::Manual,
             SourceKind::Weather,
             SourceKind::News,
-            SourceKind::Cmux,
+            SourceKind::Agent,
         ];
         expected.sort_by_key(|s| format!("{s:?}"));
         assert_eq!(sorted, expected);
         // first-occurrence order preserved for what the file already had:
         // football (deduped to one), manual, weather stay in that relative
-        // order; only the appended news/cmux go at the end.
+        // order; only the appended news/agent go at the end.
         assert_eq!(c.rotation_order[0], SourceKind::Football);
         assert_eq!(c.rotation_order[1], SourceKind::Manual);
         assert_eq!(c.rotation_order[2], SourceKind::Weather);

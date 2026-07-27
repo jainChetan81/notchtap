@@ -224,9 +224,10 @@ describe("useSlotState", () => {
 
   // plan 096: `origin` — a closed five-value union, same rejection
   // discipline as every other enum on this wire (signal/eventType/priority
-  // above).
+  // above). plan 137: "cmux" replaced by "agent" — the wire never sends
+  // "cmux" anymore (event.rs's `SourceKind` dropped the variant).
   it("accepts a showing payload with each recognized origin value", () => {
-    for (const origin of ["football", "news", "manual", "cmux", "weather"] as const) {
+    for (const origin of ["football", "news", "manual", "agent", "weather"] as const) {
       window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, origin };
       const { result } = renderHook(() => useSlotState());
       expect(result.current).toMatchObject({ origin });

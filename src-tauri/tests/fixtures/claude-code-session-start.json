@@ -1,0 +1,8 @@
+{
+  "session_id": "sess-redacted-0001",
+  "hook_event_name": "SessionStart",
+  "transcript_path": "/Users/example/.claude/projects/redacted/transcript.jsonl",
+  "cwd": "/Users/example/code/notchtap",
+  "permission_mode": "default",
+  "source": "startup"
+}
