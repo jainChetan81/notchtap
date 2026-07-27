@@ -50,6 +50,7 @@ const GOAL: SlotState = {
   priority: "high",
   signal: "goal",
   origin: "football",
+  agentRuntime: null,
   expanded: true,
   source: null,
   category: null,
@@ -72,6 +73,7 @@ const RED_CARD: SlotState = {
   priority: "high",
   signal: "red_card",
   origin: "football",
+  agentRuntime: null,
   expanded: true,
   source: null,
   category: null,
@@ -94,6 +96,7 @@ const AGENT_NEEDS_INPUT: SlotState = {
   priority: "high",
   signal: "generic",
   origin: "agent",
+  agentRuntime: null,
   expanded: true,
   source: null,
   category: null,
@@ -118,6 +121,7 @@ const LIVE_MATCH: SlotState = {
   priority: "high",
   signal: "yellow_card",
   origin: "football",
+  agentRuntime: null,
   expanded: false,
   source: null,
   category: null,
@@ -143,6 +147,7 @@ const NEWS: SlotState = {
   priority: "low",
   signal: "generic",
   origin: "news",
+  agentRuntime: null,
   expanded: true,
   source: "NDTV",
   category: "politics",
@@ -167,6 +172,7 @@ const AGENT_RICH: SlotState = {
   priority: "high",
   signal: "generic",
   origin: "agent",
+  agentRuntime: null,
   expanded: true,
   source: null,
   category: null,
@@ -199,6 +205,7 @@ const WEATHER_ALERT: SlotState = {
   priority: "medium",
   signal: "generic",
   origin: "weather",
+  agentRuntime: null,
   expanded: false,
   source: null,
   category: null,
@@ -241,6 +248,7 @@ function liveSlot(overrides: Partial<Extract<SlotState, { state: "showing" }>> =
     priority: "high",
     signal: "goal",
     origin: "football",
+    agentRuntime: null,
     expanded: false,
     source: null,
     category: null,
@@ -898,6 +906,71 @@ describe("StatusRailCard", () => {
       const manualShell = manualContainer.querySelector(".card-assembly") as HTMLElement;
       expect(agentShell.className).toBe(manualShell.className);
       expect(agentShell.className).not.toContain("agent");
+    });
+  });
+
+  // plan 147: `sourceClass` (lib/presentation.ts) — the below-block's
+  // source-identity colour class (source-identity.css's `.src-*`
+  // family), replacing the flat `cat-generic` fallback for every
+  // non-news origin. News keeps `categoryClass`/`cat-*` untouched and
+  // gains no `src-*` class of its own.
+  describe("source identity class (plan 147)", () => {
+    function belowBlockClasses(container: HTMLElement): string[] {
+      return (container.querySelector(".below-block")?.className ?? "").split(" ").filter(Boolean);
+    }
+
+    it("resolves the runtime-specific class for an agent slot with a known agentRuntime", () => {
+      const { container } = render(
+        <StatusRailCard
+          slot={{
+            ...(AGENT_NEEDS_INPUT as Extract<SlotState, { state: "showing" }>),
+            agentRuntime: "claude-code",
+          }}
+        />,
+      );
+      const classes = belowBlockClasses(container);
+      expect(classes).toContain("src-claude-code");
+      expect(classes).not.toContain("cat-generic");
+    });
+
+    it("falls back to the neutral src-agent class when agentRuntime is null on an agent-origin slot", () => {
+      const { container } = render(<StatusRailCard slot={AGENT_NEEDS_INPUT} />);
+      const classes = belowBlockClasses(container);
+      expect(classes).toContain("src-agent");
+      expect(classes).not.toContain("cat-generic");
+    });
+
+    it("resolves src-manual for a manual-origin slot", () => {
+      const { container } = render(
+        <StatusRailCard
+          slot={{
+            ...(AGENT_NEEDS_INPUT as Extract<SlotState, { state: "showing" }>),
+            origin: "manual",
+            agentRuntime: null,
+          }}
+        />,
+      );
+      expect(belowBlockClasses(container)).toContain("src-manual");
+    });
+
+    it("resolves src-football for a football-origin slot", () => {
+      const { container } = render(<StatusRailCard slot={GOAL} />);
+      expect(belowBlockClasses(container)).toContain("src-football");
+    });
+
+    it("resolves src-weather alongside the existing wx-card mood classes, without breaking them", () => {
+      const { container } = render(<StatusRailCard slot={WEATHER_ALERT} />);
+      const classes = belowBlockClasses(container);
+      expect(classes).toContain("src-weather");
+      expect(classes).toContain("wx-card");
+      expect(classes).toContain("wx-rain");
+    });
+
+    it("keeps cat-* on a news slot and adds no src-* class", () => {
+      const { container } = render(<StatusRailCard slot={NEWS} />);
+      const classes = belowBlockClasses(container);
+      expect(classes.some((c) => c.startsWith("cat-"))).toBe(true);
+      expect(classes.some((c) => c.startsWith("src-"))).toBe(false);
     });
   });
 

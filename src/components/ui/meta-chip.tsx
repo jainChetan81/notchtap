@@ -17,6 +17,7 @@ import { cn } from "@/lib/utils";
 export function MetaChip({
   active = false,
   uppercase = false,
+  dotColor,
   className,
   children,
   ...props
@@ -28,6 +29,10 @@ export function MetaChip({
    *  planned column) read as uppercase; free-form content chips
    *  (a history entry's source, a tech-stack name) don't. */
   uppercase?: boolean;
+  /** Plan 147: leading colour swatch — a source/runtime/category
+   *  identity dot pulled from `src/lib/sourceColors.ts`. Omitted by
+   *  default (no swatch, no layout change). */
+  dotColor?: string;
 }) {
   return (
     <span
@@ -40,6 +45,13 @@ export function MetaChip({
       )}
       {...props}
     >
+      {dotColor ? (
+        <span
+          data-slot="meta-chip-dot"
+          className="meta-chip-dot mr-[5px] inline-block size-[6px] rounded-full align-middle"
+          style={{ background: dotColor }}
+        />
+      ) : null}
       {children}
     </span>
   );

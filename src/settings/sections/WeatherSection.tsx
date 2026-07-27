@@ -1,3 +1,5 @@
+import { MetaChip } from "@/components/ui/meta-chip";
+import { SOURCE_ORIGIN_COLORS } from "@/lib/sourceColors";
 import { NumberControl, SettingsGroup, TestButtonRow, ToggleControl } from "../controls/controls";
 import { Segmented } from "../controls/Segmented";
 import type { Config } from "../types";
@@ -15,6 +17,9 @@ export function WeatherSection({
       title="Weather"
       description="Keyless Open-Meteo polling — set your coordinates once. The idle rail shows current conditions; rain and temperature thresholds send alert cards."
     >
+      <div className="weather-identity-row mb-1 flex items-center gap-1.5">
+        <MetaChip dotColor={SOURCE_ORIGIN_COLORS.weather}>Weather</MetaChip>
+      </div>
       <ToggleControl
         id="weather-enabled"
         name="Weather"

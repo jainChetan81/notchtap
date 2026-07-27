@@ -37,10 +37,21 @@
   gap: 7px;
 }
 
+/* Plan 147 wave 2: runtime IDENTITY colour, separate paint channel from
+   the state accents above — `--cat` comes from the `src-*` runtime
+   class (source-identity.css) applied alongside the state class on the
+   row/hero container (`agentRuntimeClass`, presentation.ts), never
+   from `--agent-accent`. Falls back to plain overlay foreground when
+   `--cat` isn't set (shouldn't happen in practice — every AgentRuntime
+   has an entry — but keeps this rule inert rather than invisible if
+   that ever drifts). Kimi's `--cat` resolves to `var(--overlay-fg)`
+   itself (source-identity.css) — this rule then paints the runtime
+   label the SAME white it would've been anyway, which is deliberately
+   the mono brand treatment, not a missed case. */
 .card-root .agent-board-runtime {
   font-weight: 600;
   font-size: 13px;
-  color: var(--overlay-fg);
+  color: var(--cat, var(--overlay-fg));
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -115,10 +126,27 @@
   white-space: nowrap;
 }
 
+/* Runtime identity colour — same `--cat`/Kimi-mono reasoning as
+   `.agent-board-runtime` above. */
 .card-root .agent-row-runtime {
   font-weight: 600;
-  color: var(--overlay-fg);
+  color: var(--cat, var(--overlay-fg));
   flex-shrink: 0;
+}
+
+/* Plan 147 wave 2: the runtime identity glyph — a small SQUARE tick,
+   deliberately NOT round, so it never reads as a second state dot next
+   to `.agent-dot`'s circular glyph on the same row (two different
+   facts — WHAT is running vs WHAT STATE it's in — need two visually
+   distinct glyph shapes, not two circles). Subtle glow mirrors the
+   masthead category dot's own idiom (news-category.css's `.masthead
+   .dot`), scaled down to match this glyph's smaller size. */
+.card-root .agent-runtime-tick {
+  width: 4px;
+  height: 4px;
+  flex-shrink: 0;
+  background: var(--cat, var(--overlay-fg));
+  box-shadow: 0 0 4px var(--cat, transparent);
 }
 
 .card-root .agent-row-project {

@@ -17,6 +17,7 @@ const SHOWING_N1: SlotState = {
   priority: "medium",
   signal: "generic",
   origin: "manual",
+  agentRuntime: null,
   expanded: false,
   source: null,
   category: null,
@@ -68,6 +69,7 @@ describe("useSlotState", () => {
       priority: "low",
       signal: "generic",
       origin: "manual",
+      agentRuntime: null,
       expanded: false,
       source: null,
       category: null,
@@ -89,6 +91,7 @@ describe("useSlotState", () => {
       priority: "high",
       signal: "goal",
       origin: "football",
+      agentRuntime: null,
       expanded: true,
       source: null,
       category: null,
@@ -132,6 +135,7 @@ describe("useSlotState", () => {
       priority: "low",
       signal: "generic",
       origin: "news",
+      agentRuntime: null,
       expanded: false,
       source: "NDTV",
       category: "politics",
@@ -246,6 +250,35 @@ describe("useSlotState", () => {
     expect(renderHook(() => useSlotState()).result.current).toEqual({ state: "empty" });
   });
 
+  // plan 147: `agentRuntime` — nullable closed-set field mirroring
+  // useAgentState.ts's own `AgentRuntime` wire tokens. Always present
+  // (never optional): null on every non-agent origin, and null/token on
+  // an agent-origin item.
+  it("accepts a showing payload with agentRuntime null or any known token", () => {
+    for (const agentRuntime of [null, "claude-code", "codex", "kimi", "opencode"] as const) {
+      window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, origin: "agent", agentRuntime };
+      const { result } = renderHook(() => useSlotState());
+      expect(result.current).toMatchObject({ agentRuntime });
+    }
+  });
+
+  it("ignores a showing payload with an unrecognized agentRuntime value", () => {
+    window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, origin: "agent", agentRuntime: "pigeon" };
+    const { result } = renderHook(() => useSlotState());
+    expect(result.current).toEqual({ state: "empty" });
+  });
+
+  // Absence-validation precedent: mirrors `source`/`category`'s nullable-
+  // string handling (an absent field fails both the `=== null` and the
+  // closed-list `.includes` arms), not `origin`'s non-nullable check —
+  // agentRuntime is nullable like source/category, so that's the closer
+  // analogue. Either precedent rejects absence identically in practice.
+  it("ignores a showing payload missing agentRuntime entirely", () => {
+    const { agentRuntime: _agentRuntime, ...missingAgentRuntime } = SHOWING_N1;
+    window.__NOTCHTAP_SLOT_STATE__ = missingAgentRuntime;
+    expect(renderHook(() => useSlotState()).result.current).toEqual({ state: "empty" });
+  });
+
   // plan 033: the queue-slider fields ride the same payload — the slider
   // does arithmetic on them, so the validator must reject anything but
   // non-negative integers (missing, fractional, negative, wrong type).
@@ -342,6 +375,7 @@ describe("useSlotState", () => {
       priority: "low",
       signal: "generic",
       origin: "news",
+      agentRuntime: null,
       expanded: false,
       source: "NDTV",
       category: "politics",

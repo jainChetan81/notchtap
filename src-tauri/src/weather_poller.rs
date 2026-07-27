@@ -38,11 +38,6 @@ use crate::status::{OutlookPoint, WeatherSummary};
 /// 64 KiB is generous headroom over the ~2 KiB real payload.
 const MAX_RESPONSE_BYTES: usize = 64 * 1024;
 
-/// Alert cards reuse the app's default rotation window shape — weather
-/// has no dedicated ttl config field (plan 040's config surface), so the
-/// standard 8s one-shot window applies.
-const WEATHER_ALERT_TTL_SECS: u64 = 8;
-
 #[derive(Debug, Clone, Deserialize)]
 pub struct OpenMeteoResponse {
     pub current: OpenMeteoCurrent,
@@ -495,6 +490,7 @@ pub fn spawn_weather_poller(
     rain_lookahead_mins: u16,
     temp_hot_c: f64,
     temp_cold_c: f64,
+    ttl_secs: u64,
     priority: Priority,
 ) {
     tauri::async_runtime::spawn(async move {
@@ -563,7 +559,7 @@ pub fn spawn_weather_poller(
                 rain_lookahead_mins,
                 temp_hot_c,
                 temp_cold_c,
-                WEATHER_ALERT_TTL_SECS,
+                ttl_secs,
                 priority,
             );
 

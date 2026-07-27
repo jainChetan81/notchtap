@@ -19,6 +19,7 @@ function session(overrides: Partial<AgentSessionView> = {}): AgentSessionView {
     details: [],
     project: null,
     host: null,
+    subagent: null,
     elapsedMs: 5_000,
     retentionRemainingMs: null,
     history: [],
@@ -107,6 +108,54 @@ describe("AgentBoard resting render", () => {
       <AgentBoard sessions={[session({ project: null })]} capturedAtMs={CAPTURED_AT_MS} />,
     );
     expect(container.querySelector(".agent-board-project")).toBeNull();
+  });
+
+  // Plan 147 wave 2: state accents (agent-waiting/agent-working/...) and
+  // runtime identity (src-claude-code/src-kimi/...) are two independent
+  // paint channels that must coexist on the same row — never one
+  // replacing the other.
+  it("a compact row carries both the state class and the runtime class simultaneously", () => {
+    const { container } = render(
+      <AgentBoard
+        sessions={[
+          session({ id: "primary", state: "waiting_for_permission" }),
+          session({ id: "b", runtime: "kimi", state: "working" }),
+        ]}
+        capturedAtMs={CAPTURED_AT_MS}
+      />,
+    );
+    const row = container.querySelector(".agent-row");
+    expect(row?.classList.contains("agent-working")).toBe(true);
+    expect(row?.classList.contains("src-kimi")).toBe(true);
+  });
+
+  it("the hero block carries both the state class and the runtime class simultaneously", () => {
+    const { container } = render(
+      <AgentBoard
+        sessions={[session({ runtime: "claude-code", state: "failed" })]}
+        capturedAtMs={CAPTURED_AT_MS}
+      />,
+    );
+    const board = container.querySelector(".below-block");
+    expect(board?.classList.contains("agent-failed")).toBe(true);
+    expect(board?.classList.contains("src-claude-code")).toBe(true);
+  });
+
+  it("renders a runtime tick glyph on each compact row", () => {
+    const { container } = render(
+      <AgentBoard
+        sessions={[session({ id: "primary" }), session({ id: "b" })]}
+        capturedAtMs={CAPTURED_AT_MS}
+      />,
+    );
+    expect(container.querySelectorAll(".agent-row .agent-runtime-tick")).toHaveLength(1);
+  });
+
+  it("renders a runtime tick glyph on the hero head", () => {
+    const { container } = render(
+      <AgentBoard sessions={[session()]} capturedAtMs={CAPTURED_AT_MS} />,
+    );
+    expect(container.querySelector(".agent-board-primary-head .agent-runtime-tick")).not.toBeNull();
   });
 });
 
@@ -337,6 +386,65 @@ describe("AgentBoard expanded render", () => {
     const { container } = render(
       <AgentBoard
         sessions={[session({ state: "working", retentionRemainingMs: null })]}
+        capturedAtMs={CAPTURED_AT_MS}
+        expanded
+      />,
+    );
+    expect(container.querySelector(".agent-expanded-row-meta")).toBeNull();
+  });
+
+  // Plan 147 wave 2: expanded rows also carry both paint channels at
+  // once (state accent + runtime identity), and get their own runtime
+  // tick glyph in the row head.
+  it("an expanded row carries both the state class and the runtime class simultaneously", () => {
+    const { container } = render(
+      <AgentBoard
+        sessions={[session({ runtime: "opencode", state: "waiting_for_input" })]}
+        capturedAtMs={CAPTURED_AT_MS}
+        expanded
+      />,
+    );
+    const row = container.querySelector('[data-testid="agent-expanded-row"]');
+    expect(row?.classList.contains("agent-waiting")).toBe(true);
+    expect(row?.classList.contains("src-opencode")).toBe(true);
+  });
+
+  it("renders a runtime tick glyph on the expanded row head", () => {
+    const { container } = render(
+      <AgentBoard sessions={[session()]} capturedAtMs={CAPTURED_AT_MS} expanded />,
+    );
+    expect(container.querySelector(".agent-expanded-row-head .agent-runtime-tick")).not.toBeNull();
+  });
+
+  // Plan 147 wave 2: the subagent meta chip — label preferred, id
+  // fallback, state appended in parens when present, nothing rendered
+  // when the session has no active subagent.
+  it("renders a subagent chip with label when present", () => {
+    const { getByText } = render(
+      <AgentBoard
+        sessions={[session({ subagent: { id: "sub-1", label: "Reviewer", state: "working" } })]}
+        capturedAtMs={CAPTURED_AT_MS}
+        expanded
+      />,
+    );
+    expect(getByText("subagent: Reviewer (working)")).toBeTruthy();
+  });
+
+  it("falls back to the subagent id when label is null", () => {
+    const { getByText } = render(
+      <AgentBoard
+        sessions={[session({ subagent: { id: "sub-1", label: null, state: null } })]}
+        capturedAtMs={CAPTURED_AT_MS}
+        expanded
+      />,
+    );
+    expect(getByText("subagent: sub-1")).toBeTruthy();
+  });
+
+  it("omits the subagent chip entirely when the session has no active subagent", () => {
+    const { container } = render(
+      <AgentBoard
+        sessions={[session({ subagent: null })]}
         capturedAtMs={CAPTURED_AT_MS}
         expanded
       />,

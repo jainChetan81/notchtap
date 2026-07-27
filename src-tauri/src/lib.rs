@@ -259,6 +259,7 @@ pub fn run() {
     let weather_rain_lookahead_mins = config.weather_rain_lookahead_mins;
     let weather_temp_hot_c = config.weather_temp_hot_c;
     let weather_temp_cold_c = config.weather_temp_cold_c;
+    let weather_ttl_secs = config.weather_ttl_secs;
     let weather_priority = config.weather_priority;
     let history_enabled = config.history_enabled;
     let now_playing_enabled = config.now_playing_enabled;
@@ -866,6 +867,7 @@ pub fn run() {
                     weather_rain_lookahead_mins,
                     weather_temp_hot_c,
                     weather_temp_cold_c,
+                    weather_ttl_secs,
                     weather_priority,
                 );
             }
@@ -2187,6 +2189,7 @@ mod tests {
             ttl_ms: 8000,
             remaining_ms: 8000,
             espn: None,
+            agent_runtime: None,
         };
         let SlotState::Showing { id, .. } = &state else {
             unreachable!()
@@ -2295,6 +2298,7 @@ mod tests {
             ttl_ms: 8000,
             remaining_ms: 8000,
             espn: None,
+            agent_runtime: None,
         };
         let escaped = escape_for_eval_splice(&serde_json::to_string(&state).unwrap());
 

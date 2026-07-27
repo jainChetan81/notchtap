@@ -21,7 +21,8 @@ use crate::config::{
 };
 use crate::engine::Engine;
 use crate::event::{
-    Event, EventMeta, EventPayload, EventSignal, EventType, RotationSpec, SourceKind,
+    AgentSignal, DetailItem, Event, EventMeta, EventPayload, EventSignal, EventType, RotationSpec,
+    SourceKind,
 };
 use tauri::Manager;
 
@@ -123,6 +124,12 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
         errors.push(format!(
             "agent_ttl_secs must be 1–3600 seconds (got {})",
             c.agent_ttl_secs
+        ));
+    }
+    if !(1..=3600).contains(&c.weather_ttl_secs) {
+        errors.push(format!(
+            "weather_ttl_secs must be 1–3600 seconds (got {})",
+            c.weather_ttl_secs
         ));
     }
     for league in &c.espn_leagues {
@@ -677,8 +684,11 @@ fn build_test_event(config: &Config, source: SourceKind) -> Event {
             id: uuid::Uuid::new_v4(),
             event_type: EventType::Generic,
             priority: config.weather_priority,
+            // the preview must show the same window the real poller
+            // applies — reading default_ttl here previewed a different
+            // ttl than weather_ttl_secs actually produces.
             rotation: RotationSpec::OneShot {
-                ttl_secs: config.default_ttl,
+                ttl_secs: config.weather_ttl_secs,
             },
             topic: None,
             payload: EventPayload {
@@ -711,7 +721,22 @@ fn build_test_event(config: &Config, source: SourceKind) -> Event {
                 title: "Test · agent event".into(),
                 body: "This is how agent notifications look".into(),
             },
-            meta: EventMeta::default(),
+            // preview mirrors what a real claude-code completion carries
+            // since plan 147.
+            meta: EventMeta {
+                subtitle: Some("notchtap".into()),
+                details: vec![DetailItem {
+                    label: "Tool".into(),
+                    value: "Bash".into(),
+                }],
+                agent: Some(AgentSignal {
+                    runtime: "claude-code".into(),
+                    kind: "completed".into(),
+                    session_hash: "preview".into(),
+                    summary: None,
+                }),
+                ..EventMeta::default()
+            },
             signal: EventSignal::Generic,
             origin: SourceKind::Agent,
         },
@@ -1175,6 +1200,11 @@ pub async fn send_agent_test_event(
     let terminal = event.terminal;
     let session_key = event.session_key.clone();
     let summary = event.summary.clone();
+    // Plan 147: clone before `event` moves into `apply_event` below, same
+    // as `http.rs`'s real `/agent/events` handler — mending this call site
+    // for the signature change only, no behavioural edit.
+    let project_name = event.project.as_ref().and_then(|p| p.name.clone());
+    let details = event.details.clone();
 
     // Plan 143: a test event is exactly the "adapter is delivering"
     // signal Adapter Health's own last-accepted-event field means — the
@@ -1207,7 +1237,11 @@ pub async fn send_agent_test_event(
         &session_key,
         kind,
         terminal,
-        summary.as_deref(),
+        crate::agents::notification::NotificationContent {
+            summary: summary.as_deref(),
+            project_name: project_name.as_deref(),
+            details: &details,
+        },
         agent_ttl_secs,
         &policy,
     ) {
@@ -1301,6 +1335,21 @@ mod tests {
         c.agent_ttl_secs = 3600;
         assert!(validate(&c).is_ok());
         c.agent_ttl_secs = 3601;
+        assert!(validate(&c).is_err());
+    }
+
+    #[test]
+    fn weather_ttl_boundaries() {
+        let mut c = Config {
+            weather_ttl_secs: 0,
+            ..Config::default()
+        };
+        assert!(validate(&c).is_err());
+        c.weather_ttl_secs = 1;
+        assert!(validate(&c).is_ok());
+        c.weather_ttl_secs = 3600;
+        assert!(validate(&c).is_ok());
+        c.weather_ttl_secs = 3601;
         assert!(validate(&c).is_err());
     }
 
@@ -2221,8 +2270,8 @@ mod tests {
     fn build_test_event_manual_uses_default_ttl_and_manual_priority() {
         use crate::event::{EventType, Priority, RotationSpec, SourceKind};
 
-        // Manual has no manual_ttl_secs field of its own — it shares
-        // default_ttl with Weather. Assert it lands on the event so a
+        // Manual has no manual_ttl_secs field of its own — it reads the
+        // shared default_ttl. Assert it lands on the event so a
         // copy-paste swap (e.g. reading espn_ttl_secs instead) is caught.
         let config = Config {
             manual_default_priority: Priority::Low,
@@ -2243,17 +2292,18 @@ mod tests {
     }
 
     #[test]
-    fn build_test_event_weather_uses_weather_priority_and_default_ttl() {
+    fn build_test_event_weather_uses_weather_priority_and_weather_ttl() {
         use crate::event::{EventType, Priority, RotationSpec, SourceKind};
 
-        // Weather's priority IS dedicated (weather_priority); its ttl is
-        // the same shared default_ttl field Manual uses — there is no
-        // private weather_ttl_secs to distinguish it from default_ttl.
+        // Weather's priority and ttl are both dedicated fields
+        // (weather_priority / weather_ttl_secs) — the preview must read
+        // the same ttl the real poller applies, not default_ttl.
         let config = Config {
             weather_priority: Priority::High,
-            default_ttl: 77,
+            weather_ttl_secs: 77,
             // pin every sibling to a contrasting value (see Football's
             // test for why) so a swap onto any of them is caught
+            default_ttl: 3,
             espn_priority: Priority::Low,
             rss_priority: Priority::Low,
             agent_priority: Priority::Low,

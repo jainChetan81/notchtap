@@ -1,3 +1,5 @@
+import { MetaChip } from "@/components/ui/meta-chip";
+import { SOURCE_ORIGIN_COLORS } from "@/lib/sourceColors";
 import {
   NumberControl,
   SettingsGroup,
@@ -22,6 +24,9 @@ export function FootballSection({
 }) {
   return (
     <SettingsGroup title="Score polling">
+      <div className="football-identity-row mb-1 flex items-center gap-1.5">
+        <MetaChip dotColor={SOURCE_ORIGIN_COLORS.football}>Football</MetaChip>
+      </div>
       <ToggleControl
         id="espn-enabled"
         name="ESPN scores"

@@ -8,6 +8,11 @@
 .card-root .cat-sports   { --cat: var(--overlay-green); --cat-deep: color-mix(in srgb, var(--overlay-green) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-green) 13%, transparent); }
 .card-root .cat-business { --cat: var(--overlay-amber); --cat-deep: color-mix(in srgb, var(--overlay-amber) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-amber) 13%, transparent); }
 .card-root .cat-world    { --cat: #c99df0; --cat-deep: rgba(201,157,240,0.15); --cat-pill: rgba(201,157,240,0.13); }
+/* plan 147: science's own category — the only clearly free hue region
+   left once tech (cyan) and sports (green) are accounted for, so it
+   splits off from tech rather than sharing cyan. Same literal-hex idiom
+   as politics/tech/world above (no shared-inventory token yet). */
+.card-root .cat-science  { --cat: #f2a2c8; --cat-deep: rgba(242,162,200,0.15); --cat-pill: rgba(242,162,200,0.13); }
 .card-root .cat-generic  { --cat: #aab3bd; --cat-deep: rgba(170,179,189,0.10); --cat-pill: rgba(170,179,189,0.10); }
 
 /* plan 105 (scope extension to Step A): deliberately KEPT — reviewed

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { MetaChip } from "@/components/ui/meta-chip";
+import { SOURCE_RUNTIME_COLORS } from "@/lib/sourceColors";
 import { ActionStatus, useActionStatus } from "../actionStatus";
 import {
   CONTROL_ROW,
@@ -232,7 +233,14 @@ function AdapterCard({
   return (
     <div className="agent-card border-t border-border/60 py-3 first:border-t-0">
       <div className="agent-card-header mb-2 flex items-center justify-between gap-2">
-        <span className="text-fs-body font-[590] text-foreground">{copy.label}</span>
+        <span className="flex items-center gap-1.5">
+          <span
+            data-slot="agent-runtime-dot"
+            className="agent-runtime-dot inline-block size-[6px] rounded-full"
+            style={{ background: SOURCE_RUNTIME_COLORS[copy.wireRuntime] }}
+          />
+          <span className="text-fs-body font-[590] text-foreground">{copy.label}</span>
+        </span>
         <div className="flex items-center gap-1.5">
           {health ? (
             <MetaChip uppercase active={health.status === "available"}>
@@ -392,6 +400,17 @@ export function AgentsSection({
     return health?.find((h) => h.runtime === wireRuntime);
   }
 
+  // Preview fixtures label a runtime by its display name (or, for the
+  // "multiple sessions" row, a combo of names) rather than the wire
+  // token — resolve back to an ADAPTER_CARDS entry when there's exactly
+  // one match so the chip's dot stays in lockstep with the adapter
+  // card's own colour; combo rows get no dot (no single colour is
+  // honest there).
+  function runtimeDotFor(runtimeLabel: string): string | undefined {
+    const card = ADAPTER_CARDS.find((c) => c.label === runtimeLabel);
+    return card ? SOURCE_RUNTIME_COLORS[card.wireRuntime] : undefined;
+  }
+
   return (
     <div className="section-stack">
       <SettingsGroup
@@ -521,7 +540,7 @@ export function AgentsSection({
           >
             <div className="mb-0.5 flex items-center gap-1.5">
               <span className="text-fs-body font-[590] text-foreground">{sample.label}</span>
-              <MetaChip>{sample.runtime}</MetaChip>
+              <MetaChip dotColor={runtimeDotFor(sample.runtime)}>{sample.runtime}</MetaChip>
             </div>
             <p className="m-0 text-fs-secondary text-muted-foreground">{sample.summary}</p>
           </div>

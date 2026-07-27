@@ -62,6 +62,7 @@ export const PREVIEW_SAMPLES: ReadonlyArray<PreviewSample> = [
       queueDone: 0,
       ttlMs: 8000,
       remainingMs: 5000,
+      agentRuntime: null,
     },
   },
   {
@@ -86,6 +87,7 @@ export const PREVIEW_SAMPLES: ReadonlyArray<PreviewSample> = [
       queueDone: 1,
       ttlMs: 8000,
       remainingMs: 5000,
+      agentRuntime: null,
     },
   },
   {
@@ -117,6 +119,7 @@ export const PREVIEW_SAMPLES: ReadonlyArray<PreviewSample> = [
       queueDone: 2,
       ttlMs: 8000,
       remainingMs: 5000,
+      agentRuntime: "claude-code",
     },
   },
   {
@@ -132,7 +135,7 @@ export const PREVIEW_SAMPLES: ReadonlyArray<PreviewSample> = [
       origin: "news",
       expanded: true,
       source: "NDTV",
-      category: "politics",
+      category: "science",
       publishedAtMs: null,
       link: "https://example.com/digital-rights",
       subtitle: null,
@@ -141,6 +144,7 @@ export const PREVIEW_SAMPLES: ReadonlyArray<PreviewSample> = [
       queueDone: 0,
       ttlMs: 8000,
       remainingMs: 5000,
+      agentRuntime: null,
     },
   },
   // plan 111 (Step 3): the states most sensitive to CSS drift are exactly
@@ -168,6 +172,7 @@ export const PREVIEW_SAMPLES: ReadonlyArray<PreviewSample> = [
       queueDone: 0,
       ttlMs: 8000,
       remainingMs: 5000,
+      agentRuntime: null,
     },
   },
   {
@@ -192,6 +197,7 @@ export const PREVIEW_SAMPLES: ReadonlyArray<PreviewSample> = [
       queueDone: 0,
       ttlMs: 8000,
       remainingMs: 5000,
+      agentRuntime: null,
       espn: ESPN_BASE,
     },
   },
@@ -224,6 +230,7 @@ export const PREVIEW_SAMPLES: ReadonlyArray<PreviewSample> = [
       queueDone: 0,
       ttlMs: 8000,
       remainingMs: 5000,
+      agentRuntime: null,
     },
   },
   {
@@ -254,6 +261,7 @@ export const PREVIEW_SAMPLES: ReadonlyArray<PreviewSample> = [
       queueDone: 0,
       ttlMs: 8000,
       remainingMs: 5000,
+      agentRuntime: null,
     },
   },
 ];

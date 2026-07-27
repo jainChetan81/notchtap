@@ -1,5 +1,19 @@
 # Implementation Plans
 
+**Source identity colours + parity spec (2026-07-27, operator-ratified):**
+plan 147 is a `/to-spec` PRD from the trim-and-sync session: fixed
+per-source brand colours on the card/board/Settings (Claude Code
+`#D97757` terracotta, Codex `#10A37F`, Kimi mono white, OpenCode
+`#9d7cd8`; news gains a science section; football/weather/manual get
+stable identities) riding the existing `--cat` paint channel — the
+priority channel stays walled off; a wire addition putting the agent
+runtime token on the promoted Slot payload; Claude/Kimi card parity
+(already-parsed project/tool/path/error fields threaded into
+subtitle/details; board expanded rows gain the stored subagent); and
+`weather_ttl_secs` config closing the last hardcoded-TTL outlier.
+Seams operator-approved (one new: a TS↔CSS colour parity pin); status
+ready-for-agent.
+
 **Telegram connector removed (2026-07-27, operator decision):** a week
 after shipping (plan 076 gave it health visibility), the telegram
 connector was removed outright — the external bot setup it required

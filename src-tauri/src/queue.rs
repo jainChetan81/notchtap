@@ -1221,6 +1221,7 @@ impl SingleSlotQueue {
                     ttl_ms,
                     remaining_ms,
                     espn: item.event.meta.espn.clone(),
+                    agent_runtime: item.event.meta.agent.as_ref().map(|a| a.runtime.clone()),
                 }
             }
         }
@@ -2905,6 +2906,41 @@ mod tests {
                 assert_eq!(details[0].value, "Bash");
                 assert_eq!(details[1].label, "Command");
                 assert_eq!(details[1].value, "git push");
+            }
+            SlotState::Empty => panic!("expected Showing"),
+        }
+    }
+
+    // plan 147: agent_runtime mirrors item.event.meta.agent.runtime onto the
+    // wire — an agent-originated item's SlotState carries the runtime
+    // token, and every other item leaves it None.
+    #[test]
+    fn current_slot_state_carries_agent_runtime_from_event_meta_agent() {
+        let mut q = SingleSlotQueue::new(50);
+        let mut ev = event("a", Priority::High, 8);
+        ev.meta.agent = Some(crate::event::AgentSignal {
+            runtime: "claude-code".to_string(),
+            kind: "permission_request".to_string(),
+            session_hash: "deadbeef".to_string(),
+            summary: None,
+        });
+        q.enqueue(ev, Instant::now()).unwrap();
+        match q.current_slot_state() {
+            SlotState::Showing { agent_runtime, .. } => {
+                assert_eq!(agent_runtime.as_deref(), Some("claude-code"));
+            }
+            SlotState::Empty => panic!("expected Showing"),
+        }
+    }
+
+    #[test]
+    fn current_slot_state_agent_runtime_is_none_for_non_agent_event() {
+        let mut q = SingleSlotQueue::new(50);
+        q.enqueue(event("a", Priority::High, 8), Instant::now())
+            .unwrap();
+        match q.current_slot_state() {
+            SlotState::Showing { agent_runtime, .. } => {
+                assert_eq!(agent_runtime, None);
             }
             SlotState::Empty => panic!("expected Showing"),
         }

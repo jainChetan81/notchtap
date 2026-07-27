@@ -1,0 +1,48 @@
+/* ==== plan 147: source-identity colours ====
+   The paint-channel law: every class below rides the existing
+   `--cat`/`--cat-deep`/`--cat-pill` triple (same derivation idiom as
+   news-category.css:6-11 — color-mix ~15%/13% for var()-backed
+   entries, hand-computed rgba for literal hex) — NEVER `--accent`.
+   These classes give each notification SOURCE (agent runtime,
+   football, weather, manual/CLI) its own identity colour, distinct
+   from news's per-CATEGORY colour system in news-category.css — a
+   card is only ever painted by one of the two systems at a time
+   (`sourceClass` in presentation.ts is explicit that news is not its
+   business).
+
+   Brand hexes below are literals, deliberately NOT promoted to
+   vendor/shared-ui/design/tokens.css — they belong to this one
+   feature, not the shared token inventory.
+
+   `src/lib/sourceColors.test.ts` is the enforcement: a string-level
+   parity pin asserts every hex in that file's TS table appears in
+   this stylesheet (or the CSS var it resolves from), so the two
+   tables can't silently drift apart. */
+
+/* Anthropic "crail" terracotta. */
+.card-root .src-claude-code { --cat: #d97757; --cat-deep: rgba(217,119,87,0.15); --cat-pill: rgba(217,119,87,0.13); }
+
+/* OpenAI green. */
+.card-root .src-codex { --cat: #10a37f; --cat-deep: rgba(16,163,127,0.15); --cat-pill: rgba(16,163,127,0.13); }
+
+/* Moonshot's Kimi is deliberately mono — restraint IS the brand, not a
+   missing colour choice. Rides the overlay's own foreground white
+   rather than an accent hue, with washes held tighter (~10%, not the
+   usual ~15%/13%) so the "identity" reads as understated brightness,
+   not a tint. */
+.card-root .src-kimi { --cat: var(--overlay-fg); --cat-deep: color-mix(in srgb, var(--overlay-fg) 10%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-fg) 10%, transparent); }
+
+/* OpenCode's own TUI accent purple. Their marketing peach (#fab283) was
+   rejected as too close to Claude Code's terracotta above; this purple's
+   proximity to cat-world's lavender (news-category.css) is accepted
+   because a news card and an OpenCode agent card never compete for
+   attention on the same card. */
+.card-root .src-opencode { --cat: #9d7cd8; --cat-deep: rgba(157,124,216,0.15); --cat-pill: rgba(157,124,216,0.13); }
+
+/* Runtime-unknown agent fallback. */
+.card-root .src-agent { --cat: var(--overlay-amber); --cat-deep: color-mix(in srgb, var(--overlay-amber) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-amber) 13%, transparent); }
+
+.card-root .src-football { --cat: var(--overlay-green); --cat-deep: color-mix(in srgb, var(--overlay-green) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-green) 13%, transparent); }
+.card-root .src-weather  { --cat: var(--overlay-amber); --cat-deep: color-mix(in srgb, var(--overlay-amber) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-amber) 13%, transparent); }
+/* "CLI blue" — the manual/notchtap-cli origin. */
+.card-root .src-manual   { --cat: var(--overlay-blue);  --cat-deep: color-mix(in srgb, var(--overlay-blue) 15%, transparent);  --cat-pill: color-mix(in srgb, var(--overlay-blue) 13%, transparent); }

@@ -52,6 +52,12 @@ export type AgentCapability = (typeof AGENT_CAPABILITIES)[number];
 export type AgentDetail = { label: string; value: string };
 export type AgentProject = { name: string | null; cwd: string | null };
 export type AgentHost = { name: string | null; bundleId: string | null };
+// Plan 147 wave 2: a session's own active subagent, when the runtime
+// reports one (`subagents` capability territory) — `id` is always
+// present when the object itself is present, `label`/`state` are
+// nullable exactly like every other adapter-optional string field on
+// this type (AgentProject.name/cwd, AgentHost.name/bundleId).
+export type AgentSubagent = { id: string; label: string | null; state: string | null };
 
 // Plan 142 (v7 ticket 10 of 13, spec §6.2 expanded): one entry of a
 // session's bounded transition history (rust: `agents::board::
@@ -71,6 +77,9 @@ export type AgentSessionView = {
   details: AgentDetail[];
   project: AgentProject | null;
   host: AgentHost | null;
+  // Plan 147 wave 2: the session's active subagent, when the runtime
+  // reports one — `null` (not just absent) when there is none.
+  subagent: AgentSubagent | null;
   // Clock-derived at the moment rust captured this snapshot
   // (`capturedAtMs` below is the shared anchor) — the frontend derives
   // LIVE elapsed-in-state time locally: `elapsedMs + (Date.now() -
@@ -140,6 +149,21 @@ function isValidHost(v: unknown): v is AgentHost {
   return isNullableString(o.name) && isNullableString(o.bundleId);
 }
 
+// Mirrors isValidProject/isValidHost's exact idiom: the value itself
+// may be `null` (no active subagent), and when present, `id` is
+// required while `label`/`state` are null-tolerant like every other
+// adapter-optional string field on this wire.
+function isValidSubagent(v: unknown): v is AgentSubagent {
+  if (v === null) {
+    return true;
+  }
+  if (typeof v !== "object") {
+    return false;
+  }
+  const o = v as Record<string, unknown>;
+  return typeof o.id === "string" && isNullableString(o.label) && isNullableString(o.state);
+}
+
 function isValidTransition(v: unknown): v is AgentTransition {
   if (typeof v !== "object" || v === null) {
     return false;
@@ -165,6 +189,10 @@ function isValidSession(v: unknown): v is AgentSessionView {
     isDetailArray(o.details) &&
     (o.project === undefined || isValidProject(o.project)) &&
     (o.host === undefined || isValidHost(o.host)) &&
+    // Plan 147 wave 2: same absent/null-tolerant idiom as project/host
+    // above — an older cached payload without `subagent` at all must
+    // not drop the session either.
+    (o.subagent === undefined || isValidSubagent(o.subagent)) &&
     isNonNegativeInteger(o.elapsedMs) &&
     (o.retentionRemainingMs === null || isNonNegativeInteger(o.retentionRemainingMs)) &&
     // Plan 142: `history` is optional at validation time (defaults to
@@ -206,7 +234,9 @@ export function isValidAgentState(v: unknown): v is AgentState {
 function sanitizeAgentState(v: AgentState): AgentState {
   return {
     ...v,
-    sessions: v.sessions.filter(isValidSession).map((s) => ({ ...s, history: s.history ?? [] })),
+    sessions: v.sessions
+      .filter(isValidSession)
+      .map((s) => ({ ...s, history: s.history ?? [], subagent: s.subagent ?? null })),
   };
 }
 

@@ -19,6 +19,7 @@ import {
   eventKindPresentationFor,
   footballEventKindFor,
   livePillVariantFor,
+  sourceClass,
 } from "../lib/presentation";
 import { weatherArtFor } from "../lib/weatherArt";
 import { useExitChoreography } from "../useExitChoreography";
@@ -474,10 +475,16 @@ export function StatusRailCard({
     // `.masthead .dot` markup (see NotificationBody.tsx), whose color
     // reads the same `--cat`/`--cat-deep` custom properties `categoryClass`
     // sets — without a class here they're unset for every non-news card,
-    // leaving the dot invisible. `cat-generic` is the same neutral-gray
-    // fallback `categoryClass(null)` already returns for uncategorized
-    // news, reused rather than forking a second "no category" class.
-    !news && "cat-generic",
+    // leaving the dot invisible.
+    // Plan 147: the flat `cat-generic` fallback is replaced by
+    // `sourceClass`, which resolves a per-origin (and, for agent origin,
+    // per-runtime) identity colour (source-identity.css's `.src-*`
+    // classes) instead of one shared neutral gray — news keeps
+    // `categoryClass` above untouched. Gated on `showing` too (not just
+    // `!news`) purely so `slot.origin`/`slot.agentRuntime` type-narrow;
+    // `belowBlockOpen` (below) never mounts this block while idle, so the
+    // fallback string was already inert there — no behavior change.
+    !news && showing && slot.origin !== "news" && sourceClass(slot.origin, slot.agentRuntime),
     wxArt && "wx-card",
     wxArt?.moodClass,
     wxArt?.textureClass,

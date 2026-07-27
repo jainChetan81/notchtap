@@ -103,6 +103,7 @@ const GOAL: SlotState = {
   priority: "high",
   signal: "goal",
   origin: "football",
+  agentRuntime: null,
   expanded: true,
   source: null,
   category: null,

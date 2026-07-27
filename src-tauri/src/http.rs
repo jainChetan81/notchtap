@@ -412,6 +412,12 @@ async fn agent_events_handler<R: tauri::Runtime>(
     // same already-sanitized summary the registry itself just accepted,
     // not a second untrusted read of the wire body.
     let summary = event.summary.clone();
+    // Plan 147: same clone-before-move for the parity fields — the project
+    // NAME (not cwd) and the already-sanitized/capped details the registry
+    // just accepted, so an agent card's subtitle/details match what a
+    // manual `/notify` rich-relay call would populate for the same shape.
+    let project_name = event.project.as_ref().and_then(|p| p.name.clone());
+    let details = event.details.clone();
     let runtime = session_key.runtime;
     let native_event = parsed.native_event;
 
@@ -503,7 +509,11 @@ async fn agent_events_handler<R: tauri::Runtime>(
             &session_key,
             kind,
             terminal,
-            summary.as_deref(),
+            notification::NotificationContent {
+                summary: summary.as_deref(),
+                project_name: project_name.as_deref(),
+                details: &details,
+            },
             state.agent_ttl_secs,
             &state.agent_notification_policy,
         ) {
@@ -659,6 +669,14 @@ mod tests {
     fn valid_agent_body(event_id: &str, session_id: &str) -> String {
         format!(
             r#"{{"schemaVersion":1,"eventId":"{event_id}","runtime":"codex","sessionId":"{session_id}","nativeEvent":"PermissionRequest","kind":"permission_requested","state":"waiting_for_permission","terminal":false}}"#
+        )
+    }
+
+    // plan 147: same shape as `valid_agent_body` but carrying `project`/
+    // `details`, for the notification-parity pin below.
+    fn valid_agent_body_with_project_and_details(event_id: &str, session_id: &str) -> String {
+        format!(
+            r#"{{"schemaVersion":1,"eventId":"{event_id}","runtime":"codex","sessionId":"{session_id}","nativeEvent":"PermissionRequest","kind":"permission_requested","state":"waiting_for_permission","terminal":false,"project":{{"name":"mac-notification-nudge","cwd":"/Users/dev/mac-notification-nudge"}},"details":[{{"label":"Tool","value":"Bash"}},{{"label":"Command","value":"git push"}}]}}"#
         )
     }
 
@@ -1551,6 +1569,43 @@ mod tests {
                 assert_eq!(event_type, crate::event::EventType::AgentEvent);
                 assert_eq!(priority, Priority::High);
                 assert_eq!(origin, SourceKind::Agent);
+            }
+            other => panic!("expected Showing, got {other:?}"),
+        }
+    }
+
+    // plan 147: the parity companion to the pin above — a noteworthy event
+    // that also carries `project`/`details` must thread the project NAME
+    // onto `subtitle` and the details onto `details`, the same
+    // `notification::build_notification` parity mapping unit-tested
+    // directly in `agents/notification.rs`, now proven end to end through
+    // the real `/agent/events` handler.
+    #[tokio::test]
+    async fn noteworthy_agent_event_threads_project_and_details_onto_the_card() {
+        let state = test_state(SingleSlotQueue::new(50));
+        let app = router(state.clone());
+        let response = app
+            .oneshot(agent_events_request(
+                &valid_agent_body_with_project_and_details("e1", "s1"),
+            ))
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::ACCEPTED);
+        let body = body_json(response).await;
+        assert_eq!(body["notificationQueued"].as_bool(), Some(true));
+
+        let slot = state.engine.read(|q| q.current_slot_state()).await;
+        match slot {
+            crate::event::SlotState::Showing {
+                subtitle, details, ..
+            } => {
+                // The project NAME, not the cwd.
+                assert_eq!(subtitle.as_deref(), Some("mac-notification-nudge"));
+                assert_eq!(details.len(), 2);
+                assert_eq!(details[0].label, "Tool");
+                assert_eq!(details[0].value, "Bash");
+                assert_eq!(details[1].label, "Command");
+                assert_eq!(details[1].value, "git push");
             }
             other => panic!("expected Showing, got {other:?}"),
         }

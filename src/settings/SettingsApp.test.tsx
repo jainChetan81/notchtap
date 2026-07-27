@@ -4,6 +4,11 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import {
+  SOURCE_CATEGORY_COLORS,
+  SOURCE_ORIGIN_COLORS,
+  SOURCE_RUNTIME_COLORS,
+} from "@/lib/sourceColors";
+import {
   type AboutInfo,
   type Config,
   type HistoryEntry,
@@ -1010,6 +1015,35 @@ describe("SettingsApp", () => {
     });
   });
 
+  // Plan 147 wave 2: a read-only legend of every SOURCE_CATEGORY_COLORS
+  // token, rendered as one MetaChip per category with a capitalized
+  // label — restrained, no interactivity, so this just checks it's
+  // there and coloured, not that it can be clicked.
+  it("News section renders a read-only category legend, including a capitalized 'Science' chip", async () => {
+    mockLoads();
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "News" }));
+    await screen.findByLabelText("Topics");
+
+    expect(await screen.findByText("Category colours")).toBeTruthy();
+    const scienceChip = screen.getByText("Science");
+    expect(scienceChip.closest('[data-slot="meta-chip"]')).toBeTruthy();
+    const dot = scienceChip
+      .closest('[data-slot="meta-chip"]')
+      ?.querySelector('[data-slot="meta-chip-dot"]') as HTMLElement;
+    expect(dot).toBeTruthy();
+    const probe = document.createElement("span");
+    probe.style.background = SOURCE_CATEGORY_COLORS.science;
+    expect(dot.style.background).toBe(probe.style.background);
+
+    // every legend token renders, not just science
+    for (const label of ["Politics", "Tech", "Sports", "Business", "World", "Science"]) {
+      expect(screen.getByText(label)).toBeTruthy();
+    }
+  });
+
   it("rotation order loads in the saved order and reorders with edge-disabled buttons", async () => {
     mockLoads();
     render(<SettingsApp />);
@@ -1106,6 +1140,43 @@ describe("SettingsApp", () => {
       .filter((el) => el.classList.contains("history-title"))
       .map((el) => el.textContent);
     expect(titles).toEqual(["Second notification", "First notification"]);
+  });
+
+  // Plan 147 wave 2: the origin span picks up its colour from
+  // SOURCE_ORIGIN_COLORS — a recognized origin (manual) carries the
+  // matching inline `color`, an origin with no entry in that table
+  // (news, which is coloured by category instead) carries no inline
+  // style at all.
+  it("History origin spans carry each origin's SOURCE_ORIGIN_COLORS colour (news included, plan 147 finisher)", async () => {
+    mockIPC((command) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "get_history") return [historyEntryOlder, historyEntryNewer];
+    });
+    render(<SettingsApp />);
+
+    await screen.findByRole("heading", { level: 1, name: "General" });
+    fireEvent.click(screen.getByRole("button", { name: "History" }));
+    await screen.findByText("Second notification");
+
+    const originSpans = screen
+      .getAllByText(/^(manual|news)$/)
+      .filter((el) => el.classList.contains("history-origin"));
+    const manualSpan = originSpans.find((el) => el.textContent === "manual") as HTMLElement;
+    const newsSpan = originSpans.find((el) => el.textContent === "news") as HTMLElement;
+
+    // jsdom normalizes an inline hex colour to its rgb() form on read —
+    // set the same hex on a throwaway element and read it back rather
+    // than hardcoding the rgb triplet, so this stays pinned to
+    // SOURCE_ORIGIN_COLORS.manual even if that hex ever changes.
+    const probe = document.createElement("span");
+    probe.style.color = SOURCE_ORIGIN_COLORS.manual;
+    expect(manualSpan.style.color).toBe(probe.style.color);
+    // news is coloured at the ORIGIN level here (the category system is
+    // a card-side refinement) — see SOURCE_ORIGIN_COLORS.news's comment.
+    probe.style.color = SOURCE_ORIGIN_COLORS.news;
+    expect(newsSpan.style.color).toBe(probe.style.color);
   });
 
   it("Empty-history state renders the 'nothing recorded yet' copy", async () => {
@@ -1930,6 +2001,29 @@ describe("SettingsApp", () => {
       expect(within(previewGroup).getByText("Completed")).toBeTruthy();
       expect(within(previewGroup).getByText("Failed")).toBeTruthy();
       expect(within(previewGroup).getByText("Multiple independent sessions")).toBeTruthy();
+    });
+
+    // Plan 147 wave 2: each adapter card header carries a runtime-colour
+    // swatch dot (SOURCE_RUNTIME_COLORS[wireRuntime]) alongside its label.
+    it("renders a runtime-colour swatch dot on each adapter card header", async () => {
+      mockAgents();
+      await openAgents();
+
+      await screen.findAllByText("Claude Code");
+      const cases: Array<[string, string]> = [
+        ["Claude Code", SOURCE_RUNTIME_COLORS["claude-code"]],
+        ["Codex", SOURCE_RUNTIME_COLORS.codex],
+        ["Kimi", SOURCE_RUNTIME_COLORS.kimi],
+        ["OpenCode", SOURCE_RUNTIME_COLORS.opencode],
+      ];
+      for (const [label, hex] of cases) {
+        const card = findAdapterCard(label);
+        const dot = card.querySelector(".agent-runtime-dot") as HTMLElement;
+        expect(dot).toBeTruthy();
+        const probe = document.createElement("span");
+        probe.style.background = hex;
+        expect(dot.style.background).toBe(probe.style.background);
+      }
     });
 
     it("the Send test event button invokes send_agent_test_event with the card's runtime", async () => {

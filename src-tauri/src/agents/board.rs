@@ -73,6 +73,12 @@ pub struct AgentSessionView {
     pub details: Vec<AgentDetailView>,
     pub project: Option<AgentProjectView>,
     pub host: Option<AgentHostView>,
+    /// Plan 147: the session's own subagent summary (spec §3.1's
+    /// `subagent` object), mirrored 1:1 from `AgentState.subagent` — was
+    /// stubbed `None` unconditionally at this ticket's predecessor
+    /// (plan 136); the registry (`registry.rs:288`) has populated the
+    /// domain field since plan 133/134, this view just hadn't surfaced it.
+    pub subagent: Option<AgentSubagentView>,
     /// Clock-derived: milliseconds since `state_entered_at`, as of
     /// `captured_at_ms` above — changes on every publish even with zero
     /// real content change (mirrors `AgentState.elapsed_ms`, which is
@@ -127,6 +133,17 @@ pub struct AgentProjectView {
 pub struct AgentHostView {
     pub name: Option<String>,
     pub bundle_id: Option<String>,
+}
+
+/// Plan 147: mirrors `AgentSubagentSummary` (model.rs) 1:1 — same
+/// "wire-shape view struct, no re-derivation" idiom as
+/// `AgentProjectView`/`AgentHostView` above.
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentSubagentView {
+    pub id: String,
+    pub label: Option<String>,
+    pub state: Option<String>,
 }
 
 /// Wire shape for one Adapter Health card (ticket 143, spec §6/§10) —
@@ -204,6 +221,11 @@ fn to_view(state: &AgentState, now: Instant) -> AgentSessionView {
         host: state.host.as_ref().map(|h| AgentHostView {
             name: h.name.clone(),
             bundle_id: h.bundle_id.clone(),
+        }),
+        subagent: state.subagent.as_ref().map(|s| AgentSubagentView {
+            id: s.id.clone(),
+            label: s.label.clone(),
+            state: s.state.clone(),
         }),
         elapsed_ms: state.elapsed_ms,
         retention_remaining_ms: state.retention_remaining_ms,
@@ -421,12 +443,59 @@ pub const DEFAULT_TICK_INTERVAL: Duration = Duration::from_secs(5);
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::agents::model::{AgentEventKind, AgentRuntime, AgentSessionKey};
+    use crate::agents::model::{
+        AgentEventKind, AgentRuntime, AgentSessionKey, AgentSessionState, AgentSubagentSummary,
+    };
     use crate::agents::registry::{AgentEvent, AgentRegistry};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn key(runtime: AgentRuntime, id: &str) -> AgentSessionKey {
         AgentSessionKey::new(runtime, id).unwrap()
+    }
+
+    // plan 147: same "build an AgentState directly" idiom as
+    // `focus.rs::state_with_host` — `to_view` is private to this module,
+    // so its unit tests live here rather than round-tripping through the
+    // registry/publisher.
+    fn state_with_subagent(subagent: Option<AgentSubagentSummary>) -> AgentState {
+        let now = Instant::now();
+        AgentState {
+            key: key(AgentRuntime::ClaudeCode, "session-1"),
+            state: AgentSessionState::Working,
+            capabilities: Vec::new(),
+            summary: None,
+            details: Vec::new(),
+            project: None,
+            host: None,
+            subagent,
+            history: Vec::new(),
+            first_seen_at: now,
+            state_entered_at: now,
+            last_seen_at_ms: 0,
+            elapsed_ms: 0,
+            retention_remaining_ms: None,
+        }
+    }
+
+    #[test]
+    fn to_view_maps_subagent_when_present() {
+        let state = state_with_subagent(Some(AgentSubagentSummary {
+            id: "sub-1".to_string(),
+            label: Some("Explorer".to_string()),
+            state: Some("running".to_string()),
+        }));
+        let view = to_view(&state, Instant::now());
+        let subagent = view.subagent.expect("subagent must be mapped when present");
+        assert_eq!(subagent.id, "sub-1");
+        assert_eq!(subagent.label.as_deref(), Some("Explorer"));
+        assert_eq!(subagent.state.as_deref(), Some("running"));
+    }
+
+    #[test]
+    fn to_view_subagent_is_none_when_absent() {
+        let state = state_with_subagent(None);
+        let view = to_view(&state, Instant::now());
+        assert!(view.subagent.is_none());
     }
 
     fn event(session_key: AgentSessionKey, event_id: &str, kind: AgentEventKind) -> AgentEvent {

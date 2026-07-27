@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { MetaChip } from "@/components/ui/meta-chip";
+import { SOURCE_CATEGORY_COLORS, type SourceCategoryToken } from "@/lib/sourceColors";
 import { ActionStatus, useActionStatus } from "../actionStatus";
 import {
   ControlCopy,
@@ -20,6 +22,38 @@ import { PRIORITY_SEGMENT_OPTIONS } from "../types";
 // announces, the input clears only on success). Local component (not
 // controls.tsx) since it's News-only, same precedent as SecretRow living
 // in ConnectorsSection.tsx rather than the shared controls module.
+// Plan 147: read-only legend for the category colours the overlay's
+// news cards actually paint with (news-category.css, mirrored in
+// SOURCE_CATEGORY_COLORS) — `generic` deliberately excluded, it's the
+// fallback, not a category anyone picks.
+const CATEGORY_LEGEND_TOKENS: readonly SourceCategoryToken[] = [
+  "politics",
+  "tech",
+  "sports",
+  "business",
+  "world",
+  "science",
+];
+
+function CategoryLegendRow() {
+  return (
+    <div className="category-legend-row border-t border-border/60 pt-[11px] pb-1 first:border-t-0">
+      <ControlCopy
+        htmlFor="rss-category-legend"
+        name="Category colours"
+        help="How each headline's category swatch is coloured."
+      />
+      <div className="category-legend-chips mt-2 flex flex-wrap gap-1.5">
+        {CATEGORY_LEGEND_TOKENS.map((token) => (
+          <MetaChip key={token} dotColor={SOURCE_CATEGORY_COLORS[token]}>
+            {token[0].toUpperCase() + token.slice(1)}
+          </MetaChip>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function SearchNowRow() {
   const [query, setQuery] = useState("");
   const { status, run } = useActionStatus("search-news-now");
@@ -157,6 +191,7 @@ export function NewsSection({
         source="news"
       />
       <SearchNowRow />
+      <CategoryLegendRow />
     </SettingsGroup>
   );
 }

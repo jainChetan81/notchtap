@@ -58,6 +58,7 @@
 @import "./overlay/manifest.css";
 @import "./overlay/status-dots.css";
 @import "./overlay/news-category.css";
+@import "./overlay/source-identity.css";
 @import "./overlay/weather-art.css";
 @import "./overlay/live-scorecard.css";
 @import "./overlay/idle-peek.css";

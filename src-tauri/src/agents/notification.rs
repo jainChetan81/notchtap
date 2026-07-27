@@ -39,12 +39,12 @@
 use uuid::Uuid;
 
 use crate::event::{
-    AgentSignal, Event, EventMeta, EventPayload, EventSignal as WireSignal, EventType, Priority,
-    RotationSpec, SourceKind,
+    AgentSignal, DetailItem, Event, EventMeta, EventPayload, EventSignal as WireSignal, EventType,
+    Priority, RotationSpec, SourceKind,
 };
 
 use super::adapter::{kind_wire_label, runtime_wire_label};
-use super::model::{session_hash_hex, AgentEventKind, AgentRuntime, AgentSessionKey};
+use super::model::{session_hash_hex, AgentDetail, AgentEventKind, AgentRuntime, AgentSessionKey};
 
 /// Priority/gating knobs for the registry→Notification mapping (spec §5's
 /// table + spec §7's future `[agents]` config block). Plan 137 wires these
@@ -160,6 +160,21 @@ fn default_body_for(kind: AgentEventKind, terminal: bool) -> String {
     }
 }
 
+/// Everything [`build_notification`] needs about what an Agent Event's
+/// card should SAY — as opposed to its routing/policy facts
+/// (`session_key`/`kind`/`terminal`/`ttl_secs`/`policy`, which stay their
+/// own positional params). Plan 147 added `project_name`/`details`
+/// alongside the pre-existing `summary`; bundling all three keeps
+/// `build_notification` under clippy's `too_many_arguments` limit instead
+/// of growing an already-long positional list.
+pub struct NotificationContent<'a> {
+    pub summary: Option<&'a str>,
+    /// The project NAME (`AgentProject.name`), never the cwd — see
+    /// [`build_notification`]'s own doc.
+    pub project_name: Option<&'a str>,
+    pub details: &'a [AgentDetail],
+}
+
 /// The one constructor for an Agent-originated Notification `Event`
 /// (spec §5). Returns `None` when this `(kind, terminal)` pair isn't
 /// noteworthy under `policy` — Starting/Working/tool/subagent progress
@@ -172,14 +187,37 @@ fn default_body_for(kind: AgentEventKind, terminal: bool) -> String {
 /// (renamed from `cmux_ttl_secs`, itself a migration target for that
 /// same v6.1 flat field), this module itself stays agnostic to where the
 /// value came from.
+///
+/// `project_name`/`details` (plan 147, spec's parity item) are the
+/// already-sanitized/capped `AgentProject.name`/`Vec<AgentDetail>` the
+/// registry itself accepted off the same wire event — NOT the cwd (spec
+/// distinguishes `project.name` from `project.cwd`; only the name is
+/// display-appropriate). They ride onto `EventMeta.subtitle`/`.details`,
+/// the same two fields the manual `/notify` rich-relay path (plan 035)
+/// already populates, so an agent card renders identically to a manual
+/// one that supplies the same shape. Absent project or empty details
+/// leave those fields at `EventMeta::default()`'s None/empty — wire
+/// shape unchanged for a session that never sent either.
+///
+/// Bundled into [`NotificationContent`] (rather than three more
+/// positional params) to stay under clippy's `too_many_arguments` —
+/// `session_key`/`kind`/`terminal`/`ttl_secs`/`policy` are the event's
+/// own routing/policy facts, `NotificationContent` is everything that
+/// only affects what the card SAYS.
 pub fn build_notification(
     session_key: &AgentSessionKey,
     kind: AgentEventKind,
     terminal: bool,
-    summary: Option<&str>,
+    content: NotificationContent<'_>,
     ttl_secs: u64,
     policy: &NotificationPolicy,
 ) -> Option<Event> {
+    let NotificationContent {
+        summary,
+        project_name,
+        details,
+    } = content;
+
     if !is_noteworthy(kind, terminal, policy) {
         return None;
     }
@@ -204,6 +242,14 @@ pub fn build_notification(
                 session_hash: session_hash_hex(session_key),
                 summary: summary.map(str::to_string),
             }),
+            subtitle: project_name.map(str::to_string),
+            details: details
+                .iter()
+                .map(|d| DetailItem {
+                    label: d.label.clone(),
+                    value: d.value.clone(),
+                })
+                .collect(),
             ..EventMeta::default()
         },
         // v7 has no dedicated icon/animation signal of its own yet — same
@@ -243,7 +289,11 @@ mod tests {
             &key(AgentRuntime::Codex),
             AgentEventKind::PermissionRequested,
             false,
-            Some("Approval needed"),
+            NotificationContent {
+                summary: Some("Approval needed"),
+                project_name: None,
+                details: &[],
+            },
             8,
             &policy,
         )
@@ -269,7 +319,11 @@ mod tests {
             &key(AgentRuntime::Kimi),
             AgentEventKind::InputRequired,
             false,
-            None,
+            NotificationContent {
+                summary: None,
+                project_name: None,
+                details: &[],
+            },
             8,
             &policy,
         )
@@ -289,7 +343,11 @@ mod tests {
             &key(AgentRuntime::OpenCode),
             AgentEventKind::Failed,
             true,
-            None,
+            NotificationContent {
+                summary: None,
+                project_name: None,
+                details: &[],
+            },
             8,
             &policy,
         )
@@ -309,7 +367,11 @@ mod tests {
             &key(AgentRuntime::ClaudeCode),
             AgentEventKind::Completed,
             true,
-            Some("All tests passed"),
+            NotificationContent {
+                summary: Some("All tests passed"),
+                project_name: None,
+                details: &[],
+            },
             8,
             &policy,
         )
@@ -333,7 +395,11 @@ mod tests {
             &key(AgentRuntime::ClaudeCode),
             AgentEventKind::Completed,
             false,
-            Some("Ready for your next message"),
+            NotificationContent {
+                summary: Some("Ready for your next message"),
+                project_name: None,
+                details: &[],
+            },
             8,
             &policy,
         )
@@ -353,7 +419,11 @@ mod tests {
             &key(AgentRuntime::Codex),
             AgentEventKind::Informational,
             false,
-            Some("Running tests"),
+            NotificationContent {
+                summary: Some("Running tests"),
+                project_name: None,
+                details: &[],
+            },
             8,
             &policy,
         )
@@ -371,7 +441,11 @@ mod tests {
             &key(AgentRuntime::Codex),
             AgentEventKind::Informational,
             false,
-            Some("Running tests"),
+            NotificationContent {
+                summary: Some("Running tests"),
+                project_name: None,
+                details: &[],
+            },
             8,
             &policy,
         )
@@ -395,7 +469,11 @@ mod tests {
             &key(AgentRuntime::Codex),
             AgentEventKind::Failed,
             false,
-            Some("shell tool exited 1"),
+            NotificationContent {
+                summary: Some("shell tool exited 1"),
+                project_name: None,
+                details: &[],
+            },
             8,
             &default_policy,
         )
@@ -422,7 +500,11 @@ mod tests {
             &key(AgentRuntime::Codex),
             AgentEventKind::Failed,
             false,
-            Some("shell tool exited 1"),
+            NotificationContent {
+                summary: Some("shell tool exited 1"),
+                project_name: None,
+                details: &[],
+            },
             8,
             &enabled_policy,
         )
@@ -444,7 +526,11 @@ mod tests {
             &key(AgentRuntime::OpenCode),
             AgentEventKind::Informational,
             false,
-            Some("Running `pnpm test`"),
+            NotificationContent {
+                summary: Some("Running `pnpm test`"),
+                project_name: None,
+                details: &[],
+            },
             8,
             &policy,
         )
@@ -460,7 +546,11 @@ mod tests {
             &raw_key,
             AgentEventKind::PermissionRequested,
             false,
-            Some("Approval needed to run a command"),
+            NotificationContent {
+                summary: Some("Approval needed to run a command"),
+                project_name: None,
+                details: &[],
+            },
             8,
             &NotificationPolicy::default(),
         )
@@ -484,7 +574,11 @@ mod tests {
             &raw_key,
             AgentEventKind::Completed,
             true,
-            None,
+            NotificationContent {
+                summary: None,
+                project_name: None,
+                details: &[],
+            },
             8,
             &NotificationPolicy::default(),
         )
@@ -493,7 +587,11 @@ mod tests {
             &raw_key,
             AgentEventKind::Completed,
             true,
-            None,
+            NotificationContent {
+                summary: None,
+                project_name: None,
+                details: &[],
+            },
             8,
             &NotificationPolicy::default(),
         )
@@ -510,11 +608,93 @@ mod tests {
             &key(AgentRuntime::Kimi),
             AgentEventKind::InputRequired,
             false,
-            None,
+            NotificationContent {
+                summary: None,
+                project_name: None,
+                details: &[],
+            },
             8,
             &NotificationPolicy::default(),
         )
         .unwrap();
         assert_eq!(event.payload.body, "Waiting for your input.");
+    }
+
+    // --- plan 147: notification parity — project name -> subtitle,
+    // AgentDetail -> DetailItem, matching the manual `/notify` rich-relay
+    // shape (plan 035) ---
+
+    #[test]
+    fn project_name_becomes_subtitle() {
+        let event = build_notification(
+            &key(AgentRuntime::ClaudeCode),
+            AgentEventKind::PermissionRequested,
+            false,
+            NotificationContent {
+                summary: Some("Approval needed"),
+                project_name: Some("mac-notification-nudge"),
+                details: &[],
+            },
+            8,
+            &NotificationPolicy::default(),
+        )
+        .unwrap();
+        // The project NAME, not the cwd — build_notification never sees a
+        // cwd at all (the caller only passes the name through).
+        assert_eq!(
+            event.meta.subtitle.as_deref(),
+            Some("mac-notification-nudge")
+        );
+    }
+
+    #[test]
+    fn agent_details_carry_verbatim_as_detail_items() {
+        let details = vec![
+            AgentDetail {
+                label: "Tool".to_string(),
+                value: "Bash".to_string(),
+            },
+            AgentDetail {
+                label: "Command".to_string(),
+                value: "git push".to_string(),
+            },
+        ];
+        let event = build_notification(
+            &key(AgentRuntime::Codex),
+            AgentEventKind::PermissionRequested,
+            false,
+            NotificationContent {
+                summary: Some("Approval needed"),
+                project_name: None,
+                details: &details,
+            },
+            8,
+            &NotificationPolicy::default(),
+        )
+        .unwrap();
+        assert_eq!(event.meta.details.len(), 2);
+        assert_eq!(event.meta.details[0].label, "Tool");
+        assert_eq!(event.meta.details[0].value, "Bash");
+        assert_eq!(event.meta.details[1].label, "Command");
+        assert_eq!(event.meta.details[1].value, "git push");
+    }
+
+    #[test]
+    fn absent_project_and_details_default_to_none_and_empty() {
+        let event = build_notification(
+            &key(AgentRuntime::OpenCode),
+            AgentEventKind::PermissionRequested,
+            false,
+            NotificationContent {
+                summary: Some("Approval needed"),
+                project_name: None,
+                details: &[],
+            },
+            8,
+            &NotificationPolicy::default(),
+        )
+        .unwrap();
+        assert_eq!(event.meta.subtitle, None);
+        assert!(event.meta.details.is_empty());
     }
 }

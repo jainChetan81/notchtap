@@ -511,7 +511,8 @@ new config block:
 [agents]
 enabled = true
 terminal_retention_secs = 60
-stale_after_secs = 900
+stale_after_secs = 300
+stale_retention_secs = 600
 informational_notifications = false
 permission_priority = "high"
 input_priority = "high"

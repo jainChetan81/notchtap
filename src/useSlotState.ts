@@ -1,5 +1,14 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
+import type { AgentRuntime } from "./useAgentState";
+
+// Mirrors useAgentState.ts's own `AGENT_RUNTIMES` wire-token list (plan
+// 136) — that file doesn't export the value (only the `AgentRuntime`
+// type), and it's a parallel executor's file for this plan, so this is a
+// local, independently-maintained copy of the same four closed tokens
+// rather than a shared import. Keep in sync with useAgentState.ts's list
+// by hand if a fifth runtime ever ships.
+const AGENT_RUNTIMES: readonly AgentRuntime[] = ["claude-code", "codex", "kimi", "opencode"];
 
 const EVENT_SIGNALS = [
   "generic",
@@ -82,6 +91,12 @@ export type SlotState =
       // `queue.rs::current_slot_state` populates it from every accepted
       // item unconditionally.
       origin: SourceKind;
+      // plan 147: which agent runtime produced this item, when `origin` is
+      // "agent" and the adapter identified itself — null for every other
+      // origin, and null for an unidentified agent event. Always present
+      // (never optional) on the wire, same discipline as `origin` itself:
+      // `queue.rs::current_slot_state` populates it unconditionally.
+      agentRuntime: AgentRuntime | null;
       expanded: boolean;
       source: string | null;
       category: string | null;
@@ -158,6 +173,13 @@ function isValidSlotState(v: unknown): v is SlotState {
     // other enum on this wire — an unrecognized origin falls back to
     // empty, not a card with an undefined origin.
     SOURCE_KINDS.includes(obj.origin as SourceKind) &&
+    // plan 147: nullable closed-set field — mirrors `source`/`category`'s
+    // nullable-string pattern just below (not `origin`'s non-nullable
+    // `.includes` check), since agentRuntime is null on every non-agent
+    // origin. An absent field fails both arms (undefined !== null, and
+    // `.includes(undefined)` is false on the closed list) so it rejects
+    // the whole payload exactly like source/category's absence does.
+    (obj.agentRuntime === null || AGENT_RUNTIMES.includes(obj.agentRuntime as AgentRuntime)) &&
     (obj.source === null || typeof obj.source === "string") &&
     (obj.category === null || typeof obj.category === "string") &&
     (obj.publishedAtMs === null || typeof obj.publishedAtMs === "number") &&

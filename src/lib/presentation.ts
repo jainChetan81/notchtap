@@ -6,7 +6,7 @@
 // variant is a compile error here until this file is updated, not a
 // silent fallback to the wrong label.
 import type { AgentRuntime, AgentSessionState } from "../useAgentState";
-import type { SlotState } from "../useSlotState";
+import type { SlotState, SourceKind } from "../useSlotState";
 
 type ShowingSlot = Extract<SlotState, { state: "showing" }>;
 export type Priority = ShowingSlot["priority"];
@@ -213,6 +213,9 @@ const CATEGORY_CLASSES = {
   sports: "cat-sports",
   business: "cat-business",
   world: "cat-world",
+  // plan 147: science split off from tech (see rss_poller.rs's
+  // CATEGORY_KEYWORDS retarget) — its own cat-science shader class.
+  science: "cat-science",
   generic: "cat-generic",
 } as const;
 
@@ -225,6 +228,7 @@ function knownCategory(category: string | null): KnownCategory | "generic" {
     case "sports":
     case "business":
     case "world":
+    case "science":
       return category;
     default:
       return "generic";
@@ -310,6 +314,48 @@ const AGENT_RUNTIME_LABEL: Record<AgentRuntime, string> = {
 
 export function agentRuntimeLabel(runtime: AgentRuntime): string {
   return AGENT_RUNTIME_LABEL[runtime];
+}
+
+// Plan 147: the paint-channel twin of AGENT_RUNTIME_LABEL — each agent
+// runtime's identity colour class (source-identity.css), consumed
+// wherever an agent-originated card needs to paint itself distinctly
+// from a generic agent, football, weather, or manual/CLI card.
+const AGENT_RUNTIME_CLASS: Record<AgentRuntime, string> = {
+  "claude-code": "src-claude-code",
+  codex: "src-codex",
+  kimi: "src-kimi",
+  opencode: "src-opencode",
+};
+
+export function agentRuntimeClass(runtime: AgentRuntime): string {
+  return AGENT_RUNTIME_CLASS[runtime];
+}
+
+// Plan 147: resolves a card's SOURCE identity colour class
+// (source-identity.css) — deliberately NOT news's business. News cards
+// keep using `categoryClass` above (per-category colour, e.g.
+// cat-science); callers must branch on origin === "news" themselves
+// and keep calling `categoryClass` for that case rather than routing
+// news through this function. `agentRuntime` is only consulted when
+// `origin === "agent"`; any other origin ignores it. An agent card
+// with `agentRuntime === null` (runtime not yet known/unrecognized)
+// falls back to the neutral `src-agent` amber.
+export function sourceClass(
+  origin: Exclude<SourceKind, "news">,
+  agentRuntime: AgentRuntime | null,
+): string {
+  switch (origin) {
+    case "football":
+      return "src-football";
+    case "weather":
+      return "src-weather";
+    case "manual":
+      return "src-manual";
+    case "agent":
+      return agentRuntime === null ? "src-agent" : AGENT_RUNTIME_CLASS[agentRuntime];
+    default:
+      return assertNever(origin);
+  }
 }
 
 export function agentStatePresentationFor(state: AgentSessionState): {

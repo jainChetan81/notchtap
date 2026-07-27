@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import {
   abbreviateHome,
+  agentRuntimeClass,
   agentRuntimeLabel,
   agentStatePresentationFor,
   elapsedLabel,
@@ -64,8 +65,9 @@ function AgentRow({
   const presentation = agentStatePresentationFor(session.state);
   const projectName = session.project?.name ?? null;
   return (
-    <div className={`agent-row ${presentation.className}`}>
+    <div className={`agent-row ${presentation.className} ${agentRuntimeClass(session.runtime)}`}>
       <span className={`agent-dot ${presentation.pulse ? "pulse" : ""}`} aria-hidden="true" />
+      <span className="agent-runtime-tick" aria-hidden="true" />
       <span className="agent-row-runtime">{agentRuntimeLabel(session.runtime)}</span>
       {projectName && <span className="agent-row-project">{projectName}</span>}
       <span className="agent-row-state">{presentation.label}</span>
@@ -111,17 +113,29 @@ function ExpandedAgentRow({
   // doubles as the terminal-only guard, no separate state check needed.
   const clearsIn =
     session.retentionRemainingMs !== null ? elapsedLabel(session.retentionRemainingMs) : null;
-  const hasMeta = showCwd || hostName !== null || clearsIn !== null;
+  // Plan 147 wave 2: the session's active subagent, rendered as one more
+  // meta chip alongside cwd/host/clears-in — same "nothing renders when
+  // absent" discipline. Falls back to `id` when the runtime hasn't (yet)
+  // supplied a human `label`, and appends the subagent's own state in
+  // parens only when the runtime reports one.
+  const subagentChip =
+    session.subagent !== null
+      ? `subagent: ${session.subagent.label ?? session.subagent.id}${
+          session.subagent.state ? ` (${session.subagent.state})` : ""
+        }`
+      : null;
+  const hasMeta = showCwd || hostName !== null || clearsIn !== null || subagentChip !== null;
   return (
     // biome-ignore lint/a11y/noStaticElementInteractions: a purely supplementary hover disclosure (recent transition history), not a control — nothing here is keyboard-reachable in this receive-only, mouse-only overlay (no focusable elements or click handlers exist anywhere in this app; see CLAUDE.md's ipc/security section).
     <div
-      className={`agent-expanded-row ${presentation.className}`}
+      className={`agent-expanded-row ${presentation.className} ${agentRuntimeClass(session.runtime)}`}
       data-testid="agent-expanded-row"
       onMouseEnter={() => setHistoryOpen(true)}
       onMouseLeave={() => setHistoryOpen(false)}
     >
       <div className="agent-expanded-row-head">
         <span className={`agent-dot ${presentation.pulse ? "pulse" : ""}`} aria-hidden="true" />
+        <span className="agent-runtime-tick" aria-hidden="true" />
         <span className="agent-row-runtime">{agentRuntimeLabel(session.runtime)}</span>
         {projectName && <span className="agent-row-project">{projectName}</span>}
         <span className="agent-row-state">{presentation.label}</span>
@@ -141,6 +155,9 @@ function ExpandedAgentRow({
           {hostName !== null && <span className="agent-expanded-meta-item">{hostName}</span>}
           {clearsIn !== null && (
             <span className="agent-expanded-meta-item">clears in {clearsIn}</span>
+          )}
+          {subagentChip !== null && (
+            <span className="agent-expanded-meta-item">{subagentChip}</span>
           )}
         </div>
       )}
@@ -246,7 +263,9 @@ export function AgentBoard({
           <StatusDots status={status} />
         </div>
       </div>
-      <div className={`below-block agent-board ${primaryPresentation.className}`}>
+      <div
+        className={`below-block agent-board ${primaryPresentation.className} ${agentRuntimeClass(primary.runtime)}`}
+      >
         {/* Plan 142 fix (operator feedback, 2026-07-27): the hero block
             below and the expanded list's own first row both used to
             render `sessions[0]` — at N=1 that put the identical session
@@ -257,11 +276,12 @@ export function AgentBoard({
             stay reachable there instead). */}
         {!expanded && (
           <div className="agent-board-primary">
-            <div className="agent-board-primary-head">
+            <div className={`agent-board-primary-head ${agentRuntimeClass(primary.runtime)}`}>
               <span
                 className={`agent-dot large ${primaryPresentation.pulse ? "pulse" : ""}`}
                 aria-hidden="true"
               />
+              <span className="agent-runtime-tick" aria-hidden="true" />
               <span className="agent-board-runtime">{agentRuntimeLabel(primary.runtime)}</span>
               <span className="agent-board-state-pill">{primaryPresentation.label}</span>
             </div>

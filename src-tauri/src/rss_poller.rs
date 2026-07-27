@@ -25,8 +25,13 @@ const CATEGORY_KEYWORDS: &[(&str, &str)] = &[
     ("election", "politics"),
     ("parliament", "politics"),
     ("tech", "tech"),
-    ("science", "tech"),
     ("gadget", "tech"),
+    // plan 147: science gets its own category (cat-science, --cat: #f2a2c8)
+    // instead of falling under tech — retargeted from ("science", "tech").
+    ("science", "science"),
+    ("physics", "science"),
+    ("space", "science"),
+    ("health", "science"),
     ("sport", "sports"),
     ("cricket", "sports"),
     ("football", "sports"),
@@ -1052,9 +1057,26 @@ mod tests {
 
     #[test]
     fn category_derivation_uses_entry_tag_hit() {
+        // plan 147: science retargeted off tech onto its own category.
         assert_eq!(
             derive_category(&["Science".to_string()], Some("world")),
-            Some("tech".to_string())
+            Some("science".to_string())
+        );
+    }
+
+    #[test]
+    fn category_derivation_science_keyword_family() {
+        assert_eq!(
+            derive_category(&["Physics".to_string()], None),
+            Some("science".to_string())
+        );
+        assert_eq!(
+            derive_category(&["Space".to_string()], None),
+            Some("science".to_string())
+        );
+        assert_eq!(
+            derive_category(&["Health".to_string()], None),
+            Some("science".to_string())
         );
     }
 
@@ -1334,7 +1356,7 @@ mod tests {
             events[0].meta,
             EventMeta {
                 source: Some("Configured News".to_string()),
-                category: Some("tech".to_string()),
+                category: Some("science".to_string()),
                 published_at_ms: Some(1_704_067_200_000),
                 link: Some(entry_link),
                 subtitle: None,

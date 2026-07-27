@@ -707,18 +707,56 @@
 /* plan 096 (079 item 8, part (c)), renamed by plan 137 (spec §7/§12: the
    cmux relay is superseded by the v7 Agent Adapter layer, so this is now
    the agent accent's hairline): a plain `border-top`, not a
-   `::before`/`::after` pseudo-element, because `.news-shade::before`
-   already claims `.below-block`'s `::before` for its background wash.
+   `::before`/`::after` pseudo-element for the LINE itself — a separate
+   `::before` wash is added below (plan 147), since `.news-shade::before`
+   claiming `.below-block`'s `::before` never co-occurs with this rule (a
+   news card is never `agent-origin` — `sourceClass` in presentation.ts is
+   explicit that news is a different, never-shared paint system).
    Lives on `.below-block` (content chrome), never on `.card-assembly`
    (the shell that owns the priority accent) — origin and priority are
    orthogonal and must never share a paint channel; this rule touches
    none of the `--accent`/`--accent-soft` vars the priority edge
-   (`.compact::before`, `.stamp`, `.ttl-fill`/`.ttl-seg.done`) reads from. */
+   (`.compact::before`, `.stamp`, `.ttl-fill`/`.ttl-seg.done`) reads from.
+   plan 147: the hairline itself is now runtime-coloured — it rides the
+   same `--cat` custom property `source-identity.css`'s `.src-*` classes
+   set (color-mix for the alpha, same idiom those classes themselves use),
+   rather than a hardcoded amber. The neutral amber look is preserved
+   exactly for the runtime-unknown case via `.src-agent`'s own `--cat:
+   var(--overlay-amber)` — this rule doesn't hardcode amber anymore, but
+   still paints amber whenever `--cat` resolves to it. */
 .card-root .below-block.agent-origin {
-  /* O3: one of the amber color's 5 meanings — tokenized onto
-     --overlay-amber (same value, color-mix for the alpha) alongside the
-     weather dot/business category/yellow-card/Break-state uses. */
-  border-top: 1px solid color-mix(in srgb, var(--overlay-amber) 55%, transparent);
+  border-top: 1px solid color-mix(in srgb, var(--cat) 55%, transparent);
+}
+
+/* plan 147: the static per-runtime identity wash — same corner-radial
+   gradient idiom as `.news-shade::before` above, deliberately WITHOUT
+   that rule's `shade-drift` animation or motion of any kind: no
+   animation, no reduced-motion variant, permanent non-goal for this
+   feature (unlike news's shade, which the operator explicitly asked to
+   keep animated). Safe to also claim `.below-block`'s `::before` slot —
+   `.news-shade` and `.agent-origin` never co-occur on the same card (see
+   the hairline comment above), so there is no collision to resolve. */
+.card-root .below-block.agent-origin::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%);
+  pointer-events: none;
+}
+
+/* Same rider idiom as news-category.css:40-41 (`.news-shade .compact,
+   .news-shade .manifest { position: relative; z-index: 1; }`): `.compact`
+   is already unconditionally `position: relative` (masthead-content.css)
+   so it already paints above the wash by DOM order, but `.manifest`/
+   `.manifest-wrap` are plain in-flow content with no `position` of their
+   own outside the news-scoped rule — without this, the expanded manifest
+   would sit BEHIND the positioned `::before` wash instead of on top of
+   it. Lifting both together (not just manifest) matches the mirrored
+   rule exactly and costs nothing extra. */
+.card-root .below-block.agent-origin .compact,
+.card-root .below-block.agent-origin .manifest {
+  position: relative;
+  z-index: 1;
 }
 
 /* priority accent — a single named color per tier, consumed by the

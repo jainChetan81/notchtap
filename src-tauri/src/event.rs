@@ -234,10 +234,9 @@ pub struct EventMeta {
     /// the same reason as `espn` above — every non-agent payload (and an
     /// agent payload built before this ticket's own tests were written)
     /// must keep an identical wire shape, no literal `"agent": null` key.
-    /// NOT mirrored onto `SlotState::Showing` — this ticket's scope is the
-    /// registry→Notification mapping and the `Event`/history shape, not
-    /// overlay rendering (a future ticket's job if the Agent Board or
-    /// per-runtime card styling needs it on the wire).
+    /// Mirrored onto `SlotState::Showing.agent_runtime` (plan 147) so the
+    /// overlay can style/label agent-originated cards by runtime; see that
+    /// field's doc for the wire shape.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent: Option<AgentSignal>,
 }
@@ -357,6 +356,15 @@ pub enum SlotState {
         /// would defeat deduping entirely (plan 081 attempt 1 measured 2
         /// emissions per 1 `accept()` before this exclusion existed).
         remaining_ms: u64,
+        /// The agent runtime wire token ("claude-code"|"codex"|"kimi"|
+        /// "opencode") for an Agent-originated item, mirrored from
+        /// `Event.meta.agent.runtime` (plan 147); `None` for every
+        /// non-agent origin. Serializes plainly like `source`/`category`
+        /// above (explicit `null` when absent, no `skip_serializing_if`) —
+        /// unlike `espn`/`agent` on `EventMeta`, this field is cheap and
+        /// common enough on agent payloads that an omitted-key special case
+        /// isn't worth the asymmetry.
+        agent_runtime: Option<String>,
     },
 }
 
@@ -385,6 +393,11 @@ impl SlotState {
     /// origin change, which cannot happen today but would be a silent bug
     /// if it ever could) for zero benefit (there is no re-emit storm to
     /// prevent, since it never ticks like `remaining_ms` does).
+    ///
+    /// `agent_runtime` (plan 147) stays IN the comparison for the same
+    /// reason as `origin`: it is set once at `build_notification` time and
+    /// never ticks for that item's lifetime, so — unlike `remaining_ms` —
+    /// there is no re-emit storm to guard against by normalizing it away.
     ///
     /// This does NOT replace the derived `PartialEq`, which stays intact
     /// and honest — several tests assert full `SlotState` equality
@@ -426,6 +439,7 @@ impl SlotState {
                     queue_done: _,
                     ttl_ms: _,
                     remaining_ms,
+                    agent_runtime: _,
                 } => {
                     *remaining_ms = 0;
                 }
@@ -596,6 +610,7 @@ mod tests {
             ttl_ms: 8000,
             remaining_ms: 6000,
             espn: None,
+            agent_runtime: Some("claude-code".to_string()),
         };
         let json = serde_json::to_value(&state).unwrap();
         assert_eq!(json["state"], "showing");
@@ -626,6 +641,8 @@ mod tests {
         // plan 081: timing fields, camelCase, milliseconds.
         assert_eq!(json["ttlMs"], 8000);
         assert_eq!(json["remainingMs"], 6000);
+        // plan 147: agent_runtime is present, camelCase, non-skipped.
+        assert_eq!(json["agentRuntime"], "claude-code");
         assert!(json.get("event_type").is_none());
         assert!(json.get("published_at_ms").is_none());
         assert!(json.get("queue_total").is_none());
@@ -656,6 +673,7 @@ mod tests {
             ttl_ms: 4000,
             remaining_ms: 4000,
             espn: None,
+            agent_runtime: None,
         };
 
         let json = serde_json::to_value(state).unwrap();
@@ -663,6 +681,9 @@ mod tests {
         assert!(json["category"].is_null());
         assert!(json["publishedAtMs"].is_null());
         assert!(json["link"].is_null());
+        // plan 147: absent agent_runtime serializes explicit null (no
+        // skip_serializing_if), matching source/category above.
+        assert!(json["agentRuntime"].is_null());
         // plan 081: timing fields are always present (never optional).
         assert_eq!(json["ttlMs"], 4000);
         assert_eq!(json["remainingMs"], 4000);
@@ -714,6 +735,7 @@ mod tests {
                 home_crest: Some("/home/u/.config/notchtap/crests/160.png".to_string()),
                 away_crest: None,
             }),
+            agent_runtime: None,
         };
         let json = serde_json::to_value(&state).unwrap();
         assert_eq!(json["espn"]["league"], "UCL");
@@ -818,6 +840,7 @@ mod tests {
                     home_crest: None,
                     away_crest: None,
                 }),
+                agent_runtime: None,
             }
         }
 
@@ -863,6 +886,7 @@ mod tests {
                 ttl_ms: 8000,
                 remaining_ms: 8000,
                 espn: None,
+                agent_runtime: None,
             }
         }
 
@@ -877,6 +901,50 @@ mod tests {
         assert!(
             !before.dedup_eq(&after_new_origin),
             "a changed origin must NOT be deduped away"
+        );
+    }
+
+    // plan 147: agent_runtime mirrors the origin tripwire above — it is
+    // also time-invariant (set once at build_notification), so it must
+    // stay IN dedup_eq's comparison too.
+    #[test]
+    fn dedup_eq_treats_a_changed_agent_runtime_as_a_real_change() {
+        fn showing_with_agent_runtime(agent_runtime: Option<&str>) -> SlotState {
+            SlotState::Showing {
+                id: Uuid::nil(),
+                title: "t".to_string(),
+                body: "b".to_string(),
+                event_type: EventType::AgentEvent,
+                priority: Priority::Medium,
+                signal: EventSignal::Generic,
+                origin: SourceKind::Agent,
+                expanded: false,
+                source: None,
+                category: None,
+                published_at_ms: None,
+                link: None,
+                subtitle: None,
+                details: Vec::new(),
+                queue_total: 1,
+                queue_done: 0,
+                ttl_ms: 8000,
+                remaining_ms: 8000,
+                espn: None,
+                agent_runtime: agent_runtime.map(|s| s.to_string()),
+            }
+        }
+
+        let before = showing_with_agent_runtime(Some("claude-code"));
+        let after_same = showing_with_agent_runtime(Some("claude-code"));
+        let after_new = showing_with_agent_runtime(Some("codex"));
+
+        assert!(
+            before.dedup_eq(&after_same),
+            "identical agent_runtime must still dedup"
+        );
+        assert!(
+            !before.dedup_eq(&after_new),
+            "a changed agent_runtime must NOT be deduped away"
         );
     }
 

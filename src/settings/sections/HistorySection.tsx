@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { MetaChip } from "@/components/ui/meta-chip";
+import { SOURCE_ORIGIN_COLORS, type SourceOriginToken } from "@/lib/sourceColors";
 import { cn } from "@/lib/utils";
 import { NOTCHTAP_EASE } from "../../animationTiming";
 import { ActionStatus, useActionStatus } from "../actionStatus";
@@ -74,6 +75,15 @@ function historyEspnSummary(espn: HistoryEspnMeta): string {
 
 // "Absent when null/undefined OR blank after trim" (Step A §1) — a
 // source/category string of only whitespace reads as absent, same as null.
+// `event.origin` is an untyped wire string (same "runtime-untrusted
+// IPC" note as historyPriorityLabel above) — only the four
+// Every SourceOriginToken (manual/football/weather/agent/news) has a
+// colour; an unrecognized origin (only possible via a hand-edited
+// history file) renders with no inline style at all.
+function historyOriginColor(origin: string): string | undefined {
+  return (SOURCE_ORIGIN_COLORS as Record<string, string>)[origin as SourceOriginToken];
+}
+
 function historyNonBlank(value: string | null | undefined): string | null {
   if (value === null || value === undefined) {
     return null;
@@ -128,7 +138,12 @@ function HistoryRow({ entry }: { entry: HistoryEntry }) {
       <span className="history-time font-mono text-fs-secondary leading-none font-bold text-muted-foreground">
         {formatRecordedAt(entry.recorded_at_ms)}
       </span>
-      <span className="history-origin ml-1.5 font-mono text-fs-secondary leading-none font-bold text-muted-foreground uppercase">
+      <span
+        className="history-origin ml-1.5 font-mono text-fs-secondary leading-none font-bold text-muted-foreground uppercase"
+        style={
+          historyOriginColor(event.origin) ? { color: historyOriginColor(event.origin) } : undefined
+        }
+      >
         {event.origin}
       </span>
       <span className="history-title text-fs-body font-[590] text-foreground">

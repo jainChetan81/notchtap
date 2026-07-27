@@ -113,6 +113,12 @@ pub struct Config {
     /// Medium by default: bracketed by espn (High — live sports is
     /// urgent) and rss (Low — news is ambient).
     pub weather_priority: Priority,
+    /// Deliberately does NOT inherit `default_ttl` the way
+    /// `espn_ttl_secs`/`agent_ttl_secs` do in `Config::parse`'s heal —
+    /// the pre-field behaviour was a hardcoded 8s in `weather_poller.rs`
+    /// regardless of `default_ttl`, so a plain serde default of 8
+    /// preserves exactly what an existing config file already produced.
+    pub weather_ttl_secs: u64,
     /// v6/v6.1: same-tier promotion tie-break, checked before arrival
     /// order. Must be a permutation of all five `SourceKind` variants —
     /// enforced by `settings::validate`.
@@ -244,8 +250,12 @@ impl Default for AgentsConfig {
         Self {
             enabled: true,
             terminal_retention_secs: 60,
-            stale_after_secs: 900,
-            stale_retention_secs: 1800,
+            // 900/1800 originally; tightened 2026-07-27 (operator feedback,
+            // same session as terminal_retention_secs above) — a dead
+            // session that missed its SessionEnd hook should be gone in
+            // ~15 minutes total, not 45.
+            stale_after_secs: 300,
+            stale_retention_secs: 600,
             informational_notifications: false,
             permission_priority: Priority::High,
             input_priority: Priority::High,
@@ -428,6 +438,10 @@ fn default_weather_priority() -> Priority {
     Priority::Medium
 }
 
+fn default_weather_ttl_secs() -> u64 {
+    8
+}
+
 fn default_resting_state() -> RestingState {
     RestingState::Rail
 }
@@ -569,6 +583,7 @@ impl Default for Config {
             weather_temp_hot_c: default_weather_temp_hot_c(),
             weather_temp_cold_c: default_weather_temp_cold_c(),
             weather_priority: default_weather_priority(),
+            weather_ttl_secs: default_weather_ttl_secs(),
             rotation_order: default_rotation_order(),
             appearance: default_appearance(),
             resting_state: default_resting_state(),
@@ -796,8 +811,8 @@ mod tests {
         assert_eq!(c.agent_ttl_secs, 8);
         assert!(c.agents.enabled);
         assert_eq!(c.agents.terminal_retention_secs, 60);
-        assert_eq!(c.agents.stale_after_secs, 900);
-        assert_eq!(c.agents.stale_retention_secs, 1800);
+        assert_eq!(c.agents.stale_after_secs, 300);
+        assert_eq!(c.agents.stale_retention_secs, 600);
         assert!(!c.agents.informational_notifications);
         assert_eq!(c.agents.permission_priority, Priority::High);
         assert_eq!(c.agents.input_priority, Priority::High);
@@ -817,6 +832,7 @@ mod tests {
         assert_eq!(c.weather_temp_hot_c, 36.0);
         assert_eq!(c.weather_temp_cold_c, 14.0);
         assert_eq!(c.weather_priority, Priority::Medium);
+        assert_eq!(c.weather_ttl_secs, 8);
         assert_eq!(
             c.rotation_order,
             [
@@ -1190,6 +1206,24 @@ url = "https://example.com/without-meta"
         assert_eq!(c.weather_temp_hot_c, 40.0);
         assert_eq!(c.weather_temp_cold_c, 10.0);
         assert_eq!(c.weather_priority, Priority::High);
+    }
+
+    #[test]
+    fn weather_ttl_secs_is_overridable() {
+        let c = Config::parse("weather_ttl_secs = 20\n").unwrap();
+        assert_eq!(c.weather_ttl_secs, 20);
+    }
+
+    #[test]
+    fn weather_ttl_secs_does_not_inherit_default_ttl() {
+        // unlike espn_ttl_secs/agent_ttl_secs (the heal in
+        // `Config::parse`), weather never had a shared-default_ttl era —
+        // its pre-field behaviour was a hardcoded 8 regardless of
+        // `default_ttl`, so the absence of `weather_ttl_secs` must keep
+        // yielding 8 even when `default_ttl` is customized.
+        let c = Config::parse("default_ttl = 30\n").unwrap();
+        assert_eq!(c.default_ttl, 30);
+        assert_eq!(c.weather_ttl_secs, 8);
     }
 
     #[test]

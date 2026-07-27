@@ -19,6 +19,7 @@ function session(overrides: Partial<AgentState["sessions"][number]> = {}) {
     details: [],
     project: { name: "notchtap", cwd: "/repo" },
     host: null,
+    subagent: null,
     elapsedMs: 1200,
     retentionRemainingMs: null,
     history: [{ state: "starting" as const, elapsedMs: 5000 }],
@@ -124,6 +125,68 @@ describe("useAgentState", () => {
     emit({ revision: 1, capturedAtMs: 1_000, sessions: [withoutHistory], adapterHealth: [] });
     expect(result.current.sessions).toHaveLength(1);
     expect(result.current.sessions[0].history).toEqual([]);
+  });
+
+  // Plan 147 wave 2: `subagent` follows the exact absent/null-tolerant
+  // idiom `project`/`host` already established above.
+  it("accepts a session with a full subagent object", async () => {
+    const { result } = await renderReady();
+    emit({
+      revision: 1,
+      capturedAtMs: 1_000,
+      sessions: [session({ subagent: { id: "sub-1", label: "Reviewer", state: "working" } })],
+      adapterHealth: [],
+    });
+    expect(result.current.sessions).toHaveLength(1);
+    expect(result.current.sessions[0].subagent).toEqual({
+      id: "sub-1",
+      label: "Reviewer",
+      state: "working",
+    });
+  });
+
+  it("accepts a session with a partial subagent (null label/state)", async () => {
+    const { result } = await renderReady();
+    emit({
+      revision: 1,
+      capturedAtMs: 1_000,
+      sessions: [session({ subagent: { id: "sub-1", label: null, state: null } })],
+      adapterHealth: [],
+    });
+    expect(result.current.sessions).toHaveLength(1);
+    expect(result.current.sessions[0].subagent).toEqual({ id: "sub-1", label: null, state: null });
+  });
+
+  it("accepts a session with subagent explicitly null", async () => {
+    const { result } = await renderReady();
+    emit({
+      revision: 1,
+      capturedAtMs: 1_000,
+      sessions: [session({ subagent: null })],
+      adapterHealth: [],
+    });
+    expect(result.current.sessions).toHaveLength(1);
+    expect(result.current.sessions[0].subagent).toBeNull();
+  });
+
+  it("defaults a session that omits subagent entirely to null", async () => {
+    const { result } = await renderReady();
+    const { subagent, ...withoutSubagent } = session();
+    void subagent;
+    emit({ revision: 1, capturedAtMs: 1_000, sessions: [withoutSubagent], adapterHealth: [] });
+    expect(result.current.sessions).toHaveLength(1);
+    expect(result.current.sessions[0].subagent).toBeNull();
+  });
+
+  it("drops a session whose subagent object is missing a required id", async () => {
+    const { result } = await renderReady();
+    emit({
+      revision: 1,
+      capturedAtMs: 1_000,
+      sessions: [session({ subagent: { label: "Reviewer", state: "working" } as never })],
+      adapterHealth: [],
+    });
+    expect(result.current.sessions).toEqual([]);
   });
 
   it("drops a session whose history entry carries an unrecognized state", async () => {

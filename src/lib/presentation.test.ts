@@ -1,12 +1,15 @@
 import { describe, expect, it } from "vitest";
+import type { AgentRuntime } from "../useAgentState";
 import type { SlotState } from "../useSlotState";
 import {
   ageLabel,
+  agentRuntimeClass,
   agentRuntimeLabel,
   agentStatePresentationFor,
   categoryClass,
   elapsedLabel,
   presentationMode,
+  sourceClass,
   stampFor,
 } from "./presentation";
 
@@ -39,11 +42,39 @@ describe("categoryClass", () => {
     expect(categoryClass("sports")).toBe("cat-sports");
     expect(categoryClass("business")).toBe("cat-business");
     expect(categoryClass("world")).toBe("cat-world");
+    expect(categoryClass("science")).toBe("cat-science");
   });
 
   it("falls back to neutral gray for null and unknown categories", () => {
     expect(categoryClass(null)).toBe("cat-generic");
-    expect(categoryClass("science")).toBe("cat-generic");
+    expect(categoryClass("astrology")).toBe("cat-generic");
+  });
+});
+
+describe("sourceClass", () => {
+  const RUNTIMES: AgentRuntime[] = ["claude-code", "codex", "kimi", "opencode"];
+
+  it("maps every agent runtime to its own identity class", () => {
+    expect(sourceClass("agent", "claude-code")).toBe("src-claude-code");
+    expect(sourceClass("agent", "codex")).toBe("src-codex");
+    expect(sourceClass("agent", "kimi")).toBe("src-kimi");
+    expect(sourceClass("agent", "opencode")).toBe("src-opencode");
+  });
+
+  it("falls back to the neutral agent class when runtime is unknown", () => {
+    expect(sourceClass("agent", null)).toBe("src-agent");
+  });
+
+  it("maps every non-agent, non-news origin to its own identity class", () => {
+    expect(sourceClass("football", null)).toBe("src-football");
+    expect(sourceClass("weather", null)).toBe("src-weather");
+    expect(sourceClass("manual", null)).toBe("src-manual");
+  });
+
+  it("agentRuntimeClass is total over every runtime (mirrors AGENT_RUNTIME_CLASS)", () => {
+    for (const runtime of RUNTIMES) {
+      expect(agentRuntimeClass(runtime)).toBe(sourceClass("agent", runtime));
+    }
   });
 });
 
@@ -80,6 +111,7 @@ describe("presentationMode", () => {
     priority: "medium",
     signal: "generic",
     origin: "manual",
+    agentRuntime: null,
     expanded: false,
     source: null,
     category: null,
