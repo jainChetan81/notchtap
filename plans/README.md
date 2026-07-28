@@ -1,5 +1,105 @@
 # Implementation Plans
 
+**Seventh audit session (2026-07-28, `/improve` standard, planned at
+`acdaeb0`)** — scoped deliberately at recon time to the surfaces the six
+prior sessions never saw: the whole v7 agent stack (`src-tauri/src/agents/**`,
+`bin/notchtap_agent.rs`, `adapters/**`), plan 146's `silence.rs` +
+queue preemption, plan 147's colour/parity work, and the post-Telegram
+`notifier.rs`. Four parallel read-only auditors (correctness; security +
+IPC boundary; tests + tech-debt; frontend + docs). Motion was excluded —
+`improve-animations` swept it the day before (148–151, three findings
+parked below). Every tabled finding was re-verified against live code by
+the advisor, not just the reporting agent. Suites at HEAD: 911 lib + 3
+integration + 3 doc-tests rust, 570 vitest / 27 files, tsc + biome clean.
+
+**All four stated security invariants HOLD** and are machine-enforced:
+`capabilities/default.json` byte-unchanged since v1 (`d6e2256`);
+seventeen `#[tauri::command]`s, every body opening with
+`ensure_settings_window`; 4-place parity pinned by three tests in
+`settings_commands.rs` (`:81` count, `:107` whole-permission-set compare,
+`:151` `generate_handler!` parse); frontend invoke-free outside
+`src/settings/`.
+
+The operator selected the three **direction** findings for planning; the
+fourteen audit findings below are recorded but **NOT yet planned** —
+awaiting selection.
+
+| plan | title | priority | effort | depends on | status |
+|---|---|---|---|---|---|
+| 152 | `notchtap-agent doctor` — read-only hook wiring report | P1 | L | — | **DONE (merged)** |
+| 153 | source scope review — keep/cut/demote matrix for the four ambient sources | P2 | L | — | **DONE (merged)** |
+| 154 | SPIKE: agent activity digest — data source + surface decision | P3 | M | — | **DONE (merged)** |
+| 155 | bound the Kimi version probe (F1) + range-check the `[agents]` durations (F5) | P1 | M | — | **DONE (merged)** |
+
+**Execution 2026-07-28.** All four were cold-reviewed by fresh-context
+agents BEFORE dispatch; every review found blockers and all four plans
+were rewritten (see "Plan review corrections" below). Then each ran in
+its own isolated git worktree under an Opus executor, and the advisor
+re-ran every done criterion independently rather than trusting the
+executor reports. **All four APPROVED and MERGED into master** on operator
+instruction; the four worktrees were removed afterwards.
+
+| plan | branch | head | result |
+|---|---|---|---|
+| 152 | `advisor/152-agent-setup-doctor` | `9ff3a3a` | +869-line `providers/doctor.rs`, 22 rust tests, 3-test cross-language parity pin; rust 933 lib / vitest 573 |
+| 153 | `advisor/153-source-scope-review` | `019119f` | `docs/design/source-scope-review.md`, 651 lines, zero code touched |
+| 154 | `advisor/154-agent-activity-digest-spike` | `645b95c` | `docs/design/agent-activity-digest.md`, 427 lines, zero code touched |
+| 155 | `advisor/155-kimi-probe-and-agents-config-bounds` | `37f5d4c` | probe bounded + delocked + gated, `[agents]` range checks; rust 919 lib, 8 new tests |
+
+**Merge, done 2026-07-28.** 155 fast-forwarded; 152/153/154 landed as
+merge commits. The one conflict was `docs/TESTING_STRATEGY.md` §0, where
+152 and 155 each rewrote the rust row (936 vs 922); resolved by hand to
+the true merged figure **941 lib + 3 integration = 944**, frontend
+**573 / 28 files** (152 adds the parity test; 155
+adds none). Nothing else overlaps across the four branches. 152 also
+corrected two long-stale §0 headlines in passing (rust `871`→live,
+frontend `474`→live), which closes part of finding F3.
+
+**Operator decisions now waiting in the two design documents:**
+153 asks 6 questions and lands on Football **DEMOTE**, News **NEEDS
+OPERATOR INPUT**, Weather **KEEP**, Now Playing **NEEDS OPERATOR INPUT** —
+grounded partly on the discovery that `espn_live_card = false` and
+`espn_rich_events = false` in the live config, i.e. football's flagship
+feature never runs on this machine. 154 asks 6 questions and recommends
+data source **A** / surface **1**, grounded on the measurement that the
+existing 200-record read window spans just **12.1 hours** and is **79%
+news**, and that `event.meta.details` is populated on **1 of 373** agent
+records.
+
+153 and 154 change **no application code** — each produces a decision
+document under `docs/design/` plus an operator decision. 152 and 155 are
+the build plans. All four are independent and touch disjoint files; run
+in any order or in parallel. 155 was added on operator request after the
+findings table below; it is the only audit finding pair currently
+planned.
+
+**Audit findings found, verified, and awaiting operator selection**
+(recorded so the audit isn't lost; ordered by leverage):
+
+| # | finding | evidence |
+|---|---|---|
+| F1 **(FIXED — 155, merged)** | `kimi --version` is spawned **while holding a `std::sync::Mutex`**, on a tokio worker, with no timeout — and unconditionally, even when Kimi is disabled. A hung `kimi` wedges `/agent/events` and every board publish. | `health.rs:411-421`, `:427` vs `:441`; `kimi_version.rs:117-121` |
+| F2 | A per-turn stop reads as the session ending: `title_for` has no terminal split for `Completed` (unlike `Failed`), so every turn shows "X finished / Session completed." Conversely OpenCode's *real* session end (`informational`+`terminal`) is gated behind `informational_notifications` and produces **no card**, while the other three runtimes do. | `notification.rs:141,157` vs `:142`; `registry.rs:119-131`; `notchtap.ts:424,449` |
+| F3 | Docs truth pass, 11 verified drifts. `AGENTS.md:198` misstates the settings allowlist three ways (says fifteen, lists the deleted `get_connector_health`, omits three); `build.rs:8` says eighteen; `CONTEXT.md:93` + `ARCHITECTURE.md:778` say retention is 10 min (it is 60s); `TESTING_STRATEGY.md` §0 headline reads 871/474 against a live 914/570 and contradicts its own narrative; `weather_ttl_secs` undocumented; `README.md:41-48` omits two shipped hotkeys; `IMPLEMENTATION_PLAN.md:763` is a checklist row for machinery deleted in plan 019. | each verified against code |
+| F4 | Agent Board frontend: "clears in" never counts down (raw `retentionRemainingMs`, no `capturedAtMs` correction) while `liveElapsedMs` beside it does; History renders a raw `agent_event` token; the runtime wire list is hand-copied 3× with a "keep in sync" comment, and a miss makes `isValidSlotState` reject the **whole** payload — the card blanks silently. | `AgentBoard.tsx:204` vs `:121`; `HistorySection.tsx:19-24`; `useSlotState.ts:5-11` |
+| F5 **(FIXED — 155, merged)** | `agents.stale_after_secs` / `terminal_retention_secs` / `stale_retention_secs` have no `validate` range check — the only numeric family without one — and the Settings UI offers `min={0}`. Saving 0 makes the first tick flip every session to Stale and purge it; the Board is permanently empty with no error. | `settings.rs:95-133`; `AgentsSection.tsx:433-456`; `registry.rs:317` |
+| F6 | `runtime`/`kind`/`state`/`capabilities` bypass `sanitize_trim` (every neighbouring field gets it) and `UnsupportedRuntime` formats with bare `{0}`, so a local process can inject forged newlines and ~64 KB of chosen text into the rotating log and flush the Settings log viewer. Contradicts `adapter.rs:47-50`'s own stated contract. Fold in the Cf/bidi strip (`sanitize_trim` filters Cc only) while in the same function. | `adapter.rs:416,434,466`, `:108`; `http.rs:387`; `settings.rs:968` |
+| F7 | A preempted card does not resume at the head of its tier: `push_front` is overridden by `best_index_in_tier`'s rotation-order rank. `CONTEXT.md:33-36` promises the opposite. The only test masks it by giving both items the same Origin, so ranks tie. | `queue.rs:292` vs `:663-680`; test `:4078-4101` |
+| F8 | The three Rust provider parsers carry ~120 lines of **byte-identical** copy each (md5-verified for `basename` / `safe_path_detail` / `safe_tool_name`, plus `Mapped` and `normalize`). `safe_path_detail` **is** the spec §3.2 "never read `command`" privacy rule, living in three independently-editable places. Separately, the per-runtime capability list exists in five hand-synced places with no parity test. | providers/`{claude_code,kimi,codex}.rs`; `health.rs:153-207` |
+| F9 | The plan-147 CSS↔TS colour "parity pin" is a whole-file `toContain`. Swapping the `.src-codex` and `.src-opencode` hexes passes every assertion — the doc comment claims more than the test enforces. | `sourceColors.test.ts:32-34` |
+| F10 | Every event after a terminal one mints a **new** suffixed session: the reuse branch only ever looks up the *original* key, so generation increments per event. One phantom Board row per event, each lingering up to 15 min; `reuse_generations` is never pruned. Live trigger: OpenCode `session.error` (terminal) followed by any further bus event. | `registry.rs:225-237`; `notchtap.ts:431` then `:449`/`:393` |
+| F11 | No cap on registry session count, and `publish_if_changed` re-serializes **all** sessions to the webview on every accepted event — growth and per-request cost both unbounded, with only the loopback bind as gatekeeper. | `registry.rs:249-253`; `board.rs:346-377` |
+| F12 | Silent Period overruns by ~an hour on the spring-forward day: `absolute_minute` deltas are wall-clock minutes, slept as real seconds. Default window `00:00–10:00` is enabled by default. Fix is a sleep cap, not a rewrite. | `lib.rs:1687`; `silence.rs:77-84` |
+| F13 | The OpenCode plugin stamps a monotonic `sequence` then delivers fire-and-forget (`void deliverAgentEvent`), so a racing POST makes the registry drop the earlier event as `StaleSequence` — including `permission.asked`, the event the feature exists for. OpenCode-only; the Rust helper sends no sequence. | `notchtap.ts:632-663`; `registry.rs:238-243` |
+| F14 | `publish_if_changed` reads `ordered_states` **before** taking its lock, so a slow reader can publish a stale snapshot at a newer revision, breaking the lockstep guarantee its own doc states. Self-heals on the next change. | `board.rs:346-361`; callers `http.rs:480` + `board.rs:429` |
+
+Suggested batching if these get planned: F1+F5 (agent runtime
+robustness), F2 alone (user-visible copy + one behaviour decision), F3
+alone (docs pass, land last so counts settle), F4+F9 (frontend truth +
+parity pins), F6 alone (input sanitisation), F7+F10 (queue/registry
+contract fixes), F8 (parser dedup, largest), F11/F12/F13/F14 (lower
+leverage, land opportunistically).
+
 **Motion audit batch 148–151 (2026-07-27, improve-animations audit,
 operator pre-authorized execution):** a three-auditor sweep (easing/
 cohesion, purpose/origin/interruptibility, performance/opportunities)
@@ -567,6 +667,45 @@ Fourth audit session (044-053):
   eventual build.
 
 ## Findings considered and rejected
+
+From the seventh audit session (2026-07-28) — recorded so they aren't
+re-audited:
+
+- **Preemption pushes past the per-tier cap** (`queue.rs:288-292`
+  `push_front`s the displaced item with no `max_queued_per_tier` check,
+  unlike the ordinary path at `:316`): real, but the overshoot is exactly
+  one item per preemption against a default cap of 50 and it drains
+  normally. Two independent auditors reached the same verdict. Not worth
+  a change; at most one sentence in `try_preempt_visible`'s doc if
+  someone is already editing it.
+- **Stripping Unicode format (Cf) characters — bidi overrides — as a
+  standalone finding**: `sanitize_trim` (`adapter.rs:187-189`) filters
+  `char::is_control`, i.e. Cc only, so a Trojan-Source-style summary
+  survives to the Board. Real, but single-user blast radius. Folded into
+  F6 (same function) rather than tabled separately; do not raise it
+  again on its own.
+- **`agents/focus.rs`**: swept for an exec-boundary injection path and
+  found clean by construction — `activate` runs
+  `open -b <&'static str bundle id>` from a closed `Host` enum, wire
+  `bundleId` is never read for recognition, `DEEP_LINK_ALLOWLIST` is
+  empty, no `sh -c`, no AppleScript. Do not re-audit.
+- **`notifier.rs` after the Telegram removal**: all 82 lines read; no
+  orphaned indirection beyond the already-settled `ConnectorHandle`
+  framework decision. `lib.rs:274-279` builds an explicitly empty `Vec`
+  and the `#[allow(dead_code)]` is honest and commented.
+- **`secrets.toml` write path**: sound — UUID temp name,
+  `create_new(true)` + `mode(0o600)` so the file never exists at another
+  mode, fsync, same-dir rename, temp removed on failure, dir pinned 0700,
+  parse errors deliberately withheld because they can echo secret
+  material, `SECRETS_LOCK` serializing read-modify-write.
+- **`silence.rs` window arithmetic** (`minutes_until_next`, midnight
+  crossing, the "equal means tomorrow" skip rule): traced by hand and by
+  a second auditor; correct and well tested. Only the *sleep-duration*
+  derivation in `lib.rs` is wrong (F12) — the pure module is fine.
+- **`queue.rs:1533` refers to "the `preemption` test module below"**;
+  there is no `mod preemption`, just a comment-delimited section at
+  `:3995`. Stale pointer, one word — fold into any future edit of that
+  file, not worth its own finding.
 
 From the fifth audit session (2026-07-20) — recorded so they aren't
 re-audited:
