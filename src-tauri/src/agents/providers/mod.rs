@@ -21,6 +21,9 @@
 //!   140, §4.4), plus its committed redacted fixture tests.
 //! - [`kimi_version`] — ticket 140's Kimi hook-support version gate: a
 //!   pure decision function plus an isolated `kimi --version` probe.
+//! - [`doctor`] — the read-only Adapter setup inspection behind
+//!   `notchtap-agent doctor`: parses each runtime's hook config file and
+//!   reports what is wired. Never writes.
 //! - [`stub`] — the "not yet supported" stub path, now unused by
 //!   Codex/Kimi (both real as of tickets 139/140) but kept for any
 //!   future runtime's hook command to land on before its own parser
@@ -30,6 +33,7 @@ pub mod claude_code;
 pub mod codex;
 pub mod delivery;
 pub mod diagnostics;
+pub mod doctor;
 pub mod kimi;
 pub mod kimi_version;
 pub mod stub;

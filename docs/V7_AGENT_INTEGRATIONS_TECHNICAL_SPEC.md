@@ -317,7 +317,15 @@ notchtap-agent hook codex
 notchtap-agent hook kimi
 notchtap-agent test <runtime>
 notchtap-agent status
+notchtap-agent doctor
 ```
+
+`doctor` is read-only: it inspects the four runtimes' hook config files
+(`~/.claude/settings.json`, `~/.codex/hooks.json`,
+`~/.kimi-code/config.toml`, `~/.config/opencode/plugins/notchtap.ts`) and
+reports which expected hook events are wired and whether each hook's
+command string resolves to an executable — it never creates, edits, or
+repairs any of them.
 
 `hook` reads one native JSON payload from stdin, normalizes it, posts
 schema v1 to the configured loopback port, and exits. delivery rules:

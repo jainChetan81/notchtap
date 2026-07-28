@@ -5,6 +5,7 @@
 //! notchtap-agent hook claude-code|codex|kimi
 //! notchtap-agent test <runtime>
 //! notchtap-agent status
+//! notchtap-agent doctor
 //! ```
 //!
 //! Kept thin on purpose: this file is argv dispatch plus the impure
@@ -26,13 +27,13 @@
 //! interactive diagnostic subcommands, not hook targets, and use stdout
 //! normally.
 
-use std::io::{self, Read};
-use std::net::TcpStream;
+use std::io::{self, ErrorKind, Read};
+use std::path::PathBuf;
 use std::process::ExitCode;
-use std::time::{Duration, SystemTime, UNIX_EPOCH};
+use std::time::{SystemTime, UNIX_EPOCH};
 
 use notchtap_lib::agents::providers::{
-    claude_code, codex, delivery, diagnostics, kimi, kimi_version, wire,
+    claude_code, codex, delivery, diagnostics, doctor, kimi, kimi_version, wire,
 };
 
 #[tokio::main]
@@ -43,6 +44,7 @@ async fn main() -> ExitCode {
         Some("hook") => run_hook(it.next().map(String::as_str)).await,
         Some("test") => run_test(it.next().map(String::as_str)).await,
         Some("status") => run_status(),
+        Some("doctor") => run_doctor(),
         _ => {
             print_usage();
             ExitCode::from(2)
@@ -52,7 +54,7 @@ async fn main() -> ExitCode {
 
 fn print_usage() {
     eprintln!(
-        "usage: notchtap-agent hook <claude-code|codex|kimi>\n       notchtap-agent test <runtime>\n       notchtap-agent status"
+        "usage: notchtap-agent hook <claude-code|codex|kimi>\n       notchtap-agent test <runtime>\n       notchtap-agent status\n       notchtap-agent doctor"
     );
 }
 
@@ -245,14 +247,8 @@ async fn run_test(runtime: Option<&str>) -> ExitCode {
 /// answer "port in use" without inventing one.
 fn run_status() -> ExitCode {
     let port = delivery::resolve_port();
-    let addr = format!("127.0.0.1:{port}");
-    let listener_ok = match addr
-        .parse()
-        .map_err(|e: std::net::AddrParseError| e.to_string())
-        .and_then(|sock| {
-            TcpStream::connect_timeout(&sock, Duration::from_millis(500)).map_err(|e| e.to_string())
-        }) {
-        Ok(_) => {
+    let listener_ok = match doctor::listener_reachable(port) {
+        Ok(()) => {
             println!("notchtap: listening on 127.0.0.1:{port}");
             true
         }
@@ -285,4 +281,128 @@ fn run_status() -> ExitCode {
     } else {
         ExitCode::FAILURE
     }
+}
+
+/// `notchtap-agent doctor` (plan 152) — the read-only "is my Agent
+/// Adapter actually wired?" report that `status` can't give: `status`
+/// only answers "is notchtap listening", and Settings' Adapter Health
+/// cards only report what has been *received*, so an un-wired runtime
+/// and a wired-but-idle one look identical there.
+///
+/// This is a thin shell by design (same rule as the rest of this file):
+/// it resolves the home directory, reads four files, and asks
+/// `notchtap_lib::agents::providers::doctor` what they mean. Every
+/// decision — what counts as wired, what a command string points at,
+/// what the exit code should be — lives in that module, where it's
+/// unit-testable. Mapping an `io::Error` to a variant and calling
+/// `is_file()` are filesystem reads, not decisions, so they stay here.
+///
+/// **It never writes.** Repairing or installing a runtime's hooks is
+/// explicitly not this command's job (spec §4.6: "v7 does not silently
+/// edit a user's global provider configuration").
+fn run_doctor() -> ExitCode {
+    let Some(home) = dirs::home_dir() else {
+        println!("notchtap doctor: cannot resolve a home directory");
+        return ExitCode::FAILURE;
+    };
+
+    let port = delivery::resolve_port();
+    let listener_ok = doctor::listener_reachable(port).is_ok();
+    let path_dirs = doctor::path_dirs_from_env();
+
+    type Inspector = fn(&str) -> doctor::AdapterInstall;
+    const HOOK_CONFIGS: [(&str, &str, Inspector); 3] = [
+        (
+            "claude-code",
+            ".claude/settings.json",
+            doctor::inspect_claude_code,
+        ),
+        ("codex", ".codex/hooks.json", doctor::inspect_codex),
+        ("kimi", ".kimi-code/config.toml", doctor::inspect_kimi),
+    ];
+
+    let mut runtimes = Vec::with_capacity(HOOK_CONFIGS.len() + 1);
+    let mut kimi_inspected = false;
+
+    for (runtime, relative, inspect) in HOOK_CONFIGS {
+        let path = home.join(relative);
+        let install = match std::fs::read_to_string(&path) {
+            Ok(contents) => inspect(&contents),
+            Err(e) if e.kind() == ErrorKind::NotFound => doctor::AdapterInstall::ConfigMissing,
+            // The `ErrorKind` debug name, never `e.to_string()` — the
+            // latter can echo the user's absolute home path.
+            Err(e) => doctor::AdapterInstall::ConfigUnreadable {
+                reason: format!("{:?}", e.kind()),
+            },
+        };
+        if runtime == "kimi" && matches!(install, doctor::AdapterInstall::Inspected { .. }) {
+            kimi_inspected = true;
+        }
+        runtimes.push(doctor::RuntimeReport {
+            runtime,
+            config_path_display: doctor::display_path(&path, &home),
+            command_targets: command_targets_for(&install, &path_dirs),
+            install,
+        });
+    }
+
+    // OpenCode ships a plugin file rather than hook entries, so presence
+    // is the whole check. The path is rendered in the output so a user
+    // who named the file differently can see what was looked for.
+    let opencode_path = home.join(".config/opencode/plugins/notchtap.ts");
+    runtimes.push(doctor::RuntimeReport {
+        runtime: "opencode",
+        config_path_display: doctor::display_path(&opencode_path, &home),
+        install: doctor::inspect_plugin_file(opencode_path.is_file()),
+        command_targets: Vec::new(),
+    });
+
+    // Only probe the version gate when Kimi is actually wired — running
+    // `kimi --version` for a user who doesn't have Kimi installed just
+    // adds a subprocess and a confusing line.
+    let kimi_note = kimi_inspected.then(|| match kimi_version::probe_hook_support() {
+        kimi_version::HookSupport::Supported { detected } => format!(
+            "kimi {detected} detected (hooks require >= {}) — supported",
+            kimi_version::MINIMUM_HOOK_VERSION_STR
+        ),
+        kimi_version::HookSupport::Unavailable { detected, minimum } => format!(
+            "kimi {} detected (hooks require >= {minimum}) — unavailable",
+            detected.as_deref().unwrap_or("no kimi on PATH")
+        ),
+    });
+
+    let report = doctor::DoctorReport {
+        listener_ok,
+        port,
+        runtimes,
+        kimi_note,
+    };
+    println!("{}", doctor::render(&report));
+
+    if doctor::is_healthy(&report) {
+        ExitCode::SUCCESS
+    } else {
+        ExitCode::FAILURE
+    }
+}
+
+/// Maps every distinct command string an install reported through
+/// [`doctor::classify_command`], against the real filesystem. Pure glue:
+/// the classification itself is the library's decision.
+fn command_targets_for(
+    install: &doctor::AdapterInstall,
+    path_dirs: &[PathBuf],
+) -> Vec<(String, doctor::CommandTarget)> {
+    let doctor::AdapterInstall::Inspected { commands, .. } = install else {
+        return Vec::new();
+    };
+    commands
+        .iter()
+        .map(|command| {
+            (
+                command.clone(),
+                doctor::classify_command(command, path_dirs, &doctor::is_executable_file),
+            )
+        })
+        .collect()
 }
