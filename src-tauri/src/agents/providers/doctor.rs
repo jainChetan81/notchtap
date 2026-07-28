@@ -27,6 +27,9 @@ use std::net::TcpStream;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use crate::agents::adapter::runtime_wire_label;
+use crate::agents::model::AgentRuntime;
+
 /// The hook events `AgentsSection.tsx`'s Claude Code setup snippet
 /// installs. Pinned against that file by
 /// `src/settings/hookEventParity.test.ts`.
@@ -58,6 +61,12 @@ pub const CODEX_HOOK_EVENTS: [&str; 8] = [
 
 /// The hook events `AgentsSection.tsx`'s Kimi setup snippet installs.
 /// Pinned against that file by `src/settings/hookEventParity.test.ts`.
+///
+/// Byte-identical to [`CLAUDE_CODE_HOOK_EVENTS`] today, and deliberately
+/// NOT shared with it: each const is pinned to its own setup snippet, so
+/// either provider can add or drop an event without dragging the other
+/// with it. Collapsing them into one would silently couple two
+/// independent providers' contracts.
 pub const KIMI_HOOK_EVENTS: [&str; 10] = [
     "SessionStart",
     "SessionEnd",
@@ -113,7 +122,10 @@ pub enum CommandTarget {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeReport {
-    pub runtime: &'static str,
+    /// The typed Agent Runtime (CONTEXT.md's term), not a loose token —
+    /// `render` turns it back into its wire label through
+    /// `adapter::runtime_wire_label`, the mapping this repo already owns.
+    pub runtime: AgentRuntime,
     /// Already home-relative — produced by [`display_path`] before this
     /// struct is built, so [`render`] stays a pure formatter with no
     /// path logic and no `home` parameter.
@@ -128,6 +140,10 @@ pub struct RuntimeReport {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DoctorReport {
     pub listener_ok: bool,
+    /// Why the listener check failed, when it did — so the report can say
+    /// `not reachable (…)` the way `notchtap-agent status` already does.
+    /// `None` whenever `listener_ok` is true.
+    pub listener_error: Option<String>,
     pub port: u16,
     pub runtimes: Vec<RuntimeReport>,
     /// The Kimi hook-version line, pre-rendered by the caller from
@@ -139,13 +155,13 @@ pub struct DoctorReport {
 
 /// Claude Code's `~/.claude/settings.json`.
 pub fn inspect_claude_code(json: &str) -> AdapterInstall {
-    inspect_hooks_json(json, &CLAUDE_CODE_HOOK_EVENTS, "claude-code")
+    inspect_hooks_json(json, &CLAUDE_CODE_HOOK_EVENTS, AgentRuntime::ClaudeCode)
 }
 
 /// Codex's `~/.codex/hooks.json` — same JSON shape as Claude Code's, so
 /// this is the shared helper with a different const and token.
 pub fn inspect_codex(json: &str) -> AdapterInstall {
-    inspect_hooks_json(json, &CODEX_HOOK_EVENTS, "codex")
+    inspect_hooks_json(json, &CODEX_HOOK_EVENTS, AgentRuntime::Codex)
 }
 
 /// Kimi's `~/.kimi-code/config.toml` — an array of `[[hooks]]` tables
@@ -157,7 +173,11 @@ pub fn inspect_kimi(toml_text: &str) -> AdapterInstall {
             reason: "malformed toml".to_string(),
         };
     };
-    assemble(&toml_hook_pairs(&table), &KIMI_HOOK_EVENTS, "kimi")
+    assemble(
+        &toml_hook_pairs(&table),
+        &KIMI_HOOK_EVENTS,
+        AgentRuntime::Kimi,
+    )
 }
 
 /// OpenCode ships a plugin file, not hook entries, so presence is the
@@ -169,13 +189,13 @@ pub fn inspect_plugin_file(present: bool) -> AdapterInstall {
 
 /// The shared Claude Code / Codex JSON body: parse, pull every
 /// `(event, command)` pair out of the `hooks` object, decide.
-fn inspect_hooks_json(json: &str, expected: &[&str], runtime_token: &str) -> AdapterInstall {
+fn inspect_hooks_json(json: &str, expected: &[&str], runtime: AgentRuntime) -> AdapterInstall {
     let Ok(value) = serde_json::from_str::<serde_json::Value>(json) else {
         return AdapterInstall::ConfigUnreadable {
             reason: "malformed json".to_string(),
         };
     };
-    assemble(&json_hook_pairs(&value), expected, runtime_token)
+    assemble(&json_hook_pairs(&value), expected, runtime)
 }
 
 /// Every `(event, command)` pair in a `{"hooks": {"Event": [{"hooks":
@@ -235,8 +255,12 @@ fn toml_hook_pairs(table: &toml::Table) -> Vec<(String, String)> {
 /// at an absolute path (`/Users/x/.local/bin/notchtap-agent hook kimi`).
 /// Iteration is over `expected`, never the file, so `wired`/`missing`
 /// come out in canonical order whatever order the user's file uses.
-fn assemble(pairs: &[(String, String)], expected: &[&str], runtime_token: &str) -> AdapterInstall {
-    let needle = format!("hook {runtime_token}");
+fn assemble(
+    pairs: &[(String, String)],
+    expected: &[&str],
+    runtime: AgentRuntime,
+) -> AdapterInstall {
+    let needle = format!("hook {}", runtime_wire_label(runtime));
     let mut wired = Vec::new();
     let mut missing = Vec::new();
     let mut commands: Vec<String> = Vec::new();
@@ -355,7 +379,7 @@ pub fn listener_reachable(port: u16) -> Result<(), String> {
 /// not un-wired), or `PluginFile { present: true }`. `ConfigMissing`,
 /// `ConfigUnreadable`, `PluginFile { present: false }`, and `Inspected`
 /// with an empty `wired` list are all "no evidence".
-pub fn is_healthy(report: &DoctorReport) -> bool {
+pub fn setup_ok(report: &DoctorReport) -> bool {
     if !report.listener_ok {
         return false;
     }
@@ -377,10 +401,10 @@ pub fn render(report: &DoctorReport) -> String {
     out.push_str(&format!(
         "listener   127.0.0.1:{}   {}\n",
         report.port,
-        if report.listener_ok {
-            "reachable"
-        } else {
-            "not reachable"
+        match (report.listener_ok, &report.listener_error) {
+            (true, _) => "reachable".to_string(),
+            (false, Some(reason)) => format!("not reachable ({reason})"),
+            (false, None) => "not reachable".to_string(),
         }
     ));
 
@@ -388,7 +412,8 @@ pub fn render(report: &DoctorReport) -> String {
         out.push('\n');
         out.push_str(&format!(
             "{}   {}\n",
-            runtime.runtime, runtime.config_path_display
+            runtime_wire_label(runtime.runtime),
+            runtime.config_path_display
         ));
         match &runtime.install {
             AdapterInstall::ConfigMissing => {
@@ -434,7 +459,7 @@ pub fn render(report: &DoctorReport) -> String {
         // The Kimi version gate belongs to the Kimi row visually (it is
         // the only runtime with one), even though the report carries it
         // once at the top level.
-        if runtime.runtime == "kimi" {
+        if runtime.runtime == AgentRuntime::Kimi {
             if let Some(note) = &report.kimi_note {
                 out.push_str(&format!("  {note}\n"));
             }
@@ -673,16 +698,23 @@ mod tests {
         assert!(!is_executable_file(&cargo_toml));
         assert!(!is_executable_file(&manifest_dir));
 
-        // ...and `classify_command` turns that "false" into Broken, not
-        // Resolved: the verdict below is the real predicate's answer for
-        // a file that exists with no execute bit.
-        let target = classify_command("/opt/bin/notchtap-agent hook kimi", &[], &|_: &Path| {
-            is_executable_file(&cargo_toml)
-        });
+        // ...and `classify_command` turns that into Broken. Run it against
+        // the REAL fixture path with the REAL predicate: an injected
+        // always-false closure would make this case mechanically identical
+        // to "the path does not exist" above, which is the one thing this
+        // test exists to distinguish.
+        let command = cargo_toml.to_str().expect("fixture path is utf-8");
+        assert!(
+            !command.contains(char::is_whitespace),
+            "fixture path must not contain whitespace — `classify_command` \
+             splits the program off on whitespace, so a spaced checkout \
+             directory would make this assertion test the wrong thing"
+        );
+        let target = classify_command(command, &[], &is_executable_file);
         assert_eq!(
             target,
             CommandTarget::Broken {
-                path: PathBuf::from("/opt/bin/notchtap-agent")
+                path: cargo_toml.clone()
             }
         );
     }
@@ -762,9 +794,10 @@ mod tests {
     fn wired_claude_code_report() -> DoctorReport {
         DoctorReport {
             listener_ok: true,
+            listener_error: None,
             port: 9789,
             runtimes: vec![RuntimeReport {
-                runtime: "claude-code",
+                runtime: AgentRuntime::ClaudeCode,
                 config_path_display: "~/.claude/settings.json".to_string(),
                 install: AdapterInstall::Inspected {
                     wired: CLAUDE_CODE_HOOK_EVENTS
@@ -795,25 +828,47 @@ mod tests {
     }
 
     #[test]
-    fn is_healthy_fails_only_on_a_dead_listener_or_zero_evidence() {
+    fn render_carries_the_listener_failure_reason_when_there_is_one() {
+        // `notchtap-agent status` has always printed why the listener was
+        // unreachable; `doctor` renders the same reason rather than a bare
+        // "not reachable", which tells a user nothing they can act on.
+        let mut down = wired_claude_code_report();
+        down.listener_ok = false;
+        down.listener_error = Some("Connection refused (os error 61)".to_string());
+        let out = render(&down);
+        assert!(
+            out.contains("not reachable (Connection refused (os error 61))"),
+            "got:\n{out}"
+        );
+
+        // No reason available -> the bare form, never "not reachable ()".
+        down.listener_error = None;
+        let bare = render(&down);
+        assert!(bare.contains("not reachable\n"), "got:\n{bare}");
+        assert!(!bare.contains("not reachable ("), "got:\n{bare}");
+    }
+
+    #[test]
+    fn setup_ok_fails_only_on_a_dead_listener_or_zero_evidence() {
         // 1. Listener down, everything wired -> unhealthy.
         let mut down = wired_claude_code_report();
         down.listener_ok = false;
-        assert!(!is_healthy(&down));
+        assert!(!setup_ok(&down));
 
         // 2. Listener up, no runtime shows any evidence -> unhealthy.
         let nothing = DoctorReport {
             listener_ok: true,
+            listener_error: None,
             port: 9789,
             runtimes: vec![
                 RuntimeReport {
-                    runtime: "claude-code",
+                    runtime: AgentRuntime::ClaudeCode,
                     config_path_display: "~/.claude/settings.json".to_string(),
                     install: AdapterInstall::ConfigMissing,
                     command_targets: Vec::new(),
                 },
                 RuntimeReport {
-                    runtime: "codex",
+                    runtime: AgentRuntime::Codex,
                     config_path_display: "~/.codex/hooks.json".to_string(),
                     install: AdapterInstall::ConfigUnreadable {
                         reason: "malformed json".to_string(),
@@ -821,7 +876,7 @@ mod tests {
                     command_targets: Vec::new(),
                 },
                 RuntimeReport {
-                    runtime: "kimi",
+                    runtime: AgentRuntime::Kimi,
                     config_path_display: "~/.kimi-code/config.toml".to_string(),
                     install: AdapterInstall::Inspected {
                         wired: Vec::new(),
@@ -831,7 +886,7 @@ mod tests {
                     command_targets: Vec::new(),
                 },
                 RuntimeReport {
-                    runtime: "opencode",
+                    runtime: AgentRuntime::OpenCode,
                     config_path_display: "~/.config/opencode/plugins/notchtap.ts".to_string(),
                     install: AdapterInstall::PluginFile { present: false },
                     command_targets: Vec::new(),
@@ -839,7 +894,7 @@ mod tests {
             ],
             kimi_note: None,
         };
-        assert!(!is_healthy(&nothing));
+        assert!(!setup_ok(&nothing));
 
         // 3. Listener up, one partial install (8/10) + three missing
         //    configs -> healthy. A partial install is still an install,
@@ -857,13 +912,13 @@ mod tests {
             commands: vec!["notchtap-agent hook kimi".to_string()],
         };
         partial.runtimes[1].install = AdapterInstall::ConfigMissing;
-        assert!(is_healthy(&partial));
+        assert!(setup_ok(&partial));
 
         // 4. Listener up, only the OpenCode plugin file present ->
         //    healthy.
         let mut plugin_only = nothing.clone();
         plugin_only.runtimes[1].install = AdapterInstall::ConfigMissing;
         plugin_only.runtimes[3].install = AdapterInstall::PluginFile { present: true };
-        assert!(is_healthy(&plugin_only));
+        assert!(setup_ok(&plugin_only));
     }
 }

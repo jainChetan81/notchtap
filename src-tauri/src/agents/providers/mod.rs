@@ -17,13 +17,13 @@
 //!   surface is additive-only (see this crate's `agents/mod.rs` doc).
 //! - [`codex`] — the real, pure Codex stdin-payload parser (ticket 139,
 //!   §4.3), plus its committed redacted fixture tests.
+//! - [`doctor`] — the read-only Adapter setup inspection behind
+//!   `notchtap-agent doctor`: parses each runtime's hook config file and
+//!   reports what is wired. Never writes.
 //! - [`kimi`] — the real, pure Kimi Code stdin-payload parser (ticket
 //!   140, §4.4), plus its committed redacted fixture tests.
 //! - [`kimi_version`] — ticket 140's Kimi hook-support version gate: a
 //!   pure decision function plus an isolated `kimi --version` probe.
-//! - [`doctor`] — the read-only Adapter setup inspection behind
-//!   `notchtap-agent doctor`: parses each runtime's hook config file and
-//!   reports what is wired. Never writes.
 //! - [`stub`] — the "not yet supported" stub path, now unused by
 //!   Codex/Kimi (both real as of tickets 139/140) but kept for any
 //!   future runtime's hook command to land on before its own parser

@@ -32,6 +32,7 @@ use std::path::PathBuf;
 use std::process::ExitCode;
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use notchtap_lib::agents::model::AgentRuntime;
 use notchtap_lib::agents::providers::{
     claude_code, codex, delivery, diagnostics, doctor, kimi, kimi_version, wire,
 };
@@ -307,18 +308,27 @@ fn run_doctor() -> ExitCode {
     };
 
     let port = delivery::resolve_port();
-    let listener_ok = doctor::listener_reachable(port).is_ok();
+    let listener_error = doctor::listener_reachable(port).err();
+    let listener_ok = listener_error.is_none();
     let path_dirs = doctor::path_dirs_from_env();
 
     type Inspector = fn(&str) -> doctor::AdapterInstall;
-    const HOOK_CONFIGS: [(&str, &str, Inspector); 3] = [
+    const HOOK_CONFIGS: [(AgentRuntime, &str, Inspector); 3] = [
         (
-            "claude-code",
+            AgentRuntime::ClaudeCode,
             ".claude/settings.json",
             doctor::inspect_claude_code,
         ),
-        ("codex", ".codex/hooks.json", doctor::inspect_codex),
-        ("kimi", ".kimi-code/config.toml", doctor::inspect_kimi),
+        (
+            AgentRuntime::Codex,
+            ".codex/hooks.json",
+            doctor::inspect_codex,
+        ),
+        (
+            AgentRuntime::Kimi,
+            ".kimi-code/config.toml",
+            doctor::inspect_kimi,
+        ),
     ];
 
     let mut runtimes = Vec::with_capacity(HOOK_CONFIGS.len() + 1);
@@ -335,7 +345,9 @@ fn run_doctor() -> ExitCode {
                 reason: format!("{:?}", e.kind()),
             },
         };
-        if runtime == "kimi" && matches!(install, doctor::AdapterInstall::Inspected { .. }) {
+        if runtime == AgentRuntime::Kimi
+            && matches!(install, doctor::AdapterInstall::Inspected { .. })
+        {
             kimi_inspected = true;
         }
         runtimes.push(doctor::RuntimeReport {
@@ -351,7 +363,7 @@ fn run_doctor() -> ExitCode {
     // who named the file differently can see what was looked for.
     let opencode_path = home.join(".config/opencode/plugins/notchtap.ts");
     runtimes.push(doctor::RuntimeReport {
-        runtime: "opencode",
+        runtime: AgentRuntime::OpenCode,
         config_path_display: doctor::display_path(&opencode_path, &home),
         install: doctor::inspect_plugin_file(opencode_path.is_file()),
         command_targets: Vec::new(),
@@ -365,21 +377,28 @@ fn run_doctor() -> ExitCode {
             "kimi {detected} detected (hooks require >= {}) — supported",
             kimi_version::MINIMUM_HOOK_VERSION_STR
         ),
-        kimi_version::HookSupport::Unavailable { detected, minimum } => format!(
-            "kimi {} detected (hooks require >= {minimum}) — unavailable",
-            detected.as_deref().unwrap_or("no kimi on PATH")
-        ),
+        // Split on `detected`: folding `None` into the same sentence
+        // produced "kimi no kimi on PATH detected (…)".
+        kimi_version::HookSupport::Unavailable {
+            detected: Some(detected),
+            minimum,
+        } => format!("kimi {detected} detected (hooks require >= {minimum}) — unavailable"),
+        kimi_version::HookSupport::Unavailable {
+            detected: None,
+            minimum,
+        } => format!("kimi not found on PATH (hooks require >= {minimum}) — unavailable"),
     });
 
     let report = doctor::DoctorReport {
         listener_ok,
+        listener_error,
         port,
         runtimes,
         kimi_note,
     };
     println!("{}", doctor::render(&report));
 
-    if doctor::is_healthy(&report) {
+    if doctor::setup_ok(&report) {
         ExitCode::SUCCESS
     } else {
         ExitCode::FAILURE

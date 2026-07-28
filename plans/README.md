@@ -9,8 +9,9 @@ queue preemption, plan 147's colour/parity work, and the post-Telegram
 IPC boundary; tests + tech-debt; frontend + docs). Motion was excluded —
 `improve-animations` swept it the day before (148–151, three findings
 parked below). Every tabled finding was re-verified against live code by
-the advisor, not just the reporting agent. Suites at HEAD: 911 lib + 3
-integration + 3 doc-tests rust, 570 vitest / 27 files, tsc + biome clean.
+the advisor, not just the reporting agent. Suites were green at HEAD on
+every gate (counts live in `docs/TESTING_STRATEGY.md` §0 and only there,
+per CLAUDE.md — deliberately not restated here).
 
 **All four stated security invariants HOLD** and are machine-enforced:
 `capabilities/default.json` byte-unchanged since v1 (`d6e2256`);
@@ -41,16 +42,16 @@ instruction; the four worktrees were removed afterwards.
 
 | plan | branch | head | result |
 |---|---|---|---|
-| 152 | `advisor/152-agent-setup-doctor` | `9ff3a3a` | +869-line `providers/doctor.rs`, 22 rust tests, 3-test cross-language parity pin; rust 933 lib / vitest 573 |
+| 152 | `advisor/152-agent-setup-doctor` | `9ff3a3a` | +869-line `providers/doctor.rs`, 22 rust tests (23 after the review-fix batch), 3-test cross-language parity pin |
 | 153 | `advisor/153-source-scope-review` | `019119f` | `docs/design/source-scope-review.md`, 651 lines, zero code touched |
 | 154 | `advisor/154-agent-activity-digest-spike` | `645b95c` | `docs/design/agent-activity-digest.md`, 427 lines, zero code touched |
-| 155 | `advisor/155-kimi-probe-and-agents-config-bounds` | `37f5d4c` | probe bounded + delocked + gated, `[agents]` range checks; rust 919 lib, 8 new tests |
+| 155 | `advisor/155-kimi-probe-and-agents-config-bounds` | `37f5d4c` | probe bounded + delocked + gated, `[agents]` range checks; 8 new tests |
 
 **Merge, done 2026-07-28.** 155 fast-forwarded; 152/153/154 landed as
 merge commits. The one conflict was `docs/TESTING_STRATEGY.md` §0, where
-152 and 155 each rewrote the rust row (936 vs 922); resolved by hand to
-the true merged figure **941 lib + 3 integration = 944**, frontend
-**573 / 28 files** (152 adds the parity test; 155
+152 and 155 each rewrote the rust row to different totals; resolved by
+hand so §0 carries the true merged figure (§0 is the only place that
+number lives) (152 adds the parity test; 155
 adds none). Nothing else overlaps across the four branches. 152 also
 corrected two long-stale §0 headlines in passing (rust `871`→live,
 frontend `474`→live), which closes part of finding F3.
