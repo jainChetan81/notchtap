@@ -440,9 +440,9 @@ export function AgentsSection({
         <NumberControl
           id="agents-stale-after"
           name="Stale threshold"
-          help="A session with no accepted event for this long is marked Stale on the Agent Board."
+          help="A session with no accepted event for this long is marked Stale on the Agent Board. Must be at least 1 second."
           value={config.agents.stale_after_secs}
-          min={0}
+          min={1}
           max={86400}
           unit="SEC"
           onChange={(stale_after_secs) => patchAgents(config, patchConfig, { stale_after_secs })}

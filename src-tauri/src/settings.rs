@@ -132,6 +132,30 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
             c.weather_ttl_secs
         ));
     }
+    // The asymmetry below is deliberate, not an oversight. Zero RETENTION
+    // is a legitimate choice ("drop a finished or stale session on the
+    // next board tick"). A zero stale THRESHOLD is never meaningful — it
+    // marks every Agent Session Stale on the first tick, including one
+    // that is actively Working, which empties the Agent Board with no
+    // error. Do not "tidy" these into one shared range.
+    if !(1..=86400).contains(&c.agents.stale_after_secs) {
+        errors.push(format!(
+            "agents.stale_after_secs must be 1–86400 seconds (got {}) — 0 marks every Agent Session Stale on the first board tick",
+            c.agents.stale_after_secs
+        ));
+    }
+    if !(0..=86400).contains(&c.agents.terminal_retention_secs) {
+        errors.push(format!(
+            "agents.terminal_retention_secs must be 0–86400 seconds (got {})",
+            c.agents.terminal_retention_secs
+        ));
+    }
+    if !(0..=86400).contains(&c.agents.stale_retention_secs) {
+        errors.push(format!(
+            "agents.stale_retention_secs must be 0–86400 seconds (got {})",
+            c.agents.stale_retention_secs
+        ));
+    }
     for league in &c.espn_leagues {
         // L-sec4: leagues feed straight into an ESPN scoreboard url path
         // segment (poller.rs) — beyond "non-empty, no whitespace", reject
@@ -1351,6 +1375,50 @@ mod tests {
         assert!(validate(&c).is_ok());
         c.weather_ttl_secs = 3601;
         assert!(validate(&c).is_err());
+    }
+
+    #[test]
+    fn agents_stale_after_boundaries() {
+        let mut c = Config::default();
+        c.agents.stale_after_secs = 0;
+        assert!(validate(&c).is_err());
+        c.agents.stale_after_secs = 1;
+        assert!(validate(&c).is_ok());
+        c.agents.stale_after_secs = 86400;
+        assert!(validate(&c).is_ok());
+        c.agents.stale_after_secs = 86401;
+        assert!(validate(&c).is_err());
+    }
+
+    #[test]
+    fn agents_retention_boundaries() {
+        // Zero retention is legitimate ("drop it on the next board
+        // tick"), unlike a zero stale threshold above — hence the
+        // deliberately different lower bound.
+        let mut c = Config::default();
+        c.agents.terminal_retention_secs = 0;
+        assert!(validate(&c).is_ok());
+        c.agents.terminal_retention_secs = 86400;
+        assert!(validate(&c).is_ok());
+        c.agents.terminal_retention_secs = 86401;
+        assert!(validate(&c).is_err());
+
+        let mut c = Config::default();
+        c.agents.stale_retention_secs = 0;
+        assert!(validate(&c).is_ok());
+        c.agents.stale_retention_secs = 86400;
+        assert!(validate(&c).is_ok());
+        c.agents.stale_retention_secs = 86401;
+        assert!(validate(&c).is_err());
+    }
+
+    #[test]
+    fn agents_duration_violations_are_all_reported_together() {
+        let mut c = Config::default();
+        c.agents.stale_after_secs = 0;
+        c.agents.terminal_retention_secs = 86401;
+        c.agents.stale_retention_secs = 86401;
+        assert_eq!(validate(&c).unwrap_err().len(), 3);
     }
 
     #[test]
