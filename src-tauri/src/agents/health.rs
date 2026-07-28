@@ -409,13 +409,27 @@ impl HealthTracker {
     /// real call sites, a simulated clock in tests) so the cache TTL
     /// itself stays testable without a real 60-second sleep.
     pub fn kimi_hook_support(&self, now: Instant) -> HookSupport {
-        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
-        if let Some((probed_at, support)) = &guard.kimi_cache {
-            if now.saturating_duration_since(*probed_at) < KIMI_PROBE_CACHE_TTL {
-                return support.clone();
+        {
+            let guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
+            if let Some((probed_at, support)) = &guard.kimi_cache {
+                if now.saturating_duration_since(*probed_at) < KIMI_PROBE_CACHE_TTL {
+                    return support.clone();
+                }
             }
-        }
+        } // guard dropped HERE — the probe below spawns a process, and
+          // this same mutex guards `records`, which `/agent/events`
+          // writes to on every accepted event. Holding it across a
+          // subprocess would stall ingestion, not just health reads.
         let support = kimi_version::probe_hook_support();
+        // Deliberate, benign race: two callers arriving together on an
+        // expired cache may both probe. Cost is one extra bounded
+        // `kimi --version`; the alternative (holding the lock) is the bug
+        // being fixed. `records` and `kimi_cache` are structurally
+        // independent — no invariant couples them — so nothing can
+        // observe a torn state. The only visible effect is that a
+        // later-finishing caller may store an EARLIER `now`, marginally
+        // shortening the effective cache TTL.
+        let mut guard = self.inner.lock().unwrap_or_else(|e| e.into_inner());
         guard.kimi_cache = Some((now, support.clone()));
         support
     }
@@ -424,7 +438,17 @@ impl HealthTracker {
     /// [`ALL_RUNTIMES`]) — the one call Settings' `get_agent_health` and
     /// the `agent-state` publish path both make.
     pub fn snapshot(&self, runtimes_cfg: &AgentRuntimesConfig, now: Instant) -> Vec<AdapterHealth> {
-        let kimi_hook = self.kimi_hook_support(now);
+        // Probe ONLY when Kimi is enabled: `build_adapter_health` passes
+        // `kimi_hook` to exactly `availability_for` and
+        // `compatibility_message`, and both return before reading it when
+        // `enabled` is false — so `None` is behaviour-preserving for a
+        // disabled runtime. A user who never installed Kimi should not pay
+        // a process spawn every `KIMI_PROBE_CACHE_TTL` forever.
+        let kimi_hook = if runtimes_cfg.runtime_enabled(AgentRuntime::Kimi) {
+            Some(self.kimi_hook_support(now))
+        } else {
+            None
+        };
         ALL_RUNTIMES
             .iter()
             .map(|&runtime| {
@@ -440,7 +464,7 @@ impl HealthTracker {
                     runtime,
                     runtimes_cfg.runtime_enabled(runtime),
                     if runtime == AgentRuntime::Kimi {
-                        Some(&kimi_hook)
+                        kimi_hook.as_ref()
                     } else {
                         None
                     },
@@ -719,5 +743,29 @@ mod tests {
         // must win regardless).
         let second = tracker.kimi_hook_support(base + Duration::from_secs(1));
         assert_eq!(first, second);
+    }
+
+    #[test]
+    fn snapshot_skips_the_kimi_probe_when_kimi_is_disabled() {
+        // "No process was spawned" cannot be asserted without injecting a
+        // probe seam, so this pins the observable contract instead: with
+        // Kimi disabled, `snapshot` passes `None` for `kimi_hook` and both
+        // `availability_for` and `compatibility_message` short-circuit on
+        // `!enabled` before ever reading it — so the row is identical to
+        // what an unconditional probe would have produced.
+        let tracker = HealthTracker::new();
+        let mut cfg = enabled_cfg();
+        cfg.kimi.enabled = false;
+        let snapshot = tracker.snapshot(&cfg, Instant::now());
+        let kimi = snapshot
+            .iter()
+            .find(|h| h.runtime == AgentRuntime::Kimi)
+            .unwrap();
+        assert!(!kimi.enabled);
+        assert_eq!(kimi.availability, AdapterAvailability::Unavailable);
+        assert_eq!(
+            kimi.compatibility_message.as_deref(),
+            Some("Disabled in Settings — enable this runtime to accept its events.")
+        );
     }
 }

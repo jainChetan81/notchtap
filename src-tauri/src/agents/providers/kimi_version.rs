@@ -33,6 +33,9 @@
 //! version") is the actual verification step. Treat this constant as
 //! provisional until that manual check confirms or corrects it — do not
 //! read its presence as "verified against the hooks contract page".
+use std::process::{Command, Stdio};
+use std::time::{Duration, Instant};
+
 pub const MINIMUM_HOOK_VERSION: (u32, u32, u32) = (0, 9, 0);
 
 /// Human-readable form of [`MINIMUM_HOOK_VERSION`], surfaced in
@@ -107,6 +110,84 @@ pub fn hook_support(raw_version: &str) -> HookSupport {
     }
 }
 
+/// Hard ceiling on the `kimi --version` probe. Matches the 750ms budget
+/// `providers::delivery` already uses for its POST (`delivery.rs:33`) —
+/// the same "a helper must never make the caller wait perceptibly" rule,
+/// applied to the one other place this crate blocks on something it does
+/// not control.
+const PROBE_TIMEOUT: Duration = Duration::from_millis(750);
+
+/// How often the bounded wait polls the child. 10ms keeps the normal
+/// case (a `--version` that returns in a few ms) from paying a
+/// meaningful sampling penalty, at 75 polls worst case.
+const PROBE_POLL_INTERVAL: Duration = Duration::from_millis(10);
+
+/// Runs `program args…` with a hard time budget, returning its stdout on
+/// a successful, in-budget exit and `None` otherwise (spawn failure,
+/// non-zero exit, or timeout — in which case the child is killed and
+/// reaped before returning).
+///
+/// This exists because `Command::output()` blocks until the child exits,
+/// with no ceiling. That is a latent hang in two places: the
+/// `HealthTracker` probe runs on a tokio worker on the same path as
+/// `/agent/events` ingestion, and `notchtap-agent hook kimi` must never
+/// block the provider process that spawned it (see that binary's module
+/// doc: hook mode "ALWAYS exits 0 … a provider session must never be
+/// blocked").
+///
+/// LIMITATION, deliberate: stdout is piped and read only AFTER the child
+/// exits, so any command whose output exceeds the OS pipe buffer (64 KiB
+/// on macOS) will block on `write`, never exit, and therefore ALWAYS hit
+/// the timeout and return `None` — no matter how large the budget. It
+/// cannot deadlock (the budget always fires), but it also cannot ever
+/// succeed. Only pass commands with short, bounded output.
+///
+/// `program`/`args` are parameters rather than hardcoded so the bounded
+/// behaviour is unit-testable against a binary guaranteed to be present,
+/// without needing `kimi` installed — the same reason [`hook_support`] is
+/// split from [`detect_installed_version`].
+fn run_bounded(program: &str, args: &[&str], budget: Duration) -> Option<Vec<u8>> {
+    let mut child = Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .ok()?;
+
+    let deadline = Instant::now().checked_add(budget)?;
+    loop {
+        match child.try_wait() {
+            Ok(Some(status)) => {
+                if !status.success() {
+                    // Already reaped by `try_wait`; this `wait` returns
+                    // the cached status without blocking, and keeps every
+                    // exit path symmetric.
+                    let _ = child.wait();
+                    return None;
+                }
+                // Valid after `try_wait` returned `Some`: `wait` short-
+                // circuits on the cached status, and the stdout pipe is
+                // still readable because we own the read end.
+                return child.wait_with_output().ok().map(|o| o.stdout);
+            }
+            Ok(None) => {
+                if Instant::now() >= deadline {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return None;
+                }
+                std::thread::sleep(PROBE_POLL_INTERVAL);
+            }
+            Err(_) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return None;
+            }
+        }
+    }
+}
+
 /// The impure half: shells out to `kimi --version` and returns whatever
 /// it printed. Isolated in its own function precisely so
 /// [`hook_support`] stays unit-testable without a real `kimi` binary —
@@ -115,14 +196,8 @@ pub fn hook_support(raw_version: &str) -> HookSupport {
 /// missing, non-UTF8 output, non-zero exit) — a `None` here is the
 /// caller's cue to treat Kimi as `Unavailable` rather than guess.
 pub fn detect_installed_version() -> Option<String> {
-    let output = std::process::Command::new("kimi")
-        .arg("--version")
-        .output()
-        .ok()?;
-    if !output.status.success() {
-        return None;
-    }
-    let text = String::from_utf8(output.stdout).ok()?;
+    let stdout = run_bounded("kimi", &["--version"], PROBE_TIMEOUT)?;
+    let text = String::from_utf8(stdout).ok()?;
     let trimmed = text.trim();
     if trimmed.is_empty() {
         None
@@ -245,5 +320,48 @@ mod tests {
         // not have `kimi` on PATH, and this must not panic either way
         // (fail-open discipline extends to detection, not just delivery).
         let _ = probe_hook_support();
+    }
+
+    // --- run_bounded (plan 155): the probe must never outlive its budget
+
+    #[test]
+    fn run_bounded_returns_stdout_on_success() {
+        let out = run_bounded("/bin/echo", &["hello"], Duration::from_secs(5))
+            .expect("/bin/echo should succeed");
+        assert_eq!(String::from_utf8(out).unwrap().trim(), "hello");
+    }
+
+    #[test]
+    fn run_bounded_kills_a_child_that_outlives_its_budget() {
+        // Deliberate real-timer test. The behaviour under test IS
+        // wall-clock process termination, which cannot be simulated.
+        // Cost is bounded at ~100ms; the 2s assertion ceiling is a 20×
+        // margin.
+        let start = Instant::now();
+        assert_eq!(
+            run_bounded("/bin/sleep", &["5"], Duration::from_millis(100)),
+            None
+        );
+        assert!(start.elapsed() < Duration::from_secs(2));
+    }
+
+    #[test]
+    fn run_bounded_rejects_a_non_zero_exit() {
+        assert_eq!(
+            run_bounded("/bin/sh", &["-c", "exit 3"], Duration::from_secs(5)),
+            None
+        );
+    }
+
+    #[test]
+    fn run_bounded_returns_none_when_the_program_does_not_exist() {
+        assert_eq!(
+            run_bounded(
+                "/nonexistent/notchtap-probe-test",
+                &[],
+                Duration::from_secs(5)
+            ),
+            None
+        );
     }
 }
