@@ -1634,18 +1634,19 @@ mod tests {
         assert!(matches!(slot, crate::event::SlotState::Empty));
 
         assert_eq!(state.agent_registry.session_count().await, 1);
-        // The very first event for a brand-new session key is `Informational`
-        // + `terminal: false` — SessionStart in disguise (no dedicated wire
-        // kind for it, `registry::next_state`'s doc) — so it leaves the
-        // session at its `Starting` baseline rather than advancing to
-        // `Working`. A SECOND informational event (a real "progress" tick,
-        // not session start) is what actually proves the Working
-        // transition — and, more importantly for this ticket, that it
-        // creates no card either.
+        // This body is a `PostToolUse` declaring `state: "working"` — a
+        // mid-session progress tick, NOT a session start — so it advances
+        // to `Working` even though the registry has never seen the session
+        // before. It used to assert `Starting` here, on the theory that any
+        // first-seen informational event is "SessionStart in disguise";
+        // that theory made every live session read `Starting` whenever
+        // notchtap restarted mid-session. `registry::apply_event`'s
+        // `is_session_start` now reads the adapter's declared state
+        // instead of guessing from novelty.
         let key = AgentSessionKey::new(crate::agents::model::AgentRuntime::Codex, "s1").unwrap();
         assert_eq!(
             state.agent_registry.state_for(&key, Instant::now()).await,
-            Some(crate::agents::model::AgentSessionState::Starting)
+            Some(crate::agents::model::AgentSessionState::Working)
         );
 
         let progress_body = r#"{"schemaVersion":1,"eventId":"e2","runtime":"codex","sessionId":"s1","nativeEvent":"PostToolUse","kind":"informational","state":"working","terminal":false,"summary":"Still running tests"}"#;

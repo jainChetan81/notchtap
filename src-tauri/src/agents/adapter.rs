@@ -294,10 +294,11 @@ fn parse_kind(s: &str) -> Result<AgentEventKind, AdapterError> {
 
 /// Validated but NOT authoritative: the registry (`registry::next_state`)
 /// alone decides `AgentSession::state` from `kind` + `terminal` (spec
-/// §2.1). The wire `state` field is the adapter's own belief and is
-/// parsed here only so a malformed value is rejected as `400` rather
-/// than silently ignored — see this function's call site in
-/// `parse_wire_event`.
+/// §2.1). The wire `state` field is the adapter's own belief. It is
+/// carried onto `AgentEvent::declared_state` for one narrow job — telling
+/// a genuine session start apart from a mid-session informational event,
+/// which are otherwise byte-identical on the wire — and a malformed value
+/// is rejected as `400` rather than silently ignored.
 fn parse_state(s: &str) -> Result<AgentSessionState, AdapterError> {
     match s {
         "starting" => Ok(AgentSessionState::Starting),
@@ -439,7 +440,7 @@ pub fn parse_wire_event(body: &[u8]) -> Result<ParsedAgentEvent, AdapterError> {
     let state_raw = wire
         .state
         .ok_or_else(|| AdapterError::MalformedJson("missing state".to_string()))?;
-    parse_state(&state_raw)?; // validated, intentionally discarded — see parse_state's doc
+    let declared_state = parse_state(&state_raw)?;
 
     let terminal = wire.terminal.unwrap_or(false);
     let summary = wire.summary.and_then(|s| sanitize_summary(&s));
@@ -499,6 +500,7 @@ pub fn parse_wire_event(body: &[u8]) -> Result<ParsedAgentEvent, AdapterError> {
     debug_assert!(subagent.iter().count() <= MAX_SUBAGENTS_PER_EVENT);
 
     let event = AgentEvent {
+        declared_state,
         event_id,
         session_key,
         sequence: wire.sequence,

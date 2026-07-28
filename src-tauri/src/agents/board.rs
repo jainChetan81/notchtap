@@ -504,6 +504,7 @@ mod tests {
             session_key,
             sequence: None,
             kind,
+            declared_state: AgentSessionState::Starting,
             terminal: false,
             capabilities: Vec::new(),
             summary: None,

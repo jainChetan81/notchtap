@@ -50,6 +50,14 @@ pub struct AgentEvent {
     /// kind `Informational` with `terminal` true is treated as a
     /// graceful `Completed` — see [`next_state`].
     pub terminal: bool,
+    /// The adapter's OWN belief about the session's state (spec §3.1's
+    /// `state`). NOT authoritative — [`next_state`] still decides every
+    /// transition (spec §2.1). It is carried for exactly one purpose:
+    /// telling a real session start apart from a mid-session
+    /// informational event, which are otherwise identical on the wire
+    /// (both `kind: informational`, both non-terminal). See
+    /// `apply_event`'s `is_session_start`.
+    pub declared_state: AgentSessionState,
     pub capabilities: Vec<AgentCapability>,
     pub summary: Option<String>,
     pub details: Vec<AgentDetail>,
@@ -252,12 +260,27 @@ impl AgentRegistry {
             .entry(target_key.clone())
             .or_insert_with(|| AgentSession::new(target_key, now));
 
-        // See `next_state`'s doc: a first-event `Informational` is
+        // See `next_state`'s doc: a session-start `Informational` is
         // SessionStart in disguise (no dedicated wire kind exists for
         // it) and must leave the session at its `Starting` baseline
         // rather than immediately advancing to `Working`.
-        let is_session_start =
-            is_new_session && event.kind == AgentEventKind::Informational && !event.terminal;
+        //
+        // `declared_state` is what disambiguates it. "New to this
+        // registry" is NOT enough on its own: notchtap restarting while
+        // an agent session is already running makes that session's next
+        // ordinary event — a `PostToolUse`, say — the first one this
+        // registry has ever seen, and it is `Informational` and
+        // non-terminal just like a real SessionStart. Keying only on
+        // novelty pinned every live session at `Starting` after every
+        // restart, with its elapsed timer ticking up beside a summary
+        // that plainly said work had happened. The adapters already
+        // distinguish the two (`state: "starting"` vs `state:
+        // "working"`, see `providers/claude_code.rs`); this reads that
+        // rather than guessing.
+        let is_session_start = is_new_session
+            && event.kind == AgentEventKind::Informational
+            && !event.terminal
+            && event.declared_state == AgentSessionState::Starting;
         let new_state = if is_session_start {
             session.state
         } else {
@@ -424,6 +447,7 @@ mod tests {
             session_key,
             sequence: None,
             kind,
+            declared_state: AgentSessionState::Starting,
             terminal,
             capabilities: Vec::new(),
             summary: None,
@@ -434,12 +458,72 @@ mod tests {
         }
     }
 
+    /// Same as [`event`], but lets a test state what the adapter
+    /// declared — the field that tells a real SessionStart apart from a
+    /// mid-session informational event.
+    fn event_declaring(
+        session_key: AgentSessionKey,
+        event_id: &str,
+        kind: AgentEventKind,
+        declared_state: AgentSessionState,
+    ) -> AgentEvent {
+        AgentEvent {
+            declared_state,
+            ..event(session_key, event_id, kind, false)
+        }
+    }
+
     fn registry() -> AgentRegistry {
         AgentRegistry::new(
             Duration::from_secs(300),
             DEFAULT_TERMINAL_RETENTION,
             DEFAULT_STALE_RETENTION,
         )
+    }
+
+    // --- session-start disambiguation (2026-07-28 regression) --------
+
+    #[test]
+    fn a_mid_session_informational_on_an_unseen_session_becomes_working() {
+        // notchtap restarting while an agent session is already running
+        // makes that session's next ordinary event the first one this
+        // registry has ever seen. It is `Informational` and non-terminal,
+        // exactly like a real SessionStart — but the adapter declared
+        // `working`, so it must NOT be mistaken for a session start.
+        // Before this fix every live session sat at `Starting` after
+        // every restart, elapsed timer ticking, summary saying otherwise.
+        let mut registry = registry();
+        let k = key(AgentRuntime::ClaudeCode, "restart-mid-session");
+        let outcome = registry.apply_event(
+            event_declaring(
+                k.clone(),
+                "e1",
+                AgentEventKind::Informational,
+                AgentSessionState::Working,
+            ),
+            Instant::now(),
+        );
+        assert_eq!(outcome, ApplyOutcome::Applied);
+        assert_eq!(registry.get(&k).unwrap().state, AgentSessionState::Working);
+    }
+
+    #[test]
+    fn a_declared_session_start_keeps_the_starting_baseline() {
+        // The other half of the same rule: a genuine SessionStart (the
+        // adapters send `state: "starting"`) still parks at `Starting`
+        // instead of jumping straight to `Working`.
+        let mut registry = registry();
+        let k = key(AgentRuntime::ClaudeCode, "genuine-start");
+        registry.apply_event(
+            event_declaring(
+                k.clone(),
+                "e1",
+                AgentEventKind::Informational,
+                AgentSessionState::Starting,
+            ),
+            Instant::now(),
+        );
+        assert_eq!(registry.get(&k).unwrap().state, AgentSessionState::Starting);
     }
 
     // --- §2.1 transition rules -------------------------------------
