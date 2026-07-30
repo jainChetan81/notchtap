@@ -25,6 +25,7 @@ mod history;
 mod hover;
 mod http;
 mod logging;
+#[cfg(target_os = "macos")]
 mod login_item;
 mod net;
 mod notifier;
@@ -49,7 +50,9 @@ use std::sync::{Arc, Mutex as StdMutex, Once, OnceLock};
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::webview::PageLoadEvent;
-use tauri::{ActivationPolicy, Manager};
+#[cfg(target_os = "macos")]
+use tauri::ActivationPolicy;
+use tauri::Manager;
 
 use crate::config::Config;
 use crate::crests::CrestCache;
@@ -279,8 +282,10 @@ pub fn run() {
     let connectors = Arc::new(connector_handles);
     let server_once = Arc::new(Once::new());
 
-    tauri::Builder::default()
-        .plugin(tauri_nspanel::init())
+    let builder = tauri::Builder::default();
+    #[cfg(target_os = "macos")]
+    let builder = builder.plugin(tauri_nspanel::init());
+    builder
         // v5 settings commands (settings.rs) — every one of these is also
         // listed in build.rs's AppManifest::commands; that pairing is what
         // keeps them deniable to the overlay window (spec §2).
@@ -304,6 +309,7 @@ pub fn run() {
             settings::send_agent_test_event,
         ])
         .setup(move |app| {
+            #[cfg(target_os = "macos")]
             app.set_activation_policy(ActivationPolicy::Accessory);
             // About section (plan: get_about_info) reports process uptime
             // from this, not system uptime — captured once, here, before
@@ -800,6 +806,7 @@ pub fn run() {
                 ))?;
             }
 
+            #[cfg(target_os = "macos")]
             login_item::register();
             // v6: polling is enabled/disabled once at boot from Config and
             // never flipped again (no longer tray-toggleable — the tray's

@@ -44,7 +44,6 @@ axum = "0.8.9"
 # its piped stdout) — no other module in this crate spawns a long-lived
 # child, so neither feature was needed before this.
 tokio = { version = "1.52.3", features = ["rt-multi-thread", "macros", "time", "net", "sync", "process", "io-util"] }
-smappservice-rs = "0.1"
 reqwest = { version = "0.13.4", features = ["json", "gzip"] }
 chrono = "0.4"
 feed-rs = "2"
@@ -58,6 +57,7 @@ sysinfo = "0.32"
 tauri-plugin-global-shortcut = "2.3.2"
 objc2-app-kit = { version = "0.3.2", features = ["NSWindow"] }
 tauri-nspanel = { git = "https://github.com/ahkohd/tauri-nspanel", rev = "a3122e894383aa068ec5365a42994e3ac94ba1b6" }
+smappservice-rs = "0.1"
 
 [dev-dependencies]
 tower = { version = "0.5.3", features = ["util"] }
