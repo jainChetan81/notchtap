@@ -1539,7 +1539,11 @@ describe("StatusRailCard", () => {
   // between them landed correctly.
   describe("contentExitVariants (plan 129 T3)", () => {
     it("the rotation exit uses ROTATION_EXIT_MS, in seconds, with the house ease", () => {
-      const variant = contentExitVariants.exit({ isRotation: true, isInterrupt: false }) as {
+      const variant = contentExitVariants.exit({
+        isRotation: true,
+        isInterrupt: false,
+        reduceMotion: false,
+      }) as {
         transition: { duration: number; ease: unknown };
       };
       expect(variant.transition.duration).toBe(ROTATION_EXIT_MS / 1000);
@@ -1547,7 +1551,11 @@ describe("StatusRailCard", () => {
     });
 
     it("the non-rotation (promotion/exit) leg uses CONTENT_EXIT_MS, in seconds, with the house ease", () => {
-      const variant = contentExitVariants.exit({ isRotation: false, isInterrupt: false }) as {
+      const variant = contentExitVariants.exit({
+        isRotation: false,
+        isInterrupt: false,
+        reduceMotion: false,
+      }) as {
         transition: { duration: number; ease: unknown };
       };
       expect(variant.transition.duration).toBe(CONTENT_EXIT_MS / 1000);
@@ -1564,7 +1572,11 @@ describe("StatusRailCard", () => {
       // guaranteed hardware-accelerated under Motion. Now a single full
       // `transform` string, so this test asserts on that string instead
       // of two numeric fields.
-      const variant = contentExitVariants.exit({ isRotation: true, isInterrupt: true }) as {
+      const variant = contentExitVariants.exit({
+        isRotation: true,
+        isInterrupt: true,
+        reduceMotion: false,
+      }) as {
         opacity: number;
         transform: string;
         transition: { duration: number; ease: unknown };
@@ -1576,6 +1588,29 @@ describe("StatusRailCard", () => {
       expect(variant.opacity).toBe(0);
       expect(variant.transform).toContain("translateY(8px)");
       expect(variant.transform).toContain("scale(0.96)");
+    });
+
+    // review fix (/review-animations, fresh-agent pass): motion-dom's own
+    // reduced-motion gate (MotionConfig reducedMotion="user") keys off
+    // `positionalKeys` (x/y/scale/…) and never matches a raw `transform`
+    // STRING target — confirmed by reading motion-dom's source directly —
+    // so this codebase has to branch explicitly instead of relying on the
+    // library. Pins that the interrupt leg drops `transform` entirely
+    // under reduced motion, keeping only the opacity fade.
+    it("the interrupt exit under reduceMotion drops the transform yank entirely, keeping only the opacity fade", () => {
+      const variant = contentExitVariants.exit({
+        isRotation: true,
+        isInterrupt: true,
+        reduceMotion: true,
+      }) as {
+        opacity: number;
+        transform?: string;
+        transition: { duration: number; ease: unknown };
+      };
+      expect(variant.transition.duration).toBe(INTERRUPT_EXIT_MS / 1000);
+      expect(variant.transition.ease).toEqual(INTERRUPT_EASE);
+      expect(variant.opacity).toBe(0);
+      expect(variant.transform).toBeUndefined();
     });
   });
 

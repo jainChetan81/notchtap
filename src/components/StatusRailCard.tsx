@@ -1,4 +1,4 @@
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CONTENT_EXIT_MS,
@@ -147,13 +147,25 @@ const RIPPLE_RING_COUNT = 3;
 // checked first and wins outright — the plain `isRotation` branch below
 // only ever runs for an ordinary end-of-turn rotation.
 export const contentExitVariants = {
-  exit: (custom: { isRotation: boolean; isInterrupt: boolean }) => {
+  // review fix (/review-animations, fresh-agent pass): `reduceMotion` was
+  // added to `custom` because Motion's own `MotionConfig
+  // reducedMotion="user"` mechanism (main.tsx) never reaches this branch —
+  // it keys its reduced-motion snap off `positionalKeys` (x/y/scale/…,
+  // motion-dom's own `transformPropOrder`), which a raw `transform` STRING
+  // target (below) never matches, confirmed by reading motion-dom's source
+  // directly. So reduced motion has to be handled explicitly here instead
+  // of relying on the library to catch it — dropping the `transform` field
+  // entirely under reduced motion, keeping only the opacity fade, matching
+  // the shape the non-interrupt branches below already use.
+  exit: (custom: { isRotation: boolean; isInterrupt: boolean; reduceMotion: boolean }) => {
     if (custom.isInterrupt) {
-      return {
-        opacity: 0,
-        transform: "translateY(8px) scale(0.96)",
-        transition: { duration: INTERRUPT_EXIT_MS / 1000, ease: INTERRUPT_EASE },
-      };
+      return custom.reduceMotion
+        ? { opacity: 0, transition: { duration: INTERRUPT_EXIT_MS / 1000, ease: INTERRUPT_EASE } }
+        : {
+            opacity: 0,
+            transform: "translateY(8px) scale(0.96)",
+            transition: { duration: INTERRUPT_EXIT_MS / 1000, ease: INTERRUPT_EASE },
+          };
     }
     return custom.isRotation
       ? { opacity: 0, transition: { duration: ROTATION_EXIT_MS / 1000, ease: NOTCHTAP_EASE } }
@@ -490,6 +502,14 @@ export function StatusRailCard({
     trueIdle,
     idleFaceEligible,
   } = useExitChoreography(slot, restingState, hovered);
+
+  // review fix (/review-animations): `motion/react`'s own reduced-motion
+  // context (`MotionConfig reducedMotion="user"`, main.tsx) doesn't reach
+  // the raw `transform` STRING targets below (Motion's reduced-motion gate
+  // keys off `positionalKeys` — x/y/scale/… — which "transform" the string
+  // never matches) — see `contentExitVariants`'s own doc for the full
+  // "why". Read explicitly here instead and threaded through by hand.
+  const reduceMotion = useReducedMotion() ?? false;
 
   // plan 091: the outer shell (`.card-assembly`) now owns ONLY geometry-
   // and-effects classes — priority accent, hover diagnostic, the goal/
@@ -978,7 +998,7 @@ export function StatusRailCard({
               lighter opacity-only rotation entrance. `enterAsPromotion`
               names that combined condition once so every prop below
               reads it consistently. */}
-              <AnimatePresence mode="wait" custom={{ isRotation, isInterrupt }}>
+              <AnimatePresence mode="wait" custom={{ isRotation, isInterrupt, reduceMotion }}>
                 {showing && (
                   <motion.div
                     key={swapKey}
@@ -1003,13 +1023,17 @@ export function StatusRailCard({
                     // incoming card through this same slide-in branch, not
                     // the rotation's opacity-only one — see this
                     // AnimatePresence's own doc comment above.
+                    // review fix (/review-animations): `reduceMotion` gates
+                    // the `transform` field explicitly — see the hook's own
+                    // doc above for why `MotionConfig` alone doesn't catch
+                    // a raw `transform` string target.
                     initial={
-                      enterAsPromotion
+                      enterAsPromotion && !reduceMotion
                         ? { opacity: 0, transform: "translateY(-4px)" }
                         : { opacity: 0 }
                     }
                     animate={
-                      enterAsPromotion
+                      enterAsPromotion && !reduceMotion
                         ? { opacity: 1, transform: "translateY(0px)" }
                         : { opacity: 1 }
                     }

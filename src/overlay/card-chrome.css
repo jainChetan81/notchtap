@@ -128,9 +128,19 @@
    only the curve changes, so this is a pure desync fix, not a pacing
    change. Mirrors `.exiting`'s own precedent below and plan 164's
    identical fix for the hover-reveal leg above. */
+/* review fix (/review-animations, fresh-agent pass): `transform` added
+   back to this list — `transition` is a single non-additive shorthand, so
+   without it, this rule's higher specificity than the base `.card-assembly`
+   rule silently dropped the base rule's `transform var(--hover-ms) ...`
+   leg on any element that's both `.expanded` and `.hovered` (both are
+   independent booleans in `cardClass`, so they DO co-occur) — the
+   hover-breathe scale snapped instead of easing. Mirrors `.exiting` below,
+   which already carries both legs for the identical reason. */
 .card-root .card-assembly.expanded {
   --cw: min(max(calc(500px * var(--card-scale)), calc(var(--notchtap-cutout-width, 200px) + (2 * 60px * var(--card-scale)))), 100%);
-  transition: width var(--expand-ms, 320ms) var(--ease-notchtap);
+  transition:
+    width var(--expand-ms, 320ms) var(--ease-notchtap),
+    transform var(--hover-ms, 160ms) var(--ease-notchtap);
 }
 
 /* plan 105 (Step C, fixing the plan-085 bug): bare notch mode
@@ -142,8 +152,22 @@
    order below it), so this narrows it back down; `:has(.idle-peek)`
    (below) restores the normal idle width the instant the peek opens on
    hover, since the below-block needs real room to render into. */
+/* review fix (/review-animations, fresh-agent pass): plain `.bare` (no
+   `:has(.idle-peek)`) previously had no own `transition`, so un-hovering
+   out of the idle-peek-revealed rail (this rule becoming the sole match
+   again) fell back to the base `.card-assembly` rule's bouncy
+   `--ease-notchtap-pop` — reintroducing on the way OUT exactly the
+   many-times-a-session bounce plan 164 scoped away on the way IN. Giving
+   `.bare` the SAME width+transform transition as `.bare:has(.idle-peek)`
+   below means whichever of the two matches, the curve is identical, so
+   the direction stops mattering. `transform` included for the same
+   hover-breathe-coexistence reason as `.expanded` above — `.bare` and
+   `.hovered` can coexist too (see `.bare.hovered` rules below). */
 .card-root .card-assembly.bare {
   --cw: min(var(--notchtap-cutout-width, 200px), 100%);
+  transition:
+    width var(--reveal-ms, 260ms) var(--ease-notchtap),
+    transform var(--hover-ms, 160ms) var(--ease-notchtap);
 }
 .card-root .card-assembly.bare .flank-left,
 .card-root .card-assembly.bare .flank-right {
@@ -187,9 +211,16 @@
    has already finished. Mirrors `.exiting`'s own precedent below ("exits
    must not bounce") — the same scoping principle applied to the
    growing/reveal direction instead of the shrinking direction. */
+/* review fix (/review-animations, fresh-agent pass): `transform` added
+   back — same "shorthand isn't additive, this rule's specificity was
+   silently dropping the base rule's hover-breathe leg" issue as
+   `.expanded` above; `.bare` (below, no `:has()`) now carries the
+   identical pair so the un-hover leg matches too. */
 .card-root .card-assembly.bare:has(.idle-peek) {
   --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
-  transition: width var(--reveal-ms, 260ms) var(--ease-notchtap);
+  transition:
+    width var(--reveal-ms, 260ms) var(--ease-notchtap),
+    transform var(--hover-ms, 160ms) var(--ease-notchtap);
 }
 /* 2026-07-23 (operator minimal-notch spec, Task 1.2): a hovered bare
    notch paints its flanks black again — StatusRailCard.tsx's
