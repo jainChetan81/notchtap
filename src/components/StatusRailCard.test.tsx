@@ -1559,10 +1559,14 @@ describe("StatusRailCard", () => {
     // sharp ease (not NOTCHTAP_EASE), and a small y/scale "yank" so the
     // handover reads as cut short, not just quicker.
     it("the interrupt exit uses INTERRUPT_EXIT_MS with its own sharp ease and a yank, even when isRotation is also true", () => {
+      // plan 157 (/improve-animations audit finding #2, performance):
+      // the yank used to be separate `y`/`scale` shorthand fields — not
+      // guaranteed hardware-accelerated under Motion. Now a single full
+      // `transform` string, so this test asserts on that string instead
+      // of two numeric fields.
       const variant = contentExitVariants.exit({ isRotation: true, isInterrupt: true }) as {
         opacity: number;
-        y: number;
-        scale: number;
+        transform: string;
         transition: { duration: number; ease: unknown };
       };
       expect(variant.transition.duration).toBe(INTERRUPT_EXIT_MS / 1000);
@@ -1570,8 +1574,8 @@ describe("StatusRailCard", () => {
       expect(variant.transition.ease).toEqual(INTERRUPT_EASE);
       expect(variant.transition.ease).not.toEqual(NOTCHTAP_EASE);
       expect(variant.opacity).toBe(0);
-      expect(variant.y).toBeGreaterThan(0);
-      expect(variant.scale).toBeLessThan(1);
+      expect(variant.transform).toContain("translateY(8px)");
+      expect(variant.transform).toContain("scale(0.96)");
     });
   });
 

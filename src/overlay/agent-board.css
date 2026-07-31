@@ -240,6 +240,19 @@
   }
 }
 
+/* plan 161: this file was the one animated overlay stylesheet with no
+   reduced-motion coverage at all. The tick (a real transform/scale) is
+   dropped entirely; the breathe (opacity-only, already bounded to 4
+   cycles per plan 149's own doc above) stays — it's comprehension-aiding
+   "this just changed" feedback, not a position change, so it survives
+   per the "keep transitions that aid comprehension, remove position
+   changes" split. */
+@media (prefers-reduced-motion: reduce) {
+  .card-root .agent-dot.pulse {
+    animation: agent-dot-breathe 2.2s ease-in-out 4;
+  }
+}
+
 /* The four (+ stale) accent bindings — set `--agent-accent` once per
    row/card via a class on that element, consumed by the dot/pill/state
    text above. `agent-waiting` covers both waiting_for_permission and

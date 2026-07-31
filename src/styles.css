@@ -2,7 +2,20 @@
   --card-scale: 1;
   --card-radius: 8px;
   --card-opacity: 1;
-  /* FEEL-CHECK (item 2, card-entry mass): a dedicated ease with a slight
+  /* plan 163: `--ease-notchtap` is only ever defined inside
+     vendor/shared-ui/design/tokens.css's `@theme inline {}` block, which
+     Tailwind's Vite plugin only expands for CSS reachable through an
+     `@import "tailwindcss";` root — the overlay's entry (main.tsx ->
+     overlay-card.css/styles.css) never has one (only
+     src/settings/base.css does), so the token silently never resolves
+     here. Same defense-in-depth convention `--ease-notchtap-pop` already
+     uses in this file: redeclare the plain value directly so every
+     overlay consumer (45 usages across 10 files) gets a real, working
+     custom property regardless of Tailwind's theme-scoping. Numeric
+     value is the exact twin of tokens.css's own `--ease-notchtap` and of
+     animationTiming.ts's `NOTCHTAP_EASE` array — keep all three in sync
+     if this curve is ever retuned.
+     FEEL-CHECK (item 2, card-entry mass): a dedicated ease with a slight
      overshoot (vs. the house `--ease-notchtap`'s pure settle), used ONLY
      by `.card-assembly`'s base width transition (card-chrome.css) so
      promotion/expand width growth lands with a touch of physical mass.
@@ -11,6 +24,7 @@
      stylesheet) — same defense-in-depth convention animationTiming.ts's
      own injected vars use. Revert = swap that consumer's timing function
      back to `var(--ease-notchtap)`. */
+  --ease-notchtap: cubic-bezier(0.22, 1, 0.36, 1);
   --ease-notchtap-pop: cubic-bezier(0.3, 1.36, 0.44, 1);
 }
 

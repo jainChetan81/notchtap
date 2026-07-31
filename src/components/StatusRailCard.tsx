@@ -151,8 +151,7 @@ export const contentExitVariants = {
     if (custom.isInterrupt) {
       return {
         opacity: 0,
-        y: 8,
-        scale: 0.96,
+        transform: "translateY(8px) scale(0.96)",
         transition: { duration: INTERRUPT_EXIT_MS / 1000, ease: INTERRUPT_EASE },
       };
     }
@@ -1004,8 +1003,16 @@ export function StatusRailCard({
                     // incoming card through this same slide-in branch, not
                     // the rotation's opacity-only one — see this
                     // AnimatePresence's own doc comment above.
-                    initial={enterAsPromotion ? { opacity: 0, y: -4 } : { opacity: 0 }}
-                    animate={enterAsPromotion ? { opacity: 1, y: 0 } : { opacity: 1 }}
+                    initial={
+                      enterAsPromotion
+                        ? { opacity: 0, transform: "translateY(-4px)" }
+                        : { opacity: 0 }
+                    }
+                    animate={
+                      enterAsPromotion
+                        ? { opacity: 1, transform: "translateY(0px)" }
+                        : { opacity: 1 }
+                    }
                     // `data-rotation-swap`/`data-interrupt-swap` are real DOM
                     // attributes, not pure decoration: they're how the test
                     // suite pins this leg-detection logic (motion's own
