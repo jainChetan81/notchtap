@@ -1,0 +1,718 @@
+<!doctype html>
+<!-- This mock mirrors the CURRENT shipped Agent Board — not a historical
+     design exploration. Geometry, class names, color tokens, and timing
+     constants below are read directly from the real source:
+       src/components/AgentBoard.tsx   — hero card, compact rows, expanded list, transitions
+       src/components/FlankClock.tsx, StatusDots.tsx — shared shell furniture (same as StatusRailCard)
+       src/lib/presentation.ts         — AGENT_STATE_PRESENTATION, AGENT_RUNTIME_LABEL/CLASS, elapsedLabel
+       src/lib/sourceColors.ts         — SOURCE_RUNTIME_COLORS
+       src/overlay/card-chrome.css     — the shared notch/HUD shell (flanks, cutout, below-block)
+       src/overlay/agent-board.css     — Agent Board layout, state accents, runtime identity, bounded pulse
+       src/overlay/source-identity.css — the four runtime brand colors
+       src/overlay/status-dots.css     — the right-flank status dots (shared with StatusRailCard)
+       src/animationTiming.ts          — the single-sourced JS/CSS timing constants
+       vendor/shared-ui/design/tokens.css — the overlay accent color tokens
+     This file is the missing sibling of notch-states.html — that file's own
+     header explicitly scopes out the Agent Board ("was never part of this
+     file's scope"), since AgentBoard.tsx is a separate top-level mode
+     App.tsx swaps in (never StatusRailCard's showing/expanded states). This
+     file covers ONLY that surface: every session state, every runtime,
+     resting (hero + compact rows) and hover-expanded (full scrollable
+     list), and the three motion primitives that are unique to this
+     component (ROW_TRANSITION, HERO_SWAP_TRANSITION, the bounded dot
+     pulse). It is still a static, hand-authored mock (no React, no
+     `motion` library, no build step) — verify against source before
+     treating a specific pixel value as current truth.
+     Last synced against source: 2026-08-01. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>agent board — mirrors the shipped Agent Board</title>
+<style>
+  /* ============== real overlay tokens (vendor/shared-ui/design/tokens.css,
+     src/animationTiming.ts, src/styles.css :root) — identical block to
+     notch-states.html, kept byte-for-byte in sync. ============== */
+  :root {
+    --overlay-blue: #0a84ff;
+    --overlay-teal: #55d6bd;
+    --overlay-coral: #ff6b57;
+    --overlay-green: #7fe08d;
+    --overlay-amber: #f0c46a;
+    --overlay-fg: #f5f7fa;
+    --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+
+    --ease-notchtap: cubic-bezier(.22,1,.36,1);
+    --ease-notchtap-pop: cubic-bezier(.3,1.36,.44,1);
+    --expand-ms: 320ms;
+    --hover-ms: 160ms;      /* HOVER_MS — status-dot flips, agent-dot color morph */
+
+    --notchtap-cutout-width: 200px;
+    --notchtap-cutout-height: 32px;
+    --card-scale: 1;
+    --card-radius: 8px;
+    --card-opacity: 1;
+
+    /* ---- this page's OWN viewer chrome, not part of the mirrored app ---- */
+    --bg: #101318; --ink: #e8ecf1; --dim: #8b95a3; --rule: rgba(255,255,255,0.09); --page-accent: #7fe08d;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-sans); padding: 44px 24px 100px; }
+  main { max-width: 920px; margin: 0 auto; }
+  h1 { font-size: 21px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .lede { color: var(--dim); font-size: 13px; line-height: 1.6; max-width: 68ch; margin: 0 0 10px; }
+  .note { font-size: 11.5px; color: var(--dim); border-left: 2px solid var(--rule); padding-left: 10px; margin: 0 0 36px; max-width: 66ch; line-height: 1.6; }
+  code { font-family: var(--font-mono); color: #9fc3e8; }
+  section { margin-bottom: 46px; padding-top: 24px; border-top: 1px solid var(--rule); }
+  h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); margin: 0 0 4px; }
+  .section-sub { font-size: 12px; color: var(--dim); margin: 0 0 14px; max-width: 64ch; line-height: 1.55; }
+  .rig-label { font: 700 10px/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); margin: 0 0 8px; }
+  .tag { display: inline-block; font: 700 8.5px/1 var(--font-mono); letter-spacing: 0.05em; text-transform: uppercase; padding: 2px 6px; border-radius: 999px; margin-left: 6px; color: var(--page-accent); background: rgba(127,224,141,0.12); border: 1px solid rgba(127,224,141,0.3); }
+
+  .rig { position: relative; background: #05060a; border-radius: 10px; overflow: visible; box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 16px 32px rgba(0,0,0,0.4); }
+  .menubar { position: relative; height: 26px; background: #1c1d20; border-radius: 10px 10px 0 0; }
+  .stage { position: relative; min-height: 90px; background: repeating-linear-gradient(45deg, #08090c 0 2px, #0c0d10 2px 4px); border-radius: 0 0 10px 10px; overflow: hidden; padding-bottom: 24px; }
+
+  .geo-table { width: 100%; border-collapse: collapse; font-size: 11.5px; margin: 10px 0 4px; }
+  .geo-table th, .geo-table td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--rule); }
+  .geo-table th { color: var(--dim); font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; }
+  .geo-table td.val { font-family: var(--font-mono); color: #b6f5e5; white-space: nowrap; }
+
+  /* ============== real shell geometry (card-chrome.css, mirrored — the
+     Agent Board mounts inside the SAME shell every other card uses) ========= */
+  .card-root .card-assembly {
+    position: relative; box-sizing: border-box; display: grid;
+    grid-template-columns: 1fr var(--notchtap-cutout-width) 1fr;
+    grid-template-rows: var(--notchtap-cutout-height) auto;
+    width: var(--cw, min(max(calc(400px * var(--card-scale)), calc(var(--notchtap-cutout-width) + (2 * 60px * var(--card-scale)))), 100%));
+    margin: 0 auto; isolation: isolate; transform-origin: top center;
+    filter: drop-shadow(0 7px 18px rgba(0,0,0,0.5));
+    transition: width var(--expand-ms) var(--ease-notchtap-pop), transform var(--hover-ms) var(--ease-notchtap);
+  }
+  /* AgentBoard.tsx hardcodes the outer wrapper as `.card-assembly.expanded
+     .agent-board-shell` UNCONDITIONALLY — the shell is ALWAYS the 500px
+     expanded formula, whether the board is resting (hero+rows) or
+     hover-expanded (full list). Only the INNER content swaps; the shell
+     itself never shrinks back to the 400px "showing" width a generic
+     StatusRailCard notification uses. This is easy to miss reading the
+     component in isolation and is the one geometry fact this file exists
+     to make visible. */
+  .card-root .card-assembly.expanded { --cw: min(max(calc(500px * var(--card-scale)), calc(var(--notchtap-cutout-width) + (2 * 60px * var(--card-scale)))), 100%); }
+  .card-root .flank-left, .card-root .flank-right {
+    box-sizing: border-box; grid-row: 1; overflow: hidden; display: flex; align-items: center;
+    background: #000; color: var(--overlay-fg); min-width: 0;
+  }
+  .card-root .flank-left { grid-column: 1; justify-content: flex-start; padding-left: 16px; }
+  .card-root .flank-right { grid-column: 3; justify-content: flex-end; padding-right: 16px; }
+  .card-root .synthetic-cutout { grid-column: 2; grid-row: 1; background: #000; }
+  .card-root .notch-gill { display: none; position: absolute; top: 0; width: 10px; height: 10px; pointer-events: none; }
+  .card-root .card-assembly:not(:has(.below-block)) .notch-gill { display: block; }
+  .card-root .notch-gill-left { left: -10px; background: radial-gradient(circle at bottom left, transparent 10px, #000 10px); }
+  .card-root .notch-gill-right { right: -10px; background: radial-gradient(circle at bottom right, transparent 10px, #000 10px); }
+  .card-root .below-block {
+    grid-column: 1 / -1; grid-row: 2; position: relative; box-sizing: border-box; overflow: hidden;
+    width: 100%; min-width: 0; background: rgba(0,0,0,var(--card-opacity)); color: var(--overlay-fg);
+    border-bottom-left-radius: var(--card-radius); border-bottom-right-radius: var(--card-radius);
+  }
+  .card-root .time-only { font: 800 15px/1 var(--font-mono); letter-spacing: 0.02em; color: var(--overlay-fg); white-space: nowrap; }
+  .card-root .status-dots { display: flex; align-items: center; gap: 8px; flex: none; }
+  .card-root .status-dot { box-sizing: border-box; width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .card-root .status-dot.football { background: var(--overlay-green); }
+  .card-root .status-dot.news { background: var(--overlay-coral); }
+  .card-root .status-dot.weather { background: var(--overlay-amber); }
+  .card-root .status-dot.active { box-shadow: 0 0 8px 1px currentColor; }
+  .card-root .status-dot.football.active { color: var(--overlay-green); }
+  .card-root .status-dot.news.active { color: var(--overlay-coral); }
+  .card-root .status-dot.weather.active { color: var(--overlay-amber); }
+  .card-root .status-dot.dim { opacity: 0.22; box-shadow: none; }
+
+  /* ============== agent-board.css, verbatim ============== */
+  .card-root .agent-board { display: flex; flex-direction: column; gap: 8px; padding: 10px 14px 12px; }
+  .card-root .agent-board-primary { display: flex; flex-direction: column; gap: 4px; }
+  .card-root .agent-board-primary-head { display: flex; align-items: center; gap: 7px; }
+  .card-root .agent-board-runtime { font-weight: 600; font-size: 13px; color: var(--cat, var(--overlay-fg)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-root .agent-board-state-pill { margin-left: auto; font-size: 10.5px; font-weight: 600; letter-spacing: 0.02em; padding: 2px 7px; border-radius: 999px; white-space: nowrap; background: color-mix(in srgb, var(--agent-accent, var(--overlay-fg)) 18%, transparent); color: var(--agent-accent, var(--overlay-fg)); }
+  .card-root .agent-board-project { font-size: 11.5px; color: color-mix(in srgb, var(--overlay-fg) 62%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .card-root .agent-board-summary { font-size: 12px; line-height: 1.35; color: color-mix(in srgb, var(--overlay-fg) 82%, transparent); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .card-root .agent-board-elapsed { font-size: 10.5px; font-variant-numeric: tabular-nums; color: color-mix(in srgb, var(--overlay-fg) 48%, transparent); }
+  .card-root .agent-board-rows { display: flex; flex-direction: column; gap: 3px; border-top: 1px solid color-mix(in srgb, var(--overlay-fg) 14%, transparent); padding-top: 6px; max-height: 150px; overflow: hidden; }
+  .card-root .agent-row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: color-mix(in srgb, var(--overlay-fg) 70%, transparent); white-space: nowrap; }
+  .card-root .agent-row-runtime { font-weight: 600; color: var(--cat, var(--overlay-fg)); flex-shrink: 0; }
+  .card-root .agent-runtime-tick { width: 4px; height: 4px; flex-shrink: 0; background: var(--cat, var(--overlay-fg)); box-shadow: 0 0 4px var(--cat, transparent); }
+  .card-root .agent-row-project { overflow: hidden; text-overflow: ellipsis; color: color-mix(in srgb, var(--overlay-fg) 55%, transparent); }
+  .card-root .agent-row-state { margin-left: auto; flex-shrink: 0; color: var(--agent-accent, var(--overlay-fg)); }
+  .card-root .agent-row-elapsed { flex-shrink: 0; font-variant-numeric: tabular-nums; color: color-mix(in srgb, var(--overlay-fg) 45%, transparent); min-width: 2.4em; text-align: right; }
+  .card-root .agent-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: var(--agent-accent, var(--overlay-fg)); transition: background-color var(--hover-ms) var(--ease-notchtap); }
+  .card-root .agent-dot.large { width: 8px; height: 8px; }
+  .card-root .agent-dot.pulse { animation: agent-dot-state-tick 240ms var(--ease-notchtap), agent-dot-breathe 2.2s ease-in-out 4; }
+  @keyframes agent-dot-state-tick { from { transform: scale(1.35); } to { transform: scale(1); } }
+  @keyframes agent-dot-breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  @media (prefers-reduced-motion: reduce) { .card-root .agent-dot.pulse { animation: agent-dot-breathe 2.2s ease-in-out 4; } }
+  .card-root .agent-waiting { --agent-accent: var(--overlay-amber); }
+  .card-root .agent-failed { --agent-accent: var(--overlay-coral); }
+  .card-root .agent-working { --agent-accent: var(--overlay-blue); }
+  .card-root .agent-completed { --agent-accent: var(--overlay-green); }
+  .card-root .agent-stale { --agent-accent: color-mix(in srgb, var(--overlay-fg) 62%, transparent); }
+  .card-root .agent-board-expanded-list { margin-top: 4px; }
+  .card-root .agent-board-expanded-scroll { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; overscroll-behavior: contain; }
+  .card-root .agent-expanded-row { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--overlay-fg) 5%, transparent); }
+  .card-root .agent-expanded-row-head { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: color-mix(in srgb, var(--overlay-fg) 78%, transparent); white-space: nowrap; }
+  .card-root .agent-expanded-row-summary { font-size: 11px; line-height: 1.3; color: color-mix(in srgb, var(--overlay-fg) 68%, transparent); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+  .card-root .agent-expanded-row-meta { display: flex; flex-wrap: wrap; gap: 4px 8px; font-size: 10px; font-family: var(--font-mono); color: color-mix(in srgb, var(--overlay-fg) 45%, transparent); }
+  .card-root .agent-expanded-row-details { display: flex; flex-wrap: wrap; gap: 4px 8px; font-size: 10px; }
+  .card-root .agent-expanded-detail { display: inline-flex; gap: 3px; color: color-mix(in srgb, var(--overlay-fg) 55%, transparent); }
+  .card-root .agent-expanded-detail-label { font-weight: 600; color: color-mix(in srgb, var(--overlay-fg) 72%, transparent); }
+  .card-root .agent-expanded-history { margin-top: 0; max-height: 0; overflow: hidden; opacity: 0; transition: max-height var(--expand-ms) var(--ease-notchtap), opacity var(--expand-ms) var(--ease-notchtap); border-top: 1px solid transparent; padding-top: 0; }
+  /* real trigger is per-ROW mouse-enter/leave (ExpandedAgentRow's own
+     onMouseEnter/onMouseLeave) — genuinely real pointer events land here in
+     the shipped app too while the board is hover-expanded (rust hands
+     click-through off for exactly this rect), so plain CSS :hover is not a
+     stand-in here, it's the same signal. */
+  .card-root .agent-expanded-row:hover .agent-expanded-history { max-height: 90px; opacity: 1; margin-top: 2px; border-top-color: color-mix(in srgb, var(--overlay-fg) 12%, transparent); padding-top: 4px; }
+  .card-root .agent-expanded-history-list { display: flex; flex-direction: column; gap: 2px; list-style: none; margin: 0; padding: 0; }
+  .card-root .agent-expanded-history-entry { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 10px; color: color-mix(in srgb, var(--overlay-fg) 50%, transparent); }
+  .card-root .agent-expanded-history-state { font-weight: 600; color: color-mix(in srgb, var(--overlay-fg) 65%, transparent); }
+  .card-root .agent-expanded-history-elapsed { font-variant-numeric: tabular-nums; flex-shrink: 0; }
+
+  /* ============== source-identity.css, the four runtimes ============== */
+  .card-root .src-claude-code { --cat: #d97757; --cat-deep: rgba(217,119,87,0.15); --cat-pill: rgba(217,119,87,0.13); } /* Anthropic "crail" terracotta */
+  .card-root .src-codex       { --cat: #10a37f; --cat-deep: rgba(16,163,127,0.15); --cat-pill: rgba(16,163,127,0.13); } /* OpenAI green */
+  .card-root .src-kimi        { --cat: var(--overlay-fg); --cat-deep: color-mix(in srgb, var(--overlay-fg) 10%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-fg) 10%, transparent); } /* deliberately mono */
+  .card-root .src-opencode    { --cat: #9d7cd8; --cat-deep: rgba(157,124,216,0.15); --cat-pill: rgba(157,124,216,0.13); }
+
+  /* ============== this page's own control/demo chrome (not app UI) ============== */
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 16px; }
+  .controls label { font: 700 9.5px/1 var(--font-mono); color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; margin-right: 2px; }
+  select, button { font: 700 10px/1 var(--font-mono); letter-spacing: 0.04em; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--rule); background: #171b22; color: var(--ink); cursor: pointer; }
+  button:hover:not(:disabled) { border-color: rgba(127,224,141,0.4); color: var(--page-accent); }
+  button[aria-pressed="true"] { border-color: var(--page-accent); color: var(--page-accent); background: rgba(127,224,141,0.1); }
+  button:disabled { opacity: 0.35; cursor: not-allowed; }
+  .status-line { text-align: center; font-size: 11.5px; color: var(--dim); margin-top: 12px; min-height: 32px; }
+  .status-line b { color: #f0c46a; }
+  .swatch-row { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0 4px; }
+  .swatch { display: flex; align-items: center; gap: 6px; font: 600 11px/1 var(--font-sans); color: var(--ink); }
+  .swatch i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+  .state-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+  .state-grid .rig { transform: scale(0.94); transform-origin: top center; }
+  footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 11.5px; color: var(--dim); line-height: 1.6; }
+
+  /* row add/remove demo — a plain CSS approximation of ROW_TRANSITION
+     (Motion spring, bounce:0 duration:0.35, critically damped). No
+     physics solver here, so this is an ease-out curve at the same
+     nominal duration, not the real spring. */
+  @keyframes row-in { from { opacity: 0; height: 0; } to { opacity: 1; height: 16px; } }
+  @keyframes row-out { from { opacity: 1; height: 16px; margin-bottom: 0; } to { opacity: 0; height: 0; } }
+  .agent-row.row-enter { animation: row-in 350ms cubic-bezier(.16,1,.3,1); }
+  .agent-row.row-leave { animation: row-out 350ms cubic-bezier(.16,1,.3,1) forwards; overflow: hidden; }
+
+  /* hero identity swap — HERO_SWAP_TRANSITION (duration 0.16, NOTCHTAP_EASE) */
+  .agent-board-primary.swap-out { transition: opacity var(--hover-ms) var(--ease-notchtap), transform var(--hover-ms) var(--ease-notchtap); opacity: 0; transform: translateY(-6px); }
+
+  /* ============== PROPOSAL ADDITION (2026-08-01): the shared generic
+     content template (masthead-content.css/manifest.css, verbatim) — real
+     code, used today for manual/CLI/weather/news, NOT currently used for
+     agent notifications (the Agent Board's own layout above is what's
+     actually shipped since v7). Added here, additive only — see
+     prototype/proposal-unified-card.html for the full cross-origin
+     version of this idea. ============== */
+  .card-root .compact { position: relative; box-sizing: border-box; min-height: 74px; padding: 12px 16px 13px 20px; overflow: hidden; }
+  .card-root .compact::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 0 2px 2px 0; background: var(--accent); box-shadow: 0 0 12px var(--accent-soft); }
+  .card-root .masthead-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .card-root .masthead { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; font: 700 8px/1 var(--font-mono); letter-spacing: 0.16em; text-transform: uppercase; color: rgba(255,255,255,0.38); }
+  .card-root .masthead::after { content: ""; flex: 1; height: 1px; background: rgba(255,255,255,0.12); }
+  .card-root .masthead .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--cat); box-shadow: 0 0 6px var(--cat); flex: none; }
+  .card-root .title.headline { white-space: normal; font-size: 13px; line-height: 1.3; font-weight: 680; }
+  .card-root .stamp { align-self: center; padding: 4px 6px; border: 1px solid var(--accent); color: var(--accent); font: 700 8px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; }
+  .card-root .notif-subtitle-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 3px; }
+  .card-root .notif-subtitle { color: rgba(255,255,255,0.45); font-size: 10.5px; font-weight: 600; }
+  .card-root .notif-body { margin-top: 8px; color: rgba(255,255,255,0.7); font-size: 11.5px; line-height: 1.35; }
+  /* detail pairs as right-aligned pills, not stacked label/value blocks —
+     supplementary facts, not a form; a quiet row on the right reads as
+     secondary at a glance, and doesn't need to sit directly under the title. */
+  /* one pill per fact, not label+value as two elements — small muted
+     label prefix, the value, and an optional colored tag when the fact
+     carries a qualifier worth a color (risk level, etc). */
+  /* FIXED SIZE DISCIPLINE: card width/height per state is a hard contract
+     — pills must never grow it. .compact has overflow:hidden as the
+     backstop, detail-facts is capped to the compact's own content width,
+     each pill truncates its own text rather than pushing wider. Only
+     background effects (goal-burst, shade-drift) may extend past the box. */
+  .card-root .detail-facts { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; margin-top: 7px; margin-bottom: 14px; max-width: 100%; }
+  .card-root .fact-pill { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 7px; border-radius: 999px; font-size: 10px; line-height: 1.4; color: rgba(255,255,255,0.82); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.05); }
+  .card-root .fact-pill .fp-label { flex: none; font: 700 7px/1 var(--font-mono); letter-spacing: 0.07em; text-transform: uppercase; opacity: 0.68; }
+  .card-root .fact-pill .fp-tag { flex: none; font: 700 7px/1 var(--font-mono); letter-spacing: 0.07em; text-transform: uppercase; }
+  .card-root .fact-pill.tone-accent { background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 38%, transparent); }
+  .card-root .fact-pill.tone-accent .fp-tag { color: var(--accent); }
+  .card-root .fact-pill.tone-danger { background: color-mix(in srgb, var(--overlay-coral) 14%, transparent); border-color: color-mix(in srgb, var(--overlay-coral) 42%, transparent); }
+  .card-root .fact-pill.tone-danger .fp-tag { color: var(--overlay-coral); }
+  .card-root .fact-pill.tone-safe { background: color-mix(in srgb, var(--overlay-green) 14%, transparent); border-color: color-mix(in srgb, var(--overlay-green) 42%, transparent); }
+  .card-root .fact-pill.tone-safe .fp-tag { color: var(--overlay-green); }
+  /* ttl-bar (ttl-bar.css, verbatim + the grid-row fix documented in
+     proposal-unified-card.html's own comment — grid auto-placement pushes
+     an item placed via grid-column alone into an invisible new row unless
+     grid-row is also explicit). */
+  .card-root .ttl-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; display: grid; grid-template-columns: repeat(var(--queue-n, 1), 1fr); grid-template-rows: 4px; gap: 3px; }
+  .card-root .ttl-seg { background: rgba(255,255,255,0.08); }
+  .card-root .ttl-seg.done { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+  .card-root .ttl-fill { grid-row: 1; height: 100%; width: 100%; background: var(--accent); transform-origin: left; }
+  .card-root .below-block.origin-wash { position: relative; }
+  .card-root .below-block.origin-wash::before { content: ""; position: absolute; inset: 0; z-index: 0; background: radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%); pointer-events: none; }
+  .card-root .below-block.origin-wash .compact { position: relative; z-index: 1; }
+  .card-root .card-assembly.medium { --accent: var(--overlay-teal); --accent-soft: rgba(85,214,189,0.24); }
+  .card-root .card-assembly.high { --accent: var(--overlay-coral); --accent-soft: rgba(255,107,87,0.28); }
+  /* the "other sessions" flavor — additive, styled with the same restrained
+     mono-row language the ttl-bar/queue system already uses elsewhere,
+     appended below the primary card rather than replacing it. */
+  .card-root .queue-rows { border-top: 1px solid rgba(255,255,255,0.08); }
+  .card-root .queue-row { display: flex; align-items: center; gap: 6px; padding: 6px 16px; font-size: 10.5px; color: rgba(255,255,255,0.55); font-family: var(--font-mono); }
+  .card-root .queue-row .qdot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
+  .card-root .queue-row .qname { font-weight: 700; color: rgba(255,255,255,0.75); }
+  .card-root .queue-row .qstate { margin-left: auto; }
+</style>
+
+<main>
+  <h1>agent board — mirrors the shipped Agent Board</h1>
+  <p class="lede">
+    <code>App.tsx</code> swaps this in as a whole separate top-level mode —
+    never a StatusRailCard variant — the moment at least one agent session
+    exists. Same notch/HUD shell as every other card (flanks, cutout,
+    below-block, drop-shadow), but its own dedicated below-block content:
+    one rich "hero" card for the top-ranked session, every other session as
+    a single compact line, <b>never a "+N" collapse</b> (spec §6.2's own
+    explicit rule) — and, on hover, a bounded scrollable list with
+    per-session detail and a per-row transition history.
+  </p>
+  <p class="note">
+    This file is the missing sibling of <code>notch-states.html</code>,
+    which explicitly scopes the Agent Board out of its own coverage. Built
+    by reading <code>AgentBoard.tsx</code>, <code>agent-board.css</code>,
+    <code>source-identity.css</code>, and <code>lib/presentation.ts</code>
+    directly — static mock, no React, no <code>motion</code>, will drift
+    the next time those files change without a matching pass here.
+  </p>
+
+  <section>
+    <h2>0 — shell geometry (card-chrome.css + agent-board.css)</h2>
+    <p class="section-sub">
+      The board's outer <code>.card-assembly</code> is <b>always</b>
+      <code>.expanded</code> (500px @ defaults) — hardcoded on the wrapper
+      in <code>AgentBoard.tsx</code>, regardless of the <code>expanded</code>
+      prop. Only the INNER content swaps between the compact view and the
+      full scrollable list below; the shell itself never shrinks to the
+      400px width a generic notification card rests at.
+    </p>
+    <table class="geo-table">
+      <tr><th>surface</th><th>class</th><th>width @ defaults</th><th>what's inside</th></tr>
+      <tr><td>resting (board mounted, not hovered)</td><td class="val">.card-assembly.expanded</td><td class="val">500px</td><td class="val">.agent-board-primary + .agent-board-rows</td></tr>
+      <tr><td>hover-expanded</td><td class="val">.card-assembly.expanded</td><td class="val">500px (unchanged)</td><td class="val">.agent-board-expanded-list (scrollable)</td></tr>
+    </table>
+  </section>
+
+  <section>
+    <h2>1 — resting, single session · all seven states</h2>
+    <p class="section-sub">
+      <code>AGENT_STATE_PRESENTATION</code> (<code>lib/presentation.ts</code>)
+      — the closed lookup table every state resolves through. Five visual
+      classes cover seven wire states: <code>starting</code> reads as a
+      <code>working</code> variant (no separate visual language for a
+      session's first few hundred ms).
+    </p>
+    <div class="state-grid" id="stateGrid"></div>
+  </section>
+
+  <section>
+    <h2>2 — runtime identity · the four adapters</h2>
+    <p class="section-sub">
+      <code>source-identity.css</code>'s <code>--cat</code> channel — a
+      SEPARATE paint system from the state accent above, applied to the
+      runtime label and the small square tick (deliberately not round, so
+      it never reads as a second state dot next to the circular
+      <code>.agent-dot</code> on the same row).
+    </p>
+    <div class="swatch-row">
+      <span class="swatch"><i style="background:#d97757"></i>Claude Code — Anthropic "crail" terracotta</span>
+      <span class="swatch"><i style="background:#10a37f"></i>Codex — OpenAI green</span>
+      <span class="swatch"><i style="background:#f5f7fa"></i>Kimi — deliberately mono (overlay-fg)</span>
+      <span class="swatch"><i style="background:#9d7cd8"></i>OpenCode — TUI accent purple</span>
+    </div>
+  </section>
+
+  <section>
+    <h2>3 — resting, multiple sessions</h2>
+    <p class="section-sub">
+      One hero (<code>sessions[0]</code>, already rust-ordered) plus every
+      other session as an <code>.agent-row</code> — pick a runtime and
+      state for the hero, and try the row add/remove buttons for
+      <code>ROW_TRANSITION</code> (spring, <code>bounce:0 duration:0.35</code>,
+      approximated with an ease-out curve here — no physics solver in plain CSS).
+    </p>
+    <div class="controls">
+      <label>hero runtime</label>
+      <button data-rt="claude-code" aria-pressed="true">Claude Code</button>
+      <button data-rt="codex">Codex</button>
+      <button data-rt="kimi">Kimi</button>
+      <button data-rt="opencode">OpenCode</button>
+    </div>
+    <div class="controls">
+      <label>hero state</label>
+      <button data-st="waiting_for_permission" aria-pressed="true">Needs approval</button>
+      <button data-st="waiting_for_input">Needs input</button>
+      <button data-st="working">Working</button>
+      <button data-st="starting">Starting</button>
+      <button data-st="completed">Completed</button>
+      <button data-st="failed">Failed</button>
+      <button data-st="stale">Stale</button>
+    </div>
+    <div class="controls">
+      <button id="heroSwapBtn">▶ new primary session (HERO_SWAP_TRANSITION)</button>
+      <button id="addRowBtn">+ add compact row</button>
+      <button id="removeRowBtn">− remove last row</button>
+      <button id="pulseBtn">▶ restart hero dot pulse (state-keyed remount)</button>
+    </div>
+    <div class="rig card-root" style="margin-top:14px;">
+      <div class="menubar"></div>
+      <div class="stage" style="min-height:210px;">
+        <div class="card-assembly expanded agent-board-shell" style="position:absolute; top:0; left:50%; transform:translateX(-50%);">
+          <span class="notch-gill notch-gill-left"></span>
+          <span class="notch-gill notch-gill-right"></span>
+          <div class="flank-left"><span class="time-only">14:32</span></div>
+          <div class="synthetic-cutout"></div>
+          <div class="flank-right">
+            <span class="status-dots">
+              <span class="status-dot football active"></span>
+              <span class="status-dot news active"></span>
+              <span class="status-dot weather dim"></span>
+            </span>
+          </div>
+          <div class="below-block agent-board agent-waiting src-claude-code" id="heroBelowBlock">
+            <div class="agent-board-primary" id="heroPrimary">
+              <div class="agent-board-primary-head" id="heroHead">
+                <span class="agent-dot large pulse" id="heroDot" aria-hidden="true"></span>
+                <span class="agent-runtime-tick" aria-hidden="true"></span>
+                <span class="agent-board-runtime" id="heroRuntimeLabel">Claude Code</span>
+                <span class="agent-board-state-pill" id="heroStateLabel">Needs approval</span>
+              </div>
+              <div class="agent-board-project">notchtap</div>
+              <div class="agent-board-summary" id="heroSummary">Approval needed to run <code>rm -rf build/</code></div>
+              <div class="agent-board-elapsed">42s</div>
+            </div>
+            <div class="agent-board-rows" id="compactRows">
+              <div class="agent-row agent-working src-codex">
+                <span class="agent-dot pulse" aria-hidden="true"></span><span class="agent-runtime-tick" aria-hidden="true"></span>
+                <span class="agent-row-runtime">Codex</span><span class="agent-row-project">mac-notification-nudge</span>
+                <span class="agent-row-state">Working</span><span class="agent-row-elapsed">3m</span>
+              </div>
+              <div class="agent-row agent-completed src-kimi">
+                <span class="agent-dot" aria-hidden="true"></span><span class="agent-runtime-tick" aria-hidden="true"></span>
+                <span class="agent-row-runtime">Kimi</span>
+                <span class="agent-row-state">Completed</span><span class="agent-row-elapsed">11m</span>
+              </div>
+              <div class="agent-row agent-failed src-opencode">
+                <span class="agent-dot" aria-hidden="true"></span><span class="agent-runtime-tick" aria-hidden="true"></span>
+                <span class="agent-row-runtime">OpenCode</span><span class="agent-row-project">shared-ui</span>
+                <span class="agent-row-state">Failed</span><span class="agent-row-elapsed">1h</span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="status-line" id="heroStatusLine">hero: <b>waiting_for_permission</b> · Claude Code</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>4 — hover-expanded · full scrollable list</h2>
+    <p class="section-sub">
+      Rust grows the real window and hands pointer events to this rect the
+      moment <code>expanded</code> flips true — every retained session
+      renders full (summary, meta chips, capability-dependent detail
+      chips), and each row's own transition history opens on THAT row's
+      real mouse-enter, exactly as below (this is genuine <code>:hover</code>,
+      not a stand-in — the shipped app receives real pointer events here too).
+    </p>
+    <div class="rig card-root">
+      <div class="menubar"></div>
+      <div class="stage" style="min-height:260px;">
+        <div class="card-assembly expanded agent-board-shell" style="position:absolute; top:0; left:50%; transform:translateX(-50%);">
+          <span class="notch-gill notch-gill-left"></span>
+          <span class="notch-gill notch-gill-right"></span>
+          <div class="flank-left"><span class="time-only">14:32</span></div>
+          <div class="synthetic-cutout"></div>
+          <div class="flank-right">
+            <span class="status-dots">
+              <span class="status-dot football active"></span>
+              <span class="status-dot news active"></span>
+              <span class="status-dot weather dim"></span>
+            </span>
+          </div>
+          <div class="below-block agent-board">
+            <div class="agent-board-expanded-list">
+              <div class="agent-board-expanded-scroll">
+                <div class="agent-expanded-row agent-waiting src-claude-code">
+                  <div class="agent-expanded-row-head">
+                    <span class="agent-dot pulse" aria-hidden="true"></span><span class="agent-runtime-tick" aria-hidden="true"></span>
+                    <span class="agent-row-runtime">Claude Code</span><span class="agent-row-state">Needs approval</span><span class="agent-row-elapsed">42s</span>
+                  </div>
+                  <div class="agent-expanded-row-summary">Approval needed to run <code>rm -rf build/</code></div>
+                  <div class="agent-expanded-row-meta"><span>~/projects/notchtap</span><span>contabo-vps</span></div>
+                  <div class="agent-expanded-row-details"><span class="agent-expanded-detail"><span class="agent-expanded-detail-label">tool:</span> Bash</span><span class="agent-expanded-detail"><span class="agent-expanded-detail-label">risk:</span> destructive</span></div>
+                  <div class="agent-expanded-history">
+                    <ul class="agent-expanded-history-list">
+                      <li class="agent-expanded-history-entry"><span class="agent-expanded-history-state">Working</span><span class="agent-expanded-history-elapsed">2m ago</span></li>
+                      <li class="agent-expanded-history-entry"><span class="agent-expanded-history-state">Starting</span><span class="agent-expanded-history-elapsed">3m ago</span></li>
+                    </ul>
+                  </div>
+                </div>
+                <div class="agent-expanded-row agent-working src-codex">
+                  <div class="agent-expanded-row-head">
+                    <span class="agent-dot pulse" aria-hidden="true"></span><span class="agent-runtime-tick" aria-hidden="true"></span>
+                    <span class="agent-row-runtime">Codex</span><span class="agent-row-state">Working</span><span class="agent-row-elapsed">3m</span>
+                  </div>
+                  <div class="agent-expanded-row-summary">Running test suite — subagent: test runner (working)</div>
+                  <div class="agent-expanded-row-meta"><span>~/projects/mac-notification-nudge</span><span>subagent: test runner (working)</span></div>
+                  <div class="agent-expanded-history">
+                    <ul class="agent-expanded-history-list"><li class="agent-expanded-history-entry"><span class="agent-expanded-history-state">Starting</span><span class="agent-expanded-history-elapsed">3m ago</span></li></ul>
+                  </div>
+                </div>
+                <div class="agent-expanded-row agent-completed src-kimi">
+                  <div class="agent-expanded-row-head">
+                    <span class="agent-dot" aria-hidden="true"></span><span class="agent-runtime-tick" aria-hidden="true"></span>
+                    <span class="agent-row-runtime">Kimi</span><span class="agent-row-state">Completed</span><span class="agent-row-elapsed">11m</span>
+                  </div>
+                  <div class="agent-expanded-row-summary">Turn completed — awaiting input</div>
+                  <div class="agent-expanded-row-meta"><span>clears in 4m</span></div>
+                  <div class="agent-expanded-history">
+                    <ul class="agent-expanded-history-list">
+                      <li class="agent-expanded-history-entry"><span class="agent-expanded-history-state">Working</span><span class="agent-expanded-history-elapsed">12m ago</span></li>
+                      <li class="agent-expanded-history-entry"><span class="agent-expanded-history-state">Starting</span><span class="agent-expanded-history-elapsed">15m ago</span></li>
+                    </ul>
+                  </div>
+                </div>
+                <div class="agent-expanded-row agent-failed src-opencode">
+                  <div class="agent-expanded-row-head">
+                    <span class="agent-dot" aria-hidden="true"></span><span class="agent-runtime-tick" aria-hidden="true"></span>
+                    <span class="agent-row-runtime">OpenCode</span><span class="agent-row-state">Failed</span><span class="agent-row-elapsed">1h</span>
+                  </div>
+                  <div class="agent-expanded-row-summary">Session ended with an error</div>
+                  <div class="agent-expanded-row-meta"><span>clears in 23m</span></div>
+                  <div class="agent-expanded-history">
+                    <ul class="agent-expanded-history-list"><li class="agent-expanded-history-entry"><span class="agent-expanded-history-state">Working</span><span class="agent-expanded-history-elapsed">1h ago</span></li></ul>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="status-line">hover any row above to open its transition history</div>
+    </div>
+  </section>
+
+  <section style="border-top-color:rgba(240,196,106,0.35);">
+    <h2 style="color:#f0c46a;">⚠ proposal — the same states, through the unified shell</h2>
+    <p class="section-sub">
+      NOT current reality — see <code>prototype/proposal-unified-card.html</code>
+      for the full cross-origin version of this idea. Above is
+      <code>AgentBoard.tsx</code>'s own layout, what's actually shipped.
+      Here, the PRIMARY session renders through the generic
+      <code>NotificationBody.tsx</code> template instead (masthead + stamp
+      + accent stripe + title/body/details) — the same template manual/CLI,
+      weather, and news already use today. The multi-session aggregate
+      view doesn't fit inside a single generic card, so it becomes an
+      ADDITIVE flavor instead: a restrained list of other sessions appended
+      below, in the same mono/dot visual language the ttl-bar/queue system
+      already uses elsewhere — not a replacement layout, an addition.
+    </p>
+    <div class="state-grid" id="proposalStateGrid"></div>
+  </section>
+
+  <section>
+    <h2>5 — motion primitives unique to this component</h2>
+    <table class="geo-table">
+      <tr><th>name</th><th>value</th><th>plays when</th></tr>
+      <tr><td>agent-dot state tick</td><td class="val">240ms NOTCHTAP_EASE, scale(1.35)→1</td><td class="val">state-keyed remount (any state change)</td></tr>
+      <tr><td>agent-dot breathe</td><td class="val">2.2s ease-in-out × 4, then rests</td><td class="val">same remount — waiting/working only, bounded</td></tr>
+      <tr><td>ROW_TRANSITION</td><td class="val">spring, bounce:0, duration:0.35</td><td class="val">a row enters, exits, AND sibling reflow — one const, all three</td></tr>
+      <tr><td>HERO_SWAP_TRANSITION</td><td class="val">duration:0.16, NOTCHTAP_EASE</td><td class="val">keyed on primary.id — a DIFFERENT session becomes primary</td></tr>
+      <tr><td>DISCLOSURE_SPRING</td><td class="val">spring, stiffness:480, damping:37</td><td class="val">compact rows block, expanded list, per-row history</td></tr>
+    </table>
+    <p class="note">
+      The hero swap only plays on an identity change — a same-session STATE
+      change morphs in place instead (the dot's colour transition + the tick
+      above), which is why the "restart hero dot pulse" button and "new
+      primary session" button above demonstrate two visibly different
+      motions for what might look like "the same card changed."
+    </p>
+  </section>
+
+  <footer>
+    Source of truth: <code>src/components/AgentBoard.tsx</code>,
+    <code>src/overlay/agent-board.css</code>,
+    <code>src/overlay/source-identity.css</code>,
+    <code>src/lib/presentation.ts</code>,
+    <code>src/lib/sourceColors.ts</code>, as of commit <code>9855bfe</code>.
+    Sibling files: <code>notch-states.html</code> (the shared shell + every
+    OTHER card mode), <code>football-card.html</code>, <code>news-card.html</code>,
+    <code>weather-art.html</code>, <code>status-rail.html</code>,
+    <code>control-panel.html</code>, <code>system-stats.html</code> — see
+    <code>index.html</code> in this folder for the full set.
+  </footer>
+</main>
+
+<script>
+(function () {
+  var RUNTIME_LABEL = { "claude-code": "Claude Code", codex: "Codex", kimi: "Kimi", opencode: "OpenCode" };
+  var RUNTIME_CLASS = { "claude-code": "src-claude-code", codex: "src-codex", kimi: "src-kimi", opencode: "src-opencode" };
+  var STATE_PRESENTATION = {
+    waiting_for_permission: { label: "Needs approval", className: "agent-waiting", pulse: true, summary: 'Approval needed to run <code>rm -rf build/</code>' },
+    waiting_for_input: { label: "Needs input", className: "agent-waiting", pulse: true, summary: "Waiting on a reply to continue" },
+    working: { label: "Working", className: "agent-working", pulse: true, summary: "Running the test suite — 214/340 files" },
+    starting: { label: "Starting", className: "agent-working", pulse: true, summary: "Session starting up" },
+    completed: { label: "Completed", className: "agent-completed", pulse: false, summary: "Turn completed — awaiting input" },
+    failed: { label: "Failed", className: "agent-failed", pulse: false, summary: "Session ended with an error" },
+    stale: { label: "Stale", className: "agent-stale", pulse: false, summary: "No event received in over 10 minutes" },
+  };
+
+  // ---- section 1: all seven states, one small rig each ----
+  var stateGrid = document.getElementById("stateGrid");
+  var STATE_ORDER = ["waiting_for_permission", "waiting_for_input", "working", "starting", "completed", "failed", "stale"];
+  STATE_ORDER.forEach(function (key) {
+    var p = STATE_PRESENTATION[key];
+    var wrap = document.createElement("div");
+    wrap.innerHTML =
+      '<div class="rig-label">' + key + " <span class=\"tag\">" + p.className + "</span></div>" +
+      '<div class="rig card-root"><div class="menubar"></div><div class="stage" style="min-height:150px;">' +
+      '<div class="card-assembly expanded agent-board-shell" style="position:absolute;top:0;left:50%;transform:translateX(-50%) scale(0.82);transform-origin:top center;">' +
+      '<span class="notch-gill notch-gill-left"></span><span class="notch-gill notch-gill-right"></span>' +
+      '<div class="flank-left"><span class="time-only">14:32</span></div><div class="synthetic-cutout"></div>' +
+      '<div class="flank-right"><span class="status-dots"><span class="status-dot football active"></span><span class="status-dot news active"></span><span class="status-dot weather dim"></span></span></div>' +
+      '<div class="below-block agent-board ' + p.className + ' src-claude-code">' +
+      '<div class="agent-board-primary"><div class="agent-board-primary-head">' +
+      '<span class="agent-dot large ' + (p.pulse ? "pulse" : "") + '" aria-hidden="true"></span>' +
+      '<span class="agent-runtime-tick" aria-hidden="true"></span>' +
+      '<span class="agent-board-runtime">Claude Code</span>' +
+      '<span class="agent-board-state-pill">' + p.label + "</span></div>" +
+      '<div class="agent-board-project">notchtap</div>' +
+      '<div class="agent-board-summary">' + p.summary + "</div>" +
+      '<div class="agent-board-elapsed">42s</div></div></div></div></div></div>';
+    stateGrid.appendChild(wrap);
+  });
+
+  // ---- proposal section: all seven states, through the unified template ----
+  var STAMP_BY_PRIORITY = { low: "Live", medium: "Done", high: "Now" };
+  var PROPOSAL_EXTRA = {
+    waiting_for_permission: { priority: "high", runtime: "claude-code", subtitle: "Claude Code · notchtap", body: "Run <code>rm -rf build/</code>?", facts: [{ label: "Tool", value: "rm", tag: "destructive", tone: "danger" }], queue: true },
+    waiting_for_input: { priority: "high", runtime: "codex", subtitle: "Codex · mac-notification-nudge", body: "Confirm the migration plan before continuing?", facts: [] },
+    working: { priority: "medium", runtime: "kimi", subtitle: "Kimi · shared-ui", body: "Running the test suite — 214/340 files.", facts: [{ label: "Progress", value: "63%", tone: "accent" }] },
+    starting: { priority: "medium", runtime: "opencode", subtitle: "OpenCode · notchtap", body: "Session starting up.", facts: [{ label: "Session", value: "2s", tone: "accent" }] },
+    completed: { priority: "low", runtime: "claude-code", subtitle: "Claude Code · notchtap", body: "Turn completed — awaiting input.", facts: [{ label: "Duration", value: "12m", tone: "accent" }] },
+    failed: { priority: "high", runtime: "codex", subtitle: "Codex · mac-notification-nudge", body: "Session ended with an error.", facts: [{ label: "Exit", value: "1", tag: "error", tone: "danger" }] },
+    stale: { priority: "low", runtime: "kimi", subtitle: "Kimi · shared-ui", body: "No event received in over 10 minutes.", facts: [{ label: "Last seen", value: "14m ago", tone: "accent" }] },
+  };
+  function factsHtml(facts) {
+    if (!facts || facts.length === 0) return "";
+    return '<div class="detail-facts">' + facts.map(function (d) {
+      var toneClass = d.tone ? " tone-" + d.tone : "";
+      var tag = d.tag ? '<span class="fp-tag">' + d.tag + "</span>" : "";
+      return '<span class="fact-pill' + toneClass + '"><span class="fp-label">' + d.label + "</span>" + d.value + tag + "</span>";
+    }).join("") + "</div>";
+  }
+  var proposalGrid = document.getElementById("proposalStateGrid");
+  STATE_ORDER.forEach(function (key) {
+    var p = STATE_PRESENTATION[key];
+    var x = PROPOSAL_EXTRA[key];
+    var title = key === "completed" ? "Agent turn completed" : key === "failed" ? "Agent session failed" : key === "stale" ? "Agent session stale" : "Agent needs input";
+    if (key === "working" || key === "starting") title = "Agent " + p.label.toLowerCase();
+    var wrap = document.createElement("div");
+    wrap.innerHTML =
+      '<div class="rig-label">' + key + " <span class=\"tag\">unified template</span></div>" +
+      '<div class="rig card-root"><div class="menubar"></div><div class="stage" style="min-height:170px;">' +
+      '<div class="card-assembly showing ' + x.priority + '" style="position:absolute;top:0;left:50%;transform:translateX(-50%) scale(0.86);transform-origin:top center;">' +
+      '<div class="flank-left"><span class="time-only">14:32</span></div><div class="synthetic-cutout"></div>' +
+      '<div class="flank-right"><span class="status-dots"><span class="status-dot football active"></span><span class="status-dot news active"></span><span class="status-dot weather dim"></span></span></div>' +
+      '<div class="below-block origin-wash ' + RUNTIME_CLASS[x.runtime] + '"><div class="card-content"><div class="compact">' +
+      '<div class="masthead-row"><div class="masthead"><span class="dot"></span>agent</div><div class="stamp">' + STAMP_BY_PRIORITY[x.priority] + "</div></div>" +
+      '<div class="title headline">' + title + "</div>" +
+      '<div class="notif-subtitle-row"><span class="notif-subtitle">' + x.subtitle + "</span></div>" +
+      '<div class="notif-body">' + x.body + "</div>" +
+      factsHtml(x.facts) + "</div></div>" +
+      (x.queue ? '<div class="queue-rows"><div class="queue-row"><span class="qdot" style="background:#10a37f"></span><span class="qname">Codex</span> working <span class="qstate">3m</span></div><div class="queue-row"><span class="qdot" style="background:#f5f7fa"></span><span class="qname">Kimi</span> completed <span class="qstate">11m</span></div><div class="queue-row"><span class="qdot" style="background:#9d7cd8"></span><span class="qname">OpenCode</span> failed <span class="qstate">1h</span></div></div>' : "") +
+      "</div></div></div></div>";
+    proposalGrid.appendChild(wrap);
+  });
+
+  // ---- section 3: interactive hero ----
+  var heroBelow = document.getElementById("heroBelowBlock");
+  var heroHead = document.getElementById("heroHead");
+  var heroDot = document.getElementById("heroDot");
+  var heroRuntimeLabel = document.getElementById("heroRuntimeLabel");
+  var heroStateLabel = document.getElementById("heroStateLabel");
+  var heroSummary = document.getElementById("heroSummary");
+  var heroPrimary = document.getElementById("heroPrimary");
+  var heroStatusLine = document.getElementById("heroStatusLine");
+  var currentRt = "claude-code", currentSt = "waiting_for_permission";
+
+  function applyHero() {
+    var p = STATE_PRESENTATION[currentSt];
+    heroBelow.className = "below-block agent-board " + p.className + " " + RUNTIME_CLASS[currentRt];
+    heroRuntimeLabel.textContent = RUNTIME_LABEL[currentRt];
+    heroStateLabel.textContent = p.label;
+    heroSummary.innerHTML = p.summary;
+    heroDot.classList.toggle("pulse", p.pulse);
+    heroStatusLine.innerHTML = "hero: <b>" + currentSt + "</b> · " + RUNTIME_LABEL[currentRt];
+  }
+  document.querySelectorAll("[data-rt]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      currentRt = b.dataset.rt;
+      document.querySelectorAll("[data-rt]").forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); });
+      applyHero();
+    });
+  });
+  document.querySelectorAll("[data-st]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      currentSt = b.dataset.st;
+      document.querySelectorAll("[data-st]").forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); });
+      applyHero();
+      heroDot.style.animation = "none"; void heroDot.offsetWidth; heroDot.style.animation = "";
+    });
+  });
+  document.getElementById("pulseBtn").addEventListener("click", function () {
+    heroDot.style.animation = "none"; void heroDot.offsetWidth; heroDot.style.animation = "";
+  });
+  document.getElementById("heroSwapBtn").addEventListener("click", function () {
+    heroPrimary.classList.add("swap-out");
+    setTimeout(function () { heroPrimary.classList.remove("swap-out"); }, 160);
+  });
+
+  // ---- row add/remove ----
+  var ROW_VARIANTS = [
+    ["agent-working", "src-codex", "Codex", "mac-notification-nudge", "Working"],
+    ["agent-completed", "src-kimi", "Kimi", null, "Completed"],
+    ["agent-failed", "src-opencode", "OpenCode", "shared-ui", "Failed"],
+    ["agent-waiting", "src-claude-code", "Claude Code", null, "Needs input"],
+  ];
+  var spawnCount = 0;
+  var rows = document.getElementById("compactRows");
+  document.getElementById("addRowBtn").addEventListener("click", function () {
+    var v = ROW_VARIANTS[spawnCount % ROW_VARIANTS.length];
+    spawnCount++;
+    var row = document.createElement("div");
+    row.className = "agent-row row-enter " + v[0] + " " + v[1];
+    row.innerHTML = '<span class="agent-dot" aria-hidden="true"></span><span class="agent-runtime-tick" aria-hidden="true"></span>' +
+      '<span class="agent-row-runtime">' + v[2] + "</span>" +
+      (v[3] ? '<span class="agent-row-project">' + v[3] + "</span>" : "") +
+      '<span class="agent-row-state">' + v[4] + '</span><span class="agent-row-elapsed">0s</span>';
+    rows.appendChild(row);
+  });
+  document.getElementById("removeRowBtn").addEventListener("click", function () {
+    var live = rows.querySelectorAll(".agent-row");
+    if (live.length === 0) return;
+    var last = live[live.length - 1];
+    last.classList.add("row-leave");
+    setTimeout(function () { last.remove(); }, 350);
+  });
+})();
+</script>
+</body>
+</html>

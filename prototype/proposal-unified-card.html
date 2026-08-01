@@ -1,0 +1,577 @@
+<!doctype html>
+<!-- ⚠ THIS IS A PROPOSAL, NOT A MIRROR OF CURRENT REALITY. Every other file
+     in this folder mirrors what's actually shipped; this one does not.
+
+     Today, three different origins render into three DIFFERENT content
+     templates inside the same shell:
+       - generic/manual/agent(-informational)/weather/news → NotificationBody.tsx's
+         .compact + .masthead + .stamp + Manifest + TtlBar (the template this
+         page calls "the generic card" — this is what the operator remembers
+         as "the CMUX card", from when agent notifications used to render
+         through this exact path, before the dedicated Agent Board existed)
+       - football (live match) → LiveMatchScorecard.tsx, its own .notif-block
+         PLUS its own idle hover-peek scorecard and goal/card celebration burst
+       - the Agent Board (resting, multi-session) → AgentBoard.tsx, its own
+         .agent-board-primary / .agent-row / .agent-expanded-row
+
+     This page explores the operator's alternate idea: ONE shell
+     (card-chrome.css, unchanged — real CSS below), and ONE shared content
+     template (the generic masthead/stamp/title/body one, also real CSS
+     below) for EVERY origin, including agent and football, instead of each
+     origin's own bespoke layout.
+
+     Every real SHELL STATE is now explicit and separately drivable: Bare,
+     Idle rail, Showing, Expanded, each combinable with Hover — the same
+     four-state/hover matrix every other file in this folder covers, applied
+     to the unified content template. Weather and Football additionally get
+     a real idle hover-peek (IdleHoverPeek.tsx's own territory — the ONLY two
+     origins with peek content today), and Football keeps its real goal
+     celebration burst (choreography.css's goal-overshoot/goal-burst/goal-ring,
+     unchanged) even on the unified template, since that motion is its own
+     thing, independent of which content template is under it.
+
+     Real per-origin data shapes (an agent session's runtime/state/elapsed;
+     a live match's score/minute) are reformatted into this template's
+     title/subtitle/body/detail-pairs shape here — this is the one place
+     this page invents something not literally in the source, because the
+     whole point is showing how that data WOULD look unified.
+     Written 2026-08-01, alongside prototype/agent-board.html (the accurate
+     mirror of what the Agent Board looks like today). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>PROPOSAL — one shell, one card template, every origin</title>
+<style>
+  :root {
+    --overlay-blue: #0a84ff; --overlay-teal: #55d6bd; --overlay-coral: #ff6b57;
+    --overlay-green: #7fe08d; --overlay-amber: #f0c46a; --overlay-fg: #f5f7fa;
+    --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    --ease-notchtap: cubic-bezier(.22,1,.36,1);
+    --ease-notchtap-pop: cubic-bezier(.3,1.36,.44,1);
+    --expand-ms: 320ms; --hover-ms: 160ms; --reveal-ms: 260ms; --content-exit-ms: 105ms;
+    --notchtap-cutout-width: 200px; --notchtap-cutout-height: 32px;
+    --card-scale: 1; --card-radius: 8px; --card-opacity: 1;
+    --bg: #101318; --ink: #e8ecf1; --dim: #8b95a3; --rule: rgba(255,255,255,0.09); --page-accent: #f0c46a;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-sans); padding: 0 24px 100px; }
+  main { max-width: 860px; margin: 0 auto; }
+
+  .banner {
+    margin: 0 -24px 40px; padding: 14px 24px; background: linear-gradient(180deg, rgba(240,196,106,0.14), rgba(240,196,106,0.02));
+    border-bottom: 1px solid rgba(240,196,106,0.35); text-align: center;
+  }
+  .banner b { color: var(--page-accent); font: 700 11px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; }
+  .banner p { margin: 6px auto 0; max-width: 68ch; font-size: 12.5px; color: var(--dim); line-height: 1.6; }
+
+  h1 { font-size: 21px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .lede { color: var(--dim); font-size: 13px; line-height: 1.6; max-width: 68ch; margin: 0 0 10px; }
+  .note { font-size: 11.5px; color: var(--dim); border-left: 2px solid var(--rule); padding-left: 10px; margin: 0 0 36px; max-width: 66ch; line-height: 1.6; }
+  code { font-family: var(--font-mono); color: #9fc3e8; }
+  section { margin-bottom: 40px; padding-top: 24px; border-top: 1px solid var(--rule); }
+  h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); margin: 0 0 4px; }
+  .section-sub { font-size: 12px; color: var(--dim); margin: 0 0 14px; max-width: 64ch; line-height: 1.55; }
+
+  .rig { position: relative; background: #05060a; border-radius: 10px; overflow: visible; box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 16px 32px rgba(0,0,0,0.4); }
+  .menubar { position: relative; height: 26px; background: #1c1d20; border-radius: 10px 10px 0 0; }
+  /* overflow:visible, not hidden — the Expanded state's manifest can run
+     taller than any fixed min-height, and the goal-celebration burst
+     (::after, inset:-60px) deliberately paints past the card's own box in
+     every direction. .rig already clips the rounded corners at its own
+     boundary, so nothing escapes the frame, it just isn't hard-cropped. */
+  .stage { position: relative; min-height: 90px; background: repeating-linear-gradient(45deg, #08090c 0 2px, #0c0d10 2px 4px); border-radius: 0 0 10px 10px; overflow: visible; padding-bottom: 20px; }
+
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-bottom: 10px; }
+  .controls label { font: 700 9.5px/1 var(--font-mono); color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; margin-right: 2px; }
+  select, button { font: 700 10px/1 var(--font-mono); letter-spacing: 0.04em; padding: 8px 12px; border-radius: 8px; border: 1px solid var(--rule); background: #171b22; color: var(--ink); cursor: pointer; }
+  button:hover:not(:disabled) { border-color: rgba(240,196,106,0.4); color: var(--page-accent); }
+  button[aria-pressed="true"] { border-color: var(--page-accent); color: var(--page-accent); background: rgba(240,196,106,0.1); }
+  button:disabled { opacity: 0.32; cursor: not-allowed; }
+  button.celebrate { border-color: rgba(255,196,106,0.5); }
+  button.celebrate:hover:not(:disabled) { border-color: #ffc46a; color: #ffc46a; }
+  .status-line { text-align: center; font-size: 11.5px; color: var(--dim); margin-top: 12px; min-height: 20px; }
+  .status-line b { color: var(--page-accent); }
+
+  /* ============== real shell (card-chrome.css, verbatim shape) ============== */
+  .card-root .card-assembly {
+    position: relative; box-sizing: border-box; display: grid;
+    grid-template-columns: 1fr var(--notchtap-cutout-width) 1fr;
+    grid-template-rows: var(--notchtap-cutout-height) auto;
+    width: var(--cw, min(max(calc(400px * var(--card-scale)), calc(var(--notchtap-cutout-width) + (2 * 60px * var(--card-scale)))), 100%));
+    margin: 0 auto; isolation: isolate; transform-origin: top center;
+    filter: drop-shadow(0 7px 18px rgba(0,0,0,0.5));
+    transition: width var(--expand-ms) var(--ease-notchtap-pop), transform var(--hover-ms) var(--ease-notchtap);
+  }
+  .card-root .card-assembly.st-idle { --cw: min(calc(var(--notchtap-cutout-width) + (2 * 85px * var(--card-scale))), 100%); transition: width var(--reveal-ms) var(--ease-notchtap), transform var(--hover-ms) var(--ease-notchtap); }
+  .card-root .card-assembly.st-bare { --cw: min(var(--notchtap-cutout-width), 100%); transition: width var(--reveal-ms) var(--ease-notchtap), transform var(--hover-ms) var(--ease-notchtap); }
+  .card-root .card-assembly.st-bare.hovered.has-peek,
+  .card-root .card-assembly.st-idle.hovered { --cw: min(calc(var(--notchtap-cutout-width) + (2 * 85px * var(--card-scale))), 100%); }
+  .card-root .card-assembly.st-showing { --cw: min(max(calc(400px * var(--card-scale)), calc(var(--notchtap-cutout-width) + (2 * 60px * var(--card-scale)))), 100%); }
+  .card-root .card-assembly.st-expanded { --cw: min(max(calc(500px * var(--card-scale)), calc(var(--notchtap-cutout-width) + (2 * 60px * var(--card-scale)))), 100%); }
+  .card-root .card-assembly.hovered { transform: scale(1.02); }
+
+  .card-root .flank-left, .card-root .flank-right {
+    box-sizing: border-box; grid-row: 1; overflow: hidden; display: flex; align-items: center;
+    background: #000; color: var(--overlay-fg); min-width: 0;
+    transition: background-color var(--reveal-ms) var(--ease-notchtap), padding var(--reveal-ms) var(--ease-notchtap);
+  }
+  .card-root .flank-left { grid-column: 1; justify-content: flex-start; padding-left: 16px; }
+  .card-root .flank-right { grid-column: 3; justify-content: flex-end; padding-right: 16px; }
+  .card-root .card-assembly.st-bare .flank-left, .card-root .card-assembly.st-bare .flank-right { background: transparent; padding: 0; }
+  .card-root .card-assembly.st-bare.hovered .flank-left, .card-root .card-assembly.st-bare.hovered .flank-right { background: #000; }
+  .card-root .card-assembly.st-bare.hovered .flank-left { padding-left: 16px; }
+  .card-root .card-assembly.st-bare.hovered .flank-right { padding-right: 16px; }
+  .card-root .synthetic-cutout { grid-column: 2; grid-row: 1; background: #000; }
+  .card-root .card-assembly.st-bare:not(.hovered) .synthetic-cutout { border-bottom-left-radius: var(--card-radius) min(calc(var(--card-radius) * 2), 20px); border-bottom-right-radius: var(--card-radius) min(calc(var(--card-radius) * 2), 20px); }
+  .card-root .notch-gill { position: absolute; top: 0; width: 10px; height: 10px; pointer-events: none; opacity: 0; transition: opacity var(--expand-ms) var(--ease-notchtap); }
+  .card-root .card-assembly.st-bare:not(.hovered) .notch-gill, .card-root .card-assembly.st-idle .notch-gill { opacity: 1; }
+  .card-root .notch-gill-left { left: -10px; background: radial-gradient(circle at bottom left, transparent 10px, #000 10px); }
+  .card-root .notch-gill-right { right: -10px; background: radial-gradient(circle at bottom right, transparent 10px, #000 10px); }
+  .card-root .time-only { font: 800 15px/1 var(--font-mono); letter-spacing: 0.02em; color: var(--overlay-fg); white-space: nowrap; }
+  .card-root .status-dots { display: flex; align-items: center; gap: 8px; flex: none; }
+  .card-root .status-dot { box-sizing: border-box; width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .card-root .status-dot.football { background: var(--overlay-green); }
+  .card-root .status-dot.news { background: var(--overlay-coral); }
+  .card-root .status-dot.weather { background: var(--overlay-amber); }
+  .card-root .status-dot.active { box-shadow: 0 0 8px 1px currentColor; }
+  .card-root .status-dot.football.active { color: var(--overlay-green); }
+  .card-root .status-dot.news.active { color: var(--overlay-coral); }
+  .card-root .status-dot.weather.active { color: var(--overlay-amber); }
+  .card-root .status-dot.dim { opacity: 0.22; box-shadow: none; }
+  .card-root .below-block {
+    grid-column: 1 / -1; grid-row: 2; position: relative; box-sizing: border-box; overflow: hidden;
+    width: 100%; min-width: 0; background: rgba(0,0,0,var(--card-opacity)); color: var(--overlay-fg);
+    border-bottom-left-radius: var(--card-radius); border-bottom-right-radius: var(--card-radius);
+  }
+  .card-root .card-assembly.st-bare .below-block, .card-root .card-assembly.st-idle:not(.hovered) .below-block { display: none; }
+
+  /* ============== the shared generic content template (masthead-content.css,
+     manifest.css, ttl-bar.css) — verbatim, this is "the CMUX card" ============== */
+  .card-root .compact { position: relative; box-sizing: border-box; min-height: 74px; padding: 12px 16px 13px 20px; }
+  .card-root .card-assembly.st-expanded .compact { min-height: 82px; }
+  .card-root .compact::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 0 2px 2px 0; background: var(--accent); box-shadow: 0 0 12px var(--accent-soft); }
+  .card-root .masthead-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .card-root .masthead { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; font: 700 8px/1 var(--font-mono); letter-spacing: 0.16em; text-transform: uppercase; color: rgba(255,255,255,0.38); }
+  .card-root .masthead::after { content: ""; flex: 1; height: 1px; background: rgba(255,255,255,0.12); }
+  .card-root .masthead .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--cat); box-shadow: 0 0 6px var(--cat); flex: none; }
+  .card-root .title.headline { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: 13px; line-height: 1.3; font-weight: 680; }
+  .card-root .stamp { align-self: center; padding: 4px 6px; border: 1px solid var(--accent); color: var(--accent); font: 700 8px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; }
+  .card-root .notif-subtitle-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 3px; }
+  .card-root .notif-subtitle { min-width: 0; overflow: hidden; color: rgba(255,255,255,0.45); font-size: 10.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  .card-root .notif-time-inline { flex: none; color: rgba(255,255,255,0.35); font: 700 10px/1 var(--font-mono); }
+  .card-root .notif-body { display: -webkit-box; margin-top: 8px; overflow: hidden; color: rgba(255,255,255,0.7); font-size: 11.5px; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .card-root .notif-meta-row { display: flex; align-items: center; gap: 5px; margin-top: 6px; }
+  .card-root .chip { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px; font: 700 8px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+  .card-root .chip-category { color: var(--cat); background: var(--cat-pill); border: 1px solid color-mix(in srgb, var(--cat) 35%, transparent); }
+  .card-root .compact-hint { position: absolute; right: 18px; bottom: 8px; color: rgba(255,255,255,0.4); font: 700 8px/1 var(--font-mono); letter-spacing: 0.16em; text-transform: uppercase; }
+  .card-root .compact-hint kbd, .card-root .manifest-hint kbd {
+    display: inline-flex; align-items: center; justify-content: center; min-height: 15px; margin: 0 1px; padding: 0 4px;
+    border: 1px solid rgba(255,255,255,0.22); border-bottom-color: rgba(255,255,255,0.34); border-radius: 3px;
+    background: rgba(255,255,255,0.07); box-shadow: 0 1px 0 rgba(0,0,0,0.35); color: inherit; font: 700 9px/1 var(--font-mono);
+  }
+  /* detail facts — the label reuses the app's REAL chip styling (.chip,
+     below: mono/uppercase/colored-border pill, same as the news category
+     pill), the value stays plain sans/normal-case next to it (values like
+     "J. Marquez (63')" would read oddly forced uppercase). Stacked as a
+     column, right-aligned — supplementary facts, not a form, so they
+     don't need to sit directly under the title. */
+  /* one pill per fact — a small muted label prefix, the value, an
+     optional colored tag. FIXED SIZE DISCIPLINE: the card's width/height
+     per state is a hard contract (card-chrome.css's formulas) — pills
+     must never be able to grow it. .compact gets overflow:hidden as the
+     backstop (same clamping discipline .title.headline/.notif-body
+     already use via -webkit-line-clamp), .detail-facts is capped to
+     max-width:100% of the compact's own content box, and each pill has
+     its own max-width + ellipsis so one long value truncates instead of
+     pushing the row wider. Only background effects (goal-burst,
+     shade-drift — both absolutely positioned, outside layout flow) are
+     allowed to visually extend past the card's box; anything that
+     participates in layout, including these pills, is not. */
+  .card-root .compact { overflow: hidden; }
+  .card-root .detail-facts { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; margin-top: 7px; margin-bottom: 14px; max-width: 100%; }
+  .card-root .fact-pill { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 7px; border-radius: 999px; font-size: 10px; line-height: 1.4; color: rgba(255,255,255,0.82); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.05); }
+  .card-root .fact-pill .fp-label { flex: none; font: 700 7px/1 var(--font-mono); letter-spacing: 0.07em; text-transform: uppercase; opacity: 0.68; }
+  .card-root .fact-pill .fp-tag { flex: none; font: 700 7px/1 var(--font-mono); letter-spacing: 0.07em; text-transform: uppercase; }
+  .card-root .fact-pill.tone-accent { background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 38%, transparent); }
+  .card-root .fact-pill.tone-accent .fp-tag { color: var(--accent); }
+  .card-root .fact-pill.tone-danger { background: color-mix(in srgb, var(--overlay-coral) 14%, transparent); border-color: color-mix(in srgb, var(--overlay-coral) 42%, transparent); }
+  .card-root .fact-pill.tone-danger .fp-tag { color: var(--overlay-coral); }
+  .card-root .fact-pill.tone-safe { background: color-mix(in srgb, var(--overlay-green) 14%, transparent); border-color: color-mix(in srgb, var(--overlay-green) 42%, transparent); }
+  .card-root .fact-pill.tone-safe .fp-tag { color: var(--overlay-green); }
+  .card-root .manifest-wrap { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows var(--expand-ms) var(--ease-notchtap), opacity var(--expand-ms) var(--ease-notchtap); }
+  .card-root .manifest-wrap.expanded { grid-template-rows: 1fr; opacity: 1; }
+  .card-root .manifest-wrap > .manifest { overflow: hidden; min-height: 0; }
+  .card-root .manifest { border-top: 1px solid rgba(255,255,255,0.1); background: linear-gradient(180deg, rgba(255,255,255,0.025), transparent); }
+  .card-root .manifest-block { padding: 12px 16px 13px; }
+  .card-root .manifest-label { font: 700 8px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--cat); margin-bottom: 7px; }
+  .card-root .manifest-text { font-size: 12px; line-height: 1.5; color: rgba(255,255,255,0.85); }
+  .card-root .manifest-footer { margin-top: 10px; display: flex; justify-content: flex-end; }
+  .card-root .manifest-hint { font: 700 9px/1 var(--font-mono); letter-spacing: 0.08em; color: rgba(255,255,255,0.4); }
+  /* real bug found + fixed here, worth checking against the shipped app
+     too: with no explicit `grid-row`, an item placed via `grid-column`
+     alone gets auto-placed into a NEW implicit row rather than actually
+     overlapping the segment already in that cell (grid auto-placement
+     avoids collisions by default) — collapsing both the segment and the
+     fill to ~0 height, confirmed empirically (getBoundingClientRect()).
+     `grid-template-rows: 4px` + `.ttl-fill { grid-row: 1 }` forces both
+     into the one real row and fixes it. ttl-bar.css itself only ever sets
+     `grid-column` inline (TtlBar.tsx) — never `grid-row` — so this exact
+     gap exists in the real stylesheet too. */
+  .card-root .ttl-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; display: grid; grid-template-columns: repeat(var(--queue-n, 1), 1fr); grid-template-rows: 4px; gap: 3px; }
+  .card-root .ttl-seg { background: rgba(255,255,255,0.08); }
+  .card-root .ttl-seg.done { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+  .card-root .ttl-fill { grid-row: 1; height: 100%; width: 100%; background: var(--accent); transform-origin: left; }
+
+  /* priority accent — three tiers */
+  .card-root .card-assembly.low { --accent: #aab3bd; --accent-soft: rgba(170,179,189,0.2); }
+  .card-root .card-assembly.medium { --accent: var(--overlay-teal); --accent-soft: rgba(85,214,189,0.24); }
+  .card-root .card-assembly.high { --accent: var(--overlay-coral); --accent-soft: rgba(255,107,87,0.28); }
+
+  /* origin identity wash */
+  .card-root .below-block.origin-wash::before { content: ""; position: absolute; inset: 0; z-index: 0; background: radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%); pointer-events: none; }
+  .card-root .below-block.origin-wash .compact, .card-root .below-block.origin-wash .manifest { position: relative; z-index: 1; }
+  .card-root .below-block.origin-wash.agent-line { border-top: 1px solid color-mix(in srgb, var(--cat) 55%, transparent); }
+
+  /* source-identity + news-category colors */
+  .card-root .src-claude-code { --cat: #d97757; --cat-deep: rgba(217,119,87,0.15); --cat-pill: rgba(217,119,87,0.13); }
+  .card-root .src-football    { --cat: var(--overlay-green); --cat-deep: color-mix(in srgb, var(--overlay-green) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-green) 13%, transparent); }
+  .card-root .src-weather     { --cat: var(--overlay-amber); --cat-deep: color-mix(in srgb, var(--overlay-amber) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-amber) 13%, transparent); }
+  .card-root .src-manual      { --cat: var(--overlay-blue);  --cat-deep: color-mix(in srgb, var(--overlay-blue) 15%, transparent);  --cat-pill: color-mix(in srgb, var(--overlay-blue) 13%, transparent); }
+  .card-root .cat-tech        { --cat: #5fd4e8; --cat-deep: rgba(95,212,232,0.15);  --cat-pill: rgba(95,212,232,0.13); }
+  .card-root .news-shade::before {
+    content: ""; position: absolute; inset: -30%; z-index: 0;
+    background: radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%), linear-gradient(135deg, var(--cat-deep) 0%, transparent 46%);
+    animation: shade-drift 12s ease-in-out infinite alternate; pointer-events: none;
+  }
+  .card-root .news-shade .compact, .card-root .news-shade .manifest { position: relative; z-index: 1; }
+  @keyframes shade-drift { 0% { transform: translate3d(0,0,0); } 33% { transform: translate3d(-7%,-2%,0); } 66% { transform: translate3d(-3%,-5%,0); } 100% { transform: translate3d(-8%,-6%,0); } }
+
+  /* ============== idle hover-peek (idle-peek.css) — weather + football only,
+     real classes, verbatim ============== */
+  .card-root .below-block.idle-peek { padding: 12px 16px 13px; display: flex; flex-direction: column; gap: 8px; }
+  .card-root .wx-peek-readout { display: flex; align-items: center; gap: 8px; }
+  .card-root .wx-peek-icon { width: 28px; height: 28px; flex: none; border-radius: 6px; background: rgba(255,255,255,0.08); display: flex; align-items: center; justify-content: center; }
+  .card-root .wx-peek-temp { font: 800 18px/1 var(--font-mono); color: var(--overlay-fg); }
+  .card-root .wx-peek-hilo { display: inline-flex; align-items: center; gap: 4px; font: 700 9px/1 var(--font-mono); color: rgba(255,255,255,0.65); white-space: nowrap; }
+  .card-root .wx-peek-condition { color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14); }
+  .card-root .idle-reveal-scorecard { display: flex; flex-direction: column; gap: 8px; }
+  .card-root .sc-head { display: flex; align-items: center; gap: 6px; }
+  .card-root .chip-live { color: var(--overlay-green); background: rgba(127,224,141,0.14); border: 1px solid rgba(127,224,141,0.35); display: inline-flex; align-items: center; gap: 4px; }
+  .card-root .live-dot { width: 5px; height: 5px; border-radius: 50%; background: var(--overlay-green); box-shadow: 0 0 6px var(--overlay-green); }
+  .card-root .clock-pill { color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14); }
+  .card-root .idle-reveal-label { text-align: center; font: 700 13px/1.3 var(--font-sans); color: var(--overlay-fg); }
+
+  /* ============== goal celebration (choreography.css, verbatim) — plays on
+     ANY content template underneath it; the burst is a shell-level effect ============== */
+  .card-root .card-assembly::after {
+    content: ""; position: absolute; inset: -60px; z-index: 0; border-radius: 50%;
+    background:
+      radial-gradient(circle at 50% 50%, rgba(255, 224, 130, 0.55), transparent 40%),
+      radial-gradient(circle at 22% 32%, rgba(255, 107, 87, 0.9), transparent 12%),
+      radial-gradient(circle at 78% 30%, rgba(120, 224, 200, 0.85), transparent 12%),
+      radial-gradient(circle at 30% 74%, rgba(124, 157, 245, 0.85), transparent 12%),
+      radial-gradient(circle at 72% 72%, rgba(255, 196, 106, 0.9), transparent 12%),
+      radial-gradient(circle at 50% 16%, rgba(255, 255, 255, 0.9), transparent 10%),
+      radial-gradient(circle at 50% 50%, rgba(255, 107, 87, 0.55), transparent 68%);
+    opacity: 0; pointer-events: none;
+  }
+  .card-root .card-assembly.pulse-goal { animation: goal-overshoot 1240ms var(--ease-notchtap); }
+  .card-root .card-assembly.pulse-goal::after { animation: goal-burst 1240ms var(--ease-notchtap); }
+  .card-root .card-assembly.pulse-goal::before {
+    content: ""; position: absolute; top: 50%; left: 50%; width: 40px; height: 40px; margin: -20px 0 0 -20px;
+    z-index: 0; border-radius: 50%; border: 2px solid rgba(255, 224, 130, 0.9); opacity: 0; pointer-events: none;
+    animation: goal-ring 1240ms var(--ease-notchtap);
+  }
+  @keyframes goal-overshoot { 0% { transform: scale(1); } 30% { transform: scale(1.06); } 55% { transform: scale(0.995); } 100% { transform: scale(1); } }
+  @keyframes goal-burst { 0% { opacity: 0; transform: scale(0.5) rotate(-8deg); } 35% { opacity: 0.7; transform: scale(1.15) rotate(0deg); } 70% { opacity: 0.6; transform: scale(1.4) rotate(4deg); } 100% { opacity: 0; transform: scale(1.7) rotate(6deg); } }
+  @keyframes goal-ring { 0% { opacity: 0; transform: scale(0.3); } 25% { opacity: 0.9; } 100% { opacity: 0; transform: scale(6); } }
+  .card-root .cele-ripple { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+  .card-root .cele-ripple span { position: absolute; left: 50%; top: 50%; width: 22px; height: 22px; border: 2px solid var(--accent); border-radius: 50%; opacity: 0; transform: translate(-50%,-50%) scale(0.4); animation: ripple-out 1440ms var(--ease-notchtap) forwards; }
+  .card-root .cele-ripple span:nth-child(2) { animation-delay: 280ms; }
+  .card-root .cele-ripple span:nth-child(3) { animation-delay: 560ms; }
+  @keyframes ripple-out { 0% { opacity: 0.85; transform: translate(-50%,-50%) scale(0.4); } 100% { opacity: 0; transform: translate(-50%,-50%) scale(9); } }
+  .card-root .card-content { position: relative; z-index: 1; }
+</style>
+</head>
+<body>
+
+<div class="banner">
+  <b>⚠ proposal, not current reality</b>
+  <p>The real app renders Agent Board and Football through their own dedicated components today (<code>AgentBoard.tsx</code>, <code>LiveMatchScorecard.tsx</code>) — see <code>agent-board.html</code> and <code>football-card.html</code> for what's actually shipped. This page explores unifying every origin onto the ONE shared card template below, across every real shell state.</p>
+</div>
+
+<main>
+  <h1>One shell. One card. Every origin. Every state.</h1>
+  <p class="lede">
+    Same <code>.card-assembly</code> shell every card in this app already
+    uses — and inside it, ONE content template (masthead + stamp + accent
+    stripe + title + body + manifest disclosure + ttl-bar) for every
+    origin, including Agent and Football, across all four real shell
+    states: <b>Bare</b>, <b>Idle rail</b>, <b>Showing</b>, <b>Expanded</b> —
+    each combinable with <b>Hover</b>.
+  </p>
+
+  <section>
+    <h2>the card</h2>
+    <p class="section-sub">
+      State first, then origin/priority (only meaningful once something is
+      showing). Weather and Football get a real idle hover-peek — hover
+      them in Bare or Idle to see it. Football also keeps its real goal
+      celebration burst — try it in Showing or Expanded.
+    </p>
+    <div class="controls">
+      <label>state</label>
+      <button data-state="bare">Bare</button>
+      <button data-state="idle">Idle rail</button>
+      <button data-state="showing" aria-pressed="true">Showing</button>
+      <button data-state="expanded">Expanded</button>
+      <label style="margin-left:14px">hover</label>
+      <button id="hoverBtn" aria-pressed="false">Hover</button>
+    </div>
+    <div class="controls">
+      <label>origin</label>
+      <button data-origin="manual" aria-pressed="true">Manual / CLI</button>
+      <button data-origin="agent">Agent</button>
+      <button data-origin="football">Football</button>
+      <button data-origin="news">News</button>
+      <button data-origin="weather">Weather</button>
+      <label style="margin-left:14px">priority</label>
+      <button data-priority="low">Low</button>
+      <button data-priority="medium" aria-pressed="true">Medium</button>
+      <button data-priority="high">High</button>
+    </div>
+    <div class="controls">
+      <button class="celebrate" id="celebrateBtn" disabled>🎉 Celebrate (goal-overshoot + burst + ring, 1240ms)</button>
+    </div>
+    <div class="rig card-root">
+      <div class="menubar"></div>
+      <div class="stage" style="min-height:340px;">
+        <div class="card-assembly st-showing medium" id="theCard" style="position:absolute; top:0; left:50%; transform:translateX(-50%);">
+          <span class="notch-gill notch-gill-left"></span>
+          <span class="notch-gill notch-gill-right"></span>
+          <div class="flank-left"><span class="time-only">14:32</span></div>
+          <div class="synthetic-cutout"></div>
+          <div class="flank-right">
+            <span class="status-dots">
+              <span class="status-dot football active"></span>
+              <span class="status-dot news active"></span>
+              <span class="status-dot weather dim"></span>
+            </span>
+          </div>
+          <div class="below-block" id="belowBlock"></div>
+        </div>
+      </div>
+      <div class="status-line" id="statusLine">state: <b>showing</b> · origin: <b>manual</b> · priority: <b>medium</b> · hover: <b>off</b></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>why this reads as "the CMUX card"</h2>
+    <p class="section-sub">Three things give this template its identity, and none of them exist in Agent Board's or Football's current bespoke layouts:</p>
+    <ul style="color:var(--dim);font-size:12.5px;line-height:1.7;max-width:64ch;padding-left:20px;margin:0;">
+      <li>The <b style="color:var(--ink)">3px accent stripe + stamp pill</b> — priority is always color, never a chip, per <code>DESIGN.html</code>'s own Law 2.</li>
+      <li>The <b style="color:var(--ink)">masthead hairline</b> — a small dot + uppercase kicker + a line that trails off, the same "letterhead" gesture on every card regardless of origin.</li>
+      <li>The <b style="color:var(--ink)">manifest disclosure</b> — one consistent way to go from "one line" to "the full message," instead of each origin inventing its own expanded layout.</li>
+    </ul>
+  </section>
+</main>
+
+<script>
+(function () {
+  var STAMP = { low: "Live", medium: "Done", high: "Now" };
+  /* `details` = the compact-view pills (facts distinctive enough to show
+     at a glance). `manifestIntro` = one sentence of NEW context, never a
+     restatement of the compact body ("we don't need the message text for
+     a message we already know"). `manifestFacts` = additional facts, same
+     stacked-pill treatment as `details`, that only earn a look once
+     expanded — never duplicating what a compact pill already said. */
+  var ORIGIN = {
+    manual: {
+      kicker: "cli", washClass: "src-manual",
+      title: "Build finished", subtitle: null,
+      body: "`cargo build` completed in **42s**.",
+      details: [],
+      manifestIntro: "Release build, zero warnings.",
+      manifestFacts: [{ label: "Binary", value: "target/release/notchtap (18.4MB)" }, { label: "Cargo.lock", value: "unchanged" }],
+      peek: null,
+    },
+    agent: {
+      kicker: "agent", washClass: "src-claude-code", agentLine: true,
+      title: "Agent needs input", subtitle: "Claude Code · notchtap",
+      body: "Run `git push origin master`?",
+      details: [{ label: "Tool", value: "Bash", tag: "destructive", tone: "danger" }],
+      manifestIntro: "Waiting on a permission decision before continuing.",
+      manifestFacts: [{ label: "Command", value: "git push origin master" }, { label: "Session", value: "12m 40s" }, { label: "Files changed", value: "3" }],
+      peek: null,
+    },
+    football: {
+      kicker: "football", washClass: "src-football",
+      title: "GOAL! Harbor City 2–1 Rivertown", subtitle: "63' · Premier Division",
+      body: "**Marquez** finishes a quick counter from the edge of the box.",
+      details: [{ label: "", value: "J. Marquez (63')", tone: "accent" }, { label: "", value: "T. Okafor", tone: "accent" }],
+      manifestIntro: "Second goal of the season for Marquez — Okafor carried it 40 yards before laying it off.",
+      manifestFacts: [{ label: "Lead", value: "Harbor City 2–1" }, { label: "Time left", value: "27 min" }],
+      peek: { live: true, home: "Harbor City", away: "Rivertown", score: "2–1", minute: "63'" },
+    },
+    weather: {
+      kicker: "weather", washClass: "src-weather",
+      title: "Rain expected this evening", subtitle: null,
+      body: "**72°F**, rain likely after 6pm — 62% chance, light wind.",
+      details: [],
+      manifestIntro: "Clearing expected by tomorrow morning.",
+      manifestFacts: [{ label: "Chance", value: "62%" }, { label: "Wind", value: "8mph SW" }, { label: "Overnight low", value: "64°F" }],
+      peek: { temp: "72°F", condition: "Cloudy", hi: "76°", lo: "61°" },
+    },
+  };
+  var NEWS = {
+    source: "NDTV", category: "Tech", categoryClass: "cat-tech", age: "42m ago",
+    title: "New framework release cuts cold-start time by 40%",
+    manifestIntro: "Focuses on lazy module resolution and a smaller default bundle.",
+    manifestFacts: [{ label: "Cold-start", value: "-40% in early benchmarks" }, { label: "Migration", value: "opt-in via config flag" }],
+  };
+
+  var card = document.getElementById("theCard");
+  var below = document.getElementById("belowBlock");
+  var statusLine = document.getElementById("statusLine");
+  var celebrateBtn = document.getElementById("celebrateBtn");
+  var currentState = "showing", currentOrigin = "manual", currentPriority = "medium", hovered = false;
+
+  function esc(s) { return String(s).replace(/&/g, "&amp;").replace(/</g, "&lt;"); }
+  function mdInline(s) {
+    if (!s) return "";
+    return esc(s)
+      .replace(/`([^`]+)`/g, function (m, c) { return "<code>" + c + "</code>"; })
+      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+      .replace(/\n/g, "<br/>");
+  }
+
+  function renderPeek() {
+    var cfg = ORIGIN[currentOrigin];
+    if (!cfg || !cfg.peek) {
+      below.className = "below-block";
+      below.innerHTML = "";
+      card.classList.remove("has-peek");
+      return;
+    }
+    card.classList.add("has-peek");
+    below.className = "below-block idle-peek origin-wash " + cfg.washClass;
+    if (currentOrigin === "weather") {
+      below.innerHTML =
+        '<div class="wx-peek-readout"><span class="wx-peek-icon">☁</span>' +
+        '<span class="wx-peek-temp">' + cfg.peek.temp + "</span>" +
+        '<span class="chip wx-peek-condition">' + cfg.peek.condition + "</span>" +
+        '<span class="wx-peek-hilo">H:' + cfg.peek.hi + " L:" + cfg.peek.lo + "</span></div>";
+    } else if (currentOrigin === "football") {
+      below.innerHTML =
+        '<div class="idle-reveal-scorecard"><div class="sc-head">' +
+        '<span class="chip chip-live"><span class="live-dot"></span>LIVE</span>' +
+        '<span class="chip clock-pill">' + cfg.peek.minute + "</span></div>" +
+        '<div class="idle-reveal-label">' + cfg.peek.home + " " + cfg.peek.score + " " + cfg.peek.away + "</div></div>";
+    }
+  }
+
+  function render() {
+    card.className = "card-assembly st-" + currentState + " " + currentPriority + (hovered ? " hovered" : "");
+    celebrateBtn.disabled = !(currentOrigin === "football" && (currentState === "showing" || currentState === "expanded"));
+
+    if (currentState === "bare" || currentState === "idle") {
+      if (hovered && (currentOrigin === "weather" || currentOrigin === "football")) {
+        renderPeek();
+      } else {
+        below.className = "below-block";
+        below.innerHTML = "";
+        card.classList.remove("has-peek");
+      }
+      statusLine.innerHTML = "state: <b>" + currentState + "</b> · origin: <b>" + currentOrigin + "</b> · hover: <b>" + (hovered ? "on" : "off") + "</b>";
+      return;
+    }
+    card.classList.remove("has-peek");
+
+    var expanded = currentState === "expanded";
+    var stamp = '<div class="stamp">' + (currentOrigin === "news" ? "Wire" : STAMP[currentPriority]) + "</div>";
+    var copy, washClass, agentLine = false, manifestIntro, manifestFacts;
+
+    function factsHtml(facts) {
+      if (!facts || facts.length === 0) return "";
+      return '<div class="detail-facts">' + facts.map(function (d) {
+        var toneClass = d.tone ? " tone-" + d.tone : "";
+        var label = d.label ? '<span class="fp-label">' + esc(d.label) + "</span>" : "";
+        var tag = d.tag ? '<span class="fp-tag">' + esc(d.tag) + "</span>" : "";
+        return '<span class="fact-pill' + toneClass + '">' + label + esc(d.value) + tag + "</span>";
+      }).join("") + "</div>";
+    }
+
+    if (currentOrigin === "news") {
+      washClass = NEWS.categoryClass;
+      manifestIntro = NEWS.manifestIntro;
+      manifestFacts = NEWS.manifestFacts;
+      copy =
+        '<div class="masthead-row"><div class="masthead"><span class="dot"></span>' + esc(NEWS.source) + "</div>" + stamp + "</div>" +
+        '<div class="title headline">' + esc(NEWS.title) + "</div>" +
+        '<div class="notif-meta-row"><span class="chip chip-category">' + esc(NEWS.category) + '</span><span class="notif-time-inline">' + esc(NEWS.age) + "</span></div>";
+    } else {
+      var cfg = ORIGIN[currentOrigin];
+      washClass = cfg.washClass;
+      agentLine = !!cfg.agentLine;
+      manifestIntro = cfg.manifestIntro;
+      manifestFacts = cfg.manifestFacts;
+      copy =
+        '<div class="masthead-row"><div class="masthead"><span class="dot"></span>' + esc(cfg.kicker) + "</div>" + stamp + "</div>" +
+        '<div class="title headline">' + esc(cfg.title) + "</div>" +
+        (cfg.subtitle ? '<div class="notif-subtitle-row"><span class="notif-subtitle">' + esc(cfg.subtitle) + "</span></div>" : "") +
+        (cfg.body ? '<div class="notif-body">' + mdInline(cfg.body) + "</div>" : "") +
+        factsHtml(cfg.details);
+    }
+
+    var newsShade = currentOrigin === "news" ? " news-shade" : "";
+    below.className = "below-block origin-wash" + (agentLine ? " agent-line" : "") + " " + washClass + newsShade;
+    below.innerHTML =
+      '<div class="card-content"><div class="compact"><div class="copy">' + copy + "</div>" + (!expanded ? '<div class="compact-hint"><kbd>&#8963;&#8679;N</kbd> more</div>' : "") + "</div>" +
+      '<div class="manifest-wrap' + (expanded ? " expanded" : "") + '"><div class="manifest"><div class="manifest-block">' +
+      '<div class="manifest-text">' + mdInline(manifestIntro) + "</div>" + factsHtml(manifestFacts) +
+      '<div class="manifest-footer"><span class="manifest-hint"><kbd>&#8963;&#8679;N</kbd> collapse</span></div></div></div></div>' +
+      '<div class="ttl-bar" style="--queue-n:4"><span class="ttl-seg done"></span><span class="ttl-seg done"></span><span class="ttl-seg"></span><span class="ttl-seg"></span><div class="ttl-fill" style="grid-column:3;transform:scaleX(0.6)"></div></div></div>';
+
+    statusLine.innerHTML = "state: <b>" + currentState + "</b> · origin: <b>" + currentOrigin + "</b> · priority: <b>" + currentPriority + "</b> · hover: <b>" + (hovered ? "on" : "off") + "</b>";
+  }
+
+  document.querySelectorAll("[data-state]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      currentState = b.dataset.state;
+      document.querySelectorAll("[data-state]").forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); });
+      render();
+    });
+  });
+  document.getElementById("hoverBtn").addEventListener("click", function (e) {
+    hovered = !hovered;
+    e.target.setAttribute("aria-pressed", String(hovered));
+    render();
+  });
+  document.querySelectorAll("[data-origin]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      currentOrigin = b.dataset.origin;
+      document.querySelectorAll("[data-origin]").forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); });
+      render();
+    });
+  });
+  document.querySelectorAll("[data-priority]").forEach(function (b) {
+    b.addEventListener("click", function () {
+      currentPriority = b.dataset.priority;
+      document.querySelectorAll("[data-priority]").forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); });
+      render();
+    });
+  });
+  celebrateBtn.addEventListener("click", function () {
+    card.classList.remove("pulse-goal");
+    void card.offsetWidth;
+    card.classList.add("pulse-goal");
+    setTimeout(function () { card.classList.remove("pulse-goal"); }, 1300);
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>

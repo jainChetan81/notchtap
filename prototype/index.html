@@ -1,0 +1,118 @@
+<!doctype html>
+<!-- Landing page for this folder — the single place to find every static
+     mock of the CURRENT shipped UI. Each file listed below is its own
+     hand-authored, standalone HTML/CSS/JS mirror (no build step, no React)
+     read directly off the real source, per its own header comment. This
+     index adds nothing visual of its own beyond a table of contents; it
+     is not itself a source of truth for any card's appearance.
+     Last synced against source: 2026-08-01. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>notchtap — current UI, mirrored (index)</title>
+<style>
+  :root { --bg: #101318; --ink: #e8ecf1; --dim: #8b95a3; --rule: rgba(255,255,255,0.09); --accent: #7fe08d; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; padding: 52px 24px 100px; }
+  main { max-width: 760px; margin: 0 auto; }
+  h1 { font-size: 22px; font-weight: 700; margin: 0 0 8px; letter-spacing: -0.01em; }
+  p.lede { color: var(--dim); font-size: 13.5px; line-height: 1.6; max-width: 62ch; margin: 0 0 8px; }
+  p.note { font-size: 11.5px; color: var(--dim); border-left: 2px solid var(--rule); padding-left: 10px; margin: 18px 0 40px; max-width: 60ch; line-height: 1.6; }
+  code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; font-size: 0.92em; color: #9fc3e8; }
+  .list { display: flex; flex-direction: column; gap: 2px; border-top: 1px solid var(--rule); }
+  .row {
+    display: grid; grid-template-columns: 28px 1fr auto; align-items: baseline; gap: 14px;
+    padding: 16px 4px; border-bottom: 1px solid var(--rule); text-decoration: none; color: inherit;
+  }
+  .row:hover .name { color: var(--accent); }
+  .row:hover { background: rgba(255,255,255,0.02); }
+  .row .n { font: 700 11px/1 ui-monospace, Menlo, monospace; color: var(--dim); }
+  .row .name { font-size: 14.5px; font-weight: 650; transition: color 140ms ease; }
+  .row .desc { display: block; margin-top: 3px; font-size: 12px; color: var(--dim); line-height: 1.5; max-width: 56ch; font-weight: 400; }
+  .row .synced { font: 600 10px/1 ui-monospace, Menlo, monospace; color: #5b6572; white-space: nowrap; align-self: start; padding-top: 2px; }
+  footer { margin-top: 44px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 11.5px; color: var(--dim); line-height: 1.7; }
+</style>
+</head>
+<body>
+<main>
+  <h1>notchtap — current UI, mirrored</h1>
+  <p class="lede">
+    Eight standalone HTML files, each a static mock of one real surface,
+    read directly off the shipped source (component + CSS files named in
+    each one's own header comment). No build step, no React, no
+    <code>motion</code> — every value is "read off source on the sync date
+    below," not a live guarantee.
+  </p>
+  <p class="note">
+    This complements, not replaces, <code>DESIGN.html</code> at the repo
+    root (the token/law/motion reference) — that file predates the Agent
+    Board and the per-card-type richness these files cover; treat these as
+    the current per-surface visual truth and <code>DESIGN.html</code> as
+    the system-level rulebook.
+  </p>
+
+  <div class="list">
+    <a class="row" href="notch-states.html">
+      <span class="n">01</span>
+      <span><span class="name">notch-states</span><span class="desc">The shared shell — bare/idle/showing/expanded/exiting, notch vs HUD mode, the idle hover-peek (weather/media/football/timeline). Every other card mounts inside this shape.</span></span>
+      <span class="synced">2026-07-30</span>
+    </a>
+    <a class="row" href="agent-board.html">
+      <span class="n">02</span>
+      <span><span class="name">agent-board</span><span class="desc">Coding-agent sessions — all seven states, all four runtime identities, resting (hero + compact rows) and hover-expanded (full scrollable list with per-row history). Also includes a proposal section (§⚠) showing the same states through the unified card template.</span></span>
+      <span class="synced">2026-08-01</span>
+    </a>
+    <a class="row" href="football-card.html">
+      <span class="n">03</span>
+      <span><span class="name">football-card</span><span class="desc">Two real render paths: the resting hover-reveal scorecard peek, and the promoted goal/card/kickoff notification with its celebration motion. Also includes a proposal section (§⚠) showing the same events through the unified card template.</span></span>
+      <span class="synced">2026-08-01</span>
+    </a>
+    <a class="row" href="news-card.html">
+      <span class="n">04</span>
+      <span><span class="name">news-card</span><span class="desc">Masthead + category dot + Wire stamp + headline + category/age pills, across every news category color.</span></span>
+      <span class="synced">2026-07-30</span>
+    </a>
+    <a class="row" href="weather-art.html">
+      <span class="n">05</span>
+      <span><span class="name">weather-art</span><span class="desc">The condition → (glyph, mood, texture) table's two consumers: the promoted alert card and the idle hover-peek readout, across the mood backdrop set.</span></span>
+      <span class="synced">2026-07-30</span>
+    </a>
+    <a class="row" href="status-rail.html">
+      <span class="n">06</span>
+      <span><span class="name">status-rail</span><span class="desc">The idle rail — clock, the three status dots (Football/News/Weather), paused state, configured-state shapes.</span></span>
+      <span class="synced">2026-07-30</span>
+    </a>
+    <a class="row" href="control-panel.html">
+      <span class="n">07</span>
+      <span><span class="name">control-panel</span><span class="desc">The Settings window — all 12 sections' sidebar nav, the rotation-order widget, form-control patterns (toggle, segmented, number field).</span></span>
+      <span class="synced">2026-07-30</span>
+    </a>
+    <a class="row" href="system-stats.html">
+      <span class="n">08</span>
+      <span><span class="name">system-stats</span><span class="desc">Settings → About — live process/system stats, version/build info.</span></span>
+      <span class="synced">2026-07-30</span>
+    </a>
+  </div>
+
+  <h2 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#f0c46a;margin:40px 0 4px;">proposals — not current reality</h2>
+  <p class="lede" style="margin-bottom:16px;">Explorations of a different direction, clearly separate from the mirror above.</p>
+  <div class="list">
+    <a class="row" href="proposal-unified-card.html">
+      <span class="n">P1</span>
+      <span><span class="name">proposal-unified-card</span><span class="desc">One shared shell + one shared content template (masthead/stamp/accent-stripe/manifest — "the CMUX card") for every origin, including Agent and Football, instead of each growing its own bespoke layout.</span></span>
+      <span class="synced">2026-08-01</span>
+    </a>
+  </div>
+
+  <footer>
+    Also in this repo: <code>DESIGN.html</code> (root) — the token/law/motion
+    system reference, last synced 2026-07-22 (predates the Agent Board).
+    <code>prototypes/</code> (plural, sibling folder) holds this session's
+    working scratch files (an animation-fix walkthrough, a broader design
+    reference) — useful context, not the source-of-truth mirror this folder
+    is.
+  </footer>
+</main>
+</body>
+</html>
