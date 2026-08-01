@@ -1,0 +1,947 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>notchtap — UI &amp; Motion Reference</title>
+<style>
+  :root {
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+    /* settings window tokens (vendor/shared-ui/design/tokens.css, .dark) */
+    --bg: oklch(0.121 0.004 245.47);
+    --fg: oklch(0.961 0.003 264.54);
+    --card: oklch(0.168 0.007 258.37);
+    --primary: oklch(0.624 0.206 255.49);
+    --muted-fg: oklch(0.724 0.011 261.78);
+    --border: oklch(0.256 0.012 264.33);
+    --sidebar: oklch(0.145 0.005 263.79);
+    --destructive: oklch(0.708 0.185 30.07);
+
+    /* overlay tokens */
+    --overlay-fg: #f5f7fa;
+    --overlay-teal: #55d6bd;
+    --overlay-coral: #ff6b57;
+    --overlay-amber: #f0c46a;
+    --overlay-blue: #0a84ff;
+    --overlay-green: #7fe08d;
+
+    /* agent runtime identity (source-identity.css) */
+    --rt-claude: #d97757;
+    --rt-codex: #10a37f;
+    --rt-kimi: #f5f7fa;
+    --rt-opencode: #9d7cd8;
+
+    /* easing (styles.css / animationTiming.ts) */
+    --ease-notchtap: cubic-bezier(0.22, 1, 0.36, 1);
+    --ease-notchtap-pop: cubic-bezier(0.3, 1.36, 0.44, 1);
+    --ease-interrupt: cubic-bezier(0.4, 0, 1, 1);
+    --ease-spring-approx: cubic-bezier(0.16, 1, 0.3, 1);
+
+    /* durations (animationTiming.ts) */
+    --hover-ms: 160ms;
+    --reveal-ms: 260ms;
+    --expand-ms: 320ms;
+    --content-exit-ms: 105ms;
+    --swap-exit-ms: 175ms;
+    --rotation-exit-ms: 70ms;
+    --interrupt-exit-ms: 60ms;
+    --idle-reveal-ms: 240ms;
+
+    --page-bg: #08090b;
+    --panel: #101216;
+    --panel-2: #14171c;
+    --line: #23262e;
+    --ink: #e9ebef;
+    --ink-dim: #99a0ac;
+    --ink-faint: #5c6270;
+  }
+
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--page-bg); color: var(--ink); font-family: var(--font-sans); -webkit-font-smoothing: antialiased; }
+  body { padding-bottom: 80px; }
+  code { font-family: var(--font-mono); }
+
+  .shell { max-width: 1180px; margin: 0 auto; padding: 0 22px; }
+
+  /* ===== header ===== */
+  header.top { padding: 34px 0 18px; display: flex; align-items: flex-start; justify-content: space-between; gap: 20px; flex-wrap: wrap; border-bottom: 1px solid var(--line); margin-bottom: 18px; }
+  header.top .eyebrow { font-family: var(--font-mono); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--overlay-teal); margin: 0 0 8px; }
+  header.top h1 { font-size: 24px; margin: 0 0 6px; font-weight: 650; letter-spacing: -0.01em; }
+  header.top p { margin: 0; color: var(--ink-dim); font-size: 13px; max-width: 560px; line-height: 1.5; }
+  header.top .global-controls { display: flex; align-items: center; gap: 14px; padding-top: 6px; }
+  label.g-toggle { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; color: var(--ink-dim); cursor: pointer; user-select: none; }
+  label.g-toggle input { accent-color: var(--overlay-teal); width: 14px; height: 14px; }
+
+  /* ===== tabs ===== */
+  nav.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 26px; position: sticky; top: 0; background: var(--page-bg); padding: 10px 0; z-index: 10; }
+  .tab-btn {
+    font-family: var(--font-mono); font-size: 11.5px; font-weight: 600; letter-spacing: 0.02em;
+    color: var(--ink-dim); background: var(--panel); border: 1px solid var(--line); border-radius: 999px;
+    padding: 8px 15px; cursor: pointer; transition: color 140ms var(--ease-notchtap), background-color 140ms var(--ease-notchtap), border-color 140ms var(--ease-notchtap);
+  }
+  .tab-btn:hover { color: var(--ink); border-color: #343842; }
+  .tab-btn.active { color: #06110e; background: var(--overlay-teal); border-color: var(--overlay-teal); }
+
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; animation: panel-in 180ms var(--ease-notchtap); }
+  @keyframes panel-in { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+  :root.force-reduced-motion .tab-panel.active { animation: none; }
+
+  h2.h { font-size: 18px; margin: 0 0 6px; font-weight: 620; letter-spacing: -0.01em; }
+  p.sub { color: var(--ink-dim); font-size: 13px; line-height: 1.55; max-width: 680px; margin: 0 0 18px; }
+  .block { margin-bottom: 44px; }
+  .panel { border: 1px solid var(--line); background: var(--panel); border-radius: 12px; overflow: hidden; }
+
+  /* ===== controls bar (shared) ===== */
+  .ctrl-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; padding: 12px 14px; border-bottom: 1px solid var(--line); background: var(--panel-2); }
+  .ctrl-bar .group-label { font-family: var(--font-mono); font-size: 10px; color: var(--ink-faint); text-transform: uppercase; letter-spacing: 0.06em; margin-right: 2px; }
+  .ctrl-bar .sep { width: 1px; align-self: stretch; background: var(--line); margin: 0 4px; }
+  .pbtn {
+    font-family: var(--font-sans); font-size: 12px; font-weight: 550; color: var(--ink);
+    background: #1b1e24; border: 1px solid #2a2e37; border-radius: 7px; padding: 6px 11px; cursor: pointer;
+    transition: background-color 140ms var(--ease-notchtap), border-color 140ms var(--ease-notchtap), transform 140ms var(--ease-notchtap), color 140ms var(--ease-notchtap);
+  }
+  .pbtn:hover { background: #22262e; }
+  .pbtn:active { transform: scale(0.96); }
+  .pbtn[aria-pressed="true"] { background: color-mix(in srgb, var(--overlay-teal) 24%, #1b1e24); border-color: var(--overlay-teal); color: #eafff9; }
+  .spacer { flex: 1 1 auto; min-width: 8px; }
+
+  /* ===== tokens tab ===== */
+  .swatch-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; padding: 16px; }
+  .swatch { border: 1px solid var(--line); border-radius: 10px; overflow: hidden; background: var(--panel-2); }
+  .swatch .fill { height: 52px; }
+  .swatch .meta { padding: 8px 10px; }
+  .swatch .name { font-size: 12px; font-weight: 600; }
+  .swatch .hex { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-faint); }
+
+  .curve-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; padding: 16px; }
+  .curve-card { border: 1px solid var(--line); border-radius: 10px; background: var(--panel-2); padding: 14px; }
+  .curve-card h4 { margin: 0 0 2px; font-size: 13px; font-family: var(--font-mono); }
+  .curve-card .used-for { margin: 0 0 10px; font-size: 11px; color: var(--ink-faint); line-height: 1.5; }
+  .curve-card svg { display: block; width: 100%; height: 90px; }
+  .curve-card .track { position: relative; height: 22px; background: #050608; border-radius: 6px; margin-top: 8px; overflow: hidden; }
+  .curve-card .dot { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 50%; background: var(--overlay-teal); }
+  .curve-card.play .dot { transform: translateX(calc(100% - 4px)); }
+
+  .dur-list { padding: 16px; display: flex; flex-direction: column; gap: 8px; }
+  .dur-row { display: grid; grid-template-columns: 150px 1fr 60px; align-items: center; gap: 10px; font-size: 11.5px; }
+  .dur-row .const-name { font-family: var(--font-mono); color: var(--overlay-amber); }
+  .dur-row .bar-track { height: 8px; background: #050608; border-radius: 4px; overflow: hidden; }
+  .dur-row .bar-fill { height: 100%; background: var(--overlay-teal); border-radius: 4px; }
+  .dur-row .ms { font-family: var(--font-mono); color: var(--ink-dim); text-align: right; }
+
+  /* ===== overlay stage ===== */
+  /* the real overlay window has no reserved menu-bar space — it's a
+     borderless desktop overlay anchored flush at the screen's own top
+     edge (notch cutout or top-center HUD, CLAUDE.md's cross-device
+     behavior), so the card sits at padding-top:0 here, not centered in
+     a fake "device frame". */
+  .stage { position: relative; padding: 0 16px 34px; background: linear-gradient(#08090b, #0e1013 140px, #0e1013); display: flex; flex-direction: column; align-items: center; min-height: 220px; }
+  .card-assembly {
+    position: relative; box-sizing: border-box; display: grid;
+    grid-template-columns: 1fr 200px 1fr; grid-template-rows: 32px auto;
+    width: 400px; margin: 0 auto; isolation: isolate;
+    filter: drop-shadow(0 7px 18px rgba(0, 0, 0, 0.5));
+    transform-origin: top center;
+    transition: width var(--expand-ms) var(--ease-notchtap-pop), transform var(--hover-ms) var(--ease-notchtap);
+  }
+  .card-assembly[data-state="bare"] { width: 200px; }
+  .card-assembly[data-state="idle"], .card-assembly[data-state="bare-peek"] { width: 370px; transition: width var(--reveal-ms) var(--ease-notchtap), transform var(--hover-ms) var(--ease-notchtap); }
+  .card-assembly[data-state="showing"] { width: 400px; }
+  .card-assembly[data-state="expanded"] { width: 500px; transition: width var(--expand-ms) var(--ease-notchtap), transform var(--hover-ms) var(--ease-notchtap); }
+  .card-assembly.hovered { transform: scale(1.02); }
+  :root.force-reduced-motion .card-assembly.hovered { transform: none; }
+  .flank { box-sizing: border-box; grid-row: 1; overflow: hidden; display: flex; align-items: center; background: #000; color: var(--overlay-fg); min-width: 0; font-family: var(--font-mono); font-size: 11px;
+    transition: background-color var(--reveal-ms) var(--ease-notchtap), padding var(--reveal-ms) var(--ease-notchtap), border-radius var(--expand-ms) var(--ease-notchtap); }
+  .flank-left { grid-column: 1; justify-content: flex-start; padding-left: 16px; }
+  .flank-right { grid-column: 3; justify-content: flex-end; padding-right: 16px; }
+  .card-assembly:not(.has-below) .flank-left { border-bottom-left-radius: 8px; transition: border-radius var(--content-exit-ms) var(--ease-notchtap); }
+  .card-assembly:not(.has-below) .flank-right { border-bottom-right-radius: 8px; transition: border-radius var(--content-exit-ms) var(--ease-notchtap); }
+  .card-assembly[data-state="bare"] .flank { background: transparent; padding-left: 0; padding-right: 0; }
+  .card-assembly[data-state="bare"].hovered .flank { background: #000; padding-left: 16px; padding-right: 16px; }
+  .cutout { grid-column: 2; grid-row: 1; background: #000; display: none; }
+  .stage[data-mode="hud"] .cutout { display: block; }
+  .stage[data-mode="hud"] .card-assembly:not(.has-below) .cutout { border-bottom-left-radius: 8px 20px; border-bottom-right-radius: 8px 20px; }
+  .notch-gill { display: none; position: absolute; top: 0; width: 10px; height: 10px; pointer-events: none; opacity: 0; transition: opacity var(--expand-ms) var(--ease-notchtap); }
+  .stage[data-mode="hud"] .notch-gill { display: block; }
+  .stage[data-mode="hud"] .card-assembly:not(.has-below) .notch-gill { opacity: 1; }
+  .notch-gill-left { left: -10px; background: radial-gradient(circle at bottom left, transparent 10px, #000 10px); }
+  .notch-gill-right { right: -10px; background: radial-gradient(circle at bottom right, transparent 10px, #000 10px); }
+  .below-block { grid-column: 1 / -1; grid-row: 2; box-sizing: border-box; overflow: hidden; width: 100%; background: #000; color: var(--overlay-fg);
+    border-bottom-left-radius: 8px; border-bottom-right-radius: 8px; padding: 14px 16px 16px;
+    opacity: 0; transform: translateY(-4px); transition: opacity 180ms var(--ease-notchtap), transform 180ms var(--ease-notchtap); }
+  :root.force-reduced-motion .below-block { transform: none; }
+  .card-assembly.has-below .below-block { opacity: 1; transform: translateY(0); display: block; }
+  .card-assembly:not(.has-below) .below-block { display: none; }
+  .below-title { font-size: 13px; font-weight: 640; margin: 0 0 4px; }
+  .below-body { font-size: 11.5px; color: color-mix(in srgb, var(--overlay-fg) 78%, transparent); line-height: 1.4; margin: 0; }
+  .stage-caption { margin-top: 20px; font-family: var(--font-mono); font-size: 11px; color: var(--ink-faint); text-align: center; }
+  .stage-caption b { color: var(--overlay-teal); }
+
+  /* ===== agent board ===== */
+  .agent-stage { padding: 0 20px 26px; background: linear-gradient(#08090b, #0e1013); display: flex; justify-content: center; }
+  .agent-board-shell { width: 420px; max-width: 100%; }
+  .agent-board { display: flex; flex-direction: column; gap: 8px; background: #000; border-radius: 12px; padding: 12px 14px 14px; box-shadow: 0 10px 26px rgba(0,0,0,0.45); }
+  .abp-head { display: flex; align-items: center; gap: 7px; }
+  .agent-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; background: var(--agent-accent, var(--overlay-fg)); transition: background-color var(--hover-ms) var(--ease-notchtap); }
+  .agent-dot.large { width: 10px; height: 10px; }
+  .agent-dot.pulse { animation: agent-dot-state-tick 240ms var(--ease-notchtap), agent-dot-breathe 2.2s ease-in-out 4; }
+  :root.force-reduced-motion .agent-dot.pulse { animation: agent-dot-breathe 2.2s ease-in-out 4; }
+  @keyframes agent-dot-state-tick { from { transform: scale(1.35); } to { transform: scale(1); } }
+  @keyframes agent-dot-breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .rt-tick { width: 5px; height: 5px; flex-shrink: 0; background: var(--rt-accent, var(--overlay-fg)); box-shadow: 0 0 4px var(--rt-accent, transparent); }
+  .abp-runtime { font-weight: 600; font-size: 13px; color: var(--rt-accent, var(--overlay-fg)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .abp-pill { margin-left: auto; font-size: 10.5px; font-weight: 600; letter-spacing: 0.02em; padding: 2px 8px; border-radius: 999px; background: color-mix(in srgb, var(--agent-accent, var(--overlay-fg)) 18%, transparent); color: var(--agent-accent, var(--overlay-fg)); }
+  .abp-project { font-size: 11.5px; color: color-mix(in srgb, var(--overlay-fg) 62%, transparent); margin-top: 2px; }
+  .abp-summary { font-size: 12px; line-height: 1.35; color: color-mix(in srgb, var(--overlay-fg) 82%, transparent); margin-top: 2px; }
+  .abp-elapsed { font-size: 10.5px; font-variant-numeric: tabular-nums; color: color-mix(in srgb, var(--overlay-fg) 48%, transparent); margin-top: 4px; }
+  .agent-board-primary { transition: opacity var(--hover-ms) var(--ease-notchtap), transform var(--hover-ms) var(--ease-notchtap); }
+  .agent-board-primary.swap-out { opacity: 0; transform: translateY(-6px); }
+  .agent-board-primary.swap-in { opacity: 0; transform: translateY(6px); }
+
+  .agent-rows { display: flex; flex-direction: column; gap: 3px; border-top: 1px solid color-mix(in srgb, var(--overlay-fg) 14%, transparent); padding-top: 6px; margin-top: 2px; }
+  .agent-row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: color-mix(in srgb, var(--overlay-fg) 70%, transparent); white-space: nowrap; overflow: hidden;
+    transition: height var(--hover-ms) linear, opacity var(--hover-ms) var(--ease-spring-approx); }
+  .agent-row .rt-name { font-weight: 600; color: var(--rt-accent, var(--overlay-fg)); flex-shrink: 0; }
+  .agent-row .st-name { margin-left: auto; flex-shrink: 0; color: var(--agent-accent, var(--overlay-fg)); }
+  .agent-row .el { flex-shrink: 0; font-variant-numeric: tabular-nums; color: color-mix(in srgb, var(--overlay-fg) 45%, transparent); min-width: 2.4em; text-align: right; }
+  .agent-row.row-enter { animation: row-in 350ms var(--ease-spring-approx); }
+  .agent-row.row-leave { animation: row-out 350ms var(--ease-spring-approx) forwards; }
+  @keyframes row-in { from { opacity: 0; height: 0; } to { opacity: 1; height: 16px; } }
+  @keyframes row-out { from { opacity: 1; height: 16px; } to { opacity: 0; height: 0; } }
+
+  .agent-waiting { --agent-accent: var(--overlay-amber); }
+  .agent-failed { --agent-accent: var(--overlay-coral); }
+  .agent-working { --agent-accent: var(--overlay-blue); }
+  .agent-completed { --agent-accent: var(--overlay-green); }
+  .agent-stale { --agent-accent: color-mix(in srgb, var(--overlay-fg) 62%, transparent); }
+  .src-claude { --rt-accent: var(--rt-claude); }
+  .src-codex { --rt-accent: var(--rt-codex); }
+  .src-kimi { --rt-accent: var(--rt-kimi); }
+  .src-opencode { --rt-accent: var(--rt-opencode); }
+
+  .expanded-scroll { display: flex; flex-direction: column; gap: 6px; max-height: 280px; overflow-y: auto; margin-top: 4px; }
+  .expanded-row { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--overlay-fg) 5%, transparent); }
+  .expanded-row-head { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: color-mix(in srgb, var(--overlay-fg) 78%, transparent); white-space: nowrap; }
+  .expanded-row-summary { font-size: 11px; line-height: 1.3; color: color-mix(in srgb, var(--overlay-fg) 68%, transparent); }
+  .expanded-row-meta, .expanded-row-details { display: flex; flex-wrap: wrap; gap: 4px 8px; font-size: 10px; color: color-mix(in srgb, var(--overlay-fg) 45%, transparent); font-family: var(--font-mono); }
+  .expanded-row-details span b { color: color-mix(in srgb, var(--overlay-fg) 72%, transparent); font-weight: 600; font-family: var(--font-sans); }
+  .expanded-history { max-height: 0; overflow: hidden; opacity: 0; transition: max-height 320ms var(--ease-notchtap), opacity 320ms var(--ease-notchtap); margin-top: 0; }
+  .expanded-row:hover .expanded-history { max-height: 90px; opacity: 1; margin-top: 4px; }
+  .expanded-history ul { list-style: none; margin: 4px 0 0; padding: 4px 0 0; border-top: 1px solid color-mix(in srgb, var(--overlay-fg) 12%, transparent); display: flex; flex-direction: column; gap: 2px; }
+  .expanded-history li { display: flex; justify-content: space-between; font-size: 10px; color: color-mix(in srgb, var(--overlay-fg) 50%, transparent); }
+  .expanded-history li b { color: color-mix(in srgb, var(--overlay-fg) 65%, transparent); font-weight: 600; }
+  .hover-hint { text-align: center; font-size: 10.5px; color: var(--ink-faint); font-family: var(--font-mono); margin-top: 6px; }
+
+  /* ===== settings window mockup ===== */
+  .settings-frame { display: grid; grid-template-columns: 150px 1fr; height: 560px; background: var(--bg); color: var(--fg); font-size: 12px; }
+  .set-sidebar { background: var(--sidebar); border-right: 1px solid var(--border); display: flex; flex-direction: column; }
+  .set-brand { display: flex; align-items: center; gap: 8px; padding: 15px 14px; border-bottom: 1px solid color-mix(in srgb, var(--border) 60%, transparent); font-family: var(--font-mono); font-size: 11px; font-weight: 700; letter-spacing: 0.09em; text-transform: uppercase; }
+  .set-brand .mark { width: 20px; height: 20px; border-radius: 5px; background: linear-gradient(135deg, var(--overlay-teal), var(--overlay-blue)); flex-shrink: 0; }
+  .set-nav { flex: 1; overflow-y: auto; padding: 10px 8px; display: flex; flex-direction: column; gap: 3px; }
+  .set-nav button { display: grid; grid-template-columns: 20px 1fr; align-items: center; gap: 8px; min-height: 34px; padding: 6px 8px; border-radius: 6px; border: none; border-left: 2px solid transparent; background: transparent; color: var(--muted-fg); font-size: 11.5px; font-weight: 560; text-align: left; cursor: pointer;
+    transition: color 140ms var(--ease-notchtap), background-color 140ms var(--ease-notchtap), border-color 140ms var(--ease-notchtap), transform 140ms var(--ease-notchtap); font-family: var(--font-sans); }
+  .set-nav button:hover { background: color-mix(in srgb, var(--fg) 8%, transparent); }
+  .set-nav button:active { transform: scale(0.97); }
+  .set-nav button.active { color: var(--fg); background: color-mix(in srgb, var(--primary) 15%, transparent); border-left-color: var(--primary); }
+  .set-nav .badge { width: 18px; height: 18px; border-radius: 4px; background: color-mix(in srgb, var(--fg) 10%, transparent); display: flex; align-items: center; justify-content: center; font-family: var(--font-mono); font-size: 8px; font-weight: 700; color: var(--muted-fg); }
+  .set-nav button.active .badge { background: var(--primary); color: #04101f; }
+  .set-meta { border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent); padding: 9px 14px 14px; font-family: var(--font-mono); font-size: 9px; font-weight: 700; letter-spacing: 0.1em; color: var(--muted-fg); text-transform: uppercase; }
+
+  .set-pane { display: grid; grid-template-rows: auto 1fr auto; min-height: 0; }
+  .set-header { padding: 18px 18px 14px; border-bottom: 1px solid var(--border); }
+  .set-header .idx { font-family: var(--font-mono); font-size: 9.5px; font-weight: 700; letter-spacing: 0.1em; color: var(--muted-fg); text-transform: uppercase; margin-bottom: 6px; }
+  .set-header h3 { margin: 0; font-size: 17px; font-weight: 650; letter-spacing: -0.015em; }
+  .set-header p { margin: 5px 0 0; font-size: 11px; color: var(--muted-fg); max-width: 280px; line-height: 1.4; }
+  .set-body { overflow-y: auto; padding: 14px 15px 20px; }
+  .set-body.fade-swap { animation: sec-swap 180ms var(--ease-notchtap); }
+  @keyframes sec-swap { from { opacity: 0; transform: translateX(3px); } to { opacity: 1; transform: translateX(0); } }
+  :root.force-reduced-motion .set-body.fade-swap { animation: none; }
+  .set-footer { display: flex; align-items: center; gap: 6px; padding: 11px 14px; border-top: 1px solid var(--border); }
+
+  .s-group { border-bottom: 1px solid color-mix(in srgb, var(--border) 70%, transparent); padding-bottom: 14px; margin-bottom: 14px; }
+  .s-group:last-child { border-bottom: none; margin-bottom: 0; }
+  .s-group-title { font-size: 12.5px; font-weight: 650; margin: 0 0 2px; }
+  .s-group-desc { font-size: 10.5px; color: var(--muted-fg); margin: 0 0 10px; line-height: 1.4; }
+  .s-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 0; }
+  .s-row .s-name { font-size: 11.5px; font-weight: 580; }
+  .s-row .s-help { font-size: 10px; color: var(--muted-fg); margin-top: 1px; }
+
+  .s-switch { width: 32px; height: 19px; border-radius: 999px; background: var(--border); position: relative; border: none; cursor: pointer; padding: 0; flex-shrink: 0; transition: background-color 150ms ease-out, transform 150ms var(--ease-notchtap); }
+  .s-switch:active { transform: scale(0.97); }
+  .s-switch[aria-pressed="true"] { background: var(--primary); }
+  .s-switch .thumb { position: absolute; top: 2px; left: 2px; width: 15px; height: 15px; border-radius: 50%; background: #e7e9ee; transition: transform 150ms ease-out; }
+  .s-switch[aria-pressed="true"] .thumb { transform: translateX(13px); }
+
+  .s-seg { display: inline-flex; gap: 2px; border-radius: 7px; border: 1px solid var(--input, var(--border)); background: color-mix(in srgb, var(--border) 25%, transparent); padding: 3px; }
+  .s-seg button { font-family: var(--font-mono); font-size: 10.5px; font-weight: 620; color: var(--muted-fg); background: transparent; border: 1px solid transparent; border-radius: 4px; padding: 5px 9px; cursor: pointer;
+    transition: color 140ms var(--ease-notchtap), background-color 140ms var(--ease-notchtap), transform 140ms var(--ease-notchtap); }
+  .s-seg button:active { transform: scale(0.97); }
+  .s-seg button[aria-pressed="true"] { background: color-mix(in srgb, var(--fg) 14%, transparent); color: var(--fg); }
+
+  .s-num { display: flex; align-items: center; gap: 6px; }
+  .s-num input { width: 60px; background: color-mix(in srgb, var(--border) 25%, transparent); border: 1px solid var(--border); border-radius: 6px; color: var(--fg); font-family: var(--font-mono); font-size: 11px; padding: 4px 6px; }
+  .s-num .unit { font-family: var(--font-mono); font-size: 9.5px; color: var(--muted-fg); }
+
+  .agent-card { border-top: 1px solid color-mix(in srgb, var(--border) 60%, transparent); padding: 11px 0; }
+  .agent-card:first-child { border-top: none; padding-top: 0; }
+  .agent-card-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 7px; }
+  .agent-card-head .rt { display: flex; align-items: center; gap: 6px; font-size: 11.5px; font-weight: 590; }
+  .agent-card-head .rt .dot { width: 6px; height: 6px; border-radius: 50%; }
+  .mchip { display: inline-flex; align-items: center; border-radius: 999px; border: 1px solid var(--border); padding: 2px 8px; font-family: var(--font-mono); font-size: 9.5px; font-weight: 650; color: var(--muted-fg); }
+  .mchip.active { border-color: color-mix(in srgb, var(--primary) 40%, transparent); background: color-mix(in srgb, var(--primary) 18%, transparent); color: var(--fg); }
+  .snippet { margin: 6px 0; max-height: 70px; overflow: auto; border-radius: 6px; border: 1px solid var(--border); background: color-mix(in srgb, var(--border) 20%, transparent); padding: 7px; font-family: var(--font-mono); font-size: 9.5px; white-space: pre-wrap; color: var(--fg); line-height: 1.4; }
+  .s-btn { font-family: var(--font-sans); font-size: 10.5px; font-weight: 560; padding: 5px 10px; border-radius: 6px; border: 1px solid var(--border); background: transparent; color: var(--fg); cursor: pointer; transition: background-color 140ms var(--ease-notchtap), transform 140ms var(--ease-notchtap); }
+  .s-btn:hover { background: color-mix(in srgb, var(--fg) 8%, transparent); }
+  .s-btn:active { transform: scale(0.96); }
+  .s-btn.primary { background: var(--primary); border-color: var(--primary); color: #04101f; font-weight: 620; }
+
+  .preview-row { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+  .preview-row .plabel { width: 70px; flex-shrink: 0; font-size: 10px; color: var(--muted-fg); font-family: var(--font-mono); }
+  .mini-card { flex: 1; background: #000; border-radius: 8px; padding: 8px 10px; display: flex; align-items: center; gap: 8px; }
+  .mini-card .txt { font-size: 10.5px; color: var(--overlay-fg); }
+  .mini-card .txt b { display: block; font-size: 11px; }
+  .mini-card .txt span { color: color-mix(in srgb, var(--overlay-fg) 60%, transparent); font-size: 9.5px; }
+
+  .fallback-note { display: flex; align-items: center; gap: 10px; padding: 20px; border: 1px dashed var(--border); border-radius: 10px; color: var(--muted-fg); font-size: 11px; line-height: 1.5; }
+
+  /* ===== catalog ===== */
+  .cat-table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 12px; }
+  table.cat { width: 100%; border-collapse: collapse; font-size: 12px; min-width: 900px; }
+  table.cat th { text-align: left; font-family: var(--font-mono); font-size: 10px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--ink-faint); background: var(--panel-2); padding: 10px 12px; border-bottom: 1px solid var(--line); position: sticky; top: 0; }
+  table.cat td { padding: 10px 12px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  table.cat tr:last-child td { border-bottom: none; }
+  table.cat tr:hover td { background: #14171c; }
+  table.cat .const { font-family: var(--font-mono); color: var(--overlay-amber); font-size: 11px; }
+  table.cat .props { font-family: var(--font-mono); font-size: 11px; color: var(--overlay-teal); }
+  table.cat .src { font-family: var(--font-mono); font-size: 10.5px; color: var(--ink-faint); }
+  table.cat td.name { font-weight: 600; }
+  table.cat .play-cell { width: 90px; }
+  .play-mini { width: 70px; height: 22px; background: #050608; border-radius: 6px; position: relative; overflow: hidden; cursor: pointer; border: 1px solid var(--line); }
+  .play-mini .chip { position: absolute; top: 3px; left: 3px; width: 16px; height: 16px; border-radius: 5px; background: var(--overlay-teal); }
+  .play-mini.play .chip { transform: translateX(46px); }
+
+  footer.foot { margin-top: 60px; padding-top: 20px; border-top: 1px solid var(--line); color: var(--ink-faint); font-size: 11.5px; line-height: 1.7; }
+  footer.foot ul { margin: 6px 0 16px; padding-left: 18px; }
+
+  @media (max-width: 760px) {
+    .settings-frame { grid-template-columns: 100px 1fr; height: 620px; }
+    .dur-row { grid-template-columns: 110px 1fr 50px; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+
+  <header class="top">
+    <div>
+      <p class="eyebrow">notchtap · prototypes/design-reference.html</p>
+      <h1>UI &amp; Motion Reference</h1>
+      <p>Every animation, the design tokens behind them, the Agent Board's full state matrix, and the Settings window — reconstructed from the actual shipped source as of today. Not a proposal, not a before/after story: this is what's live.</p>
+    </div>
+    <div class="global-controls">
+      <label class="g-toggle"><input type="checkbox" id="globalRM" /> Reduced motion</label>
+    </div>
+  </header>
+
+  <nav class="tabs">
+    <button class="tab-btn active" data-tab="agent">Agent Board</button>
+    <button class="tab-btn" data-tab="overlay">Overlay Card</button>
+    <button class="tab-btn" data-tab="settings">Settings Window</button>
+    <button class="tab-btn" data-tab="tokens">Tokens &amp; Easing</button>
+    <button class="tab-btn" data-tab="catalog">Animation Catalog</button>
+  </nav>
+
+  <!-- ============ TOKENS ============ -->
+  <section id="tab-tokens" class="tab-panel">
+    <div class="block">
+      <h2 class="h">Color</h2>
+      <p class="sub">Overlay accents (<code>vendor/shared-ui/design/tokens.css</code>), agent runtime identity colors (<code>source-identity.css</code>), and the Agent Board's per-state accents (<code>agent-board.css</code>).</p>
+      <div class="panel">
+        <div class="swatch-grid">
+          <div class="swatch"><div class="fill" style="background:#f5f7fa"></div><div class="meta"><div class="name">overlay-fg</div><div class="hex">#f5f7fa</div></div></div>
+          <div class="swatch"><div class="fill" style="background:#55d6bd"></div><div class="meta"><div class="name">overlay-teal</div><div class="hex">#55d6bd</div></div></div>
+          <div class="swatch"><div class="fill" style="background:#ff6b57"></div><div class="meta"><div class="name">overlay-coral</div><div class="hex">#ff6b57</div></div></div>
+          <div class="swatch"><div class="fill" style="background:#f0c46a"></div><div class="meta"><div class="name">overlay-amber</div><div class="hex">#f0c46a</div></div></div>
+          <div class="swatch"><div class="fill" style="background:#0a84ff"></div><div class="meta"><div class="name">overlay-blue</div><div class="hex">#0a84ff</div></div></div>
+          <div class="swatch"><div class="fill" style="background:#7fe08d"></div><div class="meta"><div class="name">overlay-green</div><div class="hex">#7fe08d</div></div></div>
+          <div class="swatch"><div class="fill" style="background:#d97757"></div><div class="meta"><div class="name">src-claude-code</div><div class="hex">#d97757 (crail)</div></div></div>
+          <div class="swatch"><div class="fill" style="background:#10a37f"></div><div class="meta"><div class="name">src-codex</div><div class="hex">#10a37f</div></div></div>
+          <div class="swatch"><div class="fill" style="background:#f5f7fa"></div><div class="meta"><div class="name">src-kimi</div><div class="hex">mono (overlay-fg)</div></div></div>
+          <div class="swatch"><div class="fill" style="background:#9d7cd8"></div><div class="meta"><div class="name">src-opencode</div><div class="hex">#9d7cd8</div></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="block">
+      <h2 class="h">Easing curves</h2>
+      <p class="sub">Three curves cover the whole app. <code>--ease-notchtap</code> is the house settle; the pop curve is scoped to one thing only (a genuine new-notification width grow); the interrupt curve is a sharp ease-in used exactly once, for a priority-preemption yank.</p>
+      <div class="curve-grid">
+        <div class="curve-card" data-curve="notchtap">
+          <h4>--ease-notchtap</h4>
+          <p class="used-for">cubic-bezier(0.22, 1, 0.36, 1) — the default everywhere: reveal/expand/exit widths, hover breathe, flank corners, gill opacity, content fades.</p>
+          <svg viewBox="-5 -20 110 90"><path d="M0,70 C22,10 36,10 100,10" fill="none" stroke="#55d6bd" stroke-width="2.5"/><line x1="0" y1="70" x2="100" y2="70" stroke="#23262e"/><line x1="0" y1="10" x2="100" y2="10" stroke="#23262e" stroke-dasharray="2 2"/></svg>
+          <div class="track" data-dur="320" data-ease="var(--ease-notchtap)"><div class="dot"></div></div>
+        </div>
+        <div class="curve-card" data-curve="pop">
+          <h4>--ease-notchtap-pop</h4>
+          <p class="used-for">cubic-bezier(0.3, 1.36, 0.44, 1) — a slight overshoot. Scoped ONLY to the base <code>.card-assembly</code> width leg (a real promotion), never the hover-reveal or expand-toggle legs (plans 164/165 pulled those back to the plain curve).</p>
+          <svg viewBox="-5 -20 110 90"><path d="M0,70 C30,-11.6 44,10 100,10" fill="none" stroke="#f0c46a" stroke-width="2.5"/><line x1="0" y1="70" x2="100" y2="70" stroke="#23262e"/><line x1="0" y1="10" x2="100" y2="10" stroke="#23262e" stroke-dasharray="2 2"/></svg>
+          <div class="track" data-dur="320" data-ease="var(--ease-notchtap-pop)"><div class="dot"></div></div>
+        </div>
+        <div class="curve-card" data-curve="interrupt">
+          <h4>--ease-interrupt</h4>
+          <p class="used-for">cubic-bezier(0.4, 0, 1, 1) — a sharp ease-in, used once: the content-exit "yank" when a strictly-higher-priority event preempts what's showing.</p>
+          <svg viewBox="-5 -20 110 90"><path d="M0,70 C40,70 100,10 100,10" fill="none" stroke="#ff6b57" stroke-width="2.5"/><line x1="0" y1="70" x2="100" y2="70" stroke="#23262e"/><line x1="0" y1="10" x2="100" y2="10" stroke="#23262e" stroke-dasharray="2 2"/></svg>
+          <div class="track" data-dur="60" data-ease="var(--ease-interrupt)"><div class="dot"></div></div>
+        </div>
+      </div>
+      <div style="padding: 0 16px 16px;"><button class="pbtn" id="playCurves">▶ Play all three</button></div>
+    </div>
+
+    <div class="block">
+      <h2 class="h">Duration scale</h2>
+      <p class="sub">Every named constant in <code>animationTiming.ts</code>, drawn to scale.</p>
+      <div class="panel">
+        <div class="dur-list" id="durList"></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ OVERLAY CARD ============ -->
+  <section id="tab-overlay" class="tab-panel">
+    <div class="block">
+      <h2 class="h">The overlay shell</h2>
+      <p class="sub">One real <code>.card-assembly</code> grid — flanks, notch cutout, below-block — same widths, durations, and curves as <code>src/overlay/card-chrome.css</code> ships today.</p>
+      <div class="panel">
+        <div class="ctrl-bar">
+          <span class="group-label">State</span>
+          <button class="pbtn" data-ov-state="bare">Bare</button>
+          <button class="pbtn" data-ov-state="idle" aria-pressed="true">Idle rail</button>
+          <button class="pbtn" data-ov-state="showing">Showing</button>
+          <button class="pbtn" data-ov-state="expanded">Expanded</button>
+          <div class="sep"></div>
+          <button class="pbtn" id="ovHover" aria-pressed="false">Hover</button>
+          <button class="pbtn" id="ovMode" aria-pressed="true">HUD mode</button>
+        </div>
+        <div class="stage" data-mode="hud" id="ovStage">
+          <div class="card-assembly" data-state="idle" id="ovCard">
+            <div class="flank flank-left">09:41</div>
+            <div class="cutout"></div>
+            <div class="flank flank-right">●●●</div>
+            <div class="notch-gill notch-gill-left"></div>
+            <div class="notch-gill notch-gill-right"></div>
+            <div class="below-block">
+              <p class="below-title">Deploy finished</p>
+              <p class="below-body">notchtap · pushed to origin/master in 42s</p>
+            </div>
+          </div>
+          <p class="stage-caption">state: <b id="ovStateReadout">idle</b> · mode: <b id="ovModeReadout">hud</b></p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ AGENT BOARD ============ -->
+  <section id="tab-agent" class="tab-panel active">
+    <div class="block">
+      <h2 class="h">Resting board — primary session</h2>
+      <p class="sub">The Agent Board mounts inside the same shell as the overlay card. One rich "hero" card for the top-ranked session, plus every other session as a compact single-line row — <b>never a "+N" collapse</b> (spec §6.2's own explicit rule). Pick a runtime and a state below.</p>
+      <div class="panel">
+        <div class="ctrl-bar">
+          <span class="group-label">Runtime</span>
+          <button class="pbtn" data-rt="claude" data-rt-label="Claude Code" aria-pressed="true">Claude Code</button>
+          <button class="pbtn" data-rt="codex" data-rt-label="Codex">Codex</button>
+          <button class="pbtn" data-rt="kimi" data-rt-label="Kimi">Kimi</button>
+          <button class="pbtn" data-rt="opencode" data-rt-label="OpenCode">OpenCode</button>
+        </div>
+        <div class="ctrl-bar">
+          <span class="group-label">State</span>
+          <button class="pbtn" data-st="agent-waiting" data-st-label="Needs approval" data-pulse="1" aria-pressed="true">Needs approval</button>
+          <button class="pbtn" data-st="agent-waiting" data-st-label="Needs input" data-pulse="1">Needs input</button>
+          <button class="pbtn" data-st="agent-working" data-st-label="Working" data-pulse="1">Working</button>
+          <button class="pbtn" data-st="agent-working" data-st-label="Starting" data-pulse="1">Starting</button>
+          <button class="pbtn" data-st="agent-completed" data-st-label="Completed" data-pulse="0">Completed</button>
+          <button class="pbtn" data-st="agent-failed" data-st-label="Failed" data-pulse="0">Failed</button>
+          <button class="pbtn" data-st="agent-stale" data-st-label="Stale" data-pulse="0">Stale</button>
+          <div class="spacer"></div>
+          <button class="pbtn" id="heroSwap">▶ New primary session (identity swap)</button>
+        </div>
+        <div class="agent-stage">
+          <div class="agent-board-shell">
+            <div class="agent-board">
+              <div class="agent-board-primary agent-waiting src-claude" id="heroCard">
+                <div class="abp-head">
+                  <span class="agent-dot large pulse" id="heroDot"></span>
+                  <span class="rt-tick" id="heroTick"></span>
+                  <span class="abp-runtime" id="heroRuntime">Claude Code</span>
+                  <span class="abp-pill" id="heroPill">Needs approval</span>
+                </div>
+                <div class="abp-project">notchtap</div>
+                <div class="abp-summary" id="heroSummary">Approval needed to run <code>rm -rf build/</code></div>
+                <div class="abp-elapsed">42s</div>
+              </div>
+              <div class="agent-rows" id="heroRows">
+                <div class="agent-row agent-working src-codex"><span class="agent-dot pulse"></span><span class="rt-tick"></span><span class="rt-name">Codex</span><span class="st-name">Working</span><span class="el">3m</span></div>
+                <div class="agent-row agent-completed src-kimi"><span class="agent-dot"></span><span class="rt-tick"></span><span class="rt-name">Kimi</span><span class="st-name">Completed</span><span class="el">11m</span></div>
+                <div class="agent-row agent-failed src-opencode"><span class="agent-dot"></span><span class="rt-tick"></span><span class="rt-name">OpenCode</span><span class="st-name">Failed</span><span class="el">1h</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="block">
+      <h2 class="h">Row add / remove — the shared spring</h2>
+      <p class="sub"><code>ROW_TRANSITION</code> (Motion spring, <code>bounce: 0, duration: 0.35</code>, critically damped — no overshoot) drives a row's enter, exit, AND the sibling reflow when one leaves, all from one shared const. Approximated below with an ease-out curve since this is plain CSS, not Motion's physics solver.</p>
+      <div class="panel">
+        <div class="ctrl-bar">
+          <button class="pbtn" id="addRow">+ Add compact row</button>
+          <button class="pbtn" id="removeRow">− Remove last row</button>
+        </div>
+        <div class="agent-stage" style="padding-top:20px;padding-bottom:20px;">
+          <div class="agent-board-shell" style="max-width:340px;">
+            <div class="agent-board" style="padding:10px 12px;">
+              <div class="agent-rows" id="spawnRows" style="border-top:none;padding-top:0;margin-top:0;"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="block">
+      <h2 class="h">Expanded (hover) — full scrollable list</h2>
+      <p class="sub">While the cursor is over the board, rust grows the real window and hands pointer events to this rect — every retained session renders as a full row with summary, meta chips, and capability-dependent detail chips. Per-row transition history opens on that <em>row's own</em> mouse-enter (real hover here, not the card-level rust boolean). Hover a row below.</p>
+      <div class="panel">
+        <div class="agent-stage">
+          <div class="agent-board-shell">
+            <div class="agent-board">
+              <div class="expanded-scroll">
+                <div class="expanded-row agent-waiting src-claude">
+                  <div class="expanded-row-head"><span class="agent-dot pulse"></span><span class="rt-tick"></span><span class="rt-name">Claude Code</span><span class="st-name">Needs approval</span><span class="el">42s</span></div>
+                  <div class="expanded-row-summary">Approval needed to run <code>rm -rf build/</code></div>
+                  <div class="expanded-row-meta"><span>~/projects/notchtap</span><span>contabo-vps</span></div>
+                  <div class="expanded-row-details"><span><b>tool:</b> Bash</span><span><b>risk:</b> destructive</span></div>
+                  <div class="expanded-history"><ul>
+                    <li><b>Working</b><span>2m ago</span></li>
+                    <li><b>Starting</b><span>3m ago</span></li>
+                  </ul></div>
+                </div>
+                <div class="expanded-row agent-working src-codex">
+                  <div class="expanded-row-head"><span class="agent-dot pulse"></span><span class="rt-tick"></span><span class="rt-name">Codex</span><span class="st-name">Working</span><span class="el">3m</span></div>
+                  <div class="expanded-row-summary">Running test suite — subagent: test runner (working)</div>
+                  <div class="expanded-row-meta"><span>~/projects/mac-notification-nudge</span><span>subagent: test runner (working)</span></div>
+                  <div class="expanded-history"><ul>
+                    <li><b>Starting</b><span>3m ago</span></li>
+                  </ul></div>
+                </div>
+                <div class="expanded-row agent-completed src-kimi">
+                  <div class="expanded-row-head"><span class="agent-dot"></span><span class="rt-tick"></span><span class="rt-name">Kimi</span><span class="st-name">Completed</span><span class="el">11m</span></div>
+                  <div class="expanded-row-summary">Turn completed — awaiting input</div>
+                  <div class="expanded-row-meta"><span>clears in 4m</span></div>
+                  <div class="expanded-history"><ul>
+                    <li><b>Working</b><span>12m ago</span></li>
+                    <li><b>Starting</b><span>15m ago</span></li>
+                  </ul></div>
+                </div>
+                <div class="expanded-row agent-failed src-opencode">
+                  <div class="expanded-row-head"><span class="agent-dot"></span><span class="rt-tick"></span><span class="rt-name">OpenCode</span><span class="st-name">Failed</span><span class="el">1h</span></div>
+                  <div class="expanded-row-summary">Session ended with an error</div>
+                  <div class="expanded-row-meta"><span>clears in 23m</span></div>
+                  <div class="expanded-history"><ul><li><b>Working</b><span>1h ago</span></li></ul></div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p class="hover-hint">hover any row above to open its transition history</p>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ SETTINGS WINDOW ============ -->
+  <section id="tab-settings" class="tab-panel">
+    <div class="block">
+      <h2 class="h">Settings window</h2>
+      <p class="sub">The real 12-section shell (<code>SettingsApp.tsx</code>) — sidebar navigation, header, section content, footer. <b>Agents</b> and <b>Appearance</b> are rebuilt from the actual component copy below; the other ten use the same control library (toggle / segmented / number) but aren't rebuilt field-for-field here. Nav icons are simplified to two-letter mono badges, not the real Lucide glyphs.</p>
+      <div class="panel">
+        <div class="settings-frame">
+          <aside class="set-sidebar">
+            <div class="set-brand"><span class="mark"></span> notchtap</div>
+            <nav class="set-nav" id="setNav"></nav>
+            <div class="set-meta">settings / v5</div>
+          </aside>
+          <div class="set-pane">
+            <div class="set-header">
+              <div class="idx" id="setIdx">Settings / 06</div>
+              <h3 id="setTitle">Agents</h3>
+              <p id="setDesc">Accept coding-agent lifecycle events, tune notification priority, and set up each adapter.</p>
+            </div>
+            <div class="set-body" id="setBody"></div>
+            <div class="set-footer">
+              <button class="s-btn primary">Save &amp; Relaunch</button>
+              <button class="s-btn">Reset</button>
+              <button class="s-btn">Reset to defaults</button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============ CATALOG ============ -->
+  <section id="tab-catalog" class="tab-panel">
+    <div class="block">
+      <h2 class="h">Animation catalog</h2>
+      <p class="sub">Every named transition in the codebase — what triggers it, how long, what curve, what properties. Click ▶ to play a row against its real duration/easing.</p>
+      <div class="cat-table-wrap">
+        <table class="cat">
+          <thead><tr><th>Name</th><th>Trigger</th><th class="play-cell">Play</th><th>Duration</th><th>Easing</th><th>Properties</th><th>Source</th></tr></thead>
+          <tbody id="catBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </section>
+
+  <footer class="foot">
+    <h3 style="color:var(--ink-dim);font-size:12.5px;font-family:var(--font-mono);margin:0 0 8px;">Scope &amp; source</h3>
+    <ul>
+      <li>Settings nav icons are two-letter mono badges, not the real Lucide icon set — structure and press/active-state behavior are accurate, glyphs are not.</li>
+      <li>Only the Agents and Appearance settings sections are rebuilt from real component copy; the other ten sections show a placeholder noting they share the same control library.</li>
+      <li>The real Rust-derived hover tracking area is stood in for by manual toggles/buttons (overlay hover) — the Agent Board's per-row history disclosure genuinely uses native hover here, matching the real feature's own real-pointer-events behavior while expanded.</li>
+      <li><code>ROW_TRANSITION</code> and <code>DISCLOSURE_SPRING</code> are Motion springs; this file approximates them with cubic-bezier/CSS transitions since it has no physics solver.</li>
+    </ul>
+    <p>Source of truth: <code>src/overlay/card-chrome.css</code>, <code>choreography.css</code>, <code>agent-board.css</code>, <code>src/components/AgentBoard.tsx</code>, <code>src/settings/SettingsApp.tsx</code>, <code>src/settings/sections/{AgentsSection,AppearanceSection}.tsx</code>, <code>src/lib/presentation.ts</code>, <code>src/lib/sourceColors.ts</code>, <code>src/animationTiming.ts</code> — as of commit <code>9855bfe</code>. This is a snapshot; it will drift if those files change.</p>
+  </footer>
+
+</div>
+
+<script>
+(function () {
+  var root = document.documentElement;
+
+  // ---- tabs ----
+  document.querySelectorAll('.tab-btn').forEach(function (btn) {
+    btn.addEventListener('click', function () {
+      document.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.remove('active'); });
+      document.querySelectorAll('.tab-panel').forEach(function (p) { p.classList.remove('active'); });
+      btn.classList.add('active');
+      document.getElementById('tab-' + btn.dataset.tab).classList.add('active');
+    });
+  });
+
+  // ---- global reduced motion ----
+  document.getElementById('globalRM').addEventListener('change', function (e) {
+    root.classList.toggle('force-reduced-motion', e.target.checked);
+  });
+
+  // ---- curves ----
+  document.getElementById('playCurves').addEventListener('click', function () {
+    document.querySelectorAll('.curve-card').forEach(function (card) {
+      var track = card.querySelector('.track');
+      var dot = track.querySelector('.dot');
+      dot.style.transition = 'none';
+      card.classList.remove('play');
+      void dot.offsetWidth;
+      dot.style.transition = 'transform ' + track.dataset.dur + 'ms ' + track.dataset.ease;
+      card.classList.add('play');
+    });
+  });
+
+  // ---- duration scale ----
+  var DURATIONS = [
+    ['INTERRUPT_EXIT_MS', 60], ['ROTATION_EXIT_MS', 70], ['CONTENT_EXIT_MS', 105],
+    ['HOVER_MS', 160], ['SWAP_EXIT_MS', 175], ['REVEAL_MS', 260],
+    ['IDLE_REVEAL_MS', 240], ['EXPAND_MS', 320],
+  ];
+  var maxMs = Math.max.apply(null, DURATIONS.map(function (d) { return d[1]; }));
+  var durList = document.getElementById('durList');
+  DURATIONS.sort(function (a, b) { return a[1] - b[1]; }).forEach(function (d) {
+    var row = document.createElement('div');
+    row.className = 'dur-row';
+    row.innerHTML = '<span class="const-name">' + d[0] + '</span>' +
+      '<span class="bar-track"><span class="bar-fill" style="width:' + (d[1] / maxMs * 100) + '%"></span></span>' +
+      '<span class="ms">' + d[1] + 'ms</span>';
+    durList.appendChild(row);
+  });
+
+  // ---- overlay stage ----
+  var ovStage = document.getElementById('ovStage');
+  var ovCard = document.getElementById('ovCard');
+  document.querySelectorAll('[data-ov-state]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      var s = b.dataset.ovState;
+      ovCard.setAttribute('data-state', s);
+      ovCard.classList.toggle('has-below', s === 'showing' || s === 'expanded');
+      document.getElementById('ovStateReadout').textContent = s;
+      document.querySelectorAll('[data-ov-state]').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+    });
+  });
+  document.getElementById('ovHover').addEventListener('click', function (e) {
+    var on = e.target.getAttribute('aria-pressed') !== 'true';
+    e.target.setAttribute('aria-pressed', String(on));
+    ovCard.classList.toggle('hovered', on);
+  });
+  document.getElementById('ovMode').addEventListener('click', function (e) {
+    var on = e.target.getAttribute('aria-pressed') !== 'true';
+    e.target.setAttribute('aria-pressed', String(on));
+    ovStage.setAttribute('data-mode', on ? 'hud' : 'notch');
+    document.getElementById('ovModeReadout').textContent = on ? 'hud' : 'notch';
+  });
+
+  // ---- agent board: hero ----
+  var heroCard = document.getElementById('heroCard');
+  var heroDot = document.getElementById('heroDot');
+  var heroTick = document.getElementById('heroTick');
+  var heroRuntime = document.getElementById('heroRuntime');
+  var heroPill = document.getElementById('heroPill');
+  var currentRt = 'src-claude', currentSt = 'agent-waiting';
+  var SUMMARIES = {
+    'agent-waiting': 'Approval needed to run <code>rm -rf build/</code>',
+    'agent-working': 'Running the test suite — 214/340 files',
+    'agent-completed': 'Turn completed — awaiting input',
+    'agent-failed': 'Session ended with an error',
+    'agent-stale': 'No event received in over 10 minutes',
+  };
+  function applyHero() {
+    heroCard.className = 'agent-board-primary ' + currentSt + ' ' + currentRt;
+  }
+  document.querySelectorAll('[data-rt]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      currentRt = 'src-' + b.dataset.rt;
+      heroRuntime.textContent = b.dataset.rtLabel;
+      document.querySelectorAll('[data-rt]').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+      applyHero();
+    });
+  });
+  document.querySelectorAll('[data-st]').forEach(function (b) {
+    b.addEventListener('click', function () {
+      currentSt = b.dataset.st;
+      heroPill.textContent = b.dataset.stLabel;
+      heroDot.classList.toggle('pulse', b.dataset.pulse === '1');
+      document.getElementById('heroSummary').innerHTML = SUMMARIES[currentSt] || '';
+      document.querySelectorAll('[data-st]').forEach(function (x) { x.setAttribute('aria-pressed', String(x === b)); });
+      applyHero();
+      // state-keyed remount = pulse restarts
+      heroDot.style.animation = 'none'; void heroDot.offsetWidth; heroDot.style.animation = '';
+    });
+  });
+  document.getElementById('heroSwap').addEventListener('click', function () {
+    heroCard.classList.add('swap-out');
+    setTimeout(function () {
+      heroCard.classList.remove('swap-out');
+      heroCard.classList.add('swap-in');
+      void heroCard.offsetWidth;
+      heroCard.classList.remove('swap-in');
+    }, 160);
+  });
+
+  // ---- agent board: add/remove rows ----
+  var spawnRows = document.getElementById('spawnRows');
+  var ROW_VARIANTS = [
+    ['agent-working', 'src-codex', 'Codex', 'Working'],
+    ['agent-completed', 'src-kimi', 'Kimi', 'Completed'],
+    ['agent-failed', 'src-opencode', 'OpenCode', 'Failed'],
+    ['agent-waiting', 'src-claude', 'Claude Code', 'Needs input'],
+  ];
+  var spawnCount = 0;
+  document.getElementById('addRow').addEventListener('click', function () {
+    var v = ROW_VARIANTS[spawnCount % ROW_VARIANTS.length];
+    spawnCount++;
+    var row = document.createElement('div');
+    row.className = 'agent-row row-enter ' + v[0] + ' ' + v[1];
+    row.innerHTML = '<span class="agent-dot"></span><span class="rt-tick"></span><span class="rt-name">' + v[2] + '</span><span class="st-name">' + v[3] + '</span><span class="el">0s</span>';
+    spawnRows.appendChild(row);
+  });
+  document.getElementById('removeRow').addEventListener('click', function () {
+    var rows = spawnRows.querySelectorAll('.agent-row');
+    if (rows.length === 0) return;
+    var last = rows[rows.length - 1];
+    last.classList.add('row-leave');
+    setTimeout(function () { last.remove(); }, 350);
+  });
+
+  // ---- settings window ----
+  var SECTIONS = [
+    { id: 'general', badge: 'GE', idx: '01', title: 'General', desc: 'Control startup, the local listener, and how notifications rotate.' },
+    { id: 'football', badge: 'FB', idx: '02', title: 'Football', desc: 'Choose the leagues and cadence used for live score checks.' },
+    { id: 'news', badge: 'NW', idx: '03', title: 'News', desc: 'Manage RSS sources and the pace of headline delivery.' },
+    { id: 'weather', badge: 'WX', idx: '04', title: 'Weather', desc: 'Show ambient conditions in the idle rail and alert on rain and temperature thresholds.' },
+    { id: 'connectors', badge: 'CN', idx: '05', title: 'Connectors & Keys', desc: 'Manage write-only credentials for outbound integrations.' },
+    { id: 'agents', badge: 'AG', idx: '06', title: 'Agents', desc: 'Accept coding-agent lifecycle events, tune notification priority, and set up each adapter.' },
+    { id: 'shortcuts', badge: 'SC', idx: '07', title: 'Shortcuts', desc: 'A reference for the global controls available while notchtap runs.' },
+    { id: 'appearance', badge: 'AP', idx: '08', title: 'Appearance', desc: "Preview the overlay's shape and animations, and send live test notifications." },
+    { id: 'diagnostics', badge: 'DG', idx: '09', title: 'Diagnostics', desc: "Read the app's recent log lines without leaving settings." },
+    { id: 'history', badge: 'HI', idx: '10', title: 'History', desc: 'Review and clear recorded past notifications.' },
+    { id: 'queue', badge: 'QU', idx: '11', title: 'Queue', desc: 'See what\'s waiting behind the visible card, and skip or clear it.' },
+    { id: 'about', badge: 'AB', idx: '12', title: 'About', desc: 'What notchtap is, how to use it, and live process/system stats.' },
+  ];
+  var setNav = document.getElementById('setNav');
+  SECTIONS.forEach(function (s) {
+    var btn = document.createElement('button');
+    btn.innerHTML = '<span class="badge">' + s.badge + '</span><span>' + s.title + '</span>';
+    btn.dataset.section = s.id;
+    btn.addEventListener('click', function () { showSection(s.id); });
+    setNav.appendChild(btn);
+  });
+
+  function agentsSectionHtml() {
+    return '' +
+      '<div class="s-group">' +
+        '<div class="s-group-title">Agent Adapters</div>' +
+        '<div class="s-group-desc">Accept lifecycle events from coding-agent runtimes over the loopback /agent/events endpoint and show them on the Agent Board.</div>' +
+        '<div class="s-row"><div><div class="s-name">Enable Agent Adapters</div><div class="s-help">Master switch — off skips every runtime\'s events.</div></div><button class="s-switch" aria-pressed="true"><span class="thumb"></span></button></div>' +
+        '<div class="s-row"><div><div class="s-name">Terminal retention</div><div class="s-help">How long a completed/failed session stays on the board.</div></div><div class="s-num"><input value="300" readonly><span class="unit">SEC</span></div></div>' +
+        '<div class="s-row"><div><div class="s-name">Stale threshold</div><div class="s-help">No event for this long marks a session Stale.</div></div><div class="s-num"><input value="120" readonly><span class="unit">SEC</span></div></div>' +
+        '<div class="s-row"><div><div class="s-name">Informational cards</div><div class="s-help">Also show cards for ordinary progress/tool events.</div></div><button class="s-switch" aria-pressed="false"><span class="thumb"></span></button></div>' +
+      '</div>' +
+      '<div class="s-group">' +
+        '<div class="s-group-title">Notification priority</div>' +
+        '<div class="s-group-desc">Which rotation tier each kind of Agent event promotes in.</div>' +
+        '<div class="s-row"><div class="s-name">Permission requested</div><div class="s-seg"><button aria-pressed="false">Low</button><button aria-pressed="true">Med</button><button aria-pressed="false">High</button></div></div>' +
+        '<div class="s-row"><div class="s-name">Input required</div><div class="s-seg"><button aria-pressed="false">Low</button><button aria-pressed="true">Med</button><button aria-pressed="false">High</button></div></div>' +
+        '<div class="s-row"><div class="s-name">Failed</div><div class="s-seg"><button aria-pressed="false">Low</button><button aria-pressed="false">Med</button><button aria-pressed="true">High</button></div></div>' +
+        '<div class="s-row"><div class="s-name">Completed</div><div class="s-seg"><button aria-pressed="true">Low</button><button aria-pressed="false">Med</button><button aria-pressed="false">High</button></div></div>' +
+      '</div>' +
+      '<div class="s-group">' +
+        '<div class="s-group-title">Adapters</div>' +
+        '<div class="s-group-desc">One card per supported runtime — setup snippet, capabilities, live health.</div>' +
+        '<div class="agent-card"><div class="agent-card-head"><span class="rt"><span class="dot" style="background:#d97757"></span>Claude Code</span><span><span class="mchip active">Available</span> <span class="mchip active">Enabled</span></span></div>' +
+          '<div class="s-help" style="margin-bottom:6px;">Last seen: 2 min ago · Capabilities: cwd, subagent, history</div>' +
+          '<div class="snippet">{\n  "hooks": {\n    "SessionStart": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook claude-code" }] }],\n    ...\n  }\n}</div>' +
+          '<div style="display:flex;gap:6px;"><button class="s-btn">Copy snippet</button><button class="s-btn">Send test event</button></div></div>' +
+        '<div class="agent-card"><div class="agent-card-head"><span class="rt"><span class="dot" style="background:#10a37f"></span>Codex</span><span><span class="mchip active">Available</span> <span class="mchip active">Enabled</span></span></div>' +
+          '<div class="s-help" style="margin-bottom:6px;">Last seen: Just now · Capabilities: cwd, subagent</div>' +
+          '<div class="snippet">{\n  "hooks": {\n    "SessionStart": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook codex" }] }],\n    ...\n  }\n}</div>' +
+          '<div style="display:flex;gap:6px;"><button class="s-btn">Copy snippet</button><button class="s-btn">Send test event</button></div></div>' +
+        '<div class="agent-card"><div class="agent-card-head"><span class="rt"><span class="dot" style="background:#f5f7fa"></span>Kimi</span><span><span class="mchip">Unavailable</span> <span class="mchip">Disabled</span></span></div>' +
+          '<div class="s-help" style="margin-bottom:6px;">Last seen: Never</div>' +
+          '<div style="display:flex;gap:6px;"><button class="s-btn">Copy snippet</button><button class="s-btn">Send test event</button></div></div>' +
+      '</div>' +
+      '<div class="s-group">' +
+        '<div class="s-group-title">Preview</div>' +
+        '<div class="s-group-desc">What each Agent Board state looks like — a text summary, not the live card.</div>' +
+        '<div class="preview-row"><span class="mchip" style="border-color:#d977574d;">Claude Code</span><span class="s-help">Waiting on permission — approval needed to run a command</span></div>' +
+        '<div class="preview-row"><span class="mchip" style="border-color:#10a37f4d;">Codex</span><span class="s-help">Working, with a subagent — running tests</span></div>' +
+        '<div class="preview-row"><span class="mchip">Kimi</span><span class="s-help">Completed — turn completed, awaiting input</span></div>' +
+        '<div class="preview-row"><span class="mchip" style="border-color:#9d7cd84d;">OpenCode</span><span class="s-help">Failed — session ended with an error</span></div>' +
+      '</div>';
+  }
+
+  function appearanceSectionHtml() {
+    return '' +
+      '<div class="s-group">' +
+        '<div class="s-group-title">Card shape</div>' +
+        '<div class="s-group-desc">Adjust the overlay card size, corner radius, and opacity. Changes apply immediately.</div>' +
+        '<div class="s-row"><div class="s-name">Scale</div><div class="s-seg"><button>Small</button><button aria-pressed="true">Medium</button><button>Large</button></div></div>' +
+        '<div class="s-row"><div class="s-name">Radius</div><div class="s-seg"><button>Square</button><button aria-pressed="true">Soft</button><button>Round</button></div></div>' +
+        '<div class="s-row"><div class="s-name">Opacity</div><div class="s-seg"><button>Glass</button><button aria-pressed="true">Default</button><button>Solid</button></div></div>' +
+        '<div class="s-row"><div><div class="s-name">Live check</div><div class="s-help">Send a one-off manual notification to the overlay.</div></div><button class="s-btn">Send test</button></div>' +
+      '</div>' +
+      '<div class="s-group">' +
+        '<div class="s-group-title">Overlay animations</div>' +
+        '<div class="s-group-desc">The built-in card styles the overlay renders — the preview reflects the shape settings above.</div>' +
+        '<div class="preview-row"><span class="plabel">Football</span><div class="mini-card"><span style="width:6px;height:6px;border-radius:50%;background:#7fe08d;"></span><span class="txt"><b>Harbor City 2–1 Rivertown</b><span>Goal — 63\'</span></span></div></div>' +
+        '<div class="preview-row"><span class="plabel">News</span><div class="mini-card"><span style="width:6px;height:6px;border-radius:50%;background:#5fd4e8;"></span><span class="txt"><b>New framework release notes</b><span>tech · 2m ago</span></span></div></div>' +
+        '<div class="preview-row"><span class="plabel">Agent</span><div class="mini-card"><span style="width:6px;height:6px;border-radius:50%;background:#0a84ff;"></span><span class="txt"><b>Claude Code — Working</b><span>notchtap</span></span></div></div>' +
+      '</div>';
+  }
+
+  function fallbackHtml(title) {
+    return '<div class="fallback-note"><span>—</span><span>The <b>' + title + '</b> section uses the same toggle / segmented / number-input control library as Agents and Appearance (shown fully in this reference) — not rebuilt field-for-field here to keep this page a manageable size.</span></div>' +
+      '<div class="s-group" style="margin-top:14px;">' +
+        '<div class="s-group-title">Representative controls</div>' +
+        '<div class="s-row"><div class="s-name">Example toggle</div><button class="s-switch" aria-pressed="false"><span class="thumb"></span></button></div>' +
+        '<div class="s-row"><div class="s-name">Example choice</div><div class="s-seg"><button aria-pressed="true">A</button><button>B</button><button>C</button></div></div>' +
+      '</div>';
+  }
+
+  function showSection(id) {
+    var s = SECTIONS.find(function (x) { return x.id === id; });
+    document.getElementById('setIdx').textContent = 'Settings / ' + s.idx;
+    document.getElementById('setTitle').textContent = s.title;
+    document.getElementById('setDesc').textContent = s.desc;
+    var body = document.getElementById('setBody');
+    body.classList.remove('fade-swap');
+    void body.offsetWidth;
+    if (id === 'agents') body.innerHTML = agentsSectionHtml();
+    else if (id === 'appearance') body.innerHTML = appearanceSectionHtml();
+    else body.innerHTML = fallbackHtml(s.title);
+    body.classList.add('fade-swap');
+    document.querySelectorAll('#setNav button').forEach(function (b) { b.classList.toggle('active', b.dataset.section === id); });
+  }
+  showSection('agents');
+
+  // s-switch / s-seg interactivity (event delegation, since content is re-rendered)
+  document.addEventListener('click', function (e) {
+    var sw = e.target.closest('.s-switch');
+    if (sw) { sw.setAttribute('aria-pressed', String(sw.getAttribute('aria-pressed') !== 'true')); return; }
+    var segBtn = e.target.closest('.s-seg button');
+    if (segBtn) {
+      segBtn.parentElement.querySelectorAll('button').forEach(function (b) { b.setAttribute('aria-pressed', String(b === segBtn)); });
+    }
+  });
+
+  // ---- catalog ----
+  var CATALOG = [
+    ['Card width — hover reveal', 'cursor proximity (rust hover-changed)', 260, 'var(--ease-notchtap)', 'width, transform', 'card-chrome.css / plan 164'],
+    ['Card width — promotion', 'new notification takes priority', 320, 'var(--ease-notchtap-pop)', 'width', 'card-chrome.css'],
+    ['Card width — expand toggle', 'manual/hover expand', 320, 'var(--ease-notchtap)', 'width, transform', 'card-chrome.css / plan 165'],
+    ['Card width — exit', 'showing → idle', 175, 'var(--ease-notchtap)', 'width, transform', 'card-chrome.css (SWAP_EXIT_MS)'],
+    ['Hover breathe', 'cursor proximity to notch', 160, 'var(--ease-notchtap)', 'transform: scale(1.02)', 'choreography.css (HOVER_MS)'],
+    ['Flank corner — entrance', 'below-block mounts', 320, 'var(--ease-notchtap)', 'border-radius', 'card-chrome.css / plan 166'],
+    ['Flank corner — exit', 'below-block unmounts', 105, 'var(--ease-notchtap)', 'border-radius', 'card-chrome.css (CONTENT_EXIT_MS)'],
+    ['Notch-gill fade', 'HUD idle show/hide', 320, 'var(--ease-notchtap)', 'opacity', 'card-chrome.css / plan 167'],
+    ['Content exit — rotation', 'same-priority slot rotates', 70, 'NOTCHTAP_EASE', 'opacity', 'StatusRailCard.tsx (ROTATION_EXIT_MS)'],
+    ['Content exit — interrupt', 'higher-priority preemption', 60, 'var(--ease-interrupt)', 'opacity, transform', 'StatusRailCard.tsx (INTERRUPT_EXIT_MS)'],
+    ['Idle face reveal', 'true idle after a few seconds', 240, 'NOTCHTAP_EASE', 'opacity, scale', 'IdleFace.tsx (IDLE_REVEAL_MS)'],
+    ['Below-block disclosure', 'agent board rows/history/expand', null, 'spring 480/37', 'height, opacity', 'agent-board.css (DISCLOSURE_SPRING)'],
+    ['Agent row enter/exit/reflow', 'session added/removed/reordered', 350, 'spring bounce:0', 'height, opacity, position', 'AgentBoard.tsx (ROW_TRANSITION)'],
+    ['Agent hero identity swap', 'a different session becomes primary', 160, 'NOTCHTAP_EASE', 'opacity, y', 'AgentBoard.tsx (HERO_SWAP_TRANSITION)'],
+    ['Agent-dot state tick', 'session state changes (keyed remount)', 240, 'NOTCHTAP_EASE', 'transform: scale', 'agent-board.css'],
+    ['Agent-dot breathe', 'waiting/working, 4 cycles then rests', 2200, 'ease-in-out', 'opacity', 'agent-board.css (bounded pulse)'],
+    ['MetaChip active', 'a secret/shortcut becomes set/wired', 150, 'var(--ease-notchtap)', 'color, background, border', 'meta-chip.tsx / plan 158'],
+    ['Segmented press', 'settings option clicked', 140, 'var(--ease-notchtap)', 'color, bg, border, shadow, transform', 'Segmented.tsx / plan 159'],
+    ['Settings press feedback', 'switch / nav item / history summary clicked', null, '—', 'transform: scale(0.97)', 'plan 160 (active:scale)'],
+    ['Settings section swap', 'sidebar nav selection changes', 160, 'NOTCHTAP_EASE', 'opacity, x', 'SettingsApp.tsx (MotionConfig transition)'],
+  ];
+  var catBody = document.getElementById('catBody');
+  CATALOG.forEach(function (row, i) {
+    var tr = document.createElement('tr');
+    var durLabel = row[2] === null ? '—' : row[2] + 'ms';
+    var playCell = row[2] === null
+      ? '<span style="color:var(--ink-faint);font-size:10px;">n/a</span>'
+      : '<div class="play-mini" data-dur="' + row[2] + '" data-ease="' + row[3].replace('var(', '').replace(')', '') + '"><div class="chip"></div></div>';
+    tr.innerHTML =
+      '<td class="name">' + row[0] + '</td>' +
+      '<td>' + row[1] + '</td>' +
+      '<td class="play-cell">' + playCell + '</td>' +
+      '<td>' + durLabel + '</td>' +
+      '<td class="const">' + row[3] + '</td>' +
+      '<td class="props">' + row[4] + '</td>' +
+      '<td class="src">' + row[5] + '</td>';
+    catBody.appendChild(tr);
+  });
+  document.addEventListener('click', function (e) {
+    var pm = e.target.closest('.play-mini');
+    if (!pm) return;
+    var chip = pm.querySelector('.chip');
+    var dur = pm.dataset.dur;
+    var ease = pm.dataset.ease;
+    var cssEase = ease === 'NOTCHTAP_EASE' ? 'cubic-bezier(0.22,1,0.36,1)'
+      : ease.indexOf('cubic-bezier') === 0 || ease.indexOf('--ease') === 0 ? (ease.indexOf('--') === 0 ? 'var(' + ease + ')' : ease)
+      : ease === 'ease-in-out' ? 'ease-in-out' : 'cubic-bezier(0.22,1,0.36,1)';
+    pm.classList.remove('play');
+    chip.style.transition = 'none';
+    void chip.offsetWidth;
+    chip.style.transition = 'transform ' + dur + 'ms ' + cssEase;
+    pm.classList.add('play');
+    setTimeout(function () { pm.classList.remove('play'); chip.style.transition = 'none'; }, Number(dur) + 700);
+  });
+})();
+</script>
+</body>
+</html>
