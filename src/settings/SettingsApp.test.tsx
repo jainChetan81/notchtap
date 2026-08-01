@@ -429,7 +429,11 @@ describe("SettingsApp", () => {
       ".preview-row",
     ) as HTMLElement;
     expect(liveRow.querySelector(".chip-live")).not.toBeNull();
-    expect(liveRow.querySelector(".notif-block")).not.toBeNull();
+    // plan 170: `.notif-block` is gone — the live card renders through
+    // `FootballHeroCard`'s shared template now, with the score-row kept
+    // as an additive block (`.score-row`) rather than the old bespoke
+    // wrapper.
+    expect(liveRow.querySelector(".score-row")).not.toBeNull();
   });
 
   it("calls set_appearance with scale/radius/opacity, not card_scale/card_radius/card_opacity", async () => {

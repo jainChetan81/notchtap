@@ -1,6 +1,6 @@
-// plan 151 (items A + B): the scorecard's own motion contract — the
-// match-state chip morphs rather than cuts, and the score digits roll on
-// a goal (and ONLY on a goal). The component's rendering was already
+// plan 151 (items A + B): the football scorecard's own motion contract —
+// the match-state chip morphs rather than cuts, and the score digits roll
+// on a goal (and ONLY on a goal). The component's rendering is otherwise
 // covered end-to-end through StatusRailCard.test.tsx's "live-match
 // football scorecard" block; this file exists for the two things that
 // block can't express, which both need the component rendered DIRECTLY so
@@ -11,12 +11,21 @@
 //     or transition engine, so those are pinned at the string level
 //     against the real stylesheet — the same technique
 //     celebrationStacking.test.tsx and IdleHoverPeek.test.tsx use).
+//
+// plan 170: this file used to be `LiveMatchScorecard.test.tsx`, direct-
+// rendering the now-deleted `LiveMatchScorecard` component. That
+// component's content moved into `FootballHeroCard` (this file's own
+// `NotificationBody.tsx`), rendered through the shared masthead/stamp/
+// accent-stripe template instead of a bespoke `.notif-block` layout — the
+// odometer/chip-morph CSS assertions below carry over unchanged (those
+// rules aren't moving, only which component renders the markup they
+// target).
 import { readFileSync } from "node:fs";
 import { fileURLToPath, URL as NodeURL } from "node:url";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { EspnMeta } from "../useSlotState";
-import { LiveMatchScorecard } from "./LiveMatchScorecard";
+import { FootballHeroCard } from "./NotificationBody";
 
 afterEach(cleanup);
 
@@ -59,13 +68,15 @@ const ESPN_BASE: EspnMeta = {
 
 function card(espn: Partial<EspnMeta> = {}) {
   return (
-    <LiveMatchScorecard
+    <FootballHeroCard
+      title="Goal — K. Havertz 78'"
+      priority="high"
+      signal="goal"
+      eventType="score_update"
       liveEspn={{ ...ESPN_BASE, ...espn }}
       pillVariant="live"
       pillLabel="Live"
-      eventPresentation={null}
       cardsClean={true}
-      body="Goal — K. Havertz 78'"
     />
   );
 }
@@ -91,7 +102,7 @@ function rolls(container: HTMLElement): (Element | undefined)[] {
   return [rollsIn(container, 0)[0], rollsIn(container, 1)[0]];
 }
 
-describe("LiveMatchScorecard score odometer (plan 151 item B)", () => {
+describe("FootballHeroCard score odometer (plan 151 item B)", () => {
   it("renders each side's score inside its own clip, reading the same as before", () => {
     const { container } = render(card());
     expect(container.querySelector(".score")?.textContent).toBe("1–1");
@@ -162,17 +173,19 @@ describe("LiveMatchScorecard score odometer (plan 151 item B)", () => {
   });
 });
 
-describe("LiveMatchScorecard match-state chip (plan 151 item A)", () => {
+describe("FootballHeroCard match-state chip (plan 151 item A)", () => {
   it("keeps the live dot mounted in every variant, final included", () => {
     for (const variant of ["live", "break", "final"] as const) {
       const { container, unmount } = render(
-        <LiveMatchScorecard
+        <FootballHeroCard
+          title="full-time"
+          priority="high"
+          signal="fulltime"
+          eventType="match_state"
           liveEspn={ESPN_BASE}
           pillVariant={variant}
           pillLabel={variant}
-          eventPresentation={null}
           cardsClean={true}
-          body="full-time"
         />,
       );
       expect(container.querySelector(".chip-live .live-dot")).not.toBeNull();

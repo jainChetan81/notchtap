@@ -1,6 +1,9 @@
-import type { ReactNode } from "react";
-import type { Priority } from "../lib/presentation";
-import type { SlotState, SourceKind } from "../useSlotState";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { AnimatePresence, motion } from "motion/react";
+import { type ReactNode, useState } from "react";
+import { NOTCHTAP_EASE } from "../animationTiming";
+import type { EventSignal, EventType, LivePillVariant, Priority } from "../lib/presentation";
+import type { EspnMeta, SlotState, SourceKind } from "../useSlotState";
 import { Manifest } from "./Manifest";
 import { Stamp } from "./Stamp";
 import type { Detail } from "./StatusRailCard";
@@ -292,6 +295,188 @@ export function AgentHeroCard({
         )}
         {body !== null && body.trim() !== "" && <div className="notif-body">{body}</div>}
         {renderFactPills(facts, factsDanger)}
+      </div>
+    </div>
+  );
+}
+
+// plan 084: the recurring live-match scorecard's crest — a filesystem path
+// on the wire (083 workstream a), never a ready `asset://` URL, so every
+// render must go through `convertFileSrc` itself. `onError` is defense in
+// depth for a cache entry that's gone stale on disk between poll and
+// render; the `broken` flag is deliberately sticky (not re-tried) so a
+// permanently-404ing path doesn't flash between the two states forever.
+// Plan 170: ported verbatim from the now-deleted `LiveMatchScorecard.tsx`
+// into `FootballHeroCard`'s additive score-row below — same behavior,
+// only its home file changed.
+function Crest({ abbrev, path }: { abbrev: string; path: string | null }) {
+  const [broken, setBroken] = useState(false);
+  const src = !broken && path !== null ? convertFileSrc(path) : null;
+  return (
+    <span className="crest">
+      {src !== null ? <img src={src} alt="" onError={() => setBroken(true)} /> : abbrev}
+    </span>
+  );
+}
+
+// plan 151 (item B): the score odometer's own timing. Deliberately LOCAL
+// literals rather than new animationTiming.ts tokens — that file
+// single-sources values with a CSS or cross-component counterpart that
+// must stay in lockstep (see its header), and this roll has exactly one
+// consumer and no CSS twin. The delay lets the goal celebration's own
+// first beat land first: 120 + 360 = 480ms, well inside the 1240ms
+// celebration window (choreography.css), so the digit finishes rolling
+// while the burst is still playing rather than after it.
+const SCORE_ROLL_S = 0.36;
+const SCORE_ROLL_DELAY_S = 0.12;
+
+// plan 151 (item B): one side's score digit, as a single-digit odometer.
+//
+// The payload used to be the one thing on this card that did NOT move —
+// `goal-overshoot`/`goal-burst`/the ripple all celebrate AROUND a number
+// that simply swapped between frames. The clip span is a fixed-height
+// `overflow: hidden` box (live-scorecard.css `.score-digit`); the inner
+// `motion.span` is KEYED ON THE VALUE, which is the whole restraint
+// guard: React only remounts (and AnimatePresence only animates) when the
+// number genuinely changes. Everything else that re-renders this card —
+// most notably the once-a-minute clock pill, but also any same-slot
+// rotation re-emit carrying an unchanged scoreline — reuses the same
+// keyed child and rolls nothing. That is why this needs no `.rotation-swap`
+// style off-switch (news-category.css): value-keying already expresses
+// "only on a real change", and it can't be fooled by a re-emit.
+//
+// `initial={false}` on the AnimatePresence means a card mounting with a
+// score already on it renders that score at rest — the roll is reserved
+// for a change that happens while the card is on screen. `mode="popLayout"`
+// takes the outgoing digit out of flow so the two digits overlap inside
+// the clip instead of the box briefly widening to hold both. The
+// percentage translate is compositor-only (no layout per frame), same
+// discipline as `.ttl-fill`/`.media-bar-fill`.
+// Plan 170: ported verbatim, same reasoning as `Crest` above.
+function ScoreDigit({ value }: { value: number }) {
+  return (
+    <span className="score-digit">
+      <AnimatePresence initial={false} mode="popLayout">
+        <motion.span
+          key={value}
+          className="score-digit-roll"
+          initial={{ y: "100%" }}
+          animate={{ y: 0 }}
+          exit={{ y: "-100%" }}
+          transition={{ duration: SCORE_ROLL_S, ease: NOTCHTAP_EASE, delay: SCORE_ROLL_DELAY_S }}
+        >
+          {value}
+        </motion.span>
+      </AnimatePresence>
+    </span>
+  );
+}
+
+// Plan 170: the live-match football card, rendered through the shared
+// masthead/stamp/accent-stripe template (`AgentHeroCard`'s own precedent,
+// plan 169) instead of `LiveMatchScorecard.tsx`'s now-deleted bespoke
+// `.notif-block` layout. `title` is `slot.body` verbatim (e.g. "Goal — K.
+// Havertz 78'"), NOT `slot.title` (`matchup()`'s "UCL: ARS 1–1 PSG" —
+// already redundant with the score-row's own crests+digits below).
+//
+// No subtitle, no `.notif-body`, no fact pills. Football's wire meta
+// (`poller.rs`'s `diff_match`) carries only the one flat body string,
+// plus a Clock detail and an aggregate Cards-tally detail when
+// `espn_live_card` is on — the SAME two facts the kept score-row already
+// shows verbatim (the `clock-pill` chip, the `cards-line` block below),
+// and no scorer/assist/booking-level data beyond that exists anywhere on
+// the wire. A fact pill fed from `slot.details` here would therefore be
+// pure duplication, not new information — plan 170's Target section has
+// the full accounting (corrected twice during that plan's own dispatch:
+// first for the aspirational fact-pill design, then for an incorrect
+// "meta is always empty" claim about exactly this data). Does NOT render
+// `<Manifest>`/`<TtlBar>` either (unlike the generic/news branches in
+// `NotificationBody` above) — same "no TTL bar for a sticky recurring
+// presence, no generic Stamp redundant with the live chip" rule
+// `LiveMatchScorecard.tsx` originally documented; `<Stamp>` here is the
+// real per-signal one (Card/Off/Foul/Offside/VAR/Sub/Break/Final via
+// `stampFor`/`SIGNAL_STAMPS`), not the redundant reference that doc was
+// about.
+//
+// The score-row (league/live-state/clock chips, crests, rolling score
+// digits, optional cards-line) is a kept ADDITIVE block below
+// `.title.headline` — not folded into the generic template's shape, same
+// precedent as Agent Board's queue-rows (plan 169).
+//
+// The old component's `.event-line` icon+tint (`eventPresentation` from
+// lib/presentation.ts) does NOT carry over onto `.title.headline`: that
+// was a flex row built for an icon beside text, `.title.headline` is a
+// line-clamped text block with no icon slot, and `slot.body`'s own text
+// already names the event ("Goal —"/"Penalty - Scored —"/"Own Goal —").
+// The goal/red-card celebration on `.card-assembly` is unaffected — a
+// shell-level effect independent of whichever content template sits
+// underneath it (StatusRailCard.tsx still computes it separately, off
+// `footballKind`/`eventKindPresentationFor`, unchanged by this plan).
+export function FootballHeroCard({
+  title,
+  priority,
+  signal,
+  eventType,
+  liveEspn,
+  pillVariant,
+  pillLabel,
+  cardsClean,
+}: {
+  title: string;
+  priority: Priority;
+  signal: EventSignal;
+  eventType: EventType;
+  liveEspn: EspnMeta;
+  pillVariant: LivePillVariant;
+  pillLabel: string;
+  cardsClean: boolean;
+}) {
+  return (
+    <div className="compact">
+      <div className="copy">
+        <div className="masthead-row">
+          <div className="masthead">
+            <span className="dot" />
+            {GENERIC_MASTHEAD_KICKER.football}
+          </div>
+          <Stamp priority={priority} signal={signal} eventType={eventType} />
+        </div>
+        <div className="title headline">{title}</div>
+        <div className="sc-head">
+          <span className="chip chip-league">{liveEspn.league}</span>
+          <span className={`chip chip-live${pillVariant === "live" ? "" : ` ${pillVariant}`}`}>
+            {/* plan 151 (item A): the dot stays MOUNTED in every variant,
+                including `final` — it leaves by fading to `opacity: 0`
+                (live-scorecard.css `.chip-live.final .live-dot`) in step
+                with the chip's own colour morph, instead of being
+                unmounted and blinking out a frame before the colours
+                change. Smallest structural change that lets it fade; the
+                collapsed 5px+gap it leaves behind is animated in the same
+                rule. */}
+            <span className="live-dot" />
+            {pillLabel}
+          </span>
+          <span className="chip clock-pill">{liveEspn.clock}</span>
+        </div>
+        <div className="score-row">
+          <div className="side">
+            <Crest abbrev={liveEspn.homeAbbrev} path={liveEspn.homeCrest} />
+          </div>
+          <span className="score">
+            <ScoreDigit value={liveEspn.homeScore} />
+            <span className="dash">–</span>
+            <ScoreDigit value={liveEspn.awayScore} />
+          </span>
+          <div className="side">
+            <Crest abbrev={liveEspn.awayAbbrev} path={liveEspn.awayCrest} />
+          </div>
+        </div>
+        {!cardsClean && (
+          <div className="cards-line">
+            {liveEspn.homeAbbrev} {liveEspn.homeCards[0]}Y{liveEspn.homeCards[1]}R ·{" "}
+            {liveEspn.awayAbbrev} {liveEspn.awayCards[0]}Y{liveEspn.awayCards[1]}R
+          </div>
+        )}
       </div>
     </div>
   );
