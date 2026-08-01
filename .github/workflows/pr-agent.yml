@@ -21,6 +21,7 @@ jobs:
           OPENROUTER__KEY: ${{ secrets.OPENROUTER_KEY }}
           CONFIG__MODEL: "openrouter/google/gemini-2.5-flash"
           CONFIG__CUSTOM_MODEL_MAX_TOKENS: "200000"
+          CONFIG__MAX_MODEL_TOKENS: "200000"
         with:
           command: review
 
@@ -39,6 +40,7 @@ jobs:
           OPENROUTER__KEY: ${{ secrets.OPENROUTER_KEY }}
           CONFIG__MODEL: "openrouter/anthropic/claude-sonnet-4.5"
           CONFIG__CUSTOM_MODEL_MAX_TOKENS: "300000"
+          CONFIG__MAX_MODEL_TOKENS: "300000"
           PR_REVIEWER__EXTRA_INSTRUCTIONS: >
             Focus on whether this PR actually delivers the full feature described
             in its title/description: missing edge cases, incomplete error handling,
@@ -61,6 +63,7 @@ jobs:
           OPENROUTER__KEY: ${{ secrets.OPENROUTER_KEY }}
           CONFIG__MODEL: "openrouter/google/gemini-2.5-pro"
           CONFIG__CUSTOM_MODEL_MAX_TOKENS: "400000"
+          CONFIG__MAX_MODEL_TOKENS: "400000"
           PR_REVIEWER__EXTRA_INSTRUCTIONS: >
             Do an architectural pass: module boundaries, dependency direction,
             API/contract design, coupling, and long-term maintainability.
@@ -83,6 +86,7 @@ jobs:
           OPENROUTER__KEY: ${{ secrets.OPENROUTER_KEY }}
           CONFIG__MODEL: "openrouter/anthropic/claude-sonnet-4.5"
           CONFIG__CUSTOM_MODEL_MAX_TOKENS: "300000"
+          CONFIG__MAX_MODEL_TOKENS: "300000"
         with:
           command: ask
           args: "Compare this PR's actual changes against the plan written in the PR description (or linked issue). List anything in the plan that is missing, incomplete, or done differently, and anything the PR does that the plan didn't ask for."
