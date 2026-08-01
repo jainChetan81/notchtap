@@ -1,7 +1,7 @@
 # 170 — Render Football's promoted match events through the shared notification template
 
-- **Status**: APPROVED — operator authorized execution 2026-08-01 (score-row question below resolved: kept as an additive block)
-- **Commit**: —
+- **Status**: DONE (2026-08-01) — executed via `/improve execute`, reviewed, approved, and locally merged into `agent-card-ui-unification` (not pushed, not merged to master). Step 7 (`live-scorecard.css` trim) deliberately deferred per this plan's own Boundaries; not yet filed as a follow-up plan.
+- **Commit**: 465b6d7, merged via da85609
 - **Severity**: N/A (design direction, not a bug)
 - **Category**: UX / architecture — reconsiders a plan-042/084/151-era decision
 - **Estimated scope**: large — `NotificationBody.tsx` (new `FootballHeroCard`), `live-scorecard.css` trim, `LiveMatchScorecard.test.tsx`/`StatusRailCard.test.tsx` rewrites, `StatusRailCard.tsx`'s call site. Frontend-only — no rust/`src-tauri` changes (see the Target correction below on why the wire doesn't support the prototype's fact-pill idea)

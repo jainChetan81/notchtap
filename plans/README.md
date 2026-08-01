@@ -17,18 +17,28 @@ the segment already in that column — collapsing both to ~0px height.
 Independent of 169/170; safe to land on its own regardless of what happens
 with the bigger design question.
 
-**169's open design question resolved 2026-08-01** — operator confirmed the
-football score-row (crests + rolling score digits) survives unification as
-an additive block, same pattern as Agent Board's queue-rows; the prototype
-was updated first, then folded into plan 170's own text. Operator then
-authorized executing 169 and 170 both (169 already executed/approved/
-merged; 170 to follow the same dispatch-and-review path).
+**170's own dispatch caught a second plan error, mid-execution** — the
+first-pass Target claimed football's wire `meta` (`subtitle`/`details`) is
+always empty, so no fact pills were possible. A dispatched executor
+correctly stopped rather than proceed past it: `poller.rs`'s `diff_match`
+actually overwrites `meta.details` with Clock/Cards entries whenever
+`espn_live_card` is on — the exact condition gating the branch this plan
+touches. Verified directly against `poller.rs`, the plan corrected in
+place (commit 6388a4b), and the executor resumed. The deliverable was
+unaffected either way: both possible `details` entries duplicate what the
+kept score-row already shows, so `FootballHeroCard` still renders no fact
+pills — only the stated reasoning needed fixing, not the target shape.
+
+All three plans in this batch are now DONE and merged locally into
+`agent-card-ui-unification` (not pushed, not merged to master). Step 7 of
+plan 170 (`live-scorecard.css` dead-rule trim) was deliberately deferred
+per that plan's own boundary and is not yet filed as its own follow-up.
 
 | plan | title | severity | depends on | status |
 |---|---|---|---|---|
 | 168 | fix the TTL-bar fill collapsing to ~0px height | MEDIUM | — | DONE |
 | 169 | render the Agent Board's primary session through the shared template | N/A (proposal) | 168 | DONE |
-| 170 | render Football's promoted events through the shared template | N/A (proposal) | 168, 169 | PROPOSAL |
+| 170 | render Football's promoted events through the shared template | N/A (proposal) | 168, 169 | DONE |
 
 **Shell-choreography review batch 163–167 (2026-07-31, `/review-animations`,
 scoped by operator request to the minimal↔idle↔compact↔expanded shell-size
