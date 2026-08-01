@@ -1,5 +1,6 @@
 [config]
-fallback_models = ["openrouter/anthropic/claude-3.5-haiku"]
+fallback_models = ["openrouter/anthropic/claude-haiku-4.5"]
+reasoning_effort = "none"
 
 [pr_reviewer]
 persistent_comment = true

@@ -22,6 +22,7 @@ jobs:
           CONFIG__MODEL: "openrouter/google/gemini-2.5-flash"
           CONFIG__CUSTOM_MODEL_MAX_TOKENS: "200000"
           CONFIG__MAX_MODEL_TOKENS: "200000"
+          CONFIG__PROPAGATE_TOOL_ERRORS: "true"
         with:
           command: review
 
