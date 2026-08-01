@@ -7,6 +7,7 @@
 .card-root .compact {
   position: relative;
   box-sizing: border-box;
+  overflow: hidden;
   min-height: 74px;
   /* O6 (content inset rhythm): right/bottom were 18px/14px, drifted from
      every other content block's 16px/13px (`.notif-block`, `.manifest-

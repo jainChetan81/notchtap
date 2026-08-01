@@ -1,4 +1,5 @@
 import type { ReactNode } from "react";
+import type { Priority } from "../lib/presentation";
 import type { SlotState, SourceKind } from "../useSlotState";
 import { Manifest } from "./Manifest";
 import { Stamp } from "./Stamp";
@@ -21,13 +22,52 @@ import { TtlBar } from "./TtlBar";
 // server push (up to ~8 detail pairs, per the wire contract's own
 // generous allowance) could grow `.compact` tall enough to push the
 // TTL bar's floor strip out of the window (`.below-block`'s `overflow:
-// hidden` just hard-crops instead of scrolling). Paired with
-// `.detail-value`'s own 2-line clamp (manifest.css), this cap bounds the
-// worst case to a knowable height instead of an unbounded one. Chosen
-// well above every existing fixture's real usage (3 pairs, the richest
-// StatusRailCard.test.tsx case) so no legitimate payload is ever visibly
-// truncated in practice.
-const MAX_VISIBLE_DETAIL_PAIRS = 4;
+// hidden` just hard-crops instead of scrolling). Plan 169 moved each
+// pair off a 2-line-clamped stacked block onto a single-line, ellipsis-
+// truncating `.fact-pill` (manifest.css) — narrower per item, but still
+// paired with this same cap on pair COUNT, so the worst case (many
+// pills stacked in `.detail-facts`) stays a knowable height instead of
+// an unbounded one. Chosen well above every existing fixture's real
+// usage (3 pairs, the richest StatusRailCard.test.tsx case) so no
+// legitimate payload is ever visibly truncated in practice.
+// Exported (plan 169) so AgentBoard.tsx's own fact-pill assembly for the
+// templated hero (session.details plus one synthesized elapsed fact)
+// caps against the SAME limit, rather than a second hand-copied literal.
+export const MAX_VISIBLE_DETAIL_PAIRS = 4;
+
+// Plan 169 (steps 2-3): the shared fact-pill renderer — one `.fact-pill`
+// per label/value pair, replacing the old stacked `.detail-label`/
+// `.detail-value` divs (manifest.css). Used by BOTH the generic branch's
+// own `liveVisibleDetails` below and the agent-aware `AgentHeroCard`
+// further down — one rendering implementation, not two hand-copied
+// ones, per this plan's own "no parallel pill system" premise.
+// `fp-label` is always shown here: a wire `Detail`/`AgentDetail` pair
+// carries only `{label, value}`, no signal for "this value is
+// self-explanatory, omit the label" — that per-fact judgment call
+// belongs to a caller with real domain knowledge of its own facts
+// (e.g. plan 170's football scorer line), not this generic renderer.
+// `danger` paints every pill in the call `tone-danger` uniformly — there
+// is no per-detail tag/tone concept here, since the wire shape has no
+// third "qualifier" field to key one off; `AgentHeroCard` below derives
+// `danger` from the session's STATE instead (see its own doc).
+function renderFactPills(details: Detail[], danger = false) {
+  if (details.length === 0) {
+    return null;
+  }
+  return (
+    <div className="detail-facts">
+      {details.map((detail) => (
+        <span
+          key={`${detail.label}:${detail.value}`}
+          className={`fact-pill${danger ? " tone-danger" : ""}`}
+        >
+          <span className="fp-label">{detail.label}</span>
+          {detail.value}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 const GENERIC_MASTHEAD_KICKER: Record<SourceKind, string> = {
   manual: "cli",
@@ -142,13 +182,7 @@ export function NotificationBody({
               {/* an empty body (e.g. an agent push with no body text)
                 must not leave a blank `.notif-body` node in the card. */}
               {slot.body.trim() !== "" && <div className="notif-body">{bodyContent}</div>}
-              {liveVisibleDetails.length > 0 &&
-                liveVisibleDetails.slice(0, MAX_VISIBLE_DETAIL_PAIRS).map((detail) => (
-                  <div key={`${detail.label}:${detail.value}`}>
-                    <div className="detail-label">{detail.label}</div>
-                    <div className="detail-value">{detail.value}</div>
-                  </div>
-                ))}
+              {renderFactPills(liveVisibleDetails.slice(0, MAX_VISIBLE_DETAIL_PAIRS))}
             </>
           )}
         </div>
@@ -187,5 +221,78 @@ export function NotificationBody({
         done={slot.queueDone}
       />
     </>
+  );
+}
+
+// Plan 169 (step 4): the Agent Board's primary-session hero — the
+// agent-aware branch this plan adds "alongside the existing generic/news
+// branches" (Repo conventions), rendering through the SAME masthead-row/
+// Stamp/`.title.headline`/`.notif-subtitle-row`/`.notif-body`/fact-pill
+// shapes the generic branch above uses, in place of the old bespoke
+// `.agent-board-primary-head` block (AgentBoard.tsx, pre-169).
+//
+// Deliberately does NOT take a `slot`/`AgentSessionView` — every field
+// arrives pre-computed as a plain primitive (a title string, a nullable
+// subtitle/body string, a `Detail[]` fact list, a dot key + pulse flag)
+// so this component needs no agent-specific type import
+// (`AgentSessionView`/`AgentRuntime`/`AgentSessionState`) — AgentBoard.tsx
+// (the one place that actually knows about sessions/runtimes) does that
+// translation and calls this directly, per the plan's own "whichever
+// keeps NotificationBody.tsx from needing agent-specific imports it
+// doesn't otherwise need" guidance. It does NOT render Manifest/TtlBar/
+// `.compact-hint` — those are notification-specific chrome (TTL/queue/
+// expand-to-read-more) that don't apply to a persistent status board
+// with no TTL and its own hover-expand meaning; only the `.compact`
+// masthead/title/subtitle/body/fact-pill shape is reused.
+//
+// `dotKey`/`pulse` intentionally stay primitive too (not a pre-rendered
+// dot element) — AgentBoard.tsx is still the one place that renders the
+// actual `.agent-dot` span (keyed on state, `large`/`pulse` classes),
+// preserving the Boundary that this plan changes markup/CSS classes
+// around the dot, never its own bounded-pulse animation contract.
+export function AgentHeroCard({
+  dotKey,
+  pulse,
+  title,
+  subtitle,
+  body,
+  priority,
+  facts,
+  factsDanger,
+}: {
+  dotKey: string;
+  pulse: boolean;
+  title: string;
+  subtitle: string | null;
+  body: string | null;
+  priority: Priority;
+  facts: Detail[];
+  factsDanger: boolean;
+}) {
+  return (
+    <div className="compact">
+      <div className="copy">
+        <div className="masthead-row">
+          <div className="masthead">
+            <span
+              key={dotKey}
+              className={`agent-dot large${pulse ? " pulse" : ""}`}
+              aria-hidden="true"
+            />
+            <span className="agent-runtime-tick" aria-hidden="true" />
+            {GENERIC_MASTHEAD_KICKER.agent}
+          </div>
+          <Stamp priority={priority} signal="generic" eventType="agent_event" />
+        </div>
+        <div className="title headline">{title}</div>
+        {subtitle !== null && (
+          <div className="notif-subtitle-row">
+            <span className="notif-subtitle">{subtitle}</span>
+          </div>
+        )}
+        {body !== null && body.trim() !== "" && <div className="notif-body">{body}</div>}
+        {renderFactPills(facts, factsDanger)}
+      </div>
+    </div>
   );
 }
