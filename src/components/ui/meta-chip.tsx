@@ -38,7 +38,7 @@ export function MetaChip({
     <span
       data-slot="meta-chip"
       className={cn(
-        "meta-chip min-w-0 rounded-full border border-border px-[7px] py-0.5 font-mono text-fs-caption font-[650] leading-[1.5] text-muted-foreground",
+        "meta-chip min-w-0 rounded-full border border-border px-[7px] py-0.5 font-mono text-fs-caption font-[650] leading-[1.5] text-muted-foreground transition-colors duration-[150ms] ease-notchtap",
         uppercase && "tracking-[0.06em] uppercase",
         active && "border-ring/40 bg-input/40 text-foreground",
         className,

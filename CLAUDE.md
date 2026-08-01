@@ -14,6 +14,12 @@ don't tell you.
 - `prototype/*.html` are static design mocks, not wired into the
   build — they drift from the shipped UI unless deliberately synced
   (plan 106 was one such sync).
+- `prototypes/*.html` (plural — a separate directory, not a typo of the
+  above) are one-off design-review snapshots/proposals produced ad hoc
+  by the `html-prototype` skill (e.g. a settings-window current-state
+  capture, a redesign proposal) — narrower in scope than `prototype/`'s
+  ongoing per-component mirror files, not maintained or synced going
+  forward, and not part of any numbered plan.
 - the test suite must stay green (`cargo test` from `src-tauri/`,
   `npx vitest run` from repo root, all gated by ci). current test
   counts live in `docs/TESTING_STRATEGY.md` §0 and only there — don't

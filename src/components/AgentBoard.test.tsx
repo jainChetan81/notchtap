@@ -1,10 +1,11 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath, URL as NodeURL } from "node:url";
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { DISCLOSURE_SPRING, NOTCHTAP_EASE } from "../animationTiming";
 import type { AgentSessionView } from "../useAgentState";
 import { AgentBoard, HERO_SWAP_TRANSITION, nowTickIntervalMs, ROW_TRANSITION } from "./AgentBoard";
+import { MAX_VISIBLE_DETAIL_PAIRS } from "./NotificationBody";
 
 // this project's vitest config doesn't set `test.globals`, so RTL's
 // auto-cleanup (hooked off a global `afterEach`) never registers.
@@ -39,7 +40,15 @@ describe("AgentBoard resting render", () => {
     expect(container.querySelector('[data-testid="agent-board"]')).toBeNull();
   });
 
-  it("waiting-for-permission: amber family, runtime/project/summary/state all render", () => {
+  // Plan 169: the hero now renders through NotificationBody.tsx's shared
+  // template — runtime+state combine into the single `.title.headline`
+  // text (there is no more standalone `.agent-board-runtime`/
+  // `.agent-board-state-pill` pair), project becomes the subtitle row,
+  // summary becomes the notif-body. `waiting_for_permission` also maps
+  // to "high" priority (step 6's mapping) — the NEW `--accent`/Stamp
+  // channel on `.card-assembly`, a separate paint channel from the
+  // `--agent-accent` one `.agent-waiting` below already drives.
+  it("waiting-for-permission: amber family, hero renders through the shared template (title/subtitle/body/priority)", () => {
     const { container, getByText } = render(
       <AgentBoard
         sessions={[
@@ -52,38 +61,41 @@ describe("AgentBoard resting render", () => {
         capturedAtMs={CAPTURED_AT_MS}
       />,
     );
-    expect(getByText("Codex")).toBeTruthy();
-    expect(getByText("Needs approval")).toBeTruthy();
+    expect(getByText("Codex — Needs approval")).toBeTruthy();
     expect(getByText("notchtap")).toBeTruthy();
     expect(getByText("Approval needed to run a command")).toBeTruthy();
     expect(container.querySelector(".below-block.agent-waiting")).not.toBeNull();
+    expect(container.querySelector(".card-assembly.high")).not.toBeNull();
   });
 
-  it("working: blue/pulsing family", () => {
-    const { container, getByText } = render(
+  it("working: blue/pulsing family, medium priority", () => {
+    const { container } = render(
       <AgentBoard sessions={[session({ state: "working" })]} capturedAtMs={CAPTURED_AT_MS} />,
     );
-    expect(getByText("Working")).toBeTruthy();
+    expect(container.querySelector(".title.headline")?.textContent).toBe("Codex — Working");
     expect(container.querySelector(".below-block.agent-working")).not.toBeNull();
     expect(container.querySelector(".agent-dot.large.pulse")).not.toBeNull();
+    expect(container.querySelector(".card-assembly.medium")).not.toBeNull();
   });
 
-  it("failed: coral, non-pulsing family", () => {
-    const { container, getByText } = render(
+  it("failed: coral, non-pulsing family, high priority", () => {
+    const { container } = render(
       <AgentBoard sessions={[session({ state: "failed" })]} capturedAtMs={CAPTURED_AT_MS} />,
     );
-    expect(getByText("Failed")).toBeTruthy();
+    expect(container.querySelector(".title.headline")?.textContent).toBe("Codex — Failed");
     expect(container.querySelector(".below-block.agent-failed")).not.toBeNull();
     expect(container.querySelector(".agent-dot.large.pulse")).toBeNull();
+    expect(container.querySelector(".card-assembly.high")).not.toBeNull();
   });
 
-  it("completed: green, non-pulsing family", () => {
-    const { container, getByText } = render(
+  it("completed: green, non-pulsing family, low priority", () => {
+    const { container } = render(
       <AgentBoard sessions={[session({ state: "completed" })]} capturedAtMs={CAPTURED_AT_MS} />,
     );
-    expect(getByText("Completed")).toBeTruthy();
+    expect(container.querySelector(".title.headline")?.textContent).toBe("Codex — Completed");
     expect(container.querySelector(".below-block.agent-completed")).not.toBeNull();
     expect(container.querySelector(".agent-dot.large.pulse")).toBeNull();
+    expect(container.querySelector(".card-assembly.low")).not.toBeNull();
   });
 
   it("renders 3+ sessions as individual rows, never a +N collapse, in the given (Rust) order", () => {
@@ -106,11 +118,14 @@ describe("AgentBoard resting render", () => {
     expect(container.textContent).not.toMatch(/\+\d/);
   });
 
-  it("omits the project line cleanly when a session has no project metadata", () => {
+  // Plan 169: project is the hero's subtitle row now (`.notif-subtitle-row`,
+  // NotificationBody.tsx's shared template) — the old standalone
+  // `.agent-board-project` line is gone.
+  it("omits the subtitle row cleanly when a session has no project metadata", () => {
     const { container } = render(
       <AgentBoard sessions={[session({ project: null })]} capturedAtMs={CAPTURED_AT_MS} />,
     );
-    expect(container.querySelector(".agent-board-project")).toBeNull();
+    expect(container.querySelector(".agent-board-primary .notif-subtitle-row")).toBeNull();
   });
 
   // Plan 147 wave 2: state accents (agent-waiting/agent-working/...) and
@@ -154,11 +169,158 @@ describe("AgentBoard resting render", () => {
     expect(container.querySelectorAll(".agent-row .agent-runtime-tick")).toHaveLength(1);
   });
 
-  it("renders a runtime tick glyph on the hero head", () => {
+  // Plan 169: the old bespoke `.agent-board-primary-head` is gone — the
+  // runtime tick glyph now lives in the hero's shared masthead.
+  it("renders a runtime tick glyph on the hero's masthead", () => {
     const { container } = render(
       <AgentBoard sessions={[session()]} capturedAtMs={CAPTURED_AT_MS} />,
     );
-    expect(container.querySelector(".agent-board-primary-head .agent-runtime-tick")).not.toBeNull();
+    expect(
+      container.querySelector(".agent-board-primary .masthead .agent-runtime-tick"),
+    ).not.toBeNull();
+  });
+});
+
+// Plan 169: the hero's fact-pill assembly — `session.details` (the same
+// capability-dependent facts `ExpandedAgentRow` already renders) plus a
+// synthesized elapsed-in-state fact for starting/completed/stale (the
+// Target table's "session"/"duration"/"last seen" examples), and the
+// Target table's own "(danger tone)" marking on exactly two states
+// (waiting_for_permission, failed). Covers the three states the earlier
+// per-state describe block didn't (waiting_for_input, starting, stale),
+// so all seven states have hero-render coverage somewhere in this file.
+describe("AgentBoard hero fact pills (plan 169)", () => {
+  // `liveElapsedMs` (AgentBoard.tsx) adds `Date.now() - capturedAtMs` on
+  // top of the fixture's own `elapsedMs` — with a real wall clock and the
+  // tiny fixed `CAPTURED_AT_MS` epoch every other test in this file uses,
+  // that diff is enormous, not zero. Pinning the system clock to exactly
+  // `CAPTURED_AT_MS` makes the diff 0, so the synthesized elapsed fact
+  // pills below assert the fixture's own `elapsedMs` value directly.
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.setSystemTime(CAPTURED_AT_MS);
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it("waiting-for-input: high priority, no fact pills when the session carries no details", () => {
+    const { container } = render(
+      <AgentBoard
+        sessions={[session({ state: "waiting_for_input" })]}
+        capturedAtMs={CAPTURED_AT_MS}
+      />,
+    );
+    expect(container.querySelector(".title.headline")?.textContent).toBe("Codex — Needs input");
+    expect(container.querySelector(".card-assembly.high")).not.toBeNull();
+    expect(container.querySelector(".agent-board-primary .detail-facts")).toBeNull();
+  });
+
+  it("starting: medium priority, synthesized 'Session' elapsed fact pill", () => {
+    const { getByText, container } = render(
+      <AgentBoard
+        sessions={[session({ state: "starting", elapsedMs: 2_000 })]}
+        capturedAtMs={CAPTURED_AT_MS}
+      />,
+    );
+    expect(container.querySelector(".card-assembly.medium")).not.toBeNull();
+    expect(getByText("Session")).toBeTruthy();
+    expect(getByText("2s")).toBeTruthy();
+  });
+
+  it("completed: low priority, synthesized 'Duration' elapsed fact pill", () => {
+    const { getByText, container } = render(
+      <AgentBoard
+        sessions={[session({ state: "completed", elapsedMs: 5_000 })]}
+        capturedAtMs={CAPTURED_AT_MS}
+      />,
+    );
+    expect(container.querySelector(".card-assembly.low")).not.toBeNull();
+    expect(getByText("Duration")).toBeTruthy();
+    expect(getByText("5s")).toBeTruthy();
+  });
+
+  it("stale: low priority, synthesized 'Last seen … ago' elapsed fact pill", () => {
+    const { getByText, container } = render(
+      <AgentBoard
+        sessions={[session({ state: "stale", elapsedMs: 840_000 })]}
+        capturedAtMs={CAPTURED_AT_MS}
+      />,
+    );
+    expect(container.querySelector(".card-assembly.low")).not.toBeNull();
+    expect(getByText("Last seen")).toBeTruthy();
+    expect(getByText("14m ago")).toBeTruthy();
+  });
+
+  it("waiting-for-permission: declared details (Tool/Bash) render as a danger-toned fact pill", () => {
+    const { getByText, container } = render(
+      <AgentBoard
+        sessions={[
+          session({
+            state: "waiting_for_permission",
+            details: [{ label: "Tool", value: "Bash" }],
+          }),
+        ]}
+        capturedAtMs={CAPTURED_AT_MS}
+      />,
+    );
+    expect(getByText("Tool")).toBeTruthy();
+    expect(getByText("Bash")).toBeTruthy();
+    const pill = container.querySelector(".agent-board-primary .fact-pill");
+    expect(pill?.classList.contains("tone-danger")).toBe(true);
+  });
+
+  it("failed: declared details (Exit code/1) render as a danger-toned fact pill", () => {
+    const { getByText, container } = render(
+      <AgentBoard
+        sessions={[session({ state: "failed", details: [{ label: "Exit code", value: "1" }] })]}
+        capturedAtMs={CAPTURED_AT_MS}
+      />,
+    );
+    expect(getByText("Exit code")).toBeTruthy();
+    expect(getByText("1")).toBeTruthy();
+    const pill = container.querySelector(".agent-board-primary .fact-pill");
+    expect(pill?.classList.contains("tone-danger")).toBe(true);
+  });
+
+  it("working: declared details (Progress/63%) render as a plain, non-danger fact pill", () => {
+    const { getByText, container } = render(
+      <AgentBoard
+        sessions={[session({ state: "working", details: [{ label: "Progress", value: "63%" }] })]}
+        capturedAtMs={CAPTURED_AT_MS}
+      />,
+    );
+    expect(getByText("Progress")).toBeTruthy();
+    expect(getByText("63%")).toBeTruthy();
+    const pill = container.querySelector(".agent-board-primary .fact-pill");
+    expect(pill?.classList.contains("tone-danger")).toBe(false);
+  });
+
+  // Overflow safety: the hero's facts are capped at the SAME
+  // MAX_VISIBLE_DETAIL_PAIRS limit the generic branch's own pills
+  // respect (NotificationBody.tsx) — a session with more declared
+  // details than the cap must never grow the card past a knowable
+  // height (see manifest.css's `.detail-facts`/`.fact-pill` truncation
+  // rules, verified statically per the plan's overflow-check note).
+  it("caps the hero's fact pills at MAX_VISIBLE_DETAIL_PAIRS even with more declared details", () => {
+    const { container } = render(
+      <AgentBoard
+        sessions={[
+          session({
+            state: "working",
+            details: Array.from({ length: MAX_VISIBLE_DETAIL_PAIRS + 3 }, (_, i) => ({
+              label: `Detail${i}`,
+              value: `v${i}`,
+            })),
+          }),
+        ]}
+        capturedAtMs={CAPTURED_AT_MS}
+      />,
+    );
+    expect(container.querySelectorAll(".agent-board-primary .fact-pill")).toHaveLength(
+      MAX_VISIBLE_DETAIL_PAIRS,
+    );
   });
 });
 
@@ -706,7 +868,9 @@ describe("AgentBoard motion vitals", () => {
       />,
     );
     const heroBefore = container.querySelector(".agent-board-primary");
-    expect(heroBefore?.querySelector(".agent-board-runtime")?.textContent).toBe("Claude Code");
+    // Plan 169: runtime is folded into the hero's `.title.headline` text
+    // now (there is no more standalone `.agent-board-runtime`).
+    expect(heroBefore?.querySelector(".title.headline")?.textContent).toContain("Claude Code");
 
     rerender(
       <AgentBoard
@@ -720,7 +884,7 @@ describe("AgentBoard motion vitals", () => {
     // a real animation, not a same-frame content replacement.
     await waitFor(() => {
       const heroAfter = container.querySelector(".agent-board-primary");
-      expect(heroAfter?.querySelector(".agent-board-runtime")?.textContent).toBe("OpenCode");
+      expect(heroAfter?.querySelector(".title.headline")?.textContent).toContain("OpenCode");
       expect(heroAfter).not.toBe(heroBefore);
     });
   });

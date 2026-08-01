@@ -6,12 +6,15 @@ import {
   agentRuntimeClass,
   agentRuntimeLabel,
   agentStatePresentationFor,
+  agentStatePriorityFor,
   elapsedLabel,
 } from "../lib/presentation";
 import type { AgentSessionView } from "../useAgentState";
 import type { StatusState } from "../useStatusState";
 import { FlankClock } from "./FlankClock";
+import { AgentHeroCard, MAX_VISIBLE_DETAIL_PAIRS } from "./NotificationBody";
 import { StatusDots } from "./StatusDots";
+import type { Detail } from "./StatusRailCard";
 
 // Plan 136 (v7 ticket 4 of 13, spec §6.2 resting): the Agent Board's
 // resting layout — one rich card for the highest-ranked session
@@ -340,9 +343,46 @@ export function AgentBoard({
   const primaryPresentation = agentStatePresentationFor(primary.state);
   const primaryProjectName = primary.project?.name ?? null;
   const primaryElapsed = elapsedLabel(liveElapsedMs(primary, capturedAtMs, nowMs));
+  // Plan 169 (step 6): the priority-tier mapping that feeds the hero's
+  // Stamp/accent-stripe/fact-pill tone — see `agentStatePriorityFor`'s
+  // own doc (lib/presentation.ts) for why this table exists and how the
+  // seven states sort into low/medium/high.
+  const primaryPriority = agentStatePriorityFor(primary.state);
+  // Plan 169: fact pills for the templated hero — the same declared
+  // `session.details` ExpandedAgentRow already renders (capability-
+  // dependent, adapter-provided: tool/risk, progress, exit code, ...),
+  // plus one synthesized elapsed-in-state fact for the three states
+  // where "how long" is itself the single most useful extra fact
+  // (starting/completed/stale) — the other four states either need no
+  // extra time fact (waiting_for_input) or already surface something
+  // more actionable via their own details (waiting_for_permission's
+  // tool/risk, working's progress, failed's exit code). Capped at the
+  // SAME MAX_VISIBLE_DETAIL_PAIRS the generic branch's own pills already
+  // respect (NotificationBody.tsx) — one shared limit, not a second
+  // hand-copied one.
+  const primaryFactsRaw: Detail[] = [...primary.details];
+  if (primary.state === "starting") {
+    primaryFactsRaw.push({ label: "Session", value: primaryElapsed });
+  } else if (primary.state === "completed") {
+    primaryFactsRaw.push({ label: "Duration", value: primaryElapsed });
+  } else if (primary.state === "stale") {
+    primaryFactsRaw.push({ label: "Last seen", value: `${primaryElapsed} ago` });
+  }
+  const primaryFacts = primaryFactsRaw.slice(0, MAX_VISIBLE_DETAIL_PAIRS);
+  // Plan 169 (Target table): waiting_for_permission and failed are the
+  // two states the table marks "(danger tone)" on their fact pills —
+  // mirrors `AGENT_STATE_PRESENTATION`'s own "agent-waiting"/
+  // "agent-failed" alarm grouping (lib/presentation.ts), not a guess at
+  // per-detail content: there is no wire field that says "this fact is
+  // dangerous," but the session's STATE already carries that signal.
+  const primaryFactsDanger =
+    primary.state === "waiting_for_permission" || primary.state === "failed";
 
   return (
-    <div className="card-assembly expanded agent-board-shell" data-testid="agent-board">
+    <div
+      className={`card-assembly expanded agent-board-shell ${primaryPriority}`}
+      data-testid="agent-board"
+    >
       <span className="notch-gill notch-gill-left" aria-hidden="true" />
       <span className="notch-gill notch-gill-right" aria-hidden="true" />
       <div className="flank-left">
@@ -377,6 +417,17 @@ export function AgentBoard({
             is meant to remove. `mode="wait"` because the hero is a
             single block: an overlap would double its height mid-flight,
             and a 160ms out-then-in reads cleanly as one swap. */}
+        {/* Plan 169: the hero's INNER content now renders through
+            `AgentHeroCard` (NotificationBody.tsx) — the same masthead-row/
+            Stamp/title/subtitle/body/fact-pill template every other
+            origin's compact card already uses, replacing the bespoke
+            `.agent-board-primary-head`/`.agent-board-runtime`/
+            `.agent-board-state-pill`/`.agent-board-project`/
+            `.agent-board-summary`/`.agent-board-elapsed` block this file
+            used to hand-roll. The OUTER `motion.div` (identity-swap
+            animation, `agent-board-primary` class) is untouched — this
+            plan changes what renders INSIDE `.below-block`, never the
+            shell or the swap's own animation contract (Boundaries). */}
         {!expanded && (
           <AnimatePresence initial={false} mode="wait">
             <motion.div
@@ -387,23 +438,16 @@ export function AgentBoard({
               exit={{ opacity: 0, y: -6 }}
               transition={HERO_SWAP_TRANSITION}
             >
-              <div className={`agent-board-primary-head ${agentRuntimeClass(primary.runtime)}`}>
-                {/* state-keyed for the bounded pulse/tick restart — same
-                    reason as `AgentRow`'s own dot. */}
-                <span
-                  key={primary.state}
-                  className={`agent-dot large ${primaryPresentation.pulse ? "pulse" : ""}`}
-                  aria-hidden="true"
-                />
-                <span className="agent-runtime-tick" aria-hidden="true" />
-                <span className="agent-board-runtime">{agentRuntimeLabel(primary.runtime)}</span>
-                <span className="agent-board-state-pill">{primaryPresentation.label}</span>
-              </div>
-              {primaryProjectName && (
-                <div className="agent-board-project">{primaryProjectName}</div>
-              )}
-              {primary.summary && <div className="agent-board-summary">{primary.summary}</div>}
-              <div className="agent-board-elapsed">{primaryElapsed}</div>
+              <AgentHeroCard
+                dotKey={primary.state}
+                pulse={primaryPresentation.pulse}
+                title={`${agentRuntimeLabel(primary.runtime)} — ${primaryPresentation.label}`}
+                subtitle={primaryProjectName}
+                body={primary.summary}
+                priority={primaryPriority}
+                facts={primaryFacts}
+                factsDanger={primaryFactsDanger}
+              />
             </motion.div>
           </AnimatePresence>
         )}

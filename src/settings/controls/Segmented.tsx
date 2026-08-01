@@ -102,7 +102,7 @@ export function Segmented<T extends string | number>({
               // focus-visible:ring-ring/50`. Same vocabulary here so
               // keyboard-tabbing reads as one consistent focus style
               // across the whole window.
-              "rounded-[4px] border border-transparent bg-transparent px-1.5 py-px font-mono text-fs-secondary font-[620] tracking-[0.03em] text-muted-foreground outline-none transition-colors duration-[140ms] ease-notchtap hover:bg-accent hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50",
+              "rounded-[4px] border border-transparent bg-transparent px-1.5 py-px font-mono text-fs-secondary font-[620] tracking-[0.03em] text-muted-foreground outline-none transition-[color,background-color,border-color,box-shadow,transform] duration-[140ms] ease-notchtap hover:bg-accent hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]",
               value === option.value &&
                 "is-selected bg-accent text-foreground shadow-[var(--shadow-selected)]",
             )}

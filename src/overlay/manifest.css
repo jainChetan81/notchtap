@@ -41,47 +41,81 @@
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent);
 }
 
-/* `.detail-label`/`.detail-value` used to also back a `.manifest-fields`
-   stacking wrapper inside the expanded manifest (subtitle + each detail
-   pair, plan 092). The 2026-07-24 declutter moved that content
-   compact-only (NotificationBody.tsx renders these same two classes
-   directly, unwrapped, in `.compact`) and removed `.manifest-fields`
-   along with it — the expanded panel never repeats metadata now. */
-.card-root .detail-label {
-  margin-bottom: 5px;
-  color: var(--accent);
-  font: 700 8px/1 var(--font-mono);
-  /* O9: was 0.14em — collapsed onto the 3-step 0.08/0.12/0.16em scale
-     every 8-9px mono uppercase label in the overlay now shares. */
-  letter-spacing: 0.16em;
+/* plan 169: `.detail-label`/`.detail-value` (the stacked label-over-
+   value pair the generic branch used to render, one per detail — a
+   visual language nothing else in the overlay shared) are gone,
+   replaced by the fact-pill system below — one pill per fact, an
+   optional muted mono label prefix (`.fp-label`), an optional colored
+   qualifier tag (`.fp-tag`), never a stacked block. NotificationBody.tsx's
+   generic branch and its new agent-aware branch (AgentBoard.tsx's
+   primary-session hero) both render through this SAME markup now — no
+   second, parallel pill system for agent's own facts.
+   `.detail-value.message` (the one variant that carried full prose,
+   plan 032) is gone too, not just converted: at implementation time
+   nothing in the live component tree still applied a `message` class
+   alongside `.detail-value` (Manifest.tsx's own message cell has always
+   used `.manifest-text`/`.manifest-label` instead — a different pair of
+   classes entirely, untouched by this plan) — the rule was already dead
+   before this change, and prose doesn't fit a pill shape regardless, so
+   there is no replacement pill variant for it. */
+.card-root .detail-facts {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+  margin-top: 7px;
+  margin-bottom: 14px;
+  max-width: 100%;
+}
+.card-root .fact-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  max-width: 100%;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 10px;
+  line-height: 1.4;
+  color: rgba(255, 255, 255, 0.82);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.05);
+}
+.card-root .fact-pill .fp-label {
+  flex: none;
+  font: 700 7px/1 var(--font-mono);
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  opacity: 0.68;
+}
+.card-root .fact-pill .fp-tag {
+  flex: none;
+  font: 700 7px/1 var(--font-mono);
+  letter-spacing: 0.07em;
   text-transform: uppercase;
 }
-
-.card-root .detail-value {
-  color: rgba(255, 255, 255, 0.74);
-  font-size: 11px;
-  line-height: 1.45;
-  /* plan 035: detail values (e.g. a long command or file path from a hook)
-     must wrap inside the fixed 500x300 window instead of overflowing. */
-  overflow-wrap: anywhere;
-  /* M13: unbounded before — paired with NotificationBody.tsx's own cap on
-     how many detail pairs render at all, this bounds each individual
-     pair's height too, so a single very long value can't alone push the
-     ttl-bar floor out of the fixed 300px window. */
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+.card-root .fact-pill.tone-accent {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  border-color: color-mix(in srgb, var(--accent) 38%, transparent);
 }
-
-/* the Message cell is the one manifest field that carries full prose —
-   it gets the same prominence treatment as the compact .body (plan 032). */
-.card-root .detail-value.message {
-  /* O9: was 0.84 — matches `.manifest-text`'s identical role/alpha
-     (news-category.css) now instead of a one-off neighbor value. */
-  color: rgba(255, 255, 255, 0.85);
-  font-size: 12px;
-  line-height: 1.5;
+.card-root .fact-pill.tone-accent .fp-tag {
+  color: var(--accent);
+}
+.card-root .fact-pill.tone-danger {
+  background: color-mix(in srgb, var(--overlay-coral) 14%, transparent);
+  border-color: color-mix(in srgb, var(--overlay-coral) 42%, transparent);
+}
+.card-root .fact-pill.tone-danger .fp-tag {
+  color: var(--overlay-coral);
+}
+.card-root .fact-pill.tone-safe {
+  background: color-mix(in srgb, var(--overlay-green) 14%, transparent);
+  border-color: color-mix(in srgb, var(--overlay-green) 42%, transparent);
+}
+.card-root .fact-pill.tone-safe .fp-tag {
+  color: var(--overlay-green);
 }
 
 /* plan 091: the flank clock — the prototype's own class name

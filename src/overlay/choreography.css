@@ -37,6 +37,18 @@
      the instant the class cleared, mid the 160ms un-hover shrink. */
 }
 
+/* plan 162: the highest-frequency transform trigger in the app (cursor
+   proximity to the notch) had no reduced-motion coverage at all — this is
+   a pure transform with no separate comprehension-carrying component (see
+   plan 161's agent-dot fix for the contrasting case), so the correct
+   minimal fix is to disable it outright under reduced motion rather than
+   partially soften it. */
+@media (prefers-reduced-motion: reduce) {
+  .card-root .card-assembly.hovered {
+    transform: none;
+  }
+}
+
 /* signature moment #1 — Goal: a bright confetti-spray burst over the
    card surface, an expanding ring, plus a quick scale overshoot on the
    card itself. plays once, never loops (this sits in a persistent

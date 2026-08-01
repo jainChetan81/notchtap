@@ -39,7 +39,7 @@ function Switch({
         // happens to set its own explicit padding (overriding the UA
         // default without ever naming it), which is why this never
         // surfaced before a component with intentionally NO padding.
-        "peer group/switch relative inline-flex shrink-0 items-center rounded-full border border-transparent p-0 transition-colors duration-150 ease-out outline-none after:absolute after:-inset-x-1 after:-inset-y-1.5 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-[size=default]:h-[22px] data-[size=default]:w-9 data-[size=sm]:h-4 data-[size=sm]:w-7 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 data-checked:bg-primary data-unchecked:bg-input data-disabled:cursor-not-allowed data-disabled:opacity-50",
+        "peer group/switch relative inline-flex shrink-0 items-center rounded-full border border-transparent p-0 transition-[color,background-color,border-color,transform] duration-150 ease-out outline-none after:absolute after:-inset-x-1 after:-inset-y-1.5 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-[size=default]:h-[22px] data-[size=default]:w-9 data-[size=sm]:h-4 data-[size=sm]:w-7 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 data-checked:bg-primary data-unchecked:bg-input data-disabled:cursor-not-allowed data-disabled:opacity-50 active:scale-[0.97]",
         className,
       )}
       {...props}

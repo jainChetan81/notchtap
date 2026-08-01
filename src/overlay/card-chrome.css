@@ -115,8 +115,32 @@
   --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
 }
 
+/* plan 165: this shell-width grow accompanies `.manifest-wrap`'s own
+   grid-template-rows/opacity disclosure (manifest.css), which already
+   uses the plain `--ease-notchtap` at the same `--expand-ms` duration —
+   but this rule was inheriting the base `.card-assembly` rule's bouncy
+   `--ease-notchtap-pop` (reserved for a genuine new-notification
+   arrival, per that rule's own FEEL-CHECK comment), so the outer shell
+   visibly overshot and wobbled while the inner manifest content grew on
+   a plain, non-overshooting curve — two halves of one disclosure
+   finishing their "looks done" moment ~85-90ms apart despite sharing a
+   nominal 320ms duration. Same duration as the base rule (no retune),
+   only the curve changes, so this is a pure desync fix, not a pacing
+   change. Mirrors `.exiting`'s own precedent below and plan 164's
+   identical fix for the hover-reveal leg above. */
+/* review fix (/review-animations, fresh-agent pass): `transform` added
+   back to this list — `transition` is a single non-additive shorthand, so
+   without it, this rule's higher specificity than the base `.card-assembly`
+   rule silently dropped the base rule's `transform var(--hover-ms) ...`
+   leg on any element that's both `.expanded` and `.hovered` (both are
+   independent booleans in `cardClass`, so they DO co-occur) — the
+   hover-breathe scale snapped instead of easing. Mirrors `.exiting` below,
+   which already carries both legs for the identical reason. */
 .card-root .card-assembly.expanded {
   --cw: min(max(calc(500px * var(--card-scale)), calc(var(--notchtap-cutout-width, 200px) + (2 * 60px * var(--card-scale)))), 100%);
+  transition:
+    width var(--expand-ms, 320ms) var(--ease-notchtap),
+    transform var(--hover-ms, 160ms) var(--ease-notchtap);
 }
 
 /* plan 105 (Step C, fixing the plan-085 bug): bare notch mode
@@ -128,8 +152,22 @@
    order below it), so this narrows it back down; `:has(.idle-peek)`
    (below) restores the normal idle width the instant the peek opens on
    hover, since the below-block needs real room to render into. */
+/* review fix (/review-animations, fresh-agent pass): plain `.bare` (no
+   `:has(.idle-peek)`) previously had no own `transition`, so un-hovering
+   out of the idle-peek-revealed rail (this rule becoming the sole match
+   again) fell back to the base `.card-assembly` rule's bouncy
+   `--ease-notchtap-pop` — reintroducing on the way OUT exactly the
+   many-times-a-session bounce plan 164 scoped away on the way IN. Giving
+   `.bare` the SAME width+transform transition as `.bare:has(.idle-peek)`
+   below means whichever of the two matches, the curve is identical, so
+   the direction stops mattering. `transform` included for the same
+   hover-breathe-coexistence reason as `.expanded` above — `.bare` and
+   `.hovered` can coexist too (see `.bare.hovered` rules below). */
 .card-root .card-assembly.bare {
   --cw: min(var(--notchtap-cutout-width, 200px), 100%);
+  transition:
+    width var(--reveal-ms, 260ms) var(--ease-notchtap),
+    transform var(--hover-ms, 160ms) var(--ease-notchtap);
 }
 .card-root .card-assembly.bare .flank-left,
 .card-root .card-assembly.bare .flank-right {
@@ -161,8 +199,28 @@
    has room to render, not the cutout-only width above. Higher
    specificity than `.card-assembly.bare` above, so this wins regardless
    of source order once `.idle-peek` mounts. */
+/* plan 164: this is a HOVER-driven width change (cursor proximity, can
+   retrigger many times a session), not a genuine new-notification
+   arrival — it must not inherit the base rule's `--ease-notchtap-pop`
+   overshoot, which the base rule's own FEEL-CHECK comment reserves for
+   "promotion/expand width growth" specifically. Retimed to `--reveal-ms`
+   (260ms) to match this exact gesture's OTHER moving part — the flank
+   clock/status-dots opacity fade (StatusRailCard.tsx, same REVEAL_MS) —
+   so the shell and its content finish growing/fading on the same clock
+   instead of the shell's width still settling ~60ms after the content
+   has already finished. Mirrors `.exiting`'s own precedent below ("exits
+   must not bounce") — the same scoping principle applied to the
+   growing/reveal direction instead of the shrinking direction. */
+/* review fix (/review-animations, fresh-agent pass): `transform` added
+   back — same "shorthand isn't additive, this rule's specificity was
+   silently dropping the base rule's hover-breathe leg" issue as
+   `.expanded` above; `.bare` (below, no `:has()`) now carries the
+   identical pair so the un-hover leg matches too. */
 .card-root .card-assembly.bare:has(.idle-peek) {
   --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
+  transition:
+    width var(--reveal-ms, 260ms) var(--ease-notchtap),
+    transform var(--hover-ms, 160ms) var(--ease-notchtap);
 }
 /* 2026-07-23 (operator minimal-notch spec, Task 1.2): a hovered bare
    notch paints its flanks black again — StatusRailCard.tsx's
@@ -217,10 +275,23 @@
      own duration (Step 4 retunes `.hovered`'s transform to a faster
      `--hover-ms`) — the two used to share one hand-typed 260ms by
      accident, not by design; this rule governs paint/inset coordination,
-     not the hover scale response. */
+     not the hover scale response.
+     plan 166: `border-radius` added below so the entrance direction (a
+     below-block newly mounting) gets a real transition for the flank's
+     own corner-round, instead of the instant snap the rounding-law
+     comment further down (`:not(:has(.below-block))`/`.exiting`)
+     documents. Does NOT affect the exit direction — that rule has higher
+     specificity and still wins the whole `transition` shorthand outright
+     whenever IT matches, keeping its own `--content-exit-ms` (105ms)
+     duration exactly as before; this leg only ever becomes active once
+     that rule stops matching (a below-block has newly mounted), which is
+     precisely the entrance moment that previously had no transition
+     context at all. Uses `--expand-ms` (320ms), matching the shell's own
+     width-grow duration for the same promotion. */
   transition:
     background-color var(--reveal-ms, 260ms) var(--ease-notchtap),
-    padding var(--reveal-ms, 260ms) var(--ease-notchtap);
+    padding var(--reveal-ms, 260ms) var(--ease-notchtap),
+    border-radius var(--expand-ms, 320ms) var(--ease-notchtap);
   /* grid items default to `min-width: auto` (their content's min-content
      size), which can force the whole grid wider than `--cw` if content
      ever doesn't wrap — the clock/dots content here is always
@@ -566,6 +637,23 @@
   width: 10px;
   height: 10px;
   pointer-events: none;
+  /* plan 167: visibility within HUD mode is now `opacity`-driven (below),
+     not this `display: none` — that stays exactly as-is here, still the
+     permanent, unconditional gate that keeps this element fully out of
+     the render tree on real notch hardware (unaffected by this plan;
+     `display` genuinely cannot be transitioned, so it must stay a hard
+     boundary for the "does this mode exist at all" question — only the
+     "is it currently showing" question below moves to opacity). */
+  opacity: 0;
+  transition: opacity var(--expand-ms, 320ms) var(--ease-notchtap);
+}
+/* plan 167: within HUD mode, the gill stays permanently in the render
+   tree (a tiny, absolutely-positioned, pointer-events:none pair of
+   elements — negligible cost) so its opacity can actually transition;
+   previously `display: none` here meant the element didn't exist to
+   animate at the exact moment it needed to fade. */
+:root[data-notchtap-mode="hud"] .card-root .notch-gill {
+  display: block;
 }
 /* 2026-07-23 (operator minimal-notch spec, Task 1.1): `:not(.bare)`
    RELAXED here (was excluded, like the flank-radius rule above it still
@@ -583,7 +671,7 @@
    doc). */
 :root[data-notchtap-mode="hud"] .card-root .card-assembly:not(:has(.below-block)) .notch-gill,
 :root[data-notchtap-mode="hud"] .card-root .card-assembly.exiting:not(.bare) .notch-gill {
-  display: block;
+  opacity: 1;
 }
 .card-root .notch-gill-left {
   left: -10px;

@@ -1,0 +1,831 @@
+<!doctype html>
+<!-- prototypes/current-state.html
+     An accurate, static, standalone snapshot of the settings window's
+     CURRENT SHIPPED UI, as of 2026-07-31. This is NOT a proposal or a
+     redesign — every color, type size, spacing value, control shape,
+     copy string, and default number below was read directly from the
+     live source, not invented or carried over from memory. No build
+     step, no React import: plain HTML/CSS reproducing what
+     src/settings/ renders.
+
+     Read in full to build this file:
+       - src/settings/SettingsApp.tsx          shell, 12-item `navigation` array,
+                                                sectionCopy indices/titles/descriptions,
+                                                footer buttons, error panel
+       - src/settings/sections/AgentsSection.tsx   every group, control, adapter-card
+                                                    snippet, preview fixture (read in full)
+       - src/settings/sections/GeneralSection.tsx  second representative section,
+                                                    read in full
+       - src/settings/sections/ConnectorsSection.tsx, ShortcutsSection.tsx,
+         AboutSection.tsx, FootballSection.tsx      read in full for verified copy
+       - src/settings/controls/controls.tsx     CONTROL_ROW, SettingsGroup, ControlCopy,
+                                                 NumberControl, ToggleControl, TestButtonRow
+       - src/settings/controls/Segmented.tsx    the one segmented control (labelled + bare forms)
+       - src/components/ui/button.tsx, switch.tsx, meta-chip.tsx, card.tsx, badge.tsx
+       - src/settings/base.css                 Tailwind v4 entry, --fs-*/--radius-* scale,
+                                                 scrollbar rules, appearance preview frame chrome
+       - vendor/shared-ui/design/tokens.css     oklch color tokens (hex originals in its own comments)
+       - src/settings/types.ts                  PriorityLevel/AgentsConfig/AdapterHealthDto shapes
+       - src/lib/sourceColors.ts                SOURCE_RUNTIME_COLORS (adapter identity dots)
+       - src-tauri/src/config.rs                real [agents] default values (retention/stale
+                                                 seconds, per-kind default priorities)
+       - git diff HEAD (working tree, 2026-07-31): confirmed today's session added
+         `active:scale-[0.97]` press feedback to the sidebar nav-item, Segmented's option
+         buttons, and the shared Switch, plus a `transition-colors` on MetaChip and a
+         `transition-[...,transform]` widen on those same three components — reproduced
+         below as real `:active { transform: scale(.97) }` rules, not decoration.
+
+     Known, deliberate simplifications (same discipline as prototype/control-panel.html,
+     the existing hand-synced reference this file was independently cross-checked
+     against, not copied from):
+       - Sidebar icons are plain placeholder glyphs, not exact Lucide paths
+         (Bot/CloudSun/Command/History/Info/KeyRound/ListOrdered/Newspaper/Palette/
+         ScrollText/SlidersHorizontal/Trophy) — order, label text, and count (12) are exact.
+       - Three sections are drawn out control-by-control (General, Agents, Connectors
+         & Keys — the first two per this file's brief, the third because it is one
+         short group and costs nothing extra to render in full). The other nine are
+         summarized in prose with their real control list and copy, not laid out
+         pixel-by-pixel.
+       - Numeric field values shown for General are the real config.rs defaults where
+         known (rotation seconds 8, queue cap 50, listener port 9789); Agents' numeric
+         defaults (terminal retention 60s, stale threshold 300s, stale retention 600s)
+         and per-kind priorities (permission/input/failure: High, completion: Medium)
+         are read verbatim from AgentsConfig::default() in src-tauri/src/config.rs. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>notchtap settings — current-state snapshot (2026-07-31)</title>
+<style>
+  :root {
+    /* page chrome only — this wrapper page is not part of the settings window itself */
+    --page-bg: #0b0d10; --page-ink: #e7ebf0; --page-dim: #8b95a3; --page-rule: rgba(255,255,255,0.08);
+    --page-accent: #6fb6ff;
+
+    /* ==== real design tokens, read from vendor/shared-ui/design/tokens.css ====
+       (hex values are that file's own round-trip comments on each oklch() line) */
+    --background: #050607;      /* window */
+    --sidebar: #090a0c;
+    --card: #0d0f12;            /* surface */
+    --foreground: #f1f2f4;
+    --muted-foreground: #a2a6ad;
+    --border: #202329;          /* same value backs --input/--secondary/--accent/--muted */
+    --primary: #0a84ff;
+    --destructive: #ff6b57;
+    --overlay-teal: #55d6bd;
+    --overlay-amber: #f0c46a;
+    --overlay-green: #7fe08d;
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+    /* settings-scoped type floor — src/settings/base.css's own :root block, verbatim */
+    --fs-caption: 9px; --fs-secondary: 10px; --fs-body: 11px; --fs-title: 19px;
+
+    /* motion — shared-ui tokens.css / src/styles.css's own --ease-notchtap twin */
+    --ease-notchtap: cubic-bezier(.22, 1, .36, 1);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--page-bg); color: var(--page-ink);
+    font-family: var(--font-sans); padding: 0 0 96px;
+  }
+  main { max-width: 980px; margin: 0 auto; padding: 0 24px; }
+
+  /* ---- banner ---- */
+  .snapshot-banner {
+    background: linear-gradient(180deg, #101318, #0b0d10 60%);
+    border-bottom: 1px solid var(--page-rule);
+    padding: 28px 24px 22px;
+    margin-bottom: 36px;
+  }
+  .snapshot-banner-inner { max-width: 980px; margin: 0 auto; }
+  .snapshot-eyebrow {
+    display: inline-flex; align-items: center; gap: 6px;
+    font: 700 10px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--page-accent); margin: 0 0 10px;
+  }
+  .snapshot-eyebrow::before { content: "●"; font-size: 8px; color: var(--overlay-green); }
+  h1.page-title { font-size: 22px; font-weight: 700; margin: 0 0 8px; letter-spacing: -0.01em; }
+  .lede { color: var(--page-dim); font-size: 13px; line-height: 1.65; max-width: 74ch; margin: 0 0 14px; }
+  .source-list {
+    margin: 0; padding: 12px 14px; border: 1px solid var(--page-rule); border-radius: 8px;
+    background: rgba(255,255,255,0.02); list-style: none; display: grid; gap: 5px;
+    max-width: 74ch;
+  }
+  .source-list li { font: 11px/1.5 var(--font-mono); color: var(--page-dim); }
+  .source-list code { color: #9fc3e8; }
+  code { font-family: var(--font-mono); color: #9fc3e8; }
+
+  .rig { margin-bottom: 52px; padding-top: 26px; border-top: 1px solid var(--page-rule); }
+  .rig h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--page-dim); margin: 0 0 6px; }
+  .rig-sub { font-size: 12.5px; color: var(--page-dim); margin: 0 0 16px; max-width: 66ch; line-height: 1.6; }
+  .rig-label { font: 700 10px/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--page-dim); margin: 0 0 8px; }
+  footer.page-foot { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--page-rule); font-size: 11.5px; color: var(--page-dim); line-height: 1.65; max-width: 74ch; }
+
+  /* ==== the window mock itself — mirrors SettingsApp.tsx's own grid shape ==== */
+  .window {
+    display: grid; grid-template-columns: 140px minmax(0,1fr);
+    min-height: 540px; background: var(--background); border-radius: 12px; overflow: hidden;
+    border: 1px solid var(--border);
+    box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 24px 48px rgba(0,0,0,0.5);
+  }
+
+  .sidebar { background: var(--sidebar); border-right: 1px solid var(--border); display: grid; grid-template-rows: auto minmax(0,1fr) auto; min-height: 0; }
+  .sidebar-brand {
+    display: flex; align-items: center; gap: 9px; min-height: 71px; padding: 17px 14px 14px;
+    border-bottom: 1px solid color-mix(in oklch, var(--border), transparent 40%);
+    font: 700 11px/1 var(--font-mono); letter-spacing: 0.09em; text-transform: uppercase; color: var(--foreground);
+  }
+  .brand-mark { width: 26px; height: 26px; flex: none; border-radius: 6px; background: linear-gradient(150deg,#1a1d22,#000); border: 1px solid var(--border); }
+  .sidebar-nav { display: flex; flex-direction: column; gap: 3px; padding: 12px 8px; overflow-y: auto; }
+  .nav-item {
+    display: grid; grid-template-columns: 14px minmax(0,1fr); align-items: center; gap: 8px;
+    min-height: 34px; padding: 6px 8px 6px 6px; border-radius: 6px; border-left: 2px solid transparent;
+    color: var(--muted-foreground); font: 560 10.5px/1.25 var(--font-sans);
+    transition: color 140ms var(--ease-notchtap), background-color 140ms var(--ease-notchtap),
+                border-color 140ms var(--ease-notchtap), transform 140ms var(--ease-notchtap);
+  }
+  .nav-item svg { width: 14px; height: 14px; }
+  .nav-item.is-active { background: color-mix(in oklch, var(--primary), transparent 85%); border-left-color: var(--primary); color: var(--foreground); }
+  /* plan-163-era press feedback (today's working-tree diff): nav-item gained
+     active:scale-[0.97] alongside its widened transition list. */
+  .nav-item:active { transform: scale(0.97); }
+  .sidebar-meta { border-top: 1px solid color-mix(in oklch, var(--border), transparent 40%); padding: 11px 14px 18px; font: 700 9px/1 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-foreground); }
+
+  .pane { display: grid; grid-template-rows: minmax(0,1fr) auto; min-width: 0; background: var(--background); }
+  .content-header { border-bottom: 1px solid var(--border); padding: 20px 20px 16px; }
+  .section-index { font: 700 9.5px/1 var(--font-mono); letter-spacing: 0.11em; text-transform: uppercase; color: var(--muted-foreground); margin: 0 0 8px; }
+  .pane-title { font-size: 18px; font-weight: 650; letter-spacing: -0.018em; color: var(--foreground); margin: 0 0 6px; }
+  .pane-desc { max-width: 300px; font-size: var(--fs-body); line-height: 1.45; color: var(--muted-foreground); margin: 0; }
+  .section-scroll { padding: 14px 16px 18px; max-height: 640px; overflow-y: auto; }
+  .section-stack { display: grid; gap: 14px; }
+
+  /* SettingsGroup (a shadcn Card underneath, see controls.tsx) */
+  .settings-group { background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .group-heading { padding: 12px 13px 11px; border-bottom: 1px solid color-mix(in oklch, var(--border), transparent 40%); }
+  .group-title { font-size: var(--fs-body); font-weight: 640; color: var(--foreground); }
+  .group-desc { margin-top: 4px; font-size: var(--fs-secondary); line-height: 1.45; color: var(--muted-foreground); }
+  .group-body { padding: 0 13px; }
+
+  .control-row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 12px; min-height: 54px; padding: 9px 0; border-top: 1px solid color-mix(in oklch, var(--border), transparent 40%); }
+  .control-row:first-child { border-top: none; }
+  .control-name { display: block; font-size: var(--fs-body); font-weight: 590; color: var(--foreground); }
+  .control-help { display: block; margin-top: 3px; font-size: var(--fs-secondary); line-height: 1.4; color: var(--muted-foreground); }
+
+  .number-field { position: relative; width: 96px; flex: none; }
+  .number-input { height: 31px; width: 100%; border-radius: 6px; border: 1px solid var(--border); background: color-mix(in oklch, var(--border), transparent 80%); padding: 0 10px; text-align: right; font: 650 var(--fs-body)/1 var(--font-mono); color: var(--foreground); }
+  .number-field.has-unit .number-input { padding-right: 34px; }
+  .unit { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); font: 700 var(--fs-caption)/1 var(--font-mono); letter-spacing: 0.05em; color: var(--muted-foreground); pointer-events: none; }
+
+  /* Switch (src/components/ui/switch.tsx) */
+  .switch { position: relative; width: 36px; height: 22px; flex: none; border-radius: 999px; background: var(--border); transition: background-color 150ms ease-out, transform 150ms ease-out; }
+  .switch.is-checked { background: var(--primary); }
+  .switch:active { transform: scale(0.97); } /* today's diff: active:scale-[0.97] added to Switch's root */
+  .switch-thumb { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--muted-foreground); transition: left 150ms ease-out, background-color 150ms ease-out; }
+  .switch.is-checked .switch-thumb { left: 16px; background: var(--background); }
+
+  /* Segmented (src/settings/controls/Segmented.tsx) */
+  .segmented { display: grid; height: 31px; width: 144px; flex: none; border-radius: 7px; border: 1px solid var(--border); background: color-mix(in oklch, var(--border), transparent 80%); padding: 3px; gap: 2px; }
+  .segmented.cols-2 { grid-template-columns: repeat(2,1fr); }
+  .segmented.cols-3 { grid-template-columns: repeat(3,1fr); }
+  .segmented-btn {
+    border-radius: 4px; border: 1px solid transparent; background: transparent;
+    font: 620 var(--fs-secondary)/1 var(--font-mono); letter-spacing: 0.03em; color: var(--muted-foreground); padding: 0;
+    transition: color 140ms var(--ease-notchtap), background-color 140ms var(--ease-notchtap),
+                border-color 140ms var(--ease-notchtap), box-shadow 140ms var(--ease-notchtap),
+                transform 140ms var(--ease-notchtap);
+  }
+  .segmented-btn.is-selected { background: var(--border); color: var(--foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.4); }
+  /* today's diff: active:scale-[0.97] added alongside the widened transition list above */
+  .segmented-btn:active { transform: scale(0.97); }
+
+  /* Textarea / text control */
+  .textarea-control { border-top: 1px solid color-mix(in oklch, var(--border), transparent 40%); padding: 11px 0 12px; }
+  .textarea-control:first-child { border-top: none; }
+  .settings-textarea { margin-top: 8px; min-height: 73px; width: 100%; border-radius: 8px; border: 1px solid var(--border); background: color-mix(in oklch, var(--border), transparent 80%); padding: 8px 10px; font: 560 var(--fs-secondary)/1.55 var(--font-mono); color: var(--foreground); resize: vertical; }
+  .settings-input { margin-top: 8px; height: 31px; width: 100%; border-radius: 6px; border: 1px solid var(--border); background: color-mix(in oklch, var(--border), transparent 80%); padding: 0 10px; font: 560 var(--fs-body)/1 var(--font-mono); color: var(--foreground); }
+  .field-caption { margin-top: 5px; font: 700 var(--fs-caption)/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-foreground); }
+
+  /* Buttons (src/components/ui/button.tsx) */
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px;
+    padding: 0 11px; border-radius: 8px; border: 1px solid transparent; font: 590 11px/1 var(--font-sans);
+    white-space: nowrap; cursor: default; transition: color 140ms, background-color 140ms, transform 140ms;
+  }
+  .btn.default { background: color-mix(in oklch, var(--primary), var(--background) 25%); color: var(--foreground); }
+  .btn.outline { background: var(--background); border-color: var(--border); color: var(--foreground); }
+  .btn.sm { height: 28px; padding: 0 10px; font-size: var(--fs-secondary); }
+  .btn[disabled] { opacity: 0.5; }
+  .btn:active:not([disabled]) { transform: translateY(1px); } /* button.tsx: active:translate-y-px */
+
+  /* MetaChip (src/components/ui/meta-chip.tsx) */
+  .meta-chip {
+    display: inline-flex; align-items: center; min-width: 0; border-radius: 999px; border: 1px solid var(--border);
+    padding: 2px 7px; font: 650 var(--fs-caption)/1.5 var(--font-mono); color: var(--muted-foreground);
+    transition: color 150ms var(--ease-notchtap), background-color 150ms var(--ease-notchtap), border-color 150ms var(--ease-notchtap);
+  }
+  .meta-chip.uppercase { letter-spacing: 0.06em; text-transform: uppercase; }
+  .meta-chip.active { border-color: color-mix(in oklch, var(--primary), transparent 60%); background: color-mix(in oklch, var(--border), transparent 60%); color: var(--foreground); }
+  .meta-chip-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+
+  /* Rotation order list (GeneralSection) */
+  .rotation-order-row { display: grid; grid-template-columns: 16px minmax(0,1fr) auto; align-items: center; gap: 10px; border-top: 1px solid color-mix(in oklch, var(--border), transparent 40%); padding: 10px 0; }
+  .rotation-order-row:first-child { border-top: none; }
+  .rotation-order-rank { font: 700 var(--fs-secondary)/1 var(--font-mono); color: var(--muted-foreground); }
+  .rotation-order-name { font-size: var(--fs-body); font-weight: 590; color: var(--foreground); }
+  .icon-btn { width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--border); background: var(--background); color: var(--muted-foreground); display: inline-flex; align-items: center; justify-content: center; font-size: 10px; }
+
+  /* agent adapter cards */
+  .agent-card { border-top: 1px solid color-mix(in oklch, var(--border), transparent 40%); padding: 12px 0; }
+  .agent-card:first-child { border-top: none; }
+  .agent-card-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .agent-name { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-body); font-weight: 590; color: var(--foreground); }
+  .runtime-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; }
+  .snippet { margin: 8px 0 0; max-height: 150px; overflow: auto; border-radius: 6px; border: 1px solid var(--border); background: color-mix(in oklch, var(--border), transparent 80%); padding: 8px; font: 400 9px/1.5 var(--font-mono); color: var(--foreground); white-space: pre-wrap; word-break: break-word; }
+  .target-file { margin-top: 6px; font: 400 var(--fs-secondary)/1.4 var(--font-mono); color: var(--foreground); word-break: break-all; }
+  .agent-meta-label { font: 700 var(--fs-caption)/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-foreground); }
+  .agent-health { margin: -2px 0 8px; display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-caption); color: var(--muted-foreground); }
+  .agent-uninstall { margin: 6px 0 0; font-size: var(--fs-caption); color: var(--muted-foreground); }
+
+  /* shortcuts table */
+  .shortcut-table { width: 100%; border-collapse: collapse; }
+  .shortcut-table th, .shortcut-table td { text-align: left; padding: 8px 4px; border-bottom: 1px solid color-mix(in oklch, var(--border), transparent 40%); }
+  .shortcut-table thead th { font: 700 var(--fs-caption)/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-foreground); padding-bottom: 7px; border-bottom: none; }
+  .kbd { display: inline-flex; min-height: 24px; align-items: center; justify-content: center; border-radius: 5px; border: 1px solid var(--border); background: color-mix(in oklch, var(--border), transparent 70%); padding: 0 5px; font: 600 var(--fs-body)/1 var(--font-mono); color: var(--foreground); }
+  .shortcut-action { font-size: var(--fs-secondary); color: var(--foreground); font-weight: 400; }
+
+  .settings-footer { display: flex; align-items: center; gap: 6px; padding: 12px 14px; border-top: 1px solid var(--border); background: var(--background); min-height: 57px; }
+
+  .prose-list { margin: 0; padding: 8px 0; list-style: none; display: grid; gap: 11px; }
+  .prose-list li { font-size: var(--fs-body); line-height: 1.55; color: var(--muted-foreground); }
+  .prose-list b { color: var(--foreground); }
+  .snip { border-radius: 4px; border: 1px solid color-mix(in oklch, var(--border), transparent 30%); background: color-mix(in oklch, var(--border), transparent 70%); padding: 1px 5px; font: 400 var(--fs-caption)/1 var(--font-mono); color: var(--foreground); }
+
+  .callout {
+    font-size: 11.5px; color: var(--page-dim); border-left: 2px solid var(--page-accent);
+    padding: 3px 0 3px 12px; margin: 0 0 20px; max-width: 68ch; line-height: 1.6;
+  }
+</style>
+</head>
+<body>
+
+<div class="snapshot-banner">
+  <div class="snapshot-banner-inner">
+    <div class="snapshot-eyebrow">Current-state snapshot — accurate as of 2026-07-31</div>
+    <h1 class="page-title">notchtap settings window — what's actually shipped today</h1>
+    <p class="lede">
+      This is a static, hand-authored HTML/CSS reproduction of the settings window's real
+      shell, sidebar, and control shapes — every string, default number, color, and spacing
+      value below was read from the live source listed below, not invented or reused from an
+      older mock. It is not a proposal and not a redesign; it exists purely as a faithful,
+      independently-verified reference for later comparison work, with the Agents section (the
+      section most relevant to that comparison) drawn out control-by-control.
+    </p>
+    <ul class="source-list">
+      <li><code>src/settings/SettingsApp.tsx</code> — shell grid, 12-item <code>navigation</code> array, per-section index/title/description, footer buttons, error panel</li>
+      <li><code>src/settings/sections/AgentsSection.tsx</code> — read in full: every group, control, the four adapter-card snippets, the five preview fixtures</li>
+      <li><code>src/settings/sections/GeneralSection.tsx</code> — read in full as the second representative section</li>
+      <li><code>src/settings/sections/ConnectorsSection.tsx</code>, <code>ShortcutsSection.tsx</code>, <code>AboutSection.tsx</code>, <code>FootballSection.tsx</code> — read for verified copy</li>
+      <li><code>src/settings/controls/controls.tsx</code>, <code>src/settings/controls/Segmented.tsx</code> — shared control shapes</li>
+      <li><code>src/components/ui/button.tsx</code>, <code>switch.tsx</code>, <code>meta-chip.tsx</code>, <code>card.tsx</code>, <code>badge.tsx</code></li>
+      <li><code>src/settings/base.css</code>, <code>vendor/shared-ui/design/tokens.css</code> — oklch color tokens, <code>--fs-*</code> type scale, radii</li>
+      <li><code>src/settings/types.ts</code>, <code>src/lib/sourceColors.ts</code> — wire shapes, adapter identity-dot colors</li>
+      <li><code>src-tauri/src/config.rs</code> — real <code>[agents]</code> defaults (retention/stale seconds, per-kind priorities)</li>
+      <li>working-tree <code>git diff</code> (2026-07-31) — confirmed today's press-feedback pass added <code>active:scale-[0.97]</code> to the sidebar nav item, Segmented's option buttons, and the shared Switch; reproduced below as real <code>:active</code> rules</li>
+    </ul>
+  </div>
+</div>
+
+<main>
+  <p class="callout">
+    Tokens: window <code>#050607</code>, sidebar <code>#090a0c</code>, surface/card <code>#0d0f12</code>,
+    border/divider <code>#202329</code> (the same value also backs <code>--input</code>/<code>--accent</code>/
+    <code>--secondary</code>/<code>--muted</code>), accent/primary <code>#0a84ff</code>. Type floor is four
+    fixed sizes only — <code>--fs-caption</code> 9px, <code>--fs-secondary</code> 10px, <code>--fs-body</code>
+    11px, <code>--fs-title</code> 19px — nothing in this window uses a size outside that scale except a
+    couple of named, commented exceptions in the real CSS (e.g. the Appearance preview label's 12px).
+    Sidebar icons below are placeholder glyphs, not the exact Lucide paths the app imports
+    (Bot/CloudSun/Command/History/Info/KeyRound/ListOrdered/Newspaper/Palette/ScrollText/
+    SlidersHorizontal/Trophy) — order, label text, and the count (12) are exact.
+  </p>
+
+  <!-- ============================================================ -->
+  <section class="rig">
+    <h2>01 — General</h2>
+    <p class="rig-sub">
+      Four groups: Engine (start-paused / hide-when-idle / record-history / now-playing toggles,
+      listener port, a test-notification button), Rotation and priority (rotation seconds, queue
+      cap per tier, manual push priority), Rotation order (a reorderable list — same-tier
+      tie-break), and Silenced (a persisted daily buffer window, distinct from the tray's
+      session-only Timed Mutes/Skip). Numbers below are this build's real <code>config.rs</code>
+      defaults: rotation seconds 8, queue cap 50, listener port 9789.
+    </p>
+    <div class="rig-label">General pane</div>
+    <div class="window">
+      <div class="sidebar">
+        <div class="sidebar-brand"><span class="brand-mark"></span>notchtap</div>
+        <nav class="sidebar-nav">
+          <div class="nav-item is-active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="17" r="2"/></svg>General</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M6 4h12v4a6 6 0 0 1-12 0V4z"/><path d="M6 6H3v2a3 3 0 0 0 3 3M18 6h3v2a3 3 0 0 1-3 3"/><path d="M9 20h6M12 14v6"/></svg>Football</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="5" width="16" height="15" rx="1.5"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="17" y2="13"/><line x1="7" y1="16" x2="13" y2="16"/></svg>News</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="9" cy="10" r="4"/><path d="M9 3v1.4M3.6 10H5M15 15.5A4.5 4.5 0 0 0 14 6.7"/><path d="M9.5 20h8a3 3 0 0 0 .5-5.96A5 5 0 0 0 9 15"/></svg>Weather</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M19 4l1 1"/></svg>Connectors &amp; Keys</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="5" y="6" width="14" height="12" rx="2"/><circle cx="9.5" cy="12" r="1"/><circle cx="14.5" cy="12" r="1"/><line x1="12" y1="3" x2="12" y2="6"/></svg>Agents</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M8 4l-3 8 3 8M16 4l3 8-3 8M11 4h2"/></svg>Shortcuts</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="8"/><circle cx="9" cy="10" r="1"/><circle cx="14" cy="9" r="1"/><circle cx="15" cy="14" r="1"/></svg>Appearance</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M6 3h9l4 4v14H6z"/><line x1="9" y1="10" x2="15" y2="10"/><line x1="9" y1="14" x2="15" y2="14"/></svg>Diagnostics</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2M4 5v4h4"/></svg>History</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><line x1="10" y1="6" x2="20" y2="6"/><line x1="10" y1="12" x2="20" y2="12"/><line x1="10" y1="18" x2="20" y2="18"/><circle cx="5" cy="6" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="5" cy="18" r="1"/></svg>Queue</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="8"/><line x1="12" y1="11" x2="12" y2="16"/><circle cx="12" cy="8" r="0.6" fill="currentColor" stroke="none"/></svg>About</div>
+        </nav>
+        <div class="sidebar-meta">settings / v5</div>
+      </div>
+      <div class="pane">
+        <div class="section-scroll">
+          <div class="content-header" style="padding:0 0 14px;border-bottom:none;">
+            <div class="section-index">Settings / 01</div>
+            <h1 class="pane-title">General</h1>
+            <p class="pane-desc">Control startup, the local listener, and how notifications rotate.</p>
+          </div>
+
+          <div class="section-stack">
+            <div class="settings-group">
+              <div class="group-heading"><div class="group-title">Engine</div></div>
+              <div class="group-body">
+                <div class="control-row">
+                  <div><span class="control-name">Start paused</span><span class="control-help">Launch with promotion paused. The tray will read Resume.</span></div>
+                  <div class="switch"><div class="switch-thumb"></div></div>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Hide overlay when idle</span><span class="control-help">Resting state shows the bare notch instead of the clock and status dots. Notifications, rotation, and shortcuts are unaffected. Applies after Save &amp; Relaunch.</span></div>
+                  <div class="switch"><div class="switch-thumb"></div></div>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Record notification history</span><span class="control-help">Records notification content (including agent-originated payloads) to ~/.config/notchtap/history.jsonl. Applies after Save &amp; Relaunch.</span></div>
+                  <div class="switch is-checked"><div class="switch-thumb"></div></div>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Now playing</span><span class="control-help">Show what's currently playing (Music, a browser tab, etc.) in the idle hover peek. Requires the vendored adapter installed via <span class="snip">just build-media-adapter</span>. Applies after Save &amp; Relaunch.</span></div>
+                  <div class="switch"><div class="switch-thumb"></div></div>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Listener port</span><span class="control-help">Local loopback port used by the notchtap CLI.</span></div>
+                  <div class="number-field has-unit"><input class="number-input" value="9789" readonly><span class="unit">PORT</span></div>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Test notification</span><span class="control-help">Send a manual push to the overlay.</span></div>
+                  <button class="btn outline sm">Send test notification</button>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-group">
+              <div class="group-heading"><div class="group-title">Rotation and priority</div><div class="group-desc">Waiting items promote high → medium → low. A strictly-higher-priority arrival interrupts the visible item immediately (Priority Preemption); equal priority never preempts.</div></div>
+              <div class="group-body">
+                <div class="control-row">
+                  <div><span class="control-name">Rotation seconds</span><span class="control-help">How long a one-shot notification occupies the slot.</span></div>
+                  <div class="number-field has-unit"><input class="number-input" value="8" readonly><span class="unit">SEC</span></div>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Queue cap per priority tier</span><span class="control-help">Maximum waiting items kept independently in each priority tier.</span></div>
+                  <div class="number-field has-unit"><input class="number-input" value="50" readonly><span class="unit">ITEMS</span></div>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Manual push priority</span><span class="control-help">Fallback for a CLI push that doesn't set its own priority.</span></div>
+                  <fieldset class="segmented cols-3">
+                    <button class="segmented-btn">Low</button>
+                    <button class="segmented-btn is-selected">Medium</button>
+                    <button class="segmented-btn">High</button>
+                  </fieldset>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-group">
+              <div class="group-heading"><div class="group-title">Rotation order</div><div class="group-desc">Same-tier tie-break, checked before arrival order. Priority still decides which tier goes first.</div></div>
+              <div class="group-body">
+                <div class="rotation-order-row">
+                  <span class="rotation-order-rank">1</span><span class="rotation-order-name">Football</span>
+                  <div style="display:inline-flex;gap:4px;"><span class="icon-btn" style="opacity:.5">▲</span><span class="icon-btn">▼</span></div>
+                </div>
+                <div class="rotation-order-row">
+                  <span class="rotation-order-rank">2</span><span class="rotation-order-name">Manual / CLI push</span>
+                  <div style="display:inline-flex;gap:4px;"><span class="icon-btn">▲</span><span class="icon-btn">▼</span></div>
+                </div>
+                <div class="rotation-order-row">
+                  <span class="rotation-order-rank">3</span><span class="rotation-order-name">Weather</span>
+                  <div style="display:inline-flex;gap:4px;"><span class="icon-btn">▲</span><span class="icon-btn">▼</span></div>
+                </div>
+                <div class="rotation-order-row">
+                  <span class="rotation-order-rank">4</span><span class="rotation-order-name">Agent</span>
+                  <div style="display:inline-flex;gap:4px;"><span class="icon-btn">▲</span><span class="icon-btn">▼</span></div>
+                </div>
+                <div class="rotation-order-row">
+                  <span class="rotation-order-rank">5</span><span class="rotation-order-name">News</span>
+                  <div style="display:inline-flex;gap:4px;"><span class="icon-btn">▲</span><span class="icon-btn" style="opacity:.5">▼</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-group">
+              <div class="group-heading"><div class="group-title">Silenced</div><div class="group-desc">Medium/Low events buffer during this daily window; a High event still promotes (Breakthrough). Tray mutes and Skip are live controls for right now — this schedule is only the persisted default.</div></div>
+              <div class="group-body">
+                <div class="control-row">
+                  <div><span class="control-name">Silent period</span><span class="control-help">Buffer Medium/Low notifications during the window below, every day.</span></div>
+                  <div class="switch"><div class="switch-thumb"></div></div>
+                </div>
+                <div class="textarea-control">
+                  <span class="control-name">Silent period window</span>
+                  <span class="control-help">24h local time, HH:MM-HH:MM. May cross midnight (e.g. 23:00-07:30).</span>
+                  <input class="settings-input" style="width:130px;" value="00:00-10:00" readonly>
+                  <div class="field-caption">start-end, 24h</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="settings-footer">
+          <button class="btn default sm">Save &amp; Relaunch</button>
+          <button class="btn outline sm">Reset</button>
+          <button class="btn outline sm">Reset to defaults</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="rig">
+    <h2>06 — Agents</h2>
+    <p class="rig-sub">
+      The v7 Agent Adapter section — the newest and largest section, and the one this file
+      draws in the most detail. Four groups, read verbatim from
+      <code>AgentsSection.tsx</code>: Agent Adapters (master enable, terminal/stale
+      retention, stale threshold, informational-cards toggle), Notification priority (one
+      Low/Medium/High <code>Segmented</code> per event kind — permission requested, input
+      required, failed, completed), Adapters (one card per supported runtime — enable
+      toggle, live health chip, the exact setup snippet + target file to copy, a "Send test
+      event" button, uninstall instructions), and Preview (five static text rows showing
+      what the overlay's Agent Board looks like per state — this settings window never
+      renders the live Agent Board component itself). All four adapter cards — Claude Code,
+      Codex, Kimi, OpenCode — are drawn in full below, each with its real setup snippet.
+      Numeric defaults and adapter identity-dot colors are read verbatim from
+      <code>src-tauri/src/config.rs</code>'s <code>AgentsConfig::default()</code> and
+      <code>src/lib/sourceColors.ts</code>'s <code>SOURCE_RUNTIME_COLORS</code>.
+    </p>
+    <div class="rig-label">Agents pane</div>
+    <div class="window">
+      <div class="sidebar">
+        <div class="sidebar-brand"><span class="brand-mark"></span>notchtap</div>
+        <nav class="sidebar-nav">
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="17" r="2"/></svg>General</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M6 4h12v4a6 6 0 0 1-12 0V4z"/><path d="M6 6H3v2a3 3 0 0 0 3 3M18 6h3v2a3 3 0 0 1-3 3"/><path d="M9 20h6M12 14v6"/></svg>Football</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="5" width="16" height="15" rx="1.5"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="17" y2="13"/><line x1="7" y1="16" x2="13" y2="16"/></svg>News</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="9" cy="10" r="4"/><path d="M9 3v1.4M3.6 10H5M15 15.5A4.5 4.5 0 0 0 14 6.7"/><path d="M9.5 20h8a3 3 0 0 0 .5-5.96A5 5 0 0 0 9 15"/></svg>Weather</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M19 4l1 1"/></svg>Connectors &amp; Keys</div>
+          <div class="nav-item is-active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="5" y="6" width="14" height="12" rx="2"/><circle cx="9.5" cy="12" r="1"/><circle cx="14.5" cy="12" r="1"/><line x1="12" y1="3" x2="12" y2="6"/></svg>Agents</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M8 4l-3 8 3 8M16 4l3 8-3 8M11 4h2"/></svg>Shortcuts</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="8"/><circle cx="9" cy="10" r="1"/><circle cx="14" cy="9" r="1"/><circle cx="15" cy="14" r="1"/></svg>Appearance</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M6 3h9l4 4v14H6z"/><line x1="9" y1="10" x2="15" y2="10"/><line x1="9" y1="14" x2="15" y2="14"/></svg>Diagnostics</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2M4 5v4h4"/></svg>History</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><line x1="10" y1="6" x2="20" y2="6"/><line x1="10" y1="12" x2="20" y2="12"/><line x1="10" y1="18" x2="20" y2="18"/><circle cx="5" cy="6" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="5" cy="18" r="1"/></svg>Queue</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="8"/><line x1="12" y1="11" x2="12" y2="16"/><circle cx="12" cy="8" r="0.6" fill="currentColor" stroke="none"/></svg>About</div>
+        </nav>
+        <div class="sidebar-meta">settings / v5</div>
+      </div>
+      <div class="pane">
+        <div class="section-scroll">
+          <div class="content-header" style="padding:0 0 14px;border-bottom:none;">
+            <div class="section-index">Settings / 06</div>
+            <h1 class="pane-title">Agents</h1>
+            <p class="pane-desc">Accept coding-agent lifecycle events, tune notification priority, and set up each adapter.</p>
+          </div>
+
+          <div class="section-stack">
+            <div class="settings-group">
+              <div class="group-heading"><div class="group-title">Agent Adapters</div><div class="group-desc">Accept lifecycle events from coding-agent runtimes over the loopback /agent/events endpoint and show them on the Agent Board.</div></div>
+              <div class="group-body">
+                <div class="control-row">
+                  <div><span class="control-name">Enable Agent Adapters</span><span class="control-help">Master switch — off skips every runtime's events regardless of the per-adapter toggles below.</span></div>
+                  <div class="switch is-checked"><div class="switch-thumb"></div></div>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Terminal retention</span><span class="control-help">How long a completed or failed session stays on the Agent Board before it's dropped.</span></div>
+                  <div class="number-field has-unit"><input class="number-input" value="60" readonly><span class="unit">SEC</span></div>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Stale threshold</span><span class="control-help">A session with no accepted event for this long is marked Stale on the Agent Board. Must be at least 1 second.</span></div>
+                  <div class="number-field has-unit"><input class="number-input" value="300" readonly><span class="unit">SEC</span></div>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Stale retention</span><span class="control-help">How long a Stale session stays on the Agent Board before it's dropped.</span></div>
+                  <div class="number-field has-unit"><input class="number-input" value="600" readonly><span class="unit">SEC</span></div>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Informational cards</span><span class="control-help">Also show a card for ordinary progress/tool events, not just permission/input/failure/completion.</span></div>
+                  <div class="switch"><div class="switch-thumb"></div></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-group">
+              <div class="group-heading"><div class="group-title">Notification priority</div><div class="group-desc">Which rotation tier each kind of Agent event promotes in.</div></div>
+              <div class="group-body">
+                <div class="control-row">
+                  <div><span class="control-name">Permission requested</span><span class="control-help">Priority for a permission-request event.</span></div>
+                  <fieldset class="segmented cols-3"><button class="segmented-btn">Low</button><button class="segmented-btn">Medium</button><button class="segmented-btn is-selected">High</button></fieldset>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Input required</span><span class="control-help">Priority for an explicit-input-required event.</span></div>
+                  <fieldset class="segmented cols-3"><button class="segmented-btn">Low</button><button class="segmented-btn">Medium</button><button class="segmented-btn is-selected">High</button></fieldset>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Failed</span><span class="control-help">Priority for a terminal failure event.</span></div>
+                  <fieldset class="segmented cols-3"><button class="segmented-btn">Low</button><button class="segmented-btn">Medium</button><button class="segmented-btn is-selected">High</button></fieldset>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Completed</span><span class="control-help">Priority for a completion event (per-turn Stop or session end).</span></div>
+                  <fieldset class="segmented cols-3"><button class="segmented-btn">Low</button><button class="segmented-btn is-selected">Medium</button><button class="segmented-btn">High</button></fieldset>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-group">
+              <div class="group-heading"><div class="group-title">Adapters</div><div class="group-desc">One card per supported runtime — setup snippet, declared capabilities, and live health.</div></div>
+              <div class="group-body">
+
+                <!-- Claude Code -->
+                <div class="agent-card">
+                  <div class="agent-card-header">
+                    <span class="agent-name"><span class="runtime-dot" style="background:#d97757"></span>Claude Code</span>
+                    <span style="display:flex;gap:6px;"><span class="meta-chip uppercase active">Available</span><span class="meta-chip">Enabled</span></span>
+                  </div>
+                  <div class="control-row">
+                    <div><span class="control-name">Enable Claude Code</span><span class="control-help">Accept Claude Code events over the loopback /agent/events endpoint.</span></div>
+                    <div class="switch is-checked"><div class="switch-thumb"></div></div>
+                  </div>
+                  <div class="agent-health">
+                    <span>Last seen: 3 min ago</span>
+                    <span>Capabilities: permission, input, completion</span>
+                  </div>
+                  <div class="agent-meta-label" style="margin-top:6px;">Target file</div>
+                  <div class="target-file">~/.claude/settings.json (or a project's .claude/settings.json)</div>
+                  <pre class="snippet">{
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook claude-code" }] }],
+    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook claude-code" }] }],
+    "PermissionRequest": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook claude-code" }] }],
+    "Notification": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook claude-code" }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook claude-code" }] }],
+    "StopFailure": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook claude-code" }] }],
+    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook claude-code" }] }],
+    "PostToolUseFailure": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook claude-code" }] }],
+    "SubagentStart": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook claude-code" }] }],
+    "SubagentStop": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook claude-code" }] }]
+  }
+}</pre>
+                  <div class="control-row"><div><span class="control-name">Setup snippet</span><span class="control-help">Copy the block above into the target file shown.</span></div><button class="btn outline sm">Copy snippet</button></div>
+                  <div class="control-row"><div><span class="control-name">Test event</span><span class="control-help">Post one synthetic completed event so you can see it land on the Agent Board.</span></div><button class="btn outline sm">Send test event</button></div>
+                  <p class="agent-uninstall">Uninstall: Remove the ten hook entries above from settings.json, or delete the whole file.</p>
+                </div>
+
+                <!-- Codex -->
+                <div class="agent-card">
+                  <div class="agent-card-header">
+                    <span class="agent-name"><span class="runtime-dot" style="background:#10a37f"></span>Codex</span>
+                    <span style="display:flex;gap:6px;"><span class="meta-chip uppercase">Unavailable</span><span class="meta-chip">Disabled</span></span>
+                  </div>
+                  <div class="control-row">
+                    <div><span class="control-name">Enable Codex</span><span class="control-help">Accept Codex events over the loopback /agent/events endpoint.</span></div>
+                    <div class="switch"><div class="switch-thumb"></div></div>
+                  </div>
+                  <div class="agent-meta-label" style="margin-top:6px;">Target file</div>
+                  <div class="target-file">~/.codex/hooks.json (or a project's .codex/hooks.json)</div>
+                  <pre class="snippet">{
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook codex" }] }],
+    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook codex" }] }],
+    "PermissionRequest": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook codex" }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook codex" }] }],
+    "SubagentStart": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook codex" }] }],
+    "SubagentStop": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook codex" }] }],
+    "PreToolUse": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook codex" }] }],
+    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook codex" }] }]
+  }
+}</pre>
+                  <div class="control-row"><div><span class="control-name">Setup snippet</span><span class="control-help">Copy the block above into the target file shown.</span></div><button class="btn outline sm">Copy snippet</button></div>
+                  <div class="control-row"><div><span class="control-name">Test event</span><span class="control-help">Post one synthetic completed event so you can see it land on the Agent Board.</span></div><button class="btn outline sm">Send test event</button></div>
+                  <p class="agent-uninstall">Uninstall: Remove the eight hook entries above from hooks.json, or delete the whole file.</p>
+                </div>
+
+                <!-- Kimi -->
+                <div class="agent-card">
+                  <div class="agent-card-header">
+                    <span class="agent-name"><span class="runtime-dot" style="background:#f5f7fa"></span>Kimi</span>
+                    <span style="display:flex;gap:6px;"><span class="meta-chip uppercase">Unavailable</span><span class="meta-chip">Disabled</span></span>
+                  </div>
+                  <div class="control-row">
+                    <div><span class="control-name">Enable Kimi</span><span class="control-help">Accept Kimi events over the loopback /agent/events endpoint.</span></div>
+                    <div class="switch"><div class="switch-thumb"></div></div>
+                  </div>
+                  <div class="agent-meta-label" style="margin-top:6px;">Target file</div>
+                  <div class="target-file">~/.kimi-code/config.toml</div>
+                  <pre class="snippet">[[hooks]]
+event = "SessionStart"
+command = "notchtap-agent hook kimi"
+
+[[hooks]]
+event = "SessionEnd"
+command = "notchtap-agent hook kimi"
+
+[[hooks]]
+event = "PermissionRequest"
+command = "notchtap-agent hook kimi"
+
+[[hooks]]
+event = "Notification"
+command = "notchtap-agent hook kimi"
+
+[[hooks]]
+event = "Stop"
+command = "notchtap-agent hook kimi"
+
+/* … 10 [[hooks]] tables total: StopFailure, PostToolUse,
+   PostToolUseFailure, SubagentStart, SubagentStop follow the
+   same shape */</pre>
+                  <div class="control-row"><div><span class="control-name">Setup snippet</span><span class="control-help">Copy the block above into the target file shown.</span></div><button class="btn outline sm">Copy snippet</button></div>
+                  <div class="control-row"><div><span class="control-name">Test event</span><span class="control-help">Post one synthetic completed event so you can see it land on the Agent Board.</span></div><button class="btn outline sm">Send test event</button></div>
+                  <p class="agent-uninstall">Uninstall: Remove the ten [[hooks]] tables above from config.toml.</p>
+                </div>
+
+                <!-- OpenCode -->
+                <div class="agent-card">
+                  <div class="agent-card-header">
+                    <span class="agent-name"><span class="runtime-dot" style="background:#9d7cd8"></span>OpenCode</span>
+                    <span style="display:flex;gap:6px;"><span class="meta-chip uppercase">Unavailable</span><span class="meta-chip">Disabled</span></span>
+                  </div>
+                  <div class="control-row">
+                    <div><span class="control-name">Enable OpenCode</span><span class="control-help">Accept OpenCode events over the loopback /agent/events endpoint.</span></div>
+                    <div class="switch"><div class="switch-thumb"></div></div>
+                  </div>
+                  <div class="agent-meta-label" style="margin-top:6px;">Target file</div>
+                  <div class="target-file">.opencode/plugins/notchtap.ts (project) or ~/.config/opencode/plugins/ (global)</div>
+                  <pre class="snippet">// copy (or symlink) adapters/opencode/notchtap.ts from the notchtap
+// repo into this project's .opencode/plugins/ directory — no build
+// step, no extra dependency.</pre>
+                  <div class="control-row"><div><span class="control-name">Setup snippet</span><span class="control-help">Copy the block above into the target file shown.</span></div><button class="btn outline sm">Copy snippet</button></div>
+                  <div class="control-row"><div><span class="control-name">Test event</span><span class="control-help">Post one synthetic completed event so you can see it land on the Agent Board.</span></div><button class="btn outline sm">Send test event</button></div>
+                  <p class="agent-uninstall">Uninstall: Delete notchtap.ts from the plugins directory it was copied into.</p>
+                </div>
+
+              </div>
+            </div>
+
+            <div class="settings-group">
+              <div class="group-heading"><div class="group-title">Preview</div><div class="group-desc">What each Agent Board state looks like — a text summary, not the live card (the Agent Board itself renders in the overlay).</div></div>
+              <div class="group-body">
+                <div class="control-row" style="grid-template-columns:1fr;min-height:auto;padding:8px 0;">
+                  <div>
+                    <span class="control-name">Waiting on permission <span class="meta-chip" style="margin-left:6px;"><span class="meta-chip-dot" style="background:#d97757"></span>Claude Code</span></span>
+                    <span class="control-help">Approval needed to run a command</span>
+                  </div>
+                </div>
+                <div class="control-row" style="grid-template-columns:1fr;min-height:auto;padding:8px 0;">
+                  <div>
+                    <span class="control-name">Working, with a subagent <span class="meta-chip" style="margin-left:6px;"><span class="meta-chip-dot" style="background:#10a37f"></span>Codex</span></span>
+                    <span class="control-help">Running tests — subagent: test runner (working)</span>
+                  </div>
+                </div>
+                <div class="control-row" style="grid-template-columns:1fr;min-height:auto;padding:8px 0;">
+                  <div>
+                    <span class="control-name">Completed <span class="meta-chip" style="margin-left:6px;"><span class="meta-chip-dot" style="background:#f5f7fa"></span>Kimi</span></span>
+                    <span class="control-help">Turn completed — awaiting input</span>
+                  </div>
+                </div>
+                <div class="control-row" style="grid-template-columns:1fr;min-height:auto;padding:8px 0;">
+                  <div>
+                    <span class="control-name">Failed <span class="meta-chip" style="margin-left:6px;"><span class="meta-chip-dot" style="background:#9d7cd8"></span>OpenCode</span></span>
+                    <span class="control-help">Session ended with an error</span>
+                  </div>
+                </div>
+                <div class="control-row" style="grid-template-columns:1fr;min-height:auto;padding:8px 0;border-bottom:none;">
+                  <div>
+                    <span class="control-name">Multiple independent sessions <span class="meta-chip" style="margin-left:6px;">Claude Code + Codex</span></span>
+                    <span class="control-help">Two sessions active in different projects — each keeps its own history</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="settings-footer">
+          <button class="btn default sm">Save &amp; Relaunch</button>
+          <button class="btn outline sm">Reset</button>
+          <button class="btn outline sm">Reset to defaults</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="rig">
+    <h2>05 — Connectors &amp; Keys</h2>
+    <p class="rig-sub">
+      One group, "Write-only keys" — currently a single row (the OpenRouter API key). Values
+      never come back across IPC; the status chip only ever reads "unset" or the masked
+      confirmation once saved (<code>secretStatus?.[field] ?? null</code>). The former
+      Telegram connector this section used to also host was removed by operator decision
+      before today and isn't drawn here as a separate variant.
+    </p>
+    <div class="rig-label">Connectors &amp; Keys pane</div>
+    <div class="window">
+      <div class="sidebar">
+        <div class="sidebar-brand"><span class="brand-mark"></span>notchtap</div>
+        <nav class="sidebar-nav">
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="17" r="2"/></svg>General</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M6 4h12v4a6 6 0 0 1-12 0V4z"/><path d="M6 6H3v2a3 3 0 0 0 3 3M18 6h3v2a3 3 0 0 1-3 3"/><path d="M9 20h6M12 14v6"/></svg>Football</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="5" width="16" height="15" rx="1.5"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="17" y2="13"/><line x1="7" y1="16" x2="13" y2="16"/></svg>News</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="9" cy="10" r="4"/><path d="M9 3v1.4M3.6 10H5M15 15.5A4.5 4.5 0 0 0 14 6.7"/><path d="M9.5 20h8a3 3 0 0 0 .5-5.96A5 5 0 0 0 9 15"/></svg>Weather</div>
+          <div class="nav-item is-active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M19 4l1 1"/></svg>Connectors &amp; Keys</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="5" y="6" width="14" height="12" rx="2"/><circle cx="9.5" cy="12" r="1"/><circle cx="14.5" cy="12" r="1"/><line x1="12" y1="3" x2="12" y2="6"/></svg>Agents</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M8 4l-3 8 3 8M16 4l3 8-3 8M11 4h2"/></svg>Shortcuts</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="8"/><circle cx="9" cy="10" r="1"/><circle cx="14" cy="9" r="1"/><circle cx="15" cy="14" r="1"/></svg>Appearance</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M6 3h9l4 4v14H6z"/><line x1="9" y1="10" x2="15" y2="10"/><line x1="9" y1="14" x2="15" y2="14"/></svg>Diagnostics</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2M4 5v4h4"/></svg>History</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><line x1="10" y1="6" x2="20" y2="6"/><line x1="10" y1="12" x2="20" y2="12"/><line x1="10" y1="18" x2="20" y2="18"/><circle cx="5" cy="6" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="5" cy="18" r="1"/></svg>Queue</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="8"/><line x1="12" y1="11" x2="12" y2="16"/><circle cx="12" cy="8" r="0.6" fill="currentColor" stroke="none"/></svg>About</div>
+        </nav>
+        <div class="sidebar-meta">settings / v5</div>
+      </div>
+      <div class="pane">
+        <div class="section-scroll">
+          <div class="content-header" style="padding:0 0 14px;border-bottom:none;">
+            <div class="section-index">Settings / 05</div>
+            <h1 class="pane-title">Connectors &amp; Keys</h1>
+            <p class="pane-desc">Manage write-only credentials for outbound integrations.</p>
+          </div>
+          <div class="settings-group">
+            <div class="group-heading"><div class="group-title">Write-only keys</div><div class="group-desc">Values never come back across IPC. Status reveals only whether a value is set and, when safe, its masked suffix.</div></div>
+            <div class="group-body">
+              <div class="textarea-control" style="padding-top:11px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:7px;">
+                  <span class="control-name">OpenRouter API key</span>
+                  <span class="meta-chip uppercase">unset</span>
+                </div>
+                <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;">
+                  <input class="settings-input" style="margin-top:0;" type="password" placeholder="Enter a new key" readonly>
+                  <button class="btn outline sm" disabled>Save</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="settings-footer">
+          <button class="btn default sm">Save &amp; Relaunch</button>
+          <button class="btn outline sm">Reset</button>
+          <button class="btn outline sm">Reset to defaults</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="rig">
+    <h2>Sections summarized (not laid out pixel-by-pixel)</h2>
+    <p class="rig-sub">
+      Every other section, with its real control list and verified copy — same window chrome
+      (sidebar/header/footer) as above, just not re-rendered control-by-control here.
+    </p>
+    <div class="settings-group" style="max-width:680px;">
+      <div class="group-body" style="padding:4px 13px;">
+        <ul class="prose-list">
+          <li><b>02 Football</b> — one group ("Score polling"): a Football identity chip, ESPN-scores enable toggle, a leagues textarea (one ESPN league code per line, caption "one league code per line"), poll interval, rotation seconds, a "Live match card" toggle (consolidate updates into one card instead of a burst), a "Richer match events" toggle (fouls/offsides/VAR/subs — heavier polling, opt in per match), priority segmented, and a "Test football notification" button.</li>
+          <li><b>03 News</b> — RSS polling: enable toggle, feeds textarea, topics textarea (searched via Google News, merged into the same stream), poll interval, headline rotation seconds, max-per-poll burst cap, priority segmented, test button, an ad-hoc "Search now" row (one-off Google News search, not saved as a topic), and a read-only category-colour legend.</li>
+          <li><b>04 Weather</b> — keyless Open-Meteo polling. Identity chip, enable toggle, latitude/longitude (decimal degrees), a Celsius/Fahrenheit units segmented (display only — alert thresholds are always Celsius), poll interval, rain threshold %, rain lookahead minutes, hot/cold temperature thresholds (°C), priority segmented, test button.</li>
+          <li><b>07 Shortcuts</b> — one group, a real <code>&lt;table&gt;</code> (not a div grid, per the "shortcuts cheatsheet is a real table" test contract) of exactly 7 rows, every one currently "active": <span class="snip">⌃⇧N</span> expand/collapse the slot manually, <span class="snip">⌃⇧O</span> open the current story's link, <span class="snip">⌃⇧X</span> dismiss the visible notification now, <span class="snip">⌃⇧P</span> pause/resume promotion, <span class="snip">⌃⇧]</span> skip to the next waiting item, <span class="snip">⌃⇧A</span> open/focus the front Agent Session's host app, <span class="snip">⌃⇧,</span> open settings.</li>
+          <li><b>08 Appearance</b> — two groups: "Card shape" (three bare, unlabelled Segmented controls — Scale: Small/Medium/Large [0.85/1.0/1.15], Radius: Square/Soft/Round [0/8/16px], Opacity: Glass/Default/Solid [0.7/0.9/1.0] — applied live to the real overlay via <code>set_appearance</code>, plus a "Live check" test button), and "Overlay animations" (a preview gallery that renders the real, imported <code>StatusRailCard</code> component across the fixtures in <code>previewFixtures.ts</code>, reflecting the shape settings above live — not re-implemented as a mock).</li>
+          <li><b>09 Diagnostics</b> — one group: a read-only <code>&lt;pre&gt;</code> tail of recent app log lines, fetched on section-open, plus a manual Refresh button (no live tail).</li>
+          <li><b>10 History</b> — a reverse-chronological list of recorded notifications (time, origin, title, metadata chips for source/category/priority/event-type/rotation, body, an expandable native <code>&lt;details&gt;</code> "More details" — its <code>&lt;summary&gt;</code> got today's press-feedback pass too, <code>active:scale-[0.97]</code>), fetched on section-open, plus a two-step-confirm Clear-history button.</li>
+          <li><b>11 Queue</b> — a plain list of items waiting behind the visible card (title + priority chip), a manual Refresh button, a Skip-current button, and a Clear-queue button.</li>
+          <li><b>12 About</b> — five groups: identity (brand mark, "Local-first notification HUD for your Mac.", live version + bundle id), "What it is" (one paragraph — cards slide out beside the clock, over the notch or as a floating top-center HUD, everything local via a Rust core on 127.0.0.1:9789), "How to use it" (four items with inline snippets: <span class="snip">./notchtap --title "t" --body "b"</span> pushes a card, <span class="snip">notchtap run -- &lt;cmd&gt;</span> wraps a long-running command, connectors live in their own tabs, then the ⌃⇧N/⌃⇧O/⌃⇧, shortcuts), "Tech stack" (chips: Rust core, Tauri v2, React + TypeScript, Motion, Vite — "Built across 130+ small reviewed plans."), and "System" — a live, 2-second-polled 2×2... actually 2×3 stat grid (App memory, System memory, Disk, Platform · arch, Bundle size, Uptime), each tile entering with a Motion stagger on first mount only.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <footer class="page-foot">
+    Every string, control shape, default number, and color above was read directly from
+    <code>src/settings/SettingsApp.tsx</code>, every file under <code>src/settings/sections/</code>,
+    the shared control components (<code>src/settings/controls/</code>), the shadcn-derived
+    primitives (<code>src/components/ui/</code>), the design tokens
+    (<code>vendor/shared-ui/design/tokens.css</code>, <code>src/settings/base.css</code>), the wire
+    types (<code>src/settings/types.ts</code>), and the rust config defaults
+    (<code>src-tauri/src/config.rs</code>) — cross-checked, not copied, against
+    <code>prototype/control-panel.html</code>'s own recent (2026-07-30) sync of the same window,
+    and against the working-tree <code>git diff</code> for the press-feedback/transition changes
+    that landed after that file was last touched. If the real source changes, this snapshot
+    drifts — there is no automated sync; re-run the same read-and-rewrite pass this header
+    describes.
+  </footer>
+</main>
+</body>
+</html>

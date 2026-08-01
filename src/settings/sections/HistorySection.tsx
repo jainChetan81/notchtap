@@ -171,7 +171,7 @@ function HistoryRow({ entry }: { entry: HistoryEntry }) {
       </span>
       {hasExpandable && (
         <details className="history-details mt-1.5 min-w-0">
-          <summary className="cursor-pointer text-fs-caption font-[650] text-muted-foreground">
+          <summary className="cursor-pointer text-fs-caption font-[650] text-muted-foreground transition-transform duration-150 ease-out active:scale-[0.97]">
             More details
           </summary>
           <div className="history-details-content mt-1.5 flex min-w-0 flex-col gap-1.5 pl-0.5">

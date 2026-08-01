@@ -1,5 +1,126 @@
 # Implementation Plans
 
+**Unified card template batch 168–170 (2026-08-01, operator UI-prototyping
+session)** — grew out of a round of static-mock exploration
+(`prototype/proposal-unified-card.html`, plus new proposal sections added
+to `prototype/agent-board.html` and `prototype/football-card.html`) into
+whether the Agent Board and Football's promoted card should move off
+their own bespoke layouts onto the same shared `NotificationBody.tsx`
+template every other origin (manual/CLI, weather, news) already renders
+through. Branch: `agent-card-ui-unification`.
+
+**168 is a real, confirmed bug** — found while building the mock, verified
+against the actual shipped `TtlBar.tsx`/`ttl-bar.css` (not just the mock):
+`.ttl-fill` is placed via `gridColumn` alone, which CSS Grid auto-placement
+resolves by pushing it into an invisible second row instead of overlapping
+the segment already in that column — collapsing both to ~0px height.
+Independent of 169/170; safe to land on its own regardless of what happens
+with the bigger design question.
+
+**170's own dispatch caught a second plan error, mid-execution** — the
+first-pass Target claimed football's wire `meta` (`subtitle`/`details`) is
+always empty, so no fact pills were possible. A dispatched executor
+correctly stopped rather than proceed past it: `poller.rs`'s `diff_match`
+actually overwrites `meta.details` with Clock/Cards entries whenever
+`espn_live_card` is on — the exact condition gating the branch this plan
+touches. Verified directly against `poller.rs`, the plan corrected in
+place (commit 6388a4b), and the executor resumed. The deliverable was
+unaffected either way: both possible `details` entries duplicate what the
+kept score-row already shows, so `FootballHeroCard` still renders no fact
+pills — only the stated reasoning needed fixing, not the target shape.
+
+All three plans in this batch are now DONE and merged locally into
+`agent-card-ui-unification` (not pushed, not merged to master). Step 7 of
+plan 170 (`live-scorecard.css` dead-rule trim) was deliberately deferred
+per that plan's own boundary and is not yet filed as its own follow-up.
+
+| plan | title | severity | depends on | status |
+|---|---|---|---|---|
+| 168 | fix the TTL-bar fill collapsing to ~0px height | MEDIUM | — | DONE |
+| 169 | render the Agent Board's primary session through the shared template | N/A (proposal) | 168 | DONE |
+| 170 | render Football's promoted events through the shared template | N/A (proposal) | 168, 169 | DONE |
+
+**Shell-choreography review batch 163–167 (2026-07-31, `/review-animations`,
+scoped by operator request to the minimal↔idle↔compact↔expanded shell-size
+state cycle)** — a focused review of the notch/HUD shell's own
+size-and-corner choreography (not a full-repo audit). Verified against the
+real component/CSS via a real `vite build` + live browser `getComputedStyle`
+checks (not the static `prototype/notch-states.html` mock, which — being
+hand-authored outside the real Tailwind/tokens.css pipeline — does not
+reproduce the finding below).
+
+**Headline finding (163, CRITICAL):** `--ease-notchtap` is defined only
+inside a Tailwind `@theme inline {}` block in
+`vendor/shared-ui/design/tokens.css`; the overlay's real entry
+(`src/main.tsx`) never routes through an `@import "tailwindcss";` root
+(only the settings window does), so the token never resolves in the
+overlay build. Confirmed independently three ways: grepping the built
+`main-*.css` (ships the token as bare unwrapped text, invalid CSS, silently
+dropped), and a live `getComputedStyle` check on the real build
+(`--ease-notchtap` unresolved, `.card-assembly`'s `transitionProperty:
+"all"` / `transitionDuration: "0s"`). All 45 usages across 10 overlay CSS
+files carry no fallback — every plain-CSS transition/animation in the
+overlay (shell width, hover breathe, flank fades, corner-radius, both exit
+legs, manifest disclosure, goal/red-card celebrations, ttl-bar, news
+`shade-drift`, status-dots, the Agent Board dot pulse/breathe plan 161
+targets) currently snaps with zero animation in the shipped app. This is a
+prerequisite for 164–167 (and effectively for 161) — none of their effects
+are visible until it lands.
+
+Execution order: **163 first, always** (nothing else in this batch is
+observable without it). 164, 165, 166, 167 are then independent of each
+other (four different rules in the same file, no shared state) and
+parallel-safe.
+
+| plan | title | severity | depends on | status |
+|---|---|---|---|---|
+| 163 | fix `--ease-notchtap` never resolving in the overlay build | CRITICAL | — | DONE |
+| 164 | scope the shell's pop-bounce out of the hover-reveal leg | HIGH | 163 | DONE |
+| 165 | match the expand-toggle shell width curve to the manifest it reveals | HIGH | 163 | DONE |
+| 166 | give the flank's corner-radius a real entrance transition | MEDIUM | 163 | DONE |
+| 167 | fade the concave "gill" corners instead of hard-popping them | MEDIUM | 163 | DONE |
+
+**Deferred, not planned**: `EXPAND_MS` (320ms) sits above the review's
+300ms UI-duration ceiling, but the file's own operator-feedback history
+means any retune should happen only after 163–167 land and get a fresh
+feel-check — nobody has actually felt this duration since the token wiring
+broke, so there's no reliable basis for a new target value yet.
+
+**Motion audit batch 156–162 (2026-07-30, `/improve-animations` standard,
+planned at `58cccd9`)** — full recon → 4 parallel category-pair auditors
+(purpose/frequency + missed opportunities; easing/duration + physicality;
+interruptibility + performance; accessibility + cohesion) → every finding
+re-verified against live code by the advisor before planning, per the
+skill's Phase 3. This codebase had already been through four prior rounds
+(107, 127, 129, 148–151) — most classic issues were already fixed; 15
+findings survived vetting, and the operator selected 7 for planning.
+
+Two findings did NOT get a plan and need follow-up before they're safe to
+plan: `card-chrome.css`'s `width`-not-`transform` shell animation (HIGH,
+needs feasibility research — the width is a real content resize, not
+decorative, so "just swap to transform" may not directly apply) and the
+top-level `App.tsx` crossfade's missing `AnimatePresence mode="wait"`
+(MEDIUM, flagged uncertain — needs a visual feel-check on real hardware
+before treating the double-expose risk as confirmed). The remaining
+un-planned findings (duration-token consolidation, button press-technique
+standardization, live-scorecard reduced-motion, bulk-clear stagger) are
+LOW/polish, not selected this round.
+
+Execution order: **156 first** (the `MotionConfig` wrapper) — it's the
+foundational fix the others don't depend on but pairs naturally with it;
+157, 158, 159, 160, 161, 162 are then independent and parallel-safe
+(disjoint files, no shared state).
+
+| plan | title | severity | depends on | status |
+|---|---|---|---|---|
+| 156 | wrap the overlay in `MotionConfig` so reduced-motion reaches it | HIGH | — | DONE |
+| 157 | `StatusRailCard`: replace `y`/`scale` shorthand with `transform` strings | HIGH | — | DONE |
+| 158 | `MetaChip`: give the `active` state a transition | MEDIUM | — | DONE |
+| 159 | `Segmented`: add press feedback, fix the selection-shadow pop | MEDIUM | — | DONE |
+| 160 | press-feedback pass: switch track, sidebar nav, history disclosure | MEDIUM | — | DONE |
+| 161 | Agent Board dot: reduced-motion for the state-change pulse | MEDIUM | — | DONE |
+| 162 | card hover "breathe": reduced-motion coverage | MEDIUM | — | DONE |
+
 **Seventh audit session (2026-07-28, `/improve` standard, planned at
 `acdaeb0`)** — scoped deliberately at recon time to the surfaces the six
 prior sessions never saw: the whole v7 agent stack (`src-tauri/src/agents/**`,

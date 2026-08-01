@@ -1,5 +1,9 @@
-import type { ReactNode } from "react";
-import type { SlotState, SourceKind } from "../useSlotState";
+import { convertFileSrc } from "@tauri-apps/api/core";
+import { AnimatePresence, motion } from "motion/react";
+import { type ReactNode, useState } from "react";
+import { NOTCHTAP_EASE } from "../animationTiming";
+import type { EventSignal, EventType, LivePillVariant, Priority } from "../lib/presentation";
+import type { EspnMeta, SlotState, SourceKind } from "../useSlotState";
 import { Manifest } from "./Manifest";
 import { Stamp } from "./Stamp";
 import type { Detail } from "./StatusRailCard";
@@ -21,13 +25,53 @@ import { TtlBar } from "./TtlBar";
 // server push (up to ~8 detail pairs, per the wire contract's own
 // generous allowance) could grow `.compact` tall enough to push the
 // TTL bar's floor strip out of the window (`.below-block`'s `overflow:
-// hidden` just hard-crops instead of scrolling). Paired with
-// `.detail-value`'s own 2-line clamp (manifest.css), this cap bounds the
-// worst case to a knowable height instead of an unbounded one. Chosen
-// well above every existing fixture's real usage (3 pairs, the richest
-// StatusRailCard.test.tsx case) so no legitimate payload is ever visibly
-// truncated in practice.
-const MAX_VISIBLE_DETAIL_PAIRS = 4;
+// hidden` just hard-crops instead of scrolling). Plan 169 moved each
+// pair off a 2-line-clamped stacked block onto a single-line, ellipsis-
+// truncating `.fact-pill` (manifest.css) — narrower per item, but still
+// paired with this same cap on pair COUNT, so the worst case (many
+// pills stacked in `.detail-facts`) stays a knowable height instead of
+// an unbounded one. Chosen well above every existing fixture's real
+// usage (3 pairs, the richest StatusRailCard.test.tsx case) so no
+// legitimate payload is ever visibly truncated in practice.
+// Exported (plan 169) so AgentBoard.tsx's own fact-pill assembly for the
+// templated hero (session.details plus one synthesized elapsed fact)
+// caps against the SAME limit, rather than a second hand-copied literal.
+export const MAX_VISIBLE_DETAIL_PAIRS = 4;
+
+// Plan 169 (steps 2-3): the shared fact-pill renderer — one `.fact-pill`
+// per label/value pair, replacing the old stacked `.detail-label`/
+// `.detail-value` divs (manifest.css). Used by BOTH the generic branch's
+// own `liveVisibleDetails` below and the agent-aware `AgentHeroCard`
+// further down — one rendering implementation, not two hand-copied
+// ones, per this plan's own "no parallel pill system" premise.
+// `fp-label` is always shown here: a wire `Detail`/`AgentDetail` pair
+// carries only `{label, value}`, no signal for "this value is
+// self-explanatory, omit the label" — that per-fact judgment call
+// belongs to a caller with real domain knowledge of its own facts
+// (e.g. plan 170's football scorer line), not this generic renderer.
+// `danger` paints every pill in the call `tone-danger` uniformly — there
+// is no per-detail tag/tone concept here, since the wire shape has no
+// third "qualifier" field to key one off; `AgentHeroCard` below derives
+// `danger` from the session's STATE instead (see its own doc).
+function renderFactPills(details: Detail[], danger = false) {
+  if (details.length === 0) {
+    return null;
+  }
+  return (
+    <div className="detail-facts">
+      {details.map((detail, index) => (
+        <span
+          // biome-ignore lint/suspicious/noArrayIndexKey: index is a tie-breaker only, not the primary key — a fresh `details` array from the wire each render, never locally reordered, so position is stable; this is what keeps two facts sharing the same label/value pair from colliding on an otherwise-identical key.
+          key={`${detail.label}:${detail.value}:${index}`}
+          className={`fact-pill${danger ? " tone-danger" : ""}`}
+        >
+          <span className="fp-label">{detail.label}</span>
+          {detail.value}
+        </span>
+      ))}
+    </div>
+  );
+}
 
 const GENERIC_MASTHEAD_KICKER: Record<SourceKind, string> = {
   manual: "cli",
@@ -142,13 +186,7 @@ export function NotificationBody({
               {/* an empty body (e.g. an agent push with no body text)
                 must not leave a blank `.notif-body` node in the card. */}
               {slot.body.trim() !== "" && <div className="notif-body">{bodyContent}</div>}
-              {liveVisibleDetails.length > 0 &&
-                liveVisibleDetails.slice(0, MAX_VISIBLE_DETAIL_PAIRS).map((detail) => (
-                  <div key={`${detail.label}:${detail.value}`}>
-                    <div className="detail-label">{detail.label}</div>
-                    <div className="detail-value">{detail.value}</div>
-                  </div>
-                ))}
+              {renderFactPills(liveVisibleDetails.slice(0, MAX_VISIBLE_DETAIL_PAIRS))}
             </>
           )}
         </div>
@@ -187,5 +225,260 @@ export function NotificationBody({
         done={slot.queueDone}
       />
     </>
+  );
+}
+
+// Plan 169 (step 4): the Agent Board's primary-session hero — the
+// agent-aware branch this plan adds "alongside the existing generic/news
+// branches" (Repo conventions), rendering through the SAME masthead-row/
+// Stamp/`.title.headline`/`.notif-subtitle-row`/`.notif-body`/fact-pill
+// shapes the generic branch above uses, in place of the old bespoke
+// `.agent-board-primary-head` block (AgentBoard.tsx, pre-169).
+//
+// Deliberately does NOT take a `slot`/`AgentSessionView` — every field
+// arrives pre-computed as a plain primitive (a title string, a nullable
+// subtitle/body string, a `Detail[]` fact list, a dot key + pulse flag)
+// so this component needs no agent-specific type import
+// (`AgentSessionView`/`AgentRuntime`/`AgentSessionState`) — AgentBoard.tsx
+// (the one place that actually knows about sessions/runtimes) does that
+// translation and calls this directly, per the plan's own "whichever
+// keeps NotificationBody.tsx from needing agent-specific imports it
+// doesn't otherwise need" guidance. It does NOT render Manifest/TtlBar/
+// `.compact-hint` — those are notification-specific chrome (TTL/queue/
+// expand-to-read-more) that don't apply to a persistent status board
+// with no TTL and its own hover-expand meaning; only the `.compact`
+// masthead/title/subtitle/body/fact-pill shape is reused.
+//
+// `dotKey`/`pulse` intentionally stay primitive too (not a pre-rendered
+// dot element) — AgentBoard.tsx is still the one place that renders the
+// actual `.agent-dot` span (keyed on state, `large`/`pulse` classes),
+// preserving the Boundary that this plan changes markup/CSS classes
+// around the dot, never its own bounded-pulse animation contract.
+export function AgentHeroCard({
+  dotKey,
+  pulse,
+  title,
+  subtitle,
+  body,
+  priority,
+  facts,
+  factsDanger,
+}: {
+  dotKey: string;
+  pulse: boolean;
+  title: string;
+  subtitle: string | null;
+  body: string | null;
+  priority: Priority;
+  facts: Detail[];
+  factsDanger: boolean;
+}) {
+  return (
+    <div className="compact">
+      <div className="copy">
+        <div className="masthead-row">
+          <div className="masthead">
+            <span
+              key={dotKey}
+              className={`agent-dot large${pulse ? " pulse" : ""}`}
+              aria-hidden="true"
+            />
+            <span className="agent-runtime-tick" aria-hidden="true" />
+            {GENERIC_MASTHEAD_KICKER.agent}
+          </div>
+          <Stamp priority={priority} signal="generic" eventType="agent_event" />
+        </div>
+        <div className="title headline">{title}</div>
+        {subtitle !== null && (
+          <div className="notif-subtitle-row">
+            <span className="notif-subtitle">{subtitle}</span>
+          </div>
+        )}
+        {body !== null && body.trim() !== "" && <div className="notif-body">{body}</div>}
+        {renderFactPills(facts, factsDanger)}
+      </div>
+    </div>
+  );
+}
+
+// plan 084: the recurring live-match scorecard's crest — a filesystem path
+// on the wire (083 workstream a), never a ready `asset://` URL, so every
+// render must go through `convertFileSrc` itself. `onError` is defense in
+// depth for a cache entry that's gone stale on disk between poll and
+// render; the `broken` flag is deliberately sticky (not re-tried) so a
+// permanently-404ing path doesn't flash between the two states forever.
+// Plan 170: ported verbatim from the now-deleted `LiveMatchScorecard.tsx`
+// into `FootballHeroCard`'s additive score-row below — same behavior,
+// only its home file changed.
+function Crest({ abbrev, path }: { abbrev: string; path: string | null }) {
+  const [broken, setBroken] = useState(false);
+  const src = !broken && path !== null ? convertFileSrc(path) : null;
+  return (
+    <span className="crest">
+      {src !== null ? <img src={src} alt="" onError={() => setBroken(true)} /> : abbrev}
+    </span>
+  );
+}
+
+// plan 151 (item B): the score odometer's own timing. Deliberately LOCAL
+// literals rather than new animationTiming.ts tokens — that file
+// single-sources values with a CSS or cross-component counterpart that
+// must stay in lockstep (see its header), and this roll has exactly one
+// consumer and no CSS twin. The delay lets the goal celebration's own
+// first beat land first: 120 + 360 = 480ms, well inside the 1240ms
+// celebration window (choreography.css), so the digit finishes rolling
+// while the burst is still playing rather than after it.
+const SCORE_ROLL_S = 0.36;
+const SCORE_ROLL_DELAY_S = 0.12;
+
+// plan 151 (item B): one side's score digit, as a single-digit odometer.
+//
+// The payload used to be the one thing on this card that did NOT move —
+// `goal-overshoot`/`goal-burst`/the ripple all celebrate AROUND a number
+// that simply swapped between frames. The clip span is a fixed-height
+// `overflow: hidden` box (live-scorecard.css `.score-digit`); the inner
+// `motion.span` is KEYED ON THE VALUE, which is the whole restraint
+// guard: React only remounts (and AnimatePresence only animates) when the
+// number genuinely changes. Everything else that re-renders this card —
+// most notably the once-a-minute clock pill, but also any same-slot
+// rotation re-emit carrying an unchanged scoreline — reuses the same
+// keyed child and rolls nothing. That is why this needs no `.rotation-swap`
+// style off-switch (news-category.css): value-keying already expresses
+// "only on a real change", and it can't be fooled by a re-emit.
+//
+// `initial={false}` on the AnimatePresence means a card mounting with a
+// score already on it renders that score at rest — the roll is reserved
+// for a change that happens while the card is on screen. `mode="popLayout"`
+// takes the outgoing digit out of flow so the two digits overlap inside
+// the clip instead of the box briefly widening to hold both. The
+// percentage translate is compositor-only (no layout per frame), same
+// discipline as `.ttl-fill`/`.media-bar-fill`.
+// Plan 170: ported verbatim, same reasoning as `Crest` above.
+function ScoreDigit({ value }: { value: number }) {
+  return (
+    <span className="score-digit">
+      <AnimatePresence initial={false} mode="popLayout">
+        <motion.span
+          key={value}
+          className="score-digit-roll"
+          initial={{ y: "100%" }}
+          animate={{ y: 0 }}
+          exit={{ y: "-100%" }}
+          transition={{ duration: SCORE_ROLL_S, ease: NOTCHTAP_EASE, delay: SCORE_ROLL_DELAY_S }}
+        >
+          {value}
+        </motion.span>
+      </AnimatePresence>
+    </span>
+  );
+}
+
+// Plan 170: the live-match football card, rendered through the shared
+// masthead/stamp/accent-stripe template (`AgentHeroCard`'s own precedent,
+// plan 169) instead of `LiveMatchScorecard.tsx`'s now-deleted bespoke
+// `.notif-block` layout. `title` is `slot.body` verbatim (e.g. "Goal — K.
+// Havertz 78'"), NOT `slot.title` (`matchup()`'s "UCL: ARS 1–1 PSG" —
+// already redundant with the score-row's own crests+digits below).
+//
+// No subtitle, no `.notif-body`, no fact pills. Football's wire meta
+// (`poller.rs`'s `diff_match`) carries only the one flat body string,
+// plus a Clock detail and an aggregate Cards-tally detail when
+// `espn_live_card` is on — the SAME two facts the kept score-row already
+// shows verbatim (the `clock-pill` chip, the `cards-line` block below),
+// and no scorer/assist/booking-level data beyond that exists anywhere on
+// the wire. A fact pill fed from `slot.details` here would therefore be
+// pure duplication, not new information — plan 170's Target section has
+// the full accounting (corrected twice during that plan's own dispatch:
+// first for the aspirational fact-pill design, then for an incorrect
+// "meta is always empty" claim about exactly this data). Does NOT render
+// `<Manifest>`/`<TtlBar>` either (unlike the generic/news branches in
+// `NotificationBody` above) — same "no TTL bar for a sticky recurring
+// presence, no generic Stamp redundant with the live chip" rule
+// `LiveMatchScorecard.tsx` originally documented; `<Stamp>` here is the
+// real per-signal one (Card/Off/Foul/Offside/VAR/Sub/Break/Final via
+// `stampFor`/`SIGNAL_STAMPS`), not the redundant reference that doc was
+// about.
+//
+// The score-row (league/live-state/clock chips, crests, rolling score
+// digits, optional cards-line) is a kept ADDITIVE block below
+// `.title.headline` — not folded into the generic template's shape, same
+// precedent as Agent Board's queue-rows (plan 169).
+//
+// The old component's `.event-line` icon+tint (`eventPresentation` from
+// lib/presentation.ts) does NOT carry over onto `.title.headline`: that
+// was a flex row built for an icon beside text, `.title.headline` is a
+// line-clamped text block with no icon slot, and `slot.body`'s own text
+// already names the event ("Goal —"/"Penalty - Scored —"/"Own Goal —").
+// The goal/red-card celebration on `.card-assembly` is unaffected — a
+// shell-level effect independent of whichever content template sits
+// underneath it (StatusRailCard.tsx still computes it separately, off
+// `footballKind`/`eventKindPresentationFor`, unchanged by this plan).
+export function FootballHeroCard({
+  title,
+  priority,
+  signal,
+  eventType,
+  liveEspn,
+  pillVariant,
+  pillLabel,
+  cardsClean,
+}: {
+  title: string;
+  priority: Priority;
+  signal: EventSignal;
+  eventType: EventType;
+  liveEspn: EspnMeta;
+  pillVariant: LivePillVariant;
+  pillLabel: string;
+  cardsClean: boolean;
+}) {
+  return (
+    <div className="compact">
+      <div className="copy">
+        <div className="masthead-row">
+          <div className="masthead">
+            <span className="dot" />
+            {GENERIC_MASTHEAD_KICKER.football}
+          </div>
+          <Stamp priority={priority} signal={signal} eventType={eventType} />
+        </div>
+        <div className="title headline">{title}</div>
+        <div className="sc-head">
+          <span className="chip chip-league">{liveEspn.league}</span>
+          <span className={`chip chip-live${pillVariant === "live" ? "" : ` ${pillVariant}`}`}>
+            {/* plan 151 (item A): the dot stays MOUNTED in every variant,
+                including `final` — it leaves by fading to `opacity: 0`
+                (live-scorecard.css `.chip-live.final .live-dot`) in step
+                with the chip's own colour morph, instead of being
+                unmounted and blinking out a frame before the colours
+                change. Smallest structural change that lets it fade; the
+                collapsed 5px+gap it leaves behind is animated in the same
+                rule. */}
+            <span className="live-dot" />
+            {pillLabel}
+          </span>
+          <span className="chip clock-pill">{liveEspn.clock}</span>
+        </div>
+        <div className="score-row">
+          <div className="side">
+            <Crest abbrev={liveEspn.homeAbbrev} path={liveEspn.homeCrest} />
+          </div>
+          <span className="score">
+            <ScoreDigit value={liveEspn.homeScore} />
+            <span className="dash">–</span>
+            <ScoreDigit value={liveEspn.awayScore} />
+          </span>
+          <div className="side">
+            <Crest abbrev={liveEspn.awayAbbrev} path={liveEspn.awayCrest} />
+          </div>
+        </div>
+        {!cardsClean && (
+          <div className="cards-line">
+            {liveEspn.homeAbbrev} {liveEspn.homeCards[0]}Y{liveEspn.homeCards[1]}R ·{" "}
+            {liveEspn.awayAbbrev} {liveEspn.awayCards[0]}Y{liveEspn.awayCards[1]}R
+          </div>
+        )}
+      </div>
+    </div>
   );
 }
