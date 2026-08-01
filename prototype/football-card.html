@@ -1,575 +1,1166 @@
 <!doctype html>
-<!-- Football / live-match card mockup v3 for plan 079 items 3/4/5/6 + plan 043 (item 6a). OPERATOR MODEL (2026-07-20): football is a STICKY medium-priority presence (~T-30 before kickoff → full-time). Resting = idle rail, green dot; hover = compact scorecard (no full-expand). HIGH-LEVEL EVENTS force the card open briefly: goals, penalties, own goals, yellow/red cards — plus plan 043's richer feed (fouls, offsides, VAR checks, substitutions) once item 6a's summary→plays fallback lands. Goal/yellow/red get celebrations (green glow / amber ring / red strobe); 043's informational events (foul/offside/VAR/sub) expand quietly. Paused football → hover falls back to weather. Higher-priority items preempt; football returns. No queue track. Crests = locked text-abbrev fallback until rust fetches team.logo. -->
-<html lang="en">
+<!-- Football / live-match card mock — mirrors the CURRENT SHIPPED overlay.
+     Markup/class names/colors are pulled directly from the real render
+     path, not invented:
+       - src/components/StatusRailCard.tsx   (card shell, celebration gating)
+       - src/components/LiveMatchScorecard.tsx (the full event-driven scorecard)
+       - src/components/IdleHoverPeek.tsx    (the resting hover-reveal peek)
+       - src/overlay/card-chrome.css         (the notch-cutout grid shell)
+       - src/overlay/choreography.css        (hover breathe, generic pulse)
+       - src/overlay/live-scorecard.css      (scorecard-specific styling)
+       - src/overlay/idle-peek.css           (hover-peek layout, event icons,
+                                               live-match celebrations)
+       - vendor/shared-ui/design/tokens.css  (color/ease tokens)
+     This is a static, hand-authored HTML/CSS file — no build step, not
+     wired into the app — kept as a visual reference for the football
+     card's current shape. Class names are namespaced under `.card-root`
+     everywhere, exactly like the shipped stylesheet, so this file can be
+     diffed against the real CSS by eye. Where the real component tree
+     omits something the previous version of this mock assumed (e.g. team
+     names under the crest, a pre-match "Soon" pill), it's omitted here
+     too — see the footer for the specific corrections made and the
+     judgment calls behind them. -->
+<html lang="en" data-notchtap-mode="hud">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>football card — sticky presence + event-driven expansion</title>
+<title>football card — shipped overlay mirror</title>
 <style>
-  :root { --bg: #101318; --ink: #e8ecf1; --dim: #8b95a3; --rule: rgba(255,255,255,0.09); --accent: #7fe08d; }
+  :root {
+    --bg: #101318; --ink: #e8ecf1; --dim: #8b95a3; --rule: rgba(255,255,255,0.09);
+    /* ==== shared-ui design tokens (vendor/shared-ui/design/tokens.css) —
+       hex values as documented in that file's own comments, since this
+       static page has no build step to resolve the oklch() originals. ==== */
+    --overlay-green: #7fe08d;
+    --overlay-amber: #f0c46a;
+    --overlay-coral: #ff6b57;
+    --overlay-teal: #55d6bd;
+    --overlay-blue: #0a84ff;
+    --overlay-fg: #f5f7fa;
+    --ease-notchtap: cubic-bezier(.22, 1, .36, 1);
+    --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    /* ==== styles.css :root defaults (the shipped app's own fallbacks) ==== */
+    --card-scale: 1;
+    --card-radius: 8px;
+    --notchtap-cutout-width: 200px;
+    --notchtap-cutout-height: 32px;
+  }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; padding: 44px 24px 100px; }
-  main { max-width: 780px; margin: 0 auto; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-sans); padding: 44px 24px 100px; }
+  main { max-width: 860px; margin: 0 auto; }
   h1 { font-size: 21px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
-  .lede { color: var(--dim); font-size: 13px; line-height: 1.6; max-width: 66ch; margin: 0 0 8px; }
-  .note { font-size: 11.5px; color: var(--dim); border-left: 2px solid var(--rule); padding-left: 10px; margin: 0 0 32px; max-width: 64ch; line-height: 1.6; }
-  code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; color: #9fc3e8; }
+  .lede { color: var(--dim); font-size: 13px; line-height: 1.6; max-width: 68ch; margin: 0 0 8px; }
+  .note { font-size: 11.5px; color: var(--dim); border-left: 2px solid var(--rule); padding-left: 10px; margin: 0 0 32px; max-width: 66ch; line-height: 1.6; }
+  code { font-family: var(--font-mono); color: #9fc3e8; }
   section { margin-bottom: 44px; padding-top: 24px; border-top: 1px solid var(--rule); }
   h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); margin: 0 0 4px; }
-  .section-sub { font-size: 12px; color: var(--dim); margin: 0 0 16px; max-width: 62ch; line-height: 1.5; }
-  .rig-label { font: 700 10px/1 ui-monospace, monospace; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); margin: 0 0 8px; }
+  .section-sub { font-size: 12px; color: var(--dim); margin: 0 0 16px; max-width: 64ch; line-height: 1.5; }
+  .rig-label { font: 700 10px/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); margin: 0 0 8px; }
 
-  .rig { position: relative; background: #05060a; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 16px 32px rgba(0,0,0,0.4); }
-  .menubar { position: relative; height: 26px; background: #1c1d20; }
-  .hw-notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: 26px; width: 150px; background: #000; z-index: 2; }
-  .stage { position: relative; min-height: 90px; background: repeating-linear-gradient(45deg, #08090c 0 2px, #0c0d10 2px 4px); }
+  /* ==== demo staging only — never part of the shipped class vocabulary.
+     the dev machine is a notch-less Mac mini, so the realistic default
+     mode is HUD (data-notchtap-mode="hud" on <html>, set above): the app
+     floats its own top-center window over the desktop and draws its own
+     `.synthetic-cutout` rather than sitting inside real notch hardware —
+     there is no menu-bar chrome to mock here, just a desktop backdrop. ==== */
+  .desktop-stage {
+    position: relative;
+    background:
+      radial-gradient(120% 160% at 50% -20%, #1b2230 0%, #05060a 60%),
+      repeating-linear-gradient(45deg, #08090c 0 2px, #0c0d10 2px 4px);
+    border-radius: 10px;
+    padding: 20px 0 26px;
+    display: flex;
+    justify-content: center;
+    box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 16px 32px rgba(0,0,0,0.4);
+  }
   .rig-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; }
-  .rig-grid .rig { min-width: 0; }
-
-  .card-wrap { position: absolute; top: 0; left: 50%; transform: translateX(-50%); z-index: 5; width: var(--cw); }
-  .flank-left, .flank-right { position: absolute; top: 0; width: calc((var(--cw) - var(--nw)) / 2); height: var(--nh); background: #000; color: #f5f7fa; display: flex; align-items: center; }
-  .flank-left { left: 0; padding-left: 16px; }
-  .flank-right { right: 0; padding-right: 16px; justify-content: flex-end; }
-  .time-only { font: 800 15px/1 ui-monospace, monospace; color: #f5f7fa; }
-  .below-block { position: absolute; top: var(--nh); left: 0; width: 100%; background: #000; box-shadow: 0 14px 28px rgba(0,0,0,0.5); border-bottom-left-radius: 14px; border-bottom-right-radius: 14px; overflow: hidden; }
-
-  .status-dots { display: flex; align-items: center; gap: 8px; flex: none; }
-  .status-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
-  .status-dot.football { background: #3ddc70; }
-  .status-dot.news { background: #ff5c5c; }
-  .status-dot.weather { background: #f0c46a; }
-  .status-dot.dim { opacity: 0.22; }
-  /* 2026-07-23 truth-sync: plan 105 removed the pulsing status/live-dot animations repo-wide
-     (distracting in peripheral vision) — steady glow only now; no @keyframes dot-pulse survives. */
-
-  /* ==== the compact scorecard — resting presentation ====
-     2026-07-23 truth-sync (plan 092 chip convergence): `.league-chip`/`.live-pill` were the
-     PRE-092 names. Shipped code (overlay-card.css) converged every pill/chip surface onto one
-     `.chip` base + a per-surface tint class — `.chip-league`/`.chip-live` here — so this file's
-     own class vocabulary now matches src/components/StatusRailCard.tsx's live-match branch
-     verbatim (`chip chip-league`, `chip chip-live`). Renamed below AND in every HTML use in this
-     file; visual shape (padding/radius/font) now lives on the shared `.chip` base rule instead of
-     being duplicated per surface. */
-  .chip { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px; font: 700 8px/1 ui-monospace, monospace; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
-  .notif-block { padding: 12px 16px 13px; }
-  .sc-head { display: flex; align-items: center; gap: 8px; }
-  .chip-league { flex: none; color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); }
-  .chip-live { flex: none; gap: 5px; color: #7fe08d; background: rgba(127,224,141,0.12); border: 1px solid rgba(127,224,141,0.35); }
-  .chip-live .live-dot { width: 5px; height: 5px; border-radius: 50%; background: #7fe08d; box-shadow: 0 0 6px rgba(127,224,141,0.9); }
-  .chip-live.break { color: #f0c46a; background: rgba(240,196,106,0.12); border-color: rgba(240,196,106,0.35); }
-  .chip-live.break .live-dot { background: #f0c46a; box-shadow: 0 0 6px rgba(240,196,106,0.9); }
-  .chip-live.final { color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.12); }
-  .chip-live.final .live-dot { display: none; }
-  /* NOT SHIPPED: overlay-card.css's own comment on `.chip-live` is explicit — "There is no 'Soon'
-     (pre-match) variant here: no wire signal exists for it… so it's omitted rather than half-built
-     against a state the backend never sends." Kept below as a still-open proposal (pre-match is a
-     real, useful state to design for), just honestly flagged as not implemented, unlike its
-     siblings which all shipped verbatim. */
-  .chip-live.soon { color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.14); }
-  .chip-live.soon .live-dot { display: none; }
-  .clock-pill { margin-left: auto; flex: none; font: 800 10px/1 ui-monospace, monospace; color: rgba(255,255,255,0.75); padding: 3px 7px; border-radius: 999px; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); }
-
-  .score-row { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 10px; }
-  .side { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 64px; }
-  .crest { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font: 800 9px/1 ui-monospace, monospace; letter-spacing: 0.03em; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.16); color: #f5f7fa; }
-  .side-name { font: 700 8px/1 ui-monospace, monospace; letter-spacing: 0.08em; color: rgba(255,255,255,0.45); text-transform: uppercase; }
-  .score { font: 800 24px/1 ui-monospace, monospace; color: #f5f7fa; letter-spacing: 0.02em; }
-  .score .dash { color: rgba(255,255,255,0.3); margin: 0 2px; }
-  .score.vs { font-size: 13px; color: rgba(255,255,255,0.4); }
-
-  .event-line { display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 9px; font-size: 11px; color: rgba(255,255,255,0.7); }
-  .cards-line { margin-top: 6px; text-align: center; font: 600 9px/1 ui-monospace, monospace; letter-spacing: 0.06em; color: rgba(255,255,255,0.38); }
-
-  /* ==== event icon set (item 6 + plan 043 events): CSS shapes, no emoji.
-     goal = filled green ball · penalty = green ring · own goal = hollow
-     grey ball · yellow/red = slips · foul = whistle triangle · offside =
-     flag · VAR = monitor · substitution = up/down triangles ==== */
-  .ev-ico { width: 9px; height: 9px; border-radius: 50%; flex: none; }
-  .ev-ico.goal { background: #7fe08d; box-shadow: 0 0 6px rgba(127,224,141,0.7); }
-  .ev-ico.pen { background: transparent; border: 2px solid #7fe08d; width: 7px; height: 7px; }
-  .ev-ico.og { background: transparent; border: 2px solid rgba(255,255,255,0.4); width: 7px; height: 7px; }
-  .ev-ico.yc, .ev-ico.rc { width: 7px; height: 10px; border-radius: 1.5px; }
-  .ev-ico.yc { background: #f0c46a; }
-  .ev-ico.rc { background: #ff6b57; }
-  .ev-ico.foul { width: 0; height: 0; border-radius: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 8px solid rgba(255,255,255,0.55); }
-  .ev-ico.off { position: relative; width: 3px; height: 12px; border-radius: 0; background: rgba(255,255,255,0.5); }
-  .ev-ico.off::after { content: ""; position: absolute; top: 0; left: 3px; width: 7px; height: 5px; background: #f0c46a; border-radius: 0 2px 2px 0; }
-  .ev-ico.var { width: 11px; height: 8px; border-radius: 2px; background: transparent; border: 1.5px solid #7c9df5; }
-  .ev-ico.sub { position: relative; width: 12px; height: 11px; border-radius: 0; background: transparent; }
-  .ev-ico.sub::before { content: ""; position: absolute; left: 0; top: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-bottom: 5px solid #7fe08d; }
-  .ev-ico.sub::after { content: ""; position: absolute; right: 0; bottom: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid #ff6b57; }
-
-  /* event-tinted event lines for the big three */
-  .event-line.tint-goal { color: #7fe08d; font-weight: 600; }
-  .event-line.tint-yc { color: #f0c46a; font-weight: 600; }
-  .event-line.tint-rc { color: #ff6b57; font-weight: 600; }
-
-  /* weather peek */
-  .wx-block { position: relative; }
-  .wx-sunny { background: linear-gradient(180deg, #163149 0%, #0e2436 100%); }
-  .wx-sunny .wx-sun { position: absolute; top: -18px; right: 16px; width: 46px; height: 46px; border-radius: 50%; background: radial-gradient(circle, #f0c46a 0%, rgba(240,196,106,0.5) 45%, transparent 72%); }
-  .wx-sunny .wx-cloud-soft { position: absolute; top: 6px; left: 10px; width: 38px; height: 16px; border-radius: 999px; background: rgba(255,255,255,0.14); }
-  .wx-scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0.05), rgba(0,0,0,0.55) 75%); z-index: 1; }
-  .wx-content { position: relative; z-index: 2; display: flex; align-items: flex-end; justify-content: space-between; height: 100%; padding: 10px 16px 14px; }
-  .wx-temp { font: 800 20px/1 ui-monospace, monospace; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,0.4); }
-  .wx-cond { font: 700 9.5px/1.4 -apple-system, sans-serif; letter-spacing: 0.04em; text-transform: uppercase; color: rgba(255,255,255,0.75); }
-
-  /* ==== interaction model (demo rig) ==== */
-  .peek { height: 0; min-height: 0; opacity: 0; overflow: hidden; transition: height 260ms cubic-bezier(0.22,1,0.36,1), opacity 200ms cubic-bezier(0.22,1,0.36,1); }
-  .fb-rig .flank-left { border-bottom-left-radius: 14px; }
-  .fb-rig .flank-right { border-bottom-right-radius: 14px; }
-  .fb-rig[data-fb="off"]:hover .wx-peek,
-  .fb-rig[data-fb="paused"]:hover .wx-peek { height: 78px; opacity: 1; }
-  .fb-rig[data-fb="live"]:hover .fb-peek { height: 172px; opacity: 1; }
-  .fb-rig[data-fb]:hover .flank-left { border-bottom-left-radius: 0; }
-  .fb-rig[data-fb]:hover .flank-right { border-bottom-right-radius: 0; }
-  .fb-rig[data-fb="showing"] .fb-peek { height: 172px; opacity: 1; }
-  .fb-rig[data-fb="showing"] .flank-left,
-  .fb-rig[data-fb="showing"] .flank-right { border-bottom-left-radius: 0; border-bottom-right-radius: 0; }
-  .fb-rig[data-fb="live"] .status-dot.football,
-  .fb-rig[data-fb="showing"] .status-dot.football { box-shadow: 0 0 8px 1px #3ddc70; }
-  .fb-rig[data-fb="paused"] .status-dot.football { opacity: 0.22; }
-
-  /* celebrations: goal = green glow+ring · yellow = amber ring · red =
-     two-pulse coral strobe (echoes src/styles.css pulse-red) · 043's
-     informational events expand quietly, no celebration */
-  .fb-rig.cele-goal .fb-peek { animation: goal-glow 900ms ease-out 1; }
-  .fb-rig.cele-goal::after { content: ""; position: absolute; inset: -6px; border-radius: 18px; pointer-events: none; border: 2px solid rgba(127,224,141,0.7); animation: cele-ring 900ms ease-out 1 forwards; }
-  @keyframes goal-glow { 0% { box-shadow: 0 0 0 rgba(127,224,141,0); } 30% { box-shadow: 0 0 34px rgba(127,224,141,0.45); } 100% { box-shadow: 0 14px 28px rgba(0,0,0,0.5); } }
-  @keyframes cele-ring { from { opacity: 1; transform: scale(0.98); } to { opacity: 0; transform: scale(1.12); } }
-  .fb-rig.cele-yc::after { content: ""; position: absolute; inset: -6px; border-radius: 18px; pointer-events: none; border: 2px solid rgba(240,196,106,0.65); animation: cele-ring 700ms ease-out 1 forwards; }
-  .fb-rig.cele-rc .fb-peek { animation: red-strobe 900ms ease-out 1; }
-  @keyframes red-strobe { 0%, 45% { box-shadow: 0 0 30px rgba(255,107,87,0.55); } 20%, 70% { box-shadow: 0 0 4px rgba(255,107,87,0.1); } 100% { box-shadow: 0 14px 28px rgba(0,0,0,0.5); } }
+  .rig-grid .desktop-stage { min-height: 168px; align-items: flex-start; }
 
   .controls { display: flex; gap: 8px; justify-content: center; margin-top: 16px; flex-wrap: wrap; }
-  button { font: 700 10px/1 ui-monospace, monospace; letter-spacing: 0.06em; text-transform: uppercase; padding: 9px 14px; border-radius: 8px; border: 1px solid var(--rule); background: #171b22; color: var(--ink); cursor: pointer; }
-  button:hover:not(:disabled) { border-color: rgba(127,224,141,0.4); color: var(--accent); }
+  button { font: 700 10px/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; padding: 9px 14px; border-radius: 8px; border: 1px solid var(--rule); background: #171b22; color: var(--ink); cursor: pointer; }
+  button:hover:not(:disabled) { border-color: rgba(127,224,141,0.4); color: var(--overlay-green); }
   button:disabled { opacity: 0.35; cursor: not-allowed; }
-  .controls-label { width: 100%; text-align: center; font: 700 8.5px/1 ui-monospace, monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); margin-top: 4px; }
+  .controls-label { width: 100%; text-align: center; font: 700 8.5px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--dim); margin-top: 4px; }
   .status-line { text-align: center; font-size: 11.5px; color: var(--dim); margin-top: 12px; min-height: 32px; }
-  .status-line b { color: #7fe08d; }
+  .status-line b { color: var(--overlay-green); }
 
-  footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 11.5px; color: var(--dim); line-height: 1.6; }
+  footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 11.5px; color: var(--dim); line-height: 1.7; }
+  footer ul { margin: 8px 0 0; padding-left: 18px; }
+
+  /* ================================================================
+     BELOW: the real shipped class vocabulary, `.card-root`-scoped, as
+     close to a verbatim copy of src/overlay/{card-chrome,choreography,
+     live-scorecard,idle-peek}.css as a demo page (no CSS custom
+     properties injected by applyAnimationTiming.ts, no `motion`
+     runtime) can reasonably reproduce. Simplifications are called out
+     inline where they diverge from the source file's own rule. Real
+     source line/rule comments are trimmed for length; the selectors,
+     values, and structure are not.
+     ================================================================ */
+
+  /* ---- card-chrome.css: the notch-cutout grid shell ---- */
+  .card-root .card-assembly {
+    position: relative;
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: 1fr var(--notchtap-cutout-width) 1fr;
+    grid-template-rows: var(--notchtap-cutout-height) auto;
+    margin: 0 auto;
+    isolation: isolate;
+    transform-origin: top center;
+    filter: drop-shadow(0 7px 18px rgba(0, 0, 0, 0.5));
+  }
+  /* idle width formula (card-chrome.css `.card-assembly.idle`) */
+  .card-root .card-assembly.idle {
+    --cw: calc(var(--notchtap-cutout-width) + (2 * 85px * var(--card-scale)));
+  }
+  /* default (non-idle, non-expanded) width — football's own case: the
+     live-match branch deliberately never sets `.expanded` (no manual
+     full-expand affordance for football), so a showing football card
+     always falls back to this base formula, not the idle or expanded one. */
+  .card-root .card-assembly.showing {
+    --cw: min(max(calc(400px * var(--card-scale)), calc(var(--notchtap-cutout-width) + (2 * 60px * var(--card-scale)))), 100%);
+  }
+  .card-root .card-assembly { width: var(--cw); }
+
+  .card-root .flank-left, .card-root .flank-right {
+    box-sizing: border-box; grid-row: 1; overflow: hidden; display: flex; align-items: center;
+    background: #000; color: var(--overlay-fg); min-width: 0;
+  }
+  .card-root .flank-left { grid-column: 1; justify-content: flex-start; padding-left: 16px; }
+  .card-root .flank-right { grid-column: 3; justify-content: flex-end; padding-right: 16px; }
+  .card-root .time-only { font: 800 15px/1 var(--font-mono); color: var(--overlay-fg); }
+
+  /* ROUNDING LAW (card-chrome.css): the cutout's base corners stay square.
+     outer rounding lives on the flanks when there is no below-block
+     (idle), or on the below-block when there is one (showing). */
+  .card-root .card-assembly:not(:has(.below-block)) .flank-left { border-bottom-left-radius: var(--card-radius); }
+  .card-root .card-assembly:not(:has(.below-block)) .flank-right { border-bottom-right-radius: var(--card-radius); }
+
+  .card-root .synthetic-cutout { grid-column: 2; grid-row: 1; display: none; }
+  :root[data-notchtap-mode="hud"] .card-root .synthetic-cutout { display: block; background: #000; }
+  :root[data-notchtap-mode="hud"] .card-root .card-assembly:not(:has(.below-block)) .synthetic-cutout {
+    border-bottom-left-radius: var(--card-radius) min(calc(var(--card-radius) * 2), 20px);
+    border-bottom-right-radius: var(--card-radius) min(calc(var(--card-radius) * 2), 20px);
+  }
+
+  /* the top concave "gill" corners (HUD-only, idle-only) — real DOM
+     siblings painted with a corner-anchored radial-gradient, not a
+     border-radius (border-radius can't fake a concave dent). */
+  .card-root .notch-gill { display: none; position: absolute; top: 0; width: 10px; height: 10px; pointer-events: none; }
+  :root[data-notchtap-mode="hud"] .card-root .card-assembly:not(:has(.below-block)) .notch-gill { display: block; }
+  .card-root .notch-gill-left { left: -10px; background: radial-gradient(circle at bottom left, transparent 10px, #000 10px); }
+  .card-root .notch-gill-right { right: -10px; background: radial-gradient(circle at bottom right, transparent 10px, #000 10px); }
+  :root[data-notchtap-mode="hud"] .card-root .card-assembly:not(:has(.below-block)) .flank-left {
+    border-bottom-left-radius: var(--card-radius) min(calc(var(--card-radius) * 2), 20px);
+  }
+  :root[data-notchtap-mode="hud"] .card-root .card-assembly:not(:has(.below-block)) .flank-right {
+    border-bottom-right-radius: var(--card-radius) min(calc(var(--card-radius) * 2), 20px);
+  }
+
+  .card-root .below-block {
+    grid-column: 1 / -1; grid-row: 2; position: relative; box-sizing: border-box;
+    overflow: hidden; width: 100%; min-width: 0; background: #000; color: var(--overlay-fg);
+    border-bottom-left-radius: var(--card-radius); border-bottom-right-radius: var(--card-radius);
+  }
+  .card-root .card-content { position: relative; z-index: 1; }
+
+  /* ---- status-dots.css: flank-right rail furniture (stays mounted
+     through a showing football card — "sticky presence", not idle-only) ---- */
+  .card-root .status-dots { display: flex; align-items: center; gap: 8px; flex: none; }
+  .card-root .status-dot { box-sizing: border-box; width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .card-root .status-dot.football { background: var(--overlay-green); }
+  .card-root .status-dot.news { background: var(--overlay-coral); }
+  .card-root .status-dot.weather { background: var(--overlay-amber); }
+  .card-root .status-dot.active { box-shadow: 0 0 8px 1px currentColor; }
+  .card-root .status-dot.football.active { color: var(--overlay-green); }
+  .card-root .status-dot.news.active { color: var(--overlay-coral); }
+  .card-root .status-dot.weather.active { color: var(--overlay-amber); }
+  .card-root .status-dot.dim { opacity: 0.22; box-shadow: none; }
+
+  /* ---- news-category.css: the shared `.chip` base rule every pill on
+     this card converged onto (league/live/clock alike). ---- */
+  .card-root .chip {
+    display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px;
+    font: 700 8px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap;
+  }
+
+  /* ---- live-scorecard.css: the full event-driven scorecard
+     (LiveMatchScorecard.tsx — mounted while StatusRailCard's slot is
+     "showing" a football event) ---- */
+  .card-root .notif-block { padding: 12px 16px 13px; }
+  .card-root .sc-head { display: flex; align-items: center; gap: 8px; }
+  .card-root .chip-league { flex: none; color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); }
+  .card-root .chip-live { flex: none; gap: 5px; color: var(--overlay-green); background: rgba(127,224,141,0.12); border: 1px solid rgba(127,224,141,0.35); }
+  .card-root .chip-live .live-dot { width: 5px; height: 5px; flex: none; border-radius: 50%; background: var(--overlay-green); box-shadow: 0 0 6px rgba(127,224,141,0.9); }
+  .card-root .chip-live.break { color: var(--overlay-amber); background: rgba(240,196,106,0.12); border-color: rgba(240,196,106,0.35); }
+  .card-root .chip-live.break .live-dot { background: var(--overlay-amber); box-shadow: 0 0 6px rgba(240,196,106,0.9); }
+  .card-root .chip-live.final { color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.12); }
+  .card-root .chip-live.final .live-dot { opacity: 0; width: 0; margin-right: -5px; box-shadow: none; }
+  /* NOT SHIPPED, same as before: there is no "Soon" (pre-match) wire
+     signal — kickoff transitions straight to Live, so a pre-match state
+     is intentionally absent from this mock too, matching the real card. */
+  .card-root .clock-pill { margin-left: auto; flex: none; font: 800 10px/1 var(--font-mono); letter-spacing: normal; text-transform: none; color: rgba(255,255,255,0.75); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); }
+
+  .card-root .score-row { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 10px; }
+  .card-root .side { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 64px; }
+  .card-root .crest { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; overflow: hidden; font: 800 9px/1 var(--font-mono); letter-spacing: 0.03em; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.16); color: var(--overlay-fg); }
+  .card-root .score { display: inline-flex; align-items: center; font: 800 24px/1 var(--font-mono); color: var(--overlay-fg); letter-spacing: 0.02em; }
+  .card-root .score-digit { display: block; position: relative; height: 1em; overflow: hidden; }
+  .card-root .score-digit-roll { display: block; line-height: 1; }
+  .card-root .score .dash { color: rgba(255,255,255,0.3); margin: 0 2px; }
+
+  .card-root .event-line { display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 9px; font-size: 11px; color: rgba(255,255,255,0.7); }
+  .card-root .cards-line { margin-top: 6px; text-align: center; font: 600 9px/1 var(--font-mono); letter-spacing: 0.08em; color: rgba(255,255,255,0.38); }
+
+  /* ---- idle-peek.css: the resting hover-reveal peek
+     (IdleHoverPeek.tsx's ScorecardRevealContent — mounted on hover while
+     the slot is idle, i.e. no event is forcing the card open). Deliberately
+     LIGHTER than the full scorecard above: label + minute only, no
+     crests, no score digits, no per-side cards line — the ambient
+     `status.football.live` the rust core polls carries only
+     `{ label, minute }`, not the full ESPN-structured meta the "showing"
+     branch gets. ---- */
+  .card-root .below-block.idle-peek { padding: 12px 16px 13px; display: flex; flex-direction: column; gap: 8px; overflow: hidden; }
+  .card-root .peek-content { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 8px; }
+  .card-root .idle-reveal-scorecard { display: flex; flex-direction: column; gap: 8px; }
+  .card-root .idle-reveal-label {
+    text-align: center; font: 700 13px/1.3 var(--font-sans); color: var(--overlay-fg);
+    display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+  }
+  .card-root .idle-peek-timeline { position: relative; display: block; height: 1px; margin-top: 2px; background: rgba(255,255,255,0.14); }
+  .card-root .idle-peek-timeline::before {
+    content: ""; position: absolute; top: -2px; left: var(--day-progress, 62%); width: 5px; height: 5px;
+    transform: translateX(-50%); border-radius: 50%; background: #b6f5e5; box-shadow: 0 0 10px rgba(182,245,229,0.75);
+  }
+
+  /* ---- idle-peek.css: the event icon set — CSS shapes, no emoji.
+     goal = filled green ball · penalty = green ring · own goal = hollow
+     grey ball · yellow/red = slips · foul = whistle triangle · offside =
+     flag · VAR = monitor · substitution = up/down triangles. ---- */
+  .card-root .ev-ico { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .card-root .ev-ico.goal { background: var(--overlay-green); box-shadow: 0 0 6px rgba(127,224,141,0.7); }
+  .card-root .ev-ico.pen { background: transparent; border: 2px solid var(--overlay-green); width: 7px; height: 7px; }
+  .card-root .ev-ico.og { background: transparent; border: 2px solid rgba(255,255,255,0.4); width: 7px; height: 7px; }
+  .card-root .ev-ico.yc, .card-root .ev-ico.rc { width: 7px; height: 10px; border-radius: 1.5px; }
+  .card-root .ev-ico.yc { background: var(--overlay-amber); }
+  .card-root .ev-ico.rc { background: var(--overlay-coral); }
+  .card-root .ev-ico.foul { width: 0; height: 0; border-radius: 0; border-left: 5px solid transparent; border-right: 5px solid transparent; border-bottom: 8px solid rgba(255,255,255,0.55); }
+  .card-root .ev-ico.off { position: relative; width: 3px; height: 12px; border-radius: 0; background: rgba(255,255,255,0.5); }
+  .card-root .ev-ico.off::after { content: ""; position: absolute; top: 0; left: 3px; width: 7px; height: 5px; background: var(--overlay-amber); border-radius: 0 2px 2px 0; }
+  .card-root .ev-ico.var { width: 11px; height: 8px; border-radius: 2px; background: transparent; border: 1.5px solid #7c9df5; }
+  .card-root .ev-ico.sub { position: relative; width: 12px; height: 11px; border-radius: 0; background: transparent; }
+  .card-root .ev-ico.sub::before { content: ""; position: absolute; left: 0; top: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-bottom: 5px solid var(--overlay-green); }
+  .card-root .ev-ico.sub::after { content: ""; position: absolute; right: 0; bottom: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid var(--overlay-coral); }
+
+  .card-root .event-line.tint-goal { color: var(--overlay-green); font-weight: 600; }
+  .card-root .event-line.tint-yc { color: var(--overlay-amber); font-weight: 600; }
+  .card-root .event-line.tint-rc { color: var(--overlay-coral); font-weight: 600; }
+
+  /* ---- idle-peek.css: the live-match celebrations — goal/penalty =
+     green glow + ring, yellow = amber ring, red = two-pulse coral
+     strobe. Applied to `.card-assembly` itself (whole-card), same as the
+     shipped rule. Durations/eases copied verbatim (1800ms,
+     var(--ease-notchtap)). ---- */
+  .card-root .card-assembly.cele-goal { animation: goal-glow 1800ms var(--ease-notchtap); }
+  .card-root .card-assembly.cele-goal::after {
+    content: ""; position: absolute; inset: -6px; z-index: 0; background: transparent; border-radius: 18px;
+    border: 2px solid rgba(127,224,141,0.7); animation: cele-ring 1800ms var(--ease-notchtap); pointer-events: none;
+  }
+  @keyframes goal-glow { 0% { box-shadow: none; } 30% { box-shadow: 0 0 34px rgba(127,224,141,0.45); } 100% { box-shadow: none; } }
+  @keyframes cele-ring { from { opacity: 1; transform: scale(0.98); } to { opacity: 0; transform: scale(1.12); } }
+  .card-root .card-assembly.cele-yc::after {
+    content: ""; position: absolute; inset: -6px; z-index: 0; background: transparent; border-radius: 18px;
+    border: 2px solid rgba(240,196,106,0.65); animation: cele-ring 1800ms var(--ease-notchtap); pointer-events: none;
+  }
+  .card-root .card-assembly.cele-rc { animation: red-strobe 1800ms var(--ease-notchtap); }
+  @keyframes red-strobe {
+    0%, 45% { box-shadow: 0 0 30px rgba(255,107,87,0.55); }
+    20%, 70% { box-shadow: 0 0 4px rgba(255,107,87,0.1); }
+    100% { box-shadow: none; }
+  }
+
+  /* ---- choreography.css: the hover "breathing" scale — same trigger
+     (a live `hovered` prop, never CSS `:hover`, since the real overlay
+     window is click-through). Demo-only exception: this mock uses real
+     `:hover` since it has no rust-derived tracking area to drive it. ---- */
+  .card-root .card-assembly:hover { transform: scale(1.02); transition: transform 160ms var(--ease-notchtap); }
+
+  /* ============== PROPOSAL ADDITION (2026-08-01): the shared generic
+     content template (masthead-content.css/manifest.css/ttl-bar.css,
+     verbatim) — real code, used today for manual/CLI/weather/news, NOT
+     currently used for football (LiveMatchScorecard's .notif-block above
+     is what's actually shipped). Added here, additive only, so the
+     "same events through the unified shell" section below can render —
+     see prototype/proposal-unified-card.html for the full cross-origin
+     version of this idea. ============== */
+  .card-root .compact { position: relative; box-sizing: border-box; min-height: 74px; padding: 12px 16px 13px 20px; overflow: hidden; }
+  .card-root .compact::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 0 2px 2px 0; background: var(--accent); box-shadow: 0 0 12px var(--accent-soft); }
+  .card-root .masthead-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .card-root .masthead { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; font: 700 8px/1 var(--font-mono); letter-spacing: 0.16em; text-transform: uppercase; color: rgba(255,255,255,0.38); }
+  .card-root .masthead::after { content: ""; flex: 1; height: 1px; background: rgba(255,255,255,0.12); }
+  .card-root .masthead .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--cat); box-shadow: 0 0 6px var(--cat); flex: none; }
+  .card-root .title.headline { white-space: normal; font-size: 13px; line-height: 1.3; font-weight: 680; }
+  .card-root .stamp { align-self: center; padding: 4px 6px; border: 1px solid var(--accent); color: var(--accent); font: 700 8px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; }
+  .card-root .notif-subtitle-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 3px; }
+  .card-root .notif-subtitle { color: rgba(255,255,255,0.45); font-size: 10.5px; font-weight: 600; }
+  .card-root .notif-body { margin-top: 8px; color: rgba(255,255,255,0.7); font-size: 11.5px; line-height: 1.35; }
+  /* detail pairs as right-aligned pills, not stacked label/value blocks —
+     supplementary facts, not a form; a quiet row on the right reads as
+     secondary at a glance, and doesn't need to sit directly under the title. */
+  /* one pill per fact, not label+value as two elements — small muted
+     label prefix, the value, and an optional colored tag when the fact
+     carries a qualifier worth a color. */
+  /* FIXED SIZE DISCIPLINE: card width/height per state is a hard contract
+     — pills must never grow it. .compact has overflow:hidden as the
+     backstop, detail-facts is capped to the compact's own content width,
+     each pill truncates its own text rather than pushing wider. Only
+     background effects (goal-burst, shade-drift) may extend past the box. */
+  .card-root .detail-facts { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; margin-top: 7px; margin-bottom: 14px; max-width: 100%; }
+  .card-root .fact-pill { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 7px; border-radius: 999px; font-size: 10px; line-height: 1.4; color: rgba(255,255,255,0.82); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.05); }
+  .card-root .fact-pill .fp-label { flex: none; font: 700 7px/1 var(--font-mono); letter-spacing: 0.07em; text-transform: uppercase; opacity: 0.68; }
+  .card-root .fact-pill .fp-tag { flex: none; font: 700 7px/1 var(--font-mono); letter-spacing: 0.07em; text-transform: uppercase; }
+  .card-root .fact-pill.tone-accent { background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 38%, transparent); }
+  .card-root .fact-pill.tone-accent .fp-tag { color: var(--accent); }
+  .card-root .fact-pill.tone-danger { background: color-mix(in srgb, var(--overlay-coral) 14%, transparent); border-color: color-mix(in srgb, var(--overlay-coral) 42%, transparent); }
+  .card-root .fact-pill.tone-danger .fp-tag { color: var(--overlay-coral); }
+  .card-root .fact-pill.tone-safe { background: color-mix(in srgb, var(--overlay-green) 14%, transparent); border-color: color-mix(in srgb, var(--overlay-green) 42%, transparent); }
+  .card-root .fact-pill.tone-safe .fp-tag { color: var(--overlay-green); }
+  /* ttl-bar (ttl-bar.css, verbatim + the grid-row fix — see
+     proposal-unified-card.html's own comment: grid auto-placement pushes
+     an item placed via grid-column alone into an invisible new row unless
+     grid-row is also explicit). */
+  .card-root .ttl-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; display: grid; grid-template-columns: repeat(var(--queue-n, 1), 1fr); grid-template-rows: 4px; gap: 3px; }
+  .card-root .ttl-seg { background: rgba(255,255,255,0.08); }
+  .card-root .ttl-seg.done { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+  .card-root .ttl-fill { grid-row: 1; height: 100%; width: 100%; background: var(--accent); transform-origin: left; }
+  .card-root .below-block.origin-wash { position: relative; }
+  .card-root .below-block.origin-wash::before { content: ""; position: absolute; inset: 0; z-index: 0; background: radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%); pointer-events: none; }
+  .card-root .below-block.origin-wash .compact { position: relative; z-index: 1; }
+  .card-root .src-football { --cat: var(--overlay-green); --cat-deep: color-mix(in srgb, var(--overlay-green) 15%, transparent); }
+
+  /* ============== plan 170: the score-row, kept as an ADDITIVE block —
+     verbatim from live-scorecard.css (LiveMatchScorecard.tsx's real
+     markup/classes), not reinvented. This is the resolution of the open
+     design question that plan itself left unresolved: the crests + big
+     rolling score digits are the single most glanceable part of a live
+     match card, and folding them into the title as plain text (this
+     section's first draft) was a real information loss. Lives BELOW the
+     unified template's own masthead/title/body/facts, inside the same
+     card-content, spaced apart with its own margin-top exactly as it is
+     today — an addition, not a replacement, same pattern as plan 169's
+     Agent Board queue-rows. ============== */
+  .card-root .score-block { margin-top: 10px; }
+  .card-root .sc-head { display: flex; align-items: center; gap: 8px; }
+  .card-root .chip-league { flex: none; color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); }
+  .card-root .chip-live { flex: none; gap: 5px; color: var(--overlay-green); background: rgba(127,224,141,0.12); border: 1px solid rgba(127,224,141,0.35); }
+  .card-root .chip-live .live-dot { width: 5px; height: 5px; flex: none; border-radius: 50%; background: var(--overlay-green); box-shadow: 0 0 6px rgba(127,224,141,0.9); }
+  .card-root .chip-live.break { color: var(--overlay-amber); background: rgba(240,196,106,0.12); border-color: rgba(240,196,106,0.35); }
+  .card-root .chip-live.break .live-dot { background: var(--overlay-amber); box-shadow: 0 0 6px rgba(240,196,106,0.9); }
+  .card-root .chip-live.final { color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.12); }
+  .card-root .chip-live.final .live-dot { opacity: 0; width: 0; margin-right: -5px; box-shadow: none; }
+  .card-root .clock-pill { margin-left: auto; flex: none; font: 800 10px/1 var(--font-mono); letter-spacing: normal; text-transform: none; color: rgba(255,255,255,0.75); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); }
+  .card-root .score-row { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 10px; }
+  .card-root .side { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 64px; }
+  .card-root .crest { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; overflow: hidden; font: 800 9px/1 var(--font-mono); letter-spacing: 0.03em; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.16); color: var(--overlay-fg); }
+  .card-root .score { display: inline-flex; align-items: center; font: 800 24px/1 var(--font-mono); color: var(--overlay-fg); letter-spacing: 0.02em; }
+  .card-root .score .dash { color: rgba(255,255,255,0.3); margin: 0 2px; }
+  .card-root .cards-line { margin-top: 6px; text-align: center; font: 600 9px/1 var(--font-mono); letter-spacing: 0.08em; color: rgba(255,255,255,0.38); }
+  .card-root .card-assembly.low { --accent: #aab3bd; --accent-soft: rgba(170,179,189,0.2); }
+  .card-root .card-assembly.medium { --accent: var(--overlay-teal); --accent-soft: rgba(85,214,189,0.24); }
+  .card-root .card-assembly.high { --accent: var(--overlay-coral); --accent-soft: rgba(255,107,87,0.28); }
 </style>
 </head>
 <body>
-<div style="background:#7a2d2d;color:#fff;padding:6px 12px;font:12px/1.4 monospace">HISTORICAL PROTOTYPE — design exploration that preceded implementation. The shipped overlay deliberately diverged (CSS-grid .card-assembly — see src/styles.css). Not a reference for current behavior.</div>
-<div style="background:#1c2a1f;color:#cfe8d4;padding:6px 12px;font:12px/1.4 monospace;border-top:1px solid #2f4a36">2026-07-23 truth-sync: chip language converged onto `.chip`/`.chip-league`/`.chip-live` (plan 092, matches src/components/StatusRailCard.tsx's live-match branch verbatim); pulsing status/live dots replaced with the static glow shipped by plan 105; `.chip-live.soon` explicitly flagged NOT SHIPPED (see its own comment) since overlay-card.css documents that no pre-match wire signal exists.</div>
 <main>
-  <h1>Football card — sticky presence, event-driven expansion</h1>
+  <h1>Football card — shipped overlay mirror</h1>
   <p class="lede">
-    Sticky medium-priority resident from ~30 min before kickoff to
-    full-time: resting = idle rail with the green dot, <b>hover reveals
-    the compact scorecard</b>, no full-expand. What forces the card open
-    is a <b>high-level event</b> — goals, penalties, own goals, yellow
-    and red cards get celebrations; plan 043's richer feed
-    (<b>fouls, offsides, VAR checks, substitutions</b>, via item 6a's
-    <code>summary</code>→<code>plays</code> fallback) expands the card
-    quietly. Then it settles back to the rail. Paused football → hover
-    falls back to weather; higher-priority items preempt, football
-    returns.
+    This mock mirrors the football/live-match card as it actually renders
+    today. There are <b>two distinct real render paths</b>, not one: the
+    <b>resting hover-reveal peek</b> (<code>IdleHoverPeek.tsx</code>,
+    label + minute only) while nothing newsworthy is happening, and the
+    <b>full event-driven scorecard</b> (<code>LiveMatchScorecard.tsx</code>,
+    crests + score + event line) that appears when a goal, card, or other
+    event promotes the card to "showing." Goal / penalty / yellow / red
+    celebrate the whole card shell; foul / offside / VAR / substitution
+    open the same scorecard quietly, no celebration.
   </p>
   <p class="note">
-    Event icon set below is the item-6 proposal — CSS shapes, no emoji:
-    goal (filled ball), penalty (ring), own goal (hollow), yellow/red
-    (slips), foul (triangle), offside (flag), VAR (monitor), substitution
-    (up/down). Goal/yellow/red tint their event line and celebrate;
-    043's informational events stay neutral.
+    Class names, colors, and structure below are copied from
+    <code>src/overlay/card-chrome.css</code>,
+    <code>src/overlay/live-scorecard.css</code>, and
+    <code>src/overlay/idle-peek.css</code> — every selector here is
+    <code>.card-root</code>-scoped, matching the shipped stylesheet, so
+    this file stays diffable against the real one by eye.
   </p>
 
   <section>
-    <h2>Event states — every expansion trigger</h2>
-    <p class="section-sub">The card as it appears when each event forces it open. Big three first (celebrating), then 043's informational events (quiet).</p>
-    <div class="rig-grid">
-      <div>
-        <div class="rig-label">Goal — green celebration</div>
-        <div class="rig">
-          <div class="menubar"></div><div class="hw-notch" style="width:150px;"></div>
-          <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
-            <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
-            <div class="below-block"><div class="notif-block">
-              <div class="sc-head"><span class="chip chip-league">UCL</span><span class="chip chip-live"><span class="live-dot"></span>Live</span><span class="clock-pill">78'</span></div>
-              <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score">2<span class="dash">–</span>1</span><div class="side"><span class="crest">PSG</span></div></div>
-              <div class="event-line tint-goal"><span class="ev-ico goal"></span>Goal — K. Havertz 78'</div>
-            </div></div>
-          </div>
-          <div class="stage" style="min-height:170px;"></div>
-        </div>
-      </div>
-      <div>
-        <div class="rig-label">Penalty scored — green ring</div>
-        <div class="rig">
-          <div class="menubar"></div><div class="hw-notch" style="width:150px;"></div>
-          <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
-            <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
-            <div class="below-block"><div class="notif-block">
-              <div class="sc-head"><span class="chip chip-league">EPL</span><span class="chip chip-live"><span class="live-dot"></span>Live</span><span class="clock-pill">44'</span></div>
-              <div class="score-row"><div class="side"><span class="crest">MCI</span></div><span class="score">1<span class="dash">–</span>1</span><div class="side"><span class="crest">LIV</span></div></div>
-              <div class="event-line tint-goal"><span class="ev-ico pen"></span>Penalty - Scored — Mohamed Salah 44'</div>
-            </div></div>
-          </div>
-          <div class="stage" style="min-height:170px;"></div>
-        </div>
-      </div>
-      <div>
-        <div class="rig-label">Own goal — hollow ball</div>
-        <div class="rig">
-          <div class="menubar"></div><div class="hw-notch" style="width:150px;"></div>
-          <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
-            <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
-            <div class="below-block"><div class="notif-block">
-              <div class="sc-head"><span class="chip chip-league">UCL</span><span class="chip chip-live"><span class="live-dot"></span>Live</span><span class="clock-pill">12'</span></div>
-              <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score">0<span class="dash">–</span>1</span><div class="side"><span class="crest">PSG</span></div></div>
-              <div class="event-line"><span class="ev-ico og"></span>Own Goal — W. Saliba 12'</div>
-            </div></div>
-          </div>
-          <div class="stage" style="min-height:170px;"></div>
-        </div>
-      </div>
-      <div>
-        <div class="rig-label">Yellow card — amber ring</div>
-        <div class="rig">
-          <div class="menubar"></div><div class="hw-notch" style="width:150px;"></div>
-          <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
-            <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
-            <div class="below-block"><div class="notif-block">
-              <div class="sc-head"><span class="chip chip-league">UCL</span><span class="chip chip-live"><span class="live-dot"></span>Live</span><span class="clock-pill">54'</span></div>
-              <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score">1<span class="dash">–</span>1</span><div class="side"><span class="crest">PSG</span></div></div>
-              <div class="event-line tint-yc"><span class="ev-ico yc"></span>Yellow Card — B. Saka 54'</div>
-              <div class="cards-line">ARS 1Y0R · PSG 2Y0R</div>
-            </div></div>
-          </div>
-          <div class="stage" style="min-height:180px;"></div>
-        </div>
-      </div>
-      <div>
-        <div class="rig-label">Red card — coral strobe</div>
-        <div class="rig">
-          <div class="menubar"></div><div class="hw-notch" style="width:150px;"></div>
-          <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
-            <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
-            <div class="below-block"><div class="notif-block">
-              <div class="sc-head"><span class="chip chip-league">UCL</span><span class="chip chip-live"><span class="live-dot"></span>Live</span><span class="clock-pill">71'</span></div>
-              <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score">1<span class="dash">–</span>1</span><div class="side"><span class="crest">PSG</span></div></div>
-              <div class="event-line tint-rc"><span class="ev-ico rc"></span>Red Card — M. Dembélé 71'</div>
-              <div class="cards-line">ARS 1Y0R · PSG 2Y1R</div>
-            </div></div>
-          </div>
-          <div class="stage" style="min-height:180px;"></div>
-        </div>
-      </div>
-      <div>
-        <div class="rig-label">Foul — quiet (plan 043)</div>
-        <div class="rig">
-          <div class="menubar"></div><div class="hw-notch" style="width:150px;"></div>
-          <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
-            <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
-            <div class="below-block"><div class="notif-block">
-              <div class="sc-head"><span class="chip chip-league">UCL</span><span class="chip chip-live"><span class="live-dot"></span>Live</span><span class="clock-pill">62'</span></div>
-              <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score">1<span class="dash">–</span>1</span><div class="side"><span class="crest">PSG</span></div></div>
-              <div class="event-line"><span class="ev-ico foul"></span>Foul — D. Rice 62'</div>
-            </div></div>
-          </div>
-          <div class="stage" style="min-height:170px;"></div>
-        </div>
-      </div>
-      <div>
-        <div class="rig-label">Offside — quiet (plan 043)</div>
-        <div class="rig">
-          <div class="menubar"></div><div class="hw-notch" style="width:150px;"></div>
-          <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
-            <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
-            <div class="below-block"><div class="notif-block">
-              <div class="sc-head"><span class="chip chip-league">UCL</span><span class="chip chip-live"><span class="live-dot"></span>Live</span><span class="clock-pill">55'</span></div>
-              <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score">1<span class="dash">–</span>1</span><div class="side"><span class="crest">PSG</span></div></div>
-              <div class="event-line"><span class="ev-ico off"></span>Offside — K. Mbappé 55'</div>
-            </div></div>
-          </div>
-          <div class="stage" style="min-height:170px;"></div>
-        </div>
-      </div>
-      <div>
-        <div class="rig-label">VAR check — quiet (plan 043)</div>
-        <div class="rig">
-          <div class="menubar"></div><div class="hw-notch" style="width:150px;"></div>
-          <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
-            <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
-            <div class="below-block"><div class="notif-block">
-              <div class="sc-head"><span class="chip chip-league">UCL</span><span class="chip chip-live"><span class="live-dot"></span>Live</span><span class="clock-pill">67'</span></div>
-              <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score">1<span class="dash">–</span>1</span><div class="side"><span class="crest">PSG</span></div></div>
-              <div class="event-line"><span class="ev-ico var"></span>VAR check — possible penalty 67'</div>
-            </div></div>
-          </div>
-          <div class="stage" style="min-height:170px;"></div>
-        </div>
-      </div>
-      <div>
-        <div class="rig-label">Substitution — quiet (plan 043)</div>
-        <div class="rig">
-          <div class="menubar"></div><div class="hw-notch" style="width:150px;"></div>
-          <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
-            <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
-            <div class="below-block"><div class="notif-block">
-              <div class="sc-head"><span class="chip chip-league">UCL</span><span class="chip chip-live"><span class="live-dot"></span>Live</span><span class="clock-pill">70'</span></div>
-              <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score">1<span class="dash">–</span>1</span><div class="side"><span class="crest">PSG</span></div></div>
-              <div class="event-line"><span class="ev-ico sub"></span>Substitution — L. Trossard for G. Martinelli 70'</div>
-            </div></div>
-          </div>
-          <div class="stage" style="min-height:170px;"></div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section>
-    <h2>Match states — resting compact</h2>
-    <p class="section-sub">What hover reveals when no event is forcing the card: pre-match, half-time, full-time.</p>
-    <div class="rig-grid">
-      <div>
-        <div class="rig-label">Pre-match — T-30</div>
-        <div class="rig">
-          <div class="menubar"></div><div class="hw-notch" style="width:150px;"></div>
-          <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
-            <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
-            <div class="below-block"><div class="notif-block">
-              <div class="sc-head"><span class="chip chip-league">UCL</span><span class="chip chip-live soon">Soon</span><span class="clock-pill">15:00</span></div>
-              <div class="score-row"><div class="side"><span class="crest">ARS</span></div><span class="score vs">vs</span><div class="side"><span class="crest">PSG</span></div></div>
-              <div class="event-line">Kickoff in 28 min — Emirates Stadium</div>
-            </div></div>
-          </div>
-          <div class="stage" style="min-height:160px;"></div>
-        </div>
-      </div>
-      <div>
-        <div class="rig-label">Half-time</div>
-        <div class="rig">
-          <div class="menubar"></div><div class="hw-notch" style="width:150px;"></div>
-          <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
-            <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
-            <div class="below-block"><div class="notif-block">
-              <div class="sc-head"><span class="chip chip-league">EPL</span><span class="chip chip-live break"><span class="live-dot"></span>Break</span><span class="clock-pill">HT</span></div>
-              <div class="score-row"><div class="side"><span class="crest">MCI</span></div><span class="score">1<span class="dash">–</span>1</span><div class="side"><span class="crest">LIV</span></div></div>
-              <div class="event-line">Half-time at the Etihad</div>
-            </div></div>
-          </div>
-          <div class="stage" style="min-height:160px;"></div>
-        </div>
-      </div>
-      <div>
-        <div class="rig-label">Full-time — then it retires</div>
-        <div class="rig">
-          <div class="menubar"></div><div class="hw-notch" style="width:150px;"></div>
-          <div class="card-wrap" style="--cw:340px; --nw:150px; --nh:26px;">
-            <div class="flank-left"><span class="time-only">14:32</span></div><div class="flank-right"></div>
-            <div class="below-block"><div class="notif-block">
-              <div class="sc-head"><span class="chip chip-league">La Liga</span><span class="chip chip-live final">Final</span><span class="clock-pill">FT</span></div>
-              <div class="score-row"><div class="side"><span class="crest">RMA</span></div><span class="score">3<span class="dash">–</span>0</span><div class="side"><span class="crest">SEV</span></div></div>
-              <div class="event-line"><span class="ev-ico goal"></span>Goal — Vinícius Júnior 89'</div>
-            </div></div>
-          </div>
-          <div class="stage" style="min-height:170px;"></div>
-        </div>
-      </div>
-    </div>
-  </section>
-
-  <section>
-    <h2>Interaction model — live demo</h2>
+    <h2>Resting — the hover-reveal peek</h2>
     <p class="section-sub">
-      <b>Hover the rail at every step.</b> "Match approaching" makes
-      football present — hover shows the compact scorecard. Fire any
-      event: the big three celebrate, 043's events open quietly; the
-      card settles back to the rail after 4s. "High-priority push"
-      preempts; "Pause football" falls back to weather on hover;
-      "Full-time" retires it.
+      Idle rail (left) vs. hovered (right). Hovering opens
+      <code>.below-block.idle-peek</code> with
+      <code>ScorecardRevealContent</code>'s markup: a <code>Live</code>
+      chip, a clock-pill minute, and one clamped label line — no crests,
+      no score digits. That richer content only exists once an event has
+      actually promoted the card (next section).
     </p>
-    <div class="rig-label">Try the whole arc</div>
-    <div class="rig" style="position:relative;">
-      <div class="menubar"></div>
-      <div class="stage" style="min-height:320px;">
-        <div class="card-wrap fb-rig" id="fb-rig" data-fb="off" style="--cw:360px; --nw:150px; --nh:26px;">
-          <div class="flank-left"><span class="time-only">14:32</span></div>
+    <div class="rig-grid">
+      <div>
+        <div class="rig-label">Idle rail — not hovered</div>
+        <div class="desktop-stage">
+          <div class="card-root">
+            <div class="card-assembly idle">
+              <span class="notch-gill notch-gill-left" aria-hidden="true"></span>
+              <span class="notch-gill notch-gill-right" aria-hidden="true"></span>
+              <div class="flank-left"><span class="time-only">6:16 PM</span></div>
+              <div class="synthetic-cutout"></div>
+              <div class="flank-right">
+                <div class="status-dots">
+                  <span class="status-dot football active"></span>
+                  <span class="status-dot news"></span>
+                  <span class="status-dot weather active"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="rig-label">Hovered — idle-reveal peek open</div>
+        <div class="desktop-stage">
+          <div class="card-root">
+            <div class="card-assembly idle">
+              <div class="flank-left"><span class="time-only">6:16 PM</span></div>
+              <div class="synthetic-cutout"></div>
+              <div class="flank-right">
+                <div class="status-dots">
+                  <span class="status-dot football active"></span>
+                  <span class="status-dot news"></span>
+                  <span class="status-dot weather active"></span>
+                </div>
+              </div>
+              <div class="below-block idle-peek">
+                <div class="peek-content">
+                  <div class="idle-reveal-scorecard">
+                    <div class="sc-head">
+                      <span class="chip chip-live"><span class="live-dot"></span>Live</span>
+                      <span class="chip clock-pill">78'</span>
+                    </div>
+                    <div class="idle-reveal-label">Arsenal 2-1 PSG</div>
+                  </div>
+                  <span class="idle-peek-timeline" style="--day-progress:78%"></span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Event states — the full scorecard, every expansion trigger</h2>
+    <p class="section-sub">
+      What renders once an event promotes the card to "showing." Big
+      three first (celebrating the whole card shell via
+      <code>.cele-goal</code>/<code>.cele-yc</code>/<code>.cele-rc</code>
+      on <code>.card-assembly</code>), then the informational events that
+      open the same scorecard with no celebration.
+    </p>
+    <div class="rig-grid">
+      <div>
+        <div class="rig-label">Goal — cele-goal (green glow + ring)</div>
+        <div class="desktop-stage">
+          <div class="card-root">
+            <div class="card-assembly showing cele-goal">
+              <div class="flank-left"><span class="time-only">6:16 PM</span></div>
+              <div class="synthetic-cutout"></div>
+              <div class="flank-right">
+                <div class="status-dots">
+                  <span class="status-dot football active"></span>
+                  <span class="status-dot news"></span>
+                  <span class="status-dot weather active"></span>
+                </div>
+              </div>
+              <div class="below-block"><div class="card-content"><div class="notif-block">
+                <div class="sc-head">
+                  <span class="chip chip-league">UCL</span>
+                  <span class="chip chip-live"><span class="live-dot"></span>Live</span>
+                  <span class="chip clock-pill">78'</span>
+                </div>
+                <div class="score-row">
+                  <div class="side"><span class="crest">ARS</span></div>
+                  <span class="score"><span class="score-digit"><span class="score-digit-roll">2</span></span><span class="dash">–</span><span class="score-digit"><span class="score-digit-roll">1</span></span></span>
+                  <div class="side"><span class="crest">PSG</span></div>
+                </div>
+                <div class="event-line tint-goal"><span class="ev-ico goal"></span>Goal — K. Havertz 78'</div>
+              </div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="rig-label">Penalty scored — same green family</div>
+        <div class="desktop-stage">
+          <div class="card-root">
+            <div class="card-assembly showing cele-goal">
+              <div class="flank-left"><span class="time-only">6:16 PM</span></div>
+              <div class="synthetic-cutout"></div>
+              <div class="flank-right">
+                <div class="status-dots">
+                  <span class="status-dot football active"></span>
+                  <span class="status-dot news"></span>
+                  <span class="status-dot weather active"></span>
+                </div>
+              </div>
+              <div class="below-block"><div class="card-content"><div class="notif-block">
+                <div class="sc-head">
+                  <span class="chip chip-league">EPL</span>
+                  <span class="chip chip-live"><span class="live-dot"></span>Live</span>
+                  <span class="chip clock-pill">44'</span>
+                </div>
+                <div class="score-row">
+                  <div class="side"><span class="crest">MCI</span></div>
+                  <span class="score"><span class="score-digit"><span class="score-digit-roll">1</span></span><span class="dash">–</span><span class="score-digit"><span class="score-digit-roll">1</span></span></span>
+                  <div class="side"><span class="crest">LIV</span></div>
+                </div>
+                <div class="event-line tint-goal"><span class="ev-ico pen"></span>Penalty - Scored — Mohamed Salah 44'</div>
+              </div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="rig-label">Own goal — hollow ball, no celebration</div>
+        <div class="desktop-stage">
+          <div class="card-root">
+            <div class="card-assembly showing">
+              <div class="flank-left"><span class="time-only">6:16 PM</span></div>
+              <div class="synthetic-cutout"></div>
+              <div class="flank-right">
+                <div class="status-dots">
+                  <span class="status-dot football active"></span>
+                  <span class="status-dot news"></span>
+                  <span class="status-dot weather active"></span>
+                </div>
+              </div>
+              <div class="below-block"><div class="card-content"><div class="notif-block">
+                <div class="sc-head">
+                  <span class="chip chip-league">UCL</span>
+                  <span class="chip chip-live"><span class="live-dot"></span>Live</span>
+                  <span class="chip clock-pill">12'</span>
+                </div>
+                <div class="score-row">
+                  <div class="side"><span class="crest">ARS</span></div>
+                  <span class="score"><span class="score-digit"><span class="score-digit-roll">0</span></span><span class="dash">–</span><span class="score-digit"><span class="score-digit-roll">1</span></span></span>
+                  <div class="side"><span class="crest">PSG</span></div>
+                </div>
+                <div class="event-line"><span class="ev-ico og"></span>Own Goal — W. Saliba 12'</div>
+              </div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="rig-label">Yellow card — cele-yc (amber ring)</div>
+        <div class="desktop-stage">
+          <div class="card-root">
+            <div class="card-assembly showing cele-yc">
+              <div class="flank-left"><span class="time-only">6:16 PM</span></div>
+              <div class="synthetic-cutout"></div>
+              <div class="flank-right">
+                <div class="status-dots">
+                  <span class="status-dot football active"></span>
+                  <span class="status-dot news"></span>
+                  <span class="status-dot weather active"></span>
+                </div>
+              </div>
+              <div class="below-block"><div class="card-content"><div class="notif-block">
+                <div class="sc-head">
+                  <span class="chip chip-league">UCL</span>
+                  <span class="chip chip-live"><span class="live-dot"></span>Live</span>
+                  <span class="chip clock-pill">54'</span>
+                </div>
+                <div class="score-row">
+                  <div class="side"><span class="crest">ARS</span></div>
+                  <span class="score"><span class="score-digit"><span class="score-digit-roll">1</span></span><span class="dash">–</span><span class="score-digit"><span class="score-digit-roll">1</span></span></span>
+                  <div class="side"><span class="crest">PSG</span></div>
+                </div>
+                <div class="event-line tint-yc"><span class="ev-ico yc"></span>Yellow Card — B. Saka 54'</div>
+                <div class="cards-line">ARS 1Y0R · PSG 2Y0R</div>
+              </div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="rig-label">Red card — cele-rc (coral strobe)</div>
+        <div class="desktop-stage">
+          <div class="card-root">
+            <div class="card-assembly showing cele-rc">
+              <div class="flank-left"><span class="time-only">6:16 PM</span></div>
+              <div class="synthetic-cutout"></div>
+              <div class="flank-right">
+                <div class="status-dots">
+                  <span class="status-dot football active"></span>
+                  <span class="status-dot news"></span>
+                  <span class="status-dot weather active"></span>
+                </div>
+              </div>
+              <div class="below-block"><div class="card-content"><div class="notif-block">
+                <div class="sc-head">
+                  <span class="chip chip-league">UCL</span>
+                  <span class="chip chip-live"><span class="live-dot"></span>Live</span>
+                  <span class="chip clock-pill">71'</span>
+                </div>
+                <div class="score-row">
+                  <div class="side"><span class="crest">ARS</span></div>
+                  <span class="score"><span class="score-digit"><span class="score-digit-roll">1</span></span><span class="dash">–</span><span class="score-digit"><span class="score-digit-roll">1</span></span></span>
+                  <div class="side"><span class="crest">PSG</span></div>
+                </div>
+                <div class="event-line tint-rc"><span class="ev-ico rc"></span>Red Card — M. Dembélé 71'</div>
+                <div class="cards-line">ARS 1Y0R · PSG 2Y1R</div>
+              </div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="rig-label">Foul — quiet, no celebration</div>
+        <div class="desktop-stage">
+          <div class="card-root">
+            <div class="card-assembly showing">
+              <div class="flank-left"><span class="time-only">6:16 PM</span></div>
+              <div class="synthetic-cutout"></div>
+              <div class="flank-right">
+                <div class="status-dots">
+                  <span class="status-dot football active"></span>
+                  <span class="status-dot news"></span>
+                  <span class="status-dot weather active"></span>
+                </div>
+              </div>
+              <div class="below-block"><div class="card-content"><div class="notif-block">
+                <div class="sc-head">
+                  <span class="chip chip-league">UCL</span>
+                  <span class="chip chip-live"><span class="live-dot"></span>Live</span>
+                  <span class="chip clock-pill">62'</span>
+                </div>
+                <div class="score-row">
+                  <div class="side"><span class="crest">ARS</span></div>
+                  <span class="score"><span class="score-digit"><span class="score-digit-roll">1</span></span><span class="dash">–</span><span class="score-digit"><span class="score-digit-roll">1</span></span></span>
+                  <div class="side"><span class="crest">PSG</span></div>
+                </div>
+                <div class="event-line"><span class="ev-ico foul"></span>Foul — D. Rice 62'</div>
+              </div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="rig-label">Offside — quiet, no celebration</div>
+        <div class="desktop-stage">
+          <div class="card-root">
+            <div class="card-assembly showing">
+              <div class="flank-left"><span class="time-only">6:16 PM</span></div>
+              <div class="synthetic-cutout"></div>
+              <div class="flank-right">
+                <div class="status-dots">
+                  <span class="status-dot football active"></span>
+                  <span class="status-dot news"></span>
+                  <span class="status-dot weather active"></span>
+                </div>
+              </div>
+              <div class="below-block"><div class="card-content"><div class="notif-block">
+                <div class="sc-head">
+                  <span class="chip chip-league">UCL</span>
+                  <span class="chip chip-live"><span class="live-dot"></span>Live</span>
+                  <span class="chip clock-pill">55'</span>
+                </div>
+                <div class="score-row">
+                  <div class="side"><span class="crest">ARS</span></div>
+                  <span class="score"><span class="score-digit"><span class="score-digit-roll">1</span></span><span class="dash">–</span><span class="score-digit"><span class="score-digit-roll">1</span></span></span>
+                  <div class="side"><span class="crest">PSG</span></div>
+                </div>
+                <div class="event-line"><span class="ev-ico off"></span>Offside — K. Mbappé 55'</div>
+              </div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="rig-label">VAR check — quiet, no celebration</div>
+        <div class="desktop-stage">
+          <div class="card-root">
+            <div class="card-assembly showing">
+              <div class="flank-left"><span class="time-only">6:16 PM</span></div>
+              <div class="synthetic-cutout"></div>
+              <div class="flank-right">
+                <div class="status-dots">
+                  <span class="status-dot football active"></span>
+                  <span class="status-dot news"></span>
+                  <span class="status-dot weather active"></span>
+                </div>
+              </div>
+              <div class="below-block"><div class="card-content"><div class="notif-block">
+                <div class="sc-head">
+                  <span class="chip chip-league">UCL</span>
+                  <span class="chip chip-live"><span class="live-dot"></span>Live</span>
+                  <span class="chip clock-pill">67'</span>
+                </div>
+                <div class="score-row">
+                  <div class="side"><span class="crest">ARS</span></div>
+                  <span class="score"><span class="score-digit"><span class="score-digit-roll">1</span></span><span class="dash">–</span><span class="score-digit"><span class="score-digit-roll">1</span></span></span>
+                  <div class="side"><span class="crest">PSG</span></div>
+                </div>
+                <div class="event-line"><span class="ev-ico var"></span>VAR check — possible penalty 67'</div>
+              </div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="rig-label">Substitution — quiet, no celebration</div>
+        <div class="desktop-stage">
+          <div class="card-root">
+            <div class="card-assembly showing">
+              <div class="flank-left"><span class="time-only">6:16 PM</span></div>
+              <div class="synthetic-cutout"></div>
+              <div class="flank-right">
+                <div class="status-dots">
+                  <span class="status-dot football active"></span>
+                  <span class="status-dot news"></span>
+                  <span class="status-dot weather active"></span>
+                </div>
+              </div>
+              <div class="below-block"><div class="card-content"><div class="notif-block">
+                <div class="sc-head">
+                  <span class="chip chip-league">UCL</span>
+                  <span class="chip chip-live"><span class="live-dot"></span>Live</span>
+                  <span class="chip clock-pill">70'</span>
+                </div>
+                <div class="score-row">
+                  <div class="side"><span class="crest">ARS</span></div>
+                  <span class="score"><span class="score-digit"><span class="score-digit-roll">1</span></span><span class="dash">–</span><span class="score-digit"><span class="score-digit-roll">1</span></span></span>
+                  <div class="side"><span class="crest">PSG</span></div>
+                </div>
+                <div class="event-line"><span class="ev-ico sub"></span>Substitution — L. Trossard for G. Martinelli 70'</div>
+              </div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section style="border-top-color:rgba(240,196,106,0.35);">
+    <h2 style="color:#f0c46a;">⚠ proposal — the same events, through the unified shell</h2>
+    <p class="section-sub">
+      NOT current reality — see <code>prototype/proposal-unified-card.html</code>
+      for the full cross-origin version of this idea. The events above use
+      <code>LiveMatchScorecard.tsx</code>'s own <code>.notif-block</code>
+      (crests, rolling score digits, the league chip) — that's what's
+      actually shipped. This section renders EVERY event type above through
+      the generic <code>NotificationBody.tsx</code> template instead
+      (masthead + real per-signal stamp word + accent stripe + title/body/
+      facts) — the same template manual/CLI, weather, and news already use
+      today, and the exact <code>SIGNAL_STAMPS</code> word each event
+      already earns (Card/Off/Foul/Offside/VAR/Sub/Break/Final), not a
+      generic priority stamp. The goal celebration burst is real, unchanged
+      CSS (<code>choreography.css</code>) — a shell-level effect,
+      indifferent to which content template is underneath it.
+    </p>
+    <div class="rig-grid" id="proposalEventGrid"></div>
+  </section>
+
+  <section>
+    <h2>Match-state chip variants</h2>
+    <p class="section-sub">
+      The <code>chip-live</code> pill's three real variants — Live
+      (default), Break (halftime), Final (fulltime). There is no
+      "Soon"/pre-match variant: kickoff transitions straight to Live on
+      the wire, so there's nothing to render beforehand.
+    </p>
+    <div class="rig-grid">
+      <div>
+        <div class="rig-label">Half-time — chip-live.break</div>
+        <div class="desktop-stage">
+          <div class="card-root">
+            <div class="card-assembly showing">
+              <div class="flank-left"><span class="time-only">6:16 PM</span></div>
+              <div class="synthetic-cutout"></div>
+              <div class="flank-right">
+                <div class="status-dots">
+                  <span class="status-dot football active"></span>
+                  <span class="status-dot news"></span>
+                  <span class="status-dot weather active"></span>
+                </div>
+              </div>
+              <div class="below-block"><div class="card-content"><div class="notif-block">
+                <div class="sc-head">
+                  <span class="chip chip-league">EPL</span>
+                  <span class="chip chip-live break"><span class="live-dot"></span>Break</span>
+                  <span class="chip clock-pill">HT</span>
+                </div>
+                <div class="score-row">
+                  <div class="side"><span class="crest">MCI</span></div>
+                  <span class="score"><span class="score-digit"><span class="score-digit-roll">1</span></span><span class="dash">–</span><span class="score-digit"><span class="score-digit-roll">1</span></span></span>
+                  <div class="side"><span class="crest">LIV</span></div>
+                </div>
+                <div class="event-line">Half-time</div>
+              </div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <div class="rig-label">Full-time — chip-live.final (dot faded)</div>
+        <div class="desktop-stage">
+          <div class="card-root">
+            <div class="card-assembly showing">
+              <div class="flank-left"><span class="time-only">6:16 PM</span></div>
+              <div class="synthetic-cutout"></div>
+              <div class="flank-right">
+                <div class="status-dots">
+                  <span class="status-dot football active"></span>
+                  <span class="status-dot news"></span>
+                  <span class="status-dot weather active"></span>
+                </div>
+              </div>
+              <div class="below-block"><div class="card-content"><div class="notif-block">
+                <div class="sc-head">
+                  <span class="chip chip-league">La Liga</span>
+                  <span class="chip chip-live final"><span class="live-dot"></span>Final</span>
+                  <span class="chip clock-pill">FT</span>
+                </div>
+                <div class="score-row">
+                  <div class="side"><span class="crest">RMA</span></div>
+                  <span class="score"><span class="score-digit"><span class="score-digit-roll">3</span></span><span class="dash">–</span><span class="score-digit"><span class="score-digit-roll">0</span></span></span>
+                  <div class="side"><span class="crest">SEV</span></div>
+                </div>
+                <div class="event-line tint-goal"><span class="ev-ico goal"></span>Goal — Vinícius Júnior 89'</div>
+              </div></div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Interaction demo — hover the rail, then fire an event</h2>
+    <p class="section-sub">
+      <b>Hover the card.</b> Resting shows the idle rail; hovering opens
+      the compact peek. Firing an event closes the peek and swaps in the
+      full scorecard with its celebration (or, for the quiet four, no
+      celebration at all), then settles back to the idle rail after a
+      few seconds.
+    </p>
+    <div class="desktop-stage" style="padding-bottom: 40px;">
+      <div class="card-root">
+        <div class="card-assembly idle" id="demo-card">
+          <div class="flank-left"><span class="time-only">6:16 PM</span></div>
+          <div class="synthetic-cutout"></div>
           <div class="flank-right">
             <div class="status-dots">
-              <span class="status-dot football" id="fb-dot"></span>
-              <span class="status-dot news dim"></span>
-              <span class="status-dot weather"></span>
-            </div>
-          </div>
-          <div class="below-block wx-block wx-sunny wx-peek peek">
-            <div class="wx-sun"></div>
-            <div class="wx-cloud-soft"></div>
-            <div class="wx-scrim"></div>
-            <div class="wx-content">
-              <span class="wx-cond">Clear · Bangalore</span>
-              <span class="wx-temp">28°</span>
-            </div>
-          </div>
-          <div class="below-block fb-peek peek">
-            <div class="notif-block">
-              <div class="sc-head">
-                <span class="chip chip-league">UCL</span>
-                <span class="chip chip-live" id="fb-pill"><span class="live-dot"></span>Live</span>
-                <span class="clock-pill" id="fb-clock">78'</span>
-              </div>
-              <div class="score-row">
-                <div class="side"><span class="crest">ARS</span><span class="side-name">Arsenal</span></div>
-                <span class="score" id="fb-score">1<span class="dash">–</span>1</span>
-                <div class="side"><span class="crest">PSG</span><span class="side-name">Paris</span></div>
-              </div>
-              <div class="event-line" id="fb-event"><span class="ev-ico goal"></span>Goal — K. Havertz 78'</div>
-              <div class="cards-line" id="fb-cards">ARS 0Y1R · PSG 2Y0R</div>
+              <span class="status-dot football active" id="demo-dot"></span>
+              <span class="status-dot news"></span>
+              <span class="status-dot weather active"></span>
             </div>
           </div>
         </div>
       </div>
-      <div class="controls">
-        <span class="controls-label">Match</span>
-        <button id="btn-approach" onclick="fbApproach()">Match approaching (T-30)</button>
-        <button id="btn-preempt" onclick="fbPreempt()" disabled>High-priority push</button>
-        <button id="btn-pause" onclick="fbPause()" disabled>Pause football</button>
-        <button id="btn-ft" onclick="fbFullTime()" disabled>Full-time</button>
-        <span class="controls-label">Events — big three celebrate, 043 opens quietly</span>
-        <button class="ev-btn" data-ev="goal" onclick="fbEvent('goal')" disabled>Goal</button>
-        <button class="ev-btn" data-ev="pen" onclick="fbEvent('pen')" disabled>Penalty</button>
-        <button class="ev-btn" data-ev="og" onclick="fbEvent('og')" disabled>Own goal</button>
-        <button class="ev-btn" data-ev="yc" onclick="fbEvent('yc')" disabled>Yellow</button>
-        <button class="ev-btn" data-ev="rc" onclick="fbEvent('rc')" disabled>Red</button>
-        <button class="ev-btn" data-ev="foul" onclick="fbEvent('foul')" disabled>Foul</button>
-        <button class="ev-btn" data-ev="off" onclick="fbEvent('off')" disabled>Offside</button>
-        <button class="ev-btn" data-ev="var" onclick="fbEvent('var')" disabled>VAR</button>
-        <button class="ev-btn" data-ev="sub" onclick="fbEvent('sub')" disabled>Sub</button>
-      </div>
-      <p class="status-line" id="fb-status">No match today. <b>Hover the rail</b> — you get the weather peek. Click "Match approaching" to bring football in.</p>
     </div>
+    <!-- the two below-block variants live in a <template> — StatusRailCard
+         itself only ever mounts ONE below-block at a time (idle-peek OR
+         the showing scorecard, never both), and the real ROUNDING LAW
+         (card-chrome.css) keys off actual DOM presence via `:has(.below-
+         block)`. Keeping both permanently in the DOM and toggling
+         `display: none` would leave `:has()` matching even while nothing
+         is visibly open — a demo-only bug the real card can't have,
+         since it never mounts a below-block it isn't using. `<template>`
+         content is inert (not in the live DOM) until cloned. -->
+    <template id="demo-peek-tpl">
+      <div class="below-block idle-peek" id="demo-peek">
+        <div class="peek-content">
+          <div class="idle-reveal-scorecard">
+            <div class="sc-head">
+              <span class="chip chip-live"><span class="live-dot"></span>Live</span>
+              <span class="chip clock-pill" id="demo-peek-clock">70'</span>
+            </div>
+            <div class="idle-reveal-label" id="demo-peek-label">Arsenal 1-1 PSG</div>
+          </div>
+          <span class="idle-peek-timeline" style="--day-progress:78%"></span>
+        </div>
+      </div>
+    </template>
+    <template id="demo-scorecard-tpl">
+      <div class="below-block" id="demo-scorecard">
+        <div class="card-content"><div class="notif-block">
+          <div class="sc-head">
+            <span class="chip chip-league">UCL</span>
+            <span class="chip chip-live" id="demo-pill"><span class="live-dot"></span>Live</span>
+            <span class="chip clock-pill" id="demo-clock">70'</span>
+          </div>
+          <div class="score-row">
+            <div class="side"><span class="crest">ARS</span></div>
+            <span class="score" id="demo-score"><span class="score-digit"><span class="score-digit-roll">1</span></span><span class="dash">–</span><span class="score-digit"><span class="score-digit-roll">1</span></span></span>
+            <div class="side"><span class="crest">PSG</span></div>
+          </div>
+          <div class="event-line" id="demo-event">Kickoff</div>
+          <div class="cards-line" id="demo-cards" style="display:none;"></div>
+        </div></div>
+      </div>
+    </template>
+    <div class="controls">
+      <span class="controls-label">Events — big three celebrate, the rest open quietly</span>
+      <button data-ev="goal" onclick="fireEvent('goal')">Goal</button>
+      <button data-ev="pen" onclick="fireEvent('pen')">Penalty</button>
+      <button data-ev="og" onclick="fireEvent('og')">Own goal</button>
+      <button data-ev="yc" onclick="fireEvent('yc')">Yellow</button>
+      <button data-ev="rc" onclick="fireEvent('rc')">Red</button>
+      <button data-ev="foul" onclick="fireEvent('foul')">Foul</button>
+      <button data-ev="off" onclick="fireEvent('off')">Offside</button>
+      <button data-ev="var" onclick="fireEvent('var')">VAR</button>
+      <button data-ev="sub" onclick="fireEvent('sub')">Sub</button>
+    </div>
+    <p class="status-line" id="demo-status">
+      <b>Hover the card</b> to open the resting peek, or fire an event to promote it straight to the full scorecard.
+    </p>
   </section>
 
   <footer>
-    Model locked with the operator (2026-07-20): sticky medium-priority
-    presence; hover = compact only; expansion is event-driven — goal /
-    penalty / own-goal / yellow / red celebrate, plan 043's fouls /
-    offsides / VAR / subs expand quietly; paused → weather peek;
-    preemptible, returns; no queue track. Plan 043 is looped in as the
-    data source for the four new event types (item 6a backend:
-    <code>summary</code> → <code>/competitions/{id}/plays</code>
-    fallback, confirmed against a live World Cup final). Still open:
-    item 4 wire shape (structured fields assumed here), crest
-    fetch/cache/embed (item 3 backend), real crest art, which 043
-    events are card-worthy vs scorecard-only, and per-event dwell time
-    before settling back to the rail.
+    Static HTML/CSS mock of <code>src/components/StatusRailCard.tsx</code> +
+    <code>src/components/LiveMatchScorecard.tsx</code> +
+    <code>src/components/IdleHoverPeek.tsx</code>, styled from
+    <code>src/overlay/card-chrome.css</code>,
+    <code>src/overlay/choreography.css</code>,
+    <code>src/overlay/live-scorecard.css</code>, and
+    <code>src/overlay/idle-peek.css</code>. Not wired into the build —
+    a hand-maintained reference, so it can drift if those files change
+    without this one being updated alongside them.
+    <ul>
+      <li>Corrected from the previous version of this file: the resting
+        hover state does NOT show crests or a score — the ambient
+        <code>status.football.live</code> summary the rust core polls
+        only carries a label string and a minute string
+        (<code>useStatusState.ts</code>'s <code>LiveMatchSummary</code>),
+        so <code>IdleHoverPeek.tsx</code> can't render more than that.</li>
+      <li>Corrected: there is no <code>.side-name</code> team-name label
+        under a crest anywhere in the shipped scorecard — only the crest
+        itself (image, or the text-abbrev fallback shown throughout this
+        mock, matching what renders when no cached crest image exists).</li>
+      <li>Corrected: the clock-pill span carries both
+        <code>chip</code> and <code>clock-pill</code> classes in the real
+        component, not <code>clock-pill</code> alone.</li>
+      <li>Corrected: there is no pre-match "Soon" state — removed rather
+        than kept as a labeled proposal, since no wire signal exists for
+        it today.</li>
+      <li>Simplified: score digits render at rest here; the real
+        component rolls each digit through a small vertical clip on
+        change (<code>ScoreDigit</code> in <code>LiveMatchScorecard.tsx</code>,
+        via <code>motion/react</code>) — the DOM shape
+        (<code>.score-digit</code>/<code>.score-digit-roll</code>) is
+        reproduced, the roll animation is not.</li>
+      <li>Simplified: the hover "breathe" here uses real CSS
+        <code>:hover</code>; the shipped card drives it off a rust-derived
+        tracking-area signal instead, since the real overlay window is
+        click-through and never receives pointer events.</li>
+    </ul>
   </footer>
 </main>
 
 <script>
-  const rig = document.getElementById('fb-rig');
-  const status = document.getElementById('fb-status');
-  const score = document.getElementById('fb-score');
-  const clock = document.getElementById('fb-clock');
-  const eventLine = document.getElementById('fb-event');
-  const cardsLine = document.getElementById('fb-cards');
-  const btns = {
-    approach: document.getElementById('btn-approach'),
-    preempt: document.getElementById('btn-preempt'),
-    pause: document.getElementById('btn-pause'),
-    ft: document.getElementById('btn-ft'),
-  };
-  const evBtns = Array.from(document.querySelectorAll('.ev-btn'));
-  let paused = false, showTimer = null;
+  const card = document.getElementById('demo-card');
+  const status = document.getElementById('demo-status');
+  const peekTpl = document.getElementById('demo-peek-tpl');
+  const scorecardTpl = document.getElementById('demo-scorecard-tpl');
+  let peek = null;
+  let scorecard = null;
+  let settleTimer = null;
 
-  const EVENTS = {
-    goal: { ico: 'goal', tint: 'tint-goal', text: 'Goal — K. Havertz 78\'',  clock: "78'", glow: 'cele-goal', score: '2<span class="dash">–</span>1', cards: 'ARS 0Y1R · PSG 2Y0R',
-            msg: '<b>Goal!</b> Green celebration — settles back to the rail in 4s. Football itself <b>stays</b>.' },
-    pen:  { ico: 'pen',  tint: 'tint-goal', text: 'Penalty - Scored — Mohamed Salah 44\'', clock: "44'", glow: 'cele-goal', score: '1<span class="dash">–</span>1', cards: 'ARS 0Y1R · PSG 2Y0R',
-            msg: '<b>Penalty scored.</b> Counts as a goal — same green celebration.' },
-    og:   { ico: 'og',   tint: '',          text: 'Own Goal — W. Saliba 12\'', clock: "12'", glow: '', score: '0<span class="dash">–</span>1', cards: 'ARS 0Y1R · PSG 2Y0R',
-            msg: '<b>Own goal.</b> Score updates, no celebration — hollow-ball icon.' },
-    yc:   { ico: 'yc',   tint: 'tint-yc',   text: 'Yellow Card — B. Saka 54\'', clock: "54'", glow: 'cele-yc', score: '1<span class="dash">–</span>1', cards: 'ARS 1Y1R · PSG 2Y0R',
-            msg: '<b>Yellow card.</b> Amber ring — the per-side cards line ticks up.' },
-    rc:   { ico: 'rc',   tint: 'tint-rc',   text: 'Red Card — M. Dembélé 71\'', clock: "71'", glow: 'cele-rc', score: '1<span class="dash">–</span>1', cards: 'ARS 1Y1R · PSG 2Y1R',
-            msg: '<b>Red card.</b> Coral strobe — echoes the shipped pulse-red.' },
-    foul: { ico: 'foul', tint: '',          text: 'Foul — D. Rice 62\'', clock: "62'", glow: '', score: '1<span class="dash">–</span>1', cards: 'ARS 1Y1R · PSG 2Y0R',
-            msg: '<b>Foul</b> (plan 043 data) — opens quietly, no celebration.' },
-    off:  { ico: 'off',  tint: '',          text: 'Offside — K. Mbappé 55\'', clock: "55'", glow: '', score: '1<span class="dash">–</span>1', cards: 'ARS 1Y1R · PSG 2Y0R',
-            msg: '<b>Offside</b> (plan 043 data) — opens quietly.' },
-    var:  { ico: 'var',  tint: '',          text: 'VAR check — possible penalty 67\'', clock: "67'", glow: '', score: '1<span class="dash">–</span>1', cards: 'ARS 1Y1R · PSG 2Y0R',
-            msg: '<b>VAR check</b> (plan 043 data) — opens quietly. The decision, when it comes, arrives as its own event.' },
-    sub:  { ico: 'sub',  tint: '',          text: 'Substitution — L. Trossard for G. Martinelli 70\'', clock: "70'", glow: '', score: '1<span class="dash">–</span>1', cards: 'ARS 1Y1R · PSG 2Y0R',
-            msg: '<b>Substitution</b> (plan 043 data) — opens quietly.' },
-  };
-
-  function setFb(phase, msg) {
-    rig.setAttribute('data-fb', phase);
-    status.innerHTML = msg;
+  // Mounts exactly one below-block at a time (or none), by real DOM
+  // insertion/removal — matches StatusRailCard.tsx, which never mounts
+  // both an idle-peek and the showing scorecard simultaneously, and lets
+  // the CSS `:not(:has(.below-block))` rounding law above key off actual
+  // DOM presence, same as the real card.
+  function showPeek() {
+    if (scorecard) return;
+    if (!peek) {
+      peek = peekTpl.content.firstElementChild.cloneNode(true);
+      card.appendChild(peek);
+    }
   }
-  function setButtons(state) {
-    btns.approach.disabled = state !== 'off';
-    btns.preempt.disabled = state === 'off';
-    btns.pause.disabled = state === 'off';
-    btns.pause.textContent = paused ? 'Resume football' : 'Pause football';
-    btns.ft.disabled = state === 'off';
-    evBtns.forEach(b => b.disabled = state === 'off' || paused);
+  function hidePeek() {
+    if (peek) {
+      peek.remove();
+      peek = null;
+    }
   }
-
-  function fbApproach() {
-    paused = false;
-    setButtons('live');
-    setFb('live', 'Football is <b>present</b>. Resting = rail — <b>hover it</b> for the compact scorecard. Fire any event below.');
+  function showScorecard() {
+    hidePeek();
+    if (!scorecard) {
+      scorecard = scorecardTpl.content.firstElementChild.cloneNode(true);
+      card.appendChild(scorecard);
+    }
+    return scorecard;
   }
-
-  function fbEvent(kind) {
-    const ev = EVENTS[kind];
-    clearTimeout(showTimer);
-    score.innerHTML = ev.score;
-    clock.textContent = ev.clock;
-    cardsLine.textContent = ev.cards;
-    eventLine.className = 'event-line' + (ev.tint ? ' ' + ev.tint : '');
-    eventLine.innerHTML = '<span class="ev-ico ' + ev.ico + '"></span>' + ev.text;
-    rig.classList.remove('cele-goal', 'cele-yc', 'cele-rc');
-    void rig.offsetWidth;
-    if (ev.glow) rig.classList.add(ev.glow);
-    setButtons('live');
-    setFb('showing', ev.msg);
-    showTimer = setTimeout(() => {
-      setFb('live', 'Back to resting rail — still live, still sticky. <b>Hover</b> to see the current state.');
-    }, 4000);
-  }
-
-  function fbPreempt() {
-    clearTimeout(showTimer);
-    setFb('off', '<b>Preempted</b> — a higher-priority item owns the slot. Hover shows weather, not football. It comes back…');
-    setButtons('off');
-    setTimeout(() => {
-      if (rig.getAttribute('data-fb') === 'off' && !paused) {
-        setButtons('live');
-        setFb('live', 'The high-priority item rotated out — <b>football is back</b>. It never lost its place.');
-      }
-    }, 4000);
-  }
-
-  function fbPause() {
-    paused = !paused;
-    setButtons('live');
-    if (paused) {
-      setFb('paused', 'Football <b>paused</b> — dot dimmed. <b>Hover</b>: weather peek again.');
-    } else {
-      setFb('live', 'Football <b>resumed</b> — hover shows the scorecard again.');
+  function hideScorecard() {
+    if (scorecard) {
+      scorecard.remove();
+      scorecard = null;
     }
   }
 
-  function fbFullTime() {
-    clearTimeout(showTimer);
-    paused = false;
-    rig.classList.remove('cele-goal', 'cele-yc', 'cele-rc');
-    score.innerHTML = '1<span class="dash">–</span>1';
-    clock.textContent = "78'";
-    cardsLine.textContent = 'ARS 0Y1R · PSG 2Y0R';
-    eventLine.className = 'event-line';
-    eventLine.innerHTML = '<span class="ev-ico goal"></span>Goal — K. Havertz 78\'';
-    setButtons('off');
-    setFb('off', '<b>Full-time.</b> Result shows once as a normal rotation item, then football retires — back to plain idle. Hover: weather.');
+  const EVENTS = {
+    goal: { ico: 'goal', tint: 'tint-goal', cele: 'cele-goal', text: "Goal — K. Havertz 78'", clock: "78'", score: ['2', '1'], cards: 'ARS 0Y1R · PSG 2Y0R',
+            msg: '<b>Goal.</b> cele-goal plays on .card-assembly (green glow + ring, 1800ms).' },
+    pen:  { ico: 'pen', tint: 'tint-goal', cele: 'cele-goal', text: "Penalty - Scored — Mohamed Salah 44'", clock: "44'", score: ['1', '1'], cards: 'ARS 0Y1R · PSG 2Y0R',
+            msg: '<b>Penalty scored.</b> Counts as a goal — same cele-goal family.' },
+    og:   { ico: 'og', tint: '', cele: '', text: "Own Goal — W. Saliba 12'", clock: "12'", score: ['0', '1'], cards: 'ARS 0Y1R · PSG 2Y0R',
+            msg: '<b>Own goal.</b> Score updates, no celebration class applied.' },
+    yc:   { ico: 'yc', tint: 'tint-yc', cele: 'cele-yc', text: "Yellow Card — B. Saka 54'", clock: "54'", score: ['1', '1'], cards: 'ARS 1Y1R · PSG 2Y0R',
+            msg: '<b>Yellow card.</b> cele-yc — amber ring only, no glow/strobe.' },
+    rc:   { ico: 'rc', tint: 'tint-rc', cele: 'cele-rc', text: "Red Card — M. Dembélé 71'", clock: "71'", score: ['1', '1'], cards: 'ARS 1Y1R · PSG 2Y1R',
+            msg: '<b>Red card.</b> cele-rc — two-pulse coral strobe.' },
+    foul: { ico: 'foul', tint: '', cele: '', text: "Foul — D. Rice 62'", clock: "62'", score: ['1', '1'], cards: 'ARS 1Y1R · PSG 2Y0R',
+            msg: '<b>Foul.</b> Opens the scorecard quietly, no celebration.' },
+    off:  { ico: 'off', tint: '', cele: '', text: "Offside — K. Mbappé 55'", clock: "55'", score: ['1', '1'], cards: 'ARS 1Y1R · PSG 2Y0R',
+            msg: '<b>Offside.</b> Opens quietly.' },
+    var:  { ico: 'var', tint: '', cele: '', text: "VAR check — possible penalty 67'", clock: "67'", score: ['1', '1'], cards: 'ARS 1Y1R · PSG 2Y0R',
+            msg: '<b>VAR check.</b> Opens quietly.' },
+    sub:  { ico: 'sub', tint: '', cele: '', text: "Substitution — L. Trossard for G. Martinelli 70'", clock: "70'", score: ['1', '1'], cards: 'ARS 1Y1R · PSG 2Y0R',
+            msg: '<b>Substitution.</b> Opens quietly.' },
+  };
+
+  function fireEvent(kind) {
+    const ev = EVENTS[kind];
+    clearTimeout(settleTimer);
+    card.classList.remove('idle');
+    card.classList.add('showing');
+    const sc = showScorecard();
+    const score = sc.querySelector('#demo-score');
+    const clock = sc.querySelector('#demo-clock');
+    const eventLine = sc.querySelector('#demo-event');
+    const cardsLine = sc.querySelector('#demo-cards');
+    score.innerHTML =
+      '<span class="score-digit"><span class="score-digit-roll">' + ev.score[0] + '</span></span>' +
+      '<span class="dash">–</span>' +
+      '<span class="score-digit"><span class="score-digit-roll">' + ev.score[1] + '</span></span>';
+    clock.textContent = ev.clock;
+    cardsLine.textContent = ev.cards;
+    cardsLine.style.display = kind === 'yc' || kind === 'rc' ? '' : 'none';
+    eventLine.className = 'event-line' + (ev.tint ? ' ' + ev.tint : '');
+    eventLine.innerHTML = '<span class="ev-ico ' + ev.ico + '"></span>' + ev.text;
+    card.classList.remove('cele-goal', 'cele-yc', 'cele-rc');
+    void card.offsetWidth;
+    if (ev.cele) card.classList.add(ev.cele);
+    status.innerHTML = ev.msg + ' Settles back to the idle rail in 4s.';
+    settleTimer = setTimeout(() => {
+      card.classList.remove('showing', 'cele-goal', 'cele-yc', 'cele-rc');
+      card.classList.add('idle');
+      hideScorecard();
+      if (card.matches(':hover')) showPeek();
+      status.innerHTML = 'Back to the idle rail — football stays sticky, still live. <b>Hover</b> to see the current state.';
+    }, 4000);
   }
 
-  setButtons('off');
+  card.addEventListener('mouseenter', () => {
+    if (!scorecard) showPeek();
+  });
+  card.addEventListener('mouseleave', () => {
+    if (!scorecard) hidePeek();
+  });
+</script>
+
+<script>
+  // ---- proposal section: every real event type, through the unified template ----
+  // stamp words are SIGNAL_STAMPS verbatim (status-rail.html's own mirror of
+  // lib/presentation.ts) — each event's REAL stamp word, not a generic
+  // priority-based one.
+  (function () {
+    // plan 170: match = the score-row's own data (league, clock, live-state
+    // variant, both sides' abbrev + score, disciplinary tally) — kept
+    // separate from the event's own title/body/facts, since it's an
+    // ADDITIVE block, not part of the unified template proper. Titles are
+    // now short event descriptions (never embedding the score — the
+    // score-row says that) matching plan 170's resolution of its own open
+    // design question.
+    var EVENTS = [
+      { key: "goal", stamp: "Live", priority: "high", celebrate: true, title: "Goal — J. Marquez", body: "Finishes a quick counter from the edge of the box.", facts: [{ label: "", value: "J. Marquez (63')", tone: "accent" }, { label: "", value: "T. Okafor", tone: "accent" }],
+        match: { league: "UCL", clock: "63'", variant: "live", home: "HCT", away: "RVT", homeScore: 2, awayScore: 1, cardsClean: true } },
+      { key: "penalty_scored", stamp: "Live", priority: "high", celebrate: true, title: "Penalty scored — M. Salah", body: "Sends the keeper the wrong way.", facts: [{ label: "", value: "M. Salah (44' pen)", tone: "accent" }],
+        match: { league: "EPL", clock: "44'", variant: "live", home: "MCI", away: "LIV", homeScore: 1, awayScore: 1, cardsClean: true } },
+      { key: "own_goal", stamp: "Live", priority: "high", celebrate: false, title: "Own goal — W. Saliba", body: "Turns a cross into his own net.", facts: [{ label: "Own goal", value: "W. Saliba", tag: "unlucky", tone: "danger" }],
+        match: { league: "UCL", clock: "12'", variant: "live", home: "ARS", away: "PSG", homeScore: 0, awayScore: 1, cardsClean: true } },
+      { key: "yellow_card", stamp: "Card", priority: "medium", celebrate: false, title: "Yellow card — B. Saka", body: null, facts: [{ label: "Booking", value: "Yellow", tag: "caution", tone: "accent" }],
+        match: { league: "UCL", clock: "54'", variant: "live", home: "ARS", away: "PSG", homeScore: 1, awayScore: 1, cardsClean: false, homeCards: [1, 0], awayCards: [0, 0] } },
+      { key: "red_card", stamp: "Off", priority: "high", celebrate: false, title: "Red card — M. Dembélé", body: null, facts: [{ label: "Booking", value: "Red", tag: "sent off", tone: "danger" }],
+        match: { league: "UCL", clock: "71'", variant: "live", home: "ARS", away: "PSG", homeScore: 1, awayScore: 1, cardsClean: false, homeCards: [1, 0], awayCards: [1, 1] } },
+      { key: "foul", stamp: "Foul", priority: "low", celebrate: false, title: "Foul — D. Rice", body: null, facts: [],
+        match: { league: "UCL", clock: "62'", variant: "live", home: "ARS", away: "PSG", homeScore: 1, awayScore: 1, cardsClean: true } },
+      { key: "offside", stamp: "Offside", priority: "low", celebrate: false, title: "Offside — K. Mbappé", body: null, facts: [],
+        match: { league: "UCL", clock: "55'", variant: "live", home: "ARS", away: "PSG", homeScore: 1, awayScore: 1, cardsClean: true } },
+      { key: "var_check", stamp: "VAR", priority: "low", celebrate: false, title: "VAR check — possible penalty", body: null, facts: [],
+        match: { league: "UCL", clock: "67'", variant: "live", home: "ARS", away: "PSG", homeScore: 1, awayScore: 1, cardsClean: true } },
+      { key: "substitution", stamp: "Sub", priority: "low", celebrate: false, title: "Substitution — Harbor City", body: null, facts: [{ label: "Off", value: "L. Trossard", tone: "accent" }, { label: "On", value: "G. Martinelli", tone: "accent" }],
+        match: { league: "Premier Division", clock: "70'", variant: "live", home: "HCT", away: "RVT", homeScore: 2, awayScore: 1, cardsClean: true } },
+      { key: "halftime", stamp: "Break", priority: "medium", celebrate: false, title: "Half-time", body: null, facts: [],
+        match: { league: "UCL", clock: "HT", variant: "break", home: "ARS", away: "PSG", homeScore: 1, awayScore: 1, cardsClean: false, homeCards: [1, 0], awayCards: [1, 1] } },
+      { key: "fulltime", stamp: "Final", priority: "medium", celebrate: false, title: "Full-time", body: null, facts: [],
+        match: { league: "Premier Division", clock: "FT", variant: "final", home: "HCT", away: "RVT", homeScore: 3, awayScore: 2, cardsClean: true } },
+    ];
+
+    function esc(s) { return String(s == null ? "" : s); }
+    function factsHtml(facts) {
+      if (!facts || facts.length === 0) return "";
+      return '<div class="detail-facts">' + facts.map(function (d) {
+        var toneClass = d.tone ? " tone-" + d.tone : "";
+        var label = d.label ? '<span class="fp-label">' + d.label + "</span>" : "";
+        var tag = d.tag ? '<span class="fp-tag">' + d.tag + "</span>" : "";
+        return '<span class="fact-pill' + toneClass + '">' + label + d.value + tag + "</span>";
+      }).join("") + "</div>";
+    }
+    // plan 170: the additive score-block — league/state/clock chips +
+    // crests + score, ported close to verbatim from LiveMatchScorecard.tsx
+    // (real markup: Crest falls back to the team abbrev as plain text when
+    // no crest image is cached, ScoreDigit is normally an animated
+    // odometer roll — this static mock just renders the resting digit).
+    function scoreBlockHtml(m) {
+      var pillClass = "chip chip-live" + (m.variant === "live" ? "" : " " + m.variant);
+      var pillLabel = m.variant === "live" ? "Live" : m.variant === "break" ? "Break" : "Final";
+      var cardsLine = !m.cardsClean
+        ? '<div class="cards-line">' + m.home + " " + m.homeCards[0] + "Y" + m.homeCards[1] + "R · " + m.away + " " + m.awayCards[0] + "Y" + m.awayCards[1] + "R</div>"
+        : "";
+      return '<div class="score-block">' +
+        '<div class="sc-head"><span class="chip chip-league">' + esc(m.league) + '</span>' +
+        '<span class="' + pillClass + '"><span class="live-dot"></span>' + pillLabel + "</span>" +
+        '<span class="chip clock-pill">' + esc(m.clock) + "</span></div>" +
+        '<div class="score-row">' +
+        '<div class="side"><span class="crest">' + esc(m.home) + "</span></div>" +
+        '<span class="score"><span class="score-digit"><span class="score-digit-roll">' + m.homeScore + '</span></span><span class="dash">–</span><span class="score-digit"><span class="score-digit-roll">' + m.awayScore + "</span></span></span>" +
+        '<div class="side"><span class="crest">' + esc(m.away) + "</span></div>" +
+        "</div>" + cardsLine + "</div>";
+    }
+
+    var grid = document.getElementById("proposalEventGrid");
+    EVENTS.forEach(function (e) {
+      var wrap = document.createElement("div");
+      wrap.innerHTML =
+        '<div class="rig-label">' + e.key + (e.celebrate ? ' <span class="tag">celebration</span>' : "") + "</div>" +
+        '<div class="desktop-stage"><div class="card-root">' +
+        '<div class="card-assembly showing ' + e.priority + (e.celebrate ? " cele-goal" : "") + '">' +
+        '<div class="flank-left"><span class="time-only">6:16 PM</span></div><div class="synthetic-cutout"></div>' +
+        '<div class="flank-right"><div class="status-dots"><span class="status-dot football active"></span><span class="status-dot news"></span><span class="status-dot weather active"></span></div></div>' +
+        '<div class="below-block origin-wash src-football"><div class="card-content"><div class="compact">' +
+        '<div class="masthead-row"><div class="masthead"><span class="dot"></span>football</div><div class="stamp">' + e.stamp + "</div></div>" +
+        '<div class="title headline">' + esc(e.title) + "</div>" +
+        (e.body ? '<div class="notif-body">' + e.body + "</div>" : "") +
+        factsHtml(e.facts) + scoreBlockHtml(e.match) + "</div></div></div></div></div></div>";
+      grid.appendChild(wrap);
+    });
+  })();
 </script>
 </body>
 </html>

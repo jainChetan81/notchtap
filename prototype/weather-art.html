@@ -1,311 +1,568 @@
 <!doctype html>
-<!-- Weather-art gallery: Meteocons static fill SVGs (MIT, vendored in
-     prototype/assets/weather/) on CSS-gradient mood backdrops. Companion
-     to notch-states.html — same .below-block wx-block card shape, real
-     condition glyphs instead of the CSS blob stand-ins. -->
+<!-- Weather art mirror: markup/CSS built to match the shipped overlay's
+     weather-origin surfaces, not a design exploration that preceded them.
+     Still a standalone static file (no build step, no imported stylesheets)
+     — this is a hand-authored REPRODUCTION of the real classes/structure,
+     not a literal include of the app's CSS.
+
+     Source of truth this was built from (re-sync by hand if these move):
+       src/components/StatusRailCard.tsx   — the promoted weather ALERT card
+       src/components/IdleHoverPeek.tsx    — idle hover-peek backdrop/readout/forecast strip
+       src/components/NotificationBody.tsx — masthead/title/body/details markup the ALERT card uses
+       src/overlay/weather-art.css         — mood gradients, glyph, rain/snow drift animations
+       src/overlay/card-chrome.css         — shell geometry, priority accent vars
+       src/overlay/masthead-content.css    — .compact / .title / .notif-body / .compact-hint / .stamp
+       src/overlay/news-category.css       — .masthead-row / .masthead .dot / .chip
+       src/overlay/idle-peek.css           — .wx-peek-* / .wx-forecast-* / .media-* / .idle-peek-timeline
+       src/overlay/source-identity.css     — .src-weather's --cat (amber)
+       src/overlay/ttl-bar.css             — the floor countdown strip
+       src/lib/weatherArt.ts               — condition -> (glyph, mood class, texture class) table
+       src-tauri/src/weather_poller.rs     — real alert titles/bodies (RAIN_ALERT_TITLE etc.)
+       vendor/shared-ui/design/tokens.css  — --overlay-teal/-amber/-coral/-fg hexes
+     Last hand-synced against those files: 2026-07-30.
+
+     Glyphs are Meteocons static-fill SVGs (MIT, Bas Milius), vendored at
+     prototype/assets/weather/ — byte-identical to src/assets/weather/, see
+     that directory's own NOTICE file for full attribution. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Weather art — condition set (Meteocons + CSS moods)</title>
+<title>Weather art — shipped overlay mirror</title>
 <style>
-  :root { --bg: #101318; --ink: #e8ecf1; --dim: #8b95a3; --rule: rgba(255,255,255,0.09); --accent: #7fe08d; }
+  :root {
+    --bg: #101318; --ink: #e8ecf1; --dim: #8b95a3; --rule: rgba(255,255,255,0.09);
+    /* ---- real overlay tokens, ported from vendor/shared-ui/design/tokens.css ---- */
+    --overlay-fg: #f5f7fa;
+    --overlay-teal: #55d6bd;
+    --overlay-coral: #ff6b57;
+    --overlay-green: #7fe08d;
+    --overlay-amber: #f0c46a;
+    --overlay-blue: #0a84ff;
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+    --card-radius: 8px;
+  }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; padding: 44px 24px 100px; }
-  main { max-width: 1080px; margin: 0 auto; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-sans); padding: 44px 24px 100px; }
+  main { max-width: 1100px; margin: 0 auto; }
   h1 { font-size: 21px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
-  .lede { color: var(--dim); font-size: 13px; line-height: 1.6; max-width: 66ch; margin: 0 0 36px; }
-  code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; color: #9fc3e8; }
-  section { margin-bottom: 44px; padding-top: 24px; border-top: 1px solid var(--rule); }
+  .lede { color: var(--dim); font-size: 13px; line-height: 1.6; max-width: 74ch; margin: 0 0 36px; }
+  code { font-family: var(--font-mono); color: #9fc3e8; }
+  section { margin-bottom: 48px; padding-top: 24px; border-top: 1px solid var(--rule); }
   h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); margin: 0 0 4px; }
-  .section-sub { font-size: 12px; color: var(--dim); margin: 0 0 18px; max-width: 62ch; line-height: 1.5; }
-  .rig-label { font: 700 10px/1 ui-monospace, monospace; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); margin: 0 0 8px; }
-
-  .card-grid { display: flex; flex-wrap: wrap; gap: 22px; }
-
-  /* --- weather card: same shape as .below-block in notch-states.html —
-     320px wide, black base, square top (it would dock under the notch
-     flanks), 14px bottom rounding, mood gradient painted over the black. --- */
-  .wx-card {
-    position: relative; width: 320px; min-height: 92px; overflow: hidden;
-    background: #000; color: #f5f7fa; box-shadow: 0 14px 28px rgba(0,0,0,0.5);
-    border-bottom-left-radius: 14px; border-bottom-right-radius: 14px;
-    padding: 10px 16px 14px;
+  .section-sub { font-size: 12px; color: var(--dim); margin: 0 0 18px; max-width: 68ch; line-height: 1.55; }
+  .rig-label { font: 700 10px/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); margin: 0 0 8px; }
+  .card-grid { display: flex; flex-wrap: wrap; gap: 26px; align-items: flex-start; }
+  .sync-note {
+    background: #1c2a1f; color: #cfe8d4; padding: 7px 14px;
+    font: 12px/1.5 var(--font-mono); border-bottom: 1px solid #2f4a36;
   }
+
+  /* ============================================================
+     the notch shell: a hand-built stand-in for .card-assembly's
+     CSS-grid geometry (card-chrome.css) — flank-left/flank-right
+     either side of a fixed-width cutout, both black; whatever's
+     underneath (.below-block) carries the content and owns the
+     bottom rounding. Fixed pixel widths here instead of the real
+     clamp()/var() formulas, computed once for scale=1: showing
+     (not idle, not expanded) resolves to 400px total / 200px
+     cutout / 100px per flank; idle resolves to 370px total / 200px
+     cutout / 85px per flank (card-chrome.css's own .idle rule).
+     ============================================================ */
+  .notch-shell { width: 400px; filter: drop-shadow(0 7px 18px rgba(0,0,0,0.5)); }
+  .notch-shell.idle-width { width: 370px; }
+  .flanks-row { display: flex; align-items: center; height: 32px; }
+  .flank { flex: 1 1 0; background: #000; color: var(--overlay-fg); display: flex; align-items: center; min-width: 0; }
+  .flank-left { justify-content: flex-start; padding-left: 16px; }
+  .flank-right { justify-content: flex-end; padding-right: 16px; gap: 8px; }
+  .cutout { flex: none; width: 200px; height: 100%; background: #000; }
+  .time-only { font: 700 12px/1 var(--font-mono); letter-spacing: 0.02em; }
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; background: rgba(255,255,255,0.22); }
+  .status-dot.on { background: var(--overlay-green); box-shadow: 0 0 6px var(--overlay-green); }
+  .status-dot.on.wx { background: var(--overlay-amber); box-shadow: 0 0 6px var(--overlay-amber); }
+
+  /* priority accent vars — card-chrome.css's .card-assembly.low/.medium/.high,
+     read by .compact::before and .stamp below. Weather alerts observed at
+     "medium" (GENERIC_PRIORITY_STAMPS -> "Done", lib/presentation.ts). */
+  .notch-shell.medium { --accent: var(--overlay-teal); --accent-soft: rgba(85,214,189,0.24); }
+  .notch-shell.low    { --accent: #aab3bd;             --accent-soft: rgba(170,179,189,0.2); }
+  .notch-shell.high   { --accent: var(--overlay-coral); --accent-soft: rgba(255,107,87,0.28); }
+
+  /* ============================================================
+     .below-block — weather-art.css's z-order discipline: a mood
+     layer + a texture layer sit at the back, real content (.compact)
+     sits above at a higher stacking position, the condition glyph
+     rides at the SAME back tier as the mood/texture (StatusRailCard
+     renders it as a sibling image, not part of .compact).
+     ============================================================ */
+  .below-block {
+    position: relative; overflow: hidden; width: 100%;
+    background: #000; color: var(--overlay-fg);
+    border-bottom-left-radius: var(--card-radius);
+    border-bottom-right-radius: var(--card-radius);
+  }
+  .wx-mood { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+  .wx-texture { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
   .wx-icon {
-    position: absolute; top: 10px; right: 14px; width: 48px; height: 48px; z-index: 2;
-    filter: drop-shadow(0 2px 6px rgba(0,0,0,0.45));
+    position: absolute; top: 10px; right: 14px; z-index: 0; width: 48px; height: 48px;
+    filter: drop-shadow(0 2px 6px rgba(0,0,0,0.45)); pointer-events: none;
   }
-  .wx-scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0.05), rgba(0,0,0,0.55) 75%); z-index: 1; }
-  .wx-content { position: relative; z-index: 2; display: flex; align-items: flex-end; justify-content: space-between; height: 100%; min-height: 68px; }
-  .wx-temp { font: 800 20px/1 ui-monospace, monospace; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,0.4); }
-  .wx-cond { font: 700 9.5px/1.4 -apple-system, sans-serif; letter-spacing: 0.04em; text-transform: uppercase; color: rgba(255,255,255,0.75); }
 
-  .wx-rain-streaks { position: absolute; inset: 0; background-image: repeating-linear-gradient(115deg, rgba(180,210,255,0.16) 0px, rgba(180,210,255,0.16) 1px, transparent 1px, transparent 10px); }
-  .wx-snow-dots { position: absolute; inset: 0; background-image: radial-gradient(circle, rgba(255,255,255,0.35) 1px, transparent 1.6px); background-size: 22px 22px; }
+  /* mood gradients — verbatim from weather-art.css's .wx-card.wx-*::before rules. */
+  .wx-clear-day           { background: linear-gradient(180deg, #163149 0%, #0e2436 100%); }
+  .wx-clear-night         { background: linear-gradient(180deg, #0d1226 0%, #070a16 100%); }
+  .wx-partly-cloudy-day   { background: linear-gradient(180deg, #1a3a52 0%, #122b3d 100%); }
+  .wx-partly-cloudy-night { background: linear-gradient(180deg, #141a33 0%, #0c1022 100%); }
+  .wx-overcast            { background: linear-gradient(180deg, #232a33 0%, #161b21 100%); }
+  .wx-rain                { background: linear-gradient(180deg, #2b3d4d 0%, #1b2731 100%); }
+  .wx-rainy-night         { background: linear-gradient(180deg, #171b35 0%, #262c52 55%, #12142a 100%); }
+  .wx-thunderstorm        { background: linear-gradient(180deg, #1d1430 0%, #110a1e 100%); }
+  .wx-snow                { background: linear-gradient(180deg, #26313f 0%, #18212b 100%); }
+  .wx-fog                 { background: linear-gradient(180deg, #2a2f36 0%, #1a1e24 100%); }
 
-  /* --- mood gradients, dark palette. First three adapted verbatim from
-     notch-states.html, the rest extend the same idea per condition. --- */
-  .wx-clear-day          { background: linear-gradient(180deg, #163149 0%, #0e2436 100%); }
-  .wx-clear-night        { background: linear-gradient(180deg, #0d1226 0%, #070a16 100%); }
-  .wx-partly-cloudy-day  { background: linear-gradient(180deg, #1a3a52 0%, #122b3d 100%); }
-  .wx-partly-cloudy-night{ background: linear-gradient(180deg, #141a33 0%, #0c1022 100%); }
-  .wx-overcast           { background: linear-gradient(180deg, #232a33 0%, #161b21 100%); }
-  .wx-rain               { background: linear-gradient(180deg, #2b3d4d 0%, #1b2731 100%); }
-  .wx-rainy-night        { background: linear-gradient(180deg, #171b35 0%, #262c52 55%, #12142a 100%); }
-  .wx-thunderstorm       { background: linear-gradient(180deg, #1d1430 0%, #110a1e 100%); }
-  .wx-snow               { background: linear-gradient(180deg, #26313f 0%, #18212b 100%); }
-  .wx-fog                { background: linear-gradient(180deg, #2a2f36 0%, #1a1e24 100%); }
+  /* ambient drift textures — ported verbatim from weather-art.css,
+     including the exact 23.66px rain-fall distance (the seamless-loop
+     math along a 115deg axis) and the two-axis, two-property snow
+     sway (plan 151 item D2: `translate` for the fall, `transform` for
+     the sway — two DIFFERENT properties so the engine composes rather
+     than overrides). Selector is scoped to `.wx-texture` here (a real
+     element) instead of `.wx-card::after` (the real pseudo-element) —
+     same visual result, flattened for a dependency-free static file. */
+  .wx-rain-streaks {
+    background-image: repeating-linear-gradient(115deg, rgba(180,210,255,0.16) 0px, rgba(180,210,255,0.16) 1px, transparent 1px, transparent 10px);
+    animation: rain-fall 2.6s linear infinite;
+    will-change: transform;
+  }
+  .wx-snow-dots {
+    background-image: radial-gradient(circle, rgba(255,255,255,0.35) 1px, transparent 1.6px);
+    background-size: 22px 22px;
+    animation: snow-fall-y 6.6s linear infinite, snow-sway-x 14s ease-in-out infinite alternate;
+    will-change: translate, transform;
+  }
+  @keyframes rain-fall { from { transform: translateY(0); } to { transform: translateY(23.66px); } }
+  @keyframes snow-fall-y { from { translate: 0 0; } to { translate: 0 66px; } }
+  @keyframes snow-sway-x { from { transform: translateX(0); } to { transform: translateX(22px); } }
+  @media (prefers-reduced-motion: reduce) {
+    .wx-rain-streaks, .wx-snow-dots { animation: none; }
+  }
 
-  footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 11.5px; color: var(--dim); line-height: 1.6; max-width: 72ch; }
+  /* source-identity: .src-weather's --cat, read by .masthead .dot below
+     (source-identity.css). */
+  .src-weather { --cat: var(--overlay-amber); }
 
-  /* ==== 2026-07-23 truth-sync addition: this same .wx-card/.wx-icon art is ALSO the idle-hover
-     peek's backdrop (IdleHoverPeek.tsx's WeatherPeekBackdrop, plan 105 Step B) — reused verbatim
-     as a `position:absolute; inset:0; z-index:0` layer BEHIND whatever the peek's precedence
-     chain (football > media > weather > timeline) puts in `.peek-content` at z-index 1, instead of
-     being replaced by it. Demo below is a minimal, class-accurate reproduction of that composition
-     (real classes: .wx-peek-backdrop, .media-row/.media-track/.media-art/.media-meta/
-     .media-transport/.media-bar, .peek-content, .idle-peek-timeline — see overlay-card.css). ==== */
-  .peek-demo { position: relative; width: 320px; min-height: 100px; overflow: hidden; border-radius: 0 0 14px 14px; background: #000; padding: 12px 16px 13px; box-shadow: 0 14px 28px rgba(0,0,0,0.5); }
-  .wx-peek-backdrop { position: absolute; inset: 0; z-index: 0; border-radius: 10px; overflow: hidden; }
+  /* ============================================================
+     .compact — masthead-content.css / news-category.css, ported.
+     ============================================================ */
+  .compact { position: relative; box-sizing: border-box; min-height: 74px; padding: 12px 16px 13px 20px; z-index: 1; }
+  .compact::before {
+    content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px;
+    border-radius: 0 2px 2px 0; background: var(--accent); box-shadow: 0 0 12px var(--accent-soft);
+  }
+  .masthead-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .masthead {
+    display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0;
+    font: 700 8px/1 var(--font-mono); letter-spacing: 0.16em; text-transform: uppercase;
+    color: rgba(255,255,255,0.38);
+  }
+  .masthead::after { content: ""; flex: 1; height: 1px; background: rgba(255,255,255,0.12); }
+  .masthead .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--cat); box-shadow: 0 0 6px var(--cat); flex: none; }
+  .stamp {
+    align-self: center; padding: 4px 6px; border: 1px solid var(--accent); color: var(--accent);
+    font: 700 8px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase;
+  }
+  .title.headline {
+    white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
+    font-weight: 680; line-height: 1.2; font-size: 13px;
+  }
+  .notif-body {
+    display: -webkit-box; margin-top: 8px; overflow: hidden; color: rgba(255,255,255,0.7);
+    font-size: 11.5px; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2;
+  }
+  .compact-hint {
+    position: absolute; right: 18px; bottom: 8px; color: rgba(255,255,255,0.4);
+    font: 700 8px/1 var(--font-mono); letter-spacing: 0.16em; text-transform: uppercase; z-index: 1;
+  }
+  .compact-hint kbd {
+    display: inline-flex; align-items: center; justify-content: center; min-height: 15px;
+    margin: 0 1px; padding: 0 4px; border: 1px solid rgba(255,255,255,0.22);
+    border-bottom-color: rgba(255,255,255,0.34); border-radius: 3px; background: rgba(255,255,255,0.07);
+    box-shadow: 0 1px 0 rgba(0,0,0,0.35); color: inherit; font: 700 9px/1 var(--font-mono);
+  }
+
+  /* floor countdown strip — ttl-bar.css, a single static segment here
+     (no live rAF tick in a static file) frozen mid-drain. */
+  .ttl-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; z-index: 1; }
+  .ttl-seg { position: relative; height: 100%; background: rgba(255,255,255,0.08); overflow: hidden; }
+  .ttl-fill { position: absolute; inset: 0; background: var(--accent); transform-origin: left; }
+
+  /* ============================================================
+     condition palette — art only (mood + glyph + texture), the
+     same smaller demo shape the old gallery used, kept for scanning
+     the full weatherArt.ts table at a glance. Not full card chrome:
+     only "Rain incoming" / "High temperature" / "Low temperature"
+     are real alert triggers (weather_poller.rs) — every OTHER
+     condition below is a live-current-weather mood that could sit
+     behind any one of those three alerts, never a distinct alert of
+     its own.
+     ============================================================ */
+  .wx-swatch {
+    position: relative; width: 240px; min-height: 84px; overflow: hidden;
+    border-radius: var(--card-radius); box-shadow: 0 10px 22px rgba(0,0,0,0.45);
+  }
+  .wx-swatch .wx-cond-label {
+    position: relative; z-index: 1; display: flex; align-items: flex-end; height: 100%;
+    padding: 10px 14px 12px; font: 700 10px/1.3 var(--font-sans); letter-spacing: 0.02em;
+    color: rgba(255,255,255,0.85); text-shadow: 0 1px 6px rgba(0,0,0,0.5);
+  }
+  .wx-swatch .wx-icon { width: 40px; height: 40px; }
+
+  /* ============================================================
+     idle hover-peek — idle-peek.css, ported.
+     ============================================================ */
+  .below-block.idle-peek { padding: 12px 16px 13px; display: flex; flex-direction: column; gap: 8px; overflow: hidden; min-height: 100px; }
+  .wx-peek-backdrop { position: absolute; inset: 0; z-index: 0; border-radius: 0 0 var(--card-radius) var(--card-radius); overflow: hidden; }
   .peek-content { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 8px; }
+  .wx-peek-weather-stack { display: flex; flex-direction: column; gap: 4px; }
+  .wx-peek-readout { display: flex; align-items: center; gap: 8px; padding: 10px 12px; }
+  .wx-peek-icon { width: 28px; height: 28px; flex: none; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.45)); }
+  .wx-peek-temp { font: 800 18px/1 var(--font-mono); color: var(--overlay-fg); }
+  .wx-peek-hilo { display: inline-flex; align-items: center; gap: 4px; font: 700 9px/1 var(--font-mono); color: rgba(255,255,255,0.65); white-space: nowrap; }
+  .wx-peek-hilo::before { content: "·"; opacity: 0.5; }
+  .chip { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px; font: 700 8px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+  .wx-peek-condition { color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14); }
+  .wx-peek-rain { color: rgba(180,210,255,0.85); background: rgba(180,210,255,0.12); border: 1px solid rgba(180,210,255,0.35); }
+  .wx-forecast-strip { display: flex; align-items: center; justify-content: space-between; padding: 0 12px; }
+  .wx-forecast-point { display: flex; align-items: center; gap: 3px; }
+  .wx-forecast-icon { width: 10px; height: 10px; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.4)); }
+  .wx-forecast-temp { font: 700 8px/1 var(--font-mono); color: var(--overlay-fg); }
+  .wx-forecast-hour { font: 600 7px/1 var(--font-mono); color: rgba(255,255,255,0.55); }
+  .idle-peek-timeline { position: relative; display: block; height: 1px; margin-top: 2px; background: rgba(255,255,255,0.14); }
+  .idle-peek-timeline::before {
+    content: ""; position: absolute; top: -2px; left: var(--day-progress, 50%); width: 5px; height: 5px;
+    transform: translateX(-50%); border-radius: 50%; background: #b6f5e5; box-shadow: 0 0 10px rgba(182,245,229,0.75);
+  }
+
+  /* now-playing media row — same block that outranks the weather readout
+     (precedence: football > media > weather > timeline) but leaves the
+     backdrop in place (plan 105 Step B). Icon glyphs here are plain SVGs
+     standing in for the real lucide-react icons (Play/Pause/Music/...)
+     StatusRailCard imports — same shapes, no extra dependency in a
+     static file. */
   .media-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
   .media-track { display: flex; align-items: center; gap: 9px; min-width: 0; }
-  .media-art { width: 26px; height: 26px; flex: none; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 13px; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14); color: #f5f7fa; }
+  .media-art { width: 26px; height: 26px; flex: none; border-radius: 6px; display: flex; align-items: center; justify-content: center; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14); color: var(--overlay-fg); }
+  .media-art svg { width: 13px; height: 13px; }
   .media-meta { min-width: 0; display: flex; flex-direction: column; }
-  .media-title { font-size: 11.5px; font-weight: 700; color: #f5f7fa; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .media-subtitle { font-size: 9.5px; color: rgba(255,255,255,0.55); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .media-transport { display: flex; align-items: center; gap: 7px; flex: none; }
-  .media-bar { display: inline-block; width: 46px; height: 3px; border-radius: 2px; background: rgba(255,255,255,0.15); overflow: hidden; }
+  .media-title { font-size: 12px; font-weight: 600; color: var(--overlay-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .media-subtitle { font-size: 10.5px; color: rgba(255,255,255,0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .media-transport { display: flex; align-items: center; gap: 6px; flex: none; color: rgba(255,255,255,0.85); }
+  .media-state svg { width: 12px; height: 12px; display: block; }
+  .media-bar { width: 56px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.12); overflow: hidden; }
   .media-bar-fill { display: block; height: 100%; background: #b6f5e5; }
-  .media-time { font: 700 9.5px/1 ui-monospace, monospace; color: rgba(255,255,255,0.6); }
-  .idle-peek-timeline { position: relative; display: block; height: 1px; background: rgba(255,255,255,0.14); }
-  .idle-peek-timeline::before { content: ""; position: absolute; top: -2px; left: var(--day-progress, 50%); width: 5px; height: 5px; transform: translateX(-50%); border-radius: 50%; background: #b6f5e5; box-shadow: 0 0 10px rgba(182,245,229,0.75); }
-</style>
+  .media-time { font: 700 10.5px/1 var(--font-mono); color: rgba(255,255,255,0.85); font-variant-numeric: tabular-nums; min-width: 30px; text-align: right; }
 
-<div style="background:#7a2d2d;color:#fff;padding:6px 12px;font:12px/1.4 monospace">HISTORICAL PROTOTYPE — design exploration that preceded implementation. The shipped overlay deliberately diverged (CSS-grid .card-assembly — see src/styles.css). Not a reference for current behavior.</div>
-<div style="background:#1c2a1f;color:#cfe8d4;padding:6px 12px;font:12px/1.4 monospace;border-top:1px solid #2f4a36">2026-07-23 truth-sync: the weather ALERT card's mood/glyph art (this gallery's original scope) is verified current — z-order (mood behind, real content above) still matches overlay-card.css. Added a new section below covering a second, newer consumer of the same art: the idle-hover peek's backdrop layer (plan 105), which this gallery didn't previously show at all.</div>
+  footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 11.5px; color: var(--dim); line-height: 1.6; max-width: 74ch; }
+</style>
+</head>
+<body>
+<div class="sync-note">Mirrors the shipped overlay's weather ALERT card and idle hover-peek as of 2026-07-30 — see this file's own top HTML comment for the exact source files it was hand-synced against. Still not wired into the build (static markup, no imports); re-sync by hand when those files move.</div>
 <main>
-  <h1>Weather art — condition set (Meteocons + CSS moods)</h1>
+  <h1>Weather art — the shipped overlay's weather surfaces</h1>
   <p class="lede">
-    The decision: <b>Meteocons</b> static fill SVGs (MIT license, by Bas
-    Milius) vendored locally as condition glyphs, on top of purpose-built
-    CSS-gradient backdrops keyed to condition + day/night. This replaces
-    the CSS-only blob stand-ins (the <code>.wx-sun</code>/<code>.wx-cloud</code>
-    divs) in <code>notch-states.html</code> — the gradients stay, they
-    carry the atmosphere; the glyph now reads the condition at a glance.
-    Card shape is the locked <code>.below-block</code> weather block:
-    320px, black base, 14px bottom rounding, scrim + condition/temp row.
+    Two distinct consumers of the same condition -> (glyph, mood, texture)
+    table (<code>src/lib/weatherArt.ts</code>): the <b>weather ALERT
+    card</b> — a real promoted notification, full masthead/title/body/
+    stamp/TTL-bar chrome with the mood art painted behind it — and the
+    <b>idle hover-peek's weather backdrop</b> — the same art reused as a
+    persistent layer behind whatever the idle peek's precedence chain
+    (football &gt; media &gt; weather &gt; timeline) is currently showing.
+    Glyphs are <b>Meteocons</b> static-fill SVGs (MIT, Bas Milius) vendored
+    locally; mood gradients are ours, CSS-only, no third-party art.
   </p>
 
   <section>
-    <h2>Day</h2>
-    <p class="section-sub">Backdrops keyed to daytime — deep teals and slate blues, never bright. Glyph sits top-right, 48px, soft drop shadow.</p>
-    <div class="card-grid">
-
-      <div>
-        <div class="rig-label">Clear day — clear-day.svg</div>
-        <div class="wx-card wx-clear-day">
-          <img class="wx-icon" src="assets/weather/clear-day.svg" alt="Clear day">
-          <div class="wx-scrim"></div>
-          <div class="wx-content">
-            <span class="wx-cond">Clear · Bangalore</span>
-            <span class="wx-temp">28°</span>
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <div class="rig-label">Partly cloudy day — partly-cloudy-day.svg</div>
-        <div class="wx-card wx-partly-cloudy-day">
-          <img class="wx-icon" src="assets/weather/partly-cloudy-day.svg" alt="Partly cloudy day">
-          <div class="wx-scrim"></div>
-          <div class="wx-content">
-            <span class="wx-cond">Partly cloudy · Bangalore</span>
-            <span class="wx-temp">27°</span>
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <div class="rig-label">Overcast — overcast.svg</div>
-        <div class="wx-card wx-overcast">
-          <img class="wx-icon" src="assets/weather/overcast.svg" alt="Overcast">
-          <div class="wx-scrim"></div>
-          <div class="wx-content">
-            <span class="wx-cond">Overcast · Bangalore</span>
-            <span class="wx-temp">24°</span>
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <div class="rig-label">Rain (day) — rain.svg</div>
-        <div class="wx-card wx-rain">
-          <img class="wx-icon" src="assets/weather/rain.svg" alt="Rain">
-          <div class="wx-rain-streaks"></div>
-          <div class="wx-scrim"></div>
-          <div class="wx-content">
-            <span class="wx-cond">Rain · Bangalore</span>
-            <span class="wx-temp">19°</span>
-          </div>
-        </div>
-      </div>
-
-    </div>
-  </section>
-
-  <section>
-    <h2>Night</h2>
-    <p class="section-sub">Same conditions after sundown — indigo/near-black variants of the day moods. Day/night is keyed off location time, which the app already has.</p>
-    <div class="card-grid">
-
-      <div>
-        <div class="rig-label">Clear night — clear-night.svg</div>
-        <div class="wx-card wx-clear-night">
-          <img class="wx-icon" src="assets/weather/clear-night.svg" alt="Clear night">
-          <div class="wx-scrim"></div>
-          <div class="wx-content">
-            <span class="wx-cond">Clear · Bangalore</span>
-            <span class="wx-temp">22°</span>
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <div class="rig-label">Partly cloudy night — partly-cloudy-night.svg</div>
-        <div class="wx-card wx-partly-cloudy-night">
-          <img class="wx-icon" src="assets/weather/partly-cloudy-night.svg" alt="Partly cloudy night">
-          <div class="wx-scrim"></div>
-          <div class="wx-content">
-            <span class="wx-cond">Partly cloudy · Bangalore</span>
-            <span class="wx-temp">23°</span>
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <div class="rig-label">Rainy night — rain.svg</div>
-        <div class="wx-card wx-rainy-night">
-          <img class="wx-icon" src="assets/weather/rain.svg" alt="Rain at night">
-          <div class="wx-rain-streaks"></div>
-          <div class="wx-scrim"></div>
-          <div class="wx-content">
-            <span class="wx-cond">Light rain · Bangalore</span>
-            <span class="wx-temp">21°</span>
-          </div>
-        </div>
-      </div>
-
-    </div>
-  </section>
-
-  <section>
-    <h2>Severe / other</h2>
-    <p class="section-sub">Alert-tier conditions — these are also the ones the weather poller edge-triggers on (rain incoming, thresholds), so the card may surface unprompted.</p>
-    <div class="card-grid">
-
-      <div>
-        <div class="rig-label">Thunderstorm — thunderstorms.svg</div>
-        <div class="wx-card wx-thunderstorm">
-          <img class="wx-icon" src="assets/weather/thunderstorms.svg" alt="Thunderstorm">
-          <div class="wx-rain-streaks"></div>
-          <div class="wx-scrim"></div>
-          <div class="wx-content">
-            <span class="wx-cond">Thunderstorm · Bangalore</span>
-            <span class="wx-temp">20°</span>
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <div class="rig-label">Snow — snow.svg</div>
-        <div class="wx-card wx-snow">
-          <img class="wx-icon" src="assets/weather/snow.svg" alt="Snow">
-          <div class="wx-snow-dots"></div>
-          <div class="wx-scrim"></div>
-          <div class="wx-content">
-            <span class="wx-cond">Snow · Shimla</span>
-            <span class="wx-temp">-2°</span>
-          </div>
-        </div>
-      </div>
-
-      <div>
-        <div class="rig-label">Fog — fog.svg</div>
-        <div class="wx-card wx-fog">
-          <img class="wx-icon" src="assets/weather/fog.svg" alt="Fog">
-          <div class="wx-scrim"></div>
-          <div class="wx-content">
-            <span class="wx-cond">Fog · Bangalore</span>
-            <span class="wx-temp">16°</span>
-          </div>
-        </div>
-      </div>
-
-    </div>
-  </section>
-
-  <section>
-    <h2>Idle-hover peek: this same art as a backdrop layer, behind the media row</h2>
+    <h2>Weather ALERT card — real alerts</h2>
     <p class="section-sub">
-      2026-07-23 truth-sync addition. Plan 105 (Step B) split the idle
-      hover-peek's weather scene into two independent layers so the mood
-      art survives even when something else outranks the plain weather
-      readout: the <code>.wx-card</code>/<code>.wx-icon</code> art above
-      now also paints as a <code>position:absolute; inset:0; z-index:0</code>
-      backdrop (<code>IdleHoverPeek.tsx</code>'s <code>WeatherPeekBackdrop</code>),
-      with the peek's real content — a live-match scorecard, a now-playing
-      media row (plan 104), the plain weather readout, or just the
-      day-progress timeline — sitting above it at <code>z-index:1</code>
-      (precedence: football &gt; media &gt; weather &gt; timeline). The
-      backdrop only shows while weather data exists and no live match is
-      running; media, when present, still gets to sit in front of it
-      rather than replacing it.
+      Full card chrome, matching <code>StatusRailCard.tsx</code> +
+      <code>NotificationBody.tsx</code>'s generic branch: a masthead row
+      (amber source-identity dot, "Weather" kicker, hairline, priority
+      Stamp), a two-line title, a one-line body, the floor TTL bar, and
+      the "more" hint — with the mood gradient + condition glyph painted
+      behind all of it. Titles/bodies below are the real strings
+      <code>weather_poller.rs</code> emits (<code>RAIN_ALERT_TITLE</code>,
+      <code>HOT_ALERT_TITLE</code>, <code>COLD_ALERT_TITLE</code>), not
+      invented copy. All three observed at "medium" priority (teal accent,
+      <code>Stamp</code> reads "Done").
     </p>
-    <div class="rig-label">Now playing, weather art still visible behind it</div>
-    <div class="peek-demo">
-      <div class="wx-peek-backdrop wx-rainy-night">
-        <img class="wx-icon" src="assets/weather/rain.svg" alt="" style="width:40px;height:40px;top:8px;right:10px;">
-      </div>
-      <div class="peek-content">
-        <div class="media-row">
-          <div class="media-track">
-            <span class="media-art">♪</span>
-            <span class="media-meta">
-              <span class="media-title">Midnight City</span>
-              <span class="media-subtitle">M83</span>
-            </span>
+    <div class="card-grid">
+
+      <div>
+        <div class="rig-label">Rain incoming — wx-rain + wx-rain-streaks drift</div>
+        <div class="notch-shell medium">
+          <div class="flanks-row">
+            <div class="flank flank-left"><span class="time-only">6:16 PM</span></div>
+            <div class="cutout"></div>
+            <div class="flank flank-right">
+              <span class="status-dot on"></span><span class="status-dot"></span><span class="status-dot on wx"></span>
+            </div>
           </div>
-          <div class="media-transport">
-            <span>▶</span>
-            <span class="media-bar"><span class="media-bar-fill" style="width:34%"></span></span>
-            <span class="media-time">1:24</span>
+          <div class="below-block src-weather">
+            <div class="wx-mood wx-rain"></div>
+            <div class="wx-texture wx-rain-streaks"></div>
+            <img class="wx-icon" src="assets/weather/rain.svg" alt="Rain">
+            <div class="compact">
+              <div class="masthead-row">
+                <div class="masthead"><span class="dot"></span>Weather</div>
+                <div class="stamp">Done</div>
+              </div>
+              <div class="title headline">Rain expected soon</div>
+              <div class="notif-body">75% chance of rain within ~30 min</div>
+            </div>
+            <div class="compact-hint"><kbd>&#8963;&#8679;N</kbd> more</div>
+            <div class="ttl-bar"><div class="ttl-seg"><div class="ttl-fill" style="transform:scaleX(.62)"></div></div></div>
           </div>
         </div>
-        <span class="idle-peek-timeline" style="--day-progress:64%"></span>
+      </div>
+
+      <div>
+        <div class="rig-label">High temperature — wx-clear-day, no texture</div>
+        <div class="notch-shell medium">
+          <div class="flanks-row">
+            <div class="flank flank-left"><span class="time-only">1:42 PM</span></div>
+            <div class="cutout"></div>
+            <div class="flank flank-right">
+              <span class="status-dot on"></span><span class="status-dot"></span><span class="status-dot on wx"></span>
+            </div>
+          </div>
+          <div class="below-block src-weather">
+            <div class="wx-mood wx-clear-day"></div>
+            <img class="wx-icon" src="assets/weather/clear-day.svg" alt="Clear day">
+            <div class="compact">
+              <div class="masthead-row">
+                <div class="masthead"><span class="dot"></span>Weather</div>
+                <div class="stamp">Done</div>
+              </div>
+              <div class="title headline">High temperature</div>
+              <div class="notif-body">37&deg; &mdash; above your 35&deg;C hot threshold</div>
+            </div>
+            <div class="compact-hint"><kbd>&#8963;&#8679;N</kbd> more</div>
+            <div class="ttl-bar"><div class="ttl-seg"><div class="ttl-fill" style="transform:scaleX(.34)"></div></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <div class="rig-label">Low temperature — wx-snow + wx-snow-dots drift</div>
+        <div class="notch-shell medium">
+          <div class="flanks-row">
+            <div class="flank flank-left"><span class="time-only">7:05 AM</span></div>
+            <div class="cutout"></div>
+            <div class="flank flank-right">
+              <span class="status-dot on"></span><span class="status-dot"></span><span class="status-dot on wx"></span>
+            </div>
+          </div>
+          <div class="below-block src-weather">
+            <div class="wx-mood wx-snow"></div>
+            <div class="wx-texture wx-snow-dots"></div>
+            <img class="wx-icon" src="assets/weather/snow.svg" alt="Snow">
+            <div class="compact">
+              <div class="masthead-row">
+                <div class="masthead"><span class="dot"></span>Weather</div>
+                <div class="stamp">Done</div>
+              </div>
+              <div class="title headline">Low temperature</div>
+              <div class="notif-body">-3&deg; &mdash; below your 0&deg;C cold threshold</div>
+            </div>
+            <div class="compact-hint"><kbd>&#8963;&#8679;N</kbd> more</div>
+            <div class="ttl-bar"><div class="ttl-seg"><div class="ttl-fill" style="transform:scaleX(.88)"></div></div></div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>Condition palette (art only)</h2>
+    <p class="section-sub">
+      Every <code>ConditionWord</code> x day/night entry
+      <code>weatherArtFor</code> can return (<code>weatherArt.ts</code>),
+      mood + glyph only, no card chrome — this is what sits behind
+      whichever of the three real alerts above happens to be showing.
+      "Cloudy" (WMO codes 1&ndash;3) resolves to the partly-cloudy glyph/
+      mood, never <code>overcast.svg</code> &mdash; that glyph and
+      <code>wx-overcast</code> are reserved exclusively for the
+      unrecognized-condition fallback shown last.
+    </p>
+    <div class="card-grid">
+
+      <div>
+        <div class="rig-label">Clear &middot; night</div>
+        <div class="wx-swatch wx-clear-night">
+          <div class="wx-cond-label"><img class="wx-icon" src="assets/weather/clear-night.svg" alt=""></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="rig-label">Cloudy &middot; day</div>
+        <div class="wx-swatch wx-partly-cloudy-day">
+          <div class="wx-cond-label"><img class="wx-icon" src="assets/weather/partly-cloudy-day.svg" alt=""></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="rig-label">Cloudy &middot; night</div>
+        <div class="wx-swatch wx-partly-cloudy-night">
+          <div class="wx-cond-label"><img class="wx-icon" src="assets/weather/partly-cloudy-night.svg" alt=""></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="rig-label">Fog (no night variant vendored)</div>
+        <div class="wx-swatch wx-fog">
+          <div class="wx-cond-label"><img class="wx-icon" src="assets/weather/fog.svg" alt=""></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="rig-label">Rain / Showers &middot; night</div>
+        <div class="wx-swatch wx-rainy-night">
+          <div class="wx-texture wx-rain-streaks"></div>
+          <div class="wx-cond-label"><img class="wx-icon" src="assets/weather/rain.svg" alt=""></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="rig-label">Storm (reuses wx-rain-streaks texture)</div>
+        <div class="wx-swatch wx-thunderstorm">
+          <div class="wx-texture wx-rain-streaks"></div>
+          <div class="wx-cond-label"><img class="wx-icon" src="assets/weather/thunderstorms.svg" alt=""></div>
+        </div>
+      </div>
+
+      <div>
+        <div class="rig-label">Neutral fallback &mdash; unrecognized condition word</div>
+        <div class="wx-swatch wx-overcast">
+          <div class="wx-cond-label"><img class="wx-icon" src="assets/weather/overcast.svg" alt=""></div>
+        </div>
+      </div>
+
+    </div>
+  </section>
+
+  <section>
+    <h2>Idle hover-peek: the same art as a persistent backdrop</h2>
+    <p class="section-sub">
+      Hovering the idle rail (rust-derived tracking area, never CSS
+      <code>:hover</code> &mdash; the overlay window is click-through) opens
+      a below-block beneath the flanks (<code>IdleHoverPeek.tsx</code>).
+      Plan 105 (Step B) split the weather scene into a backdrop layer
+      (<code>WeatherPeekBackdrop</code>, pure art, z-index 0) and a content
+      layer (<code>.peek-content</code>, z-index 1) so the mood/texture
+      survives even when something else outranks the plain weather readout
+      &mdash; a live match keeps its own scorecard visual instead (backdrop
+      stays out then), but a now-playing media row still lets the weather
+      art show through behind it. Precedence: football &gt; media &gt;
+      weather &gt; timeline; the day-progress timeline is the one thing
+      that always renders, at the bottom of every variant.
+    </p>
+
+    <div class="rig-label">Weather alone &mdash; readout + minimal forecast strip (plan 122 / 131)</div>
+    <div class="notch-shell idle-width" style="margin-bottom:28px;">
+      <div class="flanks-row">
+        <div class="flank flank-left"><span class="time-only">4:52 PM</span></div>
+        <div class="cutout"></div>
+        <div class="flank flank-right">
+          <span class="status-dot on"></span><span class="status-dot"></span><span class="status-dot on wx"></span>
+        </div>
+      </div>
+      <div class="below-block idle-peek">
+        <div class="wx-peek-backdrop">
+          <div class="wx-mood wx-rain"></div>
+          <div class="wx-texture wx-rain-streaks"></div>
+        </div>
+        <div class="peek-content">
+          <div class="wx-peek-weather-stack">
+            <div class="wx-peek-readout">
+              <img class="wx-peek-icon" src="assets/weather/rain.svg" alt="">
+              <span class="wx-peek-temp">19&deg;</span>
+              <span class="wx-peek-hilo"><span>H 24&deg;</span><span>L 16&deg;</span></span>
+              <span class="chip wx-peek-condition">Rain</span>
+              <span class="chip wx-peek-rain">Rain 42%</span>
+            </div>
+            <div class="wx-forecast-strip">
+              <span class="wx-forecast-point">
+                <img class="wx-forecast-icon" src="assets/weather/partly-cloudy-day.svg" alt="">
+                <span class="wx-forecast-temp">22&deg;</span><span class="wx-forecast-hour">6 PM</span>
+              </span>
+              <span class="wx-forecast-point">
+                <img class="wx-forecast-icon" src="assets/weather/rain.svg" alt="">
+                <span class="wx-forecast-temp">19&deg;</span><span class="wx-forecast-hour">8 PM</span>
+              </span>
+              <span class="wx-forecast-point">
+                <img class="wx-forecast-icon" src="assets/weather/clear-night.svg" alt="">
+                <span class="wx-forecast-temp">17&deg;</span><span class="wx-forecast-hour">10 PM</span>
+              </span>
+            </div>
+          </div>
+          <span class="idle-peek-timeline" style="--day-progress:64%"></span>
+        </div>
       </div>
     </div>
-    <p class="section-sub" style="margin-top:14px;">
-      Without media or a live match, the same backdrop instead sits
-      behind the plain weather readout (<code>.wx-peek-readout</code> —
-      temp + a <code>.chip</code> condition label, plan 092's chip
-      convergence; not a bespoke pill).
-    </p>
+
+    <div class="rig-label">Now playing &mdash; weather backdrop still visible behind the media row (plan 105 Step B)</div>
+    <div class="notch-shell idle-width">
+      <div class="flanks-row">
+        <div class="flank flank-left"><span class="time-only">10:08 PM</span></div>
+        <div class="cutout"></div>
+        <div class="flank flank-right">
+          <span class="status-dot on"></span><span class="status-dot"></span><span class="status-dot on wx"></span>
+        </div>
+      </div>
+      <div class="below-block idle-peek">
+        <div class="wx-peek-backdrop">
+          <div class="wx-mood wx-clear-night"></div>
+        </div>
+        <div class="peek-content">
+          <div class="media-row">
+            <div class="media-track">
+              <span class="media-art" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg>
+              </span>
+              <span class="media-meta">
+                <span class="media-title">Midnight City</span>
+                <span class="media-subtitle">M83</span>
+              </span>
+            </div>
+            <div class="media-transport">
+              <span class="media-state" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="currentColor"><path d="M8 5v14l11-7z"/></svg>
+              </span>
+              <span class="media-bar"><span class="media-bar-fill" style="width:34%"></span></span>
+              <span class="media-time">1:24</span>
+            </div>
+          </div>
+          <span class="idle-peek-timeline" style="--day-progress:88%"></span>
+        </div>
+      </div>
+    </div>
   </section>
 
   <footer>
-    <b>License:</b> glyphs are Meteocons, MIT license, by Bas Milius —
-    <code>github.com/basmilius/weather-icons</code>. Vendored copies live
-    in <code>prototype/assets/weather/</code> (12 files; the gallery uses
-    10 — <code>extreme-rain</code>, <code>wind</code>, and
-    <code>hail</code> are pulled but unassigned, spare buckets for later).
-    When these move into <code>src/assets/</code> for the real overlay,
-    add a NOTICE / attribution line alongside them. The gradient moods
-    are ours — no third-party art. Day/night variants are keyed off
-    location time, which the app already has from the weather poller's
-    coordinates; the condition → (glyph, mood class) mapping should live
-    as a plain data table, same as the v2 animation table.
+    <b>License:</b> glyphs are Meteocons, MIT license, by Bas Milius &mdash;
+    <code>github.com/basmilius/weather-icons</code>. Vendored copies live in
+    <code>prototype/assets/weather/</code>, byte-identical to
+    <code>src/assets/weather/</code> (see that directory's own
+    <code>NOTICE</code>). Of the 12 vendored files, 10 are actively assigned
+    in <code>weatherArt.ts</code>; <code>extreme-rain.svg</code>,
+    <code>wind.svg</code>, and <code>hail.svg</code> remain vendored but
+    unassigned &mdash; spare buckets for a future condition mapping. The
+    gradient moods are ours, no third-party art. Day/night is keyed off
+    rust's own <code>is_day</code> read (the weather poller's coordinates),
+    not a local wall-clock heuristic &mdash; see <code>weatherArt.ts</code>'s
+    and <code>IdleHoverPeek.tsx</code>'s plan-110 notes.
   </footer>
 </main>
+</body>
 </html>

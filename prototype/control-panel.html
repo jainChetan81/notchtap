@@ -1,273 +1,664 @@
 <!doctype html>
-<!-- plan 137 (v7 ticket 5, spec §7/§12) archived-note: this static mockup predates the cmux relay's removal — every "cmux"/"Cmux" label below is a historical artifact from when v6's cmux relay was the agent-notification source; the shipped app now sources these as the v7 Agent Adapter layer (Origin/SourceKind::Agent). Not resynced, per this repo's prototype-drift convention (CLAUDE.md). -->
-<!-- Control panel (Settings window) mockup — originally a 9-section window (Telegram connector health line, plan 076, and the Diagnostics log viewer, plan 077, which DESIGN.html §06 predates). Visual tokens mirror src/settings/settings.css (--window #050607, --accent #0a84ff, tiny SF Pro Text + ui-monospace). Static: sidebar + the two newest panes; the other seven sections are unchanged since DESIGN.html §06 and noted as such.
-     2026-07-23 truth-sync: plan 089 added a 10th sidebar section (History) after this mockup was drawn — both sidebar navs below now include it; the Switch mock was resized to the current 22px/36px, 2px-inset, muted-unchecked-thumb proportions (src/components/ui/switch.tsx, restyled the same day); the sidebar wordmark now reads "notchtap" (today's user-facing rebrand — bundle id/config paths/CLI name are unchanged, see the branding commit).
-     2026-07-27 truth-sync: the telegram connector (and its plan-076 connector-health line / get_connector_health command) was removed by operator decision. This mockup's Connectors & Keys section is resynced to show only the surviving OpenRouter key row; the health-states variant block and the telegram log line are gone. -->
+<!-- Control panel (Settings window) mockup — mirrors the settings window as of
+     2026-07-30. Rewritten from scratch against the live source (previous
+     revisions of this file carried a "HISTORICAL PROTOTYPE" banner; the
+     operator has since decided this file should track the shipped UI
+     instead of a frozen design-exploration snapshot — see git history for
+     that banner's prior text if it's ever needed again).
+
+     Sources read to build this:
+       - src/settings/SettingsApp.tsx        shell, sidebar nav, section list/order/copy
+       - src/settings/sections/*.tsx         one file per section, every control + copy string
+       - src/settings/base.css               Tailwind v4 entry, --fs-*/--radius-*/scrollbar rules
+       - src/settings/controls/controls.tsx  shared control-row/Card/Switch/Number/Textarea shapes
+       - src/settings/controls/Segmented.tsx the one segmented-control component
+       - src/components/ui/*.tsx             shadcn-derived Button/Switch/Badge/MetaChip/Input/etc.
+       - vendor/shared-ui/design/tokens.css  oklch colour tokens (hex originals kept in its comments)
+
+     This is still a static, standalone mock: no build step, no import of the
+     real React app. It uses plain CSS `color-mix()` in a few places to
+     reproduce Tailwind arbitrary values like `color-mix(in oklch, var(--primary),
+     var(--background) 25%)` (button.tsx's default-variant background) — that
+     works natively in a modern WebKit/Chromium webview, so it's not a build-step
+     workaround, just literal CSS.
+
+     Known, deliberate simplifications (see the note banner below too):
+       - Sidebar icons are plain generic placeholder glyphs, not the actual
+         Lucide icon paths SettingsApp.tsx imports (Bot/CloudSun/Command/
+         History/Info/KeyRound/ListOrdered/Newspaper/Palette/ScrollText/
+         SlidersHorizontal/Trophy) — reproducing 12 exact icon paths by hand
+         risked getting them subtly wrong, which felt worse than an honest
+         placeholder. Order, labels, and count (12) are exact.
+       - Three sections are drawn out control-by-control (General, Agents,
+         Connectors & Keys); the other nine are summarized in prose with
+         accurate control counts/copy, not fully laid out — same
+         "representative sample, not full pixel export" approach the
+         previous revision of this file used, just resynced to the current
+         12-section reality (up from the 9/10 sections it last recorded).
+       - Numeric field values shown are illustrative (chosen to look
+         plausible), not read from a live config — except where noted, they
+         match this build's actual defaults (src-tauri/src/config.rs), e.g.
+         rotation seconds 8, queue cap 50, ESPN/RSS poll interval 30s/60s,
+         listener port 9789, rotation order Football → Manual → Weather →
+         Agent → News.
+       - Agents' four adapter cards are drawn for Claude Code and Codex only
+         (Kimi and OpenCode follow the identical card shape — see the note
+         inline).
+-->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>control panel — 10 sections (History added, plan 089), with diagnostics (telegram + connector health removed 2026-07-27)</title>
+<title>control panel — 12-section settings window (mirrors src/settings/, 2026-07-30)</title>
 <style>
   :root {
-    --bg: #101318; --ink: #e8ecf1; --dim: #8b95a3; --rule: rgba(255,255,255,0.09); --green: #7fe08d;
-    /* settings.css tokens */
-    --window: #050607; --sidebar: #090a0c; --surface: #0d0f12; --surface-raised: #111318;
-    --text: #f1f2f4; --text-secondary: #a2a6ad; --text-muted: #70757d;
-    --divider: #202329; --divider-soft: #17191e; --accent: #0a84ff; --accent-soft: rgba(10,132,255,0.14);
+    /* page chrome (this document's own wrapper, not part of the window mock) */
+    --page-bg: #14171c; --page-ink: #e8ecf1; --page-dim: #8b95a3; --page-rule: rgba(255,255,255,0.09);
+
+    /* ==== real design tokens, copied from vendor/shared-ui/design/tokens.css ====
+       (hex values are that file's own round-trip comments, not independently
+       re-derived here) */
+    --background: #050607;      /* window */
+    --sidebar: #090a0c;
+    --card: #0d0f12;            /* surface */
+    --foreground: #f1f2f4;
+    --muted-foreground: #a2a6ad;
+    --border: #202329;          /* also --input, --secondary, --accent, --muted: same oklch value */
+    --primary: #0a84ff;
+    --destructive: #ff6b57;
+    --overlay-green: #7fe08d;
+    --overlay-teal: #55d6bd;
+    --overlay-amber: #f0c46a;
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+
+    /* settings-scoped type floor, src/settings/base.css's `:root` block, verbatim */
+    --fs-caption: 9px; --fs-secondary: 10px; --fs-body: 11px; --fs-title: 19px;
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; padding: 44px 24px 100px; }
-  main { max-width: 860px; margin: 0 auto; }
-  h1 { font-size: 21px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
-  .lede { color: var(--dim); font-size: 13px; line-height: 1.6; max-width: 66ch; margin: 0 0 8px; }
-  .note { font-size: 11.5px; color: var(--dim); border-left: 2px solid var(--rule); padding-left: 10px; margin: 0 0 32px; max-width: 64ch; line-height: 1.6; }
-  code { font-family: ui-monospace, Menlo, monospace; color: #9fc3e8; }
-  section { margin-bottom: 44px; padding-top: 24px; border-top: 1px solid var(--rule); }
-  h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); margin: 0 0 4px; }
-  .section-sub { font-size: 12px; color: var(--dim); margin: 0 0 16px; max-width: 62ch; line-height: 1.5; }
-  .rig-label { font: 700 10px/1 ui-monospace, monospace; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); margin: 0 0 8px; }
+  body { margin: 0; background: var(--page-bg); color: var(--page-ink); font-family: var(--font-sans); padding: 44px 24px 100px; }
+  main { max-width: 900px; margin: 0 auto; }
+  h1.page-title { font-size: 21px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
+  .lede { color: var(--page-dim); font-size: 13px; line-height: 1.6; max-width: 70ch; margin: 0 0 8px; }
+  .note { font-size: 11.5px; color: var(--page-dim); border-left: 2px solid var(--page-rule); padding-left: 10px; margin: 0 0 32px; max-width: 68ch; line-height: 1.6; }
+  code { font-family: var(--font-mono); color: #9fc3e8; }
+  .rig { margin-bottom: 48px; padding-top: 24px; border-top: 1px solid var(--page-rule); }
+  .rig h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--page-dim); margin: 0 0 4px; }
+  .rig-sub { font-size: 12px; color: var(--page-dim); margin: 0 0 16px; max-width: 64ch; line-height: 1.55; }
+  .rig-label { font: 700 10px/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--page-dim); margin: 0 0 8px; }
+  footer.page-foot { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--page-rule); font-size: 11.5px; color: var(--page-dim); line-height: 1.6; }
 
-  /* ==== window chrome, mirroring settings.css ==== */
-  .window { display: grid; grid-template-columns: 140px minmax(0,1fr); min-height: 480px; background: var(--window); border-radius: 12px; overflow: hidden; box-shadow: 0 1px 0 rgba(255,255,255,0.07) inset, 0 24px 48px rgba(0,0,0,0.5); border: 1px solid var(--divider-soft); }
-  .sidebar { background: var(--sidebar); border-right: 1px solid var(--divider-soft); display: flex; flex-direction: column; padding: 14px 8px 10px; }
-  .brand { display: flex; align-items: center; gap: 7px; padding: 2px 8px 14px; font: 650 12px/1 -apple-system, sans-serif; color: var(--text); }
-  .brand-slot { width: 14px; height: 9px; border-radius: 3px; background: #000; border: 1px solid var(--divider); }
-  .nav { display: flex; flex-direction: column; gap: 1px; flex: 1; }
-  .nav-item { position: relative; display: flex; align-items: center; gap: 7px; padding: 6px 8px; border-radius: 6px; font-size: 10.5px; font-weight: 550; color: var(--text-secondary); }
-  .nav-item .idx { font: 600 7.5px/1 ui-monospace, monospace; color: var(--text-muted); width: 14px; }
-  .nav-item.active { background: var(--accent-soft); color: var(--text); }
-  .nav-item.active::before { content: ""; position: absolute; left: 0; top: 5px; bottom: 5px; width: 2px; border-radius: 1px; background: var(--accent); }
-  .sidebar-meta { padding: 10px 8px 0; border-top: 1px solid var(--divider-soft); font: 600 7.5px/1 ui-monospace, monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
+  /* ==== the window mock itself ==== */
+  .window { display: grid; grid-template-columns: 140px minmax(0,1fr); min-height: 520px; background: var(--background); border-radius: 12px; overflow: hidden; border: 1px solid var(--border); box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 24px 48px rgba(0,0,0,0.5); }
 
-  .pane { display: flex; flex-direction: column; min-width: 0; }
-  .pane-scroll { flex: 1; padding: 20px 22px 24px; overflow: hidden; }
-  .pane-kicker { font: 600 8px/1 ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--text-muted); }
-  .pane h1.pane-title { font-size: 19px; font-weight: 650; margin: 6px 0 4px; color: var(--text); letter-spacing: 0; }
-  .pane-desc { font-size: 10px; color: var(--text-secondary); line-height: 1.5; margin: 0 0 18px; max-width: 58ch; }
+  .sidebar { background: var(--sidebar); border-right: 1px solid var(--border); display: grid; grid-template-rows: auto minmax(0,1fr) auto; min-height: 0; }
+  .sidebar-brand { display: flex; align-items: center; gap: 9px; min-height: 71px; padding: 17px 14px 14px; border-bottom: 1px solid color-mix(in oklch, var(--border), transparent 40%); font: 700 11px/1 var(--font-mono); letter-spacing: 0.09em; text-transform: uppercase; color: var(--foreground); }
+  .brand-mark { width: 26px; height: 26px; flex: none; border-radius: 6px; background: linear-gradient(150deg,#1a1d22,#000); border: 1px solid var(--border); }
+  .sidebar-nav { display: flex; flex-direction: column; gap: 3px; padding: 12px 8px; overflow-y: auto; }
+  .nav-item { display: grid; grid-template-columns: 14px minmax(0,1fr); align-items: center; gap: 8px; min-height: 34px; padding: 6px 8px 6px 6px; border-radius: 6px; border-left: 2px solid transparent; color: var(--muted-foreground); font: 560 10.5px/1.25 var(--font-sans); }
+  .nav-item svg { width: 14px; height: 14px; }
+  .nav-item.is-active { background: color-mix(in oklch, var(--primary), transparent 85%); border-left-color: var(--primary); color: var(--foreground); }
+  .sidebar-meta { border-top: 1px solid color-mix(in oklch, var(--border), transparent 40%); padding: 11px 14px 18px; font: 700 9px/1 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-foreground); }
 
-  .settings-group { background: var(--surface); border: 1px solid var(--divider-soft); border-radius: 8px; margin-bottom: 14px; overflow: hidden; }
-  .group-heading { padding: 10px 14px 8px; font-size: 11px; font-weight: 640; color: var(--text); border-bottom: 1px solid var(--divider-soft); }
-  .group-desc { font-size: 8.5px; font-weight: 400; color: var(--text-muted); margin-top: 2px; }
-  .control-row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 12px; min-height: 46px; padding: 8px 14px; }
-  .control-row + .control-row { border-top: 1px solid var(--divider-soft); }
-  .control-name { font-size: 10px; font-weight: 590; color: var(--text); }
-  .control-help { font-size: 8.5px; color: var(--text-muted); margin-top: 2px; line-height: 1.45; }
-  .relaunch-note { font: 600 7.5px/1.6 ui-monospace, monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); }
-  .health-ok { color: #7dc98a; }
-  .health-bad { color: #d6a1a5; }
+  .pane { display: grid; grid-template-rows: minmax(0,1fr) auto; min-width: 0; background: var(--background); }
+  .content-header { border-bottom: 1px solid var(--border); padding: 20px 20px 16px; }
+  .section-index { font: 700 9.5px/1 var(--font-mono); letter-spacing: 0.11em; text-transform: uppercase; color: var(--muted-foreground); margin: 0 0 8px; }
+  .pane-title { font-size: 18px; font-weight: 650; letter-spacing: -0.018em; color: var(--foreground); margin: 0 0 6px; }
+  .pane-desc { max-width: 300px; font-size: var(--fs-body); line-height: 1.45; color: var(--muted-foreground); margin: 0; }
+  .section-scroll { padding: 14px 16px 18px; max-height: 620px; overflow-y: auto; }
+  .section-stack { display: grid; gap: 14px; }
+  .section-stack + .section-stack { margin-top: 14px; }
 
-  /* 2026-07-23 truth-sync: src/components/ui/switch.tsx was restyled the same day — clean
-     iOS-like proportion, track h-[22px]/w-9 (36px), thumb 18px with a consistent 2px inset on
-     every side in both states, 150ms transitions, and the UNCHECKED thumb moved off bright white
-     onto a muted gray (dark:data-unchecked:bg-muted-foreground) so an off switch doesn't read as a
-     blown-out white blob against the now fully-visible (no more half-opacity dimming) track.
-     Dimensions/insets below are exact; the two colors are this mock's own token approximation of
-     `--muted-foreground`/`--primary`, not literal shared-ui hex — cross-check those two hexes
-     against the live app if pixel-exact color match is ever needed here. */
-  .switch { width: 36px; height: 22px; border-radius: 999px; background: #2a2e35; position: relative; flex: none; transition: background-color 150ms ease-out; }
-  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: #9aa0ab; transition: left 150ms ease-out, background-color 150ms ease-out; }
-  .switch.on { background: var(--accent); }
-  .switch.on::after { left: 16px; background: #fff; }
+  /* Card (SettingsGroup) */
+  .settings-group { background: var(--card); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+  .group-heading { padding: 12px 13px 11px; border-bottom: 1px solid color-mix(in oklch, var(--border), transparent 40%); }
+  .group-title { font-size: var(--fs-body); font-weight: 640; color: var(--foreground); }
+  .group-desc { margin-top: 4px; font-size: var(--fs-secondary); line-height: 1.45; color: var(--muted-foreground); }
+  .group-body { padding: 0 13px; }
 
-  .secret-row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 12px; min-height: 46px; padding: 8px 14px; }
-  .secret-row + .secret-row { border-top: 1px solid var(--divider-soft); }
-  .status-chip { display: inline-block; margin-left: 6px; padding: 2px 6px; border-radius: 999px; font: 600 7.5px/1 ui-monospace, monospace; letter-spacing: 0.06em; color: var(--text-muted); background: var(--surface-raised); border: 1px solid var(--divider); }
-  .status-chip.is-set { color: var(--text-secondary); }
-  .secret-controls { display: flex; gap: 6px; align-items: center; }
-  .secret-input { width: 150px; padding: 5px 8px; border-radius: 6px; border: 1px solid var(--divider); background: var(--surface-raised); color: var(--text); font: 400 10px/1 ui-monospace, monospace; }
-  .secondary-button { padding: 5px 10px; border-radius: 6px; border: 1px solid var(--divider); background: var(--surface-raised); color: var(--text-secondary); font: 590 9.5px/1 -apple-system, sans-serif; }
-  .secondary-button:disabled { opacity: 0.4; }
+  .control-row { display: grid; grid-template-columns: minmax(0,1fr) auto; align-items: center; gap: 12px; min-height: 54px; padding: 9px 0; border-top: 1px solid color-mix(in oklch, var(--border), transparent 40%); }
+  .control-row:first-child { border-top: none; }
+  .control-name { display: block; font-size: var(--fs-body); font-weight: 590; color: var(--foreground); }
+  .control-help { display: block; margin-top: 3px; font-size: var(--fs-secondary); line-height: 1.4; color: var(--muted-foreground); }
 
-  .log-view { margin: 0; max-height: 300px; overflow: auto; padding: 12px; background: rgba(0,0,0,0.25); border-radius: 8px; font: 400 10px/1.55 ui-monospace, SFMono-Regular, Menlo, monospace; color: var(--text-secondary); user-select: text; white-space: pre-wrap; }
-  .log-view .ts { color: var(--text-muted); }
+  .number-field { position: relative; width: 96px; flex: none; }
+  .number-input { height: 31px; width: 100%; border-radius: 6px; border: 1px solid var(--border); background: color-mix(in oklch, var(--border), transparent 80%); padding: 0 10px; text-align: right; font: 650 var(--fs-body)/1 var(--font-mono); color: var(--foreground); }
+  .number-field.has-unit .number-input { padding-right: 34px; }
+  .unit { position: absolute; top: 50%; right: 8px; transform: translateY(-50%); font: 700 var(--fs-caption)/1 var(--font-mono); letter-spacing: 0.05em; color: var(--muted-foreground); pointer-events: none; }
+
+  /* Switch (src/components/ui/switch.tsx) */
+  .switch { position: relative; width: 36px; height: 22px; flex: none; border-radius: 999px; background: var(--border); transition: background-color 150ms ease-out; }
+  .switch.is-checked { background: var(--primary); }
+  .switch-thumb { position: absolute; top: 2px; left: 2px; width: 18px; height: 18px; border-radius: 50%; background: var(--muted-foreground); transition: left 150ms ease-out, background-color 150ms ease-out; }
+  .switch.is-checked .switch-thumb { left: 16px; background: var(--background); }
+
+  /* Segmented (src/settings/controls/Segmented.tsx) */
+  .segmented { display: grid; height: 31px; width: 144px; flex: none; border-radius: 7px; border: 1px solid var(--border); background: color-mix(in oklch, var(--border), transparent 80%); padding: 3px; gap: 2px; }
+  .segmented.cols-2 { grid-template-columns: repeat(2,1fr); }
+  .segmented.cols-3 { grid-template-columns: repeat(3,1fr); }
+  .segmented-btn { border-radius: 4px; border: 1px solid transparent; background: transparent; font: 620 var(--fs-secondary)/1 var(--font-mono); letter-spacing: 0.03em; color: var(--muted-foreground); padding: 0; }
+  .segmented-btn.is-selected { background: var(--border); color: var(--foreground); box-shadow: 0 1px 2px rgba(0,0,0,0.4); }
+
+  /* Textarea / text control */
+  .textarea-control { border-top: 1px solid color-mix(in oklch, var(--border), transparent 40%); padding: 11px 0 12px; }
+  .textarea-control:first-child { border-top: none; }
+  .settings-textarea { margin-top: 8px; min-height: 73px; width: 100%; border-radius: 8px; border: 1px solid var(--border); background: color-mix(in oklch, var(--border), transparent 80%); padding: 8px 10px; font: 560 var(--fs-secondary)/1.55 var(--font-mono); color: var(--foreground); resize: vertical; }
+  .settings-input { margin-top: 8px; height: 31px; width: 100%; border-radius: 6px; border: 1px solid var(--border); background: color-mix(in oklch, var(--border), transparent 80%); padding: 0 10px; font: 560 var(--fs-body)/1 var(--font-mono); color: var(--foreground); }
+  .field-caption { margin-top: 5px; font: 700 var(--fs-caption)/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-foreground); }
+
+  /* Buttons (src/components/ui/button.tsx) */
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: 6px; height: 32px; padding: 0 11px; border-radius: 8px; border: 1px solid transparent; font: 590 11px/1 var(--font-sans); white-space: nowrap; cursor: default; }
+  .btn.default { background: color-mix(in oklch, var(--primary), var(--background) 25%); color: var(--foreground); }
+  .btn.outline { background: var(--background); border-color: var(--border); color: var(--foreground); }
+  .btn.sm { height: 28px; padding: 0 10px; font-size: var(--fs-secondary); }
+  .btn[disabled] { opacity: 0.5; }
+
+  /* MetaChip (src/components/ui/meta-chip.tsx) */
+  .meta-chip { display: inline-flex; align-items: center; min-width: 0; border-radius: 999px; border: 1px solid var(--border); padding: 2px 7px; font: 650 var(--fs-caption)/1.5 var(--font-mono); color: var(--muted-foreground); }
+  .meta-chip.uppercase { letter-spacing: 0.06em; text-transform: uppercase; }
+  .meta-chip.active { border-color: color-mix(in oklch, var(--primary), transparent 60%); background: color-mix(in oklch, var(--border), transparent 60%); color: var(--foreground); }
+  .meta-chip-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; margin-right: 5px; vertical-align: middle; }
+
+  /* Rotation order list (GeneralSection) */
+  .rotation-order-row { display: grid; grid-template-columns: 16px minmax(0,1fr) auto; align-items: center; gap: 10px; border-top: 1px solid color-mix(in oklch, var(--border), transparent 40%); padding: 10px 0; }
+  .rotation-order-row:first-child { border-top: none; }
+  .rotation-order-rank { font: 700 var(--fs-secondary)/1 var(--font-mono); color: var(--muted-foreground); }
+  .rotation-order-name { font-size: var(--fs-body); font-weight: 590; color: var(--foreground); }
+  .icon-btn { width: 22px; height: 22px; border-radius: 6px; border: 1px solid var(--border); background: var(--background); color: var(--muted-foreground); display: inline-flex; align-items: center; justify-content: center; }
+
+  /* shortcuts table */
+  .shortcut-table { width: 100%; border-collapse: collapse; }
+  .shortcut-table th, .shortcut-table td { text-align: left; padding: 8px 4px; border-bottom: 1px solid color-mix(in oklch, var(--border), transparent 40%); }
+  .shortcut-table thead th { font: 700 var(--fs-caption)/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted-foreground); padding-bottom: 7px; border-bottom: none; }
+  .kbd { display: inline-flex; min-height: 24px; align-items: center; justify-content: center; border-radius: 5px; border: 1px solid var(--border); background: color-mix(in oklch, var(--border), transparent 70%); padding: 0 5px; font: 600 var(--fs-body)/1 var(--font-mono); color: var(--foreground); }
+  .shortcut-action { font-size: var(--fs-secondary); color: var(--foreground); font-weight: 400; }
+
+  /* agent adapter cards */
+  .agent-card { border-top: 1px solid color-mix(in oklch, var(--border), transparent 40%); padding: 12px 0; }
+  .agent-card:first-child { border-top: none; }
+  .agent-card-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: 8px; }
+  .agent-name { display: inline-flex; align-items: center; gap: 6px; font-size: var(--fs-body); font-weight: 590; color: var(--foreground); }
+  .runtime-dot { display: inline-block; width: 6px; height: 6px; border-radius: 50%; }
+  .snippet { margin: 8px 0 0; max-height: 130px; overflow: auto; border-radius: 6px; border: 1px solid var(--border); background: color-mix(in oklch, var(--border), transparent 80%); padding: 8px; font: 400 9px/1.5 var(--font-mono); color: var(--foreground); white-space: pre-wrap; }
+  .target-file { margin-top: 6px; font: 400 var(--fs-secondary)/1.4 var(--font-mono); color: var(--foreground); word-break: break-all; }
+  .agent-meta-label { font: 700 var(--fs-caption)/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted-foreground); }
+  .agent-health { margin: -2px 0 8px; display: flex; flex-direction: column; gap: 3px; font-size: var(--fs-caption); color: var(--muted-foreground); }
+
+  /* log viewer (Diagnostics) */
+  .log-view { margin: 0; max-height: 260px; overflow: auto; padding: 12px; background: rgba(0,0,0,0.25); border-radius: 8px; font: 400 10.5px/1.55 var(--font-mono); color: var(--muted-foreground); white-space: pre-wrap; }
   .log-view .lvl-err { color: #d6a1a5; }
   .log-view .lvl-info { color: #8fb8e8; }
 
-  .settings-footer { display: flex; align-items: center; gap: 8px; padding: 12px 22px; border-top: 1px solid var(--divider-soft); background: var(--window); }
-  .primary-button { padding: 7px 14px; border-radius: 7px; border: none; background: var(--accent); color: #fff; font: 590 10.5px/1 -apple-system, sans-serif; }
-  .footer-button { padding: 7px 12px; border-radius: 7px; border: 1px solid var(--divider); background: transparent; color: var(--text-secondary); font: 590 10.5px/1 -apple-system, sans-serif; }
-  .footer-button:disabled { opacity: 0.4; }
-  .footer-spacer { flex: 1; font: 600 7.5px/1 ui-monospace, monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); text-align: right; }
+  .settings-footer { display: flex; align-items: center; gap: 6px; padding: 12px 14px; border-top: 1px solid var(--border); background: var(--background); min-height: 57px; }
 
-  .variants { display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; }
-  .variant-card { background: var(--surface); border: 1px solid var(--divider-soft); border-radius: 8px; padding: 10px 12px; }
-  .variant-title { font: 600 7.5px/1 ui-monospace, monospace; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 8px; }
+  /* history / queue rows */
+  .list-row { display: grid; grid-template-columns: minmax(0,1fr); gap: 3px; border-top: 1px solid color-mix(in oklch, var(--border), transparent 40%); padding: 10px 0; }
+  .list-row:first-child { border-top: none; }
+  .list-row.queue-row { grid-template-columns: minmax(0,1fr) auto; align-items: center; }
+  .list-time { font: 700 var(--fs-secondary)/1 var(--font-mono); color: var(--muted-foreground); }
+  .list-origin { margin-left: 6px; font: 700 var(--fs-secondary)/1 var(--font-mono); text-transform: uppercase; color: var(--muted-foreground); }
+  .list-title { font-size: var(--fs-body); font-weight: 590; color: var(--foreground); }
+  .list-body { font-size: var(--fs-body); color: var(--muted-foreground); }
+  .list-chips { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 5px; }
 
-  footer.page-foot { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 11.5px; color: var(--dim); line-height: 1.6; }
+  /* about stat grid */
+  .stat-grid { display: grid; grid-template-columns: repeat(2,1fr); gap: 8px; padding: 8px 0; }
+  .stat-tile { border-radius: 6px; border: 1px solid color-mix(in oklch, var(--border), transparent 40%); background: rgba(5,6,7,0.4); padding: 10px 12px; }
+  .stat-label { font: 700 var(--fs-caption)/1 var(--font-mono); letter-spacing: 0.1em; text-transform: uppercase; color: var(--muted-foreground); }
+  .stat-value { margin-top: 4px; font: 400 var(--fs-body)/1 var(--font-mono); color: var(--foreground); }
+
+  .prose-list { margin: 0; padding: 8px 0; list-style: none; display: grid; gap: 10px; }
+  .prose-list li { font-size: var(--fs-body); line-height: 1.5; color: var(--muted-foreground); }
+  .snip { border-radius: 4px; border: 1px solid color-mix(in oklch, var(--border), transparent 30%); background: color-mix(in oklch, var(--border), transparent 70%); padding: 1px 5px; font: 400 var(--fs-caption)/1 var(--font-mono); color: var(--foreground); }
 </style>
 </head>
 <body>
-<div style="background:#7a2d2d;color:#fff;padding:6px 12px;font:12px/1.4 monospace">HISTORICAL PROTOTYPE — design exploration that preceded implementation. The shipped overlay deliberately diverged (CSS-grid .card-assembly — see src/styles.css). Not a reference for current behavior.</div>
+<div style="border:1px solid var(--page-rule);border-radius:8px;padding:8px 14px;font:12px/1.5 var(--font-mono);color:var(--page-dim);max-width:900px;margin:0 auto 32px;">
+  Mirrors the settings window as of 2026-07-30 — see <code>src/settings/</code> for the live source. This is still a static, hand-authored mock (no build step); it is not a pixel-exact export.
+</div>
 <main>
-  <h1>Control panel — the settings window, sidebar now 10 sections (History, plan 089, added since this mockup's era)</h1>
+  <h1 class="page-title">Control panel — the settings window (12 sections)</h1>
   <p class="lede">
-    The Settings window's sidebar order is on record here at its current
-    10 sections; two of the panes are drawn out in full — the
-    <b>Connectors &amp; Keys</b> pane (now just the surviving OpenRouter
-    key row; the telegram connector and its plan-076 connector-health
-    line were removed 2026-07-27) and the
-    <b>Diagnostics</b> log viewer (plan 077), which DESIGN.html §06
-    predates. Sections 01–05, 07 and 08 are unchanged since
-    DESIGN.html's control-panel section; 10 (History, plan 089) postdates
-    this whole mockup and isn't drawn out below either — see "Sections
-    not re-drawn here".
+    <code>SettingsApp.tsx</code>'s <code>navigation</code> array is the
+    source of truth for order/count: <b>General, Football, News, Weather,
+    Connectors &amp; Keys, Agents, Shortcuts, Appearance, Diagnostics,
+    History, Queue, About</b> — 12 sections, sidebar icon + label each, no
+    per-row index badge (the "01"/"02"… index now only appears in the pane
+    header, e.g. "Settings / 06"). Three sections are drawn out in full
+    below (General, Agents, Connectors &amp; Keys); the other nine are
+    summarized in prose with their real control list.
   </p>
   <p class="note">
-    Tokens mirror <code>src/settings/settings.css</code>: window
-    <code>#050607</code>, sidebar <code>#090a0c</code>, accent
-    <code>#0a84ff</code> (system blue, used sparingly — Save is the
-    only accent fill in the window), tiny SF Pro Text with ui-monospace
-    for numbers and chips. Sidebar order and labels are verbatim from
-    <code>SettingsApp.tsx</code>.
+    Tokens mirror <code>vendor/shared-ui/design/tokens.css</code> +
+    <code>src/settings/base.css</code>: window <code>#050607</code>,
+    sidebar <code>#090a0c</code>, surface/card <code>#0d0f12</code>,
+    border/divider <code>#202329</code> (also the value <code>--input</code>/
+    <code>--accent</code>/<code>--secondary</code>/<code>--muted</code> all
+    share), accent/primary <code>#0a84ff</code> — used for the Save button
+    fill, a checked Switch, focus rings, and the active sidebar item's
+    tint/rail, not just one place. The type floor is four fixed sizes
+    (9/10/11/19px, <code>--fs-caption/secondary/body/title</code>); nothing
+    in this window uses a font size outside that scale except a couple of
+    named, commented exceptions in the real CSS (e.g. the Appearance
+    preview label's 12px).
   </p>
 
-  <section>
-    <h2>06 — Connectors &amp; Keys</h2>
-    <p class="section-sub">
-      Telegram shipped here as the first outbound connector (plan 076
-      added a "is it actually working?" health line polled via
-      <code>get_connector_health</code>) and was removed 2026-07-27 by
-      operator decision — the external bot setup felt unnecessary, and
-      there are better ways to get notifications on the phone. The pane
-      today has just the one write-only key.
+  <!-- ============================================================ -->
+  <section class="rig">
+    <h2>01 — General</h2>
+    <p class="rig-sub">
+      Four groups: Engine (start-paused/hide-when-idle/history/now-playing
+      toggles, listener port, a test-notification button), Rotation and
+      priority (rotation seconds, queue cap per tier, manual push priority),
+      Rotation order (a reorderable list — same-tier tie-break), and
+      Silenced (a persisted daily buffer window, distinct from the tray's
+      session-only Timed Mutes/Skip).
     </p>
-    <div class="rig-label">Connectors &amp; Keys pane</div>
+    <div class="rig-label">General pane</div>
     <div class="window">
       <div class="sidebar">
-        <div class="brand"><span class="brand-slot"></span>notchtap</div>
-        <div class="nav">
-          <div class="nav-item"><span class="idx">01</span>General</div>
-          <div class="nav-item"><span class="idx">02</span>Football</div>
-          <div class="nav-item"><span class="idx">03</span>News</div>
-          <div class="nav-item"><span class="idx">04</span>Cmux</div>
-          <div class="nav-item"><span class="idx">05</span>Weather</div>
-          <div class="nav-item active"><span class="idx">06</span>Connectors &amp; Keys</div>
-          <div class="nav-item"><span class="idx">07</span>Shortcuts</div>
-          <div class="nav-item"><span class="idx">08</span>Appearance</div>
-          <div class="nav-item"><span class="idx">09</span>Diagnostics</div>
-          <div class="nav-item"><span class="idx">10</span>History</div>
-        </div>
+        <div class="sidebar-brand"><span class="brand-mark"></span>notchtap</div>
+        <nav class="sidebar-nav">
+          <div class="nav-item is-active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="17" r="2"/></svg>General</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M6 4h12v4a6 6 0 0 1-12 0V4z"/><path d="M6 6H3v2a3 3 0 0 0 3 3M18 6h3v2a3 3 0 0 1-3 3"/><path d="M9 20h6M12 14v6"/></svg>Football</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="5" width="16" height="15" rx="1.5"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="17" y2="13"/><line x1="7" y1="16" x2="13" y2="16"/></svg>News</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="9" cy="10" r="4"/><path d="M9 3v1.4M3.6 10H5M15 15.5A4.5 4.5 0 0 0 14 6.7"/><path d="M9.5 20h8a3 3 0 0 0 .5-5.96A5 5 0 0 0 9 15"/></svg>Weather</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M19 4l1 1"/></svg>Connectors &amp; Keys</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="5" y="6" width="14" height="12" rx="2"/><circle cx="9.5" cy="12" r="1"/><circle cx="14.5" cy="12" r="1"/><line x1="12" y1="3" x2="12" y2="6"/></svg>Agents</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M8 4l-3 8 3 8M16 4l3 8-3 8M11 4h2"/></svg>Shortcuts</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="8"/><circle cx="9" cy="10" r="1"/><circle cx="14" cy="9" r="1"/><circle cx="15" cy="14" r="1"/></svg>Appearance</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M6 3h9l4 4v14H6z"/><line x1="9" y1="10" x2="15" y2="10"/><line x1="9" y1="14" x2="15" y2="14"/></svg>Diagnostics</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2M4 5v4h4"/></svg>History</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><line x1="10" y1="6" x2="20" y2="6"/><line x1="10" y1="12" x2="20" y2="12"/><line x1="10" y1="18" x2="20" y2="18"/><circle cx="5" cy="6" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="5" cy="18" r="1"/></svg>Queue</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="8"/><line x1="12" y1="11" x2="12" y2="16"/><circle cx="12" cy="8" r="0.6" fill="currentColor" stroke="none"/></svg>About</div>
+        </nav>
         <div class="sidebar-meta">settings / v5</div>
       </div>
       <div class="pane">
-        <div class="pane-scroll">
-          <span class="pane-kicker">Settings / 06</span>
-          <h1 class="pane-title">Connectors &amp; Keys</h1>
-          <p class="pane-desc">Outbound connectors and their write-only credentials. Keys are never read back across IPC — you can only replace them.</p>
-
-          <div class="settings-group">
-            <div class="group-heading">Write-only keys<div class="group-desc">Values never come back across IPC.</div></div>
-            <div class="secret-row">
-              <div><span class="control-name">OpenRouter API key</span><span class="status-chip">unset</span></div>
-              <div class="secret-controls"><input class="secret-input" type="password" placeholder="Enter a new key"><button class="secondary-button" disabled>Save</button></div>
-            </div>
+        <div class="section-scroll">
+          <div class="content-header" style="padding:0 0 14px;border-bottom:none;">
+            <div class="section-index">Settings / 01</div>
+            <h1 class="pane-title">General</h1>
+            <p class="pane-desc">Control startup, the local listener, and how notifications rotate.</p>
           </div>
-        </div>
-        <div class="settings-footer">
-          <button class="primary-button">Save &amp; Relaunch</button>
-          <button class="footer-button">Reset</button>
-          <button class="footer-button">Reset to defaults</button>
-          <span class="footer-spacer">write-only · receive-only overlay</span>
-        </div>
-      </div>
-    </div>
-  </section>
 
-  <section>
-    <h2>09 — Diagnostics</h2>
-    <p class="section-sub">
-      The newest sidebar section (plan 077): a read-only tail of the
-      active log file — last 200 lines of
-      <code>~/Library/Logs/notchtap/notchtap.log</code>, fetched when the
-      section opens, manual Refresh, no live tail. Secret material is
-      never logged in the first place (the telegram notifier this line
-      once credited with redaction was removed 2026-07-27; the
-      no-secrets-in-logs rule now rests on the loaders alone).
-    </p>
-    <div class="rig-label">Diagnostics pane</div>
-    <div class="window">
-      <div class="sidebar">
-        <div class="brand"><span class="brand-slot"></span>notchtap</div>
-        <div class="nav">
-          <div class="nav-item"><span class="idx">01</span>General</div>
-          <div class="nav-item"><span class="idx">02</span>Football</div>
-          <div class="nav-item"><span class="idx">03</span>News</div>
-          <div class="nav-item"><span class="idx">04</span>Cmux</div>
-          <div class="nav-item"><span class="idx">05</span>Weather</div>
-          <div class="nav-item"><span class="idx">06</span>Connectors &amp; Keys</div>
-          <div class="nav-item"><span class="idx">07</span>Shortcuts</div>
-          <div class="nav-item"><span class="idx">08</span>Appearance</div>
-          <div class="nav-item active"><span class="idx">09</span>Diagnostics</div>
-          <div class="nav-item"><span class="idx">10</span>History</div>
-        </div>
-        <div class="sidebar-meta">settings / v5</div>
-      </div>
-      <div class="pane">
-        <div class="pane-scroll">
-          <span class="pane-kicker">Settings / 09</span>
-          <h1 class="pane-title">Diagnostics</h1>
-          <p class="pane-desc">The last 200 lines of ~/Library/Logs/notchtap/notchtap.log. Read-only; rotated backups are available via Console.app.</p>
+          <div class="section-stack">
+            <div class="settings-group">
+              <div class="group-heading"><div class="group-title">Engine</div></div>
+              <div class="group-body">
+                <div class="control-row">
+                  <div><span class="control-name">Start paused</span><span class="control-help">Launch with promotion paused. The tray will read Resume.</span></div>
+                  <div class="switch"><div class="switch-thumb"></div></div>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Hide overlay when idle</span><span class="control-help">Resting state shows the bare notch instead of the clock and status dots. Notifications, rotation, and shortcuts are unaffected. Applies after Save &amp; Relaunch.</span></div>
+                  <div class="switch"><div class="switch-thumb"></div></div>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Record notification history</span><span class="control-help">Records notification content (including agent-originated payloads) to ~/.config/notchtap/history.jsonl. Applies after Save &amp; Relaunch.</span></div>
+                  <div class="switch is-checked"><div class="switch-thumb"></div></div>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Now playing</span><span class="control-help">Show what's currently playing (Music, a browser tab, etc.) in the idle hover peek. Requires the vendored adapter installed via <code style="color:inherit;font-size:inherit">just build-media-adapter</code>. Applies after Save &amp; Relaunch.</span></div>
+                  <div class="switch"><div class="switch-thumb"></div></div>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Listener port</span><span class="control-help">Local loopback port used by the notchtap CLI.</span></div>
+                  <div class="number-field has-unit"><input class="number-input" value="9789"><span class="unit">PORT</span></div>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Test notification</span><span class="control-help">Send a manual push to the overlay.</span></div>
+                  <button class="btn outline sm">Send test notification</button>
+                </div>
+              </div>
+            </div>
 
-          <div class="settings-group">
-            <div class="group-heading">Recent log lines</div>
-            <div style="padding:12px 14px;">
-              <pre class="log-view"><span class="ts">2026-07-20T14:28:11Z</span> <span class="lvl-info">INFO</span> engine: accepted event src=rss priority=low topic=none
-<span class="ts">2026-07-20T14:28:11Z</span> <span class="lvl-info">INFO</span> engine: promoted id=01J…e4 tier=low slot=visible
-<span class="ts">2026-07-20T14:28:14Z</span> <span class="lvl-info">INFO</span> espn_poller: match 6849211 score 2-1 clock 78'
-<span class="ts">2026-07-20T14:28:14Z</span> <span class="lvl-info">INFO</span> engine: accepted event src=espn priority=high topic=espn:uefa.champions:6849211
-<span class="ts">2026-07-20T14:28:14Z</span> <span class="lvl-info">INFO</span> engine: superseded topic=espn:uefa.champions:6849211
-<span class="ts">2026-07-20T14:29:02Z</span> <span class="lvl-err">WARN</span> weather_poller: open-meteo 502, retrying next interval</pre>
-              <div class="control-row" style="border-top:none; padding-left:0; padding-right:0; min-height:38px;">
-                <div class="control-help">Fetched on section open — no live tail.</div>
-                <button class="secondary-button">Refresh</button>
+            <div class="settings-group">
+              <div class="group-heading"><div class="group-title">Rotation and priority</div><div class="group-desc">Waiting items promote high → medium → low. A strictly-higher-priority arrival interrupts the visible item immediately (Priority Preemption); equal priority never preempts.</div></div>
+              <div class="group-body">
+                <div class="control-row">
+                  <div><span class="control-name">Rotation seconds</span><span class="control-help">How long a one-shot notification occupies the slot.</span></div>
+                  <div class="number-field has-unit"><input class="number-input" value="8"><span class="unit">SEC</span></div>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Queue cap per priority tier</span><span class="control-help">Maximum waiting items kept independently in each priority tier.</span></div>
+                  <div class="number-field has-unit"><input class="number-input" value="50"><span class="unit">ITEMS</span></div>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Manual push priority</span><span class="control-help">Fallback for a CLI push that doesn't set its own priority.</span></div>
+                  <fieldset class="segmented cols-3">
+                    <button class="segmented-btn">Low</button>
+                    <button class="segmented-btn is-selected">Medium</button>
+                    <button class="segmented-btn">High</button>
+                  </fieldset>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-group">
+              <div class="group-heading"><div class="group-title">Rotation order</div><div class="group-desc">Same-tier tie-break, checked before arrival order. Priority still decides which tier goes first.</div></div>
+              <div class="group-body">
+                <div class="rotation-order-row">
+                  <span class="rotation-order-rank">1</span><span class="rotation-order-name">Football</span>
+                  <div style="display:inline-flex;gap:4px;"><span class="icon-btn" style="opacity:.5">▲</span><span class="icon-btn">▼</span></div>
+                </div>
+                <div class="rotation-order-row">
+                  <span class="rotation-order-rank">2</span><span class="rotation-order-name">Manual / CLI push</span>
+                  <div style="display:inline-flex;gap:4px;"><span class="icon-btn">▲</span><span class="icon-btn">▼</span></div>
+                </div>
+                <div class="rotation-order-row">
+                  <span class="rotation-order-rank">3</span><span class="rotation-order-name">Weather</span>
+                  <div style="display:inline-flex;gap:4px;"><span class="icon-btn">▲</span><span class="icon-btn">▼</span></div>
+                </div>
+                <div class="rotation-order-row">
+                  <span class="rotation-order-rank">4</span><span class="rotation-order-name">Agent</span>
+                  <div style="display:inline-flex;gap:4px;"><span class="icon-btn">▲</span><span class="icon-btn">▼</span></div>
+                </div>
+                <div class="rotation-order-row">
+                  <span class="rotation-order-rank">5</span><span class="rotation-order-name">News</span>
+                  <div style="display:inline-flex;gap:4px;"><span class="icon-btn">▲</span><span class="icon-btn" style="opacity:.5">▼</span></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-group">
+              <div class="group-heading"><div class="group-title">Silenced</div><div class="group-desc">Medium/Low events buffer during this daily window; a High event still promotes (Breakthrough). Tray mutes and Skip are live controls for right now — this schedule is only the persisted default.</div></div>
+              <div class="group-body">
+                <div class="control-row">
+                  <div><span class="control-name">Silent period</span><span class="control-help">Buffer Medium/Low notifications during the window below, every day.</span></div>
+                  <div class="switch"><div class="switch-thumb"></div></div>
+                </div>
+                <div class="textarea-control">
+                  <span class="control-name">Silent period window</span>
+                  <span class="control-help">24h local time, HH:MM-HH:MM. May cross midnight (e.g. 23:00-07:30).</span>
+                  <input class="settings-input" style="width:130px;" value="00:00-10:00">
+                  <div class="field-caption">start-end, 24h</div>
+                </div>
               </div>
             </div>
           </div>
         </div>
         <div class="settings-footer">
-          <button class="primary-button">Save &amp; Relaunch</button>
-          <button class="footer-button">Reset</button>
-          <button class="footer-button">Reset to defaults</button>
-          <span class="footer-spacer">write-only · receive-only overlay</span>
+          <button class="btn default sm">Save &amp; Relaunch</button>
+          <button class="btn outline sm">Reset</button>
+          <button class="btn outline sm">Reset to defaults</button>
         </div>
       </div>
     </div>
   </section>
 
-  <section>
-    <h2>Sections not re-drawn here</h2>
-    <p class="section-sub">
-      01 General (engine / rotation &amp; priority / rotation-order
-      list), 02 Football, 03 News, 04 Cmux, 05 Weather — all form
-      sections using the same toggle / number-field-with-unit /
-      priority-toggle controls (Weather's units toggle is a 2-option
-      segmented control, 2 columns — plan 119 fixed a dead 3rd grid
-      column it used to hardcode); 07 Shortcuts (6-row cheatsheet with
-      raised kbd caps, all <code>active</code>); 08 Appearance (card
-      shape segmented controls + live preview rendering the real
-      StatusRailCard, plus per-source test buttons); 10 History (plan
-      089, postdates this whole mockup — a plain reverse-chronological
-      list of past notifications with a Clear action). These are
-      documented in DESIGN.html §06 and unchanged except where noted.
-      2026-07-23 correction: the old watch-out here — that the
-      Appearance preview renders <code>StatusRailCard</code> through a
-      hand-maintained scoped copy, <code>src/settings/preview-overlay.css</code>,
-      needing a matching edit on every card change (DESIGN.html Law #7)
-      — is gone. Plan 111 killed that "mirror law" entirely:
-      <code>src/overlay-card.css</code> is now the single stylesheet
-      both the overlay and the Appearance preview import directly (each
-      wraps its instance in a shared, neutral <code>.card-root</code>
-      class), so there is nothing left to keep in sync by hand.
+  <!-- ============================================================ -->
+  <section class="rig">
+    <h2>06 — Agents</h2>
+    <p class="rig-sub">
+      The v7 Agent Adapter section (spec §4.6/§8) — the newest and largest
+      section. Four groups: Agent Adapters (master enable + retention/stale
+      settings), Notification priority (one Low/Medium/High segmented per
+      event kind: permission requested, input required, failed, completed),
+      Adapters (one card per supported runtime — enable toggle, live health,
+      the exact setup snippet + target file to copy, a "send test event"
+      button, uninstall instructions), and Preview (five static text rows
+      showing what the overlay's Agent Board looks like per state — this
+      settings window never renders the live Agent Board component itself).
+      Only Claude Code and Codex's cards are drawn below; Kimi and OpenCode
+      use the identical card shape with their own snippet/target file.
     </p>
+    <div class="rig-label">Agents pane</div>
+    <div class="window">
+      <div class="sidebar">
+        <div class="sidebar-brand"><span class="brand-mark"></span>notchtap</div>
+        <nav class="sidebar-nav">
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="17" r="2"/></svg>General</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M6 4h12v4a6 6 0 0 1-12 0V4z"/><path d="M6 6H3v2a3 3 0 0 0 3 3M18 6h3v2a3 3 0 0 1-3 3"/><path d="M9 20h6M12 14v6"/></svg>Football</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="5" width="16" height="15" rx="1.5"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="17" y2="13"/><line x1="7" y1="16" x2="13" y2="16"/></svg>News</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="9" cy="10" r="4"/><path d="M9 3v1.4M3.6 10H5M15 15.5A4.5 4.5 0 0 0 14 6.7"/><path d="M9.5 20h8a3 3 0 0 0 .5-5.96A5 5 0 0 0 9 15"/></svg>Weather</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M19 4l1 1"/></svg>Connectors &amp; Keys</div>
+          <div class="nav-item is-active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="5" y="6" width="14" height="12" rx="2"/><circle cx="9.5" cy="12" r="1"/><circle cx="14.5" cy="12" r="1"/><line x1="12" y1="3" x2="12" y2="6"/></svg>Agents</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M8 4l-3 8 3 8M16 4l3 8-3 8M11 4h2"/></svg>Shortcuts</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="8"/><circle cx="9" cy="10" r="1"/><circle cx="14" cy="9" r="1"/><circle cx="15" cy="14" r="1"/></svg>Appearance</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M6 3h9l4 4v14H6z"/><line x1="9" y1="10" x2="15" y2="10"/><line x1="9" y1="14" x2="15" y2="14"/></svg>Diagnostics</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2M4 5v4h4"/></svg>History</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><line x1="10" y1="6" x2="20" y2="6"/><line x1="10" y1="12" x2="20" y2="12"/><line x1="10" y1="18" x2="20" y2="18"/><circle cx="5" cy="6" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="5" cy="18" r="1"/></svg>Queue</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="8"/><line x1="12" y1="11" x2="12" y2="16"/><circle cx="12" cy="8" r="0.6" fill="currentColor" stroke="none"/></svg>About</div>
+        </nav>
+        <div class="sidebar-meta">settings / v5</div>
+      </div>
+      <div class="pane">
+        <div class="section-scroll">
+          <div class="content-header" style="padding:0 0 14px;border-bottom:none;">
+            <div class="section-index">Settings / 06</div>
+            <h1 class="pane-title">Agents</h1>
+            <p class="pane-desc">Accept coding-agent lifecycle events, tune notification priority, and set up each adapter.</p>
+          </div>
+
+          <div class="section-stack">
+            <div class="settings-group">
+              <div class="group-heading"><div class="group-title">Agent Adapters</div><div class="group-desc">Accept lifecycle events from coding-agent runtimes over the loopback /agent/events endpoint and show them on the Agent Board.</div></div>
+              <div class="group-body">
+                <div class="control-row">
+                  <div><span class="control-name">Enable Agent Adapters</span><span class="control-help">Master switch — off skips every runtime's events regardless of the per-adapter toggles below.</span></div>
+                  <div class="switch is-checked"><div class="switch-thumb"></div></div>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Terminal retention</span><span class="control-help">How long a completed or failed session stays on the Agent Board before it's dropped.</span></div>
+                  <div class="number-field has-unit"><input class="number-input" value="600"><span class="unit">SEC</span></div>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Stale threshold</span><span class="control-help">A session with no accepted event for this long is marked Stale on the Agent Board.</span></div>
+                  <div class="number-field has-unit"><input class="number-input" value="120"><span class="unit">SEC</span></div>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Informational cards</span><span class="control-help">Also show a card for ordinary progress/tool events, not just permission/input/failure/completion.</span></div>
+                  <div class="switch"><div class="switch-thumb"></div></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-group">
+              <div class="group-heading"><div class="group-title">Notification priority</div><div class="group-desc">Which rotation tier each kind of Agent event promotes in.</div></div>
+              <div class="group-body">
+                <div class="control-row">
+                  <div><span class="control-name">Permission requested</span></div>
+                  <fieldset class="segmented cols-3"><button class="segmented-btn">Low</button><button class="segmented-btn">Medium</button><button class="segmented-btn is-selected">High</button></fieldset>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Input required</span></div>
+                  <fieldset class="segmented cols-3"><button class="segmented-btn">Low</button><button class="segmented-btn">Medium</button><button class="segmented-btn is-selected">High</button></fieldset>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Failed</span></div>
+                  <fieldset class="segmented cols-3"><button class="segmented-btn">Low</button><button class="segmented-btn">Medium</button><button class="segmented-btn is-selected">High</button></fieldset>
+                </div>
+                <div class="control-row">
+                  <div><span class="control-name">Completed</span></div>
+                  <fieldset class="segmented cols-3"><button class="segmented-btn">Low</button><button class="segmented-btn is-selected">Medium</button><button class="segmented-btn">High</button></fieldset>
+                </div>
+              </div>
+            </div>
+
+            <div class="settings-group">
+              <div class="group-heading"><div class="group-title">Adapters</div><div class="group-desc">One card per supported runtime — setup snippet, declared capabilities, and live health.</div></div>
+              <div class="group-body">
+                <div class="agent-card">
+                  <div class="agent-card-header">
+                    <span class="agent-name"><span class="runtime-dot" style="background:var(--overlay-amber)"></span>Claude Code</span>
+                    <span style="display:flex;gap:6px;"><span class="meta-chip uppercase active">Available</span><span class="meta-chip">Enabled</span></span>
+                  </div>
+                  <div class="control-row">
+                    <div><span class="control-name">Enable Claude Code</span><span class="control-help">Accept Claude Code events over the loopback /agent/events endpoint.</span></div>
+                    <div class="switch is-checked"><div class="switch-thumb"></div></div>
+                  </div>
+                  <div class="agent-health">
+                    <span>Last seen: 3 min ago</span>
+                    <span>Capabilities: permission, input, completion</span>
+                  </div>
+                  <div class="agent-meta-label" style="margin-top:6px;">Target file</div>
+                  <div class="target-file">~/.claude/settings.json (or a project's .claude/settings.json)</div>
+                  <pre class="snippet">{
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook claude-code" }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook claude-code" }] }]
+    /* … 10 hook entries total, one per lifecycle event */
+  }
+}</pre>
+                  <div class="control-row"><div><span class="control-name">Setup snippet</span><span class="control-help">Copy the block above into the target file shown.</span></div><button class="btn outline sm">Copy snippet</button></div>
+                  <div class="control-row"><div><span class="control-name">Test event</span><span class="control-help">Post one synthetic completed event so you can see it land on the Agent Board.</span></div><button class="btn outline sm">Send test event</button></div>
+                  <p style="margin:6px 0 0;font-size:var(--fs-caption);color:var(--muted-foreground);">Uninstall: Remove the ten hook entries above from settings.json, or delete the whole file.</p>
+                </div>
+
+                <div class="agent-card">
+                  <div class="agent-card-header">
+                    <span class="agent-name"><span class="runtime-dot" style="background:var(--overlay-teal)"></span>Codex</span>
+                    <span style="display:flex;gap:6px;"><span class="meta-chip uppercase">Unavailable</span><span class="meta-chip">Disabled</span></span>
+                  </div>
+                  <div class="control-row">
+                    <div><span class="control-name">Enable Codex</span><span class="control-help">Accept Codex events over the loopback /agent/events endpoint.</span></div>
+                    <div class="switch"><div class="switch-thumb"></div></div>
+                  </div>
+                  <div class="agent-meta-label" style="margin-top:6px;">Target file</div>
+                  <div class="target-file">~/.codex/hooks.json (or a project's .codex/hooks.json)</div>
+                  <pre class="snippet">{
+  "hooks": {
+    "SessionStart": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook codex" }] }],
+    "PostToolUse": [{ "hooks": [{ "type": "command", "command": "notchtap-agent hook codex" }] }]
+    /* … 8 hook entries total */
+  }
+}</pre>
+                  <div class="control-row"><div><span class="control-name">Setup snippet</span><span class="control-help">Copy the block above into the target file shown.</span></div><button class="btn outline sm">Copy snippet</button></div>
+                  <div class="control-row"><div><span class="control-name">Test event</span><span class="control-help">Post one synthetic completed event so you can see it land on the Agent Board.</span></div><button class="btn outline sm">Send test event</button></div>
+                  <p style="margin:6px 0 0;font-size:var(--fs-caption);color:var(--muted-foreground);">Uninstall: Remove the eight hook entries above from hooks.json, or delete the whole file.</p>
+                </div>
+
+                <p style="margin:8px 0 0;font-size:var(--fs-caption);color:var(--muted-foreground);">Kimi and OpenCode cards (not drawn here) follow this exact shape — a TOML <code style="color:inherit;font-size:inherit">[[hooks]]</code> snippet for Kimi's <code style="color:inherit;font-size:inherit">~/.kimi-code/config.toml</code>, a copy-the-plugin-file instruction for OpenCode.</p>
+              </div>
+            </div>
+
+            <div class="settings-group">
+              <div class="group-heading"><div class="group-title">Preview</div><div class="group-desc">What each Agent Board state looks like — a text summary, not the live card (the Agent Board itself renders in the overlay).</div></div>
+              <div class="group-body">
+                <div class="control-row" style="grid-template-columns:1fr;">
+                  <div>
+                    <span class="control-name">Waiting on permission <span class="meta-chip" style="margin-left:6px;"><span class="meta-chip-dot" style="background:var(--overlay-amber)"></span>Claude Code</span></span>
+                    <span class="control-help">Approval needed to run a command</span>
+                  </div>
+                </div>
+                <div class="control-row" style="grid-template-columns:1fr;">
+                  <div>
+                    <span class="control-name">Completed <span class="meta-chip" style="margin-left:6px;">Kimi</span></span>
+                    <span class="control-help">Turn completed — awaiting input</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="settings-footer">
+          <button class="btn default sm">Save &amp; Relaunch</button>
+          <button class="btn outline sm">Reset</button>
+          <button class="btn outline sm">Reset to defaults</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="rig">
+    <h2>05 — Connectors &amp; Keys</h2>
+    <p class="rig-sub">
+      One group, "Write-only keys" — currently a single row (the OpenRouter
+      API key). Values never come back across IPC; the status chip only
+      ever reads "unset" or a masked confirmation once saved. The telegram
+      connector this section used to also host was removed by operator
+      decision (external bot setup felt unnecessary) — that removal already
+      happened before this section's current shape and isn't drawn here as
+      a separate variant.
+    </p>
+    <div class="rig-label">Connectors &amp; Keys pane</div>
+    <div class="window">
+      <div class="sidebar">
+        <div class="sidebar-brand"><span class="brand-mark"></span>notchtap</div>
+        <nav class="sidebar-nav">
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="15" cy="17" r="2"/></svg>General</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M6 4h12v4a6 6 0 0 1-12 0V4z"/><path d="M6 6H3v2a3 3 0 0 0 3 3M18 6h3v2a3 3 0 0 1-3 3"/><path d="M9 20h6M12 14v6"/></svg>Football</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="4" y="5" width="16" height="15" rx="1.5"/><line x1="7" y1="9" x2="17" y2="9"/><line x1="7" y1="13" x2="17" y2="13"/><line x1="7" y1="16" x2="13" y2="16"/></svg>News</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="9" cy="10" r="4"/><path d="M9 3v1.4M3.6 10H5M15 15.5A4.5 4.5 0 0 0 14 6.7"/><path d="M9.5 20h8a3 3 0 0 0 .5-5.96A5 5 0 0 0 9 15"/></svg>Weather</div>
+          <div class="nav-item is-active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="8" cy="15" r="4"/><path d="M11 12l8-8M16 7l2 2M19 4l1 1"/></svg>Connectors &amp; Keys</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><rect x="5" y="6" width="14" height="12" rx="2"/><circle cx="9.5" cy="12" r="1"/><circle cx="14.5" cy="12" r="1"/><line x1="12" y1="3" x2="12" y2="6"/></svg>Agents</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M8 4l-3 8 3 8M16 4l3 8-3 8M11 4h2"/></svg>Shortcuts</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="8"/><circle cx="9" cy="10" r="1"/><circle cx="14" cy="9" r="1"/><circle cx="15" cy="14" r="1"/></svg>Appearance</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><path d="M6 3h9l4 4v14H6z"/><line x1="9" y1="10" x2="15" y2="10"/><line x1="9" y1="14" x2="15" y2="14"/></svg>Diagnostics</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2M4 5v4h4"/></svg>History</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><line x1="10" y1="6" x2="20" y2="6"/><line x1="10" y1="12" x2="20" y2="12"/><line x1="10" y1="18" x2="20" y2="18"/><circle cx="5" cy="6" r="1"/><circle cx="5" cy="12" r="1"/><circle cx="5" cy="18" r="1"/></svg>Queue</div>
+          <div class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75"><circle cx="12" cy="12" r="8"/><line x1="12" y1="11" x2="12" y2="16"/><circle cx="12" cy="8" r="0.6" fill="currentColor" stroke="none"/></svg>About</div>
+        </nav>
+        <div class="sidebar-meta">settings / v5</div>
+      </div>
+      <div class="pane">
+        <div class="section-scroll">
+          <div class="content-header" style="padding:0 0 14px;border-bottom:none;">
+            <div class="section-index">Settings / 05</div>
+            <h1 class="pane-title">Connectors &amp; Keys</h1>
+            <p class="pane-desc">Manage write-only credentials for outbound integrations.</p>
+          </div>
+          <div class="settings-group">
+            <div class="group-heading"><div class="group-title">Write-only keys</div><div class="group-desc">Values never come back across IPC. Status reveals only whether a value is set and, when safe, its masked suffix.</div></div>
+            <div class="group-body">
+              <div class="textarea-control" style="padding-top:11px;">
+                <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:7px;">
+                  <span class="control-name">OpenRouter API key</span>
+                  <span class="meta-chip uppercase">unset</span>
+                </div>
+                <div style="display:grid;grid-template-columns:minmax(0,1fr) auto;gap:7px;">
+                  <input class="settings-input" style="margin-top:0;" type="password" placeholder="Enter a new key">
+                  <button class="btn outline sm" disabled>Save</button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="settings-footer">
+          <button class="btn default sm">Save &amp; Relaunch</button>
+          <button class="btn outline sm">Reset</button>
+          <button class="btn outline sm">Reset to defaults</button>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- ============================================================ -->
+  <section class="rig">
+    <h2>Sections not drawn out in full</h2>
+    <p class="rig-sub">
+      Every other section, with its real control list and copy — same
+      window chrome (sidebar/header/footer) as above, just not re-rendered
+      pixel-by-pixel here.
+    </p>
+    <div class="settings-group" style="max-width:640px;">
+      <div class="group-body" style="padding:4px 13px;">
+        <ul class="prose-list">
+          <li><b style="color:var(--foreground)">02 Football</b> — one group ("Score polling"): a <span class="snip">Football</span> identity chip, enable toggle, a leagues textarea (one ESPN league code per line), poll interval, rotation seconds, a "Live match card" toggle (consolidate updates into one card instead of a burst), a "Richer match events" toggle (fouls/offsides/VAR/subs, opt-in — heavier polling), priority segmented, test button.</li>
+          <li><b style="color:var(--foreground)">03 News</b> — one group ("RSS polling"): enable toggle, feeds textarea, topics textarea (searched via Google News, merged into the same stream), poll interval, headline rotation seconds, max-per-poll burst cap, priority segmented, test button, an ad-hoc "Search now" row (one-off Google News search, not saved as a topic), and a read-only category-colour legend (six chips: Politics/Tech/Sports/Business/World/Science).</li>
+          <li><b style="color:var(--foreground)">04 Weather</b> — one group: keyless Open-Meteo polling. Identity chip, enable toggle, latitude/longitude (decimal degrees), a Celsius/Fahrenheit units segmented (display only — alert thresholds are always Celsius), poll interval, rain threshold %, rain lookahead minutes, hot/cold temperature thresholds (°C), priority segmented, test button.</li>
+          <li><b style="color:var(--foreground)">07 Shortcuts</b> — one group, a real <code style="color:inherit;font-size:inherit">&lt;table&gt;</code> (not a div grid) of 7 rows: expand/collapse (⌃⇧N), open story link (⌃⇧O), dismiss now (⌃⇧X), pause/resume (⌃⇧P), skip to next (⌃⇧]), focus front Agent Session's host app (⌃⇧A), open settings (⌃⇧,) — every row currently "active" (no planned-but-unshipped rows today).</li>
+          <li><b style="color:var(--foreground)">08 Appearance</b> — two groups: "Card shape" (Scale/Radius/Opacity — three bare, unlabelled segmented controls each with 3 options, e.g. Small/Medium/Large — applies live to the real overlay via <code style="color:inherit;font-size:inherit">set_appearance</code> — plus a "Live check" test button), and "Overlay animations" — a preview gallery that renders the actual <code style="color:inherit;font-size:inherit">StatusRailCard</code> component (imported from the overlay, not re-implemented) across several fixture states, reflecting the shape settings above live.</li>
+          <li><b style="color:var(--foreground)">09 Diagnostics</b> — one group: a read-only <code style="color:inherit;font-size:inherit">&lt;pre&gt;</code> tail of the last 200 lines of <code style="color:inherit;font-size:inherit">~/Library/Logs/notchtap/notchtap.log</code>, fetched on section-open, plus a manual Refresh button (no live tail).</li>
+          <li><b style="color:var(--foreground)">10 History</b> — one group: a reverse-chronological list of recorded notifications (time, origin, title, metadata chips for source/category/priority/event-type/rotation, body, an expandable "More details" native <code style="color:inherit;font-size:inherit">&lt;details&gt;</code> for subtitle/topic/published time/ESPN summary/link-as-text), fetched on section-open, plus a two-step-confirm Clear history button. Empty-state copy differs depending on whether history recording is on.</li>
+          <li><b style="color:var(--foreground)">11 Queue</b> — one group: a plain list of items currently waiting behind the visible card (title + priority chip), a manual Refresh button, a Skip current button (dismiss the visible card now, promote the next waiting item), and a Clear queue button (drops every waiting item; the visible card finishes its own turn untouched).</li>
+          <li><b style="color:var(--foreground)">12 About</b> — five groups: identity (brand mark, version + bundle id), "What it is" (one paragraph), "How to use it" (a 4-item list with inline <code style="color:inherit;font-size:inherit">./notchtap …</code>/<code style="color:inherit;font-size:inherit">notchtap run -- …</code> snippets and the three most-used shortcuts), "Tech stack" (chips: Rust core, Tauri v2, React + TypeScript, Motion, Vite), and "System" — a live 2-second-polled 2×3 stat grid (app memory, system memory, disk, platform/arch, bundle size, uptime).</li>
+        </ul>
+      </div>
+    </div>
   </section>
 
   <footer class="page-foot">
-    Historical open-items list, since resolved: plan 059 (notification
-    history) shipped as the 10th sidebar section (plan 089, "History" —
-    now in both sidebar navs above); plan 068 (test-notification
-    coverage) and plan 071 (docs truth pass) are also done. Everything
-    settings-related is shipped as of 2026-07-23.
+    Everything above was read directly from <code>src/settings/SettingsApp.tsx</code>,
+    every file under <code>src/settings/sections/</code>, the shared control
+    components (<code>src/settings/controls/</code>), the shadcn-derived
+    primitives (<code>src/components/ui/</code>), and the design tokens
+    (<code>vendor/shared-ui/design/tokens.css</code>, <code>src/settings/base.css</code>).
+    If those files change, this mock drifts — there's no automated sync;
+    re-run the same read-and-rewrite pass this file's own header comment
+    describes.
   </footer>
 </main>
 </body>

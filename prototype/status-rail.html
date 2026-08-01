@@ -1,78 +1,266 @@
 <!doctype html>
-<!-- plan 137 (v7 ticket 5, spec §7/§12) archived-note: this static mockup predates the cmux relay's removal — every "cmux"/"Cmux" label below is a historical artifact from when v6's cmux relay was the agent-notification source; the shipped app now sources these as the v7 Agent Adapter layer (Origin/SourceKind::Agent). Not resynced, per this repo's prototype-drift convention (CLAUDE.md). -->
+<!-- SYNC NOTE (2026-07-30): this file was fully re-synced against the shipped
+     overlay. Every selector/value below is copied from the real stylesheets
+     (`src/overlay-card.css` + `src/overlay/*.css` + `vendor/shared-ui/design/tokens.css`),
+     scoped exactly as they ship (`.card-root ...`); the DOM each `render*()` helper
+     builds mirrors `src/components/StatusRailCard.tsx` and the sub-components it
+     renders (`NotificationBody`, `Manifest`, `Stamp`, `TtlBar`, `StatusDots`,
+     `FlankClock`, `IdleFace`, `IdleHoverPeek`, `LiveMatchScorecard`) as of that
+     commit. The card shape changed completely since this file's previous sync
+     (2026-07-23, plan 106): the old single-shell `.rail-card` is gone, replaced by
+     the cutout/flank grid (`.card-assembly` — plan 091 onward) with a real notch
+     cutout, a persistent clock+status-dot rail, an idle face, and a hover-reveal
+     peek. This page has NO build step and pulls in no framework — motion's spring/
+     AnimatePresence choreography is approximated here with plain CSS transitions
+     using the same duration/easing *fallback* values the real CSS custom properties
+     carry (e.g. `var(--expand-ms, 320ms)`) — the shipped app injects the real
+     tokens from `src/animationTiming.ts` at runtime, which this static page never
+     loads, so it always renders on those fallbacks. Weather glyphs are hand-drawn
+     placeholder SVGs standing in for the vendored Meteocons assets
+     (`src/assets/weather/*.svg`) — real MediaRemote/team-crest artwork is likewise
+     unavailable to a static file, so media rows and crest-less scorecards fall back
+     to the same abbreviation/icon-glyph paths the shipped app itself falls back to
+     when no cached asset exists. Everything else — class names, DOM nesting, CSS
+     values, state-machine boundaries (bare/rail/hovered, idle/showing/expanded,
+     the priority accent channel vs the origin/category paint channel) — is real. -->
 <html lang="en">
 <head>
 <meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>notchtap — SHIPPED Status Rail mirror (89850b6)</title>
+<title>notchtap — Status Rail mirror (shipped overlay, synced 2026-07-30)</title>
 <style>
 /* ============================================================
-   PART 1 — verbatim copy of src/styles.css @ 89850b6 (SHIPPED)
-   the only edits: html/body page chrome lives in PART 2 instead
+   PART 1 — the real design system, verbatim selectors/values.
+   Source: vendor/shared-ui/design/tokens.css, src/styles.css,
+   src/overlay-card.css, src/overlay/*.css. Comments trimmed to the
+   load-bearing "why" only — full history lives in those files' own
+   plan-annotated comments; read them there, not here.
    ============================================================ */
+
+/* ---- vendor/shared-ui/design/tokens.css (bespoke layer only) ---- */
+:root {
+  --overlay-blue: #0a84ff;
+  --overlay-teal: #55d6bd;
+  --overlay-coral: #ff6b57;
+  --overlay-green: #7fe08d;
+  --overlay-amber: #f0c46a;
+  --overlay-fg: #f5f7fa;
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+  --ease-notchtap: cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+/* ---- src/styles.css (:root defaults + card-root scope host) ---- */
 :root {
   --card-scale: 1;
-  --card-radius: 16px; /* shipped runtime default (plan 032: 8 -> 16) */
-  --card-opacity: 0.9;
+  --card-radius: 8px;
+  --card-opacity: 1;
+  --ease-notchtap-pop: cubic-bezier(0.3, 1.36, 0.44, 1);
+  --notchtap-cutout-width: 200px;
+  --notchtap-cutout-height: 32px;
 }
+/* real App.tsx gives `.card-root` `display: contents` (a layout-neutral scope
+   host for the one real StatusRailCard mounted in the whole overlay window).
+   This showcase mounts many cards side by side inside sized preview frames, so
+   `.card-root` here is a plain block instead — the selectors under it are
+   otherwise byte-identical to the shipped scope. */
+.card-root { display: block; }
 
-.rail-card {
-  box-sizing: border-box;
+/* ============ src/overlay/card-chrome.css ============ */
+.card-root .card-assembly {
   position: relative;
-  width: calc(400px * var(--card-scale));
+  box-sizing: border-box;
+  display: grid;
+  grid-template-columns: 1fr var(--notchtap-cutout-width, 200px) 1fr;
+  grid-template-rows: var(--notchtap-cutout-height, 32px) auto;
+  width: var(--cw, min(max(calc(400px * var(--card-scale)), calc(var(--notchtap-cutout-width, 200px) + (2 * 60px * var(--card-scale)))), 100%));
   margin: 0 auto;
-  overflow: hidden;
-  border-radius: 0 0 var(--card-radius) var(--card-radius);
-  background: rgba(5, 6, 7, var(--card-opacity));
-  color: #f5f7fa;
-  box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
-  transition:
-    width 320ms cubic-bezier(0.22, 1, 0.36, 1),
-    border-radius 320ms ease,
-    background 180ms ease;
-}
-
-.rail-card.expanded {
-  width: calc(500px * var(--card-scale));
-  border-radius: 0 0 var(--card-radius) var(--card-radius);
-}
-
-.rail-card.idle {
-  width: calc(270px * var(--card-scale));
-  border-radius: 0 0 var(--card-radius) var(--card-radius);
-}
-
-.rail-card.idle.status {
-  width: calc(460px * var(--card-scale));
-}
-
-.rail-card.low {
-  --accent: #aab3bd;
-  --accent-soft: rgba(170, 179, 189, 0.2);
-}
-
-.rail-card.medium {
-  --accent: #55d6bd;
-  --accent-soft: rgba(85, 214, 189, 0.24);
-}
-
-.rail-card.high {
-  --accent: #ff6b57;
-  --accent-soft: rgba(255, 107, 87, 0.28);
-}
-
-.rail-card {
   isolation: isolate;
+  transform-origin: top center;
+  filter: drop-shadow(0 7px 18px rgba(0, 0, 0, 0.5));
+  transition:
+    width var(--expand-ms, 320ms) var(--ease-notchtap-pop, cubic-bezier(0.3, 1.36, 0.44, 1)),
+    transform var(--hover-ms, 160ms) var(--ease-notchtap);
+}
+/* idle rest-rail width and expanded width are two named modifiers; a
+   showing-but-collapsed card carries NEITHER class, so it falls through to
+   the base rule's 400px formula above — this is the "geometry priority"
+   contract StatusRailCard.tsx computes (`geometryPriority`). */
+.card-root .card-assembly.idle {
+  --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
+}
+.card-root .card-assembly.expanded {
+  --cw: min(max(calc(500px * var(--card-scale)), calc(var(--notchtap-cutout-width, 200px) + (2 * 60px * var(--card-scale)))), 100%);
+}
+/* bare/minimal notch mode (resting_state: "notch", idle, not hovered): the
+   shell mounts but paints zero app-drawn pixels — cutout-width-only, flanks
+   transparent — so it reads as the raw hardware notch. */
+.card-root .card-assembly.bare {
+  --cw: min(var(--notchtap-cutout-width, 200px), 100%);
+}
+.card-root .card-assembly.bare .flank-left,
+.card-root .card-assembly.bare .flank-right {
+  background: transparent;
+  box-shadow: none;
+  padding: 0;
+}
+.card-root .card-assembly.bare:has(.idle-peek) {
+  --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
+}
+.card-root .card-assembly.bare.hovered .flank-left,
+.card-root .card-assembly.bare.hovered .flank-right {
+  background: #000;
+}
+.card-root .card-assembly.bare.hovered .flank-left { padding-left: 16px; }
+.card-root .card-assembly.bare.hovered .flank-right { padding-right: 16px; }
+
+.card-root .flank-left,
+.card-root .flank-right {
+  box-sizing: border-box;
+  grid-row: 1;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  background: #000;
+  color: var(--overlay-fg);
+  transition:
+    background-color var(--reveal-ms, 260ms) var(--ease-notchtap),
+    padding var(--reveal-ms, 260ms) var(--ease-notchtap);
+  min-width: 0;
+}
+.card-root .flank-left { grid-column: 1; justify-content: flex-start; padding-left: 16px; }
+.card-root .flank-right { grid-column: 3; justify-content: flex-end; padding-right: 16px; }
+
+/* ROUNDING LAW: the cutout's base corners stay perfectly square everywhere.
+   Outer rounding lives only at the true outer ends of the whole assembly —
+   on the flanks when there's no below-block (idle, they ARE the bottom
+   edge), or on the below-block when there is one (showing/exiting owns the
+   bottom rounding then). Never round both at once (double-curve gap bug). */
+.card-root .card-assembly:not(:has(.below-block)) .flank-left,
+.card-root .card-assembly.exiting .flank-left {
+  border-bottom-left-radius: var(--card-radius, 8px);
+  transition: border-radius var(--content-exit-ms, 105ms) var(--ease-notchtap);
+}
+.card-root .card-assembly:not(:has(.below-block)) .flank-right,
+.card-root .card-assembly.exiting .flank-right {
+  border-bottom-right-radius: var(--card-radius, 8px);
+  transition: border-radius var(--content-exit-ms, 105ms) var(--ease-notchtap);
 }
 
-.rail-card::after {
-  content: "";
+.card-root .card-assembly.exiting {
+  --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
+  transition:
+    width var(--swap-exit-ms, 175ms) var(--ease-notchtap),
+    transform var(--hover-ms, 160ms) var(--ease-notchtap);
+}
+.card-root .card-assembly.exiting.exit-to-bare {
+  --cw: min(var(--notchtap-cutout-width, 200px), 100%);
+}
+.card-root .card-assembly.exiting.exit-to-bare .flank-left,
+.card-root .card-assembly.exiting.exit-to-bare .flank-right {
+  background-color: transparent;
+  padding: 0;
+  transition:
+    background-color var(--swap-exit-ms, 175ms) var(--ease-notchtap),
+    padding var(--swap-exit-ms, 175ms) var(--ease-notchtap);
+}
+
+/* notch-shaped idle profile: a modest convex round at the bottom-outer
+   corner (HUD only — real hardware draws its own curves), plus a genuinely
+   concave top "gill" fillet (real DOM elements below — border-radius can
+   only bow outward, never carve a concave dent). */
+:root[data-notchtap-mode="hud"] .card-root .card-assembly:not(.bare):not(:has(.below-block)) .flank-left,
+:root[data-notchtap-mode="hud"] .card-root .card-assembly.exiting:not(.bare) .flank-left {
+  border-bottom-left-radius: var(--card-radius, 8px) min(calc(var(--card-radius, 8px) * 2), 20px);
+}
+:root[data-notchtap-mode="hud"] .card-root .card-assembly:not(.bare):not(:has(.below-block)) .flank-right,
+:root[data-notchtap-mode="hud"] .card-root .card-assembly.exiting:not(.bare) .flank-right {
+  border-bottom-right-radius: var(--card-radius, 8px) min(calc(var(--card-radius, 8px) * 2), 20px);
+}
+.card-root .notch-gill {
+  display: none;
   position: absolute;
-  inset: -60px;
-  z-index: 0;
-  border-radius: 50%;
+  top: 0;
+  width: 10px;
+  height: 10px;
+  pointer-events: none;
+}
+:root[data-notchtap-mode="hud"] .card-root .card-assembly:not(:has(.below-block)) .notch-gill,
+:root[data-notchtap-mode="hud"] .card-root .card-assembly.exiting:not(.bare) .notch-gill {
+  display: block;
+}
+.card-root .notch-gill-left { left: -10px; background: radial-gradient(circle at bottom left, transparent 10px, #000 10px); }
+.card-root .notch-gill-right { right: -10px; background: radial-gradient(circle at bottom right, transparent 10px, #000 10px); }
+
+.card-root .synthetic-cutout { grid-column: 2; grid-row: 1; display: none; }
+:root[data-notchtap-mode="hud"] .card-root .synthetic-cutout { display: block; background: #000; }
+:root[data-notchtap-mode="hud"] .card-root .card-assembly.bare:not(:has(.below-block)) .synthetic-cutout {
+  border-bottom-left-radius: var(--card-radius, 8px) min(calc(var(--card-radius, 8px) * 2), 20px);
+  border-bottom-right-radius: var(--card-radius, 8px) min(calc(var(--card-radius, 8px) * 2), 20px);
+}
+
+/* the idle face — notchtap-branded personality, fades into the cutout cell
+   after a few seconds of true idle. HUD-only (real notch mode sits behind
+   the physical camera housing). */
+.card-root .idle-face {
+  grid-column: 2; grid-row: 1;
+  display: none;
+  flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px;
+  pointer-events: none;
+}
+:root[data-notchtap-mode="hud"] .card-root .idle-face { display: flex; }
+.card-root .idle-face-eyes { display: flex; align-items: center; gap: 6px; }
+.card-root .idle-face-eye {
+  width: 3px; height: 4px; border-radius: 1.5px;
+  background: color-mix(in srgb, var(--overlay-fg) 92%, transparent);
+}
+.card-root .idle-face-mouth { display: block; overflow: visible; }
+.card-root .idle-face-mouth path {
+  fill: none;
+  stroke: color-mix(in srgb, var(--overlay-fg) 75%, transparent);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.card-root .below-block {
+  grid-column: 1 / -1; grid-row: 2;
+  position: relative;
+  box-sizing: border-box;
+  overflow: hidden;
+  width: 100%;
+  min-width: 0;
+  background: rgba(0, 0, 0, var(--card-opacity, 1));
+  color: var(--overlay-fg);
+  border-bottom-left-radius: var(--card-radius, 8px);
+  border-bottom-right-radius: var(--card-radius, 8px);
+}
+/* the agent-origin hairline + wash — content chrome (below-block), never
+   the shell: origin and priority are orthogonal, never share a channel. */
+.card-root .below-block.agent-origin { border-top: 1px solid color-mix(in srgb, var(--cat) 55%, transparent); }
+.card-root .below-block.agent-origin::before {
+  content: ""; position: absolute; inset: 0;
+  background: radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%);
+  pointer-events: none;
+}
+.card-root .below-block.agent-origin .compact,
+.card-root .below-block.agent-origin .manifest { position: relative; z-index: 1; }
+
+/* priority accent — a single named color per tier, feeding the compact
+   row's edge, the stamp pill, and the ttl-bar's fill/done segments.
+   Deliberately NOT signal-driven (goal/red_card share "high" with any
+   other high-priority source). */
+.card-root .card-assembly.low { --accent: #aab3bd; --accent-soft: rgba(170, 179, 189, 0.2); }
+.card-root .card-assembly.medium { --accent: var(--overlay-teal); --accent-soft: rgba(85, 214, 189, 0.24); }
+.card-root .card-assembly.high { --accent: var(--overlay-coral); --accent-soft: rgba(255, 107, 87, 0.28); }
+
+/* ============ src/overlay/choreography.css ============ */
+.card-root .card-assembly.hovered { transform: scale(1.02); }
+
+.card-root .card-assembly::after {
+  content: ""; position: absolute; inset: -60px; z-index: 0; border-radius: 50%;
   background:
-    radial-gradient(circle at 50% 50%, rgba(255, 224, 130, 0.95), transparent 40%),
+    radial-gradient(circle at 50% 50%, rgba(255, 224, 130, 0.55), transparent 40%),
     radial-gradient(circle at 22% 32%, rgba(255, 107, 87, 0.9), transparent 12%),
     radial-gradient(circle at 78% 30%, rgba(120, 224, 200, 0.85), transparent 12%),
     radial-gradient(circle at 30% 74%, rgba(124, 157, 245, 0.85), transparent 12%),
@@ -82,383 +270,272 @@
   opacity: 0;
   pointer-events: none;
 }
-
-.rail-card.pulse-goal {
-  animation: goal-overshoot 620ms cubic-bezier(0.22, 1, 0.36, 1);
+.card-root .card-assembly.pulse-goal { animation: goal-overshoot 1240ms var(--ease-notchtap); }
+.card-root .card-assembly.pulse-goal::after { animation: goal-burst 1240ms var(--ease-notchtap); }
+.card-root .card-assembly.pulse-goal::before {
+  content: ""; position: absolute; top: 50%; left: 50%;
+  width: 40px; height: 40px; margin: -20px 0 0 -20px; z-index: 0;
+  border-radius: 50%; border: 2px solid rgba(255, 224, 130, 0.9);
+  opacity: 0; pointer-events: none;
+  animation: goal-ring 1240ms var(--ease-notchtap);
 }
-
-.rail-card.pulse-goal::after {
-  animation: goal-burst 620ms ease-out;
-}
-
-.rail-card.pulse-goal::before {
-  content: "";
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: 40px;
-  height: 40px;
-  margin: -20px 0 0 -20px;
-  z-index: 0;
-  border-radius: 50%;
-  border: 2px solid rgba(255, 224, 130, 0.9);
-  opacity: 0;
-  pointer-events: none;
-  animation: goal-ring 620ms ease-out;
-}
-
-@keyframes goal-overshoot {
-  0% { transform: scale(1); }
-  30% { transform: scale(1.06); }
-  55% { transform: scale(0.995); }
-  100% { transform: scale(1); }
-}
-
+@keyframes goal-overshoot { 0% { transform: scale(1); } 30% { transform: scale(1.06); } 55% { transform: scale(0.995); } 100% { transform: scale(1); } }
 @keyframes goal-burst {
   0% { opacity: 0; transform: scale(0.5) rotate(-8deg); }
-  35% { opacity: 1; transform: scale(1.15) rotate(0deg); }
-  70% { opacity: 0.85; transform: scale(1.4) rotate(4deg); }
+  35% { opacity: 0.7; transform: scale(1.15) rotate(0deg); }
+  70% { opacity: 0.6; transform: scale(1.4) rotate(4deg); }
   100% { opacity: 0; transform: scale(1.7) rotate(6deg); }
 }
+@keyframes goal-ring { 0% { opacity: 0; transform: scale(0.3); } 25% { opacity: 0.9; } 100% { opacity: 0; transform: scale(6); } }
 
-@keyframes goal-ring {
-  0% { opacity: 0; transform: scale(0.3); }
-  25% { opacity: 0.9; }
-  100% { opacity: 0; transform: scale(6); }
+.card-root .cele-ripple { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.card-root .cele-ripple span {
+  position: absolute; left: 50%; top: 50%; width: 22px; height: 22px;
+  border: 2px solid var(--accent); border-radius: 50%;
+  opacity: 0; transform: translate(-50%, -50%) scale(0.4);
+  animation: ripple-out 1440ms var(--ease-notchtap) forwards;
 }
+.card-root .cele-ripple span:nth-child(2) { animation-delay: 280ms; }
+.card-root .cele-ripple span:nth-child(3) { animation-delay: 560ms; }
+@keyframes ripple-out { 0% { opacity: 0.85; transform: translate(-50%, -50%) scale(0.4); } 100% { opacity: 0; transform: translate(-50%, -50%) scale(9); } }
 
-/* goal celebration part B (plan 032): three staggered accent rings */
-.cele-ripple {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  pointer-events: none;
-}
-
-.cele-ripple span {
-  position: absolute;
-  left: 50%;
-  top: 50%;
-  width: 22px;
-  height: 22px;
-  border: 2px solid var(--accent);
-  border-radius: 50%;
-  opacity: 0;
-  transform: translate(-50%, -50%) scale(0.4);
-  animation: ripple-out 720ms ease-out forwards;
-}
-
-.cele-ripple span:nth-child(2) { animation-delay: 140ms; }
-.cele-ripple span:nth-child(3) { animation-delay: 280ms; }
-
-@keyframes ripple-out {
-  0% { opacity: 0.85; transform: translate(-50%, -50%) scale(0.4); }
-  100% { opacity: 0; transform: translate(-50%, -50%) scale(9); }
-}
-
-.rail-card.pulse-red {
-  animation: red-alert 460ms steps(1, end) 2;
-}
-
+.card-root .card-assembly.pulse-red { animation: red-alert 920ms steps(1, end) 2; }
 @keyframes red-alert {
-  0%, 100% {
-    box-shadow: 0 14px 32px rgba(0, 0, 0, 0.32);
-  }
-  50% {
-    box-shadow:
-      0 14px 32px rgba(0, 0, 0, 0.32),
-      0 0 0 2px #ff6b57,
-      0 0 26px 4px rgba(255, 107, 87, 0.65);
-  }
+  0%, 100% { box-shadow: none; }
+  50% { box-shadow: 0 14px 32px rgba(0,0,0,0.32), 0 0 0 2px var(--overlay-coral), 0 0 26px 4px color-mix(in srgb, var(--overlay-coral) 65%, transparent); }
+}
+.card-root .card-content { position: relative; z-index: 1; }
+
+/* ============ src/overlay/masthead-content.css ============ */
+.card-root .compact { position: relative; box-sizing: border-box; min-height: 74px; padding: 12px 16px 13px 20px; }
+.card-root .expanded .compact { min-height: 82px; }
+.card-root .compact::before {
+  content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px;
+  border-radius: 0 2px 2px 0; background: var(--accent); box-shadow: 0 0 12px var(--accent-soft);
+}
+.card-root .copy { min-width: 0; }
+.card-root .title { display: -webkit-box; overflow: hidden; font-weight: 680; line-height: 1.2; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.card-root .notif-subtitle-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 3px; }
+.card-root .notif-subtitle { min-width: 0; overflow: hidden; color: rgba(255,255,255,0.45); font-size: 10.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.card-root .notif-time-inline { flex: none; color: rgba(255,255,255,0.35); font: 700 10px/1 var(--font-mono); }
+.card-root .notif-body { display: -webkit-box; margin-top: 8px; overflow: hidden; color: rgba(255,255,255,0.7); font-size: 11.5px; line-height: 1.35; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+.card-root .notif-body code, .card-root .detail-value code { padding: 1px 5px; background: rgba(255,255,255,0.08); color: var(--accent); font-family: var(--font-mono); }
+.card-root .stamp { align-self: center; padding: 4px 6px; border: 1px solid var(--accent); color: var(--accent); font: 700 8px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; }
+.card-root .compact-hint { position: absolute; right: 18px; bottom: 8px; color: rgba(255,255,255,0.4); font: 700 8px/1 var(--font-mono); letter-spacing: 0.16em; text-transform: uppercase; }
+.card-root .compact-hint kbd, .card-root .manifest-hint kbd {
+  display: inline-flex; align-items: center; justify-content: center; min-height: 15px; margin: 0 1px; padding: 0 4px;
+  border: 1px solid rgba(255,255,255,0.22); border-bottom-color: rgba(255,255,255,0.34); border-radius: 3px;
+  background: rgba(255,255,255,0.07); box-shadow: 0 1px 0 rgba(0,0,0,0.35); color: inherit;
+  font: 700 9px/1 var(--font-mono); letter-spacing: 0; text-transform: none;
+}
+
+/* ============ src/overlay/ttl-bar.css ============ */
+.card-root .ttl-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; display: grid; grid-template-columns: repeat(var(--queue-n, 1), 1fr); gap: 3px; }
+.card-root .ttl-seg { background: rgba(255,255,255,0.08); transition: background var(--reveal-ms, 260ms) var(--ease-notchtap); }
+.card-root .ttl-seg.done { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+.card-root .ttl-fill {
+  height: 100%; width: 100%; background: var(--accent); transform-origin: left; will-change: transform;
+  transition: opacity var(--hover-ms, 160ms) var(--ease-notchtap), background var(--hover-ms, 160ms) var(--ease-notchtap);
+}
+.card-root .ttl-fill.paused { opacity: 0.72; background: color-mix(in srgb, var(--accent) 65%, var(--accent-soft) 35%); }
+
+/* ============ src/overlay/manifest.css ============ */
+.card-root .manifest-wrap { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows var(--expand-ms, 320ms) var(--ease-notchtap), opacity var(--expand-ms, 320ms) var(--ease-notchtap); }
+.card-root .manifest-wrap.expanded { grid-template-rows: 1fr; opacity: 1; }
+.card-root .manifest-wrap > .manifest { overflow: hidden; min-height: 0; }
+.card-root .manifest { overflow: hidden; border-top: 1px solid rgba(255,255,255,0.1); background: linear-gradient(180deg, rgba(255,255,255,0.025), transparent); }
+.card-root .detail-label { margin-bottom: 5px; color: var(--accent); font: 700 8px/1 var(--font-mono); letter-spacing: 0.16em; text-transform: uppercase; }
+.card-root .detail-value { color: rgba(255,255,255,0.74); font-size: 11px; line-height: 1.45; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card-root .detail-value.message { color: rgba(255,255,255,0.85); font-size: 12px; line-height: 1.5; }
+.card-root .time-only { font: 800 15px/1 var(--font-mono); letter-spacing: 0.02em; color: var(--overlay-fg); white-space: nowrap; }
+
+/* ============ src/overlay/status-dots.css ============ */
+.card-root .status-dots { display: flex; align-items: center; gap: 8px; flex: none; }
+.card-root .status-dot {
+  box-sizing: border-box; width: 9px; height: 9px; border-radius: 50%; flex: none;
+  transition: opacity var(--hover-ms, 160ms) var(--ease-notchtap), box-shadow var(--hover-ms, 160ms) var(--ease-notchtap),
+    border-radius var(--hover-ms, 160ms) var(--ease-notchtap), background-color var(--hover-ms, 160ms) var(--ease-notchtap),
+    border-color var(--hover-ms, 160ms) var(--ease-notchtap), border-width var(--hover-ms, 160ms) var(--ease-notchtap);
+}
+.card-root .status-dot.football { background: var(--overlay-green); }
+.card-root .status-dot.news { background: var(--overlay-coral); }
+.card-root .status-dot.weather { background: var(--overlay-amber); }
+.card-root .status-dot.active { box-shadow: 0 0 8px 1px currentColor; }
+.card-root .status-dot.football.active { color: var(--overlay-green); }
+.card-root .status-dot.news.active { color: var(--overlay-coral); }
+.card-root .status-dot.weather.active { color: var(--overlay-amber); }
+.card-root .status-dot.dim { opacity: 0.22; box-shadow: none; }
+.card-root .status-dot.shape-disabled, .card-root .status-dot.shape-unavailable { background: transparent; }
+.card-root .status-dot.shape-disabled { border-radius: 2px; }
+.card-root .status-dot.football.shape-disabled { border: 1.5px solid var(--overlay-green); }
+.card-root .status-dot.news.shape-disabled { border: 1.5px solid var(--overlay-coral); }
+.card-root .status-dot.weather.shape-disabled { border: 1.5px solid var(--overlay-amber); }
+.card-root .status-dot.shape-unavailable { border: 1.5px solid rgba(255,255,255,0.35); }
+.card-root .pause-glyph { display: inline-flex; align-items: center; gap: 2px; flex: none; animation: pause-glyph-fade-in var(--hover-ms, 160ms) var(--ease-notchtap); }
+@keyframes pause-glyph-fade-in { from { opacity: 0; } to { opacity: 1; } }
+.card-root .pause-glyph span { width: 2px; height: 9px; border-radius: 1px; background: rgba(255,255,255,0.5); }
+
+/* ============ src/overlay/news-category.css ============ */
+.card-root .cat-politics { --cat: #7c9df5; --cat-deep: rgba(124,157,245,0.16); --cat-pill: rgba(124,157,245,0.14); }
+.card-root .cat-tech     { --cat: #5fd4e8; --cat-deep: rgba(95,212,232,0.15);  --cat-pill: rgba(95,212,232,0.13); }
+.card-root .cat-sports   { --cat: var(--overlay-green); --cat-deep: color-mix(in srgb, var(--overlay-green) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-green) 13%, transparent); }
+.card-root .cat-business { --cat: var(--overlay-amber); --cat-deep: color-mix(in srgb, var(--overlay-amber) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-amber) 13%, transparent); }
+.card-root .cat-world    { --cat: #c99df0; --cat-deep: rgba(201,157,240,0.15); --cat-pill: rgba(201,157,240,0.13); }
+.card-root .cat-science  { --cat: #f2a2c8; --cat-deep: rgba(242,162,200,0.15); --cat-pill: rgba(242,162,200,0.13); }
+.card-root .cat-generic  { --cat: #aab3bd; --cat-deep: rgba(170,179,189,0.10); --cat-pill: rgba(170,179,189,0.10); }
+.card-root .news-shade::before {
+  content: ""; position: absolute; inset: -30% -30% -30% -30%; z-index: 0;
+  background: radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%), linear-gradient(135deg, var(--cat-deep) 0%, transparent 46%);
+  animation: shade-drift 12s ease-in-out infinite alternate; pointer-events: none; will-change: transform;
+}
+@keyframes shade-drift { 0% { transform: translate3d(0,0,0); } 33% { transform: translate3d(-7%,-2%,0); } 66% { transform: translate3d(-3%,-5%,0); } 100% { transform: translate3d(-8%,-6%,0); } }
+.card-root .news-shade .compact, .card-root .news-shade .manifest { position: relative; z-index: 1; }
+.card-root .masthead-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+.card-root .masthead { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; font: 700 8px/1 var(--font-mono); letter-spacing: 0.16em; text-transform: uppercase; color: rgba(255,255,255,0.38); }
+.card-root .masthead::after { content: ""; flex: 1; height: 1px; background: rgba(255,255,255,0.12); }
+.card-root .masthead .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--cat); box-shadow: 0 0 6px var(--cat); flex: none; }
+.card-root .title.headline { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-size: 13px; line-height: 1.3; }
+.card-root .chip { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px; font: 700 8px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+.card-root .notif-meta-row { display: flex; align-items: center; gap: 5px; margin-top: 6px; }
+.card-root .chip-category { color: var(--cat); background: var(--cat-pill); border: 1px solid color-mix(in srgb, var(--cat) 35%, transparent); }
+.card-root .chip-category, .card-root .notif-meta-row .notif-time-inline { animation: pill-enter var(--swap-exit-ms, 175ms) var(--ease-notchtap) both; }
+.card-root .rotation-swap .chip-category, .card-root .rotation-swap .notif-meta-row .notif-time-inline { animation: none; }
+@keyframes pill-enter { from { opacity: 0; } to { opacity: 1; } }
+.card-root .manifest-block { padding: 12px 16px 13px; border-top: 1px solid rgba(255,255,255,0.1); }
+.card-root .manifest-label { font: 700 8px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--cat); margin-bottom: 7px; }
+.card-root .manifest-text { font-size: 12px; line-height: 1.5; color: rgba(255,255,255,0.85); display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+.card-root .manifest-footer { margin-top: 10px; display: flex; justify-content: flex-end; }
+.card-root .manifest-hint { font: 700 9px/1 var(--font-mono); letter-spacing: 0.08em; color: rgba(255,255,255,0.4); }
+
+/* ============ src/overlay/source-identity.css ============ */
+.card-root .src-claude-code { --cat: #d97757; --cat-deep: rgba(217,119,87,0.15); --cat-pill: rgba(217,119,87,0.13); }
+.card-root .src-codex { --cat: #10a37f; --cat-deep: rgba(16,163,127,0.15); --cat-pill: rgba(16,163,127,0.13); }
+.card-root .src-kimi { --cat: var(--overlay-fg); --cat-deep: color-mix(in srgb, var(--overlay-fg) 10%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-fg) 10%, transparent); }
+.card-root .src-opencode { --cat: #9d7cd8; --cat-deep: rgba(157,124,216,0.15); --cat-pill: rgba(157,124,216,0.13); }
+.card-root .src-agent { --cat: var(--overlay-amber); --cat-deep: color-mix(in srgb, var(--overlay-amber) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-amber) 13%, transparent); }
+.card-root .src-football { --cat: var(--overlay-green); --cat-deep: color-mix(in srgb, var(--overlay-green) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-green) 13%, transparent); }
+.card-root .src-weather  { --cat: var(--overlay-amber); --cat-deep: color-mix(in srgb, var(--overlay-amber) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-amber) 13%, transparent); }
+.card-root .src-manual   { --cat: var(--overlay-blue);  --cat-deep: color-mix(in srgb, var(--overlay-blue) 15%, transparent);  --cat-pill: color-mix(in srgb, var(--overlay-blue) 13%, transparent); }
+
+/* ============ src/overlay/weather-art.css ============ */
+.card-root .wx-card::before { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.card-root .wx-card .compact, .card-root .wx-card .manifest { position: relative; z-index: 1; }
+.card-root .wx-icon { position: absolute; top: 10px; right: 14px; z-index: 0; width: 48px; height: 48px; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.45)); pointer-events: none; }
+.card-root .wx-card.wx-clear-day::before          { background: linear-gradient(180deg, #163149 0%, #0e2436 100%); }
+.card-root .wx-card.wx-clear-night::before        { background: linear-gradient(180deg, #0d1226 0%, #070a16 100%); }
+.card-root .wx-card.wx-partly-cloudy-day::before  { background: linear-gradient(180deg, #1a3a52 0%, #122b3d 100%); }
+.card-root .wx-card.wx-partly-cloudy-night::before{ background: linear-gradient(180deg, #141a33 0%, #0c1022 100%); }
+.card-root .wx-card.wx-overcast::before           { background: linear-gradient(180deg, #232a33 0%, #161b21 100%); }
+.card-root .wx-card.wx-rain::before               { background: linear-gradient(180deg, #2b3d4d 0%, #1b2731 100%); }
+.card-root .wx-card.wx-rainy-night::before        { background: linear-gradient(180deg, #171b35 0%, #262c52 55%, #12142a 100%); }
+.card-root .wx-card.wx-thunderstorm::before       { background: linear-gradient(180deg, #1d1430 0%, #110a1e 100%); }
+.card-root .wx-card.wx-snow::before               { background: linear-gradient(180deg, #26313f 0%, #18212b 100%); }
+.card-root .wx-card.wx-fog::before                { background: linear-gradient(180deg, #2a2f36 0%, #1a1e24 100%); }
+.card-root .wx-card.wx-rain-streaks::after, .card-root .wx-card.wx-snow-dots::after { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+.card-root .wx-card.wx-rain-streaks::after {
+  background-image: repeating-linear-gradient(115deg, rgba(180,210,255,0.16) 0px, rgba(180,210,255,0.16) 1px, transparent 1px, transparent 10px);
+  animation: rain-fall 2.6s linear infinite; will-change: transform;
+}
+.card-root .wx-card.wx-snow-dots::after {
+  background-image: radial-gradient(circle, rgba(255,255,255,0.35) 1px, transparent 1.6px);
+  background-size: 22px 22px;
+  animation: snow-fall-y 6.6s linear infinite, snow-sway-x 14s ease-in-out infinite alternate;
+  will-change: translate, transform;
+}
+@keyframes rain-fall { from { transform: translateY(0); } to { transform: translateY(23.66px); } }
+@keyframes snow-fall-y { from { translate: 0 0; } to { translate: 0 66px; } }
+@keyframes snow-sway-x { from { transform: translateX(0); } to { transform: translateX(22px); } }
+
+/* ============ src/overlay/live-scorecard.css ============ */
+.card-root .notif-block { padding: 12px 16px 13px; }
+.card-root .sc-head { display: flex; align-items: center; gap: 8px; }
+.card-root .chip-league { flex: none; color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); }
+.card-root .chip-live {
+  flex: none; gap: 5px; color: var(--overlay-green); background: rgba(127,224,141,0.12); border: 1px solid rgba(127,224,141,0.35);
+  transition: color var(--reveal-ms, 260ms) var(--ease-notchtap), background-color var(--reveal-ms, 260ms) var(--ease-notchtap), border-color var(--reveal-ms, 260ms) var(--ease-notchtap);
+}
+.card-root .chip-live .live-dot {
+  width: 5px; height: 5px; flex: none; border-radius: 50%; background: var(--overlay-green); box-shadow: 0 0 6px rgba(127,224,141,0.9);
+  transition: opacity var(--reveal-ms, 260ms) var(--ease-notchtap), background var(--reveal-ms, 260ms) var(--ease-notchtap), width var(--reveal-ms, 260ms) var(--ease-notchtap), margin-right var(--reveal-ms, 260ms) var(--ease-notchtap);
+}
+.card-root .chip-live.break { color: var(--overlay-amber); background: rgba(240,196,106,0.12); border-color: rgba(240,196,106,0.35); }
+.card-root .chip-live.break .live-dot { background: var(--overlay-amber); box-shadow: 0 0 6px rgba(240,196,106,0.9); }
+.card-root .chip-live.final { color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.12); }
+.card-root .chip-live.final .live-dot { opacity: 0; width: 0; margin-right: -5px; box-shadow: none; }
+.card-root .clock-pill { margin-left: auto; flex: none; font: 800 10px/1 var(--font-mono); letter-spacing: normal; text-transform: none; color: rgba(255,255,255,0.75); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); }
+.card-root .score-row { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 10px; }
+.card-root .side { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 64px; }
+.card-root .crest { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center; overflow: hidden; font: 800 9px/1 var(--font-mono); letter-spacing: 0.03em; background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.16); color: var(--overlay-fg); }
+.card-root .crest img { width: 100%; height: 100%; object-fit: cover; }
+.card-root .score { display: inline-flex; align-items: center; font: 800 24px/1 var(--font-mono); color: var(--overlay-fg); letter-spacing: 0.02em; }
+.card-root .score-digit { display: block; position: relative; height: 1em; overflow: hidden; }
+.card-root .score-digit-roll { display: block; line-height: 1; }
+.card-root .score .dash { color: rgba(255,255,255,0.3); margin: 0 2px; }
+.card-root .event-line { display: flex; align-items: center; justify-content: center; gap: 7px; margin-top: 9px; font-size: 11px; color: rgba(255,255,255,0.7); }
+.card-root .cards-line { margin-top: 6px; text-align: center; font: 600 9px/1 var(--font-mono); letter-spacing: 0.08em; color: rgba(255,255,255,0.38); }
+.card-root .ev-ico { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+.card-root .ev-ico.goal { background: var(--overlay-green); box-shadow: 0 0 6px rgba(127,224,141,0.7); }
+.card-root .ev-ico.pen { background: transparent; border: 2px solid var(--overlay-green); width: 7px; height: 7px; }
+.card-root .ev-ico.og { background: transparent; border: 2px solid rgba(255,255,255,0.4); width: 7px; height: 7px; }
+.card-root .ev-ico.yc, .card-root .ev-ico.rc { width: 7px; height: 10px; border-radius: 1.5px; }
+.card-root .ev-ico.yc { background: var(--overlay-amber); }
+.card-root .ev-ico.rc { background: var(--overlay-coral); }
+.card-root .event-line.tint-goal { color: var(--overlay-green); font-weight: 600; }
+.card-root .event-line.tint-yc { color: var(--overlay-amber); font-weight: 600; }
+.card-root .event-line.tint-rc { color: var(--overlay-coral); font-weight: 600; }
+.card-root .card-assembly.cele-goal { animation: goal-glow 1800ms var(--ease-notchtap); }
+.card-root .card-assembly.cele-goal::after { background: transparent; inset: -6px; border-radius: 18px; border: 2px solid rgba(127,224,141,0.7); animation: cele-ring 1800ms var(--ease-notchtap); }
+@keyframes goal-glow { 0% { box-shadow: none; } 30% { box-shadow: 0 0 34px rgba(127,224,141,0.45); } 100% { box-shadow: none; } }
+@keyframes cele-ring { from { opacity: 1; transform: scale(0.98); } to { opacity: 0; transform: scale(1.12); } }
+.card-root .card-assembly.cele-yc::after { background: transparent; inset: -6px; border-radius: 18px; border: 2px solid rgba(240,196,106,0.65); animation: cele-ring 1800ms var(--ease-notchtap); }
+.card-root .card-assembly.cele-rc { animation: red-strobe 1800ms var(--ease-notchtap); }
+@keyframes red-strobe { 0%, 45% { box-shadow: 0 0 30px rgba(255,107,87,0.55); } 20%, 70% { box-shadow: 0 0 4px rgba(255,107,87,0.1); } 100% { box-shadow: none; } }
+
+/* ============ src/overlay/idle-peek.css (subset StatusRailCard mounts) ============ */
+.card-root .below-block.idle-peek { padding: 12px 16px 13px; display: flex; flex-direction: column; gap: 8px; overflow: hidden; height: 100px; box-sizing: border-box; }
+.card-root .wx-peek-backdrop { position: absolute; inset: 0; z-index: 0; border-radius: 0 0 var(--card-radius, 8px) var(--card-radius, 8px); overflow: hidden; }
+.card-root .peek-content { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 8px; }
+.card-root .wx-peek-readout { display: flex; align-items: center; gap: 8px; padding: 10px 12px; }
+.card-root .wx-peek-icon { width: 28px; height: 28px; flex: none; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.45)); pointer-events: none; }
+.card-root .wx-peek-temp { font: 800 18px/1 var(--font-mono); color: var(--overlay-fg); }
+.card-root .wx-peek-hilo { display: inline-flex; align-items: center; gap: 4px; font: 700 9px/1 var(--font-mono); color: rgba(255,255,255,0.65); white-space: nowrap; }
+.card-root .wx-peek-hilo::before { content: "·"; opacity: 0.5; }
+.card-root .wx-peek-condition { color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14); }
+.card-root .wx-peek-rain { color: rgba(180,210,255,0.85); background: rgba(180,210,255,0.12); border: 1px solid rgba(180,210,255,0.35); }
+.card-root .wx-peek-weather-stack { display: flex; flex-direction: column; gap: 4px; }
+.card-root .wx-forecast-strip { display: flex; align-items: center; justify-content: space-between; padding: 0 12px; }
+.card-root .wx-forecast-point { display: flex; align-items: center; gap: 3px; }
+.card-root .wx-forecast-icon { width: 10px; height: 10px; flex: none; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.4)); pointer-events: none; }
+.card-root .wx-forecast-temp { font: 700 8px/1 var(--font-mono); color: var(--overlay-fg); }
+.card-root .wx-forecast-hour { font: 600 7px/1 var(--font-mono); color: rgba(255,255,255,0.55); }
+.card-root .media-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.card-root .media-track { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.card-root .media-art { width: 26px; height: 26px; flex: none; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14); color: var(--overlay-fg); }
+.card-root .media-art-icon { width: 13px; height: 13px; }
+.card-root .media-meta { min-width: 0; display: flex; flex-direction: column; }
+.card-root .media-title { font-size: 12px; font-weight: 600; color: var(--overlay-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-root .media-subtitle { font-size: 10.5px; color: rgba(255,255,255,0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card-root .media-transport { display: flex; align-items: center; gap: 6px; flex: none; font-size: 10.5px; color: rgba(255,255,255,0.85); }
+.card-root .media-state-icon { width: 12px; height: 12px; }
+.card-root .media-bar { width: 56px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.12); overflow: hidden; }
+.card-root .media-bar-fill { display: block; width: 100%; height: 100%; background: #b6f5e5; transform-origin: left; transition: transform 1s linear; will-change: transform; }
+.card-root .media-time { font-variant-numeric: tabular-nums; min-width: 30px; text-align: right; }
+.card-root .idle-reveal-scorecard { display: flex; flex-direction: column; gap: 8px; }
+.card-root .idle-reveal-label { text-align: center; font: 700 13px/1.3 var(--font-sans); color: var(--overlay-fg); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+.card-root .idle-peek-timeline { position: relative; display: block; height: 1px; margin-top: 2px; background: rgba(255,255,255,0.14); }
+.card-root .idle-peek-timeline::before {
+  content: ""; position: absolute; top: -2px; left: var(--day-progress, 50%); width: 5px; height: 5px;
+  transform: translateX(-50%); border-radius: 50%; background: #b6f5e5; box-shadow: 0 0 10px rgba(182,245,229,0.75);
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .rail-card.pulse-goal,
-  .rail-card.pulse-goal::before,
-  .rail-card.pulse-goal::after,
-  .rail-card.pulse-red,
-  .cele-ripple span {
+  .card-root .card-assembly.pulse-goal, .card-root .card-assembly.pulse-goal::before, .card-root .card-assembly.pulse-goal::after,
+  .card-root .card-assembly.pulse-red, .card-root .cele-ripple span, .card-root .news-shade::before,
+  .card-root .wx-card.wx-rain-streaks::after, .card-root .wx-card.wx-snow-dots::after,
+  .card-root .card-assembly.cele-goal, .card-root .card-assembly.cele-goal::after, .card-root .card-assembly.cele-yc::after, .card-root .card-assembly.cele-rc,
+  .card-root .chip-category, .card-root .notif-meta-row .notif-time-inline {
     animation: none;
   }
-}
-
-.compact {
-  position: relative;
-  box-sizing: border-box;
-  min-height: 74px;
-  padding: 12px 18px 14px 20px;
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: center;
-  gap: 12px;
-}
-
-.expanded .compact {
-  min-height: 82px;
-}
-
-/* plan 032: priority reads from this 3px accent edge (chip deleted) */
-.compact::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 12px;
-  bottom: 12px;
-  width: 3px;
-  border-radius: 0 2px 2px 0;
-  background: var(--accent);
-  box-shadow: 0 0 12px var(--accent-soft);
-}
-
-.copy { min-width: 0; }
-
-.title {
-  display: -webkit-box;
-  overflow: hidden;
-  font-size: 14px;
-  font-weight: 680;
-  line-height: 1.2;
-  white-space: normal;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-.body {
-  display: -webkit-box;
-  margin-top: 4px;
-  overflow: hidden;
-  color: rgba(255, 255, 255, 0.74);
-  font-size: 12px;
-  line-height: 1.35;
-  white-space: normal;
-  -webkit-box-orient: vertical;
-  -webkit-line-clamp: 2;
-}
-
-/* plan 032: inline-markdown code spans */
-.body code,
-.detail-value code {
-  padding: 1px 5px;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--accent);
-  font-family: ui-monospace, "SFMono-Regular", Menlo, monospace;
-}
-
-.stamp {
-  align-self: center;
-  padding: 4px 6px;
-  border: 1px solid var(--accent);
-  color: var(--accent);
-  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.compact-hint {
-  position: absolute;
-  right: 18px;
-  bottom: 8px;
-  color: rgba(255, 255, 255, 0.4);
-  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  letter-spacing: 0.16em;
-  text-transform: uppercase;
-}
-
-/* plan 033: queue slider */
-.track {
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  left: 0;
-  height: 4px;
-  display: grid;
-  grid-template-columns: repeat(var(--queue-n, 3), 1fr);
-  gap: 3px;
-  padding: 0 3px;
-}
-
-.track span {
-  background: rgba(255, 255, 255, 0.09);
-  transition: background 260ms ease;
-}
-
-.track span.done {
-  background: color-mix(in srgb, var(--accent) 30%, transparent);
-}
-
-.track span.cur {
-  background: var(--accent);
-  box-shadow: 0 -3px 14px var(--accent-soft);
-}
-
-.manifest {
-  overflow: hidden;
-  border-top: 1px solid rgba(255, 255, 255, 0.1);
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent);
-}
-
-.manifest-inner {
-  box-sizing: border-box;
-  padding: 14px 18px 18px;
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 16px;
-}
-
-.detail-label {
-  margin-bottom: 5px;
-  color: var(--accent);
-  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-}
-
-.detail-value {
-  color: rgba(255, 255, 255, 0.74);
-  font-size: 11px;
-  line-height: 1.45;
-  overflow-wrap: anywhere; /* plan 035 */
-}
-
-.detail-value.message {
-  color: rgba(255, 255, 255, 0.84);
-  font-size: 12px;
-  line-height: 1.5;
-}
-
-.idle-view {
-  box-sizing: border-box;
-  min-height: 38px;
-  padding: 0 16px;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  font-size: 11px;
-}
-
-.idle-view .time {
-  font: 720 12px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  letter-spacing: 0.04em;
-  white-space: nowrap;
-}
-
-.idle-view .timeline {
-  position: relative;
-  flex: 1;
-  height: 1px;
-  background: rgba(255, 255, 255, 0.14);
-}
-
-.idle-view .timeline::before {
-  content: "";
-  position: absolute;
-  top: -2px;
-  left: var(--day-progress, 50%);
-  width: 5px;
-  height: 5px;
-  transform: translateX(-50%);
-  border-radius: 50%;
-  background: #b6f5e5;
-  box-shadow: 0 0 10px rgba(182, 245, 229, 0.75);
-}
-
-/* plan 034: idle status rail chips */
-.src-rail {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  min-width: 0;
-}
-
-.src-chip {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  padding: 3px 7px;
-  border-radius: 999px;
-  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
-  white-space: nowrap;
-  color: rgba(255, 255, 255, 0.62);
-  background: rgba(255, 255, 255, 0.06);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-}
-
-.src-chip.dim { color: rgba(255, 255, 255, 0.34); }
-
-.src-chip.live {
-  color: #7fe08d;
-  background: rgba(127, 224, 141, 0.1);
-  border-color: rgba(127, 224, 141, 0.28);
-}
-
-/* 2026-07-23 truth-sync: plan 105 removed the pulsing live-dot animation repo-wide (it read as
-   distracting in peripheral vision) — steady glow only now. No `animation` property or
-   `@keyframes live-dot-pulse` survives. */
-.src-chip .live-dot {
-  width: 4px;
-  height: 4px;
-  border-radius: 50%;
-  background: #7fe08d;
-  box-shadow: 0 0 6px rgba(127, 224, 141, 0.9);
-}
-
-/* ==== news card v5: category system ==== */
-.cat-politics { --cat: #7c9df5; --cat-deep: rgba(124,157,245,0.16); --cat-pill: rgba(124,157,245,0.14); }
-.cat-tech     { --cat: #5fd4e8; --cat-deep: rgba(95,212,232,0.15);  --cat-pill: rgba(95,212,232,0.13); }
-.cat-sports   { --cat: #7fe08d; --cat-deep: rgba(127,224,141,0.15); --cat-pill: rgba(127,224,141,0.13); }
-.cat-business { --cat: #f0c46a; --cat-deep: rgba(240,196,106,0.15); --cat-pill: rgba(240,196,106,0.13); }
-.cat-world    { --cat: #c99df0; --cat-deep: rgba(201,157,240,0.15); --cat-pill: rgba(201,157,240,0.13); }
-.cat-generic  { --cat: #aab3bd; --cat-deep: rgba(170,179,189,0.10); --cat-pill: rgba(170,179,189,0.10); }
-
-.news-shade::before {
-  content: ""; position: absolute; inset: -30% -30% -30% -30%; z-index: 0;
-  background:
-    radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%),
-    linear-gradient(135deg, var(--cat-deep) 0%, transparent 46%);
-  animation: shade-drift 12s ease-in-out infinite alternate;
-  pointer-events: none;
-  will-change: transform;
-}
-@keyframes shade-drift {
-  from { transform: translate3d(0, 0, 0); }
-  to   { transform: translate3d(-8%, -6%, 0); }
-}
-
-.news-shade .compact,
-.news-shade .manifest { position: relative; z-index: 1; }
-
-.masthead {
-  display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
-  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  letter-spacing: 0.14em; text-transform: uppercase;
-  color: rgba(255, 255, 255, 0.38);
-}
-.masthead::after { content: ""; flex: 1; height: 1px; background: rgba(255,255,255,0.12); }
-.masthead .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--cat); box-shadow: 0 0 6px var(--cat); }
-
-.title.headline {
-  white-space: normal;
-  display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;
-  font-size: 13px; line-height: 1.3;
-}
-
-.pills { display: flex; gap: 5px; margin-top: 6px; }
-.pill {
-  padding: 3px 7px; border-radius: 999px;
-  font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  letter-spacing: 0.1em; text-transform: uppercase;
-}
-.pill.category { color: var(--cat); background: var(--cat-pill); border: 1px solid color-mix(in srgb, var(--cat) 35%, transparent); }
-.pill.age { color: rgba(255,255,255,0.5); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); }
-
-.manifest-inner.news { grid-template-columns: 1.5fr 1fr 1fr; }
-.manifest-inner.news .detail-label { color: var(--cat); }
-
-@media (prefers-reduced-motion: reduce) {
-  .news-shade::before { animation: none; }
-  .src-chip .live-dot { animation: none; }
 }
 
 /* ============================================================
@@ -467,100 +544,57 @@
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+  font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   background: #101318;
   color: #e8ecf1;
   padding: 40px 32px 120px;
 }
 h1 { font-size: 20px; font-weight: 700; margin: 0 0 4px; }
-h2 {
-  font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em;
-  color: #8b95a3; margin: 48px 0 14px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 22px;
-}
-p.note { font-size: 12px; color: #8b95a3; margin: 4px 0 20px; max-width: 780px; line-height: 1.55; }
+h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.14em; color: #8b95a3; margin: 48px 0 14px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 22px; }
+p.note { font-size: 12px; color: #8b95a3; margin: 4px 0 20px; max-width: 800px; line-height: 1.55; }
 p.note b { color: #c3ccd6; }
-.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(540px, 1fr)); gap: 20px; }
-.frame {
-  border: 1px solid rgba(255,255,255,0.09);
-  border-radius: 12px;
-  overflow: hidden;
-  background: #171b22;
-}
-.frame .label {
-  display: flex; align-items: center; justify-content: space-between; gap: 8px;
-  padding: 9px 14px;
-  font: 600 11px/1.3 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  color: #9aa5b4;
-  border-bottom: 1px solid rgba(255,255,255,0.07);
-}
+p.note code { color: #a9b3bf; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(560px, 1fr)); gap: 20px; }
+.frame { border: 1px solid rgba(255,255,255,0.09); border-radius: 12px; overflow: hidden; background: #171b22; }
+.frame .label { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 9px 14px; font: 600 11px/1.3 var(--font-mono); color: #9aa5b4; border-bottom: 1px solid rgba(255,255,255,0.07); }
 .frame .label .meta { color: #5b6572; font-weight: 400; text-align: right; }
-.screen {
-  position: relative;
-  min-height: 180px;
-  padding: 0 0 26px;
+.screen { position: relative; min-height: 170px; padding: 26px 0; display: flex; align-items: flex-start; justify-content: center;
   background:
     radial-gradient(120% 90% at 20% 10%, #3d4f6b 0%, transparent 55%),
     radial-gradient(110% 100% at 85% 90%, #55365e 0%, transparent 60%),
     linear-gradient(160deg, #2a3245 0%, #1b2130 60%, #232c3d 100%);
 }
-.screen.tall { min-height: 240px; }
-.window { width: 500px; margin: 0 auto; }
+.screen.tall { min-height: 260px; }
+.window { width: 520px; }
 .controls { display: flex; flex-wrap: wrap; gap: 8px; padding: 10px 14px; border-top: 1px solid rgba(255,255,255,0.07); }
-button.ctl {
-  appearance: none; cursor: pointer;
-  background: #232a35; color: #dfe5ec;
-  border: 1px solid rgba(255,255,255,0.12); border-radius: 6px;
-  font: 600 11px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  padding: 7px 12px;
-}
+button.ctl { appearance: none; cursor: pointer; background: #232a35; color: #dfe5ec; border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; font: 600 11px/1 var(--font-mono); padding: 7px 12px; }
 button.ctl:hover { background: #2c3542; }
 button.ctl.active { background: #3b4757; border-color: #5b7089; }
 .seg { display: flex; gap: 0; border: 1px solid rgba(255,255,255,0.12); border-radius: 6px; overflow: hidden; }
 .seg button.ctl { border: none; border-radius: 0; }
 .seg button.ctl + button.ctl { border-left: 1px solid rgba(255,255,255,0.12); }
-.appearance-bar {
-  position: sticky; top: 0; z-index: 50;
-  display: flex; flex-wrap: wrap; align-items: center; gap: 18px;
-  background: rgba(16, 19, 24, 0.92); backdrop-filter: blur(8px);
-  border: 1px solid rgba(255,255,255,0.1); border-radius: 10px;
-  padding: 12px 16px; margin: 20px 0 8px;
-}
+.appearance-bar { position: sticky; top: 0; z-index: 50; display: flex; flex-wrap: wrap; align-items: center; gap: 18px; background: rgba(16,19,24,0.92); backdrop-filter: blur(8px); border: 1px solid rgba(255,255,255,0.1); border-radius: 10px; padding: 12px 16px; margin: 20px 0 8px; }
 .appearance-bar .group { display: flex; align-items: center; gap: 8px; }
-.appearance-bar .group > span {
-  font: 700 9px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
-  letter-spacing: 0.12em; text-transform: uppercase;
-  color: #7c8796;
-}
-.motion-wrapper { transition: opacity 220ms cubic-bezier(0.22,1,0.36,1), transform 220ms cubic-bezier(0.22,1,0.36,1); }
-.motion-wrapper.m-exit { opacity: 0; transform: translateY(-4px); }
-.motion-wrapper.m-enter-from { opacity: 0; transform: translateY(-4px); }
-.pill { transition: opacity 220ms cubic-bezier(0.22,1,0.36,1), transform 220ms cubic-bezier(0.22,1,0.36,1); }
-.pill.p-hidden { opacity: 0; transform: translateY(3px); }
-.pill.age { transition-delay: 70ms; }
-.manifest.m-animating { transition: height 240ms cubic-bezier(0.22,1,0.36,1), opacity 240ms cubic-bezier(0.22,1,0.36,1); }
+.appearance-bar .group > span { font: 700 9px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; color: #7c8796; }
 </style>
 </head>
 <body>
-<div style="background:#7a2d2d;color:#fff;padding:6px 12px;font:12px/1.4 monospace">HISTORICAL PROTOTYPE — design exploration that preceded implementation. The shipped overlay deliberately diverged (CSS-grid .card-assembly — see src/styles.css). Not a reference for current behavior.</div>
 
-<h1>notchtap · Status Rail — SHIPPED UI mirror <span style="color:#5b6572;font-weight:400">@ 89850b6</span></h1>
+<h1>notchtap · Status Rail — shipped overlay mirror</h1>
 <p class="note">
-  This page mirrored the shipped overlay <b>as of the <code>89850b6</code> sync commit above</b> —
-  <code>src/styles.css</code> was copied verbatim above and the DOM matched <code>StatusRailCard.tsx</code> /
-  <code>Track.tsx</code> / <code>Manifest.tsx</code> / <code>IdleView.tsx</code> at that point. The overlay has
-  since moved on (CSS-grid <code>.card-assembly</code>); see the HISTORICAL banner above — <code>src/overlay-card.css</code>
-  is the current authority, not this page.
-</p>
-<p class="note">
-  2026-07-23 truth-sync pass: this <code>.rail-card</code> single-shell shape predates plan 091's
-  cutout/flank grid entirely (no <code>.flank-left</code>/<code>.flank-right</code>/<code>.below-block</code>/
-  gill vocabulary here at all), so today's minimal-notch merge (bare curved shape, hover-reveal, dots
-  persisting through showing) cannot be represented in this DOM without a structural rewrite — out of scope
-  for a surgical pass, and plan 106 already decided against re-syncing this file's CSS wholesale. The one
-  narrow, verifiable fix applied: the <code>.live-dot</code> pulsing animation (plan 105 removed pulsing
-  status/live dots repo-wide, steady glow only) is now static here too. Everything else on this page should
-  still be read as historical, per the banner above.
+  Re-synced <b>2026-07-30</b> against the real DOM/CSS. Previous state: this file
+  carried a HISTORICAL PROTOTYPE banner (plan 099) and, as of plan 106, an explicit
+  note that its <b>CSS content was NOT re-synced</b> even though the surrounding prose
+  had been corrected — this page was still rendering the old plan-032 single-shell
+  <code>.rail-card</code>, three sync passes stale (plans 091/105/135+ all landed on
+  the real overlay without a matching update here). That gap is closed now: every
+  section below builds real <code>.card-assembly</code> markup (the cutout/flank
+  grid) with real class names from <code>src/overlay-card.css</code> +
+  <code>src/overlay/*.css</code>. See the top-of-file HTML comment for exactly what's
+  faithful (selectors/values/DOM nesting) vs. substituted for a static file (motion
+  springs approximated with CSS transitions on their documented fallback durations;
+  weather/media/crest artwork replaced with placeholder glyphs).
 </p>
 
 <div class="appearance-bar" id="appearance-bar">
@@ -574,249 +608,415 @@ button.ctl.active { background: #3b4757; border-color: #5b7089; }
   <div class="group"><span>Radius</span>
     <div class="seg" data-var="--card-radius">
       <button class="ctl" data-val="0px">Square</button>
-      <button class="ctl" data-val="8px">Soft</button>
-      <button class="ctl active" data-val="16px">Round (new default)</button>
+      <button class="ctl active" data-val="8px">Default</button>
+      <button class="ctl" data-val="16px">Round</button>
     </div>
   </div>
   <div class="group"><span>Opacity</span>
     <div class="seg" data-var="--card-opacity">
       <button class="ctl" data-val="0.7">Glass</button>
-      <button class="ctl active" data-val="0.9">Default</button>
-      <button class="ctl" data-val="1">Solid</button>
+      <button class="ctl active" data-val="1">Default</button>
+    </div>
+  </div>
+  <div class="group"><span>Mode</span>
+    <div class="seg" data-mode="1">
+      <button class="ctl active" data-val="hud">HUD (mac mini)</button>
+      <button class="ctl" data-val="notch">Notch (macbook)</button>
     </div>
   </div>
 </div>
 
-<h2>0 · The new lifecycle — every item enters expanded, retracts at half, slider advances</h2>
+<h2>0 · The notch shell — flanks, cutout, idle face, rail furniture</h2>
 <p class="note">
-  Plan 033: every promotion starts <b>expanded</b> regardless of priority, auto-retracts at <b>half its
-  rotation window</b>, then rotates on — total turn length unchanged from before. The track is now a
-  <b>queue slider</b> (batch semantics): dim = consumed, bright = current.
+  <code>StatusRailCard.tsx</code>'s outer shape (plan 091 onward): a real 3-col/2-row
+  CSS grid, <code>.flank-left</code> / the notch cutout (<code>.synthetic-cutout</code>,
+  HUD-mode only — real notch hardware draws nothing here) / <code>.flank-right</code>
+  on row 1, <code>.below-block</code> spanning row 2 when a card is showing. The clock
+  (<code>FlankClock</code>) and the three status dots (<code>StatusDots</code>) are
+  <b>rail furniture</b> — they persist through a showing notification in rail mode
+  (<code>railRevealed</code>), not just at idle. The idle face fades in after ~4.5s of
+  true idle. HUD mode is shown by default (the dev machine, per <code>CLAUDE.md</code>,
+  is the notch-less mac mini) — toggle "Mode" above to see notch mode, where the
+  cutout/gills/idle-face are real hardware and this app draws nothing there.
 </p>
-<div class="grid">
-  <div class="frame">
-    <div class="label">queue of 5 → idle <span class="meta">enter expanded · retract at ½ · rotate</span></div>
-    <div class="screen tall"><div class="window" id="life-mount"></div></div>
-    <div class="controls">
-      <button class="ctl" id="life-run">Run queue (5 items)</button>
-      <button class="ctl" id="life-stop">Stop / reset to idle</button>
-    </div>
-  </div>
-</div>
+<div class="grid" id="shell-states"></div>
 
-<h2>1 · Celebrations (shipped) — goal = burst + ring + ripple, red-card strobe</h2>
+<h2>1 · Priority accent — 3px edge, stamp pill, ttl-bar fill</h2>
 <p class="note">
-  Plan 023's confetti burst + expanding ring, <b>plus</b> plan 032's three staggered accent ripples
-  (your A+B pick). Red-card keeps its hard two-step strobe. Replay each.
-</p>
-<div class="grid" id="celebrations"></div>
-
-<h2>2 · Priority — the chip is gone, the accent edge carries it</h2>
-<p class="note">
-  Plan 032: L1/M2/H3 deleted. Priority now reads from the <b>3px accent edge</b> on the left,
-  the stamp, and the slider's lit colour. Body copy is brighter/larger (0.74 alpha, 12px).
+  One channel, three readouts: the <code>--accent</code> custom property (set by
+  <code>.card-assembly.low/.medium/.high</code>) colors the compact row's left edge,
+  the <code>Stamp</code> pill, and the TTL bar's fill/done segments. Deliberately not
+  signal-driven — a goal shares "high" with any other high-priority source.
 </p>
 <div class="grid" id="tiers"></div>
 
-<h2>3 · Expanded manifests — markdown bodies, subtitle + detail cells</h2>
+<h2>2 · Card content — generic/agent, news, weather, live-match</h2>
 <p class="note">
-  Bodies render inline markdown (`` `code` `` in accent mono, <b>**bold**</b>, <i>*italic*</i>, line breaks)
-  in both the compact body and the brighter Message cell. Plan 035: the cmux/Claude-Code manifest gains a
-  <b>Subtitle</b> cell and label/value <b>detail cells</b> (plain text, never markdown).
+  <code>NotificationBody.tsx</code> renders one of two branches (news vs. everything
+  else) into <code>.compact</code>, plus the disclosure <code>Manifest</code> and the
+  <code>TtlBar</code> floor strip. A live-match football card (structured ESPN meta)
+  skips all three — <code>LiveMatchScorecard.tsx</code> replaces <code>.compact</code>
+  entirely with <code>.notif-block</code>. Origin/category paint (<code>below-block</code>
+  wash — <code>news-shade</code>/<code>src-*</code>/<code>wx-card</code>) is a
+  deliberately separate channel from the priority accent above; a card only ever
+  carries one of the two paint systems.
 </p>
-<div class="grid" id="expanded"></div>
+<div class="grid" id="content-types"></div>
 
-<h2>4 · News cards — unchanged skins, new chrome</h2>
-<p class="note">Same six category shaders, masthead, and pills — sitting in the new chip-less compact row with the queue slider.</p>
-<div class="grid" id="news"></div>
-
-<h2>5 · Idle — clock-only vs the status rail</h2>
+<h2>3 · Compact ↔ expanded — the manifest disclosure</h2>
 <p class="note">
-  Plan 034: when football/news is on, a match is live, items are queued, or the engine is paused,
-  the idle card widens to <b>460px</b> and shows status chips (pulsing live dot, News gate, queue depth).
-  When there's nothing to report it stays the plain 270px clock.
+  <code>expand/collapse</code> is a CSS grid-template-rows <code>0fr → 1fr</code>
+  transition (<code>manifest.css</code>) — the panel stays mounted at zero height
+  when collapsed, never remounted/re-tokenized on toggle. Toggle the button below.
 </p>
-<div class="grid" id="idle-states"></div>
+<div class="grid" id="expand-demo"></div>
 
-<h2>6 · Queue slider edge cases</h2>
+<h2>4 · TTL bar — rotation countdown + queue segmentation</h2>
 <p class="note">
-  Segment count caps at <b>10</b>; beyond that the index maps proportionally (shown: 8 of 25).
-  Plan 038 (shipped): skipping/rotating out a <i>Recurring</i> item no longer counts as "done" —
-  both requeue arms are guarded, so a cycling live-match card can't over-advance the slider.
+  The 2026-07-24 "stories merge" folded the old separate queue slider
+  (<code>Track.tsx</code>) into this one floor strip — <code>TtlBar.tsx</code> now
+  takes <code>total</code>/<code>done</code> directly and segments the same bar the
+  countdown fill drains across. Segment count caps at 10; beyond that the current
+  index maps proportionally.
 </p>
-<div class="grid" id="slider-states"></div>
+<div class="grid" id="ttl-states"></div>
 
-<h2>7 · Live-match scorecard (plan 042) — collapsed Clock + per-side Cards</h2>
+<h2>5 · Celebrations</h2>
 <p class="note">
-  Opt-in (<code>espn_live_card</code>) — a live match's collapsed card gains Clock and per-side
-  Cards detail cells, same <code>detail-label</code>/<code>detail-value</code> classes as the
-  expanded manifest, rendered inline under the body instead of behind ⌃⇧N. Option B: the card is
-  never pinned open — it still rotates and collapses like any other item.
+  Two families, gated mutually exclusive by <code>isLiveCard</code>
+  (<code>StatusRailCard.tsx</code>): the generic <code>pulse-goal</code>/
+  <code>pulse-red</code> pair (confetti burst + ring + three staggered ripples, or a
+  two-step coral strobe) for any non-football-structured source, and the live-match
+  <code>cele-goal</code>/<code>cele-yc</code>/<code>cele-rc</code> family (a softer
+  glow + ring, scoped to <code>LiveMatchScorecard</code>) for a real ESPN-structured
+  goal/card. Replay each below.
 </p>
-<div class="grid" id="live-match"></div>
+<div class="grid" id="celebrations"></div>
+
+<h2>6 · News categories</h2>
+<p class="note">
+  Seven category shaders (<code>science</code> split off from <code>tech</code> by
+  plan 147) driving the masthead dot, category chip, and the ambient
+  <code>news-shade</code> drift wash — same <code>--cat</code>/<code>--cat-deep</code>/
+  <code>--cat-pill</code> triple every card's below-block reads.
+</p>
+<div class="grid" id="news-cats"></div>
+
+<h2>7 · Source identity — agent runtimes + non-agent origins</h2>
+<p class="note">
+  Plan 147: every notification SOURCE gets its own identity colour on the
+  below-block wash + hairline (<code>sourceClass</code>, <code>source-identity.css</code>)
+  — a system distinct from news's per-category colour above; a card only ever uses
+  one of the two. Agent runtime names appear neutrally per <code>CLAUDE.md</code>'s
+  naming section (compatibility requires them).
+</p>
+<div class="grid" id="source-identity"></div>
+
+<h2>8 · Idle hover-peek</h2>
+<p class="note">
+  <code>IdleHoverPeek.tsx</code> — mounted only while genuinely hovered
+  (<code>open</code>), never just because ambient data exists. Precedence: a live
+  football match &gt; now-playing media &gt; weather &gt; the bare day-progress
+  timeline alone. Real crest/media artwork isn't available to a static file, so the
+  scorecard reveal falls back to team abbreviations and the media row uses a
+  placeholder glyph — the same fallback paths the shipped app itself takes when no
+  cached asset exists.
+</p>
+<div class="grid" id="idle-peek-states"></div>
+
+<h2>9 · Bare (minimal notch) vs rail, hover reveal</h2>
+<p class="note">
+  <code>resting_state: "notch"</code> (Settings → Appearance) paints zero app pixels
+  at idle — cutout-width-only, transparent flanks — until hovered, when it widens
+  back to the full rail and paints the flanks black again (Task 1.2, 2026-07-23).
+  <code>resting_state: "rail"</code> (the default) skips the bare/minimal look
+  entirely and always shows the full clock+dots rail.
+</p>
+<div class="grid" id="bare-states"></div>
 
 <script>
-/* ---------- helpers mirroring lib/presentation.ts + Track.tsx + markdown.tsx ---------- */
-function stamp(cfg) {
-  const bySignal = { goal: "Live", kickoff: "Live", halftime: "Break", yellow_card: "Card", fulltime: "Final", red_card: "Off" };
-  if (cfg.signal && bySignal[cfg.signal]) return bySignal[cfg.signal];
-  if (cfg.news) return "Wire";
-  return { low: "Live", medium: "Done", high: "Now" }[cfg.priority];
-}
-function sourceText(cfg) {
-  if (cfg.news) return cfg.news.source;
-  if (cfg.eventType === "score_update" || cfg.eventType === "match_state") return "ESPN · football";
-  return "cmux / CLI · local";
-}
-function esc(s) { return s.replace(/&/g,"&amp;").replace(/</g,"&lt;"); }
-function cap(s) { return s.charAt(0).toUpperCase() + s.slice(1); }
+'use strict';
+document.documentElement.dataset.notchtapMode = 'hud';
 
-/* renderInlineMarkdown (lib/markdown.tsx) — same token order: code, bold, italic; escape-first */
+/* ---------- lib/presentation.ts mirrors ---------- */
+const SIGNAL_STAMPS = { goal: 'Live', kickoff: 'Live', halftime: 'Break', yellow_card: 'Card', fulltime: 'Final', red_card: 'Off', foul: 'Foul', offside: 'Offside', var_check: 'VAR', substitution: 'Sub' };
+const GENERIC_PRIORITY_STAMPS = { low: 'Live', medium: 'Done', high: 'Now' };
+function stampFor(priority, signal, eventType) {
+  if (signal === 'generic') return GENERIC_PRIORITY_STAMPS[priority] === undefined ? 'Wire' : (eventType === 'news_item' ? 'Wire' : GENERIC_PRIORITY_STAMPS[priority]);
+  return SIGNAL_STAMPS[signal];
+}
+const CATEGORY_CLASSES = { politics: 'cat-politics', tech: 'cat-tech', sports: 'cat-sports', business: 'cat-business', world: 'cat-world', science: 'cat-science', generic: 'cat-generic' };
+function categoryClass(cat) { return CATEGORY_CLASSES[cat] || 'cat-generic'; }
+function categoryLabel(cat) { return cat ? cat.charAt(0).toUpperCase() + cat.slice(1) : null; }
+const AGENT_RUNTIME_CLASS = { 'claude-code': 'src-claude-code', codex: 'src-codex', kimi: 'src-kimi', opencode: 'src-opencode' };
+const AGENT_RUNTIME_LABEL = { 'claude-code': 'Claude Code', codex: 'Codex', kimi: 'Kimi', opencode: 'OpenCode' };
+function sourceClass(origin, runtime) {
+  if (origin === 'agent') return runtime ? AGENT_RUNTIME_CLASS[runtime] : 'src-agent';
+  return { football: 'src-football', weather: 'src-weather', manual: 'src-manual' }[origin] || 'src-agent';
+}
+const GENERIC_MASTHEAD_KICKER = { manual: 'cli', football: 'football', weather: 'weather', news: 'news', agent: 'agent' };
+
+/* ---------- lib/markdown.tsx mirror (inline code/bold/italic + line breaks) ---------- */
+function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
 function mdInline(s) {
-  if (!s) return "";
-  return esc(s).split(/\r\n|\r|\n/).map(line =>
+  if (!s) return '';
+  return esc(s).split(/\r\n|\r|\n/).map((line) =>
     line
       .replace(/`([^`]+)`/g, (m, c) => `<code>${c}</code>`)
-      .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
-      .replace(/\*([^*]+)\*/g, "<em>$1</em>")
-  ).join("<br/>");
+      .replace(/\*\*([^*]+)\*\*/g, '<strong>$1</strong>')
+      .replace(/\*([^*]+)\*/g, '<em>$1</em>')
+  ).join('<br/>');
 }
 
-/* Track.tsx segment math, verbatim */
+/* ---------- lib/weatherArt.ts mirror — hand-drawn placeholder glyphs
+   standing in for the vendored Meteocons SVGs (see top-of-file note) ---------- */
+function wxIconSvg(mood) {
+  const sun = '<circle cx="12" cy="12" r="5" fill="#ffd166"/><g stroke="#ffd166" stroke-width="1.6" stroke-linecap="round"><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></g>';
+  const moon = '<path d="M15 3a9 9 0 1 0 6 15 8 8 0 0 1-6-15z" fill="#cfd8ff"/>';
+  const cloud = '<path d="M7 18a4.5 4.5 0 0 1-.4-9A5.5 5.5 0 0 1 17 8.6 4 4 0 0 1 16.5 18H7z" fill="#c9d3de"/>';
+  const rain = cloud + '<g stroke="#8fb4ff" stroke-width="1.6" stroke-linecap="round"><path d="M8 20l-1 2M12 20l-1 2M16 20l-1 2"/></g>';
+  const snow = cloud + '<g fill="#e8f0ff"><circle cx="8" cy="21" r="1"/><circle cx="12" cy="22" r="1"/><circle cx="16" cy="21" r="1"/></g>';
+  const storm = cloud + '<path d="M12 18l-2.5 4h2l-1 3 3.5-4.5h-2z" fill="#ffd166"/>';
+  const fog = '<g stroke="#c9d3de" stroke-width="1.6" stroke-linecap="round"><path d="M4 10h16M3 14h18M5 18h14"/></g>';
+  if (mood.indexOf('clear-day') >= 0) return sun;
+  if (mood.indexOf('clear-night') >= 0) return moon;
+  if (mood.indexOf('partly-cloudy-night') >= 0) return moon + cloud;
+  if (mood.indexOf('partly-cloudy') >= 0) return sun + cloud;
+  if (mood.indexOf('rain') >= 0 || mood.indexOf('rainy') >= 0) return rain;
+  if (mood.indexOf('thunderstorm') >= 0) return storm;
+  if (mood.indexOf('snow') >= 0) return snow;
+  if (mood.indexOf('fog') >= 0) return fog;
+  return cloud;
+}
+const WEATHER_TABLE = {
+  Clear: { day: { moodClass: 'wx-clear-day', textureClass: null }, night: { moodClass: 'wx-clear-night', textureClass: null } },
+  Cloudy: { day: { moodClass: 'wx-partly-cloudy-day', textureClass: null }, night: { moodClass: 'wx-partly-cloudy-night', textureClass: null } },
+  Fog: { day: { moodClass: 'wx-fog', textureClass: null }, night: { moodClass: 'wx-fog', textureClass: null } },
+  Rain: { day: { moodClass: 'wx-rain', textureClass: 'wx-rain-streaks' }, night: { moodClass: 'wx-rainy-night', textureClass: 'wx-rain-streaks' } },
+  Storm: { day: { moodClass: 'wx-thunderstorm', textureClass: 'wx-rain-streaks' }, night: { moodClass: 'wx-thunderstorm', textureClass: 'wx-rain-streaks' } },
+  Snow: { day: { moodClass: 'wx-snow', textureClass: 'wx-snow-dots' }, night: { moodClass: 'wx-snow', textureClass: 'wx-snow-dots' } },
+};
+function weatherArtFor(condition, isDay) {
+  const entry = WEATHER_TABLE[condition] || { day: { moodClass: 'wx-overcast', textureClass: null }, night: { moodClass: 'wx-overcast', textureClass: null } };
+  const pick = isDay ? entry.day : entry.night;
+  return { moodClass: pick.moodClass, textureClass: pick.textureClass, svg: wxIconSvg(pick.moodClass) };
+}
+function wxIcon(cls, mood) { return `<svg class="${cls}" viewBox="0 0 24 24">${wxIconSvg(mood)}</svg>`; }
+
+/* Track.tsx / TtlBar.tsx segment math, verbatim */
 const MAX_SEGMENTS = 10;
-function trackHtml(total, done) {
-  const n = Math.min(Math.max(total, 1), MAX_SEGMENTS);
-  const current = total > MAX_SEGMENTS ? Math.floor((done * MAX_SEGMENTS) / total) : done;
-  return Array.from({ length: n }, (_, i) =>
-    `<span class="${i < current ? "done" : i === current ? "cur" : ""}"></span>`).join("");
+function segmentCount(total) { return Math.min(Math.max(total, 1), MAX_SEGMENTS); }
+function currentSegment(total, done) {
+  const n = segmentCount(total);
+  const raw = total > MAX_SEGMENTS ? Math.floor((done * MAX_SEGMENTS) / total) : done;
+  return Math.min(raw, n - 1);
+}
+function ttlBarHtml(total, done, fillFraction, paused) {
+  const n = segmentCount(total);
+  const current = currentSegment(total, done);
+  const segs = Array.from({ length: n }, (_, i) => `<span class="${i < current ? 'ttl-seg done' : 'ttl-seg'}"></span>`).join('');
+  return `<div class="ttl-bar" style="--queue-n:${n}">${segs}<div class="${paused ? 'ttl-fill paused' : 'ttl-fill'}" style="grid-column:${current + 1};transform:scaleX(${fillFraction})"></div></div>`;
 }
 
-/* ---------- card renderer — mirrors StatusRailCard.tsx DOM ---------- */
-function renderCard(cfg) {
-  const el = document.createElement("div");
-  const cls = ["rail-card", cfg.priority];
-  if (cfg.expanded) cls.push("expanded");
-  if (cfg.news) cls.push("news-shade", "cat-" + cfg.news.category);
-  el.className = cls.join(" ");
-  el.setAttribute("role", "status");
-  el.setAttribute("aria-live", "polite");
+/* ---------- Stamp.tsx ---------- */
+function stampHtml(priority, signal, eventType) { return `<div class="stamp">${esc(stampFor(priority, signal, eventType))}</div>`; }
 
-  const q = cfg.queue || { total: 1, done: 0 };
-  const track = trackHtml(q.total, q.done);
-  const n = Math.min(Math.max(q.total, 1), MAX_SEGMENTS);
-  el.style.setProperty("--queue-n", n);
+/* ---------- Manifest.tsx ---------- */
+function manifestHtml(cfg) {
+  const isNews = cfg.eventType === 'news_item';
+  const summary = isNews ? (cfg.body && cfg.body.trim() !== '' ? cfg.body : cfg.title) : null;
+  const label = isNews ? 'Summary' : 'Message';
+  const text = isNews ? esc(summary) : mdInline(cfg.body || '');
+  const hint = cfg.link ? '<kbd>&#8963;&#8679;O</kbd> read &middot; <kbd>&#8963;&#8679;N</kbd> collapse' : '<kbd>&#8963;&#8679;N</kbd> collapse';
+  return `<div class="manifest-wrap${cfg.expanded ? ' expanded' : ''}" aria-hidden="${!cfg.expanded}">
+    <div class="manifest"><div class="manifest-block">
+      <div class="manifest-label">${label}</div>
+      <div class="manifest-text">${text}</div>
+      <div class="manifest-footer"><span class="manifest-hint">${hint}</span></div>
+    </div></div>
+  </div>`;
+}
 
+/* ---------- NotificationBody.tsx ---------- */
+const MAX_VISIBLE_DETAIL_PAIRS = 4;
+function notificationBodyHtml(cfg) {
+  const news = cfg.eventType === 'news_item';
   let copy;
-  if (cfg.news) {
+  if (news) {
     copy = `
-      <div class="masthead"><span class="dot"></span>${esc(cfg.news.source)}</div>
+      <div class="masthead-row">
+        <div class="masthead"><span class="dot"></span>${esc(cfg.source || 'RSS')}</div>
+        ${stampHtml(cfg.priority, cfg.signal || 'generic', cfg.eventType)}
+      </div>
       <div class="title headline">${esc(cfg.title)}</div>
-      <div class="pills">
-        <span class="pill category">${esc(cap(cfg.news.category))}</span>
-        <span class="pill age">${esc(cfg.news.age)}</span>
-      </div>`;
+      ${(cfg.category || cfg.age) ? `<div class="notif-meta-row">
+        ${cfg.category ? `<span class="chip chip-category">${esc(categoryLabel(cfg.category))}</span>` : ''}
+        ${cfg.age ? `<span class="notif-time-inline">${esc(cfg.age)}</span>` : ''}
+      </div>` : ''}`;
   } else {
+    const details = (cfg.details || []);
     copy = `
-      <div class="title">${esc(cfg.title)}</div>
-      ${cfg.body ? `<div class="body">${mdInline(cfg.body)}</div>` : ""}`;
-  }
-
-  let manifest = "";
-  if (cfg.expanded) {
-    if (cfg.news) {
-      manifest = `
-        <div class="manifest"><div class="manifest-inner news">
-          <div><div class="detail-label">Summary</div><div class="detail-value">${esc(cfg.body || cfg.title)}</div></div>
-          <div><div class="detail-label">Source / Published</div><div class="detail-value">${esc(cfg.news.source)}<br/>${esc(cfg.news.published || "09:41")}</div></div>
-          <div><div class="detail-label">Category / Control</div><div class="detail-value">${esc(cap(cfg.news.category))}<br/>⌃⇧O read · ⌃⇧N collapse</div></div>
-        </div></div>`;
-    } else {
-      const ctl = cfg.link ? "⌃⇧O read · ⌃⇧N collapse" : "⌃⇧N collapse";
-      const subtitleCell = cfg.subtitle
-        ? `<div><div class="detail-label">Subtitle</div><div class="detail-value">${esc(cfg.subtitle)}</div></div>`
-        : "";
-      const detailCells = (cfg.details || []).map((d) =>
-        `<div><div class="detail-label">${esc(d.label)}</div><div class="detail-value">${esc(d.value)}</div></div>`).join("");
-      manifest = `
-        <div class="manifest"><div class="manifest-inner">
-          <div><div class="detail-label">Message</div><div class="detail-value message">${mdInline(cfg.body || cfg.title)}</div></div>
-          <div><div class="detail-label">Source / Control</div><div class="detail-value">${esc(sourceText(cfg))}<br/>${ctl}</div></div>
-          ${subtitleCell}
-          ${detailCells}
-        </div></div>`;
-    }
-  }
-
-  // plan 042: collapsed scorecard cells (Clock, per-side Cards) — only a
-  // live-match card with `espn_live_card` on populates `details`, so every
-  // other card renders exactly as before. Same detail-label/detail-value
-  // classes as the expanded manifest; collapsed-only (mirrors
-  // src/components/StatusRailCard.tsx).
-  const collapsedDetails = (!cfg.expanded && !cfg.news && cfg.details)
-    ? cfg.details.map((d) =>
-        `<div><div class="detail-label">${esc(d.label)}</div><div class="detail-value">${esc(d.value)}</div></div>`).join("")
-    : "";
-
-  el.innerHTML = `
-    <div class="motion-wrapper">
-      <div class="compact">
-        <div class="copy">${copy}${collapsedDetails}</div>
-        <div class="stamp">${stamp(cfg)}</div>
-        ${cfg.expanded ? "" : '<div class="compact-hint">⌃⇧N more</div>'}
-        <div class="track" aria-hidden="true">${track}</div>
+      <div class="masthead-row">
+        <div class="masthead"><span class="dot"></span>${esc(GENERIC_MASTHEAD_KICKER[cfg.origin] || 'cli')}</div>
+        ${stampHtml(cfg.priority, cfg.signal || 'generic', cfg.eventType)}
       </div>
-      ${manifest}
+      <div class="title headline">${esc(cfg.title)}</div>
+      ${cfg.subtitle ? `<div class="notif-subtitle-row"><span class="notif-subtitle">${esc(cfg.subtitle)}</span></div>` : ''}
+      ${cfg.body && cfg.body.trim() !== '' ? `<div class="notif-body">${mdInline(cfg.body)}</div>` : ''}
+      ${details.slice(0, MAX_VISIBLE_DETAIL_PAIRS).map((d) => `<div><div class="detail-label">${esc(d.label)}</div><div class="detail-value">${esc(d.value)}</div></div>`).join('')}`;
+  }
+  const compact = `<div class="compact"><div class="copy">${copy}</div>${!cfg.expanded ? '<div class="compact-hint"><kbd>&#8963;&#8679;N</kbd> more</div>' : ''}</div>`;
+  const manifest = manifestHtml(cfg);
+  const ttl = ttlBarHtml(cfg.queueTotal || 1, cfg.queueDone || 0, cfg.fillFraction === undefined ? 0.7 : cfg.fillFraction, !!cfg.ttlPaused);
+  return compact + manifest + ttl;
+}
+
+/* ---------- LiveMatchScorecard.tsx ---------- */
+function liveMatchHtml(cfg) {
+  const e = cfg.espn;
+  const pillVariant = cfg.pillVariant || 'live';
+  const pillLabel = pillVariant === 'break' ? 'Break' : pillVariant === 'final' ? 'Final' : 'Live';
+  const cardsClean = e.homeCards[0] === 0 && e.homeCards[1] === 0 && e.awayCards[0] === 0 && e.awayCards[1] === 0;
+  const icon = cfg.eventIcon ? `<span class="${esc(cfg.eventIcon)}"></span>` : '';
+  return `<div class="notif-block">
+    <div class="sc-head">
+      <span class="chip chip-league">${esc(e.league)}</span>
+      <span class="chip chip-live${pillVariant === 'live' ? '' : ' ' + pillVariant}"><span class="live-dot"></span>${pillLabel}</span>
+      <span class="chip clock-pill">${esc(e.clock)}</span>
+    </div>
+    <div class="score-row">
+      <div class="side"><span class="crest">${esc(e.homeAbbrev)}</span></div>
+      <span class="score"><span class="score-digit"><span class="score-digit-roll">${e.homeScore}</span></span><span class="dash">&ndash;</span><span class="score-digit"><span class="score-digit-roll">${e.awayScore}</span></span></span>
+      <div class="side"><span class="crest">${esc(e.awayAbbrev)}</span></div>
+    </div>
+    <div class="event-line${cfg.eventTint ? ' ' + cfg.eventTint : ''}">${icon}${esc(cfg.body)}</div>
+    ${!cardsClean ? `<div class="cards-line">${esc(e.homeAbbrev)} ${e.homeCards[0]}Y${e.homeCards[1]}R &middot; ${esc(e.awayAbbrev)} ${e.awayCards[0]}Y${e.awayCards[1]}R</div>` : ''}
+  </div>`;
+}
+
+/* ---------- StatusDots.tsx ---------- */
+function shapeClass(configured) { return configured === undefined ? 'shape-unavailable' : configured ? 'shape-enabled' : 'shape-disabled'; }
+function statusDotsHtml(status) {
+  const paused = status ? !!status.paused : false;
+  const dot = (name, configured) => {
+    const active = !paused && !!configured;
+    return `<span class="status-dot ${name} ${shapeClass(configured)}${active ? ' active' : ' dim'}" role="img" aria-label="${name}"></span>`;
+  };
+  const pause = paused ? '<span class="pause-glyph" role="img" aria-label="Notifications paused"><span></span><span></span></span>' : '';
+  return `<span class="status-dots">${dot('football', status && status.football)}${dot('news', status && status.news)}${dot('weather', status && status.weather)}${pause}</span>`;
+}
+
+/* ---------- IdleFace.tsx ---------- */
+function idleFaceHtml() {
+  return `<div class="idle-face" aria-hidden="true">
+    <div class="idle-face-eyes"><span class="idle-face-eye"></span><span class="idle-face-eye"></span></div>
+    <svg class="idle-face-mouth" viewBox="0 0 14 6" width="14" height="6"><path d="M1 1.5 Q7 5.5 13 1.5"></path></svg>
+  </div>`;
+}
+
+/* ---------- FlankClock.tsx ---------- */
+function clockDisplay() { return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date()); }
+function dayProgressPct() { const now = new Date(); return (((now.getHours() * 60 + now.getMinutes()) / 1440) * 100).toFixed(1); }
+
+/* ---------- IdleHoverPeek.tsx (subset: weather / media / football reveal + timeline) ---------- */
+function idlePeekHtml(cfg) {
+  let backdrop = '';
+  let content = '';
+  if (cfg.live) {
+    content = `<div class="idle-reveal-scorecard">
+      <div class="sc-head"><span class="chip chip-live"><span class="live-dot" aria-hidden="true"></span>Live</span><span class="chip clock-pill">${esc(cfg.live.minute)}</span></div>
+      <div class="idle-reveal-label">${esc(cfg.live.label)}</div>
     </div>`;
+  } else if (cfg.media) {
+    const m = cfg.media;
+    content = `<div class="media-row">
+      <div class="media-track">
+        <span class="media-art" aria-hidden="true"><svg class="media-art-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></span>
+        <span class="media-meta"><span class="media-title">${esc(m.title)}</span><span class="media-subtitle">${esc(m.subtitle)}</span></span>
+      </div>
+      <div class="media-transport">
+        <span class="media-state" aria-hidden="true"><svg class="media-state-icon" viewBox="0 0 24 24" fill="currentColor">${m.playing ? '<rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/>' : '<path d="M7 5l12 7-12 7z"/>'}</svg></span>
+        <span class="media-bar"><span class="media-bar-fill" style="transform:scaleX(${m.fraction})"></span></span>
+        <span class="media-time">${esc(m.elapsed)}</span>
+      </div>
+    </div>`;
+  } else if (cfg.weather) {
+    const w = cfg.weather;
+    const art = weatherArtFor(w.condition, w.isDay);
+    backdrop = `<div class="wx-card wx-peek-backdrop ${art.moodClass}${art.textureClass ? ' ' + art.textureClass : ''}"></div>`;
+    const hilo = w.hi && w.lo ? `<span class="wx-peek-hilo"><span class="wx-peek-hi">H ${esc(w.hi)}</span><span class="wx-peek-lo">L ${esc(w.lo)}</span></span>` : '';
+    const rain = w.rainPct !== null && w.rainPct !== undefined ? `<span class="chip wx-peek-rain">${w.rainPct}% rain</span>` : '';
+    const strip = (w.forecast || []).length ? `<div class="wx-forecast-strip">${w.forecast.map((p) => {
+      const a = weatherArtFor(p.condition, p.isDay);
+      return `<span class="wx-forecast-point">${wxIcon('wx-forecast-icon', a.moodClass)}<span class="wx-forecast-temp">${esc(p.temp)}</span><span class="wx-forecast-hour">${esc(p.hour)}</span></span>`;
+    }).join('')}</div>` : '';
+    content = `<div class="wx-peek-weather-stack">
+      <div class="wx-peek-readout">${wxIcon('wx-peek-icon', art.moodClass)}<span class="wx-peek-temp">${esc(w.tempDisplay)}</span>${hilo}<span class="chip wx-peek-condition">${esc(w.condition)}</span>${rain}</div>
+      ${strip}
+    </div>`;
+  }
+  return `<div class="below-block idle-peek">
+    ${backdrop}
+    <div class="peek-content">
+      ${content}
+      <span class="idle-peek-timeline" style="--day-progress:${cfg.dayProgress !== undefined ? cfg.dayProgress : dayProgressPct()}%" aria-hidden="true"></span>
+    </div>
+  </div>`;
+}
+
+/* ---------- StatusRailCard.tsx — the outer shell ---------- */
+function shellHtml(cfg) {
+  const cls = ['card-assembly'];
+  cls.push(cfg.showing ? (cfg.expanded ? cfg.priority : cfg.priority) : 'idle');
+  if (cfg.showing && cfg.expanded) cls.push('expanded');
+  if (cfg.hovered) cls.push('hovered');
+  if (cfg.bare) cls.push('bare');
+  if (cfg.pulse) cls.push(cfg.pulse);
+  if (cfg.cele) cls.push(cfg.cele);
+  if (cfg.belowBlockClass) cls.push('');
+  const railRevealed = !cfg.bare || cfg.hovered;
+  const showClock = railRevealed;
+  const showDots = railRevealed;
+  const showIdleFace = !cfg.showing && cfg.idleFace;
+  const showPeek = !cfg.showing && cfg.hovered && cfg.peek;
+
+  let belowBlock = '';
+  if (cfg.showing) {
+    belowBlock = `<div class="${cfg.belowBlockClass}">
+      ${cfg.wxIconHtml || ''}
+      <div class="card-content">${cfg.bodyHtml}</div>
+    </div>`;
+  } else if (showPeek) {
+    belowBlock = idlePeekHtml(cfg.peek);
+  }
+
+  const ripple = (!cfg.isLiveCard && cfg.pulse === 'pulse-goal')
+    ? '<div class="cele-ripple" aria-hidden="true"><span></span><span></span><span></span></div>' : '';
+
+  const el = document.createElement('div');
+  el.className = 'card-root';
+  el.innerHTML = `<div class="${cls.filter(Boolean).join(' ')}">
+    <span class="notch-gill notch-gill-left" aria-hidden="true"></span>
+    <span class="notch-gill notch-gill-right" aria-hidden="true"></span>
+    <div class="flank-left">${showClock ? `<span class="time-only">${clockDisplay()}</span>` : ''}</div>
+    <div class="synthetic-cutout" aria-hidden="true"></div>
+    ${showIdleFace ? idleFaceHtml() : ''}
+    <div class="flank-right">${showDots ? `<div class="card-content idle">${statusDotsHtml(cfg.status)}</div>` : ''}</div>
+    ${belowBlock}
+    ${ripple}
+  </div>`;
   return el;
 }
 
-/* ---------- idle renderer — mirrors IdleView.tsx ---------- */
-function renderIdle(status) {
-  const el = document.createElement("div");
-  const active = status &&
-    (status.football.enabled || status.news.enabled || status.weather.enabled || status.football.live !== null || status.waiting > 0 || status.paused);
-  el.className = "rail-card idle" + (active ? " status" : "");
-  const fmt = new Intl.DateTimeFormat(undefined, { weekday: "short", month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
-  const now = new Date();
-  const dayPct = ((now.getHours() * 3600 + now.getMinutes() * 60 + now.getSeconds()) / 86400 * 100).toFixed(1);
-  let rail = "";
-  if (active) {
-    const chips = [];
-    if (status.football.live) {
-      chips.push(`<span class="src-chip live"><span class="live-dot"></span>${esc(status.football.live.label)} · ${esc(status.football.live.minute)}</span>`);
-    } else {
-      chips.push(`<span class="src-chip${status.football.enabled ? "" : " dim"}">${status.football.enabled ? "Football" : "Football off"}</span>`);
-    }
-    chips.push(`<span class="src-chip${status.news.enabled ? "" : " dim"}">${status.news.enabled ? "News" : "News paused"}</span>`);
-    // plan 040 Part B: weather chip — same src-chip pattern as football/news.
-    chips.push(`<span class="src-chip${status.weather.enabled ? "" : " dim"}">${
-      status.weather.current
-        ? `${esc(status.weather.current.tempDisplay)} ${esc(status.weather.current.condition)}`
-        : status.weather.enabled ? "Weather" : "Weather off"
-    }</span>`);
-    chips.push(`<span class="src-chip">${status.waiting > 0 ? status.waiting + " queued" : "clear"}</span>`);
-    rail = `<span class="src-rail">${chips.join("")}</span>`;
-  }
-  el.innerHTML = `
-    <div class="motion-wrapper">
-      <div class="idle-view">
-        <span class="time">${fmt.format(now)}</span>
-        ${rail}
-        <span class="timeline" style="--day-progress: ${dayPct}%" aria-hidden="true"></span>
-      </div>
-    </div>`;
-  return el;
-}
-
-function frame(parent, node, labelHtml, metaHtml, opts = {}) {
-  const f = document.createElement("div");
-  f.className = "frame";
-  f.innerHTML = `<div class="label">${labelHtml} <span class="meta">${metaHtml}</span></div>
-    <div class="screen${opts.tall ? " tall" : ""}"><div class="window"></div></div>`;
-  f.querySelector(".window").appendChild(node);
+function frame(parent, node, labelHtml, metaHtml, opts) {
+  opts = opts || {};
+  const f = document.createElement('div');
+  f.className = 'frame';
+  f.innerHTML = `<div class="label">${labelHtml} <span class="meta">${metaHtml}</span></div><div class="screen${opts.tall ? ' tall' : ''}"><div class="window"></div></div>`;
+  f.querySelector('.window').appendChild(node);
   if (opts.controls) {
-    const c = document.createElement("div");
-    c.className = "controls";
+    const c = document.createElement('div');
+    c.className = 'controls';
     f.appendChild(c);
     opts.controls(c, node, f);
   }
@@ -824,277 +1024,226 @@ function frame(parent, node, labelHtml, metaHtml, opts = {}) {
   return node;
 }
 
-function pulse(card, cls, keyframeName, withRipple) {
-  card.classList.remove(cls);
-  card.querySelectorAll(".cele-ripple").forEach(n => n.remove());
-  void card.offsetWidth;
-  card.classList.add(cls);
+function replay(assemblyEl, cls, endAnim, withRipple) {
+  assemblyEl.classList.remove(cls);
+  assemblyEl.querySelectorAll('.cele-ripple').forEach((n) => n.remove());
+  void assemblyEl.offsetWidth;
+  assemblyEl.classList.add(cls);
   if (withRipple) {
-    const r = document.createElement("div");
-    r.className = "cele-ripple";
-    r.setAttribute("aria-hidden", "true");
-    r.innerHTML = "<span></span><span></span><span></span>";
-    card.appendChild(r);
-  }
-  card.addEventListener("animationend", function h(e) {
-    if (e.animationName === keyframeName) {
-      card.classList.remove(cls);
-      card.querySelectorAll(".cele-ripple").forEach(n => n.remove());
-      card.removeEventListener("animationend", h);
-    }
-  });
-}
-
-/* ---------- 1 · celebrations ---------- */
-const celebrations = document.getElementById("celebrations");
-frame(celebrations, renderCard({ priority: "high", eventType: "score_update", signal: "goal", title: "GOAL", body: "Arsenal 2-0", queue: { total: 5, done: 1 } }),
-  "goal · burst + ring + ripple (A+B)", "620ms overshoot · 720ms ripple ×3", {
-    controls: (c, card) => {
-      const btn = document.createElement("button");
-      btn.className = "ctl"; btn.textContent = "Replay goal celebration";
-      btn.onclick = () => pulse(card, "pulse-goal", "goal-overshoot", true);
-      c.appendChild(btn);
-      setTimeout(() => pulse(card, "pulse-goal", "goal-overshoot", true), 700);
-    }
-  });
-frame(celebrations, renderCard({ priority: "high", eventType: "match_state", signal: "red_card", title: "Red Card", body: "Chelsea down to 10", queue: { total: 5, done: 3 } }),
-  "red_card · strobe (unchanged)", "red-alert 460ms steps(1,end) ×2", {
-    controls: (c, card) => {
-      const btn = document.createElement("button");
-      btn.className = "ctl"; btn.textContent = "Replay red-card strobe";
-      btn.onclick = () => pulse(card, "pulse-red", "red-alert", false);
-      c.appendChild(btn);
-    }
-  });
-
-/* ---------- 2 · tiers ---------- */
-const tiers = document.getElementById("tiers");
-frame(tiers, renderCard({ priority: "low", eventType: "generic", title: "Build finished", body: "`cargo build` completed in **42s**", queue: { total: 5, done: 0 } }),
-  "low", "accent #aab3bd");
-frame(tiers, renderCard({ priority: "medium", eventType: "generic", title: "Task complete", body: "`vitest run` — *128 passed*", queue: { total: 5, done: 2 } }),
-  "medium", "accent #55d6bd");
-frame(tiers, renderCard({ priority: "high", eventType: "generic", title: "Agent needs input", body: "Workspace command is waiting", queue: { total: 5, done: 4 } }),
-  "high", "accent #ff6b57");
-
-/* ---------- 3 · expanded manifests ---------- */
-function attachExpandToggle(controls, card, cfgFactory) {
-  let expanded = true;
-  const btn = document.createElement("button");
-  btn.className = "ctl";
-  btn.textContent = "⌃⇧N toggle expand";
-  btn.onclick = () => {
-    expanded = !expanded;
-    swapExpansion(card, cfgFactory(expanded), expanded);
-  };
-  controls.appendChild(btn);
-}
-function swapExpansion(card, cfg, expanding) {
-  const next = renderCard(cfg);
-  if (expanding) {
-    card.className = next.className;
-    card.replaceChildren(...next.children);
-    const manifest = card.querySelector(".manifest");
-    if (manifest) {
-      manifest.classList.add("m-animating");
-      manifest.style.height = "0px"; manifest.style.opacity = "0";
-      requestAnimationFrame(() => {
-        manifest.style.height = manifest.scrollHeight + "px";
-        manifest.style.opacity = "1";
-        manifest.addEventListener("transitionend", () => {
-          manifest.style.height = ""; manifest.style.opacity = "";
-          manifest.classList.remove("m-animating");
-        }, { once: true });
-      });
-    }
-  } else {
-    const manifest = card.querySelector(".manifest");
-    card.className = next.className;
-    if (manifest) {
-      manifest.classList.add("m-animating");
-      manifest.style.height = manifest.scrollHeight + "px";
-      void manifest.offsetHeight;
-      manifest.style.height = "0px"; manifest.style.opacity = "0";
-      manifest.addEventListener("transitionend", () => {
-        card.replaceChildren(...next.children);
-      }, { once: true });
-    } else {
-      card.replaceChildren(...next.children);
-    }
+    const r = document.createElement('div');
+    r.className = 'cele-ripple';
+    r.setAttribute('aria-hidden', 'true');
+    r.innerHTML = '<span></span><span></span><span></span>';
+    assemblyEl.appendChild(r);
   }
 }
 
-const expandedGrid = document.getElementById("expanded");
-{
-  const cfgF = (exp) => ({ priority: "high", eventType: "generic", title: "Agent needs input", body: "Run `git push origin master`?\nTool: **Bash** — *reply in cmux*", expanded: exp, queue: { total: 3, done: 0 } });
-  frame(expandedGrid, renderCard(cfgF(true)), "generic · markdown body", "code/bold/italic + line break", { tall: true, controls: (c, card) => attachExpandToggle(c, card, cfgF) });
-}
-{
-  const cfgF = (exp) => ({
-    priority: "high", eventType: "generic", title: "Claude Code", body: "Permission requested: Bash",
-    subtitle: "Permission request",
-    details: [
-      { label: "Tool", value: "Bash" },
-      { label: "Command", value: "git push origin master" },
-      { label: "Project", value: "~/Desktop/code/mac-notification-nudge" },
-    ],
-    expanded: exp, queue: { total: 3, done: 1 },
-  });
-  frame(expandedGrid, renderCard(cfgF(true)), "cmux/claude hook · subtitle + details", "Layout A — plain-text cells", { tall: true, controls: (c, card) => attachExpandToggle(c, card, cfgF) });
-}
-{
-  const cfgF = (exp) => ({ priority: "low", eventType: "news_item", title: "Parliament passes the landmark digital rights bill", body: "The bill introduces sweeping data-protection duties for platforms and a new privacy regulator.", expanded: exp, link: true, queue: { total: 3, done: 2 }, news: { source: "NDTV", category: "politics", age: "42m ago", published: "13:32" } });
-  frame(expandedGrid, renderCard(cfgF(true)), "news · expanded", "manifest 1.5fr 1fr 1fr", { tall: true, controls: (c, card) => attachExpandToggle(c, card, cfgF) });
-}
+/* ================= 0 · shell states ================= */
+const shellGrid = document.getElementById('shell-states');
+frame(shellGrid, shellHtml({ status: { football: true, news: true, weather: true } }),
+  'idle rail · all sources on', 'clock + 3 status dots, no idle face yet');
+frame(shellGrid, shellHtml({ status: { football: false, news: true, weather: false } }),
+  'idle rail · football/weather off', 'hollow-square dots — configured-off, not unavailable');
+frame(shellGrid, shellHtml({ status: { paused: true, football: true, news: true, weather: true } }),
+  'idle rail · engine paused', 'every dot forced dim + pause-glyph, two static bars');
+frame(shellGrid, shellHtml({ status: {}, idleFace: true }),
+  'true idle · idle face', 'no <code>status</code> prop -&gt; every dot "unavailable" (hollow circle)');
+frame(shellGrid, shellHtml({ showing: true, priority: 'high', expanded: false, status: { football: true, news: true, weather: true },
+    belowBlockClass: 'below-block', bodyHtml: notificationBodyHtml({ priority: 'high', eventType: 'generic', origin: 'agent', title: 'Agent needs input', body: 'Workspace command is waiting', queueTotal: 3, queueDone: 1 }) }),
+  'showing · rail furniture stays', 'clock + dots persist through a live card (railRevealed)');
 
-/* ---------- 4 · news categories ---------- */
-const news = document.getElementById("news");
-const NEWS_SAMPLES = [
-  ["politics", "NDTV", "Parliament passes the landmark digital rights bill", "42m ago"],
-  ["tech", "The Verge", "Open-weights model tops the coding benchmark leaderboard", "<1m ago"],
-  ["sports", "ESPN", "Arsenal clinch the title with two games to spare", "3h ago"],
-  ["business", "Reuters", "Central bank holds rates, signals cuts later this year", "18m ago"],
-  ["world", "BBC", "Summit ends with a joint statement on maritime security", "1h ago"],
-  ["generic", "Hacker News", "Show HN: a terminal that renders notebooks inline", "2d ago"],
-];
-NEWS_SAMPLES.forEach(([category, source, title, age], i) => {
-  const card = frame(news,
-    renderCard({ priority: "low", eventType: "news_item", title, queue: { total: 5, done: i % 5 }, news: { source, category, age } }),
-    "cat-" + category, "shade-drift 12s");
-  card.querySelectorAll(".pill").forEach(p => p.classList.add("p-hidden"));
-  requestAnimationFrame(() => requestAnimationFrame(() => {
-    card.querySelectorAll(".pill").forEach(p => p.classList.remove("p-hidden"));
-  }));
+/* ================= 1 · priority tiers ================= */
+const tiers = document.getElementById('tiers');
+[
+  ['low', 'Build finished', '`cargo build` completed in **42s**'],
+  ['medium', 'Task complete', '`vitest run` — *128 passed*'],
+  ['high', 'Agent needs input', 'Workspace command is waiting'],
+].forEach(([priority, title, body]) => {
+  frame(tiers, shellHtml({ showing: true, priority, status: {}, belowBlockClass: 'below-block',
+    bodyHtml: notificationBodyHtml({ priority, eventType: 'generic', origin: 'manual', title, body, queueTotal: 3, queueDone: 1 }) }),
+    priority, 'accent edge · stamp · ttl-bar fill');
 });
 
-/* ---------- 5 · idle states ---------- */
-const idleStates = document.getElementById("idle-states");
-const WEATHER_OFF = { enabled: false, current: null };
-const WEATHER_ON_NO_POLL = { enabled: true, current: null };
-const WEATHER_READING = { enabled: true, current: { tempDisplay: "72°F", condition: "Cloudy" } };
-const INACTIVE = { paused: false, waiting: 0, football: { enabled: false, live: null }, news: { enabled: false }, weather: WEATHER_OFF };
-frame(idleStates, renderIdle(INACTIVE), "plain clock · 270px", "nothing enabled, nothing queued — rail hidden");
-frame(idleStates, renderIdle({ paused: false, waiting: 0, football: { enabled: true, live: null }, news: { enabled: true }, weather: WEATHER_READING }),
-  "all sources on · all quiet", "Football + News + Weather reading + clear · 460px");
-frame(idleStates, renderIdle({ paused: false, waiting: 0, football: { enabled: true, live: { label: "ARS 2–0 CHE", minute: "Halftime" } }, news: { enabled: true }, weather: WEATHER_READING }),
-  "football live", "pulsing live dot · ARS 2–0 CHE · Halftime");
-frame(idleStates, renderIdle({ paused: false, waiting: 0, football: { enabled: true, live: null }, news: { enabled: false }, weather: WEATHER_ON_NO_POLL }),
-  "news paused · weather awaiting first poll", "dimmed News paused chip · plain \"Weather\" label until Open-Meteo lands");
-frame(idleStates, renderIdle({ paused: false, waiting: 0, football: { enabled: false, live: null }, news: { enabled: true }, weather: WEATHER_OFF }),
-  "football off · weather off", "dimmed \"off\" chips on both — plan 040 Part B");
-frame(idleStates, renderIdle({ paused: false, waiting: 2, football: { enabled: true, live: null }, news: { enabled: true }, weather: WEATHER_READING }),
-  "2 queued", "waiting depth while slot is empty");
-frame(idleStates, renderIdle({ paused: true, waiting: 3, football: { enabled: true, live: null }, news: { enabled: true }, weather: WEATHER_READING }),
-  "engine paused · 3 queued", "paused buffers, promotion frozen");
+/* ================= 2 · content types ================= */
+const contentTypes = document.getElementById('content-types');
+frame(contentTypes, shellHtml({ showing: true, priority: 'medium', status: {}, belowBlockClass: 'below-block',
+  bodyHtml: notificationBodyHtml({ priority: 'medium', eventType: 'generic', origin: 'manual', title: 'Build finished', body: 'notchtap run completed in 42s', queueTotal: 1, queueDone: 0 }) }),
+  'manual/cli card', 'origin: manual — no below-block wash');
+frame(contentTypes, shellHtml({ showing: true, priority: 'high', status: {},
+  belowBlockClass: 'below-block ' + sourceClass('agent', 'claude-code') + ' agent-origin',
+  bodyHtml: notificationBodyHtml({ priority: 'high', eventType: 'generic', origin: 'agent', title: 'Claude Code', subtitle: 'Permission request',
+    body: 'Run `git push origin master`?', details: [{ label: 'Tool', value: 'Bash' }, { label: 'Command', value: 'git push origin master' }], queueTotal: 3, queueDone: 1 }) }),
+  'agent card · Claude Code', 'origin: agent — terracotta identity wash + hairline');
+frame(contentTypes, shellHtml({ showing: true, priority: 'low', status: {},
+  belowBlockClass: 'below-block news-shade ' + categoryClass('politics'),
+  bodyHtml: notificationBodyHtml({ priority: 'low', eventType: 'news_item', title: 'Parliament passes the landmark digital rights bill', source: 'NDTV', category: 'politics', age: '42m ago', link: true, queueTotal: 5, queueDone: 2 }) }),
+  'news card', 'per-category shader — never the same channel as source identity');
+frame(contentTypes, (() => {
+  const art = weatherArtFor('Rain', true);
+  return shellHtml({ showing: true, priority: 'medium', status: {},
+    belowBlockClass: 'below-block wx-card ' + art.moodClass + (art.textureClass ? ' ' + art.textureClass : ''),
+    wxIconHtml: wxIcon('wx-icon', art.moodClass),
+    bodyHtml: notificationBodyHtml({ priority: 'medium', eventType: 'generic', origin: 'weather', title: 'Rain expected soon', body: '75% chance of rain within ~30 min', queueTotal: 1, queueDone: 0 }) });
+})(), 'weather ALERT card', 'mood gradient + texture + glyph, z-index 0 under content');
+frame(contentTypes, shellHtml({ showing: true, priority: 'low', status: {}, isLiveCard: true, belowBlockClass: 'below-block',
+  bodyHtml: liveMatchHtml({ espn: { league: 'Premier League', clock: "58'", homeAbbrev: 'ARS', awayAbbrev: 'CHE', homeScore: 2, awayScore: 0, homeCards: [1, 0], awayCards: [2, 1] },
+    pillVariant: 'live', body: "58' · Saka (assist Ødegaard)", eventIcon: 'ev-ico goal', eventTint: 'tint-goal' }) }),
+  'live-match scorecard', 'LiveMatchScorecard replaces .compact entirely — no TtlBar');
 
-/* ---------- 6 · slider edge cases ---------- */
-const sliderStates = document.getElementById("slider-states");
-frame(sliderStates, renderCard({ priority: "medium", eventType: "generic", title: "Single item", body: "batch of one", queue: { total: 1, done: 0 } }),
-  "1 segment", "min(1)");
-frame(sliderStates, renderCard({ priority: "medium", eventType: "generic", title: "Third of five", body: "mid-batch", queue: { total: 5, done: 2 } }),
-  "5 segments · #3 lit", "2 dimmed behind it");
-frame(sliderStates, renderCard({ priority: "high", eventType: "generic", title: "Cap reached", body: "batch of 10", queue: { total: 10, done: 9 } }),
-  "10 segments · last lit", "the ceiling");
-frame(sliderStates, renderCard({ priority: "high", eventType: "generic", title: "Huge batch", body: "25 items deep", queue: { total: 25, done: 7 } }),
-  "25 items → 10 segments", "index maps proportionally: floor(7×10/25)=2");
-
-/* ---------- 7 · live-match scorecard ---------- */
-const liveMatch = document.getElementById("live-match");
-frame(liveMatch, renderCard({
-  priority: "low", eventType: "score_update", signal: "kickoff", title: "ARS 0–0 CHE", body: "12' · Kickoff",
-  details: [
-    { label: "Clock", value: "12'" },
-    { label: "Home Cards", value: "—" },
-    { label: "Away Cards", value: "—" },
-  ], queue: { total: 1, done: 0 },
-}), "kickoff · no cards yet", "Clock cell always present, Cards cells show — when empty");
-frame(liveMatch, renderCard({
-  priority: "low", eventType: "score_update", signal: "goal", title: "ARS 2–0 CHE", body: "58' · Saka (assist Ødegaard)",
-  details: [
-    { label: "Clock", value: "58'" },
-    { label: "Home Cards", value: "🟨" },
-    { label: "Away Cards", value: "🟨🟨🟥" },
-  ], queue: { total: 1, done: 0 },
-}), "mid-match · cards on both sides", "per-side bucketing via team.id, not aggregate count");
-frame(liveMatch, renderCard({
-  priority: "low", eventType: "match_state", signal: "fulltime", title: "ARS 2–0 CHE", body: "FT",
-  details: [
-    { label: "Clock", value: "FT" },
-    { label: "Home Cards", value: "🟨" },
-    { label: "Away Cards", value: "🟨🟨🟥" },
-  ], queue: { total: 1, done: 0 },
-}), "full-time", "same Topic, OneShot retires the card (plan 044 fixed a same-poll un-retire bug here)");
-
-/* ---------- 0 · lifecycle ---------- */
-const LIFE_QUEUE = [
-  { priority: "high", eventType: "generic", title: "Agent needs input", body: "Workspace command is waiting" },
-  { priority: "high", eventType: "score_update", signal: "goal", title: "GOAL", body: "Arsenal 2-0", celebrate: true },
-  { priority: "low", eventType: "news_item", title: "Open-weights model tops the coding benchmark leaderboard", body: "The release ships permissive weights and a 1M-token context window.", link: true, news: { source: "The Verge", category: "tech", age: "<1m ago", published: "14:02" } },
-  { priority: "medium", eventType: "generic", title: "Task complete", body: "`vitest run` — **128 passed**" },
-  { priority: "low", eventType: "news_item", title: "Summit ends with a joint statement on maritime security", body: "Delegates agreed to a joint patrol framework starting next quarter.", link: true, news: { source: "BBC", category: "world", age: "1h ago", published: "13:10" } },
-];
-/* base ttl 8s → expanded 4s, compact 4s (retract at half), then rotate */
-const HOLD_EXPANDED = 2400, HOLD_COMPACT = 2400, SWAP = 230;
-
-const lifeMount = document.getElementById("life-mount");
-const LIFE_IDLE = { paused: false, waiting: 0, football: { enabled: true, live: null }, news: { enabled: true }, weather: WEATHER_READING };
-let lifeCard = renderIdle(LIFE_IDLE);
-lifeMount.appendChild(lifeCard);
-let lifeTimers = [], lifeRunning = false;
-
-function later(fn, ms) { lifeTimers.push(setTimeout(fn, ms)); }
-function lifeSwap(makeNext, after) {
-  const wrap = lifeCard.querySelector(".motion-wrapper");
-  wrap.classList.add("m-exit");
-  later(() => {
-    const next = makeNext();
-    lifeCard.className = next.className;
-    lifeCard.style.cssText = next.style.cssText;
-    const newWrap = next.querySelector(".motion-wrapper");
-    newWrap.classList.add("m-enter-from");
-    lifeCard.replaceChildren(...next.children);
-    void lifeCard.offsetWidth;
-    lifeCard.querySelector(".motion-wrapper").classList.remove("m-enter-from");
-    if (after) after();
-  }, SWAP);
+/* ================= 3 · expand demo ================= */
+const expandGrid = document.getElementById('expand-demo');
+{
+  const cfgF = (expanded) => ({ priority: 'high', eventType: 'generic', origin: 'agent', title: 'Agent needs input',
+    body: 'Run `git push origin master`?\nTool: **Bash** — *reply in the agent session*', expanded, queueTotal: 3, queueDone: 0 });
+  const node = shellHtml({ showing: true, priority: 'high', expanded: true, status: {}, belowBlockClass: 'below-block ' + sourceClass('agent', null) + ' agent-origin', bodyHtml: notificationBodyHtml(cfgF(true)) });
+  let expanded = true;
+  frame(expandGrid, node, 'generic · manifest disclosure', 'grid-template-rows 0fr &#8594; 1fr', { tall: true, controls: (c) => {
+    const btn = document.createElement('button');
+    btn.className = 'ctl'; btn.textContent = '⌃⇧N toggle expand';
+    btn.onclick = () => {
+      expanded = !expanded;
+      const cardEl = node.querySelector('.card-assembly');
+      cardEl.classList.toggle('expanded', expanded);
+      const cc = node.querySelector('.card-content');
+      cc.innerHTML = notificationBodyHtml(cfgF(expanded));
+    };
+    c.appendChild(btn);
+  } });
 }
 
-function lifeStep(i) {
-  if (!lifeRunning) return;
-  if (i >= LIFE_QUEUE.length) { lifeSwap(() => renderIdle(LIFE_IDLE)); lifeRunning = false; return; }
-  const item = LIFE_QUEUE[i];
-  const q = { total: LIFE_QUEUE.length, done: i };
-  // 1 — promote, ALREADY expanded, regardless of priority
-  lifeSwap(() => renderCard({ ...item, expanded: true, queue: q }), () => {
-    if (item.celebrate) later(() => pulse(lifeCard, "pulse-goal", "goal-overshoot", true), 260);
-  });
-  // 2 — retract at half the rotation window
-  later(() => {
-    if (!lifeRunning) return;
-    swapExpansion(lifeCard, { ...item, expanded: false, queue: q }, false);
-  }, SWAP + HOLD_EXPANDED);
-  // 3 — rotate on
-  later(() => lifeStep(i + 1), SWAP + HOLD_EXPANDED + HOLD_COMPACT);
-}
+/* ================= 4 · ttl states ================= */
+const ttlGrid = document.getElementById('ttl-states');
+[
+  [1, 0, 0.62, false, '1 segment', 'min(1) — degenerate, unsegmented bar'],
+  [5, 2, 0.3, false, '5 segments · #3 current', '2 dimmed behind it'],
+  [10, 9, 0.85, false, '10 segments · cap reached', 'the ceiling'],
+  [25, 7, 0.4, false, '25 items &#8594; 10 segments', 'index maps proportionally: floor(7&times;10/25)=2'],
+  [3, 1, 0.55, true, 'hover-paused', 'fill dims + shifts toward --accent-soft'],
+].forEach(([total, done, frac, paused, label, meta]) => {
+  frame(ttlGrid, shellHtml({ showing: true, priority: 'medium', status: {}, belowBlockClass: 'below-block',
+    bodyHtml: notificationBodyHtml({ priority: 'medium', eventType: 'generic', origin: 'manual', title: 'Queue demo', body: 'batch position', queueTotal: total, queueDone: done, fillFraction: frac, ttlPaused: paused }) }),
+    label, meta);
+});
 
-document.getElementById("life-run").onclick = () => {
-  lifeTimers.forEach(clearTimeout); lifeTimers = [];
-  lifeRunning = true;
-  lifeStep(0);
-};
-document.getElementById("life-stop").onclick = () => {
-  lifeTimers.forEach(clearTimeout); lifeTimers = [];
-  lifeRunning = false;
-  lifeSwap(() => renderIdle(LIFE_IDLE));
-};
+/* ================= 5 · celebrations ================= */
+const celebrations = document.getElementById('celebrations');
+frame(celebrations, (() => {
+  const node = shellHtml({ showing: true, priority: 'high', status: {}, belowBlockClass: 'below-block',
+    bodyHtml: notificationBodyHtml({ priority: 'high', eventType: 'generic', origin: 'agent', title: 'GOAL', body: 'Arsenal 2-0', queueTotal: 5, queueDone: 1 }) });
+  return frame.__lastGoal = node;
+})(), 'generic pulse-goal', 'burst + ring + 3 staggered ripples, 1240/1440ms', { controls: (c, node) => {
+  const cardEl = node.querySelector('.card-assembly');
+  const btn = document.createElement('button');
+  btn.className = 'ctl'; btn.textContent = 'Replay goal celebration';
+  btn.onclick = () => replay(cardEl, 'pulse-goal', 'ripple-out', true);
+  c.appendChild(btn);
+  setTimeout(() => replay(cardEl, 'pulse-goal', 'ripple-out', true), 500);
+} });
+frame(celebrations, shellHtml({ showing: true, priority: 'high', status: {}, belowBlockClass: 'below-block',
+  bodyHtml: notificationBodyHtml({ priority: 'high', eventType: 'generic', origin: 'agent', title: 'Red Card', body: 'Chelsea down to 10', queueTotal: 5, queueDone: 3 }) }),
+  'generic pulse-red', 'red-alert 920ms steps(1,end) &times;2', { controls: (c, node) => {
+  const cardEl = node.querySelector('.card-assembly');
+  const btn = document.createElement('button');
+  btn.className = 'ctl'; btn.textContent = 'Replay red-card strobe';
+  btn.onclick = () => replay(cardEl, 'pulse-red', 'red-alert', false);
+  c.appendChild(btn);
+} });
+frame(celebrations, shellHtml({ showing: true, priority: 'low', status: {}, isLiveCard: true, belowBlockClass: 'below-block',
+  bodyHtml: liveMatchHtml({ espn: { league: 'Premier League', clock: "58'", homeAbbrev: 'ARS', awayAbbrev: 'CHE', homeScore: 2, awayScore: 0, homeCards: [0, 0], awayCards: [0, 0] },
+    pillVariant: 'live', body: "58' · Saka", eventIcon: 'ev-ico goal', eventTint: 'tint-goal' }) }),
+  'live-match cele-goal', 'goal-glow 1800ms + cele-ring — softer than the generic pulse', { controls: (c, node) => {
+  const cardEl = node.querySelector('.card-assembly');
+  const btn = document.createElement('button');
+  btn.className = 'ctl'; btn.textContent = 'Replay cele-goal';
+  btn.onclick = () => replay(cardEl, 'cele-goal', 'goal-glow', false);
+  c.appendChild(btn);
+} });
+frame(celebrations, shellHtml({ showing: true, priority: 'low', status: {}, isLiveCard: true, belowBlockClass: 'below-block',
+  bodyHtml: liveMatchHtml({ espn: { league: 'Premier League', clock: "72'", homeAbbrev: 'ARS', awayAbbrev: 'CHE', homeScore: 2, awayScore: 0, homeCards: [1, 0], awayCards: [1, 1] },
+    pillVariant: 'live', body: 'Rüdiger', eventIcon: 'ev-ico rc', eventTint: 'tint-rc' }) }),
+  'live-match cele-rc', 'red-strobe 1800ms — same coral, live-match register', { controls: (c, node) => {
+  const cardEl = node.querySelector('.card-assembly');
+  const btn = document.createElement('button');
+  btn.className = 'ctl'; btn.textContent = 'Replay cele-rc';
+  btn.onclick = () => replay(cardEl, 'cele-rc', 'red-strobe', false);
+  c.appendChild(btn);
+} });
+
+/* ================= 6 · news categories ================= */
+const newsCats = document.getElementById('news-cats');
+[
+  ['politics', 'NDTV', 'Parliament passes the landmark digital rights bill', '42m ago'],
+  ['tech', 'The Verge', 'Open-weights model tops the coding benchmark leaderboard', '<1m ago'],
+  ['science', 'Nature', 'New catalyst cuts green-hydrogen cost by a third', '6h ago'],
+  ['sports', 'ESPN', 'Arsenal clinch the title with two games to spare', '3h ago'],
+  ['business', 'Reuters', 'Central bank holds rates, signals cuts later this year', '18m ago'],
+  ['world', 'BBC', 'Summit ends with a joint statement on maritime security', '1h ago'],
+  ['generic', 'Hacker News', 'Show HN: a terminal that renders notebooks inline', '2d ago'],
+].forEach(([category, source, title, age]) => {
+  frame(newsCats, shellHtml({ showing: true, priority: 'low', status: {}, belowBlockClass: 'below-block news-shade ' + categoryClass(category),
+    bodyHtml: notificationBodyHtml({ priority: 'low', eventType: 'news_item', title, source, category, age, queueTotal: 5, queueDone: 2 }) }),
+    'cat-' + category, 'shade-drift 12s, non-collinear waypoints');
+});
+
+/* ================= 7 · source identity ================= */
+const sourceIdentity = document.getElementById('source-identity');
+[
+  ['claude-code', 'Claude Code', 'Permission requested: Bash'],
+  ['codex', 'Codex', 'Task complete — 3 files changed'],
+  ['kimi', 'Kimi', 'Waiting for approval to continue'],
+  ['opencode', 'OpenCode', 'Run finished: `pnpm build`'],
+].forEach(([runtime, label, body]) => {
+  frame(sourceIdentity, shellHtml({ showing: true, priority: 'high', status: {},
+    belowBlockClass: 'below-block ' + sourceClass('agent', runtime) + ' agent-origin',
+    bodyHtml: notificationBodyHtml({ priority: 'high', eventType: 'generic', origin: 'agent', title: label, body, queueTotal: 1, queueDone: 0 }) }),
+    'src-' + runtime, 'agent runtime identity');
+});
+frame(sourceIdentity, shellHtml({ showing: true, priority: 'high', status: {},
+  belowBlockClass: 'below-block ' + sourceClass('agent', null) + ' agent-origin',
+  bodyHtml: notificationBodyHtml({ priority: 'high', eventType: 'generic', origin: 'agent', title: 'Unknown runtime', body: 'Falls back to neutral amber', queueTotal: 1, queueDone: 0 }) }),
+  'src-agent (fallback)', 'runtime not yet known/unrecognized');
+frame(sourceIdentity, shellHtml({ showing: true, priority: 'low', status: {},
+  belowBlockClass: 'below-block ' + sourceClass('manual', null),
+  bodyHtml: notificationBodyHtml({ priority: 'low', eventType: 'generic', origin: 'manual', title: 'CLI push', body: '`./notchtap --title t --body b`', queueTotal: 1, queueDone: 0 }) }),
+  'src-manual', '"CLI blue" — the /notify CLI push path');
+
+/* ================= 8 · idle hover-peek ================= */
+const peekGrid = document.getElementById('idle-peek-states');
+frame(peekGrid, shellHtml({ hovered: true, peek: { weather: { tempDisplay: '72°F', condition: 'Cloudy', isDay: true, hi: '75°', lo: '58°', rainPct: 20,
+    forecast: [{ condition: 'Cloudy', isDay: true, temp: '71°', hour: '15:00' }, { condition: 'Rain', isDay: true, temp: '68°', hour: '18:00' }, { condition: 'Clear', isDay: false, temp: '61°', hour: '21:00' }] } } }),
+  'weather peek + forecast strip', 'football &gt; media &gt; weather &gt; timeline precedence');
+frame(peekGrid, shellHtml({ hovered: true, peek: { media: { title: 'Everything In Its Right Place', subtitle: 'Radiohead — Kid A', playing: true, fraction: 0.42, elapsed: '1:47' } } }),
+  'now-playing media', 'lucide-style transport glyphs (placeholder here)');
+frame(peekGrid, shellHtml({ hovered: true, peek: { live: { label: 'ARS 2–0 CHE', minute: 'Halftime' } } }),
+  'live-match reveal', 'lighter render than the sticky scorecard — label/minute only');
+frame(peekGrid, shellHtml({ hovered: true, peek: {} }),
+  'timeline only', 'no live match / media / weather to show — bare day-progress dot');
+
+/* ================= 9 · bare vs rail ================= */
+const bareGrid = document.getElementById('bare-states');
+frame(bareGrid, shellHtml({ bare: true, status: {} }),
+  'bare · resting_state: notch', 'cutout-width-only, transparent flanks — zero app pixels');
+frame(bareGrid, shellHtml({ bare: true, hovered: true, peek: { weather: { tempDisplay: '68°F', condition: 'Clear', isDay: true } }, status: { football: true, news: true, weather: true } }),
+  'bare · hovered', 'widens back to rail formula, flanks repaint black, peek opens');
+frame(bareGrid, shellHtml({ status: { football: true, news: true, weather: true } }),
+  'rail · resting_state: rail (default)', 'always the full clock+dots rail, bare never applies');
+frame(bareGrid, shellHtml({ showing: true, priority: 'medium', status: {}, belowBlockClass: 'below-block',
+  bodyHtml: notificationBodyHtml({ priority: 'medium', eventType: 'generic', origin: 'manual', title: 'Showing while bare-configured', body: 'A showing card is never bare — bare only ever applies to true idle.', queueTotal: 1, queueDone: 0 }) }),
+  'showing (either resting_state)', 'bare vs rail only differ at idle — showing geometry is identical');
 
 /* ---------- appearance bar ---------- */
-document.querySelectorAll("#appearance-bar .seg").forEach(seg => {
+document.querySelectorAll('#appearance-bar .seg').forEach((seg) => {
   const cssVar = seg.dataset.var;
-  seg.querySelectorAll("button").forEach(btn => {
+  const isMode = seg.dataset.mode;
+  seg.querySelectorAll('button').forEach((btn) => {
     btn.onclick = () => {
-      seg.querySelectorAll("button").forEach(b => b.classList.remove("active"));
-      btn.classList.add("active");
-      document.documentElement.style.setProperty(cssVar, btn.dataset.val);
+      seg.querySelectorAll('button').forEach((b) => b.classList.remove('active'));
+      btn.classList.add('active');
+      if (isMode) {
+        document.documentElement.dataset.notchtapMode = btn.dataset.val;
+      } else {
+        document.documentElement.style.setProperty(cssVar, btn.dataset.val);
+      }
     };
   });
 });

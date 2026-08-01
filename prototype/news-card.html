@@ -1,47 +1,131 @@
 <!doctype html>
-<!-- plan 137 (v7 ticket 5, spec §7/§12) archived-note: this static mockup predates the cmux relay's removal — every "cmux"/"Cmux" label below is a historical artifact from when v6's cmux relay was the agent-notification source; the shipped app now sources these as the v7 Agent Adapter layer (Origin/SourceKind::Agent). Not resynced, per this repo's prototype-drift convention (CLAUDE.md). -->
-<!-- News card v2 mockup: compact keeps the SHIPPED card's exact visual language (screenshot-faithful: masthead, WIRE stamp, headline, category chip + one relative-age time slot, news-shade glow, track, MORE hint — real .cat-* tokens from src/overlay-card.css). Expanded drops the 3-column manifest for full-width summary + inline meta. Lifecycle follows the cmux template from prototype/notch-states.html: auto-expand on arrival → auto-retract to compact halfway → rotate out, hover toggles, ⌃⇧N always available.
-     2026-07-23 truth-sync: the original "ONE addition: published-time meta" pitch this comment described was declined — plan 110 (Step C) instead REMOVED the redundant .pub-meta node, so the shipped card carries exactly one time expression, not two. See the in-page banner below for the full correction list. -->
+<!-- This mock mirrors the CURRENT shipped overlay's news-origin notification
+     card. Markup shape is copied from StatusRailCard.tsx + NotificationBody.tsx's
+     render output for a `news_item` slot (compact + expanded); CSS values are
+     copied verbatim from src/overlay/card-chrome.css (shell grid), src/overlay/
+     masthead-content.css (.compact/.title/.stamp), src/overlay/news-category.css
+     (category tokens, news-shade, chips), src/overlay/ttl-bar.css (the queue-
+     segmented floor bar), src/overlay/manifest.css + src/components/Manifest.tsx
+     (expanded panel), src/overlay/status-dots.css (the flank-right rail dots),
+     and vendor/shared-ui/design/tokens.css (color/ease tokens). Static and
+     standalone by design (CLAUDE.md: prototype/*.html are mocks, not wired into
+     the build) — not a build artifact, just a hand-maintained visual reference
+     kept in sync by hand when the shipped card changes. If this drifts from the
+     real component again, re-sync it rather than re-adding a "diverged on
+     purpose" banner. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
-<title>news card — shipped look, meta + cmux lifecycle</title>
+<title>news card — mirrors the shipped overlay</title>
 <style>
-  :root { --bg: #101318; --ink: #e8ecf1; --dim: #8b95a3; --rule: rgba(255,255,255,0.09); --accent: #7fe08d; }
+  :root {
+    --overlay-fg: #f5f7fa;
+    --overlay-teal: #55d6bd;
+    --overlay-coral: #ff6b57;
+    --overlay-green: #7fe08d;
+    --overlay-amber: #f0c46a;
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+    --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+    --ease-notchtap: cubic-bezier(.22, 1, .36, 1);
+    --card-radius: 8px;
+    --bg: #050607; --ink: #e8ecf1; --dim: #8b95a3; --rule: rgba(255,255,255,0.09);
+  }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--ink); font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif; padding: 44px 24px 100px; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-sans); padding: 44px 24px 100px; }
   main { max-width: 760px; margin: 0 auto; }
   h1 { font-size: 21px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
-  .lede { color: var(--dim); font-size: 13px; line-height: 1.6; max-width: 66ch; margin: 0 0 8px; }
-  .note { font-size: 11.5px; color: var(--dim); border-left: 2px solid var(--rule); padding-left: 10px; margin: 0 0 32px; max-width: 64ch; line-height: 1.6; }
-  code { font-family: ui-monospace, "SFMono-Regular", Menlo, monospace; color: #9fc3e8; }
+  .lede { color: var(--dim); font-size: 13px; line-height: 1.6; max-width: 66ch; margin: 0 0 32px; }
+  code { font-family: var(--font-mono); color: #9fc3e8; }
   section { margin-bottom: 44px; padding-top: 24px; border-top: 1px solid var(--rule); }
   h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); margin: 0 0 4px; }
   .section-sub { font-size: 12px; color: var(--dim); margin: 0 0 16px; max-width: 62ch; line-height: 1.5; }
-  .rig-label { font: 700 10px/1 ui-monospace, monospace; letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); margin: 0 0 8px; }
+  .rig-label { font: 700 10px/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); margin: 0 0 8px; }
 
-  .rig { position: relative; background: #05060a; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 16px 32px rgba(0,0,0,0.4); }
-  .menubar { position: relative; height: 26px; background: #1c1d20; }
-  .hw-notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: 26px; width: 150px; background: #000; z-index: 2; }
-  .stage { position: relative; min-height: 90px; background: repeating-linear-gradient(45deg, #08090c 0 2px, #0c0d10 2px 4px); }
+  /* ==== the "physical" rig around the card: a fake macOS menubar with a
+     hardware notch cutout, purely so the card reads in context. Not part of
+     the shipped component itself — StatusRailCard renders only the card. ==== */
+  .rig { position: relative; background: #08090b; border-radius: 10px; overflow: hidden; box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 16px 32px rgba(0,0,0,0.4); padding-bottom: 28px; }
+  .menubar { position: relative; height: 32px; background: #1c1d20; }
+  .hw-notch { position: absolute; top: 0; left: 50%; transform: translateX(-50%); height: 32px; width: 200px; background: #000; z-index: 2; }
+  .stage { position: relative; padding-top: 6px; min-height: 160px; display: flex; justify-content: center; background: repeating-linear-gradient(45deg, #08090c 0 2px, #0c0d10 2px 4px); }
 
-  .card-wrap { position: absolute; top: 0; left: 50%; transform: translateX(-50%); z-index: 5; width: var(--cw); }
-  .flank-left, .flank-right { position: absolute; top: 0; width: calc((var(--cw) - var(--nw)) / 2); height: var(--nh); background: #000; color: #f5f7fa; display: flex; align-items: center; }
-  .flank-left { left: 0; padding-left: 16px; }
-  .flank-right { right: 0; padding-right: 16px; justify-content: flex-end; }
-  .time-only { font: 800 15px/1 ui-monospace, monospace; color: #f5f7fa; }
-  .below-block { position: absolute; top: var(--nh); left: 0; width: 100%; background: #000; box-shadow: 0 14px 28px rgba(0,0,0,0.5); border-bottom-left-radius: 14px; border-bottom-right-radius: 14px; overflow: hidden; }
+  /* ====================================================================
+     the real shell — StatusRailCard.tsx's card-assembly root element,
+     src/overlay/card-chrome.css. A 3-column/2-row CSS grid: flank-left |
+     notch cutout | flank-right on row 1, below-block spanning row 2. No
+     absolute positioning, unlike a naive mock — the grid is load-bearing
+     (keeps .card-assembly's own height real even with nothing painted in
+     the cutout cell). ==================================================== */
+  .card-assembly {
+    position: relative;
+    display: grid;
+    grid-template-columns: 1fr var(--notchtap-cutout-width, 200px) 1fr;
+    grid-template-rows: var(--notchtap-cutout-height, 32px) auto;
+    width: var(--cw, 400px);
+    margin: 0 auto;
+    filter: drop-shadow(0 7px 18px rgba(0,0,0,0.5));
+    transition: width 320ms cubic-bezier(0.3, 1.36, 0.44, 1);
+  }
+  /* base (non-expanded, showing) width formula — card-chrome.css's
+     unnamed fallback: min(max(400px*scale, cutout+120px*scale), 100%). */
+  .card-assembly { --cw: 400px; }
+  .card-assembly.expanded { --cw: 500px; }
 
-  /* ==== real category tokens, verbatim from src/styles.css .cat-* ==== */
+  .flank-left, .flank-right {
+    grid-row: 1; box-sizing: border-box; overflow: hidden;
+    display: flex; align-items: center; background: #000; color: var(--overlay-fg);
+  }
+  .flank-left { grid-column: 1; justify-content: flex-start; padding-left: 16px; }
+  .flank-right { grid-column: 3; justify-content: flex-end; padding-right: 16px; }
+  .synthetic-cutout { grid-column: 2; grid-row: 1; background: #000; }
+
+  /* FlankClock (src/components/FlankClock.tsx) — .time-only, styles.css */
+  .time-only { font: 800 15px/1 var(--font-mono); letter-spacing: 0.02em; color: var(--overlay-fg); white-space: nowrap; }
+
+  /* StatusDots (src/components/StatusDots.tsx) — src/overlay/status-dots.css.
+     Real behavior: these stay mounted in flank-right THROUGH a showing
+     notification, not just at idle (minimal-notch merge, 89b2184) — a news
+     card does not hide or replace them. */
+  .status-dots { display: flex; align-items: center; gap: 8px; flex: none; }
+  .status-dot { box-sizing: border-box; width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .status-dot.football { background: var(--overlay-green); }
+  .status-dot.news { background: var(--overlay-coral); }
+  .status-dot.weather { background: var(--overlay-amber); }
+  .status-dot.active { box-shadow: 0 0 8px 1px currentColor; }
+  .status-dot.football.active { color: var(--overlay-green); }
+  .status-dot.news.active { color: var(--overlay-coral); }
+  .status-dot.weather.active { color: var(--overlay-amber); }
+  .status-dot.dim { opacity: 0.22; box-shadow: none; }
+
+  /* below-block: grid-column 1/-1, grid-row 2 — carries the priority
+     accent's content chrome, news-shade, .compact, the manifest, ttl-bar. */
+  .below-block {
+    grid-column: 1 / -1; grid-row: 2; position: relative; overflow: hidden;
+    background: #000; color: var(--overlay-fg);
+    border-bottom-left-radius: var(--card-radius); border-bottom-right-radius: var(--card-radius);
+  }
+
+  /* ==== priority accent — card-chrome.css's .low/.medium/.high on
+     .card-assembly. Orthogonal to category: this drives .compact::before's
+     edge, .stamp's border/color, and the ttl-bar fill — never the news-shade
+     tint (that's category, below). ==== */
+  .card-assembly.low    { --accent: #aab3bd; --accent-soft: rgba(170,179,189,0.2); }
+  .card-assembly.medium { --accent: var(--overlay-teal);  --accent-soft: rgba(85,214,189,0.24); }
+  .card-assembly.high   { --accent: var(--overlay-coral); --accent-soft: rgba(255,107,87,0.28); }
+
+  /* ==== category tokens, verbatim from src/overlay/news-category.css ==== */
   .cat-politics { --cat: #7c9df5; --cat-deep: rgba(124,157,245,0.16); --cat-pill: rgba(124,157,245,0.14); }
   .cat-tech     { --cat: #5fd4e8; --cat-deep: rgba(95,212,232,0.15);  --cat-pill: rgba(95,212,232,0.13); }
-  .cat-sports   { --cat: #7fe08d; --cat-deep: rgba(127,224,141,0.15); --cat-pill: rgba(127,224,141,0.13); }
-  .cat-business { --cat: #f0c46a; --cat-deep: rgba(240,196,106,0.15); --cat-pill: rgba(240,196,106,0.13); }
+  .cat-sports   { --cat: var(--overlay-green); --cat-deep: color-mix(in srgb, var(--overlay-green) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-green) 13%, transparent); }
+  .cat-business { --cat: var(--overlay-amber); --cat-deep: color-mix(in srgb, var(--overlay-amber) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-amber) 13%, transparent); }
   .cat-world    { --cat: #c99df0; --cat-deep: rgba(201,157,240,0.15); --cat-pill: rgba(201,157,240,0.13); }
+  .cat-science  { --cat: #f2a2c8; --cat-deep: rgba(242,162,200,0.15); --cat-pill: rgba(242,162,200,0.13); }
 
-  /* the shipped news-shade: category-tinted corner glow drifting over black */
-  .news-shade { position: relative; }
+  /* the news-shade ambient wash — plan 105 kept this ONE animation on
+     purpose (a slow positional drift, not a blink); plan 151 reshaped the
+     path from a straight there-and-back pendulum to a non-collinear
+     wander, same duration/ease/endpoints. */
   .news-shade::before {
     content: ""; position: absolute; inset: -30%; z-index: 0;
     background:
@@ -51,464 +135,375 @@
     pointer-events: none;
   }
   @keyframes shade-drift {
-    from { transform: translate3d(0, 0, 0); }
-    to   { transform: translate3d(-8%, -6%, 0); }
+    0%   { transform: translate3d(0, 0, 0); }
+    33%  { transform: translate3d(-7%, -2%, 0); }
+    66%  { transform: translate3d(-3%, -5%, 0); }
+    100% { transform: translate3d(-8%, -6%, 0); }
   }
-  .news-shade > * { position: relative; z-index: 1; }
+  .news-shade .compact, .news-shade .manifest { position: relative; z-index: 1; }
 
-  /* ==== compact: the SHIPPED layout.
-     2026-07-23 truth-sync: this section's original framing ("one addition: .pub-meta") is gone —
-     plan 110 (Step C) removed the redundant ".pub-meta 'published HH:MM'" node from the compact
-     card entirely: the row now carries exactly ONE time expression (the relative age), not two.
-     Also plan 092's chip convergence retired `.pill` — `.pill.category`/`.pill.age` are now a
-     single `.notif-meta-row` holding `.chip.chip-category` (age moved OUT of the chip row into
-     the plain `.notif-time-inline` slot, "Decision 5" in overlay-card.css). `.stamp-box` is
-     renamed to `.stamp` to match the real <Stamp> component's class (same masthead-row position,
-     just the pre-092 ad-hoc name). ==== */
-  .notif-block { padding: 12px 16px 12px; }
-  .masthead-row { display: flex; align-items: center; gap: 10px; }
+  /* ==== .compact — src/overlay/masthead-content.css. Plain block flow
+     (the Stamp badge moved INTO the masthead row, plan 092 — it is not a
+     sibling grid column anymore); a 3px priority-accent edge on the left,
+     which is why the left inset is wider (20px) than the other sides. ==== */
+  .compact { position: relative; box-sizing: border-box; min-height: 74px; padding: 12px 16px 13px 20px; }
+  .expanded .compact { min-height: 82px; }
+  .compact::before {
+    content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px;
+    border-radius: 0 2px 2px 0; background: var(--accent); box-shadow: 0 0 12px var(--accent-soft);
+  }
+
+  .masthead-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
   .masthead {
     display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0;
-    font: 700 8px/1 ui-monospace, "SFMono-Regular", Menlo, monospace;
-    letter-spacing: 0.14em; text-transform: uppercase;
+    font: 700 8px/1 var(--font-mono); letter-spacing: 0.16em; text-transform: uppercase;
     color: rgba(255, 255, 255, 0.38);
   }
   .masthead::after { content: ""; flex: 1; height: 1px; background: rgba(255,255,255,0.12); }
   .masthead .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--cat); box-shadow: 0 0 6px var(--cat); flex: none; }
+
+  /* the Stamp badge (src/components/Stamp.tsx) — colored by PRIORITY
+     accent, not category. stampFor() returns "Wire" for every news_item
+     regardless of priority; CSS uppercases it. */
   .stamp {
-    flex: none; align-self: center; padding: 4px 6px; border: 1px solid rgba(255,255,255,0.45); border-radius: 0;
-    font: 700 8px/1 ui-monospace, monospace; letter-spacing: 0.12em; text-transform: uppercase;
-    color: rgba(255,255,255,0.75);
+    align-self: center; padding: 4px 6px; border: 1px solid var(--accent); color: var(--accent);
+    font: 700 8px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase;
   }
-  .headline {
-    margin-top: 5px; font: 700 13px/1.3 -apple-system, sans-serif; color: #f5f7fa;
+
+  .title.headline {
     display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    white-space: normal; font-weight: 680; font-size: 13px; line-height: 1.3;
   }
-  .chip { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px; font: 700 8px/1 ui-monospace, monospace; letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+
+  /* the chip + one relative-age time slot — plan 110 removed the old
+     redundant "published HH:MM" node, so this is the compact card's ONLY
+     time expression. NOT spread apart: .notif-meta-row has no
+     justify-content, so the chip and the age pack together on the left
+     with a 5px gap — never pushed to the far right. */
   .notif-meta-row { display: flex; align-items: center; gap: 5px; margin-top: 6px; }
-  .chip-category { color: var(--cat); background: var(--cat-pill); border: 1px solid color-mix(in srgb, var(--cat) 35%, transparent); }
-  /* single inline time slot (Decision 5) — no separate age pill, no .pub-meta */
-  .notif-time-inline { margin-left: auto; flex: none; font: 700 10px/1 ui-monospace, monospace; color: rgba(255,255,255,0.35); }
-  .card-foot { display: flex; align-items: center; justify-content: space-between; margin-top: 10px; }
-  .track { flex: 1; max-width: 140px; height: 3px; display: flex; gap: 3px; }
-  .track span { flex: 1; background: rgba(255,255,255,0.09); border-radius: 2px; }
-  .track span.done { background: color-mix(in srgb, var(--cat) 30%, transparent); }
-  .track span.cur { background: var(--cat); box-shadow: 0 -2px 8px var(--cat-pill); }
-  .more-hint { font: 700 8.5px/1 ui-monospace, monospace; letter-spacing: 0.08em; color: rgba(255,255,255,0.4); }
-
-  /* ==== expanded: full-width summary + one inline meta row (replaces
-     the shipped 3-column Summary / Source+Published / Category+Control
-     grid with its half-empty columns). Control hints in the footer,
-     where the cmux template puts them. ==== */
-  .manifest-block { padding: 12px 16px 13px; border-top: 1px solid rgba(255,255,255,0.1); }
-  .manifest-label { font: 700 8.5px/1 ui-monospace, monospace; letter-spacing: 0.1em; text-transform: uppercase; color: var(--cat); margin-bottom: 7px; }
-  .manifest-text { font-size: 12px; line-height: 1.5; color: rgba(255,255,255,0.85); }
-  .manifest-meta {
-    margin-top: 10px; display: flex; align-items: center; gap: 6px; flex-wrap: wrap;
-    font: 600 9.5px/1.5 ui-monospace, monospace; color: rgba(255,255,255,0.4);
+  .chip {
+    display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px;
+    font: 700 8px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap;
   }
-  .manifest-meta b { color: rgba(255,255,255,0.7); font-weight: 700; }
-  .manifest-meta .sep { color: rgba(255,255,255,0.18); }
+  .chip-category { color: var(--cat); background: var(--cat-pill); border: 1px solid color-mix(in srgb, var(--cat) 35%, transparent); }
+  .notif-time-inline { flex: none; color: rgba(255,255,255,0.35); font: 700 10px/1 var(--font-mono); }
+  .chip-category, .notif-meta-row .notif-time-inline { animation: pill-enter 175ms var(--ease-notchtap) both; }
+  @keyframes pill-enter { from { opacity: 0; } to { opacity: 1; } }
+
+  /* the "more" hint — absolutely positioned against .compact, only
+     rendered while NOT expanded (NotificationBody.tsx's `!expanded` gate).
+     Real markup is <kbd>⌃⇧N</kbd> more, not a flex row with a track slider
+     — the old standalone .track queue slider was removed in the
+     stories-merge (2026-07-24): it merged into the ttl-bar below instead. */
+  .compact-hint { position: absolute; right: 18px; bottom: 8px; color: rgba(255,255,255,0.4); font: 700 8px/1 var(--font-mono); letter-spacing: 0.16em; text-transform: uppercase; }
+  .compact-hint kbd {
+    display: inline-flex; align-items: center; justify-content: center; min-height: 15px; margin: 0 1px; padding: 0 4px;
+    border: 1px solid rgba(255,255,255,0.22); border-bottom-color: rgba(255,255,255,0.34); border-radius: 3px;
+    background: rgba(255,255,255,0.07); box-shadow: 0 1px 0 rgba(0,0,0,0.35); color: inherit;
+    font: 700 9px/1 var(--font-mono); letter-spacing: 0; text-transform: none;
+  }
+
+  /* ==== the expanded manifest — src/overlay/manifest.css +
+     src/components/Manifest.tsx. 2026-07-24 declutter: this panel is ONLY
+     label + summary text + the keyboard hint footer now — the old 3-column
+     "Summary / Source+Published / Category+Control" grid (and its
+     .manifest-meta row) is gone; all of that metadata lives in .compact
+     above instead, never duplicated down here. ==== */
+  .manifest-wrap { display: grid; grid-template-rows: 0fr; opacity: 0; transition: grid-template-rows 320ms var(--ease-notchtap), opacity 320ms var(--ease-notchtap); }
+  .manifest-wrap.expanded { grid-template-rows: 1fr; opacity: 1; }
+  .manifest-wrap > .manifest { overflow: hidden; min-height: 0; }
+  .manifest { overflow: hidden; border-top: 1px solid rgba(255,255,255,0.1); background: linear-gradient(180deg, rgba(255,255,255,0.025), transparent); }
+  .manifest-block { padding: 12px 16px 13px; }
+  .manifest-label { font: 700 8px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--cat); margin-bottom: 7px; }
+  .manifest-text {
+    font-size: 12px; line-height: 1.5; color: rgba(255,255,255,0.85);
+    display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden;
+  }
   .manifest-footer { margin-top: 10px; display: flex; justify-content: flex-end; }
-  .manifest-hint { font: 700 9px/1 ui-monospace, monospace; letter-spacing: 0.06em; color: rgba(255,255,255,0.4); }
+  .manifest-hint { font: 700 9px/1 var(--font-mono); letter-spacing: 0.08em; color: rgba(255,255,255,0.4); }
+  .manifest-hint kbd {
+    display: inline-flex; align-items: center; justify-content: center; min-height: 15px; margin: 0 1px; padding: 0 4px;
+    border: 1px solid rgba(255,255,255,0.22); border-bottom-color: rgba(255,255,255,0.34); border-radius: 3px;
+    background: rgba(255,255,255,0.07); box-shadow: 0 1px 0 rgba(0,0,0,0.35); color: inherit;
+    font: 700 9px/1 var(--font-mono); letter-spacing: 0; text-transform: none;
+  }
 
-  /* ==== section 3: full cmux lifecycle demo, mechanics copied from
-     prototype/notch-states.html section 4 — idle → (fire) expanded →
-     auto-retract to compact at half → rotate out. Hover expands a
-     compact card; ⌃⇧N toggles. ==== */
-  .limit-line { position: absolute; top: 300px; left: 0; right: 0; border-top: 1px dashed rgba(240,196,106,0.5); z-index: 8; }
-  .limit-line span { position: absolute; right: 8px; top: 2px; font: 700 8px/1 ui-monospace, monospace; color: #f0c46a; background: #05060a; padding: 2px 5px; border-radius: 3px; }
-
-  .status-dots { display: flex; align-items: center; gap: 8px; flex: none; }
-  .status-dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
-  .status-dot.football { background: #3ddc70; }
-  .status-dot.news { background: #ff5c5c; }
-  .status-dot.weather { background: #f0c46a; }
-  .status-dot.dim { opacity: 0.22; }
-
-  .wx-peek { height: 0; min-height: 0; opacity: 0; overflow: hidden; transition: height 260ms cubic-bezier(0.22,1,0.36,1), opacity 200ms cubic-bezier(0.22,1,0.36,1); }
-  .wx-block { position: relative; }
-  .wx-sunny { background: linear-gradient(180deg, #163149 0%, #0e2436 100%); }
-  .wx-sunny .wx-sun { position: absolute; top: -18px; right: 16px; width: 46px; height: 46px; border-radius: 50%; background: radial-gradient(circle, #f0c46a 0%, rgba(240,196,106,0.5) 45%, transparent 72%); }
-  .wx-sunny .wx-cloud-soft { position: absolute; top: 6px; left: 10px; width: 38px; height: 16px; border-radius: 999px; background: rgba(255,255,255,0.14); }
-  .wx-scrim { position: absolute; inset: 0; background: linear-gradient(180deg, rgba(0,0,0,0.05), rgba(0,0,0,0.55) 75%); z-index: 1; }
-  .wx-content { position: relative; z-index: 2; display: flex; align-items: flex-end; justify-content: space-between; height: 100%; padding: 10px 16px 14px; }
-  .wx-temp { font: 800 20px/1 ui-monospace, monospace; color: #fff; text-shadow: 0 1px 6px rgba(0,0,0,0.4); }
-  .wx-cond { font: 700 9.5px/1.4 -apple-system, sans-serif; letter-spacing: 0.04em; text-transform: uppercase; color: rgba(255,255,255,0.75); }
-
-  .flow-card { transition: width 320ms cubic-bezier(0.22,1,0.36,1); }
-  .flow-card[data-phase="expanded"], .flow-card[data-phase="compact"] { --cw: 400px !important; width: 400px !important; }
-  .flow-card[data-phase="idle"] .flank-left { border-bottom-left-radius: 14px; }
-  .flow-card[data-phase="idle"] .flank-right { border-bottom-right-radius: 14px; }
-  .flow-card[data-phase="idle"]:hover .wx-peek { height: 78px; opacity: 1; }
-  .flow-card[data-phase="idle"]:hover .flank-left { border-bottom-left-radius: 0; }
-  .flow-card[data-phase="idle"]:hover .flank-right { border-bottom-right-radius: 0; }
-  .flow-card .stamp-word { font: 800 10px/1 ui-monospace, monospace; letter-spacing: 0.1em; color: var(--cat); display: none; }
-  .flow-card[data-phase="expanded"] .stamp-word, .flow-card[data-phase="compact"] .stamp-word { display: inline-block; }
-  /* 2026-07-23 truth-sync: the status dots used to hide once a card was showing/expanded — the
-     minimal-notch merge (89b2184) reversed this (StatusRailCard.tsx's `railRevealed`, "one
-     continuous shape, never a detached slab + floating card"). No display:none rule survives. */
-
-  .flow-card .card-body { display: none; position: absolute; top: var(--nh); left: 0; width: 100%; background: #000; box-shadow: 0 14px 28px rgba(0,0,0,0.5); border-bottom-left-radius: 14px; border-bottom-right-radius: 14px; overflow: hidden; }
-  /* plan 100 truth-sync: the TTL bar is the card's own bottom edge now — absolutely positioned to
-     `.card-body`'s bottom/left/right (clipped to the rounded corners by its own overflow:hidden
-     above), never static in-flow. Static flow (the old behavior this replaces) is exactly the
-     double-border-above-the-manifest bug plan 100 fixed. */
-  .ttl-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 2px; background: rgba(255,255,255,0.08); }
-  .ttl-fill { height: 100%; width: 100%; background: var(--cat); transition: none; }
-  .flow-card[data-phase="expanded"] .card-body, .flow-card[data-phase="compact"] .card-body { display: block; }
-  /* shipped duration (overlay-card.css .manifest-wrap, plan 078): both properties share one
-     300ms — corrected from 320ms/220ms below. */
-  .flow-card .manifest-wrap { max-height: 0; opacity: 0; overflow: hidden; transition: max-height 300ms cubic-bezier(0.22,1,0.36,1), opacity 300ms cubic-bezier(0.22,1,0.36,1); }
-  .flow-card[data-phase="expanded"] .manifest-wrap { max-height: 400px; opacity: 1; }
-  .flow-card[data-phase="compact"]:hover .manifest-wrap { max-height: 400px; opacity: 1; }
-  .flow-card[data-phase="compact"]:hover .more-hint { visibility: hidden; }
+  /* ==== the ttl-bar — src/overlay/ttl-bar.css + src/components/TtlBar.tsx.
+     Last child of .below-block, absolutely positioned to its bottom edge
+     (never static in-flow — that was the double-border-above-the-manifest
+     bug plan 100 fixed). Since the stories merge (2026-07-24) it also
+     carries the queue-position slider — the old standalone .track element
+     is gone, its segments folded into this one 4px floor strip. ==== */
+  .ttl-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; display: grid; grid-template-columns: repeat(var(--queue-n, 1), 1fr); gap: 3px; }
+  .ttl-seg { background: rgba(255,255,255,0.08); }
+  .ttl-seg.done { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+  .ttl-fill { height: 100%; background: var(--accent); grid-row: 1; }
 
   .controls { display: flex; gap: 10px; justify-content: center; margin-top: 16px; }
-  button { font: 700 10px/1 ui-monospace, monospace; letter-spacing: 0.06em; text-transform: uppercase; padding: 9px 16px; border-radius: 8px; border: 1px solid var(--rule); background: #171b22; color: var(--ink); cursor: pointer; }
-  button:hover:not(:disabled) { border-color: rgba(127,224,141,0.4); color: var(--accent); }
-  button:disabled { opacity: 0.35; cursor: not-allowed; }
-  .status-line { text-align: center; font-size: 11.5px; color: var(--dim); margin-top: 12px; min-height: 32px; }
-  .status-line b { color: #f0c46a; }
+  .hover-note { text-align: center; font-size: 11.5px; color: var(--dim); margin-top: 10px; }
 
   footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 11.5px; color: var(--dim); line-height: 1.6; }
 </style>
 </head>
 <body>
-<div style="background:#7a2d2d;color:#fff;padding:6px 12px;font:12px/1.4 monospace">HISTORICAL PROTOTYPE — design exploration that preceded implementation. The shipped overlay deliberately diverged (CSS-grid .card-assembly — see src/styles.css). Not a reference for current behavior.</div>
-<div style="background:#1c2a1f;color:#cfe8d4;padding:6px 12px;font:12px/1.4 monospace;border-top:1px solid #2f4a36">2026-07-23 truth-sync: this page's original "published-time meta" pitch was DECLINED — plan 110 (Step C) removed the redundant .pub-meta node instead, so the compact card carries exactly one time expression (relative age). Category/age pills converged onto `.chip`/`.chip-category` (plan 092) + a single `.notif-time-inline` slot; `.stamp-box` renamed to `.stamp` (real &lt;Stamp&gt; component class); the TTL bar is now absolutely positioned as the card's bottom edge (plan 100); manifest-wrap expand duration corrected to 300ms; status dots no longer hide while a card is showing (minimal-notch merge, 89b2184).</div>
 <main>
-  <h1>News card — shipped look + meta, cmux lifecycle</h1>
+  <h1>News card — mirrors the shipped overlay</h1>
   <p class="lede">
-    The compact card is the <b>shipped</b> news card, screenshot-faithful
-    — masthead (category dot + source + hairline), headline,
-    <code>WIRE</code> stamp, one category chip + one relative-age time
-    slot, news-shade glow, track slider, <code>⌃⇧N MORE</code> hint. This
-    page originally proposed adding <b>published-time meta</b> next to
-    the age — the operator instead removed the redundant timestamp
-    entirely (plan 110), so what shipped is leaner than this mock's
-    original pitch, not additive to it. The expanded state drops
-    the cramped 3-column manifest for a full-width summary + one inline
-    meta row. And the card now runs the <b>cmux lifecycle</b> from
-    <code>prototype/notch-states.html</code>: auto-expand on arrival,
-    auto-retract to compact halfway through the window, rotate out —
-    hover and <code>⌃⇧N</code> toggle compact↔expanded at any point.
-  </p>
-  <p class="note">
-    Design tokens (<code>.cat-*</code>, masthead, chips, news-shade) are
-    copied from <code>src/overlay-card.css</code>; lifecycle mechanics
-    are copied from the notch-states cmux demo, so this page shows the
-    news card as a pure content-swap on the shared template.
+    Both states below are the card as it actually renders today:
+    masthead (category dot + source + hairline), <code>Wire</code> stamp
+    (colored by priority accent, not category), headline, one category
+    chip + one relative-age time slot packed to the left, the animated
+    news-shade wash, and the queue-segmented TTL floor bar. Expanded adds
+    the manifest panel — label, summary text, and a keyboard-hint footer
+    only; there is no separate source/published/category row down there
+    anymore (removed in the 2026-07-24 declutter — that metadata lives in
+    the masthead above, once, not twice).
   </p>
 
   <section>
-    <h2>Compact — shipped card + published-time meta</h2>
-    <p class="section-sub">Identical to what's implemented today — one category chip, one relative-age time slot (<code>3m ago</code>). This mock originally proposed ALSO showing <code>published 18:34</code> alongside it; the operator instead removed the redundant timestamp (plan 110), so today's shipped card is leaner than this pitch, not additive to it.</p>
-
-    <div class="rig-label">Tech — The Verge</div>
-    <div class="rig">
-      <div class="menubar"></div>
-      <div class="hw-notch" style="width:150px;"></div>
-      <div class="card-wrap cat-tech" style="--cw:340px; --nw:150px; --nh:26px;">
-        <div class="flank-left"><span class="time-only">14:32</span></div>
-        <div class="flank-right"></div>
-        <div class="below-block news-shade">
-          <div class="notif-block">
-            <div class="masthead-row">
-              <span class="masthead"><span class="dot"></span>The Verge</span>
-              <span class="stamp">Wire</span>
-            </div>
-            <div class="headline">Open-weights model tops the coding benchmark leaderboard</div>
-            <div class="notif-meta-row">
-              <span class="chip chip-category">Tech</span><span class="notif-time-inline">&lt;1m ago</span>
-            </div>
-            <div class="card-foot">
-              <div class="track"><span class="done"></span><span class="cur"></span><span></span><span></span></div>
-              <span class="more-hint">⌃⇧N more</span>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="stage" style="min-height:180px;"></div>
-    </div>
-
-    <div class="rig-label" style="margin-top:22px;">Sports — ESPN</div>
-    <div class="rig">
-      <div class="menubar"></div>
-      <div class="hw-notch" style="width:150px;"></div>
-      <div class="card-wrap cat-sports" style="--cw:340px; --nw:150px; --nh:26px;">
-        <div class="flank-left"><span class="time-only">14:32</span></div>
-        <div class="flank-right"></div>
-        <div class="below-block news-shade">
-          <div class="notif-block">
-            <div class="masthead-row">
-              <span class="masthead"><span class="dot"></span>ESPN</span>
-              <span class="stamp">Wire</span>
-            </div>
-            <div class="headline">City complete injury-time comeback against Arsenal</div>
-            <div class="notif-meta-row">
-              <span class="chip chip-category">Sports</span><span class="notif-time-inline">3m ago</span>
-            </div>
-            <div class="card-foot">
-              <div class="track"><span class="done"></span><span class="done"></span><span class="cur"></span><span></span></div>
-              <span class="more-hint">⌃⇧N more</span>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="stage" style="min-height:180px;"></div>
-    </div>
-
-    <div class="rig-label" style="margin-top:22px;">Business — Reuters</div>
-    <div class="rig">
-      <div class="menubar"></div>
-      <div class="hw-notch" style="width:150px;"></div>
-      <div class="card-wrap cat-business" style="--cw:340px; --nw:150px; --nh:26px;">
-        <div class="flank-left"><span class="time-only">14:32</span></div>
-        <div class="flank-right"></div>
-        <div class="below-block news-shade">
-          <div class="notif-block">
-            <div class="masthead-row">
-              <span class="masthead"><span class="dot"></span>Reuters</span>
-              <span class="stamp">Wire</span>
-            </div>
-            <div class="headline">Central bank holds rates, signals cuts later this year</div>
-            <div class="notif-meta-row">
-              <span class="chip chip-category">Business</span><span class="notif-time-inline">18m ago</span>
-            </div>
-            <div class="card-foot">
-              <div class="track"><span class="done"></span><span class="cur"></span><span></span></div>
-              <span class="more-hint">⌃⇧N more</span>
-            </div>
-          </div>
-        </div>
-      </div>
-      <div class="stage" style="min-height:180px;"></div>
-    </div>
-  </section>
-
-  <section>
-    <h2>Expanded — full-width summary + inline meta</h2>
+    <h2>Compact</h2>
     <p class="section-sub">
-      The shipped 3-column manifest (<code>SUMMARY</code> /
-      <code>SOURCE · PUBLISHED</code> / <code>CATEGORY · CONTROL</code>)
-      gives the summary half the width it needs and leaves two columns
-      mostly empty. Here the summary takes the full width — same as the
-      cmux template's full-width message — and the side columns collapse
-      into one inline meta row.
+      Priority accent (the 3px left edge, the Stamp's border/color, the
+      ttl-bar fill) is independent of category (the masthead dot, chip,
+      and news-shade tint) — the two examples below use different
+      priorities on purpose to show they're separate channels.
     </p>
-    <div class="rig-label">Politics — NDTV, expanded</div>
+
+    <div class="rig-label">Tech — The Verge — medium priority</div>
     <div class="rig">
       <div class="menubar"></div>
-      <div class="hw-notch" style="width:150px;"></div>
-      <div class="card-wrap cat-politics" style="--cw:400px; --nw:150px; --nh:26px;">
-        <div class="flank-left"><span class="time-only">14:32</span></div>
-        <div class="flank-right"></div>
-        <div class="below-block news-shade">
-          <div class="notif-block">
-            <div class="masthead-row">
-              <span class="masthead"><span class="dot"></span>NDTV</span>
-              <span class="stamp">Wire</span>
-            </div>
-            <div class="headline">"A Time Bomb": Residents Fear Ghazipur-Like Landfill In Faridabad</div>
-            <div class="notif-meta-row">
-              <span class="chip chip-category">Politics</span><span class="notif-time-inline">45m ago</span>
-            </div>
-          </div>
-          <div class="manifest-block">
-            <div class="manifest-label">Summary</div>
-            <div class="manifest-text">The biggest fear that clouds the minds of the citizens is whether this would mark the inauguration of Faridabad's version of a Ghazipur landfill — the mountain of waste that became a symbol of unchecked urban neglect.</div>
-            <div class="manifest-meta">
-              <b>NDTV</b><span class="sep">·</span>published 18:34<span class="sep">·</span>Politics
-            </div>
-            <div class="manifest-footer"><span class="manifest-hint">⌃⇧O read · ⌃⇧N collapse</span></div>
-          </div>
-        </div>
-      </div>
-      <div class="stage" style="min-height:330px;"></div>
-    </div>
-  </section>
-
-  <section>
-    <h2>Full lifecycle — the cmux timing, live</h2>
-    <p class="section-sub">
-      Exact mechanics of the notch-states cmux demo, news content
-      swapped in. Start idle (hover — weather peek). Click
-      "Notification arrives" — the card auto-expands (full manifest),
-      auto-retracts to compact halfway through, then rotates back to
-      idle. Hover a compact card to re-expand it; "Toggle (⌃⇧N)" does
-      the same by hotkey. <code>⌃⇧O read</code> appears in the expanded
-      footer because this item has a link.
-    </p>
-    <div class="rig-label">Live demo — try the whole sequence</div>
-    <div class="rig" style="position:relative;">
-      <div class="menubar"></div>
-      <div class="stage" style="min-height:430px;">
-        <div class="limit-line"><span>300px — real window height ends here</span></div>
-        <div class="card-wrap flow-card cat-tech" id="flow-card" data-phase="idle" style="--cw:260px; --nw:150px; --nh:26px;">
-          <div class="flank-left">
-            <span class="time-only">14:32</span>
-          </div>
+      <div class="hw-notch"></div>
+      <div class="stage">
+        <div class="card-assembly medium cat-tech">
+          <div class="flank-left"><span class="time-only">14:32</span></div>
+          <div class="synthetic-cutout"></div>
           <div class="flank-right">
-            <div class="status-dots">
+            <span class="status-dots">
               <span class="status-dot football dim"></span>
-              <span class="status-dot news"></span>
-              <span class="status-dot weather dim"></span>
-            </div>
-            <span class="stamp-word">WIRE</span>
+              <span class="status-dot news active"></span>
+              <span class="status-dot weather active"></span>
+            </span>
           </div>
-          <div class="below-block wx-block wx-sunny wx-peek">
-            <div class="wx-sun"></div>
-            <div class="wx-cloud-soft"></div>
-            <div class="wx-scrim"></div>
-            <div class="wx-content">
-              <span class="wx-cond">Clear · Bangalore</span>
-              <span class="wx-temp">28°</span>
-            </div>
-          </div>
-          <div class="card-body news-shade">
-            <div class="notif-block">
+          <div class="below-block news-shade">
+            <div class="compact">
               <div class="masthead-row">
-                <span class="masthead"><span class="dot"></span>The Verge</span>
-                <span class="stamp">Wire</span>
+                <div class="masthead"><span class="dot"></span>The Verge</div>
+                <div class="stamp">Wire</div>
               </div>
-              <div class="headline">Apple ships on-device model update for Xcode's autocomplete</div>
+              <div class="title headline">Open-weights model tops the coding benchmark leaderboard</div>
               <div class="notif-meta-row">
-                <span class="chip chip-category">Tech</span><span class="notif-time-inline">12m ago</span>
+                <span class="chip chip-category">Tech</span><span class="notif-time-inline">&lt;1m ago</span>
               </div>
-              <div class="card-foot">
-                <div class="track"><span class="done"></span><span class="cur"></span><span></span><span></span></div>
-                <span class="more-hint">⌃⇧N more</span>
-              </div>
+              <div class="compact-hint"><kbd>⌃⇧N</kbd> more</div>
             </div>
-            <div class="manifest-wrap">
-              <div class="manifest-block">
-                <div class="manifest-label">Summary</div>
-                <div class="manifest-text">The update ships silently via macOS Sequoia's model-catalog service, no Xcode update required — developers report faster suggestions in large Swift files, and the model itself appears to be a smaller distillation rather than a full replacement of the existing completion engine.</div>
-                <div class="manifest-meta">
-                  <b>The Verge</b><span class="sep">·</span>published 14:20<span class="sep">·</span>Tech
-                </div>
-                <div class="manifest-footer"><span class="manifest-hint">⌃⇧O read · ⌃⇧N collapse</span></div>
-              </div>
+            <div class="ttl-bar" style="--queue-n:4;">
+              <span class="ttl-seg done"></span><span class="ttl-seg"><div class="ttl-fill" style="width:55%;"></div></span><span class="ttl-seg"></span><span class="ttl-seg"></span>
             </div>
-            <div class="ttl-bar"><div class="ttl-fill" id="ttl-fill"></div></div>
           </div>
         </div>
       </div>
-      <div class="controls">
-        <button id="flow-fire" onclick="flowFire()">Notification arrives</button>
-        <button id="flow-toggle" onclick="flowToggle()" disabled>Toggle (⌃⇧N)</button>
+    </div>
+
+    <div class="rig-label" style="margin-top:22px;">Sports — ESPN — high priority</div>
+    <div class="rig">
+      <div class="menubar"></div>
+      <div class="hw-notch"></div>
+      <div class="stage">
+        <div class="card-assembly high cat-sports">
+          <div class="flank-left"><span class="time-only">14:32</span></div>
+          <div class="synthetic-cutout"></div>
+          <div class="flank-right">
+            <span class="status-dots">
+              <span class="status-dot football active"></span>
+              <span class="status-dot news active"></span>
+              <span class="status-dot weather dim"></span>
+            </span>
+          </div>
+          <div class="below-block news-shade">
+            <div class="compact">
+              <div class="masthead-row">
+                <div class="masthead"><span class="dot"></span>ESPN</div>
+                <div class="stamp">Wire</div>
+              </div>
+              <div class="title headline">City complete injury-time comeback against Arsenal</div>
+              <div class="notif-meta-row">
+                <span class="chip chip-category">Sports</span><span class="notif-time-inline">12m ago</span>
+              </div>
+              <div class="compact-hint"><kbd>⌃⇧N</kbd> more</div>
+            </div>
+            <div class="ttl-bar" style="--queue-n:2;">
+              <span class="ttl-seg done"></span><span class="ttl-seg"><div class="ttl-fill" style="width:80%;"></div></span>
+            </div>
+          </div>
+        </div>
       </div>
-      <p class="status-line" id="flow-status">Idle. Hover the card to peek the weather, or click "Notification arrives" to start.</p>
+    </div>
+
+    <div class="rig-label" style="margin-top:22px;">Business — Reuters — low priority</div>
+    <div class="rig">
+      <div class="menubar"></div>
+      <div class="hw-notch"></div>
+      <div class="stage">
+        <div class="card-assembly low cat-business">
+          <div class="flank-left"><span class="time-only">14:32</span></div>
+          <div class="synthetic-cutout"></div>
+          <div class="flank-right">
+            <span class="status-dots">
+              <span class="status-dot football dim"></span>
+              <span class="status-dot news active"></span>
+              <span class="status-dot weather dim"></span>
+            </span>
+          </div>
+          <div class="below-block news-shade">
+            <div class="compact">
+              <div class="masthead-row">
+                <div class="masthead"><span class="dot"></span>Reuters</div>
+                <div class="stamp">Wire</div>
+              </div>
+              <div class="title headline">Central bank holds rates, signals cuts later this year</div>
+              <div class="notif-meta-row">
+                <span class="chip chip-category">Business</span><span class="notif-time-inline">2h ago</span>
+              </div>
+              <div class="compact-hint"><kbd>⌃⇧N</kbd> more</div>
+            </div>
+            <div class="ttl-bar" style="--queue-n:1;">
+              <span class="ttl-seg"><div class="ttl-fill" style="width:30%;"></div></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Expanded</h2>
+    <p class="section-sub">
+      The shell widens to 500px (<code>.card-assembly.expanded</code>) and
+      the manifest panel opens below <code>.compact</code>. The compact
+      row's own masthead/headline/chip/age is untouched by expansion —
+      it's the same content, just with the manifest revealed underneath
+      and the "more" hint hidden (there is nothing more to reveal once
+      expanded).
+    </p>
+    <div class="rig-label">Politics — NDTV — medium priority</div>
+    <div class="rig">
+      <div class="menubar"></div>
+      <div class="hw-notch"></div>
+      <div class="stage">
+        <div class="card-assembly medium cat-politics expanded">
+          <div class="flank-left"><span class="time-only">14:32</span></div>
+          <div class="synthetic-cutout"></div>
+          <div class="flank-right">
+            <span class="status-dots">
+              <span class="status-dot football dim"></span>
+              <span class="status-dot news active"></span>
+              <span class="status-dot weather active"></span>
+            </span>
+          </div>
+          <div class="below-block news-shade">
+            <div class="compact">
+              <div class="masthead-row">
+                <div class="masthead"><span class="dot"></span>NDTV</div>
+                <div class="stamp">Wire</div>
+              </div>
+              <div class="title headline">"A Time Bomb": Residents Fear Ghazipur-Like Landfill In Faridabad</div>
+              <div class="notif-meta-row">
+                <span class="chip chip-category">Politics</span><span class="notif-time-inline">45m ago</span>
+              </div>
+            </div>
+            <div class="manifest-wrap expanded">
+              <div class="manifest">
+                <div class="manifest-block">
+                  <div class="manifest-label">Summary</div>
+                  <div class="manifest-text">The biggest fear that clouds the minds of the citizens is whether this would mark the inauguration of Faridabad's version of a Ghazipur landfill — the mountain of waste that became a symbol of unchecked urban neglect.</div>
+                  <div class="manifest-footer"><span class="manifest-hint"><kbd>⌃⇧O</kbd> read · <kbd>⌃⇧N</kbd> collapse</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="ttl-bar" style="--queue-n:1;">
+              <span class="ttl-seg"><div class="ttl-fill" style="width:64%;"></div></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Hover — compact ↔ expanded</h2>
+    <p class="section-sub">
+      In the real overlay this is driven by a rust-derived hover signal
+      (the window is click-through, so CSS <code>:hover</code> never
+      fires there) — approximated here with a plain CSS <code>:hover</code>
+      for this static page only, since there's no click-through window to
+      simulate. Hover the card to preview the expand transition.
+    </p>
+    <div class="rig-label">Science — Nature — medium priority (hover to expand)</div>
+    <div class="rig">
+      <div class="menubar"></div>
+      <div class="hw-notch"></div>
+      <div class="stage" style="min-height:210px;">
+        <div class="card-assembly medium cat-science" id="hover-card">
+          <div class="flank-left"><span class="time-only">14:32</span></div>
+          <div class="synthetic-cutout"></div>
+          <div class="flank-right">
+            <span class="status-dots">
+              <span class="status-dot football dim"></span>
+              <span class="status-dot news active"></span>
+              <span class="status-dot weather dim"></span>
+            </span>
+          </div>
+          <div class="below-block news-shade">
+            <div class="compact">
+              <div class="masthead-row">
+                <div class="masthead"><span class="dot"></span>Nature</div>
+                <div class="stamp">Wire</div>
+              </div>
+              <div class="title headline">Room-temperature superconductor claim fails independent replication</div>
+              <div class="notif-meta-row">
+                <span class="chip chip-category">Science</span><span class="notif-time-inline">6m ago</span>
+              </div>
+              <div class="compact-hint" id="hover-hint"><kbd>⌃⇧N</kbd> more</div>
+            </div>
+            <div class="manifest-wrap" id="hover-manifest">
+              <div class="manifest">
+                <div class="manifest-block">
+                  <div class="manifest-label">Summary</div>
+                  <div class="manifest-text">Three independent labs report they were unable to reproduce the original resistivity and magnetization measurements under ambient pressure, casting doubt on the initial claim.</div>
+                  <div class="manifest-footer"><span class="manifest-hint"><kbd>⌃⇧N</kbd> collapse</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="ttl-bar" style="--queue-n:1;">
+              <span class="ttl-seg"><div class="ttl-fill" style="width:42%;"></div></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <p class="hover-note">Hover the card above to expand it.</p>
     </div>
   </section>
 
   <footer>
-    Net diff against the shipped card, as it actually landed (2026-07-23 correction — this page's
-    original pitch proposed adding published-time meta; what shipped instead REMOVED a timestamp):
-    (1) compact carries exactly one time expression, plan 110 having removed the old, redundant
-    published-time node rather than adding a second one; (2) the expanded manifest lost its
-    3-column grid — full-width summary + inline meta row instead (this part of the pitch shipped
-    as proposed); (3) the card runs the shared cmux lifecycle (auto-expand →
-    auto-retract at half → rotate out, hover/⌃⇧N toggle). Everything
-    visual — masthead, WIRE stamp, chips, news-shade, track, headline
-    type — carries over, modulo the plan-092 chip-class rename.
+    Corrections against the pre-2026-07-30 version of this page (which
+    carried a "historical prototype, not a reference" banner): the shell
+    is a CSS grid (<code>.card-assembly</code>), not absolutely-positioned
+    boxes; the Stamp badge is colored by priority accent, never a flat
+    white outline; <code>.notif-meta-row</code>'s chip and age pack
+    together on the left (no <code>margin-left: auto</code> spreading them
+    apart); the old <code>.track</code> queue slider and <code>.card-foot</code>
+    row are gone, folded into the queue-segmented <code>.ttl-bar</code>
+    floor strip; the expanded manifest carries only a label, summary text,
+    and a keyboard hint — no source/published/category row; and status
+    dots stay mounted in the right flank through a showing card, not just
+    at idle.
   </footer>
 </main>
-
-<script>
-  const flowCard = document.getElementById('flow-card');
-  const flowFireBtn = document.getElementById('flow-fire');
-  const flowToggleBtn = document.getElementById('flow-toggle');
-  const flowStatus = document.getElementById('flow-status');
-  const ttlFill = document.getElementById('ttl-fill');
-  let flowRetractTimer = null, flowRotateTimer = null;
-  const FLOW_RETRACT_MS = 3000, FLOW_ROTATE_MS = 6000;
-
-  // Pausable timeout: { id, remaining, dueAt, fn }. Pause stores how much is
-  // left and clears the native timer; resume re-arms it with what's left.
-  // The TTL bar is driven by the same remaining-time clock.
-  function makePausableTimer(ms, fn) {
-    return { id: null, remaining: ms, dueAt: 0, fn };
-  }
-  function timerStart(t) {
-    t.dueAt = Date.now() + t.remaining;
-    t.id = setTimeout(() => { t.id = null; t.remaining = 0; t.fn(); }, t.remaining);
-  }
-  function timerPause(t) {
-    if (t === null || t.id === null) return;
-    clearTimeout(t.id);
-    t.id = null;
-    t.remaining = Math.max(0, t.dueAt - Date.now());
-  }
-  function timerResume(t) {
-    if (t === null || t.id !== null || t.remaining <= 0) return;
-    timerStart(t);
-  }
-  function timerCancel(t) {
-    if (t === null) return;
-    clearTimeout(t.id);
-    t.id = null;
-    t.remaining = 0;
-  }
-  function timerRemaining(t) {
-    if (t === null) return 0;
-    return t.id === null ? t.remaining : Math.max(0, t.dueAt - Date.now());
-  }
-
-  function flowSetPhase(phase, msg) {
-    flowCard.setAttribute('data-phase', phase);
-    flowStatus.innerHTML = msg;
-  }
-
-  function flowFire() {
-    timerCancel(flowRetractTimer); timerCancel(flowRotateTimer);
-    flowFireBtn.disabled = true;
-    flowToggleBtn.disabled = false;
-    flowSetPhase('expanded', '<b>Expanded</b> — auto-retracts to compact in 3s.');
-    flowRetractTimer = makePausableTimer(FLOW_RETRACT_MS, () => {
-      flowSetPhase('compact', '<b>Compact</b> (auto-retracted) — rotates out in 3 more seconds. Hover the card, or press toggle.');
-    });
-    flowRotateTimer = makePausableTimer(FLOW_ROTATE_MS, () => {
-      timerCancel(flowRetractTimer);
-      flowRotateTimer = null;
-      flowSetPhase('idle', 'Rotated out — back to <b>idle</b>. Fire another notification to run it again.');
-      flowFireBtn.disabled = false;
-      flowToggleBtn.disabled = true;
-    });
-    timerStart(flowRetractTimer);
-    timerStart(flowRotateTimer);
-  }
-
-  function flowToggle() {
-    const current = flowCard.getAttribute('data-phase');
-    if (current === 'idle') return;
-    timerCancel(flowRetractTimer);
-    if (current === 'expanded') {
-      flowSetPhase('compact', 'Manually collapsed via <b>⌃⇧N</b> — auto-retract cancelled, stays compact until it rotates out.');
-    } else {
-      flowSetPhase('expanded', 'Manually re-expanded via <b>⌃⇧N</b>.');
-    }
-  }
-
-  // Hover pauses the lifecycle (and the bar); leaving resumes where it stopped.
-  flowCard.addEventListener('mouseenter', () => {
-    timerPause(flowRetractTimer);
-    timerPause(flowRotateTimer);
-  });
-  flowCard.addEventListener('mouseleave', () => {
-    timerResume(flowRetractTimer);
-    timerResume(flowRotateTimer);
-  });
-
-  // Bar tracks the rotate window: 100% → 0 over FLOW_ROTATE_MS, frozen while
-  // paused, back to 100% once the card rotates out to idle.
-  function ttlTick() {
-    const remaining = flowRotateTimer === null ? FLOW_ROTATE_MS : timerRemaining(flowRotateTimer);
-    ttlFill.style.width = (remaining / FLOW_ROTATE_MS * 100) + '%';
-    requestAnimationFrame(ttlTick);
-  }
-  requestAnimationFrame(ttlTick);
-</script>
+<style>
+  #hover-card { transition: width 320ms cubic-bezier(0.3, 1.36, 0.44, 1); }
+  #hover-card:hover { --cw: 500px; }
+  #hover-card:hover #hover-hint { display: none; }
+  #hover-card:hover #hover-manifest { grid-template-rows: 1fr; opacity: 1; }
+</style>
 </body>
 </html>
