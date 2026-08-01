@@ -63,22 +63,52 @@ implementation.
 ## Target
 
 **Correction (2026-08-01), found while grounding this plan against the
-real wire contract before dispatch:** the prototype's per-event facts
-column (scorer/assist/booking pills) is aspirational, not achievable as
-written. `poller.rs::make_event`/`make_rich_event` both build every
-football `Event` with `meta: EventMeta::default()` — `subtitle: None`,
-`details: vec![]` — so `slot.subtitle`/`slot.details` are always empty
-for football on the real wire today; there is no structured
-scorer/assist/booking data to render as fact pills, only the one flat
-`body` string (`EventPayload.body`, e.g. `"Goal — K. Havertz 78'"`,
-`candidate.text` verbatim from ESPN). Parsing that string to fabricate a
-scorer/assist split would be exactly the text-sniffing
-`lib/presentation.ts`'s own `SIGNAL_STAMPS` doc already rejects ("never
-derived from parsing title/body text") — not a shortcut worth taking.
-The Target below is corrected to what's actually deliverable from the
-real wire shape; the richer fact-pill treatment stays a documented
-follow-up (a separate plan extending `EventPayload`/`poller.rs` to carry
-structured scorer/assist fields), not part of this plan.
+real wire contract before dispatch; RE-CORRECTED (2026-08-01, second
+pass) after a dispatched executor caught an error in the first
+correction — see below.** The prototype's per-event facts column
+(scorer/assist/booking pills) is aspirational, not achievable as
+written: there is no structured scorer/assist/booking data anywhere on
+the wire, only the one flat `body` string (`EventPayload.body`, e.g.
+`"Goal — K. Havertz 78'"`, `candidate.text` verbatim from ESPN).
+Parsing that string to fabricate a scorer/assist split would be exactly
+the text-sniffing `lib/presentation.ts`'s own `SIGNAL_STAMPS` doc
+already rejects ("never derived from parsing title/body text") — not a
+shortcut worth taking. The richer fact-pill treatment stays a
+documented follow-up (a separate plan extending `EventPayload`/
+`poller.rs` to carry structured scorer/assist fields), not part of this
+plan — **no fact pills in `FootballHeroCard`, full stop.**
+
+The FIRST correction pass claimed `slot.subtitle`/`slot.details` are
+*always* empty for football, citing `make_event`/`make_rich_event`
+constructing `meta: EventMeta::default()`. That was wrong for exactly
+the path this plan touches. A dispatched executor caught it (correctly
+stopped rather than proceeding past a plan/reality mismatch — see
+`plans/README.md`'s note on this plan's dispatch history) and it was
+verified directly against `poller.rs` before writing this paragraph:
+`make_event`/`make_rich_event` do construct with a default `meta`, but
+their caller, `diff_match` (`poller.rs:589-624`), OVERWRITES it
+afterward — `event.meta = meta.clone()` — whenever `topic.is_some()`
+(i.e. whenever `espn_live_card` is on, the SAME condition that makes
+`isLiveCard`/`liveEspn` true on the frontend and routes a card through
+`FootballHeroCard` at all). That overwritten `meta.details` carries two
+possible `DetailItem`s: `{label: "Clock", value: <display_clock>}`
+always, and `{label: "Cards", value: "<away> <y>Y<r>R · <home> <y>Y<r>R"}`
+when either side has a card. `subtitle` genuinely does stay `None` in
+every case (`EventMeta::default()`'s value, never overwritten to
+`Some(...)` anywhere in `diff_match`) — that half of the original claim
+held.
+
+This does NOT change the plan's deliverable, only the reasoning: both
+`details` entries this path can carry (Clock, aggregate Cards tally)
+duplicate information the kept additive score-row already shows
+verbatim (the `clock-pill` chip; the `cards-line` block) — there is
+still no scorer/assist/booking-level data that a fact pill could show
+which isn't already on the card. **`FootballHeroCard` still renders NO
+fact pills** — simply because rendering `slot.details` through
+`renderFactPills` here would be pure duplication of the score-row, not
+because the field happens to be empty (it usually is not, on a
+live-card-flagged match). Do not wire `liveVisibleDetails`/
+`slot.details` into `FootballHeroCard` at all.
 
 Also corrected: `slot.title` for football is `matchup()`'s output
 (`poller.rs:369-376`, e.g. `"UCL: ARS 1–1 PSG"`) — already redundant
@@ -211,10 +241,12 @@ operator has given no indication they want it changed.
   scorer/assist/booking data — see Target's correction. If real
   structured per-event data is wanted later, that's `EventPayload`/
   `poller.rs` wire work and belongs in its own plan, not this one.
-- If `poller.rs::make_event`/`make_rich_event` no longer match the
-  quoted excerpts in Target (drift since this plan was written — e.g.
-  `subtitle`/`details` are no longer always empty for football), STOP
-  and report back instead of improvising a fact-pill design on the fly.
+- If `poller.rs`'s `diff_match`/`make_event`/`make_rich_event` no longer
+  match the description in Target's correction above (real drift since
+  this plan was written this time, not the first correction's own
+  error — e.g. `subtitle` starts being populated, or `details` starts
+  carrying something beyond Clock/Cards), STOP and report back instead
+  of improvising a fact-pill design on the fly.
 
 ## Steps
 
