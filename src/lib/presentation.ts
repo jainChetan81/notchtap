@@ -366,6 +366,38 @@ export function agentStatePresentationFor(state: AgentSessionState): {
   return AGENT_STATE_PRESENTATION[state];
 }
 
+// Plan 169 (step 6): the Agent Board's primary-session hero now renders
+// through the SAME priority-accent channel (`--accent`/`--accent-soft`,
+// `.card-assembly.low/.medium/.high`, card-chrome.css) every other
+// origin's card already drives via `slot.priority` — until this plan,
+// Agent Board carried no notion of "priority" at all (it painted state
+// entirely through its own separate `--agent-accent` system,
+// agent-board.css, untouched by this table). This is a NEW semantic,
+// not a port of an existing one, so the mapping is a documented,
+// implementer-chosen default rather than a spec-given constant: the two
+// states that need the operator's attention NOW (a live decision or a
+// hard stop) read as "high" — that's also the pairing the Target table
+// (plan 169) marks "(danger tone)" on the hero's fact pills; the two
+// states that are actively in flight read as "medium"; the two settled/
+// quiet states read as "low". `starting` groups with `working` (same
+// "in flight" family `AGENT_STATE_PRESENTATION` above already treats
+// them as, both `agent-working`); `stale` groups with `completed` (both
+// "nothing to do here" from the operator's perspective, just for
+// different reasons).
+const AGENT_STATE_PRIORITY: Record<AgentSessionState, Priority> = {
+  waiting_for_permission: "high",
+  waiting_for_input: "high",
+  failed: "high",
+  working: "medium",
+  starting: "medium",
+  completed: "low",
+  stale: "low",
+};
+
+export function agentStatePriorityFor(state: AgentSessionState): Priority {
+  return AGENT_STATE_PRIORITY[state];
+}
+
 // Plan 136 (spec §6.2's "elapsed-in-state time"): formats a duration in
 // milliseconds as a short "Xs"/"Xm"/"Xh Ym" label — the Agent Board row's
 // own twin of `ageLabel` above (news' "Xm ago"), but relative duration

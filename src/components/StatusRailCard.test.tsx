@@ -837,8 +837,11 @@ describe("StatusRailCard", () => {
     expect(within(manifest).getByText(AGENT_RICH.body)).toBeTruthy();
     expect(manifest.querySelector(".manifest-meta")).toBeNull();
     expect(manifest.querySelector(".manifest-fields")).toBeNull();
-    expect(manifest.querySelector(".detail-label")).toBeNull();
-    expect(manifest.querySelector(".detail-value")).toBeNull();
+    // plan 169: detail pairs render as fact pills now (`.detail-facts`/
+    // `.fact-pill`), not the old stacked `.detail-label`/`.detail-value`
+    // — same "compact-only, never duplicated into the manifest" contract.
+    expect(manifest.querySelector(".detail-facts")).toBeNull();
+    expect(manifest.querySelector(".fact-pill")).toBeNull();
     expect(within(manifest).queryByText("Subtitle")).toBeNull();
 
     // AGENT_RICH has no link, so the footer shows only the collapse hint.
@@ -884,8 +887,10 @@ describe("StatusRailCard", () => {
     // the compact view, so assert there.
     const compact = container.querySelector(".compact") as HTMLElement;
     expect(within(compact).getByText("Arsenal 2-0")).toBeTruthy();
-    expect(compact.querySelector(".detail-label")).toBeNull();
-    expect(compact.querySelector(".detail-value")).toBeNull();
+    // plan 169: fact pills (`.detail-facts`/`.fact-pill`), not the old
+    // `.detail-label`/`.detail-value` stack.
+    expect(compact.querySelector(".detail-facts")).toBeNull();
+    expect(compact.querySelector(".fact-pill")).toBeNull();
   });
 
   it("renders a detail value that contains an '=' verbatim (first-'=' split is CLI-side only)", () => {
@@ -1218,8 +1223,10 @@ describe("StatusRailCard", () => {
       expect(within(compact).queryByText("wx-condition")).toBeNull();
       expect(within(compact).queryByText("wx-is-day")).toBeNull();
       expect(within(compact).queryByText("Rain")).toBeNull();
-      expect(compact.querySelector(".detail-label")).toBeNull();
-      expect(compact.querySelector(".detail-value")).toBeNull();
+      // plan 169: fact pills (`.detail-facts`/`.fact-pill`), not the old
+      // `.detail-label`/`.detail-value` stack.
+      expect(compact.querySelector(".detail-facts")).toBeNull();
+      expect(compact.querySelector(".fact-pill")).toBeNull();
     });
 
     it("never renders wx-condition/wx-is-day as visible detail cells while expanded (Manifest)", () => {
@@ -1230,9 +1237,7 @@ describe("StatusRailCard", () => {
       // the manifest's Message cell legitimately contains the alert body
       // text, so assert there's no *label* cell for either marker rather
       // than banning the word "Rain" outright.
-      const labels = Array.from(manifest.querySelectorAll(".detail-label")).map(
-        (el) => el.textContent,
-      );
+      const labels = Array.from(manifest.querySelectorAll(".fp-label")).map((el) => el.textContent);
       expect(labels).not.toContain("wx-condition");
       expect(labels).not.toContain("wx-is-day");
     });
