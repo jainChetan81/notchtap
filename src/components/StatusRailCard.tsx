@@ -28,8 +28,7 @@ import type { StatusState } from "../useStatusState";
 import { FlankClock } from "./FlankClock";
 import { IdleFace } from "./IdleFace";
 import { IdleHoverPeek } from "./IdleHoverPeek";
-import { LiveMatchScorecard } from "./LiveMatchScorecard";
-import { NotificationBody } from "./NotificationBody";
+import { FootballHeroCard, NotificationBody } from "./NotificationBody";
 import { StatusDots } from "./StatusDots";
 
 // plan 084: the live scorecard's celebration classes — echoes the shipped
@@ -618,8 +617,14 @@ export function StatusRailCard({
   // delayed/live pair that could "briefly disagree" (wave 2 dropped that
   // window entirely — see the comment above).
   const liveEspn: EspnMeta | undefined = showing ? slot.espn : undefined;
-  const footballKind = showing && isLiveCard ? footballEventKindFor(slot.signal, slot.body) : null;
-  const eventPresentation = footballKind ? eventKindPresentationFor(footballKind) : null;
+  // plan 170: the OLD `footballKind` local (fed only the now-deleted
+  // `eventPresentation` derivative — the `.event-line` icon+tint prop
+  // `LiveMatchScorecard` took, which `FootballHeroCard` has no equivalent
+  // slot for, see that component's own doc) is gone too — `tsc` confirmed
+  // it dead once `eventPresentation` was removed. The celebration effect
+  // above (`setLiveCelebration`, ~line 333) is UNAFFECTED: it calls
+  // `footballEventKindFor`/`eventKindPresentationFor` itself, on its own
+  // local `kind`, never reading this variable.
   const pillVariant = showing && isLiveCard ? livePillVariantFor(slot.signal) : "live";
   const pillLabel = pillVariant === "break" ? "Break" : pillVariant === "final" ? "Final" : "Live";
   const cardsClean =
@@ -1064,13 +1069,15 @@ export function StatusRailCard({
                     }}
                   >
                     {isLiveCard && liveEspn !== undefined ? (
-                      <LiveMatchScorecard
+                      <FootballHeroCard
+                        title={slot.body}
+                        priority={slot.priority}
+                        signal={slot.signal}
+                        eventType={slot.eventType}
                         liveEspn={liveEspn}
                         pillVariant={pillVariant}
                         pillLabel={pillLabel}
-                        eventPresentation={eventPresentation}
                         cardsClean={cardsClean}
-                        body={slot.body}
                       />
                     ) : (
                       <NotificationBody

@@ -1623,10 +1623,17 @@ describe("StatusRailCard", () => {
   // structured `espn` block's presence (POST-083 contract), rendered
   // through a wholly different branch than the generic/news layouts
   // above (no Track, no TtlBar, no Manifest, no compact-hint).
-  describe("live-match football scorecard (plan 084)", () => {
-    it("renders the league chip, live-pill, clock, crests-as-abbrev, and score", () => {
+  describe("live-match football scorecard (plan 084; content template plan 170)", () => {
+    it("renders the title (slot.body) and stamp, plus the league chip, live-pill, clock, crests-as-abbrev, and score", () => {
       const { container } = render(<StatusRailCard slot={liveSlot()} />);
-      expect(container.querySelector(".notif-block")).not.toBeNull();
+      // plan 170: `.notif-block` is gone — the live card now renders
+      // through the shared `.title.headline`/`.stamp` template
+      // (`FootballHeroCard`, NotificationBody.tsx), with the league/
+      // live-pill/clock/crests/score row kept as an additive block below
+      // it (assertions further down, unchanged from before this plan).
+      expect(container.querySelector(".title.headline")?.textContent).toBe("Goal — K. Havertz 78'");
+      // signal "goal" -> SIGNAL_STAMPS["goal"] === "Live" (lib/presentation.ts).
+      expect(container.querySelector(".stamp")?.textContent).toBe("Live");
       expect(screen.getByText("UCL")).toBeTruthy();
       const pill = container.querySelector(".chip-live");
       expect(pill?.textContent).toBe("Live");
@@ -1641,32 +1648,35 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".score")?.textContent).toBe("1–1");
     });
 
-    it("goal: tints the event line green, plays cele-goal (not pulse-goal), never the ripple", () => {
+    // plan 170: the old `.event-line` icon+tint (`ev-ico`/`tint-*`,
+    // `eventPresentation`) is gone — `slot.body` now renders verbatim as
+    // `.title.headline` with no icon slot (see `FootballHeroCard`'s own
+    // doc for why). The celebration classes on `.card-assembly` are a
+    // shell-level effect independent of the content template underneath
+    // them, so those assertions carry over unchanged.
+    it("goal: title is the body text, plays cele-goal (not pulse-goal), never the ripple", () => {
       const { container } = render(
         <StatusRailCard slot={liveSlot({ signal: "goal", body: "Goal — K. Havertz 78'" })} />,
       );
-      const eventLine = container.querySelector(".event-line");
-      expect(eventLine?.classList.contains("tint-goal")).toBe(true);
-      expect(eventLine?.querySelector(".ev-ico.goal")).not.toBeNull();
-      expect(eventLine?.textContent).toContain("Goal — K. Havertz 78'");
+      expect(container.querySelector(".title.headline")?.textContent).toBe("Goal — K. Havertz 78'");
       expect(container.querySelector(".card-assembly.cele-goal")).not.toBeNull();
       expect(container.querySelector(".card-assembly.pulse-goal")).toBeNull();
       expect(container.querySelector(".cele-ripple")).toBeNull();
     });
 
-    it("penalty scored: same cele-goal celebration family, ring icon", () => {
+    it("penalty scored: title is the body text, same cele-goal celebration family", () => {
       const { container } = render(
         <StatusRailCard
           slot={liveSlot({ signal: "goal", body: "Penalty - Scored — Mohamed Salah 44'" })}
         />,
       );
-      const eventLine = container.querySelector(".event-line");
-      expect(eventLine?.classList.contains("tint-goal")).toBe(true);
-      expect(eventLine?.querySelector(".ev-ico.pen")).not.toBeNull();
+      expect(container.querySelector(".title.headline")?.textContent).toBe(
+        "Penalty - Scored — Mohamed Salah 44'",
+      );
       expect(container.querySelector(".card-assembly.cele-goal")).not.toBeNull();
     });
 
-    it("own goal: score updates, hollow icon, NO tint and NO celebration", () => {
+    it("own goal: score updates, title is the body text, NO celebration", () => {
       const { container } = render(
         <StatusRailCard
           slot={liveSlot({
@@ -1677,15 +1687,15 @@ describe("StatusRailCard", () => {
         />,
       );
       expect(container.querySelector(".score")?.textContent).toBe("0–1");
-      const eventLine = container.querySelector(".event-line");
-      expect(eventLine?.className).toBe("event-line");
-      expect(eventLine?.querySelector(".ev-ico.og")).not.toBeNull();
+      expect(container.querySelector(".title.headline")?.textContent).toBe(
+        "Own Goal — W. Saliba 12'",
+      );
       expect(container.querySelector(".card-assembly.cele-goal")).toBeNull();
       expect(container.querySelector(".card-assembly.cele-yc")).toBeNull();
       expect(container.querySelector(".card-assembly.cele-rc")).toBeNull();
     });
 
-    it("yellow card: amber tint, cele-yc, and the per-side cards line ticks up", () => {
+    it("yellow card: title is the body text, stamp reads Card, cele-yc, and the per-side cards line ticks up", () => {
       const { container } = render(
         <StatusRailCard
           slot={liveSlot({
@@ -1695,14 +1705,15 @@ describe("StatusRailCard", () => {
           })}
         />,
       );
-      const eventLine = container.querySelector(".event-line");
-      expect(eventLine?.classList.contains("tint-yc")).toBe(true);
-      expect(eventLine?.querySelector(".ev-ico.yc")).not.toBeNull();
+      expect(container.querySelector(".title.headline")?.textContent).toBe(
+        "Yellow Card — B. Saka 54'",
+      );
+      expect(container.querySelector(".stamp")?.textContent).toBe("Card");
       expect(container.querySelector(".card-assembly.cele-yc")).not.toBeNull();
       expect(container.querySelector(".cards-line")?.textContent).toBe("ARS 1Y0R · PSG 2Y0R");
     });
 
-    it("red card: coral tint and cele-rc", () => {
+    it("red card: title is the body text, stamp reads Off, and cele-rc", () => {
       const { container } = render(
         <StatusRailCard
           slot={liveSlot({
@@ -1712,26 +1723,25 @@ describe("StatusRailCard", () => {
           })}
         />,
       );
-      const eventLine = container.querySelector(".event-line");
-      expect(eventLine?.classList.contains("tint-rc")).toBe(true);
-      expect(eventLine?.querySelector(".ev-ico.rc")).not.toBeNull();
+      expect(container.querySelector(".title.headline")?.textContent).toBe(
+        "Red Card — M. Dembélé 71'",
+      );
+      expect(container.querySelector(".stamp")?.textContent).toBe("Off");
       expect(container.querySelector(".card-assembly.cele-rc")).not.toBeNull();
       expect(container.querySelector(".card-assembly.pulse-red")).toBeNull();
     });
 
     it.each([
-      ["foul", "foul", "Foul — D. Rice 62'"],
-      ["offside", "off", "Offside — K. Mbappé 55'"],
-      ["var_check", "var", "VAR check — possible penalty 67'"],
-      ["substitution", "sub", "Substitution — L. Trossard for G. Martinelli 70'"],
+      ["foul", "Foul", "Foul — D. Rice 62'"],
+      ["offside", "Offside", "Offside — K. Mbappé 55'"],
+      ["var_check", "VAR", "VAR check — possible penalty 67'"],
+      ["substitution", "Sub", "Substitution — L. Trossard for G. Martinelli 70'"],
     ] as const)(
-      "%s: quiet event line — correct icon, no tint, no celebration",
-      (signal, iconSuffix, body) => {
+      "%s: title is the body text, stamp reads %s, no celebration",
+      (signal, stamp, body) => {
         const { container } = render(<StatusRailCard slot={liveSlot({ signal, body })} />);
-        const eventLine = container.querySelector(".event-line");
-        expect(eventLine?.className).toBe("event-line");
-        expect(eventLine?.querySelector(`.ev-ico.${iconSuffix}`)).not.toBeNull();
-        expect(eventLine?.textContent).toContain(body);
+        expect(container.querySelector(".title.headline")?.textContent).toBe(body);
+        expect(container.querySelector(".stamp")?.textContent).toBe(stamp);
         expect(container.querySelector(".card-assembly.cele-goal")).toBeNull();
         expect(container.querySelector(".card-assembly.cele-yc")).toBeNull();
         expect(container.querySelector(".card-assembly.cele-rc")).toBeNull();
@@ -1833,7 +1843,8 @@ describe("StatusRailCard", () => {
 
     it("still renders the compact scorecard (not a bigger layout) when expanded arrives true", () => {
       const { container } = render(<StatusRailCard slot={liveSlot({ expanded: true })} />);
-      expect(container.querySelector(".notif-block")).not.toBeNull();
+      expect(container.querySelector(".sc-head")).not.toBeNull();
+      expect(container.querySelector(".score-row")).not.toBeNull();
       expect(container.querySelector(".manifest")).toBeNull();
     });
 
