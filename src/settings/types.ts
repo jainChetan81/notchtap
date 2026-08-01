@@ -49,15 +49,18 @@ export interface SilenceConfig {
 }
 
 // Mirrors rust's `AgentsConfig` (config.rs) — the `[agents]` v7 config
-// block: global enable, registry retention/staleness, the
-// informational-card toggle, four per-kind Notification priorities, and
-// the four per-runtime enable flags above.
+// block: global enable, registry retention/staleness, the two per-kind
+// card toggles (informational, completion), four per-kind Notification
+// priorities, and the four per-runtime enable flags above.
 export interface AgentsConfig {
   enabled: boolean;
   terminal_retention_secs: number;
   stale_after_secs: number;
   stale_retention_secs: number;
   informational_notifications: boolean;
+  // Default `true` — a runtime fires a completion event per response
+  // turn, so this is the operator's off switch for per-turn cards.
+  completion_notifications: boolean;
   permission_priority: PriorityLevel;
   input_priority: PriorityLevel;
   failure_priority: PriorityLevel;

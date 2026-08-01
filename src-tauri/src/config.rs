@@ -213,7 +213,8 @@ impl Default for Appearance {
 }
 
 /// `[agents]` — v7's Agent Adapter config surface (spec §7). Global
-/// enable/retention/staleness/informational-toggle plus the four
+/// enable/retention/staleness plus the two per-kind on/off gates
+/// (`informational_notifications`, `completion_notifications`) and the four
 /// per-kind Notification priorities that
 /// `agents::notification::NotificationPolicy` is built from
 /// (`lib.rs`'s `setup`), and `[agents.runtimes.*]`'s four per-runtime
@@ -237,6 +238,15 @@ pub struct AgentsConfig {
     /// the idle face forever — see `agents::registry::AgentRegistry::tick`).
     pub stale_retention_secs: u64,
     pub informational_notifications: bool,
+    /// Operator decision 2026-08-02: gates a TERMINAL `Completed` — a
+    /// real session end — only. Every runtime also fires a `Completed`
+    /// per response/turn (`terminal: false`); that shape is NOT covered
+    /// by this key, it rides `informational_notifications` instead (see
+    /// `agents::notification`'s top doc), which is what keeps per-turn
+    /// cards quiet by default. Defaults `true` so session ends card out
+    /// of the box; the struct-level `#[serde(default)]` above means a
+    /// config written before this key existed still loads as `true`.
+    pub completion_notifications: bool,
     pub permission_priority: Priority,
     pub input_priority: Priority,
     pub failure_priority: Priority,
@@ -257,6 +267,7 @@ impl Default for AgentsConfig {
             stale_after_secs: 300,
             stale_retention_secs: 600,
             informational_notifications: false,
+            completion_notifications: true,
             permission_priority: Priority::High,
             input_priority: Priority::High,
             failure_priority: Priority::High,
@@ -814,6 +825,7 @@ mod tests {
         assert_eq!(c.agents.stale_after_secs, 300);
         assert_eq!(c.agents.stale_retention_secs, 600);
         assert!(!c.agents.informational_notifications);
+        assert!(c.agents.completion_notifications);
         assert_eq!(c.agents.permission_priority, Priority::High);
         assert_eq!(c.agents.input_priority, Priority::High);
         assert_eq!(c.agents.failure_priority, Priority::High);
@@ -857,6 +869,25 @@ mod tests {
         assert!(c
             .now_playing_adapter_dir
             .ends_with("Library/Application Support/notchtap/mediaremote-adapter"));
+    }
+
+    #[test]
+    fn completion_notifications_defaults_to_true_for_a_config_predating_the_key() {
+        // Operator decision 2026-08-02: an `[agents]` block written before
+        // `completion_notifications` existed must keep the shipped
+        // behaviour (a card per Completed event), not silently go quiet —
+        // `AgentsConfig`'s struct-level `#[serde(default)]` supplies
+        // `true` for the absent key while every sibling key it DOES set
+        // still lands.
+        let legacy = Config::parse(
+            "[agents]\nenabled = true\ninformational_notifications = false\ncompletion_priority = \"low\"\n",
+        )
+        .unwrap();
+        assert!(legacy.agents.completion_notifications);
+        assert_eq!(legacy.agents.completion_priority, Priority::Low);
+
+        let off = Config::parse("[agents]\ncompletion_notifications = false\n").unwrap();
+        assert!(!off.agents.completion_notifications);
     }
 
     #[test]

@@ -128,13 +128,35 @@ describe("mapBusEvent", () => {
     expect(JSON.stringify(wire)).not.toContain("secret-ish stack trace");
   });
 
-  it("maps session.deleted to a terminal informational event", () => {
+  it("maps session.deleted to a terminal completed event (the real session end)", () => {
+    // session.deleted is OpenCode's SessionEnd counterpart. It must be
+    // `completed` + terminal, not `informational` + terminal: the core
+    // gates `informational` behind an off-by-default toggle, so the
+    // former shape produced no session-end card for OpenCode while the
+    // other three runtimes carded.
     const wire = mapBusEvent(
       { type: "session.deleted", properties: { sessionID: "s1" } },
       fixedCtx(),
     );
-    expect(wire?.kind).toBe("informational");
+    expect(wire?.kind).toBe("completed");
+    expect(wire?.state).toBe("completed");
     expect(wire?.terminal).toBe(true);
+    expect(wire?.summary).toBe("Session ended");
+  });
+
+  it("distinguishes the per-turn session.idle from the session-ending session.deleted", () => {
+    // Both carry kind "completed"; only `terminal` separates them, and
+    // that flag is exactly what the core's notification policy splits on
+    // (quiet per-turn stop vs carded session end).
+    const idle = mapBusEvent({ type: "session.idle", properties: { sessionID: "s1" } }, fixedCtx());
+    const deleted = mapBusEvent(
+      { type: "session.deleted", properties: { sessionID: "s1" } },
+      fixedCtx(),
+    );
+    expect(idle?.kind).toBe("completed");
+    expect(deleted?.kind).toBe("completed");
+    expect(idle?.terminal).toBe(false);
+    expect(deleted?.terminal).toBe(true);
   });
 
   it("session.idle can fire repeatedly across turns; only session.deleted is terminal", () => {

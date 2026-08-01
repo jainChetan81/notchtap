@@ -460,6 +460,16 @@ export function AgentsSection({
           }
         />
         <ToggleControl
+          id="agents-completion"
+          name="Completion cards"
+          help="Runtimes fire a completion event after every response, not just at session end — turn this off to stop a card per turn."
+          label="Show a card when an agent finishes a turn"
+          checked={config.agents.completion_notifications}
+          onChange={(completion_notifications) =>
+            patchAgents(config, patchConfig, { completion_notifications })
+          }
+        />
+        <ToggleControl
           id="agents-informational"
           name="Informational cards"
           help="Also show a card for ordinary progress/tool events, not just permission/input/failure/completion."

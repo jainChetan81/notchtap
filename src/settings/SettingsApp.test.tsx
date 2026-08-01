@@ -92,6 +92,7 @@ const config: Config = {
     stale_after_secs: 600,
     stale_retention_secs: 1200,
     informational_notifications: true,
+    completion_notifications: false,
     permission_priority: "high",
     input_priority: "medium",
     failure_priority: "high",
@@ -159,6 +160,7 @@ const rustConfigDefaults: Config = {
     stale_after_secs: 900,
     stale_retention_secs: 1800,
     informational_notifications: false,
+    completion_notifications: true,
     permission_priority: "high",
     input_priority: "high",
     failure_priority: "high",
@@ -1968,6 +1970,8 @@ describe("SettingsApp", () => {
       expect(isChecked(enableToggle)).toBe(true);
       const informational = screen.getByLabelText("Show informational cards");
       expect(isChecked(informational)).toBe(true); // fixture: agents.informational_notifications true
+      const completion = screen.getByLabelText("Show a card when an agent finishes a turn");
+      expect(isChecked(completion)).toBe(false); // fixture: agents.completion_notifications false
       expect(screen.getByDisplayValue("400")).toBeTruthy(); // terminal_retention_secs
       expect(screen.getByDisplayValue("600")).toBeTruthy(); // stale_after_secs
       expect(screen.getByDisplayValue("1200")).toBeTruthy(); // stale_retention_secs
@@ -2077,6 +2081,40 @@ describe("SettingsApp", () => {
       expect(savedConfig!.agents.runtimes.codex.enabled).toBe(true);
       // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
       expect(savedConfig!.agents.runtimes.claude_code.enabled).toBe(true); // untouched sibling
+    });
+
+    it("the completion-cards toggle round-trips into the saved config payload", async () => {
+      // Operator decision 2026-08-02: agents.completion_notifications is
+      // the per-turn-card off switch, and it must survive the
+      // get_config -> edit -> save_config_and_relaunch round trip like
+      // every other [agents] key.
+      let savedConfig: Config | null = null;
+      mockIPC((command, payload) => {
+        if (command === "get_config") return config;
+        if (command === "get_secret_status") return unsetSecrets;
+        if (command === "get_default_config") return rustConfigDefaults;
+        if (command === "get_agent_health") return health;
+        if (command === "save_config_and_relaunch") {
+          savedConfig = (payload as { config: Config }).config;
+          return null;
+        }
+      });
+      await openAgents();
+
+      const toggle = await screen.findByLabelText("Show a card when an agent finishes a turn");
+      expect(isChecked(toggle)).toBe(false); // fixture: agents.completion_notifications false
+      fireEvent.click(toggle);
+      expect(isChecked(toggle)).toBe(true);
+
+      fireEvent.click(screen.getByRole("button", { name: "Save & Relaunch" }));
+
+      await waitFor(() => expect(savedConfig).not.toBeNull());
+      // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
+      expect(savedConfig!.agents.completion_notifications).toBe(true);
+      // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
+      expect(savedConfig!.agents.informational_notifications).toBe(true); // untouched sibling
+      // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
+      expect(savedConfig!.agents.completion_priority).toBe("low"); // untouched sibling
     });
   });
 });

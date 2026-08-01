@@ -35,6 +35,32 @@
 //! its own doc) — this module's tests
 //! (`non_terminal_failed_is_gated_like_informational_not_high`) pin that
 //! the notification layer agrees with it.
+//!
+//! ## The same split, applied to `Completed` (operator decision 2026-08-02)
+//!
+//! Every supported runtime fires a completion event TWICE-shaped: once
+//! per response/turn (Claude Code/Codex/Kimi `Stop`, OpenCode
+//! `session.idle` — all `terminal: false`) and once when the session
+//! genuinely ends (`SessionEnd`/`session.deleted` — `terminal: true`).
+//! Shipped v7 treated both identically, so an operator got a "session
+//! completed" card after every single turn. That per-turn stop is
+//! progress, not an outcome: it belongs on the Agent Board, not in the
+//! Notification Slot.
+//!
+//! So `Completed` now carries exactly the terminal split `Failed`
+//! already has:
+//!
+//! - `Completed` + `terminal` — a REAL session end. Noteworthy per
+//!   `policy.completion_notifications` (default on) at
+//!   `policy.completion_priority` (default Medium).
+//! - `Completed` + `!terminal` — a per-turn stop. Reads as
+//!   informational: gated behind `policy.informational_notifications`
+//!   (default OFF, so quiet) at the fixed `Priority::Medium` every
+//!   Informational gets. Identical treatment to a non-terminal `Failed`.
+//!
+//! `registry::next_state` already split the same pair (terminal ->
+//! `Completed`, non-terminal -> `WaitingForInput`), so the Agent Board
+//! keeps showing every turn boundary — only the card is suppressed.
 
 use uuid::Uuid;
 
@@ -65,6 +91,14 @@ pub struct NotificationPolicy {
     /// `Failed` — see this module's top doc for why the two share one
     /// gate.
     pub informational_notifications: bool,
+    /// `agents.completion_notifications` (default `true`, operator
+    /// decision 2026-08-02). Gates a TERMINAL `Completed` — a real
+    /// session end — only. A non-terminal `Completed` (the per-turn
+    /// stop every runtime fires after each response) is not covered by
+    /// this key at all: it rides `informational_notifications` instead,
+    /// see this module's top doc. So this defaults ON without
+    /// reintroducing per-turn spam.
+    pub completion_notifications: bool,
     pub permission_priority: Priority,
     pub input_priority: Priority,
     pub failure_priority: Priority,
@@ -74,10 +108,13 @@ pub struct NotificationPolicy {
 impl Default for NotificationPolicy {
     /// Spec §7's own defaults, verbatim: `permission_priority =
     /// input_priority = failure_priority = "high"`, `completion_priority
-    /// = "medium"`, `informational_notifications = false`.
+    /// = "medium"`, `informational_notifications = false`. Plus
+    /// `completion_notifications = true` (added 2026-08-02, not in the
+    /// spec's original block — see the field's own doc).
     fn default() -> Self {
         Self {
             informational_notifications: false,
+            completion_notifications: true,
             permission_priority: Priority::High,
             input_priority: Priority::High,
             failure_priority: Priority::High,
@@ -89,13 +126,18 @@ impl Default for NotificationPolicy {
 /// Whether `kind` (+ `terminal`) is ever eligible to become a
 /// Notification, independent of queue capacity (spec §5's table, with the
 /// §2.1 non-terminal-`Failed` carve-out — see this module's top doc).
+///
+/// `Completed` carries the same terminal split `Failed` does: a terminal
+/// `Completed` (real session end) reads `policy.completion_notifications`
+/// (default ON), a non-terminal one (per-turn stop) falls through into
+/// the shared `policy.informational_notifications` gate (default OFF).
+/// See this module's top doc for why.
 pub fn is_noteworthy(kind: AgentEventKind, terminal: bool, policy: &NotificationPolicy) -> bool {
     match kind {
-        AgentEventKind::PermissionRequested
-        | AgentEventKind::InputRequired
-        | AgentEventKind::Completed => true,
+        AgentEventKind::PermissionRequested | AgentEventKind::InputRequired => true,
+        AgentEventKind::Completed if terminal => policy.completion_notifications,
         AgentEventKind::Failed if terminal => true,
-        AgentEventKind::Failed | AgentEventKind::Informational => {
+        AgentEventKind::Completed | AgentEventKind::Failed | AgentEventKind::Informational => {
             policy.informational_notifications
         }
     }
@@ -109,12 +151,14 @@ pub fn priority_for(kind: AgentEventKind, terminal: bool, policy: &NotificationP
     match kind {
         AgentEventKind::PermissionRequested => policy.permission_priority,
         AgentEventKind::InputRequired => policy.input_priority,
-        AgentEventKind::Completed => policy.completion_priority,
+        AgentEventKind::Completed if terminal => policy.completion_priority,
         AgentEventKind::Failed if terminal => policy.failure_priority,
-        // Non-terminal Failed reads as Informational (this module's top
-        // doc) — spec §5's table pins Informational at a fixed Medium,
-        // not a configurable priority.
-        AgentEventKind::Failed | AgentEventKind::Informational => Priority::Medium,
+        // Non-terminal Failed and non-terminal Completed both read as
+        // Informational (this module's top doc) — spec §5's table pins
+        // Informational at a fixed Medium, not a configurable priority.
+        AgentEventKind::Completed | AgentEventKind::Failed | AgentEventKind::Informational => {
+            Priority::Medium
+        }
     }
 }
 
@@ -138,7 +182,8 @@ fn title_for(runtime: AgentRuntime, kind: AgentEventKind, terminal: bool) -> Str
     match kind {
         AgentEventKind::PermissionRequested => format!("{name} needs permission"),
         AgentEventKind::InputRequired => format!("{name} needs input"),
-        AgentEventKind::Completed => format!("{name} finished"),
+        AgentEventKind::Completed if terminal => format!("{name} finished"),
+        AgentEventKind::Completed => format!("{name} finished a turn"),
         AgentEventKind::Failed if terminal => format!("{name} failed"),
         AgentEventKind::Failed => format!("{name} hit a tool error"),
         AgentEventKind::Informational => format!("{name} update"),
@@ -153,7 +198,8 @@ fn default_body_for(kind: AgentEventKind, terminal: bool) -> String {
     match kind {
         AgentEventKind::PermissionRequested => "Approval needed to continue.".to_string(),
         AgentEventKind::InputRequired => "Waiting for your input.".to_string(),
-        AgentEventKind::Completed => "Session completed.".to_string(),
+        AgentEventKind::Completed if terminal => "Session completed.".to_string(),
+        AgentEventKind::Completed => "Turn completed; the session is still open.".to_string(),
         AgentEventKind::Failed if terminal => "The session ended with an error.".to_string(),
         AgentEventKind::Failed => "A tool call failed; the session is still working.".to_string(),
         AgentEventKind::Informational => "Session update.".to_string(),
@@ -179,8 +225,12 @@ pub struct NotificationContent<'a> {
 /// (spec §5). Returns `None` when this `(kind, terminal)` pair isn't
 /// noteworthy under `policy` — Starting/Working/tool/subagent progress
 /// (wire `Informational`, `terminal: false`, `informational_notifications`
-/// off) and a non-terminal `Failed` under that same gate both resolve to
-/// `None` here, same as they never update anything past the registry.
+/// off), a non-terminal `Failed`, and a non-terminal `Completed` (the
+/// per-turn stop) all resolve to `None` here under that same gate, same
+/// as they never update anything past the registry. A TERMINAL
+/// `Completed` — a real session end — resolves to `None` only once
+/// `completion_notifications` is off (that gate defaults on, so this is
+/// opt-in silence, not the default).
 ///
 /// `ttl_secs` is the caller's own one-shot rotation window — plan 137
 /// wired `http.rs`'s call site to the real `agent_ttl_secs` config field
@@ -379,13 +429,43 @@ mod tests {
         assert_eq!(event.priority, Priority::Medium);
     }
 
+    // --- the `Completed` terminal split (operator decision 2026-08-02).
+    // Four (terminal, policy) combinations, pinned exhaustively. ---
+
     #[test]
-    fn non_terminal_completed_is_also_medium_one_shot() {
-        // Operator decision 2026-07-26 (spec §2.1/§5): a per-turn Stop
-        // (kind Completed, terminal:false) still posts the same Medium
-        // one-shot "completed" card as a terminal session end — the
-        // notification layer doesn't gate on `terminal` for this kind.
+    fn non_terminal_completed_is_quiet_under_the_default_policy() {
+        // A per-turn Stop (kind Completed, terminal:false) is progress,
+        // not an outcome: it rides `informational_notifications` (OFF by
+        // default), so the operator is NOT carded once per turn.
         let policy = NotificationPolicy::default();
+        assert!(!policy.informational_notifications);
+        assert!(!is_noteworthy(AgentEventKind::Completed, false, &policy));
+        assert!(build_notification(
+            &key(AgentRuntime::ClaudeCode),
+            AgentEventKind::Completed,
+            false,
+            NotificationContent {
+                summary: Some("Ready for your next message"),
+                project_name: None,
+                details: &[],
+            },
+            8,
+            &policy,
+        )
+        .is_none());
+    }
+
+    #[test]
+    fn non_terminal_completed_becomes_a_medium_card_when_informational_is_on() {
+        // It shares Informational's gate AND Informational's fixed
+        // Medium priority — never `completion_priority`, and never
+        // `completion_notifications`.
+        let policy = NotificationPolicy {
+            informational_notifications: true,
+            completion_notifications: false,
+            completion_priority: Priority::High,
+            ..NotificationPolicy::default()
+        };
         assert!(is_noteworthy(AgentEventKind::Completed, false, &policy));
         assert_eq!(
             priority_for(AgentEventKind::Completed, false, &policy),
@@ -403,8 +483,139 @@ mod tests {
             8,
             &policy,
         )
-        .expect("a non-terminal (per-turn) completed event must still produce a card");
+        .expect("a per-turn completed must card once the informational gate is on");
         assert_eq!(event.priority, Priority::Medium);
+    }
+
+    #[test]
+    fn terminal_completed_ignores_the_informational_gate() {
+        // The mirror of the test above: a real session end is NOT gated
+        // behind `informational_notifications`, only behind
+        // `completion_notifications`.
+        let policy = NotificationPolicy {
+            informational_notifications: false,
+            completion_notifications: true,
+            ..NotificationPolicy::default()
+        };
+        assert!(is_noteworthy(AgentEventKind::Completed, true, &policy));
+    }
+
+    // --- `completion_notifications`: the session-end off switch.
+    // Default ON, and it now only reaches the terminal shape. ---
+
+    #[test]
+    fn terminal_completed_is_suppressed_when_completion_notifications_is_off() {
+        let policy = NotificationPolicy {
+            completion_notifications: false,
+            ..NotificationPolicy::default()
+        };
+        assert!(!is_noteworthy(AgentEventKind::Completed, true, &policy));
+        assert!(build_notification(
+            &key(AgentRuntime::ClaudeCode),
+            AgentEventKind::Completed,
+            true,
+            NotificationContent {
+                summary: Some("All tests passed"),
+                project_name: None,
+                details: &[],
+            },
+            8,
+            &policy,
+        )
+        .is_none());
+
+        // The other kinds are untouched by this gate.
+        assert!(is_noteworthy(
+            AgentEventKind::PermissionRequested,
+            false,
+            &policy
+        ));
+        assert!(is_noteworthy(AgentEventKind::InputRequired, false, &policy));
+        assert!(is_noteworthy(AgentEventKind::Failed, true, &policy));
+    }
+
+    #[test]
+    fn terminal_completed_is_noteworthy_when_completion_notifications_is_on() {
+        let policy = NotificationPolicy {
+            completion_notifications: true,
+            ..NotificationPolicy::default()
+        };
+        assert!(NotificationPolicy::default().completion_notifications);
+        assert!(is_noteworthy(AgentEventKind::Completed, true, &policy));
+        let event = build_notification(
+            &key(AgentRuntime::ClaudeCode),
+            AgentEventKind::Completed,
+            true,
+            NotificationContent {
+                summary: Some("All tests passed"),
+                project_name: None,
+                details: &[],
+            },
+            8,
+            &policy,
+        )
+        .expect("a terminal completed must produce a card while the gate is on");
+        assert_eq!(event.priority, Priority::Medium);
+    }
+
+    #[test]
+    fn completion_notifications_off_still_lets_a_per_turn_stop_through_the_informational_gate() {
+        // The two gates are independent: turning the session-end card off
+        // must not also silence a per-turn stop the operator explicitly
+        // opted into via `informational_notifications`.
+        let policy = NotificationPolicy {
+            completion_notifications: false,
+            informational_notifications: true,
+            ..NotificationPolicy::default()
+        };
+        assert!(!is_noteworthy(AgentEventKind::Completed, true, &policy));
+        assert!(is_noteworthy(AgentEventKind::Completed, false, &policy));
+    }
+
+    #[test]
+    fn completed_titles_and_bodies_split_on_terminal() {
+        let policy = NotificationPolicy {
+            informational_notifications: true,
+            ..NotificationPolicy::default()
+        };
+        let session_end = build_notification(
+            &key(AgentRuntime::ClaudeCode),
+            AgentEventKind::Completed,
+            true,
+            NotificationContent {
+                summary: None,
+                project_name: None,
+                details: &[],
+            },
+            8,
+            &policy,
+        )
+        .unwrap();
+        assert_eq!(session_end.payload.title, "Claude Code finished");
+        assert_eq!(session_end.payload.body, "Session completed.");
+
+        let per_turn = build_notification(
+            &key(AgentRuntime::ClaudeCode),
+            AgentEventKind::Completed,
+            false,
+            NotificationContent {
+                summary: None,
+                project_name: None,
+                details: &[],
+            },
+            8,
+            &policy,
+        )
+        .unwrap();
+        assert_eq!(per_turn.payload.title, "Claude Code finished a turn");
+        assert_eq!(
+            per_turn.payload.body,
+            "Turn completed; the session is still open."
+        );
+        // The whole point of the split: a per-turn stop must never read
+        // as the session ending.
+        assert_ne!(per_turn.payload.title, session_end.payload.title);
+        assert_ne!(per_turn.payload.body, session_end.payload.body);
     }
 
     #[test]

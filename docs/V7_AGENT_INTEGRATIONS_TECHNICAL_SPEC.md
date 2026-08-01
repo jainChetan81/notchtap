@@ -174,7 +174,9 @@ or do neither when it is a duplicate/stale event.
   only an explicit session-end event (`SessionEnd`,
   `session.deleted`) is terminal. (operator decision 2026-07-26 —
   per-turn Stop must not fragment one session into suffixed terminal
-  rows.)
+  rows.) the same non-terminal completed event is also a QUIET
+  informational Notification, not a session-completed card — see §5's
+  `Completed` split (operator decision 2026-08-02).
 - failure event representing a terminal failure → `Failed`.
 - a non-terminal tool failure is an informational/failure Notification
   while the session remains `Working`.
@@ -414,12 +416,36 @@ enter the existing Engine as `Origin::Agent`:
 | Permission Requested | High | one-shot |
 | Input Required | High | one-shot |
 | Failed (terminal) | High | one-shot |
-| Completed | Medium | one-shot (both per-turn Stop and session end) |
+| Completed (terminal) | Medium (`completion_priority`) | one-shot; on by default, suppressed by `completion_notifications = false` (§7) |
+| Completed (non-terminal) | Medium (fixed) | off by default; follows the Informational row's gating |
 | Informational | Medium | off by default; runtime/user policy may enable |
 
 a NON-terminal tool failure follows the Informational row's gating
 (off by default), not the Failed row — §2.1's "informational/failure
 Notification" wording governs. operator-confirmed 2026-07-26.
+
+**`Completed` carries the same terminal split** (operator decision
+2026-08-02). every runtime fires a completion event twice-shaped: once
+per response/turn (`Stop` / `session.idle`, `terminal: false`) and once
+when the session genuinely ends (`SessionEnd` / `session.deleted`,
+`terminal: true`). the per-turn stop is progress, not an outcome, so it
+rides `informational_notifications` (off by default) at the fixed
+Informational Medium — the operator is not carded once per turn. only
+the terminal shape reads `completion_notifications` /
+`completion_priority`. the two gates are independent: switching the
+session-end card off does not silence a per-turn stop the operator
+explicitly opted into, and vice versa. card text splits too — terminal
+reads "X finished / Session completed.", non-terminal reads "X finished
+a turn / Turn completed; the session is still open."
+
+for this split to work, every runtime's REAL session end must arrive as
+`Completed` + `terminal: true`. all four adapters do: Claude Code /
+Codex / Kimi map their `SessionEnd` hook that way, and OpenCode's
+`session.deleted` was corrected from `Informational` + `terminal: true`
+(which produced no card at all, since it fell into the off-by-default
+Informational gate) to match. `registry::next_state` resolves both
+shapes to the same terminal `Completed` state, so the Agent Board is
+unchanged by that correction.
 
 Starting, Working, tool progress, and subagent progress update the Agent
 Board without creating cards. Notification creation does not delete or
@@ -522,6 +548,7 @@ terminal_retention_secs = 60
 stale_after_secs = 300
 stale_retention_secs = 600
 informational_notifications = false
+completion_notifications = true
 permission_priority = "high"
 input_priority = "high"
 failure_priority = "high"
@@ -539,6 +566,14 @@ enabled = true
 [agents.runtimes.opencode]
 enabled = true
 ```
+
+`completion_notifications` (added 2026-08-02, operator decision) gates a
+TERMINAL `Completed` — a real session end — only. it defaults `true`,
+and a config predating the key loads as `true`, so session ends card out
+of the box. a NON-terminal `Completed` (the per-turn stop) is not
+covered by this key at all; it rides `informational_notifications`
+(default `false`), which is what keeps per-turn cards quiet by default.
+see §5's `Completed` split.
 
 the existing source-level config gains `agent_ttl_secs` and
 `agent_priority` only where the flat compatibility layer still requires

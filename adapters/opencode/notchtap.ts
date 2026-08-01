@@ -443,10 +443,21 @@ function mapSessionError(event: BusEvent, ctx: EventContext): AgentWireEvent | n
   return wire;
 }
 
+/** `session.deleted` is OpenCode's explicit session-end signal, so it is
+ * the counterpart of the other three runtimes' `SessionEnd` hook: a
+ * TERMINAL `completed`. It used to emit `informational` + terminal,
+ * which meant OpenCode's real session end produced no card at all (it
+ * fell into the off-by-default `informational_notifications` gate) while
+ * the other three runtimes carded — an inconsistency the core's
+ * `Completed`-terminal split (2026-08-02) made visible. Emitting
+ * `completed` here is what makes a real session end card identically
+ * across all four runtimes; the registry's `next_state` lands both
+ * `Completed`+terminal and `Informational`+terminal in the same terminal
+ * `Completed` state, so the Agent Board is unaffected by the change. */
 function mapSessionDeleted(event: BusEvent, ctx: EventContext): AgentWireEvent | null {
   const sessionId = extractSessionId(event.properties);
   if (!sessionId) return null;
-  const wire = baseEvent(event.type, sessionId, "informational", "completed", true, ctx);
+  const wire = baseEvent(event.type, sessionId, "completed", "completed", true, ctx);
   wire.summary = sanitizeSummary("Session ended");
   return wire;
 }

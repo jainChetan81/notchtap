@@ -242,6 +242,7 @@ pub fn run() {
     let agents_config = config.agents.clone();
     let agent_notification_policy = agents::notification::NotificationPolicy {
         informational_notifications: agents_config.informational_notifications,
+        completion_notifications: agents_config.completion_notifications,
         permission_priority: agents_config.permission_priority,
         input_priority: agents_config.input_priority,
         failure_priority: agents_config.failure_priority,

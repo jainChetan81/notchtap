@@ -1210,10 +1210,18 @@ pub async fn send_agent_test_event(
         "occurredAtMs": occurred_at_ms,
         "nativeEvent": "settings test event",
         "kind": "completed",
-        "state": "waiting_for_input",
-        "summary": format!("Test event from Settings — {runtime} turn completed"),
+        "state": "completed",
+        "summary": format!("Test event from Settings — {runtime} session completed"),
         "capabilities": ["session_lifecycle", "completion"],
-        "terminal": false,
+        // Deliberately TERMINAL (changed 2026-08-02 alongside the
+        // `Completed` terminal split in `agents::notification`): the whole
+        // point of this button is "click it, see a card", and only a
+        // terminal `Completed` is carded under the default policy — a
+        // non-terminal one is a per-turn stop, which is now quiet unless
+        // `informational_notifications` is on. Terminal also means the
+        // throwaway test session retires on `terminal_retention_secs`
+        // instead of lingering on the Agent Board as a live session.
+        "terminal": true,
     })
     .to_string();
 
@@ -1249,6 +1257,7 @@ pub async fn send_agent_test_event(
             config.agent_ttl_secs,
             crate::agents::notification::NotificationPolicy {
                 informational_notifications: config.agents.informational_notifications,
+                completion_notifications: config.agents.completion_notifications,
                 permission_priority: config.agents.permission_priority,
                 input_priority: config.agents.input_priority,
                 failure_priority: config.agents.failure_priority,
