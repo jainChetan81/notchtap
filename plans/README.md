@@ -1,5 +1,35 @@
 # Implementation Plans
 
+**Unified card template batch 168–170 (2026-08-01, operator UI-prototyping
+session)** — grew out of a round of static-mock exploration
+(`prototype/proposal-unified-card.html`, plus new proposal sections added
+to `prototype/agent-board.html` and `prototype/football-card.html`) into
+whether the Agent Board and Football's promoted card should move off
+their own bespoke layouts onto the same shared `NotificationBody.tsx`
+template every other origin (manual/CLI, weather, news) already renders
+through. Branch: `agent-card-ui-unification`.
+
+**168 is a real, confirmed bug** — found while building the mock, verified
+against the actual shipped `TtlBar.tsx`/`ttl-bar.css` (not just the mock):
+`.ttl-fill` is placed via `gridColumn` alone, which CSS Grid auto-placement
+resolves by pushing it into an invisible second row instead of overlapping
+the segment already in that column — collapsing both to ~0px height.
+Independent of 169/170; safe to land on its own regardless of what happens
+with the bigger design question.
+
+**169's open design question resolved 2026-08-01** — operator confirmed the
+football score-row (crests + rolling score digits) survives unification as
+an additive block, same pattern as Agent Board's queue-rows; the prototype
+was updated first, then folded into plan 170's own text. Operator then
+authorized executing 169 and 170 both (169 already executed/approved/
+merged; 170 to follow the same dispatch-and-review path).
+
+| plan | title | severity | depends on | status |
+|---|---|---|---|---|
+| 168 | fix the TTL-bar fill collapsing to ~0px height | MEDIUM | — | DONE |
+| 169 | render the Agent Board's primary session through the shared template | N/A (proposal) | 168 | DONE |
+| 170 | render Football's promoted events through the shared template | N/A (proposal) | 168, 169 | PROPOSAL |
+
 **Shell-choreography review batch 163–167 (2026-07-31, `/review-animations`,
 scoped by operator request to the minimal↔idle↔compact↔expanded shell-size
 state cycle)** — a focused review of the notch/HUD shell's own
