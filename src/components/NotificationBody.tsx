@@ -59,9 +59,10 @@ function renderFactPills(details: Detail[], danger = false) {
   }
   return (
     <div className="detail-facts">
-      {details.map((detail) => (
+      {details.map((detail, index) => (
         <span
-          key={`${detail.label}:${detail.value}`}
+          // biome-ignore lint/suspicious/noArrayIndexKey: index is a tie-breaker only, not the primary key — a fresh `details` array from the wire each render, never locally reordered, so position is stable; this is what keeps two facts sharing the same label/value pair from colliding on an otherwise-identical key.
+          key={`${detail.label}:${detail.value}:${index}`}
           className={`fact-pill${danger ? " tone-danger" : ""}`}
         >
           <span className="fp-label">{detail.label}</span>
