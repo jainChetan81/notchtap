@@ -35,6 +35,7 @@
   height: 4px;
   display: grid;
   grid-template-columns: repeat(var(--queue-n, 1), 1fr);
+  grid-template-rows: 4px;
   gap: 3px;
 }
 
@@ -82,6 +83,7 @@
    makes `width: 100%` redundant-but-harmless here; kept explicit to match
    this rule's pre-merge shape. */
 .card-root .ttl-fill {
+  grid-row: 1;
   height: 100%;
   width: 100%;
   background: var(--accent);
