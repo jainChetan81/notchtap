@@ -41,17 +41,13 @@
   width: var(--cw, min(max(calc(400px * var(--card-scale)), calc(var(--notchtap-cutout-width, 200px) + (2 * 60px * var(--card-scale)))), 100%));
   margin: 0 auto;
   isolation: isolate;
-  /* plan 129 (C5, deep-review fix): lives here now, not only inside
-     `.hovered`/`.pulse-goal` (both deleted their own copy) — the notch
-     cutout never moves, so every whole-card `transform: scale(...)` this
-     shell ever plays (hover breathe, goal overshoot, any future one)
-     wants the SAME top anchor; leaving it scoped to just those two
-     modifier classes meant `.hovered` clearing mid-flight snapped the
-     origin back to the un-hovered default (`50% 50%`, center) while the
-     160ms shrink was still animating, pivoting the un-hover around the
-     wrong point. Behavior-neutral everywhere else: origin only matters
-     while `transform` isn't `none`, and every whole-card transform on
-     this shell already wanted top-center. */
+  /* plan 129 (C5, deep-review fix): lives here now, not inside
+     `.pulse-goal` (which deleted its own copy) — the notch cutout never
+     moves, so every whole-card `transform: scale(...)` this shell ever
+     plays wants the SAME top anchor. Still load-bearing after the
+     2026-08-02 hover-breathe removal (choreography.css's own note): the
+     goal-overshoot keyframe is the remaining whole-card transform, and
+     it grows from the notch's fixed top edge, not the card's center. */
   transform-origin: top center;
   /* Depth (imported reference-app technique): a single drop-shadow on the COMPOSITE
      notch shape (drop-shadow follows the actual painted flanks+cutout+
@@ -60,14 +56,9 @@
      mode it shadows the part that extends below the hardware cutout. Only
      recomputes during animation — idle is cached, so no idle-CPU cost. */
   filter: drop-shadow(0 7px 18px rgba(0, 0, 0, 0.5));
-  /* plan 102: +25% pacing, operator feedback. `transform` added for the
-     hover "breathing" rule below (`.hovered`) — it only ever CHANGES via
-     that class toggle, so listing it here is what makes the transition
-     symmetric (animates in on hover AND back out on un-hover, not just
-     one direction).
+  /* plan 102: +25% pacing, operator feedback.
      plan 12x (wave 3): width dropped 400ms -> 320ms (~20% quicker,
-     operator-feedback "snappier overall" pass) — transform (the hover
-     breathe, unrelated to this pass's complaint) was untouched.
+     operator-feedback "snappier overall" pass).
      2026-07-23 review fix (wave C, CSS custom-property injection): the
      literal 320ms moved to `var(--expand-ms, 320ms)` — EXPAND_MS in
      animationTiming.ts, injected by applyAnimationTiming.ts at both real
@@ -75,34 +66,31 @@
      manifest disclosure's duration (below). The `320ms` fallback keeps
      this rule correct even in a hypothetical context that never calls
      applyAnimationTiming.
-     plan 127 (Step 4, /improve-animations audit finding #5): TWO changes.
-     (1) `transform`'s own duration moved off the shared 260ms onto a
-     dedicated `var(--hover-ms, 160ms)` — HOVER_MS in animationTiming.ts —
-     landing the hover scale response inside the ~125-200ms budget a
-     snappy hover reaction should live in, rather than sharing REVEAL_MS
-     (a slower, unrelated paint-coordination duration the two used to tie
-     together only by accident, see REVEAL_MS's own doc). (2) `filter` is
-     REMOVED from this list entirely — the `.hovered` rule below no
-     longer overrides it (see that rule's own doc for the "why": an
-     animated `filter` re-rasterizes the whole ~500px composite every
-     frame, both directions, on a many-times/day hover; the base
-     drop-shadow now stays static and the scale alone carries the
-     breathe).
+     plan 127 (Step 4, /improve-animations audit finding #5): `filter` is
+     REMOVED from this list entirely — an animated `filter` re-rasterizes
+     the whole ~500px composite every frame, both directions, on a
+     many-times/day hover; the base drop-shadow stays static instead.
+     2026-08-02 (operator hover-breathe removal, choreography.css's own
+     note): the `transform var(--hover-ms, 160ms)` leg is gone too — it
+     existed ONLY to ease that deleted scale in and out. The one
+     remaining whole-card transform (`goal-overshoot`) is a keyframe
+     animation, which carries its own timing and never reads a transition
+     leg. `--hover-ms` itself is untouched (agent-board.css still uses it).
      FEEL-CHECK (item 2, card-entry mass): the `width` leg's timing
      function is now `--ease-notchtap-pop` (styles.css's `:root`, with the
      same value repeated here as an inline fallback since this shared
      file also renders in the settings preview, which never loads
      styles.css) — a slight overshoot so promotion/expand width growth
      lands with a touch of physical mass, instead of the house ease's
-     pure settle. `transform` (the hover breathe) is untouched: hover
-     never animates `width` at all, so this can never be felt as part of
-     the hover response — only a real promotion or manual expand feels
-     it. `.exiting`'s own width transition (below) deliberately keeps
-     `--ease-notchtap` — exits must not bounce. Revert = swap
-     `--ease-notchtap-pop` back to `--ease-notchtap` here. */
-  transition:
-    width var(--expand-ms, 320ms) var(--ease-notchtap-pop, cubic-bezier(0.3, 1.36, 0.44, 1)),
-    transform var(--hover-ms, 160ms) var(--ease-notchtap);
+     pure settle. `.exiting`'s own width transition (below) deliberately
+     keeps `--ease-notchtap` — exits must not bounce. Revert = swap
+     `--ease-notchtap-pop` back to `--ease-notchtap` here.
+     2026-08-02: hover-expand (a showing card widening while hovered —
+     useExitChoreography.ts's `expanded`) is routed through `.expanded`
+     below, which declares its own non-bouncy width curve, so this pop
+     ease still only ever plays on a genuine arrival. */
+  transition: width var(--expand-ms, 320ms)
+    var(--ease-notchtap-pop, cubic-bezier(0.3, 1.36, 0.44, 1));
 }
 
 /* plan 090 (Q1a/Q2b, carried forward): the cutout term
@@ -128,19 +116,17 @@
    only the curve changes, so this is a pure desync fix, not a pacing
    change. Mirrors `.exiting`'s own precedent below and plan 164's
    identical fix for the hover-reveal leg above. */
-/* review fix (/review-animations, fresh-agent pass): `transform` added
-   back to this list — `transition` is a single non-additive shorthand, so
-   without it, this rule's higher specificity than the base `.card-assembly`
-   rule silently dropped the base rule's `transform var(--hover-ms) ...`
-   leg on any element that's both `.expanded` and `.hovered` (both are
-   independent booleans in `cardClass`, so they DO co-occur) — the
-   hover-breathe scale snapped instead of easing. Mirrors `.exiting` below,
-   which already carries both legs for the identical reason. */
+/* 2026-08-02 (operator hover-breathe removal): the `transform
+   var(--hover-ms, ...)` leg a previous review pass had added back here
+   is gone — it existed only so this rule's higher specificity wouldn't
+   drop the base rule's hover-scale leg on an element that's both
+   `.expanded` and `.hovered`. There is no hover scale to preserve
+   anymore (choreography.css's own note), and the co-occurrence itself is
+   now the NORMAL case, not an edge one: hovering a showing card is what
+   makes it `.expanded` in the first place. */
 .card-root .card-assembly.expanded {
   --cw: min(max(calc(500px * var(--card-scale)), calc(var(--notchtap-cutout-width, 200px) + (2 * 60px * var(--card-scale)))), 100%);
-  transition:
-    width var(--expand-ms, 320ms) var(--ease-notchtap),
-    transform var(--hover-ms, 160ms) var(--ease-notchtap);
+  transition: width var(--expand-ms, 320ms) var(--ease-notchtap);
 }
 
 /* plan 105 (Step C, fixing the plan-085 bug): bare notch mode
@@ -158,16 +144,15 @@
    again) fell back to the base `.card-assembly` rule's bouncy
    `--ease-notchtap-pop` — reintroducing on the way OUT exactly the
    many-times-a-session bounce plan 164 scoped away on the way IN. Giving
-   `.bare` the SAME width+transform transition as `.bare:has(.idle-peek)`
-   below means whichever of the two matches, the curve is identical, so
-   the direction stops mattering. `transform` included for the same
-   hover-breathe-coexistence reason as `.expanded` above — `.bare` and
-   `.hovered` can coexist too (see `.bare.hovered` rules below). */
+   `.bare` the SAME width transition as `.bare:has(.idle-peek)` below
+   means whichever of the two matches, the curve is identical, so the
+   direction stops mattering. (2026-08-02: the `transform` leg both rules
+   used to carry — purely to keep the deleted hover breathe easing when
+   `.bare` and `.hovered` coexist — is gone with the breathe itself; see
+   choreography.css's own note.) */
 .card-root .card-assembly.bare {
   --cw: min(var(--notchtap-cutout-width, 200px), 100%);
-  transition:
-    width var(--reveal-ms, 260ms) var(--ease-notchtap),
-    transform var(--hover-ms, 160ms) var(--ease-notchtap);
+  transition: width var(--reveal-ms, 260ms) var(--ease-notchtap);
 }
 .card-root .card-assembly.bare .flank-left,
 .card-root .card-assembly.bare .flank-right {
@@ -211,16 +196,13 @@
    has already finished. Mirrors `.exiting`'s own precedent below ("exits
    must not bounce") — the same scoping principle applied to the
    growing/reveal direction instead of the shrinking direction. */
-/* review fix (/review-animations, fresh-agent pass): `transform` added
-   back — same "shorthand isn't additive, this rule's specificity was
-   silently dropping the base rule's hover-breathe leg" issue as
-   `.expanded` above; `.bare` (below, no `:has()`) now carries the
-   identical pair so the un-hover leg matches too. */
+/* 2026-08-02 (operator hover-breathe removal): the `transform` leg is
+   gone here too — plain `.bare` above carries the identical single-leg
+   `width` transition, so the reveal and un-reveal directions still
+   match, which was the whole point of pairing the two rules. */
 .card-root .card-assembly.bare:has(.idle-peek) {
   --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
-  transition:
-    width var(--reveal-ms, 260ms) var(--ease-notchtap),
-    transform var(--hover-ms, 160ms) var(--ease-notchtap);
+  transition: width var(--reveal-ms, 260ms) var(--ease-notchtap);
 }
 /* 2026-07-23 (operator minimal-notch spec, Task 1.2): a hovered bare
    notch paints its flanks black again — StatusRailCard.tsx's
@@ -261,21 +243,18 @@
   color: var(--overlay-fg);
   /* 2026-07-23 (operator minimal-notch spec, Task 1.2): lets the bare
      <-> bare-hovered background AND padding swap (both rules above) fade
-     rather than pop — mirrors the reveal/paint coordination duration the
-     hover "breathing" rule below already used at the time this was
-     written, so the paint/inset reads as coordinated with that same
-     hover trigger and with the width growth it rides alongside. Harmless
+     rather than pop — the same reveal/paint coordination duration the
+     shell's own bare-width growth uses, so the paint/inset reads as
+     coordinated with that same hover trigger. Harmless
      outside bare<->bare-hovered: neither property ever changes in any
      other state, so this declaration never has anything else to animate.
      plan 127 (Step 1, /improve-animations audit finding #4): the literal
      260ms moved to `var(--reveal-ms, 260ms)` — REVEAL_MS in
      animationTiming.ts, injected by applyAnimationTiming.ts, same
      single-source discipline as SWAP_EXIT_MS/CONTENT_EXIT_MS/EXPAND_MS.
-     This is now a genuinely SEPARATE constant from the hover breathe's
-     own duration (Step 4 retunes `.hovered`'s transform to a faster
-     `--hover-ms`) — the two used to share one hand-typed 260ms by
-     accident, not by design; this rule governs paint/inset coordination,
-     not the hover scale response.
+     This is a genuinely SEPARATE constant from `--hover-ms` — the two
+     used to share one hand-typed 260ms by accident, not by design; this
+     rule governs paint/inset coordination only.
      plan 166: `border-radius` added below so the entrance direction (a
      below-block newly mounting) gets a real transition for the flank's
      own corner-round, instead of the instant snap the rounding-law
@@ -411,8 +390,7 @@
    number) — by the time `.exiting` clears and `.idle` actually applies,
    `--cw` is already sitting at the identical value, so the handoff never
    re-triggers a transition or jumps.
-   `transition` is redeclared here (not just `width`) with the SAME
-   transform duration as the base rule, only `width` shortened — 320ms ->
+   `transition` is redeclared here with `width` shortened — 320ms ->
    175ms, matching SWAP_EXIT_MS (src/animationTiming.ts) exactly, so the
    shell has fully reached idle width by the same tick the geometry-class
    freeze itself lets go — never before (content spill) and never
@@ -424,29 +402,18 @@
    rule's own declaration block and compare the number by hand; now there
    is only one place the number is written.
    plan 127 (Step 4, finding #5): `filter` dropped from this list — same
-   removal as the base rule above (the `.hovered` override it used to
-   pair with is gone).
-   plan 129 (C1, deep-review fix): the plan-127 pass above had briefly
-   retokenized the surviving `transform` leg to `var(--reveal-ms, 260ms)`
-   on the theory that this rule mirrors the base rule's REVEAL pacing —
-   wrong, and self-contradicting against this comment's own OPENING
-   paragraph ("the SAME transform duration as the base rule"): the only
-   consumer of `transform` on `.card-assembly` is the hover breathe
-   (`.hovered`, below), which plan 127 Step 4 itself moved onto
-   `var(--hover-ms, 160ms)` on the BASE rule above. Leaving this rule's
-   `transform` leg on `--reveal-ms` meant a hover-out mid-exit ran a
-   260ms breathe-settle instead of the intended 160ms one. Retokenized
-   to `var(--hover-ms, 160ms)` below, which makes the opening paragraph
-   literally true again.
+   removal as the base rule above.
+   2026-08-02 (operator hover-breathe removal): the `transform
+   var(--hover-ms, ...)` leg is dropped too, same as the base rule — the
+   hover scale it eased no longer exists (choreography.css's own note),
+   so a hover arriving or leaving mid-exit has no transform to settle.
    FEEL-CHECK (item 2, card-entry mass): `width` here deliberately stays on
    `--ease-notchtap`, NOT the base rule's new `--ease-notchtap-pop` — exits
    must settle, never overshoot/bounce, so the pop ease is scoped to the
    entrance (base rule above) only. */
 .card-root .card-assembly.exiting {
   --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
-  transition:
-    width var(--swap-exit-ms, 175ms) var(--ease-notchtap),
-    transform var(--hover-ms, 160ms) var(--ease-notchtap);
+  transition: width var(--swap-exit-ms, 175ms) var(--ease-notchtap);
 }
 
 /* plan 123: kills the "box, then rounded shape pops in" exit artifact —
@@ -507,8 +474,8 @@
      window instead of snapping at the class flip. Redeclares the base
      flank rule's own `background-color`/`padding` transition (:213-215)
      with `--swap-exit-ms` in place of its 260ms, so this pairing
-     finishes in lockstep with the shell width above, not on the hover-
-     breathing rule's slower cadence. */
+     finishes in lockstep with the shell width above, not on the slower
+     reveal cadence. */
   background-color: transparent;
   padding: 0;
   transition:

@@ -523,10 +523,13 @@ export function StatusRailCard({
     "card-assembly",
     geometryPriority,
     expanded && "expanded",
-    // drives the hover "breathing" (scale + deeper drop-shadow,
-    // overlay-card.css `.card-assembly.hovered`) off the live `hovered`
-    // prop — never CSS `:hover`, since the overlay window is
-    // click-through and never receives real pointer events.
+    // the hover modifier, off the live `hovered` prop — never CSS
+    // `:hover`, since the overlay window is click-through and never
+    // receives real pointer events. It no longer scales the shell (the
+    // "breathing" rule was removed 2026-08-02 — choreography.css's own
+    // note); what it still drives is the bare-notch rail reveal
+    // (`.bare.hovered`, card-chrome.css), and, via `expanded` above,
+    // hover-expand on a showing card.
     hovered && "hovered",
     // plan 105 (Step C): the bare-notch modifier — transparent flanks,
     // cutout-width-only shell (styles.css), so the mode reads as the

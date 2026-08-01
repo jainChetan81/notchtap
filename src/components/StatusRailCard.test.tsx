@@ -1914,6 +1914,34 @@ describe("StatusRailCard", () => {
     });
   });
 
+  // 2026-08-02 (operator request): hover-expand REPLACES the deleted
+  // hover "breathe" scale — hovering a live showing card now opens its
+  // manifest and grows the shell to `.expanded`'s width instead of
+  // zooming the whole shell. The OR itself lives in
+  // useExitChoreography.ts's `expanded`; these pin it end-to-end through
+  // both consumers of that one value (the shell class AND the manifest's
+  // own open state). Same precedent as App.tsx's `expanded={hovered}` on
+  // AgentBoard (plan 142).
+  describe("hover-expand on a showing card (2026-08-02)", () => {
+    const COLLAPSED: SlotState = { ...GOAL, expanded: false };
+
+    it("renders .expanded and an open manifest while hovered, even with slot.expanded false", () => {
+      const { container } = render(<StatusRailCard slot={COLLAPSED} hovered={true} />);
+      expect(container.querySelector(".card-assembly.expanded")).not.toBeNull();
+      const wrap = container.querySelector(".manifest-wrap");
+      expect(wrap?.classList.contains("expanded")).toBe(true);
+      expect(wrap?.getAttribute("aria-hidden")).toBe("false");
+    });
+
+    it("stays collapsed — no .expanded, manifest closed — while not hovered", () => {
+      const { container } = render(<StatusRailCard slot={COLLAPSED} hovered={false} />);
+      expect(container.querySelector(".card-assembly.expanded")).toBeNull();
+      const wrap = container.querySelector(".manifest-wrap");
+      expect(wrap?.classList.contains("expanded")).toBe(false);
+      expect(wrap?.getAttribute("aria-hidden")).toBe("true");
+    });
+  });
+
   // plan 093: the idle hover-expanded state (079 items 9/17/18) and the
   // TTL hover-pause (081's deferred half), exercised through the whole
   // StatusRailCard tree rather than IdleHoverPeek/TtlBar in isolation —

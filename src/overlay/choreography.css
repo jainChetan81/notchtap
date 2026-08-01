@@ -1,53 +1,13 @@
-/* plan 087 (superseded by the hover "breathing" design below): this
-   started as a deliberately boring diagnostic rule proving the
-   rust-derived tracking-area signal reached the webview end-to-end
-   (`filter: brightness(1.04)`, no shape change). The imported reference
-   technique — a gentle scale-up anchored at the top edge (the notch's own
-   physical anchor never moves; only the shell "breathes" outward from
-   it), driven by the SAME `hovered` prop → `.hovered` class this rule
-   always used (StatusRailCard sets it from the live `hovered` prop,
-   never CSS `:hover` — the window is click-through, so `:hover` never
-   fires). Set on the whole assembly (not a single block) so idle's two
-   flanks and showing's flank+below-block all lift together as one shape,
-   same as the rule this replaces. Kept deliberately subtle (1.02 scale,
-   not 1.05+) per the plan's own "alive, not bouncy" instruction; the
-   `var(--hover-ms, 160ms)` transition on the base rule above makes both
-   directions (hover-in and hover-out) animate smoothly.
-   plan 127 (Step 4, /improve-animations audit finding #5): the deepened
-   `filter: drop-shadow(...)` override is GONE — audit finding: animating
-   `filter` (even just swapping in a new static value across a CSS
-   transition) forces the browser to re-rasterize the FULL composited
-   card — flanks, cutout, below-block, everything drop-shadow follows —
-   every frame, in BOTH directions, on a many-times/day hover trigger.
-   The base rule's resting drop-shadow (`:86` above) now stays static
-   through hover; the 1.02 scale alone carries the "breathe." Tradeoff,
-   screenshot-compared before landing: the deepened-shadow version read
-   as very slightly more "lifted," but the static-shadow + scale version
-   reads nearly identical at this subtle a scale delta, for zero ongoing
-   re-rasterize cost. FEEL-CHECK flag for the operator — this is a
-   genuine visual tradeoff, not a pure improvement, and is worth a real
-   before/after look on the hardware this shows on. */
-.card-root .card-assembly.hovered {
-  transform: scale(1.02);
-  /* plan 129 (C5): `transform-origin: top center` moved to the base
-     `.card-assembly` rule above — see that declaration's own doc. Was
-     declared here (and echoed on `.pulse-goal` below) until this plan;
-     kept working for AS LONG AS `.hovered` stayed applied, but the
-     origin snapped back to the base rule's implicit `50% 50%` default
-     the instant the class cleared, mid the 160ms un-hover shrink. */
-}
-
-/* plan 162: the highest-frequency transform trigger in the app (cursor
-   proximity to the notch) had no reduced-motion coverage at all — this is
-   a pure transform with no separate comprehension-carrying component (see
-   plan 161's agent-dot fix for the contrasting case), so the correct
-   minimal fix is to disable it outright under reduced motion rather than
-   partially soften it. */
-@media (prefers-reduced-motion: reduce) {
-  .card-root .card-assembly.hovered {
-    transform: none;
-  }
-}
+/* hover no longer scales the shell (operator removal, 2026-08-02): the
+   old plan-087/127 "breathe" (`.card-assembly.hovered { transform:
+   scale(1.02) }`, plus plan 162's reduced-motion override for it) is
+   deleted — the zoom read as the shell DETACHING from the notch top on
+   every hover. Nothing replaced it here; there is no hover transform on
+   this shell anymore. `.hovered` itself is very much alive and still
+   drives every other hover consumer: rail reveal (card-chrome.css's
+   `.bare.hovered` flank paint), the idle weather peek, TTL hover-pause,
+   and hover-expand (a showing card opens its manifest while hovered —
+   useExitChoreography.ts's `expanded`). */
 
 /* signature moment #1 — Goal: a bright confetti-spray burst over the
    card surface, an expanding ring, plus a quick scale overshoot on the

@@ -73,7 +73,18 @@ export function useExitChoreography(
     : renderedShowing
       ? renderedSlot.priority
       : "idle";
-  const expanded = showing ? slot.expanded : renderedShowing && renderedSlot.expanded;
+  // 2026-08-02 (operator request, replacing the deleted hover "breathe"):
+  // a LIVE showing card also counts as expanded while hovered — hovering
+  // a notification opens its manifest (and grows the shell to
+  // `.expanded`'s width) instead of zooming the whole shell. Precedent:
+  // App.tsx already passes `expanded={hovered}` to AgentBoard (plan 142)
+  // off this same `hover-changed`-sourced boolean; this gives the
+  // notification cards the same behavior. Deliberately only on the LIVE
+  // (`showing`) branch: during the exit-choreography window the
+  // `renderedShowing` fallback below must keep serving the frozen
+  // outgoing value exactly as before, or a hover held through an exit
+  // would re-expand a card that's already collapsing.
+  const expanded = showing ? slot.expanded || hovered : renderedShowing && renderedSlot.expanded;
 
   // 2026-07-23 review fix (wave B, Task 1 — "one overlapping collapse"):
   // true ONLY during the genuine showing->idle exit's freeze window, never

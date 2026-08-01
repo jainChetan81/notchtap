@@ -90,10 +90,12 @@
   transform-origin: left;
   will-change: transform;
   /* O13: the transition (not just the `.paused` values below) lives here
-     on the base rule — same "declare the transition on the base rule, the
-     modifier class only overrides values" shape `.card-assembly`'s own
-     `.hovered` scale uses (card-chrome.css) — so the fade-in on pause AND
-     the fade-back-out on resume both animate, not just one direction. */
+     on the base rule — the standard "declare the transition on the base
+     rule, the modifier class only overrides values" shape — so the
+     fade-in on pause AND the fade-back-out on resume both animate, not
+     just one direction. (This used to cite `.card-assembly.hovered`'s
+     scale as the in-repo example of that shape; that rule was removed
+     2026-08-02 — see choreography.css's own note.) */
   transition:
     opacity var(--hover-ms, 160ms) var(--ease-notchtap),
     background var(--hover-ms, 160ms) var(--ease-notchtap);
