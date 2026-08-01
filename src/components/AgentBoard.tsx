@@ -9,10 +9,15 @@ import {
   agentStatePriorityFor,
   elapsedLabel,
 } from "../lib/presentation";
-import type { AgentSessionView } from "../useAgentState";
+import type { AgentSessionState, AgentSessionView } from "../useAgentState";
 import type { StatusState } from "../useStatusState";
 import { FlankClock } from "./FlankClock";
-import { AgentHeroCard, MAX_VISIBLE_DETAIL_PAIRS } from "./NotificationBody";
+import {
+  AgentHeroCard,
+  type Fact,
+  type FactTone,
+  MAX_VISIBLE_DETAIL_PAIRS,
+} from "./NotificationBody";
 import { StatusDots } from "./StatusDots";
 import type { Detail } from "./StatusRailCard";
 
@@ -123,6 +128,95 @@ export function nowTickIntervalMs(
 /// media rendering).
 function liveElapsedMs(session: AgentSessionView, capturedAtMs: number, nowMs: number): number {
   return session.elapsedMs + Math.max(0, nowMs - capturedAtMs);
+}
+
+// Plan 169 fidelity pass (2026-08-02): the hero's per-state TITLE — prose
+// naming what happened, exactly as `prototype/agent-board.html`'s proposal
+// section writes it. Deliberately NOT the old `"<Runtime> — <State
+// label>"` composition: the runtime name moved down into the subtitle
+// (`primarySubtitle` below), so the title is free to be a sentence rather
+// than a pair of labels.
+//
+// Lives here, not in `lib/presentation.ts`, because it is HERO COPY, not
+// state presentation: `agentStatePresentationFor`'s own `label` (the
+// short "Needs approval"/"Working" word every compact row and expanded
+// row still shows) is unchanged and remains the shared lookup. Two
+// waiting states deliberately share one string — the mock's own fixture
+// does the same, since "needs input" is what both mean to the operator.
+// Exhaustive `Record` so a new `AgentSessionState` is a compile error
+// here until this table names it, the same discipline every other closed
+// table in this app follows.
+const AGENT_HERO_TITLE: Record<AgentSessionState, string> = {
+  waiting_for_permission: "Agent needs input",
+  waiting_for_input: "Agent needs input",
+  working: "Agent working",
+  starting: "Agent starting",
+  completed: "Agent turn completed",
+  failed: "Agent session failed",
+  stale: "Agent session stale",
+};
+
+// Plan 169 fidelity pass: the risk values that earn the mock's coloured
+// `DESTRUCTIVE` tag on a permission request's tool pill. A risk detail
+// with any other value (a runtime that reports e.g. "read-only") is left
+// as its own plain pill — the tag exists to flag the dangerous case, not
+// to restate every risk level.
+const TAGGED_RISKS = new Set(["destructive", "blocked"]);
+
+function normalizedLabel(label: string): string {
+  return label.trim().toLowerCase();
+}
+
+// A nonzero, parseable exit code. `"0"` (a clean exit reported on a
+// failed session) and a non-numeric value both fall through untagged
+// rather than being asserted as errors.
+function isNonzeroExitValue(value: string): boolean {
+  const parsed = Number.parseInt(value.trim(), 10);
+  return Number.isFinite(parsed) && parsed !== 0;
+}
+
+// Plan 169 fidelity pass: the two tags the mock's proposal fixtures show
+// (`Tool rm DESTRUCTIVE` on a permission request, `Exit 1 ERROR` on a
+// failure), derived ONLY from facts the session already carries — no tag
+// is ever synthesized from the state alone:
+//
+//   - `waiting_for_permission`: a `Risk` detail whose value reads
+//     destructive/blocked is FOLDED INTO the `Tool` detail's pill as its
+//     tag (one pill saying "this tool, and it's destructive", which is
+//     what the mock draws) and dropped as a standalone pill. Without a
+//     tool pill to fold into, or with a risk the table doesn't flag, the
+//     details are left exactly as the adapter sent them.
+//   - `failed`: an `Exit`/`Exit code` detail with a nonzero value gets
+//     the `error` tag on its own pill.
+//
+// Every other state (and every other label) passes through untouched.
+function heroFactTags(state: AgentSessionState, details: Detail[]): Fact[] {
+  const facts: Fact[] = details.map((detail) => ({ ...detail }));
+  if (state === "waiting_for_permission") {
+    const riskIndex = facts.findIndex(
+      (fact) =>
+        normalizedLabel(fact.label) === "risk" && TAGGED_RISKS.has(normalizedLabel(fact.value)),
+    );
+    const toolIndex = facts.findIndex((fact) => normalizedLabel(fact.label) === "tool");
+    if (riskIndex !== -1 && toolIndex !== -1) {
+      facts[toolIndex] = {
+        ...facts[toolIndex],
+        tag: { text: facts[riskIndex].value, tone: "danger" },
+      };
+      facts.splice(riskIndex, 1);
+    }
+    return facts;
+  }
+  if (state === "failed") {
+    const exitIndex = facts.findIndex((fact) => {
+      const label = normalizedLabel(fact.label);
+      return (label === "exit" || label === "exit code") && isNonzeroExitValue(fact.value);
+    });
+    if (exitIndex !== -1) {
+      facts[exitIndex] = { ...facts[exitIndex], tag: { text: "error", tone: "danger" } };
+    }
+  }
+  return facts;
 }
 
 function AgentRow({
@@ -360,7 +454,7 @@ export function AgentBoard({
   // SAME MAX_VISIBLE_DETAIL_PAIRS the generic branch's own pills already
   // respect (NotificationBody.tsx) — one shared limit, not a second
   // hand-copied one.
-  const primaryFactsRaw: Detail[] = [...primary.details];
+  const primaryFactsRaw: Fact[] = heroFactTags(primary.state, primary.details);
   if (primary.state === "starting") {
     primaryFactsRaw.push({ label: "Session", value: primaryElapsed });
   } else if (primary.state === "completed") {
@@ -375,8 +469,24 @@ export function AgentBoard({
   // "agent-failed" alarm grouping (lib/presentation.ts), not a guess at
   // per-detail content: there is no wire field that says "this fact is
   // dangerous," but the session's STATE already carries that signal.
-  const primaryFactsDanger =
-    primary.state === "waiting_for_permission" || primary.state === "failed";
+  // Plan 169 fidelity pass: every OTHER state's pills are `tone-accent`,
+  // not the neutral pill — the mock gives all five non-danger states an
+  // accent-toned pill (`prototype/agent-board.html`'s proposal fixtures),
+  // which ties the fact back to the card's own priority accent. Generic
+  // (non-agent) cards keep the neutral pill: `NotificationBody`'s own
+  // generic branch passes no tone at all.
+  const primaryFactsTone: FactTone =
+    primary.state === "waiting_for_permission" || primary.state === "failed" ? "danger" : "accent";
+  // Plan 169 fidelity pass: the subtitle is `runtime · project` (the
+  // mock's "Claude Code · notchtap"), falling back to the runtime alone
+  // when the adapter reported no project — the hero's subtitle row is no
+  // longer optional, because the runtime name lives ONLY here now (the
+  // title above is per-state prose, `AGENT_HERO_TITLE`).
+  const primaryRuntimeLabel = agentRuntimeLabel(primary.runtime);
+  const primarySubtitle =
+    primaryProjectName !== null
+      ? `${primaryRuntimeLabel} · ${primaryProjectName}`
+      : primaryRuntimeLabel;
 
   return (
     <div
@@ -394,17 +504,29 @@ export function AgentBoard({
           <StatusDots status={status} />
         </div>
       </div>
+      {/* Plan 169 fidelity pass: `agent-origin` is the SHIPPED runtime
+          wash + hairline every agent-origin notification card already
+          carries (card-chrome.css's `.below-block.agent-origin`/`::before`
+          — a corner radial keyed to `--cat-deep`, no motion). The mock's
+          hero draws exactly that (`origin-wash`), and the board's own
+          `src-<runtime>` class already sets the `--cat`/`--cat-deep`
+          pair the rule reads (source-identity.css), so this is a class
+          application, not new CSS. */}
       <div
-        className={`below-block agent-board ${primaryPresentation.className} ${agentRuntimeClass(primary.runtime)}`}
+        className={`below-block agent-board agent-origin ${primaryPresentation.className} ${agentRuntimeClass(primary.runtime)}`}
       >
         {/* Plan 142 fix (operator feedback, 2026-07-27): the hero block
             below and the expanded list's own first row both used to
             render `sessions[0]` — at N=1 that put the identical session
-            on screen twice. The hero is the RESTING-only summary for the
-            top session; while `expanded`, it's replaced entirely by the
-            expanded list (which already includes the primary session as
-            its first `ExpandedAgentRow`, so `primary.details`/`history`
-            stay reachable there instead). */}
+            on screen twice. That was fixed by hiding the hero while
+            expanded; operator feedback (2026-08-02) rejected the cure:
+            hovering a one-session Board swapped its big hero for a single
+            skinny row, so "compact looks bigger than on hover" — a hover
+            must never shrink the card or swap its content out. The fix
+            now runs the other way: the hero for the PRIMARY session stays
+            mounted in BOTH states, and the expanded list carries only the
+            OTHER sessions (`rest`, never `sessions`), which keeps each
+            session on screen exactly once at every N. */}
         {/* Plan 149: the hero used to swap in a single frame when a
             DIFFERENT session took the top rank — five lines of content
             teleporting, with nothing distinguishing "a new session is
@@ -428,32 +550,31 @@ export function AgentBoard({
             animation, `agent-board-primary` class) is untouched — this
             plan changes what renders INSIDE `.below-block`, never the
             shell or the swap's own animation contract (Boundaries). */}
-        {!expanded && (
-          <AnimatePresence initial={false} mode="wait">
-            <motion.div
-              key={primary.id}
-              className="agent-board-primary"
-              initial={{ opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -6 }}
-              transition={HERO_SWAP_TRANSITION}
-            >
-              <AgentHeroCard
-                dotKey={primary.state}
-                pulse={primaryPresentation.pulse}
-                title={`${agentRuntimeLabel(primary.runtime)} — ${primaryPresentation.label}`}
-                subtitle={primaryProjectName}
-                body={primary.summary}
-                priority={primaryPriority}
-                facts={primaryFacts}
-                factsDanger={primaryFactsDanger}
-              />
-            </motion.div>
-          </AnimatePresence>
-        )}
-        {/* Plan 142 (spec §6.2 expanded): while `expanded`, the hero +
-            compact `rest`-only rows swap for a bounded, scrollable list
-            of EVERY retained session (primary included) — rust has
+        <AnimatePresence initial={false} mode="wait">
+          <motion.div
+            key={primary.id}
+            className="agent-board-primary"
+            initial={{ opacity: 0, y: 6 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: -6 }}
+            transition={HERO_SWAP_TRANSITION}
+          >
+            <AgentHeroCard
+              dotKey={primary.state}
+              pulse={primaryPresentation.pulse}
+              title={AGENT_HERO_TITLE[primary.state]}
+              subtitle={primarySubtitle}
+              body={primary.summary}
+              priority={primaryPriority}
+              facts={primaryFacts}
+              factsTone={primaryFactsTone}
+            />
+          </motion.div>
+        </AnimatePresence>
+        {/* Plan 142 (spec §6.2 expanded): while `expanded`, the compact
+            `rest` rows swap for a bounded, scrollable list of those SAME
+            non-primary sessions in their richer form (the primary stays
+            in the hero above, in both states) — rust has
             already grown the real window to
             `agents::expand::expanded_board_frame`'s screen-bounded frame
             and opened pointer delivery for exactly this rect by the time
@@ -465,8 +586,13 @@ export function AgentBoard({
             already follows (the failure class to avoid is desynced
             clocks, not a specific library — `IdleHoverPeek.tsx`'s own
             spring is the precedent this mirrors). */}
+        {/* One shared `rest.length > 0` guard over BOTH branches: with a
+            single session there is nothing below the hero to show in
+            either state, so hovering a one-session Board simply keeps the
+            hero (operator feedback, 2026-08-02 — hover must not shrink or
+            swap the card). */}
         <AnimatePresence initial={false} mode="wait">
-          {expanded ? (
+          {rest.length === 0 ? null : expanded ? (
             <motion.div
               key="expanded"
               className="agent-board-expanded-list"
@@ -490,7 +616,12 @@ export function AgentBoard({
                     removal reads as two separate beats instead of one
                     fluid motion. */}
                 <AnimatePresence initial={false}>
-                  {sessions.map((session) => (
+                  {/* `rest`, NOT `sessions`: the primary session is the
+                      hero above (in both states), so listing `sessions`
+                      here would render it twice — the same N=1 double
+                      render plan 142 already fixed once, just from the
+                      other side. */}
+                  {rest.map((session) => (
                     // Row exit/enter/reflow share ONE transition
                     // (`ROW_TRANSITION`, see its own comment above) — same
                     // spring for a departing row's collapse, an arriving
@@ -520,38 +651,36 @@ export function AgentBoard({
               </div>
             </motion.div>
           ) : (
-            rest.length > 0 && (
-              <motion.div
-                key="resting"
-                className="agent-board-rows"
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: "auto" }}
-                exit={{ opacity: 0, height: 0 }}
-                transition={DISCLOSURE_SPRING}
-                style={{ overflow: "hidden" }}
-              >
-                {/* `initial={false}` (matching the outer swap this block
-                    lives inside, and `ExpandedAgentRow`'s inner list above)
-                    — this block itself already fades/grows in as a whole
-                    on first mount, so the individual rows inside it
-                    shouldn't ALSO stagger-animate in on top of that; only
-                    a genuine per-session add/remove/reorder afterward
-                    should trigger `AgentRow`'s own enter/exit. Default
-                    ("sync") mode so an exit and the resulting sibling
-                    reflow (via `AgentRow`'s `layout="position"`) play
-                    concurrently, same reasoning as the expanded list. */}
-                <AnimatePresence initial={false}>
-                  {rest.map((session) => (
-                    <AgentRow
-                      key={session.id}
-                      session={session}
-                      capturedAtMs={capturedAtMs}
-                      nowMs={nowMs}
-                    />
-                  ))}
-                </AnimatePresence>
-              </motion.div>
-            )
+            <motion.div
+              key="resting"
+              className="agent-board-rows"
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: "auto" }}
+              exit={{ opacity: 0, height: 0 }}
+              transition={DISCLOSURE_SPRING}
+              style={{ overflow: "hidden" }}
+            >
+              {/* `initial={false}` (matching the outer swap this block
+                  lives inside, and `ExpandedAgentRow`'s inner list above)
+                  — this block itself already fades/grows in as a whole
+                  on first mount, so the individual rows inside it
+                  shouldn't ALSO stagger-animate in on top of that; only
+                  a genuine per-session add/remove/reorder afterward
+                  should trigger `AgentRow`'s own enter/exit. Default
+                  ("sync") mode so an exit and the resulting sibling
+                  reflow (via `AgentRow`'s `layout="position"`) play
+                  concurrently, same reasoning as the expanded list. */}
+              <AnimatePresence initial={false}>
+                {rest.map((session) => (
+                  <AgentRow
+                    key={session.id}
+                    session={session}
+                    capturedAtMs={capturedAtMs}
+                    nowMs={nowMs}
+                  />
+                ))}
+              </AnimatePresence>
+            </motion.div>
           )}
         </AnimatePresence>
       </div>

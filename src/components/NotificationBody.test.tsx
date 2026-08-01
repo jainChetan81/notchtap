@@ -24,8 +24,8 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath, URL as NodeURL } from "node:url";
 import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
-import type { EspnMeta } from "../useSlotState";
-import { FootballHeroCard } from "./NotificationBody";
+import type { EspnMeta, SlotState } from "../useSlotState";
+import { AgentHeroCard, type Fact, FootballHeroCard, NotificationBody } from "./NotificationBody";
 
 afterEach(cleanup);
 
@@ -214,5 +214,106 @@ describe("FootballHeroCard match-state chip (plan 151 item A)", () => {
 
   it("ruleBody throws on a selector that doesn't exist — no vacuous pass", () => {
     expect(() => ruleBody(overlayCardCss, ".card-root .no-such-selector")).toThrow();
+  });
+});
+
+// Plan 169 fidelity pass (2026-08-02): the shared fact-pill renderer's
+// two knobs — the optional `.fp-tag` qualifier and the per-call tone —
+// asserted directly on the two components that pass them differently.
+// The mock (`prototype/agent-board.html`, proposal section) gives the
+// agent hero a toned pill in every state and a coloured tag on the two
+// alarm states; a generic (non-agent) card's pills stay neutral, which
+// is the contrast this block pins so the two can't silently converge.
+describe("fact pills: tags and tones (plan 169 fidelity pass)", () => {
+  function heroWith(facts: Fact[], factsTone: "accent" | "danger" | "safe") {
+    return (
+      <AgentHeroCard
+        dotKey="working"
+        pulse={false}
+        title="Agent working"
+        subtitle="Codex · notchtap"
+        body={null}
+        priority="medium"
+        facts={facts}
+        factsTone={factsTone}
+      />
+    );
+  }
+
+  it("renders a tagged fact as label + value + `.fp-tag`, in that order", () => {
+    const { container } = render(
+      heroWith(
+        [{ label: "Tool", value: "rm", tag: { text: "destructive", tone: "danger" } }],
+        "danger",
+      ),
+    );
+    const pill = container.querySelector(".fact-pill");
+    expect(pill?.querySelector(".fp-label")?.textContent).toBe("Tool");
+    expect(pill?.querySelector(".fp-tag")?.textContent).toBe("destructive");
+    expect(pill?.textContent).toBe("Toolrmdestructive");
+  });
+
+  it("omits `.fp-tag` entirely for an untagged fact — never an empty span", () => {
+    const { container } = render(heroWith([{ label: "Progress", value: "63%" }], "accent"));
+    expect(container.querySelector(".fact-pill .fp-tag")).toBeNull();
+  });
+
+  it("a tagged fact's own tone wins over the call-level tone", () => {
+    const { container } = render(
+      heroWith(
+        [
+          { label: "Progress", value: "63%" },
+          { label: "Exit", value: "1", tag: { text: "error", tone: "danger" } },
+        ],
+        "accent",
+      ),
+    );
+    const pills = container.querySelectorAll(".fact-pill");
+    expect(pills[0].classList.contains("tone-accent")).toBe(true);
+    expect(pills[1].classList.contains("tone-danger")).toBe(true);
+    expect(pills[1].classList.contains("tone-accent")).toBe(false);
+  });
+
+  // The other half of the contrast: the generic branch passes no tone at
+  // all, so a manual/CLI card's pills stay the plain neutral pill.
+  it("a generic card's pills carry no tone class", () => {
+    const slot: Extract<SlotState, { state: "showing" }> = {
+      state: "showing",
+      id: "n1",
+      title: "Build finished",
+      body: "All green",
+      eventType: "generic",
+      priority: "medium",
+      signal: "generic",
+      origin: "manual",
+      agentRuntime: null,
+      expanded: false,
+      source: null,
+      category: null,
+      publishedAtMs: null,
+      link: null,
+      subtitle: null,
+      details: [{ label: "Tool", value: "Bash" }],
+      queueTotal: 1,
+      queueDone: 0,
+      ttlMs: 8000,
+      remainingMs: 8000,
+    };
+    const { container } = render(
+      <NotificationBody
+        news={false}
+        slot={slot}
+        newsCategory={null}
+        newsAge={null}
+        bodyContent={slot.body}
+        expanded={false}
+        liveVisibleDetails={slot.details}
+        hovered={false}
+      />,
+    );
+    const pill = container.querySelector(".fact-pill");
+    expect(pill).not.toBeNull();
+    expect(pill?.className).toBe("fact-pill");
+    expect(pill?.querySelector(".fp-tag")).toBeNull();
   });
 });

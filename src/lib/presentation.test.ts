@@ -126,17 +126,39 @@ describe("presentationMode", () => {
   };
 
   it("a Visible Notification always wins, regardless of session count", () => {
-    expect(presentationMode(showing, 0)).toBe("notification");
-    expect(presentationMode(showing, 3)).toBe("notification");
+    expect(presentationMode(showing, 0, false)).toBe("notification");
+    expect(presentationMode(showing, 3, false)).toBe("notification");
   });
 
   it("shows the board when the slot is empty and at least one session exists", () => {
-    expect(presentationMode(empty, 1)).toBe("board");
-    expect(presentationMode(empty, 5)).toBe("board");
+    expect(presentationMode(empty, 1, false)).toBe("board");
+    expect(presentationMode(empty, 5, false)).toBe("board");
   });
 
   it("falls back to idle when the slot is empty and no session exists", () => {
-    expect(presentationMode(empty, 0)).toBe("idle");
+    expect(presentationMode(empty, 0, false)).toBe("idle");
+  });
+
+  // Operator feedback (2026-08-02): pausing notifications left the Agent
+  // Board on screen, still ticking with live agent activity. Paused means
+  // "quiet the whole notch" (CONTEXT.md's Paused) — the board falls
+  // through to the idle rail for the duration.
+  it("hides the board while paused, falling through to idle even with sessions present", () => {
+    expect(presentationMode(empty, 1, true)).toBe("idle");
+    expect(presentationMode(empty, 5, true)).toBe("idle");
+  });
+
+  it("still idles while paused with no sessions at all", () => {
+    expect(presentationMode(empty, 0, true)).toBe("idle");
+  });
+
+  // Paused gates PROMOTION, not an already-Visible Notification (rust's
+  // queue owns that, and it finishes its natural Rotation) — so a showing
+  // slot's precedence is untouched here; this frontend table adds no slot
+  // logic of its own.
+  it("leaves a Visible Notification's precedence untouched while paused", () => {
+    expect(presentationMode(showing, 0, true)).toBe("notification");
+    expect(presentationMode(showing, 3, true)).toBe("notification");
   });
 });
 

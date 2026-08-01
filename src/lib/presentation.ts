@@ -256,13 +256,24 @@ export function categoryLabel(category: string | null): string | null {
 // (already elaborate) exit-choreography state machine a third mode.
 //
 // 1. a Visible Notification (slot.state === "showing") owns the Slot —
-//    always wins, regardless of the Agent Board's own state.
-// 2. otherwise, at least one live/retained Agent Session (a non-empty
+//    always wins, regardless of the Agent Board's own state (and
+//    regardless of `paused`: rust's queue already stops PROMOTING while
+//    paused, and an already-Visible Notification finishes its natural
+//    Rotation, CONTEXT.md's Paused — the frontend adds no slot logic of
+//    its own).
+// 2. otherwise, while the engine is Paused the Board is hidden: Paused
+//    means "quiet the whole notch," not just "stop promoting"
+//    (operator feedback, 2026-08-02 — a paused engine still showed the
+//    Board ticking with live agent activity). Note this is the opposite
+//    of Silenced, which is explicitly display-layer-only and leaves the
+//    idle surface — Agent Board included — behaving as normal
+//    (CONTEXT.md's Silenced).
+// 3. otherwise, at least one live/retained Agent Session (a non-empty
 //    `sessions` array — the registry's own `terminal_retention_secs`
 //    sweep is what drops a session out of that array, so "present in
 //    the array at all" already means "live or retained") shows the
 //    Agent Board.
-// 3. otherwise, the existing clock/weather/media idle presentation.
+// 4. otherwise, the existing clock/weather/media idle presentation.
 //
 // "when a noteworthy Agent Notification finishes, presentation returns
 // to the still-current Agent Board" falls out for free: the instant
@@ -273,9 +284,16 @@ export function categoryLabel(category: string | null): string | null {
 // channels were never coupled to begin with.
 export type PresentationMode = "notification" | "board" | "idle";
 
-export function presentationMode(slot: SlotState, sessionCount: number): PresentationMode {
+export function presentationMode(
+  slot: SlotState,
+  sessionCount: number,
+  paused: boolean,
+): PresentationMode {
   if (slot.state === "showing") {
     return "notification";
+  }
+  if (paused) {
+    return "idle";
   }
   return sessionCount > 0 ? "board" : "idle";
 }

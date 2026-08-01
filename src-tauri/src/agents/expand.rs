@@ -37,10 +37,25 @@ pub const RESTING_WINDOW_HEIGHT: f64 = 300.0;
 
 /// Conservative estimate (same CONSERVATIVE-never-generous discipline
 /// `hover.rs`'s own `BELOW_BLOCK_SHOWING_H`/`BELOW_BLOCK_EXPANDED_H`
-/// constants document) of the expanded header block above the
-/// scrollable session list — the primary card's head/project/summary/
-/// elapsed lines, plus the shell's own flank/cutout row.
-const HEADER_HEIGHT: f64 = 150.0;
+/// constants document) of everything the expanded Board draws ABOVE its
+/// scrollable session list: the shell's own flank/cutout row, the
+/// primary session's HERO card (`AgentHeroCard`'s masthead/title/
+/// subtitle/body/fact-pill template, `AgentBoard.tsx`), and the list's
+/// own top margin.
+///
+/// Operator feedback (2026-08-02): the hero used to be REPLACED by the
+/// expanded list, so this constant only had to cover a bare header —
+/// hovering a one-session Board swapped its big hero for one skinny
+/// row, i.e. hover made the card look smaller. The hero now stays
+/// mounted in BOTH states and the list carries only the OTHER sessions,
+/// so this height must budget for the hero itself.
+///
+/// Lockstep pair with `agent-board.css`'s
+/// `.agent-board-expanded-scroll { max-height: calc(100vh - 210px) }` —
+/// that reserve is this same above-the-list block, measured against the
+/// window height this module computes. Any change to one MUST change
+/// the other in the same commit.
+const HEADER_HEIGHT: f64 = 210.0;
 
 /// Conservative estimate of one expanded row's rendered height
 /// (`agent-board.css`'s `.agent-expanded-row`) — taller than the resting
@@ -52,11 +67,6 @@ const ROW_HEIGHT: f64 = 34.0;
 /// many sessions are retained — "screen-bounded," not "however tall the
 /// content wants to be."
 const MAX_SCREEN_FRACTION: f64 = 0.75;
-
-/// Keep the expanded panel's top edge clear of the literal screen edge
-/// (and, in practice, the menu bar it overlaps) rather than flush at
-/// `y = 0` the way the resting frame is.
-const TOP_MARGIN: f64 = 8.0;
 
 /// A window frame in the same screen-space, top-left-origin convention
 /// `lib.rs::position_top_center` already uses for `PhysicalPosition`/
@@ -78,26 +88,33 @@ pub struct BoardWindowFrame {
 /// - width: `EXPANDED_BOARD_WIDTH`, capped at `screen_width` (an
 ///   unrealistically narrow screen must never produce an off-screen
 ///   window);
-/// - height: `HEADER_HEIGHT + ROW_HEIGHT * session_count`, floored at
+/// - height: `HEADER_HEIGHT + ROW_HEIGHT * (session_count - 1)` — the
+///   primary session lives in the HERO block `HEADER_HEIGHT` already
+///   budgets for, so only the OTHER sessions are rows (`AgentBoard.tsx`
+///   renders exactly `sessions[1..]` as expanded rows) — floored at
 ///   `RESTING_WINDOW_HEIGHT` (never shrink below the resting frame) and
 ///   capped at `screen_height * MAX_SCREEN_FRACTION` (the screen-bounded
 ///   maximum spec §6.2 calls for — content beyond that scrolls, per the
 ///   frontend's own bounded scroll container);
-/// - horizontally centered; vertically anchored `TOP_MARGIN` below the
-///   screen's top edge.
+/// - horizontally centered; anchored FLUSH at the screen's top edge
+///   (`y = 0`), exactly like the resting frame `lib.rs::position_window`
+///   places. Operator feedback (2026-08-02): an 8px top margin here made
+///   the whole shell visibly detach from the top of the screen on hover
+///   and re-attach on leave.
 pub fn expanded_board_frame(
     screen_width: f64,
     screen_height: f64,
     session_count: usize,
 ) -> BoardWindowFrame {
-    let content_height = HEADER_HEIGHT + ROW_HEIGHT * session_count as f64;
+    let row_count = session_count.saturating_sub(1);
+    let content_height = HEADER_HEIGHT + ROW_HEIGHT * row_count as f64;
     let max_height = (screen_height * MAX_SCREEN_FRACTION).max(RESTING_WINDOW_HEIGHT);
     let height = content_height.max(RESTING_WINDOW_HEIGHT).min(max_height);
     let width = EXPANDED_BOARD_WIDTH.min(screen_width.max(0.0));
     let x = ((screen_width - width) / 2.0).max(0.0);
     BoardWindowFrame {
         x,
-        y: TOP_MARGIN,
+        y: 0.0,
         width,
         height,
     }
@@ -124,7 +141,7 @@ mod tests {
 
     #[test]
     fn a_handful_of_sessions_under_the_cap_grows_linearly_with_count() {
-        // 5 and 7, not e.g. 3 and 5: content_height(3) = 150 + 34*3 = 252,
+        // 5 and 7, not e.g. 2 and 3: content_height(3) = 210 + 34*2 = 278,
         // still under the RESTING_WINDOW_HEIGHT (300) floor, so a lower
         // pair would compare two FLOORED (equal) heights instead of
         // exercising the linear-growth formula this test targets.
@@ -134,11 +151,20 @@ mod tests {
     }
 
     #[test]
+    fn the_primary_session_is_the_hero_not_a_row_so_only_the_rest_are_counted() {
+        // Operator feedback (2026-08-02): the hero card stays mounted while
+        // expanded, and the list below it carries `sessions[1..]` only —
+        // so N sessions is a hero plus N-1 rows, never N rows.
+        let frame = expanded_board_frame(SCREEN_W, SCREEN_H, 6);
+        assert_eq!(frame.height, HEADER_HEIGHT + ROW_HEIGHT * 5.0);
+    }
+
+    #[test]
     fn many_sessions_caps_at_the_screen_fraction_not_content_height() {
-        // 30 sessions would want HEADER_HEIGHT + 30*ROW_HEIGHT = 1170px —
+        // 30 sessions would want HEADER_HEIGHT + 29*ROW_HEIGHT = 1196px —
         // comfortably over 0.75 * 982 = 736.5, so the cap must win.
         let frame = expanded_board_frame(SCREEN_W, SCREEN_H, 30);
-        let uncapped_content = HEADER_HEIGHT + ROW_HEIGHT * 30.0;
+        let uncapped_content = HEADER_HEIGHT + ROW_HEIGHT * 29.0;
         assert!(frame.height < uncapped_content);
         assert_eq!(frame.height, SCREEN_H * MAX_SCREEN_FRACTION);
     }
@@ -150,7 +176,7 @@ mod tests {
         // so the frontend's scroll-container test actually exercises real
         // growth rather than a pre-capped constant.
         let frame = expanded_board_frame(SCREEN_W, SCREEN_H, 8);
-        assert_eq!(frame.height, HEADER_HEIGHT + ROW_HEIGHT * 8.0);
+        assert_eq!(frame.height, HEADER_HEIGHT + ROW_HEIGHT * 7.0);
         assert!(frame.height < SCREEN_H * MAX_SCREEN_FRACTION);
     }
 
@@ -173,9 +199,15 @@ mod tests {
     }
 
     #[test]
-    fn anchored_top_margin_below_the_screen_edge_not_flush() {
-        let frame = expanded_board_frame(SCREEN_W, SCREEN_H, 4);
-        assert_eq!(frame.y, TOP_MARGIN);
+    fn anchored_flush_at_the_screen_top_edge_exactly_like_the_resting_frame() {
+        // Operator feedback (2026-08-02): any nonzero y here makes the whole
+        // shell visibly drop away from the top of the screen on hover-expand
+        // and snap back on leave. The resting frame sits at y = 0
+        // (`lib.rs::position_window`); the expanded one must too.
+        for session_count in [0, 1, 4, 30] {
+            let frame = expanded_board_frame(SCREEN_W, SCREEN_H, session_count);
+            assert_eq!(frame.y, 0.0);
+        }
     }
 
     #[test]

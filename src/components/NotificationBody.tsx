@@ -38,6 +38,27 @@ import { TtlBar } from "./TtlBar";
 // caps against the SAME limit, rather than a second hand-copied literal.
 export const MAX_VISIBLE_DETAIL_PAIRS = 4;
 
+// Plan 169 fidelity pass (2026-08-02): the three tone classes
+// `manifest.css` actually implements for a fact pill (`.fact-pill.tone-
+// accent`/`.tone-danger`/`.tone-safe`). A pill with NO tone is the plain
+// neutral pill — that is the generic branch's own look and stays it.
+export type FactTone = "accent" | "danger" | "safe";
+
+// Plan 169 fidelity pass: a fact's optional trailing QUALIFIER — the
+// mock's `.fp-tag` span (`prototype/agent-board.html`'s proposal
+// fixtures: `Tool rm DESTRUCTIVE`, `Exit 1 ERROR`). Carries its own tone
+// because a tag is exactly the thing that "deserves a color" (plan 169's
+// Target wording): a tagged fact's tone travels WITH the tag rather than
+// being re-derived by the caller, and it wins over whatever call-level
+// tone the rest of the pills in that call carry.
+export type FactTag = { text: string; tone: FactTone };
+
+// A `Detail` (the wire's flat `{label, value}` pair) plus that optional
+// tag. Every existing `Detail` is already a valid `Fact` — the tag is
+// synthesized by a caller with real domain knowledge of its own facts
+// (`AgentBoard.tsx`), never carried on the wire.
+export type Fact = Detail & { tag?: FactTag };
+
 // Plan 169 (steps 2-3): the shared fact-pill renderer — one `.fact-pill`
 // per label/value pair, replacing the old stacked `.detail-label`/
 // `.detail-value` divs (manifest.css). Used by BOTH the generic branch's
@@ -49,26 +70,31 @@ export const MAX_VISIBLE_DETAIL_PAIRS = 4;
 // self-explanatory, omit the label" — that per-fact judgment call
 // belongs to a caller with real domain knowledge of its own facts
 // (e.g. plan 170's football scorer line), not this generic renderer.
-// `danger` paints every pill in the call `tone-danger` uniformly — there
-// is no per-detail tag/tone concept here, since the wire shape has no
-// third "qualifier" field to key one off; `AgentHeroCard` below derives
-// `danger` from the session's STATE instead (see its own doc).
-function renderFactPills(details: Detail[], danger = false) {
-  if (details.length === 0) {
+// `tone` is the CALL-level tone every untagged pill in the call takes
+// (`null` = the plain neutral pill, which is what the generic branch
+// passes); a fact carrying its own `tag` uses that tag's tone instead,
+// exactly as the mock's fixtures do (a danger-tagged pill inside an
+// otherwise accent-toned state would still read danger).
+function renderFactPills(facts: Fact[], tone: FactTone | null = null) {
+  if (facts.length === 0) {
     return null;
   }
   return (
     <div className="detail-facts">
-      {details.map((detail, index) => (
-        <span
-          // biome-ignore lint/suspicious/noArrayIndexKey: index is a tie-breaker only, not the primary key — a fresh `details` array from the wire each render, never locally reordered, so position is stable; this is what keeps two facts sharing the same label/value pair from colliding on an otherwise-identical key.
-          key={`${detail.label}:${detail.value}:${index}`}
-          className={`fact-pill${danger ? " tone-danger" : ""}`}
-        >
-          <span className="fp-label">{detail.label}</span>
-          {detail.value}
-        </span>
-      ))}
+      {facts.map((fact, index) => {
+        const pillTone = fact.tag?.tone ?? tone;
+        return (
+          <span
+            // biome-ignore lint/suspicious/noArrayIndexKey: index is a tie-breaker only, not the primary key — a fresh `details` array from the wire each render, never locally reordered, so position is stable; this is what keeps two facts sharing the same label/value pair from colliding on an otherwise-identical key.
+            key={`${fact.label}:${fact.value}:${index}`}
+            className={`fact-pill${pillTone !== null ? ` tone-${pillTone}` : ""}`}
+          >
+            <span className="fp-label">{fact.label}</span>
+            {fact.value}
+            {fact.tag !== undefined && <span className="fp-tag">{fact.tag.text}</span>}
+          </span>
+        );
+      })}
     </div>
   );
 }
@@ -254,6 +280,14 @@ export function NotificationBody({
 // actual `.agent-dot` span (keyed on state, `large`/`pulse` classes),
 // preserving the Boundary that this plan changes markup/CSS classes
 // around the dot, never its own bounded-pulse animation contract.
+//
+// `factsTone` (plan 169 fidelity pass) is the call-level pill tone —
+// `"danger"` for the two alarm states, `"accent"` for every other state,
+// mirroring the mock's own per-state fixtures (`prototype/agent-board
+// .html`, proposal section). Deliberately NOT defaulted here: the
+// generic branch above passes no tone at all (neutral pills), and the
+// agent hero always passes one, so making it explicit keeps the two
+// looks from silently converging.
 export function AgentHeroCard({
   dotKey,
   pulse,
@@ -262,7 +296,7 @@ export function AgentHeroCard({
   body,
   priority,
   facts,
-  factsDanger,
+  factsTone,
 }: {
   dotKey: string;
   pulse: boolean;
@@ -270,8 +304,8 @@ export function AgentHeroCard({
   subtitle: string | null;
   body: string | null;
   priority: Priority;
-  facts: Detail[];
-  factsDanger: boolean;
+  facts: Fact[];
+  factsTone: FactTone;
 }) {
   return (
     <div className="compact">
@@ -295,7 +329,7 @@ export function AgentHeroCard({
           </div>
         )}
         {body !== null && body.trim() !== "" && <div className="notif-body">{body}</div>}
-        {renderFactPills(facts, factsDanger)}
+        {renderFactPills(facts, factsTone)}
       </div>
     </div>
   );
@@ -443,41 +477,47 @@ export function FootballHeroCard({
           <Stamp priority={priority} signal={signal} eventType={eventType} />
         </div>
         <div className="title headline">{title}</div>
-        <div className="sc-head">
-          <span className="chip chip-league">{liveEspn.league}</span>
-          <span className={`chip chip-live${pillVariant === "live" ? "" : ` ${pillVariant}`}`}>
-            {/* plan 151 (item A): the dot stays MOUNTED in every variant,
-                including `final` — it leaves by fading to `opacity: 0`
-                (live-scorecard.css `.chip-live.final .live-dot`) in step
-                with the chip's own colour morph, instead of being
-                unmounted and blinking out a frame before the colours
-                change. Smallest structural change that lets it fade; the
-                collapsed 5px+gap it leaves behind is animated in the same
-                rule. */}
-            <span className="live-dot" />
-            {pillLabel}
-          </span>
-          <span className="chip clock-pill">{liveEspn.clock}</span>
+        {/* plan 170 (prototype-fidelity fix): the score block is ONE wrapper,
+            matching prototype/football-card.html's `<div class="score-block">`
+            — it carries the 10px gap off `.title.headline` that the chips
+            row otherwise butts against at 0px (live-scorecard.css). */}
+        <div className="score-block">
+          <div className="sc-head">
+            <span className="chip chip-league">{liveEspn.league}</span>
+            <span className={`chip chip-live${pillVariant === "live" ? "" : ` ${pillVariant}`}`}>
+              {/* plan 151 (item A): the dot stays MOUNTED in every variant,
+                  including `final` — it leaves by fading to `opacity: 0`
+                  (live-scorecard.css `.chip-live.final .live-dot`) in step
+                  with the chip's own colour morph, instead of being
+                  unmounted and blinking out a frame before the colours
+                  change. Smallest structural change that lets it fade; the
+                  collapsed 5px+gap it leaves behind is animated in the same
+                  rule. */}
+              <span className="live-dot" />
+              {pillLabel}
+            </span>
+            <span className="chip clock-pill">{liveEspn.clock}</span>
+          </div>
+          <div className="score-row">
+            <div className="side">
+              <Crest abbrev={liveEspn.homeAbbrev} path={liveEspn.homeCrest} />
+            </div>
+            <span className="score">
+              <ScoreDigit value={liveEspn.homeScore} />
+              <span className="dash">–</span>
+              <ScoreDigit value={liveEspn.awayScore} />
+            </span>
+            <div className="side">
+              <Crest abbrev={liveEspn.awayAbbrev} path={liveEspn.awayCrest} />
+            </div>
+          </div>
+          {!cardsClean && (
+            <div className="cards-line">
+              {liveEspn.homeAbbrev} {liveEspn.homeCards[0]}Y{liveEspn.homeCards[1]}R ·{" "}
+              {liveEspn.awayAbbrev} {liveEspn.awayCards[0]}Y{liveEspn.awayCards[1]}R
+            </div>
+          )}
         </div>
-        <div className="score-row">
-          <div className="side">
-            <Crest abbrev={liveEspn.homeAbbrev} path={liveEspn.homeCrest} />
-          </div>
-          <span className="score">
-            <ScoreDigit value={liveEspn.homeScore} />
-            <span className="dash">–</span>
-            <ScoreDigit value={liveEspn.awayScore} />
-          </span>
-          <div className="side">
-            <Crest abbrev={liveEspn.awayAbbrev} path={liveEspn.awayCrest} />
-          </div>
-        </div>
-        {!cardsClean && (
-          <div className="cards-line">
-            {liveEspn.homeAbbrev} {liveEspn.homeCards[0]}Y{liveEspn.homeCards[1]}R ·{" "}
-            {liveEspn.awayAbbrev} {liveEspn.awayCards[0]}Y{liveEspn.awayCards[1]}R
-          </div>
-        )}
       </div>
     </div>
   );

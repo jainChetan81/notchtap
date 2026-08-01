@@ -8,6 +8,13 @@
   padding: 12px 16px 13px;
 }
 
+/* plan 170: the score block is "spaced apart with its own margin-top" per
+   prototype/football-card.html — without it the chips row butts against
+   `.title.headline` at 0px. */
+.card-root .score-block {
+  margin-top: 10px;
+}
+
 .card-root .sc-head {
   display: flex;
   align-items: center;

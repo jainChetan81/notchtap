@@ -9,6 +9,20 @@ vi.mock("@tauri-apps/api/event", () => import("./test-support/tauriEventMock"));
 
 const emit = (payload: SlotState) => act(() => emitTo("slot-state", payload));
 const emitAgentState = (payload: AgentState) => act(() => emitTo("agent-state", payload));
+// Every gate off, nothing queued — only `paused` is under test here, and
+// `useStatusState`'s validator rejects a partial payload whole, so the
+// full shape has to be supplied.
+const emitStatus = (paused: boolean) =>
+  act(() =>
+    emitTo("status-state", {
+      paused,
+      waiting: 0,
+      football: { enabled: false, live: null },
+      news: { enabled: false },
+      weather: { enabled: false, current: null },
+      media: { enabled: false, current: null },
+    }),
+  );
 
 const SHOWING: SlotState = {
   state: "showing",
@@ -369,6 +383,34 @@ describe("App", () => {
       expect(
         container.querySelector(".card-assembly.high, .card-assembly.medium, .card-assembly.low"),
       ).not.toBeNull();
+    });
+
+    // Operator feedback (2026-08-02): pausing notifications left the Agent
+    // Board on screen, still ticking with live agent activity. Paused
+    // quiets the WHOLE notch (CONTEXT.md's Paused), so the board falls
+    // through to the idle rail until the engine resumes.
+    it("hides the board while the engine is paused, and brings it back on resume", async () => {
+      const { container } = render(<App />);
+      emitAgentState({
+        revision: 1,
+        capturedAtMs: Date.now(),
+        sessions: [agentSession("s1")],
+        adapterHealth: [],
+      });
+      await vi.waitFor(() => {
+        expect(container.querySelector('[data-testid="agent-board"]')).not.toBeNull();
+      });
+
+      emitStatus(true);
+      await vi.waitFor(() => {
+        expect(container.querySelector('[data-testid="agent-board"]')).toBeNull();
+      });
+      expect(container.querySelector(".card-assembly.idle")).not.toBeNull();
+
+      emitStatus(false);
+      await vi.waitFor(() => {
+        expect(container.querySelector('[data-testid="agent-board"]')).not.toBeNull();
+      });
     });
 
     it("returns to the still-current board once the notification finishes", async () => {

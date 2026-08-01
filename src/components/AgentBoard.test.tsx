@@ -41,13 +41,17 @@ describe("AgentBoard resting render", () => {
   });
 
   // Plan 169: the hero now renders through NotificationBody.tsx's shared
-  // template — runtime+state combine into the single `.title.headline`
-  // text (there is no more standalone `.agent-board-runtime`/
-  // `.agent-board-state-pill` pair), project becomes the subtitle row,
-  // summary becomes the notif-body. `waiting_for_permission` also maps
-  // to "high" priority (step 6's mapping) — the NEW `--accent`/Stamp
-  // channel on `.card-assembly`, a separate paint channel from the
-  // `--agent-accent` one `.agent-waiting` below already drives.
+  // template — the state drives a prose `.title.headline` (there is no
+  // more standalone `.agent-board-runtime`/`.agent-board-state-pill`
+  // pair), runtime + project become the subtitle row, summary becomes
+  // the notif-body. `waiting_for_permission` also maps to "high"
+  // priority (step 6's mapping) — the NEW `--accent`/Stamp channel on
+  // `.card-assembly`, a separate paint channel from the `--agent-accent`
+  // one `.agent-waiting` below already drives.
+  // Plan 169 fidelity pass (2026-08-02): title/subtitle are pinned to the
+  // mock's own strings (`prototype/agent-board.html`, proposal section) —
+  // per-state prose plus a `runtime · project` subtitle, replacing the
+  // old `"Codex — Needs approval"` / bare-project pair.
   it("waiting-for-permission: amber family, hero renders through the shared template (title/subtitle/body/priority)", () => {
     const { container, getByText } = render(
       <AgentBoard
@@ -61,8 +65,8 @@ describe("AgentBoard resting render", () => {
         capturedAtMs={CAPTURED_AT_MS}
       />,
     );
-    expect(getByText("Codex — Needs approval")).toBeTruthy();
-    expect(getByText("notchtap")).toBeTruthy();
+    expect(getByText("Agent needs input")).toBeTruthy();
+    expect(getByText("Codex · notchtap")).toBeTruthy();
     expect(getByText("Approval needed to run a command")).toBeTruthy();
     expect(container.querySelector(".below-block.agent-waiting")).not.toBeNull();
     expect(container.querySelector(".card-assembly.high")).not.toBeNull();
@@ -72,7 +76,7 @@ describe("AgentBoard resting render", () => {
     const { container } = render(
       <AgentBoard sessions={[session({ state: "working" })]} capturedAtMs={CAPTURED_AT_MS} />,
     );
-    expect(container.querySelector(".title.headline")?.textContent).toBe("Codex — Working");
+    expect(container.querySelector(".title.headline")?.textContent).toBe("Agent working");
     expect(container.querySelector(".below-block.agent-working")).not.toBeNull();
     expect(container.querySelector(".agent-dot.large.pulse")).not.toBeNull();
     expect(container.querySelector(".card-assembly.medium")).not.toBeNull();
@@ -82,7 +86,7 @@ describe("AgentBoard resting render", () => {
     const { container } = render(
       <AgentBoard sessions={[session({ state: "failed" })]} capturedAtMs={CAPTURED_AT_MS} />,
     );
-    expect(container.querySelector(".title.headline")?.textContent).toBe("Codex — Failed");
+    expect(container.querySelector(".title.headline")?.textContent).toBe("Agent session failed");
     expect(container.querySelector(".below-block.agent-failed")).not.toBeNull();
     expect(container.querySelector(".agent-dot.large.pulse")).toBeNull();
     expect(container.querySelector(".card-assembly.high")).not.toBeNull();
@@ -92,7 +96,7 @@ describe("AgentBoard resting render", () => {
     const { container } = render(
       <AgentBoard sessions={[session({ state: "completed" })]} capturedAtMs={CAPTURED_AT_MS} />,
     );
-    expect(container.querySelector(".title.headline")?.textContent).toBe("Codex — Completed");
+    expect(container.querySelector(".title.headline")?.textContent).toBe("Agent turn completed");
     expect(container.querySelector(".below-block.agent-completed")).not.toBeNull();
     expect(container.querySelector(".agent-dot.large.pulse")).toBeNull();
     expect(container.querySelector(".card-assembly.low")).not.toBeNull();
@@ -121,11 +125,17 @@ describe("AgentBoard resting render", () => {
   // Plan 169: project is the hero's subtitle row now (`.notif-subtitle-row`,
   // NotificationBody.tsx's shared template) — the old standalone
   // `.agent-board-project` line is gone.
-  it("omits the subtitle row cleanly when a session has no project metadata", () => {
+  // Plan 169 fidelity pass: the subtitle is `runtime · project` and the
+  // row ALWAYS renders for the hero — the runtime name lives only here
+  // now (the title is per-state prose), so a session with no project
+  // must still say which runtime it is, not drop the row.
+  it("falls back to the runtime alone in the subtitle when a session has no project metadata", () => {
     const { container } = render(
       <AgentBoard sessions={[session({ project: null })]} capturedAtMs={CAPTURED_AT_MS} />,
     );
-    expect(container.querySelector(".agent-board-primary .notif-subtitle-row")).toBeNull();
+    const subtitle = container.querySelector(".agent-board-primary .notif-subtitle-row");
+    expect(subtitle).not.toBeNull();
+    expect(subtitle?.textContent).toBe("Codex");
   });
 
   // Plan 147 wave 2: state accents (agent-waiting/agent-working/...) and
@@ -156,6 +166,24 @@ describe("AgentBoard resting render", () => {
     );
     const board = container.querySelector(".below-block");
     expect(board?.classList.contains("agent-failed")).toBe(true);
+    expect(board?.classList.contains("src-claude-code")).toBe(true);
+  });
+
+  // Plan 169 fidelity pass (2026-08-02): the board's below-block also
+  // carries the SHIPPED runtime wash (`agent-origin` — card-chrome.css's
+  // corner radial off `--cat-deep`, plus the runtime-coloured hairline),
+  // which the mock's hero draws and the board never applied. Paired with
+  // the `src-<runtime>` class above, which is what actually supplies the
+  // `--cat`/`--cat-deep` pair that rule reads.
+  it("the hero's below-block carries the runtime wash class", () => {
+    const { container } = render(
+      <AgentBoard
+        sessions={[session({ runtime: "claude-code", state: "working" })]}
+        capturedAtMs={CAPTURED_AT_MS}
+      />,
+    );
+    const board = container.querySelector(".below-block");
+    expect(board?.classList.contains("agent-origin")).toBe(true);
     expect(board?.classList.contains("src-claude-code")).toBe(true);
   });
 
@@ -212,7 +240,7 @@ describe("AgentBoard hero fact pills (plan 169)", () => {
         capturedAtMs={CAPTURED_AT_MS}
       />,
     );
-    expect(container.querySelector(".title.headline")?.textContent).toBe("Codex — Needs input");
+    expect(container.querySelector(".title.headline")?.textContent).toBe("Agent needs input");
     expect(container.querySelector(".card-assembly.high")).not.toBeNull();
     expect(container.querySelector(".agent-board-primary .detail-facts")).toBeNull();
   });
@@ -279,12 +307,80 @@ describe("AgentBoard hero fact pills (plan 169)", () => {
       />,
     );
     expect(getByText("Exit code")).toBeTruthy();
-    expect(getByText("1")).toBeTruthy();
     const pill = container.querySelector(".agent-board-primary .fact-pill");
     expect(pill?.classList.contains("tone-danger")).toBe(true);
+    // Plan 169 fidelity pass: a nonzero exit also earns the mock's
+    // `ERROR` tag (`.fp-tag`) on that same pill.
+    expect(pill?.querySelector(".fp-tag")?.textContent).toBe("error");
+    expect(pill?.textContent).toBe("Exit code1error");
   });
 
-  it("working: declared details (Progress/63%) render as a plain, non-danger fact pill", () => {
+  // Plan 169 fidelity pass: the tag is derived from the DATA, never from
+  // the state alone — a failed session reporting a clean exit code (or a
+  // non-numeric one) gets no `ERROR` tag.
+  it("failed: a zero exit code carries no error tag", () => {
+    const { container } = render(
+      <AgentBoard
+        sessions={[session({ state: "failed", details: [{ label: "Exit code", value: "0" }] })]}
+        capturedAtMs={CAPTURED_AT_MS}
+      />,
+    );
+    const pill = container.querySelector(".agent-board-primary .fact-pill");
+    expect(pill?.classList.contains("tone-danger")).toBe(true);
+    expect(pill?.querySelector(".fp-tag")).toBeNull();
+  });
+
+  // Plan 169 fidelity pass: the mock's `Tool rm DESTRUCTIVE` pill — a
+  // declared `Risk` detail whose value reads destructive/blocked folds
+  // into the `Tool` pill as its tag instead of standing as its own pill.
+  it("waiting-for-permission: a destructive Risk detail folds into the Tool pill as a tag", () => {
+    const { container } = render(
+      <AgentBoard
+        sessions={[
+          session({
+            state: "waiting_for_permission",
+            details: [
+              { label: "Tool", value: "rm" },
+              { label: "Risk", value: "destructive" },
+            ],
+          }),
+        ]}
+        capturedAtMs={CAPTURED_AT_MS}
+      />,
+    );
+    const pills = container.querySelectorAll(".agent-board-primary .fact-pill");
+    expect(pills).toHaveLength(1);
+    expect(pills[0].classList.contains("tone-danger")).toBe(true);
+    expect(pills[0].querySelector(".fp-tag")?.textContent).toBe("destructive");
+    expect(pills[0].textContent).toBe("Toolrmdestructive");
+  });
+
+  // The same guard from the other direction: a risk the table doesn't
+  // flag stays an ordinary pill of its own, nothing is invented.
+  it("waiting-for-permission: an unflagged Risk value stays its own untagged pill", () => {
+    const { container } = render(
+      <AgentBoard
+        sessions={[
+          session({
+            state: "waiting_for_permission",
+            details: [
+              { label: "Tool", value: "read" },
+              { label: "Risk", value: "read-only" },
+            ],
+          }),
+        ]}
+        capturedAtMs={CAPTURED_AT_MS}
+      />,
+    );
+    const pills = container.querySelectorAll(".agent-board-primary .fact-pill");
+    expect(pills).toHaveLength(2);
+    expect(container.querySelector(".agent-board-primary .fp-tag")).toBeNull();
+  });
+
+  // Plan 169 fidelity pass: every non-danger state's pills are
+  // `tone-accent` (the mock's own fixtures), not the neutral pill the
+  // generic branch uses.
+  it("working: declared details (Progress/63%) render as an accent-toned fact pill", () => {
     const { getByText, container } = render(
       <AgentBoard
         sessions={[session({ state: "working", details: [{ label: "Progress", value: "63%" }] })]}
@@ -295,6 +391,19 @@ describe("AgentBoard hero fact pills (plan 169)", () => {
     expect(getByText("63%")).toBeTruthy();
     const pill = container.querySelector(".agent-board-primary .fact-pill");
     expect(pill?.classList.contains("tone-danger")).toBe(false);
+    expect(pill?.classList.contains("tone-accent")).toBe(true);
+    expect(pill?.querySelector(".fp-tag")).toBeNull();
+  });
+
+  it("stale: the synthesized elapsed pill is accent-toned too", () => {
+    const { container } = render(
+      <AgentBoard
+        sessions={[session({ state: "stale", elapsedMs: 840_000 })]}
+        capturedAtMs={CAPTURED_AT_MS}
+      />,
+    );
+    const pill = container.querySelector(".agent-board-primary .fact-pill");
+    expect(pill?.classList.contains("tone-accent")).toBe(true);
   });
 
   // Overflow safety: the hero's facts are capped at the SAME
@@ -339,13 +448,25 @@ describe("AgentBoard expanded render", () => {
     );
   }
 
-  it("renders every retained session (8+) in the given order, none collapsed", () => {
+  // Operator feedback (2026-08-02): `sessions[0]` is the HERO in both the
+  // resting and the expanded state — only `sessions[1..]` become expanded
+  // rows. Every row-level assertion below therefore puts a filler primary
+  // ahead of the session actually under test, so that session is a ROW.
+  // The filler carries no summary/project/host/subagent/details of its
+  // own, so it can never satisfy a row assertion by accident.
+  function withHero(...rows: AgentSessionView[]): AgentSessionView[] {
+    return [session({ id: "hero-filler", runtime: "opencode" }), ...rows];
+  }
+
+  it("renders every retained non-primary session (8+) in the given order, none collapsed", () => {
     const sessions = manySessions(9);
     const { container } = render(
       <AgentBoard sessions={sessions} capturedAtMs={CAPTURED_AT_MS} expanded />,
     );
     const rows = container.querySelectorAll('[data-testid="agent-expanded-row"]');
-    expect(rows).toHaveLength(9);
+    // 9 sessions = 1 hero + 8 rows
+    expect(rows).toHaveLength(8);
+    expect(container.querySelector(".agent-board-primary")).not.toBeNull();
     expect(container.textContent).not.toMatch(/\+\d/);
   });
 
@@ -365,7 +486,7 @@ describe("AgentBoard expanded render", () => {
   });
 
   it("a row's transition history is hidden until that row is hovered, then discloses oldest first", () => {
-    const sessions = [
+    const sessions = withHero(
       session({
         id: "a",
         history: [
@@ -374,7 +495,7 @@ describe("AgentBoard expanded render", () => {
           { state: "waiting_for_permission", elapsedMs: 1_000 },
         ],
       }),
-    ];
+    );
     const { container, getByTestId, queryByTestId } = render(
       <AgentBoard sessions={sessions} capturedAtMs={CAPTURED_AT_MS} expanded />,
     );
@@ -400,7 +521,11 @@ describe("AgentBoard expanded render", () => {
 
   it("a row with no transition history renders no history section even when hovered", () => {
     const { getByTestId, queryByTestId } = render(
-      <AgentBoard sessions={[session({ history: [] })]} capturedAtMs={CAPTURED_AT_MS} expanded />,
+      <AgentBoard
+        sessions={withHero(session({ history: [] }))}
+        capturedAtMs={CAPTURED_AT_MS}
+        expanded
+      />,
     );
     fireEvent.mouseEnter(getByTestId("agent-expanded-row"));
     expect(queryByTestId("agent-expanded-history")).toBeNull();
@@ -408,7 +533,11 @@ describe("AgentBoard expanded render", () => {
 
   it("capability-dependent detail cells are omitted cleanly when a session has none", () => {
     const { container } = render(
-      <AgentBoard sessions={[session({ details: [] })]} capturedAtMs={CAPTURED_AT_MS} expanded />,
+      <AgentBoard
+        sessions={withHero(session({ details: [] }))}
+        capturedAtMs={CAPTURED_AT_MS}
+        expanded
+      />,
     );
     expect(container.querySelector(".agent-expanded-row-details")).toBeNull();
   });
@@ -416,7 +545,7 @@ describe("AgentBoard expanded render", () => {
   it("renders declared detail cells when present", () => {
     const { getByText } = render(
       <AgentBoard
-        sessions={[session({ details: [{ label: "Tool", value: "Bash" }] })]}
+        sessions={withHero(session({ details: [{ label: "Tool", value: "Bash" }] }))}
         capturedAtMs={CAPTURED_AT_MS}
         expanded
       />,
@@ -425,12 +554,15 @@ describe("AgentBoard expanded render", () => {
     expect(getByText("Bash")).toBeTruthy();
   });
 
-  // Operator feedback (2026-07-27): with the OLD implementation the hero
-  // block (resting's primary-session summary) rendered unconditionally,
-  // so at N=1 the same session appeared twice — once as the hero, once
-  // as the first (only) expanded row. `expanded` must replace the hero
-  // entirely, not sit alongside it.
-  it("hides the hero block while expanded, showing sessions[0] only once, as an expanded row", () => {
+  // Operator feedback (2026-07-27, then 2026-08-02): the hero and the
+  // expanded list's first row both used to render `sessions[0]`, so at
+  // N=1 the same session appeared twice. Hiding the hero while expanded
+  // fixed the duplicate but broke something worse — hovering a
+  // one-session Board swapped its big hero card for one skinny list row,
+  // i.e. hover made the card SMALLER. The contract now: the hero stays
+  // mounted in both states and the list carries `sessions[1..]` only, so
+  // each session still renders exactly once at every N.
+  it("keeps the hero mounted while expanded, with no row at all for a one-session board", () => {
     const { container } = render(
       <AgentBoard
         sessions={[session({ id: "only", summary: "Investigating a flaky test" })]}
@@ -438,10 +570,17 @@ describe("AgentBoard expanded render", () => {
         expanded
       />,
     );
-    expect(container.querySelector(".agent-board-primary")).toBeNull();
-    const rows = container.querySelectorAll('[data-testid="agent-expanded-row"]');
-    expect(rows).toHaveLength(1);
+    expect(container.querySelector(".agent-board-primary")).not.toBeNull();
+    expect(container.querySelectorAll('[data-testid="agent-expanded-row"]')).toHaveLength(0);
     expect(container.textContent?.match(/Investigating a flaky test/g)).toHaveLength(1);
+  });
+
+  it("keeps the hero mounted while expanded on a 3-session board, with the other two as rows", () => {
+    const { container } = render(
+      <AgentBoard sessions={manySessions(3)} capturedAtMs={CAPTURED_AT_MS} expanded />,
+    );
+    expect(container.querySelector(".agent-board-primary")).not.toBeNull();
+    expect(container.querySelectorAll('[data-testid="agent-expanded-row"]')).toHaveLength(2);
   });
 
   it("renders each session exactly once across a larger expanded board", () => {
@@ -449,11 +588,16 @@ describe("AgentBoard expanded render", () => {
     const { container } = render(
       <AgentBoard sessions={sessions} capturedAtMs={CAPTURED_AT_MS} expanded />,
     );
-    expect(container.querySelector(".agent-board-primary")).toBeNull();
-    expect(container.querySelectorAll('[data-testid="agent-expanded-row"]')).toHaveLength(5);
+    expect(container.querySelector(".agent-board-primary")).not.toBeNull();
+    // 5 sessions = 1 hero + 4 rows; the primary is never also a row.
+    expect(container.querySelectorAll('[data-testid="agent-expanded-row"]')).toHaveLength(4);
+    const rowRuntimes = Array.from(
+      container.querySelectorAll('[data-testid="agent-expanded-row"] .agent-row-runtime'),
+    ).map((node) => node.textContent);
+    expect(rowRuntimes).toEqual(["Codex", "Kimi", "OpenCode", "Claude Code"]);
   });
 
-  it("shows the hero block again once expanded flips back to false (resting unchanged)", () => {
+  it("keeps the hero mounted across an expanded -> resting flip (hover never swaps the hero out)", () => {
     const { container, rerender } = render(
       <AgentBoard
         sessions={[session({ id: "a" }), session({ id: "b" })]}
@@ -461,7 +605,7 @@ describe("AgentBoard expanded render", () => {
         expanded
       />,
     );
-    expect(container.querySelector(".agent-board-primary")).toBeNull();
+    expect(container.querySelector(".agent-board-primary")).not.toBeNull();
     rerender(
       <AgentBoard
         sessions={[session({ id: "a" }), session({ id: "b" })]}
@@ -469,11 +613,11 @@ describe("AgentBoard expanded render", () => {
         expanded={false}
       />,
     );
-    // The hero reappears synchronously; the compact `rest` row swap is
-    // behind `AnimatePresence mode="wait"`'s exit-then-enter animation
-    // (async, a real spring — same reason the history-disclosure test
-    // above asserts closing INTENT rather than an immediate DOM state),
-    // so only the hero's presence is asserted here.
+    // The hero never unmounts; only the rows below it swap shape, and
+    // that swap is behind `AnimatePresence mode="wait"`'s exit-then-enter
+    // animation (async, a real spring — same reason the history-disclosure
+    // test above asserts closing INTENT rather than an immediate DOM
+    // state), so only the hero's presence is asserted here.
     expect(container.querySelector(".agent-board-primary")).not.toBeNull();
   });
 
@@ -483,9 +627,9 @@ describe("AgentBoard expanded render", () => {
   it("renders an abbreviated cwd distinct from the project name", () => {
     const { getByText, queryByText } = render(
       <AgentBoard
-        sessions={[
+        sessions={withHero(
           session({ project: { name: "notchtap", cwd: "/Users/chetanjain/code/notchtap" } }),
-        ]}
+        )}
         capturedAtMs={CAPTURED_AT_MS}
         expanded
       />,
@@ -497,7 +641,7 @@ describe("AgentBoard expanded render", () => {
   it("omits the cwd line when it duplicates the project name", () => {
     const { container, queryByText } = render(
       <AgentBoard
-        sessions={[session({ project: { name: "notchtap", cwd: "notchtap" } })]}
+        sessions={withHero(session({ project: { name: "notchtap", cwd: "notchtap" } }))}
         capturedAtMs={CAPTURED_AT_MS}
         expanded
       />,
@@ -510,7 +654,7 @@ describe("AgentBoard expanded render", () => {
   it("omits the cwd line entirely when project metadata has no cwd", () => {
     const { container } = render(
       <AgentBoard
-        sessions={[session({ project: { name: "notchtap", cwd: null } })]}
+        sessions={withHero(session({ project: { name: "notchtap", cwd: null } }))}
         capturedAtMs={CAPTURED_AT_MS}
         expanded
       />,
@@ -521,7 +665,7 @@ describe("AgentBoard expanded render", () => {
   it("renders host.name when present", () => {
     const { getByText } = render(
       <AgentBoard
-        sessions={[session({ host: { name: "chetans-mac-mini", bundleId: null } })]}
+        sessions={withHero(session({ host: { name: "chetans-mac-mini", bundleId: null } }))}
         capturedAtMs={CAPTURED_AT_MS}
         expanded
       />,
@@ -531,7 +675,11 @@ describe("AgentBoard expanded render", () => {
 
   it("omits host metadata cleanly when absent", () => {
     const { container } = render(
-      <AgentBoard sessions={[session({ host: null })]} capturedAtMs={CAPTURED_AT_MS} expanded />,
+      <AgentBoard
+        sessions={withHero(session({ host: null }))}
+        capturedAtMs={CAPTURED_AT_MS}
+        expanded
+      />,
     );
     expect(container.querySelector(".agent-expanded-row-meta")).toBeNull();
   });
@@ -539,7 +687,7 @@ describe("AgentBoard expanded render", () => {
   it("shows a 'clears in' hint for terminal sessions with a retention countdown", () => {
     const { getByText } = render(
       <AgentBoard
-        sessions={[session({ state: "completed", retentionRemainingMs: 125_000 })]}
+        sessions={withHero(session({ state: "completed", retentionRemainingMs: 125_000 }))}
         capturedAtMs={CAPTURED_AT_MS}
         expanded
       />,
@@ -550,7 +698,7 @@ describe("AgentBoard expanded render", () => {
   it("omits the 'clears in' hint for non-terminal sessions (retentionRemainingMs null)", () => {
     const { container } = render(
       <AgentBoard
-        sessions={[session({ state: "working", retentionRemainingMs: null })]}
+        sessions={withHero(session({ state: "working", retentionRemainingMs: null }))}
         capturedAtMs={CAPTURED_AT_MS}
         expanded
       />,
@@ -564,7 +712,7 @@ describe("AgentBoard expanded render", () => {
   it("an expanded row carries both the state class and the runtime class simultaneously", () => {
     const { container } = render(
       <AgentBoard
-        sessions={[session({ runtime: "opencode", state: "waiting_for_input" })]}
+        sessions={withHero(session({ runtime: "opencode", state: "waiting_for_input" }))}
         capturedAtMs={CAPTURED_AT_MS}
         expanded
       />,
@@ -576,7 +724,7 @@ describe("AgentBoard expanded render", () => {
 
   it("renders a runtime tick glyph on the expanded row head", () => {
     const { container } = render(
-      <AgentBoard sessions={[session()]} capturedAtMs={CAPTURED_AT_MS} expanded />,
+      <AgentBoard sessions={withHero(session())} capturedAtMs={CAPTURED_AT_MS} expanded />,
     );
     expect(container.querySelector(".agent-expanded-row-head .agent-runtime-tick")).not.toBeNull();
   });
@@ -587,7 +735,9 @@ describe("AgentBoard expanded render", () => {
   it("renders a subagent chip with label when present", () => {
     const { getByText } = render(
       <AgentBoard
-        sessions={[session({ subagent: { id: "sub-1", label: "Reviewer", state: "working" } })]}
+        sessions={withHero(
+          session({ subagent: { id: "sub-1", label: "Reviewer", state: "working" } }),
+        )}
         capturedAtMs={CAPTURED_AT_MS}
         expanded
       />,
@@ -598,7 +748,7 @@ describe("AgentBoard expanded render", () => {
   it("falls back to the subagent id when label is null", () => {
     const { getByText } = render(
       <AgentBoard
-        sessions={[session({ subagent: { id: "sub-1", label: null, state: null } })]}
+        sessions={withHero(session({ subagent: { id: "sub-1", label: null, state: null } }))}
         capturedAtMs={CAPTURED_AT_MS}
         expanded
       />,
@@ -609,7 +759,7 @@ describe("AgentBoard expanded render", () => {
   it("omits the subagent chip entirely when the session has no active subagent", () => {
     const { container } = render(
       <AgentBoard
-        sessions={[session({ subagent: null })]}
+        sessions={withHero(session({ subagent: null }))}
         capturedAtMs={CAPTURED_AT_MS}
         expanded
       />,
@@ -700,7 +850,10 @@ describe("AgentBoard row removal/insertion/reorder fluidity", () => {
   });
 
   it("a removed expanded row leaves its siblings' stable keys/content intact, and either unmounts or is visibly closing", () => {
+    // `sessions[0]` is the hero in BOTH states (operator feedback,
+    // 2026-08-02), so the three rows under test are sessions 1..3.
     const sessions = [
+      session({ id: "primary", runtime: "opencode" }),
       session({ id: "a", runtime: "claude-code" }),
       session({ id: "b", runtime: "codex" }),
       session({ id: "c", runtime: "kimi" }),
@@ -711,7 +864,11 @@ describe("AgentBoard row removal/insertion/reorder fluidity", () => {
     expect(container.querySelectorAll('[data-testid="agent-expanded-row"]')).toHaveLength(3);
 
     rerender(
-      <AgentBoard sessions={[sessions[0], sessions[2]]} capturedAtMs={CAPTURED_AT_MS} expanded />,
+      <AgentBoard
+        sessions={[sessions[0], sessions[1], sessions[3]]}
+        capturedAtMs={CAPTURED_AT_MS}
+        expanded
+      />,
     );
 
     const rows = container.querySelectorAll('[data-testid="agent-expanded-row"]');
@@ -868,9 +1025,11 @@ describe("AgentBoard motion vitals", () => {
       />,
     );
     const heroBefore = container.querySelector(".agent-board-primary");
-    // Plan 169: runtime is folded into the hero's `.title.headline` text
-    // now (there is no more standalone `.agent-board-runtime`).
-    expect(heroBefore?.querySelector(".title.headline")?.textContent).toContain("Claude Code");
+    // Plan 169: runtime is folded into the hero's shared template now
+    // (there is no more standalone `.agent-board-runtime`); the fidelity
+    // pass moved it specifically into the subtitle row, since the title
+    // is per-state prose that never names the runtime.
+    expect(heroBefore?.querySelector(".notif-subtitle")?.textContent).toContain("Claude Code");
 
     rerender(
       <AgentBoard
@@ -884,7 +1043,7 @@ describe("AgentBoard motion vitals", () => {
     // a real animation, not a same-frame content replacement.
     await waitFor(() => {
       const heroAfter = container.querySelector(".agent-board-primary");
-      expect(heroAfter?.querySelector(".title.headline")?.textContent).toContain("OpenCode");
+      expect(heroAfter?.querySelector(".notif-subtitle")?.textContent).toContain("OpenCode");
       expect(heroAfter).not.toBe(heroBefore);
     });
   });

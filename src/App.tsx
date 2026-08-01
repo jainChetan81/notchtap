@@ -35,11 +35,13 @@ function App() {
   // Plan 136 (spec §6.1's presentation precedence): a Visible
   // Notification always wins; otherwise the Agent Board shows whenever
   // the independently-updating `agent-state` channel currently holds at
-  // least one session; otherwise the existing clock/weather/media idle.
+  // least one session AND the engine isn't Paused (operator feedback,
+  // 2026-08-02: pausing must quiet the whole notch, Board included);
+  // otherwise the existing clock/weather/media idle.
   // `presentationMode` is pure data (lib/presentation.ts) — this is its
   // one call site.
   const agentState = useAgentState();
-  const mode = presentationMode(slot, agentState.sessions.length);
+  const mode = presentationMode(slot, agentState.sessions.length, status.paused);
   // plan 085: the RESTING (idle) render choice, seeded like scale/radius/
   // opacity and hot-updated by the same appearance-changed listener below.
   // Missing on the seed (an old boot payload) means "rail" — the default,

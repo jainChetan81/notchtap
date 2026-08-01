@@ -18,11 +18,37 @@
    NOT one of the four accent colors, since "provider went quiet" is a
    different kind of fact than any of the four active states. */
 
+/* Plan 169 fidelity pass (2026-08-02): NO horizontal or top padding on
+   the board itself. The templated hero renders through the shared
+   `.compact` block, which carries its own inset (12px 16px 13px 20px,
+   masthead-content.css) AND the 3px priority accent stripe flush against
+   its own left edge (`.compact::before`). Any padding here pushed that
+   stripe ~14px into the card, which is exactly the drift the mock
+   (`prototype/agent-board.html`'s proposal hero) does not have — the
+   stripe must touch the card edge like every other card's does. The
+   inset the rows below still want is now carried by THOSE blocks
+   (`.agent-board-rows`/`.agent-board-expanded-list`), not by a shared
+   container padding the hero can't opt out of. */
 .card-root .agent-board {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  padding: 10px 14px 12px;
+  padding: 0 0 12px;
+}
+
+/* Plan 169 fidelity pass: the same z-index rider card-chrome.css already
+   applies to `.compact`/`.manifest` under `.below-block.agent-origin`,
+   extended to the board's OWN blocks — the runtime wash is a positioned
+   `::before` on the below-block, so plain in-flow content underneath it
+   (the session rows, the expanded list) would otherwise paint behind it.
+   Lives here rather than in card-chrome.css: these three classes are
+   this stylesheet's own, and the shared rule shouldn't have to know
+   them. */
+.card-root .below-block.agent-origin .agent-board-primary,
+.card-root .below-block.agent-origin .agent-board-rows,
+.card-root .below-block.agent-origin .agent-board-expanded-list {
+  position: relative;
+  z-index: 1;
 }
 
 .card-root .agent-board-primary {
@@ -103,7 +129,10 @@
   flex-direction: column;
   gap: 3px;
   border-top: 1px solid color-mix(in srgb, var(--overlay-fg) 14%, transparent);
-  padding-top: 6px;
+  /* Plan 169 fidelity pass: the 14px side inset that used to come from
+     `.agent-board`'s own padding now lives here, so the rows keep their
+     current inset while the hero above reaches the card edge. */
+  padding: 6px 14px 0;
   /* Bounded to the resting window frame — the fixed-size resting canvas
      rust renders this into (`hover::WINDOW_HEIGHT`/`expand.rs`'s
      `RESTING_WINDOW_HEIGHT`, 300px total) minus the hero block/shell
@@ -294,14 +323,24 @@
    adds no JS scroll handling of its own (CLAUDE.md/plan brief: "don't
    fight it"). */
 .card-root .agent-board-expanded-list {
-  margin-top: 4px;
+  /* Plan 169 fidelity pass: 14px (4px of its own + the 10px that used to
+     come from `.agent-board`'s now-removed top padding) so the expanded
+     list sits exactly where it always did, plus that same padding's side
+     inset — the hero, not this list, is what needed to reach the edge. */
+  margin-top: 14px;
+  padding: 0 14px;
 }
 
 .card-root .agent-board-expanded-scroll {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  max-height: calc(100vh - 170px);
+  /* Operator feedback (2026-08-02): the hero card now stays mounted while
+     expanded (it used to be replaced by this list), so the reserve above
+     this scroll area is the shell's cutout row PLUS the hero PLUS this
+     list's own top margin — the same block `agents::expand::HEADER_HEIGHT`
+     budgets for. Lockstep pair with that constant: change both together. */
+  max-height: calc(100vh - 210px);
   overflow-y: auto;
   overscroll-behavior: contain;
 }

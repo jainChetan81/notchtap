@@ -145,7 +145,9 @@ in `docs/ARCHITECTURE.md`.
 - **Paused** — engine state in which Promotion is disabled. pushes are
   still accepted and buffered into Waiting (caller is told the app is
   paused); an already-Visible Notification finishes its natural
-  Rotation and exits. Resuming re-enables Promotion immediately;
+  Rotation and exits. the Agent Board hides for the duration too — a
+  Paused engine quiets the whole notch, not just Promotion. Resuming
+  re-enables Promotion immediately;
   nothing is dropped. (v3.6: gates the single Slot, same contract,
   formerly gated a 3-item cap. v5: the tray toggle stays session-only,
   but the persisted `start_paused` config flag — the **Kill Switch** —
