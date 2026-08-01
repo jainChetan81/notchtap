@@ -1,7 +1,7 @@
 # 157 — Replace StatusRailCard's y/scale shorthand with full transform strings
 
 - **Status**: DONE (2026-07-31) — `contentExitVariants`'s interrupt branch and the entrance `initial`/`animate` props now use `transform` strings; `StatusRailCard.test.tsx`'s interrupt-exit test updated to match. `npx vitest run` 573/573, `npx tsc --noEmit` clean.
-- **Commit**: 58cccd9
+- **Commit**: ef91a0f, then 9855bfe (follow-up /review-animations fixes)
 - **Severity**: HIGH
 - **Category**: Performance (AUDIT.md §5)
 - **Estimated scope**: 1 file, ~4 call sites

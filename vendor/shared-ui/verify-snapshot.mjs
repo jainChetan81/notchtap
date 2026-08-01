@@ -7,10 +7,14 @@
 //
 //   node vendor/shared-ui/verify-snapshot.mjs
 //
-// If ../shared-ui/design/tokens.css exists (this Mac, sibling checkout
-// present), compares its SHA-256 against the vendored copy and exits
-// non-zero on any difference. If the sibling is absent (CI, other
-// machines), prints the pinned SHA-256 + upstream commit and exits 0.
+// Always checks the vendored copy against its own pinned SHA-256. If
+// ../shared-ui/design/tokens.css also exists (this Mac, sibling checkout
+// present), additionally checks the sibling against ITS own pinned
+// SHA-256 — i.e. "has upstream moved since we last looked?", not "is the
+// vendored copy byte-identical to upstream?" (it deliberately isn't
+// anymore; see PINNED_SIBLING_SHA256 below). Either mismatch exits
+// non-zero. If the sibling is absent (CI, other machines), prints the
+// pinned SHA-256 + upstream commit and exits 0.
 //
 // `npm ci` self-containment (this snapshot resolves without ../shared-ui
 // present at all) is proven separately by the "npm ci with ../shared-ui
@@ -59,9 +63,41 @@ const siblingPath = join(here, "..", "..", "..", "shared-ui", "design", "tokens.
 // via this script's own sibling-diff check — "matches the vendored
 // snapshot exactly. No drift."), so PINNED_TOKENS_SHA256 is unchanged;
 // only the reviewed-upstream pin moves.
+// 2026-08-02 re-pin: commit 892d661 (2026-07-25 audit remediation) deliberately
+// ADDED --overlay-green/--overlay-amber/--overlay-fg to the vendored tokens.css
+// without refreshing this pin, so the check had been failing ever since. The
+// edit is intentional and stays; only the hash below moves to match it. The
+// upstream pin is unchanged — these three tokens are this app's own bespoke
+// overlay layer, not a refresh from the sibling shared-ui checkout, so
+// UPSTREAM_SHA still names the last reviewed upstream commit. That also means
+// the sibling-diff branch further below will now legitimately report drift on a
+// machine that has the sibling checked out (the vendored copy is deliberately
+// ahead of upstream by those three tokens) — treat that as expected here, not
+// as accidental local editing.
+//
+// Which is why the sibling branch below no longer demands BYTE-EQUALITY with
+// the vendored copy: with a bespoke local layer on top, byte-equality is
+// permanently impossible, so that assertion could only ever fail from here on.
+// It compares the sibling against its OWN recorded hash instead
+// (PINNED_SIBLING_SHA256) — same drift-detection job (upstream moves => this
+// fails and someone makes a deliberate decision), minus the impossible demand.
 const UPSTREAM_SHA = "2321f37";
 const PINNED_TOKENS_SHA256 =
-  "5b7bcefe6f89c9ed72a1487e9ac2bd15c644d56904582aa33735fcc2039e8313";
+  "376dbce9245f1ed42d27c10848ad9403cb27cbdce682f391be107fca1ae6e816";
+// The sibling checkout as reviewed on 2026-08-02 (shared-ui 0.2.2, tokens
+// commit 4722b88). It differs from the vendored snapshot in exactly two ways,
+// both known and both deliberate:
+//   1. the three bespoke --overlay-green/--overlay-amber/--overlay-fg tokens
+//      (892d661) exist only in the vendored copy — this app's own layer,
+//      never sent upstream;
+//   2. upstream's 0.2.2 "motion trio" (--ease-notchtap retuned to
+//      cubic-bezier(0.23, 1, 0.32, 1), plus new --ease-drawer /
+//      --ease-in-out-strong) is NOT adopted here — the overlay's whole motion
+//      system is tuned against the vendored cubic-bezier(.22, 1, .36, 1), so
+//      adopting it is an animation decision, not a snapshot refresh.
+// Update this hash only alongside a deliberate look at what upstream changed.
+const PINNED_SIBLING_SHA256 =
+  "33e55ba7297bfb7b8b1d591bc1e039b7088ac15f1885b333f9c89819df97ac84";
 
 function sha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -86,12 +122,14 @@ if (!existsSync(siblingPath)) {
 }
 
 const siblingSha = sha256(siblingPath);
-if (siblingSha !== vendoredSha) {
+if (siblingSha !== PINNED_SIBLING_SHA256) {
   console.error(
-    `FAIL: sibling ../shared-ui/design/tokens.css SHA-256 (${siblingSha}) differs from the vendored snapshot (${vendoredSha}). Upstream has drifted since the ${UPSTREAM_SHA} snapshot was taken — refresh vendor/shared-ui deliberately (see this file's header) rather than editing token values here directly.`,
+    `FAIL: sibling ../shared-ui/design/tokens.css SHA-256 (${siblingSha}) differs from the reviewed sibling state recorded in this script (${PINNED_SIBLING_SHA256}). Upstream has moved since 2026-08-02 — read what changed and either port it into vendor/shared-ui deliberately or re-pin this constant, rather than editing token values here directly.`,
   );
   process.exit(1);
 }
 
-console.log("sibling ../shared-ui/design/tokens.css matches the vendored snapshot exactly. No drift.");
+console.log(
+  "sibling ../shared-ui/design/tokens.css matches its reviewed 2026-08-02 state. No new upstream drift. (It is NOT byte-identical to the vendored copy — see PINNED_SIBLING_SHA256's own comment for the two known, deliberate deltas.)",
+);
 process.exit(0);

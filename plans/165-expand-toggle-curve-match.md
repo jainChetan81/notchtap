@@ -1,7 +1,7 @@
 # 165 — Match the expand-toggle shell width curve to the manifest it reveals
 
 - **Status**: DONE (2026-07-31) — `.card-assembly.expanded` now has its own `transition: width var(--expand-ms, 320ms) var(--ease-notchtap);`. `npx vitest run` 573/573.
-- **Commit**: 58cccd9
+- **Commit**: ef91a0f, then 9855bfe (follow-up /review-animations fixes)
 - **Severity**: HIGH
 - **Category**: Cohesion / interruptibility & timing (review-animations skill, "one clock, one gesture")
 - **Estimated scope**: 1 file, 1 new rule

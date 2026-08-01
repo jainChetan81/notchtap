@@ -1,7 +1,7 @@
 # 160 — Add press feedback to the switch, sidebar nav, and history disclosure
 
 - **Status**: DONE (2026-07-31) — `active:scale-[0.97]` added to switch.tsx's track, SettingsApp.tsx's nav item, and HistorySection.tsx's summary, each with `transform` folded into their transition list. `npx vitest run` 573/573.
-- **Commit**: 58cccd9
+- **Commit**: ef91a0f
 - **Severity**: MEDIUM
 - **Category**: Physicality & origin (AUDIT.md §3)
 - **Estimated scope**: 3 files, 1 class-string edit each

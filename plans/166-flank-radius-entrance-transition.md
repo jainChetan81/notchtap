@@ -1,7 +1,7 @@
 # 166 — Give the flank's corner-radius a real entrance transition
 
 - **Status**: DONE (2026-07-31) — `border-radius var(--expand-ms, 320ms) var(--ease-notchtap)` added to the base flank rule's transition list; the higher-specificity exit-direction rule left untouched, confirmed by both the spec-axis code review and a passing full test suite (573/573).
-- **Commit**: 58cccd9
+- **Commit**: ef91a0f
 - **Severity**: MEDIUM
 - **Category**: Interruptibility & timing / cohesion (review-animations skill, "one shape, one motion")
 - **Estimated scope**: 1 file, 1 line added to an existing rule

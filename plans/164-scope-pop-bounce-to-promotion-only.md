@@ -1,7 +1,7 @@
 # 164 — Scope the shell's pop-bounce curve out of the hover-reveal leg
 
 - **Status**: DONE (2026-07-31) — `.bare:has(.idle-peek)` now has its own `transition: width var(--reveal-ms, 260ms) var(--ease-notchtap);`. `npx vitest run` 573/573.
-- **Commit**: 58cccd9
+- **Commit**: ef91a0f, then 9855bfe (follow-up /review-animations fixes)
 - **Severity**: HIGH
 - **Category**: Physicality & origin / frequency-appropriateness (review-animations skill, Standards #2, #10)
 - **Estimated scope**: 1 file, 1 new rule

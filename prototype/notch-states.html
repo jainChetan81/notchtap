@@ -20,7 +20,10 @@
      option) — it does not attempt to also model the Agent Board surface
      (src/components/AgentBoard.tsx), which App.tsx swaps in as a separate
      top-level mode and was never part of this file's scope.
-     Last synced against source: 2026-07-30. -->
+     Last synced against source: 2026-08-02 (CSS-only re-sync of the shell/
+     flank/gill/ttl-bar rules for plans 164-168 plus the 2026-08-02 operator
+     removal of the hover "breathe" scale; the rest of the file was already
+     current as of the 2026-07-30 full sync). -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -45,7 +48,7 @@
     --swap-exit-ms: 175ms;    /* SWAP_EXIT_MS    — shell width exit-to-idle, promotion content-enter */
     --content-exit-ms: 105ms; /* CONTENT_EXIT_MS — below-block close, flank corner round-in */
     --reveal-ms: 260ms;       /* REVEAL_MS       — bare<->hovered paint/inset fade, StatusDots/FlankClock mount */
-    --hover-ms: 160ms;        /* HOVER_MS        — hover "breathe" scale, status-dot state flips */
+    --hover-ms: 160ms;        /* HOVER_MS        — ttl-fill pause fade, status-dot state flips, agent board */
     --rotation-exit-ms: 70ms;   /* ROTATION_EXIT_MS  — same-slot rotation content fade-out */
     --rotation-enter-ms: 120ms; /* ROTATION_ENTER_MS — same-slot rotation content fade-in */
     --interrupt-exit-ms: 60ms;  /* INTERRUPT_EXIT_MS — priority-preemption "yank" */
@@ -99,23 +102,37 @@
     isolation: isolate;
     transform-origin: top center;
     filter: drop-shadow(0 7px 18px rgba(0,0,0,0.5));
-    transition:
-      width var(--expand-ms) var(--ease-notchtap-pop),
-      transform var(--hover-ms) var(--ease-notchtap);
+    /* the bouncy `--ease-notchtap-pop` is reserved for a genuine arrival
+       (promotion/entrance width growth). Every hover-driven or exiting
+       width change below re-declares its own non-bouncy curve. There is
+       no `transform` leg: the hover "breathe" scale this shell used to
+       ease was deleted (operator removal, 2026-08-02 — choreography.css). */
+    transition: width var(--expand-ms) var(--ease-notchtap-pop);
   }
   .card-root .card-assembly.idle { --cw: min(calc(var(--notchtap-cutout-width) + (2 * 85px * var(--card-scale))), 100%); }
-  .card-root .card-assembly.expanded { --cw: min(max(calc(500px * var(--card-scale)), calc(var(--notchtap-cutout-width) + (2 * 60px * var(--card-scale)))), 100%); }
-  .card-root .card-assembly.bare { --cw: min(var(--notchtap-cutout-width), 100%); }
-  .card-root .card-assembly.bare:has(.idle-peek) { --cw: min(calc(var(--notchtap-cutout-width) + (2 * 85px * var(--card-scale))), 100%); }
-  .card-root .card-assembly.exiting { --cw: min(calc(var(--notchtap-cutout-width) + (2 * 85px * var(--card-scale))), 100%); transition: width var(--swap-exit-ms) var(--ease-notchtap), transform var(--hover-ms) var(--ease-notchtap); }
+  /* plan 165: hover-expand grows the shell alongside the manifest's own
+     plain-eased disclosure — same duration, non-bouncy curve, so the two
+     halves of one disclosure finish together. */
+  .card-root .card-assembly.expanded { --cw: min(max(calc(500px * var(--card-scale)), calc(var(--notchtap-cutout-width) + (2 * 60px * var(--card-scale)))), 100%); transition: width var(--expand-ms) var(--ease-notchtap); }
+  /* plan 164: the bare<->peek width change is HOVER-driven (many times a
+     session), so it must not inherit the arrival pop — and it rides
+     --reveal-ms to match the flank clock/status-dot fade on the same
+     gesture. Both directions carry the identical transition so the curve
+     doesn't depend on which rule happens to be matching. */
+  .card-root .card-assembly.bare { --cw: min(var(--notchtap-cutout-width), 100%); transition: width var(--reveal-ms) var(--ease-notchtap); }
+  .card-root .card-assembly.bare:has(.idle-peek) { --cw: min(calc(var(--notchtap-cutout-width) + (2 * 85px * var(--card-scale))), 100%); transition: width var(--reveal-ms) var(--ease-notchtap); }
+  .card-root .card-assembly.exiting { --cw: min(calc(var(--notchtap-cutout-width) + (2 * 85px * var(--card-scale))), 100%); transition: width var(--swap-exit-ms) var(--ease-notchtap); }
   .card-root .card-assembly.exiting.exit-to-bare { --cw: min(var(--notchtap-cutout-width), 100%); }
-
-  .card-root .card-assembly.hovered { transform: scale(1.02); }
 
   .card-root .flank-left, .card-root .flank-right {
     box-sizing: border-box; grid-row: 1; overflow: hidden; display: flex; align-items: center;
     background: #000; color: var(--overlay-fg); min-width: 0;
-    transition: background-color var(--reveal-ms) var(--ease-notchtap), padding var(--reveal-ms) var(--ease-notchtap);
+    /* plan 166: the `border-radius` leg gives the ENTRANCE direction (a
+       below-block newly mounting, so the flank un-rounds) a real
+       transition instead of an instant snap. The exit direction is
+       unaffected — the rounding-law rules below have higher specificity
+       and still win the whole shorthand with their own --content-exit-ms. */
+    transition: background-color var(--reveal-ms) var(--ease-notchtap), padding var(--reveal-ms) var(--ease-notchtap), border-radius var(--expand-ms) var(--ease-notchtap);
   }
   .card-root .flank-left { grid-column: 1; justify-content: flex-start; padding-left: 16px; }
   .card-root .flank-right { grid-column: 3; justify-content: flex-end; padding-right: 16px; }
@@ -161,10 +178,17 @@
      — a real border-radius can only bow OUTWARD, never carve a concave
      dent, so the shipped app paints two corner-anchored radial-gradient
      elements instead (card-chrome.css's own comment has the full "why").
-     Hidden whenever a below-block is mounted or the shell is bare. */
-  .card-root .notch-gill { display: none; position: absolute; top: 0; width: 10px; height: 10px; pointer-events: none; }
+     Hidden whenever a below-block is mounted or the shell is bare.
+     plan 167: that hide/show is `opacity`-driven, not a `display` toggle —
+     `display` cannot be transitioned, so the gill now stays permanently in
+     the render tree (tiny, absolutely positioned, pointer-events: none)
+     and fades. The shipped file keeps a `display: none` base as the
+     "does this mode exist at all" gate for real notch hardware, flipped to
+     `display: block` by `:root[data-notchtap-mode="hud"]`; this static page
+     only ever renders the HUD case, so it starts from `display: block`. */
+  .card-root .notch-gill { display: block; position: absolute; top: 0; width: 10px; height: 10px; pointer-events: none; opacity: 0; transition: opacity var(--expand-ms) var(--ease-notchtap); }
   .card-root .card-assembly:not(:has(.below-block)):not(.bare) .notch-gill,
-  .card-root .card-assembly.exiting:not(.bare) .notch-gill { display: block; }
+  .card-root .card-assembly.exiting:not(.bare) .notch-gill { opacity: 1; }
   .card-root .notch-gill-left { left: -10px; background: radial-gradient(circle at bottom left, transparent 10px, #000 10px); }
   .card-root .notch-gill-right { right: -10px; background: radial-gradient(circle at bottom right, transparent 10px, #000 10px); }
 
@@ -222,10 +246,14 @@
   .card-root .manifest-hint { font: 700 9px/1 var(--font-mono); letter-spacing: 0.08em; color: rgba(255,255,255,0.4); }
 
   /* ============== ttl-bar / queue segments (ttl-bar.css) ============== */
-  .card-root .ttl-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; display: grid; grid-template-columns: repeat(var(--queue-n, 1), 1fr); gap: 3px; }
+  /* plan 168: the explicit `grid-template-rows: 4px` + the fill's own
+     `grid-row: 1` keep every segment (and the live fill) pinned to ONE
+     4px row — without them an implicit second row could appear and the
+     bar would render at double height. */
+  .card-root .ttl-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; display: grid; grid-template-columns: repeat(var(--queue-n, 1), 1fr); grid-template-rows: 4px; gap: 3px; }
   .card-root .ttl-seg { background: rgba(255,255,255,0.08); transition: background var(--reveal-ms) var(--ease-notchtap); }
   .card-root .ttl-seg.done { background: color-mix(in srgb, var(--accent) 30%, transparent); }
-  .card-root .ttl-fill { height: 100%; width: 100%; background: var(--accent); transform-origin: left; transition: opacity var(--hover-ms) var(--ease-notchtap), background var(--hover-ms) var(--ease-notchtap); }
+  .card-root .ttl-fill { grid-row: 1; height: 100%; width: 100%; background: var(--accent); transform-origin: left; will-change: transform; transition: opacity var(--hover-ms) var(--ease-notchtap), background var(--hover-ms) var(--ease-notchtap); }
   .card-root .ttl-fill.paused { opacity: 0.72; background: color-mix(in srgb, var(--accent) 65%, var(--accent-soft) 35%); }
 
   /* ============== news category colors (news-category.css) ============== */

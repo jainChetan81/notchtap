@@ -1,7 +1,7 @@
 # 163 — Fix `--ease-notchtap` never resolving in the overlay build
 
 - **Status**: DONE (2026-07-31) — plain `--ease-notchtap: cubic-bezier(0.22, 1, 0.36, 1);` redeclared on `:root` in src/styles.css, mirroring `--ease-notchtap-pop`'s existing defense-in-depth pattern. `npx vitest run` 573/573, `npx tsc --noEmit`/`npx biome ci .` clean. Re-verified against a fresh `npx vite build`: the overlay's `main-*.css` bundle now carries `--ease-notchtap` inside a real `:root{...}` rule (previously only the broken, bare unwrapped `@theme` leftover text existed).
-- **Commit**: 58cccd9
+- **Commit**: ef91a0f
 - **Severity**: CRITICAL (P0 — prerequisite for plans 164–167 and effectively for plan 161)
 - **Category**: Interruptibility & timing / cohesion (review-animations skill, "feel-breaking regression")
 - **Estimated scope**: 1 file, 1 line

@@ -29,8 +29,9 @@ unaffected either way: both possible `details` entries duplicate what the
 kept score-row already shows, so `FootballHeroCard` still renders no fact
 pills — only the stated reasoning needed fixing, not the target shape.
 
-All three plans in this batch are now DONE and merged locally into
-`agent-card-ui-unification` (not pushed, not merged to master). Step 7 of
+All three plans in this batch are now DONE and **in master** — the
+`agent-card-ui-unification` branch was pushed and merged via PR #7 (merge
+commit `6e6de35`, which also carried the 156–167 animation batch). Step 7 of
 plan 170 (`live-scorecard.css` dead-rule trim) was deliberately deferred
 per that plan's own boundary and is not yet filed as its own follow-up.
 

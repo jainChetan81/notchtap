@@ -1,7 +1,7 @@
 # 159 — Segmented control: add press feedback, fix the selection-shadow pop
 
 - **Status**: DONE (2026-07-31) — transition property list expanded to cover box-shadow/transform, `active:scale-[0.97]` added. `npx vitest run` 573/573.
-- **Commit**: 58cccd9
+- **Commit**: ef91a0f
 - **Severity**: MEDIUM
 - **Category**: Physicality & origin (AUDIT.md §3) + Cohesion & tokens (§7)
 - **Estimated scope**: 1 file, 1 class list

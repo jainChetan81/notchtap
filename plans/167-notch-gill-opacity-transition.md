@@ -1,7 +1,7 @@
 # 167 — Fade the concave "gill" corners instead of hard-popping them
 
 - **Status**: DONE (2026-07-31) — `.notch-gill` visibility within HUD mode is now opacity-driven; the outer real-hardware `display: none` gate is untouched. `npx vitest run` 573/573 (no existing test asserted on the old display-toggle behavior, so none needed updating).
-- **Commit**: 58cccd9
+- **Commit**: ef91a0f
 - **Severity**: MEDIUM
 - **Category**: Interruptibility & timing / physicality (review-animations skill — `display` cannot be transitioned)
 - **Estimated scope**: 1 file, restructure one small rule group

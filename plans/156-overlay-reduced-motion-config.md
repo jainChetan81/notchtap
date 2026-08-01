@@ -1,7 +1,7 @@
 # 156 — Wrap the overlay in MotionConfig so reduced-motion actually reaches it
 
 - **Status**: DONE (2026-07-31) — `src/main.tsx` wraps `<App />` in `<MotionConfig reducedMotion="user">`; `npx tsc --noEmit` clean, `npx vitest run` 573/573; feel-checked via a real Playwright browser render (throwaway harness mounting the actual `StatusRailCard`) — confirmed `transform` snaps to its end value while `opacity` still eases under `reduced`, full interpolation restored under `no-preference`, and `TtlBar.tsx`'s separate rAF-based reduced-motion handling is unaffected.
-- **Commit**: 58cccd9
+- **Commit**: ef91a0f
 - **Severity**: HIGH
 - **Category**: Accessibility (AUDIT.md §6)
 - **Estimated scope**: 1 file, ~5 lines

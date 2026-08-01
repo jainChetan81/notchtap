@@ -1,7 +1,7 @@
 # 162 — Add reduced-motion coverage to the card's hover "breathe" scale
 
 - **Status**: DONE (2026-07-31) — `transform: none` reduced-motion override added immediately after `.hovered`. `npx vitest run` 573/573.
-- **Commit**: 58cccd9
+- **Commit**: ef91a0f
 - **Severity**: MEDIUM
 - **Category**: Accessibility (AUDIT.md §6)
 - **Estimated scope**: 1 file, ~1 new rule block

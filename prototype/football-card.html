@@ -282,11 +282,10 @@
     100% { box-shadow: none; }
   }
 
-  /* ---- choreography.css: the hover "breathing" scale — same trigger
-     (a live `hovered` prop, never CSS `:hover`, since the real overlay
-     window is click-through). Demo-only exception: this mock uses real
-     `:hover` since it has no rust-derived tracking area to drive it. ---- */
-  .card-root .card-assembly:hover { transform: scale(1.02); transition: transform 160ms var(--ease-notchtap); }
+  /* ---- choreography.css: the hover "breathing" scale was REMOVED from
+     the shipped UI on operator instruction (2026-08-02) — hover no longer
+     scales the shell; it expands the card instead. Mirror kept rule-free
+     to match. ---- */
 
   /* ============== PROPOSAL ADDITION (2026-08-01): the shared generic
      content template (masthead-content.css/manifest.css/ttl-bar.css,

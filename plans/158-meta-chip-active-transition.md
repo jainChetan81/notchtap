@@ -1,7 +1,7 @@
 # 158 — Give MetaChip's active state a transition
 
 - **Status**: DONE (2026-07-31) — `transition-colors duration-[150ms] ease-notchtap` added to MetaChip's base class. `npx vitest run` 573/573.
-- **Commit**: 58cccd9
+- **Commit**: ef91a0f
 - **Severity**: MEDIUM
 - **Category**: Missed opportunities (AUDIT.md §8) / Purpose & frequency (§1)
 - **Estimated scope**: 1 file, 1 class list
