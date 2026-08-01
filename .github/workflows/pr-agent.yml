@@ -23,9 +23,13 @@ jobs:
           CONFIG__CUSTOM_MODEL_MAX_TOKENS: "200000"
           CONFIG__MAX_MODEL_TOKENS: "200000"
           CONFIG__PROPAGATE_TOOL_ERRORS: "true"
-        with:
-          command: review
 
+  # Labels don't carry a "run this command" instruction — PR-Agent's container is
+  # 100% event-driven (checked its source directly). Adding a label only fires
+  # auto_describe + auto_review + auto_improve, gated by whether "labeled" is in
+  # GITHUB_ACTION_CONFIG.PR_ACTIONS (not there by default, added below). There is
+  # no way to pass a custom question this way — that's why review_plan below is
+  # comment-triggered instead.
   review_feature:
     if: github.event.action == 'labeled' && github.event.label.name == 'review:feature'
     runs-on: ubuntu-latest
@@ -43,12 +47,13 @@ jobs:
           CONFIG__CUSTOM_MODEL_MAX_TOKENS: "300000"
           CONFIG__MAX_MODEL_TOKENS: "300000"
           CONFIG__PROPAGATE_TOOL_ERRORS: "true"
+          GITHUB_ACTION_CONFIG__PR_ACTIONS: '["labeled"]'
+          GITHUB_ACTION_CONFIG__AUTO_DESCRIBE: "false"
+          GITHUB_ACTION_CONFIG__AUTO_IMPROVE: "false"
           PR_REVIEWER__EXTRA_INSTRUCTIONS: >
             Focus on whether this PR actually delivers the full feature described
             in its title/description: missing edge cases, incomplete error handling,
             gaps versus the stated intent, and missing tests.
-        with:
-          command: review
 
   review_architecture:
     if: github.event.action == 'labeled' && github.event.label.name == 'review:arch'
@@ -67,15 +72,24 @@ jobs:
           CONFIG__CUSTOM_MODEL_MAX_TOKENS: "400000"
           CONFIG__MAX_MODEL_TOKENS: "400000"
           CONFIG__PROPAGATE_TOOL_ERRORS: "true"
+          GITHUB_ACTION_CONFIG__PR_ACTIONS: '["labeled"]'
+          GITHUB_ACTION_CONFIG__AUTO_DESCRIBE: "false"
+          GITHUB_ACTION_CONFIG__AUTO_IMPROVE: "false"
           PR_REVIEWER__EXTRA_INSTRUCTIONS: >
             Do an architectural pass: module boundaries, dependency direction,
             API/contract design, coupling, and long-term maintainability.
             Do not repeat line-level nitpicks already covered by a standard review.
-        with:
-          command: review
 
+  # PR-Agent only runs /ask with a real question by parsing actual comment text
+  # (issue_comment event) — there is no way to supply a fixed question via the
+  # workflow file itself. So: add the review:plan label to pick this tier's
+  # model, then comment the actual question starting with "/ask".
   review_plan:
-    if: github.event.action == 'labeled' && github.event.label.name == 'review:plan'
+    if: >
+      github.event_name == 'issue_comment' &&
+      github.event.issue.pull_request != null &&
+      startsWith(github.event.comment.body, '/ask') &&
+      contains(github.event.issue.labels.*.name, 'review:plan')
     runs-on: ubuntu-latest
     name: "PR Review — plan compliance (claude-sonnet-4.5)"
     permissions:
@@ -91,6 +105,3 @@ jobs:
           CONFIG__CUSTOM_MODEL_MAX_TOKENS: "300000"
           CONFIG__MAX_MODEL_TOKENS: "300000"
           CONFIG__PROPAGATE_TOOL_ERRORS: "true"
-        with:
-          command: ask
-          args: "Compare this PR's actual changes against the plan written in the PR description (or linked issue). List anything in the plan that is missing, incomplete, or done differently, and anything the PR does that the plan didn't ask for."
