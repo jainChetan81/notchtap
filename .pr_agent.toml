@@ -14,3 +14,6 @@ publish_labels = true
 
 [openrouter]
 # provider_only = ["anthropic"]   # uncomment to pin a single upstream provider per repo if you want cost predictability
+
+[litellm]
+drop_params = true
