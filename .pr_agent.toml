@@ -1,0 +1,15 @@
+[config]
+fallback_models = ["openrouter/anthropic/claude-3.5-haiku"]
+
+[pr_reviewer]
+persistent_comment = true
+require_ticket_analysis_review = true
+require_estimate_effort_to_review = true
+require_score_review = true
+num_max_findings = 5
+
+[pr_description]
+publish_labels = true
+
+[openrouter]
+# provider_only = ["anthropic"]   # uncomment to pin a single upstream provider per repo if you want cost predictability

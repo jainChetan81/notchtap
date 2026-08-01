@@ -1,0 +1,88 @@
+on:
+  pull_request:
+    types: [opened, reopened, ready_for_review, synchronize, labeled]
+  issue_comment:
+
+jobs:
+  review_standard:
+    if: >
+      github.event.sender.type != 'Bot' &&
+      (github.event_name != 'pull_request' || github.event.action != 'labeled')
+    runs-on: ubuntu-latest
+    name: "PR Review — standard (gemini-2.5-flash)"
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: write
+    steps:
+      - uses: the-pr-agent/pr-agent@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENROUTER__KEY: ${{ secrets.OPENROUTER_KEY }}
+          CONFIG__MODEL: "openrouter/google/gemini-2.5-flash"
+          CONFIG__CUSTOM_MODEL_MAX_TOKENS: "20000"
+        with:
+          command: review
+
+  review_feature:
+    if: github.event.action == 'labeled' && github.event.label.name == 'review:feature'
+    runs-on: ubuntu-latest
+    name: "PR Review — feature depth (claude-sonnet-4.5)"
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: write
+    steps:
+      - uses: the-pr-agent/pr-agent@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENROUTER__KEY: ${{ secrets.OPENROUTER_KEY }}
+          CONFIG__MODEL: "openrouter/anthropic/claude-sonnet-4.5"
+          CONFIG__CUSTOM_MODEL_MAX_TOKENS: "30000"
+          PR_REVIEWER__EXTRA_INSTRUCTIONS: >
+            Focus on whether this PR actually delivers the full feature described
+            in its title/description: missing edge cases, incomplete error handling,
+            gaps versus the stated intent, and missing tests.
+        with:
+          command: review
+
+  review_architecture:
+    if: github.event.action == 'labeled' && github.event.label.name == 'review:arch'
+    runs-on: ubuntu-latest
+    name: "PR Review — architecture (gemini-2.5-pro)"
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: write
+    steps:
+      - uses: the-pr-agent/pr-agent@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENROUTER__KEY: ${{ secrets.OPENROUTER_KEY }}
+          CONFIG__MODEL: "openrouter/google/gemini-2.5-pro"
+          CONFIG__CUSTOM_MODEL_MAX_TOKENS: "50000"
+          PR_REVIEWER__EXTRA_INSTRUCTIONS: >
+            Do an architectural pass: module boundaries, dependency direction,
+            API/contract design, coupling, and long-term maintainability.
+            Do not repeat line-level nitpicks already covered by a standard review.
+        with:
+          command: review
+
+  review_plan:
+    if: github.event.action == 'labeled' && github.event.label.name == 'review:plan'
+    runs-on: ubuntu-latest
+    name: "PR Review — plan compliance (claude-sonnet-4.5)"
+    permissions:
+      issues: write
+      pull-requests: write
+      contents: write
+    steps:
+      - uses: the-pr-agent/pr-agent@main
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OPENROUTER__KEY: ${{ secrets.OPENROUTER_KEY }}
+          CONFIG__MODEL: "openrouter/anthropic/claude-sonnet-4.5"
+          CONFIG__CUSTOM_MODEL_MAX_TOKENS: "30000"
+        with:
+          command: ask
+          args: "Compare this PR's actual changes against the plan written in the PR description (or linked issue). List anything in the plan that is missing, incomplete, or done differently, and anything the PR does that the plan didn't ask for."
