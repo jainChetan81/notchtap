@@ -26,6 +26,39 @@ const emitStatus = (paused: boolean) =>
     }),
   );
 
+// plan 180 (Step 2): the same full status shape as `emitStatus` above,
+// but with a track on the wire — the media below-block renders nothing at
+// all for `media.current === null` (MediaBelowBlock.tsx's own early
+// return), so the seam test needs real content to distinguish "the
+// selection arrived" from "the selection arrived and rendered nothing".
+const emitStatusWithMedia = () =>
+  act(() =>
+    emitTo("status-state", {
+      paused: false,
+      waiting: 0,
+      agent: { activeSessions: 0 },
+      football: { enabled: false, live: null },
+      news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
+      weather: { enabled: false, current: null },
+      media: {
+        enabled: true,
+        current: {
+          title: "Midnight City",
+          artist: "M83",
+          album: "Hurry Up, We're Dreaming",
+          playing: true,
+          elapsedMs: 1500,
+          durationMs: 243_000,
+          capturedAtMs: 1_753_000_000_000,
+          appBundleId: "app.zen-browser.zen",
+        },
+      },
+    }),
+  );
+
+const emitHover = (hovered: boolean) => act(() => emitTo("hover-changed", { hovered }));
+const emitTabSelection = (payload: unknown) => act(() => emitTo("tab-selection-changed", payload));
+
 const SHOWING: SlotState = {
   state: "showing",
   id: "n1",
@@ -513,6 +546,91 @@ describe("App", () => {
       await vi.waitFor(() => {
         expect(container.querySelector('[data-testid="agent-board"]')).not.toBeNull();
       });
+    });
+  });
+
+  // Plan 180 (Step 2): `useTabSelection`'s ONE production call site.
+  // `useTabSelection.test.ts` proves the hook validates and stores; this
+  // proves App.tsx actually subscribes to the right channel and threads
+  // the result down to `StatusRailCard`'s `selectedTab` prop. Neither of
+  // those wiring mistakes is loud: drop the prop or mistype the channel
+  // name and the overlay degrades to "clicking an icon does nothing" with
+  // the whole suite still green, because every layer's own failure mode
+  // is the silent "nothing is selected" page (spec §7's "none").
+  //
+  // Three events are needed to reach the seam, and all three are real
+  // rust-emitted channels, not test scaffolding: a status wire with a
+  // track on it (the below-block renders nothing without content), the
+  // hover that opens the tab pull at all (`tabPullOpen = !showing &&
+  // hovered`, StatusRailCard.tsx), and the selection itself.
+  describe("tab selection seam (plan 180)", () => {
+    it("mounts the selected tab's below-block once hovered", async () => {
+      const { container } = render(<App />);
+      emitStatusWithMedia();
+      emitHover(true);
+      emitTabSelection({ selected: "music" });
+
+      await vi.waitFor(() => {
+        expect(container.querySelector('[data-testid="media-below-block"]')).not.toBeNull();
+      });
+      // ...and the ambient peek yields to it, leaving exactly one
+      // `.below-block` under the shell once the swap settles — the
+      // invariant `card-chrome.css`'s `:not(:has(.below-block))` rounding
+      // law depends on (StatusRailCard.tsx's `peekOpen` doc). Waited on,
+      // not asserted synchronously: the peek is an AnimatePresence child,
+      // so it is still playing its exit collapse at the instant the new
+      // card mounts. The overlap is the crossfade, by design.
+      await vi.waitFor(() => {
+        expect(container.querySelector(".idle-peek")).toBeNull();
+        expect(container.querySelectorAll(".below-block").length).toBe(1);
+      });
+    });
+
+    it("is inert until the operator hovers — a selection alone opens nothing", async () => {
+      const { container } = render(<App />);
+      emitStatusWithMedia();
+      emitTabSelection({ selected: "music" });
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+      expect(container.querySelector('[data-testid="media-below-block"]')).toBeNull();
+    });
+
+    it("ignores an unknown tab token instead of rendering a broken page", async () => {
+      const { container } = render(<App />);
+      emitStatusWithMedia();
+      emitHover(true);
+      emitTabSelection({ selected: "definitely-not-a-tab" });
+
+      await act(async () => {
+        await Promise.resolve();
+      });
+      // The coercion this pins is SILENT by design (`useTabSelection`'s
+      // closed-set check against `TAB_ORDER` returns "nothing selected"
+      // for anything it does not recognise, never an error) — which is
+      // also why `tabWireParity.test.ts` exists: rust-side drift in the
+      // five wire tokens would land here and read as a working app that
+      // simply never selects anything.
+      expect(container.querySelector('[data-testid="media-below-block"]')).toBeNull();
+      // ...and the shipped ambient peek is what fills the gap, unchanged.
+      expect(container.querySelector(".idle-peek")).not.toBeNull();
+    });
+
+    it("drops back to the ambient peek when an unknown token follows a good one", async () => {
+      const { container } = render(<App />);
+      emitStatusWithMedia();
+      emitHover(true);
+      emitTabSelection({ selected: "music" });
+      await vi.waitFor(() => {
+        expect(container.querySelector('[data-testid="media-below-block"]')).not.toBeNull();
+      });
+
+      emitTabSelection({ selected: 5 });
+      await vi.waitFor(() => {
+        expect(container.querySelector('[data-testid="media-below-block"]')).toBeNull();
+      });
+      expect(container.querySelector(".idle-peek")).not.toBeNull();
     });
   });
 });

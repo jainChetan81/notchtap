@@ -1347,6 +1347,63 @@ mod tests {
         assert!(!is_valid_prefix_shortcut("⇧⌃Space")); // glyphs in the wrong order
     }
 
+    // --- plan 180 (Step 4): the shared whitespace fixture table ---
+    //
+    // THIS FUNCTION IS ONE HALF OF A TWO-LANGUAGE TEST. The identical
+    // strings run against `isValidPrefixShortcut` in
+    // `src/settings/sections/ShortcutsSection.test.ts`; that TS mirror
+    // decides whether the Settings field looks valid, this one decides
+    // whether the config actually saves. A disagreement shows up as a
+    // field that reads "valid" and a save that quietly refuses it.
+    //
+    // They did disagree until plan 180: rust's `char::is_whitespace` is
+    // Unicode `White_Space`, while JavaScript's `\s` misses U+0085 (NEL)
+    // and adds U+FEFF (ZWNBSP). Both of those are in the table below.
+    // Change either validator and you must run BOTH tables.
+    #[test]
+    fn prefix_shortcut_whitespace_table_matches_the_ts_mirror() {
+        // --- accept ---
+        // a single glyph, the shape the shipped seven shortcuts use
+        assert!(is_valid_prefix_shortcut("⌃⇧K"));
+        // a spelled-out key name, the spec's chosen default
+        assert!(is_valid_prefix_shortcut("⌃⇧Space"));
+        // U+FEFF is NOT Unicode White_Space — both sides accept it
+        assert!(is_valid_prefix_shortcut("⌃⇧K\u{FEFF}"));
+        // 24 chars of key name — the inclusive upper bound
+        assert!(is_valid_prefix_shortcut(&format!("⌃⇧{}", "K".repeat(24))));
+
+        // --- reject ---
+        // an ordinary space inside the key name
+        assert!(!is_valid_prefix_shortcut("⌃⇧K L"));
+        // U+0085 (NEL) IS White_Space — the bug this table caught
+        assert!(!is_valid_prefix_shortcut("⌃⇧K\u{0085}"));
+        // the prefix with no key name at all
+        assert!(!is_valid_prefix_shortcut("⌃⇧"));
+        // 25 chars — one past the upper bound
+        assert!(!is_valid_prefix_shortcut(&format!("⌃⇧{}", "K".repeat(25))));
+    }
+
+    /// The exact rust twin of the TS mirror's own BMP sweep ("rejects a
+    /// key name containing any BMP White_Space code point, and no
+    /// others"). Unicode has no `White_Space` code point above U+3000,
+    /// so the BMP is the whole set; `from_u32` skips the surrogates,
+    /// which the TS sweep skips too, so both runs cover the same domain.
+    /// Together the two sweeps are what make "exact sync" a checked
+    /// claim rather than a comment.
+    #[test]
+    fn prefix_shortcut_rejects_exactly_the_unicode_white_space_code_points() {
+        for code in 0u32..=0xFFFF {
+            let Some(c) = char::from_u32(code) else {
+                continue;
+            };
+            assert_eq!(
+                is_valid_prefix_shortcut(&format!("⌃⇧K{c}")),
+                !c.is_whitespace(),
+                "U+{code:04X} disagrees with char::is_whitespace"
+            );
+        }
+    }
+
     #[test]
     fn prefix_shortcut_boundary_validates_through_the_whole_config() {
         let mut c = Config {
