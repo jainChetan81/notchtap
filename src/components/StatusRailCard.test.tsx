@@ -430,16 +430,18 @@ describe("StatusRailCard", () => {
     const active: StatusState = {
       paused: false,
       waiting: 1,
+      agent: { activeSessions: 0 },
       football: { enabled: true, live: { label: "MTL 0–0 TOR", minute: "12'" } },
-      news: { enabled: true },
+      news: { enabled: true, chargeFraction: 0, chargeCount: 0, isCharged: false },
       weather: { enabled: false, current: null },
       media: { enabled: false, current: null },
     };
     const inactive: StatusState = {
       paused: false,
       waiting: 0,
+      agent: { activeSessions: 0 },
       football: { enabled: false, live: null },
-      news: { enabled: false },
+      news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
       weather: { enabled: false, current: null },
       media: { enabled: false, current: null },
     };
@@ -2037,8 +2039,9 @@ describe("StatusRailCard", () => {
     const WEATHER_STATUS: StatusState = {
       paused: false,
       waiting: 0,
+      agent: { activeSessions: 0 },
       football: { enabled: false, live: null },
-      news: { enabled: false },
+      news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
       weather: {
         enabled: true,
         current: {

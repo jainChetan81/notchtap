@@ -2,24 +2,16 @@
 //! machine — pure, no AppKit types, no lock, no I/O, same discipline
 //! `hover.rs` follows (`docs/TESTING_STRATEGY.md` §4.4).
 //!
-//! Not yet wired into `lib.rs`: the actual click-detection mechanism that
-//! would call `TabSelection::select` is an open design question (see
-//! `plans/171-tab-notch-redesign.md`'s own note) — whether it needs a new
-//! native NSEvent monitor, or whether a plain webview `onClick` already
-//! reaches the frontend once click-through is off on this app's
-//! non-activating overlay panel, is unverified from a Linux dev
-//! environment and needs one empirical check on real macOS hardware
-//! before either is built. This module is ready for either answer; it
-//! knows about neither AppKit nor tauri events.
+//! Wired (2026-08-03, on-hardware hand-off): `click.rs`'s NSEvent local
+//! monitor is the click path (plan 171 slice A item 2's mechanism (a) —
+//! required regardless of what the webview sees, because the overlay is
+//! receive-only: the frontend has no invoke/emit capability with which
+//! to tell rust about a click, so rust must observe the mouseDown
+//! itself). `lib.rs` owns the live `Arc<TabState>`; the engine's status
+//! loop drives `clear_if_gone` off the same presence snapshot the icon
+//! strip renders from. This module still knows about neither AppKit nor
+//! tauri events — the monitor calls in, never the other way.
 //!
-//! `#![allow(dead_code)]`: every item here is staged ahead of the real
-//! caller that lands with Slice A's click-detection wiring above —
-//! `cargo clippy --all-targets -D warnings` (the CI gate, justfile's
-//! `check-rust`) has no exemption for a plain `pub fn` the way it does
-//! for `#[cfg(test)]`-reached items, so this whole module reads as dead
-//! until that caller exists. Remove this attribute the moment
-//! `TabSelection` gets a real call site outside its own tests.
-#![allow(dead_code)]
 
 /// The five sources the icon strip can select, in the strip's fixed
 /// left-to-right order (spec `docs/superpowers/specs/2026-08-02-tab-
@@ -109,6 +101,175 @@ impl TabSelection {
                 self.selected = None;
             }
         }
+    }
+}
+
+impl Tab {
+    /// The wire token `tab-selection-changed` carries (plan 171 §0 pins
+    /// the closed set: `"agent" | "football" | "music" | "weather" |
+    /// "news"`). "music", not "media" — the strip's own vocabulary, per
+    /// the spec's §6 table.
+    pub fn wire_label(self) -> &'static str {
+        match self {
+            Tab::Agent => "agent",
+            Tab::Football => "football",
+            Tab::Music => "music",
+            Tab::Weather => "weather",
+            Tab::News => "news",
+        }
+    }
+}
+
+/// Which tabs are PRESENT given the current ambient state (spec §6's
+/// visibility rule): weather and news always, agent/football/music only
+/// while genuinely live. Returned in `Tab::ORDER` order — the same order
+/// `hover::icon_strip_rects` lays boxes out in, so a caller can zip the
+/// two index-for-index (that pairing is the whole click hit-test).
+pub fn present_tabs(state: &crate::status::StatusState) -> Vec<Tab> {
+    Tab::ORDER
+        .iter()
+        .copied()
+        .filter(|tab| match tab {
+            Tab::Agent => state.agent.active_sessions > 0,
+            Tab::Football => state.football.live.is_some(),
+            Tab::Music => state.media.current.is_some(),
+            Tab::Weather | Tab::News => true,
+        })
+        .collect()
+}
+
+/// The one shared, live tab-state bundle (`lib.rs` owns the `Arc`): the
+/// selection itself, the last selection actually emitted over the wire
+/// (`tab-selection-changed` fires on transitions only, mirroring
+/// `emit_hover_changed_if_transitioned`'s discipline), and the presence
+/// snapshot the click monitor hit-tests against — written by the
+/// engine's status loop from the SAME `StatusState` the frontend renders
+/// the strip from, so both sides always derive geometry from one source.
+#[derive(Debug, Default)]
+pub struct TabState {
+    pub selection: std::sync::Mutex<TabSelection>,
+    pub last_emitted: std::sync::Mutex<Option<Tab>>,
+    pub presence: std::sync::Mutex<Vec<Tab>>,
+}
+
+/// The ONE shared plan-171 wire bundle (`lib.rs` owns the `Arc`): every
+/// mechanism this feature adds — the click monitor, the prefix keymap,
+/// the engine's status loop, the Agent Board's session-count mirror, and
+/// the rss poller's charge feed — reads/writes through this rather than
+/// each holding its own handle soup. One new `Engine::new` param instead
+/// of four; `Default` keeps every existing engine test constructor to a
+/// one-line addition.
+#[derive(Debug)]
+pub struct TabWire {
+    /// Live Agent Session count, mirrored by
+    /// `AgentBoardPublisher::publish_if_changed` (which already recomputes
+    /// on every registry change) — the status loop reads it instead of
+    /// taking a second async registry lock inside the queue's own
+    /// critical section.
+    pub agent_sessions: std::sync::atomic::AtomicUsize,
+    /// The news-charge state machine (`news_charge.rs`), fed by
+    /// `rss_poller.rs` (`item_landed`/`cycle_end`) and cleared by the
+    /// selection paths (`visit` on selecting the news tab).
+    pub news_charge: std::sync::Mutex<crate::news_charge::NewsCharge>,
+    /// Selection + emission + presence — see [`TabState`].
+    pub tabs: TabState,
+    /// Whether a pushed card currently occupies the Slot — mirrored at
+    /// every `emit_slot_state` site so the click monitor (a sync
+    /// main-thread AppKit callback that cannot await the queue) can gate
+    /// on "the strip is actually what's on screen".
+    pub slot_occupied: std::sync::atomic::AtomicBool,
+}
+
+impl TabWire {
+    pub fn new(news_batch_size: usize) -> Self {
+        Self {
+            agent_sessions: std::sync::atomic::AtomicUsize::new(0),
+            news_charge: std::sync::Mutex::new(crate::news_charge::NewsCharge::new(
+                news_batch_size,
+            )),
+            tabs: TabState::default(),
+            slot_occupied: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+}
+
+impl Default for TabWire {
+    /// Test-friendly default; production (`lib.rs`) passes the real
+    /// configured batch size (`rss_max_per_poll` — a "full batch" is
+    /// exactly what one poll cycle is allowed to land).
+    fn default() -> Self {
+        Self::new(5)
+    }
+}
+
+#[cfg(test)]
+mod wire_tests {
+    use super::*;
+    use crate::status::{FootballStatus, MediaStatus, NewsStatus, StatusState, WeatherStatus};
+
+    fn base_state() -> StatusState {
+        StatusState {
+            paused: false,
+            waiting: 0,
+            agent: crate::status::AgentStatus { active_sessions: 0 },
+            football: FootballStatus {
+                enabled: true,
+                live: None,
+            },
+            news: NewsStatus {
+                enabled: true,
+                charge_fraction: 0.0,
+                charge_count: 0,
+                is_charged: false,
+            },
+            weather: WeatherStatus {
+                enabled: true,
+                current: None,
+            },
+            media: MediaStatus {
+                enabled: true,
+                current: None,
+            },
+        }
+    }
+
+    #[test]
+    fn wire_labels_are_the_pinned_closed_set() {
+        let labels: Vec<&str> = Tab::ORDER.iter().map(|t| t.wire_label()).collect();
+        assert_eq!(labels, ["agent", "football", "music", "weather", "news"]);
+    }
+
+    #[test]
+    fn weather_and_news_are_always_present_even_with_nothing_live() {
+        assert_eq!(present_tabs(&base_state()), vec![Tab::Weather, Tab::News]);
+    }
+
+    #[test]
+    fn agent_presence_follows_active_session_count() {
+        let mut s = base_state();
+        s.agent.active_sessions = 1;
+        assert_eq!(present_tabs(&s), vec![Tab::Agent, Tab::Weather, Tab::News]);
+    }
+
+    #[test]
+    fn presence_preserves_strip_order_when_everything_is_live() {
+        let mut s = base_state();
+        s.agent.active_sessions = 2;
+        s.football.live = Some(crate::status::LiveMatchSummary {
+            label: "A 1-0 B".to_string(),
+            minute: "45'".to_string(),
+        });
+        s.media.current = Some(crate::status::NowPlayingSummary {
+            title: "t".to_string(),
+            artist: None,
+            album: None,
+            playing: true,
+            elapsed_ms: 0,
+            duration_ms: None,
+            captured_at_ms: 0,
+            app_bundle_id: None,
+        });
+        assert_eq!(present_tabs(&s), Tab::ORDER.to_vec());
     }
 }
 

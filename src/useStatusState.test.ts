@@ -12,8 +12,9 @@ const emit = (payload: unknown) => act(() => emitTo("status-state", payload));
 const FALLBACK: StatusState = {
   paused: false,
   waiting: 0,
+  agent: { activeSessions: 0 },
   football: { enabled: false, live: null },
-  news: { enabled: false },
+  news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
   weather: { enabled: false, current: null },
   media: { enabled: false, current: null },
 };
@@ -21,8 +22,9 @@ const FALLBACK: StatusState = {
 const LIVE: StatusState = {
   paused: false,
   waiting: 3,
+  agent: { activeSessions: 0 },
   football: { enabled: true, live: { label: "Arsenal 2–0 Chelsea", minute: "45'" } },
-  news: { enabled: true },
+  news: { enabled: true, chargeFraction: 0, chargeCount: 0, isCharged: false },
   weather: { enabled: false, current: null },
   media: { enabled: false, current: null },
 };
@@ -72,6 +74,7 @@ describe("useStatusState", () => {
     expect(result.current).toEqual({
       ...LIVE,
       waiting: 2,
+      agent: { activeSessions: 0 },
       football: { enabled: true, live: null },
     });
   });
@@ -132,18 +135,21 @@ describe("useStatusState", () => {
   it("ignores a payload with a non-boolean football gate or a malformed live match", () => {
     window.__NOTCHTAP_STATUS_STATE__ = {
       ...LIVE,
+      agent: { activeSessions: 0 },
       football: { enabled: "yes", live: null },
     };
     expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
 
     window.__NOTCHTAP_STATUS_STATE__ = {
       ...LIVE,
+      agent: { activeSessions: 0 },
       football: { enabled: true, live: { label: "Arsenal 2–0 Chelsea", minute: 45 } },
     };
     expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
 
     window.__NOTCHTAP_STATUS_STATE__ = {
       ...LIVE,
+      agent: { activeSessions: 0 },
       football: { enabled: true, live: "Arsenal 2–0 Chelsea" },
     };
     expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
@@ -363,8 +369,9 @@ describe("useStatusState", () => {
     const allClear: StatusState = {
       paused: false,
       waiting: 0,
+      agent: { activeSessions: 0 },
       football: { enabled: false, live: null },
-      news: { enabled: true },
+      news: { enabled: true, chargeFraction: 0, chargeCount: 0, isCharged: false },
       weather: { enabled: false, current: null },
       media: { enabled: false, current: null },
     };

@@ -317,6 +317,11 @@ pub struct AgentBoardPublisher<R: tauri::Runtime = tauri::Wry> {
     /// documented on [`Self::publish_if_changed`]; `true` restores the
     /// pre-2026-08-02 behavior where any live session shows the Board.
     board_show_working: bool,
+    /// Plan 171: live-session count mirror for the agent icon — stored
+    /// UNGATED (before `gate_presence`) in `publish_if_changed`, because
+    /// the icon's "a session is genuinely running" tier must see Working
+    /// sessions even when `board_show_working` hides them from the Board.
+    tab_wire: std::sync::Arc<crate::tabs::TabWire>,
 }
 
 impl<R: tauri::Runtime> Clone for AgentBoardPublisher<R> {
@@ -328,6 +333,7 @@ impl<R: tauri::Runtime> Clone for AgentBoardPublisher<R> {
             health: self.health.clone(),
             runtimes_cfg: self.runtimes_cfg,
             board_show_working: self.board_show_working,
+            tab_wire: self.tab_wire.clone(),
         }
     }
 }
@@ -339,6 +345,7 @@ impl<R: tauri::Runtime> AgentBoardPublisher<R> {
         health: Arc<super::health::HealthTracker>,
         runtimes_cfg: crate::config::AgentRuntimesConfig,
         board_show_working: bool,
+        tab_wire: std::sync::Arc<crate::tabs::TabWire>,
     ) -> Self {
         Self {
             app,
@@ -350,6 +357,7 @@ impl<R: tauri::Runtime> AgentBoardPublisher<R> {
             health,
             runtimes_cfg,
             board_show_working,
+            tab_wire,
         }
     }
 
@@ -373,7 +381,22 @@ impl<R: tauri::Runtime> AgentBoardPublisher<R> {
     /// idle with no knowledge of the knob, and hover-expand declines for
     /// the same reason, without a second gate in either layer.
     pub async fn publish_if_changed(&self, now: Instant) -> bool {
-        let states = self.gate_presence(self.registry.ordered_states(now).await);
+        let ungated = self.registry.ordered_states(now).await;
+        // Plan 171: the agent icon counts LIVE sessions (spec §6:
+        // "a session is genuinely running") — non-terminal, non-stale —
+        // from the ungated registry view, independent of the Board's own
+        // show-working presence gate.
+        self.tab_wire.agent_sessions.store(
+            ungated
+                .iter()
+                .filter(|st| {
+                    !st.state.is_terminal()
+                        && st.state != crate::agents::model::AgentSessionState::Stale
+                })
+                .count(),
+            std::sync::atomic::Ordering::Relaxed,
+        );
+        let states = self.gate_presence(ungated);
         // poison-tolerant, matching this codebase's other `StdMutex`
         // guards — a panic elsewhere while holding this lock must not
         // permanently wedge every later publish attempt.
@@ -584,6 +607,7 @@ mod tests {
             Arc::new(crate::agents::health::HealthTracker::new()),
             crate::config::AgentRuntimesConfig::default(),
             board_show_working,
+            std::sync::Arc::new(crate::tabs::TabWire::default()),
         )
     }
 

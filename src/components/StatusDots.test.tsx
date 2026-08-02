@@ -12,8 +12,9 @@ afterEach(cleanup);
 const ALL_ON: StatusState = {
   paused: false,
   waiting: 3,
+  agent: { activeSessions: 0 },
   football: { enabled: true, live: { label: "Arsenal 2–0 Chelsea", minute: "45'" } },
-  news: { enabled: true },
+  news: { enabled: true, chargeFraction: 0, chargeCount: 0, isCharged: false },
   weather: {
     enabled: true,
     current: {
@@ -32,8 +33,9 @@ const ALL_ON: StatusState = {
 const ALL_OFF: StatusState = {
   paused: false,
   waiting: 0,
+  agent: { activeSessions: 0 },
   football: { enabled: false, live: null },
-  news: { enabled: false },
+  news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
   weather: { enabled: false, current: null },
   media: { enabled: false, current: null },
 };
@@ -72,8 +74,9 @@ describe("StatusDots", () => {
         status={{
           paused: false,
           waiting: 0,
+          agent: { activeSessions: 0 },
           football: { enabled: true, live: null },
-          news: { enabled: false },
+          news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
           weather: { enabled: true, current: null },
           media: { enabled: false, current: null },
         }}
@@ -113,8 +116,9 @@ describe("StatusDots", () => {
           status={{
             paused: true,
             waiting: 0,
+            agent: { activeSessions: 0 },
             football: { enabled: true, live: null },
-            news: { enabled: true },
+            news: { enabled: true, chargeFraction: 0, chargeCount: 0, isCharged: false },
             weather: { enabled: true, current: null },
             media: { enabled: false, current: null },
           }}
@@ -185,8 +189,9 @@ describe("StatusDots", () => {
           status={{
             paused: false,
             waiting: 0,
+            agent: { activeSessions: 0 },
             football: { enabled: true, live: null },
-            news: { enabled: false },
+            news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
             weather: { enabled: true, current: null },
             media: { enabled: false, current: null },
           }}
@@ -208,8 +213,9 @@ describe("StatusDots", () => {
           status={{
             paused: true,
             waiting: 0,
+            agent: { activeSessions: 0 },
             football: { enabled: true, live: null },
-            news: { enabled: false },
+            news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
             weather: { enabled: true, current: null },
             media: { enabled: false, current: null },
           }}

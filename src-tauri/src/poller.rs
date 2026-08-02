@@ -1598,6 +1598,7 @@ mod tests {
             false,
             false,
             None,
+            std::sync::Arc::new(crate::tabs::TabWire::default()),
         );
 
         engine.accept(score_event("accepted"), false).await.unwrap();
@@ -2347,6 +2348,7 @@ mod tests {
             false,
             false,
             None,
+            std::sync::Arc::new(crate::tabs::TabWire::default()),
         );
 
         for event in live_cycle_events(true) {

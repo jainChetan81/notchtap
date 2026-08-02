@@ -74,8 +74,20 @@ export type NowPlayingSummary = {
 export type StatusState = {
   paused: boolean;
   waiting: number;
+  /// Plan 171 (tab-notch): live Agent Session count — the agent icon's
+  /// present/live source (present iff > 0; for agent, present IS live).
+  agent: { activeSessions: number };
   football: { enabled: boolean; live: LiveMatchSummary | null };
-  news: { enabled: boolean };
+  news: {
+    enabled: boolean;
+    // Plan 171 (spec §8): the news-charge cycle. chargeFraction is
+    // 0..=1 fill, chargeCount items waiting, isCharged the edge-held
+    // "cycle ended with a full batch" flag (cleared on visiting the
+    // news tab).
+    chargeFraction: number;
+    chargeCount: number;
+    isCharged: boolean;
+  };
   weather: { enabled: boolean; current: WeatherSummary | null };
   media: { enabled: boolean; current: NowPlayingSummary | null };
 };
@@ -91,8 +103,9 @@ declare global {
 const FALLBACK_STATUS: StatusState = {
   paused: false,
   waiting: 0,
+  agent: { activeSessions: 0 },
   football: { enabled: false, live: null },
-  news: { enabled: false },
+  news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
   weather: { enabled: false, current: null },
   media: { enabled: false, current: null },
 };
@@ -186,6 +199,9 @@ function isValidStatusState(v: unknown): v is StatusState {
     return false;
   }
   const obj = v as Record<string, unknown>;
+  if (typeof obj.agent !== "object" || obj.agent === null) {
+    return false;
+  }
   if (typeof obj.football !== "object" || obj.football === null) {
     return false;
   }
@@ -198,6 +214,7 @@ function isValidStatusState(v: unknown): v is StatusState {
   if (typeof obj.media !== "object" || obj.media === null) {
     return false;
   }
+  const agent = obj.agent as Record<string, unknown>;
   const football = obj.football as Record<string, unknown>;
   const news = obj.news as Record<string, unknown>;
   const weather = obj.weather as Record<string, unknown>;
@@ -205,9 +222,15 @@ function isValidStatusState(v: unknown): v is StatusState {
   return (
     typeof obj.paused === "boolean" &&
     isNonNegativeInteger(obj.waiting) &&
+    isNonNegativeInteger(agent.activeSessions) &&
     typeof football.enabled === "boolean" &&
     (football.live === null || isValidLiveMatch(football.live)) &&
     typeof news.enabled === "boolean" &&
+    typeof news.chargeFraction === "number" &&
+    news.chargeFraction >= 0 &&
+    news.chargeFraction <= 1 &&
+    isNonNegativeInteger(news.chargeCount) &&
+    typeof news.isCharged === "boolean" &&
     typeof weather.enabled === "boolean" &&
     (weather.current === null || isValidWeatherSummary(weather.current)) &&
     typeof media.enabled === "boolean" &&

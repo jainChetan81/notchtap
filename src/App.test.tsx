@@ -18,8 +18,9 @@ const emitStatus = (paused: boolean) =>
     emitTo("status-state", {
       paused,
       waiting: 0,
+      agent: { activeSessions: 0 },
       football: { enabled: false, live: null },
-      news: { enabled: false },
+      news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
       weather: { enabled: false, current: null },
       media: { enabled: false, current: null },
     }),

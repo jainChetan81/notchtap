@@ -68,8 +68,9 @@ const OUTLOOK: OutlookPoint[] = [
 const WEATHER_STATUS: StatusState = {
   paused: false,
   waiting: 0,
+  agent: { activeSessions: 0 },
   football: { enabled: false, live: null },
-  news: { enabled: false },
+  news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
   weather: { enabled: true, current: WEATHER_CURRENT },
   media: { enabled: false, current: null },
 };
@@ -93,8 +94,9 @@ const WEATHER_STATUS_WITH_FORECAST: StatusState = {
 const LIVE_MATCH_STATUS: StatusState = {
   paused: false,
   waiting: 0,
+  agent: { activeSessions: 0 },
   football: { enabled: true, live: { label: "MTL 1-0 TOR", minute: "63'" } },
-  news: { enabled: false },
+  news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
   weather: { enabled: true, current: WEATHER_CURRENT },
   media: { enabled: false, current: null },
 };
@@ -109,8 +111,9 @@ const LIVE_MATCH_STATUS_WITH_FORECAST: StatusState = {
 const NOTHING_AMBIENT_STATUS: StatusState = {
   paused: false,
   waiting: 0,
+  agent: { activeSessions: 0 },
   football: { enabled: false, live: null },
-  news: { enabled: false },
+  news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
   weather: { enabled: false, current: null },
   media: { enabled: false, current: null },
 };
@@ -129,8 +132,9 @@ const NOW_PLAYING: NowPlayingSummary = {
 const MEDIA_STATUS: StatusState = {
   paused: false,
   waiting: 0,
+  agent: { activeSessions: 0 },
   football: { enabled: false, live: null },
-  news: { enabled: false },
+  news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
   weather: { enabled: true, current: WEATHER_CURRENT },
   media: { enabled: true, current: NOW_PLAYING },
 };

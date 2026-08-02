@@ -19,6 +19,7 @@ mod engine;
 // queue, event, and error are `pub` so their doc-tests can exercise the
 // real public api (doc-tests link against the lib crate from outside);
 // nothing else consumes this crate as a library.
+mod click;
 pub mod error;
 pub mod event;
 mod history;
@@ -365,6 +366,10 @@ pub fn run() {
             } else {
                 None
             };
+            // Plan 171: the ONE shared tab-notch wire bundle. Batch size
+            // = `rss_max_per_poll` — a "full batch" is exactly what one
+            // poll cycle is allowed to land (news_charge.rs's own doc).
+            let tab_wire = std::sync::Arc::new(tabs::TabWire::new(rss_max_per_poll));
             let engine = Engine::new(
                 initial_queue,
                 app.handle().clone(),
@@ -374,6 +379,7 @@ pub fn run() {
                 weather_enabled,
                 now_playing_enabled,
                 history,
+                tab_wire.clone(),
             );
             app.manage(engine.clone());
 
@@ -435,6 +441,7 @@ pub fn run() {
                 agent_health.clone(),
                 agent_runtimes,
                 agent_board_show_working,
+                tab_wire.clone(),
             );
             app.manage(agent_board.clone());
             agent_board.spawn_tick(agents::board::DEFAULT_TICK_INTERVAL);
@@ -527,6 +534,7 @@ pub fn run() {
                     let was_hovered = was_hovered.clone();
                     let agent_board = agent_board.clone();
                     let board_frame = board_frame.clone();
+                    let tab_wire = tab_wire.clone();
                     let window = window.clone();
                     hover_handler.on_mouse_entered(move |event| {
                         let loc = event.locationInWindow();
@@ -565,6 +573,7 @@ pub fn run() {
                             cutout,
                             &agent_board,
                             &board_frame,
+                            &tab_wire,
                         );
                     });
                 }
@@ -574,6 +583,7 @@ pub fn run() {
                     let was_hovered = was_hovered.clone();
                     let agent_board = agent_board.clone();
                     let board_frame = board_frame.clone();
+                    let tab_wire = tab_wire.clone();
                     let window = window.clone();
                     hover_handler.on_mouse_moved(move |event| {
                         let loc = event.locationInWindow();
@@ -604,6 +614,7 @@ pub fn run() {
                             cutout,
                             &agent_board,
                             &board_frame,
+                            &tab_wire,
                         );
                     });
                 }
@@ -613,6 +624,7 @@ pub fn run() {
                     let was_hovered = was_hovered.clone();
                     let agent_board = agent_board.clone();
                     let board_frame = board_frame.clone();
+                    let tab_wire = tab_wire.clone();
                     let window = window.clone();
                     // Leaving the window's tracking area is never "still
                     // hovered" regardless of where the cursor lands next —
@@ -628,6 +640,7 @@ pub fn run() {
                             cutout,
                             &agent_board,
                             &board_frame,
+                            &tab_wire,
                         );
                     });
                 }
@@ -690,13 +703,62 @@ pub fn run() {
                                 last_visible_id.lock().unwrap_or_else(|e| e.into_inner());
                             if *last != new_id {
                                 *last = new_id;
-                                *was_hovered.lock().unwrap_or_else(|e| e.into_inner()) = false;
+                                let was = std::mem::replace(
+                                    &mut *was_hovered.lock().unwrap_or_else(|e| e.into_inner()),
+                                    false,
+                                );
+                                // plan 171: the latch reset is also the
+                                // strip's death — if the window was in a
+                                // hovered state (and so may be accepting
+                                // cursor events for the strip), restore
+                                // click-through NOW rather than waiting
+                                // for the next hover transition. Closes
+                                // the promote-while-hovered gap; showing
+                                // cards are always click-through, and the
+                                // board collapse's own restore below is
+                                // idempotent with this. No slot check:
+                                // at this moment the slot JUST changed
+                                // (that's why we're here), and the strip
+                                // is gone either way.
+                                if was {
+                                    let _ = window.set_ignore_cursor_events(true);
+                                }
                                 if is_real_notification {
                                     collapse_board_if_expanded(&window, mode, cutout, &board_frame);
                                 }
                             }
                         });
                 }
+            }
+
+            // Plan 171 slice A item 2: the icon-strip click monitor —
+            // mechanism (a), an NSEvent LOCAL monitor (click.rs's module
+            // doc records why (b) alone can never satisfy the receive-only
+            // overlay). Installed once, before the native config below
+            // re-asserts click-through; events only ever reach it while
+            // `emit_hover_changed_if_transitioned` has opened the window
+            // for cursor events (strip hovered, slot idle).
+            #[cfg(target_os = "macos")]
+            {
+                let monitor_cutout_width = cutout.map(|c| c.width).unwrap_or(0.0);
+                let monitor_cutout_height = inset;
+                let monitor_scale = config.appearance.card_scale;
+                let window_number = {
+                    use objc2_app_kit::NSWindow;
+                    let ns_window_ptr = window.ns_window()? as *mut NSWindow;
+                    let ns_window: &NSWindow = unsafe { &*ns_window_ptr };
+                    ns_window.windowNumber()
+                };
+                click::install_click_monitor(click::ClickMonitorParams {
+                    app: app.handle().clone(),
+                    tab_wire: tab_wire.clone(),
+                    was_hovered: was_hovered.clone(),
+                    window_number,
+                    mode,
+                    cutout_width: monitor_cutout_width,
+                    cutout_height: monitor_cutout_height,
+                    scale: monitor_scale,
+                });
             }
 
             // v3.6 spec §7.2: survive Spaces switches and fullscreen apps.
@@ -720,6 +782,7 @@ pub fn run() {
                 let engine_for_handler = engine.clone();
                 let pause_item_for_handler = pause_item.clone();
                 let was_hovered_for_handler = was_hovered.clone();
+                let tab_wire_for_handler = tab_wire.clone();
                 let agent_board_for_handler = agent_board.clone();
                 let board_frame_for_handler = board_frame.clone();
                 let window_for_handler = window.clone();
@@ -761,6 +824,7 @@ pub fn run() {
                                         cutout,
                                         &agent_board_for_handler,
                                         &board_frame_for_handler,
+                                        &tab_wire_for_handler,
                                     );
                                 } else if *shortcut
                                     == Shortcut::new(
@@ -787,6 +851,7 @@ pub fn run() {
                                         cutout,
                                         &agent_board_for_handler,
                                         &board_frame_for_handler,
+                                        &tab_wire_for_handler,
                                     );
                                 } else if *shortcut
                                     == Shortcut::new(
@@ -897,6 +962,7 @@ pub fn run() {
                     rss_ttl_secs,
                     rss_max_per_poll,
                     rss_priority,
+                    tab_wire.clone(),
                 );
             }
 
@@ -1393,6 +1459,7 @@ fn emit_hover_changed_if_transitioned(
     cutout: Option<presentation::CutoutGeometry>,
     agent_board: &agents::board::AgentBoardPublisher,
     board_frame: &Arc<StdMutex<BoardFrameState>>,
+    tab_wire: &Arc<tabs::TabWire>,
 ) {
     use tauri::Emitter;
 
@@ -1435,22 +1502,47 @@ fn emit_hover_changed_if_transitioned(
         collapse_board_if_expanded(window, mode, cutout, board_frame);
     }
 
-    // plan 171 (tab-notch redesign): deliberately NOT wiring an icon-strip
-    // click-through toggle into this function yet, even though it would
-    // be a small, mechanically obvious addition (open click-through
-    // whenever `hovered && !visible`, mirroring `try_expand_board_for_
-    // hover`'s own gating minus its session-count check). Landing that
-    // toggle ALONE, ahead of any actual click-to-selection handling,
-    // would be a real, shippable regression: today, hovering the plain
-    // idle notch (e.g. the weather peek) stays fully click-through, so a
-    // click during that hover passes to whatever is behind the window on
-    // the desktop. Opening click-through on every idle hover before
-    // there is anything new to click would start SILENTLY EATING those
-    // clicks instead, with zero compensating functionality yet — see
-    // plans/171-tab-notch-redesign.md's own "click detection mechanism"
-    // open question for the unresolved design question this is blocked
-    // on. This toggle belongs in the SAME commit as whatever finally
-    // detects which icon (if any) a click landed on, not before it.
+    // plan 171 slice A item 3: the icon-strip click-through toggle,
+    // landing in the SAME commit as the click monitor (click.rs) per the
+    // plan's own regression constraint — never alone. Scope note the OS
+    // forces on us: `set_ignore_cursor_events` is WINDOW-granular, so
+    // "accept clicks only inside the strip's rect" is enforced by the
+    // monitor's hit-test (clicks elsewhere in the window select nothing
+    // and are otherwise inert), not by the toggle itself. The gate here
+    // decides WHEN the window accepts cursor events at all:
+    //   hovered && slot idle  → accept (the strip is what's on screen —
+    //     and `hovered` requires the cursor to be over the painted card
+    //     rect, so a click that lands while accepting is over the card,
+    //     never over desktop dead space);
+    //   hovered && slot occupied → stay click-through (today's TTL-pause
+    //     hover behavior over a showing card, unchanged);
+    //   hover ends → restore click-through, unless the Board-expand path
+    //     currently owns the window (its collapse restores it with its
+    //     own grace-period semantics — don't fight it).
+    // Accepted gap (documented in the plan): a card PROMOTING while the
+    // strip is hovered leaves events accepted until the next hover
+    // transition — clicks during that window land on the showing card
+    // and do nothing, matching the showing-card branch above.
+    if hovered {
+        if !tab_wire
+            .slot_occupied
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            if let Err(e) = window.set_ignore_cursor_events(false) {
+                tracing::warn!("icon strip: set_ignore_cursor_events(false) failed: {e}");
+            }
+        }
+    } else {
+        let board_expanded = board_frame
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .expanded;
+        if !board_expanded {
+            if let Err(e) = window.set_ignore_cursor_events(true) {
+                tracing::warn!("icon strip: set_ignore_cursor_events(true) failed: {e}");
+            }
+        }
+    }
 }
 
 /// Animation audit 2026-08-02 (finding 2): the Agent Board's window-frame
@@ -2383,6 +2475,7 @@ mod tests {
             false,
             false,
             None,
+            std::sync::Arc::new(crate::tabs::TabWire::default()),
         )
     }
 
