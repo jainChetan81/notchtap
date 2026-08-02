@@ -99,6 +99,8 @@ These are not fully specified by the design spec (which describes behavior, not 
 
 **Verification**: `cargo test` clean — the arm/disarm/timeout/key-consumption state machine is exactly the kind of pure, deterministic logic `docs/TESTING_STRATEGY.md` §3 says to TDD; the actual `tauri_plugin_global_shortcut` grab/release mechanism stays manual-only (same posture as the existing seven combos, which likewise have no automated coverage of the AppKit-level registration itself).
 
+**Landed so far**: `src-tauri/src/prefix.rs`, `PrefixState`/`PrefixKey`/`PrefixAction` — pure arm/disarm/timeout/key-consumption state machine, 15 tests. Documents which existing mechanism each action reuses (`PrefixAction`'s own doc comments) rather than inventing new ones. Does NOT touch `tauri_plugin_global_shortcut` registration in `lib.rs` — the real wiring (dynamic register/unregister of the seven follow-up keys for the live window plus a cancellable 2s timer) is architecturally sound but a live, timing-sensitive integration this environment can't exercise; left for real-device wiring alongside Slice A's click detection. `#![allow(dead_code)]`, same discipline as B/C. 993/993 `cargo test` passing.
+
 ## Slice E — rest-state UI (frontend)
 
 **Files**: a new `src/components/IconStrip.tsx` (or similar), a new eq-bars component/CSS, `src/App.tsx`/`src/components/StatusDots.tsx` (removing the status dots per spec §2 decision 1 — confirm this doesn't orphan the `StatusDots` component entirely elsewhere before deleting vs. just unmounting it from this surface).
