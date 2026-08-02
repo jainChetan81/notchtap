@@ -1995,10 +1995,18 @@ describe("SettingsApp", () => {
       const codexCard = findAdapterCard("Codex");
       const kimiCard = findAdapterCard("Kimi");
       const opencodeCard = findAdapterCard("OpenCode");
-      expect(within(claudeCard).getByText("Available")).toBeTruthy();
-      expect(within(codexCard).getByText("Partial")).toBeTruthy();
-      expect(within(kimiCard).getByText("Unavailable")).toBeTruthy();
-      expect(within(opencodeCard).getByText("Partial")).toBeTruthy();
+      // CI flake fix: the adapter name renders immediately from static
+      // config, but the health chip depends on the separate, async
+      // `get_agent_health` mock resolving — a race the previous
+      // synchronous getByText calls here didn't account for (it passed
+      // locally under light load, but failed in CI, a genuinely
+      // pre-existing race this PR's redesign likely widened by adding
+      // an extra render pass for the collapsed/expanded state). Await
+      // each health chip instead of asserting on it synchronously.
+      expect(await within(claudeCard).findByText("Available")).toBeTruthy();
+      expect(await within(codexCard).findByText("Partial")).toBeTruthy();
+      expect(await within(kimiCard).findByText("Unavailable")).toBeTruthy();
+      expect(await within(opencodeCard).findByText("Partial")).toBeTruthy();
     });
 
     it("renders the five named preview fixtures", async () => {
@@ -2052,9 +2060,91 @@ describe("SettingsApp", () => {
 
       await screen.findAllByText("Claude Code");
       const claudeCard = findAdapterCard("Claude Code");
+      // Plan 143 restyle (Handy "Models"-page reference): cards start
+      // collapsed, and the setup snippet's Copy/Send-test buttons only
+      // mount once expanded — click the header/name button to expand it
+      // first (CodeRabbit review, PR #11: this comment previously said
+      // "collapse," backwards from what the click actually does).
+      fireEvent.click(within(claudeCard).getByRole("button", { name: "Claude Code" }));
       fireEvent.click(within(claudeCard).getByRole("button", { name: "Send test event" }));
 
       await waitFor(() => expect(sentRuntime).toBe("claude-code"));
+    });
+
+    // Plan 143 restyle: each adapter tile is collapsed by default (a
+    // compact identity/health/toggle row, matching Handy's Models-page
+    // "compact by default, click to reveal detail" pattern) — the
+    // capabilities list, last-seen/status detail, and setup snippet only
+    // mount once the card is expanded.
+    it("keeps an adapter card's detail collapsed by default and reveals it on click", async () => {
+      mockAgents();
+      await openAgents();
+
+      await screen.findAllByText("Codex");
+      const codexCard = findAdapterCard("Codex");
+      const trigger = within(codexCard).getByRole("button", { name: "Codex" });
+      expect(trigger.getAttribute("aria-expanded")).toBe("false");
+
+      // Collapsed: no capabilities list, no "Last seen" field, no setup
+      // snippet target-file text anywhere in the card.
+      expect(within(codexCard).queryByText("session_lifecycle")).toBeNull();
+      expect(within(codexCard).queryByText("Last seen")).toBeNull();
+      expect(codexCard.querySelector(".agent-setup")).toBeNull();
+      // The health chip and the enable toggle stay visible regardless.
+      expect(within(codexCard).getByText("Partial")).toBeTruthy();
+      expect(within(codexCard).getByLabelText("Enable Codex")).toBeTruthy();
+
+      fireEvent.click(trigger);
+
+      expect(trigger.getAttribute("aria-expanded")).toBe("true");
+      expect(within(codexCard).getByText("session_lifecycle")).toBeTruthy();
+      expect(within(codexCard).getByText("Last seen")).toBeTruthy();
+      expect(codexCard.querySelector(".agent-setup")?.textContent).toContain("hooks.json");
+      // Codex's fixture carries a compatibilityMessage but no
+      // lastErrorCategory — the "Status" field should render, the
+      // "Last error" field should not.
+      expect(within(codexCard).getByText("Codex has known gaps.")).toBeTruthy();
+      expect(within(codexCard).queryByText("Last error")).toBeNull();
+
+      fireEvent.click(trigger);
+
+      expect(trigger.getAttribute("aria-expanded")).toBe("false");
+      expect(within(codexCard).queryByText("session_lifecycle")).toBeNull();
+    });
+
+    // Kimi's fixture is the one adapter with both a lastErrorCategory AND
+    // a compatibilityMessage set — confirms both real-field rows render
+    // together rather than one silently winning.
+    it("shows both the error-category field and the compatibility message once expanded", async () => {
+      mockAgents();
+      await openAgents();
+
+      await screen.findAllByText("Kimi");
+      const kimiCard = findAdapterCard("Kimi");
+      fireEvent.click(within(kimiCard).getByRole("button", { name: "Kimi" }));
+
+      expect(within(kimiCard).getByText("Last error")).toBeTruthy();
+      expect(within(kimiCard).getByText("Malformed payload")).toBeTruthy();
+      expect(within(kimiCard).getByText("Status")).toBeTruthy();
+      expect(within(kimiCard).getByText("Disabled in Settings.")).toBeTruthy();
+    });
+
+    // The enable switch is a primary control (Handy keeps a model's own
+    // on/off state visible without needing to expand), not detail — it
+    // must never toggle the disclosure it happens to sit beside.
+    it("clicking the enable switch does not expand or collapse the card", async () => {
+      mockAgents();
+      await openAgents();
+
+      await screen.findAllByText("Codex");
+      const codexCard = findAdapterCard("Codex");
+      const trigger = within(codexCard).getByRole("button", { name: "Codex" });
+      expect(trigger.getAttribute("aria-expanded")).toBe("false");
+
+      fireEvent.click(within(codexCard).getByLabelText("Enable Codex"));
+
+      expect(trigger.getAttribute("aria-expanded")).toBe("false");
+      expect(within(codexCard).queryByText("session_lifecycle")).toBeNull();
     });
 
     it("the enabled-runtime toggle round-trips into the saved config payload", async () => {

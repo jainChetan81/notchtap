@@ -39,7 +39,24 @@ function Switch({
         // happens to set its own explicit padding (overriding the UA
         // default without ever naming it), which is why this never
         // surfaced before a component with intentionally NO padding.
-        "peer group/switch relative inline-flex shrink-0 items-center rounded-full border border-transparent p-0 transition-[color,background-color,border-color,transform] duration-150 ease-out outline-none after:absolute after:-inset-x-1 after:-inset-y-1.5 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-[size=default]:h-[22px] data-[size=default]:w-9 data-[size=sm]:h-4 data-[size=sm]:w-7 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 data-checked:bg-primary data-unchecked:bg-input data-disabled:cursor-not-allowed data-disabled:opacity-50 active:scale-[0.97]",
+        // 2026-08-02 (operator press-feedback pass, matching button.tsx):
+        // `active:scale-[0.97]` alone read as a nudge, not a press — added
+        // an inset shadow alongside it so the track reads as depressing
+        // rather than just shrinking. Same shadow value button.tsx uses
+        // (borrowed from `--shadow-selected` in settings/base.css, flipped
+        // to `inset`) rather than inventing a new one, so all three
+        // pressable primitives in the settings window share one shadow
+        // vocabulary for "pressed." Scale stays at 0.97 (not button.tsx's
+        // 0.96) — the track is the smaller, secondary tactile surface, per
+        // that file's own comment. `box-shadow` added to the transition
+        // list so the press/release both animate instead of the shadow
+        // snapping in and out.
+        // CodeRabbit review (PR #11): `transform` in the transition list
+        // doesn't cover Tailwind v4's `scale-*` utility (a standalone
+        // `scale` CSS property, not `transform`) — swapped so the press
+        // scale actually animates instead of snapping. Same fix as
+        // button.tsx.
+        "peer group/switch relative inline-flex shrink-0 items-center rounded-full border border-transparent p-0 transition-[color,background-color,border-color,box-shadow,scale] duration-150 ease-out outline-none after:absolute after:-inset-x-1 after:-inset-y-1.5 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-[size=default]:h-[22px] data-[size=default]:w-9 data-[size=sm]:h-4 data-[size=sm]:w-7 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 data-checked:bg-primary data-unchecked:bg-input data-disabled:cursor-not-allowed data-disabled:opacity-50 active:scale-[0.97] active:shadow-[var(--shadow-pressed)]",
         className,
       )}
       {...props}

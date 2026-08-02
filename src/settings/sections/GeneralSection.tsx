@@ -12,7 +12,7 @@ import {
 } from "../controls/controls";
 import { Segmented } from "../controls/Segmented";
 import type { Config, SourceKind } from "../types";
-import { PRIORITY_SEGMENT_OPTIONS, SOURCE_LABELS } from "../types";
+import { PRIORITY_SEGMENT_OPTIONS, PRIORITY_TONES, SOURCE_LABELS } from "../types";
 
 // plan 146a (docs/ARCHITECTURE.md §21, CONTEXT.md's Silenced/Silent Period
 // entries): validates a `"HH:MM-HH:MM"` (24h) silence window string with
@@ -292,6 +292,7 @@ export function GeneralSection({
           name="Manual push priority"
           help="Fallback for a CLI push that doesn't set its own priority."
           options={PRIORITY_SEGMENT_OPTIONS}
+          optionTones={PRIORITY_TONES}
           value={config.manual_default_priority}
           onChange={(manual_default_priority) => patchConfig({ manual_default_priority })}
         />

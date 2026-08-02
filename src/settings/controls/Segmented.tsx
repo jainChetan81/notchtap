@@ -40,6 +40,7 @@ export function Segmented<T extends string | number>({
   options,
   value,
   onChange,
+  optionTones,
 }: {
   /** Present for the labelled control-row form; absent for the bare (Appearance) form. */
   id?: string;
@@ -49,6 +50,22 @@ export function Segmented<T extends string | number>({
   options: ReadonlyArray<SegmentedOption<T>>;
   value: T;
   onChange: (value: T) => void;
+  /**
+   * Optional per-value override for the SELECTED segment's color, keyed by
+   * option value. Each entry is a literal Tailwind class string (e.g.
+   * `"bg-overlay-teal/20 text-overlay-teal"`) substituted for the default
+   * `bg-accent text-foreground` selected treatment — Tailwind v4's content
+   * scanner only picks up literal class substrings, so callers must pass
+   * whole class strings here rather than building them from a color name at
+   * runtime (see the GRID_COLS comment above for the same constraint).
+   *
+   * Deliberately generic — this is a coloring hook, not priority-specific
+   * knowledge. Segmented itself has no notion of "low/medium/high"; callers
+   * that render priority pickers pass `PRIORITY_TONES` (types.ts), every
+   * other caller (Units, Appearance's Scale/Radius/Opacity rows) passes
+   * nothing and keeps today's flat neutral selected state unchanged.
+   */
+  optionTones?: Partial<Record<T, string>>;
 }) {
   const labelled = id !== undefined;
   const cols = GRID_COLS[options.length] ?? "grid-cols-3";
@@ -102,9 +119,35 @@ export function Segmented<T extends string | number>({
               // focus-visible:ring-ring/50`. Same vocabulary here so
               // keyboard-tabbing reads as one consistent focus style
               // across the whole window.
-              "rounded-[4px] border border-transparent bg-transparent px-1.5 py-px font-mono text-fs-secondary font-[620] tracking-[0.03em] text-muted-foreground outline-none transition-[color,background-color,border-color,box-shadow,transform] duration-[140ms] ease-notchtap hover:bg-accent hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97]",
-              value === option.value &&
-                "is-selected bg-accent text-foreground shadow-[var(--shadow-selected)]",
+              // 2026-08-02 (operator press-feedback pass, matching
+              // button.tsx/switch.tsx): added the same inset press shadow
+              // those two now carry, so all three pressable primitives in
+              // the settings window feel like one consistent depth
+              // vocabulary. `box-shadow` was already in this transition
+              // list, so no change needed there. Note this can momentarily
+              // out-cascade the selected pill's own resting
+              // `shadow-[var(--shadow-selected)]` below while pressed —
+              // intentional: a selected pill being pressed should still
+              // read as depressing.
+              // CodeRabbit review (PR #11): `transform` swapped for `scale`
+              // (Tailwind v4's `scale-*` utility sets the standalone
+              // `scale` property, not `transform` — see button.tsx's same
+              // fix), and the press shadow now references the shared
+              // `--shadow-pressed` token instead of a third hand-copied
+              // literal.
+              "rounded-[4px] border border-transparent bg-transparent px-1.5 py-px font-mono text-fs-secondary font-[620] tracking-[0.03em] text-muted-foreground outline-none transition-[color,background-color,border-color,box-shadow,scale] duration-[140ms] ease-notchtap focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97] active:shadow-[var(--shadow-pressed)]",
+              value === option.value
+                ? cn(
+                    "is-selected shadow-[var(--shadow-selected)]",
+                    optionTones?.[option.value] ?? "bg-accent text-foreground",
+                  )
+                : // CodeRabbit review (PR #11): hover used to be unconditional
+                  // on the base class above, so hovering a SELECTED tone pill
+                  // (e.g. a colored priority segment) overrode its
+                  // `optionTones` background/text with the plain neutral
+                  // hover treatment. Scoped to the unselected case only —
+                  // a selected pill keeps its own tone color on hover now.
+                  "hover:bg-accent hover:text-foreground",
             )}
             aria-pressed={value === option.value}
             onClick={() => onChange(option.value)}

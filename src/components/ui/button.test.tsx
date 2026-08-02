@@ -10,19 +10,24 @@ afterEach(cleanup);
 // plan 126 (finding #10): the bare `transition-all` this component used to
 // carry animated every property change, including ones with no visual
 // transition author ever intended (a broad, imprecise wildcard). Swapping
-// it for an explicit property list must keep `transform` in that list —
-// it's what makes `active:not-aria-[haspopup]:translate-y-px`'s press
-// feedback actually animate instead of snapping. This is a string-level
-// pin, not a computed-style assertion: jsdom doesn't run CSS transitions,
-// so the only thing to assert is that the utility class carries the right
-// transition-property list.
+// it for an explicit property list must keep `translate`/`scale` in that
+// list — it's what makes `active:not-aria-[haspopup]:translate-y-px` and
+// `active:scale-[0.96]`'s press feedback actually animate instead of
+// snapping. This is a string-level pin, not a computed-style assertion:
+// jsdom doesn't run CSS transitions, so the only thing to assert is that
+// the utility class carries the right transition-property list.
+// CodeRabbit review (PR #11): this pin originally named `transform`, not
+// `translate,scale` — Tailwind v4 emits `scale-*`/`translate-*` utilities
+// as the standalone `scale`/`translate` CSS properties, not `transform`
+// (confirmed against the built CSS output), so the pin was guarding the
+// wrong property name the whole time. Updated to match the real fix.
 describe("Button — transition-property (plan 126)", () => {
-  it("keeps transform in the transition property list, and drops the bare transition-all wildcard", () => {
+  it("keeps translate/scale in the transition property list, and drops the bare transition-all wildcard", () => {
     render(<Button>Click me</Button>);
     const button = screen.getByRole("button", { name: "Click me" });
 
     expect(button.className).toContain(
-      "transition-[color,background-color,border-color,box-shadow,transform]",
+      "transition-[color,background-color,border-color,box-shadow,translate,scale]",
     );
     expect(button.className).not.toMatch(/(?:^|\s)transition-all(?:\s|$)/);
     // the press-feedback utility itself is untouched by this plan.

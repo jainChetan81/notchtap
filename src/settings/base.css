@@ -202,6 +202,12 @@
      unlike the focus ring it has no shared-ui token of its own to
      reference. */
   --shadow-selected: 0 1px 2px rgba(0, 0, 0, 0.4);
+  /* CodeRabbit review (PR #11): button.tsx/switch.tsx/Segmented.tsx had
+     each hand-copied the same `inset 0 1px 2px rgba(0, 0, 0, 0.4)` press
+     shadow literal — the same value as --shadow-selected above, just
+     flipped to inset. Single-sourced here instead, same discipline that
+     token already follows. */
+  --shadow-pressed: inset 0 1px 2px rgba(0, 0, 0, 0.4);
 }
 
 @theme inline {

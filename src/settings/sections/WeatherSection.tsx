@@ -3,7 +3,7 @@ import { SOURCE_ORIGIN_COLORS } from "@/lib/sourceColors";
 import { NumberControl, SettingsGroup, TestButtonRow, ToggleControl } from "../controls/controls";
 import { Segmented } from "../controls/Segmented";
 import type { Config } from "../types";
-import { PRIORITY_SEGMENT_OPTIONS, UNITS_SEGMENT_OPTIONS } from "../types";
+import { PRIORITY_SEGMENT_OPTIONS, PRIORITY_TONES, UNITS_SEGMENT_OPTIONS } from "../types";
 
 export function WeatherSection({
   config,
@@ -111,6 +111,7 @@ export function WeatherSection({
         name="Priority"
         help="Which tier a waiting weather alert promotes in."
         options={PRIORITY_SEGMENT_OPTIONS}
+        optionTones={PRIORITY_TONES}
         value={config.weather_priority}
         onChange={(weather_priority) => patchConfig({ weather_priority })}
       />

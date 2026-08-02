@@ -9,7 +9,7 @@ import {
 } from "../controls/controls";
 import { Segmented } from "../controls/Segmented";
 import type { Config } from "../types";
-import { PRIORITY_SEGMENT_OPTIONS } from "../types";
+import { PRIORITY_SEGMENT_OPTIONS, PRIORITY_TONES } from "../types";
 
 export function FootballSection({
   config,
@@ -84,6 +84,7 @@ export function FootballSection({
         name="Priority"
         help="Which tier a waiting score/match-state update promotes in."
         options={PRIORITY_SEGMENT_OPTIONS}
+        optionTones={PRIORITY_TONES}
         value={config.espn_priority}
         onChange={(espn_priority) => patchConfig({ espn_priority })}
       />
