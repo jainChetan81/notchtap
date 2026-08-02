@@ -85,6 +85,13 @@ in the same commit, per the fallback-tracks-the-constant discipline.
 Tests reference `EXPAND_MS` symbolically — zero test edits needed,
 which is itself the plan-117 single-sourcing working as designed.
 
+Execution note (honesty record, from this branch's own review round):
+the fallback sed in the landing commit also rewrote one HISTORICAL
+quote in card-chrome.css's wave-C note into nonsense and missed three
+prose echoes of the old value (two present-tense card-chrome comments,
+useExitChoreography's rebound estimate) — all repaired by the
+follow-up truth-up commit on this same branch before the PR opened.
+
 ## Boundaries
 
 - The `--ease-notchtap-pop` overshoot on the base width transition is
