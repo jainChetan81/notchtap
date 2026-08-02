@@ -176,6 +176,82 @@ describe("useStatusState", () => {
     expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
   });
 
+  // --- plan 180: the wire fields plan 171 added to the validator ---
+  //
+  // The four clauses below (`agent.activeSessions`, `news.chargeFraction`
+  // with its `[0, 1]` range, `news.chargeCount`, `news.isCharged`) shipped
+  // with fixture coverage only. They matter more than the count suggests:
+  // this validator is all-or-nothing, so a single bad field from rust
+  // blanks the WHOLE status rail back to FALLBACK — every icon dark, no
+  // console error, nothing naming the field that did it. These tests name
+  // the fields.
+
+  it("ignores a payload with no agent block at all", () => {
+    const { agent: _agent, ...missingAgent } = LIVE;
+    window.__NOTCHTAP_STATUS_STATE__ = missingAgent;
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
+
+    // ...and one that is present but not an object.
+    window.__NOTCHTAP_STATUS_STATE__ = { ...LIVE, agent: 3 };
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
+  });
+
+  it("ignores a payload with a negative, fractional, or non-number agent session count", () => {
+    window.__NOTCHTAP_STATUS_STATE__ = { ...LIVE, agent: { activeSessions: -1 } };
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
+
+    window.__NOTCHTAP_STATUS_STATE__ = { ...LIVE, agent: { activeSessions: 1.5 } };
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
+
+    window.__NOTCHTAP_STATUS_STATE__ = { ...LIVE, agent: { activeSessions: "2" } };
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
+  });
+
+  it("ignores a news charge fraction outside [0, 1] — the file's only range check", () => {
+    window.__NOTCHTAP_STATUS_STATE__ = {
+      ...LIVE,
+      news: { enabled: true, chargeFraction: 1.4, chargeCount: 0, isCharged: false },
+    };
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
+
+    window.__NOTCHTAP_STATUS_STATE__ = {
+      ...LIVE,
+      news: { enabled: true, chargeFraction: -0.1, chargeCount: 0, isCharged: false },
+    };
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
+
+    window.__NOTCHTAP_STATUS_STATE__ = {
+      ...LIVE,
+      news: { enabled: true, chargeFraction: "0.5", chargeCount: 0, isCharged: false },
+    };
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
+  });
+
+  it("accepts both ends of the charge fraction — the range is inclusive", () => {
+    for (const chargeFraction of [0, 1]) {
+      const payload: StatusState = {
+        ...LIVE,
+        news: { enabled: true, chargeFraction, chargeCount: 2, isCharged: chargeFraction === 1 },
+      };
+      window.__NOTCHTAP_STATUS_STATE__ = payload;
+      expect(renderHook(() => useStatusState()).result.current).toEqual(payload);
+    }
+  });
+
+  it("ignores a negative news charge count or a non-boolean charged flag", () => {
+    window.__NOTCHTAP_STATUS_STATE__ = {
+      ...LIVE,
+      news: { enabled: true, chargeFraction: 0.5, chargeCount: -3, isCharged: false },
+    };
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
+
+    window.__NOTCHTAP_STATUS_STATE__ = {
+      ...LIVE,
+      news: { enabled: true, chargeFraction: 0.5, chargeCount: 0, isCharged: "yes" },
+    };
+    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
+  });
+
   // --- plan 110 (Step B): the isDay guard ---
 
   it("accepts a valid weather summary with isDay", () => {

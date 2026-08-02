@@ -129,6 +129,27 @@ describe("iconPresenceFor (plan 171, spec §6's presence/liveness table)", () =>
     });
   });
 
+  // plan 180: the early return at the top of `iconPresenceFor` — the one
+  // branch the fixtures above never reach. It is not a defensive
+  // afterthought: the settings-window Appearance preview and most
+  // component tests render `StatusRailCard` with no status wire at all,
+  // so this IS their presence table. It must agree with `useStatusState`'s
+  // FALLBACK_STATUS (all gates off) rather than being a second literal
+  // that can drift from it — which is exactly what the QUIET row below
+  // pins, by asserting the two produce the identical table.
+  it("treats a missing status wire as the all-gates-off fallback", () => {
+    expect(iconPresenceFor(undefined)).toEqual({
+      agent: "hidden",
+      football: "hidden",
+      music: "hidden",
+      weather: "present",
+      news: "present",
+    });
+    // the whole point of that early return: no wire reads exactly like a
+    // quiet wire, so the preview and the live overlay never disagree.
+    expect(iconPresenceFor(undefined)).toEqual(iconPresenceFor(QUIET));
+  });
+
   it("maps every source independently — one live source never lights another", () => {
     const presence = iconPresenceFor({ ...QUIET, agent: { activeSessions: 2 } });
     expect(presence).toEqual({

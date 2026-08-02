@@ -39,6 +39,28 @@ const SHORTCUT_CELL = "border-b border-border/60 px-[13px] py-2.5 text-left alig
 
 const PREFIX_GLYPHS = "⌃⇧";
 
+// plan 180 (Step 4): the Unicode `White_Space` property, spelled out.
+//
+// `src-tauri/src/settings.rs`'s `is_valid_prefix_shortcut` is the
+// AUTHORITATIVE twin of the validator below, and it rejects whitespace
+// with rust's `char::is_whitespace` — which is exactly Unicode
+// `White_Space`, 25 code points. JavaScript's `\s` is a DIFFERENT set,
+// and the two disagree in both directions:
+//
+//   - U+0085 (NEL) is `White_Space` but is NOT matched by `\s` — rust
+//     rejected `⌃⇧K<NEL>`, the UI accepted it, so the field said "valid"
+//     and the save then failed at the boundary.
+//   - U+FEFF (ZWNBSP/BOM) IS matched by `\s` but is not `White_Space` —
+//     the mirror image: the UI refused a value rust would have taken.
+//
+// The 25 code points, as ranges: U+0009-U+000D (`\t\n\v\f\r`), U+0020,
+// U+0085, U+00A0, U+1680, U+2000-U+200A, U+2028, U+2029, U+202F, U+205F,
+// U+3000. `ShortcutsSection.test.ts` machine-checks this class against
+// `\p{White_Space}` over the whole BMP rather than leaving it to be
+// eyeballed — change one, run that test.
+const UNICODE_WHITE_SPACE =
+  /[\t\n\v\f\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/;
+
 // plan 171 slice J (spec §9): mirrors `src-tauri/src/settings.rs`'s
 // `is_valid_prefix_shortcut` EXACTLY — starts with the literal `⌃⇧`
 // (Control, Shift) this app's existing seven shortcuts above already use
@@ -46,13 +68,14 @@ const PREFIX_GLYPHS = "⌃⇧";
 // anywhere. Accepts both a single glyph (`N`, `]`, `,`) and a
 // spelled-out key name (`Space`) — the spec's own chosen default is the
 // latter. Exported so it can be unit-tested the same way
-// `isValidSilenceWindow` (GeneralSection.tsx) is.
+// `isValidSilenceWindow` (GeneralSection.tsx) is; both sides' tests run
+// the same fixture table (see that file's header).
 export function isValidPrefixShortcut(raw: string): boolean {
   if (!raw.startsWith(PREFIX_GLYPHS)) {
     return false;
   }
   const rest = Array.from(raw.slice(PREFIX_GLYPHS.length));
-  return rest.length >= 1 && rest.length <= 24 && !/\s/.test(rest.join(""));
+  return rest.length >= 1 && rest.length <= 24 && !UNICODE_WHITE_SPACE.test(rest.join(""));
 }
 
 // plan 171 slice J: the one new text field this slice adds, following
