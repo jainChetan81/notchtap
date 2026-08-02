@@ -250,6 +250,7 @@
   pre.code-block { margin: 0; padding: 10px 12px; background: color-mix(in oklch, var(--surface), black 12%); border: 1px solid var(--line); border-radius: 5px; font-family: var(--font-mono); font-size: 11px; line-height: 1.5; color: var(--ink-dim); overflow: auto; white-space: pre-wrap; }
 
   /* ---------- motion budget table, reused pattern ---------- */
+  .table-scroll { width: 100%; overflow-x: auto; }
   table.budget { width: 100%; border-collapse: collapse; font-size: 12.5px; }
   table.budget th, table.budget td { text-align: left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
   table.budget th { font-family: var(--font-mono); font-size: 10.5px; letter-spacing: 0.06em; text-transform: uppercase; color: var(--ink-dim); }
@@ -272,6 +273,11 @@
   footer p { max-width: 70ch; }
   footer a { color: var(--ink-dim); }
 </style>
+<noscript>
+<style>
+  .reveal { opacity: 1 !important; transform: none !important; transition: none !important; }
+</style>
+</noscript>
 </head>
 <body>
 
@@ -557,7 +563,7 @@
       <div class="panel-tab">Today — one event in, one Notification out, no batching</div>
       <div class="panel-body">
         <div class="pipe-track">
-          <svg viewBox="0 0 620 64" preserveAspectRatio="none">
+          <svg viewBox="0 0 620 64">
             <line x1="26" y1="32" x2="130" y2="32" class="pipe-trace"/>
             <line x1="150" y1="32" x2="254" y2="32" class="pipe-trace"/>
             <line x1="274" y1="32" x2="378" y2="32" class="pipe-trace"/>
@@ -592,8 +598,13 @@
           matches. A burst of five tool-progress events inside two seconds
           is five separate opportunities to enter the Slot (most gated off
           by <span class="mono">informational_notifications</span> default
-          <span class="mono">false</span> today, but the Agent Board itself
-          still re-renders on every one).
+          <span class="mono">false</span> today) — but the Agent Board's own
+          emission is deduplicated: <span class="cite">board.rs</span>'s
+          <span class="mono">publish_if_changed</span> compares states with
+          <span class="mono">AgentState::dedup_eq</span>, which excludes
+          clock-derived fields, so a burst that only touches those doesn't
+          push a new Board render even though each event still counts as its
+          own Queue/Slot opportunity.
         </p>
       </div>
     </div>
@@ -735,6 +746,7 @@
       included specifically to show what's ALREADY shipped so this table
       can't be misread as proposing it again.
     </p>
+    <div class="table-scroll">
     <table class="budget">
       <thead><tr><th>Element</th><th>Treatment</th><th>Value</th></tr></thead>
       <tbody>
@@ -765,6 +777,7 @@
         </tr>
       </tbody>
     </table>
+    </div>
     <p style="margin-top:14px; font-size:12px; color:var(--ink-dim); max-width:68ch;">
       All values above reuse this app's real named tokens
       (<span class="mono">var(--ease-notchtap)</span> =
@@ -788,6 +801,7 @@
       commits under it. Nothing in §02/§03 above restates any row on the
       left.
     </p>
+    <div class="table-scroll">
     <table class="honesty">
       <thead><tr><th style="width:44%">Already shipped (do NOT re-propose)</th><th style="width:56%">Proposed in this deck</th></tr></thead>
       <tbody>
@@ -817,6 +831,7 @@
         </tr>
       </tbody>
     </table>
+    </div>
   </section>
 
   <footer>

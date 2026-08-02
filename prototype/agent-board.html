@@ -538,7 +538,7 @@
     <div class="rig card-root" style="margin-top:14px;">
       <div class="menubar"></div>
       <div class="stage" style="min-height:220px;">
-        <div class="card-assembly expanded agent-board-shell" style="position:absolute; top:0; left:50%; transform:translateX(-50%);">
+        <div class="card-assembly expanded agent-board-shell" id="heroShell" style="position:absolute; top:0; left:50%; transform:translateX(-50%);">
           <span class="notch-gill notch-gill-left"></span>
           <span class="notch-gill notch-gill-right"></span>
           <div class="flank-left"><span class="time-only">14:32</span></div>
@@ -972,6 +972,7 @@
   });
 
   // ---- section 4: interactive hero + rows ----
+  var heroShell = document.getElementById("heroShell");
   var heroBelow = document.getElementById("heroBelowBlock");
   var heroPrimary = document.getElementById("heroPrimary");
   var heroStatusLine = document.getElementById("heroStatusLine");
@@ -979,6 +980,7 @@
 
   function applyHero() {
     setBelowClasses(heroBelow, currentRt, currentSt);
+    setShellPriority(heroShell, currentSt);
     heroPrimary.innerHTML = heroHtml(currentRt, currentSt, "notchtap");
     heroStatusLine.innerHTML = "hero: <b>" + currentSt + "</b> · " + RUNTIME_LABEL[currentRt];
   }

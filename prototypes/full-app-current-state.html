@@ -249,9 +249,9 @@ h3.sub-title .num{font:700 10px/1 var(--font-mono); color:var(--page-dim2);}
 .expanded .compact{min-height:82px;}
 .compact::before{content:""; position:absolute; left:0; top:12px; bottom:12px; width:3px; border-radius:0 2px 2px 0; background:var(--accent); box-shadow:0 0 12px var(--accent-soft);}
 .masthead-row{display:flex; align-items:center; gap:10px; margin-bottom:4px;}
-.masthead{display:flex; align-items:center; gap:6px; flex:1; min-width:0; font:700 8px/1 var(--font-mono); letter-spacing:.16em; text-transform:uppercase; color:rgba(255,255,255,.38);}
-.masthead::after{content:""; flex:1; height:1px; background:rgba(255,255,255,.12);}
-.masthead .dot{width:4px; height:4px; border-radius:50%; background:var(--cat,var(--overlay-amber)); box-shadow:0 0 6px var(--cat,var(--overlay-amber)); flex:none;}
+.card-masthead{display:flex; align-items:center; gap:6px; flex:1; min-width:0; font:700 8px/1 var(--font-mono); letter-spacing:.16em; text-transform:uppercase; color:rgba(255,255,255,.38);}
+.card-masthead::after{content:""; flex:1; height:1px; background:rgba(255,255,255,.12);}
+.card-masthead .dot{width:4px; height:4px; border-radius:50%; background:var(--cat,var(--overlay-amber)); box-shadow:0 0 6px var(--cat,var(--overlay-amber)); flex:none;}
 .stamp{align-self:center; padding:4px 6px; border:1px solid var(--accent); color:var(--accent); font:700 8px/1 var(--font-mono); letter-spacing:.12em; text-transform:uppercase; flex:none;}
 .title.headline{white-space:normal; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; font-weight:680; line-height:1.2; font-size:13px; margin:0;}
 .notif-subtitle-row{display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-top:3px;}
@@ -391,26 +391,26 @@ h3.sub-title .num{font:700 10px/1 var(--font-mono); color:var(--page-dim2);}
 /* ---- state switcher wiring (radio hack, no JS) ---- */
 .switcher input{position:absolute; opacity:0; pointer-events:none;}
 .switcher .panel{display:none;}
-#gen-bare:checked ~ .switcher-panels .panel-bare,
-#gen-idle:checked ~ .switcher-panels .panel-idle,
-#gen-idleface:checked ~ .switcher-panels .panel-idleface,
-#gen-bhover:checked ~ .switcher-panels .panel-bhover{display:block;}
-#gen-bare:checked ~ .state-switch label[for="gen-bare"],
-#gen-idle:checked ~ .state-switch label[for="gen-idle"],
-#gen-idleface:checked ~ .state-switch label[for="gen-idleface"],
-#gen-bhover:checked ~ .state-switch label[for="gen-bhover"]{background:var(--primary); color:#fff;}
+#gen-bare:checked ~ * .switcher-panels .panel-bare,
+#gen-idle:checked ~ * .switcher-panels .panel-idle,
+#gen-idleface:checked ~ * .switcher-panels .panel-idleface,
+#gen-bhover:checked ~ * .switcher-panels .panel-bhover{display:block;}
+#gen-bare:checked ~ * .state-switch label[for="gen-bare"],
+#gen-idle:checked ~ * .state-switch label[for="gen-idle"],
+#gen-idleface:checked ~ * .state-switch label[for="gen-idleface"],
+#gen-bhover:checked ~ * .state-switch label[for="gen-bhover"]{background:var(--primary); color:#fff;}
 
 /* generic origin-card switchers (compact/expanded), one per origin, param via data attr replicated per block below */
 .origincard input{position:absolute; opacity:0; pointer-events:none;}
 .origincard .panel{display:none;}
 
 /* agent board switcher */
-#ab-1:checked ~ .switcher-panels .panel-ab1,
-#ab-n:checked ~ .switcher-panels .panel-abn,
-#ab-x:checked ~ .switcher-panels .panel-abx{display:block;}
-#ab-1:checked ~ .state-switch label[for="ab-1"],
-#ab-n:checked ~ .state-switch label[for="ab-n"],
-#ab-x:checked ~ .state-switch label[for="ab-x"]{background:var(--primary); color:#fff;}
+#ab-1:checked ~ * .switcher-panels .panel-ab1,
+#ab-n:checked ~ * .switcher-panels .panel-abn,
+#ab-x:checked ~ * .switcher-panels .panel-abx{display:block;}
+#ab-1:checked ~ * .state-switch label[for="ab-1"],
+#ab-n:checked ~ * .state-switch label[for="ab-n"],
+#ab-x:checked ~ * .state-switch label[for="ab-x"]{background:var(--primary); color:#fff;}
 
 .caption-note{font-size:12px; color:var(--page-dim); line-height:1.6; margin-top:14px; max-width:76ch;}
 .caption-note b{color:var(--page-ink);}
@@ -846,17 +846,17 @@ footer.page-foot{border-top:1px solid var(--page-rule); margin-top:64px; padding
     <div class="stage-label-row">
       <span class="stage-label">agent origin — claude code</span>
       <div class="state-switch">
-        <label for="o-agent-c" style="background:var(--primary);color:#fff;" onclick="">Compact</label>
+        <label for="o-agent-c">Compact</label>
         <label for="o-agent-x">Expanded</label>
       </div>
     </div>
     <style>
       #o-agent-c:checked ~ .stg .p-c{display:block;} #o-agent-c:checked ~ .stg .p-x{display:none;}
       #o-agent-x:checked ~ .stg .p-c{display:none;} #o-agent-x:checked ~ .stg .p-x{display:block;}
-      #o-agent-c:checked ~ .state-switch label[for=o-agent-c]{background:var(--primary);color:#fff;}
-      #o-agent-c:checked ~ .state-switch label[for=o-agent-x]{background:transparent;color:var(--page-dim);}
-      #o-agent-x:checked ~ .state-switch label[for=o-agent-x]{background:var(--primary);color:#fff;}
-      #o-agent-x:checked ~ .state-switch label[for=o-agent-c]{background:transparent;color:var(--page-dim);}
+      #o-agent-c:checked ~ * .state-switch label[for=o-agent-c]{background:var(--primary);color:#fff;}
+      #o-agent-c:checked ~ * .state-switch label[for=o-agent-x]{background:transparent;color:var(--page-dim);}
+      #o-agent-x:checked ~ * .state-switch label[for=o-agent-x]{background:var(--primary);color:#fff;}
+      #o-agent-x:checked ~ * .state-switch label[for=o-agent-c]{background:transparent;color:var(--page-dim);}
     </style>
     <div class="stage stg">
       <div class="stage-inner">
@@ -868,7 +868,7 @@ footer.page-foot{border-top:1px solid var(--page-rule); margin-top:64px; padding
             <div class="p-c panel">
               <div class="compact">
                 <div class="masthead-row">
-                  <div class="masthead"><span class="dot"></span>agent</div>
+                  <div class="card-masthead"><span class="dot"></span>agent</div>
                   <div class="stamp">Now</div>
                 </div>
                 <div class="title headline">Agent needs input</div>
@@ -888,7 +888,7 @@ footer.page-foot{border-top:1px solid var(--page-rule); margin-top:64px; padding
             <div class="p-x panel" style="display:none;">
               <div class="compact expanded">
                 <div class="masthead-row">
-                  <div class="masthead"><span class="dot"></span>agent</div>
+                  <div class="card-masthead"><span class="dot"></span>agent</div>
                   <div class="stamp">Now</div>
                 </div>
                 <div class="title headline">Agent needs input</div>
@@ -933,8 +933,8 @@ footer.page-foot{border-top:1px solid var(--page-rule); margin-top:64px; padding
     <style>
       #o-fb-c:checked ~ .stg .p-c{display:block;} #o-fb-c:checked ~ .stg .p-x{display:none;}
       #o-fb-x:checked ~ .stg .p-c{display:none;} #o-fb-x:checked ~ .stg .p-x{display:block;}
-      #o-fb-c:checked ~ .state-switch label[for=o-fb-c]{background:var(--primary);color:#fff;}
-      #o-fb-x:checked ~ .state-switch label[for=o-fb-x]{background:var(--primary);color:#fff;}
+      #o-fb-c:checked ~ * .state-switch label[for=o-fb-c]{background:var(--primary);color:#fff;}
+      #o-fb-x:checked ~ * .state-switch label[for=o-fb-x]{background:var(--primary);color:#fff;}
     </style>
     <div class="stage stg">
       <div class="stage-inner">
@@ -946,7 +946,7 @@ footer.page-foot{border-top:1px solid var(--page-rule); margin-top:64px; padding
             <div class="p-c panel">
               <div class="compact">
                 <div class="masthead-row">
-                  <div class="masthead"><span class="dot" style="background:#7fe08d;box-shadow:0 0 6px #7fe08d;"></span>football</div>
+                  <div class="card-masthead"><span class="dot" style="background:#7fe08d;box-shadow:0 0 6px #7fe08d;"></span>football</div>
                   <div class="stamp">Live</div>
                 </div>
                 <div class="title headline">Goal — K. Havertz 78'</div>
@@ -968,7 +968,7 @@ footer.page-foot{border-top:1px solid var(--page-rule); margin-top:64px; padding
             <div class="p-x panel" style="display:none;">
               <div class="compact expanded">
                 <div class="masthead-row">
-                  <div class="masthead"><span class="dot" style="background:#7fe08d;box-shadow:0 0 6px #7fe08d;"></span>football</div>
+                  <div class="card-masthead"><span class="dot" style="background:#7fe08d;box-shadow:0 0 6px #7fe08d;"></span>football</div>
                   <div class="stamp">Live</div>
                 </div>
                 <div class="title headline">Goal — K. Havertz 78'</div>
@@ -1021,8 +1021,8 @@ footer.page-foot{border-top:1px solid var(--page-rule); margin-top:64px; padding
     <style>
       #o-wx-c:checked ~ .stg .p-c{display:block;} #o-wx-c:checked ~ .stg .p-x{display:none;}
       #o-wx-x:checked ~ .stg .p-c{display:none;} #o-wx-x:checked ~ .stg .p-x{display:block;}
-      #o-wx-c:checked ~ .state-switch label[for=o-wx-c]{background:var(--primary);color:#fff;}
-      #o-wx-x:checked ~ .state-switch label[for=o-wx-x]{background:var(--primary);color:#fff;}
+      #o-wx-c:checked ~ * .state-switch label[for=o-wx-c]{background:var(--primary);color:#fff;}
+      #o-wx-x:checked ~ * .state-switch label[for=o-wx-x]{background:var(--primary);color:#fff;}
     </style>
     <div class="stage stg">
       <div class="stage-inner">
@@ -1033,10 +1033,9 @@ footer.page-foot{border-top:1px solid var(--page-rule); margin-top:64px; padding
           <div class="below-block wx-card wx-rain">
             <div class="p-c panel">
               <div class="compact">
-                <img class="wx-icon" alt="" style="background:none;" />
                 <span style="position:absolute; top:10px; right:14px; font-size:34px; z-index:0;">🌧️</span>
                 <div class="masthead-row">
-                  <div class="masthead"><span class="dot" style="background:#f0c46a;box-shadow:0 0 6px #f0c46a;"></span>weather</div>
+                  <div class="card-masthead"><span class="dot" style="background:#f0c46a;box-shadow:0 0 6px #f0c46a;"></span>weather</div>
                   <div class="stamp">Live</div>
                 </div>
                 <div class="title headline">Rain expected within the hour</div>
@@ -1049,7 +1048,7 @@ footer.page-foot{border-top:1px solid var(--page-rule); margin-top:64px; padding
               <div class="compact expanded">
                 <span style="position:absolute; top:10px; right:14px; font-size:34px; z-index:0;">🌧️</span>
                 <div class="masthead-row">
-                  <div class="masthead"><span class="dot" style="background:#f0c46a;box-shadow:0 0 6px #f0c46a;"></span>weather</div>
+                  <div class="card-masthead"><span class="dot" style="background:#f0c46a;box-shadow:0 0 6px #f0c46a;"></span>weather</div>
                   <div class="stamp">Live</div>
                 </div>
                 <div class="title headline">Rain expected within the hour</div>
@@ -1086,8 +1085,8 @@ footer.page-foot{border-top:1px solid var(--page-rule); margin-top:64px; padding
     <style>
       #o-nw-c:checked ~ .stg .p-c{display:block;} #o-nw-c:checked ~ .stg .p-x{display:none;}
       #o-nw-x:checked ~ .stg .p-c{display:none;} #o-nw-x:checked ~ .stg .p-x{display:block;}
-      #o-nw-c:checked ~ .state-switch label[for=o-nw-c]{background:var(--primary);color:#fff;}
-      #o-nw-x:checked ~ .state-switch label[for=o-nw-x]{background:var(--primary);color:#fff;}
+      #o-nw-c:checked ~ * .state-switch label[for=o-nw-c]{background:var(--primary);color:#fff;}
+      #o-nw-x:checked ~ * .state-switch label[for=o-nw-x]{background:var(--primary);color:#fff;}
     </style>
     <div class="stage stg">
       <div class="stage-inner">
@@ -1099,7 +1098,7 @@ footer.page-foot{border-top:1px solid var(--page-rule); margin-top:64px; padding
             <div class="p-c panel">
               <div class="compact">
                 <div class="masthead-row">
-                  <div class="masthead"><span class="dot"></span>The Verge</div>
+                  <div class="card-masthead"><span class="dot"></span>The Verge</div>
                   <div class="stamp">Wire</div>
                 </div>
                 <div class="title headline">Apple ships v7 of its coding-agent notification layer</div>
@@ -1118,7 +1117,7 @@ footer.page-foot{border-top:1px solid var(--page-rule); margin-top:64px; padding
             <div class="p-x panel" style="display:none;">
               <div class="compact expanded">
                 <div class="masthead-row">
-                  <div class="masthead"><span class="dot"></span>The Verge</div>
+                  <div class="card-masthead"><span class="dot"></span>The Verge</div>
                   <div class="stamp">Wire</div>
                 </div>
                 <div class="title headline">Apple ships v7 of its coding-agent notification layer</div>
@@ -1187,7 +1186,7 @@ footer.page-foot{border-top:1px solid var(--page-rule); margin-top:64px; padding
               <div class="agent-board-primary">
                 <div class="compact">
                   <div class="masthead-row">
-                    <div class="masthead"><span class="agent-dot large agent-waiting"></span><span class="agent-runtime-tick" style="background:#d97757;"></span>agent</div>
+                    <div class="card-masthead"><span class="agent-dot large agent-waiting"></span><span class="agent-runtime-tick" style="background:#d97757;"></span>agent</div>
                     <div class="stamp">Now</div>
                   </div>
                   <div class="title headline">Agent needs input</div>
@@ -1211,7 +1210,7 @@ footer.page-foot{border-top:1px solid var(--page-rule); margin-top:64px; padding
               <div class="agent-board-primary">
                 <div class="compact">
                   <div class="masthead-row">
-                    <div class="masthead"><span class="agent-dot large agent-waiting"></span><span class="agent-runtime-tick" style="background:#d97757;"></span>agent</div>
+                    <div class="card-masthead"><span class="agent-dot large agent-waiting"></span><span class="agent-runtime-tick" style="background:#d97757;"></span>agent</div>
                     <div class="stamp">Now</div>
                   </div>
                   <div class="title headline">Agent needs input</div>
@@ -1258,7 +1257,7 @@ footer.page-foot{border-top:1px solid var(--page-rule); margin-top:64px; padding
               <div class="agent-board-primary">
                 <div class="compact">
                   <div class="masthead-row">
-                    <div class="masthead"><span class="agent-dot large agent-waiting"></span><span class="agent-runtime-tick" style="background:#d97757;"></span>agent</div>
+                    <div class="card-masthead"><span class="agent-dot large agent-waiting"></span><span class="agent-runtime-tick" style="background:#d97757;"></span>agent</div>
                     <div class="stamp">Now</div>
                   </div>
                   <div class="title headline">Agent needs input</div>
@@ -1405,7 +1404,7 @@ footer.page-foot{border-top:1px solid var(--page-rule); margin-top:64px; padding
                   <div class="crow"><div><span class="cname">Record notification history</span><span class="chelp">Records notification content to ~/.config/notchtap/history.jsonl. Applies after Save &amp; Relaunch.</span></div><div class="toggle on"></div></div>
                   <div class="crow"><div><span class="cname">Now playing</span><span class="chelp">Show what's currently playing in the idle hover peek. Requires the vendored media adapter.</span></div><div class="toggle"></div></div>
                   <div class="crow"><div><span class="cname">Listener port</span><span class="chelp">Local loopback port used by the notchtap CLI.</span></div><div class="numfield"><input value="9789" readonly><span class="unit">PORT</span></div></div>
-                  <div class="crow"><div><span class="cname">Test notification</span><span class="chelp">Send a manual push to the overlay.</span></div><button class="btn btn-outline">Send test notification</button></div>
+                  <div class="crow"><div><span class="cname">Test notification</span><span class="chelp">Send a manual push to the overlay.</span></div><button type="button" class="btn btn-outline">Send test notification</button></div>
                 </div>
               </div>
               <div class="group">
@@ -1420,11 +1419,11 @@ footer.page-foot{border-top:1px solid var(--page-rule); margin-top:64px; padding
                 <div class="group-head"><p class="group-title">Rotation order</p><p class="group-desc">Same-tier tie-break, checked before arrival order.</p></div>
                 <div class="group-body">
                   <ul class="rotlist">
-                    <li><span class="rank">1</span><span class="rname">Agents</span><span class="vis"><span class="rotbtn">▲</span><span class="rotbtn">▼</span></span></li>
-                    <li><span class="rank">2</span><span class="rname">Football</span><span class="vis"><span class="rotbtn">▲</span><span class="rotbtn">▼</span></span></li>
-                    <li><span class="rank">3</span><span class="rname">News</span><span class="vis"><span class="rotbtn">▲</span><span class="rotbtn">▼</span></span></li>
-                    <li><span class="rank">4</span><span class="rname">Weather</span><span class="vis"><span class="rotbtn">▲</span><span class="rotbtn">▼</span></span></li>
-                    <li><span class="rank">5</span><span class="rname">Manual (CLI)</span><span class="vis"><span class="rotbtn">▲</span><span class="rotbtn">▼</span></span></li>
+                    <li><span class="rank">1</span><span class="rname">Football</span><span class="vis"><span class="rotbtn">▲</span><span class="rotbtn">▼</span></span></li>
+                    <li><span class="rank">2</span><span class="rname">Manual (CLI)</span><span class="vis"><span class="rotbtn">▲</span><span class="rotbtn">▼</span></span></li>
+                    <li><span class="rank">3</span><span class="rname">Weather</span><span class="vis"><span class="rotbtn">▲</span><span class="rotbtn">▼</span></span></li>
+                    <li><span class="rank">4</span><span class="rname">Agents</span><span class="vis"><span class="rotbtn">▲</span><span class="rotbtn">▼</span></span></li>
+                    <li><span class="rank">5</span><span class="rname">News</span><span class="vis"><span class="rotbtn">▲</span><span class="rotbtn">▼</span></span></li>
                   </ul>
                 </div>
               </div>
@@ -1438,9 +1437,9 @@ footer.page-foot{border-top:1px solid var(--page-rule); margin-top:64px; padding
             </div>
           </div>
           <footer class="settings-footer">
-            <button class="btn btn-default">Save &amp; Relaunch</button>
-            <button class="btn btn-outline">Reset</button>
-            <button class="btn btn-outline">Reset to defaults</button>
+            <button type="button" class="btn btn-default">Save &amp; Relaunch</button>
+            <button type="button" class="btn btn-outline">Reset</button>
+            <button type="button" class="btn btn-outline">Reset to defaults</button>
           </footer>
         </div>
 
@@ -1464,11 +1463,11 @@ uefa.champions</textarea><div class="txtcaption">one league code per line</div><
                 <div class="crow"><div><span class="cname">Live match card</span><span class="chelp">Show one live match as a single updating card instead of a burst of one-shot cards.</span></div><div class="toggle on"></div></div>
                 <div class="crow"><div><span class="cname">Richer match events</span><span class="chelp">Poll for fouls, offsides, VAR checks, and substitutions. Heavier polling.</span></div><div class="toggle"></div></div>
                 <div class="crow"><div><span class="cname">Priority</span><span class="chelp">Which tier a waiting score/match-state update promotes in.</span></div><div class="segmented"><span class="segbtn">Low</span><span class="segbtn is-selected">Med</span><span class="segbtn">High</span></div></div>
-                <div class="crow"><div><span class="cname">Test football notification</span><span class="chelp">Send a one-off football notification to the overlay.</span></div><button class="btn btn-outline">Send test notification</button></div>
+                <div class="crow"><div><span class="cname">Test football notification</span><span class="chelp">Send a one-off football notification to the overlay.</span></div><button type="button" class="btn btn-outline">Send test notification</button></div>
               </div>
             </div>
           </div>
-          <footer class="settings-footer"><button class="btn btn-default">Save &amp; Relaunch</button><button class="btn btn-outline">Reset</button><button class="btn btn-outline">Reset to defaults</button></footer>
+          <footer class="settings-footer"><button type="button" class="btn btn-default">Save &amp; Relaunch</button><button type="button" class="btn btn-outline">Reset</button><button type="button" class="btn btn-outline">Reset to defaults</button></footer>
         </div>
 
         <!-- NEWS -->
@@ -1489,8 +1488,8 @@ uefa.champions</textarea><div class="txtcaption">one league code per line</div><
                 <div class="crow"><div><span class="cname">Headline rotation</span><span class="chelp">How long each headline occupies the slot.</span></div><div class="numfield"><input value="8" readonly><span class="unit">SEC</span></div></div>
                 <div class="crow"><div><span class="cname">Maximum per poll</span><span class="chelp">Burst cap: collecting more than this in one interval drops the extras.</span></div><div class="numfield"><input value="6" readonly><span class="unit">ITEMS</span></div></div>
                 <div class="crow"><div><span class="cname">Priority</span><span class="chelp">Which tier a waiting headline promotes in.</span></div><div class="segmented"><span class="segbtn">Low</span><span class="segbtn is-selected">Med</span><span class="segbtn">High</span></div></div>
-                <div class="crow"><div><span class="cname">Test news notification</span><span class="chelp">Send a one-off news headline to the overlay.</span></div><button class="btn btn-outline">Send test notification</button></div>
-                <div class="trow"><span class="cname" style="display:block;margin-bottom:6px;">Search now</span><div style="display:flex;gap:7px;"><input class="numfield" style="width:100%;flex:1;" placeholder="e.g. aston villa transfers" readonly><button class="btn btn-outline">Search</button></div></div>
+                <div class="crow"><div><span class="cname">Test news notification</span><span class="chelp">Send a one-off news headline to the overlay.</span></div><button type="button" class="btn btn-outline">Send test notification</button></div>
+                <div class="trow"><span class="cname" style="display:block;margin-bottom:6px;">Search now</span><div style="display:flex;gap:7px;"><input class="numfield" style="width:100%;flex:1;" placeholder="e.g. aston villa transfers" readonly><button type="button" class="btn btn-outline">Search</button></div></div>
                 <div class="trow">
                   <span class="cname" style="display:block;margin-bottom:6px;">Category colours</span>
                   <div class="vis">
@@ -1505,7 +1504,7 @@ uefa.champions</textarea><div class="txtcaption">one league code per line</div><
               </div>
             </div>
           </div>
-          <footer class="settings-footer"><button class="btn btn-default">Save &amp; Relaunch</button><button class="btn btn-outline">Reset</button><button class="btn btn-outline">Reset to defaults</button></footer>
+          <footer class="settings-footer"><button type="button" class="btn btn-default">Save &amp; Relaunch</button><button type="button" class="btn btn-outline">Reset</button><button type="button" class="btn btn-outline">Reset to defaults</button></footer>
         </div>
 
         <!-- WEATHER -->
@@ -1530,11 +1529,11 @@ uefa.champions</textarea><div class="txtcaption">one league code per line</div><
                 <div class="crow"><div><span class="cname">Hot threshold</span><span class="chelp">Alert when the temperature reaches this.</span></div><div class="numfield"><input value="35" readonly><span class="unit">°C</span></div></div>
                 <div class="crow"><div><span class="cname">Cold threshold</span><span class="chelp">Alert when the temperature drops to this.</span></div><div class="numfield"><input value="5" readonly><span class="unit">°C</span></div></div>
                 <div class="crow"><div><span class="cname">Priority</span><span class="chelp">Which tier a waiting weather alert promotes in.</span></div><div class="segmented"><span class="segbtn">Low</span><span class="segbtn is-selected">Med</span><span class="segbtn">High</span></div></div>
-                <div class="crow"><div><span class="cname">Test weather notification</span><span class="chelp">Send a one-off weather alert to the overlay.</span></div><button class="btn btn-outline">Send test notification</button></div>
+                <div class="crow"><div><span class="cname">Test weather notification</span><span class="chelp">Send a one-off weather alert to the overlay.</span></div><button type="button" class="btn btn-outline">Send test notification</button></div>
               </div>
             </div>
           </div>
-          <footer class="settings-footer"><button class="btn btn-default">Save &amp; Relaunch</button><button class="btn btn-outline">Reset</button><button class="btn btn-outline">Reset to defaults</button></footer>
+          <footer class="settings-footer"><button type="button" class="btn btn-default">Save &amp; Relaunch</button><button type="button" class="btn btn-outline">Reset</button><button type="button" class="btn btn-outline">Reset to defaults</button></footer>
         </div>
 
         <!-- CONNECTORS -->
@@ -1555,13 +1554,13 @@ uefa.champions</textarea><div class="txtcaption">one league code per line</div><
                   </div>
                   <div style="display:grid;grid-template-columns:1fr auto;gap:7px;">
                     <input class="numfield" style="width:100%;" type="password" placeholder="Enter a new key" readonly>
-                    <button class="btn btn-outline">Save</button>
+                    <button type="button" class="btn btn-outline">Save</button>
                   </div>
                 </div>
               </div>
             </div>
           </div>
-          <footer class="settings-footer"><button class="btn btn-default">Save &amp; Relaunch</button><button class="btn btn-outline">Reset</button><button class="btn btn-outline">Reset to defaults</button></footer>
+          <footer class="settings-footer"><button type="button" class="btn btn-default">Save &amp; Relaunch</button><button type="button" class="btn btn-outline">Reset</button><button type="button" class="btn btn-outline">Reset to defaults</button></footer>
         </div>
 
         <!-- AGENTS -->
@@ -1600,16 +1599,17 @@ uefa.champions</textarea><div class="txtcaption">one league code per line</div><
                   <div class="agentcard">
                     <div class="agentcard-head"><span class="agentcard-name"><span class="dot6" style="background:#d97757;"></span>Claude Code</span><span class="vis"><span class="metachip active uc">Available</span><span class="metachip active uc">Enabled</span></span></div>
                     <div class="crow" style="min-height:auto;padding:0 0 8px;"><div><span class="cname">Enable Claude Code</span><span class="chelp">Accept Claude Code events over the loopback endpoint.</span></div><div class="toggle on"></div></div>
-                    <div class="healthmeta"><span>Last seen: 2 min ago</span><span>Capabilities: hooks, subagents</span></div>
+                    <div class="healthmeta"><span>Last seen: 2 min ago</span><span>Capabilities: session_lifecycle, permission_requests, input_required, completion, failure, tool_details, subagents</span></div>
                     <div class="snippet-lbl">Target file</div>
                     <div class="snippet-target">~/.claude/settings.json</div>
                     <pre class="snippet-box">{ "hooks": { "SessionStart": [...], "Notification": [...], "Stop": [...] } }</pre>
-                    <div class="crow" style="min-height:auto;padding:8px 0 0;"><div><span class="cname">Setup snippet</span><span class="chelp">Copy the block above into the target file shown.</span></div><button class="btn btn-outline">Copy snippet</button></div>
-                    <div class="crow" style="min-height:auto;padding:8px 0 0;"><div><span class="cname">Test event</span><span class="chelp">Post one synthetic completed event.</span></div><button class="btn btn-outline">Send test event</button></div>
+                    <div class="crow" style="min-height:auto;padding:8px 0 0;"><div><span class="cname">Setup snippet</span><span class="chelp">Copy the block above into the target file shown.</span></div><button type="button" class="btn btn-outline">Copy snippet</button></div>
+                    <div class="crow" style="min-height:auto;padding:8px 0 0;"><div><span class="cname">Test event</span><span class="chelp">Post one synthetic completed event.</span></div><button type="button" class="btn btn-outline">Send test event</button></div>
                     <p class="agentcard-foot">Uninstall: remove the ten hook entries above from settings.json, or delete the whole file.</p>
                   </div>
                   <div class="agentcard">
-                    <div class="agentcard-head"><span class="agentcard-name"><span class="dot6" style="background:#10a37f;"></span>Codex</span><span class="vis"><span class="metachip active uc">Available</span><span class="metachip active uc">Enabled</span></span></div>
+                    <div class="agentcard-head"><span class="agentcard-name"><span class="dot6" style="background:#10a37f;"></span>Codex</span><span class="vis"><span class="metachip active uc">Partial</span><span class="metachip active uc">Enabled</span></span></div>
+                    <div class="healthmeta"><span>Capabilities: session_lifecycle, permission_requests, completion, tool_details, subagents</span></div>
                     <div class="snippet-lbl">Target file</div>
                     <div class="snippet-target">~/.codex/hooks.json</div>
                     <p class="agentcard-foot">Uninstall: remove the eight hook entries above from hooks.json.</p>
@@ -1640,7 +1640,7 @@ uefa.champions</textarea><div class="txtcaption">one league code per line</div><
               </div>
             </div>
           </div>
-          <footer class="settings-footer"><button class="btn btn-default">Save &amp; Relaunch</button><button class="btn btn-outline">Reset</button><button class="btn btn-outline">Reset to defaults</button></footer>
+          <footer class="settings-footer"><button type="button" class="btn btn-default">Save &amp; Relaunch</button><button type="button" class="btn btn-outline">Reset</button><button type="button" class="btn btn-outline">Reset to defaults</button></footer>
         </div>
 
         <!-- SHORTCUTS -->
@@ -1669,7 +1669,7 @@ uefa.champions</textarea><div class="txtcaption">one league code per line</div><
               </div>
             </div>
           </div>
-          <footer class="settings-footer"><button class="btn btn-default">Save &amp; Relaunch</button><button class="btn btn-outline">Reset</button><button class="btn btn-outline">Reset to defaults</button></footer>
+          <footer class="settings-footer"><button type="button" class="btn btn-default">Save &amp; Relaunch</button><button type="button" class="btn btn-outline">Reset</button><button type="button" class="btn btn-outline">Reset to defaults</button></footer>
         </div>
 
         <!-- APPEARANCE -->
@@ -1687,7 +1687,7 @@ uefa.champions</textarea><div class="txtcaption">one league code per line</div><
                   <div class="crow" style="padding-top:12px;"><span class="cname">Scale</span><div class="segmented"><span class="segbtn">Small</span><span class="segbtn is-selected">Medium</span><span class="segbtn">Large</span></div></div>
                   <div class="crow"><span class="cname">Radius</span><div class="segmented"><span class="segbtn">Square</span><span class="segbtn is-selected">Soft</span><span class="segbtn">Round</span></div></div>
                   <div class="crow"><span class="cname">Opacity</span><div class="segmented"><span class="segbtn">Glass</span><span class="segbtn is-selected">Default</span><span class="segbtn">Solid</span></div></div>
-                  <div class="crow"><div><span class="cname">Live check</span><span class="chelp">Send a one-off manual notification to the overlay.</span></div><button class="btn btn-outline">Send test notification</button></div>
+                  <div class="crow"><div><span class="cname">Live check</span><span class="chelp">Send a one-off manual notification to the overlay.</span></div><button type="button" class="btn btn-outline">Send test notification</button></div>
                 </div>
               </div>
               <div class="group">
@@ -1698,7 +1698,7 @@ uefa.champions</textarea><div class="txtcaption">one league code per line</div><
               </div>
             </div>
           </div>
-          <footer class="settings-footer"><button class="btn btn-default">Save &amp; Relaunch</button><button class="btn btn-outline">Reset</button><button class="btn btn-outline">Reset to defaults</button></footer>
+          <footer class="settings-footer"><button type="button" class="btn btn-default">Save &amp; Relaunch</button><button type="button" class="btn btn-outline">Reset</button><button type="button" class="btn btn-outline">Reset to defaults</button></footer>
         </div>
 
         <!-- DIAGNOSTICS -->
@@ -1716,11 +1716,11 @@ uefa.champions</textarea><div class="txtcaption">one league code per line</div><
 09:41:02 INFO  agents: session claude-code/notchtap -> waiting_for_permission
 09:40:58 INFO  espn: poll ok leagues=2 matches=1
 09:40:12 WARN  rss: feed timeout theverge.com, retry in 600s</pre>
-                <div class="crow"><div><span class="cname">Refresh</span><span class="chelp">Re-read the log file. New lines appear as the app writes them.</span></div><button class="btn btn-outline">Refresh</button></div>
+                <div class="crow"><div><span class="cname">Refresh</span><span class="chelp">Re-read the log file. New lines appear as the app writes them.</span></div><button type="button" class="btn btn-outline">Refresh</button></div>
               </div>
             </div>
           </div>
-          <footer class="settings-footer"><button class="btn btn-default">Save &amp; Relaunch</button><button class="btn btn-outline">Reset</button><button class="btn btn-outline">Reset to defaults</button></footer>
+          <footer class="settings-footer"><button type="button" class="btn btn-default">Save &amp; Relaunch</button><button type="button" class="btn btn-outline">Reset</button><button type="button" class="btn btn-outline">Reset to defaults</button></footer>
         </div>
 
         <!-- HISTORY -->
@@ -1753,11 +1753,11 @@ uefa.champions</textarea><div class="txtcaption">one league code per line</div><
                   <div class="hist-meta"><span class="metachip">The Verge</span><span class="metachip">Tech</span><span class="metachip">Low</span><span class="metachip">News item</span><span class="metachip">TTL 8s</span></div>
                   <div class="hist-more">▸ More details</div>
                 </div>
-                <div class="crow"><div><span class="cname">Clear history</span><span class="chelp">Permanently deletes every recorded notification. This cannot be undone.</span></div><button class="btn btn-outline">Clear history</button></div>
+                <div class="crow"><div><span class="cname">Clear history</span><span class="chelp">Permanently deletes every recorded notification. This cannot be undone.</span></div><button type="button" class="btn btn-outline">Clear history</button></div>
               </div>
             </div>
           </div>
-          <footer class="settings-footer"><button class="btn btn-default">Save &amp; Relaunch</button><button class="btn btn-outline">Reset</button><button class="btn btn-outline">Reset to defaults</button></footer>
+          <footer class="settings-footer"><button type="button" class="btn btn-default">Save &amp; Relaunch</button><button type="button" class="btn btn-outline">Reset</button><button type="button" class="btn btn-outline">Reset to defaults</button></footer>
         </div>
 
         <!-- QUEUE -->
@@ -1774,13 +1774,13 @@ uefa.champions</textarea><div class="txtcaption">one league code per line</div><
                 <div class="queue-row" style="padding-top:12px;"><span class="qt">Rain expected within the hour</span><span class="metachip">Medium</span></div>
                 <div class="queue-row"><span class="qt">Turn completed — awaiting input</span><span class="metachip">Medium</span></div>
                 <div class="queue-row"><span class="qt">Newcastle 0–0 Villa — Kickoff</span><span class="metachip">Medium</span></div>
-                <div class="crow"><div><span class="cname">Refresh</span><span class="chelp">Re-fetch the waiting list. Not live — this is a manual pull.</span></div><button class="btn btn-outline">Refresh</button></div>
-                <div class="crow"><div><span class="cname">Skip current</span><span class="chelp">Dismiss the visible card now and promote the next waiting item.</span></div><button class="btn btn-outline">Skip current</button></div>
-                <div class="crow"><div><span class="cname">Clear queue</span><span class="chelp">Drops every waiting notification. The visible card is unaffected.</span></div><button class="btn btn-outline">Clear queue</button></div>
+                <div class="crow"><div><span class="cname">Refresh</span><span class="chelp">Re-fetch the waiting list. Not live — this is a manual pull.</span></div><button type="button" class="btn btn-outline">Refresh</button></div>
+                <div class="crow"><div><span class="cname">Skip current</span><span class="chelp">Dismiss the visible card now and promote the next waiting item.</span></div><button type="button" class="btn btn-outline">Skip current</button></div>
+                <div class="crow"><div><span class="cname">Clear queue</span><span class="chelp">Drops every waiting notification. The visible card is unaffected.</span></div><button type="button" class="btn btn-outline">Clear queue</button></div>
               </div>
             </div>
           </div>
-          <footer class="settings-footer"><button class="btn btn-default">Save &amp; Relaunch</button><button class="btn btn-outline">Reset</button><button class="btn btn-outline">Reset to defaults</button></footer>
+          <footer class="settings-footer"><button type="button" class="btn btn-default">Save &amp; Relaunch</button><button type="button" class="btn btn-outline">Reset</button><button type="button" class="btn btn-outline">Reset to defaults</button></footer>
         </div>
 
         <!-- ABOUT -->
@@ -1831,7 +1831,7 @@ uefa.champions</textarea><div class="txtcaption">one league code per line</div><
               </div>
             </div>
           </div>
-          <footer class="settings-footer"><button class="btn btn-default">Save &amp; Relaunch</button><button class="btn btn-outline">Reset</button><button class="btn btn-outline">Reset to defaults</button></footer>
+          <footer class="settings-footer"><button type="button" class="btn btn-default">Save &amp; Relaunch</button><button type="button" class="btn btn-outline">Reset</button><button type="button" class="btn btn-outline">Reset to defaults</button></footer>
         </div>
 
       </div>
