@@ -141,6 +141,8 @@ These are not fully specified by the design spec (which describes behavior, not 
 
 **Verification**: `npx vitest run` — button click → correct command-dispatch event fired (mock the event, don't require a real MediaRemote adapter in CI, same posture as every other subprocess-backed surface here).
 
+**Landed so far**: `MediaBelowBlock.tsx` (new) — title/subtitle, album-art glyph, three presentational transport buttons (`onCommand` callback, no `invoke()`), the shipped `.media-bar` progress indicator with its discontinuity guard ported faithfully from `IdleHoverPeek.tsx`, `expanded`-gated scrubber + optional queue preview (no real queue data source, flagged like Slice G's `secondaryMatches`). 28 tests. New `media-below-block.css` for the genuinely-new transport-button markup only; `.media-bar` itself reused verbatim from `idle-peek.css`. Discovered a pre-existing gap (not this slice's to fix): `--media-mint` has no `:root` definition anywhere despite Slice E's `icon-strip.css`/`eq-bars.css` already referencing it — flagged for Slice K.
+
 ## Slice I — news below-block: batch header + position bar (frontend)
 
 **Files**: `src/components/NotificationBody.tsx`'s news branch (extending), a new batch-header sub-component.
