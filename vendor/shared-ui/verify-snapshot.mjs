@@ -95,8 +95,9 @@ const siblingPath = join(here, "..", "..", "..", "shared-ui", "design", "tokens.
 // (cubic-bezier(.22, 1, .36, 1) -> (0.23, 1, 0.32, 1)) IS the deliberate
 // animation decision the old note anticipated — its JS/CSS lockstep
 // twins (animationTiming.ts NOTCHTAP_EASE, styles.css's :root
-// redeclaration) move in the same commit, guarded as ever by
-// animationTiming.test.ts's token-parity test.
+// redeclaration) move in the same commit, guarded by
+// animationTiming.test.ts's token-parity tests — the styles.css twin
+// had no guard of its own until this round's review added one.
 const UPSTREAM_SHA = "711c792";
 const PINNED_TOKENS_SHA256 =
   "cdba5a467dfb81c51e425fb829d39724bbee7c91e19cbda482970f6376742e31";
