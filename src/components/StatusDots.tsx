@@ -1,4 +1,5 @@
 import type { StatusState } from "../useStatusState";
+import { FootballGlyph, NewsGlyph, WeatherGlyph } from "./IconStrip";
 
 // plan 091 (079 item 2): the right flank's three status dots — fixed order
 // Football/News/Weather, per the locked reference
@@ -70,17 +71,23 @@ export function StatusDots({ status }: { status?: StatusState }) {
         className={`status-dot football ${shapeClass(footballConfigured)}${football ? " active" : " dim"}`}
         role="img"
         aria-label={configuredLabel("Football", footballConfigured)}
-      />
+      >
+        <FootballGlyph />
+      </span>
       <span
         className={`status-dot news ${shapeClass(newsConfigured)}${news ? " active" : " dim"}`}
         role="img"
         aria-label={configuredLabel("News", newsConfigured)}
-      />
+      >
+        <NewsGlyph charge={0} />
+      </span>
       <span
         className={`status-dot weather ${shapeClass(weatherConfigured)}${weather ? " active" : " dim"}`}
         role="img"
         aria-label={configuredLabel("Weather", weatherConfigured)}
-      />
+      >
+        <WeatherGlyph />
+      </span>
       {paused && (
         <span className="pause-glyph" role="img" aria-label="Notifications paused">
           <span />
