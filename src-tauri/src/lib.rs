@@ -2117,6 +2117,59 @@ fn set_prefix_followups_registered<R: tauri::Runtime>(app: &tauri::AppHandle<R>,
     all_ok
 }
 
+/// What one watchdog wake-up should do. See [`watchdog_verdict`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum WatchdogVerdict {
+    /// Nothing registered — the net is not needed.
+    Done,
+    /// A newer arm is still inside its legitimate watchdog budget —
+    /// sleep again for this long, then re-decide.
+    Reschedule(std::time::Duration),
+    /// No arm within budget explains the live registration — release.
+    Release,
+}
+
+/// Pure decision, thin apply wrapper (house pattern — see
+/// `should_auto_advance_session` / `silence_should_flip`, and
+/// `docs/TESTING_STRATEGY.md` §4.4). ALL watchdog policy lives here; the
+/// async loop in `handle_prefix_fire` only sleeps and applies.
+///
+/// Plan 178: the watchdog stays generation-BLIND on purpose — gating it on
+/// `prefix_generation` would blind it to the "follow-up consumed
+/// (generation bumped) but its release failed" case, which is precisely
+/// the case only the watchdog can catch. What it needs instead is a TIME
+/// deadline: every arm records `last_arm_at`, and a watchdog spawned by an
+/// older arm defers to any newer arm that is still inside its own
+/// `timeout` budget rather than force-releasing grabs that live window
+/// still needs (arm at t0, lapse, re-arm at t0+4s — the t0 watchdog used
+/// to fire at t0+5s and silently kill the second window's grabs).
+///
+/// A newest-arm age of exactly `timeout` releases rather than rescheduling
+/// — both because that arm's own budget is spent, and because a
+/// zero-length `Reschedule` would spin the loop hot.
+///
+/// Deliberately NOT `#[cfg(target_os = "macos")]`-gated: it takes plain
+/// values and has no OS dependency, so it stays unit-testable on every
+/// platform (same reasoning as `should_auto_advance_session`).
+fn watchdog_verdict(
+    followups_registered: bool,
+    last_arm_at: Option<std::time::Instant>,
+    now: std::time::Instant,
+    timeout: std::time::Duration,
+) -> WatchdogVerdict {
+    if !followups_registered {
+        return WatchdogVerdict::Done;
+    }
+    // Registered with no arm on record can only be a leak — release.
+    let Some(armed_at) = last_arm_at else {
+        return WatchdogVerdict::Release;
+    };
+    match timeout.checked_sub(now.saturating_duration_since(armed_at)) {
+        Some(remaining) if !remaining.is_zero() => WatchdogVerdict::Reschedule(remaining),
+        _ => WatchdogVerdict::Release,
+    }
+}
+
 /// The unconditional dead-man's switch. Releases every follow-up grab and
 /// clears the armed state regardless of generation, timer, or current
 /// state — the one path that is safe to call from anywhere, at any time,
@@ -2131,7 +2184,21 @@ fn force_release_prefix_followups<R: tauri::Runtime>(
         return;
     }
     tracing::warn!("prefix watchdog: force-releasing follow-up grabs");
-    let _ = set_prefix_followups_registered(app, false);
+    let all_ok = set_prefix_followups_registered(app, false);
+    if !all_ok {
+        // Plan 178, the invariant every other caller honours (see
+        // `handle_prefix_fire` / `handle_prefix_followup`): a failed
+        // RELEASE keeps the flag true so the watchdog retries. Clearing it
+        // unconditionally used to LIE — the flag said "released", every
+        // later watchdog early-returned on it, and a bare `Enter` stayed
+        // grabbed system-wide until the app restarted.
+        //
+        // The brief false window between the `swap` above and this `store`
+        // is acceptable: the only readers are the verdict loop, which
+        // retries anyway, and the handlers, which re-register on the next
+        // arm.
+        tab_wire.followups_registered.store(true, Ordering::SeqCst);
+    }
     *tab_wire.prefix.lock().unwrap_or_else(|e| e.into_inner()) = prefix::PrefixState::Disarmed;
 }
 
@@ -2148,6 +2215,14 @@ fn handle_prefix_fire<R: tauri::Runtime>(app: &tauri::AppHandle<R>, tab_wire: &A
         st.is_armed(now)
     };
     let generation = tab_wire.prefix_generation.fetch_add(1, Ordering::SeqCst) + 1;
+    if armed {
+        // Plan 178: the deadline every watchdog — including ones spawned by
+        // EARLIER arms — measures itself against.
+        *tab_wire
+            .last_arm_at
+            .lock()
+            .unwrap_or_else(|e| e.into_inner()) = Some(now);
+    }
     let all_ok = set_prefix_followups_registered(app, armed);
     // Stays true if a RELEASE partially failed, so the watchdog retries.
     tab_wire
@@ -2176,13 +2251,43 @@ fn handle_prefix_fire<R: tauri::Runtime>(app: &tauri::AppHandle<R>, tab_wire: &A
         // still grabbed, ignoring generation entirely. This is the net
         // that catches what the generation-guarded timer above cannot —
         // a wedged runtime, a lost timer, a panic that unwound past the
-        // release, or an unregister that failed per-key. Idempotent, so
-        // overlapping watchdogs from rapid re-arming are harmless.
+        // release, or an unregister that failed per-key.
+        //
+        // Plan 178: generation-blind BY DESIGN (a generation gate would
+        // blind it to the "follow-up consumed, but its release failed"
+        // case — the one only this net can catch), but DEADLINE-aware, so
+        // it can no longer kill a newer legitimate window: each wake-up
+        // asks `watchdog_verdict` whether the newest arm on record still
+        // has budget left, and defers to it if so. Overlapping loops from
+        // rapid re-arming stay harmless — every one converges to `Done`
+        // the moment nothing is registered.
         let watchdog_app = app.clone();
         let watchdog_wire = tab_wire.clone();
         tauri::async_runtime::spawn(async move {
-            tokio::time::sleep(PREFIX_WATCHDOG_TIMEOUT).await;
-            force_release_prefix_followups(&watchdog_app, &watchdog_wire);
+            let mut sleep_for = PREFIX_WATCHDOG_TIMEOUT;
+            loop {
+                tokio::time::sleep(sleep_for).await;
+                let last_arm = *watchdog_wire
+                    .last_arm_at
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                match watchdog_verdict(
+                    watchdog_wire.followups_registered.load(Ordering::SeqCst),
+                    last_arm,
+                    std::time::Instant::now(),
+                    PREFIX_WATCHDOG_TIMEOUT,
+                ) {
+                    WatchdogVerdict::Done => return,
+                    WatchdogVerdict::Reschedule(d) => sleep_for = d,
+                    WatchdogVerdict::Release => {
+                        force_release_prefix_followups(&watchdog_app, &watchdog_wire);
+                        // A failed release keeps the flag true, so loop
+                        // again: the next verdict is `Done` on success,
+                        // `Release` again (a paced retry) on failure.
+                        sleep_for = PREFIX_WATCHDOG_TIMEOUT;
+                    }
+                }
+            }
         });
     }
 }
@@ -2731,6 +2836,108 @@ fn open_current_story<R: tauri::Runtime>(engine: &Engine<R>) {
 /// function's own definition — clippy's `items_after_test_module` lint
 /// requires every non-test item in a scope to precede any test module in
 /// that same scope, so a second test module can only sit at the very end.
+/// Plan 178: `watchdog_verdict`'s own tests. A plain `#[cfg(test)]` module
+/// for the same reason `agent_session_advance_tests` below is one — `mod
+/// tests` compiles out entirely on non-macOS, and the function under test
+/// is deliberately not `target_os`-gated.
+///
+/// NOTE: the watchdog's async loop itself is deliberately left untested.
+/// All of its policy lives in the pure function exercised here, and the
+/// only way to test the loop would be a real-timer async test — an
+/// exception this repo grants to exactly two existing `engine.rs` tests
+/// and no more (`plans/README.md`'s rejected findings).
+#[cfg(test)]
+mod watchdog_verdict_tests {
+    use super::*;
+    use std::time::{Duration, Instant};
+
+    const TIMEOUT: Duration = Duration::from_secs(5);
+
+    /// Nothing grabbed: the net is not needed, whatever the arm history.
+    #[test]
+    fn done_when_nothing_is_registered() {
+        let t0 = Instant::now();
+        assert_eq!(
+            watchdog_verdict(false, None, t0, TIMEOUT),
+            WatchdogVerdict::Done
+        );
+        assert_eq!(
+            watchdog_verdict(false, Some(t0), t0 + Duration::from_secs(5), TIMEOUT),
+            WatchdogVerdict::Done
+        );
+    }
+
+    /// The bug this plan fixes: arm at t0, let it lapse, re-arm at t0+4s.
+    /// The t0 watchdog wakes at t0+5s and must DEFER to the newer arm for
+    /// the 4s left in that arm's own budget, not force-release its grabs.
+    #[test]
+    fn reschedule_when_a_newer_arm_is_still_inside_its_budget() {
+        let t0 = Instant::now();
+        let rearmed_at = t0 + Duration::from_secs(4);
+        assert_eq!(
+            watchdog_verdict(true, Some(rearmed_at), t0 + Duration::from_secs(5), TIMEOUT),
+            WatchdogVerdict::Reschedule(Duration::from_secs(4))
+        );
+    }
+
+    /// A one-millisecond-old arm reschedules for very nearly the whole
+    /// budget — the reschedule duration is the arm's remaining time, not a
+    /// fixed sleep.
+    #[test]
+    fn reschedule_duration_is_the_newest_arms_remaining_budget() {
+        let t0 = Instant::now();
+        assert_eq!(
+            watchdog_verdict(true, Some(t0), t0 + Duration::from_millis(1), TIMEOUT),
+            WatchdogVerdict::Reschedule(Duration::from_millis(4999))
+        );
+    }
+
+    /// Lapsed and stuck: the newest arm is exactly `timeout` old, so its
+    /// budget is spent and the grabs are still live — release. (Exactly at
+    /// the deadline must NOT reschedule for zero: that would spin hot.)
+    #[test]
+    fn release_when_the_newest_arm_is_exactly_at_its_deadline() {
+        let t0 = Instant::now();
+        assert_eq!(
+            watchdog_verdict(true, Some(t0), t0 + TIMEOUT, TIMEOUT),
+            WatchdogVerdict::Release
+        );
+    }
+
+    /// Well past the deadline and still grabbed — the wedged case the
+    /// dead-man's switch exists for.
+    #[test]
+    fn release_when_the_newest_arm_is_long_past_its_deadline() {
+        let t0 = Instant::now();
+        assert_eq!(
+            watchdog_verdict(true, Some(t0), t0 + Duration::from_secs(60), TIMEOUT),
+            WatchdogVerdict::Release
+        );
+    }
+
+    /// Registered with no arm ever recorded can only be a leak — release.
+    #[test]
+    fn release_when_registered_but_no_arm_was_ever_recorded() {
+        let t0 = Instant::now();
+        assert_eq!(
+            watchdog_verdict(true, None, t0, TIMEOUT),
+            WatchdogVerdict::Release
+        );
+    }
+
+    /// Defensive: a `now` that predates the arm instant (clock read
+    /// ordering, not a real monotonic regression) saturates to zero
+    /// elapsed and reschedules for the full budget rather than panicking.
+    #[test]
+    fn arm_instant_in_the_future_reschedules_for_the_full_budget() {
+        let t0 = Instant::now();
+        assert_eq!(
+            watchdog_verdict(true, Some(t0 + Duration::from_secs(1)), t0, TIMEOUT),
+            WatchdogVerdict::Reschedule(TIMEOUT)
+        );
+    }
+}
+
 #[cfg(test)]
 mod agent_session_advance_tests {
     use super::*;

@@ -179,6 +179,15 @@ pub struct TabWire {
     /// the generation out from under it.
     pub prefix: std::sync::Mutex<crate::prefix::PrefixState>,
     pub prefix_generation: std::sync::atomic::AtomicU64,
+    /// Plan 178: when the NEWEST arm happened. The watchdog stays
+    /// generation-BLIND by design (see `followups_registered` below), so
+    /// this instant — not the generation counter — is what tells an older
+    /// watchdog "a newer legitimate window is still inside its own budget,
+    /// sleep again" instead of force-releasing grabs that window still
+    /// needs. `None` until the first arm; never cleared on disarm, because
+    /// a stale arm instant reads as "long past its deadline" anyway, which
+    /// is exactly the release verdict we want.
+    pub last_arm_at: std::sync::Mutex<Option<std::time::Instant>>,
     /// The agent below-block's VIEWED session index (spec §7's
     /// `prefix-[`/`prefix-]` cycling) — wraps modulo the live session
     /// count; emitted to the frontend as `agent-viewed-session-changed`.
@@ -214,6 +223,7 @@ impl TabWire {
             tabs: TabState::default(),
             prefix: std::sync::Mutex::new(crate::prefix::PrefixState::Disarmed),
             prefix_generation: std::sync::atomic::AtomicU64::new(0),
+            last_arm_at: std::sync::Mutex::new(None),
             viewed_session: std::sync::atomic::AtomicUsize::new(0),
             session_advanced: tokio::sync::Notify::new(),
             followups_registered: std::sync::atomic::AtomicBool::new(false),
