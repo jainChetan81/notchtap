@@ -28,6 +28,7 @@ mod logging;
 #[cfg(target_os = "macos")]
 mod login_item;
 mod net;
+mod news_charge;
 mod notifier;
 mod now_playing;
 mod poller;
