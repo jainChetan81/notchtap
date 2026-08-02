@@ -131,6 +131,8 @@ These are not fully specified by the design spec (which describes behavior, not 
 
 **Verification**: `npx vitest run` — compact vs. crossbar rendering, confirm no floor strip renders in either pulled state (matching the shipped sticky-card precedent this spec explicitly says NOT to regress).
 
+**Landed so far**: `FootballHeroCard` extended with `secondaryMatches` (default `[]`, byte-identical to before for every existing caller — 143 pre-existing tests unchanged), rendering additional `.score-block.stacked` blocks via an extracted `ScoreBlockContent` helper. 6 new tests. **Discovered gap, flagged rather than improvised**: nothing on the wire currently surfaces more than one live match at a time (`StatusState.football.live` is a single `Option`; `poller.rs`'s snapshot map tracks every watched league but collapses to "first in-play wins" before the wire) — a real second match needs a rust wire change outside this slice's file scope. `secondaryMatches` has no real caller yet; Slice K's integration (or a dedicated follow-up plan) needs to resolve this before the crossbar variant can show a genuine second match.
+
 ## Slice H — media below-block: transport + scrubber + queue (frontend)
 
 **Files**: a new media below-block component (`src/components/MediaCard.tsx` or similar) — genuinely new surface, not an extension of an existing card, so this is the most independently parallel-safe of the below-block slices.
