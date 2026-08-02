@@ -64,12 +64,14 @@ plan-172 harness (`research/plan172-harness/`, `trace.mjs` variant),
 
 Worst full-pipeline frame ≈ 1.3ms against the 16.7ms/60fps budget
 (~8%); the TYPICAL frame's layout leg is 0.09ms (~0.5%). The plan-172
-frame samples over the same gesture held ~60fps (worst gap 22ms, one
-56ms hiccup across six scenarios). The invalidation scope textbook
-advice worries about is one tiny fixed-size overlay window whose entire
-content IS this card — there is no surrounding page to thrash.
+frame samples over the same gesture held ~60fps overall — worst gap
+across six scenarios was a single 56ms hiccup, with every other gap
+(including the next-worst) at or under 22ms. The invalidation scope
+textbook advice worries about is one tiny fixed-size overlay window
+whose entire content IS this card — there is no surrounding page to
+thrash.
 
-**On the 56ms hiccup**: it's a single sample, one of six scenarios, and
+**On the 56ms hiccup**: it's the one outlier sample noted above, and
 none of the per-stage trace costs above (all comfortably under budget,
 worst full-pipeline frame ~1.3ms) account for a gap that size — so it
 doesn't read as width-vs-transform-caused. Left unexplained rather than

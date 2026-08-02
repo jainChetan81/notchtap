@@ -44,8 +44,9 @@ same repo in parallel, one line never pushed.
    relative to the previous snapshot: `--ease-notchtap`
    `cubic-bezier(.22, 1, .36, 1)` → `cubic-bezier(0.23, 1, 0.32, 1)`
    (both strong ease-outs; the new one is the standard easeOutQuint
-   shape), plus the two new tokens above (no notchtap consumer yet —
-   available, not adopted).
+   shape), plus the two new tokens above — `--ease-drawer` and
+   `--ease-in-out-strong` have no notchtap consumer yet (available, not
+   adopted); `--ease-notchtap` itself is adopted below (step 3).
 3. **Lockstep twins** (the trio `styles.css`'s plan-163 comment says
    must move together): `src/styles.css` `:root` redeclaration and
    `src/animationTiming.ts` `NOTCHTAP_EASE` both retuned to
