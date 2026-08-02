@@ -38,11 +38,22 @@ Restated here because they are the spine everything else hangs off; full rationa
 
 ## 4. Rest state
 
-Exactly the shell (`.card-assembly`, `--flank-w: 0`, width = the 200×32 cutout, nothing else), the approved idle face (two 4px status-dot-style eyes, a 1px hairline mouth — assembled entirely from parts the app already ships, see mock 1 §1's originality note), and the eq bars (3 bars, `--media-mint`, `scaleY` off a bottom origin, collapsed to zero width when silent) whenever audio is genuinely playing. Both flanks are zero-width and paint nothing at rest — there is no reserved dead space either side.
+Exactly the shell (`.card-assembly`, `--flank-w: 0`, width = the 200×32 cutout, nothing else), the ALREADY-SHIPPED `<IdleFace idle={...} />` component (`src/components/IdleFace.tsx`, unmodified — see the correction below), and the eq bars (3 bars, `--media-mint`, `scaleY` off a bottom origin, collapsed to zero width when silent) whenever audio is genuinely playing. Both flanks are zero-width and paint nothing at rest — there is no reserved dead space either side.
 
-Face motion (unchanged from the already-shipped `IdleFace.tsx`/plan 125, reproduced faithfully in the mock, not redesigned by this spec): 5.2s breathe, a double-blink every 6.4s (two ~96ms closes 96ms apart), right eye 40ms behind the left.
+**Correction (2026-08-02, found grounding this section against the real component before implementation): the mock's own face illustration is NOT a faithful reproduction of the shipped `IdleFace.tsx` — it is a hand-drawn, illustrative approximation for the static-HTML medium, and this spec's first draft repeated its numbers as if they were the real, unchanged behavior.** They are not; verified directly against `src/components/IdleFace.tsx` and `card-chrome.css`'s `.idle-face*` rules:
 
-**Prefix-armed indicator** (delight proposal, mock 1 §5, not yet a decision — see open questions): while the prefix is armed, the face's eyes flick to pure white with a 6px halo and the breath speeds up to 2.2s. Built entirely from the face's own existing parts.
+| | mock's illustration (WRONG for this spec's purposes) | real, shipped `IdleFace.tsx` (correct) |
+|---|---|---|
+| continuous "breathe" | `scale(1 → 1.045)`, 5.2s loop, infinite | **does not exist** — no continuous idle animation at all beyond the one-time reveal |
+| blink | double: two ~96ms closes 96ms apart, fixed 6.4s cadence | single: one 140ms `scaleY(0.12)` dip, scheduled on a **random** 6000–12000ms interval (plan 125's cost-optimization) |
+| eye lag | right eye 40ms behind the left (two independent animations) | **no lag** — both eyes are plain sibling `<span>`s sharing ONE parent `transform` (`.idle-face-eyes`); there is no per-eye timing at all |
+| eye shape | "two 4px status-dot circles, shrunk from 9px" | `.idle-face-eye`: `3px × 4px`, `border-radius: 1.5px` (a rounded pill, not a circle) — its own dedicated CSS class, not literally a reused `.status-dot` |
+| mouth | "a 1px hairline... a straight rule, never a curve" | an SVG `<path d="M1 1.5 Q7 5.5 13 1.5">` — a gentle quadratic curve, not a straight line |
+| gaze | not mentioned in the mock at all | exists in the real component and is NOT mentioned here because it's irrelevant to this correction — left completely alone |
+
+**Resolution: this feature imports and renders the real `<IdleFace />` component unmodified, in the same `.synthetic-cutout` grid cell (`grid-column: 2, grid-row: 1`) it already occupies today** — not a new, re-timed drawing matching the mock's illustrative numbers. This is a strictly SIMPLER implementation than the first draft implied (zero new face code, zero new CSS for eyes/mouth/blink/gaze) and is more consistent with this spec's own "reuse what's shipped" discipline than inventing a second, competing face implementation would have been. The mock's illustration should be read as "a face lives here, roughly like this" for review purposes, not as this feature's literal animation spec.
+
+**Prefix-armed indicator** (delight proposal, mock 1 §5, not yet a decision — see open questions): while the prefix is armed, the face's eyes flick to pure white with a 6px halo. The mock's own accompanying claim that "the breath speeds up to 2.2s" is void per the correction above — there is no breath cycle to speed up. If this delight proposal is picked up, it needs its own small addition to `IdleFace.tsx` (an `armed` prop gating an eye-color/glow override) rather than modulating a cadence that doesn't exist; out of scope unless the operator confirms wanting it.
 
 ## 5. Hover reveal
 
