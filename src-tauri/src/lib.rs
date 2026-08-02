@@ -547,7 +547,7 @@ pub fn run() {
                         // the correct hysteresis input for whether the
                         // idle peek's (2026-08-02: or the showing card's
                         // hover-expanded) rect should already be grown.
-                        let hover_latched = *was_hovered.lock().unwrap();
+                        let hover_latched = *was_hovered.lock().unwrap_or_else(|e| e.into_inner());
                         // P0 fix: the REAL currently-applied window height
                         // — `hover::WINDOW_HEIGHT` at rest, or the taller
                         // applied board-expand frame — never the stale
@@ -590,7 +590,7 @@ pub fn run() {
                     let window = window.clone();
                     hover_handler.on_mouse_moved(move |event| {
                         let loc = event.locationInWindow();
-                        let hover_latched = *was_hovered.lock().unwrap();
+                        let hover_latched = *was_hovered.lock().unwrap_or_else(|e| e.into_inner());
                         // P0 fix: see the matching comment in
                         // `on_mouse_entered` just above.
                         let real_window_height =
@@ -745,7 +745,6 @@ pub fn run() {
             {
                 let monitor_cutout_width = cutout.map(|c| c.width).unwrap_or(0.0);
                 let monitor_cutout_height = inset;
-                let monitor_scale = config.appearance.card_scale;
                 let window_number = {
                     use objc2_app_kit::NSWindow;
                     let ns_window_ptr = window.ns_window()? as *mut NSWindow;
@@ -760,7 +759,6 @@ pub fn run() {
                     mode,
                     cutout_width: monitor_cutout_width,
                     cutout_height: monitor_cutout_height,
-                    scale: monitor_scale,
                     board_frame: board_frame.clone(),
                 });
             }
@@ -1519,10 +1517,15 @@ fn hover_point_is_over_card(
         SlotState::Showing { expanded, .. } => (true, expanded),
         SlotState::Empty => (false, false),
     });
+    // Poison-tolerant: a panic elsewhere must not turn every later mouse
+    // event into a panic inside an objc callback (this runs on the AppKit
+    // main thread, from the tracking area's handlers). The `Config` mutex
+    // is genuinely poisonable — `set_appearance` holds it across
+    // `write_config_atomic`.
     let scale = app_handle
         .state::<StdMutex<Config>>()
         .lock()
-        .unwrap()
+        .unwrap_or_else(|e| e.into_inner())
         .appearance
         .card_scale;
     let rect = if !visible && board_session_count > 0 {
@@ -1595,7 +1598,7 @@ fn emit_hover_changed_if_transitioned(
     use tauri::Emitter;
 
     {
-        let mut last = was_hovered.lock().unwrap();
+        let mut last = was_hovered.lock().unwrap_or_else(|e| e.into_inner());
         if *last == hovered {
             return;
         }
