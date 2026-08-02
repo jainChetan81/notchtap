@@ -82,12 +82,16 @@ export const CONTENT_EXIT_MS = 105;
 
 // 2026-07-23 review fix (Duplicated Code finding): the overlay's signature
 // easing curve, single-sourced for every JS/motion consumer. This is the
-// numeric twin of shared-ui's `--ease-notchtap: cubic-bezier(.22,1,.36,1)`
+// numeric twin of shared-ui's `--ease-notchtap: cubic-bezier(0.23,1,0.32,1)`
 // token (vendor/shared-ui/design/tokens.css) — a real cross-file lockstep
 // pair, now GUARDED by a test in animationTiming.test.ts that parses the
 // token and compares it to this array, so drift fails CI instead of
 // shipping two subtly different eases.
-export const NOTCHTAP_EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
+// 2026-08-02 (shared-ui 0.4.0 vendor refresh): retuned from
+// [0.22, 1, 0.36, 1] alongside the token itself — upstream's motion-trio
+// pass unified notchtap onto this slightly stronger ease-out. The third
+// lockstep twin is src/styles.css's `--ease-notchtap` redeclaration.
+export const NOTCHTAP_EASE: [number, number, number, number] = [0.23, 1, 0.32, 1];
 
 // 2026-07-23 review fix (Duplicated Code finding, wave C — CSS custom-
 // property injection): the shell's own entrance width-grow (base

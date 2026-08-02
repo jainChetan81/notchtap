@@ -82,26 +82,26 @@ const siblingPath = join(here, "..", "..", "..", "shared-ui", "design", "tokens.
 // BYTE-IDENTICAL to the sibling checkout again, first time since 892d661.
 // Both hashes below are the same value as a result.
 //
-// Flagging a discrepancy rather than silently resolving it: the previous
-// comment block (now replaced) described a reviewed sibling state at
-// "shared-ui 0.2.2, tokens commit 4722b88" carrying a "motion trio"
-// retune (--ease-notchtap -> cubic-bezier(0.23, 1, 0.32, 1), new
-// --ease-drawer/--ease-in-out-strong). That commit does not exist
-// anywhere in `git log --oneline --all` on the actual shared-ui checkout
-// as of this refresh (freshly fetched; real HEAD is f1d2bf7, still
-// carrying the ORIGINAL cubic-bezier(.22, 1, .36, 1) --ease-notchtap —
-// verified directly, not assumed). Whatever "0.2.2"/4722b88 was, it
-// either never got pushed/merged, lived on a branch since deleted, or
-// was aspirational documentation of reviewed-but-not-landed work. If a
-// real motion-trio retune DOES land upstream later, adopting it is still
-// the deliberate animation decision the old comment said it was — this
-// note doesn't change that, it only corrects what's verifiably on disk
-// right now.
-const UPSTREAM_SHA = "f1d2bf7";
+// 2026-08-02 (later the same day) motion-trio adoption, closing the
+// mystery the previous refresh flagged: "0.2.2 / tokens commit 4722b88"
+// was NOT aspirational — it was real, reviewed work sitting UNPUSHED on
+// the mac mini's own ../shared-ui checkout, invisible to the remote
+// session that wrote that note (it fetched origin, which only had PR #1).
+// The two lines were merged upstream as shared-ui 0.4.0 (merge commit
+// 711c792: overlay trio from PR #1 + motion trio from 4722b88, both
+// preserved with their original SHAs). This refresh vendors the merged
+// file, so the vendored copy is again BYTE-IDENTICAL to the sibling and
+// both hashes below share one value. Adopting the --ease-notchtap retune
+// (cubic-bezier(.22, 1, .36, 1) -> (0.23, 1, 0.32, 1)) IS the deliberate
+// animation decision the old note anticipated — its JS/CSS lockstep
+// twins (animationTiming.ts NOTCHTAP_EASE, styles.css's :root
+// redeclaration) move in the same commit, guarded as ever by
+// animationTiming.test.ts's token-parity test.
+const UPSTREAM_SHA = "711c792";
 const PINNED_TOKENS_SHA256 =
-  "f1db9873e2618835489463bfd03b83a2258200b72236602386a0f4613f967d2f";
+  "cdba5a467dfb81c51e425fb829d39724bbee7c91e19cbda482970f6376742e31";
 const PINNED_SIBLING_SHA256 =
-  "f1db9873e2618835489463bfd03b83a2258200b72236602386a0f4613f967d2f";
+  "cdba5a467dfb81c51e425fb829d39724bbee7c91e19cbda482970f6376742e31";
 
 function sha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
