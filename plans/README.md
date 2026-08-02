@@ -1,5 +1,90 @@
 # Implementation Plans
 
+**Eighth audit session, plans 175–181 (2026-08-02, `/improve` standard,
+planned at `7ca82d5`)** — scoped to the least-audited surface: the 122
+commits since the seventh audit's `acdaeb0` baseline, dominated by plan
+171's tab-notch redesign (PR #13). Four parallel read-only auditors (rust
+native-input; rust core delta; frontend delta + tests; debt/docs/
+direction); every tabled finding re-verified against live code by the
+advisor before planning, per house practice. Run non-interactively — the
+operator was not present for selection, so per the skill's default the
+top findings by leverage were planned and everything else is recorded
+below, awaiting selection.
+
+**Headline finding (175, P1):** the icon-strip click hit-test and the
+shipped CSS were never re-paired after the mock — rust computes an
+icon-count-driven flank (`max(85·scale, 26n+14)`, inset 14) while the CSS
+paints a flat 85px flank (inset 16) with `overflow: hidden`. At 3+ present
+icons, clicks select the wrong tab or nothing and glyphs clip out of view
+— the feature's headline gesture, broken exactly in the "everything live"
+state. Found independently by three of the four auditors; confirmed by the
+advisor against every `--cw` declaration in `src/`.
+
+Execution order: 175 → 176 (same `card-chrome.css:243` rule: 175 changes
+its value, 176 its selector); 177, 178, 179 independent of those and of
+each other (177 shares `StatusRailCard.tsx` with 176, different regions —
+reconcile by reading); 180 soft-after 176/177 (its seam test asserts
+post-fix behaviour); 181 last (prose-only, touches files 178/179/180
+edit).
+
+| plan | title | priority | effort | depends on | status |
+|---|---|---|---|---|---|
+| 175 | reconcile icon-strip rust hit-test geometry with shipped CSS | P1 | M | — | TODO |
+| 176 | place the pulled-tab below-block in its grid row | P1 | S | 175 (soft) | TODO |
+| 177 | blank pulls: ungated agent sessions on the wire + empty-tab peek fallback | P1 | M | — | TODO |
+| 178 | prefix watchdog: deadline-aware + self-healing forced release | P1 | S | — | TODO |
+| 179 | input-path robustness: live scale, poison-tolerant AppKit locks, emit-under-lock | P2 | S | — | TODO |
+| 180 | tab-wire test backfill: rejection cases, App seam, identity parity pin, whitespace unification | P2 | S | 176/177 (soft) | TODO |
+| 181 | post-171 docs truth: five stale claims, one user-visible in Settings | P3 | S | 178/179/180 (soft, land last) | TODO |
+
+**Verified this session but NOT planned (awaiting selection):**
+
+- **Dead prefix pull actions** — `agent-viewed-session-changed` is emitted
+  (`lib.rs:2160-2166`) into the void: no frontend listener exists, and
+  `TabBelowBlock`'s `viewedSessionIndex`/`expanded` props keep their
+  defaults at the one mount site, so prefix `[`/`]` do nothing and
+  `enter`/`o` route to the queue's expand flag, a no-op while the Slot is
+  idle. Four of the eleven grabbed keys deliver zero behaviour; README/spec
+  say otherwise. Fix is M: a `useViewedSession` hook mirroring
+  `useTabSelection`, thread both props, give ExpandToggle a pull-aware
+  branch.
+- **Media transport controls are complete and unreachable** —
+  `now_playing.rs::send_command` is `#[allow(dead_code)]`, the buttons get
+  `NOOP_MEDIA_COMMAND` (`TabBelowBlock.tsx:57`) yet render press feedback:
+  the one place the app's controls lie. Fix rides the click-routing seam
+  below.
+- **Kimi probe still blocks the runtime** — plan 155 bounded the hang, but
+  `run_bounded` (`kimi_version.rs:149-186`) parks a tokio worker in
+  `thread::sleep` up to 750ms on the `publish_if_changed` path;
+  `now_playing.rs:533-556` is the in-repo async model to copy. S.
+- **News charge fires early on multi-feed configs** —
+  `TabWire::new(rss_max_per_poll)` (`lib.rs:369-372`) treats the per-SOURCE
+  cap as the whole cycle's batch, but the cycle lands up to
+  `sources.len() × max_per_poll`; the glow reads "batch ready" at ~1/N of a
+  real batch. S.
+- **Direction (operator options, spike-shaped):** (1) an "interactive
+  regions" seam — one `(RegionId, Rect)` registry walked by the existing
+  click monitor; three shipped stubs already name it (media transport, news
+  batch nav, session arrows), and it closes the media finding above without
+  touching `capabilities/default.json`. (2) A news story wire for the pull
+  surface — §22 makes pull the ONLY news delivery, yet `NewsBelowBlock` is
+  hard-wired empty (`NO_NEWS_STORIES`); the charge machine advertises a
+  batch the app cannot show. Design decision is the wire shape, not new
+  polling.
+- Nit, fold into any future edit: `icon-strip.css:327` hand-copies
+  `--overlay-coral` as an rgba literal.
+
+**Seventh-audit backlog reconciliation (re-verified 2026-08-02):** F2 is
+FIXED (the `Completed` terminal split landed with the 2026-08-02 board
+work — `notification.rs` now gates non-terminal `Completed` behind
+`informational_notifications`). F4 is PARTIAL — the "clears in" line still
+renders raw `retentionRemainingMs` (`AgentBoard.tsx:367-368`) while the
+`capturedAtMs` correction machinery now sits adjacent (fix shrank to S);
+the other two F4 halves stand. F6, F7, F9, F10, F13, F14 re-verified still
+open at their recorded sites; F12 not re-checked this pass. F3's docs list
+is untouched by plan 181 (disjoint claims — 181 covers only what the
+`0e9b212` truth pass missed).
+
 **Unified card template batch 168–170 (2026-08-01, operator UI-prototyping
 session)** — grew out of a round of static-mock exploration
 (`prototype/proposal-unified-card.html`, plus new proposal sections added
@@ -218,9 +303,9 @@ planned.
 | # | finding | evidence |
 |---|---|---|
 | F1 **(FIXED — 155, merged)** | `kimi --version` is spawned **while holding a `std::sync::Mutex`**, on a tokio worker, with no timeout — and unconditionally, even when Kimi is disabled. A hung `kimi` wedges `/agent/events` and every board publish. | `health.rs:411-421`, `:427` vs `:441`; `kimi_version.rs:117-121` |
-| F2 | A per-turn stop reads as the session ending: `title_for` has no terminal split for `Completed` (unlike `Failed`), so every turn shows "X finished / Session completed." Conversely OpenCode's *real* session end (`informational`+`terminal`) is gated behind `informational_notifications` and produces **no card**, while the other three runtimes do. | `notification.rs:141,157` vs `:142`; `registry.rs:119-131`; `notchtap.ts:424,449` |
+| F2 **(FIXED — landed with the 2026-08-02 Completed-terminal-split decision; verified by the eighth session)** | A per-turn stop reads as the session ending: `title_for` has no terminal split for `Completed` (unlike `Failed`), so every turn shows "X finished / Session completed." Conversely OpenCode's *real* session end (`informational`+`terminal`) is gated behind `informational_notifications` and produces **no card**, while the other three runtimes do. | `notification.rs:141,157` vs `:142`; `registry.rs:119-131`; `notchtap.ts:424,449` |
 | F3 | Docs truth pass, 11 verified drifts. `AGENTS.md:198` misstates the settings allowlist three ways (says fifteen, lists the deleted `get_connector_health`, omits three); `build.rs:8` says eighteen; `CONTEXT.md:93` + `ARCHITECTURE.md:778` say retention is 10 min (it is 60s); `TESTING_STRATEGY.md` §0 headline reads 871/474 against a live 914/570 and contradicts its own narrative; `weather_ttl_secs` undocumented; `README.md:41-48` omits two shipped hotkeys; `IMPLEMENTATION_PLAN.md:763` is a checklist row for machinery deleted in plan 019. | each verified against code |
-| F4 | Agent Board frontend: "clears in" never counts down (raw `retentionRemainingMs`, no `capturedAtMs` correction) while `liveElapsedMs` beside it does; History renders a raw `agent_event` token; the runtime wire list is hand-copied 3× with a "keep in sync" comment, and a miss makes `isValidSlotState` reject the **whole** payload — the card blanks silently. | `AgentBoard.tsx:204` vs `:121`; `HistorySection.tsx:19-24`; `useSlotState.ts:5-11` |
+| F4 **(PARTIAL — "clears in" half still open at `AgentBoard.tsx:367-368`, now an S fix; see eighth-session reconciliation)** | Agent Board frontend: "clears in" never counts down (raw `retentionRemainingMs`, no `capturedAtMs` correction) while `liveElapsedMs` beside it does; History renders a raw `agent_event` token; the runtime wire list is hand-copied 3× with a "keep in sync" comment, and a miss makes `isValidSlotState` reject the **whole** payload — the card blanks silently. | `AgentBoard.tsx:204` vs `:121`; `HistorySection.tsx:19-24`; `useSlotState.ts:5-11` |
 | F5 **(FIXED — 155, merged)** | `agents.stale_after_secs` / `terminal_retention_secs` / `stale_retention_secs` have no `validate` range check — the only numeric family without one — and the Settings UI offers `min={0}`. Saving 0 makes the first tick flip every session to Stale and purge it; the Board is permanently empty with no error. | `settings.rs:95-133`; `AgentsSection.tsx:433-456`; `registry.rs:317` |
 | F6 | `runtime`/`kind`/`state`/`capabilities` bypass `sanitize_trim` (every neighbouring field gets it) and `UnsupportedRuntime` formats with bare `{0}`, so a local process can inject forged newlines and ~64 KB of chosen text into the rotating log and flush the Settings log viewer. Contradicts `adapter.rs:47-50`'s own stated contract. Fold in the Cf/bidi strip (`sanitize_trim` filters Cc only) while in the same function. | `adapter.rs:416,434,466`, `:108`; `http.rs:387`; `settings.rs:968` |
 | F7 | A preempted card does not resume at the head of its tier: `push_front` is overridden by `best_index_in_tier`'s rotation-order rank. `CONTEXT.md:33-36` promises the opposite. The only test masks it by giving both items the same Origin, so ranks tie. | `queue.rs:292` vs `:663-680`; test `:4078-4101` |
