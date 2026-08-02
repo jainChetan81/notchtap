@@ -241,6 +241,7 @@ export function StatusRailCard({
   selectedTab = null,
   agentSessions = NO_AGENT_SESSIONS,
   agentCapturedAtMs = 0,
+  viewedSessionIndex,
 }: {
   slot: SlotState;
   status?: StatusState;
@@ -268,6 +269,14 @@ export function StatusRailCard({
   // existing caller renders byte-identically.
   agentSessions?: AgentSessionView[];
   agentCapturedAtMs?: number;
+  // Plan 184 (Part 1): the Agent tab's viewed-session cursor —
+  // `useAgentViewedSession`'s return value, sourced in App.tsx and
+  // threaded down for the same reason `selectedTab` above is (this
+  // component never listens for itself). Optional and undefined by
+  // default so every existing caller (tests, the settings preview) keeps
+  // rendering byte-identically; `TabBelowBlock`'s own `viewedSessionIndex`
+  // prop already defaults an absent value to session 0.
+  viewedSessionIndex?: number;
 }) {
   const showing = slot.state === "showing";
   const currentId = showing ? slot.id : null;
@@ -1109,6 +1118,7 @@ export function StatusRailCard({
               status={status}
               agentSessions={agentSessions}
               agentCapturedAtMs={agentCapturedAtMs}
+              viewedSessionIndex={viewedSessionIndex}
             />
           </motion.div>
         )}

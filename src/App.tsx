@@ -7,6 +7,7 @@ import { StatusRailCard } from "./components/StatusRailCard";
 import { presentationMode } from "./lib/presentation";
 import { presentationFacts } from "./lib/presentationFacts";
 import { useAgentState } from "./useAgentState";
+import { useAgentViewedSession } from "./useAgentViewedSession";
 import { useSlotState } from "./useSlotState";
 import { useStatusState } from "./useStatusState";
 import { useTabSelection } from "./useTabSelection";
@@ -172,6 +173,13 @@ function App() {
   // rust-side (spec section 10); this is display state, and there is no
   // `invoke()` anywhere on the path.
   const selectedTab = useTabSelection();
+  // Plan 184 (Part 1): the Agent tab's viewed-session cursor. Sourced
+  // here, next to `selectedTab` above, for the same reason — rust owns
+  // this value (manual prefix-key cycling and, from Part 2, the
+  // auto-advance timer both write `tab_wire.viewed_session` and emit
+  // `agent-viewed-session-changed`); this hook only renders what it's
+  // told, and StatusRailCard keeps listening for nothing itself.
+  const viewedSessionIndex = useAgentViewedSession();
 
   // plan 063: expose the boot-time presentation facts to CSS — the mode
   // gates notch-only CSS, the cutout width/height feed the card-assembly's
@@ -319,6 +327,7 @@ function App() {
                 selectedTab={selectedTab}
                 agentSessions={agentState.sessions}
                 agentCapturedAtMs={agentState.capturedAtMs}
+                viewedSessionIndex={viewedSessionIndex}
               />
             </motion.div>
           )}
