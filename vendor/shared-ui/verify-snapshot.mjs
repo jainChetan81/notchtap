@@ -75,29 +75,33 @@ const siblingPath = join(here, "..", "..", "..", "shared-ui", "design", "tokens.
 // ahead of upstream by those three tokens) — treat that as expected here, not
 // as accidental local editing.
 //
-// Which is why the sibling branch below no longer demands BYTE-EQUALITY with
-// the vendored copy: with a bespoke local layer on top, byte-equality is
-// permanently impossible, so that assertion could only ever fail from here on.
-// It compares the sibling against its OWN recorded hash instead
-// (PINNED_SIBLING_SHA256) — same drift-detection job (upstream moves => this
-// fails and someone makes a deliberate decision), minus the impossible demand.
-const UPSTREAM_SHA = "2321f37";
+// 2026-08-02 upstream-contribution refresh: the three bespoke
+// --overlay-green/--overlay-amber/--overlay-fg tokens were CONTRIBUTED
+// upstream this round (shared-ui PR #1, merged f1d2bf7, version 0.3.0) —
+// they're no longer a local-only layer, so the vendored copy is now
+// BYTE-IDENTICAL to the sibling checkout again, first time since 892d661.
+// Both hashes below are the same value as a result.
+//
+// Flagging a discrepancy rather than silently resolving it: the previous
+// comment block (now replaced) described a reviewed sibling state at
+// "shared-ui 0.2.2, tokens commit 4722b88" carrying a "motion trio"
+// retune (--ease-notchtap -> cubic-bezier(0.23, 1, 0.32, 1), new
+// --ease-drawer/--ease-in-out-strong). That commit does not exist
+// anywhere in `git log --oneline --all` on the actual shared-ui checkout
+// as of this refresh (freshly fetched; real HEAD is f1d2bf7, still
+// carrying the ORIGINAL cubic-bezier(.22, 1, .36, 1) --ease-notchtap —
+// verified directly, not assumed). Whatever "0.2.2"/4722b88 was, it
+// either never got pushed/merged, lived on a branch since deleted, or
+// was aspirational documentation of reviewed-but-not-landed work. If a
+// real motion-trio retune DOES land upstream later, adopting it is still
+// the deliberate animation decision the old comment said it was — this
+// note doesn't change that, it only corrects what's verifiably on disk
+// right now.
+const UPSTREAM_SHA = "f1d2bf7";
 const PINNED_TOKENS_SHA256 =
-  "376dbce9245f1ed42d27c10848ad9403cb27cbdce682f391be107fca1ae6e816";
-// The sibling checkout as reviewed on 2026-08-02 (shared-ui 0.2.2, tokens
-// commit 4722b88). It differs from the vendored snapshot in exactly two ways,
-// both known and both deliberate:
-//   1. the three bespoke --overlay-green/--overlay-amber/--overlay-fg tokens
-//      (892d661) exist only in the vendored copy — this app's own layer,
-//      never sent upstream;
-//   2. upstream's 0.2.2 "motion trio" (--ease-notchtap retuned to
-//      cubic-bezier(0.23, 1, 0.32, 1), plus new --ease-drawer /
-//      --ease-in-out-strong) is NOT adopted here — the overlay's whole motion
-//      system is tuned against the vendored cubic-bezier(.22, 1, .36, 1), so
-//      adopting it is an animation decision, not a snapshot refresh.
-// Update this hash only alongside a deliberate look at what upstream changed.
+  "f1db9873e2618835489463bfd03b83a2258200b72236602386a0f4613f967d2f";
 const PINNED_SIBLING_SHA256 =
-  "33e55ba7297bfb7b8b1d591bc1e039b7088ac15f1885b333f9c89819df97ac84";
+  "f1db9873e2618835489463bfd03b83a2258200b72236602386a0f4613f967d2f";
 
 function sha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -130,6 +134,6 @@ if (siblingSha !== PINNED_SIBLING_SHA256) {
 }
 
 console.log(
-  "sibling ../shared-ui/design/tokens.css matches its reviewed 2026-08-02 state. No new upstream drift. (It is NOT byte-identical to the vendored copy — see PINNED_SIBLING_SHA256's own comment for the two known, deliberate deltas.)",
+  "sibling ../shared-ui/design/tokens.css matches its reviewed 2026-08-02 state. No new upstream drift. (It IS byte-identical to the vendored copy as of this refresh — the bespoke overlay-green/amber/fg layer was contributed upstream, see PINNED_TOKENS_SHA256's own comment.)",
 );
 process.exit(0);
