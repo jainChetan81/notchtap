@@ -1,0 +1,53 @@
+/* ==== rest-state eq bars (plan 171) ====
+   Design source: prototypes/tab-notch-rest-and-morph.html section 1b
+   ("APPROVED TWICE — do not redraw"). Three 2px bars in --media-mint,
+   scaleY off a bottom origin (compositor-only; never animate `height`),
+   three different durations so they never phase-lock into one marching
+   pattern. Collapsed to zero width + margin when silent so the idle
+   face stays optically centered — width, margin, and opacity animate on
+   one clock. */
+.card-root .eq {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 9px;
+  width: 0;
+  margin-left: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    width var(--hover-ms, 160ms) var(--ease-notchtap),
+    margin-left var(--hover-ms, 160ms) var(--ease-notchtap),
+    opacity var(--hover-ms, 160ms) var(--ease-notchtap);
+}
+.card-root .eq i {
+  display: block;
+  width: 2px;
+  height: 9px;
+  border-radius: 1px;
+  background: var(--media-mint);
+  transform-origin: bottom;
+  transform: scaleY(0.18);
+}
+.card-root .eq.playing {
+  width: 10px;
+  margin-left: 11px;
+  opacity: 1;
+}
+.card-root .eq.playing i {
+  animation: eq-bounce 900ms ease-in-out infinite alternate;
+}
+.card-root .eq.playing i:nth-child(2) {
+  animation-duration: 640ms;
+}
+.card-root .eq.playing i:nth-child(3) {
+  animation-duration: 1120ms;
+}
+@keyframes eq-bounce {
+  from {
+    transform: scaleY(0.18);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}

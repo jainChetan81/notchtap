@@ -1,0 +1,313 @@
+/* ==== the tab-notch icon strip (plan 171) ====
+   Design source: prototypes/tab-notch-rest-and-morph.html section 2 (r3).
+   Hidden entirely at rest (visibility:hidden + opacity:0 + pointer-events:
+   none — belt, braces, and a third belt, per that file's own comment: the
+   rule that the icons must never paint over the desktop is the single
+   load-bearing rule of this whole feature). Visible only under `.hovered`
+   on the ancestor `.card-assembly` (card-chrome.css), i.e. only once the
+   flank behind it has already started painting #000 — the strip's own
+   opacity fade below is staggered 60ms behind that flank paint so there
+   is never a frame where a glyph is visible against the wallpaper. */
+.card-root .icon-strip {
+  display: flex;
+  align-items: center;
+  flex: none;
+  visibility: hidden;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateX(8px);
+  /* `visibility 0s` is a deliberate, self-contained structural idiom —
+     visibility itself always snaps instantly, the `var(--reveal-ms, ...)`
+     DELAY after it is what actually staggers the snap until after the
+     opacity/transform legs finish (so the strip vanishes from hit-testing
+     only once it's already invisible, never a frame early). Not an
+     animation-timing choice in its own right — allowlisted in
+     animationTiming.test.ts, same as idle-peek.css's own `1s linear`. */
+  transition:
+    opacity var(--hover-ms, 160ms) var(--ease-notchtap),
+    transform var(--reveal-ms, 260ms) var(--ease-notchtap),
+    visibility 0s linear var(--reveal-ms, 260ms);
+}
+.card-root .card-assembly.hovered .icon-strip {
+  visibility: visible;
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(0);
+  /* the `var(--icon-strip-stagger-ms, 60ms)` DELAY on this leg only: the
+     flank's own black paint starts at 0ms, the strip's opacity fade
+     starts this many ms later, so there is never a frame where a glyph
+     is visible against the desktop instead of the flank behind it —
+     the design source's own "the entire fix for [an earlier draft's]
+     rejected screenshot" (animationTiming.ts's own doc on this token). */
+  transition:
+    opacity var(--hover-ms, 160ms) var(--ease-notchtap) var(--icon-strip-stagger-ms, 60ms),
+    transform var(--reveal-ms, 260ms) var(--ease-notchtap),
+    visibility 0s linear 0s;
+}
+
+.card-root .icon {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 0;
+  height: 18px;
+  margin-left: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--hue);
+  opacity: 0;
+  transform: scale(0.6);
+  overflow: visible;
+  cursor: default;
+  appearance: none;
+  transition:
+    width var(--reveal-ms, 260ms) var(--ease-notchtap),
+    margin-left var(--reveal-ms, 260ms) var(--ease-notchtap),
+    opacity var(--hover-ms, 160ms) var(--ease-notchtap),
+    transform var(--reveal-ms, 260ms) var(--ease-notchtap-pop, cubic-bezier(0.3, 1.36, 0.44, 1));
+}
+/* the glow: a tight core (crisp stroke) plus a wide bloom (the actual
+   halo), both `currentColor` so hue and glow can never drift apart —
+   changing `--hue` (or an animation shifting `color`) moves both shadows
+   for free. One shadow at a wider radius reads as a smudge, not neon. */
+.card-root .icon svg {
+  width: 18px;
+  height: 18px;
+  display: block;
+  overflow: visible;
+  color: var(--hue);
+  filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 7px currentColor);
+  transition:
+    color var(--hover-ms, 160ms) var(--ease-notchtap),
+    filter var(--hover-ms, 160ms) var(--ease-notchtap);
+}
+
+.card-root .icon.is-present {
+  width: 18px;
+  margin-left: 8px;
+  transform: scale(1);
+  cursor: pointer;
+}
+/* the three luminance tiers, spec section 6 — weight only, hue never
+   changes per-tier, same discipline the shipped status dots already use
+   (status-dots.css's own active/dim split). */
+.card-root .icon.is-present {
+  opacity: 0.62;
+}
+.card-root .icon.is-present.is-live {
+  opacity: 1;
+}
+.card-root .icon.is-present.is-selected {
+  opacity: 1;
+}
+.card-root .icon:active {
+  transform: scale(0.9);
+}
+.card-root .icon:disabled {
+  cursor: default;
+}
+
+/* the selection mark: a 3px underline dot in the icon's own hue, a
+   deliberately different SHAPE from the glyph above it (not just a
+   weight change) so a dim-but-selected icon still reads as selected in
+   peripheral vision. */
+.card-root .icon::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -6px;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 5px currentColor;
+  transform: translateX(-50%) scale(0);
+  transform-origin: center;
+  transition: transform var(--hover-ms, 160ms) var(--ease-notchtap-pop, cubic-bezier(0.3, 1.36, 0.44, 1));
+}
+.card-root .icon.is-selected::after {
+  transform: translateX(-50%) scale(1);
+}
+
+/* per-source hues — the shipped status-dot/source-identity table, plus
+   the two the strip needed and the dots never had (agent, music). */
+.card-root .icon.agent {
+  --hue: var(--overlay-blue);
+}
+.card-root .icon.football {
+  --hue: var(--overlay-green);
+}
+.card-root .icon.music {
+  --hue: var(--media-mint);
+}
+.card-root .icon.weather {
+  --hue: var(--overlay-amber);
+}
+.card-root .icon.news {
+  --hue: var(--overlay-coral);
+}
+
+/* ---- per-icon character: five distinct motions, five distinct periods
+   (1.9s / 2.8s / 900ms+3.6s / 7.2s / 2.6s), so the strip never lands on a
+   shared downbeat. Every icon animates — there is no "still anchor"
+   icon (spec section 2 decision 3, an explicit operator override of an
+   earlier draft that kept weather still). ---- */
+
+/* AGENT — a slow ~1.9s breath, blue -> teal and back, glow swelling with
+   it. The calmest of the loud ones: an agent session is the longest-
+   running source, so anything sharper becomes unbearable over a long
+   build. */
+.card-root .icon.agent.is-live svg {
+  animation: icon-agent-pulse 1900ms ease-in-out infinite;
+}
+@keyframes icon-agent-pulse {
+  0%,
+  100% {
+    color: var(--overlay-blue);
+    filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 6px currentColor);
+  }
+  50% {
+    color: var(--overlay-teal);
+    filter: drop-shadow(0 0 4px currentColor) drop-shadow(0 0 12px currentColor);
+  }
+}
+
+/* FOOTBALL — an irregular flicker on a 2.8s loop, bursts clustered at the
+   front, deliberately NOT a sine wave: a live match is jumpy, an even
+   pulse reads as "loading" rather than "live". */
+.card-root .icon.football.is-live svg {
+  animation: icon-football-flicker 2800ms linear infinite;
+}
+@keyframes icon-football-flicker {
+  0%,
+  100% {
+    color: var(--overlay-green);
+    filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 6px currentColor);
+  }
+  6% {
+    color: #e9ffec;
+    filter: drop-shadow(0 0 4px currentColor) drop-shadow(0 0 14px currentColor);
+  }
+  9% {
+    color: var(--overlay-green);
+    filter: drop-shadow(0 0 2px currentColor) drop-shadow(0 0 5px currentColor);
+  }
+  12% {
+    color: #e9ffec;
+    filter: drop-shadow(0 0 4px currentColor) drop-shadow(0 0 15px currentColor);
+  }
+  17% {
+    color: var(--overlay-green);
+    filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 6px currentColor);
+  }
+  56% {
+    color: var(--overlay-green);
+    filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 6px currentColor);
+  }
+  59% {
+    color: #e9ffec;
+    filter: drop-shadow(0 0 4px currentColor) drop-shadow(0 0 12px currentColor);
+  }
+  63% {
+    color: var(--overlay-green);
+    filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 6px currentColor);
+  }
+}
+
+/* MUSIC — the note bobs on a 900ms clock (the eq bars' own tempo, see
+   eq-bars.css, so the strip and the cutout share a beat) while the hue
+   drifts mint -> teal on a slower 3.6s clock, letting the two phase
+   against each other rather than locking into one mechanical pulse. The
+   bob is a `transform`, compositor-only. */
+.card-root .icon.music.is-live svg {
+  animation:
+    icon-music-bob 900ms ease-in-out infinite,
+    icon-music-hue 3600ms ease-in-out infinite;
+}
+@keyframes icon-music-bob {
+  0%,
+  100% {
+    transform: translateY(1.5px);
+  }
+  50% {
+    transform: translateY(-1.5px);
+  }
+}
+@keyframes icon-music-hue {
+  0%,
+  100% {
+    color: var(--media-mint);
+    filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 6px currentColor);
+  }
+  50% {
+    color: var(--overlay-teal);
+    filter: drop-shadow(0 0 4px currentColor) drop-shadow(0 0 12px currentColor);
+  }
+}
+
+/* WEATHER — a 7.2s ambient drift: the cloud slides ~1px sideways and
+   tilts under 2 degrees while its halo breathes amber -> pale gold. The
+   slowest, lowest-amplitude motion in the set on purpose — weather is
+   the always-there icon, the one that has to survive being looked at
+   for a long time. Runs whenever the icon is PRESENT, not only "live" —
+   weather has no live state (spec section 6's table). */
+.card-root .icon.weather.is-present svg {
+  animation: icon-weather-drift 7200ms ease-in-out infinite;
+}
+@keyframes icon-weather-drift {
+  0%,
+  100% {
+    transform: translateX(-1px) rotate(-1.6deg);
+    color: var(--overlay-amber);
+    filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 6px currentColor);
+  }
+  50% {
+    transform: translateX(1px) rotate(1.6deg);
+    color: #ffdca0;
+    filter: drop-shadow(0 0 4px currentColor) drop-shadow(0 0 11px currentColor);
+  }
+}
+
+/* NEWS — charging (the interior fill rising) and charged (full weight,
+   breathing coral -> salmon) are two different things and must not be
+   confused (spec section 8): charging is silent and slow, charged is a
+   summons. `.is-charged` is declared AFTER (and at equal specificity to)
+   the plain luminance tiers above so it wins on source order alone — no
+   `!important` anywhere in this file, matching the design source's own
+   discipline. */
+.card-root .icon.news .charge {
+  transition: transform var(--news-charge-step-ms, 320ms) var(--ease-notchtap);
+}
+.card-root .icon.news.is-charged {
+  opacity: 1;
+}
+.card-root .icon.news.is-charged svg {
+  animation: icon-news-glow 2600ms ease-in-out infinite;
+}
+@keyframes icon-news-glow {
+  0%,
+  100% {
+    color: var(--overlay-coral);
+    filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 7px currentColor);
+  }
+  50% {
+    color: #ffb3a5;
+    filter: drop-shadow(0 0 5px currentColor) drop-shadow(0 0 16px currentColor);
+  }
+}
+
+/* the literal count badge — 8px mono digits at the glyph's top-right
+   corner. Spec section 12 open question 5: shipped alongside the fill
+   (the mock's own "ship both" default), either can be dropped later as
+   a pure CSS/JS change with no structural impact. */
+.card-root .charge-count {
+  position: absolute;
+  top: -5px;
+  right: -6px;
+  font: 700 8px/1 var(--font-mono);
+  letter-spacing: -0.02em;
+  color: var(--overlay-coral);
+  text-shadow: 0 0 4px rgba(255, 107, 87, 0.8);
+  pointer-events: none;
+}

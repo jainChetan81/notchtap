@@ -69,3 +69,8 @@
    settings preview never mounts AgentBoard, but scoping it here costs
    nothing and keeps one import list for every card-shape rule). */
 @import "./overlay/agent-board.css";
+/* plan 171 (tab-notch redesign): same append-after convention as
+   agent-board.css just above — the icon strip and eq bars are new
+   surfaces, not part of the original 2026-07-24 split. */
+@import "./overlay/icon-strip.css";
+@import "./overlay/eq-bars.css";
