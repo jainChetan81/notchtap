@@ -293,5 +293,19 @@ export const SOURCE_LABELS: Record<SourceKind, string> = {
 export const PRIORITY_SEGMENT_OPTIONS: ReadonlyArray<{ label: string; value: PriorityLevel }> =
   PRIORITY_LEVELS.map((level) => ({ label: PRIORITY_LABELS[level], value: level }));
 
+// Segmented's `optionTones` prop for every priority picker in the app —
+// mirrors the overlay's own priority accent scheme, one named hue per tier
+// (src/overlay/card-chrome.css's `.card-assembly.low/medium/high`: grey,
+// overlay-teal, overlay-coral respectively), so the settings window's
+// selected-priority color reads as the same real distinction the overlay
+// notification card itself makes, not a settings-only invention. Literal
+// Tailwind class strings only (not built from a color name at runtime) —
+// see Segmented's own `optionTones` doc for why.
+export const PRIORITY_TONES: Record<PriorityLevel, string> = {
+  low: "bg-muted-foreground/20 text-muted-foreground",
+  medium: "bg-overlay-teal/20 text-overlay-teal",
+  high: "bg-overlay-coral/20 text-overlay-coral",
+};
+
 export const UNITS_SEGMENT_OPTIONS: ReadonlyArray<{ label: string; value: Units }> =
   UNITS_OPTIONS.map((unit) => ({ label: UNITS_LABELS[unit], value: unit }));

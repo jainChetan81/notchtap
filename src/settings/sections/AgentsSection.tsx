@@ -1,7 +1,10 @@
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { Label } from "@/components/ui/label";
 import { MetaChip } from "@/components/ui/meta-chip";
+import { Switch } from "@/components/ui/switch";
 import { SOURCE_RUNTIME_COLORS } from "@/lib/sourceColors";
+import { cn } from "@/lib/utils";
 import { ActionStatus, useActionStatus } from "../actionStatus";
 import {
   CONTROL_ROW,
@@ -21,7 +24,7 @@ import type {
   AgentWireRuntime,
   Config,
 } from "../types";
-import { PRIORITY_SEGMENT_OPTIONS } from "../types";
+import { PRIORITY_SEGMENT_OPTIONS, PRIORITY_TONES } from "../types";
 
 // --- adapter card static content (plan 143, spec §4.6/§8) --------------
 //
@@ -157,6 +160,16 @@ const AVAILABILITY_LABELS: Record<AdapterAvailability, string> = {
   unavailable: "Unavailable",
 };
 
+// tone redesign: a binary active/not chip couldn't say "partial" apart
+// from "unavailable" — both just read as un-emphasized. Real tri-state
+// color so a glance at the dot tells you which of the three it is,
+// without reading the word.
+const AVAILABILITY_TONE: Record<AdapterAvailability, "positive" | "caution" | "critical"> = {
+  available: "positive",
+  partial: "caution",
+  unavailable: "critical",
+};
+
 const ERROR_CATEGORY_LABELS: Record<AdapterErrorCategory, string> = {
   malformed_payload: "Malformed payload",
   unsupported_runtime: "Unsupported runtime",
@@ -197,6 +210,15 @@ function patchRuntime(
   });
 }
 
+// Shared label/value field shape for the expanded panel's real facts —
+// mirrors HistoryRow's `history-detail-field` stacked pair
+// (HistorySection.tsx) so the two settings-window disclosure surfaces
+// read as one visual language rather than two competing ones.
+const AGENT_DETAIL_LABEL_CLASS =
+  "agent-detail-label text-fs-caption tracking-[0.04em] text-muted-foreground uppercase";
+const AGENT_DETAIL_VALUE_CLASS =
+  "agent-detail-value min-w-0 text-fs-body text-muted-foreground [overflow-wrap:anywhere]";
+
 function AdapterCard({
   copy,
   config,
@@ -208,9 +230,15 @@ function AdapterCard({
   patchConfig: (patch: Partial<Config>) => void;
   health: AdapterHealthDto | undefined;
 }) {
+  // Handy "Models"-page reference: compact by default, click to reveal
+  // real detail — no per-card lift needed, nothing outside this card
+  // ever reads another card's expanded state.
+  const [expanded, setExpanded] = useState(false);
   const { status: copyStatus, run: runCopy } = useActionStatus(`agent-copy-${copy.configKey}`);
   const { status: testStatus, run: runTest } = useActionStatus(`agent-test-${copy.configKey}`);
   const enabled = config.agents.runtimes[copy.configKey].enabled;
+  const toggleId = `agent-runtime-${copy.configKey}`;
+  const detailId = `agent-detail-${copy.configKey}`;
 
   async function copySnippet() {
     await runCopy(
@@ -232,105 +260,167 @@ function AdapterCard({
 
   return (
     <div className="agent-card border-t border-border/60 py-3 first:border-t-0">
-      <div className="agent-card-header mb-2 flex items-center justify-between gap-2">
-        <span className="flex items-center gap-1.5">
+      <div className="agent-card-header flex items-center justify-between gap-2">
+        {/* Disclosure trigger: identity dot + name ONLY. The health chip
+            and the enable switch below are siblings, not children, of
+            this button — deliberately, so they stay visible and
+            independently clickable while the card is collapsed (the
+            switch is a primary control, not detail, per the ticket's
+            Handy-modeled "Models" reference). A native <details> can't
+            express that split (everything but <summary> hides when
+            closed), so this is a plain controlled disclosure
+            (aria-expanded/aria-controls) instead of this file's sibling
+            HistorySection.tsx convention. */}
+        <button
+          type="button"
+          className="agent-card-trigger flex min-w-0 flex-1 items-center gap-1.5 rounded-sm text-left outline-none transition-transform duration-[140ms] ease-notchtap focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.97]"
+          aria-expanded={expanded}
+          aria-controls={detailId}
+          onClick={() => setExpanded((prev) => !prev)}
+        >
           <span
             data-slot="agent-runtime-dot"
-            className="agent-runtime-dot inline-block size-[6px] rounded-full"
+            className="agent-runtime-dot inline-block size-[6px] flex-none rounded-full"
             style={{ background: SOURCE_RUNTIME_COLORS[copy.wireRuntime] }}
           />
-          <span className="text-fs-body font-[590] text-foreground">{copy.label}</span>
-        </span>
-        <div className="flex items-center gap-1.5">
+          <span className="truncate text-fs-body font-[590] text-foreground">{copy.label}</span>
+        </button>
+        <div className="flex flex-none items-center gap-1.5">
           {health ? (
-            <MetaChip uppercase active={health.status === "available"}>
+            <MetaChip uppercase tone={AVAILABILITY_TONE[health.status]}>
               {AVAILABILITY_LABELS[health.status]}
             </MetaChip>
           ) : null}
-          <MetaChip>{enabled ? "Enabled" : "Disabled"}</MetaChip>
+          {/* sr-only label + bare Switch (not the full ToggleControl row)
+              — ToggleControl's own ControlCopy name/help pair is sized
+              for a full-width settings row, not this compact header;
+              the accessible name ("Enable {label}") is unchanged so the
+              existing "enabled-runtime toggle round-trips" test still
+              resolves it via screen.findByLabelText regardless of
+              expanded state. */}
+          <Label htmlFor={toggleId} className="sr-only">
+            {`Enable ${copy.label}`}
+          </Label>
+          <Switch
+            id={toggleId}
+            checked={enabled}
+            onCheckedChange={(next) => patchRuntime(config, patchConfig, copy.configKey, next)}
+          />
         </div>
       </div>
 
-      <ToggleControl
-        id={`agent-runtime-${copy.configKey}`}
-        name={`Enable ${copy.label}`}
-        help={`Accept ${copy.label} events over the loopback /agent/events endpoint.`}
-        label={`Enable ${copy.label}`}
-        checked={enabled}
-        onChange={(next) => patchRuntime(config, patchConfig, copy.configKey, next)}
-      />
+      {expanded ? (
+        // Mounted only while expanded (not a native <details>/CSS-hide):
+        // keeps the setup snippet's Copy/Send-test buttons out of the
+        // tab order entirely while collapsed, rather than fighting the
+        // "interactive control nested in a hidden-but-still-focusable
+        // subtree" trap a CSS-only hide would create. `animate-in
+        // fade-in slide-in-from-top-1` (tw-animate-css, already imported
+        // by base.css) plays reliably on insertion — a plain CSS
+        // `transition` does not fire the same way across a display:none
+        // boundary. duration/ease match this file's other motion
+        // (Segmented.tsx's `duration-[140ms] ease-notchtap`).
+        <div
+          id={detailId}
+          className="agent-card-detail mt-3 flex flex-col gap-3 animate-in fade-in slide-in-from-top-1 duration-[140ms] ease-notchtap"
+        >
+          <div className="agent-detail-field grid min-w-0 grid-cols-[minmax(0,1fr)] gap-px">
+            <span className={AGENT_DETAIL_LABEL_CLASS}>Last seen</span>
+            <span className={AGENT_DETAIL_VALUE_CLASS}>
+              {formatLastSeen(health?.lastAcceptedEventMs ?? null)}
+            </span>
+          </div>
+          {health?.lastErrorCategory ? (
+            <div className="agent-detail-field grid min-w-0 grid-cols-[minmax(0,1fr)] gap-px">
+              <span className={AGENT_DETAIL_LABEL_CLASS}>Last error</span>
+              <span className={AGENT_DETAIL_VALUE_CLASS}>
+                {ERROR_CATEGORY_LABELS[health.lastErrorCategory]}
+              </span>
+            </div>
+          ) : null}
+          {health?.compatibilityMessage ? (
+            <div className="agent-detail-field grid min-w-0 grid-cols-[minmax(0,1fr)] gap-px">
+              <span className={AGENT_DETAIL_LABEL_CLASS}>Status</span>
+              <span className={AGENT_DETAIL_VALUE_CLASS}>{health.compatibilityMessage}</span>
+            </div>
+          ) : null}
+          {health && health.capabilities.length > 0 ? (
+            // Structured list, not a comma-joined string dressed as a
+            // pill — each capability is its own line, no decorative chip
+            // shape (the operator's explicit complaint about the old
+            // "Capabilities: a, b, c" row).
+            <div className="agent-detail-field grid min-w-0 grid-cols-[minmax(0,1fr)] gap-px">
+              <span className={AGENT_DETAIL_LABEL_CLASS}>Capabilities</span>
+              <ul
+                className={cn(AGENT_DETAIL_VALUE_CLASS, "m-0 flex list-none flex-col gap-0.5 p-0")}
+              >
+                {health.capabilities.map((capability) => (
+                  <li key={capability}>{capability}</li>
+                ))}
+              </ul>
+            </div>
+          ) : null}
 
-      {health ? (
-        <div className="agent-health-meta mt-[-2px] mb-2 flex flex-col gap-1 text-fs-caption text-muted-foreground">
-          <span>Last seen: {formatLastSeen(health.lastAcceptedEventMs)}</span>
-          {health.capabilities.length > 0 ? (
-            <span>Capabilities: {health.capabilities.join(", ")}</span>
-          ) : null}
-          {health.lastErrorCategory ? (
-            <span>Last error: {ERROR_CATEGORY_LABELS[health.lastErrorCategory]}</span>
-          ) : null}
-          {health.compatibilityMessage ? <span>{health.compatibilityMessage}</span> : null}
+          <div className="agent-setup">
+            <div className="mb-1 text-fs-caption font-bold tracking-[0.06em] text-muted-foreground uppercase">
+              Target file
+            </div>
+            <div className="mb-2 font-mono text-fs-secondary text-foreground [overflow-wrap:anywhere]">
+              {copy.targetFile}
+            </div>
+            <pre className="agent-snippet m-0 max-h-[160px] overflow-auto rounded-sm border border-border bg-input/20 p-2 font-mono text-fs-caption whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]">
+              {copy.snippet}
+            </pre>
+          </div>
+
+          <div className={CONTROL_ROW}>
+            {/* `htmlFor` deliberately does not match any element id below —
+                same convention `TestButtonRow` (controls.tsx) already uses:
+                these two rows label a plain <Button> by its own visible
+                text, not a form control a <label for> should actually
+                associate with (associating would make the LABEL text win as
+                the button's accessible name over its own text content). */}
+            <ControlCopy
+              htmlFor={`agent-copy-${copy.configKey}-label`}
+              name="Setup snippet"
+              help="Copy the block above into the target file shown."
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="text-fs-secondary"
+              onClick={() => void copySnippet()}
+            >
+              Copy snippet
+            </Button>
+          </div>
+          <ActionStatus status={copyStatus} className="agent-copy-status" />
+
+          <div className={CONTROL_ROW}>
+            <ControlCopy
+              htmlFor={`agent-test-${copy.configKey}-label`}
+              name="Test event"
+              help="Post one synthetic completed event so you can see it land on the Agent Board."
+            />
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              className="text-fs-secondary"
+              disabled={testStatus.state === "pending"}
+              onClick={() => void sendTest()}
+            >
+              {testStatus.state === "pending" ? "Sending…" : "Send test event"}
+            </Button>
+          </div>
+          <ActionStatus status={testStatus} className="agent-test-status" />
+
+          <p className="agent-uninstall m-0 mt-1.5 text-fs-caption text-muted-foreground">
+            Uninstall: {copy.uninstall}
+          </p>
         </div>
       ) : null}
-
-      <div className="agent-setup mb-2">
-        <div className="mb-1 text-fs-caption font-bold tracking-[0.06em] text-muted-foreground uppercase">
-          Target file
-        </div>
-        <div className="mb-2 font-mono text-fs-secondary text-foreground [overflow-wrap:anywhere]">
-          {copy.targetFile}
-        </div>
-        <pre className="agent-snippet m-0 max-h-[160px] overflow-auto rounded-sm border border-border bg-input/20 p-2 font-mono text-fs-caption whitespace-pre-wrap text-foreground [overflow-wrap:anywhere]">
-          {copy.snippet}
-        </pre>
-      </div>
-
-      <div className={CONTROL_ROW}>
-        {/* `htmlFor` deliberately does not match any element id below —
-            same convention `TestButtonRow` (controls.tsx) already uses:
-            these two rows label a plain <Button> by its own visible
-            text, not a form control a <label for> should actually
-            associate with (associating would make the LABEL text win as
-            the button's accessible name over its own text content). */}
-        <ControlCopy
-          htmlFor={`agent-copy-${copy.configKey}-label`}
-          name="Setup snippet"
-          help="Copy the block above into the target file shown."
-        />
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="text-fs-secondary"
-          onClick={() => void copySnippet()}
-        >
-          Copy snippet
-        </Button>
-      </div>
-      <ActionStatus status={copyStatus} className="agent-copy-status" />
-
-      <div className={CONTROL_ROW}>
-        <ControlCopy
-          htmlFor={`agent-test-${copy.configKey}-label`}
-          name="Test event"
-          help="Post one synthetic completed event so you can see it land on the Agent Board."
-        />
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="text-fs-secondary"
-          disabled={testStatus.state === "pending"}
-          onClick={() => void sendTest()}
-        >
-          {testStatus.state === "pending" ? "Sending…" : "Send test event"}
-        </Button>
-      </div>
-      <ActionStatus status={testStatus} className="agent-test-status" />
-
-      <p className="agent-uninstall m-0 mt-1.5 text-fs-caption text-muted-foreground">
-        Uninstall: {copy.uninstall}
-      </p>
     </div>
   );
 }
@@ -500,6 +590,7 @@ export function AgentsSection({
           name="Permission requested"
           help="Priority for a permission-request event."
           options={PRIORITY_SEGMENT_OPTIONS}
+          optionTones={PRIORITY_TONES}
           value={config.agents.permission_priority}
           onChange={(permission_priority) =>
             patchAgents(config, patchConfig, { permission_priority })
@@ -510,6 +601,7 @@ export function AgentsSection({
           name="Input required"
           help="Priority for an explicit-input-required event."
           options={PRIORITY_SEGMENT_OPTIONS}
+          optionTones={PRIORITY_TONES}
           value={config.agents.input_priority}
           onChange={(input_priority) => patchAgents(config, patchConfig, { input_priority })}
         />
@@ -518,6 +610,7 @@ export function AgentsSection({
           name="Failed"
           help="Priority for a terminal failure event."
           options={PRIORITY_SEGMENT_OPTIONS}
+          optionTones={PRIORITY_TONES}
           value={config.agents.failure_priority}
           onChange={(failure_priority) => patchAgents(config, patchConfig, { failure_priority })}
         />
@@ -526,6 +619,7 @@ export function AgentsSection({
           name="Completed"
           help="Priority for a completion event (per-turn Stop or session end)."
           options={PRIORITY_SEGMENT_OPTIONS}
+          optionTones={PRIORITY_TONES}
           value={config.agents.completion_priority}
           onChange={(completion_priority) =>
             patchAgents(config, patchConfig, { completion_priority })

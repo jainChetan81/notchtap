@@ -1,0 +1,1887 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>notchtap — full current-state mirror</title>
+<style>
+/* ============================================================
+   PAGE CHROME — this wrapper document is NOT part of the app.
+   Tokens below are read verbatim from vendor/shared-ui/design/
+   tokens.css, src/styles.css, src/settings/base.css and the
+   overlay/*.css files — see the closing note at the foot of the
+   page for the exact file list and commit this was built against.
+   ============================================================ */
+:root{
+  /* ---- real app tokens (vendor/shared-ui/design/tokens.css) ---- */
+  --background:#050607; --foreground:#f1f2f4; --card:#0d0f12; --sidebar:#090a0c;
+  --muted-foreground:#a2a6ad; --border:#202329; --primary:#0a84ff;
+  --destructive:#ff6b57; --overlay-blue:#0a84ff; --overlay-teal:#55d6bd;
+  --overlay-coral:#ff6b57; --overlay-green:#7fe08d; --overlay-amber:#f0c46a;
+  --overlay-fg:#f5f7fa;
+  --font-sans:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",sans-serif;
+  --font-mono:ui-monospace,"SFMono-Regular",Menlo,monospace;
+  --ease-notchtap:cubic-bezier(.22,1,.36,1);
+  --ease-notchtap-pop:cubic-bezier(.3,1.36,.44,1);
+  /* settings type floor (src/settings/base.css) */
+  --fs-caption:9px; --fs-secondary:10px; --fs-body:11px; --fs-title:19px;
+  /* source-identity.css */
+  --src-claude:#d97757; --src-codex:#10a37f; --src-kimi:#f5f7fa; --src-opencode:#9d7cd8;
+  --src-football:#7fe08d; --src-weather:#f0c46a; --src-manual:#0a84ff;
+  /* news-category.css */
+  --cat-politics:#7c9df5; --cat-tech:#5fd4e8; --cat-sports:#7fe08d; --cat-business:#f0c46a;
+  --cat-world:#c99df0; --cat-science:#f2a2c8; --cat-generic:#aab3bd;
+
+  /* ---- page-only presentation tokens ---- */
+  --page-bg:#08090b; --page-bg-alt:#0c0e11; --page-ink:#eef1f5; --page-dim:#8b93a0;
+  --page-dim2:#5e6672; --page-rule:rgba(255,255,255,.09); --page-accent:#5aa9ff;
+  --page-radius:14px;
+}
+*{box-sizing:border-box;}
+html{scroll-behavior:smooth;}
+body{
+  margin:0; background:var(--page-bg); color:var(--page-ink);
+  font-family:var(--font-sans); line-height:1.5; padding-bottom:96px;
+  -webkit-font-smoothing:antialiased;
+}
+::selection{background:rgba(90,169,255,.32);}
+a{color:var(--page-accent);}
+code,.mono{font-family:var(--font-mono);}
+img{max-width:100%;}
+
+.wrap{max-width:1180px; margin:0 auto; padding:0 28px;}
+@media (max-width:720px){ .wrap{padding:0 16px;} }
+
+/* ---- top intro / masthead ---- */
+.masthead{
+  border-bottom:1px solid var(--page-rule);
+  background:radial-gradient(1200px 420px at 20% -10%, rgba(10,132,255,.10), transparent 60%),
+             linear-gradient(180deg,#0d1014,#08090b 70%);
+  padding:40px 0 30px;
+}
+.eyebrow{
+  display:inline-flex; align-items:center; gap:7px;
+  font:700 10px/1 var(--font-mono); letter-spacing:.14em; text-transform:uppercase;
+  color:var(--page-accent); margin:0 0 14px;
+}
+.eyebrow::before{content:"";width:6px;height:6px;border-radius:50%;background:var(--overlay-green);
+  box-shadow:0 0 8px var(--overlay-green);}
+h1.page-title{font-size:28px; line-height:1.18; font-weight:700; letter-spacing:-.015em; margin:0 0 12px;}
+.lede{color:var(--page-dim); font-size:14.5px; line-height:1.68; max-width:74ch; margin:0 0 20px;}
+.intro-grid{display:grid; grid-template-columns:1fr 1fr; gap:14px; max-width:900px;}
+@media (max-width:760px){ .intro-grid{grid-template-columns:1fr;} }
+.intro-card{
+  border:1px solid var(--page-rule); border-radius:10px; background:rgba(255,255,255,.02);
+  padding:16px 18px;
+}
+.intro-card h3{margin:0 0 6px; font-size:13px; font-weight:700;}
+.intro-card p{margin:0 0 10px; font-size:12.5px; color:var(--page-dim); line-height:1.55;}
+.intro-card a.jump{
+  display:inline-flex; align-items:center; gap:5px; font:700 11px/1 var(--font-sans);
+  color:var(--page-accent); text-decoration:none;
+}
+.intro-card a.jump:hover{text-decoration:underline;}
+
+/* ---- sticky in-page nav ---- */
+.pagenav{
+  position:sticky; top:0; z-index:50; display:flex; gap:2px;
+  background:rgba(8,9,11,.86); backdrop-filter:blur(10px) saturate(1.4);
+  border-bottom:1px solid var(--page-rule); padding:0 28px;
+}
+.pagenav a{
+  display:inline-flex; align-items:center; padding:11px 14px; font:700 11px/1 var(--font-sans);
+  color:var(--page-dim); text-decoration:none; border-bottom:2px solid transparent;
+  letter-spacing:.01em;
+}
+.pagenav a:hover{color:var(--page-ink);}
+.pagenav a.current{color:var(--page-ink); border-bottom-color:var(--page-accent);}
+.pagenav .spacer{flex:1;}
+.pagenav .totop{color:var(--page-dim2); font:600 10px/1 var(--font-mono);}
+
+/* ---- section scaffolding ---- */
+.part{padding:56px 0 8px; border-top:1px solid var(--page-rule); margin-top:12px;}
+.part:first-of-type{border-top:none;}
+.part-head{margin-bottom:30px;}
+.part-kicker{font:700 10.5px/1 var(--font-mono); letter-spacing:.16em; text-transform:uppercase; color:var(--page-accent); margin:0 0 8px;}
+h2.part-title{font-size:23px; font-weight:700; letter-spacing:-.01em; margin:0 0 8px;}
+.part-sub{color:var(--page-dim); font-size:13px; max-width:70ch; line-height:1.6; margin:0;}
+
+.subhead{margin:44px 0 16px;}
+.subhead:first-child{margin-top:0;}
+h3.sub-title{font-size:15px; font-weight:700; margin:0 0 5px; display:flex; align-items:center; gap:8px;}
+h3.sub-title .num{font:700 10px/1 var(--font-mono); color:var(--page-dim2);}
+.sub-copy{color:var(--page-dim); font-size:12.5px; line-height:1.6; max-width:76ch; margin:0 0 16px;}
+
+.callout{
+  border:1px solid var(--page-rule); border-left:3px solid var(--page-accent);
+  background:rgba(90,169,255,.05); border-radius:0 8px 8px 0; padding:11px 14px;
+  font-size:12px; line-height:1.55; color:var(--page-dim); margin:14px 0 0; max-width:76ch;
+}
+.callout b{color:var(--page-ink);}
+.callout.warn{border-left-color:var(--overlay-amber); background:rgba(240,196,106,.05);}
+
+/* ============================================================
+   DESIGN TOKENS STRIP
+   ============================================================ */
+.token-grid{display:grid; grid-template-columns:repeat(4,1fr); gap:14px; margin-bottom:10px;}
+@media (max-width:900px){ .token-grid{grid-template-columns:repeat(2,1fr);} }
+.token-card{border:1px solid var(--page-rule); border-radius:10px; padding:14px 16px; background:rgba(255,255,255,.015);}
+.token-card h4{margin:0 0 10px; font:700 9.5px/1 var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--page-dim2);}
+.swatch-row{display:flex; align-items:center; gap:8px; margin-bottom:7px; font-size:11px;}
+.swatch-row:last-child{margin-bottom:0;}
+.swatch{width:16px;height:16px;border-radius:5px; flex:none; border:1px solid rgba(255,255,255,.14);}
+.swatch-name{color:var(--page-ink); font-weight:600;}
+.swatch-val{color:var(--page-dim2); font-family:var(--font-mono); font-size:10px; margin-left:auto;}
+.type-specimen{display:flex; flex-direction:column; gap:9px;}
+.type-row{display:flex; align-items:baseline; gap:10px;}
+.type-row .lbl{width:52px; flex:none; font:700 9px/1 var(--font-mono); color:var(--page-dim2); text-transform:uppercase; letter-spacing:.06em;}
+.type-row .ex{color:var(--page-ink); font-family:var(--font-sans);}
+.ease-curve{height:52px; position:relative; margin-top:4px;}
+.ease-curve svg{width:100%;height:100%;}
+.spacing-strip{display:flex; align-items:flex-end; gap:6px; height:56px; margin-top:4px;}
+.spacing-bar{background:linear-gradient(180deg,var(--overlay-blue),#0a84ff33); border-radius:3px 3px 0 0; width:14px;}
+.spacing-bar .n{display:block; margin-top:4px; font:600 8.5px/1 var(--font-mono); color:var(--page-dim2); text-align:center;}
+
+/* ============================================================
+   OVERLAY STAGE — the faux top-of-screen the card mockups hang
+   from. Not literally screenshot-accurate hardware; a labelled
+   stand-in so the card's own shape/anchoring reads clearly.
+   ============================================================ */
+.stage-shell{margin-bottom:8px;}
+.stage-label-row{display:flex; align-items:center; gap:10px; margin-bottom:10px; flex-wrap:wrap;}
+.stage-label{font:700 10px/1 var(--font-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--page-dim);}
+.state-switch{display:inline-flex; gap:3px; padding:3px; border-radius:8px; background:rgba(255,255,255,.04); border:1px solid var(--page-rule);}
+.state-switch input{position:absolute; opacity:0; pointer-events:none;}
+.state-switch label{
+  font:700 10.5px/1 var(--font-sans); padding:6px 11px; border-radius:6px; cursor:pointer;
+  color:var(--page-dim); user-select:none; transition:background-color .12s, color .12s;
+}
+.state-switch label:hover{color:var(--page-ink);}
+
+.stage{
+  position:relative; border-radius:16px; overflow:hidden;
+  background:
+    radial-gradient(900px 300px at 15% 0%, #14202c 0%, transparent 55%),
+    radial-gradient(700px 260px at 85% 8%, #1a1620 0%, transparent 55%),
+    linear-gradient(180deg,#0a0c10 0%, #06070a 100%);
+  border:1px solid var(--page-rule);
+  padding:34px 20px 40px;
+  display:flex; justify-content:center;
+  min-height:150px;
+}
+.stage::before{ /* faux menu-bar hairline */
+  content:""; position:absolute; top:0; left:0; right:0; height:26px;
+  background:rgba(0,0,0,.35); border-bottom:1px solid rgba(255,255,255,.05);
+}
+.stage-inner{position:relative; z-index:1; padding-top:8px;}
+
+/* ============================================================
+   CARD ASSEMBLY — mirrors src/overlay/card-chrome.css's grid
+   (flank-left | synthetic-cutout | flank-right, row 2 = below-block).
+   Widths follow the real formulas (HUD synthetic cutout 200x32).
+   ============================================================ */
+.card-assembly{
+  --cw-bare:200px; --cw-idle:370px; --cw-full:500px;
+  position:relative; box-sizing:border-box; display:grid;
+  grid-template-columns:1fr 200px 1fr; grid-template-rows:32px auto;
+  width:var(--cw-idle); margin:0 auto; isolation:isolate;
+  filter:drop-shadow(0 7px 18px rgba(0,0,0,.5));
+  transition:width .32s var(--ease-notchtap);
+  font-family:var(--font-sans);
+}
+.card-assembly[data-shape="bare"]{width:var(--cw-bare);}
+.card-assembly[data-shape="idle"]{width:var(--cw-idle);}
+.card-assembly[data-shape="full"]{width:var(--cw-full);}
+.card-assembly .flank{box-sizing:border-box; grid-row:1; overflow:hidden; display:flex; align-items:center; background:#000; color:var(--overlay-fg); min-width:0; transition:background-color .26s var(--ease-notchtap), padding .26s var(--ease-notchtap);}
+.card-assembly .flank-left{grid-column:1; justify-content:flex-start; padding-left:16px;}
+.card-assembly .flank-right{grid-column:3; justify-content:flex-end; padding-right:16px;}
+.card-assembly[data-shape="bare"] .flank{background:transparent; padding:0;}
+.card-assembly[data-shape="bare"].hovered .flank{background:#000;}
+.card-assembly[data-shape="bare"].hovered .flank-left{padding-left:16px;}
+.card-assembly[data-shape="bare"].hovered .flank-right{padding-right:16px;}
+.card-assembly:not(.has-below)[data-shape]:not(.hovered) .flank-left,
+.card-assembly:not(.has-below) .flank-left{border-bottom-left-radius:8px;}
+.card-assembly:not(.has-below) .flank-right{border-bottom-right-radius:8px;}
+.card-assembly[data-shape="bare"]:not(.hovered) .flank-left,
+.card-assembly[data-shape="bare"]:not(.hovered) .flank-right{border-radius:0;}
+.cutout{grid-column:2; grid-row:1; background:#000;}
+.card-assembly[data-shape="bare"]:not(.has-below):not(.hovered) .cutout{
+  border-bottom-left-radius:8px 20px; border-bottom-right-radius:8px 20px;
+}
+/* concave "gill" corners — HUD-only fillet where the idle rail meets the screen edge */
+.notch-gill{display:none; position:absolute; top:0; width:10px; height:10px; pointer-events:none;}
+.card-assembly:not(.has-below):not(.hovered):not([data-shape="bare"]) .notch-gill,
+.card-assembly.showing-exit .notch-gill{display:block;}
+.notch-gill-left{left:-10px; background:radial-gradient(circle at bottom left, transparent 10px, #000 10px);}
+.notch-gill-right{right:-10px; background:radial-gradient(circle at bottom right, transparent 10px, #000 10px);}
+
+.time-only{font:800 15px/1 var(--font-mono); letter-spacing:.02em; color:var(--overlay-fg); white-space:nowrap;}
+
+.status-dots{display:flex; align-items:center; gap:8px;}
+.status-dot{width:9px; height:9px; border-radius:50%; border:1.5px solid currentColor; transition:opacity .2s;}
+.status-dot.active{opacity:1;}
+.status-dot.dim{opacity:.22;}
+.status-dot.filled{background:currentColor;}
+.status-dot.football{color:var(--src-football);}
+.status-dot.news{color:var(--overlay-coral);}
+.status-dot.weather{color:var(--src-weather);}
+.pause-glyph{display:inline-flex; gap:2px; margin-left:2px;}
+.pause-glyph span{width:2px; height:9px; background:var(--overlay-fg); opacity:.55; border-radius:1px;}
+
+.idle-face{grid-column:2; grid-row:1; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:3px;}
+.idle-face-eyes{display:flex; gap:6px;}
+.idle-face-eye{width:3px; height:4px; border-radius:1.5px; background:rgba(245,247,250,.92);}
+.idle-face svg path{fill:none; stroke:rgba(245,247,250,.75); stroke-width:1.4; stroke-linecap:round;}
+
+.below-block{
+  grid-column:1/-1; grid-row:2; position:relative; box-sizing:border-box; overflow:hidden;
+  width:100%; background:rgba(0,0,0,1); color:var(--overlay-fg);
+  border-bottom-left-radius:8px; border-bottom-right-radius:8px;
+}
+.card-assembly.has-below{ /* just a marker class for the CSS above */ }
+
+/* priority accent */
+.card-assembly.low{--accent:#aab3bd; --accent-soft:rgba(170,179,189,.2);}
+.card-assembly.medium{--accent:var(--overlay-teal); --accent-soft:rgba(85,214,189,.24);}
+.card-assembly.high{--accent:var(--overlay-coral); --accent-soft:rgba(255,107,87,.28);}
+
+.compact{position:relative; box-sizing:border-box; overflow:hidden; min-height:74px; padding:12px 16px 13px 20px;}
+.expanded .compact{min-height:82px;}
+.compact::before{content:""; position:absolute; left:0; top:12px; bottom:12px; width:3px; border-radius:0 2px 2px 0; background:var(--accent); box-shadow:0 0 12px var(--accent-soft);}
+.masthead-row{display:flex; align-items:center; gap:10px; margin-bottom:4px;}
+.masthead{display:flex; align-items:center; gap:6px; flex:1; min-width:0; font:700 8px/1 var(--font-mono); letter-spacing:.16em; text-transform:uppercase; color:rgba(255,255,255,.38);}
+.masthead::after{content:""; flex:1; height:1px; background:rgba(255,255,255,.12);}
+.masthead .dot{width:4px; height:4px; border-radius:50%; background:var(--cat,var(--overlay-amber)); box-shadow:0 0 6px var(--cat,var(--overlay-amber)); flex:none;}
+.stamp{align-self:center; padding:4px 6px; border:1px solid var(--accent); color:var(--accent); font:700 8px/1 var(--font-mono); letter-spacing:.12em; text-transform:uppercase; flex:none;}
+.title.headline{white-space:normal; display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; font-weight:680; line-height:1.2; font-size:13px; margin:0;}
+.notif-subtitle-row{display:flex; align-items:baseline; justify-content:space-between; gap:10px; margin-top:3px;}
+.notif-subtitle{min-width:0; overflow:hidden; color:rgba(255,255,255,.45); font-size:10.5px; font-weight:600; text-overflow:ellipsis; white-space:nowrap;}
+.notif-body{display:-webkit-box; margin-top:8px; overflow:hidden; color:rgba(255,255,255,.7); font-size:11.5px; line-height:1.35; -webkit-box-orient:vertical; -webkit-line-clamp:2;}
+.notif-meta-row{display:flex; align-items:center; gap:5px; margin-top:6px;}
+.notif-time-inline{flex:none; color:rgba(255,255,255,.35); font:700 10px/1 var(--font-mono);}
+.chip{display:inline-flex; align-items:center; padding:3px 8px; border-radius:999px; font:700 8px/1 var(--font-mono); letter-spacing:.08em; text-transform:uppercase; white-space:nowrap;}
+.chip-category{color:var(--cat); background:var(--cat-pill); border:1px solid color-mix(in srgb, var(--cat) 35%, transparent);}
+.compact-hint{position:absolute; right:18px; bottom:8px; color:rgba(255,255,255,.4); font:700 8px/1 var(--font-mono); letter-spacing:.16em; text-transform:uppercase;}
+.compact-hint kbd, .manifest-hint kbd{display:inline-flex; align-items:center; justify-content:center; min-height:15px; margin:0 1px; padding:0 4px; border:1px solid rgba(255,255,255,.22); border-bottom-color:rgba(255,255,255,.34); border-radius:3px; background:rgba(255,255,255,.07); box-shadow:0 1px 0 rgba(0,0,0,.35); font:700 9px/1 var(--font-mono);}
+
+.detail-facts{display:flex; flex-direction:column; align-items:flex-end; gap:3px; margin-top:7px; margin-bottom:14px;}
+.fact-pill{display:inline-flex; align-items:center; gap:4px; max-width:100%; padding:2px 7px; border-radius:999px; font-size:10px; line-height:1.4; color:rgba(255,255,255,.82); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; border:1px solid rgba(255,255,255,.12); background:rgba(255,255,255,.05);}
+.fact-pill .fp-label{flex:none; font:700 7px/1 var(--font-mono); letter-spacing:.07em; text-transform:uppercase; opacity:.68;}
+.fact-pill .fp-tag{flex:none; font:700 7px/1 var(--font-mono); letter-spacing:.07em; text-transform:uppercase;}
+.fact-pill.tone-accent{background:color-mix(in srgb, var(--accent) 14%, transparent); border-color:color-mix(in srgb, var(--accent) 38%, transparent);}
+.fact-pill.tone-accent .fp-tag{color:var(--accent);}
+.fact-pill.tone-danger{background:color-mix(in srgb, var(--overlay-coral) 14%, transparent); border-color:color-mix(in srgb, var(--overlay-coral) 42%, transparent);}
+.fact-pill.tone-danger .fp-tag{color:var(--overlay-coral);}
+
+.manifest-wrap{display:grid; grid-template-rows:0fr; opacity:0; transition:grid-template-rows .32s var(--ease-notchtap), opacity .32s var(--ease-notchtap);}
+.manifest-wrap.expanded{grid-template-rows:1fr; opacity:1;}
+.manifest-wrap>.manifest{overflow:hidden; min-height:0;}
+.manifest{border-top:1px solid rgba(255,255,255,.1); background:linear-gradient(180deg, rgba(255,255,255,.025), transparent);}
+.manifest-block{padding:12px 16px 13px;}
+.manifest-label{font:700 8px/1 var(--font-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--cat,var(--overlay-fg)); margin-bottom:7px;}
+.manifest-text{font-size:12px; line-height:1.5; color:rgba(255,255,255,.85); display:-webkit-box; -webkit-line-clamp:6; -webkit-box-orient:vertical; overflow:hidden;}
+.manifest-footer{margin-top:10px; display:flex; justify-content:flex-end;}
+.manifest-hint{font:700 9px/1 var(--font-mono); letter-spacing:.08em; color:rgba(255,255,255,.4);}
+
+.ttl-bar{position:absolute; bottom:0; left:0; right:0; height:4px; display:grid; grid-template-columns:repeat(var(--qn,1),1fr); gap:3px;}
+.ttl-seg{background:color-mix(in srgb, var(--accent) 30%, transparent); position:relative; overflow:hidden;}
+.ttl-seg.done{background:rgba(255,255,255,.08);}
+.ttl-seg.current .ttl-fill{position:absolute; inset:0; background:var(--accent); transform-origin:right;}
+.ttl-seg.current.paused .ttl-fill{opacity:.85; background:color-mix(in srgb, var(--accent) 90%, transparent);}
+
+/* origin identity washes (source-identity.css) */
+.origin-wash{border-top:1px solid color-mix(in srgb, var(--cat) 55%, transparent); position:relative;}
+.origin-wash::before{content:""; position:absolute; inset:0; background:radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%); pointer-events:none; z-index:0;}
+.origin-wash .compact,.origin-wash .manifest{position:relative; z-index:1;}
+
+/* news mood */
+.news-shade{position:relative;}
+.news-shade::before{content:""; position:absolute; inset:-20%; background:radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%), linear-gradient(135deg,var(--cat-deep) 0%, transparent 46%); pointer-events:none; z-index:0;}
+.news-shade .compact,.news-shade .manifest{position:relative; z-index:1;}
+
+/* weather */
+.wx-card{position:relative;}
+.wx-icon{position:absolute; top:8px; right:12px; width:44px; height:44px; opacity:.9; z-index:0; filter:drop-shadow(0 2px 6px rgba(0,0,0,.5)); display:flex; align-items:center; justify-content:center; font-size:34px;}
+.wx-clear{background:radial-gradient(circle at 85% 0%, rgba(255,196,106,.16), transparent 60%);}
+.wx-rain{background:radial-gradient(circle at 85% 0%, rgba(90,140,220,.14), transparent 60%);}
+
+/* football score-block */
+.score-block{margin-top:10px; position:relative; z-index:1;}
+.sc-head{display:flex; align-items:center; gap:6px; margin-bottom:8px;}
+.chip-league{color:rgba(255,255,255,.7); background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.14);}
+.chip-live{color:var(--overlay-coral); background:rgba(255,107,87,.14); border:1px solid rgba(255,107,87,.4); gap:5px;}
+.chip-live.break{color:var(--overlay-amber); background:rgba(240,196,106,.14); border-color:rgba(240,196,106,.4);}
+.chip-live.final{color:rgba(255,255,255,.55); background:rgba(255,255,255,.08); border-color:rgba(255,255,255,.18);}
+.live-dot{width:5px; height:5px; border-radius:50%; background:currentColor;}
+.clock-pill{color:rgba(255,255,255,.65); background:rgba(255,255,255,.06); border:1px solid rgba(255,255,255,.12); font-variant-numeric:tabular-nums;}
+.score-row{display:flex; align-items:center; justify-content:center; gap:16px;}
+.side{display:flex; flex-direction:column; align-items:center; gap:4px; width:52px;}
+.crest{width:26px; height:26px; border-radius:50%; background:rgba(255,255,255,.08); border:1px solid rgba(255,255,255,.15); display:flex; align-items:center; justify-content:center; font:700 9px/1 var(--font-mono); color:rgba(255,255,255,.7);}
+.score{font:800 26px/1 var(--font-mono); letter-spacing:-.01em; color:var(--overlay-fg); display:flex; align-items:center; gap:4px;}
+.score .dash{color:rgba(255,255,255,.3); font-weight:600;}
+.cards-line{margin-top:8px; text-align:center; font:600 9.5px/1 var(--font-mono); color:rgba(255,255,255,.45); letter-spacing:.02em;}
+
+/* idle hover-peek */
+.idle-peek{padding:12px 16px 13px;}
+.peek-content{display:flex; flex-direction:column; gap:8px;}
+.wx-peek-readout{display:flex; align-items:center; gap:8px;}
+.wx-peek-icon{width:24px;height:24px; font-size:20px; display:flex; align-items:center; justify-content:center;}
+.wx-peek-temp{font:800 17px/1 var(--font-mono); color:var(--overlay-fg);}
+.wx-peek-hilo{display:flex; flex-direction:column; font:700 8.5px/1.3 var(--font-mono); color:rgba(255,255,255,.5);}
+.wx-peek-condition{margin-left:auto; color:rgba(255,255,255,.65); background:rgba(255,255,255,.07); border:1px solid rgba(255,255,255,.14);}
+.wx-peek-rain{color:var(--overlay-blue); background:rgba(10,132,255,.14); border:1px solid rgba(10,132,255,.4);}
+.wx-forecast-strip{display:flex; gap:12px; padding-top:2px;}
+.wx-forecast-point{display:flex; flex-direction:column; align-items:center; gap:2px;}
+.wx-forecast-icon{width:16px;height:16px; font-size:14px; display:flex; align-items:center; justify-content:center;}
+.wx-forecast-temp{font:700 10px/1 var(--font-mono); color:rgba(255,255,255,.85);}
+.wx-forecast-hour{font:600 8px/1 var(--font-mono); color:rgba(255,255,255,.4);}
+.media-row{display:flex; align-items:center; justify-content:space-between; gap:10px;}
+.media-track{display:flex; align-items:center; gap:8px; min-width:0;}
+.media-art{width:26px;height:26px; border-radius:6px; background:rgba(255,255,255,.08); display:flex; align-items:center; justify-content:center; flex:none; font-size:13px;}
+.media-meta{min-width:0; display:flex; flex-direction:column;}
+.media-title{font:700 11px/1.3 var(--font-sans); color:var(--overlay-fg); white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:150px;}
+.media-subtitle{font:600 9px/1.3 var(--font-mono); color:rgba(255,255,255,.45);}
+.media-transport{display:flex; align-items:center; gap:6px;}
+.media-bar{width:52px; height:3px; border-radius:2px; background:rgba(255,255,255,.14); overflow:hidden;}
+.media-bar-fill{display:block; height:100%; background:var(--overlay-blue); width:62%;}
+.media-time{font:700 9px/1 var(--font-mono); color:rgba(255,255,255,.45);}
+.idle-peek-timeline{position:relative; height:3px; border-radius:2px; background:rgba(255,255,255,.1); overflow:hidden; margin-top:2px;}
+.idle-peek-timeline::before{content:""; position:absolute; inset:0; width:var(--day-progress,42%); background:var(--overlay-amber); border-radius:2px;}
+.idle-reveal-scorecard{display:flex; flex-direction:column; gap:6px;}
+.idle-reveal-label{font:700 11px/1.3 var(--font-sans); color:var(--overlay-fg);}
+
+/* ============================================================
+   AGENT BOARD
+   ============================================================ */
+.agent-board{display:flex; flex-direction:column; gap:8px; padding:0 0 12px;}
+.agent-board.hero-only{padding-bottom:0;}
+.agent-board-primary{display:flex; flex-direction:column; gap:4px;}
+.agent-board-primary .compact{min-height:74px;}
+.agent-board-primary .detail-facts{flex-direction:row; flex-wrap:wrap; justify-content:flex-end; gap:4px 6px; margin-bottom:0;}
+.agent-dot{width:6px;height:6px; border-radius:50%; background:var(--agent-accent,var(--overlay-fg)); flex:none;}
+.agent-dot.large{width:8px;height:8px;}
+.agent-runtime-tick{width:4px;height:4px; flex:none; background:var(--cat,var(--overlay-fg)); box-shadow:0 0 4px var(--cat,transparent);}
+.agent-waiting{--agent-accent:var(--overlay-amber);}
+.agent-failed{--agent-accent:var(--overlay-coral);}
+.agent-working{--agent-accent:var(--overlay-blue);}
+.agent-completed{--agent-accent:var(--overlay-green);}
+.agent-stale{--agent-accent:color-mix(in srgb, var(--overlay-fg) 62%, transparent);}
+
+.agent-board-rows{display:flex; flex-direction:column; gap:3px; border-top:1px solid rgba(255,255,255,.14); padding:6px 14px 0;}
+.agent-row{display:flex; align-items:center; gap:6px; font-size:11px; color:rgba(255,255,255,.7); white-space:nowrap; padding:2px 0;}
+.agent-row-runtime{font-weight:600; color:var(--cat,var(--overlay-fg)); flex:none;}
+.agent-row-project{overflow:hidden; text-overflow:ellipsis; color:rgba(255,255,255,.55);}
+.agent-row-state{margin-left:auto; flex:none; color:var(--agent-accent,var(--overlay-fg));}
+.agent-row-elapsed{flex:none; font-variant-numeric:tabular-nums; color:rgba(255,255,255,.45); min-width:2.4em; text-align:right;}
+
+.agent-board-expanded-list{margin-top:14px; padding:0 14px;}
+.agent-board-expanded-scroll{display:flex; flex-direction:column; gap:6px; max-height:210px; overflow:hidden;}
+.agent-expanded-row{display:flex; flex-direction:column; gap:4px; padding:8px 10px; border-radius:10px; background:rgba(255,255,255,.05);}
+.agent-expanded-row-head{display:flex; align-items:center; gap:6px; font-size:11.5px; color:rgba(255,255,255,.78); white-space:nowrap;}
+.agent-expanded-row-summary{font-size:11px; line-height:1.3; color:rgba(255,255,255,.68);}
+.agent-expanded-row-meta{display:flex; flex-wrap:wrap; gap:4px 8px; font-size:10px; font-family:var(--font-mono); color:rgba(255,255,255,.45);}
+.agent-expanded-row-details{display:flex; flex-wrap:wrap; gap:4px 8px; font-size:10px;}
+.agent-expanded-detail{display:inline-flex; gap:3px; color:rgba(255,255,255,.55);}
+.agent-expanded-detail-label{font-weight:600; color:rgba(255,255,255,.72);}
+.agent-expanded-history{margin-top:2px; border-top:1px solid rgba(255,255,255,.12); padding-top:4px;}
+.agent-expanded-history-list{display:flex; flex-direction:column; gap:2px; list-style:none; margin:0; padding:0;}
+.agent-expanded-history-entry{display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:10px; color:rgba(255,255,255,.5);}
+.agent-expanded-history-state{font-weight:600; color:rgba(255,255,255,.65);}
+
+/* ---- state switcher wiring (radio hack, no JS) ---- */
+.switcher input{position:absolute; opacity:0; pointer-events:none;}
+.switcher .panel{display:none;}
+#gen-bare:checked ~ .switcher-panels .panel-bare,
+#gen-idle:checked ~ .switcher-panels .panel-idle,
+#gen-idleface:checked ~ .switcher-panels .panel-idleface,
+#gen-bhover:checked ~ .switcher-panels .panel-bhover{display:block;}
+#gen-bare:checked ~ .state-switch label[for="gen-bare"],
+#gen-idle:checked ~ .state-switch label[for="gen-idle"],
+#gen-idleface:checked ~ .state-switch label[for="gen-idleface"],
+#gen-bhover:checked ~ .state-switch label[for="gen-bhover"]{background:var(--primary); color:#fff;}
+
+/* generic origin-card switchers (compact/expanded), one per origin, param via data attr replicated per block below */
+.origincard input{position:absolute; opacity:0; pointer-events:none;}
+.origincard .panel{display:none;}
+
+/* agent board switcher */
+#ab-1:checked ~ .switcher-panels .panel-ab1,
+#ab-n:checked ~ .switcher-panels .panel-abn,
+#ab-x:checked ~ .switcher-panels .panel-abx{display:block;}
+#ab-1:checked ~ .state-switch label[for="ab-1"],
+#ab-n:checked ~ .state-switch label[for="ab-n"],
+#ab-x:checked ~ .state-switch label[for="ab-x"]{background:var(--primary); color:#fff;}
+
+.caption-note{font-size:12px; color:var(--page-dim); line-height:1.6; margin-top:14px; max-width:76ch;}
+.caption-note b{color:var(--page-ink);}
+
+/* ============================================================
+   SETTINGS WINDOW MOCK
+   ============================================================ */
+.settings-frame{
+  border-radius:12px; overflow:hidden; border:1px solid var(--border);
+  box-shadow:0 1px 0 rgba(255,255,255,.06) inset, 0 30px 60px rgba(0,0,0,.55);
+  background:var(--background);
+}
+.settings-window{display:grid; grid-template-columns:150px minmax(0,1fr); min-height:600px;}
+@media (max-width:760px){ .settings-window{grid-template-columns:118px minmax(0,1fr);} }
+
+.settings-sidebar{background:var(--sidebar); border-right:1px solid var(--border); display:grid; grid-template-rows:auto minmax(0,1fr) auto; min-height:0;}
+.sidebar-brand{display:flex; align-items:center; gap:9px; min-height:71px; padding:17px 14px 14px; border-bottom:1px solid color-mix(in srgb, var(--border) 60%, transparent); font:700 11px/1 var(--font-mono); letter-spacing:.09em; text-transform:uppercase; color:var(--foreground);}
+.brand-mark{width:24px; height:24px; flex:none; border-radius:6px; background:linear-gradient(150deg,#232833,#050607); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:11px;}
+.sidebar-nav{display:flex; flex-direction:column; gap:3px; padding:12px 8px; overflow-y:auto;}
+.nav-item{
+  display:grid; grid-template-columns:15px minmax(0,1fr); align-items:center; gap:8px;
+  min-height:36px; padding:7px 8px 7px 6px; border-radius:6px; border-left:2px solid transparent;
+  color:var(--muted-foreground); font:560 10.5px/1.25 var(--font-sans); cursor:pointer;
+  transition:color .14s var(--ease-notchtap), background-color .14s var(--ease-notchtap), border-color .14s var(--ease-notchtap);
+  text-align:left; width:100%; -webkit-appearance:none; background:transparent;
+}
+.nav-item:hover{background:rgba(255,255,255,.05); color:var(--foreground);}
+.nav-item svg{width:14px;height:14px; stroke:currentColor; fill:none; stroke-width:1.75;}
+.sidebar-meta{border-top:1px solid color-mix(in srgb, var(--border) 60%, transparent); padding:11px 14px 18px; font:700 9px/1 var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--muted-foreground);}
+
+/* radio-driven section switching */
+.settings-frame input[type=radio]{position:absolute; opacity:0; pointer-events:none;}
+.settings-frame .sec-panel{display:none;}
+#sec-general:checked ~ .settings-window .sec-panel.general,
+#sec-football:checked ~ .settings-window .sec-panel.football,
+#sec-news:checked ~ .settings-window .sec-panel.news,
+#sec-weather:checked ~ .settings-window .sec-panel.weather,
+#sec-connectors:checked ~ .settings-window .sec-panel.connectors,
+#sec-agents:checked ~ .settings-window .sec-panel.agents,
+#sec-shortcuts:checked ~ .settings-window .sec-panel.shortcuts,
+#sec-appearance:checked ~ .settings-window .sec-panel.appearance,
+#sec-diagnostics:checked ~ .settings-window .sec-panel.diagnostics,
+#sec-history:checked ~ .settings-window .sec-panel.history,
+#sec-queue:checked ~ .settings-window .sec-panel.queue,
+#sec-about:checked ~ .settings-window .sec-panel.about{display:block;}
+
+#sec-general:checked ~ .settings-window label[for=sec-general],
+#sec-football:checked ~ .settings-window label[for=sec-football],
+#sec-news:checked ~ .settings-window label[for=sec-news],
+#sec-weather:checked ~ .settings-window label[for=sec-weather],
+#sec-connectors:checked ~ .settings-window label[for=sec-connectors],
+#sec-agents:checked ~ .settings-window label[for=sec-agents],
+#sec-shortcuts:checked ~ .settings-window label[for=sec-shortcuts],
+#sec-appearance:checked ~ .settings-window label[for=sec-appearance],
+#sec-diagnostics:checked ~ .settings-window label[for=sec-diagnostics],
+#sec-history:checked ~ .settings-window label[for=sec-history],
+#sec-queue:checked ~ .settings-window label[for=sec-queue],
+#sec-about:checked ~ .settings-window label[for=sec-about]{
+  background:color-mix(in srgb, var(--primary) 15%, transparent); border-left-color:var(--primary); color:var(--foreground);
+}
+
+.settings-pane{display:grid; grid-template-rows:auto minmax(0,1fr) auto; min-height:0; background:var(--background);}
+.content-header{border-bottom:1px solid var(--border); padding:22px 20px 17px;}
+.section-index{font:700 10px/1 var(--font-mono); letter-spacing:.11em; text-transform:uppercase; color:var(--muted-foreground); margin-bottom:8px;}
+.section-h1{font-size:19px; line-height:1.15; font-weight:650; letter-spacing:-.018em; margin:0 0 6px; color:var(--foreground);}
+.section-desc{font-size:11px; line-height:1.45; color:var(--muted-foreground); max-width:340px; margin:0;}
+.section-scroll{min-height:0; overflow-y:auto; padding:16px 16px 24px;}
+.settings-footer{display:flex; align-items:center; gap:8px; min-height:57px; border-top:1px solid var(--border); padding:12px 14px;}
+
+.btn{font:600 11.5px/1 var(--font-sans); border-radius:8px; padding:0 11px; height:28px; display:inline-flex; align-items:center; gap:5px; border:1px solid transparent; cursor:default;}
+.btn-default{background:color-mix(in srgb, var(--primary), var(--background) 25%); color:var(--foreground);}
+.btn-outline{background:var(--background); border-color:var(--border); color:var(--foreground);}
+.btn-outline:hover{background:rgba(255,255,255,.05);}
+
+.group{border:1px solid var(--border); border-radius:8px; background:var(--card); margin-bottom:14px; overflow:hidden;}
+.group-head{border-bottom:1px solid color-mix(in srgb, var(--border) 60%, transparent); padding:12px 13px 11px;}
+.group-title{font-size:11px; font-weight:640; color:var(--foreground); margin:0;}
+.group-desc{font-size:10px; line-height:1.45; color:var(--muted-foreground); margin:4px 0 0;}
+.group-body{padding:0 13px;}
+
+.crow{display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:12px; min-height:56px; padding:10px 0; border-top:1px solid color-mix(in srgb, var(--border) 60%, transparent);}
+.crow:first-child{border-top:none;}
+.crow .cname{display:block; font-size:11px; font-weight:590; color:var(--foreground); line-height:1.3;}
+.crow .chelp{display:block; margin-top:3px; font-size:10px; line-height:1.4; color:var(--muted-foreground);}
+
+.toggle{width:36px;height:22px; border-radius:999px; background:var(--border); position:relative; flex:none;}
+.toggle.on{background:var(--primary);}
+.toggle::after{content:""; position:absolute; top:2px; left:2px; width:18px;height:18px; border-radius:50%; background:#f5f7fa; transition:transform .15s;}
+.toggle.on::after{transform:translateX(14px); background:#050607;}
+
+.numfield{position:relative; width:96px; flex:none;}
+.numfield input{width:100%; height:31px; border-radius:6px; border:1px solid var(--border); background:rgba(255,255,255,.03); color:var(--foreground); font:650 11px/1 var(--font-mono); text-align:right; padding:0 34px 0 8px;}
+.numfield .unit{position:absolute; right:8px; top:50%; transform:translateY(-50%); font:700 9px/1 var(--font-mono); color:var(--muted-foreground); letter-spacing:.05em; pointer-events:none;}
+
+.segmented{display:inline-grid; grid-auto-flow:column; height:31px; border-radius:7px; border:1px solid var(--border); background:rgba(255,255,255,.03); padding:3px; gap:2px;}
+.segmented button, .segbtn{font:620 10px/1 var(--font-mono); letter-spacing:.03em; color:var(--muted-foreground); border-radius:4px; padding:0 9px; border:none; background:transparent; display:flex; align-items:center; justify-content:center;}
+.segbtn.is-selected{background:rgba(255,255,255,.09); color:var(--foreground); box-shadow:0 1px 2px rgba(0,0,0,.4);}
+
+.metachip{display:inline-flex; align-items:center; gap:5px; border-radius:999px; border:1px solid var(--border); padding:2px 7px; font:650 9px/1.5 var(--font-mono); color:var(--muted-foreground);}
+.metachip.active{border-color:color-mix(in srgb, var(--primary) 40%, var(--border)); background:rgba(255,255,255,.06); color:var(--foreground);}
+.metachip.uc{letter-spacing:.06em; text-transform:uppercase;}
+.metachip .dotswatch{width:6px;height:6px;border-radius:50%; display:inline-block;}
+
+.txtarea{width:100%; min-height:62px; border-radius:8px; border:1px solid var(--border); background:rgba(255,255,255,.03); color:var(--foreground); font:560 10px/1.5 var(--font-mono); padding:8px 10px; resize:vertical;}
+.txtcaption{margin-top:5px; font:700 9px/1 var(--font-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted-foreground);}
+.trow{border-top:1px solid color-mix(in srgb, var(--border) 60%, transparent); padding:11px 0 12px;}
+.trow:first-child{border-top:none;}
+
+.stack{display:grid; gap:14px;}
+.rotlist{list-style:none; margin:0; padding:4px 0 11px;}
+.rotlist li{display:grid; grid-template-columns:16px minmax(0,1fr) auto; align-items:center; gap:10px; padding:10px 0; border-top:1px solid color-mix(in srgb, var(--border) 60%, transparent);}
+.rotlist li:first-child{border-top:none;}
+.rotlist .rank{font:700 10px/1 var(--font-mono); color:var(--muted-foreground);}
+.rotlist .rname{font-size:11px; font-weight:590; color:var(--foreground);}
+.rotbtn{width:24px;height:24px; border-radius:6px; border:1px solid var(--border); display:flex; align-items:center; justify-content:center; color:var(--muted-foreground);}
+
+.agentcard{border-top:1px solid color-mix(in srgb, var(--border) 60%, transparent); padding:12px 0;}
+.agentcard:first-child{border-top:none;}
+.agentcard-head{display:flex; align-items:center; justify-content:space-between; gap:8px; margin-bottom:8px;}
+.agentcard-name{display:flex; align-items:center; gap:6px; font-size:11px; font-weight:590; color:var(--foreground);}
+.dot6{width:6px;height:6px;border-radius:50%; flex:none;}
+.healthmeta{display:flex; flex-direction:column; gap:3px; font-size:9px; color:var(--muted-foreground); margin:-2px 0 8px;}
+.snippet-lbl{font:700 9px/1 var(--font-mono); letter-spacing:.06em; text-transform:uppercase; color:var(--muted-foreground); margin-bottom:4px;}
+.snippet-target{font:11px/1 var(--font-mono); color:var(--foreground); margin-bottom:6px; word-break:break-all;}
+.snippet-box{margin:0; max-height:110px; overflow:auto; border-radius:6px; border:1px solid var(--border); background:rgba(255,255,255,.02); padding:8px; font:9.5px/1.5 var(--font-mono); white-space:pre-wrap; color:var(--foreground);}
+.agentcard-foot{margin:8px 0 0; font-size:9px; color:var(--muted-foreground);}
+
+.hist-row{border-top:1px solid color-mix(in srgb, var(--border) 60%, transparent); padding:9px 0;}
+.hist-row:first-child{border-top:none;}
+.hist-line1{display:flex; align-items:baseline; gap:8px; font:700 10px/1 var(--font-mono); color:var(--muted-foreground);}
+.hist-line1 .t{color:var(--primary);}
+.hist-title{font-size:11px; font-weight:590; color:var(--foreground); margin-top:3px;}
+.hist-meta{display:flex; flex-wrap:wrap; gap:5px; margin-top:6px;}
+.hist-body{font-size:11px; color:var(--muted-foreground); margin-top:4px;}
+.hist-more{margin-top:5px; font:650 9px/1 var(--font-sans); color:var(--muted-foreground);}
+
+.queue-row{display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:8px; padding:8px 0; border-top:1px solid color-mix(in srgb, var(--border) 60%, transparent);}
+.queue-row:first-child{border-top:none;}
+.queue-row .qt{font-size:11px; color:var(--foreground);}
+
+.shtable{width:100%; border-collapse:collapse;}
+.shtable th{text-align:left; padding:0 0 7px; font:700 9px/1 var(--font-mono); letter-spacing:.08em; text-transform:uppercase; color:var(--muted-foreground);}
+.shtable td,.shtable th{padding:9px 8px;}
+.shtable td:first-child,.shtable th:first-child{padding-left:0;}
+.shtable tr{border-top:1px solid color-mix(in srgb, var(--border) 60%, transparent);}
+.shtable thead tr{border-top:none;}
+.kbd{display:inline-flex; align-items:center; justify-content:center; min-height:25px; padding:0 5px; border-radius:5px; border:1px solid var(--border); background:rgba(255,255,255,.03); font:650 11px/1 var(--font-mono); box-shadow:0 1px 0 var(--border);}
+
+.aboutgrid{display:grid; grid-template-columns:1fr 1fr; gap:8px;}
+.stat-tile{border:1px solid color-mix(in srgb, var(--border) 60%, transparent); border-radius:6px; background:rgba(255,255,255,.02); padding:10px 12px;}
+.stat-label{font:700 9px/1 var(--font-mono); letter-spacing:.1em; text-transform:uppercase; color:var(--muted-foreground);}
+.stat-value{margin-top:4px; font:11px/1 var(--font-mono); color:var(--foreground);}
+.identity-row{display:flex; align-items:center; gap:9px; padding:8px 0;}
+.identity-mark{width:38px;height:38px; border-radius:8px; background:linear-gradient(150deg,#232833,#050607); border:1px solid var(--border); display:flex; align-items:center; justify-content:center; font-size:16px;}
+
+/* small helper */
+.vis{display:flex; align-items:center; gap:6px; flex-wrap:wrap;}
+.small{font-size:11px;}
+
+footer.page-foot{border-top:1px solid var(--page-rule); margin-top:64px; padding-top:26px;}
+.foot-grid{display:grid; grid-template-columns:1fr 1fr; gap:20px; font-size:12px; color:var(--page-dim); line-height:1.7;}
+@media (max-width:760px){ .foot-grid{grid-template-columns:1fr;} }
+.foot-grid h4{margin:0 0 8px; font-size:11px; color:var(--page-ink); text-transform:uppercase; letter-spacing:.08em; font-family:var(--font-mono);}
+.foot-grid ul{margin:0; padding-left:16px;}
+.foot-grid code{color:#9fc3e8;}
+.commit-chip{display:inline-flex; align-items:center; gap:6px; font:700 11px/1 var(--font-mono); color:var(--overlay-green); background:rgba(127,224,141,.1); border:1px solid rgba(127,224,141,.3); border-radius:6px; padding:5px 9px; margin-top:6px;}
+</style>
+</head>
+<body>
+
+<nav class="pagenav">
+  <a href="#top" class="totop">↑ top</a>
+  <a href="#overlay">Part 1 · Overlay</a>
+  <a href="#settings">Part 2 · Settings</a>
+  <div class="spacer"></div>
+  <a href="#closing" class="totop">sync note</a>
+</nav>
+
+<header class="masthead" id="top">
+  <div class="wrap">
+    <p class="eyebrow">notchtap · current-state mirror</p>
+    <h1 class="page-title">The entire shipped UI, in one place</h1>
+    <p class="lede">
+      A single self-contained reference for what notchtap actually renders today — the overlay's
+      notch/HUD shell across every resting and notification state, the Agent Board post
+      board-motion-polish, and the full settings window across all twelve sections. Built by reading
+      the live source directly (see the closing note for the exact files and commit), not carried over
+      from the narrower <code>prototypes/current-state.html</code> or the design mocks under
+      <code>prototype/</code>. This is a state reference, not an animation demo — motion is
+      represented as discrete states with captions, not live choreography.
+    </p>
+    <div class="intro-grid">
+      <div class="intro-card">
+        <h3>Part 1 — Overlay</h3>
+        <p>Every shell shape (bare, idle rail, showing, expanded) across four notification origins,
+        idle furniture (clock, status dots, idle face, hover peeks), and the Agent Board's resting
+        hero / multi-session rows / hover-expanded states.</p>
+        <a class="jump" href="#overlay">Jump to overlay →</a>
+      </div>
+      <div class="intro-card">
+        <h3>Part 2 — Settings</h3>
+        <p>The real sidebar (12 sections, correct order/icons), with every section's actual controls
+        laid out — click a sidebar item below to navigate it, the same way the real window works.</p>
+        <a class="jump" href="#settings">Jump to settings →</a>
+      </div>
+    </div>
+  </div>
+</header>
+
+<main class="wrap">
+
+<!-- ============================================================
+     PART 1 — OVERLAY
+     ============================================================ -->
+<section class="part" id="overlay">
+  <div class="part-head">
+    <p class="part-kicker">Part 1</p>
+    <h2 class="part-title">Overlay</h2>
+    <p class="part-sub">The rust-core-driven notch/HUD card — <code>src/App.tsx</code> crossfades
+      between two top-level surfaces (a status-rail card and, when an agent needs the operator, the
+      Agent Board) in one stacked grid cell so the swap never pushes the window taller mid-transition.
+      Rendered here in HUD form (a notchless display draws its own synthetic black cutout) — notch-mode
+      hardware is visually identical in shape, just with a real camera housing instead of the drawn
+      rectangle.</p>
+  </div>
+
+  <!-- ---- design tokens ---- -->
+  <div class="subhead">
+    <h3 class="sub-title"><span class="num">1.0</span> Visual language</h3>
+    <p class="sub-copy">Color, type, and motion tokens the whole app draws from —
+      <code>vendor/shared-ui/design/tokens.css</code>, <code>src/overlay/source-identity.css</code>,
+      <code>src/overlay/news-category.css</code>, and <code>src/animationTiming.ts</code>.</p>
+  </div>
+  <div class="token-grid">
+    <div class="token-card">
+      <h4>Priority accent (shell)</h4>
+      <div class="swatch-row"><span class="swatch" style="background:#aab3bd"></span><span class="swatch-name">Low</span><span class="swatch-val">#aab3bd</span></div>
+      <div class="swatch-row"><span class="swatch" style="background:#55d6bd"></span><span class="swatch-name">Medium</span><span class="swatch-val">--overlay-teal</span></div>
+      <div class="swatch-row"><span class="swatch" style="background:#ff6b57"></span><span class="swatch-name">High</span><span class="swatch-val">--overlay-coral</span></div>
+    </div>
+    <div class="token-card">
+      <h4>Source identity (origin/runtime)</h4>
+      <div class="swatch-row"><span class="swatch" style="background:#d97757"></span><span class="swatch-name">Claude Code</span></div>
+      <div class="swatch-row"><span class="swatch" style="background:#10a37f"></span><span class="swatch-name">Codex</span></div>
+      <div class="swatch-row"><span class="swatch" style="background:#f5f7fa"></span><span class="swatch-name">Kimi (mono)</span></div>
+      <div class="swatch-row"><span class="swatch" style="background:#9d7cd8"></span><span class="swatch-name">OpenCode</span></div>
+      <div class="swatch-row"><span class="swatch" style="background:#7fe08d"></span><span class="swatch-name">Football</span></div>
+      <div class="swatch-row"><span class="swatch" style="background:#f0c46a"></span><span class="swatch-name">Weather</span></div>
+    </div>
+    <div class="token-card">
+      <h4>Type scale (overlay)</h4>
+      <div class="type-specimen">
+        <div class="type-row"><span class="lbl">masthead</span><span class="ex" style="font:700 8px/1 var(--font-mono); letter-spacing:.16em; text-transform:uppercase; color:rgba(255,255,255,.5)">AGENT</span></div>
+        <div class="type-row"><span class="lbl">stamp</span><span class="ex" style="font:700 8px/1 var(--font-mono); letter-spacing:.12em; text-transform:uppercase; color:#ff6b57">Now</span></div>
+        <div class="type-row"><span class="lbl">headline</span><span class="ex" style="font:680 13px/1.2 var(--font-sans)">Agent needs input</span></div>
+        <div class="type-row"><span class="lbl">body</span><span class="ex" style="font:400 11.5px/1.35 var(--font-sans); color:rgba(255,255,255,.7)">Approval needed to run a command</span></div>
+        <div class="type-row"><span class="lbl">fact pill</span><span class="ex" style="font:400 10px/1.4 var(--font-sans)"><span style="font:700 7px/1 var(--font-mono);letter-spacing:.07em;text-transform:uppercase;opacity:.68">TOOL</span> rm</span></div>
+      </div>
+    </div>
+    <div class="token-card">
+      <h4>Motion — <code>--ease-notchtap</code></h4>
+      <div class="ease-curve">
+        <svg viewBox="0 0 100 52" preserveAspectRatio="none">
+          <path d="M0,52 C22,52 36,0 100,0" fill="none" stroke="#5aa9ff" stroke-width="2"/>
+        </svg>
+      </div>
+      <p style="margin:6px 0 0; font-size:10px; color:var(--page-dim2); font-family:var(--font-mono)">cubic-bezier(.22, 1, .36, 1)</p>
+      <p style="margin:8px 0 0; font-size:10.5px; color:var(--page-dim); line-height:1.5">House curve for nearly every transition. A separate bouncy
+        <code>--ease-notchtap-pop</code> is scoped ONLY to a genuine promotion's width-grow — hover
+        and exit legs deliberately never overshoot.</p>
+    </div>
+  </div>
+
+  <!-- ---- 1.1 shell resting states ---- -->
+  <div class="subhead">
+    <h3 class="sub-title"><span class="num">1.1</span> Shell resting states</h3>
+    <p class="sub-copy">Origin-independent — bare/idle content never depends on which notification
+      origin will eventually promote into it. <code>[general] hide_when_idle</code> chooses Idle rail
+      (default) or Bare notch as the resting shape; a bare notch still reveals the full rail on hover
+      (the tracking area keeps working even with zero pixels painted).</p>
+  </div>
+  <div class="stage-shell switcher">
+    <input type="radio" name="gen" id="gen-bare" checked>
+    <input type="radio" name="gen" id="gen-bhover">
+    <input type="radio" name="gen" id="gen-idle">
+    <input type="radio" name="gen" id="gen-idleface">
+    <div class="stage-label-row">
+      <span class="stage-label">state</span>
+      <div class="state-switch">
+        <label for="gen-bare">Bare / minimal</label>
+        <label for="gen-bhover">Bare, hovered</label>
+        <label for="gen-idle">Idle rail</label>
+        <label for="gen-idleface">Idle, face revealed</label>
+      </div>
+    </div>
+    <div class="stage">
+      <div class="stage-inner switcher-panels">
+        <div class="panel panel-bare">
+          <div class="card-assembly" data-shape="bare">
+            <span class="notch-gill notch-gill-left"></span><span class="notch-gill notch-gill-right"></span>
+            <div class="flank flank-left"></div>
+            <div class="cutout"></div>
+            <div class="flank flank-right"></div>
+          </div>
+        </div>
+        <div class="panel panel-bhover">
+          <div class="card-assembly hovered" data-shape="idle">
+            <div class="flank flank-left"><span class="time-only">9:41</span></div>
+            <div class="cutout"></div>
+            <div class="flank flank-right"><span class="status-dots"><span class="status-dot football filled active"></span><span class="status-dot news dim"></span><span class="status-dot weather filled active"></span></span></div>
+          </div>
+        </div>
+        <div class="panel panel-idle">
+          <div class="card-assembly" data-shape="idle">
+            <div class="flank flank-left"><span class="time-only">9:41</span></div>
+            <div class="cutout"></div>
+            <div class="flank flank-right"><span class="status-dots"><span class="status-dot football filled active"></span><span class="status-dot news dim"></span><span class="status-dot weather filled active"></span></span></div>
+          </div>
+        </div>
+        <div class="panel panel-idleface">
+          <div class="card-assembly" data-shape="idle">
+            <div class="flank flank-left"><span class="time-only">9:41</span></div>
+            <div class="idle-face">
+              <div class="idle-face-eyes"><span class="idle-face-eye"></span><span class="idle-face-eye"></span></div>
+              <svg viewBox="0 0 14 6" width="14" height="6"><path d="M1 1.5 Q7 5.5 13 1.5"/></svg>
+            </div>
+            <div class="flank flank-right"><span class="status-dots"><span class="status-dot football filled active"></span><span class="status-dot news dim"></span><span class="status-dot weather filled active"></span></span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption-note"><b>Bare / minimal</b> paints zero pixels except the cutout itself — flanks
+    fully transparent, shell width shrunk to exactly the cutout, HUD corners squared off to read as
+    hardware. <b>Bare, hovered</b> reveals the full black rail (clock + status dots) without changing
+    which notification is showing (there is none). <b>Idle, face revealed</b> is <code>IdleFace</code>:
+    after ~4.5s of continuous true-idle a minimal two-eyes-and-a-smile face fades into the cutout's own
+    grid cell and glances/blinks on a slow, capped-cost cadence — hidden instantly the moment a card
+    shows or the cursor hovers.</p>
+
+  <div class="subhead" style="margin-top:34px;">
+    <h3 class="sub-title" style="font-size:13px;"><span class="num">1.1b</span> Idle hover-peek disclosures</h3>
+    <p class="sub-copy">Hovering the idle rail opens a below-block beneath the flanks
+      (<code>IdleHoverPeek.tsx</code>) — precedence is live football &gt; now-playing media &gt;
+      ambient weather &gt; the day-progress timeline alone, one disclosure at a time.</p>
+  </div>
+  <div class="stage">
+    <div class="stage-inner" style="display:flex; flex-direction:column; gap:22px; align-items:center;">
+      <div>
+        <p class="stage-label" style="margin-bottom:8px; text-align:center;">weather + forecast strip</p>
+        <div class="card-assembly has-below" data-shape="idle">
+          <div class="flank flank-left"><span class="time-only">9:41</span></div>
+          <div class="cutout"></div>
+          <div class="flank flank-right"><span class="status-dots"><span class="status-dot football filled active"></span><span class="status-dot news dim"></span><span class="status-dot weather filled active"></span></span></div>
+          <div class="below-block idle-peek wx-card wx-clear">
+            <div class="peek-content">
+              <div class="wx-peek-readout">
+                <span class="wx-peek-icon">☀️</span>
+                <span class="wx-peek-temp">21°</span>
+                <span class="wx-peek-hilo"><span>H 24°</span><span>L 16°</span></span>
+                <span class="chip wx-peek-condition">Clear</span>
+              </div>
+              <div class="wx-forecast-strip">
+                <span class="wx-forecast-point"><span class="wx-forecast-icon">☀️</span><span class="wx-forecast-temp">22°</span><span class="wx-forecast-hour">2pm</span></span>
+                <span class="wx-forecast-point"><span class="wx-forecast-icon">⛅</span><span class="wx-forecast-temp">20°</span><span class="wx-forecast-hour">4pm</span></span>
+                <span class="wx-forecast-point"><span class="wx-forecast-icon">🌙</span><span class="wx-forecast-temp">17°</span><span class="wx-forecast-hour">6pm</span></span>
+              </div>
+              <span class="idle-peek-timeline" style="--day-progress:58%"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <p class="stage-label" style="margin-bottom:8px; text-align:center;">now playing</p>
+        <div class="card-assembly has-below" data-shape="idle">
+          <div class="flank flank-left"><span class="time-only">9:41</span></div>
+          <div class="cutout"></div>
+          <div class="flank flank-right"><span class="status-dots"><span class="status-dot football dim"></span><span class="status-dot news filled active"></span><span class="status-dot weather dim"></span></span></div>
+          <div class="below-block idle-peek">
+            <div class="peek-content">
+              <div class="media-row">
+                <div class="media-track">
+                  <span class="media-art">🎵</span>
+                  <span class="media-meta"><span class="media-title">Second Nature</span><span class="media-subtitle">Bicep</span></span>
+                </div>
+                <div class="media-transport">
+                  <span>▶</span>
+                  <span class="media-bar"><span class="media-bar-fill"></span></span>
+                  <span class="media-time">1:48</span>
+                </div>
+              </div>
+              <span class="idle-peek-timeline" style="--day-progress:58%"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div>
+        <p class="stage-label" style="margin-bottom:8px; text-align:center;">live match, ambient</p>
+        <div class="card-assembly has-below" data-shape="idle">
+          <div class="flank flank-left"><span class="time-only">9:41</span></div>
+          <div class="cutout"></div>
+          <div class="flank flank-right"><span class="status-dots"><span class="status-dot football filled active"></span><span class="status-dot news dim"></span><span class="status-dot weather dim"></span></span></div>
+          <div class="below-block idle-peek">
+            <div class="peek-content">
+              <div class="idle-reveal-scorecard">
+                <div class="sc-head"><span class="chip chip-live"><span class="live-dot"></span>Live</span><span class="chip clock-pill">67'</span></div>
+                <div class="idle-reveal-label">ARS 1–1 PSG</div>
+              </div>
+              <span class="idle-peek-timeline" style="--day-progress:58%"></span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption-note">The idle rail's own width formula (cutout + 2×85px, scale-adjusted) stays
+    unchanged while a peek is open — only the below-block grows underneath it, exactly like a real
+    notification's below-block.</p>
+
+  <!-- ---- 1.2 notification cards per origin ---- -->
+  <div class="subhead" style="margin-top:46px;">
+    <h3 class="sub-title"><span class="num">1.2</span> Notification cards, by origin</h3>
+    <p class="sub-copy">Four representative origins — every card shares the same
+      compact/expanded shell (<code>NotificationBody.tsx</code>), differing in masthead kicker,
+      accent identity, and content template. Toggle Compact/Expanded per card; the expanded panel is
+      the <code>Manifest</code> disclosure (⌃⇧N).</p>
+  </div>
+
+  <!-- Agent / generic origin -->
+  <div class="origincard switcher">
+    <input type="radio" name="o-agent" id="o-agent-c" checked>
+    <input type="radio" name="o-agent" id="o-agent-x">
+    <div class="stage-label-row">
+      <span class="stage-label">agent origin — claude code</span>
+      <div class="state-switch">
+        <label for="o-agent-c" style="background:var(--primary);color:#fff;" onclick="">Compact</label>
+        <label for="o-agent-x">Expanded</label>
+      </div>
+    </div>
+    <style>
+      #o-agent-c:checked ~ .stg .p-c{display:block;} #o-agent-c:checked ~ .stg .p-x{display:none;}
+      #o-agent-x:checked ~ .stg .p-c{display:none;} #o-agent-x:checked ~ .stg .p-x{display:block;}
+      #o-agent-c:checked ~ .state-switch label[for=o-agent-c]{background:var(--primary);color:#fff;}
+      #o-agent-c:checked ~ .state-switch label[for=o-agent-x]{background:transparent;color:var(--page-dim);}
+      #o-agent-x:checked ~ .state-switch label[for=o-agent-x]{background:var(--primary);color:#fff;}
+      #o-agent-x:checked ~ .state-switch label[for=o-agent-c]{background:transparent;color:var(--page-dim);}
+    </style>
+    <div class="stage stg">
+      <div class="stage-inner">
+        <div class="card-assembly has-below high" data-shape="full">
+          <div class="flank flank-left"></div>
+          <div class="cutout"></div>
+          <div class="flank flank-right"></div>
+          <div class="below-block origin-wash" style="--cat:#d97757; --cat-deep:rgba(217,119,87,.15);">
+            <div class="p-c panel">
+              <div class="compact">
+                <div class="masthead-row">
+                  <div class="masthead"><span class="dot"></span>agent</div>
+                  <div class="stamp">Now</div>
+                </div>
+                <div class="title headline">Agent needs input</div>
+                <div class="notif-subtitle-row"><span class="notif-subtitle">Claude Code · notchtap</span></div>
+                <div class="notif-body">Approval needed to run a command</div>
+                <div class="detail-facts">
+                  <span class="fact-pill tone-danger"><span class="fp-label">TOOL</span>rm<span class="fp-tag">DESTRUCTIVE</span></span>
+                </div>
+                <div class="compact-hint"><kbd>⌃⇧N</kbd> more</div>
+              </div>
+              <div class="ttl-bar" style="--qn:3;">
+                <span class="ttl-seg done"></span>
+                <span class="ttl-seg current"><span class="ttl-fill" style="transform:scaleX(.4)"></span></span>
+                <span class="ttl-seg"></span>
+              </div>
+            </div>
+            <div class="p-x panel" style="display:none;">
+              <div class="compact expanded">
+                <div class="masthead-row">
+                  <div class="masthead"><span class="dot"></span>agent</div>
+                  <div class="stamp">Now</div>
+                </div>
+                <div class="title headline">Agent needs input</div>
+                <div class="notif-subtitle-row"><span class="notif-subtitle">Claude Code · notchtap</span></div>
+                <div class="notif-body">Approval needed to run a command</div>
+                <div class="detail-facts">
+                  <span class="fact-pill tone-danger"><span class="fp-label">TOOL</span>rm<span class="fp-tag">DESTRUCTIVE</span></span>
+                </div>
+              </div>
+              <div class="manifest-wrap expanded">
+                <div class="manifest">
+                  <div class="manifest-block">
+                    <div class="manifest-label">Message</div>
+                    <div class="manifest-text">Claude wants to run <code>rm -rf dist/</code> to clear the build output before a fresh `just build-web`. Approve to continue, or handle it from the terminal.</div>
+                    <div class="manifest-footer"><span class="manifest-hint"><kbd>⌃⇧N</kbd> collapse</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="ttl-bar" style="--qn:3;">
+                <span class="ttl-seg done"></span>
+                <span class="ttl-seg current"><span class="ttl-fill" style="transform:scaleX(.4)"></span></span>
+                <span class="ttl-seg"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Football origin -->
+  <div class="origincard switcher" style="margin-top:26px;">
+    <input type="radio" name="o-fb" id="o-fb-c" checked>
+    <input type="radio" name="o-fb" id="o-fb-x">
+    <div class="stage-label-row">
+      <span class="stage-label">football origin — live match card</span>
+      <div class="state-switch">
+        <label for="o-fb-c">Compact</label>
+        <label for="o-fb-x">Expanded</label>
+      </div>
+    </div>
+    <style>
+      #o-fb-c:checked ~ .stg .p-c{display:block;} #o-fb-c:checked ~ .stg .p-x{display:none;}
+      #o-fb-x:checked ~ .stg .p-c{display:none;} #o-fb-x:checked ~ .stg .p-x{display:block;}
+      #o-fb-c:checked ~ .state-switch label[for=o-fb-c]{background:var(--primary);color:#fff;}
+      #o-fb-x:checked ~ .state-switch label[for=o-fb-x]{background:var(--primary);color:#fff;}
+    </style>
+    <div class="stage stg">
+      <div class="stage-inner">
+        <div class="card-assembly has-below high" data-shape="full">
+          <div class="flank flank-left"></div>
+          <div class="cutout"></div>
+          <div class="flank flank-right"></div>
+          <div class="below-block">
+            <div class="p-c panel">
+              <div class="compact">
+                <div class="masthead-row">
+                  <div class="masthead"><span class="dot" style="background:#7fe08d;box-shadow:0 0 6px #7fe08d;"></span>football</div>
+                  <div class="stamp">Live</div>
+                </div>
+                <div class="title headline">Goal — K. Havertz 78'</div>
+                <div class="score-block">
+                  <div class="sc-head">
+                    <span class="chip chip-league">UCL</span>
+                    <span class="chip chip-live"><span class="live-dot"></span>Live</span>
+                    <span class="chip clock-pill">78'</span>
+                  </div>
+                  <div class="score-row">
+                    <div class="side"><span class="crest">ARS</span></div>
+                    <span class="score">1<span class="dash">–</span>1</span>
+                    <div class="side"><span class="crest">PSG</span></div>
+                  </div>
+                </div>
+                <div class="compact-hint"><kbd>⌃⇧N</kbd> more</div>
+              </div>
+            </div>
+            <div class="p-x panel" style="display:none;">
+              <div class="compact expanded">
+                <div class="masthead-row">
+                  <div class="masthead"><span class="dot" style="background:#7fe08d;box-shadow:0 0 6px #7fe08d;"></span>football</div>
+                  <div class="stamp">Live</div>
+                </div>
+                <div class="title headline">Goal — K. Havertz 78'</div>
+                <div class="score-block">
+                  <div class="sc-head">
+                    <span class="chip chip-league">UCL</span>
+                    <span class="chip chip-live"><span class="live-dot"></span>Live</span>
+                    <span class="chip clock-pill">78'</span>
+                  </div>
+                  <div class="score-row">
+                    <div class="side"><span class="crest">ARS</span></div>
+                    <span class="score">1<span class="dash">–</span>1</span>
+                    <div class="side"><span class="crest">PSG</span></div>
+                  </div>
+                  <div class="cards-line">ARS 1Y0R · PSG 0Y0R</div>
+                </div>
+              </div>
+              <div class="manifest-wrap expanded">
+                <div class="manifest">
+                  <div class="manifest-block">
+                    <div class="manifest-label">Message</div>
+                    <div class="manifest-text">Goal — K. Havertz 78'</div>
+                    <div class="manifest-footer"><span class="manifest-hint"><kbd>⌃⇧N</kbd> collapse</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption-note">The live match card is a persistent, self-updating card, not a one-shot —
+    it renders through <code>FootballHeroCard</code>, which deliberately has no TTL bar or fact pills
+    (the score row already carries every fact the wire has). A goal also triggers the shell-level
+    confetti/ring celebration (<code>.pulse-goal</code>) — not represented here since this is a state
+    reference, not a motion demo.</p>
+
+  <!-- Weather origin -->
+  <div class="origincard switcher" style="margin-top:26px;">
+    <input type="radio" name="o-wx" id="o-wx-c" checked>
+    <input type="radio" name="o-wx" id="o-wx-x">
+    <div class="stage-label-row">
+      <span class="stage-label">weather origin — alert card</span>
+      <div class="state-switch">
+        <label for="o-wx-c">Compact</label>
+        <label for="o-wx-x">Expanded</label>
+      </div>
+    </div>
+    <style>
+      #o-wx-c:checked ~ .stg .p-c{display:block;} #o-wx-c:checked ~ .stg .p-x{display:none;}
+      #o-wx-x:checked ~ .stg .p-c{display:none;} #o-wx-x:checked ~ .stg .p-x{display:block;}
+      #o-wx-c:checked ~ .state-switch label[for=o-wx-c]{background:var(--primary);color:#fff;}
+      #o-wx-x:checked ~ .state-switch label[for=o-wx-x]{background:var(--primary);color:#fff;}
+    </style>
+    <div class="stage stg">
+      <div class="stage-inner">
+        <div class="card-assembly has-below medium" data-shape="full">
+          <div class="flank flank-left"></div>
+          <div class="cutout"></div>
+          <div class="flank flank-right"></div>
+          <div class="below-block wx-card wx-rain">
+            <div class="p-c panel">
+              <div class="compact">
+                <img class="wx-icon" alt="" style="background:none;" />
+                <span style="position:absolute; top:10px; right:14px; font-size:34px; z-index:0;">🌧️</span>
+                <div class="masthead-row">
+                  <div class="masthead"><span class="dot" style="background:#f0c46a;box-shadow:0 0 6px #f0c46a;"></span>weather</div>
+                  <div class="stamp">Live</div>
+                </div>
+                <div class="title headline">Rain expected within the hour</div>
+                <div class="notif-body">78% chance of rain in the next 45 minutes. Current: 17°C, overcast.</div>
+                <div class="compact-hint"><kbd>⌃⇧N</kbd> more</div>
+              </div>
+              <div class="ttl-bar"><span class="ttl-seg current"><span class="ttl-fill" style="transform:scaleX(.7)"></span></span></div>
+            </div>
+            <div class="p-x panel" style="display:none;">
+              <div class="compact expanded">
+                <span style="position:absolute; top:10px; right:14px; font-size:34px; z-index:0;">🌧️</span>
+                <div class="masthead-row">
+                  <div class="masthead"><span class="dot" style="background:#f0c46a;box-shadow:0 0 6px #f0c46a;"></span>weather</div>
+                  <div class="stamp">Live</div>
+                </div>
+                <div class="title headline">Rain expected within the hour</div>
+                <div class="notif-body">78% chance of rain in the next 45 minutes. Current: 17°C, overcast.</div>
+              </div>
+              <div class="manifest-wrap expanded">
+                <div class="manifest">
+                  <div class="manifest-block">
+                    <div class="manifest-label">Message</div>
+                    <div class="manifest-text">78% chance of rain in the next 45 minutes. Current: 17°C, overcast.</div>
+                    <div class="manifest-footer"><span class="manifest-hint"><kbd>⌃⇧N</kbd> collapse</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="ttl-bar"><span class="ttl-seg current"><span class="ttl-fill" style="transform:scaleX(.7)"></span></span></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- News origin -->
+  <div class="origincard switcher" style="margin-top:26px;">
+    <input type="radio" name="o-nw" id="o-nw-c" checked>
+    <input type="radio" name="o-nw" id="o-nw-x">
+    <div class="stage-label-row">
+      <span class="stage-label">news origin — headline card</span>
+      <div class="state-switch">
+        <label for="o-nw-c">Compact</label>
+        <label for="o-nw-x">Expanded</label>
+      </div>
+    </div>
+    <style>
+      #o-nw-c:checked ~ .stg .p-c{display:block;} #o-nw-c:checked ~ .stg .p-x{display:none;}
+      #o-nw-x:checked ~ .stg .p-c{display:none;} #o-nw-x:checked ~ .stg .p-x{display:block;}
+      #o-nw-c:checked ~ .state-switch label[for=o-nw-c]{background:var(--primary);color:#fff;}
+      #o-nw-x:checked ~ .state-switch label[for=o-nw-x]{background:var(--primary);color:#fff;}
+    </style>
+    <div class="stage stg">
+      <div class="stage-inner">
+        <div class="card-assembly has-below low" data-shape="full">
+          <div class="flank flank-left"></div>
+          <div class="cutout"></div>
+          <div class="flank flank-right"></div>
+          <div class="below-block news-shade" style="--cat:#5fd4e8; --cat-deep:rgba(95,212,232,.15); --cat-pill:rgba(95,212,232,.13);">
+            <div class="p-c panel">
+              <div class="compact">
+                <div class="masthead-row">
+                  <div class="masthead"><span class="dot"></span>The Verge</div>
+                  <div class="stamp">Wire</div>
+                </div>
+                <div class="title headline">Apple ships v7 of its coding-agent notification layer</div>
+                <div class="notif-meta-row">
+                  <span class="chip chip-category">Tech</span>
+                  <span class="notif-time-inline">12m ago</span>
+                </div>
+                <div class="compact-hint"><kbd>⌃⇧N</kbd> more</div>
+              </div>
+              <div class="ttl-bar" style="--qn:4;">
+                <span class="ttl-seg done"></span><span class="ttl-seg done"></span>
+                <span class="ttl-seg current"><span class="ttl-fill" style="transform:scaleX(.55)"></span></span>
+                <span class="ttl-seg"></span>
+              </div>
+            </div>
+            <div class="p-x panel" style="display:none;">
+              <div class="compact expanded">
+                <div class="masthead-row">
+                  <div class="masthead"><span class="dot"></span>The Verge</div>
+                  <div class="stamp">Wire</div>
+                </div>
+                <div class="title headline">Apple ships v7 of its coding-agent notification layer</div>
+                <div class="notif-meta-row">
+                  <span class="chip chip-category">Tech</span>
+                  <span class="notif-time-inline">12m ago</span>
+                </div>
+              </div>
+              <div class="manifest-wrap expanded">
+                <div class="manifest">
+                  <div class="manifest-block">
+                    <div class="manifest-label">Summary</div>
+                    <div class="manifest-text">The update adds a loopback Agent Adapter layer accepting lifecycle events from Claude Code, Codex, Kimi, and OpenCode — surfaced as a persistent status board rather than one card per event.</div>
+                    <div class="manifest-footer"><span class="manifest-hint"><kbd>⌃⇧O</kbd> read · <kbd>⌃⇧N</kbd> collapse</span></div>
+                  </div>
+                </div>
+              </div>
+              <div class="ttl-bar" style="--qn:4;">
+                <span class="ttl-seg done"></span><span class="ttl-seg done"></span>
+                <span class="ttl-seg current"><span class="ttl-fill" style="transform:scaleX(.55)"></span></span>
+                <span class="ttl-seg"></span>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <p class="caption-note">The floor strip on every one-shot card is the TTL/queue bar — segmented by
+    the current rotation batch (<code>queueTotal</code>/<code>queueDone</code>), bright segments still
+    to come, dim segments already burned through, draining right-to-left within the current segment.
+    A live match and the Agent Board's hero both render with no TTL bar at all — they are standing
+    presences, not one-shot rotations.</p>
+
+  <!-- ---- 1.3 Agent Board ---- -->
+  <div class="subhead" style="margin-top:46px;">
+    <h3 class="sub-title"><span class="num">1.3</span> Agent Board <span style="font-weight:500;color:var(--page-dim);font-size:11px;">— post board-motion-polish</span></h3>
+    <p class="sub-copy"><code>src/components/AgentBoard.tsx</code> — a second top-level surface
+      (<code>App.tsx</code> swaps it in for the status rail whenever the independently-updating
+      agent-state channel holds at least one session and the engine isn't Paused). The
+      highest-ranked session renders as a rich hero (<code>AgentHeroCard</code>, the same
+      masthead/stamp/fact-pill template every notification card uses); every OTHER session renders as
+      a compact one-line row underneath — never a "+N" collapse.</p>
+  </div>
+  <div class="stage-shell switcher">
+    <input type="radio" name="ab" id="ab-1" checked>
+    <input type="radio" name="ab" id="ab-n">
+    <input type="radio" name="ab" id="ab-x">
+    <div class="stage-label-row">
+      <span class="stage-label">state</span>
+      <div class="state-switch">
+        <label for="ab-1">Resting — one session</label>
+        <label for="ab-n">Resting — multi-session</label>
+        <label for="ab-x">Hover-expanded</label>
+      </div>
+    </div>
+    <div class="stage">
+      <div class="stage-inner switcher-panels">
+
+        <div class="panel panel-ab1">
+          <div class="card-assembly has-below high" data-shape="full">
+            <div class="flank flank-left"><span class="time-only">9:41</span></div>
+            <div class="cutout"></div>
+            <div class="flank flank-right"><span class="status-dots"><span class="status-dot football filled active"></span><span class="status-dot news dim"></span><span class="status-dot weather filled active"></span></span></div>
+            <div class="below-block origin-wash agent-board hero-only" style="--cat:#d97757; --cat-deep:rgba(217,119,87,.15);">
+              <div class="agent-board-primary">
+                <div class="compact">
+                  <div class="masthead-row">
+                    <div class="masthead"><span class="agent-dot large agent-waiting"></span><span class="agent-runtime-tick" style="background:#d97757;"></span>agent</div>
+                    <div class="stamp">Now</div>
+                  </div>
+                  <div class="title headline">Agent needs input</div>
+                  <div class="notif-subtitle-row"><span class="notif-subtitle">Claude Code · notchtap</span></div>
+                  <div class="notif-body">Approval needed to run a command</div>
+                  <div class="detail-facts">
+                    <span class="fact-pill tone-danger"><span class="fp-label">TOOL</span>rm<span class="fp-tag">DESTRUCTIVE</span></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel panel-abn">
+          <div class="card-assembly has-below high" data-shape="full">
+            <div class="flank flank-left"><span class="time-only">9:41</span></div>
+            <div class="cutout"></div>
+            <div class="flank flank-right"><span class="status-dots"><span class="status-dot football filled active"></span><span class="status-dot news dim"></span><span class="status-dot weather filled active"></span></span></div>
+            <div class="below-block origin-wash agent-board" style="--cat:#d97757; --cat-deep:rgba(217,119,87,.15);">
+              <div class="agent-board-primary">
+                <div class="compact">
+                  <div class="masthead-row">
+                    <div class="masthead"><span class="agent-dot large agent-waiting"></span><span class="agent-runtime-tick" style="background:#d97757;"></span>agent</div>
+                    <div class="stamp">Now</div>
+                  </div>
+                  <div class="title headline">Agent needs input</div>
+                  <div class="notif-subtitle-row"><span class="notif-subtitle">Claude Code · notchtap</span></div>
+                  <div class="notif-body">Approval needed to run a command</div>
+                  <div class="detail-facts">
+                    <span class="fact-pill tone-danger"><span class="fp-label">TOOL</span>rm<span class="fp-tag">DESTRUCTIVE</span></span>
+                  </div>
+                </div>
+              </div>
+              <div class="agent-board-rows">
+                <div class="agent-row agent-working">
+                  <span class="agent-dot" style="background:#10a37f;"></span><span class="agent-runtime-tick" style="background:#10a37f;"></span>
+                  <span class="agent-row-runtime" style="color:#10a37f;">Codex</span>
+                  <span class="agent-row-project">notchtap</span>
+                  <span class="agent-row-state">Working</span>
+                  <span class="agent-row-elapsed">3m</span>
+                </div>
+                <div class="agent-row agent-completed">
+                  <span class="agent-dot" style="background:#f5f7fa;"></span><span class="agent-runtime-tick" style="background:#f5f7fa;"></span>
+                  <span class="agent-row-runtime" style="color:#f5f7fa;">Kimi</span>
+                  <span class="agent-row-project">kharcha</span>
+                  <span class="agent-row-state">Completed</span>
+                  <span class="agent-row-elapsed">41s</span>
+                </div>
+                <div class="agent-row agent-failed">
+                  <span class="agent-dot" style="background:#9d7cd8;"></span><span class="agent-runtime-tick" style="background:#9d7cd8;"></span>
+                  <span class="agent-row-runtime" style="color:#9d7cd8;">OpenCode</span>
+                  <span class="agent-row-project">shared-ui</span>
+                  <span class="agent-row-state">Failed</span>
+                  <span class="agent-row-elapsed">2m</span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="panel panel-abx">
+          <div class="card-assembly has-below high" data-shape="full">
+            <div class="flank flank-left"><span class="time-only">9:41</span></div>
+            <div class="cutout"></div>
+            <div class="flank flank-right"><span class="status-dots"><span class="status-dot football filled active"></span><span class="status-dot news dim"></span><span class="status-dot weather filled active"></span></span></div>
+            <div class="below-block origin-wash agent-board" style="--cat:#d97757; --cat-deep:rgba(217,119,87,.15);">
+              <div class="agent-board-primary">
+                <div class="compact">
+                  <div class="masthead-row">
+                    <div class="masthead"><span class="agent-dot large agent-waiting"></span><span class="agent-runtime-tick" style="background:#d97757;"></span>agent</div>
+                    <div class="stamp">Now</div>
+                  </div>
+                  <div class="title headline">Agent needs input</div>
+                  <div class="notif-subtitle-row"><span class="notif-subtitle">Claude Code · notchtap</span></div>
+                  <div class="notif-body">Approval needed to run a command</div>
+                  <div class="detail-facts">
+                    <span class="fact-pill tone-danger"><span class="fp-label">TOOL</span>rm<span class="fp-tag">DESTRUCTIVE</span></span>
+                  </div>
+                </div>
+              </div>
+              <div class="agent-board-expanded-list">
+                <div class="agent-board-expanded-scroll">
+                  <div class="agent-expanded-row">
+                    <div class="agent-expanded-row-head">
+                      <span class="agent-dot" style="background:#10a37f;"></span><span class="agent-runtime-tick" style="background:#10a37f;"></span>
+                      <span class="agent-row-runtime" style="color:#10a37f;">Codex</span>
+                      <span class="agent-row-project">notchtap</span>
+                      <span class="agent-row-state" style="color:#0a84ff;">Working</span>
+                      <span class="agent-row-elapsed">3m</span>
+                    </div>
+                    <div class="agent-expanded-row-summary">Running <code>just test-all</code> before the release build</div>
+                    <div class="agent-expanded-row-meta">
+                      <span class="agent-expanded-meta-item">~/projects/notchtap</span>
+                      <span class="agent-expanded-meta-item">mac-mini</span>
+                    </div>
+                    <div class="agent-expanded-history" data-testid="agent-expanded-history">
+                      <ul class="agent-expanded-history-list">
+                        <li class="agent-expanded-history-entry"><span class="agent-expanded-history-state">Starting</span><span class="agent-expanded-history-elapsed">3m ago</span></li>
+                      </ul>
+                    </div>
+                  </div>
+                  <div class="agent-expanded-row">
+                    <div class="agent-expanded-row-head">
+                      <span class="agent-dot" style="background:#f5f7fa;"></span><span class="agent-runtime-tick" style="background:#f5f7fa;"></span>
+                      <span class="agent-row-runtime" style="color:#f5f7fa;">Kimi</span>
+                      <span class="agent-row-project">kharcha</span>
+                      <span class="agent-row-state" style="color:#7fe08d;">Completed</span>
+                      <span class="agent-row-elapsed">41s</span>
+                    </div>
+                    <div class="agent-expanded-row-summary">Turn completed — awaiting input</div>
+                  </div>
+                  <div class="agent-expanded-row">
+                    <div class="agent-expanded-row-head">
+                      <span class="agent-dot" style="background:#9d7cd8;"></span><span class="agent-runtime-tick" style="background:#9d7cd8;"></span>
+                      <span class="agent-row-runtime" style="color:#9d7cd8;">OpenCode</span>
+                      <span class="agent-row-project">shared-ui</span>
+                      <span class="agent-row-state" style="color:#ff6b57;">Failed</span>
+                      <span class="agent-row-elapsed">2m</span>
+                    </div>
+                    <div class="agent-expanded-row-summary">Session ended with an error</div>
+                    <div class="agent-expanded-row-details">
+                      <span class="agent-expanded-detail"><span class="agent-expanded-detail-label">Exit</span>1<span style="margin-left:3px;color:#ff6b57;font:700 7px/1 var(--font-mono);">ERROR</span></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  <p class="caption-note">
+    <b>The hero for the primary session stays mounted in both resting and expanded states</b> — hover
+    only swaps what renders <i>below</i> it (the compact rows morph into the richer scrollable list,
+    with per-row hover-disclosed transition history); a one-session board simply keeps its hero as-is
+    on hover, never shrinking or swapping content out. The resting↔expanded swap is one continuous
+    grid-stacked morph (both branches occupy the same cell, so the row height traces
+    <code>max(outgoing, incoming)</code>) rather than a collapse-then-grow. <b>Working-only sessions no
+    longer auto-summon the Board</b> — <code>[agents] board_show_working</code> defaults to
+    <code>false</code>, so the Board stays out of the way until a session actually needs the operator
+    (a permission/input request, a failure, or a just-finished turn); it still lists every retained
+    working session once it's up for another reason. The hero plays its own identity-swap fade only
+    when a <i>different</i> session becomes primary — an in-place state change (e.g. working →
+    needs-approval) morphs the accent color instead of replaying the whole block.</p>
+
+</section>
+
+<!-- ============================================================
+     PART 2 — SETTINGS
+     ============================================================ -->
+<section class="part" id="settings">
+  <div class="part-head">
+    <p class="part-kicker">Part 2</p>
+    <h2 class="part-title">Settings window</h2>
+    <p class="part-sub"><code>src/settings/SettingsApp.tsx</code> — a second, separate webview
+      (<code>settings.html</code>), the one place the app grants any <code>#[tauri::command]</code>
+      invokes at all, opted into per-command via <code>src-tauri/build.rs</code>. Twelve sections,
+      always in this order. Click a sidebar item below — this mock wires up the same one-section-
+      visible navigation the real window uses.</p>
+  </div>
+
+  <div class="settings-frame">
+    <input type="radio" name="sec" id="sec-general" checked>
+    <input type="radio" name="sec" id="sec-football">
+    <input type="radio" name="sec" id="sec-news">
+    <input type="radio" name="sec" id="sec-weather">
+    <input type="radio" name="sec" id="sec-connectors">
+    <input type="radio" name="sec" id="sec-agents">
+    <input type="radio" name="sec" id="sec-shortcuts">
+    <input type="radio" name="sec" id="sec-appearance">
+    <input type="radio" name="sec" id="sec-diagnostics">
+    <input type="radio" name="sec" id="sec-history">
+    <input type="radio" name="sec" id="sec-queue">
+    <input type="radio" name="sec" id="sec-about">
+
+    <div class="settings-window">
+      <aside class="settings-sidebar">
+        <div class="sidebar-brand"><span class="brand-mark">◆</span>notchtap</div>
+        <nav class="sidebar-nav">
+          <label class="nav-item" for="sec-general"><svg viewBox="0 0 24 24"><line x1="4" y1="7" x2="20" y2="7"/><circle cx="9" cy="7" r="2"/><line x1="4" y1="17" x2="20" y2="17"/><circle cx="16" cy="17" r="2"/></svg><span>General</span></label>
+          <label class="nav-item" for="sec-football"><svg viewBox="0 0 24 24"><path d="M12 3l2.5 6.5L21 12l-6.5 2.5L12 21l-2.5-6.5L3 12l6.5-2.5z"/></svg><span>Football</span></label>
+          <label class="nav-item" for="sec-news"><svg viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="1"/><line x1="7" y1="9" x2="13" y2="9"/><line x1="7" y1="13" x2="17" y2="13"/><line x1="7" y1="16" x2="17" y2="16"/></svg><span>News</span></label>
+          <label class="nav-item" for="sec-weather"><svg viewBox="0 0 24 24"><circle cx="9" cy="9" r="3.5"/><path d="M6 17h11a3 3 0 0 0 .5-5.96A5 5 0 0 0 8 12"/></svg><span>Weather</span></label>
+          <label class="nav-item" for="sec-connectors"><svg viewBox="0 0 24 24"><circle cx="8" cy="15" r="3.2"/><path d="M10.3 12.7 18 5l2 2-2 2 1.5 1.5L18 12"/></svg><span>Connectors &amp; Keys</span></label>
+          <label class="nav-item" for="sec-agents"><svg viewBox="0 0 24 24"><rect x="5" y="8" width="14" height="11" rx="2"/><circle cx="9.5" cy="13.5" r="1.2"/><circle cx="14.5" cy="13.5" r="1.2"/><line x1="12" y1="8" x2="12" y2="4"/></svg><span>Agents</span></label>
+          <label class="nav-item" for="sec-shortcuts"><svg viewBox="0 0 24 24"><path d="M8 7a2 2 0 1 1 2 2H7a2 2 0 1 1 2-2v10a2 2 0 1 1-2-2h3a2 2 0 1 1-2 2"/></svg><span>Shortcuts</span></label>
+          <label class="nav-item" for="sec-appearance"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="9" cy="10" r="1"/><circle cx="14" cy="9" r="1"/><circle cx="15" cy="14" r="1"/></svg><span>Appearance</span></label>
+          <label class="nav-item" for="sec-diagnostics"><svg viewBox="0 0 24 24"><path d="M7 3h10v4a3 3 0 0 1 0 6v4H7v-4a3 3 0 0 1 0-6z"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="9" y1="16" x2="15" y2="16"/></svg><span>Diagnostics</span></label>
+          <label class="nav-item" for="sec-history"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/></svg><span>History</span></label>
+          <label class="nav-item" for="sec-queue"><svg viewBox="0 0 24 24"><line x1="5" y1="7" x2="19" y2="7"/><line x1="5" y1="12" x2="19" y2="12"/><line x1="5" y1="17" x2="14" y2="17"/></svg><span>Queue</span></label>
+          <label class="nav-item" for="sec-about"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><line x1="12" y1="11" x2="12" y2="16"/><circle cx="12" cy="8" r=".6" fill="currentColor"/></svg><span>About</span></label>
+        </nav>
+        <div class="sidebar-meta">settings / v5</div>
+      </aside>
+
+      <div class="settings-pane">
+
+        <!-- GENERAL -->
+        <div class="sec-panel general">
+          <header class="content-header">
+            <div class="section-index">Settings / 01</div>
+            <h1 class="section-h1">General</h1>
+            <p class="section-desc">Control startup, the local listener, and how notifications rotate.</p>
+          </header>
+          <div class="section-scroll">
+            <div class="stack">
+              <div class="group">
+                <div class="group-head"><p class="group-title">Engine</p></div>
+                <div class="group-body">
+                  <div class="crow"><div><span class="cname">Start paused</span><span class="chelp">Launch with promotion paused. The tray will read Resume.</span></div><div class="toggle"></div></div>
+                  <div class="crow"><div><span class="cname">Hide overlay when idle</span><span class="chelp">Resting state shows the bare notch instead of the clock and status dots. Applies after Save &amp; Relaunch.</span></div><div class="toggle"></div></div>
+                  <div class="crow"><div><span class="cname">Record notification history</span><span class="chelp">Records notification content to ~/.config/notchtap/history.jsonl. Applies after Save &amp; Relaunch.</span></div><div class="toggle on"></div></div>
+                  <div class="crow"><div><span class="cname">Now playing</span><span class="chelp">Show what's currently playing in the idle hover peek. Requires the vendored media adapter.</span></div><div class="toggle"></div></div>
+                  <div class="crow"><div><span class="cname">Listener port</span><span class="chelp">Local loopback port used by the notchtap CLI.</span></div><div class="numfield"><input value="9789" readonly><span class="unit">PORT</span></div></div>
+                  <div class="crow"><div><span class="cname">Test notification</span><span class="chelp">Send a manual push to the overlay.</span></div><button class="btn btn-outline">Send test notification</button></div>
+                </div>
+              </div>
+              <div class="group">
+                <div class="group-head"><p class="group-title">Rotation and priority</p><p class="group-desc">Waiting items promote high → medium → low. A strictly-higher-priority arrival interrupts the visible item immediately; equal priority never preempts.</p></div>
+                <div class="group-body">
+                  <div class="crow"><div><span class="cname">Rotation seconds</span><span class="chelp">How long a one-shot notification occupies the slot.</span></div><div class="numfield"><input value="8" readonly><span class="unit">SEC</span></div></div>
+                  <div class="crow"><div><span class="cname">Queue cap per priority tier</span><span class="chelp">Maximum waiting items kept independently in each priority tier.</span></div><div class="numfield"><input value="50" readonly><span class="unit">ITEMS</span></div></div>
+                  <div class="crow"><div><span class="cname">Manual push priority</span><span class="chelp">Fallback for a CLI push that doesn't set its own priority.</span></div><div class="segmented"><span class="segbtn">Low</span><span class="segbtn is-selected">Med</span><span class="segbtn">High</span></div></div>
+                </div>
+              </div>
+              <div class="group">
+                <div class="group-head"><p class="group-title">Rotation order</p><p class="group-desc">Same-tier tie-break, checked before arrival order.</p></div>
+                <div class="group-body">
+                  <ul class="rotlist">
+                    <li><span class="rank">1</span><span class="rname">Agents</span><span class="vis"><span class="rotbtn">▲</span><span class="rotbtn">▼</span></span></li>
+                    <li><span class="rank">2</span><span class="rname">Football</span><span class="vis"><span class="rotbtn">▲</span><span class="rotbtn">▼</span></span></li>
+                    <li><span class="rank">3</span><span class="rname">News</span><span class="vis"><span class="rotbtn">▲</span><span class="rotbtn">▼</span></span></li>
+                    <li><span class="rank">4</span><span class="rname">Weather</span><span class="vis"><span class="rotbtn">▲</span><span class="rotbtn">▼</span></span></li>
+                    <li><span class="rank">5</span><span class="rname">Manual (CLI)</span><span class="vis"><span class="rotbtn">▲</span><span class="rotbtn">▼</span></span></li>
+                  </ul>
+                </div>
+              </div>
+              <div class="group">
+                <div class="group-head"><p class="group-title">Silenced</p><p class="group-desc">Medium/Low events buffer during this daily window; a High event still promotes.</p></div>
+                <div class="group-body">
+                  <div class="crow"><div><span class="cname">Silent period</span><span class="chelp">Buffer Medium/Low notifications during the window below, every day.</span></div><div class="toggle"></div></div>
+                  <div class="trow"><span class="cname" style="display:block;margin-bottom:6px;">Silent period window</span><input class="numfield" style="width:120px;" value="00:00-10:00" readonly><div class="txtcaption">start-end, 24h</div></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <footer class="settings-footer">
+            <button class="btn btn-default">Save &amp; Relaunch</button>
+            <button class="btn btn-outline">Reset</button>
+            <button class="btn btn-outline">Reset to defaults</button>
+          </footer>
+        </div>
+
+        <!-- FOOTBALL -->
+        <div class="sec-panel football">
+          <header class="content-header">
+            <div class="section-index">Settings / 02</div>
+            <h1 class="section-h1">Football</h1>
+            <p class="section-desc">Choose the leagues and cadence used for live score checks.</p>
+          </header>
+          <div class="section-scroll">
+            <div class="group">
+              <div class="group-head"><p class="group-title">Score polling</p></div>
+              <div class="group-body">
+                <div class="crow" style="padding-top:12px;"><span class="metachip"><span class="dotswatch" style="background:#7fe08d;"></span>Football</span><span></span></div>
+                <div class="crow"><div><span class="cname">ESPN scores</span><span class="chelp">Poll watched leagues for score and match-state changes.</span></div><div class="toggle on"></div></div>
+                <div class="trow"><span class="cname" style="display:block;margin-bottom:6px;">Leagues</span><textarea class="txtarea" readonly>eng.1
+uefa.champions</textarea><div class="txtcaption">one league code per line</div></div>
+                <div class="crow"><div><span class="cname">Poll interval</span><span class="chelp">How often enabled leagues are checked.</span></div><div class="numfield"><input value="60" readonly><span class="unit">SEC</span></div></div>
+                <div class="crow"><div><span class="cname">Rotation seconds</span><span class="chelp">How long a score card occupies the slot once shown.</span></div><div class="numfield"><input value="8" readonly><span class="unit">SEC</span></div></div>
+                <div class="crow"><div><span class="cname">Live match card</span><span class="chelp">Show one live match as a single updating card instead of a burst of one-shot cards.</span></div><div class="toggle on"></div></div>
+                <div class="crow"><div><span class="cname">Richer match events</span><span class="chelp">Poll for fouls, offsides, VAR checks, and substitutions. Heavier polling.</span></div><div class="toggle"></div></div>
+                <div class="crow"><div><span class="cname">Priority</span><span class="chelp">Which tier a waiting score/match-state update promotes in.</span></div><div class="segmented"><span class="segbtn">Low</span><span class="segbtn is-selected">Med</span><span class="segbtn">High</span></div></div>
+                <div class="crow"><div><span class="cname">Test football notification</span><span class="chelp">Send a one-off football notification to the overlay.</span></div><button class="btn btn-outline">Send test notification</button></div>
+              </div>
+            </div>
+          </div>
+          <footer class="settings-footer"><button class="btn btn-default">Save &amp; Relaunch</button><button class="btn btn-outline">Reset</button><button class="btn btn-outline">Reset to defaults</button></footer>
+        </div>
+
+        <!-- NEWS -->
+        <div class="sec-panel news">
+          <header class="content-header">
+            <div class="section-index">Settings / 03</div>
+            <h1 class="section-h1">News</h1>
+            <p class="section-desc">Manage RSS sources and the pace of headline delivery.</p>
+          </header>
+          <div class="section-scroll">
+            <div class="group">
+              <div class="group-head"><p class="group-title">RSS polling</p></div>
+              <div class="group-body">
+                <div class="crow" style="padding-top:12px;"><div><span class="cname">RSS news</span><span class="chelp">Poll configured feeds and rotate fresh headlines through the slot.</span></div><div class="toggle on"></div></div>
+                <div class="trow"><span class="cname" style="display:block;margin-bottom:6px;">Feeds</span><textarea class="txtarea" readonly>https://www.theverge.com/rss/index.xml</textarea><div class="txtcaption">one feed URL per line</div></div>
+                <div class="trow"><span class="cname" style="display:block;margin-bottom:6px;">Topics</span><textarea class="txtarea" readonly>aston villa transfers</textarea><div class="txtcaption">one topic per line</div></div>
+                <div class="crow"><div><span class="cname">Poll interval</span><span class="chelp">How often feeds/topics are checked.</span></div><div class="numfield"><input value="600" readonly><span class="unit">SEC</span></div></div>
+                <div class="crow"><div><span class="cname">Headline rotation</span><span class="chelp">How long each headline occupies the slot.</span></div><div class="numfield"><input value="8" readonly><span class="unit">SEC</span></div></div>
+                <div class="crow"><div><span class="cname">Maximum per poll</span><span class="chelp">Burst cap: collecting more than this in one interval drops the extras.</span></div><div class="numfield"><input value="6" readonly><span class="unit">ITEMS</span></div></div>
+                <div class="crow"><div><span class="cname">Priority</span><span class="chelp">Which tier a waiting headline promotes in.</span></div><div class="segmented"><span class="segbtn">Low</span><span class="segbtn is-selected">Med</span><span class="segbtn">High</span></div></div>
+                <div class="crow"><div><span class="cname">Test news notification</span><span class="chelp">Send a one-off news headline to the overlay.</span></div><button class="btn btn-outline">Send test notification</button></div>
+                <div class="trow"><span class="cname" style="display:block;margin-bottom:6px;">Search now</span><div style="display:flex;gap:7px;"><input class="numfield" style="width:100%;flex:1;" placeholder="e.g. aston villa transfers" readonly><button class="btn btn-outline">Search</button></div></div>
+                <div class="trow">
+                  <span class="cname" style="display:block;margin-bottom:6px;">Category colours</span>
+                  <div class="vis">
+                    <span class="metachip"><span class="dotswatch" style="background:#7c9df5;"></span>Politics</span>
+                    <span class="metachip"><span class="dotswatch" style="background:#5fd4e8;"></span>Tech</span>
+                    <span class="metachip"><span class="dotswatch" style="background:#7fe08d;"></span>Sports</span>
+                    <span class="metachip"><span class="dotswatch" style="background:#f0c46a;"></span>Business</span>
+                    <span class="metachip"><span class="dotswatch" style="background:#c99df0;"></span>World</span>
+                    <span class="metachip"><span class="dotswatch" style="background:#f2a2c8;"></span>Science</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <footer class="settings-footer"><button class="btn btn-default">Save &amp; Relaunch</button><button class="btn btn-outline">Reset</button><button class="btn btn-outline">Reset to defaults</button></footer>
+        </div>
+
+        <!-- WEATHER -->
+        <div class="sec-panel weather">
+          <header class="content-header">
+            <div class="section-index">Settings / 04</div>
+            <h1 class="section-h1">Weather</h1>
+            <p class="section-desc">Show ambient conditions in the idle rail and alert on rain and temperature thresholds.</p>
+          </header>
+          <div class="section-scroll">
+            <div class="group">
+              <div class="group-head"><p class="group-title">Weather</p><p class="group-desc">Keyless Open-Meteo polling — set your coordinates once.</p></div>
+              <div class="group-body">
+                <div class="crow" style="padding-top:12px;"><span class="metachip"><span class="dotswatch" style="background:#f0c46a;"></span>Weather</span><span></span></div>
+                <div class="crow"><div><span class="cname">Weather</span><span class="chelp">Poll Open-Meteo for current conditions and threshold alerts.</span></div><div class="toggle on"></div></div>
+                <div class="crow"><div><span class="cname">Latitude</span><span class="chelp">Decimal degrees, e.g. 12.97 for Bangalore.</span></div><div class="numfield"><input value="12.97" readonly></div></div>
+                <div class="crow"><div><span class="cname">Longitude</span><span class="chelp">Decimal degrees, e.g. 77.59 for Bangalore.</span></div><div class="numfield"><input value="77.59" readonly></div></div>
+                <div class="crow"><div><span class="cname">Units</span><span class="chelp">Display units for the idle chip.</span></div><div class="segmented"><span class="segbtn is-selected">°C</span><span class="segbtn">°F</span></div></div>
+                <div class="crow"><div><span class="cname">Poll interval</span><span class="chelp">How often conditions are checked.</span></div><div class="numfield"><input value="600" readonly><span class="unit">SEC</span></div></div>
+                <div class="crow"><div><span class="cname">Rain threshold</span><span class="chelp">Alert when the chance of rain reaches this.</span></div><div class="numfield"><input value="70" readonly><span class="unit">%</span></div></div>
+                <div class="crow"><div><span class="cname">Rain lookahead</span><span class="chelp">How far ahead the rain check looks.</span></div><div class="numfield"><input value="45" readonly><span class="unit">MIN</span></div></div>
+                <div class="crow"><div><span class="cname">Hot threshold</span><span class="chelp">Alert when the temperature reaches this.</span></div><div class="numfield"><input value="35" readonly><span class="unit">°C</span></div></div>
+                <div class="crow"><div><span class="cname">Cold threshold</span><span class="chelp">Alert when the temperature drops to this.</span></div><div class="numfield"><input value="5" readonly><span class="unit">°C</span></div></div>
+                <div class="crow"><div><span class="cname">Priority</span><span class="chelp">Which tier a waiting weather alert promotes in.</span></div><div class="segmented"><span class="segbtn">Low</span><span class="segbtn is-selected">Med</span><span class="segbtn">High</span></div></div>
+                <div class="crow"><div><span class="cname">Test weather notification</span><span class="chelp">Send a one-off weather alert to the overlay.</span></div><button class="btn btn-outline">Send test notification</button></div>
+              </div>
+            </div>
+          </div>
+          <footer class="settings-footer"><button class="btn btn-default">Save &amp; Relaunch</button><button class="btn btn-outline">Reset</button><button class="btn btn-outline">Reset to defaults</button></footer>
+        </div>
+
+        <!-- CONNECTORS -->
+        <div class="sec-panel connectors">
+          <header class="content-header">
+            <div class="section-index">Settings / 05</div>
+            <h1 class="section-h1">Connectors &amp; Keys</h1>
+            <p class="section-desc">Manage write-only credentials for outbound integrations.</p>
+          </header>
+          <div class="section-scroll">
+            <div class="group">
+              <div class="group-head"><p class="group-title">Write-only keys</p><p class="group-desc">Values never come back across IPC. Status reveals only whether a value is set.</p></div>
+              <div class="group-body">
+                <div class="trow">
+                  <div style="display:flex;align-items:center;justify-content:space-between;gap:8px;margin-bottom:7px;">
+                    <span class="cname">OpenRouter API key</span>
+                    <span class="metachip active uc">set · ····a91f</span>
+                  </div>
+                  <div style="display:grid;grid-template-columns:1fr auto;gap:7px;">
+                    <input class="numfield" style="width:100%;" type="password" placeholder="Enter a new key" readonly>
+                    <button class="btn btn-outline">Save</button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <footer class="settings-footer"><button class="btn btn-default">Save &amp; Relaunch</button><button class="btn btn-outline">Reset</button><button class="btn btn-outline">Reset to defaults</button></footer>
+        </div>
+
+        <!-- AGENTS -->
+        <div class="sec-panel agents">
+          <header class="content-header">
+            <div class="section-index">Settings / 06</div>
+            <h1 class="section-h1">Agents</h1>
+            <p class="section-desc">Accept coding-agent lifecycle events, tune notification priority, and set up each adapter.</p>
+          </header>
+          <div class="section-scroll">
+            <div class="stack">
+              <div class="group">
+                <div class="group-head"><p class="group-title">Agent Adapters</p><p class="group-desc">Accept lifecycle events from coding-agent runtimes over the loopback /agent/events endpoint.</p></div>
+                <div class="group-body">
+                  <div class="crow" style="padding-top:12px;"><div><span class="cname">Enable Agent Adapters</span><span class="chelp">Master switch — off skips every runtime's events.</span></div><div class="toggle on"></div></div>
+                  <div class="crow"><div><span class="cname">Terminal retention</span><span class="chelp">How long a completed/failed session stays on the Board.</span></div><div class="numfield"><input value="60" readonly><span class="unit">SEC</span></div></div>
+                  <div class="crow"><div><span class="cname">Stale threshold</span><span class="chelp">No accepted event for this long marks a session Stale.</span></div><div class="numfield"><input value="300" readonly><span class="unit">SEC</span></div></div>
+                  <div class="crow"><div><span class="cname">Stale retention</span><span class="chelp">How long a Stale session stays on the Board.</span></div><div class="numfield"><input value="600" readonly><span class="unit">SEC</span></div></div>
+                  <div class="crow"><div><span class="cname">Completion cards</span><span class="chelp">Runtimes fire a completion event after every response, not just at session end.</span></div><div class="toggle on"></div></div>
+                  <div class="crow"><div><span class="cname">Board for working sessions</span><span class="chelp">Off (default) keeps the Board out of the way until something needs you.</span></div><div class="toggle"></div></div>
+                  <div class="crow"><div><span class="cname">Informational cards</span><span class="chelp">Also show a card for ordinary progress/tool events.</span></div><div class="toggle"></div></div>
+                </div>
+              </div>
+              <div class="group">
+                <div class="group-head"><p class="group-title">Notification priority</p><p class="group-desc">Which rotation tier each kind of Agent event promotes in.</p></div>
+                <div class="group-body">
+                  <div class="crow" style="padding-top:12px;"><div><span class="cname">Permission requested</span></div><div class="segmented"><span class="segbtn">Low</span><span class="segbtn">Med</span><span class="segbtn is-selected">High</span></div></div>
+                  <div class="crow"><div><span class="cname">Input required</span></div><div class="segmented"><span class="segbtn">Low</span><span class="segbtn">Med</span><span class="segbtn is-selected">High</span></div></div>
+                  <div class="crow"><div><span class="cname">Failed</span></div><div class="segmented"><span class="segbtn">Low</span><span class="segbtn">Med</span><span class="segbtn is-selected">High</span></div></div>
+                  <div class="crow"><div><span class="cname">Completed</span></div><div class="segmented"><span class="segbtn">Low</span><span class="segbtn is-selected">Med</span><span class="segbtn">High</span></div></div>
+                </div>
+              </div>
+              <div class="group">
+                <div class="group-head"><p class="group-title">Adapters</p><p class="group-desc">One card per supported runtime — setup snippet, declared capabilities, and live health.</p></div>
+                <div class="group-body" style="padding-top:0;">
+                  <div class="agentcard">
+                    <div class="agentcard-head"><span class="agentcard-name"><span class="dot6" style="background:#d97757;"></span>Claude Code</span><span class="vis"><span class="metachip active uc">Available</span><span class="metachip active uc">Enabled</span></span></div>
+                    <div class="crow" style="min-height:auto;padding:0 0 8px;"><div><span class="cname">Enable Claude Code</span><span class="chelp">Accept Claude Code events over the loopback endpoint.</span></div><div class="toggle on"></div></div>
+                    <div class="healthmeta"><span>Last seen: 2 min ago</span><span>Capabilities: hooks, subagents</span></div>
+                    <div class="snippet-lbl">Target file</div>
+                    <div class="snippet-target">~/.claude/settings.json</div>
+                    <pre class="snippet-box">{ "hooks": { "SessionStart": [...], "Notification": [...], "Stop": [...] } }</pre>
+                    <div class="crow" style="min-height:auto;padding:8px 0 0;"><div><span class="cname">Setup snippet</span><span class="chelp">Copy the block above into the target file shown.</span></div><button class="btn btn-outline">Copy snippet</button></div>
+                    <div class="crow" style="min-height:auto;padding:8px 0 0;"><div><span class="cname">Test event</span><span class="chelp">Post one synthetic completed event.</span></div><button class="btn btn-outline">Send test event</button></div>
+                    <p class="agentcard-foot">Uninstall: remove the ten hook entries above from settings.json, or delete the whole file.</p>
+                  </div>
+                  <div class="agentcard">
+                    <div class="agentcard-head"><span class="agentcard-name"><span class="dot6" style="background:#10a37f;"></span>Codex</span><span class="vis"><span class="metachip active uc">Available</span><span class="metachip active uc">Enabled</span></span></div>
+                    <div class="snippet-lbl">Target file</div>
+                    <div class="snippet-target">~/.codex/hooks.json</div>
+                    <p class="agentcard-foot">Uninstall: remove the eight hook entries above from hooks.json.</p>
+                  </div>
+                  <div class="agentcard">
+                    <div class="agentcard-head"><span class="agentcard-name"><span class="dot6" style="background:#f5f7fa;"></span>Kimi</span><span class="vis"><span class="metachip uc">Unavailable</span><span class="metachip">Disabled</span></span></div>
+                    <div class="snippet-lbl">Target file</div>
+                    <div class="snippet-target">~/.kimi-code/config.toml</div>
+                    <p class="agentcard-foot">Uninstall: remove the ten [[hooks]] tables above from config.toml.</p>
+                  </div>
+                  <div class="agentcard">
+                    <div class="agentcard-head"><span class="agentcard-name"><span class="dot6" style="background:#9d7cd8;"></span>OpenCode</span><span class="vis"><span class="metachip uc">Unavailable</span><span class="metachip">Disabled</span></span></div>
+                    <div class="snippet-lbl">Target file</div>
+                    <div class="snippet-target">.opencode/plugins/notchtap.ts (project) or ~/.config/opencode/plugins/</div>
+                    <p class="agentcard-foot">Uninstall: delete notchtap.ts from the plugins directory it was copied into.</p>
+                  </div>
+                </div>
+              </div>
+              <div class="group">
+                <div class="group-head"><p class="group-title">Preview</p><p class="group-desc">What each Agent Board state looks like — a text summary, not the live card.</p></div>
+                <div class="group-body">
+                  <div class="crow" style="display:block; min-height:auto; padding-top:12px;"><span class="cname">Waiting on permission</span> <span class="metachip"><span class="dotswatch" style="background:#d97757;"></span>Claude Code</span><p class="chelp" style="margin-top:3px;">Approval needed to run a command</p></div>
+                  <div class="crow" style="display:block; min-height:auto;"><span class="cname">Working, with a subagent</span> <span class="metachip"><span class="dotswatch" style="background:#10a37f;"></span>Codex</span><p class="chelp" style="margin-top:3px;">Running tests — subagent: test runner (working)</p></div>
+                  <div class="crow" style="display:block; min-height:auto;"><span class="cname">Completed</span> <span class="metachip"><span class="dotswatch" style="background:#f5f7fa;"></span>Kimi</span><p class="chelp" style="margin-top:3px;">Turn completed — awaiting input</p></div>
+                  <div class="crow" style="display:block; min-height:auto;"><span class="cname">Failed</span> <span class="metachip"><span class="dotswatch" style="background:#9d7cd8;"></span>OpenCode</span><p class="chelp" style="margin-top:3px;">Session ended with an error</p></div>
+                  <div class="crow" style="display:block; min-height:auto;"><span class="cname">Multiple independent sessions</span> <span class="metachip">Claude Code + Codex</span><p class="chelp" style="margin-top:3px;">Two sessions active in different projects — each keeps its own history</p></div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <footer class="settings-footer"><button class="btn btn-default">Save &amp; Relaunch</button><button class="btn btn-outline">Reset</button><button class="btn btn-outline">Reset to defaults</button></footer>
+        </div>
+
+        <!-- SHORTCUTS -->
+        <div class="sec-panel shortcuts">
+          <header class="content-header">
+            <div class="section-index">Settings / 07</div>
+            <h1 class="section-h1">Shortcuts</h1>
+            <p class="section-desc">A reference for the global controls available while notchtap runs.</p>
+          </header>
+          <div class="section-scroll">
+            <div class="group">
+              <div class="group-head"><p class="group-title">Global shortcuts</p><p class="group-desc">These work while notchtap is running, regardless of which app has focus.</p></div>
+              <div class="group-body" style="padding-top:6px;">
+                <table class="shtable">
+                  <thead><tr><th>Keys</th><th>Action</th><th>Status</th></tr></thead>
+                  <tbody>
+                    <tr><td><span class="kbd">⌃⇧N</span></td><td>Expand or collapse the slot (manual)</td><td><span class="metachip active uc">active</span></td></tr>
+                    <tr><td><span class="kbd">⌃⇧O</span></td><td>Open the current story's link</td><td><span class="metachip active uc">active</span></td></tr>
+                    <tr><td><span class="kbd">⌃⇧X</span></td><td>Dismiss the visible notification now</td><td><span class="metachip active uc">active</span></td></tr>
+                    <tr><td><span class="kbd">⌃⇧P</span></td><td>Pause or resume promotion</td><td><span class="metachip active uc">active</span></td></tr>
+                    <tr><td><span class="kbd">⌃⇧]</span></td><td>Skip to the next waiting item</td><td><span class="metachip active uc">active</span></td></tr>
+                    <tr><td><span class="kbd">⌃⇧A</span></td><td>Open or focus the front Agent Session's host app</td><td><span class="metachip active uc">active</span></td></tr>
+                    <tr><td><span class="kbd">⌃⇧,</span></td><td>Open settings</td><td><span class="metachip active uc">active</span></td></tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <footer class="settings-footer"><button class="btn btn-default">Save &amp; Relaunch</button><button class="btn btn-outline">Reset</button><button class="btn btn-outline">Reset to defaults</button></footer>
+        </div>
+
+        <!-- APPEARANCE -->
+        <div class="sec-panel appearance">
+          <header class="content-header">
+            <div class="section-index">Settings / 08</div>
+            <h1 class="section-h1">Appearance</h1>
+            <p class="section-desc">Preview the overlay's shape and animations, and send live test notifications.</p>
+          </header>
+          <div class="section-scroll">
+            <div class="stack">
+              <div class="group">
+                <div class="group-head"><p class="group-title">Card shape</p><p class="group-desc">Adjust the overlay card size, corner radius, and opacity. Changes apply immediately.</p></div>
+                <div class="group-body">
+                  <div class="crow" style="padding-top:12px;"><span class="cname">Scale</span><div class="segmented"><span class="segbtn">Small</span><span class="segbtn is-selected">Medium</span><span class="segbtn">Large</span></div></div>
+                  <div class="crow"><span class="cname">Radius</span><div class="segmented"><span class="segbtn">Square</span><span class="segbtn is-selected">Soft</span><span class="segbtn">Round</span></div></div>
+                  <div class="crow"><span class="cname">Opacity</span><div class="segmented"><span class="segbtn">Glass</span><span class="segbtn is-selected">Default</span><span class="segbtn">Solid</span></div></div>
+                  <div class="crow"><div><span class="cname">Live check</span><span class="chelp">Send a one-off manual notification to the overlay.</span></div><button class="btn btn-outline">Send test notification</button></div>
+                </div>
+              </div>
+              <div class="group">
+                <div class="group-head"><p class="group-title">Overlay animations</p><p class="group-desc">The built-in card styles the overlay renders, reflecting the shape settings above.</p></div>
+                <div class="group-body" style="padding:14px 13px;">
+                  <p class="chelp" style="margin:0;">Live-rendered <code>StatusRailCard</code> samples, one per representative slot fixture — idle, generic, football, news, weather. See Part 1 above for the full-size versions of the same card shapes.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <footer class="settings-footer"><button class="btn btn-default">Save &amp; Relaunch</button><button class="btn btn-outline">Reset</button><button class="btn btn-outline">Reset to defaults</button></footer>
+        </div>
+
+        <!-- DIAGNOSTICS -->
+        <div class="sec-panel diagnostics">
+          <header class="content-header">
+            <div class="section-index">Settings / 09</div>
+            <h1 class="section-h1">Diagnostics</h1>
+            <p class="section-desc">Read the app's recent log lines without leaving settings.</p>
+          </header>
+          <div class="section-scroll">
+            <div class="group">
+              <div class="group-head"><p class="group-title">Recent log lines</p><p class="group-desc">The last 200 lines of ~/Library/Logs/notchtap/notchtap.log. Read-only.</p></div>
+              <div class="group-body" style="padding:12px 13px;">
+                <pre class="snippet-box" style="max-height:220px;">09:41:02 INFO  queue: promoted slot id=a91f priority=high
+09:41:02 INFO  agents: session claude-code/notchtap -> waiting_for_permission
+09:40:58 INFO  espn: poll ok leagues=2 matches=1
+09:40:12 WARN  rss: feed timeout theverge.com, retry in 600s</pre>
+                <div class="crow"><div><span class="cname">Refresh</span><span class="chelp">Re-read the log file. New lines appear as the app writes them.</span></div><button class="btn btn-outline">Refresh</button></div>
+              </div>
+            </div>
+          </div>
+          <footer class="settings-footer"><button class="btn btn-default">Save &amp; Relaunch</button><button class="btn btn-outline">Reset</button><button class="btn btn-outline">Reset to defaults</button></footer>
+        </div>
+
+        <!-- HISTORY -->
+        <div class="sec-panel history">
+          <header class="content-header">
+            <div class="section-index">Settings / 10</div>
+            <h1 class="section-h1">History</h1>
+            <p class="section-desc">Review and clear recorded past notifications.</p>
+          </header>
+          <div class="section-scroll">
+            <div class="group">
+              <div class="group-head"><p class="group-title">Recorded notifications</p><p class="group-desc">The most recent notifications recorded to ~/.config/notchtap/history.jsonl, newest first.</p></div>
+              <div class="group-body">
+                <div class="hist-row" style="padding-top:12px;">
+                  <div class="hist-line1"><span class="t">09:41</span><span style="color:#d97757;">AGENT</span></div>
+                  <div class="hist-title">Agent needs input</div>
+                  <div class="hist-meta"><span class="metachip">claude-code</span><span class="metachip">High</span><span class="metachip">Generic</span><span class="metachip">TTL 8s</span></div>
+                  <div class="hist-body">Approval needed to run a command</div>
+                  <div class="hist-more">▸ More details</div>
+                </div>
+                <div class="hist-row">
+                  <div class="hist-line1"><span class="t">09:38</span><span style="color:#7fe08d;">FOOTBALL</span></div>
+                  <div class="hist-title">Goal — K. Havertz 78'</div>
+                  <div class="hist-meta"><span class="metachip">High</span><span class="metachip">Score update</span><span class="metachip">every 8s</span></div>
+                  <div class="hist-more">▸ More details</div>
+                </div>
+                <div class="hist-row">
+                  <div class="hist-line1"><span class="t">09:22</span><span style="color:#5fd4e8;">NEWS</span></div>
+                  <div class="hist-title">Apple ships v7 of its coding-agent notification layer</div>
+                  <div class="hist-meta"><span class="metachip">The Verge</span><span class="metachip">Tech</span><span class="metachip">Low</span><span class="metachip">News item</span><span class="metachip">TTL 8s</span></div>
+                  <div class="hist-more">▸ More details</div>
+                </div>
+                <div class="crow"><div><span class="cname">Clear history</span><span class="chelp">Permanently deletes every recorded notification. This cannot be undone.</span></div><button class="btn btn-outline">Clear history</button></div>
+              </div>
+            </div>
+          </div>
+          <footer class="settings-footer"><button class="btn btn-default">Save &amp; Relaunch</button><button class="btn btn-outline">Reset</button><button class="btn btn-outline">Reset to defaults</button></footer>
+        </div>
+
+        <!-- QUEUE -->
+        <div class="sec-panel queue">
+          <header class="content-header">
+            <div class="section-index">Settings / 11</div>
+            <h1 class="section-h1">Queue</h1>
+            <p class="section-desc">See what's waiting behind the visible card, and skip or clear it.</p>
+          </header>
+          <div class="section-scroll">
+            <div class="group">
+              <div class="group-head"><p class="group-title">Waiting notifications</p><p class="group-desc">What's queued behind the visible card, and controls to skip or clear it.</p></div>
+              <div class="group-body">
+                <div class="queue-row" style="padding-top:12px;"><span class="qt">Rain expected within the hour</span><span class="metachip">Medium</span></div>
+                <div class="queue-row"><span class="qt">Turn completed — awaiting input</span><span class="metachip">Medium</span></div>
+                <div class="queue-row"><span class="qt">Newcastle 0–0 Villa — Kickoff</span><span class="metachip">Medium</span></div>
+                <div class="crow"><div><span class="cname">Refresh</span><span class="chelp">Re-fetch the waiting list. Not live — this is a manual pull.</span></div><button class="btn btn-outline">Refresh</button></div>
+                <div class="crow"><div><span class="cname">Skip current</span><span class="chelp">Dismiss the visible card now and promote the next waiting item.</span></div><button class="btn btn-outline">Skip current</button></div>
+                <div class="crow"><div><span class="cname">Clear queue</span><span class="chelp">Drops every waiting notification. The visible card is unaffected.</span></div><button class="btn btn-outline">Clear queue</button></div>
+              </div>
+            </div>
+          </div>
+          <footer class="settings-footer"><button class="btn btn-default">Save &amp; Relaunch</button><button class="btn btn-outline">Reset</button><button class="btn btn-outline">Reset to defaults</button></footer>
+        </div>
+
+        <!-- ABOUT -->
+        <div class="sec-panel about">
+          <header class="content-header">
+            <div class="section-index">Settings / 12</div>
+            <h1 class="section-h1">About</h1>
+            <p class="section-desc">What notchtap is, how to use it, and live process/system stats.</p>
+          </header>
+          <div class="section-scroll">
+            <div class="stack">
+              <div class="group">
+                <div class="group-body">
+                  <div class="identity-row"><span class="identity-mark">◆</span><div><div style="font-size:15px; font-weight:650;">notchtap</div><p style="margin:2px 0 0; font-size:11px; color:var(--muted-foreground);">Local-first notification HUD for your Mac.</p><div style="margin-top:3px; font:10px/1 var(--font-mono); color:var(--muted-foreground);">v0.7.0 · com.notchtap.app</div></div></div>
+                </div>
+              </div>
+              <div class="group">
+                <div class="group-head"><p class="group-title">What it is</p></div>
+                <div class="group-body"><p class="chelp" style="padding:10px 0;">Cards from your tools slide out beside the clock — over the notch on a MacBook, or as a floating top-center HUD on a notchless display. Everything runs locally: a small Rust core listens on 127.0.0.1:9789, and the window only renders what the core sends it.</p></div>
+              </div>
+              <div class="group">
+                <div class="group-head"><p class="group-title">How to use it</p></div>
+                <div class="group-body">
+                  <ul style="margin:0; padding:10px 0 10px 16px; font-size:11px; color:var(--muted-foreground); line-height:1.7;">
+                    <li><code class="kbd" style="padding:1px 5px; min-height:auto;">./notchtap --title "t" --body "b"</code> pushes a card.</li>
+                    <li><code class="kbd" style="padding:1px 5px; min-height:auto;">notchtap run -- &lt;cmd&gt;</code> wraps a long-running command and pushes a completion card when it finishes.</li>
+                    <li>Connectors for football scores, personalized news topics, and weather are configured in their own tabs.</li>
+                    <li><span class="kbd" style="padding:1px 5px; min-height:auto;">⌃⇧N</span> expands a card, <span class="kbd" style="padding:1px 5px; min-height:auto;">⌃⇧O</span> opens its link, <span class="kbd" style="padding:1px 5px; min-height:auto;">⌃⇧,</span> opens settings.</li>
+                  </ul>
+                </div>
+              </div>
+              <div class="group">
+                <div class="group-head"><p class="group-title">Tech stack</p></div>
+                <div class="group-body"><div class="vis" style="padding:10px 0;"><span class="metachip">Rust core</span><span class="metachip">Tauri v2</span><span class="metachip">React + TypeScript</span><span class="metachip">Motion</span><span class="metachip">Vite</span></div><p style="margin:0 0 8px; font-size:9px; color:var(--muted-foreground);">Built across 170+ small reviewed plans.</p></div>
+              </div>
+              <div class="group">
+                <div class="group-head"><p class="group-title">System</p><p class="group-desc">Live process, memory, and disk stats.</p></div>
+                <div class="group-body" style="padding:12px 13px;">
+                  <div class="aboutgrid">
+                    <div class="stat-tile"><div class="stat-label">App memory</div><div class="stat-value">86.2 MB</div></div>
+                    <div class="stat-tile"><div class="stat-label">System memory</div><div class="stat-value">11.2 / 16.0 GB</div></div>
+                    <div class="stat-tile"><div class="stat-label">Disk</div><div class="stat-value">210 / 494 GB</div></div>
+                    <div class="stat-tile"><div class="stat-label">Platform</div><div class="stat-value">macos · aarch64</div></div>
+                    <div class="stat-tile"><div class="stat-label">Bundle size</div><div class="stat-value">18.4 MB</div></div>
+                    <div class="stat-tile"><div class="stat-label">Uptime</div><div class="stat-value">2h 14m</div></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <footer class="settings-footer"><button class="btn btn-default">Save &amp; Relaunch</button><button class="btn btn-outline">Reset</button><button class="btn btn-outline">Reset to defaults</button></footer>
+        </div>
+
+      </div>
+    </div>
+  </div>
+  <p class="caption-note" style="margin-top:16px;">Numeric defaults shown for General/Agents are the
+    real <code>Config::default()</code>/<code>AgentsConfig::default()</code> values from
+    <code>src-tauri/src/config.rs</code> (rotation 8s, queue cap 50/tier, listener port 9789; agent
+    terminal retention 60s, stale threshold 300s, stale retention 600s, permission/input/failure
+    priority High, completion priority Medium, board-for-working off). Sidebar icons are plain
+    placeholder line-glyphs, not traced Lucide paths — order, label text, and count (12) are exact.
+    Diagnostics/History/Queue/About content rows are representative sample data, not a live IPC
+    read — the controls, copy, and layout are real.</p>
+</section>
+
+<footer class="page-foot" id="closing">
+  <div class="wrap">
+    <div class="foot-grid">
+      <div>
+        <h4>Sync</h4>
+        <p>Built 2026-08-02, against the working tree at:</p>
+        <div class="commit-chip">● 0252767</div>
+        <p style="margin-top:10px;">Verify with <code>git show 0252767 --stat</code> or
+          <code>git rev-parse --short HEAD</code> from the repo root.</p>
+      </div>
+      <div>
+        <h4>Source files read to build this</h4>
+        <ul>
+          <li><code>src/App.tsx</code>, <code>src/components/StatusRailCard.tsx</code>, <code>src/components/AgentBoard.tsx</code></li>
+          <li><code>src/overlay/card-chrome.css</code>, <code>choreography.css</code>, <code>agent-board.css</code>, <code>masthead-content.css</code>, <code>manifest.css</code>, <code>ttl-bar.css</code>, <code>news-category.css</code>, <code>source-identity.css</code></li>
+          <li><code>src/components/NotificationBody.tsx</code>, <code>StatusDots.tsx</code>, <code>IdleFace.tsx</code>, <code>IdleHoverPeek.tsx</code>, <code>FlankClock.tsx</code>, <code>Stamp.tsx</code>, <code>Manifest.tsx</code>, <code>TtlBar.tsx</code></li>
+          <li><code>src/lib/presentation.ts</code>, <code>weatherArt.ts</code>, <code>sourceColors.ts</code></li>
+          <li><code>src/settings/SettingsApp.tsx</code> and every file under <code>src/settings/sections/</code></li>
+          <li><code>src/settings/controls/controls.tsx</code>, <code>Segmented.tsx</code>; <code>src/components/ui/*.tsx</code></li>
+          <li><code>src/styles.css</code>, <code>src/animationTiming.ts</code>, <code>src/settings/base.css</code>, <code>vendor/shared-ui/design/tokens.css</code></li>
+          <li><code>src-tauri/src/config.rs</code> (real numeric defaults)</li>
+        </ul>
+      </div>
+    </div>
+    <p style="margin-top:22px; font-size:11px; color:var(--page-dim2);">
+      Only this file, <code>prototypes/full-app-current-state.html</code>, was created or modified —
+      the existing <code>prototypes/current-state.html</code>, <code>future-proposal.html</code>,
+      <code>design-reference.html</code>, and <code>animation-fixes-showcase.html</code> were read
+      for context only, never touched. Standalone HTML/CSS, no build step, no external requests;
+      section navigation and per-card state switching use the CSS-only radio-input pattern, no
+      JavaScript.
+    </p>
+  </div>
+</footer>
+
+</main>
+</body>
+</html>

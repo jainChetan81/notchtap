@@ -1,29 +1,35 @@
 <!doctype html>
 <!-- This mock mirrors the CURRENT shipped Agent Board — not a historical
-     design exploration. Geometry, class names, color tokens, and timing
-     constants below are read directly from the real source:
-       src/components/AgentBoard.tsx   — hero card, compact rows, expanded list, transitions
-       src/components/FlankClock.tsx, StatusDots.tsx — shared shell furniture (same as StatusRailCard)
-       src/lib/presentation.ts         — AGENT_STATE_PRESENTATION, AGENT_RUNTIME_LABEL/CLASS, elapsedLabel
-       src/lib/sourceColors.ts         — SOURCE_RUNTIME_COLORS
-       src/overlay/card-chrome.css     — the shared notch/HUD shell (flanks, cutout, below-block)
-       src/overlay/agent-board.css     — Agent Board layout, state accents, runtime identity, bounded pulse
-       src/overlay/source-identity.css — the four runtime brand colors
-       src/overlay/status-dots.css     — the right-flank status dots (shared with StatusRailCard)
-       src/animationTiming.ts          — the single-sourced JS/CSS timing constants
-       vendor/shared-ui/design/tokens.css — the overlay accent color tokens
-     This file is the missing sibling of notch-states.html — that file's own
-     header explicitly scopes out the Agent Board ("was never part of this
-     file's scope"), since AgentBoard.tsx is a separate top-level mode
-     App.tsx swaps in (never StatusRailCard's showing/expanded states). This
-     file covers ONLY that surface: every session state, every runtime,
-     resting (hero + compact rows) and hover-expanded (full scrollable
-     list), and the three motion primitives that are unique to this
-     component (ROW_TRANSITION, HERO_SWAP_TRANSITION, the bounded dot
-     pulse). It is still a static, hand-authored mock (no React, no
-     `motion` library, no build step) — verify against source before
-     treating a specific pixel value as current truth.
-     Last synced against source: 2026-08-01. -->
+     design exploration, and not a "proposal" (the old file's unified-shell
+     section drew as speculative is now what's actually shipped; the
+     speculative section is gone). Rewritten 2026-08-02 against the
+     `fix/board-motion-polish` branch (PR #10, merge commit `0252767`,
+     repo HEAD `25c007c2` at the time of this pass) — that branch reworked
+     the hero's summon entrance, converged the resting<->expanded swap onto
+     a single continuous morph, and added the `board_show_working` presence
+     gate. Read directly from source:
+       src/components/AgentBoard.tsx     — hero mount, compact rows, expanded list, the resting<->expanded swap, all named transitions
+       src/App.tsx                       — the OUTER Board<->status-rail surface swap (BOARD_SURFACE_MOTION/RAIL_SURFACE_MOTION), the summon's own arrival/exit clocks
+       src/components/NotificationBody.tsx — AgentHeroCard: the hero now renders through the SAME masthead/stamp/title/subtitle/body/fact-pill template every other card uses, not a bespoke block
+       src/lib/presentation.ts           — AGENT_STATE_PRESENTATION, AGENT_STATE_PRIORITY, elapsedLabel, presentationMode
+       src/animationTiming.ts            — BOARD_SUMMON_MS, SURFACE_SWAP_MS, DISCLOSURE_SPRING, REVEAL_MS, HOVER_MS
+       src/overlay/agent-board.css       — layout, state accents, the stacked-cell swap, the CONTENT-HUG hero fixes
+       src/overlay/masthead-content.css, news-category.css, manifest.css — the shared `.compact`/`.masthead`/`.stamp`/`.detail-facts`/`.fact-pill` template the hero now reuses
+       src/overlay/card-chrome.css        — shell geometry, the `.agent-origin` runtime wash, the low/medium/high priority accent
+       src-tauri/src/agents/board.rs      — the `agent-state` wire shape and the ONE place Board presence is gated (`AgentBoardPublisher::gate_presence`)
+       src-tauri/src/agents/model.rs      — `AgentSessionState::summons_board`/`urgency_rank` — which states earn the Board at all, and why a summoning session always leads the hero
+       src-tauri/src/config.rs            — `[agents] board_show_working` (default `false`) and `completion_notifications` (default `true`, a separate knob)
+       src/settings/sections/AgentsSection.tsx — the two toggles' actual copy
+     This file is still the missing sibling of notch-states.html — that
+     file's own header explicitly scopes the Agent Board out ("was never
+     part of this file's scope"), since AgentBoard.tsx is a separate
+     top-level mode App.tsx swaps in, not a StatusRailCard variant. It is
+     still a static, hand-authored mock (no React, no `motion` library, no
+     build step) — the height/spring animations below are CSS
+     approximations of the real physics, called out inline wherever they
+     diverge; verify against source before treating a specific pixel value
+     as current truth.
+     Last synced against source: 2026-08-02. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -46,7 +52,10 @@
     --ease-notchtap: cubic-bezier(.22,1,.36,1);
     --ease-notchtap-pop: cubic-bezier(.3,1.36,.44,1);
     --expand-ms: 320ms;
-    --hover-ms: 160ms;      /* HOVER_MS — status-dot flips, agent-dot color morph */
+    --hover-ms: 160ms;       /* HOVER_MS — bare<->hovered rail paint */
+    --reveal-ms: 260ms;      /* REVEAL_MS — a surface revealing itself; also the hero's per-field accent-morph clock */
+    --board-summon-ms: 260ms; /* BOARD_SUMMON_MS — the Board's own arrival leg (App.tsx) */
+    --surface-swap-ms: 180ms; /* SURFACE_SWAP_MS — the shared exit leg for BOTH surfaces, and the routine rail<->rail crossfade */
 
     --notchtap-cutout-width: 200px;
     --notchtap-cutout-height: 32px;
@@ -59,16 +68,17 @@
   }
   * { box-sizing: border-box; }
   body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-sans); padding: 44px 24px 100px; }
-  main { max-width: 920px; margin: 0 auto; }
+  main { max-width: 940px; margin: 0 auto; }
   h1 { font-size: 21px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.01em; }
-  .lede { color: var(--dim); font-size: 13px; line-height: 1.6; max-width: 68ch; margin: 0 0 10px; }
-  .note { font-size: 11.5px; color: var(--dim); border-left: 2px solid var(--rule); padding-left: 10px; margin: 0 0 36px; max-width: 66ch; line-height: 1.6; }
+  .lede { color: var(--dim); font-size: 13px; line-height: 1.6; max-width: 70ch; margin: 0 0 10px; }
+  .note { font-size: 11.5px; color: var(--dim); border-left: 2px solid var(--rule); padding-left: 10px; margin: 0 0 36px; max-width: 68ch; line-height: 1.6; }
   code { font-family: var(--font-mono); color: #9fc3e8; }
   section { margin-bottom: 46px; padding-top: 24px; border-top: 1px solid var(--rule); }
   h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); margin: 0 0 4px; }
-  .section-sub { font-size: 12px; color: var(--dim); margin: 0 0 14px; max-width: 64ch; line-height: 1.55; }
+  .section-sub { font-size: 12px; color: var(--dim); margin: 0 0 14px; max-width: 66ch; line-height: 1.55; }
   .rig-label { font: 700 10px/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); margin: 0 0 8px; }
   .tag { display: inline-block; font: 700 8.5px/1 var(--font-mono); letter-spacing: 0.05em; text-transform: uppercase; padding: 2px 6px; border-radius: 999px; margin-left: 6px; color: var(--page-accent); background: rgba(127,224,141,0.12); border: 1px solid rgba(127,224,141,0.3); }
+  .tag.warn { color: #f0c46a; background: rgba(240,196,106,0.12); border-color: rgba(240,196,106,0.32); }
 
   .rig { position: relative; background: #05060a; border-radius: 10px; overflow: visible; box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 16px 32px rgba(0,0,0,0.4); }
   .menubar { position: relative; height: 26px; background: #1c1d20; border-radius: 10px 10px 0 0; }
@@ -79,8 +89,9 @@
   .geo-table th { color: var(--dim); font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; }
   .geo-table td.val { font-family: var(--font-mono); color: #b6f5e5; white-space: nowrap; }
 
-  /* ============== real shell geometry (card-chrome.css, mirrored — the
-     Agent Board mounts inside the SAME shell every other card uses) ========= */
+  /* ============== real shell geometry (card-chrome.css, verbatim formulas —
+     unaffected by the board-motion-polish branch; the Board mounts inside
+     the SAME shell every other card uses) ========= */
   .card-root .card-assembly {
     position: relative; box-sizing: border-box; display: grid;
     grid-template-columns: 1fr var(--notchtap-cutout-width) 1fr;
@@ -88,17 +99,15 @@
     width: var(--cw, min(max(calc(400px * var(--card-scale)), calc(var(--notchtap-cutout-width) + (2 * 60px * var(--card-scale)))), 100%));
     margin: 0 auto; isolation: isolate; transform-origin: top center;
     filter: drop-shadow(0 7px 18px rgba(0,0,0,0.5));
-    transition: width var(--expand-ms) var(--ease-notchtap-pop), transform var(--hover-ms) var(--ease-notchtap);
+    transition: width var(--expand-ms) var(--ease-notchtap-pop);
   }
   /* AgentBoard.tsx hardcodes the outer wrapper as `.card-assembly.expanded
      .agent-board-shell` UNCONDITIONALLY — the shell is ALWAYS the 500px
      expanded formula, whether the board is resting (hero+rows) or
-     hover-expanded (full list). Only the INNER content swaps; the shell
-     itself never shrinks back to the 400px "showing" width a generic
-     StatusRailCard notification uses. This is easy to miss reading the
-     component in isolation and is the one geometry fact this file exists
-     to make visible. */
+     hover-expanded (full list). Only the INNER content swaps. Still true
+     on this branch — untouched by board-motion-polish. */
   .card-root .card-assembly.expanded { --cw: min(max(calc(500px * var(--card-scale)), calc(var(--notchtap-cutout-width) + (2 * 60px * var(--card-scale)))), 100%); }
+  .card-root .card-assembly.idle { --cw: min(calc(var(--notchtap-cutout-width) + (2 * 85px * var(--card-scale))), 100%); }
   .card-root .flank-left, .card-root .flank-right {
     box-sizing: border-box; grid-row: 1; overflow: hidden; display: flex; align-items: center;
     background: #000; color: var(--overlay-fg); min-width: 0;
@@ -127,23 +136,93 @@
   .card-root .status-dot.weather.active { color: var(--overlay-amber); }
   .card-root .status-dot.dim { opacity: 0.22; box-shadow: none; }
 
-  /* ============== agent-board.css, verbatim ============== */
-  .card-root .agent-board { display: flex; flex-direction: column; gap: 8px; padding: 10px 14px 12px; }
+  /* ============== priority accent (card-chrome.css, verbatim) — consumed
+     by the hero's `.compact::before` edge and `.stamp`, exactly like every
+     other card type. Lives on `.card-assembly`, orthogonal to the runtime
+     wash below (which lives on `.below-block`). ============== */
+  .card-root .card-assembly.low { --accent: #aab3bd; --accent-soft: rgba(170,179,189,0.2); }
+  .card-root .card-assembly.medium { --accent: var(--overlay-teal); --accent-soft: rgba(85,214,189,0.24); }
+  .card-root .card-assembly.high { --accent: var(--overlay-coral); --accent-soft: rgba(255,107,87,0.28); }
+
+  /* ============== the agent-origin runtime wash + hairline
+     (card-chrome.css, verbatim) — a corner radial keyed to `--cat-deep`,
+     no motion, applied to `.below-block.agent-board.agent-origin`. ====== */
+  .card-root .below-block.agent-origin { border-top: 1px solid color-mix(in srgb, var(--cat) 55%, transparent); }
+  .card-root .below-block.agent-origin::before {
+    content: ""; position: absolute; inset: 0;
+    background: radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%);
+    pointer-events: none;
+  }
+  .card-root .below-block.agent-origin .agent-board-primary,
+  .card-root .below-block.agent-origin .agent-board-rows,
+  .card-root .below-block.agent-origin .agent-board-expanded-list {
+    position: relative; z-index: 1;
+  }
+
+  /* ============== the shared `.compact` hero template
+     (masthead-content.css/news-category.css/manifest.css, verbatim) — the
+     hero now renders through this SAME template every generic/news/football
+     card uses (`AgentHeroCard`, NotificationBody.tsx, plan 169). This is
+     no longer a "proposal" block; it is what's on screen today. ====== */
+  .card-root .compact { position: relative; box-sizing: border-box; overflow: hidden; padding: 12px 16px 13px 20px; }
+  .card-root .compact::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 0 2px 2px 0; background: var(--accent); box-shadow: 0 0 12px var(--accent-soft); }
+  .card-root .copy { min-width: 0; }
+  .card-root .masthead-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .card-root .masthead { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; font: 700 8px/1 var(--font-mono); letter-spacing: 0.16em; text-transform: uppercase; color: rgba(255,255,255,0.38); }
+  .card-root .masthead::after { content: ""; flex: 1; height: 1px; background: rgba(255,255,255,0.12); }
+  .card-root .title.headline { white-space: normal; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; font-weight: 680; line-height: 1.2; font-size: 13px; }
+  .card-root .stamp { align-self: center; padding: 4px 6px; border: 1px solid var(--accent); color: var(--accent); font: 700 8px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; }
+  .card-root .notif-subtitle-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 3px; }
+  .card-root .notif-subtitle { min-width: 0; overflow: hidden; color: rgba(255,255,255,0.45); font-size: 10.5px; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+  .card-root .notif-body { display: -webkit-box; margin-top: 8px; overflow: hidden; color: rgba(255,255,255,0.7); font-size: 11.5px; line-height: 1.35; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .card-root .notif-body code { padding: 1px 5px; background: rgba(255,255,255,0.08); color: var(--accent); font-family: var(--font-mono); }
+  .card-root .detail-facts { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; margin-top: 7px; margin-bottom: 14px; max-width: 100%; }
+  .card-root .fact-pill { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 7px; border-radius: 999px; font-size: 10px; line-height: 1.4; color: rgba(255,255,255,0.82); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.05); }
+  .card-root .fact-pill .fp-label { flex: none; font: 700 7px/1 var(--font-mono); letter-spacing: 0.07em; text-transform: uppercase; opacity: 0.68; }
+  .card-root .fact-pill .fp-tag { flex: none; font: 700 7px/1 var(--font-mono); letter-spacing: 0.07em; text-transform: uppercase; }
+  .card-root .fact-pill.tone-accent { background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 38%, transparent); }
+  .card-root .fact-pill.tone-accent .fp-tag { color: var(--accent); }
+  .card-root .fact-pill.tone-danger { background: color-mix(in srgb, var(--overlay-coral) 14%, transparent); border-color: color-mix(in srgb, var(--overlay-coral) 42%, transparent); }
+  .card-root .fact-pill.tone-danger .fp-tag { color: var(--overlay-coral); }
+
+  /* ============== agent-board.css, verbatim (2026-08-02 fidelity pass) ============== */
+  .card-root .agent-board { display: flex; flex-direction: column; gap: 8px; padding: 0 0 12px; }
+  /* CONTENT-HUG: the 12px bottom padding is only owed to a mounted rows/
+     list block, so a hero-only (single-session) board ends flush at the
+     hero's own bottom inset, exactly like every other card. */
+  .card-root .agent-board:not(:has(.agent-board-rows, .agent-board-expanded-list)) { padding-bottom: 0; }
+  /* the single-cell grid stack the resting rows and expanded list share —
+     their swap is a sync crossfade IN PLACE, sized to max(outgoing,
+     incoming), not `mode="wait"`'s collapse-then-grow. */
+  .card-root .agent-board-swap { display: grid; align-items: start; }
+  .card-root .agent-board:not(:has(.agent-board-rows, .agent-board-expanded-list)) .agent-board-swap { display: none; }
   .card-root .agent-board-primary { display: flex; flex-direction: column; gap: 4px; }
-  .card-root .agent-board-primary-head { display: flex; align-items: center; gap: 7px; }
-  .card-root .agent-board-runtime { font-weight: 600; font-size: 13px; color: var(--cat, var(--overlay-fg)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .card-root .agent-board-state-pill { margin-left: auto; font-size: 10.5px; font-weight: 600; letter-spacing: 0.02em; padding: 2px 7px; border-radius: 999px; white-space: nowrap; background: color-mix(in srgb, var(--agent-accent, var(--overlay-fg)) 18%, transparent); color: var(--agent-accent, var(--overlay-fg)); }
-  .card-root .agent-board-project { font-size: 11.5px; color: color-mix(in srgb, var(--overlay-fg) 62%, transparent); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .card-root .agent-board-summary { font-size: 12px; line-height: 1.35; color: color-mix(in srgb, var(--overlay-fg) 82%, transparent); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
-  .card-root .agent-board-elapsed { font-size: 10.5px; font-variant-numeric: tabular-nums; color: color-mix(in srgb, var(--overlay-fg) 48%, transparent); }
-  .card-root .agent-board-rows { display: flex; flex-direction: column; gap: 3px; border-top: 1px solid color-mix(in srgb, var(--overlay-fg) 14%, transparent); padding-top: 6px; max-height: 150px; overflow: hidden; }
+  /* CONTENT-HUG hero fixes: the shell's permanent `.expanded` class would
+     otherwise drag in `.expanded .compact`'s +8px min-height (a hover-
+     expand rhythm the resting Board never asked for) — pinned back to the
+     unified skeleton's own 74px; and the fact pills lay out in a wrapping
+     ROW, right-aligned, instead of the generic branch's stacked column,
+     since two 20px pills in a column left a wide dead band the row avoids. */
+  .card-root .agent-board-primary .compact { min-height: 74px; }
+  .card-root .agent-board-primary .detail-facts { flex-direction: row; flex-wrap: wrap; justify-content: flex-end; gap: 4px 6px; margin-bottom: 0; }
+  /* ONE CLOCK FOR THE TIER FLIP: when the primary session's state changes,
+     the shell's priority accent AND the below-block's `--agent-accent`
+     rebind together — every consumer here morphs on the SAME `--reveal-ms`
+     clock the dot already used, instead of one snapping while the dot
+     fades. Scoped to the board only; a notification card's accent never
+     flips mid-life, so this would be dead weight there. */
+  .card-root .agent-board-primary .compact::before { transition: background-color var(--reveal-ms) var(--ease-notchtap), box-shadow var(--reveal-ms) var(--ease-notchtap); }
+  .card-root .agent-board-primary .stamp { transition: color var(--reveal-ms) var(--ease-notchtap), border-color var(--reveal-ms) var(--ease-notchtap); }
+  .card-root .agent-board-primary .fact-pill, .card-root .agent-board-primary .fact-pill .fp-tag { transition: background-color var(--reveal-ms) var(--ease-notchtap), border-color var(--reveal-ms) var(--ease-notchtap), color var(--reveal-ms) var(--ease-notchtap); }
+
+  .card-root .agent-board-rows { display: flex; flex-direction: column; gap: 3px; border-top: 1px solid color-mix(in srgb, var(--overlay-fg) 14%, transparent); padding: 6px 14px 0; max-height: 150px; overflow: hidden; }
   .card-root .agent-row { display: flex; align-items: center; gap: 6px; font-size: 11px; color: color-mix(in srgb, var(--overlay-fg) 70%, transparent); white-space: nowrap; }
   .card-root .agent-row-runtime { font-weight: 600; color: var(--cat, var(--overlay-fg)); flex-shrink: 0; }
   .card-root .agent-runtime-tick { width: 4px; height: 4px; flex-shrink: 0; background: var(--cat, var(--overlay-fg)); box-shadow: 0 0 4px var(--cat, transparent); }
   .card-root .agent-row-project { overflow: hidden; text-overflow: ellipsis; color: color-mix(in srgb, var(--overlay-fg) 55%, transparent); }
-  .card-root .agent-row-state { margin-left: auto; flex-shrink: 0; color: var(--agent-accent, var(--overlay-fg)); }
+  .card-root .agent-row-state { margin-left: auto; flex-shrink: 0; color: var(--agent-accent, var(--overlay-fg)); transition: color var(--reveal-ms) var(--ease-notchtap); }
   .card-root .agent-row-elapsed { flex-shrink: 0; font-variant-numeric: tabular-nums; color: color-mix(in srgb, var(--overlay-fg) 45%, transparent); min-width: 2.4em; text-align: right; }
-  .card-root .agent-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: var(--agent-accent, var(--overlay-fg)); transition: background-color var(--hover-ms) var(--ease-notchtap); }
+  .card-root .agent-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: var(--agent-accent, var(--overlay-fg)); transition: background-color var(--reveal-ms) var(--ease-notchtap); }
   .card-root .agent-dot.large { width: 8px; height: 8px; }
   .card-root .agent-dot.pulse { animation: agent-dot-state-tick 240ms var(--ease-notchtap), agent-dot-breathe 2.2s ease-in-out 4; }
   @keyframes agent-dot-state-tick { from { transform: scale(1.35); } to { transform: scale(1); } }
@@ -154,8 +233,9 @@
   .card-root .agent-working { --agent-accent: var(--overlay-blue); }
   .card-root .agent-completed { --agent-accent: var(--overlay-green); }
   .card-root .agent-stale { --agent-accent: color-mix(in srgb, var(--overlay-fg) 62%, transparent); }
-  .card-root .agent-board-expanded-list { margin-top: 4px; }
-  .card-root .agent-board-expanded-scroll { display: flex; flex-direction: column; gap: 6px; max-height: 260px; overflow-y: auto; overscroll-behavior: contain; }
+
+  .card-root .agent-board-expanded-list { margin-top: 14px; padding: 0 14px; }
+  .card-root .agent-board-expanded-scroll { display: flex; flex-direction: column; gap: 6px; max-height: min(420px, calc(100vh - 210px)); overflow-y: auto; overscroll-behavior: contain; }
   .card-root .agent-expanded-row { display: flex; flex-direction: column; gap: 4px; padding: 8px 10px; border-radius: 10px; background: color-mix(in srgb, var(--overlay-fg) 5%, transparent); }
   .card-root .agent-expanded-row-head { display: flex; align-items: center; gap: 6px; font-size: 11.5px; color: color-mix(in srgb, var(--overlay-fg) 78%, transparent); white-space: nowrap; }
   .card-root .agent-expanded-row-summary { font-size: 11px; line-height: 1.3; color: color-mix(in srgb, var(--overlay-fg) 68%, transparent); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
@@ -165,10 +245,10 @@
   .card-root .agent-expanded-detail-label { font-weight: 600; color: color-mix(in srgb, var(--overlay-fg) 72%, transparent); }
   .card-root .agent-expanded-history { margin-top: 0; max-height: 0; overflow: hidden; opacity: 0; transition: max-height var(--expand-ms) var(--ease-notchtap), opacity var(--expand-ms) var(--ease-notchtap); border-top: 1px solid transparent; padding-top: 0; }
   /* real trigger is per-ROW mouse-enter/leave (ExpandedAgentRow's own
-     onMouseEnter/onMouseLeave) — genuinely real pointer events land here in
-     the shipped app too while the board is hover-expanded (rust hands
-     click-through off for exactly this rect), so plain CSS :hover is not a
-     stand-in here, it's the same signal. */
+     onMouseEnter/onMouseLeave) — genuine pointer events land here in the
+     shipped app too while the board is hover-expanded (rust hands
+     click-through off for exactly this rect), so plain CSS :hover is the
+     same signal, not a stand-in. */
   .card-root .agent-expanded-row:hover .agent-expanded-history { max-height: 90px; opacity: 1; margin-top: 2px; border-top-color: color-mix(in srgb, var(--overlay-fg) 12%, transparent); padding-top: 4px; }
   .card-root .agent-expanded-history-list { display: flex; flex-direction: column; gap: 2px; list-style: none; margin: 0; padding: 0; }
   .card-root .agent-expanded-history-entry { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 10px; color: color-mix(in srgb, var(--overlay-fg) 50%, transparent); }
@@ -193,7 +273,7 @@
   .swatch-row { display: flex; gap: 10px; flex-wrap: wrap; margin: 10px 0 4px; }
   .swatch { display: flex; align-items: center; gap: 6px; font: 600 11px/1 var(--font-sans); color: var(--ink); }
   .swatch i { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
-  .state-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 16px; }
+  .state-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; }
   .state-grid .rig { transform: scale(0.94); transform-origin: top center; }
   footer { margin-top: 48px; padding-top: 18px; border-top: 1px solid var(--rule); font-size: 11.5px; color: var(--dim); line-height: 1.6; }
 
@@ -206,129 +286,209 @@
   .agent-row.row-enter { animation: row-in 350ms cubic-bezier(.16,1,.3,1); }
   .agent-row.row-leave { animation: row-out 350ms cubic-bezier(.16,1,.3,1) forwards; overflow: hidden; }
 
-  /* hero identity swap — HERO_SWAP_TRANSITION (duration 0.16, NOTCHTAP_EASE) */
+  /* hero identity swap — HERO_SWAP_TRANSITION (duration 0.16, NOTCHTAP_EASE).
+     Plays ONLY when a DIFFERENT session becomes primary; a same-session
+     state change morphs in place instead (the --reveal-ms accent morph
+     above), never replays this. */
   .agent-board-primary.swap-out { transition: opacity var(--hover-ms) var(--ease-notchtap), transform var(--hover-ms) var(--ease-notchtap); opacity: 0; transform: translateY(-6px); }
 
-  /* ============== PROPOSAL ADDITION (2026-08-01): the shared generic
-     content template (masthead-content.css/manifest.css, verbatim) — real
-     code, used today for manual/CLI/weather/news, NOT currently used for
-     agent notifications (the Agent Board's own layout above is what's
-     actually shipped since v7). Added here, additive only — see
-     prototype/proposal-unified-card.html for the full cross-origin
-     version of this idea. ============== */
-  .card-root .compact { position: relative; box-sizing: border-box; min-height: 74px; padding: 12px 16px 13px 20px; overflow: hidden; }
-  .card-root .compact::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 0 2px 2px 0; background: var(--accent); box-shadow: 0 0 12px var(--accent-soft); }
-  .card-root .masthead-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
-  .card-root .masthead { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0; font: 700 8px/1 var(--font-mono); letter-spacing: 0.16em; text-transform: uppercase; color: rgba(255,255,255,0.38); }
-  .card-root .masthead::after { content: ""; flex: 1; height: 1px; background: rgba(255,255,255,0.12); }
-  .card-root .masthead .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--cat); box-shadow: 0 0 6px var(--cat); flex: none; }
-  .card-root .title.headline { white-space: normal; font-size: 13px; line-height: 1.3; font-weight: 680; }
-  .card-root .stamp { align-self: center; padding: 4px 6px; border: 1px solid var(--accent); color: var(--accent); font: 700 8px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; }
-  .card-root .notif-subtitle-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 3px; }
-  .card-root .notif-subtitle { color: rgba(255,255,255,0.45); font-size: 10.5px; font-weight: 600; }
-  .card-root .notif-body { margin-top: 8px; color: rgba(255,255,255,0.7); font-size: 11.5px; line-height: 1.35; }
-  /* detail pairs as right-aligned pills, not stacked label/value blocks —
-     supplementary facts, not a form; a quiet row on the right reads as
-     secondary at a glance, and doesn't need to sit directly under the title. */
-  /* one pill per fact, not label+value as two elements — small muted
-     label prefix, the value, and an optional colored tag when the fact
-     carries a qualifier worth a color (risk level, etc). */
-  /* FIXED SIZE DISCIPLINE: card width/height per state is a hard contract
-     — pills must never grow it. .compact has overflow:hidden as the
-     backstop, detail-facts is capped to the compact's own content width,
-     each pill truncates its own text rather than pushing wider. Only
-     background effects (goal-burst, shade-drift) may extend past the box. */
-  .card-root .detail-facts { display: flex; flex-direction: column; align-items: flex-end; gap: 3px; margin-top: 7px; margin-bottom: 14px; max-width: 100%; }
-  .card-root .fact-pill { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 7px; border-radius: 999px; font-size: 10px; line-height: 1.4; color: rgba(255,255,255,0.82); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.05); }
-  .card-root .fact-pill .fp-label { flex: none; font: 700 7px/1 var(--font-mono); letter-spacing: 0.07em; text-transform: uppercase; opacity: 0.68; }
-  .card-root .fact-pill .fp-tag { flex: none; font: 700 7px/1 var(--font-mono); letter-spacing: 0.07em; text-transform: uppercase; }
-  .card-root .fact-pill.tone-accent { background: color-mix(in srgb, var(--accent) 14%, transparent); border-color: color-mix(in srgb, var(--accent) 38%, transparent); }
-  .card-root .fact-pill.tone-accent .fp-tag { color: var(--accent); }
-  .card-root .fact-pill.tone-danger { background: color-mix(in srgb, var(--overlay-coral) 14%, transparent); border-color: color-mix(in srgb, var(--overlay-coral) 42%, transparent); }
-  .card-root .fact-pill.tone-danger .fp-tag { color: var(--overlay-coral); }
-  .card-root .fact-pill.tone-safe { background: color-mix(in srgb, var(--overlay-green) 14%, transparent); border-color: color-mix(in srgb, var(--overlay-green) 42%, transparent); }
-  .card-root .fact-pill.tone-safe .fp-tag { color: var(--overlay-green); }
-  /* ttl-bar (ttl-bar.css, verbatim + the grid-row fix documented in
-     proposal-unified-card.html's own comment — grid auto-placement pushes
-     an item placed via grid-column alone into an invisible new row unless
-     grid-row is also explicit). */
-  .card-root .ttl-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; display: grid; grid-template-columns: repeat(var(--queue-n, 1), 1fr); grid-template-rows: 4px; gap: 3px; }
-  .card-root .ttl-seg { background: rgba(255,255,255,0.08); }
-  .card-root .ttl-seg.done { background: color-mix(in srgb, var(--accent) 30%, transparent); }
-  .card-root .ttl-fill { grid-row: 1; height: 100%; width: 100%; background: var(--accent); transform-origin: left; }
-  .card-root .below-block.origin-wash { position: relative; }
-  .card-root .below-block.origin-wash::before { content: ""; position: absolute; inset: 0; z-index: 0; background: radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%); pointer-events: none; }
-  .card-root .below-block.origin-wash .compact { position: relative; z-index: 1; }
-  .card-root .card-assembly.medium { --accent: var(--overlay-teal); --accent-soft: rgba(85,214,189,0.24); }
-  .card-root .card-assembly.high { --accent: var(--overlay-coral); --accent-soft: rgba(255,107,87,0.28); }
-  /* the "other sessions" flavor — additive, styled with the same restrained
-     mono-row language the ttl-bar/queue system already uses elsewhere,
-     appended below the primary card rather than replacing it. */
-  .card-root .queue-rows { border-top: 1px solid rgba(255,255,255,0.08); }
-  .card-root .queue-row { display: flex; align-items: center; gap: 6px; padding: 6px 16px; font-size: 10.5px; color: rgba(255,255,255,0.55); font-family: var(--font-mono); }
-  .card-root .queue-row .qdot { width: 5px; height: 5px; border-radius: 50%; flex-shrink: 0; }
-  .card-root .queue-row .qname { font-weight: 700; color: rgba(255,255,255,0.75); }
-  .card-root .queue-row .qstate { margin-left: auto; }
+  /* ============== section 6 demo: the OUTER Board<->status-rail surface
+     swap (App.tsx's SURFACE_STACK_STYLE/SURFACE_CELL_STYLE + BOARD_SURFACE_
+     MOTION/RAIL_SURFACE_MOTION). Opacity-only on both legs — the shell
+     itself (the synthetic notch cutout) NEVER transforms; a scale/drop
+     entrance was tried and rejected on sight (2026-08-02 operator feedback:
+     "looks weird, something about its size animation" — it moved the fake
+     notch). Arrival is the longer, house-eased BOARD_SUMMON_MS (260ms);
+     dismissal is the quieter, shared SURFACE_SWAP_MS (180ms) — a deliberate
+     asymmetry: an arrival earns emphasis, a dismissal should be quieter
+     than the thing it dismisses. ============== */
+  .surface-stack-demo { display: grid; }
+  .surface-cell { grid-area: 1 / 1; opacity: 0; pointer-events: none; }
+  .surface-cell.is-active { opacity: 1; pointer-events: auto; transition: opacity var(--board-summon-ms) var(--ease-notchtap); }
+  .surface-cell.is-leaving { opacity: 0; transition: opacity var(--surface-swap-ms) var(--ease-notchtap); }
+
+  /* ============== section 7 demo: the resting<->expanded morph inside the
+     Board (`.agent-board-swap`, AgentBoard.tsx/agent-board.css). The real
+     component keeps BOTH branches' `height` on one Motion spring
+     (DISCLOSURE_SPRING) started the same frame, so the wrapper's height
+     traces max(outgoing, incoming) as one continuous curve — never a
+     collapse-to-zero followed by a grow. Approximated here with the CSS
+     `grid-template-rows: 0fr -> 1fr` height trick (an `overflow:hidden`
+     inner track keyed to a fr-unit, not `height: auto`, which plain CSS
+     transitions can't interpolate) on EACH branch independently, inside
+     the same single grid cell (`grid-area: 1/1`) the real markup already
+     uses. Because both branches animate on the same clock, the outer
+     row's size is genuinely `max()` of the two the whole way through —
+     the same emergent property the real spring-based version has — not a
+     hand-tuned imitation of the curve's shape. ============== */
+  .card-root .agent-board-swap .swap-branch {
+    grid-area: 1 / 1;
+    display: grid;
+    grid-template-rows: 0fr;
+    opacity: 0;
+    transition: grid-template-rows 420ms cubic-bezier(.16,1,.3,1), opacity 420ms cubic-bezier(.16,1,.3,1);
+  }
+  .card-root .agent-board-swap .swap-branch.is-visible { grid-template-rows: 1fr; opacity: 1; }
+  .card-root .agent-board-swap .swap-branch > .swap-branch-inner { overflow: hidden; min-height: 0; }
 </style>
 
 <main>
   <h1>agent board — mirrors the shipped Agent Board</h1>
   <p class="lede">
-    <code>App.tsx</code> swaps this in as a whole separate top-level mode —
-    never a StatusRailCard variant — the moment at least one agent session
-    exists. Same notch/HUD shell as every other card (flanks, cutout,
-    below-block, drop-shadow), but its own dedicated below-block content:
-    one rich "hero" card for the top-ranked session, every other session as
-    a single compact line, <b>never a "+N" collapse</b> (spec §6.2's own
-    explicit rule) — and, on hover, a bounded scrollable list with
-    per-session detail and a per-row transition history.
+    <code>App.tsx</code> swaps this in as a whole separate top-level
+    surface — never a StatusRailCard variant — whenever the independently-
+    updating <code>agent-state</code> channel currently holds at least one
+    <b>gated-in</b> session and the engine isn't Paused (pausing quiets the
+    whole notch, Board included). Same notch/HUD shell as every other card
+    (flanks, cutout, below-block, drop-shadow), but its own dedicated
+    below-block content: one rich "hero" for the top-ranked session — now
+    rendered through the SAME masthead/stamp/title/subtitle/body/fact-pill
+    template every other card uses, not a bespoke block — plus every other
+    session as a single compact line, <b>never a "+N" collapse</b>
+    (spec's own explicit rule), and, on hover, a bounded scrollable list
+    with per-session detail and a per-row transition history.
   </p>
   <p class="note">
     This file is the missing sibling of <code>notch-states.html</code>,
     which explicitly scopes the Agent Board out of its own coverage. Built
-    by reading <code>AgentBoard.tsx</code>, <code>agent-board.css</code>,
-    <code>source-identity.css</code>, and <code>lib/presentation.ts</code>
+    by reading <code>AgentBoard.tsx</code>, <code>App.tsx</code>,
+    <code>NotificationBody.tsx</code>, <code>agent-board.css</code>, and
+    the rust-side <code>agents/board.rs</code>/<code>agents/model.rs</code>
     directly — static mock, no React, no <code>motion</code>, will drift
     the next time those files change without a matching pass here.
   </p>
 
   <section>
-    <h2>0 — shell geometry (card-chrome.css + agent-board.css)</h2>
+    <h2>0 — shell geometry</h2>
     <p class="section-sub">
       The board's outer <code>.card-assembly</code> is <b>always</b>
       <code>.expanded</code> (500px @ defaults) — hardcoded on the wrapper
       in <code>AgentBoard.tsx</code>, regardless of the <code>expanded</code>
-      prop. Only the INNER content swaps between the compact view and the
-      full scrollable list below; the shell itself never shrinks to the
-      400px width a generic notification card rests at.
+      (hover) prop. Only the INNER content swaps between the compact view
+      and the full scrollable list below; the shell itself never shrinks
+      to the 400px width a generic notification card rests at, and never
+      transforms (see section 6 for why the shell specifically can't).
     </p>
     <table class="geo-table">
       <tr><th>surface</th><th>class</th><th>width @ defaults</th><th>what's inside</th></tr>
       <tr><td>resting (board mounted, not hovered)</td><td class="val">.card-assembly.expanded</td><td class="val">500px</td><td class="val">.agent-board-primary + .agent-board-rows</td></tr>
-      <tr><td>hover-expanded</td><td class="val">.card-assembly.expanded</td><td class="val">500px (unchanged)</td><td class="val">.agent-board-expanded-list (scrollable)</td></tr>
+      <tr><td>hover-expanded</td><td class="val">.card-assembly.expanded</td><td class="val">500px (unchanged)</td><td class="val">.agent-board-primary + .agent-board-expanded-list (scrollable)</td></tr>
+      <tr><td>idle (no gated session)</td><td class="val">.card-assembly.idle</td><td class="val">~370px</td><td class="val">status rail, not the Board at all</td></tr>
     </table>
   </section>
 
   <section>
-    <h2>1 — resting, single session · all seven states</h2>
+    <h2>1 — presence: which sessions earn the Board at all</h2>
+    <p class="section-sub">
+      Operator decision 2026-08-02: <b>the Board's job is attention, not a
+      dashboard.</b> A session in a merely-<code>Working</code>,
+      <code>Starting</code>, or <code>Stale</code> state does not, on its
+      own, summon the Board — <code>AgentSessionState::summons_board</code>
+      (rust, <code>agents/model.rs</code>) is <code>true</code> only for
+      <code>waiting_for_permission</code>/<code>waiting_for_input</code>/
+      <code>failed</code>/a still-retained <code>completed</code>. This
+      gate is evaluated in exactly one place —
+      <code>AgentBoardPublisher::gate_presence</code>
+      (<code>agents/board.rs</code>), before the wire snapshot is even
+      built — so a gated-off board publishes as ZERO sessions and every
+      downstream consumer (the overlay's <code>presentationMode</code>, the
+      hover-expand primitive) stays ignorant of the knob entirely. The
+      Settings toggle is <code>[agents] board_show_working</code>,
+      <b>default OFF</b> — a deliberate behavior change from the pre-
+      2026-08-02 always-on Board.
+    </p>
+    <p class="section-sub">
+      This gates PRESENCE only, never CONTENT: once <i>something</i> has
+      summoned the Board, it lists every retained session, working ones
+      included — the row list below never filters. And it's a distinct
+      knob from <code>completion_notifications</code> (also on/off in the
+      same Settings section): that one gates whether a terminal session end
+      pushes a promoted notification CARD; <code>board_show_working</code>
+      gates whether the Board surface itself appears for working-only
+      sessions. A session that already summoned the Board for another
+      reason still lists its working siblings regardless of either toggle.
+    </p>
+    <p class="section-sub">
+      Ordering follows the same principle: <code>urgency_rank</code>
+      guarantees <b>every summoning state outranks every non-summoning
+      state</b>, so the session that actually summoned the Board always
+      leads the hero — a <code>Completed</code> session that just summoned
+      the Board can never lose the hero card to a merely-<code>Working</code>
+      sibling (that was a real, fixed bug: the Board used to arrive
+      announcing "Agent working" on exactly that scenario).
+    </p>
+    <div class="controls">
+      <button id="gateOffBtn" aria-pressed="true">board_show_working = false (default)</button>
+      <button id="gateOnBtn">board_show_working = true</button>
+    </div>
+    <div class="rig card-root" style="margin-top:14px;">
+      <div class="menubar"></div>
+      <div class="stage" style="min-height:110px;">
+        <div class="card-assembly agent-board-shell" id="gateShell" style="position:absolute; top:0; left:50%; transform:translateX(-50%);">
+          <span class="notch-gill notch-gill-left"></span>
+          <span class="notch-gill notch-gill-right"></span>
+          <div class="flank-left"><span class="time-only">14:32</span></div>
+          <div class="synthetic-cutout"></div>
+          <div class="flank-right">
+            <span class="status-dots">
+              <span class="status-dot football active"></span>
+              <span class="status-dot news active"></span>
+              <span class="status-dot weather dim"></span>
+            </span>
+          </div>
+          <div class="below-block agent-board agent-completed agent-origin src-kimi" id="gateBelow" style="display:none;">
+            <div class="agent-board-primary" id="gateHero"></div>
+            <div class="agent-board-swap"><div class="agent-board-rows" id="gateRows">
+              <div class="agent-row agent-working src-codex"><span class="agent-dot pulse"></span><span class="agent-runtime-tick"></span><span class="agent-row-runtime">Codex</span><span class="agent-row-project">notchtap</span><span class="agent-row-state">Working</span><span class="agent-row-elapsed">3m</span></div>
+            </div></div>
+          </div>
+        </div>
+      </div>
+      <div class="status-line" id="gateStatusLine">two live sessions: Kimi <b>completed</b> (just finished — summons the Board), Codex <b>working</b> (rides along, gated OFF alone)</div>
+    </div>
+    <p class="note">
+      This rig holds the SAME two sessions throughout — only the gate
+      changes. With the gate off (default), the Kimi completion alone is
+      enough to summon the Board (it outranks Working per
+      <code>urgency_rank</code>, so it leads the hero); the Codex session
+      lists as a compact row underneath, exactly as it would with the gate
+      on. Toggling to <code>true</code> changes nothing about THIS
+      fixture (a summoning session is already present) — the gate only
+      matters for the working-only case, demonstrated by removing the
+      completed session in your head: with zero summoning sessions and the
+      gate off, the Board would publish empty and the notch would show its
+      ordinary idle face instead.
+    </p>
+  </section>
+
+  <section>
+    <h2>2 — resting, single session · all seven states</h2>
     <p class="section-sub">
       <code>AGENT_STATE_PRESENTATION</code> (<code>lib/presentation.ts</code>)
-      — the closed lookup table every state resolves through. Five visual
+      — the closed lookup table every state's dot/accent resolves through —
+      paired with <code>AGENT_HERO_TITLE</code> (per-state hero prose) and
+      <code>AGENT_STATE_PRIORITY</code> (which of the shared low/medium/high
+      accent tiers the state's card renders through). Five visual accent
       classes cover seven wire states: <code>starting</code> reads as a
       <code>working</code> variant (no separate visual language for a
-      session's first few hundred ms).
+      session's first few hundred ms). Note the Stamp badge (Live/Done/Now)
+      comes from the SAME generic-priority table every non-football card
+      uses — it isn't agent-specific, so "Done" while <i>working</i> and
+      "Live" while <i>completed</i> look odd read literally; that's the
+      shared vocabulary, not a mislabel in this mock.
     </p>
     <div class="state-grid" id="stateGrid"></div>
   </section>
 
   <section>
-    <h2>2 — runtime identity · the four adapters</h2>
+    <h2>3 — runtime identity · the four adapters</h2>
     <p class="section-sub">
       <code>source-identity.css</code>'s <code>--cat</code> channel — a
       SEPARATE paint system from the state accent above, applied to the
-      runtime label and the small square tick (deliberately not round, so
-      it never reads as a second state dot next to the circular
-      <code>.agent-dot</code> on the same row).
+      masthead dot's runtime tick and the compact row's runtime label/tick
+      (deliberately a small square, not round, so it never reads as a
+      second state dot next to the circular <code>.agent-dot</code> on the
+      same row).
     </p>
     <div class="swatch-row">
       <span class="swatch"><i style="background:#d97757"></i>Claude Code — Anthropic "crail" terracotta</span>
@@ -339,13 +499,19 @@
   </section>
 
   <section>
-    <h2>3 — resting, multiple sessions</h2>
+    <h2>4 — resting, multiple sessions</h2>
     <p class="section-sub">
-      One hero (<code>sessions[0]</code>, already rust-ordered) plus every
-      other session as an <code>.agent-row</code> — pick a runtime and
-      state for the hero, and try the row add/remove buttons for
-      <code>ROW_TRANSITION</code> (spring, <code>bounce:0 duration:0.35</code>,
-      approximated with an ease-out curve here — no physics solver in plain CSS).
+      One hero (<code>sessions[0]</code>, already rust-ordered so the
+      summoning session always leads — section 1) plus every other session
+      as an <code>.agent-row</code> — pick a runtime and state for the
+      hero, and try the row add/remove buttons for <code>ROW_TRANSITION</code>
+      (spring, <code>bounce:0 duration:0.35</code>, approximated with an
+      ease-out curve here — no physics solver in plain CSS). "New primary
+      session" plays <code>HERO_SWAP_TRANSITION</code> — the hero's own
+      IDENTITY swap, keyed on <code>primary.id</code>, which plays ONLY
+      when a different session takes over the hero, never on a same-session
+      state change (that morphs its accent in place instead — try a state
+      button and watch the dot/stripe/pills recolor rather than swap).
     </p>
     <div class="controls">
       <label>hero runtime</label>
@@ -368,11 +534,10 @@
       <button id="heroSwapBtn">▶ new primary session (HERO_SWAP_TRANSITION)</button>
       <button id="addRowBtn">+ add compact row</button>
       <button id="removeRowBtn">− remove last row</button>
-      <button id="pulseBtn">▶ restart hero dot pulse (state-keyed remount)</button>
     </div>
     <div class="rig card-root" style="margin-top:14px;">
       <div class="menubar"></div>
-      <div class="stage" style="min-height:210px;">
+      <div class="stage" style="min-height:220px;">
         <div class="card-assembly expanded agent-board-shell" style="position:absolute; top:0; left:50%; transform:translateX(-50%);">
           <span class="notch-gill notch-gill-left"></span>
           <span class="notch-gill notch-gill-right"></span>
@@ -385,33 +550,25 @@
               <span class="status-dot weather dim"></span>
             </span>
           </div>
-          <div class="below-block agent-board agent-waiting src-claude-code" id="heroBelowBlock">
-            <div class="agent-board-primary" id="heroPrimary">
-              <div class="agent-board-primary-head" id="heroHead">
-                <span class="agent-dot large pulse" id="heroDot" aria-hidden="true"></span>
-                <span class="agent-runtime-tick" aria-hidden="true"></span>
-                <span class="agent-board-runtime" id="heroRuntimeLabel">Claude Code</span>
-                <span class="agent-board-state-pill" id="heroStateLabel">Needs approval</span>
-              </div>
-              <div class="agent-board-project">notchtap</div>
-              <div class="agent-board-summary" id="heroSummary">Approval needed to run <code>rm -rf build/</code></div>
-              <div class="agent-board-elapsed">42s</div>
-            </div>
-            <div class="agent-board-rows" id="compactRows">
-              <div class="agent-row agent-working src-codex">
-                <span class="agent-dot pulse" aria-hidden="true"></span><span class="agent-runtime-tick" aria-hidden="true"></span>
-                <span class="agent-row-runtime">Codex</span><span class="agent-row-project">mac-notification-nudge</span>
-                <span class="agent-row-state">Working</span><span class="agent-row-elapsed">3m</span>
-              </div>
-              <div class="agent-row agent-completed src-kimi">
-                <span class="agent-dot" aria-hidden="true"></span><span class="agent-runtime-tick" aria-hidden="true"></span>
-                <span class="agent-row-runtime">Kimi</span>
-                <span class="agent-row-state">Completed</span><span class="agent-row-elapsed">11m</span>
-              </div>
-              <div class="agent-row agent-failed src-opencode">
-                <span class="agent-dot" aria-hidden="true"></span><span class="agent-runtime-tick" aria-hidden="true"></span>
-                <span class="agent-row-runtime">OpenCode</span><span class="agent-row-project">shared-ui</span>
-                <span class="agent-row-state">Failed</span><span class="agent-row-elapsed">1h</span>
+          <div class="below-block agent-board agent-waiting agent-origin src-claude-code" id="heroBelowBlock">
+            <div class="agent-board-primary" id="heroPrimary"></div>
+            <div class="agent-board-swap">
+              <div class="agent-board-rows" id="compactRows">
+                <div class="agent-row agent-working src-codex">
+                  <span class="agent-dot pulse" aria-hidden="true"></span><span class="agent-runtime-tick" aria-hidden="true"></span>
+                  <span class="agent-row-runtime">Codex</span><span class="agent-row-project">mac-notification-nudge</span>
+                  <span class="agent-row-state">Working</span><span class="agent-row-elapsed">3m</span>
+                </div>
+                <div class="agent-row agent-completed src-kimi">
+                  <span class="agent-dot" aria-hidden="true"></span><span class="agent-runtime-tick" aria-hidden="true"></span>
+                  <span class="agent-row-runtime">Kimi</span>
+                  <span class="agent-row-state">Completed</span><span class="agent-row-elapsed">11m</span>
+                </div>
+                <div class="agent-row agent-failed src-opencode">
+                  <span class="agent-dot" aria-hidden="true"></span><span class="agent-runtime-tick" aria-hidden="true"></span>
+                  <span class="agent-row-runtime">OpenCode</span><span class="agent-row-project">shared-ui</span>
+                  <span class="agent-row-state">Failed</span><span class="agent-row-elapsed">1h</span>
+                </div>
               </div>
             </div>
           </div>
@@ -422,18 +579,101 @@
   </section>
 
   <section>
-    <h2>4 — hover-expanded · full scrollable list</h2>
+    <h2>5 — the Board's own summon &amp; dismissal</h2>
     <p class="section-sub">
-      Rust grows the real window and hands pointer events to this rect the
-      moment <code>expanded</code> flips true — every retained session
-      renders full (summary, meta chips, capability-dependent detail
-      chips), and each row's own transition history opens on THAT row's
-      real mouse-enter, exactly as below (this is genuine <code>:hover</code>,
-      not a stand-in — the shipped app receives real pointer events here too).
+      One level up from this component: <code>App.tsx</code> stacks the
+      Board and the ordinary status rail in a single grid cell
+      (<code>surface-stack</code>) so their crossfade never pushes layout —
+      the SAME technique the Board's own resting<span>↔</span>expanded swap
+      uses one level down (section 6). Since the Board now only appears
+      when an agent actually needs the operator, its ARRIVAL earns its own
+      longer clock — <code>BOARD_SUMMON_MS</code> (260ms) against the
+      routine rail<span>↔</span>rail crossfade's 180ms — while its EXIT
+      stays on the shared, quieter <code>SURFACE_SWAP_MS</code> (180ms): an
+      interruption should announce itself and then leave without ceremony.
+      Both legs are <b>opacity-only</b> — a scale/drop entrance was tried
+      and rejected on sight (2026-08-02, live operator feedback: "looks
+      weird, something about its size animation"), because the wrapping
+      <code>motion.div</code> also contains the synthetic notch cutout, and
+      that cutout's whole illusion depends on being a fixed physical
+      anchor. The standing law: any future entrance emphasis on this
+      surface animates ONLY content below the cutout, never the shell.
     </p>
-    <div class="rig card-root">
+    <div class="controls">
+      <button id="summonBtn">▶ summon the Board (260ms opacity, house-eased)</button>
+      <button id="dismissBtn">▶ dismiss to idle (180ms opacity)</button>
+    </div>
+    <div class="rig card-root" style="margin-top:14px;">
       <div class="menubar"></div>
-      <div class="stage" style="min-height:260px;">
+      <div class="stage" style="min-height:140px;">
+        <div class="surface-stack-demo" style="position:absolute; top:0; left:50%; transform:translateX(-50%);">
+          <div class="surface-cell is-active" id="idleCell">
+            <div class="card-assembly idle">
+              <div class="flank-left"><span class="time-only">14:32</span></div>
+              <div class="synthetic-cutout"></div>
+              <div class="flank-right">
+                <span class="status-dots">
+                  <span class="status-dot football active"></span>
+                  <span class="status-dot news active"></span>
+                  <span class="status-dot weather dim"></span>
+                </span>
+              </div>
+            </div>
+          </div>
+          <div class="surface-cell" id="boardCell">
+            <div class="card-assembly expanded agent-board-shell">
+              <div class="flank-left"><span class="time-only">14:32</span></div>
+              <div class="synthetic-cutout"></div>
+              <div class="flank-right">
+                <span class="status-dots">
+                  <span class="status-dot football active"></span>
+                  <span class="status-dot news active"></span>
+                  <span class="status-dot weather dim"></span>
+                </span>
+              </div>
+              <div class="below-block agent-board agent-waiting agent-origin src-claude-code">
+                <div class="agent-board-primary" id="summonHero"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="status-line" id="summonStatusLine">idle — no gated session</div>
+    </div>
+    <p class="note">
+      The idle face drawn here (flanks + synthetic cutout, no below-block)
+      is a simplified stand-in for whatever <code>StatusRailCard</code>
+      would actually be showing — the full idle/notification catalogue is
+      <code>notch-states.html</code>'s job, not this file's.
+    </p>
+  </section>
+
+  <section>
+    <h2>6 — resting ↔ hover-expanded · one continuous morph</h2>
+    <p class="section-sub">
+      2026-08-02 operator feedback: "the compact&lt;-&gt;expanded transition
+      reads badly." It used to run <code>mode="wait"</code> — the resting
+      rows collapsed ALL THE WAY to nothing before the expanded list was
+      allowed to start growing, so a hover played as two chained beats with
+      a full pinch-to-zero between them. Fixed by stacking both branches in
+      ONE grid cell (<code>.agent-board-swap</code>) with BOTH kept on the
+      same height spring, started the same frame — since a grid row sizes
+      to the MAX of its items rather than their sum, the wrapper's height
+      traces <code>max(outgoing, incoming)</code> as one continuous curve.
+      The hero above is unaffected either way — it stays mounted in BOTH
+      states (a fix for a separate bug: hovering a one-session Board used
+      to swap its hero for a single skinny row, which read as the card
+      getting SMALLER on hover — a hover must never shrink or swap the
+      hero). The expanded list below only ever holds the OTHER sessions
+      (<code>rest</code>), so each session appears exactly once at every
+      session count.
+    </p>
+    <div class="controls">
+      <button id="expandToggleBtn">▶ hover the Board (toggle expanded)</button>
+    </div>
+    <div class="rig card-root" style="margin-top:14px;">
+      <div class="menubar"></div>
+      <div class="stage" style="min-height:120px;">
         <div class="card-assembly expanded agent-board-shell" style="position:absolute; top:0; left:50%; transform:translateX(-50%);">
           <span class="notch-gill notch-gill-left"></span>
           <span class="notch-gill notch-gill-right"></span>
@@ -446,58 +686,32 @@
               <span class="status-dot weather dim"></span>
             </span>
           </div>
-          <div class="below-block agent-board">
-            <div class="agent-board-expanded-list">
-              <div class="agent-board-expanded-scroll">
-                <div class="agent-expanded-row agent-waiting src-claude-code">
-                  <div class="agent-expanded-row-head">
-                    <span class="agent-dot pulse" aria-hidden="true"></span><span class="agent-runtime-tick" aria-hidden="true"></span>
-                    <span class="agent-row-runtime">Claude Code</span><span class="agent-row-state">Needs approval</span><span class="agent-row-elapsed">42s</span>
-                  </div>
-                  <div class="agent-expanded-row-summary">Approval needed to run <code>rm -rf build/</code></div>
-                  <div class="agent-expanded-row-meta"><span>~/projects/notchtap</span><span>contabo-vps</span></div>
-                  <div class="agent-expanded-row-details"><span class="agent-expanded-detail"><span class="agent-expanded-detail-label">tool:</span> Bash</span><span class="agent-expanded-detail"><span class="agent-expanded-detail-label">risk:</span> destructive</span></div>
-                  <div class="agent-expanded-history">
-                    <ul class="agent-expanded-history-list">
-                      <li class="agent-expanded-history-entry"><span class="agent-expanded-history-state">Working</span><span class="agent-expanded-history-elapsed">2m ago</span></li>
-                      <li class="agent-expanded-history-entry"><span class="agent-expanded-history-state">Starting</span><span class="agent-expanded-history-elapsed">3m ago</span></li>
-                    </ul>
+          <div class="below-block agent-board agent-waiting agent-origin src-claude-code">
+            <div class="agent-board-primary" id="morphHero"></div>
+            <div class="agent-board-swap">
+              <div class="swap-branch is-visible" id="morphRestingBranch">
+                <div class="swap-branch-inner">
+                  <div class="agent-board-rows">
+                    <div class="agent-row agent-working src-codex"><span class="agent-dot pulse"></span><span class="agent-runtime-tick"></span><span class="agent-row-runtime">Codex</span><span class="agent-row-project">mac-notification-nudge</span><span class="agent-row-state">Working</span><span class="agent-row-elapsed">3m</span></div>
+                    <div class="agent-row agent-completed src-kimi"><span class="agent-dot"></span><span class="agent-runtime-tick"></span><span class="agent-row-runtime">Kimi</span><span class="agent-row-state">Completed</span><span class="agent-row-elapsed">11m</span></div>
                   </div>
                 </div>
-                <div class="agent-expanded-row agent-working src-codex">
-                  <div class="agent-expanded-row-head">
-                    <span class="agent-dot pulse" aria-hidden="true"></span><span class="agent-runtime-tick" aria-hidden="true"></span>
-                    <span class="agent-row-runtime">Codex</span><span class="agent-row-state">Working</span><span class="agent-row-elapsed">3m</span>
-                  </div>
-                  <div class="agent-expanded-row-summary">Running test suite — subagent: test runner (working)</div>
-                  <div class="agent-expanded-row-meta"><span>~/projects/mac-notification-nudge</span><span>subagent: test runner (working)</span></div>
-                  <div class="agent-expanded-history">
-                    <ul class="agent-expanded-history-list"><li class="agent-expanded-history-entry"><span class="agent-expanded-history-state">Starting</span><span class="agent-expanded-history-elapsed">3m ago</span></li></ul>
-                  </div>
-                </div>
-                <div class="agent-expanded-row agent-completed src-kimi">
-                  <div class="agent-expanded-row-head">
-                    <span class="agent-dot" aria-hidden="true"></span><span class="agent-runtime-tick" aria-hidden="true"></span>
-                    <span class="agent-row-runtime">Kimi</span><span class="agent-row-state">Completed</span><span class="agent-row-elapsed">11m</span>
-                  </div>
-                  <div class="agent-expanded-row-summary">Turn completed — awaiting input</div>
-                  <div class="agent-expanded-row-meta"><span>clears in 4m</span></div>
-                  <div class="agent-expanded-history">
-                    <ul class="agent-expanded-history-list">
-                      <li class="agent-expanded-history-entry"><span class="agent-expanded-history-state">Working</span><span class="agent-expanded-history-elapsed">12m ago</span></li>
-                      <li class="agent-expanded-history-entry"><span class="agent-expanded-history-state">Starting</span><span class="agent-expanded-history-elapsed">15m ago</span></li>
-                    </ul>
-                  </div>
-                </div>
-                <div class="agent-expanded-row agent-failed src-opencode">
-                  <div class="agent-expanded-row-head">
-                    <span class="agent-dot" aria-hidden="true"></span><span class="agent-runtime-tick" aria-hidden="true"></span>
-                    <span class="agent-row-runtime">OpenCode</span><span class="agent-row-state">Failed</span><span class="agent-row-elapsed">1h</span>
-                  </div>
-                  <div class="agent-expanded-row-summary">Session ended with an error</div>
-                  <div class="agent-expanded-row-meta"><span>clears in 23m</span></div>
-                  <div class="agent-expanded-history">
-                    <ul class="agent-expanded-history-list"><li class="agent-expanded-history-entry"><span class="agent-expanded-history-state">Working</span><span class="agent-expanded-history-elapsed">1h ago</span></li></ul>
+              </div>
+              <div class="swap-branch" id="morphExpandedBranch">
+                <div class="swap-branch-inner">
+                  <div class="agent-board-expanded-list">
+                    <div class="agent-board-expanded-scroll">
+                      <div class="agent-expanded-row agent-working src-codex">
+                        <div class="agent-expanded-row-head"><span class="agent-dot pulse"></span><span class="agent-runtime-tick"></span><span class="agent-row-runtime">Codex</span><span class="agent-row-state">Working</span><span class="agent-row-elapsed">3m</span></div>
+                        <div class="agent-expanded-row-summary">Running test suite — subagent: test runner (working)</div>
+                        <div class="agent-expanded-row-meta"><span>~/projects/mac-notification-nudge</span><span>subagent: test runner (working)</span></div>
+                      </div>
+                      <div class="agent-expanded-row agent-completed src-kimi">
+                        <div class="agent-expanded-row-head"><span class="agent-dot"></span><span class="agent-runtime-tick"></span><span class="agent-row-runtime">Kimi</span><span class="agent-row-state">Completed</span><span class="agent-row-elapsed">11m</span></div>
+                        <div class="agent-expanded-row-summary">Turn completed — awaiting input</div>
+                        <div class="agent-expanded-row-meta"><span>clears in 4m</span></div>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -505,53 +719,144 @@
           </div>
         </div>
       </div>
-      <div class="status-line">hover any row above to open its transition history</div>
+      <div class="status-line" id="morphStatusLine">resting — hero + 2 compact rows</div>
     </div>
-  </section>
-
-  <section style="border-top-color:rgba(240,196,106,0.35);">
-    <h2 style="color:#f0c46a;">⚠ proposal — the same states, through the unified shell</h2>
-    <p class="section-sub">
-      NOT current reality — see <code>prototype/proposal-unified-card.html</code>
-      for the full cross-origin version of this idea. Above is
-      <code>AgentBoard.tsx</code>'s own layout, what's actually shipped.
-      Here, the PRIMARY session renders through the generic
-      <code>NotificationBody.tsx</code> template instead (masthead + stamp
-      + accent stripe + title/body/details) — the same template manual/CLI,
-      weather, and news already use today. The multi-session aggregate
-      view doesn't fit inside a single generic card, so it becomes an
-      ADDITIVE flavor instead: a restrained list of other sessions appended
-      below, in the same mono/dot visual language the ttl-bar/queue system
-      already uses elsewhere — not a replacement layout, an addition.
+    <p class="note">
+      Rust grows the REAL native window (and hands pointer events to it)
+      before <code>expanded</code> flips true on the frontend
+      (<code>try_expand_board_for_hover</code>, <code>hover.rs</code>) —
+      the frame budgets <code>HEADER_HEIGHT</code> (210px: the cutout row
+      plus the hero plus the list's own top margin) plus
+      <code>EXPANDED_ROW_HEIGHT</code> (96px, honestly sized to what
+      <code>ExpandedAgentRow</code> actually renders — name/summary/meta —
+      not the compact row's much shorter 34px, which used to clip rows
+      mid-text) per non-primary session, floored at the same 300px resting
+      canvas and capped at 75% of screen height. Board hover-out also now
+      waits a 450ms grace before shrinking the native frame, so the row-
+      collapse spring above isn't visibly clipped by the window disappearing
+      out from under it.
     </p>
-    <div class="state-grid" id="proposalStateGrid"></div>
   </section>
 
   <section>
-    <h2>5 — motion primitives unique to this component</h2>
+    <h2>7 — hover-expanded detail rows</h2>
+    <p class="section-sub">
+      Every retained session, full detail — summary, meta chips
+      (<code>project.cwd</code>/<code>host.name</code>/terminal "clears
+      in"/active subagent), capability-dependent detail chips, and a per-
+      row transition history that opens on THAT row's own real mouse-enter
+      (genuine pointer events land here in the shipped app too — rust
+      hands click-through off for exactly this rect while hovered, so
+      plain CSS <code>:hover</code> below is the same signal, not a stand-
+      in). Hover any row.
+    </p>
+    <div class="rig card-root">
+      <div class="menubar"></div>
+      <div class="stage" style="min-height:300px;">
+        <div class="card-assembly expanded agent-board-shell" style="position:absolute; top:0; left:50%; transform:translateX(-50%);">
+          <span class="notch-gill notch-gill-left"></span>
+          <span class="notch-gill notch-gill-right"></span>
+          <div class="flank-left"><span class="time-only">14:32</span></div>
+          <div class="synthetic-cutout"></div>
+          <div class="flank-right">
+            <span class="status-dots">
+              <span class="status-dot football active"></span>
+              <span class="status-dot news active"></span>
+              <span class="status-dot weather dim"></span>
+            </span>
+          </div>
+          <div class="below-block agent-board agent-waiting agent-origin src-claude-code">
+            <div class="agent-board-primary" id="detailHero"></div>
+            <div class="agent-board-swap">
+              <div class="agent-board-expanded-list">
+                <div class="agent-board-expanded-scroll">
+                  <div class="agent-expanded-row agent-working src-codex">
+                    <div class="agent-expanded-row-head">
+                      <span class="agent-dot pulse" aria-hidden="true"></span><span class="agent-runtime-tick" aria-hidden="true"></span>
+                      <span class="agent-row-runtime">Codex</span><span class="agent-row-state">Working</span><span class="agent-row-elapsed">3m</span>
+                    </div>
+                    <div class="agent-expanded-row-summary">Running test suite — subagent: test runner (working)</div>
+                    <div class="agent-expanded-row-meta"><span>~/projects/mac-notification-nudge</span><span>subagent: test runner (working)</span></div>
+                    <div class="agent-expanded-history">
+                      <ul class="agent-expanded-history-list"><li class="agent-expanded-history-entry"><span class="agent-expanded-history-state">Starting</span><span class="agent-expanded-history-elapsed">3m ago</span></li></ul>
+                    </div>
+                  </div>
+                  <div class="agent-expanded-row agent-completed src-kimi">
+                    <div class="agent-expanded-row-head">
+                      <span class="agent-dot" aria-hidden="true"></span><span class="agent-runtime-tick" aria-hidden="true"></span>
+                      <span class="agent-row-runtime">Kimi</span><span class="agent-row-state">Completed</span><span class="agent-row-elapsed">11m</span>
+                    </div>
+                    <div class="agent-expanded-row-summary">Turn completed — awaiting input</div>
+                    <div class="agent-expanded-row-meta"><span>clears in 4m</span></div>
+                    <div class="agent-expanded-history">
+                      <ul class="agent-expanded-history-list">
+                        <li class="agent-expanded-history-entry"><span class="agent-expanded-history-state">Working</span><span class="agent-expanded-history-elapsed">12m ago</span></li>
+                        <li class="agent-expanded-history-entry"><span class="agent-expanded-history-state">Starting</span><span class="agent-expanded-history-elapsed">15m ago</span></li>
+                      </ul>
+                    </div>
+                  </div>
+                  <div class="agent-expanded-row agent-failed src-opencode">
+                    <div class="agent-expanded-row-head">
+                      <span class="agent-dot" aria-hidden="true"></span><span class="agent-runtime-tick" aria-hidden="true"></span>
+                      <span class="agent-row-runtime">OpenCode</span><span class="agent-row-state">Failed</span><span class="agent-row-elapsed">1h</span>
+                    </div>
+                    <div class="agent-expanded-row-summary">Session ended with an error</div>
+                    <div class="agent-expanded-row-meta"><span>clears in 23m</span></div>
+                    <div class="agent-expanded-history">
+                      <ul class="agent-expanded-history-list"><li class="agent-expanded-history-entry"><span class="agent-expanded-history-state">Working</span><span class="agent-expanded-history-elapsed">1h ago</span></li></ul>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+      <div class="status-line">hero (the summoning session, Claude Code — needs approval) stays mounted above; hover any row below to open its transition history</div>
+    </div>
+  </section>
+
+  <section>
+    <h2>8 — motion primitives unique to this component</h2>
     <table class="geo-table">
       <tr><th>name</th><th>value</th><th>plays when</th></tr>
+      <tr><td>BOARD_SUMMON_MS</td><td class="val">260ms, NOTCHTAP_EASE, opacity only</td><td class="val">the Board's own arrival (App.tsx surface swap)</td></tr>
+      <tr><td>SURFACE_SWAP_MS</td><td class="val">180ms, NOTCHTAP_EASE, opacity only</td><td class="val">the Board's dismissal, AND the routine rail↔rail crossfade</td></tr>
+      <tr><td>resting↔expanded stacked swap</td><td class="val">DISCLOSURE_SPRING (stiffness 480, damping 37) on BOTH branches' height, same clock</td><td class="val">hover enters/leaves the Board — one continuous max(outgoing,incoming) curve</td></tr>
       <tr><td>agent-dot state tick</td><td class="val">240ms NOTCHTAP_EASE, scale(1.35)→1</td><td class="val">state-keyed remount (any state change)</td></tr>
       <tr><td>agent-dot breathe</td><td class="val">2.2s ease-in-out × 4, then rests</td><td class="val">same remount — waiting/working only, bounded</td></tr>
+      <tr><td>--reveal-ms accent morph</td><td class="val">260ms, house-eased</td><td class="val">a same-session state change: dot, accent stripe, stamp, fact pills, row state word all recolor together</td></tr>
       <tr><td>ROW_TRANSITION</td><td class="val">spring, bounce:0, duration:0.35</td><td class="val">a row enters, exits, AND sibling reflow — one const, all three</td></tr>
-      <tr><td>HERO_SWAP_TRANSITION</td><td class="val">duration:0.16, NOTCHTAP_EASE</td><td class="val">keyed on primary.id — a DIFFERENT session becomes primary</td></tr>
-      <tr><td>DISCLOSURE_SPRING</td><td class="val">spring, stiffness:480, damping:37</td><td class="val">compact rows block, expanded list, per-row history</td></tr>
+      <tr><td>HERO_SWAP_TRANSITION</td><td class="val">duration:0.16, NOTCHTAP_EASE, opacity + 6px y</td><td class="val">keyed on primary.id — a DIFFERENT session becomes primary</td></tr>
+      <tr><td>DISCLOSURE_SPRING</td><td class="val">spring, stiffness:480, damping:37</td><td class="val">the resting/expanded swap, and each row's own history disclosure</td></tr>
     </table>
     <p class="note">
-      The hero swap only plays on an identity change — a same-session STATE
-      change morphs in place instead (the dot's colour transition + the tick
-      above), which is why the "restart hero dot pulse" button and "new
-      primary session" button above demonstrate two visibly different
-      motions for what might look like "the same card changed."
+      Two clocks are deliberately asymmetric with their own "mirror the
+      exit" sibling: the Board's summon (260ms in / 180ms out) and the
+      per-row history disclosure vs. its own collapse both earn a
+      different arrival weight than their departure, per this repo's
+      house rule that an arrival can earn emphasis while a departure
+      should stay quiet. Every OTHER transition in this file (rows,
+      resting↔expanded) genuinely does mirror its own exit path — the
+      asymmetry is scoped narrowly, not a general pattern.
     </p>
   </section>
 
   <footer>
     Source of truth: <code>src/components/AgentBoard.tsx</code>,
+    <code>src/App.tsx</code>, <code>src/components/NotificationBody.tsx</code>,
     <code>src/overlay/agent-board.css</code>,
+    <code>src/overlay/masthead-content.css</code>,
+    <code>src/overlay/news-category.css</code>,
+    <code>src/overlay/manifest.css</code>,
+    <code>src/overlay/card-chrome.css</code>,
     <code>src/overlay/source-identity.css</code>,
-    <code>src/lib/presentation.ts</code>,
-    <code>src/lib/sourceColors.ts</code>, as of commit <code>9855bfe</code>.
+    <code>src/lib/presentation.ts</code>, <code>src/animationTiming.ts</code>,
+    <code>src-tauri/src/agents/board.rs</code>,
+    <code>src-tauri/src/agents/model.rs</code>,
+    <code>src-tauri/src/config.rs</code>, as of merge commit
+    <code>0252767</code> (PR #10, <code>fix/board-motion-polish</code>;
+    repo HEAD <code>25c007c2</code> at the time of this pass).
     Sibling files: <code>notch-states.html</code> (the shared shell + every
     OTHER card mode), <code>football-card.html</code>, <code>news-card.html</code>,
     <code>weather-art.html</code>, <code>status-rail.html</code>,
@@ -564,104 +869,120 @@
 (function () {
   var RUNTIME_LABEL = { "claude-code": "Claude Code", codex: "Codex", kimi: "Kimi", opencode: "OpenCode" };
   var RUNTIME_CLASS = { "claude-code": "src-claude-code", codex: "src-codex", kimi: "src-kimi", opencode: "src-opencode" };
-  var STATE_PRESENTATION = {
-    waiting_for_permission: { label: "Needs approval", className: "agent-waiting", pulse: true, summary: 'Approval needed to run <code>rm -rf build/</code>' },
-    waiting_for_input: { label: "Needs input", className: "agent-waiting", pulse: true, summary: "Waiting on a reply to continue" },
-    working: { label: "Working", className: "agent-working", pulse: true, summary: "Running the test suite — 214/340 files" },
-    starting: { label: "Starting", className: "agent-working", pulse: true, summary: "Session starting up" },
-    completed: { label: "Completed", className: "agent-completed", pulse: false, summary: "Turn completed — awaiting input" },
-    failed: { label: "Failed", className: "agent-failed", pulse: false, summary: "Session ended with an error" },
-    stale: { label: "Stale", className: "agent-stale", pulse: false, summary: "No event received in over 10 minutes" },
-  };
+  var STAMP_BY_PRIORITY = { low: "Live", medium: "Done", high: "Now" };
 
-  // ---- section 1: all seven states, one small rig each ----
-  var stateGrid = document.getElementById("stateGrid");
+  // AGENT_STATE_PRESENTATION + AGENT_HERO_TITLE + AGENT_STATE_PRIORITY +
+  // the heroFactTags()/synthesized-elapsed-fact rules, folded into one
+  // table (lib/presentation.ts + AgentBoard.tsx, verbatim behavior).
+  var STATE = {
+    waiting_for_permission: { label: "Needs approval", className: "agent-waiting", pulse: true, priority: "high", title: "Agent needs input", body: 'Approval needed to run <code>rm -rf build/</code>', facts: [{ label: "Tool", value: "rm", tag: "destructive" }], factsTone: "danger" },
+    waiting_for_input:      { label: "Needs input",    className: "agent-waiting", pulse: true, priority: "high", title: "Agent needs input", body: "Waiting on a reply to continue", facts: [], factsTone: "accent" },
+    working:                { label: "Working",        className: "agent-working", pulse: true, priority: "medium", title: "Agent working", body: "Running the test suite — 214/340 files", facts: [{ label: "Progress", value: "63%" }], factsTone: "accent" },
+    starting:               { label: "Starting",       className: "agent-working", pulse: true, priority: "medium", title: "Agent starting", body: "Session starting up", facts: [{ label: "Session", value: "2s" }], factsTone: "accent" },
+    completed:              { label: "Completed",      className: "agent-completed", pulse: false, priority: "low", title: "Agent turn completed", body: "Turn completed — awaiting input", facts: [{ label: "Duration", value: "12m" }], factsTone: "accent" },
+    failed:                 { label: "Failed",         className: "agent-failed", pulse: false, priority: "high", title: "Agent session failed", body: "Session ended with an error", facts: [{ label: "Exit", value: "1", tag: "error" }], factsTone: "danger" },
+    stale:                  { label: "Stale",          className: "agent-stale", pulse: false, priority: "low", title: "Agent session stale", body: "No event received in over 10 minutes", facts: [{ label: "Last seen", value: "14m ago" }], factsTone: "accent" },
+  };
   var STATE_ORDER = ["waiting_for_permission", "waiting_for_input", "working", "starting", "completed", "failed", "stale"];
+
+  // renderFactPills (NotificationBody.tsx), verbatim behavior: a fact's
+  // own `tag` (when present) always wins its pill's tone over the call-
+  // level tone every untagged pill in the same call takes.
+  function factsHtml(facts, tone) {
+    if (!facts || facts.length === 0) return "";
+    return '<div class="detail-facts">' + facts.map(function (f) {
+      var pillTone = f.tag ? "danger" : tone;
+      var tag = f.tag ? '<span class="fp-tag">' + f.tag + "</span>" : "";
+      return '<span class="fact-pill' + (pillTone ? " tone-" + pillTone : "") + '"><span class="fp-label">' + f.label + "</span>" + f.value + tag + "</span>";
+    }).join("") + "</div>";
+  }
+
+  // AgentHeroCard (NotificationBody.tsx), verbatim markup shape: `.compact`
+  // > `.copy` > masthead-row (agent-dot + tick + "agent" kicker, Stamp) >
+  // title.headline > notif-subtitle-row > notif-body > fact pills.
+  function heroHtml(rt, st, project) {
+    var s = STATE[st];
+    var subtitle = project ? RUNTIME_LABEL[rt] + " · " + project : RUNTIME_LABEL[rt];
+    return (
+      '<div class="compact"><div class="copy">' +
+        '<div class="masthead-row">' +
+          '<div class="masthead">' +
+            '<span class="agent-dot large' + (s.pulse ? " pulse" : "") + '" aria-hidden="true"></span>' +
+            '<span class="agent-runtime-tick" aria-hidden="true"></span>agent' +
+          '</div>' +
+          '<div class="stamp">' + STAMP_BY_PRIORITY[s.priority] + '</div>' +
+        '</div>' +
+        '<div class="title headline">' + s.title + '</div>' +
+        '<div class="notif-subtitle-row"><span class="notif-subtitle">' + subtitle + '</span></div>' +
+        '<div class="notif-body">' + s.body + '</div>' +
+        factsHtml(s.facts, s.factsTone) +
+      '</div></div>'
+    );
+  }
+
+  function setBelowClasses(el, rt, st) {
+    el.className = "below-block agent-board agent-origin " + STATE[st].className + " " + RUNTIME_CLASS[rt];
+  }
+  function setShellPriority(shellEl, st) {
+    ["low", "medium", "high"].forEach(function (p) { shellEl.classList.remove(p); });
+    shellEl.classList.add(STATE[st].priority);
+  }
+
+  // ---- section 2: all seven states, one small rig each ----
+  var stateGrid = document.getElementById("stateGrid");
   STATE_ORDER.forEach(function (key) {
-    var p = STATE_PRESENTATION[key];
+    var s = STATE[key];
     var wrap = document.createElement("div");
     wrap.innerHTML =
-      '<div class="rig-label">' + key + " <span class=\"tag\">" + p.className + "</span></div>" +
-      '<div class="rig card-root"><div class="menubar"></div><div class="stage" style="min-height:150px;">' +
-      '<div class="card-assembly expanded agent-board-shell" style="position:absolute;top:0;left:50%;transform:translateX(-50%) scale(0.82);transform-origin:top center;">' +
+      '<div class="rig-label">' + key + " <span class=\"tag\">" + s.className + "</span></div>" +
+      '<div class="rig card-root"><div class="menubar"></div><div class="stage" style="min-height:160px;">' +
+      '<div class="card-assembly expanded agent-board-shell ' + s.priority + '" style="position:absolute;top:0;left:50%;transform:translateX(-50%) scale(0.82);transform-origin:top center;">' +
       '<span class="notch-gill notch-gill-left"></span><span class="notch-gill notch-gill-right"></span>' +
       '<div class="flank-left"><span class="time-only">14:32</span></div><div class="synthetic-cutout"></div>' +
       '<div class="flank-right"><span class="status-dots"><span class="status-dot football active"></span><span class="status-dot news active"></span><span class="status-dot weather dim"></span></span></div>' +
-      '<div class="below-block agent-board ' + p.className + ' src-claude-code">' +
-      '<div class="agent-board-primary"><div class="agent-board-primary-head">' +
-      '<span class="agent-dot large ' + (p.pulse ? "pulse" : "") + '" aria-hidden="true"></span>' +
-      '<span class="agent-runtime-tick" aria-hidden="true"></span>' +
-      '<span class="agent-board-runtime">Claude Code</span>' +
-      '<span class="agent-board-state-pill">' + p.label + "</span></div>" +
-      '<div class="agent-board-project">notchtap</div>' +
-      '<div class="agent-board-summary">' + p.summary + "</div>" +
-      '<div class="agent-board-elapsed">42s</div></div></div></div></div></div>';
+      '<div class="below-block agent-board agent-origin ' + s.className + ' src-claude-code">' +
+      '<div class="agent-board-primary">' + heroHtml("claude-code", key, "notchtap") + "</div>" +
+      "</div></div></div></div>";
     stateGrid.appendChild(wrap);
   });
 
-  // ---- proposal section: all seven states, through the unified template ----
-  var STAMP_BY_PRIORITY = { low: "Live", medium: "Done", high: "Now" };
-  var PROPOSAL_EXTRA = {
-    waiting_for_permission: { priority: "high", runtime: "claude-code", subtitle: "Claude Code · notchtap", body: "Run <code>rm -rf build/</code>?", facts: [{ label: "Tool", value: "rm", tag: "destructive", tone: "danger" }], queue: true },
-    waiting_for_input: { priority: "high", runtime: "codex", subtitle: "Codex · mac-notification-nudge", body: "Confirm the migration plan before continuing?", facts: [] },
-    working: { priority: "medium", runtime: "kimi", subtitle: "Kimi · shared-ui", body: "Running the test suite — 214/340 files.", facts: [{ label: "Progress", value: "63%", tone: "accent" }] },
-    starting: { priority: "medium", runtime: "opencode", subtitle: "OpenCode · notchtap", body: "Session starting up.", facts: [{ label: "Session", value: "2s", tone: "accent" }] },
-    completed: { priority: "low", runtime: "claude-code", subtitle: "Claude Code · notchtap", body: "Turn completed — awaiting input.", facts: [{ label: "Duration", value: "12m", tone: "accent" }] },
-    failed: { priority: "high", runtime: "codex", subtitle: "Codex · mac-notification-nudge", body: "Session ended with an error.", facts: [{ label: "Exit", value: "1", tag: "error", tone: "danger" }] },
-    stale: { priority: "low", runtime: "kimi", subtitle: "Kimi · shared-ui", body: "No event received in over 10 minutes.", facts: [{ label: "Last seen", value: "14m ago", tone: "accent" }] },
-  };
-  function factsHtml(facts) {
-    if (!facts || facts.length === 0) return "";
-    return '<div class="detail-facts">' + facts.map(function (d) {
-      var toneClass = d.tone ? " tone-" + d.tone : "";
-      var tag = d.tag ? '<span class="fp-tag">' + d.tag + "</span>" : "";
-      return '<span class="fact-pill' + toneClass + '"><span class="fp-label">' + d.label + "</span>" + d.value + tag + "</span>";
-    }).join("") + "</div>";
+  // ---- section 1: presence gate demo ----
+  var gateShell = document.getElementById("gateShell");
+  var gateBelow = document.getElementById("gateBelow");
+  var gateHero = document.getElementById("gateHero");
+  var gateStatusLine = document.getElementById("gateStatusLine");
+  gateHero.innerHTML = heroHtml("kimi", "completed", "shared-ui");
+  setShellPriority(gateShell, "completed");
+  gateShell.classList.add("expanded");
+  gateBelow.style.display = "";
+  function applyGate(showWorking) {
+    gateStatusLine.innerHTML = showWorking
+      ? "board_show_working = <b>true</b> — same result here (a summoning session is already present); this toggle only changes the working-ONLY case"
+      : "board_show_working = <b>false</b> (default) — Kimi's completion alone already summons the Board";
   }
-  var proposalGrid = document.getElementById("proposalStateGrid");
-  STATE_ORDER.forEach(function (key) {
-    var p = STATE_PRESENTATION[key];
-    var x = PROPOSAL_EXTRA[key];
-    var title = key === "completed" ? "Agent turn completed" : key === "failed" ? "Agent session failed" : key === "stale" ? "Agent session stale" : "Agent needs input";
-    if (key === "working" || key === "starting") title = "Agent " + p.label.toLowerCase();
-    var wrap = document.createElement("div");
-    wrap.innerHTML =
-      '<div class="rig-label">' + key + " <span class=\"tag\">unified template</span></div>" +
-      '<div class="rig card-root"><div class="menubar"></div><div class="stage" style="min-height:170px;">' +
-      '<div class="card-assembly showing ' + x.priority + '" style="position:absolute;top:0;left:50%;transform:translateX(-50%) scale(0.86);transform-origin:top center;">' +
-      '<div class="flank-left"><span class="time-only">14:32</span></div><div class="synthetic-cutout"></div>' +
-      '<div class="flank-right"><span class="status-dots"><span class="status-dot football active"></span><span class="status-dot news active"></span><span class="status-dot weather dim"></span></span></div>' +
-      '<div class="below-block origin-wash ' + RUNTIME_CLASS[x.runtime] + '"><div class="card-content"><div class="compact">' +
-      '<div class="masthead-row"><div class="masthead"><span class="dot"></span>agent</div><div class="stamp">' + STAMP_BY_PRIORITY[x.priority] + "</div></div>" +
-      '<div class="title headline">' + title + "</div>" +
-      '<div class="notif-subtitle-row"><span class="notif-subtitle">' + x.subtitle + "</span></div>" +
-      '<div class="notif-body">' + x.body + "</div>" +
-      factsHtml(x.facts) + "</div></div>" +
-      (x.queue ? '<div class="queue-rows"><div class="queue-row"><span class="qdot" style="background:#10a37f"></span><span class="qname">Codex</span> working <span class="qstate">3m</span></div><div class="queue-row"><span class="qdot" style="background:#f5f7fa"></span><span class="qname">Kimi</span> completed <span class="qstate">11m</span></div><div class="queue-row"><span class="qdot" style="background:#9d7cd8"></span><span class="qname">OpenCode</span> failed <span class="qstate">1h</span></div></div>' : "") +
-      "</div></div></div></div>";
-    proposalGrid.appendChild(wrap);
+  document.getElementById("gateOffBtn").addEventListener("click", function (e) {
+    document.getElementById("gateOnBtn").setAttribute("aria-pressed", "false");
+    e.target.setAttribute("aria-pressed", "true");
+    applyGate(false);
+  });
+  document.getElementById("gateOnBtn").addEventListener("click", function (e) {
+    document.getElementById("gateOffBtn").setAttribute("aria-pressed", "false");
+    e.target.setAttribute("aria-pressed", "true");
+    applyGate(true);
   });
 
-  // ---- section 3: interactive hero ----
+  // ---- section 4: interactive hero + rows ----
   var heroBelow = document.getElementById("heroBelowBlock");
-  var heroHead = document.getElementById("heroHead");
-  var heroDot = document.getElementById("heroDot");
-  var heroRuntimeLabel = document.getElementById("heroRuntimeLabel");
-  var heroStateLabel = document.getElementById("heroStateLabel");
-  var heroSummary = document.getElementById("heroSummary");
   var heroPrimary = document.getElementById("heroPrimary");
   var heroStatusLine = document.getElementById("heroStatusLine");
   var currentRt = "claude-code", currentSt = "waiting_for_permission";
 
   function applyHero() {
-    var p = STATE_PRESENTATION[currentSt];
-    heroBelow.className = "below-block agent-board " + p.className + " " + RUNTIME_CLASS[currentRt];
-    heroRuntimeLabel.textContent = RUNTIME_LABEL[currentRt];
-    heroStateLabel.textContent = p.label;
-    heroSummary.innerHTML = p.summary;
-    heroDot.classList.toggle("pulse", p.pulse);
+    setBelowClasses(heroBelow, currentRt, currentSt);
+    heroPrimary.innerHTML = heroHtml(currentRt, currentSt, "notchtap");
     heroStatusLine.innerHTML = "hero: <b>" + currentSt + "</b> · " + RUNTIME_LABEL[currentRt];
   }
+  applyHero();
   document.querySelectorAll("[data-rt]").forEach(function (b) {
     b.addEventListener("click", function () {
       currentRt = b.dataset.rt;
@@ -674,18 +995,14 @@
       currentSt = b.dataset.st;
       document.querySelectorAll("[data-st]").forEach(function (x) { x.setAttribute("aria-pressed", String(x === b)); });
       applyHero();
-      heroDot.style.animation = "none"; void heroDot.offsetWidth; heroDot.style.animation = "";
     });
-  });
-  document.getElementById("pulseBtn").addEventListener("click", function () {
-    heroDot.style.animation = "none"; void heroDot.offsetWidth; heroDot.style.animation = "";
   });
   document.getElementById("heroSwapBtn").addEventListener("click", function () {
     heroPrimary.classList.add("swap-out");
     setTimeout(function () { heroPrimary.classList.remove("swap-out"); }, 160);
   });
 
-  // ---- row add/remove ----
+  // row add/remove — ROW_TRANSITION approximation, unchanged shape
   var ROW_VARIANTS = [
     ["agent-working", "src-codex", "Codex", "mac-notification-nudge", "Working"],
     ["agent-completed", "src-kimi", "Kimi", null, "Completed"],
@@ -712,6 +1029,48 @@
     last.classList.add("row-leave");
     setTimeout(function () { last.remove(); }, 350);
   });
+
+  // ---- section 5: summon / dismiss the whole surface ----
+  var idleCell = document.getElementById("idleCell");
+  var boardCell = document.getElementById("boardCell");
+  var summonHero = document.getElementById("summonHero");
+  var summonStatusLine = document.getElementById("summonStatusLine");
+  summonHero.innerHTML = heroHtml("claude-code", "waiting_for_permission", "notchtap");
+  document.getElementById("summonBtn").addEventListener("click", function () {
+    idleCell.classList.remove("is-active");
+    idleCell.classList.add("is-leaving");
+    boardCell.classList.remove("is-leaving");
+    boardCell.classList.add("is-active");
+    summonStatusLine.innerHTML = "Board summoned — 260ms opacity, house-eased (BOARD_SUMMON_MS)";
+  });
+  document.getElementById("dismissBtn").addEventListener("click", function () {
+    boardCell.classList.remove("is-active");
+    boardCell.classList.add("is-leaving");
+    idleCell.classList.remove("is-leaving");
+    idleCell.classList.add("is-active");
+    summonStatusLine.innerHTML = "dismissed to idle — 180ms opacity (SURFACE_SWAP_MS, the shared quiet exit)";
+  });
+
+  // ---- section 6: resting <-> expanded morph ----
+  var morphHero = document.getElementById("morphHero");
+  var morphRestingBranch = document.getElementById("morphRestingBranch");
+  var morphExpandedBranch = document.getElementById("morphExpandedBranch");
+  var morphStatusLine = document.getElementById("morphStatusLine");
+  morphHero.innerHTML = heroHtml("claude-code", "waiting_for_permission", "notchtap");
+  var isExpanded = false;
+  document.getElementById("expandToggleBtn").addEventListener("click", function (e) {
+    isExpanded = !isExpanded;
+    morphRestingBranch.classList.toggle("is-visible", !isExpanded);
+    morphExpandedBranch.classList.toggle("is-visible", isExpanded);
+    e.target.setAttribute("aria-pressed", String(isExpanded));
+    morphStatusLine.textContent = isExpanded
+      ? "hover-expanded — full detail for the 2 non-primary sessions"
+      : "resting — hero + 2 compact rows";
+  });
+
+  // ---- section 7: static hover-expanded detail ----
+  var detailHero = document.getElementById("detailHero");
+  detailHero.innerHTML = heroHtml("claude-code", "waiting_for_permission", "notchtap");
 })();
 </script>
 </body>
