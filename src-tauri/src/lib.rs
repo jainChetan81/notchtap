@@ -590,7 +590,7 @@ pub fn run() {
                     let window = window.clone();
                     hover_handler.on_mouse_moved(move |event| {
                         let loc = event.locationInWindow();
-                        let hover_latched = *was_hovered.lock().unwrap();
+                        let hover_latched = *was_hovered.lock().unwrap_or_else(|e| e.into_inner());
                         // P0 fix: see the matching comment in
                         // `on_mouse_entered` just above.
                         let real_window_height =
