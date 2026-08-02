@@ -121,6 +121,8 @@ These are not fully specified by the design spec (which describes behavior, not 
 
 **Verification**: `npx vitest run` — new tests confirming the runtime wash reads correctly at shipped height (the actual regression this spec's own §7 flags from r2), the session bar's segment count/brightness tracks the viewed index, cycling wraps correctly at both ends.
 
+**Landed so far**: `src/components/PositionBar.tsx` (new, shared with Slice I per spec §8's own default) — the no-drain floor strip, reusing `.ttl-bar`/`.ttl-seg`/`.ttl-seg.done`/`.ttl-fill` verbatim (no new CSS), 13 tests. `src/components/AgentBelowBlock.tsx` (new) — composes `AgentHeroCard` + `PositionBar` at shipped card height (no roster rows), 12 tests, plus `cycleSessionIndex` (pure wraparound prev/next). Extracted `agentHeroPropsFor` out of `AgentBoard.tsx`'s own inline derivation so both components share it rather than drifting copies (`AgentBoard.tsx`'s own 75 tests still pass unchanged). Not wired to a real mount point — the outer hover/selection shell is Slice K's job. `npx tsc --noEmit`/biome/`npx vitest run` all clean (one pre-existing, unrelated `SettingsApp.test.tsx` timeout confirmed via `git stash` to predate this slice).
+
 ## Slice G — football below-block: crossbar variant (frontend)
 
 **Files**: `src/components/NotificationBody.tsx`'s `FootballHeroCard` (extending, per plan 170's precedent — same file Slice F touches, so this slice and Slice F are NOT trivially parallel-safe against each other if both land in the same file region; coordinate merge order or scope each to a clearly separate function/component within the file).
