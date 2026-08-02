@@ -116,9 +116,20 @@ impl AgentSessionState {
     }
 
     /// Urgency class rank used by the ordering key (spec §2.2 step 1):
-    /// `WaitingForPermission`, `WaitingForInput`, `Failed`, `Stale`,
-    /// `Working`, `Starting`, `Completed`, most urgent first (lowest
-    /// rank sorts first).
+    /// `WaitingForPermission`, `WaitingForInput`, `Failed`, `Completed`,
+    /// `Stale`, `Working`, `Starting`, most urgent first (lowest rank
+    /// sorts first).
+    ///
+    /// **Governing principle (operator feedback 2026-08-02): every state
+    /// that can summon the Board ([`Self::summons_board`]) outranks every
+    /// state that cannot.** `Completed` used to rank last, which was
+    /// harmless under the old always-on Board but became visibly wrong
+    /// once the presence gate landed: a Completed session SUMMONS the
+    /// Board, yet a merely-`Working` sibling outranked it and took the
+    /// hero card, so the Board appeared announcing "Agent working" — the
+    /// exact noise the gate exists to remove. A summoning state must
+    /// outrank non-summoning states for as long as it lives (which, for
+    /// a terminal session, is only its `terminal_retention_secs` window).
     ///
     /// Called from `AgentRegistry::ordered_states`, which ticket 136
     /// (agent-state IPC, `agents/board.rs`) wires into the live
@@ -128,10 +139,10 @@ impl AgentSessionState {
             AgentSessionState::WaitingForPermission => 0,
             AgentSessionState::WaitingForInput => 1,
             AgentSessionState::Failed => 2,
-            AgentSessionState::Stale => 3,
-            AgentSessionState::Working => 4,
-            AgentSessionState::Starting => 5,
-            AgentSessionState::Completed => 6,
+            AgentSessionState::Completed => 3,
+            AgentSessionState::Stale => 4,
+            AgentSessionState::Working => 5,
+            AgentSessionState::Starting => 6,
         }
     }
 }
@@ -470,10 +481,10 @@ mod tests {
             WaitingForPermission,
             WaitingForInput,
             Failed,
+            Completed,
             Stale,
             Working,
             Starting,
-            Completed,
         ]
         .map(|s| s.urgency_rank());
         let mut sorted = ranks;
@@ -482,6 +493,32 @@ mod tests {
             ranks, sorted,
             "spec §2.2 order must already be rank-ascending"
         );
+    }
+
+    #[test]
+    fn every_summoning_state_outranks_every_non_summoning_state() {
+        use AgentSessionState::*;
+        // Operator feedback (2026-08-02): the state that SUMMONS the Board
+        // must lead it. Otherwise a Completed session pops the Board open
+        // and a merely-Working sibling takes the hero card, announcing
+        // "Agent working" — the noise the presence gate exists to remove.
+        let all = [
+            WaitingForPermission,
+            WaitingForInput,
+            Failed,
+            Completed,
+            Stale,
+            Working,
+            Starting,
+        ];
+        for summoning in all.iter().copied().filter(|s| s.summons_board()) {
+            for quiet in all.iter().copied().filter(|s| !s.summons_board()) {
+                assert!(
+                    summoning.urgency_rank() < quiet.urgency_rank(),
+                    "{summoning:?} summons the Board and must outrank {quiet:?}, which does not"
+                );
+            }
+        }
     }
 
     #[test]

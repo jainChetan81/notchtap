@@ -57,11 +57,23 @@ pub const RESTING_WINDOW_HEIGHT: f64 = 300.0;
 /// the other in the same commit.
 const HEADER_HEIGHT: f64 = 210.0;
 
-/// Conservative estimate of one expanded row's rendered height
-/// (`agent-board.css`'s `.agent-expanded-row`) — taller than the resting
-/// board's compact `.agent-row` because the expanded row carries its own
-/// per-row disclosure affordance.
-const ROW_HEIGHT: f64 = 34.0;
+/// Conservative per-row budget for what the hover-EXPANDED Board
+/// actually renders below its hero: one `ExpandedAgentRow`
+/// (`AgentBoard.tsx`), whose `agent-board.css` template is a multi-line
+/// stack — name row, summary line, meta row — plus the list's
+/// between-row gap. Lockstep-references that component: if its template
+/// gains or loses a line, this number must move in the same commit.
+///
+/// Operator feedback (2026-08-02): this budget used to be a 34px
+/// `ROW_HEIGHT`, which is the COMPACT RESTING row's height
+/// (`.agent-row`) and roughly a third of an expanded row's. The resting
+/// board is a fixed [`RESTING_WINDOW_HEIGHT`] canvas that no per-row
+/// arithmetic drives, so that constant never belonged in this formula
+/// at all; with it, a three-session Board sized its window to give each
+/// expanded row a ~68px slot and visibly clipped them mid-row. It has
+/// been deleted rather than kept — nothing in the frame math is allowed
+/// to reach for a resting-row number.
+const EXPANDED_ROW_HEIGHT: f64 = 96.0;
 
 /// Never claim more than this fraction of the screen's height, however
 /// many sessions are retained — "screen-bounded," not "however tall the
@@ -88,7 +100,7 @@ pub struct BoardWindowFrame {
 /// - width: `EXPANDED_BOARD_WIDTH`, capped at `screen_width` (an
 ///   unrealistically narrow screen must never produce an off-screen
 ///   window);
-/// - height: `HEADER_HEIGHT + ROW_HEIGHT * (session_count - 1)` — the
+/// - height: `HEADER_HEIGHT + EXPANDED_ROW_HEIGHT * (session_count - 1)` — the
 ///   primary session lives in the HERO block `HEADER_HEIGHT` already
 ///   budgets for, so only the OTHER sessions are rows (`AgentBoard.tsx`
 ///   renders exactly `sessions[1..]` as expanded rows) — floored at
@@ -107,7 +119,7 @@ pub fn expanded_board_frame(
     session_count: usize,
 ) -> BoardWindowFrame {
     let row_count = session_count.saturating_sub(1);
-    let content_height = HEADER_HEIGHT + ROW_HEIGHT * row_count as f64;
+    let content_height = HEADER_HEIGHT + EXPANDED_ROW_HEIGHT * row_count as f64;
     let max_height = (screen_height * MAX_SCREEN_FRACTION).max(RESTING_WINDOW_HEIGHT);
     let height = content_height.max(RESTING_WINDOW_HEIGHT).min(max_height);
     let width = EXPANDED_BOARD_WIDTH.min(screen_width.max(0.0));
@@ -141,13 +153,15 @@ mod tests {
 
     #[test]
     fn a_handful_of_sessions_under_the_cap_grows_linearly_with_count() {
-        // 5 and 7, not e.g. 2 and 3: content_height(3) = 210 + 34*2 = 278,
-        // still under the RESTING_WINDOW_HEIGHT (300) floor, so a lower
-        // pair would compare two FLOORED (equal) heights instead of
-        // exercising the linear-growth formula this test targets.
+        // 3 and 5, not e.g. 1 and 2: content_height(2) = 210 + 96 = 306 is
+        // only just over the RESTING_WINDOW_HEIGHT (300) floor, and
+        // content_height(1) = 210 is under it, so a lower pair would
+        // compare FLOORED heights instead of exercising the linear-growth
+        // formula this test targets. Not 7+ either: content_height(7) =
+        // 210 + 96*6 = 786 is already over the 0.75 * 982 = 736.5 cap.
+        let three = expanded_board_frame(SCREEN_W, SCREEN_H, 3);
         let five = expanded_board_frame(SCREEN_W, SCREEN_H, 5);
-        let seven = expanded_board_frame(SCREEN_W, SCREEN_H, 7);
-        assert_eq!(seven.height - five.height, ROW_HEIGHT * 2.0);
+        assert_eq!(five.height - three.height, EXPANDED_ROW_HEIGHT * 2.0);
     }
 
     #[test]
@@ -156,28 +170,46 @@ mod tests {
         // expanded, and the list below it carries `sessions[1..]` only —
         // so N sessions is a hero plus N-1 rows, never N rows.
         let frame = expanded_board_frame(SCREEN_W, SCREEN_H, 6);
-        assert_eq!(frame.height, HEADER_HEIGHT + ROW_HEIGHT * 5.0);
+        assert_eq!(frame.height, HEADER_HEIGHT + EXPANDED_ROW_HEIGHT * 5.0);
+    }
+
+    #[test]
+    fn three_sessions_budget_a_full_expanded_row_each_never_a_clipped_slot() {
+        // Operator screenshot (2026-08-02): the frame used to budget the
+        // COMPACT resting row's 34px per row, so a three-session Board gave
+        // each `ExpandedAgentRow` a ~68px slot and clipped them mid-row.
+        // The rows are ~90px tall; the frame must say so.
+        let frame = expanded_board_frame(SCREEN_W, SCREEN_H, 3);
+        assert_eq!(frame.height, HEADER_HEIGHT + EXPANDED_ROW_HEIGHT * 2.0);
+        let per_row_slot = (frame.height - HEADER_HEIGHT) / 2.0;
+        assert!(
+            per_row_slot >= 96.0,
+            "each expanded row got {per_row_slot}px, under a real row's height"
+        );
     }
 
     #[test]
     fn many_sessions_caps_at_the_screen_fraction_not_content_height() {
-        // 30 sessions would want HEADER_HEIGHT + 29*ROW_HEIGHT = 1196px —
-        // comfortably over 0.75 * 982 = 736.5, so the cap must win.
+        // 30 sessions would want HEADER_HEIGHT + 29*EXPANDED_ROW_HEIGHT =
+        // 2994px — far over 0.75 * 982 = 736.5, so the cap must win.
         let frame = expanded_board_frame(SCREEN_W, SCREEN_H, 30);
-        let uncapped_content = HEADER_HEIGHT + ROW_HEIGHT * 29.0;
+        let uncapped_content = HEADER_HEIGHT + EXPANDED_ROW_HEIGHT * 29.0;
         assert!(frame.height < uncapped_content);
         assert_eq!(frame.height, SCREEN_H * MAX_SCREEN_FRACTION);
     }
 
     #[test]
-    fn eight_sessions_the_plans_own_test_floor_stays_comfortably_under_the_cap() {
-        // The plan's own manual-check floor ("many (8+) sessions") — prove
-        // it lands in the linear regime, not already clipped by the cap,
-        // so the frontend's scroll-container test actually exercises real
-        // growth rather than a pre-capped constant.
+    fn eight_sessions_the_plans_own_test_floor_hits_the_cap_and_scrolls() {
+        // The plan's own manual-check floor ("many (8+) sessions"). With the
+        // real ~96px expanded-row budget the cap now binds well before 8 on
+        // a 982pt screen (content would be 210 + 96*7 = 882 > 736.5), so the
+        // contract this exercises is the OTHER half of spec §6.2: the frame
+        // stays screen-bounded and the surplus scrolls inside the
+        // frontend's own bounded container. It is not a regression that this
+        // count is capped — it is the cap doing its job.
         let frame = expanded_board_frame(SCREEN_W, SCREEN_H, 8);
-        assert_eq!(frame.height, HEADER_HEIGHT + ROW_HEIGHT * 7.0);
-        assert!(frame.height < SCREEN_H * MAX_SCREEN_FRACTION);
+        assert_eq!(frame.height, SCREEN_H * MAX_SCREEN_FRACTION);
+        assert!(frame.height < HEADER_HEIGHT + EXPANDED_ROW_HEIGHT * 7.0);
     }
 
     #[test]
