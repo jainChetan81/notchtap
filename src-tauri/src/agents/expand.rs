@@ -73,6 +73,14 @@ const HEADER_HEIGHT: f64 = 210.0;
 /// expanded row a ~68px slot and visibly clipped them mid-row. It has
 /// been deleted rather than kept — nothing in the frame math is allowed
 /// to reach for a resting-row number.
+///
+/// Deliberately budgets the COMMON row shape only (review note,
+/// 2026-08-02): a row's OPTIONAL blocks — per-event detail pairs and
+/// the hover-revealed history disclosure — are unbounded, dynamic
+/// content and are NOT budgeted here. When they push the list past
+/// this frame, the `.agent-board-expanded-scroll` max-height cap
+/// scrolls them by design; sizing the window for the maximum possible
+/// row would oversize it for every ordinary hover instead.
 const EXPANDED_ROW_HEIGHT: f64 = 96.0;
 
 /// Never claim more than this fraction of the screen's height, however
