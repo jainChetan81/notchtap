@@ -46,6 +46,17 @@
     border-width var(--hover-ms, 160ms) var(--ease-notchtap);
 }
 
+/* plan 182 (glyph swap): SVG elements from the reused IconStrip glyphs
+   (18x18 viewBox, no explicit width/height) render at the browser's
+   default replaced-element size (~300x150px) if unsized, breaking the
+   9x9px dot box. Match icon-strip.css:81-83 which sizes IconStrip's own
+   use of these identical glyphs. Use `100%` to respect the dot's own
+   width/height and any future resizing. */
+.card-root .status-dot svg {
+  width: 100%;
+  height: 100%;
+}
+
 /* H5: was #3ddc70/#ff5c5c — a SECOND green/red the dots alone used,
    diverging from the #7fe08d/#ff6b57 every football/news CARD element
    already reads (live-scorecard.css, idle-peek.css, news-category.css).
