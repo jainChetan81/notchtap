@@ -779,6 +779,12 @@ pub fn run() {
             // is needed for this.
             #[cfg(target_os = "macos")]
             {
+                // plan 171 slice D: the configured prefix combo, parsed
+                // once. An unparseable key logs and falls back to Space —
+                // fail-open, matching the validator's own permissive
+                // grammar (settings::is_valid_prefix_shortcut).
+                let prefix_sc = prefix_shortcut_from_config(&config.prefix_shortcut);
+                let prefix_sc_for_handler = prefix_sc;
                 let engine_for_handler = engine.clone();
                 let pause_item_for_handler = pause_item.clone();
                 let was_hovered_for_handler = was_hovered.clone();
@@ -860,6 +866,21 @@ pub fn run() {
                                     )
                                 {
                                     open_settings_window(app);
+                                } else if *shortcut == prefix_sc_for_handler {
+                                    handle_prefix_fire(
+                                        app,
+                                        &tab_wire_for_handler,
+                                    );
+                                } else if let Some(key) =
+                                    prefix_followup_key_for(shortcut)
+                                {
+                                    handle_prefix_followup(
+                                        app,
+                                        key,
+                                        &tab_wire_for_handler,
+                                        &engine_for_handler,
+                                        &pause_item_for_handler,
+                                    );
                                 } else if *shortcut
                                     == Shortcut::new(
                                         FOCUS_SESSION_SHORTCUT.0,
@@ -909,6 +930,21 @@ pub fn run() {
                     FOCUS_SESSION_SHORTCUT.0,
                     FOCUS_SESSION_SHORTCUT.1,
                 ))?;
+                // plan 171 slice D: the prefix combo — the ONLY
+                // always-registered addition. The seven follow-up keys
+                // are bare, system-wide grabs and are registered only
+                // inside a live armed window (spec §9's mechanism note),
+                // never here: a permanently-registered bare Return or
+                // `1` would eat ordinary typing everywhere.
+                if let Err(e) = app
+                    .global_shortcut()
+                    .register(prefix_shortcut_from_config(&config.prefix_shortcut))
+                {
+                    tracing::warn!(
+                        "prefix shortcut {:?} failed to register: {e}",
+                        config.prefix_shortcut
+                    );
+                }
             }
 
             #[cfg(target_os = "macos")]
@@ -1872,6 +1908,214 @@ fn position_window(
     } else {
         position_top_center(window)
     }
+}
+
+// ---------------------------------------------------------------------------
+// plan 171 slice D: the prefix keymap's live wiring. The state machine is
+// prefix.rs (pure, tested); everything here is the impure shell: parsing
+// the configured combo, the temporary system-wide grab of the seven
+// follow-up keys while armed, the cancellable disarm timer, and routing
+// each PrefixAction onto the EXISTING mechanism its own doc names.
+// ---------------------------------------------------------------------------
+
+/// The follow-up grabs, `(Code, PrefixKey)` — registered as BARE
+/// shortcuts (no modifiers) only while an armed window is live, then
+/// unregistered the moment one key is consumed, the window times out, or
+/// the prefix/esc disarms it. `enter`/`o` both mean ExpandToggle and
+/// `esc` maps to Disarm, per spec §9's table.
+const PREFIX_FOLLOWUPS: [(Code, prefix::PrefixKey); 11] = [
+    (Code::Digit1, prefix::PrefixKey::Digit(1)),
+    (Code::Digit2, prefix::PrefixKey::Digit(2)),
+    (Code::Digit3, prefix::PrefixKey::Digit(3)),
+    (Code::Digit4, prefix::PrefixKey::Digit(4)),
+    (Code::Digit5, prefix::PrefixKey::Digit(5)),
+    (Code::BracketLeft, prefix::PrefixKey::BracketLeft),
+    (Code::BracketRight, prefix::PrefixKey::BracketRight),
+    (Code::Enter, prefix::PrefixKey::ExpandToggle),
+    (Code::KeyO, prefix::PrefixKey::ExpandToggle),
+    (Code::KeyP, prefix::PrefixKey::Pause),
+    (Code::Escape, prefix::PrefixKey::Disarm),
+];
+
+/// `"⌃⇧Space"` → the tauri Shortcut. The validator
+/// (`settings::is_valid_prefix_shortcut`) only guarantees the `⌃⇧`
+/// prefix and a whitespace-free key name — the key itself is resolved
+/// against `Code`'s own names (`Space`, `F5`, …), then single
+/// letters/digits get the `KeyX`/`DigitN` spelling. Unresolvable keys
+/// warn and fall back to Space rather than failing boot (fail-open,
+/// same posture as every optional surface here).
+fn prefix_shortcut_from_config(value: &str) -> Shortcut {
+    use std::str::FromStr;
+    let key = value.strip_prefix("\u{2303}\u{21e7}").unwrap_or(value);
+    let code = Code::from_str(key)
+        .ok()
+        .or_else(|| {
+            let mut chars = key.chars();
+            match (chars.next(), chars.next()) {
+                (Some(c), None) if c.is_ascii_alphabetic() => {
+                    Code::from_str(&format!("Key{}", c.to_ascii_uppercase())).ok()
+                }
+                (Some(c), None) if c.is_ascii_digit() => Code::from_str(&format!("Digit{c}")).ok(),
+                _ => None,
+            }
+        })
+        .unwrap_or_else(|| {
+            tracing::warn!(?value, "unresolvable prefix key — falling back to Space");
+            Code::Space
+        });
+    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), code)
+}
+
+/// Which armed-window key a fired shortcut is, if any. Bare (modifierless)
+/// matches only — these shortcuts exist solely while armed, so a hit here
+/// implies an armed window opened them.
+fn prefix_followup_key_for(shortcut: &Shortcut) -> Option<prefix::PrefixKey> {
+    PREFIX_FOLLOWUPS
+        .iter()
+        .find(|(code, _)| *shortcut == Shortcut::new(None, *code))
+        .map(|(_, key)| *key)
+}
+
+fn set_prefix_followups_registered<R: tauri::Runtime>(app: &tauri::AppHandle<R>, on: bool) {
+    for (code, _) in PREFIX_FOLLOWUPS {
+        let sc = Shortcut::new(None, code);
+        let result = if on {
+            app.global_shortcut().register(sc)
+        } else {
+            app.global_shortcut().unregister(sc)
+        };
+        if let Err(e) = result {
+            // Fail-open: a single un(register) failure (another app owns
+            // the key) degrades that one key, never the whole keymap.
+            tracing::warn!(?code, on, "prefix follow-up grab toggle failed: {e}");
+        }
+    }
+}
+
+/// The prefix combo fired: arm (register the follow-up grabs + start the
+/// cancellable disarm timer) or — if an armed window was already live —
+/// disarm (spec §9: the prefix again IS the disarm gesture).
+fn handle_prefix_fire<R: tauri::Runtime>(app: &tauri::AppHandle<R>, tab_wire: &Arc<tabs::TabWire>) {
+    use std::sync::atomic::Ordering;
+    let now = std::time::Instant::now();
+    let armed = {
+        let mut st = tab_wire.prefix.lock().unwrap_or_else(|e| e.into_inner());
+        st.on_prefix(now);
+        st.is_armed(now)
+    };
+    let generation = tab_wire.prefix_generation.fetch_add(1, Ordering::SeqCst) + 1;
+    set_prefix_followups_registered(app, armed);
+    if armed {
+        let app = app.clone();
+        let wire = tab_wire.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(prefix::PREFIX_ARM_WINDOW).await;
+            // Only the timer for the CURRENT arm acts — any later
+            // consume/disarm/re-arm bumped the generation past us.
+            if wire.prefix_generation.load(Ordering::SeqCst) == generation {
+                {
+                    let mut st = wire.prefix.lock().unwrap_or_else(|e| e.into_inner());
+                    *st = prefix::PrefixState::Disarmed;
+                }
+                set_prefix_followups_registered(&app, false);
+            }
+        });
+    }
+}
+
+/// One armed-window key landed: consume it (the state machine disarms on
+/// ANY consumed key, spec §9), release the grabs, cancel the timer via
+/// the generation bump, and route the resulting action onto the existing
+/// mechanism its own `PrefixAction` doc names.
+fn handle_prefix_followup<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    key: prefix::PrefixKey,
+    tab_wire: &Arc<tabs::TabWire>,
+    engine: &Engine<R>,
+    pause_item: &MenuItem<R>,
+) {
+    use std::sync::atomic::Ordering;
+    let action = {
+        let mut st = tab_wire.prefix.lock().unwrap_or_else(|e| e.into_inner());
+        st.on_key(std::time::Instant::now(), key)
+    };
+    tab_wire.prefix_generation.fetch_add(1, Ordering::SeqCst);
+    set_prefix_followups_registered(app, false);
+    match action {
+        prefix::PrefixAction::Select(tab) => {
+            apply_tab_select(app, tab_wire, tab);
+        }
+        prefix::PrefixAction::PreviousSession | prefix::PrefixAction::NextSession => {
+            // Spec §9: "ignored unless the agent tab is selected" — the
+            // caller-side gate PrefixAction's own doc assigns here.
+            let agent_selected = {
+                let sel = tab_wire
+                    .tabs
+                    .selection
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                sel.selected() == Some(tabs::Tab::Agent)
+            };
+            if agent_selected {
+                let count = tab_wire.agent_sessions.load(Ordering::Relaxed);
+                if count > 0 {
+                    let delta: isize = if action == prefix::PrefixAction::NextSession {
+                        1
+                    } else {
+                        -1
+                    };
+                    let current = tab_wire.viewed_session.load(Ordering::Relaxed) as isize;
+                    let next = (current + delta).rem_euclid(count as isize) as usize;
+                    tab_wire.viewed_session.store(next, Ordering::Relaxed);
+                    use tauri::Emitter;
+                    if let Err(e) = app.emit(
+                        "agent-viewed-session-changed",
+                        serde_json::json!({ "index": next }),
+                    ) {
+                        tracing::error!("failed to emit agent-viewed-session-changed: {e}");
+                    }
+                }
+            }
+        }
+        prefix::PrefixAction::ExpandToggle => {
+            toggle_manual_expand(engine);
+        }
+        prefix::PrefixAction::TogglePause => {
+            toggle_pause(engine, pause_item);
+        }
+        prefix::PrefixAction::NoOp => {}
+    }
+}
+
+/// The ONE selection mutation both input paths funnel through — the click
+/// monitor calls the same sequence (click.rs); keeping them identical is
+/// what spec §9's "same toggle semantics a click would drive" means.
+pub(crate) fn apply_tab_select<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    tab_wire: &Arc<tabs::TabWire>,
+    tab: tabs::Tab,
+) {
+    let selected_now = {
+        let mut sel = tab_wire
+            .tabs
+            .selection
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        sel.select(tab);
+        sel.selected()
+    };
+    if selected_now == Some(tabs::Tab::News) {
+        tab_wire
+            .news_charge
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .visit();
+    }
+    crate::status::emit_tab_selection_if_transitioned(
+        app,
+        &tab_wire.tabs.last_emitted,
+        selected_now,
+    );
 }
 
 fn toggle_pause<R: tauri::Runtime>(engine: &Engine<R>, pause_item: &MenuItem<R>) {

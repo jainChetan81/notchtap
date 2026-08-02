@@ -30,7 +30,6 @@
 //! clippy --locked --all-targets -D warnings` (the CI gate) has no
 //! exemption for a plain unused `pub` item. Remove once the lib.rs
 //! wiring calls `on_prefix`/`on_key` for real.
-#![allow(dead_code)]
 
 use std::time::{Duration, Instant};
 

@@ -81,7 +81,7 @@ const BELOW_BLOCK_EXPANDED_H: f64 = 240.0; // conservative estimate, expanded (m
 // `FLANK_IDLE` value above, `85.0` — not redefined, reused, because the
 // mock's own hover-rail floor is explicitly "the same 85px rail floor"
 // every other hovered-but-not-showing state in this app already uses.
-// `#[allow(dead_code)]` on this trio and the two functions below: staged
+// Real callers since slice A's click wiring (click.rs): staged-allow
 // ahead of their real caller, which lands with Slice A's click-detection
 // wiring (see `icon_strip_rects`'s own doc below and the plan's "Landed
 // so far" note) — `cargo clippy --all-targets -D warnings` (the CI gate,
@@ -89,11 +89,8 @@ const BELOW_BLOCK_EXPANDED_H: f64 = 240.0; // conservative estimate, expanded (m
 // `const` the way it does for `#[cfg(test)]`-reached items, so these read
 // as dead until that caller exists. Remove every one of these five
 // attributes the moment `icon_strip_rects` gets a real call site.
-#[allow(dead_code)]
 const ICON_BOX: f64 = 18.0;
-#[allow(dead_code)]
 const ICON_GAP: f64 = 8.0;
-#[allow(dead_code)]
 const FLANK_INSET: f64 = 14.0;
 
 /// The right flank's own width while hovered, given how many icons are
@@ -102,7 +99,6 @@ const FLANK_INSET: f64 = 14.0;
 /// that filter, not always 5). Mirrors the mock's own two-step formula
 /// exactly: `strip_w` is unscaled raw geometry (icon box/gap/inset never
 /// scale with `--card-scale`), only the 85px rail floor does.
-#[allow(dead_code)]
 fn hovered_right_flank_width(present_count: usize, scale: f64) -> f64 {
     let strip_w = (ICON_BOX + ICON_GAP) * present_count as f64 + FLANK_INSET;
     (FLANK_IDLE * scale).max(strip_w)
@@ -128,7 +124,6 @@ fn hovered_right_flank_width(present_count: usize, scale: f64) -> f64 {
 /// pure/parameter-driven, matching this file's own house style; the
 /// `!visible` gate belongs at the call site, mirroring `try_expand_board_
 /// for_hover`'s own `if visible || session_count == 0 { return; }` guard).
-#[allow(dead_code)]
 pub fn icon_strip_rects(
     mode: Mode,
     cutout_width: f64,

@@ -173,6 +173,16 @@ pub struct TabWire {
     pub news_charge: std::sync::Mutex<crate::news_charge::NewsCharge>,
     /// Selection + emission + presence — see [`TabState`].
     pub tabs: TabState,
+    /// Plan 171 slice D: the prefix keymap's arm/disarm state machine
+    /// (`prefix.rs`) plus the generation counter its cancellable disarm
+    /// timer checks — a timer only acts if no later arm/consume bumped
+    /// the generation out from under it.
+    pub prefix: std::sync::Mutex<crate::prefix::PrefixState>,
+    pub prefix_generation: std::sync::atomic::AtomicU64,
+    /// The agent below-block's VIEWED session index (spec §7's
+    /// `prefix-[`/`prefix-]` cycling) — wraps modulo the live session
+    /// count; emitted to the frontend as `agent-viewed-session-changed`.
+    pub viewed_session: std::sync::atomic::AtomicUsize,
     /// Whether a pushed card currently occupies the Slot — mirrored at
     /// every `emit_slot_state` site so the click monitor (a sync
     /// main-thread AppKit callback that cannot await the queue) can gate
@@ -188,6 +198,9 @@ impl TabWire {
                 news_batch_size,
             )),
             tabs: TabState::default(),
+            prefix: std::sync::Mutex::new(crate::prefix::PrefixState::Disarmed),
+            prefix_generation: std::sync::atomic::AtomicU64::new(0),
+            viewed_session: std::sync::atomic::AtomicUsize::new(0),
             slot_occupied: std::sync::atomic::AtomicBool::new(false),
         }
     }

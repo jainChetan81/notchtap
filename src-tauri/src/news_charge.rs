@@ -38,7 +38,6 @@
 //! justfile's `check-rust`) has no exemption for a plain `pub fn` the way
 //! it does for `#[cfg(test)]`-reached items. Remove this attribute the
 //! moment `NewsCharge` gets a real call site outside its own tests.
-#![allow(dead_code)]
 
 /// Tracks landed-since-visit count and the edge-triggered "charged" flag
 /// for the news icon. `batch_size` is clamped to at least 1 at

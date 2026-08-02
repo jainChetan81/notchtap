@@ -110,29 +110,11 @@ pub fn install_click_monitor<R: tauri::Runtime>(params: ClickMonitorParams<R>) {
         let rects =
             crate::hover::icon_strip_rects(mode, cutout_width, cutout_height, scale, present.len());
         if let Some(tab) = click_target(loc.x, loc.y, &present, &rects) {
-            let selected_now = {
-                let mut sel = tab_wire
-                    .tabs
-                    .selection
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner());
-                sel.select(tab);
-                sel.selected()
-            };
-            // Spec §8: visiting the news tab clears its charge.
-            if selected_now == Some(Tab::News) {
-                tab_wire
-                    .news_charge
-                    .lock()
-                    .unwrap_or_else(|e| e.into_inner())
-                    .visit();
-            }
-            tracing::debug!(?tab, ?selected_now, "icon strip click");
-            crate::status::emit_tab_selection_if_transitioned(
-                &app,
-                &tab_wire.tabs.last_emitted,
-                selected_now,
-            );
+            tracing::debug!(?tab, "icon strip click");
+            // The ONE shared mutation path — identical semantics for a
+            // click and a prefix+digit (spec §9), including the
+            // news-visit charge clear and the transitions-only emit.
+            crate::apply_tab_select(&app, &tab_wire, tab);
         }
         pass_through
     });
