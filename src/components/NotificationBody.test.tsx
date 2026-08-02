@@ -217,6 +217,145 @@ describe("FootballHeroCard match-state chip (plan 151 item A)", () => {
   });
 });
 
+// Plan 171 (tab-notch redesign, slice G): the crossbar persistent
+// variant — a second, stacked score-block for a secondary live match.
+describe("FootballHeroCard crossbar variant (plan 171, slice G)", () => {
+  const SECOND_ESPN: EspnMeta = {
+    league: "EPL",
+    homeAbbrev: "MCI",
+    awayAbbrev: "LIV",
+    homeScore: 0,
+    awayScore: 0,
+    clock: "HT",
+    homeCards: [0, 0],
+    awayCards: [0, 0],
+    homeCrest: null,
+    awayCrest: null,
+  };
+
+  it("renders exactly one score-block when secondaryMatches is omitted (byte-identical to before this slice)", () => {
+    const { container } = render(card());
+    expect(container.querySelectorAll(".score-block")).toHaveLength(1);
+    expect(container.querySelector(".score-block.stacked")).toBeNull();
+  });
+
+  it("renders a second, stacked score-block for a secondary match", () => {
+    const { container } = render(
+      <FootballHeroCard
+        title="2 matches live"
+        priority="high"
+        signal="goal"
+        eventType="score_update"
+        liveEspn={ESPN_BASE}
+        pillVariant="live"
+        pillLabel="Live"
+        cardsClean={true}
+        secondaryMatches={[
+          { liveEspn: SECOND_ESPN, pillVariant: "break", pillLabel: "Break", cardsClean: true },
+        ]}
+      />,
+    );
+    const blocks = container.querySelectorAll(".score-block");
+    expect(blocks).toHaveLength(2);
+    expect(blocks[0].classList.contains("stacked")).toBe(false);
+    expect(blocks[1].classList.contains("stacked")).toBe(true);
+  });
+
+  it("renders the secondary match's own league, pill label, clock, and score", () => {
+    const { container } = render(
+      <FootballHeroCard
+        title="2 matches live"
+        priority="high"
+        signal="goal"
+        eventType="score_update"
+        liveEspn={ESPN_BASE}
+        pillVariant="live"
+        pillLabel="Live"
+        cardsClean={true}
+        secondaryMatches={[
+          { liveEspn: SECOND_ESPN, pillVariant: "break", pillLabel: "Break", cardsClean: true },
+        ]}
+      />,
+    );
+    const stacked = container.querySelector(".score-block.stacked") as HTMLElement;
+    expect(stacked.querySelector(".chip-league")?.textContent).toBe("EPL");
+    expect(stacked.querySelector(".chip-live")?.classList.contains("break")).toBe(true);
+    expect(stacked.querySelector(".clock-pill")?.textContent).toBe("HT");
+    expect(stacked.querySelectorAll(".side")).toHaveLength(2);
+  });
+
+  it("still suppresses the primary block's title-headline behaviour not at all — title stays a plain caller-controlled string", () => {
+    const { container } = render(
+      <FootballHeroCard
+        title="2 matches live"
+        priority="high"
+        signal="goal"
+        eventType="score_update"
+        liveEspn={ESPN_BASE}
+        pillVariant="live"
+        pillLabel="Live"
+        cardsClean={true}
+        secondaryMatches={[
+          { liveEspn: SECOND_ESPN, pillVariant: "break", pillLabel: "Break", cardsClean: true },
+        ]}
+      />,
+    );
+    expect(container.querySelector(".title.headline")?.textContent).toBe("2 matches live");
+  });
+
+  it("shows the secondary match's own cards-line only when it has cards, independent of the primary's cardsClean", () => {
+    const { container } = render(
+      <FootballHeroCard
+        title="2 matches live"
+        priority="high"
+        signal="goal"
+        eventType="score_update"
+        liveEspn={ESPN_BASE}
+        pillVariant="live"
+        pillLabel="Live"
+        cardsClean={true}
+        secondaryMatches={[
+          {
+            liveEspn: { ...SECOND_ESPN, homeCards: [1, 0] },
+            pillVariant: "break",
+            pillLabel: "Break",
+            cardsClean: false,
+          },
+        ]}
+      />,
+    );
+    const stacked = container.querySelector(".score-block.stacked") as HTMLElement;
+    expect(stacked.querySelector(".cards-line")).not.toBeNull();
+    expect(container.querySelector(".score-block:not(.stacked) .cards-line")).toBeNull();
+  });
+
+  it("renders multiple secondary matches with a stable, non-index key (no React key warning) using league/team identity", () => {
+    const THIRD_ESPN: EspnMeta = {
+      ...SECOND_ESPN,
+      league: "LaLiga",
+      homeAbbrev: "RMA",
+      awayAbbrev: "BAR",
+    };
+    const { container } = render(
+      <FootballHeroCard
+        title="3 matches live"
+        priority="high"
+        signal="goal"
+        eventType="score_update"
+        liveEspn={ESPN_BASE}
+        pillVariant="live"
+        pillLabel="Live"
+        cardsClean={true}
+        secondaryMatches={[
+          { liveEspn: SECOND_ESPN, pillVariant: "break", pillLabel: "Break", cardsClean: true },
+          { liveEspn: THIRD_ESPN, pillVariant: "live", pillLabel: "Live", cardsClean: true },
+        ]}
+      />,
+    );
+    expect(container.querySelectorAll(".score-block.stacked")).toHaveLength(2);
+  });
+});
+
 // Plan 169 fidelity pass (2026-08-02): the shared fact-pill renderer's
 // two knobs — the optional `.fp-tag` qualifier and the per-call tone —
 // asserted directly on the two components that pass them differently.
