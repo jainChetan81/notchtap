@@ -950,11 +950,59 @@ describe("AgentBoard motion vitals", () => {
     // base rule: colour morph for every state (including completed/
     // failed/stale); the scale tick lives under `.pulse` so quiet states
     // stay quiet.
+    // 2026-08-02 animation audit (finding #2): the duration moved from
+    // `--hover-ms` to `--reveal-ms` so the dot lands on the SAME frame as
+    // every other accent consumer on a tier flip — see the next test for
+    // the rest of that set, and the rule's own comment for why the
+    // "direct response" family was the wrong one here.
     expect(AGENT_BOARD_CSS).toMatch(
-      /\.card-root \.agent-dot \{[^}]*transition: background-color var\(--hover-ms, 160ms\) var\(--ease-notchtap\);/s,
+      /\.card-root \.agent-dot \{[^}]*transition: background-color var\(--reveal-ms, 260ms\) var\(--ease-notchtap\);/s,
     );
     expect(AGENT_BOARD_CSS).toMatch(/@keyframes agent-dot-state-tick/);
     expect(AGENT_BOARD_CSS).not.toMatch(/\.card-root \.agent-dot \{[^}]*agent-dot-state-tick/s);
+  });
+
+  // 2026-08-02 animation audit (finding #2): a working -> needs-approval
+  // flip rebinds BOTH accent channels (`--accent` on the shell,
+  // `--agent-accent` on the below-block) at once. Every consumer the board
+  // owns has to move on ONE clock, or the flip reads as several unrelated
+  // things twitching. Asserted against the stylesheet text (jsdom computes
+  // no transitions), same technique as the dot rules above.
+  it("every board-scoped accent consumer morphs on the same --reveal-ms clock", () => {
+    const revealTransition = /var\(--reveal-ms, 260ms\) var\(--ease-notchtap\)/;
+    for (const selector of [
+      /\.card-root \.agent-board-primary \.compact::before \{([^}]*)\}/,
+      /\.card-root \.agent-board-primary \.stamp \{([^}]*)\}/,
+      /\.card-root \.agent-board-primary \.fact-pill \.fp-tag \{([^}]*)\}/,
+      /\.card-root \.agent-row-state \{([^}]*)\}/,
+    ]) {
+      const rule = AGENT_BOARD_CSS.match(selector);
+      expect(rule, `no rule matched ${selector}`).not.toBeNull();
+      expect(rule?.[1]).toMatch(/transition:/);
+      expect(rule?.[1]).toMatch(revealTransition);
+    }
+    // and none of them borrows the hover ("direct response") budget —
+    // nothing in this file responds to a pointer on a tier flip. (Matches
+    // a real `var()` consumer, not the prose in the rule comments that
+    // explain why the dot left that family.)
+    expect(AGENT_BOARD_CSS).not.toMatch(/var\(--hover-ms/);
+  });
+
+  // Plan 169 step 9's mandated follow-up, landed 2026-08-02: the bespoke
+  // hero block this file used to hand-roll lost its last .tsx consumer
+  // when the hero moved onto the shared `AgentHeroCard` template, leaving
+  // six rules that could never match anything.
+  it("carries no rules for the pre-169 bespoke hero block", () => {
+    for (const dead of [
+      "agent-board-primary-head",
+      "agent-board-runtime",
+      "agent-board-state-pill",
+      "agent-board-project",
+      "agent-board-summary",
+      "agent-board-elapsed",
+    ]) {
+      expect(AGENT_BOARD_CSS, `${dead} is still referenced`).not.toContain(dead);
+    }
   });
 
   it("every disclosure uses the shared DISCLOSURE_SPRING — no hand-copied spring literals remain", () => {

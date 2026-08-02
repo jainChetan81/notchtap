@@ -178,6 +178,30 @@ export const INTERRUPT_EASE: [number, number, number, number] = [0.4, 0, 1, 1];
 // no geometry leg to stay in lockstep with.
 export const SURFACE_SWAP_MS = 180;
 
+// 2026-08-02 animation audit (Agent Board finding #1): the Board's own
+// ARRIVAL leg, split off from SURFACE_SWAP_MS above. Since the Board now
+// only appears when an agent actually needs the operator (permission /
+// input / failure / completion), its summon is the highest-stakes moment
+// the overlay has — and it was riding the same 180ms opacity-only fade a
+// routine idle<->rail swap uses, so the most important surface in the
+// product arrived with the least presence.
+//
+// Deliberately asymmetric with SURFACE_SWAP_MS, which stays the EXIT
+// duration for both surfaces: an arrival earns emphasis (a longer,
+// house-eased opacity+scale+drop settle), a dismissal should be quieter
+// than the thing it dismisses. That is a conscious exception to the
+// "mirror the exit path exactly" spatial-consistency rule — see App.tsx's
+// `BOARD_SURFACE_MOTION` doc for the full argument.
+//
+// Numerically equal to REVEAL_MS today (both 260ms — the house "a surface
+// is revealing itself" budget) but kept as its own name rather than
+// reusing that constant, for the same reason HOVER_MS was split out of it:
+// REVEAL_MS governs the rail's bare<->hovered PAINT coordination, this
+// governs a whole-surface summon. The two are free to diverge, and this
+// one is the one expected to move — its scale/drop values still owe an
+// on-hardware feel check (FEEL-CHECK, App.tsx).
+export const BOARD_SUMMON_MS = 260;
+
 // plan 148: the shared hover-disclosure spring. One config used to be
 // hand-copied byte-for-byte across four call sites in two files
 // (IdleHoverPeek's idle-peek below-block, AgentBoard's three expanded

@@ -118,66 +118,48 @@
   margin-bottom: 0;
 }
 
-.card-root .agent-board-primary-head {
-  display: flex;
-  align-items: center;
-  gap: 7px;
+/* 2026-08-02 animation audit (finding #2): ONE CLOCK FOR THE TIER FLIP.
+   When the primary session changes state, two independent paint channels
+   swap at once — the shell's priority class rebinds `--accent`/
+   `--accent-soft` (card-chrome.css) and the below-block's state class
+   rebinds `--agent-accent` (this file, below). Every consumer of either
+   used to hard-swap in a single frame EXCEPT `.agent-dot`, which faded on
+   its own 160ms clock: the exact "desynced clocks" failure this repo's
+   timing discipline exists to prevent, on the one moment the operator
+   most needs to read (working -> needs-approval).
+   All of them now morph together over `--reveal-ms`, the house "a surface
+   is changing what it says about itself" budget. Deliberately scoped to
+   the board (`.agent-board-primary` for the hero's shared-template
+   internals, board-only classes for the rest) — the SAME `.compact`/
+   `.stamp`/`.fact-pill` markup renders on notification cards, whose
+   accent never flips mid-life, so a generic transition there would be
+   dead weight and isn't this stylesheet's to add.
+   The hero's TITLE text still hard-swaps: it is a keyed remount
+   (AgentBoard.tsx's `AGENT_HERO_TITLE`), settled by plan 169, and a
+   crossfade there would fight the identity-swap animation that block
+   already owns. Colour morphs, words cut. */
+.card-root .agent-board-primary .compact::before {
+  transition:
+    background-color var(--reveal-ms, 260ms) var(--ease-notchtap),
+    box-shadow var(--reveal-ms, 260ms) var(--ease-notchtap);
 }
 
-/* Plan 147 wave 2: runtime IDENTITY colour, separate paint channel from
-   the state accents above — `--cat` comes from the `src-*` runtime
-   class (source-identity.css) applied alongside the state class on the
-   row/hero container (`agentRuntimeClass`, presentation.ts), never
-   from `--agent-accent`. Falls back to plain overlay foreground when
-   `--cat` isn't set (shouldn't happen in practice — every AgentRuntime
-   has an entry — but keeps this rule inert rather than invisible if
-   that ever drifts). Kimi's `--cat` resolves to `var(--overlay-fg)`
-   itself (source-identity.css) — this rule then paints the runtime
-   label the SAME white it would've been anyway, which is deliberately
-   the mono brand treatment, not a missed case. */
-.card-root .agent-board-runtime {
-  font-weight: 600;
-  font-size: 13px;
-  color: var(--cat, var(--overlay-fg));
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+.card-root .agent-board-primary .stamp {
+  transition:
+    color var(--reveal-ms, 260ms) var(--ease-notchtap),
+    border-color var(--reveal-ms, 260ms) var(--ease-notchtap);
 }
 
-.card-root .agent-board-state-pill {
-  margin-left: auto;
-  font-size: 10.5px;
-  font-weight: 600;
-  letter-spacing: 0.02em;
-  padding: 2px 7px;
-  border-radius: 999px;
-  white-space: nowrap;
-  background: color-mix(in srgb, var(--agent-accent, var(--overlay-fg)) 18%, transparent);
-  color: var(--agent-accent, var(--overlay-fg));
-}
-
-.card-root .agent-board-project {
-  font-size: 11.5px;
-  color: color-mix(in srgb, var(--overlay-fg) 62%, transparent);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.card-root .agent-board-summary {
-  font-size: 12px;
-  line-height: 1.35;
-  color: color-mix(in srgb, var(--overlay-fg) 82%, transparent);
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
-}
-
-.card-root .agent-board-elapsed {
-  font-size: 10.5px;
-  font-variant-numeric: tabular-nums;
-  color: color-mix(in srgb, var(--overlay-fg) 48%, transparent);
+/* Both halves of a fact pill: the box's own tint/border (`.tone-accent`
+   reads `--accent`, `.tone-danger` a fixed coral) and the tag glyph's
+   colour. A pill that only EXISTS in one of the two states mounts fresh
+   and correctly plays no transition at all. */
+.card-root .agent-board-primary .fact-pill,
+.card-root .agent-board-primary .fact-pill .fp-tag {
+  transition:
+    background-color var(--reveal-ms, 260ms) var(--ease-notchtap),
+    border-color var(--reveal-ms, 260ms) var(--ease-notchtap),
+    color var(--reveal-ms, 260ms) var(--ease-notchtap);
 }
 
 /* Every OTHER session — individual compact rows, never a "+N" collapse
@@ -216,8 +198,17 @@
   white-space: nowrap;
 }
 
-/* Runtime identity colour — same `--cat`/Kimi-mono reasoning as
-   `.agent-board-runtime` above. */
+/* Plan 147 wave 2: runtime IDENTITY colour, a separate paint channel from
+   the state accents — `--cat` comes from the `src-*` runtime class
+   (source-identity.css) applied alongside the state class on the row
+   container (`agentRuntimeClass`, presentation.ts), never from
+   `--agent-accent`. Falls back to plain overlay foreground when `--cat`
+   isn't set (shouldn't happen in practice — every AgentRuntime has an
+   entry — but keeps this rule inert rather than invisible if that ever
+   drifts). Kimi's `--cat` resolves to `var(--overlay-fg)` itself
+   (source-identity.css) — this rule then paints the runtime label the
+   SAME white it would've been anyway, which is deliberately the mono
+   brand treatment, not a missed case. */
 .card-root .agent-row-runtime {
   font-weight: 600;
   color: var(--cat, var(--overlay-fg));
@@ -245,10 +236,15 @@
   color: color-mix(in srgb, var(--overlay-fg) 55%, transparent);
 }
 
+/* 2026-08-02 animation audit (finding #2): the row's own accent consumer,
+   on the same `--reveal-ms` clock as the hero's — a row whose session
+   flips working -> waiting morphs its state word's colour alongside its
+   dot instead of snapping while the dot fades. */
 .card-root .agent-row-state {
   margin-left: auto;
   flex-shrink: 0;
   color: var(--agent-accent, var(--overlay-fg));
+  transition: color var(--reveal-ms, 260ms) var(--ease-notchtap);
 }
 
 .card-root .agent-row-elapsed {
@@ -268,19 +264,26 @@
    Plan 149: the accent MORPHS rather than snaps. `--agent-accent` is
    rebound by a state-class flip on the row/hero container, so
    working->waiting (blue->amber) used to change in a single frame —
-   exactly the moment the operator most needs to notice it. Riding
-   `--hover-ms` (the house "direct response" budget, animationTiming.ts's
-   HOVER_MS) keeps this in the same family as every other state-response
-   in the overlay instead of minting a fifth hand-tuned duration. Only
+   exactly the moment the operator most needs to notice it. Only
    background-color transitions here: the tick keyframe below is scoped
-   to `.pulse` so completed/failed/stale changes stay quiet. */
+   to `.pulse` so completed/failed/stale changes stay quiet.
+
+   2026-08-02 animation audit (finding #2): moved off `--hover-ms` (160ms)
+   onto `--reveal-ms`. When plan 149 wrote this rule the dot was the ONLY
+   thing that morphed on a tier flip, so borrowing the "direct response"
+   budget was the right call. It is no longer alone — the accent edge, the
+   stamp, the fact pills and the rows' state words now morph with it (see
+   the transitions block near the top of this file), and a dot that
+   finishes 100ms ahead of everything it belongs to reads as a glitch, not
+   as snappiness. `--hover-ms` also isn't the right family for it: nothing
+   here responds to a pointer, this is a state change announcing itself. */
 .card-root .agent-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
   flex-shrink: 0;
   background: var(--agent-accent, var(--overlay-fg));
-  transition: background-color var(--hover-ms, 160ms) var(--ease-notchtap);
+  transition: background-color var(--reveal-ms, 260ms) var(--ease-notchtap);
 }
 
 .card-root .agent-dot.large {

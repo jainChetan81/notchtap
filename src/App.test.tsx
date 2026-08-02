@@ -1,6 +1,7 @@
 import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import App from "./App";
+import App, { BOARD_SURFACE_MOTION, RAIL_SURFACE_MOTION } from "./App";
+import { BOARD_SUMMON_MS, NOTCHTAP_EASE, SURFACE_SWAP_MS } from "./animationTiming";
 import { emitTo, resetHandlers } from "./test-support/tauriEventMock";
 import type { AgentState } from "./useAgentState";
 import type { SlotState } from "./useSlotState";
@@ -410,6 +411,74 @@ describe("App", () => {
       emitStatus(false);
       await vi.waitFor(() => {
         expect(container.querySelector('[data-testid="agent-board"]')).not.toBeNull();
+      });
+    });
+
+    // 2026-08-02 animation audit (finding #1): the summon's two fixes —
+    // the surfaces stack in one grid cell instead of queueing in flow
+    // during the overlap, and the Board branch (only the Board branch)
+    // arrives with real entrance emphasis. Structure and exported consts
+    // are pinned here, never mid-flight styles: jsdom runs no compositor,
+    // same discipline as AgentBoard.test.tsx's own motion-vitals block.
+    describe("surface swap (2026-08-02 animation audit)", () => {
+      it("stacks both surfaces in one grid cell so an overlap never pushes either one down", async () => {
+        const { container } = render(<App />);
+        const stack = container.querySelector(".surface-stack") as HTMLElement | null;
+        expect(stack).not.toBeNull();
+        // the wrapper is the layout mechanism — a single-cell grid, so an
+        // overlap resolves as max(height), not sum(height).
+        expect(stack?.style.display).toBe("grid");
+        // `.card-root` itself keeps its documented zero-geometry
+        // `display: contents` scoping role (styles.css) — the stack is a
+        // NEW child, not an amendment to that guarantee.
+        expect(stack?.parentElement?.className).toBe("card-root");
+
+        // both branches occupy the same cell, so neither is ever in the
+        // other's flow.
+        const railCell = container.querySelector(".card-assembly")?.parentElement;
+        expect(railCell?.style.gridArea).toBe("1 / 1");
+
+        emitAgentState({
+          revision: 1,
+          capturedAtMs: Date.now(),
+          sessions: [agentSession("s1")],
+          adapterHealth: [],
+        });
+        await vi.waitFor(() => {
+          expect(container.querySelector('[data-testid="agent-board"]')).not.toBeNull();
+        });
+        const boardCell = container.querySelector('[data-testid="agent-board"]')?.parentElement;
+        expect(boardCell?.style.gridArea).toBe("1 / 1");
+        // the summon's scale grows out of the notch cutout, the one point
+        // on this card that never moves.
+        expect(boardCell?.style.transformOrigin).toBe("top center");
+      });
+
+      it("gives the board an entrance the routine rail swap does not have", () => {
+        // The Board only appears when an agent is blocked on the operator,
+        // so its arrival earns emphasis (opacity + scale + a small drop on
+        // the house ease) while the rail keeps the plain crossfade.
+        expect(BOARD_SURFACE_MOTION.initial).toEqual({ opacity: 0, scale: 0.97, y: -6 });
+        expect(BOARD_SURFACE_MOTION.animate).toEqual({
+          opacity: 1,
+          scale: 1,
+          y: 0,
+          transition: { duration: BOARD_SUMMON_MS / 1000, ease: NOTCHTAP_EASE },
+        });
+        expect(RAIL_SURFACE_MOTION.initial).toEqual({ opacity: 0 });
+        expect(RAIL_SURFACE_MOTION.animate).toEqual({ opacity: 1 });
+      });
+
+      it("keeps the board's dismissal quieter than its arrival (deliberate asymmetry)", () => {
+        // Spatial-consistency's "mirror the exit path" rule is waived here
+        // on purpose: an interruption should announce itself and then
+        // leave without ceremony. The exit is opacity ONLY, on the shorter
+        // shared surface-swap clock.
+        expect(BOARD_SURFACE_MOTION.exit).toEqual({
+          opacity: 0,
+          transition: { duration: SURFACE_SWAP_MS / 1000, ease: NOTCHTAP_EASE },
+        });
+        expect(BOARD_SUMMON_MS).toBeGreaterThan(SURFACE_SWAP_MS);
       });
     });
 

@@ -543,10 +543,11 @@ export function AgentBoard({
             `AgentHeroCard` (NotificationBody.tsx) — the same masthead-row/
             Stamp/title/subtitle/body/fact-pill template every other
             origin's compact card already uses, replacing the bespoke
-            `.agent-board-primary-head`/`.agent-board-runtime`/
-            `.agent-board-state-pill`/`.agent-board-project`/
-            `.agent-board-summary`/`.agent-board-elapsed` block this file
-            used to hand-roll. The OUTER `motion.div` (identity-swap
+            head/runtime/state-pill/project/summary/elapsed block this
+            file used to hand-roll (that block's own stylesheet rules were
+            trimmed as plan 169 step 9's mandated follow-up, 2026-08-02 —
+            they had had no consumer since this swap). The OUTER
+            `motion.div` (identity-swap
             animation, `agent-board-primary` class) is untouched — this
             plan changes what renders INSIDE `.below-block`, never the
             shell or the swap's own animation contract (Boundaries). */}
@@ -586,6 +587,18 @@ export function AgentBoard({
             already follows (the failure class to avoid is desynced
             clocks, not a specific library — `IdleHoverPeek.tsx`'s own
             spring is the precedent this mirrors). */}
+        {/* 2026-08-02 animation audit (finding #4, DEFERRED): `mode="wait"`
+            here means the resting rows fully collapse before the expanded
+            list grows — two beats with a pinch between them, which reads
+            against this block's own "morphs between the two shapes" claim
+            above. Left as-is because the two branches are not one
+            structure restyled at two densities: `AgentRow` is a single
+            nowrap line, `ExpandedAgentRow` is a multi-block card with its
+            own meta/detail chips and a per-row hover history disclosure.
+            Converging them is a component merge, not a transition tweak,
+            and it would have to be done without destabilising the
+            settled per-row add/remove animations (ROW_TRANSITION +
+            `layout="position"`) that both branches share. */}
         {/* One shared `rest.length > 0` guard over BOTH branches: with a
             single session there is nothing below the hero to show in
             either state, so hovering a one-session Board simply keeps the
