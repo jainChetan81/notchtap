@@ -468,6 +468,18 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             let board_frame = Arc::new(StdMutex::new(BoardFrameState::default()));
 
+            // plan 171 (tab-notch redesign, slice A): `tabs::TabSelection`
+            // (the icon strip's own selection state — see tabs.rs) is
+            // deliberately NOT wired up as app state here yet. It needs a
+            // real consumer (the click detection mechanism, still an open
+            // question — see plans/171-tab-notch-redesign.md's own note)
+            // before it's threaded through `Arc<StdMutex<..>>` the same
+            // way `board_frame` is just above; declaring it unconsumed
+            // would trip clippy's unused-variable lint on a real macOS
+            // build (invisible from this Linux dev environment, but real
+            // on CI) — added in the same commit as whatever first reads
+            // or writes it.
+
             // permanent-overlay pass: a plain NSWindow is never composited
             // into another app's fullscreen Space, regardless of level or
             // collection behavior — macOS only honors fullScreenAuxiliary
@@ -1420,6 +1432,23 @@ fn emit_hover_changed_if_transitioned(
     } else {
         collapse_board_if_expanded(window, mode, cutout, board_frame);
     }
+
+    // plan 171 (tab-notch redesign): deliberately NOT wiring an icon-strip
+    // click-through toggle into this function yet, even though it would
+    // be a small, mechanically obvious addition (open click-through
+    // whenever `hovered && !visible`, mirroring `try_expand_board_for_
+    // hover`'s own gating minus its session-count check). Landing that
+    // toggle ALONE, ahead of any actual click-to-selection handling,
+    // would be a real, shippable regression: today, hovering the plain
+    // idle notch (e.g. the weather peek) stays fully click-through, so a
+    // click during that hover passes to whatever is behind the window on
+    // the desktop. Opening click-through on every idle hover before
+    // there is anything new to click would start SILENTLY EATING those
+    // clicks instead, with zero compensating functionality yet — see
+    // plans/171-tab-notch-redesign.md's own "click detection mechanism"
+    // open question for the unresolved design question this is blocked
+    // on. This toggle belongs in the SAME commit as whatever finally
+    // detects which icon (if any) a click landed on, not before it.
 }
 
 /// Animation audit 2026-08-02 (finding 2): the Agent Board's window-frame

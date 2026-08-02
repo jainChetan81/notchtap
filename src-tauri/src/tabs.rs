@@ -1,8 +1,16 @@
 //! Plan 171 (tab-notch redesign, slice A): the icon-strip SELECTION state
 //! machine — pure, no AppKit types, no lock, no I/O, same discipline
-//! `hover.rs` follows (`docs/TESTING_STRATEGY.md` §4.4). `lib.rs` wires
-//! this to the native click monitor on one side and the `tab-selection-
-//! changed` event emission on the other; this module knows about neither.
+//! `hover.rs` follows (`docs/TESTING_STRATEGY.md` §4.4).
+//!
+//! Not yet wired into `lib.rs`: the actual click-detection mechanism that
+//! would call `TabSelection::select` is an open design question (see
+//! `plans/171-tab-notch-redesign.md`'s own note) — whether it needs a new
+//! native NSEvent monitor, or whether a plain webview `onClick` already
+//! reaches the frontend once click-through is off on this app's
+//! non-activating overlay panel, is unverified from a Linux dev
+//! environment and needs one empirical check on real macOS hardware
+//! before either is built. This module is ready for either answer; it
+//! knows about neither AppKit nor tauri events.
 
 /// The five sources the icon strip can select, in the strip's fixed
 /// left-to-right order (spec `docs/superpowers/specs/2026-08-02-tab-
@@ -22,7 +30,13 @@ impl Tab {
     /// Fixed strip order — the single source of truth every other "which
     /// index is which tab" mapping (icon-rect layout, `prefix+N`) reads
     /// from, so the order can never drift between the two call sites.
-    pub const ORDER: [Tab; 5] = [Tab::Agent, Tab::Football, Tab::Music, Tab::Weather, Tab::News];
+    pub const ORDER: [Tab; 5] = [
+        Tab::Agent,
+        Tab::Football,
+        Tab::Music,
+        Tab::Weather,
+        Tab::News,
+    ];
 
     /// `prefix+1`..`prefix+5` (spec §9) — `None` for anything outside
     /// that range, so the caller's "anything else: disarm, do nothing"
@@ -62,7 +76,11 @@ impl TabSelection {
     /// §9's keymap table: "the same key again deselects") — one rule,
     /// two callers, not two mechanisms; see `select` below.
     pub fn select(&mut self, tab: Tab) {
-        self.selected = if self.selected == Some(tab) { None } else { Some(tab) };
+        self.selected = if self.selected == Some(tab) {
+            None
+        } else {
+            Some(tab)
+        };
     }
 
     pub fn deselect(&mut self) {

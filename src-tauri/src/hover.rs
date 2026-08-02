@@ -1042,11 +1042,7 @@ mod tests {
              against the real, taller window's rect"
         );
         // The real card's own top, at the ACTUAL window height, does.
-        assert!(point_in_rect(
-            &fixed,
-            WINDOW_WIDTH / 2.0,
-            real_height - 1.0
-        ));
+        assert!(point_in_rect(&fixed, WINDOW_WIDTH / 2.0, real_height - 1.0));
     }
 
     #[test]
@@ -1093,8 +1089,8 @@ mod tests {
         let rects = icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.0, 2);
         let flank_w = hovered_right_flank_width(2, 1.0);
         assert_eq!(flank_w, FLANK_IDLE); // 85.0, the floor, not the narrower strip_w
-        // total card width = 200 (hud cutout) + 2*85 = 370, matching the
-        // mock's own worked example ("hovered, 2 icons: shell width 370px").
+                                         // total card width = 200 (hud cutout) + 2*85 = 370, matching the
+                                         // mock's own worked example ("hovered, 2 icons: shell width 370px").
         let total_width = HUD_CUTOUT_W + 2.0 * flank_w;
         assert_eq!(total_width, 370.0);
         let card_x_min = (WINDOW_WIDTH - total_width) / 2.0;
