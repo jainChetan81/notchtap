@@ -292,4 +292,13 @@ describe("StatusDots", () => {
       expect(body).toContain("pause-glyph-fade-in");
     });
   });
+
+  describe("StatusDots glyphs", () => {
+    it("renders the football, news, and weather glyphs as SVGs, not plain shape divs", () => {
+      const { container } = render(<StatusDots />);
+      expect(container.querySelector(".status-dot.football svg")).not.toBeNull();
+      expect(container.querySelector(".status-dot.news svg")).not.toBeNull();
+      expect(container.querySelector(".status-dot.weather svg")).not.toBeNull();
+    });
+  });
 });
