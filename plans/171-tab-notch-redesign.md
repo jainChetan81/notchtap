@@ -161,6 +161,8 @@ These are not fully specified by the design spec (which describes behavior, not 
 
 **Verification**: `npx vitest run` — round-trips into the saved config, matching every other Settings field's own test pattern in this codebase.
 
+**Landed so far**: scope corrected from "frontend only" — a persisted field genuinely needs both sides. `Config.prefix_shortcut: String` (rust, default `"⌃⇧Space"`) + matching TS field + `is_valid_prefix_shortcut`/`isValidPrefixShortcut` (kept in exact sync, both sides) + `PrefixShortcutControl` in `ShortcutsSection.tsx` (built on `SilenceWindowControl`'s idiom). 5 rust tests + 2 frontend tests. `capabilities/*.json`/`build.rs`/`prefix.rs`/`lib.rs`'s shortcut block all confirmed untouched. Data only — not wired to a live `tauri_plugin_global_shortcut` registration yet (Slice K/real-device work). `cargo test` 998/998, clippy byte-identical to the known baseline, `tsc`/vitest/biome all clean.
+
 ## Slice K — integration, full verification, animation lock-down, PR (sequential, one owner, after every above slice lands)
 
 1. Wire everything into `src/components/StatusRailCard.tsx`/`src/App.tsx` — the actual mount points for the icon strip and the selection-driven below-block swap. This is the one place genuine cross-slice integration risk lives; budget real time for it, don't treat it as a rubber-stamp merge step.
