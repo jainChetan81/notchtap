@@ -129,12 +129,25 @@ export function Segmented<T extends string | number>({
               // `shadow-[var(--shadow-selected)]` below while pressed —
               // intentional: a selected pill being pressed should still
               // read as depressing.
-              "rounded-[4px] border border-transparent bg-transparent px-1.5 py-px font-mono text-fs-secondary font-[620] tracking-[0.03em] text-muted-foreground outline-none transition-[color,background-color,border-color,box-shadow,transform] duration-[140ms] ease-notchtap hover:bg-accent hover:text-foreground focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97] active:shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)]",
-              value === option.value &&
-                cn(
-                  "is-selected shadow-[var(--shadow-selected)]",
-                  optionTones?.[option.value] ?? "bg-accent text-foreground",
-                ),
+              // CodeRabbit review (PR #11): `transform` swapped for `scale`
+              // (Tailwind v4's `scale-*` utility sets the standalone
+              // `scale` property, not `transform` — see button.tsx's same
+              // fix), and the press shadow now references the shared
+              // `--shadow-pressed` token instead of a third hand-copied
+              // literal.
+              "rounded-[4px] border border-transparent bg-transparent px-1.5 py-px font-mono text-fs-secondary font-[620] tracking-[0.03em] text-muted-foreground outline-none transition-[color,background-color,border-color,box-shadow,scale] duration-[140ms] ease-notchtap focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97] active:shadow-[var(--shadow-pressed)]",
+              value === option.value
+                ? cn(
+                    "is-selected shadow-[var(--shadow-selected)]",
+                    optionTones?.[option.value] ?? "bg-accent text-foreground",
+                  )
+                : // CodeRabbit review (PR #11): hover used to be unconditional
+                  // on the base class above, so hovering a SELECTED tone pill
+                  // (e.g. a colored priority segment) overrode its
+                  // `optionTones` background/text with the plain neutral
+                  // hover treatment. Scoped to the unselected case only —
+                  // a selected pill keeps its own tone color on hover now.
+                  "hover:bg-accent hover:text-foreground",
             )}
             aria-pressed={value === option.value}
             onClick={() => onChange(option.value)}

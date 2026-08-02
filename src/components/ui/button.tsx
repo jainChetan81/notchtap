@@ -22,7 +22,14 @@ const buttonVariants = cva(
   // scratch. `box-shadow` was already in the transition list below
   // (plan 126); `transform` covers both translate and scale since
   // Tailwind composes them through shared CSS vars.
-  "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow,transform] outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px active:scale-[0.96] active:shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)] disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  // CodeRabbit review (PR #11): Tailwind v4 emits `scale-*`/`translate-*`
+  // utilities as the standalone CSS `scale`/`translate` properties, not
+  // `transform` (confirmed against the built CSS: `{scale:.97}`, not a
+  // `transform:` shorthand) — so listing `transform` here transitioned
+  // neither, and the whole "deepen the press feedback" change was
+  // snapping instantly instead of animating. Fixed to the real property
+  // names.
+  "group/button inline-flex shrink-0 items-center justify-center rounded-lg border border-transparent bg-clip-padding text-sm font-medium whitespace-nowrap transition-[color,background-color,border-color,box-shadow,translate,scale] outline-none select-none focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:not-aria-[haspopup]:translate-y-px active:scale-[0.96] active:shadow-[var(--shadow-pressed)] disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {

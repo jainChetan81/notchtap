@@ -301,8 +301,16 @@ export const PRIORITY_SEGMENT_OPTIONS: ReadonlyArray<{ label: string; value: Pri
 // notification card itself makes, not a settings-only invention. Literal
 // Tailwind class strings only (not built from a color name at runtime) —
 // see Segmented's own `optionTones` doc for why.
+// CodeRabbit review (PR #11): `low`'s foreground used to be
+// `text-muted-foreground` — byte-identical to Segmented's own unselected
+// text color, so a selected Low segment was nearly indistinguishable
+// from an unselected one (only the faint 20%-opacity background tint
+// differed). `text-foreground` keeps the neutral/grey background tint
+// (Low is correctly the quiet, uncolored tier) while giving selection
+// itself a real, visible contrast bump — matching how `medium`/`high`'s
+// saturated text already reads as clearly "on."
 export const PRIORITY_TONES: Record<PriorityLevel, string> = {
-  low: "bg-muted-foreground/20 text-muted-foreground",
+  low: "bg-muted-foreground/20 text-foreground",
   medium: "bg-overlay-teal/20 text-overlay-teal",
   high: "bg-overlay-coral/20 text-overlay-coral",
 };

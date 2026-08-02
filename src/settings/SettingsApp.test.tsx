@@ -2052,9 +2052,11 @@ describe("SettingsApp", () => {
 
       await screen.findAllByText("Claude Code");
       const claudeCard = findAdapterCard("Claude Code");
-      // Plan 143 restyle (Handy "Models"-page reference): the setup
-      // snippet's Copy/Send-test buttons only mount once the card is
-      // expanded — collapse the header/name button first.
+      // Plan 143 restyle (Handy "Models"-page reference): cards start
+      // collapsed, and the setup snippet's Copy/Send-test buttons only
+      // mount once expanded — click the header/name button to expand it
+      // first (CodeRabbit review, PR #11: this comment previously said
+      // "collapse," backwards from what the click actually does).
       fireEvent.click(within(claudeCard).getByRole("button", { name: "Claude Code" }));
       fireEvent.click(within(claudeCard).getByRole("button", { name: "Send test event" }));
 

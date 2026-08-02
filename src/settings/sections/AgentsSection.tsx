@@ -273,9 +273,17 @@ function AdapterCard({
             HistorySection.tsx convention. */}
         <button
           type="button"
-          className="agent-card-trigger flex min-w-0 flex-1 items-center gap-1.5 rounded-sm text-left outline-none transition-transform duration-[140ms] ease-notchtap focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.97]"
+          // CodeRabbit review (PR #11): two fixes matching the same
+          // findings applied to button.tsx/switch.tsx/Segmented.tsx —
+          // `transition-transform` doesn't cover Tailwind v4's `scale-*`
+          // utility (a standalone `scale` property), so the press scale
+          // was snapping instead of animating; and `aria-controls` must
+          // not point at an id with no matching element — the detail
+          // panel is conditionally MOUNTED (not just hidden), so while
+          // collapsed there is no `detailId` element in the DOM at all.
+          className="agent-card-trigger flex min-w-0 flex-1 items-center gap-1.5 rounded-sm text-left outline-none transition-[scale] duration-[140ms] ease-notchtap focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.97]"
           aria-expanded={expanded}
-          aria-controls={detailId}
+          aria-controls={expanded ? detailId : undefined}
           onClick={() => setExpanded((prev) => !prev)}
         >
           <span

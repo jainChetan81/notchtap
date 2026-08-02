@@ -51,7 +51,12 @@ function Switch({
         // that file's own comment. `box-shadow` added to the transition
         // list so the press/release both animate instead of the shadow
         // snapping in and out.
-        "peer group/switch relative inline-flex shrink-0 items-center rounded-full border border-transparent p-0 transition-[color,background-color,border-color,box-shadow,transform] duration-150 ease-out outline-none after:absolute after:-inset-x-1 after:-inset-y-1.5 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-[size=default]:h-[22px] data-[size=default]:w-9 data-[size=sm]:h-4 data-[size=sm]:w-7 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 data-checked:bg-primary data-unchecked:bg-input data-disabled:cursor-not-allowed data-disabled:opacity-50 active:scale-[0.97] active:shadow-[inset_0_1px_2px_rgba(0,0,0,0.4)]",
+        // CodeRabbit review (PR #11): `transform` in the transition list
+        // doesn't cover Tailwind v4's `scale-*` utility (a standalone
+        // `scale` CSS property, not `transform`) — swapped so the press
+        // scale actually animates instead of snapping. Same fix as
+        // button.tsx.
+        "peer group/switch relative inline-flex shrink-0 items-center rounded-full border border-transparent p-0 transition-[color,background-color,border-color,box-shadow,scale] duration-150 ease-out outline-none after:absolute after:-inset-x-1 after:-inset-y-1.5 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-[size=default]:h-[22px] data-[size=default]:w-9 data-[size=sm]:h-4 data-[size=sm]:w-7 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 data-checked:bg-primary data-unchecked:bg-input data-disabled:cursor-not-allowed data-disabled:opacity-50 active:scale-[0.97] active:shadow-[var(--shadow-pressed)]",
         className,
       )}
       {...props}
