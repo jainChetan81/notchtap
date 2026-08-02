@@ -55,6 +55,40 @@
   padding-bottom: 0;
 }
 
+/* 2026-08-02 (operator: "the compact<->expanded transition reads badly"):
+   the single-cell grid stack the resting rows and the expanded list now
+   share, so their swap is a sync crossfade IN PLACE rather than
+   `mode="wait"`'s collapse-then-grow. Both branches sit at
+   `grid-area: 1 / 1` (AgentBoard.tsx's `SWAP_CELL_STYLE`), so the row —
+   and therefore this wrapper's height — is `max(outgoing, incoming)`
+   instead of their sum, and follows one continuous curve while both
+   branches' `height` springs run on the same clock. See that swap's own
+   comment in AgentBoard.tsx for the full argument.
+
+   `align-items: start`: grid items stretch by default, so a branch that
+   has finished animating (back to `height: auto`) would otherwise be
+   stretched to the taller sibling's height mid-overlap. Top-aligned
+   instead — the card hangs from the notch, so any size difference must
+   resolve downward. */
+.card-root .agent-board-swap {
+  display: grid;
+  align-items: start;
+}
+
+/* ...and while the wrapper holds nothing (a one-session Board: no `rest`,
+   so neither branch is mounted), it must not exist for layout at all.
+   `.agent-board` is a flex column with an 8px `gap`, which an empty
+   zero-height child still collects — re-adding exactly the dead band
+   under the hero that the CONTENT-HUG pass above removed. Same `:has()`
+   DOM-presence signal as the padding rule above, for the same reason:
+   both branches mount/unmount through `AnimatePresence`, and an EXITING
+   branch is still in the DOM, so this correctly keeps the wrapper alive
+   (and animating) until the last row has finished leaving. */
+.card-root .agent-board:not(:has(.agent-board-rows, .agent-board-expanded-list))
+  .agent-board-swap {
+  display: none;
+}
+
 /* Plan 169 fidelity pass: the same z-index rider card-chrome.css already
    applies to `.compact`/`.manifest` under `.below-block.agent-origin`,
    extended to the board's OWN blocks — the runtime wash is a positioned
