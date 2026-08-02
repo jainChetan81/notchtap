@@ -43,6 +43,7 @@ mod settings;
 mod settings_commands;
 pub mod silence;
 mod status;
+mod tabs;
 mod weather_poller;
 
 use std::sync::{Arc, Mutex as StdMutex, Once, OnceLock};
