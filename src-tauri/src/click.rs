@@ -55,6 +55,15 @@ pub struct ClickMonitorParams<R: tauri::Runtime> {
     pub cutout_width: f64,
     pub cutout_height: f64,
     pub scale: f64,
+    /// The REAL currently-applied window height, read fresh per click —
+    /// never `hover::WINDOW_HEIGHT`. The Agent Board's hover-expand
+    /// genuinely resizes this window taller while the Slot is idle,
+    /// which is exactly when the strip is up, so a resting-constant
+    /// y-transform would put every icon rect in the wrong place. Same
+    /// parameter, same reason, as `hover::board_rect`'s own
+    /// `window_height` (the P0 fix) and `icon_strip_rects`' own
+    /// CodeRabbit-flagged addition.
+    pub board_frame: std::sync::Arc<std::sync::Mutex<crate::BoardFrameState>>,
 }
 
 /// Installs the `LeftMouseDown` local monitor. Main-thread only (AppKit
@@ -79,6 +88,7 @@ pub fn install_click_monitor<R: tauri::Runtime>(params: ClickMonitorParams<R>) {
         cutout_width,
         cutout_height,
         scale,
+        board_frame,
     } = params;
 
     let handler = RcBlock::new(move |event: std::ptr::NonNull<NSEvent>| -> *mut NSEvent {
@@ -107,8 +117,15 @@ pub fn install_click_monitor<R: tauri::Runtime>(params: ClickMonitorParams<R>) {
             .lock()
             .unwrap_or_else(|e| e.into_inner())
             .clone();
-        let rects =
-            crate::hover::icon_strip_rects(mode, cutout_width, cutout_height, scale, present.len());
+        let real_window_height = board_frame.lock().unwrap_or_else(|e| e.into_inner()).height;
+        let rects = crate::hover::icon_strip_rects(
+            mode,
+            cutout_width,
+            cutout_height,
+            scale,
+            present.len(),
+            real_window_height,
+        );
         if let Some(tab) = click_target(loc.x, loc.y, &present, &rects) {
             tracing::debug!(?tab, "icon strip click");
             // The ONE shared mutation path — identical semantics for a

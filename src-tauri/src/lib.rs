@@ -758,6 +758,7 @@ pub fn run() {
                     cutout_width: monitor_cutout_width,
                     cutout_height: monitor_cutout_height,
                     scale: monitor_scale,
+                    board_frame: board_frame.clone(),
                 });
             }
 
@@ -1610,14 +1611,14 @@ fn emit_hover_changed_if_transitioned(
 /// cursor far below the painted board).
 #[cfg(target_os = "macos")]
 #[derive(Debug, Clone, Copy, PartialEq)]
-struct BoardFrameState {
+pub(crate) struct BoardFrameState {
     /// The EXPANDED window frame is currently applied. Stays `true` for
     /// the whole grace period after a hover-exit — the frame really is
     /// still the big one until the timer shrinks it, and lying about that
     /// would let a re-hover skip the re-expand it still needs to do.
     expanded: bool,
     generation: u64,
-    height: f64,
+    pub(crate) height: f64,
 }
 
 #[cfg(target_os = "macos")]
