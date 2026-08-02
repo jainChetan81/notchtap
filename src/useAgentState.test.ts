@@ -55,6 +55,9 @@ describe("useAgentState", () => {
       revision: 1,
       capturedAtMs: 1_000,
       sessions: [session()],
+      // plan 177: the hook always resolves this field, so a fixture
+      // compared with `toEqual` has to carry it too.
+      tabSessions: [],
       adapterHealth: [],
     };
     emit(payload);
@@ -98,6 +101,7 @@ describe("useAgentState", () => {
       revision: 1,
       capturedAtMs: 1_000,
       sessions: [session()],
+      tabSessions: [],
       adapterHealth: [],
     };
     emit(good);
@@ -187,6 +191,60 @@ describe("useAgentState", () => {
       adapterHealth: [],
     });
     expect(result.current.sessions).toEqual([]);
+  });
+
+  // Plan 177: `tabSessions` — the ungated list the pulled agent tab
+  // renders, alongside the gated `sessions` the Board renders.
+  it("parses a payload carrying tabSessions alongside a gated-empty sessions list", async () => {
+    const { result } = await renderReady();
+    emit({
+      revision: 1,
+      capturedAtMs: 1_000,
+      sessions: [],
+      tabSessions: [session({ id: "working", state: "working" as const })],
+      adapterHealth: [],
+    });
+    expect(result.current.sessions).toEqual([]);
+    expect(result.current.tabSessions.map((s) => s.id)).toEqual(["working"]);
+  });
+
+  it("defaults a payload that omits tabSessions entirely to an empty array", async () => {
+    const { result } = await renderReady();
+    emit({ revision: 1, capturedAtMs: 1_000, sessions: [session()], adapterHealth: [] });
+    expect(result.current.sessions).toHaveLength(1);
+    expect(result.current.tabSessions).toEqual([]);
+  });
+
+  it("drops a malformed tabSessions session, keeping every valid sibling", async () => {
+    const { result } = await renderReady();
+    emit({
+      revision: 1,
+      capturedAtMs: 1_000,
+      sessions: [],
+      tabSessions: [session({ id: "bad", runtime: "cursor" as never }), session({ id: "good" })],
+      adapterHealth: [],
+    });
+    expect(result.current.tabSessions.map((s) => s.id)).toEqual(["good"]);
+  });
+
+  it("ignores a payload whose tabSessions is not an array, keeping the last good state", async () => {
+    const { result } = await renderReady();
+    const good: AgentState = {
+      revision: 1,
+      capturedAtMs: 1_000,
+      sessions: [session()],
+      tabSessions: [],
+      adapterHealth: [],
+    };
+    emit(good);
+    emit({
+      revision: 2,
+      capturedAtMs: 2_000,
+      sessions: [],
+      tabSessions: "nope",
+      adapterHealth: [],
+    });
+    expect(result.current).toEqual(good);
   });
 
   it("drops a session whose history entry carries an unrecognized state", async () => {

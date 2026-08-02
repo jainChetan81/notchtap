@@ -98,12 +98,36 @@ export type AdapterHealthView = {
 export type AgentState = {
   revision: number;
   capturedAtMs: number;
+  /// The Agent BOARD's list — summons-gated on the rust side
+  /// (`board.rs::gate_presence`), so it is empty whenever nothing needs
+  /// the operator. This is what `presentationMode` reads to decide
+  /// whether the Board is on screen at all.
   sessions: AgentSessionView[];
+  /// Plan 177: the PULL surface's list — the same ordered slice before
+  /// that gate. The agent tab's below-block renders this one, because a
+  /// tab the operator clicked open is a user-initiated view: the gate
+  /// governs the Board summoning itself, not an explicit pull. Optional
+  /// on this type (and only on this type) because it doubles as the
+  /// constructed payload shape in tests and older payloads predate the
+  /// field — `useAgentState` itself always returns it filled, see
+  /// `sanitizeAgentState`.
+  tabSessions?: AgentSessionView[];
   adapterHealth: AdapterHealthView[];
 };
 
-function emptyAgentState(): AgentState {
-  return { revision: 0, capturedAtMs: Date.now(), sessions: [], adapterHealth: [] };
+/// What the HOOK hands back, as opposed to what the wire may carry:
+/// `tabSessions` is guaranteed present here because `sanitizeAgentState`
+/// fills it, so a consumer never has to repeat the `?? []` itself.
+export type ResolvedAgentState = AgentState & { tabSessions: AgentSessionView[] };
+
+function emptyAgentState(): ResolvedAgentState {
+  return {
+    revision: 0,
+    capturedAtMs: Date.now(),
+    sessions: [],
+    tabSessions: [],
+    adapterHealth: [],
+  };
 }
 
 function isNonNegativeInteger(v: unknown): v is number {
@@ -226,24 +250,40 @@ export function isValidAgentState(v: unknown): v is AgentState {
     isNonNegativeInteger(o.revision) &&
     isNonNegativeInteger(o.capturedAtMs) &&
     Array.isArray(o.sessions) &&
+    // Plan 177: absent is tolerated (an older payload predating the
+    // field must not blank the board — the same "degrade, don't crash"
+    // discipline `history` already follows), but present-and-not-an-array
+    // is malformed and rejects the whole payload, exactly like
+    // `sessions` above. Per-session validation happens in the sanitizer,
+    // through the very same `isValidSession`.
+    (o.tabSessions === undefined || Array.isArray(o.tabSessions)) &&
     Array.isArray(o.adapterHealth) &&
     (o.adapterHealth as unknown[]).every(isValidAdapterHealth)
   );
 }
 
-function sanitizeAgentState(v: AgentState): AgentState {
+// The one per-session pass both lists get — shared rather than
+// duplicated so the two can't drift apart in what they accept.
+function sanitizeSessions(list: AgentSessionView[] | undefined): AgentSessionView[] {
+  return (list ?? [])
+    .filter(isValidSession)
+    .map((s) => ({ ...s, history: s.history ?? [], subagent: s.subagent ?? null }));
+}
+
+function sanitizeAgentState(v: AgentState): ResolvedAgentState {
   return {
     ...v,
-    sessions: v.sessions
-      .filter(isValidSession)
-      .map((s) => ({ ...s, history: s.history ?? [], subagent: s.subagent ?? null })),
+    sessions: sanitizeSessions(v.sessions),
+    // Always an array after this, never `undefined` — the hook's
+    // consumers get a safe `[]` for a payload that omitted the field.
+    tabSessions: sanitizeSessions(v.tabSessions),
   };
 }
 
 export const AGENT_STATE_EVENT = "agent-state";
 
-export function useAgentState(): AgentState {
-  const [state, setState] = useState<AgentState>(emptyAgentState);
+export function useAgentState(): ResolvedAgentState {
+  const [state, setState] = useState<ResolvedAgentState>(emptyAgentState);
   useEffect(() => {
     let unlisten: UnlistenFn | undefined;
     let unmounted = false;

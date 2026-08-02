@@ -324,8 +324,16 @@ function App() {
                 // `agentState` is already read above for the Board's own
                 // presentation branch — the agent tab's below-block reads
                 // the same snapshot rather than a second subscription.
+                // Plan 177: but the OTHER list on that snapshot.
+                // `sessions` is summons-gated (empty unless something
+                // needs the operator, which is what keeps merely-working
+                // agents from summoning the Board); `tabSessions` is the
+                // ungated view the agent ICON is already lit from. A pull
+                // is user-initiated, so it gets the ungated one — reading
+                // `sessions` here is what made a lit icon open an empty
+                // block. The Board's own render above is untouched.
                 selectedTab={selectedTab}
-                agentSessions={agentState.sessions}
+                agentSessions={agentState.tabSessions}
                 agentCapturedAtMs={agentState.capturedAtMs}
                 viewedSessionIndex={viewedSessionIndex}
               />
