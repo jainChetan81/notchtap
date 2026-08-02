@@ -70,26 +70,34 @@ const SURFACE_CELL_STYLE = { gridArea: "1 / 1" } as const;
 // zero entrance emphasis):
 //
 // The status rail keeps the plain symmetric crossfade it always had; the
-// BOARD gets a restrained entrance on top of it. Scale + a 6px drop, on
-// the house ease, anchored at `top center` — the notch cutout, the one
-// point on this card that never moves (card-chrome.css's own
-// `transform-origin` doc) — so the Board reads as unfolding out of the
-// notch rather than materializing in place.
+// BOARD still gets its own, LONGER arrival clock (BOARD_SUMMON_MS, 260ms
+// against the rail's 180ms exit) — but the emphasis is carried by
+// duration alone, not by a transform.
 //
-// The exit stays the quiet SURFACE_SWAP_MS opacity fade, deliberately NOT
-// the mirror of this entrance. That is a conscious exception to the
-// "mirror the exit path exactly" spatial-consistency rule this repo
-// otherwise follows (AgentBoard.tsx's `ROW_TRANSITION`): those rows are
-// peers appearing and disappearing in a list, whereas this is an
-// interruption. An interruption should announce itself and then leave
-// without ceremony — a Board that exits as emphatically as it arrives
-// draws the eye to the moment it stops mattering.
+// FEEL-CHECK RESULT (2026-08-02, operator, live): a transform entrance
+// (`scale: 0.97 -> 1`, `y: -6 -> 0`, anchored `transform-origin: top
+// center`) was tried and REJECTED — "looks weird, something about its
+// size animation". The diagnosis: this `motion.div` wraps the WHOLE
+// `.card-assembly`, synthetic notch cutout included, and that cutout's
+// entire illusion is being a fixed physical anchor — card-chrome.css's
+// `transform-origin` doc states the contract outright ("the notch cutout
+// never moves; only the shell grows outward from it"). Scaling or
+// dropping the shell moves the fake notch, which reads as the hardware
+// itself twitching. Anchoring the origin at the cutout does not save it:
+// the cutout still changes SIZE.
 //
-// FEEL-CHECK (owed on the macbook, notch mode): 0.97 / -6px are the
-// restrained end of the range on purpose — big enough to register as an
-// arrival, small enough not to read as a bounce on a 500px card. Both
-// numbers, and BOARD_SUMMON_MS itself, want an on-hardware eye before
-// they're treated as settled.
+// LAW for any future entrance emphasis on this surface: animate ONLY
+// content BELOW the cutout (the below-block, the hero, the rows), never
+// the shell. `BOARD_SURFACE_MOTION` itself stays opacity-only.
+//
+// The exit keeps the quieter SURFACE_SWAP_MS clock, deliberately NOT the
+// mirror of the entrance. That is a conscious exception to the "mirror
+// the exit path exactly" spatial-consistency rule this repo otherwise
+// follows (AgentBoard.tsx's `ROW_TRANSITION`): those rows are peers
+// appearing and disappearing in a list, whereas this is an interruption.
+// An interruption should announce itself and then leave without
+// ceremony — a Board that exits as emphatically as it arrives draws the
+// eye to the moment it stops mattering.
 //
 // Exported so App.test.tsx pins these exact values without hand-copying
 // them into a second literal — the same "one const, no desynced clocks"
@@ -97,11 +105,9 @@ const SURFACE_CELL_STYLE = { gridArea: "1 / 1" } as const;
 // already follow. Spread onto the `motion.div`, so pinning the object
 // also pins the wiring.
 export const BOARD_SURFACE_MOTION = {
-  initial: { opacity: 0, scale: 0.97, y: -6 },
+  initial: { opacity: 0 },
   animate: {
     opacity: 1,
-    scale: 1,
-    y: 0,
     transition: { duration: BOARD_SUMMON_MS / 1000, ease: NOTCHTAP_EASE },
   },
   exit: {
@@ -258,11 +264,12 @@ function App() {
   // notification<->idle transition (both map to "status-rail"), so
   // StatusRailCard itself is never remounted by this wrapper — its own
   // `.card-assembly` identity stays stable exactly as before this plan.
-  // 2026-08-02 animation audit: "crossfades" is now only half true — the
-  // rail branch still plays that plain symmetric fade, the Board branch
-  // arrives with its own emphasis and leaves with the quiet one
-  // (`BOARD_SURFACE_MOTION`/`RAIL_SURFACE_MOTION` above), and both are
-  // stacked in one grid cell so the overlap no longer shifts anything.
+  // 2026-08-02 animation audit: both branches crossfade, but on
+  // different clocks — the rail keeps the plain symmetric fade, the Board
+  // arrives on the longer summon clock and leaves on the short shared one
+  // (`BOARD_SURFACE_MOTION`/`RAIL_SURFACE_MOTION` above). Neither branch
+  // transforms the shell (see `BOARD_SURFACE_MOTION`'s FEEL-CHECK RESULT),
+  // and both are stacked in one grid cell so the overlap shifts nothing.
   // `initial={false}` is unchanged, so the first-mount contract above
   // holds exactly as written.
   return (
@@ -275,14 +282,7 @@ function App() {
       <div className="surface-stack" style={SURFACE_STACK_STYLE}>
         <AnimatePresence initial={false}>
           {mode === "board" ? (
-            <motion.div
-              key="agent-board"
-              // `transformOrigin`: the notch cutout is the fixed point
-              // this card hangs from, so the summon's scale grows out of
-              // it (same anchor `.card-assembly` itself uses).
-              style={{ ...SURFACE_CELL_STYLE, transformOrigin: "top center" }}
-              {...BOARD_SURFACE_MOTION}
-            >
+            <motion.div key="agent-board" style={SURFACE_CELL_STYLE} {...BOARD_SURFACE_MOTION}>
               <AgentBoard
                 sessions={agentState.sessions}
                 capturedAtMs={agentState.capturedAtMs}

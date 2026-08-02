@@ -614,10 +614,11 @@ describe("AgentBoard expanded render", () => {
       />,
     );
     // The hero never unmounts; only the rows below it swap shape, and
-    // that swap is behind `AnimatePresence mode="wait"`'s exit-then-enter
-    // animation (async, a real spring — same reason the history-disclosure
-    // test above asserts closing INTENT rather than an immediate DOM
-    // state), so only the hero's presence is asserted here.
+    // that swap is behind a sync `AnimatePresence` overlap (2026-08-02 —
+    // both branches share one grid cell and crossfade in place), whose
+    // exit is async and spring-driven — same reason the
+    // history-disclosure test above asserts closing INTENT rather than an
+    // immediate DOM state. So only the hero's presence is asserted here.
     expect(container.querySelector(".agent-board-primary")).not.toBeNull();
   });
 
@@ -1225,5 +1226,104 @@ describe("AgentBoard resting content-hug", () => {
     expect(AGENT_BOARD_CSS).toMatch(
       /\.card-root \.agent-board-primary \.compact \{\s*min-height: 74px;/,
     );
+  });
+});
+
+// Operator feedback (2026-08-02, live): the resting<->expanded swap "reads
+// badly". It ran `AnimatePresence mode="wait"`, so the outgoing list had to
+// collapse to height 0 before the incoming one started growing from 0 — a
+// full pinch to nothing, at double the settle time. Both branches now share
+// one grid cell and overlap, so the container's height is
+// `max(outgoing, incoming)` — one continuous size change. jsdom runs no
+// compositor, so this pins the STRUCTURE that produces the morph (the
+// wrapper, the shared cell, the shared spring) plus the stylesheet rules,
+// never mid-flight geometry — same discipline as the motion-vitals block
+// above.
+describe("AgentBoard resting<->expanded morph", () => {
+  const AGENT_BOARD_TSX = readFileSync(
+    fileURLToPath(new NodeURL("./AgentBoard.tsx", import.meta.url)),
+    "utf8",
+  );
+  const AGENT_BOARD_CSS = readFileSync(
+    fileURLToPath(new NodeURL("../overlay/agent-board.css", import.meta.url)),
+    "utf8",
+  );
+
+  const twoSessions = [session({ id: "a" }), session({ id: "b" })];
+
+  it("puts both branches in one grid cell so they overlap instead of stacking", () => {
+    const { container, rerender } = render(
+      <AgentBoard sessions={twoSessions} capturedAtMs={CAPTURED_AT_MS} />,
+    );
+    const swap = container.querySelector(".agent-board-swap");
+    expect(swap).not.toBeNull();
+    // the wrapper is a direct child of the board itself, so the parent
+    // flex `gap` still separates it from the hero exactly as the rows
+    // block used to be separated.
+    expect(swap?.parentElement?.classList.contains("agent-board")).toBe(true);
+
+    const resting = container.querySelector(".agent-board-rows") as HTMLElement | null;
+    expect(resting?.parentElement).toBe(swap);
+    expect(resting?.style.gridArea).toBe("1 / 1");
+    // each branch keeps clipping its own collapsing content.
+    expect(resting?.style.overflow).toBe("hidden");
+
+    rerender(<AgentBoard sessions={twoSessions} capturedAtMs={CAPTURED_AT_MS} expanded />);
+    const expandedList = container.querySelector(
+      '[data-testid="agent-board-expanded-list"]',
+    ) as HTMLElement | null;
+    expect(expandedList?.parentElement).toBe(swap);
+    expect(expandedList?.style.gridArea).toBe("1 / 1");
+    expect(expandedList?.style.overflow).toBe("hidden");
+    // the bounded scroll surface is unchanged by the wrapper.
+    expect(container.querySelector(".agent-board-expanded-scroll")).not.toBeNull();
+  });
+
+  it('no longer serialises the swap — `mode="wait"` is gone from this block', () => {
+    // `mode="wait"` IS still correct for the hero above (a single block
+    // whose overlap would double its height), so this asserts that
+    // exactly ONE `AnimatePresence` still opts into it, not that the
+    // string is absent from the file (the prose comments name it too).
+    expect(AGENT_BOARD_TSX.match(/<AnimatePresence[^>]*mode="wait"/g)).toHaveLength(1);
+    expect(AGENT_BOARD_TSX).toMatch(
+      /<div className="agent-board-swap">\s*<AnimatePresence initial=\{false\}>/,
+    );
+  });
+
+  it("drives both branches' height off the SAME spring, so max() traces one curve", () => {
+    // the morph only reads as one continuous size change while the two
+    // heights animate on one clock — two configs here would be exactly
+    // the desynced-clocks drift this repo single-sources against.
+    for (const cls of ["agent-board-expanded-list", "agent-board-rows"]) {
+      const branch = AGENT_BOARD_TSX.match(
+        new RegExp(`className="${cls}"[\\s\\S]{0,400}?/>|className="${cls}"[\\s\\S]{0,400}?>`),
+      );
+      expect(branch, `no ${cls} branch found`).not.toBeNull();
+      expect(branch?.[0]).toContain('animate={{ opacity: 1, height: "auto" }}');
+      expect(branch?.[0]).toContain("exit={{ opacity: 0, height: 0 }}");
+      expect(branch?.[0]).toContain("transition={DISCLOSURE_SPRING}");
+    }
+  });
+
+  it("the wrapper is a top-aligned single-cell grid", () => {
+    expect(AGENT_BOARD_CSS).toMatch(
+      /\.card-root \.agent-board-swap \{\s*display: grid;\s*align-items: start;\s*\}/,
+    );
+  });
+
+  it("an empty wrapper is removed from layout so it can't collect the board's flex gap", () => {
+    // same `:has()` DOM-presence signal as the hero-only padding rule —
+    // an always-mounted wrapper would otherwise re-add an 8px dead band
+    // under a one-session hero.
+    expect(AGENT_BOARD_CSS).toMatch(
+      /\.card-root \.agent-board:not\(:has\(\.agent-board-rows, \.agent-board-expanded-list\)\)\s*\.agent-board-swap \{\s*display: none;/,
+    );
+    // ...and the guard really does leave the wrapper empty at N=1.
+    const { container } = render(
+      <AgentBoard sessions={[session({ id: "solo" })]} capturedAtMs={CAPTURED_AT_MS} />,
+    );
+    const swap = container.querySelector(".agent-board-swap");
+    expect(swap).not.toBeNull();
+    expect(swap?.childElementCount).toBe(0);
   });
 });

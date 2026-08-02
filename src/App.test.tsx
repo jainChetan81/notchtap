@@ -414,12 +414,14 @@ describe("App", () => {
       });
     });
 
-    // 2026-08-02 animation audit (finding #1): the summon's two fixes —
-    // the surfaces stack in one grid cell instead of queueing in flow
-    // during the overlap, and the Board branch (only the Board branch)
-    // arrives with real entrance emphasis. Structure and exported consts
-    // are pinned here, never mid-flight styles: jsdom runs no compositor,
-    // same discipline as AgentBoard.test.tsx's own motion-vitals block.
+    // 2026-08-02 animation audit (finding #1) + the same day's operator
+    // rejection of its transform entrance: the surfaces stack in one grid
+    // cell instead of queueing in flow during the overlap, and the Board
+    // branch (only the Board branch) arrives on a longer clock — with NO
+    // transform on the shell, since that would move/resize the synthetic
+    // notch cutout. Structure and exported consts are pinned here, never
+    // mid-flight styles: jsdom runs no compositor, same discipline as
+    // AgentBoard.test.tsx's own motion-vitals block.
     describe("surface swap (2026-08-02 animation audit)", () => {
       it("stacks both surfaces in one grid cell so an overlap never pushes either one down", async () => {
         const { container } = render(<App />);
@@ -449,24 +451,36 @@ describe("App", () => {
         });
         const boardCell = container.querySelector('[data-testid="agent-board"]')?.parentElement;
         expect(boardCell?.style.gridArea).toBe("1 / 1");
-        // the summon's scale grows out of the notch cutout, the one point
-        // on this card that never moves.
-        expect(boardCell?.style.transformOrigin).toBe("top center");
+        // ...and nothing else: the surface cell carries no transform of
+        // its own (see the next test).
+        expect(boardCell?.style.transform).toBe("");
+        expect(boardCell?.style.transformOrigin).toBe("");
       });
 
-      it("gives the board an entrance the routine rail swap does not have", () => {
-        // The Board only appears when an agent is blocked on the operator,
-        // so its arrival earns emphasis (opacity + scale + a small drop on
-        // the house ease) while the rail keeps the plain crossfade.
-        expect(BOARD_SURFACE_MOTION.initial).toEqual({ opacity: 0, scale: 0.97, y: -6 });
+      it("never transforms the shell — the summon's emphasis is duration only", () => {
+        // Operator feedback (2026-08-02, live): a scale/drop entrance on
+        // this wrapper animated the synthetic notch cutout along with the
+        // rest of the shell, and that cutout has to read as fixed
+        // hardware (card-chrome.css's `transform-origin` doc). Both
+        // surfaces are opacity-only; the Board's arrival earns its
+        // emphasis from the LONGER clock instead.
+        expect(BOARD_SURFACE_MOTION.initial).toEqual({ opacity: 0 });
         expect(BOARD_SURFACE_MOTION.animate).toEqual({
           opacity: 1,
-          scale: 1,
-          y: 0,
           transition: { duration: BOARD_SUMMON_MS / 1000, ease: NOTCHTAP_EASE },
         });
         expect(RAIL_SURFACE_MOTION.initial).toEqual({ opacity: 0 });
         expect(RAIL_SURFACE_MOTION.animate).toEqual({ opacity: 1 });
+        // no transform-family key anywhere in the board's three legs.
+        for (const leg of [
+          BOARD_SURFACE_MOTION.initial,
+          BOARD_SURFACE_MOTION.animate,
+          BOARD_SURFACE_MOTION.exit,
+        ] as Record<string, unknown>[]) {
+          for (const banned of ["scale", "x", "y", "rotate", "transform"]) {
+            expect(leg, `${banned} must not animate the shell`).not.toHaveProperty(banned);
+          }
+        }
       });
 
       it("keeps the board's dismissal quieter than its arrival (deliberate asymmetry)", () => {

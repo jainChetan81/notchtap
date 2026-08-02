@@ -85,6 +85,20 @@ export const ROW_TRANSITION = { type: "spring", bounce: 0, duration: 0.35 } as c
 // reading as a slide.
 export const HERO_SWAP_TRANSITION = { duration: 0.16, ease: NOTCHTAP_EASE } as const;
 
+// 2026-08-02 (operator: "the compact<->expanded transition reads badly"):
+// the single grid cell both branches of the resting<->expanded swap share,
+// so a sync overlap crossfades them IN PLACE instead of stacking them and
+// pushing the card taller. See that swap's own comment in the JSX below
+// for the full argument, and App.tsx's `SURFACE_CELL_STYLE` for the
+// identical mechanism one level up.
+//
+// Only the CELL is inline; the wrapper's own `display: grid` lives in
+// agent-board.css (`.agent-board-swap`) rather than here, because a CSS
+// rule there also has to be able to turn the wrapper OFF (`display: none`
+// while it is empty, off the same `:has()` signal the board's padding
+// rule uses) — an inline `display` would out-specify that rule.
+const SWAP_CELL_STYLE = { gridArea: "1 / 1" } as const;
+
 /// Local wall-clock tick — re-renders the board so every row's
 /// elapsed-in-state label stays live, WITHOUT rust publishing a
 /// per-second `agent-state` event (CLAUDE.md's `dedup_eq` rule: a
@@ -587,37 +601,76 @@ export function AgentBoard({
             already follows (the failure class to avoid is desynced
             clocks, not a specific library — `IdleHoverPeek.tsx`'s own
             spring is the precedent this mirrors). */}
-        {/* 2026-08-02 animation audit (finding #4, DEFERRED): `mode="wait"`
-            here means the resting rows fully collapse before the expanded
-            list grows — two beats with a pinch between them, which reads
-            against this block's own "morphs between the two shapes" claim
-            above. Left as-is because the two branches are not one
-            structure restyled at two densities: `AgentRow` is a single
-            nowrap line, `ExpandedAgentRow` is a multi-block card with its
-            own meta/detail chips and a per-row hover history disclosure.
-            Converging them is a component merge, not a transition tweak,
-            and it would have to be done without destabilising the
-            settled per-row add/remove animations (ROW_TRANSITION +
-            `layout="position"`) that both branches share. */}
+        {/* 2026-08-02 animation audit (finding #4) + operator feedback the
+            same day ("the compact<->expanded transition reads badly").
+            This block used to run `mode="wait"`, which made the "morphs"
+            claim above false: the resting rows had to collapse ALL THE
+            WAY to height 0 before the expanded list was allowed to start
+            growing from 0, so a hover played as two chained beats with a
+            full pinch to nothing between them, at double the settle time.
+
+            Fixed with the same technique App.tsx's surface swap uses —
+            the DEFAULT (sync) `AnimatePresence` mode inside a single-cell
+            grid stack (`.agent-board-swap`, agent-board.css; both
+            branches pinned to `gridArea: "1 / 1"`). The two lists now
+            overlap in place, and because a grid row is sized to the MAX
+            of its items rather than their SUM, the container's height
+            traces `max(outgoing, incoming)` — one continuous size change
+            instead of down-to-zero-then-up.
+
+            Why both children KEEP their `height` spring rather than
+            simplifying to opacity-only children with the grid carrying
+            the size: with opacity-only children both lists would sit at
+            their natural heights for the whole overlap, so the row would
+            jump straight to `max(H_resting, H_expanded)` on the swap
+            frame and snap to the survivor when the exit finished — two
+            instant steps, no morph at all. With both heights on the SAME
+            spring (one config, started the same frame), `max()` traces a
+            genuinely animated path in both directions. It is not
+            perfectly monotonic — the two curves cross at
+            `H1*H2/(H1+H2)`, a transient dip of a few px below the
+            smaller height — but that is a small fraction of the travel,
+            against a former pinch of 100% of it.
+
+            The two branches are deliberately NOT converged into one
+            component (the audit's original reason for deferring this):
+            `AgentRow` is a single nowrap line, `ExpandedAgentRow` is a
+            multi-block card with meta/detail chips and its own hover
+            history disclosure. This is a transition fix only — the
+            settled per-row add/remove animations (`ROW_TRANSITION` +
+            `layout="position"` + the inner `AnimatePresence
+            initial={false}`), each branch's own `overflow: hidden`
+            clipping, and the `.agent-board-expanded-scroll` max-height
+            cap are all untouched. */}
         {/* One shared `rest.length > 0` guard over BOTH branches: with a
             single session there is nothing below the hero to show in
             either state, so hovering a one-session Board simply keeps the
             hero (operator feedback, 2026-08-02 — hover must not shrink or
-            swap the card). */}
-        <AnimatePresence initial={false} mode="wait">
-          {rest.length === 0 ? null : expanded ? (
-            <motion.div
-              key="expanded"
-              className="agent-board-expanded-list"
-              data-testid="agent-board-expanded-list"
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={DISCLOSURE_SPRING}
-              style={{ overflow: "hidden" }}
-            >
-              <div className="agent-board-expanded-scroll">
-                {/* `initial={false}` mirrors the two outer `AnimatePresence`
+            swap the card).
+
+            The guard stays INSIDE `.agent-board-swap` rather than around
+            it, so a last row leaving still gets its exit animation (an
+            unmounting wrapper would cut it). The wrapper is instead
+            hidden by CSS while it holds nothing, off the same `:has()`
+            signal `.agent-board`'s own padding rule already reads —
+            otherwise an empty wrapper would still collect the parent
+            flex `gap` and re-add the dead band under a one-session hero
+            that the CONTENT-HUG pass just removed. */}
+        <div className="agent-board-swap">
+          <AnimatePresence initial={false}>
+            {rest.length === 0 ? null : expanded ? (
+              <motion.div
+                key="expanded"
+                className="agent-board-expanded-list"
+                data-testid="agent-board-expanded-list"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={DISCLOSURE_SPRING}
+                style={{ ...SWAP_CELL_STYLE, overflow: "hidden" }}
+              >
+                <div className="agent-board-expanded-scroll">
+                  {/* `initial={false}` mirrors the two outer `AnimatePresence`
                     blocks in this file (the resting/expanded swap above,
                     the per-row history disclosure in `ExpandedAgentRow`) —
                     the whole board mounting (or `expanded` flipping true
@@ -628,52 +681,52 @@ export function AgentBoard({
                     reflow must play concurrently, not sequentially, or a
                     removal reads as two separate beats instead of one
                     fluid motion. */}
-                <AnimatePresence initial={false}>
-                  {/* `rest`, NOT `sessions`: the primary session is the
+                  <AnimatePresence initial={false}>
+                    {/* `rest`, NOT `sessions`: the primary session is the
                       hero above (in both states), so listing `sessions`
                       here would render it twice — the same N=1 double
                       render plan 142 already fixed once, just from the
                       other side. */}
-                  {rest.map((session) => (
-                    // Row exit/enter/reflow share ONE transition
-                    // (`ROW_TRANSITION`, see its own comment above) — same
-                    // spring for a departing row's collapse, an arriving
-                    // row's expand, and `layout="position"`'s reflow of
-                    // everything in between, per the "mirror the exit path
-                    // exactly" spatial-consistency rule. Overflow hidden on
-                    // THIS row (not the `.agent-board-expanded-scroll`
-                    // container, which keeps its own `overflow-y: auto`)
-                    // so the collapsing row doesn't spill during animation.
-                    <motion.div
-                      key={session.id}
-                      layout="position"
-                      initial={{ height: 0, opacity: 0 }}
-                      animate={{ height: "auto", opacity: 1 }}
-                      exit={{ height: 0, opacity: 0 }}
-                      transition={ROW_TRANSITION}
-                      style={{ overflow: "hidden" }}
-                    >
-                      <ExpandedAgentRow
-                        session={session}
-                        capturedAtMs={capturedAtMs}
-                        nowMs={nowMs}
-                      />
-                    </motion.div>
-                  ))}
-                </AnimatePresence>
-              </div>
-            </motion.div>
-          ) : (
-            <motion.div
-              key="resting"
-              className="agent-board-rows"
-              initial={{ opacity: 0, height: 0 }}
-              animate={{ opacity: 1, height: "auto" }}
-              exit={{ opacity: 0, height: 0 }}
-              transition={DISCLOSURE_SPRING}
-              style={{ overflow: "hidden" }}
-            >
-              {/* `initial={false}` (matching the outer swap this block
+                    {rest.map((session) => (
+                      // Row exit/enter/reflow share ONE transition
+                      // (`ROW_TRANSITION`, see its own comment above) — same
+                      // spring for a departing row's collapse, an arriving
+                      // row's expand, and `layout="position"`'s reflow of
+                      // everything in between, per the "mirror the exit path
+                      // exactly" spatial-consistency rule. Overflow hidden on
+                      // THIS row (not the `.agent-board-expanded-scroll`
+                      // container, which keeps its own `overflow-y: auto`)
+                      // so the collapsing row doesn't spill during animation.
+                      <motion.div
+                        key={session.id}
+                        layout="position"
+                        initial={{ height: 0, opacity: 0 }}
+                        animate={{ height: "auto", opacity: 1 }}
+                        exit={{ height: 0, opacity: 0 }}
+                        transition={ROW_TRANSITION}
+                        style={{ overflow: "hidden" }}
+                      >
+                        <ExpandedAgentRow
+                          session={session}
+                          capturedAtMs={capturedAtMs}
+                          nowMs={nowMs}
+                        />
+                      </motion.div>
+                    ))}
+                  </AnimatePresence>
+                </div>
+              </motion.div>
+            ) : (
+              <motion.div
+                key="resting"
+                className="agent-board-rows"
+                initial={{ opacity: 0, height: 0 }}
+                animate={{ opacity: 1, height: "auto" }}
+                exit={{ opacity: 0, height: 0 }}
+                transition={DISCLOSURE_SPRING}
+                style={{ ...SWAP_CELL_STYLE, overflow: "hidden" }}
+              >
+                {/* `initial={false}` (matching the outer swap this block
                   lives inside, and `ExpandedAgentRow`'s inner list above)
                   — this block itself already fades/grows in as a whole
                   on first mount, so the individual rows inside it
@@ -683,19 +736,20 @@ export function AgentBoard({
                   ("sync") mode so an exit and the resulting sibling
                   reflow (via `AgentRow`'s `layout="position"`) play
                   concurrently, same reasoning as the expanded list. */}
-              <AnimatePresence initial={false}>
-                {rest.map((session) => (
-                  <AgentRow
-                    key={session.id}
-                    session={session}
-                    capturedAtMs={capturedAtMs}
-                    nowMs={nowMs}
-                  />
-                ))}
-              </AnimatePresence>
-            </motion.div>
-          )}
-        </AnimatePresence>
+                <AnimatePresence initial={false}>
+                  {rest.map((session) => (
+                    <AgentRow
+                      key={session.id}
+                      session={session}
+                      capturedAtMs={capturedAtMs}
+                      nowMs={nowMs}
+                    />
+                  ))}
+                </AnimatePresence>
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
       </div>
     </div>
   );

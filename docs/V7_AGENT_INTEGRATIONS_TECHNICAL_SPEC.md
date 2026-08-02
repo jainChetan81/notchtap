@@ -197,9 +197,18 @@ fallback generation rather than mutate old history.
 
 the Agent Board ordering key is:
 
-1. state urgency:
-   `WaitingForPermission`, `WaitingForInput`, `Failed`, `Stale`,
-   `Working`, `Starting`, `Completed`;
+1. state urgency, most urgent first:
+
+   | rank | state | summons the Board? |
+   |---|---|---|
+   | 0 | `WaitingForPermission` | yes |
+   | 1 | `WaitingForInput` | yes |
+   | 2 | `Failed` | yes |
+   | 3 | `Completed` | yes |
+   | 4 | `Stale` | no |
+   | 5 | `Working` | no |
+   | 6 | `Starting` | no |
+
 2. state-entered timestamp, oldest first;
 3. first-seen timestamp, oldest first;
 4. stable `AgentSessionKey` lexical tie-break.
@@ -207,6 +216,21 @@ the Agent Board ordering key is:
 this implements urgency first and FIFO within equal urgency without
 render-time instability. a state change creates a new FIFO position in
 the destination urgency class.
+
+**governing principle: every state that can summon the Board (§6.1's
+presence gate, `AgentSessionState::summons_board`) outranks every state
+that cannot.** the ordering table above must stay partitioned that way —
+adding a state means placing it on the correct side of the rank-3/rank-4
+line, not appending it.
+
+`Completed` ranked last until 2026-08-02, which was harmless while the
+Board was always on. once the presence gate landed it became visibly
+wrong: a Completed session summons the Board, but a merely-`Working`
+sibling outranked it and took the hero card, so the Board appeared
+announcing "Agent working" — the exact noise the gate exists to remove
+(operator-reported the same day). a summoning state must lead the Board
+it summoned for as long as it lives, which for a terminal session is
+only its `terminal_retention_secs` window.
 
 ### 2.3 semantic equality
 
@@ -534,7 +558,13 @@ resting:
 hover/expanded:
 
 - every retained session in Rust-provided order;
-- screen-bounded maximum height and scrolling;
+- screen-bounded maximum height and scrolling. the native frame
+  (`agents::expand::expanded_board_frame`) must budget the height of an
+  *expanded* row, not the compact resting row — they are not the same
+  template. fixed 2026-08-02: the frame budgeted the resting row's 34px
+  while rendering ~90px expanded rows, so a three-session Board clipped
+  every row mid-content (operator screenshot). content past the
+  screen-fraction cap scrolls; content inside it must never be squeezed;
 - each row expands to its independent bounded transition history;
 - capability-dependent detail cells are omitted cleanly. (no
   reduced-motion mode — a standing repo non-goal.)

@@ -188,18 +188,28 @@ export const SURFACE_SWAP_MS = 180;
 //
 // Deliberately asymmetric with SURFACE_SWAP_MS, which stays the EXIT
 // duration for both surfaces: an arrival earns emphasis (a longer,
-// house-eased opacity+scale+drop settle), a dismissal should be quieter
-// than the thing it dismisses. That is a conscious exception to the
-// "mirror the exit path exactly" spatial-consistency rule — see App.tsx's
+// house-eased settle), a dismissal should be quieter than the thing it
+// dismisses. That is a conscious exception to the "mirror the exit path
+// exactly" spatial-consistency rule — see App.tsx's
 // `BOARD_SURFACE_MOTION` doc for the full argument.
+//
+// This duration is now the ONLY emphasis the summon has. The pass that
+// introduced this constant also gave the Board a transform entrance
+// (scale + drop); the operator rejected that on sight the same day
+// ("looks weird, something about its size animation") because it scaled
+// the synthetic notch cutout, which must read as fixed hardware. The
+// transform is gone, this longer clock stays. The standing law, in
+// full: any future entrance emphasis on the Board animates ONLY content
+// below the cutout row (the below-block), NEVER the shell — the cutout
+// is the one element that must never scale, translate, or fade
+// independently of the hardware it impersonates. (Also recorded at
+// `BOARD_SURFACE_MOTION`'s FEEL-CHECK RESULT in App.tsx, the consumer.)
 //
 // Numerically equal to REVEAL_MS today (both 260ms — the house "a surface
 // is revealing itself" budget) but kept as its own name rather than
 // reusing that constant, for the same reason HOVER_MS was split out of it:
 // REVEAL_MS governs the rail's bare<->hovered PAINT coordination, this
-// governs a whole-surface summon. The two are free to diverge, and this
-// one is the one expected to move — its scale/drop values still owe an
-// on-hardware feel check (FEEL-CHECK, App.tsx).
+// governs a whole-surface summon. The two are free to diverge.
 export const BOARD_SUMMON_MS = 260;
 
 // plan 148: the shared hover-disclosure spring. One config used to be
