@@ -74,6 +74,17 @@
   /* bespoke layer — overlay accent colors, named, not semantic */
   --overlay-blue: oklch(0.624 0.206 255.49);          /*           #0a84ff */
   --overlay-teal: oklch(0.798 0.119 178.03);          /*           #55d6bd */
+  /* plan 171 (tab-notch redesign): the media source's own accent — the
+   * design mock's own token (`prototypes/tab-notch-panel.html`:
+   * `--media-mint: #b6f5e5`), genuinely new rather than a retrofit of the
+   * shipped `.media-bar-fill` (idle-peek.css), which intentionally reuses
+   * `--overlay-teal` above and is untouched. Referenced UNGUARDED (no
+   * `var(..., fallback)`) by `icon-strip.css`/`eq-bars.css`/
+   * `media-below-block.css`, so this definition is load-bearing, not
+   * decorative. Converted to oklch via this file's own documented
+   * srgb->linear->oklab->oklch pipeline. Re-added after the shared-ui
+   * 0.4.0 regeneration dropped it (2026-08-03 merge). */
+  --media-mint: oklch(0.923 0.067 177.33);            /*           #b6f5e5 */
   --overlay-coral: oklch(0.708 0.185 30.07);          /*           #ff6b57 */
   /* upstreamed from notchtap's vendored copy (a "visual-consistency
    * sweep" that minted these locally so its green/amber/full-strength-
@@ -121,6 +132,7 @@
   --sidebar-ring: oklch(0.624 0.206 255.49);
   --overlay-blue: oklch(0.624 0.206 255.49);
   --overlay-teal: oklch(0.798 0.119 178.03);
+  --media-mint: oklch(0.923 0.067 177.33);
   --overlay-coral: oklch(0.708 0.185 30.07);
   --overlay-green: oklch(0.826 0.148 147.39);
   --overlay-amber: oklch(0.841 0.120 83.66);

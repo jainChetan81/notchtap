@@ -19,6 +19,7 @@ mod engine;
 // queue, event, and error are `pub` so their doc-tests can exercise the
 // real public api (doc-tests link against the lib crate from outside);
 // nothing else consumes this crate as a library.
+mod click;
 pub mod error;
 pub mod event;
 mod history;
@@ -28,9 +29,11 @@ mod logging;
 #[cfg(target_os = "macos")]
 mod login_item;
 mod net;
+mod news_charge;
 mod notifier;
 mod now_playing;
 mod poller;
+mod prefix;
 mod presentation;
 pub mod queue;
 mod rss_poller;
@@ -43,6 +46,7 @@ mod settings;
 mod settings_commands;
 pub mod silence;
 mod status;
+mod tabs;
 mod weather_poller;
 
 use std::sync::{Arc, Mutex as StdMutex, Once, OnceLock};
@@ -362,6 +366,13 @@ pub fn run() {
             } else {
                 None
             };
+            // Plan 171: the ONE shared tab-notch wire bundle. Batch size
+            // = `rss_max_per_poll` — a "full batch" is exactly what one
+            // poll cycle is allowed to land (news_charge.rs's own doc).
+            let tab_wire = std::sync::Arc::new(tabs::TabWire::new(rss_max_per_poll));
+            // Managed so the Exit hook in `run()` can reach it to
+            // force-release any live follow-up grabs (see that hook).
+            app.manage(tab_wire.clone());
             let engine = Engine::new(
                 initial_queue,
                 app.handle().clone(),
@@ -371,6 +382,7 @@ pub fn run() {
                 weather_enabled,
                 now_playing_enabled,
                 history,
+                tab_wire.clone(),
             );
             app.manage(engine.clone());
 
@@ -432,6 +444,7 @@ pub fn run() {
                 agent_health.clone(),
                 agent_runtimes,
                 agent_board_show_working,
+                tab_wire.clone(),
             );
             app.manage(agent_board.clone());
             agent_board.spawn_tick(agents::board::DEFAULT_TICK_INTERVAL);
@@ -466,6 +479,18 @@ pub fn run() {
             // and `collapse_board_if_expanded` for why.
             #[cfg(target_os = "macos")]
             let board_frame = Arc::new(StdMutex::new(BoardFrameState::default()));
+
+            // plan 171 (tab-notch redesign, slice A): `tabs::TabSelection`
+            // (the icon strip's own selection state — see tabs.rs) is
+            // deliberately NOT wired up as app state here yet. It needs a
+            // real consumer (the click detection mechanism, still an open
+            // question — see plans/171-tab-notch-redesign.md's own note)
+            // before it's threaded through `Arc<StdMutex<..>>` the same
+            // way `board_frame` is just above; declaring it unconsumed
+            // would trip clippy's unused-variable lint on a real macOS
+            // build (invisible from this Linux dev environment, but real
+            // on CI) — added in the same commit as whatever first reads
+            // or writes it.
 
             // permanent-overlay pass: a plain NSWindow is never composited
             // into another app's fullscreen Space, regardless of level or
@@ -512,6 +537,7 @@ pub fn run() {
                     let was_hovered = was_hovered.clone();
                     let agent_board = agent_board.clone();
                     let board_frame = board_frame.clone();
+                    let tab_wire = tab_wire.clone();
                     let window = window.clone();
                     hover_handler.on_mouse_entered(move |event| {
                         let loc = event.locationInWindow();
@@ -522,6 +548,12 @@ pub fn run() {
                         // idle peek's (2026-08-02: or the showing card's
                         // hover-expanded) rect should already be grown.
                         let hover_latched = *was_hovered.lock().unwrap();
+                        // P0 fix: the REAL currently-applied window height
+                        // — `hover::WINDOW_HEIGHT` at rest, or the taller
+                        // applied board-expand frame — never the stale
+                        // constant. See `hover::board_rect`'s doc comment.
+                        let real_window_height =
+                            board_frame.lock().unwrap_or_else(|e| e.into_inner()).height;
                         let hovered = hover_point_is_over_card(
                             &engine,
                             &app_handle,
@@ -530,6 +562,7 @@ pub fn run() {
                             hover_cutout_height,
                             hover_latched,
                             agent_board.last_session_count(),
+                            real_window_height,
                             loc.x,
                             loc.y,
                         );
@@ -543,6 +576,7 @@ pub fn run() {
                             cutout,
                             &agent_board,
                             &board_frame,
+                            &tab_wire,
                         );
                     });
                 }
@@ -552,10 +586,15 @@ pub fn run() {
                     let was_hovered = was_hovered.clone();
                     let agent_board = agent_board.clone();
                     let board_frame = board_frame.clone();
+                    let tab_wire = tab_wire.clone();
                     let window = window.clone();
                     hover_handler.on_mouse_moved(move |event| {
                         let loc = event.locationInWindow();
                         let hover_latched = *was_hovered.lock().unwrap();
+                        // P0 fix: see the matching comment in
+                        // `on_mouse_entered` just above.
+                        let real_window_height =
+                            board_frame.lock().unwrap_or_else(|e| e.into_inner()).height;
                         let hovered = hover_point_is_over_card(
                             &engine,
                             &app_handle,
@@ -564,6 +603,7 @@ pub fn run() {
                             hover_cutout_height,
                             hover_latched,
                             agent_board.last_session_count(),
+                            real_window_height,
                             loc.x,
                             loc.y,
                         );
@@ -577,6 +617,7 @@ pub fn run() {
                             cutout,
                             &agent_board,
                             &board_frame,
+                            &tab_wire,
                         );
                     });
                 }
@@ -586,6 +627,7 @@ pub fn run() {
                     let was_hovered = was_hovered.clone();
                     let agent_board = agent_board.clone();
                     let board_frame = board_frame.clone();
+                    let tab_wire = tab_wire.clone();
                     let window = window.clone();
                     // Leaving the window's tracking area is never "still
                     // hovered" regardless of where the cursor lands next —
@@ -601,6 +643,7 @@ pub fn run() {
                             cutout,
                             &agent_board,
                             &board_frame,
+                            &tab_wire,
                         );
                     });
                 }
@@ -663,13 +706,63 @@ pub fn run() {
                                 last_visible_id.lock().unwrap_or_else(|e| e.into_inner());
                             if *last != new_id {
                                 *last = new_id;
-                                *was_hovered.lock().unwrap_or_else(|e| e.into_inner()) = false;
+                                let was = std::mem::replace(
+                                    &mut *was_hovered.lock().unwrap_or_else(|e| e.into_inner()),
+                                    false,
+                                );
+                                // plan 171: the latch reset is also the
+                                // strip's death — if the window was in a
+                                // hovered state (and so may be accepting
+                                // cursor events for the strip), restore
+                                // click-through NOW rather than waiting
+                                // for the next hover transition. Closes
+                                // the promote-while-hovered gap; showing
+                                // cards are always click-through, and the
+                                // board collapse's own restore below is
+                                // idempotent with this. No slot check:
+                                // at this moment the slot JUST changed
+                                // (that's why we're here), and the strip
+                                // is gone either way.
+                                if was {
+                                    let _ = window.set_ignore_cursor_events(true);
+                                }
                                 if is_real_notification {
                                     collapse_board_if_expanded(&window, mode, cutout, &board_frame);
                                 }
                             }
                         });
                 }
+            }
+
+            // Plan 171 slice A item 2: the icon-strip click monitor —
+            // mechanism (a), an NSEvent LOCAL monitor (click.rs's module
+            // doc records why (b) alone can never satisfy the receive-only
+            // overlay). Installed once, before the native config below
+            // re-asserts click-through; events only ever reach it while
+            // `emit_hover_changed_if_transitioned` has opened the window
+            // for cursor events (strip hovered, slot idle).
+            #[cfg(target_os = "macos")]
+            {
+                let monitor_cutout_width = cutout.map(|c| c.width).unwrap_or(0.0);
+                let monitor_cutout_height = inset;
+                let monitor_scale = config.appearance.card_scale;
+                let window_number = {
+                    use objc2_app_kit::NSWindow;
+                    let ns_window_ptr = window.ns_window()? as *mut NSWindow;
+                    let ns_window: &NSWindow = unsafe { &*ns_window_ptr };
+                    ns_window.windowNumber()
+                };
+                click::install_click_monitor(click::ClickMonitorParams {
+                    app: app.handle().clone(),
+                    tab_wire: tab_wire.clone(),
+                    was_hovered: was_hovered.clone(),
+                    window_number,
+                    mode,
+                    cutout_width: monitor_cutout_width,
+                    cutout_height: monitor_cutout_height,
+                    scale: monitor_scale,
+                    board_frame: board_frame.clone(),
+                });
             }
 
             // v3.6 spec §7.2: survive Spaces switches and fullscreen apps.
@@ -690,9 +783,16 @@ pub fn run() {
             // is needed for this.
             #[cfg(target_os = "macos")]
             {
+                // plan 171 slice D: the configured prefix combo, parsed
+                // once. An unparseable key logs and falls back to Space —
+                // fail-open, matching the validator's own permissive
+                // grammar (settings::is_valid_prefix_shortcut).
+                let prefix_sc = prefix_shortcut_from_config(&config.prefix_shortcut);
+                let prefix_sc_for_handler = prefix_sc;
                 let engine_for_handler = engine.clone();
                 let pause_item_for_handler = pause_item.clone();
                 let was_hovered_for_handler = was_hovered.clone();
+                let tab_wire_for_handler = tab_wire.clone();
                 let agent_board_for_handler = agent_board.clone();
                 let board_frame_for_handler = board_frame.clone();
                 let window_for_handler = window.clone();
@@ -734,6 +834,7 @@ pub fn run() {
                                         cutout,
                                         &agent_board_for_handler,
                                         &board_frame_for_handler,
+                                        &tab_wire_for_handler,
                                     );
                                 } else if *shortcut
                                     == Shortcut::new(
@@ -760,6 +861,7 @@ pub fn run() {
                                         cutout,
                                         &agent_board_for_handler,
                                         &board_frame_for_handler,
+                                        &tab_wire_for_handler,
                                     );
                                 } else if *shortcut
                                     == Shortcut::new(
@@ -768,6 +870,21 @@ pub fn run() {
                                     )
                                 {
                                     open_settings_window(app);
+                                } else if *shortcut == prefix_sc_for_handler {
+                                    handle_prefix_fire(
+                                        app,
+                                        &tab_wire_for_handler,
+                                    );
+                                } else if let Some(key) =
+                                    prefix_followup_key_for(shortcut)
+                                {
+                                    handle_prefix_followup(
+                                        app,
+                                        key,
+                                        &tab_wire_for_handler,
+                                        &engine_for_handler,
+                                        &pause_item_for_handler,
+                                    );
                                 } else if *shortcut
                                     == Shortcut::new(
                                         FOCUS_SESSION_SHORTCUT.0,
@@ -817,6 +934,21 @@ pub fn run() {
                     FOCUS_SESSION_SHORTCUT.0,
                     FOCUS_SESSION_SHORTCUT.1,
                 ))?;
+                // plan 171 slice D: the prefix combo — the ONLY
+                // always-registered addition. The seven follow-up keys
+                // are bare, system-wide grabs and are registered only
+                // inside a live armed window (spec §9's mechanism note),
+                // never here: a permanently-registered bare Return or
+                // `1` would eat ordinary typing everywhere.
+                if let Err(e) = app
+                    .global_shortcut()
+                    .register(prefix_shortcut_from_config(&config.prefix_shortcut))
+                {
+                    tracing::warn!(
+                        "prefix shortcut {:?} failed to register: {e}",
+                        config.prefix_shortcut
+                    );
+                }
             }
 
             #[cfg(target_os = "macos")]
@@ -870,6 +1002,7 @@ pub fn run() {
                     rss_ttl_secs,
                     rss_max_per_poll,
                     rss_priority,
+                    tab_wire.clone(),
                 );
             }
 
@@ -1069,8 +1202,21 @@ pub fn run() {
                 });
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running notchtap");
+        .build(tauri::generate_context!())
+        .expect("error while running notchtap")
+        .run(|app_handle, event| {
+            // PAL consensus 2026-08-03: the other path by which a bare
+            // follow-up grab could outlive the app's own control flow —
+            // quitting while armed. Releasing on Exit is cheap and
+            // idempotent, and macOS reclaiming the grabs on process death
+            // is not something to rely on when the cost of being wrong is
+            // the user's keyboard.
+            if matches!(event, tauri::RunEvent::Exit) {
+                if let Some(tab_wire) = app_handle.try_state::<Arc<tabs::TabWire>>() {
+                    force_release_prefix_followups(app_handle, &tab_wire);
+                }
+            }
+        });
 }
 
 /// Blocking native error dialog for boot-time failures that happen
@@ -1285,6 +1431,7 @@ fn hover_point_is_over_card(
     cutout_height: f64,
     hover_latched: bool,
     board_session_count: usize,
+    real_window_height: f64,
     point_x: f64,
     point_y: f64,
 ) -> bool {
@@ -1301,12 +1448,18 @@ fn hover_point_is_over_card(
         .appearance
         .card_scale;
     let rect = if !visible && board_session_count > 0 {
+        // P0 fix: `real_window_height` is the window height ACTUALLY
+        // applied right now (`BoardFrameState.height`, read by the
+        // caller before this call) — never the stale `hover::WINDOW_HEIGHT`
+        // constant, which is only correct while the board is resting. See
+        // `hover::board_rect`'s doc comment for the bug this closes.
         hover::board_rect(
             mode,
             cutout_width,
             cutout_height,
             scale,
             board_session_count,
+            real_window_height,
         )
     } else {
         hover::active_card_rect(
@@ -1359,6 +1512,7 @@ fn emit_hover_changed_if_transitioned(
     cutout: Option<presentation::CutoutGeometry>,
     agent_board: &agents::board::AgentBoardPublisher,
     board_frame: &Arc<StdMutex<BoardFrameState>>,
+    tab_wire: &Arc<tabs::TabWire>,
 ) {
     use tauri::Emitter;
 
@@ -1400,6 +1554,48 @@ fn emit_hover_changed_if_transitioned(
     } else {
         collapse_board_if_expanded(window, mode, cutout, board_frame);
     }
+
+    // plan 171 slice A item 3: the icon-strip click-through toggle,
+    // landing in the SAME commit as the click monitor (click.rs) per the
+    // plan's own regression constraint — never alone. Scope note the OS
+    // forces on us: `set_ignore_cursor_events` is WINDOW-granular, so
+    // "accept clicks only inside the strip's rect" is enforced by the
+    // monitor's hit-test (clicks elsewhere in the window select nothing
+    // and are otherwise inert), not by the toggle itself. The gate here
+    // decides WHEN the window accepts cursor events at all:
+    //   hovered && slot idle  → accept (the strip is what's on screen —
+    //     and `hovered` requires the cursor to be over the painted card
+    //     rect, so a click that lands while accepting is over the card,
+    //     never over desktop dead space);
+    //   hovered && slot occupied → stay click-through (today's TTL-pause
+    //     hover behavior over a showing card, unchanged);
+    //   hover ends → restore click-through, unless the Board-expand path
+    //     currently owns the window (its collapse restores it with its
+    //     own grace-period semantics — don't fight it).
+    // Accepted gap (documented in the plan): a card PROMOTING while the
+    // strip is hovered leaves events accepted until the next hover
+    // transition — clicks during that window land on the showing card
+    // and do nothing, matching the showing-card branch above.
+    if hovered {
+        if !tab_wire
+            .slot_occupied
+            .load(std::sync::atomic::Ordering::Relaxed)
+        {
+            if let Err(e) = window.set_ignore_cursor_events(false) {
+                tracing::warn!("icon strip: set_ignore_cursor_events(false) failed: {e}");
+            }
+        }
+    } else {
+        let board_expanded = board_frame
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .expanded;
+        if !board_expanded {
+            if let Err(e) = window.set_ignore_cursor_events(true) {
+                tracing::warn!("icon strip: set_ignore_cursor_events(true) failed: {e}");
+            }
+        }
+    }
 }
 
 /// Animation audit 2026-08-02 (finding 2): the Agent Board's window-frame
@@ -1417,15 +1613,41 @@ fn emit_hover_changed_if_transitioned(
 /// detect INEQUALITY has no reason to be able to panic on overflow, and
 /// wrapping cannot produce a false match here (it would take 2^64 hover
 /// transitions inside one 450ms window).
+///
+/// `height` (P0 fix, tab-notch redesign) is the REAL native window height
+/// currently applied — `hover::WINDOW_HEIGHT` while resting, or the exact
+/// `agents::expand::expanded_board_frame(...).height` value the expand
+/// path passed to `window.set_size` while expanded. `hover_point_is_over_card`
+/// reads this back and threads it into `hover::board_rect` so the hit-test
+/// coordinate transform always matches the window AppKit is actually
+/// reporting mouse coordinates against, instead of assuming a fixed 300px
+/// canvas regardless of how tall the real window has grown (see
+/// `hover::board_rect`'s own doc comment for the full bug writeup — a
+/// stale assumption here is exactly what let `hovered=true` fire for a
+/// cursor far below the painted board).
 #[cfg(target_os = "macos")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-struct BoardFrameState {
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) struct BoardFrameState {
     /// The EXPANDED window frame is currently applied. Stays `true` for
     /// the whole grace period after a hover-exit — the frame really is
     /// still the big one until the timer shrinks it, and lying about that
     /// would let a re-hover skip the re-expand it still needs to do.
     expanded: bool,
     generation: u64,
+    pub(crate) height: f64,
+}
+
+#[cfg(target_os = "macos")]
+impl Default for BoardFrameState {
+    fn default() -> Self {
+        BoardFrameState {
+            expanded: false,
+            generation: 0,
+            // Resting height by construction — no expand has ever run, so
+            // the real window is still exactly `hover::WINDOW_HEIGHT` tall.
+            height: hover::WINDOW_HEIGHT,
+        }
+    }
 }
 
 /// How long a board hover-EXIT waits before actually shrinking the native
@@ -1512,6 +1734,14 @@ fn try_expand_board_for_hover(
         tracing::warn!("board hover-expand: set_size failed: {e}");
         return;
     }
+    // CodeRabbit review fix (PR #13): the real window IS this tall now,
+    // whatever happens below — recording it here, right after the
+    // successful `set_size`, rather than after `set_ignore_cursor_events`
+    // (which can itself fail and return early, below), closes an error
+    // path that was reintroducing the exact desync the P0 fix exists to
+    // prevent: `state.height` staying at the stale resting value while
+    // the real window is genuinely taller.
+    board_frame.lock().unwrap_or_else(|e| e.into_inner()).height = frame.height;
     if let Err(e) = window.set_position(tauri::LogicalPosition::new(frame.x, frame.y)) {
         tracing::warn!("board hover-expand: set_position failed: {e}");
     }
@@ -1613,16 +1843,29 @@ fn collapse_board_if_expanded(
             if !board_shrink_should_run(*state, armed_generation) {
                 return;
             }
-            if let Err(e) = shrink_window.set_size(tauri::LogicalSize::new(
+            let shrank = match shrink_window.set_size(tauri::LogicalSize::new(
                 hover::WINDOW_WIDTH,
                 hover::WINDOW_HEIGHT,
             )) {
-                tracing::warn!("board hover-collapse: set_size failed: {e}");
-            }
+                Ok(()) => true,
+                Err(e) => {
+                    tracing::warn!("board hover-collapse: set_size failed: {e}");
+                    false
+                }
+            };
             if let Err(e) = position_window(&shrink_window, mode, cutout) {
                 tracing::warn!("board hover-collapse: position_window failed: {e}");
             }
             state.expanded = false;
+            // CodeRabbit review fix (PR #13): only claim the resting
+            // height if the shrink actually landed — the previous
+            // unconditional assignment here matched the exact desync bug
+            // the P0 fix elsewhere in this function closes: on a failed
+            // `set_size`, the window is still tall, but `state.height`
+            // would have claimed it was back to resting.
+            if shrank {
+                state.height = hover::WINDOW_HEIGHT;
+            }
         });
     });
 }
@@ -1682,6 +1925,278 @@ fn position_window(
     } else {
         position_top_center(window)
     }
+}
+
+// ---------------------------------------------------------------------------
+// plan 171 slice D: the prefix keymap's live wiring. The state machine is
+// prefix.rs (pure, tested); everything here is the impure shell: parsing
+// the configured combo, the temporary system-wide grab of the seven
+// follow-up keys while armed, the cancellable disarm timer, and routing
+// each PrefixAction onto the EXISTING mechanism its own doc names.
+// ---------------------------------------------------------------------------
+
+/// The follow-up grabs, `(Code, PrefixKey)` — registered as BARE
+/// shortcuts (no modifiers) only while an armed window is live, then
+/// unregistered the moment one key is consumed, the window times out, or
+/// the prefix/esc disarms it. `enter`/`o` both mean ExpandToggle and
+/// `esc` maps to Disarm, per spec §9's table.
+/// How long after arming the unconditional watchdog force-releases every
+/// follow-up grab. Comfortably past `PREFIX_ARM_WINDOW` (2s) so it never
+/// races a legitimate window, short enough that a stuck bare `Enter` is
+/// measured in seconds rather than "until the app restarts".
+const PREFIX_WATCHDOG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
+const PREFIX_FOLLOWUPS: [(Code, prefix::PrefixKey); 11] = [
+    (Code::Digit1, prefix::PrefixKey::Digit(1)),
+    (Code::Digit2, prefix::PrefixKey::Digit(2)),
+    (Code::Digit3, prefix::PrefixKey::Digit(3)),
+    (Code::Digit4, prefix::PrefixKey::Digit(4)),
+    (Code::Digit5, prefix::PrefixKey::Digit(5)),
+    (Code::BracketLeft, prefix::PrefixKey::BracketLeft),
+    (Code::BracketRight, prefix::PrefixKey::BracketRight),
+    (Code::Enter, prefix::PrefixKey::ExpandToggle),
+    (Code::KeyO, prefix::PrefixKey::ExpandToggle),
+    (Code::KeyP, prefix::PrefixKey::Pause),
+    (Code::Escape, prefix::PrefixKey::Disarm),
+];
+
+/// `"⌃⇧Space"` → the tauri Shortcut. The validator
+/// (`settings::is_valid_prefix_shortcut`) only guarantees the `⌃⇧`
+/// prefix and a whitespace-free key name — the key itself is resolved
+/// against `Code`'s own names (`Space`, `F5`, …), then single
+/// letters/digits get the `KeyX`/`DigitN` spelling. Unresolvable keys
+/// warn and fall back to Space rather than failing boot (fail-open,
+/// same posture as every optional surface here).
+fn prefix_shortcut_from_config(value: &str) -> Shortcut {
+    use std::str::FromStr;
+    let key = value.strip_prefix("\u{2303}\u{21e7}").unwrap_or(value);
+    let code = Code::from_str(key)
+        .ok()
+        .or_else(|| {
+            let mut chars = key.chars();
+            match (chars.next(), chars.next()) {
+                (Some(c), None) if c.is_ascii_alphabetic() => {
+                    Code::from_str(&format!("Key{}", c.to_ascii_uppercase())).ok()
+                }
+                (Some(c), None) if c.is_ascii_digit() => Code::from_str(&format!("Digit{c}")).ok(),
+                _ => None,
+            }
+        })
+        .unwrap_or_else(|| {
+            tracing::warn!(?value, "unresolvable prefix key — falling back to Space");
+            Code::Space
+        });
+    Shortcut::new(Some(Modifiers::CONTROL | Modifiers::SHIFT), code)
+}
+
+/// Which armed-window key a fired shortcut is, if any. Bare (modifierless)
+/// matches only — these shortcuts exist solely while armed, so a hit here
+/// implies an armed window opened them.
+fn prefix_followup_key_for(shortcut: &Shortcut) -> Option<prefix::PrefixKey> {
+    PREFIX_FOLLOWUPS
+        .iter()
+        .find(|(code, _)| *shortcut == Shortcut::new(None, *code))
+        .map(|(_, key)| *key)
+}
+
+/// Registers or releases the eleven bare follow-up grabs. Returns whether
+/// EVERY key reached the requested state.
+///
+/// PAL consensus 2026-08-03 (gemini-2.5-pro + gpt-5.2, unanimous on this
+/// point): a per-key failure is asymmetric and the old "fail-open, warn,
+/// move on" comment had it backwards. Failing to REGISTER is benign — that
+/// key simply doesn't work. Failing to UNREGISTER is the catastrophic
+/// case: a bare `Enter`/`p`/`1` stays grabbed SYSTEM-WIDE and the user's
+/// typing is broken everywhere until notchtap restarts. So a failed
+/// release is logged at ERROR and reported to the caller, which keeps
+/// `followups_registered` true so the watchdog retries.
+fn set_prefix_followups_registered<R: tauri::Runtime>(app: &tauri::AppHandle<R>, on: bool) -> bool {
+    let mut all_ok = true;
+    for (code, _) in PREFIX_FOLLOWUPS {
+        let sc = Shortcut::new(None, code);
+        let result = if on {
+            app.global_shortcut().register(sc)
+        } else {
+            app.global_shortcut().unregister(sc)
+        };
+        if let Err(e) = result {
+            all_ok = false;
+            if on {
+                tracing::warn!(?code, "prefix follow-up grab failed: {e}");
+            } else {
+                tracing::error!(
+                    ?code,
+                    "prefix follow-up RELEASE failed — this key may stay grabbed system-wide: {e}"
+                );
+            }
+        }
+    }
+    all_ok
+}
+
+/// The unconditional dead-man's switch. Releases every follow-up grab and
+/// clears the armed state regardless of generation, timer, or current
+/// state — the one path that is safe to call from anywhere, at any time,
+/// however many times.
+fn force_release_prefix_followups<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    tab_wire: &Arc<tabs::TabWire>,
+) {
+    use std::sync::atomic::Ordering;
+    if !tab_wire.followups_registered.swap(false, Ordering::SeqCst) {
+        return;
+    }
+    tracing::warn!("prefix watchdog: force-releasing follow-up grabs");
+    let _ = set_prefix_followups_registered(app, false);
+    *tab_wire.prefix.lock().unwrap_or_else(|e| e.into_inner()) = prefix::PrefixState::Disarmed;
+}
+
+/// The prefix combo fired: arm (register the follow-up grabs + start the
+/// cancellable disarm timer) or — if an armed window was already live —
+/// disarm (spec §9: the prefix again IS the disarm gesture).
+fn handle_prefix_fire<R: tauri::Runtime>(app: &tauri::AppHandle<R>, tab_wire: &Arc<tabs::TabWire>) {
+    use std::sync::atomic::Ordering;
+    let now = std::time::Instant::now();
+    let armed = {
+        let mut st = tab_wire.prefix.lock().unwrap_or_else(|e| e.into_inner());
+        st.on_prefix(now);
+        st.is_armed(now)
+    };
+    let generation = tab_wire.prefix_generation.fetch_add(1, Ordering::SeqCst) + 1;
+    let all_ok = set_prefix_followups_registered(app, armed);
+    // Stays true if a RELEASE partially failed, so the watchdog retries.
+    tab_wire
+        .followups_registered
+        .store(armed || !all_ok, Ordering::SeqCst);
+    if armed {
+        let timer_app = app.clone();
+        let wire = tab_wire.clone();
+        tauri::async_runtime::spawn(async move {
+            let app = timer_app;
+            tokio::time::sleep(prefix::PREFIX_ARM_WINDOW).await;
+            // Only the timer for the CURRENT arm acts — any later
+            // consume/disarm/re-arm bumped the generation past us.
+            if wire.prefix_generation.load(Ordering::SeqCst) == generation {
+                {
+                    let mut st = wire.prefix.lock().unwrap_or_else(|e| e.into_inner());
+                    *st = prefix::PrefixState::Disarmed;
+                }
+                if set_prefix_followups_registered(&app, false) {
+                    wire.followups_registered.store(false, Ordering::SeqCst);
+                }
+            }
+        });
+        // The watchdog (PAL consensus 2026-08-03): fires well after any
+        // legitimate window has closed and force-releases if ANYTHING is
+        // still grabbed, ignoring generation entirely. This is the net
+        // that catches what the generation-guarded timer above cannot —
+        // a wedged runtime, a lost timer, a panic that unwound past the
+        // release, or an unregister that failed per-key. Idempotent, so
+        // overlapping watchdogs from rapid re-arming are harmless.
+        let watchdog_app = app.clone();
+        let watchdog_wire = tab_wire.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(PREFIX_WATCHDOG_TIMEOUT).await;
+            force_release_prefix_followups(&watchdog_app, &watchdog_wire);
+        });
+    }
+}
+
+/// One armed-window key landed: consume it (the state machine disarms on
+/// ANY consumed key, spec §9), release the grabs, cancel the timer via
+/// the generation bump, and route the resulting action onto the existing
+/// mechanism its own `PrefixAction` doc names.
+fn handle_prefix_followup<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    key: prefix::PrefixKey,
+    tab_wire: &Arc<tabs::TabWire>,
+    engine: &Engine<R>,
+    pause_item: &MenuItem<R>,
+) {
+    use std::sync::atomic::Ordering;
+    let action = {
+        let mut st = tab_wire.prefix.lock().unwrap_or_else(|e| e.into_inner());
+        st.on_key(std::time::Instant::now(), key)
+    };
+    tab_wire.prefix_generation.fetch_add(1, Ordering::SeqCst);
+    if set_prefix_followups_registered(app, false) {
+        tab_wire.followups_registered.store(false, Ordering::SeqCst);
+    }
+    match action {
+        prefix::PrefixAction::Select(tab) => {
+            apply_tab_select(app, tab_wire, tab);
+        }
+        prefix::PrefixAction::PreviousSession | prefix::PrefixAction::NextSession => {
+            // Spec §9: "ignored unless the agent tab is selected" — the
+            // caller-side gate PrefixAction's own doc assigns here.
+            let agent_selected = {
+                let sel = tab_wire
+                    .tabs
+                    .selection
+                    .lock()
+                    .unwrap_or_else(|e| e.into_inner());
+                sel.selected() == Some(tabs::Tab::Agent)
+            };
+            if agent_selected {
+                let count = tab_wire.agent_sessions.load(Ordering::Relaxed);
+                if count > 0 {
+                    let delta: isize = if action == prefix::PrefixAction::NextSession {
+                        1
+                    } else {
+                        -1
+                    };
+                    let current = tab_wire.viewed_session.load(Ordering::Relaxed) as isize;
+                    let next = (current + delta).rem_euclid(count as isize) as usize;
+                    tab_wire.viewed_session.store(next, Ordering::Relaxed);
+                    use tauri::Emitter;
+                    if let Err(e) = app.emit(
+                        "agent-viewed-session-changed",
+                        serde_json::json!({ "index": next }),
+                    ) {
+                        tracing::error!("failed to emit agent-viewed-session-changed: {e}");
+                    }
+                }
+            }
+        }
+        prefix::PrefixAction::ExpandToggle => {
+            toggle_manual_expand(engine);
+        }
+        prefix::PrefixAction::TogglePause => {
+            toggle_pause(engine, pause_item);
+        }
+        prefix::PrefixAction::NoOp => {}
+    }
+}
+
+/// The ONE selection mutation both input paths funnel through — the click
+/// monitor calls the same sequence (click.rs); keeping them identical is
+/// what spec §9's "same toggle semantics a click would drive" means.
+pub(crate) fn apply_tab_select<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    tab_wire: &Arc<tabs::TabWire>,
+    tab: tabs::Tab,
+) {
+    let selected_now = {
+        let mut sel = tab_wire
+            .tabs
+            .selection
+            .lock()
+            .unwrap_or_else(|e| e.into_inner());
+        sel.select(tab);
+        sel.selected()
+    };
+    if selected_now == Some(tabs::Tab::News) {
+        tab_wire
+            .news_charge
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .visit();
+    }
+    crate::status::emit_tab_selection_if_transitioned(
+        app,
+        &tab_wire.tabs.last_emitted,
+        selected_now,
+    );
 }
 
 fn toggle_pause<R: tauri::Runtime>(engine: &Engine<R>, pause_item: &MenuItem<R>) {
@@ -2179,6 +2694,7 @@ mod tests {
         let state = BoardFrameState {
             expanded: true,
             generation: 7,
+            ..Default::default()
         };
         assert!(board_shrink_should_run(state, 7));
     }
@@ -2191,6 +2707,7 @@ mod tests {
         let state = BoardFrameState {
             expanded: true,
             generation: 8,
+            ..Default::default()
         };
         assert!(!board_shrink_should_run(state, 7));
     }
@@ -2201,6 +2718,7 @@ mod tests {
         let state = BoardFrameState {
             expanded: false,
             generation: 7,
+            ..Default::default()
         };
         assert!(!board_shrink_should_run(state, 7));
     }
@@ -2214,10 +2732,12 @@ mod tests {
         let after_first_request = BoardFrameState {
             expanded: true,
             generation: 1,
+            ..Default::default()
         };
         let after_second_request = BoardFrameState {
             expanded: true,
             generation: 2,
+            ..Default::default()
         };
         assert!(board_shrink_should_run(after_first_request, 1));
         assert!(!board_shrink_should_run(after_second_request, 1));
@@ -2232,7 +2752,31 @@ mod tests {
         let state = BoardFrameState::default();
         assert!(!state.expanded);
         assert!(!board_shrink_should_run(state, state.generation));
+        // P0 fix: the default height is the real resting window height —
+        // never 0.0 (the derived-`Default` value f64 would otherwise get),
+        // which would have made the very first hover computation on a
+        // freshly-launched app wrong until the first expand/collapse cycle
+        // ever touched it.
+        assert_eq!(state.height, hover::WINDOW_HEIGHT);
     }
+
+    // CodeRabbit review fix (PR #13): the test that used to live here
+    // (`board_frame_state_expanded_and_height_move_together_by_
+    // construction`) asserted that two HAND-CONSTRUCTED `BoardFrameState`
+    // literals with deliberately different `height`/`expanded` values
+    // were... different — true by construction, regardless of whether
+    // `try_expand_board_for_hover`/`collapse_board_if_expanded` (the
+    // functions the invariant is actually about) work at all. Deleted
+    // rather than patched: introducing new `mark_expanded`/`mark_resting`
+    // encapsulating methods just to give this invariant a real target to
+    // test would be new production-code surface built solely to satisfy a
+    // test, and the impure `set_size`/AppKit mutation those two functions
+    // perform is already, deliberately, this file's own
+    // manual-verification-only territory (same posture as every other
+    // window call here) — the P0 fix's real correctness now lives in the
+    // two functions' own code (record height immediately after a
+    // successful `set_size`, only claim the resting height when the
+    // shrink actually lands), not in a struct-literal comparison.
 
     #[test]
     fn board_collapse_grace_clears_the_disclosure_springs_settle() {
@@ -2256,6 +2800,7 @@ mod tests {
             false,
             false,
             None,
+            std::sync::Arc::new(crate::tabs::TabWire::default()),
         )
     }
 

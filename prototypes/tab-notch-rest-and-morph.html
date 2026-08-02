@@ -1,0 +1,2146 @@
+<!doctype html>
+<!-- prototypes/tab-notch-rest-and-morph.html
+     PROPOSAL 1 of 2 — the tab-notch REST model, r3. Standalone,
+     hand-authored HTML/CSS/JS: no build step, no React, no `motion`, no
+     network. Not wired into the app, not part of a numbered plan, not
+     synced going forward (prototypes/, plural — the ad-hoc design-proposal
+     dir, per CLAUDE.md).
+
+     ============================================================
+     WHAT CHANGED IN r3 (2026-08-02) — read this before anything else
+     ============================================================
+     Four operator calls off the r2 screenshots, all of them rejections:
+
+     1. THE ICONS WERE FLOATING OUTSIDE THE NOTCH. r2 kept a permanent
+        strip in the right flank, and at rest the flanks are transparent —
+        so five glowing glyphs hung in mid-air over the wallpaper, next to
+        a black shape they were supposedly part of. Rejected as "awkwardly
+        outside". The new rule: AT REST THE ICONS DO NOT EXIST. Rest is
+        the bare shell, the approved face, and the eq bars when audio is
+        genuinely playing. Nothing else. ON HOVER the right flank widens
+        and paints black FIRST, and the icons appear INSIDE it — they are
+        part of the shell at every frame in which they are visible, and
+        they are never drawn over the desktop.
+
+     2. THE ICONS WERE TOO SMALL, TOO DIM, AND HALF OF THEM WERE DEAD.
+        13px -> 18px (+38%), one drop-shadow -> two (a tight core halo
+        plus a wide bloom), and EVERY icon now animates. r2 argued weather
+        should be deliberately still as the strip's anchor; the operator
+        overruled it — everything moves. Weather got a slow ambient sway,
+        the calmest motion in the set. Per-icon character is unchanged
+        otherwise: agent breathes, football flickers, music bobs, news
+        charges.
+
+     3. THE "ONE CONTEXTUAL LINE" IS DEAD. r2 put a 30px strip under the
+        notch with a single sentence in it. Rejected outright ("hate all
+        the views here"). On hover with a tab selected, the below-block
+        now shows THAT SOURCE'S REAL SHIPPED COMPACT CARD — the card the
+        app already draws, at the size it already draws it. Always
+        compact on hover; EXPANDING IS A SEPARATE DELIBERATE ACT (a
+        keystroke, section 5), never something hover does for you. This
+        file renders one faithful example, weather, because the shipped
+        weather peek is explicitly not allowed to change. The other four
+        cards are catalogued in proposal 2/2 r3.
+
+     4. DISMISSAL RULES ARE REPLACED BY A KEYBOARD MODEL (section 5). A
+        tmux-style configurable PREFIX, then one key: 1-5 pick a tab,
+        [ / ] cycle agent sessions, enter/o expand, p pause. Default
+        prefix ⌃⇧Space, CONFIRMED by the operator mid-build and
+        configurable in settings. The seven shipped ⌃⇧-combos survive
+        prefix-free as legacy.
+
+     r1's click-morph — the 500x360 panel, the tab-strip band, the four
+     dismissal rules — was killed in r2 and stays killed. Do not resurrect
+     it from git history.
+
+     ============================================================
+     WHAT THIS FILE ARGUES
+     ============================================================
+       REST      the bare shell, the approved face, and the eq bars when
+                 audio is genuinely playing. No icons, no clock, no
+                 readouts, no text. The shell is exactly the 200px cutout:
+                 both flanks are ZERO wide and paint nothing.
+       HOVER     both flanks widen and paint #000 on one clock. The time
+                 fades in on the LEFT. The icon strip appears INSIDE the
+                 RIGHT flank — inside the black, never over the desktop.
+                 If a tab is selected, its real shipped COMPACT card
+                 mounts in the below-block.
+       SELECT    click an icon to select it. Max one, or none. Click it
+                 again to deselect. Selection is remembered across hovers;
+                 it is simply not VISIBLE at rest any more, because
+                 nothing is.
+       EXPAND    never automatic. A separate keystroke (section 5).
+
+     ============================================================
+     WHAT IT REUSES (read off the shipped source: src/overlay/*.css read
+     directly for the weather peek in section 2, everything else via
+     prototype/notch-states.html, the hand-synced mirror of
+     src/overlay/*.css + src/animationTiming.ts)
+     ============================================================
+       --ease-notchtap  cubic-bezier(.22,1,.36,1)   the house curve
+       --reveal-ms      260ms   REVEAL_MS   bare<->hovered paint/inset fade
+       --hover-ms       160ms   HOVER_MS    per-icon state flips
+       --card-radius    8px     the one card radius
+       cutout 200x32, flanks as 1fr grid columns, pure #000 shell,
+       accent #0a84ff, the status-dot hue table (#7fe08d football,
+       #ff6b57 news, #f0c46a weather), --media-mint #b6f5e5 for audio,
+       the flank clock, the 85px hover-rail flank, the rounding law
+       (outer rounding on the flanks OR on the below-block, never both),
+       and — verbatim, class for class — the shipped idle-peek weather
+       vocabulary: the 100px below-block, .wx-peek-backdrop's mood
+       gradient, .wx-peek-readout, .wx-peek-temp, .wx-peek-hilo, .chip +
+       .wx-peek-condition + .wx-peek-rain, .wx-forecast-strip and
+       .idle-peek-timeline.
+     No new colour, no new radius, no new curve. The only new geometry is
+     the icon box (18px) and the strip's gap (8px).
+
+     ============================================================
+     WHAT IS NEW AND THEREFORE ARGUABLE
+     ============================================================
+       1. the five neon glyphs themselves — all original, see the
+          originality note below
+       2. hidden-at-rest as the chosen default (section 1), with
+          inside-always logged as the alternative
+       3. the visibility rule (weather + news whenever the strip is up,
+          the other three only while genuinely live)
+       4. the news CHARGE model — a fill level that rises across a cycle
+          and a glow that persists until visited
+       5. the selection model (max one, remembered, underline dot)
+       6. the prefix keyboard model (section 5)
+
+     ============================================================
+     HARDWARE + ACCESSIBILITY SCOPE — both deliberate, both hard rules
+     ============================================================
+     HUD ONLY. Every rig on this page is the Mac mini / HUD presentation:
+     a SYNTHETIC notch drawn by us and floated under the menu bar. There
+     are no notch-hardware variants on this page, on purpose — the
+     macbook's real-cutout anchoring is the same runtime branch and the
+     same CSS, and mixing both into one design review only ever produces
+     arguments about which screenshot is the real one.
+
+     NO reduced-motion variants and NO accessibility variants appear
+     anywhere in this file. That is a standing project rule, not an
+     oversight and not a thing to "fix" in review: this repo does not do
+     prefers-reduced-motion work, and a review mock must not smuggle it
+     back in through the side door. Every animation below is unconditional.
+
+     ============================================================
+     ORIGINALITY NOTE, up front and non-negotiable (CLAUDE.md "naming")
+     ============================================================
+     The idle face and all five neon glyphs are ORIGINAL notchtap
+     drawings. They are explicitly NOT copies of, homages to, or
+     variations on boring.notch's mascot, any icon set (Lucide, SF
+     Symbols, Feather, Meteocons or otherwise), or any third-party app's
+     character or trade dress. The face is assembled entirely out of parts
+     this repo already ships — two status dots shrunk from 9px to 4px, and
+     the 1px hairline the masthead rule already draws. The five glyphs are
+     hand-authored paths built from circles, straight strokes and cubics,
+     drawn for this file. The weather peek's condition glyph is likewise
+     an original inline drawing standing in for the app's own glyph asset,
+     which is a raster file this standalone page cannot and must not
+     inline. No third-party logo, asset, vendored path data, or implied
+     affiliation appears anywhere in this file.
+
+     Authored 2026-08-02 (r1), rewritten 2026-08-02 (r2), rewritten again
+     2026-08-02 (r3). -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tab-notch proposal 1/2 — rest, icons, selection (2026-08-02 r3)</title>
+<style>
+  /* ============== shipped tokens (mirrored, not invented) ============== */
+  :root {
+    --overlay-blue: #0a84ff;
+    --overlay-teal: #55d6bd;
+    --overlay-coral: #ff6b57;
+    --overlay-green: #7fe08d;
+    --overlay-amber: #f0c46a;
+    --overlay-fg: #f5f7fa;
+    --surface: #0d0f12;
+    --border: #202329;
+    --media-mint: #b6f5e5;      /* idle-peek media-bar fill, reused for the eq + the music glyph */
+    --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+
+    --ease-notchtap: cubic-bezier(.22,1,.36,1);
+    --ease-notchtap-pop: cubic-bezier(.3,1.36,.44,1);
+    --reveal-ms: 260ms;
+    --hover-ms: 160ms;
+
+    --notchtap-cutout-width: 200px;
+    --notchtap-cutout-height: 32px;
+    --card-scale: 1;
+    --card-radius: 8px;
+
+    /* proposal-only geometry — the two numbers this file is actually
+       asking for. 18px icon box (r2's 13px, +38%, per operator) and an
+       8px strip gap. --flank-inset and --peek-h are shipped values
+       (the flank's own padding, and IDLE_PEEK_BELOW_BLOCK_H). */
+    --icon-box: 18px;
+    --icon-gap: 8px;
+    --flank-inset: 14px;
+    --peek-h: 100px;            /* hover.rs IDLE_PEEK_BELOW_BLOCK_H, verbatim */
+
+    /* ---- this page's own viewer chrome, never app UI ---- */
+    --bg: #101318; --ink: #e8ecf1; --dim: #8b95a3; --rule: rgba(255,255,255,0.09);
+    --page-accent: #7fe08d;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-sans); padding: 44px 24px 120px; }
+  main { max-width: 940px; margin: 0 auto; }
+  h1 { font-size: 21px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.012em; }
+  .lede { color: var(--dim); font-size: 13px; line-height: 1.62; max-width: 70ch; margin: 0 0 12px; }
+  .note { font-size: 11.5px; color: var(--dim); border-left: 2px solid var(--rule); padding-left: 11px; margin: 14px 0 0; max-width: 68ch; line-height: 1.62; }
+  .note.warn { border-left-color: rgba(240,196,106,0.55); }
+  .note.kill { border-left-color: rgba(255,107,87,0.6); }
+  .note.open-q { border-left-color: rgba(10,132,255,0.6); }
+  .note b { color: var(--ink); font-weight: 640; }
+  code { font-family: var(--font-mono); color: #9fc3e8; font-size: 0.94em; }
+  kbd { display: inline-flex; align-items: center; justify-content: center; min-height: 16px; padding: 0 4px; margin: 0 1px;
+        border: 1px solid rgba(255,255,255,0.22); border-bottom-color: rgba(255,255,255,0.34); border-radius: 3px;
+        background: rgba(255,255,255,0.07); font: 700 9.5px/1 var(--font-mono); color: var(--ink); }
+  section { margin-bottom: 52px; padding-top: 26px; border-top: 1px solid var(--rule); }
+  h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); margin: 0 0 5px; }
+  h3 { font: 700 10px/1 var(--font-mono); letter-spacing: 0.07em; text-transform: uppercase; color: var(--dim); margin: 26px 0 8px; }
+  .section-sub { font-size: 12.5px; color: var(--dim); margin: 0 0 16px; max-width: 68ch; line-height: 1.6; }
+  .rig-label { font: 700 10px/1 var(--font-mono); letter-spacing: 0.06em; text-transform: uppercase; color: var(--dim); margin: 0 0 8px; }
+  .tag { display: inline-block; font: 700 8.5px/1 var(--font-mono); letter-spacing: 0.05em; text-transform: uppercase;
+         padding: 3px 6px; border-radius: 999px; margin-left: 6px; color: var(--page-accent);
+         background: rgba(127,224,141,0.12); border: 1px solid rgba(127,224,141,0.3); vertical-align: 1px; }
+  .tag.new { color: var(--overlay-amber); background: rgba(240,196,106,0.12); border-color: rgba(240,196,106,0.32); }
+  .tag.orig { color: #c99df0; background: rgba(201,157,240,0.12); border-color: rgba(201,157,240,0.32); }
+  .tag.kill { color: var(--overlay-coral); background: rgba(255,107,87,0.12); border-color: rgba(255,107,87,0.32); }
+
+  /* the desktop rig — a fake menu bar the synthetic notch hangs off.
+     the stage is deliberately a visible wallpaper-ish weave: the whole
+     r3 argument for hiding the icons at rest is about what they look
+     like OVER the desktop, and a flat black stage would hide the bug
+     this revision exists to fix. */
+  .rig { position: relative; background: #05060a; border-radius: 10px; overflow: visible;
+         box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 16px 32px rgba(0,0,0,0.4); }
+  .menubar { position: relative; height: 26px; background: #1c1d20; border-radius: 10px 10px 0 0; }
+  .stage { position: relative; background: repeating-linear-gradient(45deg, #08090c 0 2px, #0c0d10 2px 4px);
+           border-radius: 0 0 10px 10px; overflow: hidden; }
+  .stage.pale { background: linear-gradient(160deg, #6f7d92 0%, #47566d 55%, #2c3646 100%); }
+  .rest-grid { display: grid; grid-template-columns: repeat(3, minmax(0,1fr)); gap: 16px; }
+  .rest-grid .rig { border-radius: 8px; }
+  .rest-grid .menubar { border-radius: 8px 8px 0 0; }
+  .rest-grid .stage { border-radius: 0 0 8px 8px; }
+  .variant-cap { font: 700 9.5px/1.5 var(--font-mono); letter-spacing: 0.05em; color: var(--dim); margin: 8px 0 0; }
+  .variant-cap b { color: var(--ink); }
+
+  /* ============== the shell (card-chrome.css, mirrored) ==============
+     THE r3 GEOMETRY CHANGE, and it is the whole file:
+
+         REST   --flank-w: 0        shell width = 200px, exactly the cutout
+         HOVER  --flank-w: max(85px, strip width)
+
+     At rest both flanks are zero wide, paint nothing, and hold nothing.
+     There is no "reserved dead space either side" any more, because there
+     is nothing to reserve it for — r2's width-derived-from-the-strip
+     formula is gone with the permanent strip.
+
+     On hover both flanks widen together (they are `1fr` columns of a
+     fixed-width grid, so they are always equal, which is what keeps the
+     cutout optically centred). The right flank must be at least as wide
+     as the strip it now has to CONTAIN:
+
+         --strip-w = (18px + 8px) * icons + 14px
+
+     so five icons ask for 144px a side and two ask for the 85px rail
+     floor. One clock, REVEAL_MS, house curve, no two-step. */
+  .card-assembly {
+    position: absolute; top: 0; left: 50%;
+    box-sizing: border-box;
+    display: grid;
+    grid-template-columns: 1fr var(--notchtap-cutout-width) 1fr;
+    grid-template-rows: var(--notchtap-cutout-height) auto;
+    --icon-n: 2;
+    --strip-w: calc((var(--icon-box) + var(--icon-gap)) * var(--icon-n) + var(--flank-inset));
+    --flank-w: 0px;                              /* REST: no flank at all */
+    --cw: calc(var(--notchtap-cutout-width) + 2 * var(--flank-w));
+    width: var(--cw);
+    transform: translateX(-50%);
+    transform-origin: top center;   /* spatial anchor: everything grows OUT OF the notch */
+    isolation: isolate;
+    filter: drop-shadow(0 7px 18px rgba(0,0,0,0.5));
+    transition: width var(--reveal-ms) var(--ease-notchtap);
+  }
+  .card-assembly.hovered { --flank-w: max(calc(85px * var(--card-scale)), var(--strip-w)); }
+
+  .flank-left, .flank-right {
+    grid-row: 1; display: flex; align-items: center; min-width: 0;
+    background: transparent; color: var(--overlay-fg);
+    transition: background-color var(--reveal-ms) var(--ease-notchtap),
+                padding var(--reveal-ms) var(--ease-notchtap),
+                border-radius var(--reveal-ms) var(--ease-notchtap);
+  }
+  /* the left flank keeps the shipped `overflow: hidden` — it clips the
+     clock during the width run, which is exactly what we want.
+     the right flank CANNOT: `overflow: hidden` clips `drop-shadow`, and
+     the glow is the entire point of a neon strip. So it is `visible`, and
+     the strip is instead kept inside the black by SIZING the flank to its
+     contents (--strip-w above) — the icon boxes are geometrically inside
+     the flank's own rect, and only the halo's outer bloom is allowed past
+     it. The self-check under section 2 asserts exactly that. */
+  .flank-left  { grid-column: 1; justify-content: flex-start; padding-left: 0; overflow: hidden; }
+  .flank-right { grid-column: 3; justify-content: flex-end; overflow: visible; padding-right: 0; }
+  .hovered .flank-right { padding-right: var(--flank-inset); }
+  .synthetic-cutout { grid-column: 2; grid-row: 1; background: #000; position: relative; }
+
+  /* a review aid, never app UI: dashes the right flank's own box so the
+     "are the icons inside it?" question is answerable by looking. */
+  .show-bounds .flank-right { outline: 1px dashed rgba(240,196,106,0.85); outline-offset: -1px; }
+
+  /* ROUNDING LAW, from the shipped app (`card-chrome.css`, the block
+     headed ROUNDING LAW): outer rounding lives at the two TRUE OUTER ENDS
+     of the assembly and nowhere else — on the flanks when there is no
+     below-block, or on the below-block when there is one. Never both, or
+     you get the documented double-curve gap. The cutout's own base
+     corners stay SQUARE.
+
+     r3 has one case the shipped law does not: AT REST the flanks are ZERO
+     WIDE, so the cutout IS both true outer ends, and it takes the
+     rounding for exactly that state. The instant the flanks paint
+     (`.hovered`) it goes square again and the flanks take over —
+     otherwise the rounded base corners sit in the middle of a continuous
+     black bar and read as two seams. r2 rounded the cutout in every
+     non-below-block state and did exactly that; this is the fix. */
+  .card-assembly:not(.hovered) .synthetic-cutout {
+    border-bottom-left-radius: var(--card-radius) min(calc(var(--card-radius) * 2), 20px);
+    border-bottom-right-radius: var(--card-radius) min(calc(var(--card-radius) * 2), 20px);
+  }
+  .card-assembly:not(.has-peek) .flank-left  { border-bottom-left-radius: var(--card-radius); }
+  .card-assembly:not(.has-peek) .flank-right { border-bottom-right-radius: var(--card-radius); }
+
+  /* ============== 1a — THE FACE (APPROVED TWICE — do not redraw) ======
+     Byte-faithful to r1 and r2. Anatomy, and where every part comes from:
+       eyes  = two `.status-dot` circles, 9px shrunk to 4px, in --overlay-fg
+       mouth = one 1px hairline at 28% white — the exact rule
+               `.masthead::after` already draws across every card
+       gap   = 4px, the same 4px the ttl-bar is tall
+     It reads as a GLYPH, not a cartoon: the mouth is a straight rule,
+     never a curve, and it never emotes. */
+  .rest-cluster {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    display: flex; align-items: center; pointer-events: none;
+    transition: opacity var(--reveal-ms) var(--ease-notchtap);
+  }
+  .idle-face { display: flex; flex-direction: column; align-items: center; gap: 4px;
+               animation: face-breathe 5.2s ease-in-out infinite alternate; will-change: transform, opacity; }
+  .face-eyes { display: flex; gap: 15px; }
+  .face-eye { width: 4px; height: 4px; border-radius: 50%; background: var(--overlay-fg);
+              transform-origin: center; animation: face-blink 6.4s var(--ease-notchtap) infinite; }
+  /* the signature detail, and the cheapest one: the right eye trails the
+     left by 40ms. Perfectly synchronous eyes read as two lamps; 40ms of
+     lag reads as one creature. */
+  .face-eye-r { animation-delay: 40ms; }
+  .face-mouth { width: 14px; height: 1px; border-radius: 1px; background: rgba(255,255,255,0.28); }
+
+  @keyframes face-breathe {
+    from { transform: scale(1);     opacity: 0.80; }
+    to   { transform: scale(1.045); opacity: 1; }
+  }
+  /* a DOUBLE blink every 6.4s, not a single one. Two ~96ms closes 96ms
+     apart. A single blink on a long loop reads as a rendering glitch; a
+     double blink is unmistakably deliberate. */
+  @keyframes face-blink {
+    0%, 89%, 100% { transform: scaleY(1); }
+    90.5%         { transform: scaleY(0.15); }
+    92%           { transform: scaleY(1); }
+    93.5%         { transform: scaleY(0.15); }
+    95%           { transform: scaleY(1); }
+  }
+
+  /* ============== 1b — THE EQ BARS (APPROVED TWICE — do not redraw) ====
+     Byte-faithful to r1 and r2. Three 2px bars in the idle-peek's own
+     mint, scaleY off a bottom origin (compositor-friendly; never animate
+     `height`). Three different durations so they never phase-lock into a
+     marching pattern. Collapsed to zero width when silent, so the face
+     stays optically centred — width and margin animate on one clock. */
+  .eq { display: flex; align-items: flex-end; gap: 2px; height: 9px; width: 0; margin-left: 0;
+        opacity: 0; overflow: hidden;
+        transition: width var(--hover-ms) var(--ease-notchtap),
+                    margin-left var(--hover-ms) var(--ease-notchtap),
+                    opacity var(--hover-ms) var(--ease-notchtap); }
+  .eq i { display: block; width: 2px; height: 9px; border-radius: 1px; background: var(--media-mint);
+          transform-origin: bottom; transform: scaleY(0.18); }
+  .eq.playing { width: 10px; margin-left: 11px; opacity: 1; }
+  .eq.playing i { animation: eq-bounce 900ms ease-in-out infinite alternate; }
+  .eq.playing i:nth-child(2) { animation-duration: 640ms; }
+  .eq.playing i:nth-child(3) { animation-duration: 1120ms; }
+  @keyframes eq-bounce { from { transform: scaleY(0.18); } to { transform: scaleY(1); } }
+
+  /* ============== 2 — THE NEON ICON STRIP (r3: hover-only) ==============
+     Five icon boxes, fixed order agent - football - music - weather -
+     news, right-aligned INSIDE the right flank. Each box is 18px square
+     with an 8px left margin, so a present icon costs exactly 26px of
+     flank width.
+
+     THE STRIP IS HIDDEN AT REST. `visibility: hidden` AND `opacity: 0`
+     AND `pointer-events: none` — belt, braces and a third belt, because
+     "the icons must never be visible over the desktop" is now the
+     load-bearing rule of the whole design and it should be impossible to
+     half-break. It becomes visible only under `.hovered`, i.e. only once
+     the flank behind it has already started painting #000.
+
+     ABSENT vs PRESENT (a different axis: whether the SOURCE is live) is
+     still a width+opacity+scale collapse, not a display:none — the strip
+     must never jump when a match ends mid-hover. */
+  .icon-strip {
+    display: flex; align-items: center; flex: none;
+    visibility: hidden; opacity: 0; pointer-events: none;
+    transform: translateX(8px);
+    transition: opacity var(--hover-ms) var(--ease-notchtap),
+                transform var(--reveal-ms) var(--ease-notchtap),
+                visibility 0s linear var(--reveal-ms);
+  }
+  .hovered .icon-strip {
+    visibility: visible; opacity: 1; pointer-events: auto; transform: translateX(0);
+    transition: opacity var(--hover-ms) var(--ease-notchtap) 60ms,
+                transform var(--reveal-ms) var(--ease-notchtap),
+                visibility 0s linear 0s;
+  }
+  .icon {
+    position: relative; display: grid; place-items: center;
+    width: 0; height: var(--icon-box); margin-left: 0; padding: 0; border: 0; background: none;
+    color: var(--hue); opacity: 0; transform: scale(0.6); overflow: visible;
+    cursor: default; -webkit-appearance: none; appearance: none;
+    transition: width var(--reveal-ms) var(--ease-notchtap),
+                margin-left var(--reveal-ms) var(--ease-notchtap),
+                opacity var(--hover-ms) var(--ease-notchtap),
+                transform var(--reveal-ms) var(--ease-notchtap-pop);
+  }
+  /* THE GLOW, r3: two stacked drop-shadows rather than one. A tight 3px
+     core keeps the stroke crisp and a wide 7px bloom is the halo. One
+     shadow at 18px read as a smudge; two read as neon. Both are
+     `currentColor`, so hue and glow are still the same single value by
+     construction and can never drift apart. */
+  .icon svg { width: var(--icon-box); height: var(--icon-box); display: block; overflow: visible;
+              color: var(--hue);
+              filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 7px currentColor);
+              transition: color var(--hover-ms) var(--ease-notchtap),
+                          filter var(--hover-ms) var(--ease-notchtap); }
+
+  .icon.is-present { width: var(--icon-box); margin-left: var(--icon-gap); transform: scale(1); cursor: pointer; }
+  /* the three luminances. Nothing here is a colour change — the hue is
+     fixed per source; only weight changes, which is the same discipline
+     the shipped status dots use (`active` vs `dim`). r3 drops r2's
+     separate at-rest tier: there IS no at-rest tier any more, the strip
+     only ever exists while hovered. */
+  .icon.is-present               { opacity: 0.62; }   /* present but idle  — weather, quiet news */
+  .icon.is-present.is-live       { opacity: 1; }      /* genuinely live    — agent/match/audio  */
+  .icon.is-present.is-selected   { opacity: 1; }
+
+  .icon:active { transform: scale(0.9); }   /* press feedback on pointer-DOWN, house rule */
+
+  /* the selection mark: a 3px underline dot in the icon's own hue, under
+     the glyph, deliberately a different SHAPE from the glyph above it so
+     a dim-but-selected icon still reads as selected in peripheral vision.
+     r3 note: it no longer "survives the cursor leaving" in any visible
+     sense, because nothing does. Selection is still remembered — it is
+     just remembered silently now. See the honest-cost note in section 3. */
+  .icon::after {
+    content: ""; position: absolute; left: 50%; bottom: -6px;
+    width: 3px; height: 3px; border-radius: 50%; background: currentColor;
+    box-shadow: 0 0 5px currentColor;
+    transform: translateX(-50%) scale(0); transform-origin: center;
+    transition: transform var(--hover-ms) var(--ease-notchtap-pop);
+  }
+  .icon.is-selected::after { transform: translateX(-50%) scale(1); }
+
+  /* per-source hues — straight off the shipped status-dot table, plus two
+     the strip needed and the dots never had (agent, music). */
+  .icon.agent    { --hue: var(--overlay-blue); }
+  .icon.football { --hue: var(--overlay-green); }
+  .icon.music    { --hue: var(--media-mint); }
+  .icon.weather  { --hue: var(--overlay-amber); }
+  .icon.news     { --hue: var(--overlay-coral); }
+
+  /* ---- the animations. r3: EVERY icon moves. r2 argued weather should
+     be the one still anchor; the operator overruled it. What survives
+     that override is the per-icon CHARACTER — five different motions, not
+     one motion at five speeds — because five identical pulses would be
+     exactly the "everything glows, nothing means anything" failure the
+     still-anchor was guarding against. The guard is now variety instead
+     of stillness. ---- */
+
+  /* AGENT — a slow ~2s breath, blue -> teal and back, glow swelling with
+     it. The calmest of the loud ones, because an agent session is the
+     longest-running: anything sharper becomes unbearable over a
+     twenty-minute build. */
+  .icon.agent.is-live svg { animation: agent-pulse 1900ms ease-in-out infinite; }
+  @keyframes agent-pulse {
+    0%, 100% { color: var(--overlay-blue); filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 6px currentColor); }
+    50%      { color: var(--overlay-teal); filter: drop-shadow(0 0 4px currentColor) drop-shadow(0 0 12px currentColor); }
+  }
+
+  /* FOOTBALL — an irregular flicker, green -> near-white, on a 2.8s loop
+     with the bursts clustered at the front and one straggler near 60%.
+     Deliberately NOT a sine: a live match is jumpy, and an even pulse
+     would read as "loading" rather than "live". */
+  .icon.football.is-live svg { animation: fb-flicker 2800ms linear infinite; }
+  @keyframes fb-flicker {
+    0%, 100% { color: var(--overlay-green); filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 6px currentColor); }
+    6%       { color: #e9ffec;              filter: drop-shadow(0 0 4px currentColor) drop-shadow(0 0 14px currentColor); }
+    9%       { color: var(--overlay-green); filter: drop-shadow(0 0 2px currentColor) drop-shadow(0 0 5px currentColor); }
+    12%      { color: #e9ffec;              filter: drop-shadow(0 0 4px currentColor) drop-shadow(0 0 15px currentColor); }
+    17%      { color: var(--overlay-green); filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 6px currentColor); }
+    56%      { color: var(--overlay-green); filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 6px currentColor); }
+    59%      { color: #e9ffec;              filter: drop-shadow(0 0 4px currentColor) drop-shadow(0 0 12px currentColor); }
+    63%      { color: var(--overlay-green); filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 6px currentColor); }
+  }
+
+  /* MUSIC — the note bobs on a 900ms clock (the eq bars' own base
+     duration, so the strip and the cutout share a tempo) while the hue
+     drifts mint -> teal on a much slower 3.6s clock. Two clocks on
+     purpose: the bob is the beat, the hue drift is the mood, and letting
+     them phase against each other is what stops it looking mechanical.
+     The bob is a `transform`, so it stays on the compositor. At 18px the
+     travel went 1px -> 1.5px so the bob scales with the glyph. */
+  .icon.music.is-live svg { animation: music-bob 900ms ease-in-out infinite,
+                                       music-hue 3600ms ease-in-out infinite; }
+  @keyframes music-bob { 0%, 100% { transform: translateY(1.5px); } 50% { transform: translateY(-1.5px); } }
+  @keyframes music-hue {
+    0%, 100% { color: var(--media-mint);   filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 6px currentColor); }
+    50%      { color: var(--overlay-teal); filter: drop-shadow(0 0 4px currentColor) drop-shadow(0 0 12px currentColor); }
+  }
+
+  /* WEATHER — r3, and the one genuinely new animation on this page. A
+     7.2s ambient DRIFT: the cloud slides about 1px sideways and tilts
+     under 2 degrees while its halo breathes amber -> pale gold. It is
+     the slowest and lowest-amplitude motion in the set on purpose —
+     weather is the always-there icon, so it is the one that has to
+     survive being looked at for a long time. It reads as weather rather
+     than as a notification precisely because nothing about it is
+     rhythmic: 7.2s against the agent's 1.9s and football's 2.8s means
+     the strip never lands on a shared downbeat.
+     Unlike the other four this runs whenever the icon is PRESENT, not
+     only when "live" — weather has no live state. */
+  .icon.weather.is-present svg { animation: wx-drift 7200ms ease-in-out infinite; }
+  @keyframes wx-drift {
+    0%, 100% { transform: translateX(-1px) rotate(-1.6deg);
+               color: var(--overlay-amber); filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 6px currentColor); }
+    50%      { transform: translateX(1px) rotate(1.6deg);
+               color: #ffdca0;              filter: drop-shadow(0 0 4px currentColor) drop-shadow(0 0 11px currentColor); }
+  }
+
+  /* NEWS — two separate things, and they must not be confused.
+     CHARGING is the fill level inside the glyph rising toward the batch
+     size across the cycle; it is silent and slow and has no glow.
+     CHARGED is what happens at cycle end when items are actually waiting:
+     the glyph goes to full weight and breathes coral -> salmon until the
+     tab is VISITED (selected), at which point it resets to empty. */
+  .icon.news .charge {
+    transform-box: fill-box; transform-origin: bottom;
+    transform: scaleY(var(--charge, 0));
+    transition: transform 320ms var(--ease-notchtap);
+  }
+  /* declared AFTER the luminance block above, at equal specificity, so it
+     wins on order alone — no `!important` anywhere in this file. */
+  .icon.news.is-charged { opacity: 1; }
+  .icon.news.is-charged svg { animation: news-glow 2600ms ease-in-out infinite; }
+  @keyframes news-glow {
+    0%, 100% { color: var(--overlay-coral); filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 7px currentColor); }
+    50%      { color: #ffb3a5;              filter: drop-shadow(0 0 5px currentColor) drop-shadow(0 0 16px currentColor); }
+  }
+  /* the tiny count. 8px mono digits at the glyph's top-right corner,
+     eating 6px of the flank's 14px inset. It is the literal reading of
+     "show the count"; the fill level is the ambient reading. Both are
+     drawn here on purpose so the operator can kill one — see open
+     question 4. */
+  .charge-count {
+    position: absolute; top: -5px; right: -6px;
+    font: 700 8px/1 var(--font-mono); letter-spacing: -0.02em;
+    color: var(--overlay-coral); text-shadow: 0 0 4px rgba(255,107,87,0.8);
+    opacity: 0; transform: scale(0.6); transform-origin: center;
+    transition: opacity var(--hover-ms) var(--ease-notchtap),
+                transform var(--hover-ms) var(--ease-notchtap-pop);
+  }
+  .icon.news.has-count .charge-count { opacity: 1; transform: scale(1); }
+
+  /* ============== 3 — HOVER REVEAL ==============
+     The shipped reveal: the flanks paint #000 and take their insets, the
+     clock fades up on the LEFT, and the strip arrives INSIDE the right.
+     REVEAL_MS, house curve. The strip's own opacity is 60ms behind the
+     flank paint on purpose — the black must be there first, so the icons
+     are never seen against the wallpaper even for two frames. That 60ms
+     is the entire fix for r2's rejected screenshot.
+     (In the app this is driven by the rust tracking area's
+     `hover-changed`, never CSS :hover — the overlay window is
+     click-through. This page drives it off JS pointer events on the rig,
+     which is the closer analogue.) */
+  .hovered .flank-left, .hovered .flank-right { background: #000; }
+  .hovered .flank-left { padding-left: 16px; }
+
+  .flank-clock { font: 800 15px/1 var(--font-mono); letter-spacing: 0.02em; color: var(--overlay-fg);
+                 white-space: nowrap; opacity: 0; transition: opacity var(--reveal-ms) var(--ease-notchtap); }
+  .hovered .flank-clock { opacity: 1; }
+
+  /* The face recedes on hover rather than leaving — things change weight,
+     they never pop out of existence. 0.3 is a judgement call, not a
+     measurement. */
+  .hovered .rest-cluster { opacity: 0.3; }
+
+  /* ---- PREFIX ARMED (section 5, a delight proposal) ----
+     While the prefix is armed the face's eyes flick brighter and gain a
+     small halo, and the breath speeds up slightly. Nothing else on the
+     surface changes and no text appears: the creature is listening, and
+     that is the whole message. Deliberately built out of the face's own
+     existing parts, so it cannot drift from the approved drawing. */
+  .prefix-armed .rest-cluster { opacity: 1; }
+  .prefix-armed .face-eye { background: #fff; box-shadow: 0 0 6px rgba(255,255,255,0.95); }
+  .prefix-armed .idle-face { animation-duration: 2.2s; }
+
+  /* ---- THE BELOW-BLOCK: the shipped compact card ----
+     r2's 30px one-line strip is gone. This is the shipped idle-peek
+     below-block: a FIXED 100px (hover.rs `IDLE_PEEK_BELOW_BLOCK_H`),
+     spanning both flanks and the cutout, mounted only while hovered AND a
+     tab is selected. It takes the bottom rounding and the flanks give
+     theirs up — the rounding law, untouched. */
+  .peek-block {
+    grid-column: 1 / -1; grid-row: 2; position: relative; overflow: hidden;
+    width: 100%; min-width: 0; height: 0;
+    background: #000; color: var(--overlay-fg);
+    border-bottom-left-radius: var(--card-radius); border-bottom-right-radius: var(--card-radius);
+    transition: height var(--reveal-ms) var(--ease-notchtap);
+  }
+  .card-assembly.has-peek .peek-block { height: var(--peek-h); }
+  /* `.below-block.idle-peek`, verbatim: padding 12/16/13, column, gap 8 */
+  .peek-inner { padding: 12px 16px 13px; display: flex; flex-direction: column; gap: 8px;
+                overflow: hidden; height: var(--peek-h);
+                opacity: 0; transform: translateY(-4px);
+                transition: opacity var(--hover-ms) var(--ease-notchtap),
+                            transform var(--hover-ms) var(--ease-notchtap); }
+  .has-peek .peek-inner { opacity: 1; transform: translateY(0);
+                          transition: opacity 180ms var(--ease-notchtap) 80ms,
+                                      transform 220ms var(--ease-notchtap) 80ms; }
+
+  /* ---- the SHIPPED weather peek, class for class off
+     src/overlay/idle-peek.css + src/overlay/weather-art.css. Nothing
+     here is a redesign and nothing here is allowed to become one: the
+     operator's instruction is that the existing weather card does not
+     change. It is reproduced so the below-block can be judged with real
+     content in it rather than a grey rectangle. ---- */
+  .wx-peek-backdrop { position: absolute; inset: 0; z-index: 0;
+                      border-radius: 0 0 var(--card-radius) var(--card-radius); overflow: hidden;
+                      background: linear-gradient(180deg, #1a3a52 0%, #122b3d 100%); }
+  .peek-content { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 8px; }
+  .wx-peek-weather-stack { display: flex; flex-direction: column; gap: 4px; }
+  .wx-peek-readout { display: flex; align-items: center; gap: 8px; padding: 10px 12px; }
+  .wx-peek-icon { width: 28px; height: 28px; flex: none;
+                  filter: drop-shadow(0 2px 6px rgba(0,0,0,0.45)); pointer-events: none; }
+  .wx-peek-temp { font: 800 18px/1 var(--font-mono); color: var(--overlay-fg); }
+  .wx-peek-hilo { display: inline-flex; align-items: center; gap: 4px;
+                  font: 700 9px/1 var(--font-mono); color: rgba(255,255,255,0.65); white-space: nowrap; }
+  .wx-peek-hilo::before { content: "\00b7"; opacity: 0.5; }
+  .chip { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px;
+          font: 700 8px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+  .wx-peek-condition { color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.08);
+                       border: 1px solid rgba(255,255,255,0.14); }
+  .wx-peek-rain { color: rgba(180,210,255,0.85); background: rgba(180,210,255,0.12);
+                  border: 1px solid rgba(180,210,255,0.35); }
+  .wx-forecast-strip { display: flex; align-items: center; justify-content: space-between; padding: 0 12px; }
+  .wx-forecast-point { display: flex; align-items: center; gap: 3px; }
+  .wx-forecast-icon { width: 10px; height: 10px; flex: none;
+                      filter: drop-shadow(0 1px 3px rgba(0,0,0,0.4)); pointer-events: none; }
+  .wx-forecast-temp { font: 700 8px/1 var(--font-mono); color: var(--overlay-fg); }
+  .wx-forecast-hour { font: 600 7px/1 var(--font-mono); color: rgba(255,255,255,0.55); }
+  .idle-peek-timeline { position: relative; display: block; height: 1px; margin-top: 2px;
+                        background: rgba(255,255,255,0.14); }
+  .idle-peek-timeline::before { content: ""; position: absolute; top: -2px; left: var(--day-progress, 50%);
+                                width: 5px; height: 5px; transform: translateX(-50%); border-radius: 50%;
+                                background: #b6f5e5; box-shadow: 0 0 10px rgba(182,245,229,0.75); }
+
+  /* the four tabs whose cards are NOT drawn here. Deliberately a plate,
+     not a design: this file renders one faithful card and points at the
+     sibling for the rest, rather than inventing four approximations that
+     would then have to be un-invented. */
+  .peek-stub { position: relative; z-index: 1; display: flex; flex-direction: column; justify-content: center;
+               gap: 6px; height: 100%; padding: 0 4px; }
+  .peek-stub .stub-head { display: flex; align-items: center; gap: 7px;
+                          font: 700 9px/1 var(--font-mono); letter-spacing: 0.09em; text-transform: uppercase;
+                          color: var(--stub-hue, #fff); }
+  .peek-stub .stub-dot { width: 6px; height: 6px; border-radius: 50%; background: currentColor;
+                         box-shadow: 0 0 7px currentColor; flex: none; }
+  .peek-stub .stub-body { font: 620 11.5px/1.45 var(--font-sans); color: rgba(255,255,255,0.72); }
+  .peek-stub .stub-body b { color: var(--overlay-fg); font-weight: 700; }
+  .peek-block.hue-agent    { --stub-hue: var(--overlay-blue); }
+  .peek-block.hue-football { --stub-hue: var(--overlay-green); }
+  .peek-block.hue-music    { --stub-hue: var(--media-mint); }
+  .peek-block.hue-news     { --stub-hue: var(--overlay-coral); }
+
+  /* ============== the one-state-at-a-time rack ==============
+     r1 had a stacking bug: several frames lived in one box and all of
+     them painted at once on the operator's machine. The fix is
+     structural, not cosmetic — every frame in a rack is `display: none`
+     by DEFAULT, and exactly one `.is-on` turns exactly one on. `display`,
+     not opacity and not visibility, so there is no state in which two
+     frames can occupy the box simultaneously even mid-transition. */
+  .rack { position: relative; }
+  .rack-frame { display: none; }
+  .rack-frame.is-on { display: block; }
+
+  /* --- page controls --- */
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 14px 0 0; }
+  .controls label { font: 700 9.5px/1 var(--font-mono); color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; }
+  .controls button { font: 700 10px/1 var(--font-mono); letter-spacing: 0.04em; padding: 9px 13px; border-radius: 8px;
+                     border: 1px solid var(--rule); background: #171b22; color: var(--ink); cursor: pointer;
+                     transition: border-color 140ms var(--ease-notchtap), color 140ms var(--ease-notchtap), transform 120ms var(--ease-notchtap); }
+  .controls button:hover { border-color: rgba(127,224,141,0.4); color: var(--page-accent); }
+  .controls button:active { transform: scale(0.97); }
+  .controls button.on { border-color: rgba(127,224,141,0.55); color: var(--page-accent); background: rgba(127,224,141,0.08); }
+  .status-line { text-align: center; font-size: 11.5px; color: var(--dim); margin-top: 12px; min-height: 20px; }
+  .status-line b { color: var(--overlay-amber); }
+
+  .selfcheck { margin-top: 14px; font: 700 10px/1.6 var(--font-mono); letter-spacing: 0.03em; color: var(--dim);
+               border-left: 2px solid var(--rule); padding-left: 11px; }
+  .selfcheck b.ok { color: var(--page-accent); }
+  .selfcheck b.bad { color: var(--overlay-coral); }
+
+  table.spec { width: 100%; border-collapse: collapse; font-size: 11.5px; margin: 12px 0 0; }
+  table.spec th, table.spec td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  table.spec th { color: var(--dim); font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; }
+  table.spec td.val { font-family: var(--font-mono); color: #b6f5e5; white-space: nowrap; }
+  table.spec td.new { color: var(--overlay-amber); }
+  table.spec td .swatch { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; vertical-align: 0; }
+
+  ul.rules { margin: 10px 0 0; padding: 0; list-style: none; display: grid; gap: 12px; max-width: 72ch; }
+  ul.rules li { font-size: 12.5px; line-height: 1.6; color: var(--dim); padding-left: 14px; position: relative; }
+  ul.rules li::before { content: ""; position: absolute; left: 0; top: 8px; width: 5px; height: 5px; border-radius: 50%; background: rgba(255,255,255,0.25); }
+  ul.rules li b { color: var(--ink); font-weight: 640; }
+  ul.rules li.q::before { background: var(--overlay-blue); box-shadow: 0 0 8px rgba(10,132,255,0.6); }
+  ul.rules li.alt::before { background: var(--overlay-amber); box-shadow: 0 0 8px rgba(240,196,106,0.6); }
+  footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--rule); font-size: 11.5px; color: var(--dim); line-height: 1.65; max-width: 74ch; }
+</style>
+</head>
+<body>
+<main>
+
+  <h1>tab-notch proposal 1/2 — rest, icons, selection <span class="tag new">r3</span></h1>
+  <p class="lede">
+    The notch <b>rests bare</b>: the approved face, and the eq bars when audio is genuinely playing.
+    <b>No icons at rest.</b> <b>Hover</b> widens both flanks and paints them black — the time fades in
+    on the left, and the neon icon-tabs appear <b>inside</b> the right flank, never over the desktop.
+    <b>Clicking an icon selects</b> that tab, and a selected tab means hover also mounts that source's
+    <b>real shipped compact card</b> in the below-block. Expanding it is a separate keystroke, never
+    something hover does for you.
+  </p>
+  <p class="note kill">
+    <b>What r3 rejected.</b> (1) r2's permanent strip — the icons floated <b>outside</b> the notch
+    shape over the wallpaper, and that is now impossible by construction. (2) r2's 13px dim icons —
+    18px now, twice the glow, and <b>all five animate</b>, including weather, which r2 deliberately
+    left still. (3) r2's "one contextual line" — deleted; the below-block shows the shipped compact
+    card instead. (4) r1's click-morph panel stayed dead. Do not restore any of them from git history.
+  </p>
+  <p class="note">
+    Every curve, colour, radius, and duration below is the shipped one — <code>--ease-notchtap</code>
+    <code>cubic-bezier(.22,1,.36,1)</code>, <code>REVEAL_MS</code> 260ms, <code>HOVER_MS</code> 160ms,
+    8px radius, <code>#000</code> shell, the <code>#7fe08d</code> / <code>#ff6b57</code> /
+    <code>#f0c46a</code> status hue table, <code>--media-mint</code> <code>#b6f5e5</code>, a
+    200&times;32 cutout with <code>1fr</code> flanks, the 85px hover-rail flank, and the 100px
+    below-block (<code>hover.rs</code> <code>IDLE_PEEK_BELOW_BLOCK_H</code>). Only the 18px icon box,
+    the 8px strip gap, and the five glyph drawings are new geometry.
+  </p>
+  <p class="note warn">
+    <b>Scope, stated once.</b> Every rig on this page is the <b>Mac mini / HUD</b> presentation — a
+    synthetic notch we draw ourselves, floated under the menu bar. No notch-hardware variants appear
+    here on purpose. And there are <b>no reduced-motion and no accessibility variants anywhere in
+    this file</b>: that is a standing project rule, not an omission to be corrected in review. Every
+    animation below is unconditional.
+  </p>
+  <p class="note" style="border-left-color:rgba(201,157,240,0.6)">
+    <b>Originality, stated up front.</b> The face and all five glyphs are <b>original notchtap
+    drawings</b> — not copies of, homages to, or variations on boring.notch's mascot, any icon set
+    (Lucide, SF&nbsp;Symbols, Feather, Meteocons), or any third-party app's character. The face is
+    two <code>.status-dot</code> circles shrunk 9px&nbsp;&rarr;&nbsp;4px plus the 1px hairline
+    <code>.masthead::after</code> already draws. The glyphs are hand-authored paths built from
+    circles, straight strokes and cubics. The weather peek's condition glyph is an original inline
+    drawing standing in for the app's own glyph asset (a raster file this standalone page cannot
+    inline). No third-party logo, asset, vendored path data, or implied affiliation appears anywhere
+    in this file (CLAUDE.md, "naming").
+  </p>
+
+  <!-- ================================================================= -->
+  <section>
+    <h2>1 — rest<span class="tag new">changed in r3</span></h2>
+    <p class="section-sub">
+      What the notch is when nobody is touching it. In r2 this was "face + eq + five icons"; the
+      screenshots showed the icons hanging in mid-air beside the black shape, and that is what r3
+      deletes. <b>Rest is now the shell, the face, and the eq bars when audio is actually playing.
+      Full stop.</b> The three rigs below are separate boxes, not stacked layers.
+    </p>
+
+    <div class="rest-grid">
+
+      <!-- 1a -->
+      <div>
+        <div class="rig-label">a — dead bare</div>
+        <div class="rig">
+          <div class="menubar"></div>
+          <div class="stage" style="height:82px;">
+            <div class="card-assembly">
+              <div class="flank-left"></div>
+              <div class="synthetic-cutout"></div>
+              <div class="flank-right"></div>
+            </div>
+          </div>
+        </div>
+        <p class="variant-cap"><b>zero app pixels.</b> The honest baseline. Costs nothing, says nothing, impossible to discover.</p>
+      </div>
+
+      <!-- 1b -->
+      <div>
+        <div class="rig-label">b — face only <span class="tag orig">approved</span></div>
+        <div class="rig">
+          <div class="menubar"></div>
+          <div class="stage" style="height:82px;">
+            <div class="card-assembly">
+              <div class="flank-left"></div>
+              <div class="synthetic-cutout">
+                <div class="rest-cluster">
+                  <span class="idle-face">
+                    <span class="face-eyes"><i class="face-eye face-eye-l"></i><i class="face-eye face-eye-r"></i></span>
+                    <span class="face-mouth"></span>
+                  </span>
+                </div>
+              </div>
+              <div class="flank-right"></div>
+            </div>
+          </div>
+        </div>
+        <p class="variant-cap"><b>two 4px dots + a 1px rule.</b> Breathes on 5.2s; double-blinks every 6.4s, right eye 40ms behind.</p>
+      </div>
+
+      <!-- 1c -->
+      <div>
+        <div class="rig-label">c — the proposal at rest <span class="tag new">r3</span></div>
+        <div class="rig">
+          <div class="menubar"></div>
+          <div class="stage pale" style="height:82px;">
+            <div class="card-assembly">
+              <div class="flank-left"></div>
+              <div class="synthetic-cutout">
+                <div class="rest-cluster">
+                  <span class="idle-face">
+                    <span class="face-eyes"><i class="face-eye face-eye-l"></i><i class="face-eye face-eye-r"></i></span>
+                    <span class="face-mouth"></span>
+                  </span>
+                  <span class="eq playing"><i></i><i></i><i></i></span>
+                </div>
+              </div>
+              <div class="flank-right"></div>
+            </div>
+          </div>
+        </div>
+        <p class="variant-cap"><b>face + eq, over a pale desktop.</b> Deliberately the worst-case wallpaper — and there is nothing on it to wash out, because nothing is drawn outside the shell.</p>
+      </div>
+    </div>
+
+    <p class="note kill">
+      <b>The r2 bug, named.</b> r2 sized the resting shell from the strip and left the flanks
+      transparent, so five glowing glyphs were painted directly onto the wallpaper next to a black
+      shape they claimed to belong to. Over a pale desktop the dim ones vanished; over a dark one
+      they read as free-floating dust. Either way they were not part of the notch. r3's rule removes
+      the failure mode rather than tuning it: <b>if the black is not there, the icons are not there.</b>
+    </p>
+    <p class="note warn">
+      <b>Chosen default vs logged alternative — we can change this whenever.</b><br>
+      <b>CHOSEN: rest-hidden.</b> Nothing but the shell, the face, and the eq bars. Rest costs zero
+      pixels of desktop; discovery is entirely on hover.<br>
+      <b>ALTERNATIVE, logged not deleted: inside-always.</b> Keep the icons permanently, but give the
+      right flank a permanent black plate so they are <em>always</em> inside the shell — the notch
+      would then rest wider (200px&nbsp;+&nbsp;2&times;144px with five sources) and always carry a
+      black shoulder. That buys the free glance r2 was after and pays for it in resting footprint.
+      It is a one-line change to this file's <code>--flank-w</code> rest value plus dropping the
+      strip's <code>visibility</code> gate; it is not a rewrite. Say the word.
+    </p>
+
+    <h3>live — hover to bring the strip in</h3>
+    <p class="section-sub">
+      <b>Hover the rig.</b> The flanks widen and paint, then the icons arrive inside the right one.
+      Weather and news are there whenever the strip is up; agent, football and music appear
+      <b>only while genuinely live</b> — a session actually running, a match actually in play, audio
+      actually playing. Flip the toggles and watch the hovered shell breathe: each icon costs exactly
+      26px of flank, and both flanks always move together so the cutout never drifts off centre.
+      <b>Pin hover</b> holds the state open so it can be inspected without a cursor;
+      <b>show flank bounds</b> dashes the right flank's own box so you can see the icons are inside it.
+    </p>
+    <div class="rig-label">rest &rarr; hover</div>
+    <div class="rig" data-rig="rest">
+      <div class="menubar"></div>
+      <div class="stage pale" style="height:104px;">
+        <!-- assembly markup is generated once and cloned into every rig, so
+             the rigs on this page cannot drift apart -->
+      </div>
+    </div>
+    <div class="controls">
+      <label>simulate</label>
+      <button type="button" data-toggle="rest:agent">agent running: off</button>
+      <button type="button" data-toggle="rest:match">match live: off</button>
+      <button type="button" data-toggle="rest:music">music playing: off</button>
+      <button type="button" data-pin="rest">pin hover</button>
+      <button type="button" data-bounds="rest">show flank bounds</button>
+    </div>
+    <p class="status-line" id="status-rest">at rest: 200px, no icons.</p>
+
+    <h3>the five glyphs</h3>
+    <table class="spec">
+      <tr><th>tab</th><th>glyph</th><th>hue</th><th>when it is in the strip</th><th>motion</th></tr>
+      <tr>
+        <td>agent</td>
+        <td>a shell prompt — a chevron plus a short underscore bar</td>
+        <td class="val"><span class="swatch" style="background:#0a84ff"></span>#0a84ff</td>
+        <td class="val">only while live</td>
+        <td class="new">1.9s breath, blue&nbsp;&rarr;&nbsp;teal, glow swells</td>
+      </tr>
+      <tr>
+        <td>football</td>
+        <td>a hollow circle with three seam strokes meeting at its centre</td>
+        <td class="val"><span class="swatch" style="background:#7fe08d"></span>#7fe08d</td>
+        <td class="val">only while live</td>
+        <td class="new">2.8s irregular flicker, green&nbsp;&rarr;&nbsp;near-white</td>
+      </tr>
+      <tr>
+        <td>music</td>
+        <td>a single eighth note — round head, straight stem, one flag</td>
+        <td class="val"><span class="swatch" style="background:#b6f5e5"></span>#b6f5e5</td>
+        <td class="val">only while playing</td>
+        <td class="new">900ms 1.5px bob + 3.6s mint&nbsp;&rarr;&nbsp;teal drift</td>
+      </tr>
+      <tr>
+        <td>weather</td>
+        <td>a cloud — three lobes over a flat base, one closed cubic path</td>
+        <td class="val"><span class="swatch" style="background:#f0c46a"></span>#f0c46a</td>
+        <td class="val">always, whenever the strip is up</td>
+        <td class="new">7.2s ambient sway &plusmn;1px / &plusmn;1.6&deg; + halo breath <b>(new in r3)</b></td>
+      </tr>
+      <tr>
+        <td>news</td>
+        <td>a page — rounded rectangle with a headline rule and a shorter one</td>
+        <td class="val"><span class="swatch" style="background:#ff6b57"></span>#ff6b57</td>
+        <td class="val">always, whenever the strip is up</td>
+        <td class="new">fills as it charges; breathes coral&nbsp;&rarr;&nbsp;salmon when charged</td>
+      </tr>
+    </table>
+
+    <p class="note">
+      <b>Bigger, because 13px was a rumour of an icon.</b> 13px&nbsp;&rarr;&nbsp;18px is +38%, and at
+      18px a stroke-only glyph is actually legible as its own shape rather than as a coloured smudge.
+      The strip costs 26px of flank per icon instead of 21px, which is the entire price: the hovered
+      shell with five sources goes 438px&nbsp;&rarr;&nbsp;488px. Since the strip no longer exists at
+      rest, that width is only ever paid while you are looking at it.
+    </p>
+    <p class="note">
+      <b>Glowier, by stacking two shadows rather than widening one.</b> Every glyph carries
+      <code>drop-shadow(0 0 3px currentColor) drop-shadow(0 0 7px currentColor)</code> — a tight core
+      that keeps the stroke crisp, and a wide bloom that is the actual halo. Widening a single shadow
+      to 10px just blurs the drawing away. Both read <code>currentColor</code>, so hue and glow stay
+      the same single value by construction: when the agent glyph shifts blue to teal, its halo shifts
+      with it for free.
+    </p>
+    <p class="note">
+      <b>Everything moves now — and that is exactly why they must move differently.</b> r2 kept
+      weather still as the strip's anchor, on the theory that if everything glows nothing does. The
+      operator overruled it. What survives the override is the guard underneath it: the strip is
+      protected from becoming noise by <em>variety</em> instead of stillness. Five motions, five
+      characters, five unrelated periods (1.9s / 2.8s / 900ms / 7.2s / 2.6s) so the strip never lands
+      on a shared downbeat. Weather got the slowest and smallest of them — a 7.2s sway of about a
+      pixel — because it is the one icon that is always there, so it is the one that has to survive
+      being looked at.
+    </p>
+    <p class="note warn">
+      <b>Honest cost.</b> The colour-shift keyframes animate <code>color</code> and
+      <code>filter</code>, which are not compositor-only properties, and r3 both enlarged the glyphs
+      and doubled the shadows — so the per-frame repaint is meaningfully more expensive than r2's.
+      At 18px, on at most five glyphs, only while hovered, this should still be invisible; but "only
+      while hovered" is now doing real work in that sentence and it is the reason the cost is
+      acceptable. If profiling ever complains, the fix is two stacked copies of the glyph cross-fading
+      on <code>opacity</code>, not a slower animation. The music bob and the weather sway are
+      <code>transform</code>s and stay on the compositor.
+    </p>
+    <p class="note">
+      <b>The r2 scrim question is answered by deletion.</b> r2 flagged "the icons glow over the
+      wallpaper, do we need a faint scrim behind the strip?" as an open question. There is no longer
+      anything to scrim: the strip only ever paints on top of a flank that is already <code>#000</code>.
+      One rejected screenshot removed a whole open question.
+    </p>
+  </section>
+
+  <!-- ================================================================= -->
+  <section>
+    <h2>2 — hover: the flank widens, and the card is the shipped card<span class="tag new">changed in r3</span></h2>
+    <p class="section-sub">
+      Hover does three things on one clock: both flanks widen and paint <code>#000</code>, the time
+      fades in on the <b>left</b>, and the icon strip arrives <b>inside</b> the right. Beneath all of
+      it, and only if a tab is selected, that source's <b>real shipped compact card</b>. Always
+      compact — hover never expands anything. <b>Hover the notch.</b>
+    </p>
+    <div class="rig-label">live — real pointer hover; pick a selection first</div>
+    <div class="rig" data-rig="hover">
+      <div class="menubar"></div>
+      <div class="stage pale" style="height:190px;"></div>
+    </div>
+    <div class="controls">
+      <label>selection</label>
+      <button type="button" data-select="hover:none">none</button>
+      <button type="button" data-select="hover:agent">agent</button>
+      <button type="button" data-select="hover:football">football</button>
+      <button type="button" data-select="hover:music">music</button>
+      <button type="button" data-select="hover:weather" class="on">weather</button>
+      <button type="button" data-select="hover:news">news</button>
+      <button type="button" data-pin="hover">pin hover</button>
+      <button type="button" data-bounds="hover">show flank bounds</button>
+    </div>
+    <p class="status-line" id="status-hover">weather selected &mdash; hover to mount the shipped weather peek.</p>
+
+    <h3>one state at a time — rest &rarr; hovered &rarr; hovered + selected</h3>
+    <p class="section-sub">
+      Three frames in one box. Every frame is <code>display: none</code> by default and exactly one
+      <code>.is-on</code> turns exactly one on — <code>display</code>, not opacity, so there is no
+      moment, mid-transition or otherwise, in which two frames can paint at once. The self-check
+      under the rack proves it from computed style, and proves the two r3 rules alongside it:
+      <b>no icon is ever painted without black behind it</b>, and every visible icon box sits inside
+      its own flank's rect.
+    </p>
+    <div class="controls" style="margin-bottom:12px">
+      <label>frame</label>
+      <button type="button" class="on" data-frame="rack-hover:rest">rest</button>
+      <button type="button" data-frame="rack-hover:hovered">hovered, nothing selected</button>
+      <button type="button" data-frame="rack-hover:selected">hovered, weather selected</button>
+    </div>
+    <div class="rack" id="rack-hover">
+      <div class="rack-frame is-on" data-frame-name="rest">
+        <div class="rig">
+          <div class="menubar"></div>
+          <div class="stage pale" style="height:170px;">
+            <div class="card-assembly" style="--icon-n:3">
+              <div class="flank-left"><span class="flank-clock">14:32</span></div>
+              <div class="synthetic-cutout">
+                <div class="rest-cluster">
+                  <span class="idle-face"><span class="face-eyes"><i class="face-eye face-eye-l"></i><i class="face-eye face-eye-r"></i></span><span class="face-mouth"></span></span>
+                  <span class="eq playing"><i></i><i></i><i></i></span>
+                </div>
+              </div>
+              <div class="flank-right"><span class="icon-strip" data-static-strip="music,weather,news" data-static-live="music"></span></div>
+              <div class="peek-block"></div>
+            </div>
+          </div>
+        </div>
+        <p class="variant-cap"><b>rest.</b> 200px. Zero-width flanks, nothing painted, no clock, no icons &mdash; and the strip's markup is present in the DOM the whole time, merely invisible.</p>
+      </div>
+      <div class="rack-frame" data-frame-name="hovered">
+        <div class="rig">
+          <div class="menubar"></div>
+          <div class="stage pale" style="height:170px;">
+            <div class="card-assembly hovered" style="--icon-n:3">
+              <div class="flank-left"><span class="flank-clock">14:32</span></div>
+              <div class="synthetic-cutout">
+                <div class="rest-cluster">
+                  <span class="idle-face"><span class="face-eyes"><i class="face-eye face-eye-l"></i><i class="face-eye face-eye-r"></i></span><span class="face-mouth"></span></span>
+                  <span class="eq playing"><i></i><i></i><i></i></span>
+                </div>
+              </div>
+              <div class="flank-right"><span class="icon-strip" data-static-strip="music,weather,news" data-static-live="music"></span></div>
+              <div class="peek-block"></div>
+            </div>
+          </div>
+        </div>
+        <p class="variant-cap"><b>hovered, nothing selected.</b> 370px (three icons ask for 92px, the 85px rail floor loses to it by 7px). Flanks paint, clock up, strip inside the right flank. No card, because no tab is selected.</p>
+      </div>
+      <div class="rack-frame" data-frame-name="selected">
+        <div class="rig">
+          <div class="menubar"></div>
+          <div class="stage pale" style="height:170px;">
+            <div class="card-assembly hovered has-peek" style="--icon-n:3">
+              <div class="flank-left"><span class="flank-clock">14:32</span></div>
+              <div class="synthetic-cutout">
+                <div class="rest-cluster">
+                  <span class="idle-face"><span class="face-eyes"><i class="face-eye face-eye-l"></i><i class="face-eye face-eye-r"></i></span><span class="face-mouth"></span></span>
+                  <span class="eq playing"><i></i><i></i><i></i></span>
+                </div>
+              </div>
+              <div class="flank-right"><span class="icon-strip" data-static-strip="music,weather,news" data-static-live="music" data-static-selected="weather"></span></div>
+              <div class="peek-block" data-static-peek="weather"></div>
+            </div>
+          </div>
+        </div>
+        <p class="variant-cap"><b>hovered, weather selected.</b> The shipped weather peek, 100px tall, in the shipped below-block. It takes the bottom rounding and the flanks give theirs up &mdash; the rounding law, unchanged. Music is still playing; its card is <em>not</em> shown, because only one tab can be selected.</p>
+      </div>
+    </div>
+    <div class="selfcheck" id="selfcheck">self-check pending</div>
+
+    <table class="spec">
+      <tr><th>state</th><th>shell width</th><th>flanks</th><th>clock</th><th>strip</th><th>below-block</th></tr>
+      <tr><td>rest (any number of sources)</td><td class="val">200px</td><td class="val">0px, transparent</td><td class="val">opacity 0</td><td class="new">hidden &mdash; visibility: hidden</td><td class="val">&mdash;</td></tr>
+      <tr><td>hovered, 2 icons</td><td class="val">370px</td><td class="val">#000, 85px rail floor</td><td class="val">opacity 1</td><td class="val">0.62 idle / 1.00 live</td><td class="val">only if selected</td></tr>
+      <tr><td>hovered, 5 icons</td><td class="val">488px</td><td class="val">#000, 144px (strip-driven)</td><td class="val">opacity 1</td><td class="val">0.62 idle / 1.00 live</td><td class="val">only if selected</td></tr>
+      <tr><td>hovered + selected</td><td class="val">as above</td><td class="val">bottom rounding released</td><td class="val">opacity 1</td><td class="val">selected icon at 1.00</td><td class="new">100px compact card</td></tr>
+      <tr><td>every leg</td><td class="val">260ms</td><td class="val">260ms</td><td class="val">260ms</td><td class="val">160ms + 60ms</td><td class="val">260ms + 80ms</td></tr>
+    </table>
+
+    <p class="note">
+      <b>The 60ms that fixes the screenshot.</b> The flank's background and the strip's opacity are
+      not on the same beat: the flank starts painting at 0ms, the strip's fade starts at 60ms. So
+      there is no frame in which a glyph is visible against anything but black. Leaving them
+      simultaneous would technically satisfy "the icons are inside the flank" and would still flash
+      the old bug for two frames on a slow paint.
+    </p>
+    <p class="note">
+      <b>The card is the card we already ship.</b> The weather example above is not a redrawing: it is
+      <code>.below-block.idle-peek</code> at its real 100px, with <code>.wx-peek-backdrop</code>'s
+      partly-cloudy mood gradient, <code>.wx-peek-readout</code> (28px condition glyph, 18px mono
+      temperature, the hi/lo pair, the <code>.chip wx-peek-condition</code> label and the
+      <code>.chip wx-peek-rain</code> chip), the three-point <code>.wx-forecast-strip</code>, and the
+      <code>.idle-peek-timeline</code> day dot — the same classes, paddings and type sizes read
+      straight out of <code>src/overlay/idle-peek.css</code>. <b>The weather card is not being
+      changed by this proposal.</b> The only substitution is the condition glyph, which ships as a
+      raster asset this standalone page cannot inline, so an original drawing stands in its slot.
+    </p>
+    <p class="note warn">
+      <b>The other four cards are not drawn here.</b> Selecting agent, football, music or news mounts
+      a plate that names the card and points at <b>proposal 2/2 r3</b>, which is the catalogue of all
+      five in compact and expanded form. Drawing four approximations here would mean inventing
+      details that the sibling file would then have to un-invent, and this file's job is the notch,
+      not the cards.
+    </p>
+    <p class="note">
+      <b>Hover shows COMPACT. Always.</b> There is no "hover long enough and it grows", no
+      hover-intent timer, no second stage. Expansion is a deliberate act with its own keystroke
+      (section 5), so the surface you get by accident is always the small one. That is the single
+      most important behavioural line in this file: <em>hovering is not a request</em>.
+    </p>
+    <p class="note warn">
+      <b>Faithfulness caveat.</b> This page drives hover off JS pointer events on the rig. The shipped
+      overlay window is click-through and cannot receive hover, so the real build drives the identical
+      CSS off the rust tracking area's <code>hover-changed</code> event
+      (<code>src-tauri/src/hover.rs</code> &rarr; <code>App.tsx</code>). Same styles, different
+      trigger. Note also that a <em>clickable</em> icon strip means the hovered overlay can no longer
+      be unconditionally click-through — though r3 shrinks that problem considerably, since the strip
+      only exists while hovered, and the hover state already has a rust-derived card rect.
+    </p>
+  </section>
+
+  <!-- ================================================================= -->
+  <section>
+    <h2>3 — selection<span class="tag">carried from r2</span></h2>
+    <p class="section-sub">
+      Click an icon to select it. Click it again to deselect. Selecting a second icon moves the
+      selection rather than adding to it — <b>max one, or none</b>. The rig below is pinned hovered
+      with everything live so all five are clickable and the card under them changes as you click.
+    </p>
+    <div class="rig-label">live — click the icons</div>
+    <div class="rig" data-rig="select">
+      <div class="menubar"></div>
+      <div class="stage pale" style="height:190px;"></div>
+    </div>
+    <div class="controls">
+      <label>demo</label>
+      <button type="button" data-toggle="select:agent" class="on">agent running: on</button>
+      <button type="button" data-toggle="select:match" class="on">match live: on</button>
+      <button type="button" data-toggle="select:music" class="on">music playing: on</button>
+      <button type="button" data-clear="select">deselect</button>
+      <button type="button" data-pin="select" class="on">pin hover</button>
+    </div>
+    <p class="status-line" id="status-select">nothing selected. click any icon.</p>
+
+    <ul class="rules">
+      <li>
+        <b>Max one, or none.</b> A second click on the selected icon clears it; a click on a different
+        icon moves the selection. There is no multi-select and no "sticky last tab" — the empty state
+        is a first-class state, and it is the default.
+      </li>
+      <li>
+        <b>Selection is not opening, and it is not expanding.</b> Selecting a tab decides which
+        compact card hover mounts. It does not open anything on its own, and it never expands
+        anything. Expansion is section 5's keystroke.
+      </li>
+      <li>
+        <b>Selection is now remembered silently, and that is a real cost.</b> In r2 the underline dot
+        survived the cursor leaving, so the resting notch could say "you care about music" in three
+        pixels. r3 removed every resting pixel, so it cannot. The selection is still remembered —
+        hover again and it is exactly where you left it — but there is no longer any way to know what
+        it is without hovering. That is the honest price of a bare rest state, and it is the strongest
+        argument the <b>inside-always</b> alternative in section 1 has.
+      </li>
+      <li>
+        <b>A selection whose icon disappears is cleared, not remembered.</b> Turn "music playing" off
+        while music is selected: the icon collapses and the selection goes with it. Remembering it
+        would mean the notch had a hidden state you could not see or undo — which, with a bare rest
+        state, is now doubly true.
+      </li>
+      <li>
+        <b>Press feedback is on pointer-down.</b> <code>:active</code> scales the icon to 0.9
+        immediately, before the click commits — the house rule, and the same one every button in the
+        settings window follows.
+      </li>
+      <li class="q">
+        <b>Open question — is the underline dot enough?</b> At 3px it is the smallest mark on the
+        surface and it is doing the heaviest semantic lifting on it. The alternatives are a thin
+        underline bar (reads as a tab, but at 18px wide it is nearly a dot anyway) or letting the
+        brightness change carry it alone (cleaner, but a dim-and-selected icon then looks identical
+        to a live-and-unselected one). Argued for the dot on the grounds that it is a different
+        <em>shape</em>, not just a different weight, and shape survives peripheral vision.
+      </li>
+    </ul>
+  </section>
+
+  <!-- ================================================================= -->
+  <section>
+    <h2>4 — the news charge<span class="tag">carried from r2</span></h2>
+    <p class="section-sub">
+      News is the one source that is neither live nor idle — it <b>accumulates</b>. Every
+      user-defined cycle (15 minutes, say) fresh items land one at a time; the glyph <b>fills</b>
+      toward the batch size as they do, silently and without a glow. At cycle end, if items are
+      actually waiting, the icon <b>glows</b> and keeps glowing until the tab is visited. Selecting
+      news is what counts as visiting: the glow stops and the fill resets to empty.
+    </p>
+    <div class="rig-label">live — run a cycle, then select the news icon to clear it</div>
+    <div class="rig" data-rig="news">
+      <div class="menubar"></div>
+      <div class="stage pale" style="height:190px;"></div>
+    </div>
+    <div class="controls">
+      <label>cycle</label>
+      <button type="button" id="btn-cycle">simulate news cycle</button>
+      <button type="button" id="btn-one-item">+1 item</button>
+      <button type="button" id="btn-cycle-reset">reset</button>
+      <button type="button" data-pin="news" class="on">pin hover</button>
+    </div>
+    <p class="status-line" id="status-news">empty. batch size 5. run a cycle &mdash; the glyph fills, then glows.</p>
+
+    <table class="spec">
+      <tr><th>phase</th><th>what the glyph does</th><th>duration</th><th>clears on</th></tr>
+      <tr><td>empty</td><td>dim outline, 0.62 opacity, no fill</td><td class="val">&mdash;</td><td class="val">&mdash;</td></tr>
+      <tr><td>charging</td><td>fill rises one step per item, count badge appears</td><td class="val">320ms per step</td><td class="val">&mdash;</td></tr>
+      <tr><td>full, cycle not over</td><td>fill at 100%, still no glow</td><td class="val">&mdash;</td><td class="val">&mdash;</td></tr>
+      <tr><td>charged</td><td>full weight + 2.6s coral&nbsp;&rarr;&nbsp;salmon breath</td><td class="val">2600ms loop</td><td class="new">selecting the news tab</td></tr>
+    </table>
+
+    <p class="note">
+      <b>Charging and charged are two different things, and conflating them is the trap.</b> Charging
+      is ambient: it happens over fifteen minutes and must never pull the eye, so it is a fill level
+      and nothing else — no glow, no motion, no colour change. Charged is a summons: the cycle has
+      ended, items are genuinely waiting, and now it is allowed to breathe.
+    </p>
+    <p class="note warn">
+      <b>r3 makes this quieter than it looks, and someone should decide whether that is right.</b>
+      Both states now live entirely inside the hover strip, so a charged batch <em>summons nobody</em>
+      — you only ever see the glow if you were already hovering. The old always-visible strip was the
+      thing that made "charged" mean anything at a distance. Either that is fine (news is not
+      urgent, and a real story still promotes a card through the normal queue) or the charged state
+      needs its own resting mark, which would be the first crack in the bare-rest rule. Flagged as
+      open question 3.
+    </p>
+    <p class="note">
+      <b>The fill is a <code>transform</code>, not a height.</b> A rectangle inside the glyph with
+      <code>transform-box: fill-box</code>, a bottom origin, and
+      <code>transform: scaleY(var(--charge))</code>. So the level is one custom property that JS sets
+      and CSS animates on the house curve — the same discipline as the eq bars.
+    </p>
+    <p class="note">
+      <b>"Visited" means selected, not hovered.</b> Hovering the notch to check the time must not
+      silently mark five unread stories as seen. Only a deliberate click on the news icon clears the
+      glow, which also means the clearing gesture and the reading gesture are the same one.
+    </p>
+    <p class="note warn">
+      <b>What the demo compresses.</b> The real cycle is user-defined and measured in minutes; the
+      button above lands five items in about three and a half seconds so the fill is actually
+      watchable. Read the <em>shape</em> of the sequence, not its tempo. The batch size is also fixed
+      at 5 here and would be configuration in the real build.
+    </p>
+  </section>
+
+  <!-- ================================================================= -->
+  <section>
+    <h2>5 — the keyboard model<span class="tag new">new in r3</span></h2>
+    <p class="section-sub">
+      A hover-driven surface that you have to reach for with a cursor is a surface you will not use.
+      So the whole of section 2 and 3 gets a keyboard twin: a <b>tmux-style prefix</b>, then one key.
+      Press the prefix, the notch arms, the next keystroke does one thing, and it disarms itself.
+      This is also the <b>only</b> way to expand a card — hover never does it.
+    </p>
+
+    <div class="rig-label">live — click the rig, then press the prefix (control + shift + space) and a key</div>
+    <div class="rig" data-rig="keys" tabindex="0">
+      <div class="menubar"></div>
+      <div class="stage pale" style="height:190px;"></div>
+    </div>
+    <div class="controls">
+      <label>simulate a keystroke</label>
+      <button type="button" data-key-demo="prefix">prefix &#8963;&#8679;space</button>
+      <button type="button" data-key-demo="1">1</button>
+      <button type="button" data-key-demo="2">2</button>
+      <button type="button" data-key-demo="3">3</button>
+      <button type="button" data-key-demo="4">4</button>
+      <button type="button" data-key-demo="5">5</button>
+      <button type="button" data-key-demo="[">[</button>
+      <button type="button" data-key-demo="]">]</button>
+      <button type="button" data-key-demo="o">enter / o</button>
+      <button type="button" data-key-demo="p">p</button>
+      <button type="button" data-key-demo="esc">esc</button>
+    </div>
+    <p class="status-line" id="status-keys">disarmed. press the prefix &mdash; watch the eyes.</p>
+
+    <h3>the keymap</h3>
+    <table class="spec">
+      <tr><th>press</th><th>then</th><th>does</th><th>notes</th></tr>
+      <tr>
+        <td class="val">&#8963;&#8679;space</td><td class="val">&mdash;</td>
+        <td class="new">arms the prefix</td>
+        <td>the default, and configurable in settings. armed for 2s, then it disarms itself.</td>
+      </tr>
+      <tr><td class="val">prefix</td><td class="val">1 &hellip; 5</td><td>select agent / football / music / weather / news</td><td>strip order, left to right. the same key again deselects.</td></tr>
+      <tr><td class="val">prefix</td><td class="val">[ &nbsp;/&nbsp; ]</td><td>previous / next agent session</td><td>only meaningful with the agent tab selected; otherwise ignored.</td></tr>
+      <tr><td class="val">prefix</td><td class="val">enter &nbsp;/&nbsp; o</td><td class="new">expand &harr; collapse the current card</td><td>the only expansion gesture that exists. two keys because both are muscle memory.</td></tr>
+      <tr><td class="val">prefix</td><td class="val">p</td><td>pause / resume</td><td>same pause the tray and &#8963;&#8679;P already drive.</td></tr>
+      <tr><td class="val">prefix</td><td class="val">esc &nbsp;/&nbsp; prefix</td><td>disarm, do nothing</td><td>an armed prefix must always be cancellable without a side effect.</td></tr>
+      <tr><td class="val">prefix</td><td class="val">anything else</td><td>disarm, do nothing</td><td>silently. never beep, never flash an error.</td></tr>
+    </table>
+
+    <h3>the legacy shortcuts, which do not change</h3>
+    <p class="section-sub">
+      The seven combos the app registers today keep working exactly as they do now, <b>prefix-free</b>.
+      The prefix is an addition, not a migration — nothing anyone has already learned stops working.
+      Read off <code>src-tauri/src/lib.rs</code>:
+    </p>
+    <table class="spec">
+      <tr><th>combo</th><th>does</th><th>status under r3</th></tr>
+      <tr><td class="val">&#8963;&#8679;X</td><td>dismiss</td><td>unchanged, prefix-free</td></tr>
+      <tr><td class="val">&#8963;&#8679;P</td><td>pause toggle</td><td>unchanged, prefix-free (also <code>prefix p</code>)</td></tr>
+      <tr><td class="val">&#8963;&#8679;N</td><td>expand toggle</td><td>unchanged, prefix-free (also <code>prefix enter</code>)</td></tr>
+      <tr><td class="val">&#8963;&#8679;O</td><td>open story</td><td>unchanged, prefix-free</td></tr>
+      <tr><td class="val">&#8963;&#8679;]</td><td>skip current</td><td>unchanged, prefix-free</td></tr>
+      <tr><td class="val">&#8963;&#8679;A</td><td>open / focus session</td><td>unchanged, prefix-free</td></tr>
+      <tr><td class="val">&#8963;&#8679;,</td><td>open settings</td><td>unchanged, prefix-free</td></tr>
+    </table>
+
+    <ul class="rules">
+      <li>
+        <b>The prefix is decided: &#8963;&#8679;space, configurable in settings.</b> It has to be a
+        combo nothing else claims, it has to be reachable one-handed, and it must not collide with
+        the seven &#8963;&#8679; combos above — space is the only key in that family nobody is using.
+        Because it is configurable, a collision with someone's window manager is a setting, not a
+        redesign.
+      </li>
+      <li>
+        <b>Why a prefix at all, instead of seven more direct combos.</b> Direct combos do not scale:
+        five tabs plus session cycling plus expand plus pause is nine bindings, and every one of them
+        has to dodge macOS, the browser, the terminal and whatever else is running. A prefix costs one
+        binding total and buys the entire single-key alphabet after it. It is also the model the
+        people who will actually use this (tmux, vim, emacs users) already have in their fingers.
+      </li>
+      <li>
+        <b>Armed is a real state and it must be visible.</b> A prefix that gives no feedback is a
+        prefix you press twice. See the delight proposal below.
+      </li>
+      <li class="q">
+        <b>Open — what does the armed window do on timeout?</b> Drawn here as 2s, then a silent
+        disarm. The alternative is no timeout at all (armed until you press something), which is
+        what tmux does and which means a stray prefix leaves the notch listening indefinitely.
+        2s is a guess, not a measurement.
+      </li>
+      <li class="q">
+        <b>Open — should the prefix work when the notch is not hovered?</b> Drawn here as yes: the
+        keystroke summons the surface it needs, so <code>prefix 4</code> from a full-screen editor
+        selects weather and shows its card without touching the mouse. That is the whole point of a
+        keyboard model, but it does mean a keystroke can make the notch grow while you are looking
+        somewhere else.
+      </li>
+    </ul>
+
+    <p class="note" style="border-left-color:rgba(201,157,240,0.6)">
+      <b>Delight proposal — the eyes are the armed indicator.</b> While the prefix is armed, the
+      face's two eyes flick from <code>--overlay-fg</code> to pure white with a 6px halo, and the
+      breath speeds up from 5.2s to 2.2s. Nothing else changes and no text appears anywhere. It is
+      built entirely out of the approved face's own parts — no new element, no badge, no colour that
+      is not already on the surface — so it cannot drift away from the drawing that was approved
+      twice. The creature is listening, and that is the entire message. <b>This is a proposal, not a
+      decision:</b> the conservative alternative is a 1px accent hairline under the cutout, which is
+      duller and would definitely work.
+    </p>
+    <p class="note warn">
+      <b>Honest gap.</b> Nothing about this is built. The app registers global shortcuts one combo at
+      a time through <code>tauri_plugin_global_shortcut</code>; a prefix needs a mode — register the
+      prefix globally, then take a temporary key grab for the armed window, then release it. That is
+      a genuinely different mechanism from the seven combos above, not an extension of them, and it
+      should be scoped before it is promised.
+    </p>
+  </section>
+
+  <!-- ================================================================= -->
+  <section>
+    <h2>6 — open questions</h2>
+    <p class="section-sub">
+      Everything below is genuinely undecided. The glyph drawings in particular are <b>proposals</b>,
+      not a finished set — they are here so there is something concrete to reject.
+    </p>
+    <ul class="rules">
+      <li class="alt">
+        <b>1. Rest-hidden vs inside-always — the live alternative.</b> This file ships rest-hidden as
+        the default because that is what the operator's rejection asked for, but inside-always is
+        logged, not dead: a permanent black shoulder on the right flank with the strip permanently
+        inside it. It costs about 144px of resting width with five sources and buys back the free
+        glance, the visible selection, and a charged-news state that can actually summon. Switching
+        is a <code>--flank-w</code> rest value plus dropping one <code>visibility</code> gate.
+      </li>
+      <li class="q">
+        <b>2. The five glyph drawings are proposals.</b> Each is legible at 18px and each has a
+        distinct silhouette from the other four, which was the actual constraint. 18px is kinder to
+        all of them than 13px was. The weakest is still <b>football</b>: a circle with three seam
+        strokes is the honest simplification of a ball, but it sits close to a generic target glyph.
+        The <b>agent</b> prompt-chevron is the most legible and the least specific — it says "a
+        terminal", not "a coding session". Redraw any of them freely.
+      </li>
+      <li class="q">
+        <b>3. Does a charged news batch need a resting mark?</b> See section 4's warning. With a
+        hover-only strip, "charged" is invisible until you hover, which may make the whole charge
+        model pointless. The options are: accept it (news is not urgent), give charged-news one
+        resting pixel (the first crack in bare rest), or let a charged cycle promote a normal card
+        through the queue and drop the charge model entirely.
+      </li>
+      <li class="q">
+        <b>4. Fill level, count badge, or both?</b> The news glyph currently shows both: the interior
+        fill (ambient) and an 8px numeral at its top-right (literal). Both are drawn so one can be
+        killed. The numeral eats 6px of the flank's 14px inset, which is the only place on this page
+        where a drawing pokes outside its own box.
+      </li>
+      <li class="q">
+        <b>5. Two arguable hues.</b> <b>Agent</b> borrows <code>#0a84ff</code>, the app accent — so
+        the strip uses the accent for a source and the accent stops being reserved. <b>Music</b> uses
+        <code>--media-mint</code> <code>#b6f5e5</code>, which is very pale; against a black flank
+        that is now fine, which is one more thing r3's hidden-at-rest rule quietly fixed.
+      </li>
+      <li class="q">
+        <b>6. Does a clickable strip still break click-through?</b> Much smaller than it was in r2,
+        because the strip only exists while hovered and the hover state already has a rust-derived
+        card rect. But "the overlay must accept clicks in exactly this rect, only while hovered, and
+        go back to click-through the instant hover ends" is still a real piece of rust work, and it
+        should be settled before any of this is planned.
+      </li>
+      <li class="q">
+        <b>7. What happens on a real-cutout macbook?</b> Out of scope for this page by instruction,
+        but not forever: on a real notch the flanks are the actual screen either side of the physical
+        cutout, next to the menu bar's own right-side items. A 144px black shoulder that appears on
+        hover may collide with the system status items. Someone has to look at it on the macbook.
+      </li>
+      <li class="q">
+        <b>8. Is five tabs the set?</b> Agent, football, music, weather, news is the current source
+        list and the strip is a 1:1 mirror of it. A sixth source costs another 52px of hovered width
+        and another number on the keymap. There is a size at which this stops working; nobody has
+        found it yet.
+      </li>
+    </ul>
+  </section>
+
+  <footer>
+    prototypes/tab-notch-rest-and-morph.html &mdash; proposal 1 of 2, r3, 2026-08-02. Standalone
+    HTML/CSS/JS; no build step, no React, no <code>motion</code>, no network, not wired into the app,
+    not synced going forward. The weather peek's classes and values were read directly off
+    <code>src/overlay/idle-peek.css</code> and <code>src/overlay/weather-art.css</code>; the shell,
+    curve and timing values via <code>prototype/notch-states.html</code>, the hand-synced mirror of
+    <code>src/overlay/*.css</code> and <code>src/animationTiming.ts</code>; the legacy shortcut table
+    off <code>src-tauri/src/lib.rs</code> &mdash; treat them as "read off source on this date", not as
+    a live guarantee. HUD presentation only; no notch-hardware variants, and no reduced-motion or
+    accessibility variants anywhere, by standing project rule. The face and all five glyphs are
+    original notchtap drawings; no third-party branding, assets, vendored path data, or trade dress
+    appear anywhere in this file.
+  </footer>
+
+</main>
+
+<script>
+(function () {
+  "use strict";
+
+  /* ------------------------------------------------------------------
+     GLYPHS — all five, hand-authored, stroke-only, 24x24 viewBox.
+     Every path is built from circles, straight strokes and cubics drawn
+     for this file; none is copied from an icon set. See the file header.
+     ------------------------------------------------------------------ */
+  var GLYPH = {
+    /* agent — a shell prompt: chevron plus a short underscore bar */
+    agent:
+      '<path d="M4.5 7.2 L9.8 12 L4.5 16.8"/>' +
+      '<path d="M12.8 16.8 L19.5 16.8"/>',
+    /* football — hollow circle, three seam strokes meeting at the centre */
+    football:
+      '<circle cx="12" cy="12" r="7.6"/>' +
+      '<path d="M12 12 L12 7.4"/>' +
+      '<path d="M12 12 L15.9 14.4"/>' +
+      '<path d="M12 12 L8.1 14.4"/>',
+    /* music — one eighth note: round head, straight stem, single flag */
+    music:
+      '<circle cx="10.6" cy="16.6" r="2.9"/>' +
+      '<path d="M13.5 16.6 L13.5 5 L19 7.6"/>',
+    /* weather — a cloud: three lobes over a flat base, one closed cubic path */
+    weather:
+      '<path d="M6.8 17.6 C5.1 17.6 3.8 16.3 3.8 14.7 C3.8 13.2 4.9 12 6.3 11.8 ' +
+      'C6.5 8.9 8.9 6.6 11.9 6.6 C14.6 6.6 16.9 8.5 17.4 11.1 ' +
+      'C19 11.4 20.2 12.8 20.2 14.5 C20.2 16.2 18.8 17.6 17.1 17.6 Z"/>',
+    /* news — a page: rounded rectangle, a headline rule and a shorter one.
+       the extra `.charge` rect is the fill level; it is the only filled
+       shape in the whole set. */
+    news:
+      '<rect class="charge" x="4.6" y="6.6" width="14.8" height="10.8" rx="1.6" ' +
+      'fill="currentColor" stroke="none" opacity="0.32"/>' +
+      '<rect x="4.6" y="6.6" width="14.8" height="10.8" rx="1.6"/>' +
+      '<path d="M8 10.6 L16 10.6"/>' +
+      '<path d="M8 13.6 L13 13.6"/>'
+  };
+
+  var ORDER = ["agent", "football", "music", "weather", "news"];
+  var LABEL = { agent: "agent", football: "football", music: "music", weather: "weather", news: "news" };
+
+  function svgFor(key) {
+    return '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" ' +
+           'stroke-linecap="round" stroke-linejoin="round">' + GLYPH[key] + "</svg>";
+  }
+
+  function stripHTML() {
+    var out = "";
+    for (var i = 0; i < ORDER.length; i++) {
+      var k = ORDER[i];
+      out += '<button type="button" class="icon ' + k + '" data-key="' + k + '" title="' + LABEL[k] + '">' +
+             svgFor(k) +
+             (k === "news" ? '<span class="charge-count">0</span>' : "") +
+             "</button>";
+    }
+    return out;
+  }
+
+  /* ------------------------------------------------------------------
+     THE SHIPPED WEATHER PEEK, reproduced.
+     Class names, paddings, type sizes and the mood gradient are read off
+     src/overlay/idle-peek.css + src/overlay/weather-art.css. The ONLY
+     substitution is the condition glyph: the app renders a raster asset
+     there, and a standalone no-network page cannot, so an original inline
+     drawing stands in its slot at the same 28px. Nothing about the
+     shipped card is being redesigned by this file.
+     ------------------------------------------------------------------ */
+  function wxGlyph(px) {
+    return '<svg class="' + (px === 28 ? "wx-peek-icon" : "wx-forecast-icon") + '" viewBox="0 0 24 24" fill="none">' +
+             '<circle cx="15.6" cy="8.4" r="3.5" fill="#ffd479"/>' +
+             '<path d="M6.6 18 C4.8 18 3.4 16.6 3.4 14.9 C3.4 13.3 4.6 12 6.1 11.8 ' +
+                     'C6.4 9 8.8 6.8 11.6 6.8 C14.2 6.8 16.4 8.6 17 11 ' +
+                     'C18.7 11.3 20 12.8 20 14.6 C20 16.5 18.5 18 16.7 18 Z" ' +
+                   'fill="#e8eef6"/>' +
+           '</svg>';
+  }
+
+  function weatherPeekHTML() {
+    return '' +
+      '<div class="wx-peek-backdrop"></div>' +
+      '<div class="peek-inner">' +
+        '<div class="peek-content">' +
+          '<div class="wx-peek-weather-stack">' +
+            '<div class="wx-peek-readout">' +
+              wxGlyph(28) +
+              '<span class="wx-peek-temp">24&deg;</span>' +
+              '<span class="wx-peek-hilo"><span class="wx-peek-hi">H 27&deg;</span><span class="wx-peek-lo">L 18&deg;</span></span>' +
+              '<span class="chip wx-peek-condition">partly cloudy</span>' +
+              '<span class="chip wx-peek-rain">20% rain</span>' +
+            '</div>' +
+            '<div class="wx-forecast-strip">' +
+              '<span class="wx-forecast-point">' + wxGlyph(10) + '<span class="wx-forecast-temp">25&deg;</span><span class="wx-forecast-hour">15:00</span></span>' +
+              '<span class="wx-forecast-point">' + wxGlyph(10) + '<span class="wx-forecast-temp">26&deg;</span><span class="wx-forecast-hour">16:00</span></span>' +
+              '<span class="wx-forecast-point">' + wxGlyph(10) + '<span class="wx-forecast-temp">24&deg;</span><span class="wx-forecast-hour">17:00</span></span>' +
+              '<span class="wx-forecast-point">' + wxGlyph(10) + '<span class="wx-forecast-temp">22&deg;</span><span class="wx-forecast-hour">18:00</span></span>' +
+            '</div>' +
+          '</div>' +
+          '<span class="idle-peek-timeline" style="--day-progress:61%"></span>' +
+        '</div>' +
+      '</div>';
+  }
+
+  /* the four tabs whose compact cards are catalogued in proposal 2/2 r3.
+     Deliberately a plate that names the card, never an approximation of
+     it — see the section 2 warning. */
+  var STUB = {
+    agent:    ["agent board", "The shipped board: hero card through the unified template, then the compact session rows."],
+    football: ["live scorecard", "The shipped scorecard: chips, score row with crests and odometer digits, cards line."],
+    music:    ["now playing", "The shipped media row: art tile, title and artist, transport glyph, progress bar."],
+    news:     ["news batch", "The shipped news card: category chip, headline, source and age, batch cycle bar."]
+  };
+
+  function stubHTML(key) {
+    return '<div class="peek-inner"><div class="peek-stub">' +
+             '<span class="stub-head"><i class="stub-dot"></i>' + STUB[key][0] + '</span>' +
+             '<span class="stub-body">' + STUB[key][1] +
+               ' Drawn in full &mdash; compact <b>and</b> expanded &mdash; in <b>proposal 2/2 r3</b>.</span>' +
+           '</div></div>';
+  }
+
+  function peekHTML(key) {
+    return key === "weather" ? weatherPeekHTML() : stubHTML(key);
+  }
+
+  /* the static strips and peeks in sections 1 and 2 — same markup, frozen state */
+  var statics = document.querySelectorAll("[data-static-strip]");
+  for (var s = 0; s < statics.length; s++) {
+    var host = statics[s];
+    host.innerHTML = stripHTML();
+    var spec = host.getAttribute("data-static-strip");
+    var present = spec === "1" ? ORDER.slice() : spec.split(",");
+    var live = (host.getAttribute("data-static-live") || (spec === "1" ? "agent,football,music" : "")).split(",");
+    var sel = host.getAttribute("data-static-selected") || "";
+    var kids = host.querySelectorAll(".icon");
+    for (var j = 0; j < kids.length; j++) {
+      var key = kids[j].getAttribute("data-key");
+      if (present.indexOf(key) !== -1) { kids[j].classList.add("is-present"); }
+      if (live.indexOf(key) !== -1) { kids[j].classList.add("is-live"); }
+      if (key === sel) { kids[j].classList.add("is-selected"); }
+    }
+  }
+  var staticPeeks = document.querySelectorAll("[data-static-peek]");
+  for (var sp = 0; sp < staticPeeks.length; sp++) {
+    staticPeeks[sp].innerHTML = peekHTML(staticPeeks[sp].getAttribute("data-static-peek"));
+  }
+
+  /* ------------------------------------------------------------------
+     THE ASSEMBLY — built once, cloned into every live rig, so the rigs
+     on this page cannot drift apart the way hand-copied markup does.
+     ------------------------------------------------------------------ */
+  function assemblyHTML() {
+    return '' +
+      '<div class="card-assembly">' +
+        '<div class="flank-left"><span class="flank-clock">14:32</span></div>' +
+        '<div class="synthetic-cutout">' +
+          '<div class="rest-cluster">' +
+            '<span class="idle-face">' +
+              '<span class="face-eyes"><i class="face-eye face-eye-l"></i><i class="face-eye face-eye-r"></i></span>' +
+              '<span class="face-mouth"></span>' +
+            '</span>' +
+            '<span class="eq"><i></i><i></i><i></i></span>' +
+          '</div>' +
+        '</div>' +
+        '<div class="flank-right"><span class="icon-strip">' + stripHTML() + '</span></div>' +
+        '<div class="peek-block"></div>' +
+      '</div>';
+  }
+
+  var BATCH = 5;
+  var ARM_MS = 2000;
+
+  function makeNotch(rig) {
+    var stage = rig.querySelector(".stage");
+    stage.insertAdjacentHTML("beforeend", assemblyHTML());
+
+    var shell = stage.querySelector(".card-assembly");
+    var eq = shell.querySelector(".eq");
+    var peekBlock = shell.querySelector(".peek-block");
+    var icons = {};
+    var nodes = shell.querySelectorAll(".icon");
+    for (var i = 0; i < nodes.length; i++) { icons[nodes[i].getAttribute("data-key")] = nodes[i]; }
+
+    var st = {
+      agent: false, match: false, music: false,
+      count: 0, charged: false,
+      selected: null, hovered: false, pinned: false,
+      armed: false, expanded: false, session: 1
+    };
+    var listeners = [];
+    var painted = null;   /* which tab's peek markup is currently mounted */
+
+    function isPresent(key) {
+      if (key === "weather" || key === "news") { return true; }
+      if (key === "agent") { return st.agent; }
+      if (key === "football") { return st.match; }
+      if (key === "music") { return st.music; }
+      return false;
+    }
+    function isLive(key) {
+      if (key === "agent") { return st.agent; }
+      if (key === "football") { return st.match; }
+      if (key === "music") { return st.music; }
+      if (key === "news") { return st.charged; }
+      return false;
+    }
+
+    function render() {
+      /* a selection whose icon has gone away is cleared, never remembered */
+      if (st.selected && !isPresent(st.selected)) { st.selected = null; }
+
+      var n = 0;
+      for (var i = 0; i < ORDER.length; i++) {
+        var key = ORDER[i];
+        var el = icons[key];
+        var present = isPresent(key);
+        if (present) { n++; }
+        el.classList.toggle("is-present", present);
+        el.classList.toggle("is-live", present && isLive(key));
+        el.classList.toggle("is-selected", st.selected === key);
+      }
+
+      shell.style.setProperty("--icon-n", String(n));
+
+      /* news charge */
+      var news = icons.news;
+      news.style.setProperty("--charge", String(Math.min(st.count / BATCH, 1)));
+      news.classList.toggle("has-count", st.count > 0);
+      news.classList.toggle("is-charged", st.charged);
+      news.querySelector(".charge-count").textContent = String(st.count);
+
+      /* the eq bars follow real audio, exactly as they do today */
+      eq.classList.toggle("playing", st.music);
+
+      /* hover. `pinned` is a page control, not an app state — it holds the
+         hovered state open so a still screenshot can show it. */
+      var hoverOn = st.hovered || st.pinned;
+      shell.classList.toggle("hovered", hoverOn);
+      shell.classList.toggle("prefix-armed", st.armed);
+
+      /* the below-block: the selected source's SHIPPED COMPACT card.
+         Compact always — nothing here ever consults st.expanded, which is
+         section 5's business and lives in the sibling proposal. */
+      var showPeek = hoverOn && !!st.selected;
+      shell.classList.toggle("has-peek", showPeek);
+      peekBlock.className = "peek-block" + (st.selected ? " hue-" + st.selected : "");
+      if (st.selected && painted !== st.selected) {
+        peekBlock.innerHTML = peekHTML(st.selected);
+        painted = st.selected;
+      } else if (!st.selected && painted !== null) {
+        peekBlock.innerHTML = "";
+        painted = null;
+      }
+
+      for (var j = 0; j < listeners.length; j++) { listeners[j](st, n); }
+    }
+
+    /* clicks on the strip — select, or deselect if already selected */
+    shell.addEventListener("click", function (e) {
+      var el = e.target.closest ? e.target.closest(".icon") : null;
+      if (!el || !el.classList.contains("is-present")) { return; }
+      pick(el.getAttribute("data-key"));
+    });
+
+    function pick(key) {
+      st.selected = st.selected === key ? null : key;
+      /* visiting the news tab is what clears the charge — hovering never does */
+      if (st.selected === "news") { st.charged = false; st.count = 0; }
+      render();
+    }
+
+    /* hover, driven off pointer events on the rig. In the real build this
+       is the rust tracking area's `hover-changed`, not a DOM event. */
+    rig.addEventListener("mouseenter", function () { st.hovered = true; render(); });
+    rig.addEventListener("mouseleave", function () { st.hovered = false; render(); });
+
+    render();
+
+    return {
+      el: shell,
+      rig: rig,
+      state: st,
+      pick: pick,
+      set: function (patch) { for (var k in patch) { if (patch.hasOwnProperty(k)) { st[k] = patch[k]; } } render(); },
+      render: render,
+      onRender: function (fn) { listeners.push(fn); fn(st, 0); }
+    };
+  }
+
+  var rigs = {};
+  var rigNodes = document.querySelectorAll("[data-rig]");
+  for (var r = 0; r < rigNodes.length; r++) {
+    rigs[rigNodes[r].getAttribute("data-rig")] = makeNotch(rigNodes[r]);
+  }
+
+  /* ---- section 1: visibility toggles ---- */
+  var LABELS = { agent: "agent running", match: "match live", music: "music playing" };
+  var toggles = document.querySelectorAll("[data-toggle]");
+  for (var t = 0; t < toggles.length; t++) {
+    (function (btn) {
+      var parts = btn.getAttribute("data-toggle").split(":");
+      var rigKey = parts[0], field = parts[1];
+      function paint() {
+        var on = !!rigs[rigKey].state[field];
+        btn.textContent = LABELS[field] + ": " + (on ? "on" : "off");
+        btn.classList.toggle("on", on);
+      }
+      btn.addEventListener("click", function () {
+        var patch = {};
+        patch[field] = !rigs[rigKey].state[field];
+        rigs[rigKey].set(patch);
+        paint();
+      });
+      paint();
+    })(toggles[t]);
+  }
+
+  /* ---- pin-hover + flank-bounds, page controls only ---- */
+  var pins = document.querySelectorAll("[data-pin]");
+  for (var p = 0; p < pins.length; p++) {
+    (function (btn) {
+      var rigKey = btn.getAttribute("data-pin");
+      if (btn.classList.contains("on")) { rigs[rigKey].set({ pinned: true }); }
+      btn.addEventListener("click", function () {
+        var next = !rigs[rigKey].state.pinned;
+        rigs[rigKey].set({ pinned: next });
+        btn.classList.toggle("on", next);
+        runSelfCheck();
+      });
+    })(pins[p]);
+  }
+  var boundsBtns = document.querySelectorAll("[data-bounds]");
+  for (var b = 0; b < boundsBtns.length; b++) {
+    (function (btn) {
+      var rigKey = btn.getAttribute("data-bounds");
+      btn.addEventListener("click", function () {
+        var on = rigs[rigKey].el.classList.toggle("show-bounds");
+        btn.classList.toggle("on", on);
+      });
+    })(boundsBtns[b]);
+  }
+
+  /* section 1's status line — reports the derived shell width, because
+     "rest is 200px and hover is content-derived" is the whole claim */
+  rigs.rest.onRender(function (st, n) {
+    var el = document.getElementById("status-rest");
+    if (!el) { return; }
+    var hoverOn = st.hovered || st.pinned;
+    if (!hoverOn) {
+      el.innerHTML = "at rest: <b>200px</b>, zero-width flanks, <b>no icons at all</b> &mdash; hover to bring them in.";
+      return;
+    }
+    var live = [];
+    if (st.agent) { live.push("agent"); }
+    if (st.match) { live.push("football"); }
+    if (st.music) { live.push("music"); }
+    var flank = Math.max(85, 26 * n + 14);
+    el.innerHTML = "hovered &mdash; " + (live.length ? "live: <b>" + live.join(", ") + "</b>, " : "nothing live, ") +
+      n + " icons inside a <b>" + flank + "px</b> flank, shell is <b>" + (200 + 2 * flank) + "px</b> wide.";
+  });
+
+  /* ---- section 2: the selection chooser + status ---- */
+  var selectors = document.querySelectorAll("[data-select]");
+  for (var q = 0; q < selectors.length; q++) {
+    (function (btn) {
+      var parts = btn.getAttribute("data-select").split(":");
+      var rigKey = parts[0], key = parts[1];
+      btn.addEventListener("click", function () {
+        var api = rigs[rigKey];
+        /* everything must be present for every choice to be reachable */
+        api.set({ agent: true, match: true, music: true, selected: key === "none" ? null : key });
+        for (var z = 0; z < selectors.length; z++) { selectors[z].classList.remove("on"); }
+        btn.classList.add("on");
+      });
+    })(selectors[q]);
+  }
+  rigs.hover.set({ agent: true, match: true, music: true, selected: "weather" });
+  rigs.hover.onRender(function (st) {
+    var el = document.getElementById("status-hover");
+    if (!el) { return; }
+    var hoverOn = st.hovered || st.pinned;
+    if (!st.selected) {
+      el.innerHTML = "nothing selected &mdash; hover shows the time and the strip, and mounts no card.";
+    } else if (st.selected === "weather") {
+      el.innerHTML = "selected <b>weather</b> &mdash; " +
+        (hoverOn ? "the <b>shipped</b> weather peek, compact, 100px. unchanged by this proposal."
+                 : "hover the notch to mount the shipped weather peek.");
+    } else {
+      el.innerHTML = "selected <b>" + st.selected + "</b> &mdash; its compact card is catalogued in " +
+        "<b>proposal 2/2 r3</b>; this file draws a plate for it.";
+    }
+  });
+
+  /* ---- section 3: selection demo ---- */
+  rigs.select.set({ agent: true, match: true, music: true });
+  rigs.select.onRender(function (st) {
+    var el = document.getElementById("status-select");
+    if (!el) { return; }
+    if (!st.selected) {
+      el.innerHTML = "nothing selected. click any icon &mdash; max one at a time, click again to deselect.";
+    } else {
+      el.innerHTML = "selected <b>" + st.selected + "</b> &mdash; remembered across hovers, and " +
+        "<b>invisible at rest</b>, because nothing is visible at rest.";
+    }
+  });
+  var clearBtn = document.querySelector("[data-clear='select']");
+  if (clearBtn) {
+    clearBtn.addEventListener("click", function () { rigs.select.set({ selected: null }); });
+  }
+
+  /* ---- section 4: the news cycle ---- */
+  var newsRig = rigs.news;
+  var cycleTimer = null;
+  function newsSay(msg) { document.getElementById("status-news").innerHTML = msg; }
+
+  function stopCycle() { if (cycleTimer) { clearInterval(cycleTimer); cycleTimer = null; } }
+
+  function addItem() {
+    var st = newsRig.state;
+    if (st.count >= BATCH) { return false; }
+    newsRig.set({ count: st.count + 1, charged: false });
+    return true;
+  }
+
+  document.getElementById("btn-one-item").addEventListener("click", function () {
+    stopCycle();
+    if (addItem()) {
+      newsSay("item landed &mdash; <b>" + newsRig.state.count + " of " + BATCH +
+              "</b>. fill rises, no glow yet: charging is ambient.");
+    } else {
+      newsSay("batch is full at <b>" + BATCH + "</b>. run a cycle to see the cycle-end glow.");
+    }
+  });
+
+  document.getElementById("btn-cycle-reset").addEventListener("click", function () {
+    stopCycle();
+    newsRig.set({ count: 0, charged: false, selected: null });
+    newsSay("reset. empty, dim, no glow. batch size " + BATCH + ".");
+  });
+
+  document.getElementById("btn-cycle").addEventListener("click", function () {
+    stopCycle();
+    newsRig.set({ count: 0, charged: false, selected: null });
+    newsSay("cycle started &mdash; items landing. the glyph fills; it does <b>not</b> glow yet.");
+    cycleTimer = setInterval(function () {
+      if (!addItem()) {
+        stopCycle();
+        newsRig.set({ charged: true });
+        newsSay("cycle ended with <b>" + BATCH + "</b> waiting &mdash; now it glows, and keeps glowing " +
+                "until visited. click the news icon to visit it.");
+        return;
+      }
+      newsSay("charging &mdash; <b>" + newsRig.state.count + " of " + BATCH + "</b> queued.");
+    }, 700);
+  });
+
+  newsRig.onRender(function (st) {
+    if (st.selected === "news" && !st.charged && st.count === 0 && !cycleTimer) {
+      newsSay("visited &mdash; glow cleared, fill reset to empty. hovering alone would never have done that.");
+    }
+  });
+
+  /* ------------------------------------------------------------------
+     SECTION 5 — the prefix keyboard model.
+     A tiny state machine: disarmed -> (prefix) -> armed -> (one key) ->
+     disarmed. The armed window self-expires after ARM_MS. The face's
+     eyes are the only indicator, by design (`.prefix-armed`).
+     ------------------------------------------------------------------ */
+  var keyRig = rigs.keys;
+  keyRig.set({ agent: true, match: true, music: true, pinned: true });
+  var armTimer = null;
+  function keysSay(msg) { document.getElementById("status-keys").innerHTML = msg; }
+
+  function disarm(msg) {
+    if (armTimer) { clearTimeout(armTimer); armTimer = null; }
+    keyRig.set({ armed: false });
+    if (msg) { keysSay(msg); }
+  }
+
+  function arm() {
+    if (keyRig.state.armed) { disarm("prefix pressed twice &mdash; <b>disarmed</b>, nothing happened."); return; }
+    keyRig.set({ armed: true });
+    keysSay("<b>armed</b> &mdash; the eyes are brighter. press 1&ndash;5, [ or ], enter/o, p, or esc.");
+    if (armTimer) { clearTimeout(armTimer); }
+    armTimer = setTimeout(function () {
+      armTimer = null;
+      keyRig.set({ armed: false });
+      keysSay("armed window expired after " + (ARM_MS / 1000) + "s &mdash; disarmed itself, silently.");
+    }, ARM_MS);
+  }
+
+  function afterPrefix(k) {
+    var st = keyRig.state;
+    if (k === "esc") { disarm("esc &mdash; <b>disarmed</b>, no side effect. an armed prefix is always cancellable."); return; }
+    var idx = ORDER.indexOf(k === "1" ? "agent" : k === "2" ? "football" : k === "3" ? "music" :
+                            k === "4" ? "weather" : k === "5" ? "news" : "");
+    if (idx !== -1) {
+      var tab = ORDER[idx];
+      keyRig.pick(tab);
+      disarm("<b>prefix " + k + "</b> &mdash; " + (keyRig.state.selected ? "selected <b>" + tab + "</b>, compact card mounted." : "deselected <b>" + tab + "</b>."));
+      return;
+    }
+    if (k === "[" || k === "]") {
+      if (st.selected !== "agent") { disarm("<b>prefix " + k + "</b> &mdash; ignored: session cycling only means anything with the agent tab selected."); return; }
+      var next = st.session + (k === "]" ? 1 : -1);
+      if (next < 1) { next = 3; }
+      if (next > 3) { next = 1; }
+      keyRig.set({ session: next });
+      disarm("<b>prefix " + k + "</b> &mdash; agent session <b>" + next + " of 3</b>.");
+      return;
+    }
+    if (k === "o") {
+      keyRig.set({ expanded: !st.expanded });
+      disarm("<b>prefix enter/o</b> &mdash; card is now <b>" + (keyRig.state.expanded ? "expanded" : "compact") +
+             "</b>. the only gesture that expands anything; hover never does. (the expanded card itself lives in proposal 2/2 r3.)");
+      return;
+    }
+    if (k === "p") {
+      disarm("<b>prefix p</b> &mdash; paused / resumed. same pause &#8963;&#8679;P already drives.");
+      return;
+    }
+    disarm("unmapped key &mdash; <b>disarmed</b> silently. no beep, no error flash.");
+  }
+
+  function feedKey(k) {
+    if (k === "prefix") { arm(); return; }
+    if (!keyRig.state.armed) {
+      keysSay("<b>" + k + "</b> with no prefix armed &mdash; the notch ignores it. press the prefix first.");
+      return;
+    }
+    afterPrefix(k);
+  }
+
+  var keyBtns = document.querySelectorAll("[data-key-demo]");
+  for (var kb = 0; kb < keyBtns.length; kb++) {
+    (function (btn) {
+      btn.addEventListener("click", function () { feedKey(btn.getAttribute("data-key-demo")); });
+    })(keyBtns[kb]);
+  }
+
+  /* real keystrokes too, but only while the rig itself has focus — this
+     page must never swallow the browser's own keys */
+  keyRig.rig.addEventListener("keydown", function (e) {
+    if (e.ctrlKey && e.shiftKey && (e.key === " " || e.code === "Space")) { e.preventDefault(); feedKey("prefix"); return; }
+    if (!keyRig.state.armed) { return; }
+    var k = e.key;
+    if (k === "Escape") { k = "esc"; }
+    else if (k === "Enter") { k = "o"; }
+    else { k = k.toLowerCase(); }
+    e.preventDefault();
+    feedKey(k);
+  });
+
+  /* ---- the one-state-at-a-time racks ----
+     Exactly one `.is-on` per rack, always. The buttons cannot produce a
+     second one because every switch clears the whole rack first. */
+  var frameBtns = document.querySelectorAll("[data-frame]");
+  for (var f = 0; f < frameBtns.length; f++) {
+    (function (btn) {
+      var parts = btn.getAttribute("data-frame").split(":");
+      var rackId = parts[0], name = parts[1];
+      btn.addEventListener("click", function () {
+        var rack = document.getElementById(rackId);
+        if (!rack) { return; }
+        var frames = rack.querySelectorAll(".rack-frame");
+        for (var i = 0; i < frames.length; i++) {
+          frames[i].classList.toggle("is-on", frames[i].getAttribute("data-frame-name") === name);
+        }
+        var sibs = document.querySelectorAll("[data-frame^='" + rackId + ":']");
+        for (var j = 0; j < sibs.length; j++) { sibs[j].classList.remove("on"); }
+        btn.classList.add("on");
+        runSelfCheck();
+      });
+    })(frameBtns[f]);
+  }
+
+  /* ------------------------------------------------------------------
+     SELF-CHECKS — read off computed style, not off the class list, so
+     they fail if a stylesheet change breaks the rule even though the
+     markup still looks right. Three invariants:
+
+       1. ONE FRAME AT A TIME   exactly one `.rack-frame` is displayed.
+       2. NO ICON WITHOUT BLACK no painted `.icon-strip` has a
+          (r3)                  transparent `.flank-right` behind it.
+                                Stated this way rather than as "hidden
+                                whenever the shell lacks `.hovered`" on
+                                purpose: the second form is true at rest
+                                but reads FALSE for one exit frame, while
+                                the strip is still fading and the flank is
+                                still black — which is correct behaviour,
+                                not a leak. The rule that actually matters
+                                is "there is always black behind an icon",
+                                and that one holds in every frame. The
+                                settled at-rest count is reported beside
+                                it.
+       3. INSIDE THE FLANK (r3) every visible icon's box is horizontally
+                                and vertically inside its own
+                                `.flank-right` rect. Layout-dependent, so
+                                it self-skips where there is no layout
+                                (jsdom reports zero-size rects).
+
+     Runs on load and on every rack switch / pin toggle. Also exposed as
+     `window.__selfcheck()` so a headless run can assert on it.
+     ------------------------------------------------------------------ */
+  function isPainted(el) {
+    var cs = (el.ownerDocument.defaultView || window).getComputedStyle(el);
+    return cs.visibility !== "hidden" && cs.display !== "none" && cs.opacity !== "0";
+  }
+
+  /* "is there black behind this?" — an unpainted flank is either the
+     keyword `transparent` or an rgba with a zero alpha, depending on the
+     engine, so both spellings are checked. */
+  function isTransparent(el) {
+    var bg = (el.ownerDocument.defaultView || window).getComputedStyle(el).backgroundColor;
+    if (!bg || bg === "transparent") { return true; }
+    var m = bg.replace(/\s/g, "").match(/^rgba\(\d+,\d+,\d+,([\d.]+)\)$/);
+    return !!m && parseFloat(m[1]) === 0;
+  }
+
+  function runSelfCheck() {
+    var lines = [];
+    var allOk = true;
+
+    /* 1 — one frame at a time */
+    var racks = document.querySelectorAll(".rack");
+    for (var r2 = 0; r2 < racks.length; r2++) {
+      var frames = racks[r2].querySelectorAll(".rack-frame");
+      var shown = [];
+      for (var i = 0; i < frames.length; i++) {
+        if (isPainted(frames[i])) { shown.push(frames[i].getAttribute("data-frame-name")); }
+      }
+      var ok1 = shown.length === 1;
+      allOk = allOk && ok1;
+      lines.push("one-frame-at-a-time: " + mark(ok1) + " &mdash; " + shown.length + " of " +
+                 frames.length + " painted [" + (shown.join(", ") || "none") + "]");
+    }
+
+    /* 2 — no icon without black behind it */
+    var strips = document.querySelectorAll(".icon-strip");
+    var leaked = 0, restCount = 0, restHidden = 0;
+    for (var s2 = 0; s2 < strips.length; s2++) {
+      var strip = strips[s2];
+      var shell = strip.closest ? strip.closest(".card-assembly") : null;
+      var flank = strip.closest ? strip.closest(".flank-right") : null;
+      if (!shell || !flank) { continue; }
+      var atRest = !shell.classList.contains("hovered");
+      if (atRest) {
+        restCount++;
+        if (!isPainted(strip)) { restHidden++; }
+      }
+      if (isPainted(strip) && isTransparent(flank)) { leaked++; }
+    }
+    var ok2 = leaked === 0;
+    allOk = allOk && ok2;
+    lines.push("no-icon-without-black: " + mark(ok2) + " &mdash; " + leaked +
+               " strip(s) painted over a transparent flank; settled at rest: " +
+               restHidden + " of " + restCount + " strip(s) hidden");
+
+    /* 3 — inside the flank (needs real layout) */
+    var icons = document.querySelectorAll(".icon.is-present");
+    var measured = 0, outside = 0;
+    for (var k2 = 0; k2 < icons.length; k2++) {
+      var icon = icons[k2];
+      var flank = icon.closest ? icon.closest(".flank-right") : null;
+      if (!flank || !isPainted(icon)) { continue; }
+      var ir = icon.getBoundingClientRect();
+      var fr = flank.getBoundingClientRect();
+      if (!ir.width || !fr.width) { continue; }   /* no layout engine — skip, don't lie */
+      measured++;
+      if (ir.left < fr.left - 0.5 || ir.right > fr.right + 0.5 ||
+          ir.top < fr.top - 0.5 || ir.bottom > fr.bottom + 0.5) { outside++; }
+    }
+    var ok3 = outside === 0;
+    allOk = allOk && ok3;
+    lines.push("icons-inside-flank: " + (measured === 0 ? "<b>skipped</b> &mdash; no layout" : mark(ok3)) +
+               " &mdash; " + measured + " visible icon box(es) measured, " + outside + " outside their flank");
+
+    var out = document.getElementById("selfcheck");
+    if (out) { out.innerHTML = lines.join("<br>"); }
+    return allOk;
+  }
+
+  function mark(ok) { return '<b class="' + (ok ? "ok" : "bad") + '">' + (ok ? "PASS" : "FAIL") + "</b>"; }
+
+  window.__selfcheck = runSelfCheck;
+  runSelfCheck();
+  /* one deferred re-run so the layout-dependent check measures settled
+     geometry rather than first paint */
+  if (typeof requestAnimationFrame === "function") { requestAnimationFrame(runSelfCheck); }
+})();
+</script>
+</body>
+</html>

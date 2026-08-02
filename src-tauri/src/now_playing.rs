@@ -475,6 +475,92 @@ async fn run_stream_once(
     Ok(())
 }
 
+/// Plan 171 (tab-notch redesign, slice C): the three transport actions
+/// the media below-block exposes (spec §7's media bullet), routed to the
+/// vendored adapter's already-built `send <MRCommand ID>` subcommand
+/// (`bin/mediaremote-adapter.pl --help`; the numeric IDs are
+/// `include/MediaRemoteAdapter.h`'s `MRCommand` enum). Plan 104 only ever
+/// wired the READ side (`stream`) — this is the first consumer of the
+/// write side, which the vendored tree already supports unmodified, so
+/// this slice never touches the frozen vendor tree (`VENDORED.md`).
+// `#[allow(dead_code)]` on this enum and `send_command` below: staged
+// ahead of their real caller, same as `tabs.rs`/`news_charge.rs`'s own
+// module-level allows (see those files' doc comments) — `cargo clippy
+// --locked --all-targets -D warnings` (the CI gate) has no exemption for
+// a plain unused `pub` item. Remove both attributes the moment a click
+// handler actually calls `send_command`.
+#[allow(dead_code)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum MediaCommand {
+    Previous,
+    PlayPause,
+    Next,
+}
+
+impl MediaCommand {
+    /// `include/MediaRemoteAdapter.h`'s `MRCommand` enum — pinned numeric
+    /// IDs, not re-derived at runtime. The vendored header is frozen (see
+    /// `VENDORED.md`: bumping the pin requires a reviewed plan), so this
+    /// mapping can't silently drift out from under a routine vendor
+    /// update the way a re-parsed value could.
+    fn mr_command_id(self) -> u8 {
+        match self {
+            MediaCommand::Previous => 5,  // kMRAPreviousTrack
+            MediaCommand::PlayPause => 2, // kMRATogglePlayPause
+            MediaCommand::Next => 4,      // kMRANextTrack
+        }
+    }
+}
+
+/// Bounds the wait the same way `presentation.rs`'s `DETECT_TIMEOUT`
+/// bounds its own subprocess probe — a wedged `send` must not hang
+/// whatever click-handling task ends up calling this.
+const SEND_COMMAND_TIMEOUT: Duration = Duration::from_secs(3);
+
+/// One-shot dispatch: `mediaremote-adapter.pl send <id>`, the SAME
+/// installed binary `run_stream_once` already execs, same permission
+/// check (`adapter_permission_violation`) first — a `send` invocation
+/// execs the real, Apple-signed `/usr/bin/perl` exactly like `stream`
+/// does, so it inherits the identical entitlement/writability posture.
+///
+/// Not yet called from anywhere live: the actual caller — "a click
+/// landed on the media below-block's prev/play-pause/next buttons" — is
+/// Slice A's click-routing mechanism, still open pending the Mac Mini
+/// hand-off (`plans/171-tab-notch-redesign.md`, Slice A item 2). This
+/// function knows nothing about that mechanism; it is ready to be driven
+/// by whichever answer that gives.
+#[allow(dead_code)]
+pub async fn send_command(adapter_dir: &Path, command: MediaCommand) -> anyhow::Result<()> {
+    let pl_path = adapter_dir.join("bin").join("mediaremote-adapter.pl");
+    let framework_path = adapter_dir.join("MediaRemoteAdapter.framework");
+
+    if let Some(violation) = adapter_permission_violation(&pl_path) {
+        anyhow::bail!("unsafe adapter permissions: {violation}");
+    }
+
+    let run = Command::new(SYSTEM_PERL)
+        .arg(&pl_path)
+        .arg(&framework_path)
+        .arg("send")
+        .arg(command.mr_command_id().to_string())
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .kill_on_drop(true)
+        .status();
+
+    let status = tokio::time::timeout(SEND_COMMAND_TIMEOUT, run)
+        .await
+        .map_err(|_| {
+            anyhow::anyhow!("mediaremote-adapter send timed out after {SEND_COMMAND_TIMEOUT:?}")
+        })??;
+
+    if !status.success() {
+        anyhow::bail!("mediaremote-adapter send exited with {:?}", status.code());
+    }
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -725,6 +811,29 @@ mod tests {
         let s = state.unwrap();
         assert_eq!(s.elapsed_ms, 9854);
         assert_eq!(s.duration_ms, Some(829_981));
+    }
+
+    // --- plan 171 slice C: MediaCommand -> MRCommand ID mapping ---
+
+    #[test]
+    fn media_command_maps_to_the_vendored_headers_mr_command_ids() {
+        assert_eq!(MediaCommand::Previous.mr_command_id(), 5); // kMRAPreviousTrack
+        assert_eq!(MediaCommand::PlayPause.mr_command_id(), 2); // kMRATogglePlayPause
+        assert_eq!(MediaCommand::Next.mr_command_id(), 4); // kMRANextTrack
+    }
+
+    #[test]
+    fn media_command_ids_are_pairwise_distinct() {
+        let ids = [
+            MediaCommand::Previous.mr_command_id(),
+            MediaCommand::PlayPause.mr_command_id(),
+            MediaCommand::Next.mr_command_id(),
+        ];
+        for (i, a) in ids.iter().enumerate() {
+            for (j, b) in ids.iter().enumerate() {
+                assert!(i == j || a != b, "duplicate MRCommand id: {a}");
+            }
+        }
     }
 
     // --- L-sec6: refuse to spawn against a group/world-writable script

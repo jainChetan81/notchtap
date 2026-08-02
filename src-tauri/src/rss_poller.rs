@@ -633,6 +633,7 @@ pub fn spawn_rss_poller(
     ttl_secs: u64,
     max_per_poll: usize,
     priority: Priority,
+    tab_wire: std::sync::Arc<crate::tabs::TabWire>,
 ) {
     tauri::async_runtime::spawn(async move {
         let client = match crate::net::build_poll_client() {
@@ -655,6 +656,14 @@ pub fn spawn_rss_poller(
 
         loop {
             interval.tick().await;
+            // Plan 171 (news_charge.rs's own placement doc): the PREVIOUS
+            // cycle ends at this tick boundary — evaluate the charge edge
+            // BEFORE this pass lands anything new.
+            tab_wire
+                .news_charge
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .cycle_end();
 
             for (source, state) in sources.iter().zip(&mut states) {
                 let now = Instant::now();
@@ -702,8 +711,19 @@ pub fn spawn_rss_poller(
                 state.baseline = false;
 
                 for event in events {
-                    if let Err(error) = engine.accept(event, false).await {
-                        tracing::warn!(feed = %feed_log_ref(&source.config), "rss event dropped: {error}");
+                    match engine.accept(event, false).await {
+                        Ok(()) => {
+                            // Plan 171: one charge unit per item that
+                            // actually landed (accepted, not dropped).
+                            tab_wire
+                                .news_charge
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .item_landed();
+                        }
+                        Err(error) => {
+                            tracing::warn!(feed = %feed_log_ref(&source.config), "rss event dropped: {error}");
+                        }
                     }
                 }
             }

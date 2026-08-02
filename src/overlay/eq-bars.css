@@ -1,0 +1,75 @@
+/* ==== rest-state eq bars (plan 171) ====
+   Design source: prototypes/tab-notch-rest-and-morph.html section 1b
+   ("APPROVED TWICE — do not redraw"). Three 2px bars in --media-mint,
+   scaleY off a bottom origin (compositor-only; never animate `height`),
+   three different durations so they never phase-lock into one marching
+   pattern. Collapsed to zero width + margin when silent so the idle
+   face stays optically centered — width, margin, and opacity animate on
+   one clock. */
+/* the rest cluster (plan 171, slice K) — the design source's own
+   `.rest-cluster` (prototypes/tab-notch-rest-and-morph.html section 1c):
+   the face and the eq bars side by side, optically centred in the
+   cutout. It takes over the grid placement `.idle-face` used to hold
+   directly (`grid-column: 2 / grid-row: 1`, card-chrome.css), so that
+   rule's own declarations simply go inert on a flex child — `IdleFace`
+   itself is untouched, exactly as spec section 4's correction requires.
+   The HUD-only `display` gate is copied from that same `.idle-face`
+   pair for the same reason: a real hardware notch has no app-drawn
+   cutout to paint any of this into. */
+.card-root .rest-cluster {
+  grid-column: 2;
+  grid-row: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+:root[data-notchtap-mode="hud"] .card-root .rest-cluster {
+  display: flex;
+}
+
+.card-root .eq {
+  display: flex;
+  align-items: flex-end;
+  gap: 2px;
+  height: 9px;
+  width: 0;
+  margin-left: 0;
+  opacity: 0;
+  overflow: hidden;
+  transition:
+    width var(--hover-ms, 160ms) var(--ease-notchtap),
+    margin-left var(--hover-ms, 160ms) var(--ease-notchtap),
+    opacity var(--hover-ms, 160ms) var(--ease-notchtap);
+}
+.card-root .eq i {
+  display: block;
+  width: 2px;
+  height: 9px;
+  border-radius: 1px;
+  background: var(--media-mint);
+  transform-origin: bottom;
+  transform: scaleY(0.18);
+}
+.card-root .eq.playing {
+  width: 10px;
+  margin-left: 11px;
+  opacity: 1;
+}
+.card-root .eq.playing i {
+  animation: eq-bounce 900ms ease-in-out infinite alternate;
+}
+.card-root .eq.playing i:nth-child(2) {
+  animation-duration: 640ms;
+}
+.card-root .eq.playing i:nth-child(3) {
+  animation-duration: 1120ms;
+}
+@keyframes eq-bounce {
+  from {
+    transform: scaleY(0.18);
+  }
+  to {
+    transform: scaleY(1);
+  }
+}

@@ -1,0 +1,1610 @@
+<!doctype html>
+<!-- prototypes/tab-notch-panel.html
+     PROPOSAL 2 of 2 — what the below-block shows per SELECTED TAB.
+     Standalone, hand-authored HTML/CSS/vanilla JS: no build step, no React,
+     no `motion`, no network. Not wired into the app, not part of a numbered
+     plan, not synced going forward (prototypes/, plural — the ad-hoc
+     design-proposal dir, per CLAUDE.md).
+
+     r3, 2026-08-02. r1 argued for a BIG TABBED PANEL — a 500x360 dashboard
+     with a tab strip, a three-column grid, and its own interior design
+     language. That concept is REJECTED by operator decision and nothing of
+     it survives here. r2 killed the panel but got the agent page wrong
+     twice over; r3 is the correction.
+
+     WHAT CHANGED IN r3 (operator review of r2's screenshots)
+       1. THE AGENT CARD READ AS FLAT BLACK. The `agent-origin` runtime
+          wash was present and its values were correct, but r2 stacked a
+          hero + three roster rows + fact pills into one ~230px-tall
+          below-block. The shipped wash is a corner radial sized `120%
+          140% at 0% 0%` fading out at 52% — on the ~110px card the app
+          actually paints, that covers the WHOLE card; on r2's 230px card
+          it covered the top third and the rest read as black. The values
+          were never the bug, the card height was. r3 puts the agent page
+          back on a shipped-height card and the wash reads across all of
+          it. Nothing was exaggerated: `--cat-deep` is still exactly
+          `rgba(217,119,87,0.15)` from source-identity.css, the hairline
+          is still exactly `color-mix(in srgb, var(--cat) 55%, transparent)`,
+          the wash is still the same one-line radial. A self-check under
+          the rig now reads the `::before` back out of COMPUTED style and
+          prints the runtime triple it resolved to, so "is the wash
+          actually painting" is answered on the page instead of by eye.
+       2. THE AGENT PAGE IS NOW ONE VIEWED SESSION + A SESSION BAR. All
+          registered sessions stay visible, but as a segmented floor bar
+          (ttl-bar geometry, no drain), not as a stack of rows. Prev/next
+          cycles the hero and the bright segment follows.
+       3. HOVER ALWAYS SHOWS COMPACT. Expanded is a keyboard-only state
+          (prefix+enter). The per-page toggle is now labelled a
+          "shortcut-expanded preview" because that is all it is.
+       4. WEATHER re-derived strictly from weather-art.css + idle-peek.css.
+          r2 had invented a 30px temp, a column-stacked forecast point and
+          an unpadded strip; all three are gone.
+       5. NEWS and MUSIC/MEDIA are approved as-is and are untouched.
+
+     Also fixed in passing: r2 hid per-variant parts with the `hidden`
+     property, but several of them (`.agent-board-rows`, `.queue-list`,
+     `.wx-forecast-point`, `.chip`) carry an explicit `display` from a
+     CLASS selector, which outranks the UA `[hidden] { display: none }`.
+     Those parts were painting in both variants. One `[hidden] { display:
+     none !important; }` rule fixes it, and the self-check now verifies
+     every `[data-when]` element from computed style too.
+
+     THE DECISION THIS FILE NOW DRAWS
+       - There is NO panel. Nothing new opens. Nothing is redesigned.
+       - The neon icon-tabs live on the notch's RIGHT FLANK. They are the
+         sibling mock's subject (proposal 1/2); this file draws them only as
+         a small placeholder strip so the reader can see what "selected"
+         means.
+       - Selecting a tab changes ONE thing: which source's card the EXISTING
+         below-block shows when you hover the notch. That card is the card
+         we already ship, in the card language we already ship — masthead
+         kicker, priority Stamp, accent stripe, priority/runtime washes,
+         fact pills, score block, manifest.
+       - So this page is a catalogue, not an invention: six selections, each
+         in its shipped COMPACT and shipped EXPANDED form.
+
+     DERIVED FROM THE SHIPPED SOURCE, NOT FROM OLD PROTOTYPES
+     (the previous draft cribbed outdated proposal sections out of
+     prototype/*.html and was caught doing it). Every class name, colour,
+     radius, inset and font below was read off the live overlay stylesheets
+     and components at authoring time:
+       src/overlay/card-chrome.css        shell, below-block, rounding law,
+                                          priority --accent/--accent-soft
+       src/overlay/masthead-content.css   .compact + its 3px accent stripe,
+                                          .title/.headline, subtitle row,
+                                          .notif-body, .stamp, kbd hint
+       src/overlay/manifest.css           .detail-facts / .fact-pill /
+                                          .fp-label / .fp-tag / tones
+       src/overlay/news-category.css      .masthead(-row), .chip, category
+                                          vars, .news-shade wash, manifest
+       src/overlay/live-scorecard.css     .score-block (10px margin-top),
+                                          .sc-head, .score-row, .cards-line
+       src/overlay/agent-board.css        board rows, expanded rows, dots,
+                                          state accents
+       src/overlay/weather-art.css        .wx-card mood gradients/textures
+       src/overlay/idle-peek.css          peek readout + media row vocabulary
+       src/overlay/ttl-bar.css            the 4px segmented floor bar
+       src/overlay/source-identity.css    per-runtime --cat identity colours
+       src/components/NotificationBody.tsx  DOM order of every block above
+       src/components/AgentBoard.tsx        row/expanded-row DOM
+       src/lib/presentation.ts              the real Stamp words
+
+     HARD RULE, stated once: this file contains NO reduced-motion variant
+     and NO accessibility variant of anything. That is a permanent non-goal
+     for this project, not an oversight. Mac mini HUD mode only — a
+     synthetic 200x32 cutout, never real notch hardware.
+
+     Authored 2026-08-02. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>tab-notch proposal 2/2 — selected-tab cards (2026-08-02 r3)</title>
+<style>
+  /* ============== shipped tokens (mirrored, not invented) ==============
+     vendor/shared-ui/design/tokens.css publishes these as oklch(); the hex
+     comments in that same file are the identical colours, and are what a
+     static mock can paste without a build step. */
+  :root {
+    --overlay-blue: #0a84ff;
+    --overlay-teal: #55d6bd;
+    --overlay-coral: #ff6b57;
+    --overlay-green: #7fe08d;
+    --overlay-amber: #f0c46a;
+    --overlay-fg: #f5f7fa;
+    --media-mint: #b6f5e5;          /* .media-bar-fill / .idle-peek-timeline */
+    --font-mono: ui-monospace, "SFMono-Regular", Menlo, monospace;
+    --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+
+    --ease-notchtap: cubic-bezier(.22,1,.36,1);
+    --ease-notchtap-pop: cubic-bezier(.3,1.36,.44,1);
+    --expand-ms: 320ms;             /* EXPAND_MS       */
+    --swap-exit-ms: 175ms;          /* SWAP_EXIT_MS    */
+    --content-exit-ms: 105ms;       /* CONTENT_EXIT_MS */
+    --reveal-ms: 260ms;             /* REVEAL_MS       */
+    --hover-ms: 160ms;              /* HOVER_MS        */
+
+    --notchtap-cutout-width: 200px;
+    --notchtap-cutout-height: 32px;
+    --card-scale: 1;
+    --card-radius: 8px;
+    --card-opacity: 1;
+
+    /* ---- this page's own viewer chrome, never app UI ---- */
+    --bg: #101318; --ink: #e8ecf1; --dim: #8b95a3; --rule: rgba(255,255,255,0.09);
+    --page-accent: #7fe08d;
+  }
+  * { box-sizing: border-box; }
+  /* r3 FIX. Every per-variant part on this page is hidden with the `hidden`
+     property. The UA sheet's `[hidden] { display: none }` is an attribute
+     selector at specificity (0,1,0) — any CLASS that sets an explicit
+     `display` (and several here do: `.agent-board-rows`, `.queue-list`,
+     `.wx-forecast-point`, `.chip`) ties it and wins on order, so those
+     parts painted in BOTH variants in r2. This is the one rule that makes
+     `hidden` mean hidden regardless of what the class layer wants; the
+     self-check under the rig now proves it from computed style. */
+  [hidden] { display: none !important; }
+  body { margin: 0; background: var(--bg); color: var(--ink); font-family: var(--font-sans); padding: 44px 24px 120px; }
+  main { max-width: 980px; margin: 0 auto; }
+  h1 { font-size: 21px; font-weight: 700; margin: 0 0 6px; letter-spacing: -0.012em; }
+  .lede { color: var(--dim); font-size: 13px; line-height: 1.62; max-width: 72ch; margin: 0 0 12px; }
+  .note { font-size: 11.5px; color: var(--dim); border-left: 2px solid var(--rule); padding-left: 11px; margin: 14px 0 0; max-width: 72ch; line-height: 1.62; }
+  .note.warn { border-left-color: rgba(240,196,106,0.55); }
+  .note.kill { border-left-color: rgba(255,107,87,0.6); }
+  .note.open-q { border-left-color: rgba(10,132,255,0.6); }
+  .note b { color: var(--ink); font-weight: 640; }
+  code { font-family: var(--font-mono); color: #9fc3e8; font-size: 0.94em; }
+  section { margin-bottom: 52px; padding-top: 26px; border-top: 1px solid var(--rule); }
+  h2 { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.1em; color: var(--dim); margin: 0 0 5px; }
+  .section-sub { font-size: 12.5px; color: var(--dim); margin: 0 0 16px; max-width: 72ch; line-height: 1.6; }
+  .tag { display: inline-block; font: 700 8.5px/1 var(--font-mono); letter-spacing: 0.05em; text-transform: uppercase;
+         padding: 3px 6px; border-radius: 999px; margin-left: 6px; color: var(--page-accent);
+         background: rgba(127,224,141,0.12); border: 1px solid rgba(127,224,141,0.3); vertical-align: 1px; }
+  .tag.new { color: var(--overlay-amber); background: rgba(240,196,106,0.12); border-color: rgba(240,196,106,0.32); }
+  .tag.same { color: #9fc3e8; background: rgba(10,132,255,0.12); border-color: rgba(10,132,255,0.32); }
+  ul.rules { margin: 10px 0 0; padding: 0; list-style: none; display: grid; gap: 10px; max-width: 76ch; }
+  ul.rules li { font-size: 12.5px; line-height: 1.6; color: var(--dim); padding-left: 14px; position: relative; }
+  ul.rules li::before { content: ""; position: absolute; left: 0; top: 8px; width: 5px; height: 5px; border-radius: 50%; background: rgba(255,255,255,0.25); }
+  ul.rules li b { color: var(--ink); font-weight: 640; }
+  ul.rules li.q::before { background: var(--overlay-blue); box-shadow: 0 0 8px rgba(10,132,255,0.6); }
+  ul.rules li.n::before { background: var(--overlay-amber); box-shadow: 0 0 8px rgba(240,196,106,0.55); }
+  footer { margin-top: 56px; padding-top: 20px; border-top: 1px solid var(--rule); font-size: 11.5px; color: var(--dim); line-height: 1.65; max-width: 76ch; }
+  table.spec { width: 100%; border-collapse: collapse; font-size: 11.5px; margin: 12px 0 0; }
+  table.spec th, table.spec td { text-align: left; padding: 7px 10px; border-bottom: 1px solid var(--rule); vertical-align: top; }
+  table.spec th { color: var(--dim); font-weight: 600; font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.05em; }
+  table.spec td.val { font-family: var(--font-mono); color: #b6f5e5; white-space: nowrap; }
+  table.spec td.new { font-family: var(--font-mono); color: var(--overlay-amber); white-space: nowrap; }
+
+  /* ============== the desktop rig (viewer chrome) ============== */
+  .rig { position: relative; background: #05060a; border-radius: 10px;
+         box-shadow: 0 1px 0 rgba(255,255,255,0.06) inset, 0 16px 32px rgba(0,0,0,0.4); }
+  .menubar { position: relative; height: 26px; background: #1c1d20; border-radius: 10px 10px 0 0; }
+  .stage { position: relative; height: 400px; overflow: hidden; border-radius: 0 0 10px 10px;
+           background: repeating-linear-gradient(45deg, #08090c 0 2px, #0c0d10 2px 4px); }
+
+  /* ============== the shell — card-chrome.css, mirrored ==============
+     Three plain geometry blocks (flank | cutout | flank) on row 1, the
+     below-block spanning row 2. Never one masked shape. The `1fr` flank
+     columns split whatever width is left after the fixed-width cutout
+     column, which IS the shipped formula, not an approximation of it. */
+  .card-assembly {
+    position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    display: grid;
+    grid-template-columns: 1fr var(--notchtap-cutout-width) 1fr;
+    grid-template-rows: var(--notchtap-cutout-height) auto;
+    width: var(--cw);
+    transform-origin: top center;
+    isolation: isolate;
+    filter: drop-shadow(0 7px 18px rgba(0,0,0,0.5));
+    transition: width var(--expand-ms) var(--ease-notchtap);
+  }
+  /* the three shipped width formulas, verbatim:
+       showing   min(max(400 x scale, cutout + 2 x 60), 100%)
+       expanded  min(max(500 x scale, cutout + 2 x 60), 100%)
+       rail      min(cutout + 2 x 85, 100%)                     */
+  .card-assembly { --cw: min(max(calc(400px * var(--card-scale)), calc(var(--notchtap-cutout-width) + (2 * 60px * var(--card-scale)))), 100%); }
+  .card-assembly.expanded { --cw: min(max(calc(500px * var(--card-scale)), calc(var(--notchtap-cutout-width) + (2 * 60px * var(--card-scale)))), 100%); }
+  .card-assembly.rail { --cw: min(calc(var(--notchtap-cutout-width) + (2 * 85px * var(--card-scale))), 100%);
+                        transition: width var(--reveal-ms) var(--ease-notchtap); }
+
+  .flank-left, .flank-right {
+    grid-row: 1; overflow: hidden; display: flex; align-items: center; min-width: 0;
+    background: #000; color: var(--overlay-fg);
+    transition: background-color var(--reveal-ms) var(--ease-notchtap),
+                padding var(--reveal-ms) var(--ease-notchtap),
+                border-radius var(--expand-ms) var(--ease-notchtap);
+  }
+  .flank-left { grid-column: 1; justify-content: flex-start; padding-left: 16px; }
+  .flank-right { grid-column: 3; justify-content: flex-end; padding-right: 16px; }
+  .synthetic-cutout { grid-column: 2; grid-row: 1; background: #000; }
+
+  /* THE ROUNDING LAW, unchanged: the cutout's base corners stay square;
+     outer rounding lives on the FLANKS when there is nothing below them, or
+     on the BELOW-BLOCK when there is — never both, or you get the
+     documented double-curve gap. Keyed on real DOM presence via `:has()`,
+     exactly the way card-chrome.css keys it. The elliptical second radius
+     is the HUD-only convex profile the shipped rail draws. */
+  .card-assembly:not(:has(.below-block)) .flank-left {
+    border-bottom-left-radius: var(--card-radius) min(calc(var(--card-radius) * 2), 20px); }
+  .card-assembly:not(:has(.below-block)) .flank-right {
+    border-bottom-right-radius: var(--card-radius) min(calc(var(--card-radius) * 2), 20px); }
+  .card-assembly:not(:has(.below-block)) .synthetic-cutout {
+    border-bottom-left-radius: var(--card-radius) min(calc(var(--card-radius) * 2), 20px);
+    border-bottom-right-radius: var(--card-radius) min(calc(var(--card-radius) * 2), 20px); }
+
+  .time-only { font: 800 15px/1 var(--font-mono); letter-spacing: 0.02em; color: var(--overlay-fg); white-space: nowrap; }
+
+  /* ============== the icon-tab strip (PLACEHOLDER — sibling mock owns it)
+     The neon icon-tabs live on the notch's right flank. Their real design,
+     their rest/charged/hover states and the reveal that brings them out are
+     proposal 1/2's subject. Here they are five 11px glyph squares, just
+     enough to show what "selected" means and to drive this page. Each one
+     borrows its own SHIPPED identity colour (source-identity.css for
+     agent/football/weather, news-category.css for the news category hue,
+     --media-mint for media). No new colour is introduced. ============== */
+  .tab-rail { display: flex; align-items: center; gap: 4px; flex: none; }
+  .tab-ico { width: 11px; height: 11px; border-radius: 3px; flex: none;
+             background: rgba(255,255,255,0.14);
+             transition: background-color var(--hover-ms) var(--ease-notchtap),
+                         box-shadow var(--hover-ms) var(--ease-notchtap); }
+  .tab-ico.on { background: var(--ico); box-shadow: 0 0 9px 1px var(--ico); }
+  .tab-ico[data-tab="agent"]    { --ico: #d97757; }              /* src-claude-code */
+  .tab-ico[data-tab="football"] { --ico: var(--overlay-green); } /* src-football    */
+  .tab-ico[data-tab="music"]    { --ico: var(--media-mint); }
+  .tab-ico[data-tab="weather"]  { --ico: var(--overlay-amber); } /* src-weather     */
+  .tab-ico[data-tab="news"]     { --ico: #5fd4e8; }              /* cat-tech        */
+
+  /* ============== below-block — card-chrome.css, mirrored ============== */
+  .below-block {
+    grid-column: 1 / -1; grid-row: 2; position: relative; overflow: hidden;
+    width: 100%; min-width: 0;
+    background: rgba(0,0,0,var(--card-opacity));
+    color: var(--overlay-fg);
+    border-bottom-left-radius: var(--card-radius);
+    border-bottom-right-radius: var(--card-radius);
+  }
+
+  /* priority accent tiers — card-chrome.css's `.card-assembly.low/.medium/
+     .high`, verbatim values. Consumed by the compact row's 3px stripe, the
+     Stamp pill, the accent-toned fact pills and the ttl-bar fill. */
+  .card-assembly.low    { --accent: #aab3bd;              --accent-soft: rgba(170,179,189,0.2); }
+  .card-assembly.medium { --accent: var(--overlay-teal);  --accent-soft: rgba(85,214,189,0.24); }
+  .card-assembly.high   { --accent: var(--overlay-coral); --accent-soft: rgba(255,107,87,0.28); }
+
+  /* ============== masthead-content.css, mirrored ============== */
+  .compact { position: relative; box-sizing: border-box; overflow: hidden; min-height: 74px;
+             padding: 12px 16px 13px 20px;   /* left is 20px: the stripe needs 4px of clearance */
+             transition: min-height var(--expand-ms) var(--ease-notchtap); }
+  .expanded .compact { min-height: 82px; }
+  /* the 3px priority accent stripe, flush against the card's own left edge.
+     This is the single strongest "that is our app" cue on the whole card —
+     if it ever drifts inward, the card stops reading as ours. */
+  .compact::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px;
+                     border-radius: 0 2px 2px 0; background: var(--accent); box-shadow: 0 0 12px var(--accent-soft); }
+  .copy { min-width: 0; }
+  .title { display: -webkit-box; overflow: hidden; font-weight: 680; line-height: 1.2;
+           white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .title.headline { font-size: 13px; line-height: 1.3; }
+  .notif-subtitle-row { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; margin-top: 3px; }
+  .notif-subtitle { min-width: 0; overflow: hidden; color: rgba(255,255,255,0.45); font-size: 10.5px; font-weight: 600;
+                    text-overflow: ellipsis; white-space: nowrap; }
+  .notif-time-inline { flex: none; color: rgba(255,255,255,0.35); font: 700 10px/1 var(--font-mono); }
+  .notif-body { display: -webkit-box; margin-top: 8px; overflow: hidden; color: rgba(255,255,255,0.7);
+                font-size: 11.5px; line-height: 1.35; white-space: normal; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
+  .notif-body code { padding: 1px 5px; background: rgba(255,255,255,0.08); color: var(--accent); font-family: var(--font-mono); }
+  .stamp { align-self: center; padding: 4px 6px; border: 1px solid var(--accent); color: var(--accent);
+           font: 700 8px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase; }
+  .compact-hint { position: absolute; right: 18px; bottom: 8px; color: rgba(255,255,255,0.4);
+                  font: 700 8px/1 var(--font-mono); letter-spacing: 0.16em; text-transform: uppercase; }
+  .compact-hint kbd { display: inline-flex; align-items: center; justify-content: center; min-height: 15px; margin: 0 1px;
+                      padding: 0 4px; border: 1px solid rgba(255,255,255,0.22); border-bottom-color: rgba(255,255,255,0.34);
+                      border-radius: 3px; background: rgba(255,255,255,0.07); box-shadow: 0 1px 0 rgba(0,0,0,0.35);
+                      color: inherit; font: 700 9px/1 var(--font-mono); letter-spacing: 0; text-transform: none; }
+
+  /* ============== news-category.css, mirrored ============== */
+  .cat-tech     { --cat: #5fd4e8; --cat-deep: rgba(95,212,232,0.15);  --cat-pill: rgba(95,212,232,0.13); }
+  .cat-politics { --cat: #7c9df5; --cat-deep: rgba(124,157,245,0.16); --cat-pill: rgba(124,157,245,0.14); }
+  .masthead-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
+  .masthead { display: flex; align-items: center; gap: 6px; flex: 1; min-width: 0;
+              font: 700 8px/1 var(--font-mono); letter-spacing: 0.16em; text-transform: uppercase;
+              color: rgba(255,255,255,0.38); }
+  .masthead::after { content: ""; flex: 1; height: 1px; background: rgba(255,255,255,0.12); }
+  .masthead .dot { width: 4px; height: 4px; border-radius: 50%; background: var(--cat); box-shadow: 0 0 6px var(--cat); flex: none; }
+  .chip { display: inline-flex; align-items: center; padding: 3px 8px; border-radius: 999px;
+          font: 700 8px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; white-space: nowrap; }
+  .notif-meta-row { display: flex; align-items: center; gap: 5px; margin-top: 6px; }
+  .chip-category { color: var(--cat); background: var(--cat-pill); border: 1px solid color-mix(in srgb, var(--cat) 35%, transparent); }
+  /* the news shade — a drifting, oversized, already-translucent category
+     wash. KEPT animated on purpose: plan 105 reviewed this exact loop
+     alongside the pulses it removed and deliberately spared it. */
+  .news-shade::before { content: ""; position: absolute; inset: -30%; z-index: 0;
+    background: radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%),
+                linear-gradient(135deg, var(--cat-deep) 0%, transparent 46%);
+    animation: shade-drift 12s ease-in-out infinite alternate; pointer-events: none; will-change: transform; }
+  @keyframes shade-drift {
+    0%   { transform: translate3d(0, 0, 0); }
+    33%  { transform: translate3d(-7%, -2%, 0); }
+    66%  { transform: translate3d(-3%, -5%, 0); }
+    100% { transform: translate3d(-8%, -6%, 0); }
+  }
+  .news-shade .compact, .news-shade .manifest, .news-shade .batch-head { position: relative; z-index: 1; }
+
+  /* ============== manifest.css, mirrored ============== */
+  .manifest-wrap { display: grid; grid-template-rows: 0fr; opacity: 0;
+                   transition: grid-template-rows var(--expand-ms) var(--ease-notchtap),
+                               opacity var(--expand-ms) var(--ease-notchtap); }
+  .expanded .manifest-wrap { grid-template-rows: 1fr; opacity: 1; }
+  .manifest-wrap > .manifest { overflow: hidden; min-height: 0; }
+  .manifest { overflow: hidden; border-top: 1px solid rgba(255,255,255,0.1);
+              background: linear-gradient(180deg, rgba(255,255,255,0.025), transparent); }
+  .manifest-block { padding: 12px 16px 13px; }
+  .manifest-label { font: 700 8px/1 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase;
+                    color: var(--cat, var(--accent)); margin-bottom: 7px; }
+  .manifest-text { font-size: 12px; line-height: 1.5; color: rgba(255,255,255,0.85);
+                   display: -webkit-box; -webkit-line-clamp: 6; -webkit-box-orient: vertical; overflow: hidden; }
+  .manifest-footer { margin-top: 10px; display: flex; justify-content: flex-end; }
+  .manifest-hint { font: 700 9px/1 var(--font-mono); letter-spacing: 0.08em; color: rgba(255,255,255,0.4); }
+
+  .detail-facts { display: flex; flex-direction: column; align-items: flex-end; gap: 3px;
+                  margin-top: 7px; margin-bottom: 14px; max-width: 100%; }
+  .fact-pill { display: inline-flex; align-items: center; gap: 4px; max-width: 100%; padding: 2px 7px;
+               border-radius: 999px; font-size: 10px; line-height: 1.4; color: rgba(255,255,255,0.82);
+               white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+               border: 1px solid rgba(255,255,255,0.12); background: rgba(255,255,255,0.05); }
+  .fact-pill .fp-label { flex: none; font: 700 7px/1 var(--font-mono); letter-spacing: 0.07em; text-transform: uppercase; opacity: 0.68; }
+  .fact-pill .fp-tag   { flex: none; font: 700 7px/1 var(--font-mono); letter-spacing: 0.07em; text-transform: uppercase; }
+  .fact-pill.tone-accent { background: color-mix(in srgb, var(--accent) 14%, transparent);
+                           border-color: color-mix(in srgb, var(--accent) 38%, transparent); }
+  .fact-pill.tone-accent .fp-tag { color: var(--accent); }
+  .fact-pill.tone-danger { background: color-mix(in srgb, var(--overlay-coral) 14%, transparent);
+                           border-color: color-mix(in srgb, var(--overlay-coral) 42%, transparent); }
+  .fact-pill.tone-danger .fp-tag { color: var(--overlay-coral); }
+  .fact-pill.tone-safe   { background: color-mix(in srgb, var(--overlay-green) 14%, transparent);
+                           border-color: color-mix(in srgb, var(--overlay-green) 42%, transparent); }
+  .fact-pill.tone-safe .fp-tag { color: var(--overlay-green); }
+
+  /* ============== ttl-bar.css, mirrored ============== */
+  .ttl-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; display: grid;
+             grid-template-columns: repeat(var(--queue-n, 1), 1fr); grid-template-rows: 4px; gap: 3px; z-index: 2; }
+  .ttl-seg { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+  /* r3 fidelity fix: shipped `.ttl-seg.done` is a flat rgba(255,255,255,0.08),
+     not an accent mix. r2 had invented the accent-10% value. */
+  .ttl-seg.done { background: rgba(255,255,255,0.08); }
+  .ttl-fill { display: block; height: 100%; background: var(--accent); transform-origin: right; }
+
+  /* ---- SESSION POSITION INDICATOR (NEW, agent page only) ----
+     Geometry is the shipped ttl-bar's, verbatim: absolutely positioned to
+     the card's own floor, 4px tall, one grid column per item, 3px gaps, no
+     container padding. What is REMOVED is the only thing that made it a
+     ttl bar — the draining `.ttl-fill`. Nothing here counts down, because
+     nothing here expires: this is a PULLED view, you asked for it.
+     The two tones are the two the shipped bar already owns, reused rather
+     than invented: the viewed segment is the full `--accent` `.ttl-fill`
+     paints with, the others are `.ttl-seg`'s own 30% trough.
+     Paint channel: `--accent` (priority), never `--cat` (origin). That is
+     card-chrome.css's standing law — the floor bar is card CHROME like the
+     priority edge and the Stamp, so it must not read from the origin
+     channel even though the hero above it is painted by one. */
+  .session-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; display: grid;
+                 grid-template-columns: repeat(var(--session-n, 1), 1fr); grid-template-rows: 4px; gap: 3px; z-index: 2; }
+  .session-seg { background: color-mix(in srgb, var(--accent) 30%, transparent);
+                 transition: background-color var(--reveal-ms) var(--ease-notchtap); }
+  .session-seg.viewed { background: var(--accent); }
+
+  /* ============== source-identity.css, mirrored ============== */
+  .src-claude-code { --cat: #d97757; --cat-deep: rgba(217,119,87,0.15);  --cat-pill: rgba(217,119,87,0.13); }
+  .src-codex       { --cat: #10a37f; --cat-deep: rgba(16,163,127,0.15);  --cat-pill: rgba(16,163,127,0.13); }
+  .src-opencode    { --cat: #9d7cd8; --cat-deep: rgba(157,124,216,0.15); --cat-pill: rgba(157,124,216,0.13); }
+  .src-football    { --cat: var(--overlay-green); --cat-deep: color-mix(in srgb, var(--overlay-green) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-green) 13%, transparent); }
+  .src-weather     { --cat: var(--overlay-amber); --cat-deep: color-mix(in srgb, var(--overlay-amber) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-amber) 13%, transparent); }
+  .src-manual      { --cat: var(--overlay-blue);  --cat-deep: color-mix(in srgb, var(--overlay-blue) 15%, transparent);  --cat-pill: color-mix(in srgb, var(--overlay-blue) 13%, transparent); }
+
+  /* ============== THE AGENT RUNTIME WASH (card-chrome.css ~:815-843)
+     This is the stack the operator approved and the r2 draft failed to
+     show. Three parts, in this order, no more and no less:
+
+       (a) the HAIRLINE — a plain `border-top` on `.below-block`, coloured
+           `color-mix(in srgb, var(--cat) 55%, transparent)`. Runtime-keyed
+           since plan 147; it is NOT a hardcoded amber, it just resolves to
+           amber whenever `--cat` does (the runtime-unknown `.src-agent`
+           case). Lives on the content block, never on `.card-assembly` —
+           origin and priority must never share a paint channel.
+       (b) the WASH — the `::before` pseudo-element, `inset: 0`, a single
+           corner radial `radial-gradient(120% 140% at 0% 0%, var(--cat-deep),
+           transparent 52%)`. Same idiom as `.news-shade::before`,
+           deliberately WITHOUT its `shade-drift` animation: this one is
+           static, permanently, by decision.
+       (c) the RIDER — `.compact` / `.manifest` lifted to `position:
+           relative; z-index: 1` so real content paints OVER the wash
+           rather than behind the positioned pseudo-element.
+
+     `--cat-deep` for `.src-claude-code` is `rgba(217,119,87,0.15)`: over
+     the card's black that is rgb(33,18,13) at the corner, falling to black
+     by 52% of a 120%x140% ellipse. That is a genuinely visible warm
+     terracotta glow ACROSS a shipped-height card — and a smudge in one
+     corner of a tall one, which is exactly what went wrong in r2. The
+     value is untouched here. The card height is what got fixed. */
+  .below-block.agent-origin { border-top: 1px solid color-mix(in srgb, var(--cat) 55%, transparent); }
+  .below-block.agent-origin::before { content: ""; position: absolute; inset: 0;
+    background: radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%); pointer-events: none; }
+  .below-block.agent-origin .compact,
+  .below-block.agent-origin .manifest,
+  .below-block.agent-origin .agent-board-rows { position: relative; z-index: 1; }
+
+  /* ============== agent-board.css, mirrored ============== */
+  .agent-board-primary { display: flex; flex-direction: column; gap: 4px; }
+  .agent-board-primary .compact { min-height: 74px; }
+  .agent-board-primary .detail-facts { flex-direction: row; flex-wrap: wrap; justify-content: flex-end;
+                                       gap: 4px 6px; margin-bottom: 0; }
+  /* the shipped roster rows. In r3 these appear ONLY in the shortcut-
+     expanded state — compact is the hero plus the session bar, nothing
+     else, which is what keeps the card at shipped height and the runtime
+     wash reading across the whole of it. */
+  .agent-board-rows { display: flex; flex-direction: column; gap: 3px;
+                      border-top: 1px solid color-mix(in srgb, var(--overlay-fg) 14%, transparent);
+                      padding: 6px 14px 12px; max-height: 150px; overflow: hidden; }
+  /* the viewed session's row, marked so the roster and the floor bar agree
+     about which one you are looking at. Same 5%-white lift the shipped
+     `.agent-expanded-row` uses for its own card — no new tint. */
+  .agent-row.viewed { background: color-mix(in srgb, var(--overlay-fg) 5%, transparent);
+                      border-radius: 6px; margin: 0 -6px; padding: 3px 6px; }
+  .agent-row { display: flex; align-items: center; gap: 6px; font-size: 11px;
+               color: color-mix(in srgb, var(--overlay-fg) 70%, transparent); white-space: nowrap; }
+  .agent-row-runtime { font-weight: 600; color: var(--cat, var(--overlay-fg)); flex-shrink: 0; }
+  /* the runtime glyph is a SQUARE tick on purpose — it must never read as a
+     second state dot beside the round `.agent-dot` on the same row. */
+  .agent-runtime-tick { width: 4px; height: 4px; flex-shrink: 0; background: var(--cat, var(--overlay-fg));
+                        box-shadow: 0 0 4px var(--cat, transparent); }
+  .agent-row-project { overflow: hidden; text-overflow: ellipsis; color: color-mix(in srgb, var(--overlay-fg) 55%, transparent); }
+  .agent-row-state { margin-left: auto; flex-shrink: 0; color: var(--agent-accent, var(--overlay-fg));
+                     transition: color var(--reveal-ms) var(--ease-notchtap); }
+  .agent-row-elapsed { flex-shrink: 0; font-variant-numeric: tabular-nums;
+                       color: color-mix(in srgb, var(--overlay-fg) 45%, transparent); min-width: 2.4em; text-align: right; }
+  .agent-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; background: var(--agent-accent, var(--overlay-fg));
+               transition: background-color var(--reveal-ms) var(--ease-notchtap); }
+  .agent-dot.large { width: 8px; height: 8px; }
+  /* the BOUNDED pulse — one 240ms tick, then four breathe cycles, then rest.
+     Exactly as shipped. An always-on pulse was deliberately removed from
+     this app; a tab that summons the board must not smuggle it back. */
+  .agent-dot.pulse { animation: agent-dot-state-tick 240ms var(--ease-notchtap),
+                                agent-dot-breathe 2.2s ease-in-out 4; }
+  @keyframes agent-dot-state-tick { from { transform: scale(1.35); } to { transform: scale(1); } }
+  @keyframes agent-dot-breathe { 0%, 100% { opacity: 1; } 50% { opacity: 0.35; } }
+  .agent-waiting   { --agent-accent: var(--overlay-amber); }
+  .agent-failed    { --agent-accent: var(--overlay-coral); }
+  .agent-working   { --agent-accent: var(--overlay-blue); }
+  .agent-completed { --agent-accent: var(--overlay-green); }
+  .agent-stale     { --agent-accent: color-mix(in srgb, var(--overlay-fg) 62%, transparent); }
+  /* (r2's `.agent-board-expanded-*` block is gone. Those taller rows are a
+     real shipped surface, but r3's expanded state is the shipped one-line
+     ROSTER — dead CSS for a surface this page no longer draws would be a
+     lie about what the mock shows.) */
+
+  /* ============== live-scorecard.css, mirrored ============== */
+  .score-block { margin-top: 10px; }   /* the 10px is load-bearing: without it the chips row butts the headline at 0px */
+  .sc-head { display: flex; align-items: center; gap: 8px; }
+  .chip-league { flex: none; color: rgba(255,255,255,0.6); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); }
+  .chip-live { flex: none; gap: 5px; color: var(--overlay-green); background: rgba(127,224,141,0.12); border: 1px solid rgba(127,224,141,0.35);
+               transition: color var(--reveal-ms) var(--ease-notchtap), background-color var(--reveal-ms) var(--ease-notchtap),
+                           border-color var(--reveal-ms) var(--ease-notchtap); }
+  /* steady glow, never a blink — the looping keyframe was removed from the
+     shipped dot on purpose (peripheral-vision complaint). */
+  .chip-live .live-dot { width: 5px; height: 5px; flex: none; border-radius: 50%; background: var(--overlay-green);
+                         box-shadow: 0 0 6px rgba(127,224,141,0.9); }
+  .chip-live.break { color: var(--overlay-amber); background: rgba(240,196,106,0.12); border-color: rgba(240,196,106,0.35); }
+  .chip-live.break .live-dot { background: var(--overlay-amber); box-shadow: 0 0 6px rgba(240,196,106,0.9); }
+  .clock-pill { margin-left: auto; flex: none; font: 800 10px/1 var(--font-mono); letter-spacing: normal; text-transform: none;
+                color: rgba(255,255,255,0.75); background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); }
+  .score-row { display: flex; align-items: center; justify-content: center; gap: 14px; margin-top: 10px; }
+  .side { display: flex; flex-direction: column; align-items: center; gap: 4px; width: 64px; }
+  .crest { width: 30px; height: 30px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+           overflow: hidden; font: 800 9px/1 var(--font-mono); letter-spacing: 0.03em;
+           background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.16); color: var(--overlay-fg); }
+  .score { display: inline-flex; align-items: center; font: 800 24px/1 var(--font-mono); color: var(--overlay-fg); letter-spacing: 0.02em; }
+  .score-digit { display: block; position: relative; height: 1em; overflow: hidden; }
+  .score-digit-roll { display: block; line-height: 1; }
+  .score .dash { color: rgba(255,255,255,0.3); margin: 0 2px; }
+  .cards-line { margin-top: 6px; text-align: center; font: 600 9px/1 var(--font-mono); letter-spacing: 0.08em; color: rgba(255,255,255,0.38); }
+  /* the persistent (crossbar) variant's second, stacked block — same
+     vocabulary, tighter: it is a standing readout, not an event card. */
+  .score-block.stacked { margin-top: 12px; padding-top: 10px; border-top: 1px solid rgba(255,255,255,0.08); }
+  .score-block.stacked .score { font-size: 19px; }
+  .score-block.stacked .crest { width: 24px; height: 24px; }
+
+  /* ============== weather-art.css + idle-peek.css, mirrored ============== */
+  /* r3: re-derived line by line off the two shipped sheets. Everything r2
+     invented here is gone — the 30px `.wx-peek-temp.big` (shipped is 18px,
+     full stop), the column-stacked `.wx-forecast-point` (shipped is a ROW),
+     the unpadded strip (shipped is `padding: 0 12px`), and the
+     `.wx-forecast-glyph` name (shipped is `.wx-forecast-icon`). */
+  .wx-card::before { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; }
+  .wx-card .compact, .wx-card .manifest, .wx-card .peek-content { position: relative; z-index: 1; }
+  .wx-card.wx-clear-day::before          { background: linear-gradient(180deg, #163149 0%, #0e2436 100%); }
+  .wx-card.wx-partly-cloudy-day::before  { background: linear-gradient(180deg, #1a3a52 0%, #122b3d 100%); }
+  .wx-card.wx-rain::before               { background: linear-gradient(180deg, #2b3d4d 0%, #1b2731 100%); }
+  .wx-card.wx-rain-streaks::after { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none;
+    background-image: repeating-linear-gradient(115deg, rgba(180,210,255,0.16) 0px, rgba(180,210,255,0.16) 1px, transparent 1px, transparent 10px);
+    animation: rain-fall 2.6s linear infinite; will-change: transform; }
+  /* 23.66px is one full streak period projected onto the 115deg axis — the
+     shipped number, which is what makes the loop genuinely seamless rather
+     than approximately so. */
+  @keyframes rain-fall { from { transform: translateY(0); } to { transform: translateY(23.66px); } }
+  /* idle-peek.css's `.peek-content`: z-index 1 over the mood art, column
+     flex, 8px gap. The readout carries its OWN 10px/12px padding, which is
+     why it is a sibling of `.compact` here rather than a child of it —
+     nesting it would have stacked the two paddings. */
+  .peek-content { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 8px; padding-bottom: 12px; }
+  .wx-peek-weather-stack { display: flex; flex-direction: column; gap: 4px; }
+  .wx-peek-readout { display: flex; align-items: center; gap: 8px; padding: 10px 12px; }
+  /* the shipped condition glyph is a 28px Meteocons SVG. A static mock has
+     no asset pipeline, so this is a plain tinted disc at the identical
+     28px footprint, with the shipped drop-shadow. Flagged as a stand-in. */
+  .wx-peek-icon { width: 28px; height: 28px; flex: none; border-radius: 50%;
+                  filter: drop-shadow(0 2px 6px rgba(0,0,0,0.45)); pointer-events: none;
+                  background: radial-gradient(circle at 35% 32%, #ffe6ad 0%, var(--overlay-amber) 55%, rgba(240,196,106,0.35) 100%); }
+  .wx-peek-temp { font: 800 18px/1 var(--font-mono); color: var(--overlay-fg); }
+  .wx-peek-hilo { display: inline-flex; align-items: center; gap: 4px; font: 700 9px/1 var(--font-mono);
+                  color: rgba(255,255,255,0.65); white-space: nowrap; }
+  .wx-peek-hilo::before { content: "\00b7"; opacity: 0.5; }
+  .wx-peek-condition { color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14); }
+  .wx-peek-rain { color: rgba(180,210,255,0.85); background: rgba(180,210,255,0.12); border: 1px solid rgba(180,210,255,0.35); }
+  .wx-forecast-strip { display: flex; align-items: center; justify-content: space-between; padding: 0 12px; }
+  .wx-forecast-point { display: flex; align-items: center; gap: 3px; }
+  /* same stand-in note as `.wx-peek-icon`: shipped is a 10px Meteocons SVG
+     with a 0 1px 3px drop-shadow, this is a disc at that exact footprint. */
+  .wx-forecast-icon { width: 10px; height: 10px; border-radius: 50%; flex: none;
+                      background: rgba(255,255,255,0.35); filter: drop-shadow(0 1px 3px rgba(0,0,0,0.4)); }
+  .wx-forecast-icon.sun { background: var(--overlay-amber); }
+  .wx-forecast-icon.rain { background: rgba(180,210,255,0.85); }
+  .wx-forecast-temp { font: 700 8px/1 var(--font-mono); color: var(--overlay-fg); }
+  .wx-forecast-hour { font: 600 7px/1 var(--font-mono); color: rgba(255,255,255,0.55); }
+
+  .media-art { width: 26px; height: 26px; flex: none; border-radius: 6px; display: flex; align-items: center; justify-content: center;
+               font-size: 13px; line-height: 1; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14); color: var(--overlay-fg); }
+  .media-art.big { width: 44px; height: 44px; border-radius: 8px; font-size: 18px; }
+  .media-transport { display: flex; align-items: center; gap: 6px; flex: none; font-size: 10.5px; color: rgba(255,255,255,0.85); }
+  .media-bar { display: block; width: 56px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.12); overflow: hidden; }
+  /* scaleX, never width — the same compositor-only discipline `.ttl-fill`
+     uses, and the reason the shipped bar can glide between ticks. */
+  .media-bar-fill { display: block; width: 100%; height: 100%; background: var(--media-mint);
+                    transform-origin: left; transition: transform 1s linear; will-change: transform; }
+  .media-time { font-variant-numeric: tabular-nums; min-width: 30px; text-align: right;
+                font: 700 9px/1 var(--font-mono); color: rgba(255,255,255,0.55); }
+
+  /* ---- the ONE genuinely new interactive surface in this file: real
+     transport BUTTONS. Everything else on the media page is shipped
+     vocabulary; the controls are new because the vendored MediaRemote
+     adapter gives us COMMANDS, not just a read-only now-playing string.
+     Drawn in the existing chip/tile language — same tints, same radii, same
+     press-scale house rule — so "new capability" does not arrive as "new
+     look". ---- */
+  .mr-btn { appearance: none; border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.06);
+            color: var(--overlay-fg); width: 26px; height: 26px; border-radius: 7px; cursor: pointer;
+            display: grid; place-items: center; padding: 0;
+            transition: background-color var(--hover-ms) var(--ease-notchtap),
+                        border-color var(--hover-ms) var(--ease-notchtap),
+                        transform var(--hover-ms) var(--ease-notchtap); }
+  .mr-btn:hover { background: rgba(255,255,255,0.11); border-color: rgba(255,255,255,0.26); }
+  .mr-btn:active { transform: scale(0.94); }
+  .mr-btn.primary { width: 30px; height: 30px; border-color: color-mix(in srgb, var(--media-mint) 40%, transparent);
+                    background: color-mix(in srgb, var(--media-mint) 12%, transparent); }
+  .mr-glyph { display: block; position: relative; }
+  .mr-glyph.play  { width: 0; height: 0; border-left: 8px solid var(--overlay-fg);
+                    border-top: 5px solid transparent; border-bottom: 5px solid transparent; margin-left: 2px; }
+  .mr-glyph.pause { width: 9px; height: 10px; border-left: 3px solid var(--overlay-fg); border-right: 3px solid var(--overlay-fg); }
+  .mr-glyph.prev, .mr-glyph.next { width: 11px; height: 9px; }
+  .mr-glyph.prev::before, .mr-glyph.next::before { content: ""; position: absolute; top: 0;
+    border-top: 4.5px solid transparent; border-bottom: 4.5px solid transparent; }
+  .mr-glyph.prev::before { left: 2px; border-right: 7px solid var(--overlay-fg); }
+  .mr-glyph.next::before { right: 2px; border-left: 7px solid var(--overlay-fg); }
+  .mr-glyph.prev::after, .mr-glyph.next::after { content: ""; position: absolute; top: 0; width: 2px; height: 9px; background: var(--overlay-fg); }
+  .mr-glyph.prev::after { left: 0; }
+  .mr-glyph.next::after { right: 0; }
+
+  .media-body { display: flex; align-items: center; gap: 10px; margin-top: 9px; }
+  .media-body .grow { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 6px; }
+  .media-scrub { position: relative; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.12); margin-top: 4px; }
+  .media-scrub .fill { position: absolute; left: 0; top: 0; bottom: 0; width: 42%; background: var(--media-mint); border-radius: 2px; }
+  .media-scrub .knob { position: absolute; left: 42%; top: 50%; width: 9px; height: 9px; border-radius: 50%;
+                       background: var(--media-mint); box-shadow: 0 0 8px rgba(182,245,229,0.7); transform: translate(-50%,-50%); }
+  .media-times { display: flex; justify-content: space-between; margin-top: 6px;
+                 font: 700 9px/1 var(--font-mono); color: rgba(255,255,255,0.45); }
+  .queue-row { display: flex; align-items: center; gap: 8px; font-size: 11px;
+               color: color-mix(in srgb, var(--overlay-fg) 66%, transparent); white-space: nowrap; }
+  .queue-row .n { font: 700 9px/1 var(--font-mono); color: rgba(255,255,255,0.35); width: 12px; flex: none; }
+  .queue-row .who { margin-left: auto; color: rgba(255,255,255,0.4); font-size: 10px; overflow: hidden; text-overflow: ellipsis; }
+  .queue-list { margin-top: 12px; display: flex; flex-direction: column; gap: 5px; }
+
+  /* ---- the news BATCH HEADER: new, and small on purpose. It exists
+     because a tab-summoned news card is not a promotion — nothing pushed
+     it, you asked for it — so it has to say how big the pile is and let you
+     walk it. Set in the masthead's own mono type so it reads as card
+     chrome, not as a toolbar. ---- */
+  .batch-head { display: flex; align-items: center; gap: 8px; padding: 9px 16px 0 20px;
+                font: 700 8px/1 var(--font-mono); letter-spacing: 0.12em; text-transform: uppercase;
+                color: rgba(255,255,255,0.4); }
+  .batch-head .sep { color: rgba(255,255,255,0.22); }
+  .batch-dots { display: flex; align-items: center; gap: 3px; margin-left: auto; }
+  .batch-dots i { width: 4px; height: 4px; border-radius: 50%; background: rgba(255,255,255,0.18); display: block; }
+  .batch-dots i.on { background: var(--cat); box-shadow: 0 0 6px var(--cat); }
+  .batch-nav { display: inline-flex; gap: 3px; }
+  .batch-nav button { appearance: none; border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.05);
+                      color: rgba(255,255,255,0.6); border-radius: 5px; width: 18px; height: 16px; cursor: pointer; padding: 0;
+                      font: 700 9px/1 var(--font-mono);
+                      transition: color var(--hover-ms) var(--ease-notchtap), border-color var(--hover-ms) var(--ease-notchtap),
+                                  transform var(--hover-ms) var(--ease-notchtap); }
+  .batch-nav button:hover { color: var(--overlay-fg); border-color: rgba(255,255,255,0.3); }
+  .batch-nav button:active { transform: scale(0.92); }
+
+  /* ============== page switching — DEFAULT HIDDEN, one active ==============
+     The previous version of this file painted every page stacked on top of
+     one another. This rule pair is what makes that impossible: `.tapage`-
+     style default-hide, i.e. `.tabpage` is `display: none` unconditionally,
+     and exactly one element gets `.is-active`. The self-check under the rig
+     asserts it from COMPUTED style on every switch, so it cannot silently
+     regress again. */
+  .tabpage { display: none; }
+  .tabpage.is-active { display: block; }
+
+  /* ============== page controls ============== */
+  .controls { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin: 0 0 16px; }
+  .controls .lbl { font: 700 9.5px/1 var(--font-mono); color: var(--dim); text-transform: uppercase; letter-spacing: 0.06em; margin-right: 2px; }
+  .sel-chip { font: 700 10px/1 var(--font-mono); letter-spacing: 0.04em; padding: 9px 13px; border-radius: 8px;
+              border: 1px solid var(--rule); background: #171b22; color: var(--ink); cursor: pointer;
+              display: inline-flex; align-items: center; gap: 7px;
+              transition: border-color 140ms var(--ease-notchtap), color 140ms var(--ease-notchtap),
+                          background-color 140ms var(--ease-notchtap), transform 120ms var(--ease-notchtap); }
+  .sel-chip .swatch { width: 8px; height: 8px; border-radius: 2px; background: var(--sw, rgba(255,255,255,0.3)); }
+  .sel-chip:hover { border-color: rgba(127,224,141,0.4); color: var(--page-accent); }
+  .sel-chip:active { transform: scale(0.97); }
+  .sel-chip.on { border-color: rgba(127,224,141,0.55); color: var(--page-accent); background: rgba(127,224,141,0.08); }
+  .toggle-row { display: flex; align-items: center; gap: 10px; margin: 14px 0 0; }
+  .toggle-row button { font: 700 10px/1 var(--font-mono); letter-spacing: 0.04em; padding: 8px 12px; border-radius: 8px;
+                       border: 1px solid var(--rule); background: #171b22; color: var(--ink); cursor: pointer;
+                       transition: border-color 140ms var(--ease-notchtap), color 140ms var(--ease-notchtap), transform 120ms var(--ease-notchtap); }
+  .toggle-row button:hover { border-color: rgba(10,132,255,0.45); color: #9fc3e8; }
+  .toggle-row button:active { transform: scale(0.97); }
+  .toggle-row button:disabled { opacity: 0.32; cursor: default; }
+  .toggle-row button:disabled:hover { border-color: var(--rule); color: var(--ink); }
+  .toggle-row .state { font: 700 9.5px/1 var(--font-mono); letter-spacing: 0.05em; color: var(--dim); text-transform: uppercase; }
+  .toggle-row .state b { color: var(--overlay-amber); }
+  .selfcheck { margin-top: 14px; font: 700 10px/1.5 var(--font-mono); letter-spacing: 0.03em; color: var(--dim); }
+  .selfcheck b.ok { color: var(--page-accent); }
+  .selfcheck b.bad { color: var(--overlay-coral); }
+  .ann { margin: 22px 0 0; }
+  .ann h3 { font: 700 10px/1 var(--font-mono); letter-spacing: 0.07em; text-transform: uppercase; color: var(--dim); margin: 0 0 8px; }
+</style>
+</head>
+<body>
+<main>
+
+  <h1>tab-notch proposal 2/2 — selected-tab cards</h1>
+  <p class="lede">
+    <b>There is no panel.</b> The neon icon-tabs sit on the notch's right flank (proposal 1/2 owns
+    their design). Selecting one changes exactly one thing: which source's card the
+    <b>existing below-block</b> shows when you hover the notch. That card is the card we already
+    ship — same masthead kicker, same priority Stamp, same 3px accent stripe, same priority and
+    runtime washes, same fact pills, same score block, same manifest. This page is a catalogue of
+    those six selections in the compact form hover shows, plus the shortcut-expanded state
+    <b>prefix+enter</b> opens.
+  </p>
+  <p class="note warn">
+    <b>Hover always shows COMPACT.</b> There is no hover-expand anywhere in this proposal. Hovering
+    the notch reveals the selected tab's card in its compact form and stops there. Expanded is a
+    <b>keyboard-only</b> state reached with <b>prefix+enter</b>, and it closes the same way. The
+    toggle under the rig is therefore labelled a <b>shortcut-expanded preview</b> &mdash; it is a
+    way to look at that state on this page, not a pointer gesture the app has.
+  </p>
+  <p class="note kill">
+    <b>What was rejected.</b> The earlier version of this file argued for a 500x360 tabbed dashboard
+    with its own tab strip, grid and interior language. Operator decision: no big panel, no second
+    design system, nothing new opens. That concept is gone from this file entirely — not softened,
+    not parked. The below-block we already ship is the whole surface.
+  </p>
+  <p class="note warn">
+    <b>Hard rule, stated once.</b> This file has no reduced-motion variant and no accessibility
+    variant of anything. That is a permanent non-goal for this project, not an omission. Mac mini
+    <b>HUD mode only</b>: a synthetic 200x32 cutout drawn by the app, never real notch hardware.
+  </p>
+  <p class="note">
+    <b>Where the visuals came from.</b> Every class, colour, radius, inset and duration below was
+    read off the live overlay source, not off an older prototype file:
+    <code>card-chrome.css</code>, <code>masthead-content.css</code>, <code>manifest.css</code>,
+    <code>news-category.css</code>, <code>live-scorecard.css</code>, <code>agent-board.css</code>,
+    <code>weather-art.css</code>, <code>idle-peek.css</code>, <code>ttl-bar.css</code>,
+    <code>source-identity.css</code>, <code>NotificationBody.tsx</code>, <code>AgentBoard.tsx</code>,
+    <code>presentation.ts</code>. The Stamp words (<code>Now</code>, <code>Done</code>,
+    <code>Live</code>, <code>Wire</code>) are the real lookup table, not invented labels.
+  </p>
+
+  <!-- ================================================================= -->
+  <section>
+    <h2>the demo — one notch, six selections</h2>
+    <p class="section-sub">
+      Pick a tab. The strip on the notch's right flank lights the matching icon and the below-block
+      swaps to that source's card. On the agent tab, <b>prefix-[</b> / <b>prefix-]</b> walks the
+      registered sessions and the bright segment on the card floor follows. Exactly one page is ever
+      painted, every per-variant part obeys the variant, and the runtime wash is read back out of
+      computed style — the self-check under the rig proves all three on every switch.
+    </p>
+
+    <div class="controls" id="selectors">
+      <span class="lbl">selected tab</span>
+      <button class="sel-chip on" type="button" data-tab="agent"><span class="swatch" style="--sw:#d97757"></span>agent</button>
+      <button class="sel-chip" type="button" data-tab="football"><span class="swatch" style="--sw:#7fe08d"></span>football</button>
+      <button class="sel-chip" type="button" data-tab="music"><span class="swatch" style="--sw:#b6f5e5"></span>music</button>
+      <button class="sel-chip" type="button" data-tab="weather"><span class="swatch" style="--sw:#f0c46a"></span>weather</button>
+      <button class="sel-chip" type="button" data-tab="news"><span class="swatch" style="--sw:#5fd4e8"></span>news</button>
+      <button class="sel-chip" type="button" data-tab="none"><span class="swatch" style="--sw:rgba(255,255,255,0.25)"></span>none</button>
+    </div>
+
+    <div class="rig">
+      <div class="menubar"></div>
+      <div class="stage">
+
+        <!-- the shipped shell: flank | cutout | flank on row 1, below-block
+             spanning row 2. The right flank carries the icon-tab strip. -->
+        <div class="card-assembly high" id="assembly">
+          <div class="flank-left"><span class="time-only">9:41</span></div>
+          <div class="synthetic-cutout"></div>
+          <div class="flank-right">
+            <!-- PLACEHOLDER. The real icon-tabs — rest, charged, hover, and
+                 the reveal that brings them out — are proposal 1/2's
+                 subject. Five glyph squares is all this page needs. -->
+            <div class="tab-rail" id="tabRail">
+              <span class="tab-ico on" data-tab="agent"></span>
+              <span class="tab-ico" data-tab="football"></span>
+              <span class="tab-ico" data-tab="music"></span>
+              <span class="tab-ico" data-tab="weather"></span>
+              <span class="tab-ico" data-tab="news"></span>
+            </div>
+          </div>
+
+          <!-- ============ 1 — AGENTS ============
+               ONE VIEWED SESSION, plus a session-position bar on the card
+               floor for the rest of the roster.
+
+               THE PAINT STACK, which is the whole point of this page:
+               `.below-block` carries `agent-origin` (hairline + wash
+               pseudo-element) AND a `src-<runtime>` class (the --cat /
+               --cat-deep / --cat-pill triple). The wash is the
+               `::before`, UNDER the content; `.compact` and
+               `.agent-board-rows` ride above it at z-index 1. Cycling the
+               hero re-writes the `src-*` class, so the wash changes hue
+               with the runtime — terracotta for Claude Code, green for
+               Codex, purple for OpenCode. That colour change IS the
+               feature; if the card looks flat black, the stack is broken.
+
+               The card is deliberately SHIPPED-HEIGHT (hero only). r2
+               stacked the hero, three roster rows and a pill row into one
+               block and the corner radial then only reached the top third
+               — which is exactly why r2 read as a black card. -->
+          <div class="below-block agent-origin src-claude-code tabpage is-active" data-page="agent" id="agentBlock">
+
+            <!-- THE HERO — one per registered session, exactly one shown.
+                 Each renders through the SAME unified template every other
+                 card on this page uses: masthead-row + Stamp,
+                 .title.headline, subtitle row, .notif-body, fact pills
+                 with fp-tag qualifiers. Stamp words are the real generic
+                 lookup (presentation.ts: low -> Live, medium -> Done,
+                 high -> Now) — a running session is Live, a finished one
+                 is Done. There is no shipped word for "stale", and this
+                 file does not invent one. -->
+            <div class="agent-board-primary agent-working" data-session="0">
+              <div class="compact">
+                <div class="copy">
+                  <div class="masthead-row">
+                    <div class="masthead">
+                      <span class="agent-dot large pulse"></span>
+                      <span class="agent-runtime-tick"></span>
+                      agent
+                    </div>
+                    <div class="stamp">Live</div>
+                  </div>
+                  <div class="title headline">Building the r3 prototype pass</div>
+                  <div class="notif-subtitle-row">
+                    <span class="notif-subtitle">claude code &middot; mac-notification-nudge</span>
+                    <span class="notif-time-inline">6m</span>
+                  </div>
+                  <div class="notif-body">Editing <code>prototypes/tab-notch-panel.html</code> &mdash; three tool calls since the last turn.</div>
+                  <div class="detail-facts">
+                    <span class="fact-pill tone-accent"><span class="fp-label">turn</span>12<span class="fp-tag">working</span></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="agent-board-primary agent-completed" data-session="1" hidden>
+              <div class="compact">
+                <div class="copy">
+                  <div class="masthead-row">
+                    <div class="masthead">
+                      <span class="agent-dot large"></span>
+                      <span class="agent-runtime-tick"></span>
+                      agent
+                    </div>
+                    <div class="stamp">Done</div>
+                  </div>
+                  <div class="title headline">Finished the pricing section rewrite</div>
+                  <div class="notif-subtitle-row">
+                    <span class="notif-subtitle">codex &middot; notchtap-site</span>
+                    <span class="notif-time-inline">2m</span>
+                  </div>
+                  <div class="notif-body">Regenerated the preview images and pushed the branch.</div>
+                  <div class="detail-facts">
+                    <span class="fact-pill tone-safe"><span class="fp-label">exit</span>0<span class="fp-tag">clean</span></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="agent-board-primary agent-completed" data-session="2" hidden>
+              <div class="compact">
+                <div class="copy">
+                  <div class="masthead-row">
+                    <div class="masthead">
+                      <span class="agent-dot large"></span>
+                      <span class="agent-runtime-tick"></span>
+                      agent
+                    </div>
+                    <div class="stamp">Done</div>
+                  </div>
+                  <div class="title headline">Split the zsh config into per-machine fragments</div>
+                  <div class="notif-subtitle-row">
+                    <span class="notif-subtitle">opencode &middot; dotfiles</span>
+                    <span class="notif-time-inline">34m</span>
+                  </div>
+                  <div class="notif-body">Every shell still starts clean, and nothing was left staged.</div>
+                  <div class="detail-facts">
+                    <span class="fact-pill tone-safe"><span class="fp-label">exit</span>0<span class="fp-tag">clean</span></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="agent-board-primary agent-stale" data-session="3" hidden>
+              <div class="compact">
+                <div class="copy">
+                  <div class="masthead-row">
+                    <div class="masthead">
+                      <span class="agent-dot large"></span>
+                      <span class="agent-runtime-tick"></span>
+                      agent
+                    </div>
+                    <div class="stamp">Done</div>
+                  </div>
+                  <div class="title headline">No adapter heartbeat since 09:12</div>
+                  <div class="notif-subtitle-row">
+                    <span class="notif-subtitle">claude code &middot; scratch</span>
+                    <span class="notif-time-inline">51m</span>
+                  </div>
+                  <div class="notif-body">Last known state was working. Drops off the roster at the hour.</div>
+                  <div class="detail-facts">
+                    <span class="fact-pill tone-danger"><span class="fp-label">heartbeat</span>lost<span class="fp-tag">stale</span></span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- SHORTCUT-EXPANDED ONLY (prefix+enter). The shipped one-line
+                 roster rows — dot, runtime tick, runtime, project, state,
+                 elapsed. Never a "+N" collapse; that is an explicit spec
+                 rule. The viewed row is lifted so the roster and the floor
+                 bar agree about where you are. Hover alone never opens
+                 this. -->
+            <div class="agent-board-rows" data-when="expanded">
+              <div class="agent-row agent-working src-claude-code" data-row="0">
+                <span class="agent-dot pulse"></span><span class="agent-runtime-tick"></span>
+                <span class="agent-row-runtime">claude code</span>
+                <span class="agent-row-project">mac-notification-nudge</span>
+                <span class="agent-row-state">Working</span>
+                <span class="agent-row-elapsed">6m</span>
+              </div>
+              <div class="agent-row agent-completed src-codex" data-row="1">
+                <span class="agent-dot"></span><span class="agent-runtime-tick"></span>
+                <span class="agent-row-runtime">codex</span>
+                <span class="agent-row-project">notchtap-site</span>
+                <span class="agent-row-state">Done</span>
+                <span class="agent-row-elapsed">2m</span>
+              </div>
+              <div class="agent-row agent-completed src-opencode" data-row="2">
+                <span class="agent-dot"></span><span class="agent-runtime-tick"></span>
+                <span class="agent-row-runtime">opencode</span>
+                <span class="agent-row-project">dotfiles</span>
+                <span class="agent-row-state">Done</span>
+                <span class="agent-row-elapsed">34m</span>
+              </div>
+              <div class="agent-row agent-stale src-claude-code" data-row="3">
+                <span class="agent-dot"></span><span class="agent-runtime-tick"></span>
+                <span class="agent-row-runtime">claude code</span>
+                <span class="agent-row-project">scratch</span>
+                <span class="agent-row-state">Stale</span>
+                <span class="agent-row-elapsed">51m</span>
+              </div>
+            </div>
+
+            <!-- THE SESSION POSITION INDICATOR (NEW). ttl-bar geometry, no
+                 drain: one segment per registered session, bright = the one
+                 you are viewing, dim = the rest. Paired with prefix-[ and
+                 prefix-] to walk the roster. This card does NOT expire —
+                 you pulled it. A PUSHED interrupt (a completion, a
+                 permission prompt) is a different animal and keeps the real
+                 draining TTL bar. -->
+            <div class="session-bar" style="--session-n:4" id="sessionBar">
+              <span class="session-seg viewed"></span>
+              <span class="session-seg"></span>
+              <span class="session-seg"></span>
+              <span class="session-seg"></span>
+            </div>
+          </div>
+
+          <!-- ============ 2 — FOOTBALL ============
+               Compact is the shipped scorecard: football kicker + dot, the
+               real per-signal Stamp, the event line as the headline, then
+               the score-block hanging off its own 10px margin-top —
+               sc-head chips, score-row with crests and odometer digits,
+               cards-line. Shortcut-expanded is the CROSSBAR variant: two stacked
+               score-blocks, no event headline, no TTL bar. -->
+          <div class="below-block src-football tabpage" data-page="football">
+            <div class="compact">
+              <div class="copy">
+                <div class="masthead-row">
+                  <div class="masthead"><span class="dot"></span>football</div>
+                  <div class="stamp">Live</div>
+                </div>
+                <div class="title headline" data-when="compact">Goal &mdash; K. Havertz 78'</div>
+                <div class="title headline" data-when="expanded">2 matches live</div>
+
+                <div class="score-block">
+                  <div class="sc-head">
+                    <span class="chip chip-league">UCL</span>
+                    <span class="chip chip-live"><span class="live-dot"></span>Live</span>
+                    <span class="chip clock-pill">78'</span>
+                  </div>
+                  <div class="score-row">
+                    <div class="side"><span class="crest">ARS</span></div>
+                    <span class="score">
+                      <span class="score-digit"><span class="score-digit-roll">2</span></span>
+                      <span class="dash">&ndash;</span>
+                      <span class="score-digit"><span class="score-digit-roll">1</span></span>
+                    </span>
+                    <div class="side"><span class="crest">PSG</span></div>
+                  </div>
+                  <div class="cards-line">ARS 2Y0R &middot; PSG 1Y1R</div>
+                </div>
+
+                <!-- the second match exists only in the persistent variant -->
+                <div class="score-block stacked" data-when="expanded">
+                  <div class="sc-head">
+                    <span class="chip chip-league">EPL</span>
+                    <span class="chip chip-live break"><span class="live-dot"></span>Break</span>
+                    <span class="chip clock-pill">HT</span>
+                  </div>
+                  <div class="score-row">
+                    <div class="side"><span class="crest">MCI</span></div>
+                    <span class="score">
+                      <span class="score-digit"><span class="score-digit-roll">0</span></span>
+                      <span class="dash">&ndash;</span>
+                      <span class="score-digit"><span class="score-digit-roll">0</span></span>
+                    </span>
+                    <div class="side"><span class="crest">LIV</span></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ============ 3 — MUSIC / MEDIA ============
+               Now-playing poured into the shipped card skeleton: "media"
+               kicker, track title as .title.headline, artist as the
+               subtitle row. The body area carries the album tile, the
+               transport buttons and the thin .media-bar the idle peek
+               already draws. Shortcut-expanded adds a scrubber and a queue preview. -->
+          <div class="below-block src-manual tabpage" data-page="music">
+            <div class="compact">
+              <div class="copy">
+                <div class="masthead-row">
+                  <div class="masthead"><span class="dot"></span>media</div>
+                  <div class="stamp">Live</div>
+                </div>
+                <div class="title headline">Weightless in Motion</div>
+                <div class="notif-subtitle-row">
+                  <span class="notif-subtitle">Hiroshi Ando &middot; Long Season</span>
+                </div>
+
+                <div class="media-body">
+                  <span class="media-art big">&#9834;</span>
+                  <div class="grow">
+                    <div class="media-transport">
+                      <button class="mr-btn" type="button" aria-label="previous track"><span class="mr-glyph prev"></span></button>
+                      <button class="mr-btn primary" type="button" aria-label="pause"><span class="mr-glyph pause"></span></button>
+                      <button class="mr-btn" type="button" aria-label="next track"><span class="mr-glyph next"></span></button>
+                      <span class="media-bar" style="margin-left:6px"><span class="media-bar-fill" style="transform:scaleX(0.42)"></span></span>
+                      <span class="media-time">1:47</span>
+                    </div>
+                    <div data-when="expanded">
+                      <div class="media-scrub"><span class="fill"></span><span class="knob"></span></div>
+                      <div class="media-times"><span>1:47</span><span>4:12</span></div>
+                    </div>
+                  </div>
+                </div>
+
+                <div class="queue-list" data-when="expanded">
+                  <div class="queue-row"><span class="n">1</span>Sable Light<span class="who">Hiroshi Ando</span></div>
+                  <div class="queue-row"><span class="n">2</span>Kite Weather<span class="who">Mono No Aware</span></div>
+                  <div class="queue-row"><span class="n">3</span>Slow Harbour<span class="who">Tide Machine</span></div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ============ 4 — WEATHER ============
+               The shipped weather card, tightened, with nothing invented.
+               `.wx-card` + a mood class paints the gradient in `::before`
+               at z-index 0 (weather-art.css); `.compact` and
+               `.peek-content` ride above it at z-index 1. The readout
+               itself is idle-peek.css's vocabulary at its shipped sizes:
+               `.wx-peek-icon` 28px, `.wx-peek-temp` 18px mono-800,
+               `.wx-peek-condition` neutral chip, `.wx-peek-hilo` with its
+               leading middot, `.wx-peek-rain` in the same light blue the
+               rain-streak texture uses. `.wx-forecast-point` is a ROW
+               (icon, temp, hour side by side), the strip carries the
+               shipped `padding: 0 12px`, and the whole readout+strip pair
+               sits in one `.wx-peek-weather-stack` so `.peek-content`'s
+               8px gap still applies exactly once.
+               The readout is a SIBLING of `.compact`, not a child: it
+               brings its own 10px/12px padding and nesting would have
+               stacked that on top of the compact row's 16/20px. -->
+          <div class="below-block src-weather wx-card wx-partly-cloudy-day tabpage" data-page="weather">
+            <div class="compact">
+              <div class="copy">
+                <div class="masthead-row">
+                  <div class="masthead"><span class="dot"></span>weather</div>
+                  <div class="stamp">Done</div>
+                </div>
+                <div class="title headline">Bengaluru &mdash; partly cloudy</div>
+                <div class="notif-subtitle-row">
+                  <span class="notif-subtitle">updated from the 15-minute poll</span>
+                  <span class="notif-time-inline">4m</span>
+                </div>
+              </div>
+            </div>
+            <div class="peek-content">
+              <div class="wx-peek-weather-stack">
+                <div class="wx-peek-readout">
+                  <span class="wx-peek-icon"></span>
+                  <span class="wx-peek-temp">27&deg;</span>
+                  <span class="chip wx-peek-condition">partly cloudy</span>
+                  <span class="wx-peek-hilo">H 31&deg; L 21&deg;</span>
+                  <span class="chip wx-peek-rain">rain 40%</span>
+                </div>
+                <div class="wx-forecast-strip">
+                  <div class="wx-forecast-point"><span class="wx-forecast-icon sun"></span><span class="wx-forecast-temp">28&deg;</span><span class="wx-forecast-hour">14</span></div>
+                  <div class="wx-forecast-point"><span class="wx-forecast-icon sun"></span><span class="wx-forecast-temp">29&deg;</span><span class="wx-forecast-hour">15</span></div>
+                  <div class="wx-forecast-point"><span class="wx-forecast-icon"></span><span class="wx-forecast-temp">28&deg;</span><span class="wx-forecast-hour">16</span></div>
+                  <div class="wx-forecast-point"><span class="wx-forecast-icon rain"></span><span class="wx-forecast-temp">26&deg;</span><span class="wx-forecast-hour">17</span></div>
+                  <div class="wx-forecast-point"><span class="wx-forecast-icon rain"></span><span class="wx-forecast-temp">24&deg;</span><span class="wx-forecast-hour">18</span></div>
+                </div>
+              </div>
+            </div>
+            <div class="manifest-wrap">
+              <div class="manifest">
+                <div class="manifest-block">
+                  <div class="manifest-label">Message</div>
+                  <div class="manifest-text">Showers building from the west after 17:00, easing by 20:00. Winds stay light. Nothing severe in the next 24 hours.</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ============ 5 — NEWS ============
+               The shipped news card: source masthead with its category dot,
+               the real Wire stamp, the headline, the category chip and the
+               relative age, all over the drifting category shade. The batch
+               header above it is new — see its annotation. Shortcut-expanded opens
+               the summary manifest exactly as shipped. -->
+          <div class="below-block news-shade cat-tech tabpage" data-page="news">
+            <div class="batch-head">
+              <span>10 fresh</span>
+              <span class="sep">&middot;</span>
+              <span>cycle ended 2m ago</span>
+              <span class="batch-dots">
+                <i></i><i class="on"></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i><i></i>
+              </span>
+              <span class="batch-nav">
+                <button type="button" aria-label="previous story">&lsaquo;</button>
+                <button type="button" aria-label="next story">&rsaquo;</button>
+              </span>
+            </div>
+            <div class="compact">
+              <div class="copy">
+                <div class="masthead-row">
+                  <div class="masthead"><span class="dot"></span>The Verge</div>
+                  <div class="stamp">Wire</div>
+                </div>
+                <div class="title headline">Apple opens the notch region to third-party status items in the next macOS beta</div>
+                <div class="notif-meta-row">
+                  <span class="chip chip-category">tech</span>
+                  <span class="notif-time-inline">12m</span>
+                </div>
+              </div>
+              <div class="compact-hint" data-when="compact"><kbd>&#8963;&#8679;N</kbd> more</div>
+            </div>
+            <div class="manifest-wrap">
+              <div class="manifest">
+                <div class="manifest-block">
+                  <div class="manifest-label">Summary</div>
+                  <div class="manifest-text">The beta exposes a narrow API for persistent items either side of the camera housing, with a strict height budget and no arbitrary drawing. Layout is declarative only.</div>
+                  <div class="manifest-footer"><span class="manifest-hint">&#8963;&#8679;N to close</span></div>
+                </div>
+              </div>
+            </div>
+            <!-- the shipped 4px segmented floor bar: ten segments for the ten
+                 stories in this cycle, burning out left to right (bright =
+                 still to come, dim = already read). -->
+            <div class="ttl-bar" style="--queue-n:10">
+              <span class="ttl-seg done"><span class="ttl-fill" style="transform:scaleX(1)"></span></span>
+              <span class="ttl-seg"><span class="ttl-fill" style="transform:scaleX(0.55)"></span></span>
+              <span class="ttl-seg"></span><span class="ttl-seg"></span><span class="ttl-seg"></span>
+              <span class="ttl-seg"></span><span class="ttl-seg"></span><span class="ttl-seg"></span>
+              <span class="ttl-seg"></span><span class="ttl-seg"></span>
+            </div>
+          </div>
+
+          <!-- ============ 6 — NONE ============
+               Nothing selected: the hover face only. Painted flanks, the
+               clock, the icon strip, and nothing underneath. This page is
+               deliberately EMPTY — its emptiness is the design. With no
+               below-block in the DOM the rounding law hands the outer
+               corners back to the flanks and the cutout, which is why the
+               shape reads as a notch again rather than a card. -->
+          <div class="tabpage" data-page="none"></div>
+
+        </div>
+      </div>
+    </div>
+
+    <div class="toggle-row">
+      <button id="toggleExpand" type="button">shortcut-expanded preview</button>
+      <span class="state">hover shows compact &middot; expanded is <b>prefix+enter</b> only</span>
+      <span class="state">state: <b id="stateReadout">agent &middot; compact</b></span>
+    </div>
+
+    <!-- the session-cycling demo. The buttons stand in for prefix-[ and
+         prefix-]; on the agent page they move the hero and the bright
+         segment together, and they are inert on every other page because
+         no other page has a roster to walk. -->
+    <div class="toggle-row" id="cycleRow">
+      <button id="sessPrev" type="button">&lsaquo; prefix-[</button>
+      <button id="sessNext" type="button">prefix-] &rsaquo;</button>
+      <span class="state">viewing session <b id="sessReadout">1 / 4</b></span>
+    </div>
+
+    <div class="selfcheck" id="selfcheck">self-check pending</div>
+
+    <p class="note open-q">
+      <b>The floor strip, settled.</b> A tab-summoned card was not promoted — nothing pushed it, you
+      asked for it — so it never counts down. The 4px floor strip survives on pulled cards as a
+      <b>position indicator</b> instead: ten segments for the ten stories in a news cycle, four for
+      four registered agent sessions, bright for where you are. <b>Pushed interrupt cards keep the
+      real draining TTL and expire; pulled views persist.</b> Same strip, and the presence or
+      absence of the drain is the whole tell. Football's persistent variant carries no strip at all,
+      which is already how it ships.
+    </p>
+  </section>
+
+  <!-- ================================================================= -->
+  <section>
+    <h2>what each selection shows</h2>
+
+    <div class="ann">
+      <h3>1 &mdash; agents<span class="tag same">shipped card</span><span class="tag new">session bar</span></h3>
+      <ul class="rules">
+        <li><b>The card is the shipped card.</b> The hero runs through the unified template &mdash; AGENT kicker, real Stamp, prose title, runtime &middot; project subtitle, body, fact pills with <code>fp-tag</code> qualifiers &mdash; sitting on the <b>runtime identity wash</b> and its hairline, with the 3px priority stripe flush to the card's own left edge.</li>
+        <li><b>The wash is the point.</b> <code>agent-origin</code> puts a static corner radial in <code>::before</code> (<code>120% 140% at 0% 0%</code>, <code>--cat-deep</code>, out by 52%) and a <code>--cat</code>-keyed hairline on the top border; <code>.compact</code> rides above it at z-index 1. Cycling the hero rewrites the <code>src-*</code> class, so the card warms to terracotta for Claude Code, green for Codex, purple for OpenCode. If it ever reads as flat black, that stack is broken &mdash; and the self-check under the rig now prints the exact colour it resolved to rather than leaving it to the eye.</li>
+        <li class="n"><b>The session bar is new.</b> One segment per registered session on the card floor: the shipped ttl-bar's exact geometry (4px, 3px gaps, one grid column each) with the drain removed. Bright <code>--accent</code> is the session you are viewing, the 30% trough is the rest. It reads from the <b>priority</b> channel, never the origin channel, because a floor bar is card chrome like the Stamp and the priority edge &mdash; the hero above it can be painted by origin, the bar under it cannot.</li>
+        <li class="n"><b>Pulled views persist; pushed cards expire.</b> This card has no countdown because nothing pushed it &mdash; you asked for it, so it stays until you go elsewhere. A PUSHED agent interrupt (a completion, a permission prompt) is unchanged: it arrives on its own, carries the real draining TTL bar, and times out. Same 4px strip, two different jobs, and the presence or absence of the drain is what tells them apart.</li>
+        <li><b>All four sessions stay visible</b> &mdash; as segments in compact, and as the shipped one-line roster rows (dot, runtime tick, runtime, project, state, elapsed; never a "+N" collapse) once <b>prefix+enter</b> opens the expanded state. The viewed row is lifted so the roster and the bar agree.</li>
+        <li>The dot's pulse stays <b>bounded</b> (one tick, four breathes, then rest). An always-on pulse was deliberately removed from this app; a tab that summons the board must not smuggle it back.</li>
+        <li class="q"><b>Flagged, not answered.</b> The generic Stamp table has three words (<code>Live</code> / <code>Done</code> / <code>Now</code>) and none of them means "stale". This file uses <code>Done</code> for the stale session rather than inventing a fourth.</li>
+      </ul>
+    </div>
+
+    <div class="ann">
+      <h3>2 &mdash; football<span class="tag same">shipped card</span></h3>
+      <ul class="rules">
+        <li>Compact is the shipped scorecard: football kicker and dot, the real per-signal Stamp (<code>Live</code> / <code>Card</code> / <code>Final</code>&hellip;), the event line as the headline, and the score-block hanging off its own 10px margin-top &mdash; <code>sc-head</code> chips, <code>score-row</code> with crests and odometer digits, <code>cards-line</code>.</li>
+        <li><b>Permanent while live.</b> Shortcut-expanded (<b>prefix+enter</b>) is the crossbar-style persistent variant: two stacked score-blocks, no event headline, <b>no TTL bar</b>. While a match is live and the football tab is selected, this does not time out and never needs re-summoning &mdash; it is a standing readout you glance at, the same way the shipped sticky live card already behaves.</li>
+        <li>A goal still interrupts. Selection decides what rests under the notch, never what a goal is allowed to do.</li>
+      </ul>
+    </div>
+
+    <div class="ann">
+      <h3>3 &mdash; music / media<span class="tag new">new controls</span></h3>
+      <ul class="rules">
+        <li>Now-playing poured into the shipped skeleton: <code>media</code> kicker, track title as <code>.title.headline</code>, artist as the subtitle row, then the album tile, transport and thin <code>.media-bar</code> in the body area &mdash; the same bar the idle peek already draws, still scaled with a transform rather than a width.</li>
+        <li class="n"><b>The controls are the new MediaRemote command surface.</b> Everything else on this page is existing vocabulary; prev / play-pause / next are new because the vendored MediaRemote adapter gives us commands, not just a read-only string. They are drawn in the existing chip and tile language &mdash; same tints, same radii, same press-scale &mdash; so a new capability does not arrive as a new look.</li>
+        <li>Shortcut-expanded (<b>prefix+enter</b>) adds the scrubber (drag to seek) and a three-row queue preview. Nothing here has a TTL: media is a live surface, not an event.</li>
+      </ul>
+    </div>
+
+    <div class="ann">
+      <h3>4 &mdash; weather<span class="tag same">shipped card, tightened</span></h3>
+      <ul class="rules">
+        <li><b>Essentially unchanged, re-derived strictly.</b> Every value here comes off <code>weather-art.css</code> and <code>idle-peek.css</code> at its shipped size: the <code>.wx-card</code> mood gradient at z-index 0, the 28px condition glyph, the <b>18px</b> mono-800 temp, the neutral <code>.wx-peek-condition</code> chip, <code>.wx-peek-hilo</code> with its leading middot, and <code>.wx-peek-rain</code> in the same light blue the rain-streak texture already uses.</li>
+        <li class="n"><b>What r2 had invented, and is now gone:</b> a 30px "big" temp variant (shipped is 18px, full stop), a column-stacked <code>.wx-forecast-point</code> (shipped is a row), an unpadded forecast strip (shipped is <code>padding: 0 12px</code>), and a made-up <code>.wx-forecast-glyph</code> class name (shipped is <code>.wx-forecast-icon</code>). The readout is also a sibling of <code>.compact</code> rather than a child, because it brings its own 10px/12px padding and nesting stacked the two.</li>
+        <li>The readout and strip share one <code>.wx-peek-weather-stack</code> so <code>.peek-content</code>'s 8px gap applies exactly once, whether or not the strip is mounted &mdash; the shipped reason that wrapper exists.</li>
+        <li>Rain conditions bring the shipped rain-streak texture with its seamless 23.66px loop. <b>prefix+enter</b> opens the manifest block, the same disclosure the news card uses on the same 320ms grid-rows transition.</li>
+        <li>A severe-weather alert still interrupts as a high-priority card, selection or no selection.</li>
+      </ul>
+    </div>
+
+    <div class="ann">
+      <h3>5 &mdash; news<span class="tag new">batch header</span></h3>
+      <ul class="rules">
+        <li>The shipped news card: source masthead with its category dot, the real <code>Wire</code> stamp, the headline, the category chip and the relative age, all over the drifting category shade. <b>prefix+enter</b> opens the summary manifest exactly as shipped.</li>
+        <li class="n"><b>The batch header is new</b> &mdash; "10 fresh &middot; cycle ended 2m ago", ten dots, prev / next. It exists because a tab-summoned card is not a promotion: nothing pushed it, so it has to say how big the pile is and let you walk it. Held to one mono line in the masthead's own type so it reads as card chrome, not a toolbar.</li>
+        <li><b>Opened via the charged icon, never interrupts.</b> A finished news cycle charges the news icon on the flank; it does not promote a card at you. Breaking-news interruption is explicitly a future thing, out of scope here.</li>
+      </ul>
+    </div>
+
+    <div class="ann">
+      <h3>6 &mdash; none selected</h3>
+      <ul class="rules">
+        <li>The bare hover face: painted flanks, the clock, the icon strip, nothing underneath. With no below-block in the DOM the rounding law hands the outer corners back to the flanks and the cutout, so the shape reads as a notch again rather than a card &mdash; that handoff is the shipped rule, not a special case built for this page.</li>
+        <li>This is the honest default. If you have selected nothing, the notch owes you nothing.</li>
+      </ul>
+    </div>
+
+    <p class="note warn">
+      <b>On every page, without exception.</b> High-priority interrupting cards &mdash; a goal, an
+      agent completion, an agent waiting on permission, a severe weather alert &mdash; still arrive
+      exactly as they do today, regardless of which tab is selected or whether any tab is. Tab
+      selection decides what the notch shows when you go looking. It never decides what the notch is
+      allowed to tell you.
+    </p>
+  </section>
+
+  <!-- ================================================================= -->
+  <section>
+    <h2>shipped vs new</h2>
+    <table class="spec">
+      <tr><th>piece</th><th>status</th><th>source</th></tr>
+      <tr><td>shell, cutout, rounding law, drop-shadow</td><td class="val">shipped</td><td class="val">card-chrome.css</td></tr>
+      <tr><td>3px priority stripe, Stamp, headline, subtitle, body</td><td class="val">shipped</td><td class="val">masthead-content.css</td></tr>
+      <tr><td>fact pills, fp-label, fp-tag, tones</td><td class="val">shipped</td><td class="val">manifest.css</td></tr>
+      <tr><td>masthead kicker + hairline, chips, category shade</td><td class="val">shipped</td><td class="val">news-category.css</td></tr>
+      <tr><td>score-block, sc-head, score-row, cards-line</td><td class="val">shipped</td><td class="val">live-scorecard.css</td></tr>
+      <tr><td>roster rows, runtime tick, bounded dot pulse</td><td class="val">shipped</td><td class="val">agent-board.css</td></tr>
+      <tr><td>agent runtime wash + --cat hairline</td><td class="val">shipped</td><td class="val">card-chrome.css ~815</td></tr>
+      <tr><td>mood gradients, rain texture</td><td class="val">shipped</td><td class="val">weather-art.css</td></tr>
+      <tr><td>media bar, art tile, peek readout</td><td class="val">shipped</td><td class="val">idle-peek.css</td></tr>
+      <tr><td>4px segmented floor bar</td><td class="val">shipped</td><td class="val">ttl-bar.css</td></tr>
+      <tr><td>runtime identity colours</td><td class="val">shipped</td><td class="val">source-identity.css</td></tr>
+      <tr><td>session position bar (ttl geometry, no drain)</td><td class="new">NEW</td><td class="val">prefix-[ / prefix-]</td></tr>
+      <tr><td>media transport buttons + scrubber</td><td class="new">NEW</td><td class="val">MediaRemote commands</td></tr>
+      <tr><td>news batch header + prev/next</td><td class="new">NEW</td><td class="val">tab-summoned browsing</td></tr>
+      <tr><td>football two-match persistent variant</td><td class="new">NEW</td><td class="val">crossbar behaviour</td></tr>
+      <tr><td>icon-tab strip on the right flank</td><td class="new">PLACEHOLDER</td><td class="val">proposal 1/2</td></tr>
+      <tr><td>weather + forecast glyphs</td><td class="new">STAND-IN</td><td class="val">Meteocons SVG in app</td></tr>
+    </table>
+  </section>
+
+  <footer>
+    prototypes/tab-notch-panel.html &mdash; proposal 2 of 2, revised 2026-08-02 (r3). Hand-authored
+    HTML/CSS/vanilla JS, no build step, no network, not wired into the app and not synced going
+    forward. The big-panel concept this file used to argue for is rejected and removed. No
+    reduced-motion or accessibility variants appear anywhere here, by standing rule. HUD mode only.
+    No third-party logo, asset, trade dress or implied affiliation appears in this file; coding
+    runtime names are used neutrally, because compatibility requires them.
+  </footer>
+
+</main>
+
+<script>
+  "use strict";
+
+  // The whole page is this much state: which tab is selected, which agent
+  // session is being viewed, and whether the shortcut-expanded state is
+  // being previewed. Expanded-ness is remembered PER TAB, so walking the
+  // chips does not silently reset what you were looking at.
+  var TABS = ["agent", "football", "music", "weather", "news", "none"];
+
+  // Priority tier per selection, mirroring what the real event would carry.
+  // The tier class lives on `.card-assembly` exactly as it does in the app:
+  // it is the SHELL that owns the priority accent, never the content block.
+  // `agent` is absent on purpose — its tier follows the VIEWED SESSION, see
+  // SESSIONS below.
+  var PRIORITY = {
+    football: "high",   // a goal
+    music: "low",       // ambient
+    weather: "medium",  // forecast, not an alert
+    news: "low",        // wire item
+    none: "low"
+  };
+
+  // The registered agent roster. `src` is the source-identity class that
+  // drives the runtime wash on the below-block; `tier` is the priority
+  // class on the shell; `rgb` is what `--cat` resolves to and is what the
+  // wash self-check below looks for in computed style. The two channels are
+  // deliberately independent — origin paints the wash, priority paints the
+  // stripe, the Stamp and the session bar.
+  var SESSIONS = [
+    { src: "src-claude-code", tier: "low",    cat: [217, 119, 87],  label: "claude code / mac-notification-nudge" },
+    { src: "src-codex",       tier: "medium", cat: [16, 163, 127],  label: "codex / notchtap-site" },
+    { src: "src-opencode",    tier: "medium", cat: [157, 124, 216], label: "opencode / dotfiles" },
+    { src: "src-claude-code", tier: "medium", cat: [217, 119, 87],  label: "claude code / scratch" }
+  ];
+  var SESSION_SRC_CLASSES = ["src-claude-code", "src-codex", "src-opencode"];
+
+  var state = { tab: "agent", session: 0, expanded: {} };
+  TABS.forEach(function (t) { state.expanded[t] = false; });
+
+  var assembly = document.getElementById("assembly");
+  var pages = Array.prototype.slice.call(document.querySelectorAll(".tabpage"));
+  var chips = Array.prototype.slice.call(document.querySelectorAll(".sel-chip"));
+  var icons = Array.prototype.slice.call(document.querySelectorAll(".tab-ico"));
+  var readout = document.getElementById("stateReadout");
+  var selfcheck = document.getElementById("selfcheck");
+
+  var agentBlock = document.getElementById("agentBlock");
+  var heroes = Array.prototype.slice.call(agentBlock.querySelectorAll("[data-session]"));
+  var segs = Array.prototype.slice.call(agentBlock.querySelectorAll(".session-seg"));
+  var rosterRows = Array.prototype.slice.call(agentBlock.querySelectorAll("[data-row]"));
+  var sessPrev = document.getElementById("sessPrev");
+  var sessNext = document.getElementById("sessNext");
+  var sessReadout = document.getElementById("sessReadout");
+
+  function tierFor(tab) {
+    return tab === "agent" ? SESSIONS[state.session].tier : PRIORITY[tab];
+  }
+
+  // `data-when="compact"` / `data-when="expanded"` marks the parts of a page
+  // that belong to only one of the two variants. Toggled with the `hidden`
+  // property; the stylesheet's `[hidden] { display: none !important }` is
+  // what makes that hold even against a class that sets its own `display`.
+  function applyVariant(page, expanded) {
+    var scoped = page.querySelectorAll("[data-when]");
+    for (var i = 0; i < scoped.length; i++) {
+      var want = scoped[i].getAttribute("data-when");
+      scoped[i].hidden = (want === "expanded") !== expanded;
+    }
+  }
+
+  // The session cycle: hero, floor-bar segment and roster row move as one.
+  // Swapping the `src-*` class on the below-block is what re-tints the
+  // runtime wash and hairline — the whole card warms to the runtime you are
+  // looking at.
+  function applySession() {
+    var i = state.session;
+    heroes.forEach(function (hero, n) { hero.hidden = n !== i; });
+    segs.forEach(function (seg, n) { seg.classList.toggle("viewed", n === i); });
+    rosterRows.forEach(function (row, n) { row.classList.toggle("viewed", n === i); });
+    SESSION_SRC_CLASSES.forEach(function (cls) { agentBlock.classList.remove(cls); });
+    agentBlock.classList.add(SESSIONS[i].src);
+    sessReadout.textContent = (i + 1) + " / " + SESSIONS.length;
+  }
+
+  function render() {
+    var tab = state.tab;
+    var expanded = state.expanded[tab] === true;
+    var isNone = tab === "none";
+
+    applySession();
+
+    // exactly one page carries `.is-active`; every other one falls back to
+    // the stylesheet's unconditional `display: none`.
+    pages.forEach(function (page) {
+      var active = page.getAttribute("data-page") === tab;
+      page.classList.toggle("is-active", active);
+      if (active) { applyVariant(page, expanded); }
+    });
+
+    // the shell: priority tier + width geometry. `rail` is the shipped
+    // idle/hover-rail width (cutout + 2 x 85px), used when nothing is
+    // selected and there is therefore no below-block to hold.
+    assembly.className = "card-assembly " + tierFor(tab) +
+      (isNone ? " rail" : (expanded ? " expanded" : ""));
+
+    icons.forEach(function (ico) {
+      ico.classList.toggle("on", ico.getAttribute("data-tab") === tab);
+    });
+    chips.forEach(function (chip) {
+      chip.classList.toggle("on", chip.getAttribute("data-tab") === tab);
+    });
+
+    sessPrev.disabled = tab !== "agent";
+    sessNext.disabled = tab !== "agent";
+
+    readout.innerHTML = tab + " &middot; " +
+      (isNone ? "bare hover face" : (expanded ? "shortcut-expanded" : "compact (hover)"));
+    runChecks();
+  }
+
+  // ============ EXPLICIT VERIFICATION, on every switch ============
+  // All four checks read COMPUTED style, never the class list — a stacking
+  // or specificity bug lies happily about the class list and cannot lie
+  // about computed style. Results are printed on the page, not just logged.
+
+  // 1. exactly one page painted.
+  function checkOnePage() {
+    var visible = pages.filter(function (page) {
+      return window.getComputedStyle(page).display !== "none";
+    });
+    var names = visible.map(function (page) { return page.getAttribute("data-page"); });
+    return {
+      name: "one page painted",
+      ok: visible.length === 1 && names[0] === state.tab,
+      detail: visible.length + "/" + pages.length + " [" + (names.join(", ") || "none") + "]"
+    };
+  }
+
+  // 2. every per-variant part obeys the variant. This is the check that
+  // would have caught r2's `hidden`-vs-class-display bug.
+  function checkVariantParts() {
+    var expanded = state.expanded[state.tab] === true;
+    var page = pages.filter(function (p) { return p.getAttribute("data-page") === state.tab; })[0];
+    var wrong = 0;
+    var total = 0;
+    if (page) {
+      var scoped = page.querySelectorAll("[data-when]");
+      for (var i = 0; i < scoped.length; i++) {
+        total++;
+        var shouldShow = (scoped[i].getAttribute("data-when") === "expanded") === expanded;
+        var isShown = window.getComputedStyle(scoped[i]).display !== "none";
+        if (shouldShow !== isShown) { wrong++; }
+      }
+    }
+    return {
+      name: "variant parts",
+      ok: wrong === 0,
+      detail: (total - wrong) + "/" + total + " correct"
+    };
+  }
+
+  // 3. the session cycle: one hero, one bright segment, same index, and the
+  // bar has exactly as many segments as there are registered sessions.
+  function checkSessionCycle() {
+    var shownHeroes = [];
+    heroes.forEach(function (hero, n) {
+      if (window.getComputedStyle(hero).display !== "none") { shownHeroes.push(n); }
+    });
+    var bright = [];
+    segs.forEach(function (seg, n) {
+      if (seg.classList.contains("viewed")) { bright.push(n); }
+    });
+    // Bar geometry is asserted from computed style too, against the shipped
+    // ttl-bar numbers: 4px tall, 3px gaps, `--session-n` columns. (Column
+    // COUNT is read off the custom property rather than
+    // `gridTemplateColumns`, which only resolves to used track sizes on a
+    // rendered element — this check has to hold on the hidden pages too.)
+    var bar = window.getComputedStyle(segs[0].parentNode);
+    var barCols = parseInt(bar.getPropertyValue("--session-n"), 10);
+    var geometryOk = bar.height === "4px" && bar.gap === "3px" && barCols === SESSIONS.length;
+    var ok = shownHeroes.length === 1 && bright.length === 1 &&
+      shownHeroes[0] === state.session && bright[0] === state.session &&
+      segs.length === SESSIONS.length && heroes.length === SESSIONS.length && geometryOk;
+    return {
+      name: "session cycle",
+      ok: ok,
+      detail: "hero " + (shownHeroes.join(",") || "none") + " / segment " + (bright.join(",") || "none") +
+        " / " + segs.length + " segments, " + barCols + " columns, " + bar.height + " tall, " + bar.gap + " gaps"
+    };
+  }
+
+  // 4. THE WASH. Reads the `agent-origin` pseudo-element back out of
+  // computed style and confirms it is (a) a radial-gradient and (b) carries
+  // the viewed runtime's own --cat-deep triple — plus that the hairline
+  // resolved to a real colour. This is the check the r2 review needed: it
+  // answers "is the card actually warm" without anyone squinting at a
+  // screenshot.
+  // Pulls the numeric channels out of whatever colour syntax the engine
+  // hands back and normalises them to 0..1. `--cat-deep` is a literal rgba
+  // and comes back as `rgba(217, 119, 87, 0.15)`; the hairline goes through
+  // `color-mix()` and comes back as `color(srgb 0.85098 0.466667 0.341176 /
+  // 0.55)`. Same colour, two spellings — compare the numbers, not the text.
+  function channels(str) {
+    var nums = (str.match(/-?[\d.]+/g) || []).map(Number);
+    if (nums.length < 3) { return null; }
+    var scale = (nums[0] > 1.5 || nums[1] > 1.5 || nums[2] > 1.5) ? 255 : 1;
+    return [nums[0] / scale, nums[1] / scale, nums[2] / scale, nums.length > 3 ? nums[3] : 1];
+  }
+  function near(a, b) { return a !== null && b !== null && Math.abs(a - b) < 0.01; }
+
+  function checkWash() {
+    var cat = SESSIONS[state.session].cat;
+    var wantDeep = "rgba(" + cat[0] + ", " + cat[1] + ", " + cat[2] + ", 0.15)";
+    var img = window.getComputedStyle(agentBlock, "::before").backgroundImage || "";
+    var own = window.getComputedStyle(agentBlock);
+    var hasRadial = img.indexOf("radial-gradient") !== -1;
+    var hasDeep = img.indexOf(wantDeep) !== -1;
+
+    var hair = channels(own.borderTopColor || "");
+    var hairOk = hair !== null && own.borderTopWidth === "1px" &&
+      near(hair[0], cat[0] / 255) && near(hair[1], cat[1] / 255) &&
+      near(hair[2], cat[2] / 255) && near(hair[3], 0.55);
+
+    // the rider: content must sit ON the wash, not behind it.
+    var compact = agentBlock.querySelector("[data-session]:not([hidden]) .compact");
+    var riderOk = !!compact && window.getComputedStyle(compact).zIndex === "1";
+
+    return {
+      name: "runtime wash",
+      ok: hasRadial && hasDeep && hairOk && riderOk,
+      detail: (hasRadial ? "radial" : "NO RADIAL") + ", " + wantDeep + " " +
+        (hasDeep ? "painting" : "MISSING") + ", 1px hairline " + (hairOk ? "keyed to --cat" : "NOT KEYED") +
+        ", content rider " + (riderOk ? "z-index 1" : "NOT LIFTED")
+    };
+  }
+
+  function runChecks() {
+    var results = [checkOnePage(), checkVariantParts(), checkSessionCycle(), checkWash()];
+    var allOk = results.every(function (r) { return r.ok; });
+    selfcheck.innerHTML =
+      "self-check: <b class=\"" + (allOk ? "ok" : "bad") + "\">" + (allOk ? "PASS" : "FAIL") + "</b><br>" +
+      results.map(function (r) {
+        return "&nbsp;&nbsp;" + r.name + ": <b class=\"" + (r.ok ? "ok" : "bad") + "\">" +
+          (r.ok ? "ok" : "FAIL") + "</b> &mdash; " + r.detail;
+      }).join("<br>") +
+      "<br>&nbsp;&nbsp;viewing: " + state.tab +
+      (state.tab === "agent" ? " &middot; " + SESSIONS[state.session].label : "");
+    return allOk;
+  }
+
+  chips.forEach(function (chip) {
+    chip.addEventListener("click", function () {
+      state.tab = chip.getAttribute("data-tab");
+      render();
+    });
+  });
+
+  document.getElementById("toggleExpand").addEventListener("click", function () {
+    if (state.tab === "none") { return; }   // nothing selected, nothing to expand
+    state.expanded[state.tab] = !state.expanded[state.tab];
+    render();
+  });
+
+  function cycle(delta) {
+    if (state.tab !== "agent") { return; }
+    state.session = (state.session + delta + SESSIONS.length) % SESSIONS.length;
+    render();
+  }
+  sessPrev.addEventListener("click", function () { cycle(-1); });
+  sessNext.addEventListener("click", function () { cycle(1); });
+
+  // A one-shot sweep at load: walk every tab in both variants, and every
+  // session on the agent tab, confirming the invariants hold for all of
+  // them rather than just the combination the page happens to open on.
+  (function sweep() {
+    var failures = [];
+    var opening = state.tab;
+    TABS.forEach(function (tab) {
+      [false, true].forEach(function (exp) {
+        state.tab = tab;
+        state.expanded[tab] = exp;
+        if (tab === "agent") {
+          for (var s = 0; s < SESSIONS.length; s++) {
+            state.session = s;
+            render();
+            if (!runChecks()) { failures.push("agent/s" + s + "/" + (exp ? "expanded" : "compact")); }
+          }
+          state.session = 0;
+        } else {
+          render();
+          if (!runChecks()) { failures.push(tab + "/" + (exp ? "expanded" : "compact")); }
+        }
+      });
+      state.expanded[tab] = false;
+    });
+    state.tab = opening;
+    render();
+    var combos = (TABS.length - 1) * 2 + SESSIONS.length * 2;
+    if (failures.length === 0) {
+      console.log("[tab-notch 2/2 r3] self-checks: PASS for all " + combos + " combinations");
+    } else {
+      console.error("[tab-notch 2/2 r3] self-checks FAILED for:", failures);
+    }
+  })();
+</script>
+</body>
+</html>

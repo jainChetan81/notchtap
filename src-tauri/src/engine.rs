@@ -119,6 +119,8 @@ pub struct Engine<R: tauri::Runtime = tauri::Wry> {
     /// testable against a temp dir instead of the operator's real config
     /// directory.
     history: Option<Arc<HistoryStore>>,
+    /// Plan 171: the shared tab-notch wire bundle — see `tabs::TabWire`.
+    tab_wire: Arc<crate::tabs::TabWire>,
 }
 
 // Clone by hand (Arc clones + AppHandle clone + bool copies), like
@@ -138,6 +140,7 @@ impl<R: tauri::Runtime> Clone for Engine<R> {
             weather_enabled: self.weather_enabled,
             now_playing_enabled: self.now_playing_enabled,
             history: self.history.clone(),
+            tab_wire: self.tab_wire.clone(),
         }
     }
 }
@@ -172,6 +175,7 @@ impl<R: tauri::Runtime> Engine<R> {
         weather_enabled: bool,
         now_playing_enabled: bool,
         history: Option<Arc<HistoryStore>>,
+        tab_wire: Arc<crate::tabs::TabWire>,
     ) -> Self {
         Self {
             queue: Arc::new(Mutex::new(queue)),
@@ -186,6 +190,7 @@ impl<R: tauri::Runtime> Engine<R> {
             weather_enabled,
             now_playing_enabled,
             history,
+            tab_wire,
         }
     }
 
@@ -229,6 +234,10 @@ impl<R: tauri::Runtime> Engine<R> {
         let slot_change = q.slot_state_if_changed();
         self.wake.notify_waiters();
         if let Some(state) = slot_change {
+            self.tab_wire.slot_occupied.store(
+                !matches!(state, SlotState::Empty),
+                std::sync::atomic::Ordering::Relaxed,
+            );
             emit_slot_state(&self.app, state);
         }
         out
@@ -252,6 +261,10 @@ impl<R: tauri::Runtime> Engine<R> {
         let slot_change = q.slot_state_if_changed();
         self.wake.notify_waiters();
         if let Some(state) = slot_change {
+            self.tab_wire.slot_occupied.store(
+                !matches!(state, SlotState::Empty),
+                std::sync::atomic::Ordering::Relaxed,
+            );
             emit_slot_state(&self.app, state);
         }
         out
@@ -308,6 +321,10 @@ impl<R: tauri::Runtime> Engine<R> {
             let slot_change = q.slot_state_if_changed();
             self.wake.notify_waiters();
             if let Some(state) = slot_change {
+                self.tab_wire.slot_occupied.store(
+                    !matches!(state, SlotState::Empty),
+                    std::sync::atomic::Ordering::Relaxed,
+                );
                 emit_slot_state(&self.app, state);
             }
         }
@@ -389,6 +406,7 @@ impl<R: tauri::Runtime> Engine<R> {
         let rss_enabled = self.rss_enabled;
         let weather_enabled = self.weather_enabled;
         let now_playing_enabled = self.now_playing_enabled;
+        let tab_wire = self.tab_wire.clone();
         tauri::async_runtime::spawn(async move {
             let mut last_status: Option<StatusState> = None;
             loop {
@@ -409,8 +427,19 @@ impl<R: tauri::Runtime> Engine<R> {
                     let mut q = queue.lock().await;
                     q.tick(Instant::now());
                     if let Some(state) = q.slot_state_if_changed() {
+                        tab_wire.slot_occupied.store(
+                            !matches!(state, SlotState::Empty),
+                            std::sync::atomic::Ordering::Relaxed,
+                        );
                         emit_slot_state(&app, state);
                     }
+                    let news_charge = {
+                        let c = tab_wire
+                            .news_charge
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner());
+                        (c.fill(), c.count(), c.is_charged())
+                    };
                     let status = StatusState::snapshot(
                         &q,
                         StatusInputs {
@@ -421,7 +450,37 @@ impl<R: tauri::Runtime> Engine<R> {
                             weather_enabled,
                             media: now_playing_summary,
                             now_playing_enabled,
+                            agent_sessions: tab_wire
+                                .agent_sessions
+                                .load(std::sync::atomic::Ordering::Relaxed),
+                            news_charge,
                         },
+                    );
+                    // Plan 171: presence + liveness-clearing ride the same
+                    // pass that computes the StatusState the strip renders
+                    // from — one derivation, both sides (spec §2 dec. 4/5).
+                    let present = crate::tabs::present_tabs(&status);
+                    {
+                        let mut p = tab_wire
+                            .tabs
+                            .presence
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner());
+                        *p = present.clone();
+                    }
+                    let selected_now = {
+                        let mut sel = tab_wire
+                            .tabs
+                            .selection
+                            .lock()
+                            .unwrap_or_else(|e| e.into_inner());
+                        sel.clear_if_gone(|t| present.contains(&t));
+                        sel.selected()
+                    };
+                    crate::status::emit_tab_selection_if_transitioned(
+                        &app,
+                        &tab_wire.tabs.last_emitted,
+                        selected_now,
                     );
                     if let Some(changed) = status_state_if_changed(&mut last_status, status) {
                         emit_status_state(&app, changed);
@@ -517,6 +576,18 @@ impl<R: tauri::Runtime> Engine<R> {
                 weather_enabled: self.weather_enabled,
                 media: now_playing_summary,
                 now_playing_enabled: self.now_playing_enabled,
+                agent_sessions: self
+                    .tab_wire
+                    .agent_sessions
+                    .load(std::sync::atomic::Ordering::Relaxed),
+                news_charge: {
+                    let c = self
+                        .tab_wire
+                        .news_charge
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner());
+                    (c.fill(), c.count(), c.is_charged())
+                },
             },
         )
     }
@@ -569,6 +640,7 @@ mod tests {
             false,
             false,
             None,
+            std::sync::Arc::new(crate::tabs::TabWire::default()),
         )
     }
 
@@ -639,6 +711,7 @@ mod tests {
             false,
             false,
             None,
+            std::sync::Arc::new(crate::tabs::TabWire::default()),
         );
 
         engine.accept(event(Priority::Medium), false).await.unwrap();
@@ -669,6 +742,7 @@ mod tests {
             false,
             false,
             None,
+            std::sync::Arc::new(crate::tabs::TabWire::default()),
         );
 
         // fill the Medium tier: first promotes into the visible slot,
@@ -935,6 +1009,7 @@ mod tests {
             false,
             false,
             None,
+            std::sync::Arc::new(crate::tabs::TabWire::default()),
         );
         engine.update_live_match(Some(live_summary("45'")));
 
@@ -1067,6 +1142,7 @@ mod tests {
             false,
             false,
             Some(store.clone()),
+            std::sync::Arc::new(crate::tabs::TabWire::default()),
         );
 
         let mut one_shot = event(Priority::Medium);
@@ -1097,6 +1173,7 @@ mod tests {
             false,
             false,
             Some(store.clone()),
+            std::sync::Arc::new(crate::tabs::TabWire::default()),
         );
 
         let mut recurring = event(Priority::Medium);
@@ -1160,6 +1237,7 @@ mod tests {
             false,
             false,
             Some(store.clone()),
+            std::sync::Arc::new(crate::tabs::TabWire::default()),
         );
 
         let accessed = engine

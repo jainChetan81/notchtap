@@ -391,6 +391,22 @@ function PeekTimeline() {
   );
 }
 
+// Plan 171 (tab-notch redesign, slice K): which source the caller wants
+// this peek to show, overriding the ambient precedence chain below.
+// `null` (the default, and what every pre-171 caller passes by omission)
+// means "unchanged" — the shipped football > media > weather > timeline
+// chain, byte-identical to before this plan.
+//
+// Only the two sources the tab feature deliberately does NOT rebuild are
+// listed: spec section 7 says the weather card is "the shipped card,
+// unchanged" and section 11 keeps this peek's own mechanism explicitly
+// untouched, so selecting the weather (or football) tab must reach THIS
+// component's existing rendering rather than a second, drifting copy of
+// it. Music/agent/news each got their own dedicated below-block
+// component (`MediaBelowBlock`/`AgentBelowBlock`/`NewsBelowBlock`) and
+// so are never routed here.
+export type PeekPreference = "football" | "weather" | null;
+
 export function IdleHoverPeek({
   status,
   hovered,
@@ -414,14 +430,31 @@ export function IdleHoverPeek({
   // when there's no separate "peek should survive a promotion" caller to
   // coordinate with.
   open = hovered,
+  // Plan 171 (slice K): see `PeekPreference`'s own doc above. Defaults to
+  // `null` so every existing caller — this file's own tests, the settings
+  // preview, StatusRailCard's no-selection path — keeps the shipped
+  // precedence chain without passing anything.
+  prefer = null,
 }: {
   status?: StatusState;
   hovered: boolean;
   open?: boolean;
+  prefer?: PeekPreference;
 }) {
-  const live = status?.football.live ?? null;
-  const media = status?.media.current ?? null;
-  const weather = status?.weather.current ?? null;
+  const liveMatch = status?.football.live ?? null;
+  const nowPlaying = status?.media.current ?? null;
+  const currentWeather = status?.weather.current ?? null;
+
+  // Plan 171 (slice K): a preference NARROWS to one source, it never
+  // re-orders and falls through — selecting the weather tab and being
+  // shown a scorecard because a match happened to kick off would be a
+  // worse lie than showing nothing. A preferred source with no data
+  // yields an empty content slot (the timeline alone), which is the same
+  // "nothing to show" posture the un-preferred chain's own final `null`
+  // arm already produces.
+  const live = prefer === null || prefer === "football" ? liveMatch : null;
+  const media = prefer === null ? nowPlaying : null;
+  const weather = prefer === null || prefer === "weather" ? currentWeather : null;
   // plan 105 (Step B): the art now paints as a backdrop layer under
   // whatever the precedence chain picks, rather than being one of the
   // precedence options itself — so it survives media outranking the

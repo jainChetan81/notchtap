@@ -9,6 +9,7 @@ import { presentationFacts } from "./lib/presentationFacts";
 import { useAgentState } from "./useAgentState";
 import { useSlotState } from "./useSlotState";
 import { useStatusState } from "./useStatusState";
+import { useTabSelection } from "./useTabSelection";
 
 type RestingState = "rail" | "notch";
 
@@ -163,6 +164,14 @@ function App() {
   // unknown at page load), so this starts false and only ever moves via
   // the listener below.
   const [hovered, setHovered] = useState(false);
+  // Plan 171 (tab-notch redesign, slice K): which tab rust currently has
+  // selected. Sourced here, next to the other three receive-only wire
+  // hooks, and threaded down as a plain prop — StatusRailCard listens for
+  // nothing itself, so the settings preview and every component test can
+  // still render it with no tauri channel at all. Selection is decided
+  // rust-side (spec section 10); this is display state, and there is no
+  // `invoke()` anywhere on the path.
+  const selectedTab = useTabSelection();
 
   // plan 063: expose the boot-time presentation facts to CSS — the mode
   // gates notch-only CSS, the cutout width/height feed the card-assembly's
@@ -303,6 +312,13 @@ function App() {
                 status={status}
                 restingState={restingState}
                 hovered={hovered}
+                // Plan 171 (slice K): the tab surface's three inputs.
+                // `agentState` is already read above for the Board's own
+                // presentation branch — the agent tab's below-block reads
+                // the same snapshot rather than a second subscription.
+                selectedTab={selectedTab}
+                agentSessions={agentState.sessions}
+                agentCapturedAtMs={agentState.capturedAtMs}
               />
             </motion.div>
           )}

@@ -72,6 +72,118 @@ const IDLE_PEEK_BELOW_BLOCK_H: f64 = 100.0; // IdleHoverPeek.tsx motion.div `ani
 const BELOW_BLOCK_SHOWING_H: f64 = 160.0; // conservative estimate, compact (non-expanded) content
 const BELOW_BLOCK_EXPANDED_H: f64 = 240.0; // conservative estimate, expanded (manifest) content
 
+// Plan 171 (tab-notch redesign): the icon strip's own geometry constants —
+// duplicated-constants pair with `prototypes/tab-notch-rest-and-morph.html`'s
+// `--icon-box`/`--icon-gap`/`--flank-inset` custom properties (the design
+// source of truth until this feature's own CSS ships; re-pair these against
+// the real stylesheet once it exists, same discipline the rest of this
+// file's constants already follow). `HOVER_RAIL_FLOOR` is the EXISTING
+// `FLANK_IDLE` value above, `85.0` — not redefined, reused, because the
+// mock's own hover-rail floor is explicitly "the same 85px rail floor"
+// every other hovered-but-not-showing state in this app already uses.
+// Real callers since slice A's click wiring (click.rs): staged-allow
+// ahead of their real caller, which lands with Slice A's click-detection
+// wiring (see `icon_strip_rects`'s own doc below and the plan's "Landed
+// so far" note) — `cargo clippy --all-targets -D warnings` (the CI gate,
+// justfile's `check-rust`) has no test-only exemption for a plain `fn`/
+// `const` the way it does for `#[cfg(test)]`-reached items, so these read
+// as dead until that caller exists. Remove every one of these five
+// attributes the moment `icon_strip_rects` gets a real call site.
+const ICON_BOX: f64 = 18.0;
+const ICON_GAP: f64 = 8.0;
+const FLANK_INSET: f64 = 14.0;
+
+/// The right flank's own width while hovered, given how many icons are
+/// currently present (spec §6/§0: absent icons are omitted, never
+/// `display: none`'d in place — so `present_count` is the count AFTER
+/// that filter, not always 5). Mirrors the mock's own two-step formula
+/// exactly: `strip_w` is unscaled raw geometry (icon box/gap/inset never
+/// scale with `--card-scale`), only the 85px rail floor does.
+fn hovered_right_flank_width(present_count: usize, scale: f64) -> f64 {
+    let strip_w = (ICON_BOX + ICON_GAP) * present_count as f64 + FLANK_INSET;
+    (FLANK_IDLE * scale).max(strip_w)
+}
+
+/// One `Rect` per PRESENT icon, in the strip's fixed left-to-right order
+/// (agent, football, music, weather, news) — the caller passes exactly the
+/// present-icon list it already computed (this function does not know
+/// which of the five sources is live; it only knows how many boxes to
+/// lay out and how wide the right flank consequently is), and must zip
+/// the returned `Vec` against that SAME list, index for index.
+///
+/// Icons are right-aligned inside the flank with `FLANK_INSET` as the
+/// flank's own right padding (`.hovered .flank-right { padding-right:
+/// var(--flank-inset) }`) and pack leftward from there — so the
+/// RIGHTMOST returned rect (last in the Vec) sits flush against that
+/// inset, and each icon to its left is offset by one more
+/// `ICON_BOX + ICON_GAP`. This is a plan-171 sibling of `active_card_rect`
+/// above: only used while the shell is hovered AND the Slot is idle (the
+/// icon strip is an idle-only affordance, same gating `board_rect` already
+/// uses for `!visible`) — callers must not call this while a pushed card
+/// is showing, and this function does not itself check `visible` (kept
+/// pure/parameter-driven, matching this file's own house style; the
+/// `!visible` gate belongs at the call site, mirroring `try_expand_board_
+/// for_hover`'s own `if visible || session_count == 0 { return; }` guard).
+pub fn icon_strip_rects(
+    mode: Mode,
+    cutout_width: f64,
+    cutout_height: f64,
+    scale: f64,
+    present_count: usize,
+    // CodeRabbit review fix (PR #13): threaded through explicitly rather
+    // than reading the `WINDOW_HEIGHT` resting constant directly — the
+    // exact same lesson `board_rect`'s own `window_height` parameter
+    // already encodes (see this file's P0 fix), not yet applied here
+    // when this function was first written. A caller wiring this up
+    // while the window is genuinely taller than resting (an active
+    // `BoardFrameState.height`, or any other future window-height
+    // driver) passes that real height; every existing call site below
+    // passes `WINDOW_HEIGHT` explicitly, preserving today's behavior
+    // byte-for-byte.
+    window_height: f64,
+) -> Vec<Rect> {
+    if present_count == 0 {
+        return Vec::new();
+    }
+    let effective_cutout_width = match mode {
+        Mode::Notch => cutout_width,
+        Mode::Hud => HUD_CUTOUT_W,
+    };
+    let effective_cutout_height = match mode {
+        Mode::Notch => cutout_height,
+        Mode::Hud => HUD_CUTOUT_H,
+    };
+    let flank_w = hovered_right_flank_width(present_count, scale);
+    let total_width = (effective_cutout_width + 2.0 * flank_w).min(WINDOW_WIDTH);
+    let card_x_min = (WINDOW_WIDTH - total_width) / 2.0;
+    let card_x_max = card_x_min + total_width;
+
+    // The strip lives inside the cutout's own row (grid-row: 1, same row
+    // the flanks and the synthetic cutout share) — its y-span is exactly
+    // the cutout height, not the below-block. `top: 0.0` because the
+    // window is pinned flush to the physical screen top (`position_
+    // window`), the same anchor every other rect in this file assumes.
+    let (y_min, y_max) = css_top_down_to_appkit_y(window_height, 0.0, effective_cutout_height);
+
+    (0..present_count)
+        .map(|from_right| {
+            let right_edge = card_x_max - FLANK_INSET - from_right as f64 * (ICON_BOX + ICON_GAP);
+            let left_edge = right_edge - ICON_BOX;
+            Rect {
+                x_min: left_edge,
+                x_max: right_edge,
+                y_min,
+                y_max,
+            }
+        })
+        // built right-to-left above (from_right ascends outward from the
+        // flank's own inset edge); reversed once here so the returned
+        // Vec reads left-to-right, matching the strip's fixed visual
+        // order and sparing every caller from re-deriving the reversal.
+        .rev()
+        .collect()
+}
+
 /// A screen-space rect in AppKit window coordinates (bottom-left origin,
 /// y grows UP) — the region where hover should count as "over the
 /// card." Plain numbers, no AppKit types, so `point_in_rect` and every
@@ -325,22 +437,54 @@ pub fn active_card_rect(
 // Notification queue's `visible`/`expanded` state, which
 // `hover_point_is_over_card` (`lib.rs`) can't derive board-ness from at
 // all — the Slot reads `Empty` the whole time the Board is showing.
-// Unlike the expanded WINDOW frame (`agents::expand::
-// expanded_board_frame`), this rect stays within the fixed
-// `WINDOW_WIDTH`/`WINDOW_HEIGHT` canvas — the RESTING board never
-// resizes the real window; only a hover transition does that
-// (`lib.rs`'s hover-transition call site).
+//
+// P0 FIX (tab-notch redesign, 2026-08-02): the RESTING board rect stays
+// within the fixed `WINDOW_WIDTH`/`WINDOW_HEIGHT` canvas, but the EXPANDED
+// board (hovered, `lib.rs`'s `try_expand_board_for_hover`) genuinely
+// resizes the real native window taller via
+// `agents::expand::expanded_board_frame` — `content_height` there is
+// `HEADER_HEIGHT (210) + EXPANDED_ROW_HEIGHT (96) * extra_rows`, which
+// exceeds `WINDOW_HEIGHT` (300) with just one extra session. Once that
+// resize has actually happened, every subsequent AppKit `locationInWindow`
+// mouse event is reported relative to the NEW, taller window frame — but
+// this function used to unconditionally flip coordinates through
+// `css_top_down_to_appkit_y(WINDOW_HEIGHT, ...)`, i.e. it kept assuming a
+// 300px-tall canvas no matter how tall the real window had actually grown.
+// That stale assumption is exactly the bug: a point genuinely far down in
+// the now-much-taller real window (well below the last rendered row) could
+// still fall inside the [0, 300]-relative rect the old math produced,
+// because that range no longer corresponded to "the top of the window"
+// once the window itself grew past 300px. `hovered=true` then fired for a
+// cursor nowhere near the painted card.
+//
+// The fix: the caller (`lib.rs`) tracks the REAL, currently-applied window
+// height in `BoardFrameState.height` — set from the exact same `frame`
+// value `try_expand_board_for_hover` passed to `window.set_size`, so it
+// can never drift from what the OS window actually is — and passes it in
+// here as `window_height`, which replaces every use of the module-level
+// `WINDOW_HEIGHT` constant for this rect's height cap and y-flip. Ordinary
+// (non-board) hover detection is unaffected: `active_card_rect` never
+// triggers a real resize, so its canvas is always the true `WINDOW_HEIGHT`
+// and it keeps using the constant directly.
 const BOARD_PRIMARY_H: f64 = 150.0; // conservative estimate, agent-board.css's `.agent-board-primary` block
 const BOARD_ROW_H: f64 = 18.0; // conservative estimate, agent-board.css's `.agent-row`
 
 /// `session_count` is every session the Board currently renders (primary
 /// + rows) — `lib.rs` reads this from `AgentBoardPublisher::last_session_count`.
+///
+/// `window_height` is the REAL, currently-applied native window height —
+/// `WINDOW_HEIGHT` whenever the board frame is resting, or the taller
+/// applied `agents::expand::expanded_board_frame` height while a hover has
+/// actually expanded it (see the P0 FIX note above `BOARD_PRIMARY_H`).
+/// Passing `WINDOW_HEIGHT` itself here reproduces the pre-fix behavior
+/// exactly, which is what every resting-state test below still does.
 pub fn board_rect(
     mode: Mode,
     cutout_width: f64,
     cutout_height: f64,
     scale: f64,
     session_count: usize,
+    window_height: f64,
 ) -> Rect {
     let effective_cutout_width = match mode {
         Mode::Notch => cutout_width,
@@ -358,10 +502,10 @@ pub fn board_rect(
     let extra_rows = session_count.saturating_sub(1);
     let below_block_h = BOARD_PRIMARY_H + BOARD_ROW_H * extra_rows as f64;
     let raw_height = effective_cutout_height + below_block_h;
-    let height = raw_height.min(WINDOW_HEIGHT);
+    let height = raw_height.min(window_height);
 
     let x_min = (WINDOW_WIDTH - width) / 2.0;
-    let (y_min, y_max) = css_top_down_to_appkit_y(WINDOW_HEIGHT, 0.0, height);
+    let (y_min, y_max) = css_top_down_to_appkit_y(window_height, 0.0, height);
 
     Rect {
         x_min,
@@ -828,20 +972,20 @@ mod tests {
     #[test]
     fn board_rect_width_matches_the_expanded_formula() {
         let expanded = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, true, false, false);
-        let board = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 3);
+        let board = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 3, WINDOW_HEIGHT);
         assert_eq!(expanded.x_max - expanded.x_min, board.x_max - board.x_min);
     }
 
     #[test]
     fn board_rect_one_session_is_the_primary_block_alone() {
-        let r = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 1);
+        let r = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 1, WINDOW_HEIGHT);
         assert_eq!(r.y_max - r.y_min, HUD_CUTOUT_H + BOARD_PRIMARY_H);
     }
 
     #[test]
     fn board_rect_grows_by_one_row_height_per_extra_session() {
-        let three = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 3);
-        let four = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 4);
+        let three = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 3, WINDOW_HEIGHT);
+        let four = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 4, WINDOW_HEIGHT);
         assert_eq!(
             (four.y_max - four.y_min) - (three.y_max - three.y_min),
             BOARD_ROW_H
@@ -853,14 +997,191 @@ mod tests {
         // Defense in depth: `session_count` should never legitimately be
         // 0 while the Board renders at all, but `saturating_sub` must not
         // panic or produce a nonsensical (negative) row count.
-        let zero = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 0);
-        let one = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 1);
+        let zero = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 0, WINDOW_HEIGHT);
+        let one = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 1, WINDOW_HEIGHT);
         assert_eq!(zero, one);
     }
 
     #[test]
     fn board_rect_caps_at_the_window_height_for_many_sessions() {
-        let r = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 50);
+        let r = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 50, WINDOW_HEIGHT);
         assert_eq!(r.y_max - r.y_min, WINDOW_HEIGHT);
+    }
+
+    // --- P0 fix (tab-notch redesign): the real-window-height coordinate
+    // bug. Once `try_expand_board_for_hover` has actually resized the
+    // native window taller than `WINDOW_HEIGHT`, the rect must be computed
+    // against THAT real height, not the stale 300px constant — otherwise a
+    // point genuinely far down in the now-taller window can still fall
+    // inside a rect whose range was only ever valid for a 300px canvas. ---
+
+    #[test]
+    fn board_rect_caps_at_the_real_window_height_when_taller_than_the_constant() {
+        // 5 sessions asks for well over 300px of content (150 + 18*4 =
+        // 222, plus cutout — still under 300 here, so pick a real,
+        // larger `window_height` the way `expanded_board_frame` would
+        // actually report for a taller board with more rows/header space)
+        // to prove the cap tracks the ARGUMENT, not the module constant.
+        let real_height = 520.0;
+        let r = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 3, real_height);
+        // content (32 cutout + 150 + 18 = 200) is under both 300 and 520,
+        // so the height is the content height either way here — the
+        // meaningful assertion is the Y-FLIP below, not this cap.
+        assert!(r.y_max - r.y_min < real_height);
+    }
+
+    #[test]
+    fn board_rect_y_flip_uses_the_real_window_height_not_the_stale_constant() {
+        // The actual bug, reproduced directly: at the OLD (wrong) fixed
+        // WINDOW_HEIGHT, the rect's top (`y_max`) sits at 300 — but once
+        // the real window has grown to `real_height` (e.g. 520, a
+        // plausible multi-session board), the window's TRUE top is at
+        // y=520 in AppKit's bottom-left-origin space, and a point at
+        // y=300 (which used to read as the rect's very top edge, i.e.
+        // "at the card") is now deep in the window's own middle — nowhere
+        // near the card, which is top-anchored and therefore occupies the
+        // HIGH end of the real coordinate range, not the range around the
+        // stale constant.
+        let real_height = 520.0;
+        let stale = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 1, WINDOW_HEIGHT);
+        let fixed = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 1, real_height);
+        assert_eq!(stale.y_max, WINDOW_HEIGHT, "sanity: the old/stale top");
+        assert_eq!(
+            fixed.y_max, real_height,
+            "the fixed rect's top must track the real applied window height"
+        );
+        // The point that used to sit right at the stale rect's top edge —
+        // i.e. exactly where a cursor over the real card's top would have
+        // been reported, back when the window really was 300px tall — no
+        // longer counts as hovered once the real window has actually grown
+        // to 520px: the true card has moved up with the window's own top.
+        assert!(
+            !point_in_rect(&fixed, WINDOW_WIDTH / 2.0, WINDOW_HEIGHT),
+            "a point at the OLD window's top must not register as hovered \
+             against the real, taller window's rect"
+        );
+        // The real card's own top, at the ACTUAL window height, does.
+        assert!(point_in_rect(&fixed, WINDOW_WIDTH / 2.0, real_height - 1.0));
+    }
+
+    #[test]
+    fn board_rect_a_point_far_below_the_real_card_is_correctly_excluded() {
+        // The exact failure mode named in the bug report: "hovered=true
+        // fires with the cursor far below the card" once the board has
+        // genuinely expanded past the stale 300px assumption. A point
+        // comfortably inside the OLD [y_min, 300] range but which, in a
+        // real 520px-tall window, sits in the dead space well below the
+        // painted board content must be excluded.
+        let real_height = 520.0;
+        let r = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 1, real_height);
+        // With the fix, dead space is [0, y_min); pick a point in the
+        // middle of the OLD (300-relative) range that the pre-fix rect
+        // would have wrongly accepted.
+        let old_rect_midpoint_y = (WINDOW_HEIGHT - HUD_CUTOUT_H - BOARD_PRIMARY_H) / 2.0;
+        assert!(
+            old_rect_midpoint_y < r.y_min,
+            "the chosen probe point must actually be below the fixed rect \
+             for this test to prove anything"
+        );
+        assert!(!point_in_rect(&r, WINDOW_WIDTH / 2.0, old_rect_midpoint_y));
+    }
+
+    // --- plan 171 (tab-notch redesign): icon_strip_rects ---
+
+    #[test]
+    fn icon_strip_rects_returns_empty_for_zero_present() {
+        assert_eq!(
+            icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.0, 0, WINDOW_HEIGHT),
+            Vec::new()
+        );
+    }
+
+    #[test]
+    fn icon_strip_rects_returns_present_count_entries() {
+        for n in 1..=5 {
+            assert_eq!(
+                icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.0, n, WINDOW_HEIGHT).len(),
+                n
+            );
+        }
+    }
+
+    #[test]
+    fn icon_strip_rects_two_icons_uses_the_85px_rail_floor() {
+        // 2 icons: strip_w = (18+8)*2 + 14 = 66, which loses to the 85px
+        // rail floor at scale 1 — the SAME "2 icons -> 85px rail floor
+        // wins" case mock 1's own spec table states explicitly.
+        let rects = icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.0, 2, WINDOW_HEIGHT);
+        let flank_w = hovered_right_flank_width(2, 1.0);
+        assert_eq!(flank_w, FLANK_IDLE); // 85.0, the floor, not the narrower strip_w
+                                         // total card width = 200 (hud cutout) + 2*85 = 370, matching the
+                                         // mock's own worked example ("hovered, 2 icons: shell width 370px").
+        let total_width = HUD_CUTOUT_W + 2.0 * flank_w;
+        assert_eq!(total_width, 370.0);
+        let card_x_min = (WINDOW_WIDTH - total_width) / 2.0;
+        let card_x_max = card_x_min + total_width;
+        // rightmost icon (index 1, last in the returned left-to-right Vec)
+        // sits flush against the flank's own FLANK_INSET right padding.
+        assert_eq!(rects[1].x_max, card_x_max - FLANK_INSET);
+    }
+
+    #[test]
+    fn icon_strip_rects_five_icons_matches_the_488px_worked_example() {
+        // 5 icons: strip_w = (18+8)*5 + 14 = 144, beats the 85px floor —
+        // the mock's own "5 icons -> 488px" worked example (200 + 2*144).
+        let flank_w = hovered_right_flank_width(5, 1.0);
+        assert_eq!(flank_w, 144.0);
+        let total_width = HUD_CUTOUT_W + 2.0 * flank_w;
+        assert_eq!(total_width, 488.0);
+    }
+
+    #[test]
+    fn icon_strip_rects_are_in_left_to_right_order_with_no_overlap_and_correct_gaps() {
+        let rects = icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.0, 5, WINDOW_HEIGHT);
+        for pair in rects.windows(2) {
+            let (left, right) = (pair[0], pair[1]);
+            assert!(
+                left.x_max <= right.x_min,
+                "icons must never overlap: {left:?} vs {right:?}"
+            );
+            // exactly ICON_GAP between the left icon's right edge and the
+            // next icon's left edge — not "at least", the packed formula
+            // is exact.
+            assert_eq!(right.x_min - left.x_max, ICON_GAP);
+            // every icon is exactly ICON_BOX wide.
+            assert_eq!(left.x_max - left.x_min, ICON_BOX);
+        }
+    }
+
+    #[test]
+    fn icon_strip_rects_y_span_is_the_cutout_height_alone() {
+        let rects = icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.0, 1, WINDOW_HEIGHT);
+        assert_eq!(rects[0].y_max - rects[0].y_min, HUD_CUTOUT_H);
+        // top-anchored: the highest AppKit y in the rect equals the whole
+        // window's own top, same invariant `top_of_window_maps_to_high_
+        // appkit_y_not_low` already pins for every other rect in this file.
+        assert_eq!(rects[0].y_max, WINDOW_HEIGHT);
+    }
+
+    #[test]
+    fn icon_strip_rects_notch_mode_uses_the_real_measured_cutout() {
+        // unlike HUD mode (always the synthetic 200x32), notch mode reads
+        // the real measured cutout — same discipline active_card_rect's
+        // own notch-mode branch already follows.
+        let rects_notch = icon_strip_rects(Mode::Notch, 260.0, 34.0, 1.0, 2, WINDOW_HEIGHT);
+        let rects_hud = icon_strip_rects(Mode::Hud, 260.0, 34.0, 1.0, 2, WINDOW_HEIGHT);
+        assert_ne!(rects_notch[0].x_min, rects_hud[0].x_min);
+        assert_eq!(rects_notch[0].y_max - rects_notch[0].y_min, 34.0);
+    }
+
+    #[test]
+    fn icon_strip_rects_scale_only_affects_the_rail_floor_not_the_raw_icon_geometry() {
+        // ICON_BOX/ICON_GAP/FLANK_INSET are unscaled raw px per the mock's
+        // own formula (only the 85px rail floor multiplies by --card-scale)
+        // — at a present_count where the strip genuinely beats the floor
+        // even at an elevated scale, the icon box width itself must stay
+        // exactly ICON_BOX regardless of scale.
+        let rects = icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.25, 5, WINDOW_HEIGHT);
+        assert_eq!(rects[0].x_max - rects[0].x_min, ICON_BOX);
     }
 }

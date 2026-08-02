@@ -606,6 +606,7 @@ mod tests {
                 false,
                 false,
                 None,
+                std::sync::Arc::new(crate::tabs::TabWire::default()),
             ),
             default_ttl: 8,
             manual_default_priority: Priority::Medium,
@@ -625,6 +626,7 @@ mod tests {
                 // those tests) — `true` keeps every existing assertion
                 // reading the ungated snapshot it was written against.
                 true,
+                std::sync::Arc::new(crate::tabs::TabWire::default()),
             ),
             agent_health: Arc::new(crate::agents::health::HealthTracker::new()),
         }

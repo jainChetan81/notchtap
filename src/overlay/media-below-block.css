@@ -1,0 +1,208 @@
+/* ==== the media tab's below-block, transport controls (plan 171, slice
+   H) ====
+   Design source: prototypes/tab-notch-panel.html, data-page="music"
+   (~line 1003-1039 for the markup, ~561-616 for the CSS this file ports
+   from). Deliberately does NOT redeclare `.media-art` (base)/
+   `.media-transport`/`.media-bar`/`.media-bar-fill`/`.media-time` —
+   those are the shipped `idle-peek.css` rules, reused verbatim by
+   `MediaBelowBlock.tsx` (same classNames, same `.card-root` scope), per
+   spec section 7's "the shipped `.media-bar`" instruction. Only the
+   genuinely new classes this slice's markup introduces live here: the
+   big album-art modifier, the transport buttons (the ONE new
+   interactive surface this whole feature adds — mock's own comment,
+   ported below), and the expanded-only scrubber/queue preview. */
+
+.card-root .media-art.big {
+  width: 44px;
+  height: 44px;
+  border-radius: 8px;
+  font-size: 18px;
+}
+
+.card-root .media-body {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 9px;
+}
+.card-root .media-body .grow {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+/* ---- the ONE genuinely new interactive surface in this feature: real
+   transport BUTTONS. Everything else on this page is shipped
+   vocabulary; the controls are new because the vendored MediaRemote
+   adapter gives us COMMANDS, not just a read-only now-playing string
+   (slice C, `now_playing.rs`'s `MediaCommand`/`send_command`). Drawn in
+   the existing chip/tile language — same tints, same radii, same
+   press-scale house rule — so "new capability" does not arrive as "new
+   look" (mock's own comment, ported verbatim). Every duration here is a
+   real token (`--hover-ms`/`--ease-notchtap`, animationTiming.ts), no
+   new bare literal durations, per this feature's own verification
+   discipline (spec section 13). ---- */
+.card-root .mr-btn {
+  appearance: none;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  background: rgba(255, 255, 255, 0.06);
+  color: var(--overlay-fg);
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  cursor: pointer;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  transition:
+    background-color var(--hover-ms, 160ms) var(--ease-notchtap),
+    border-color var(--hover-ms, 160ms) var(--ease-notchtap),
+    transform var(--hover-ms, 160ms) var(--ease-notchtap);
+}
+.card-root .mr-btn:hover {
+  background: rgba(255, 255, 255, 0.11);
+  border-color: rgba(255, 255, 255, 0.26);
+}
+.card-root .mr-btn:active {
+  transform: scale(0.94);
+}
+/* `--media-mint`: same token icon-strip.css/eq-bars.css (slice E) also
+   reference. Was missing a `:root` definition when this file first
+   landed (flagged here, in the PR description, and in the plan doc) —
+   now defined in `vendor/shared-ui/design/tokens.css`, matching the
+   design mock's own `#b6f5e5` value exactly. */
+.card-root .mr-btn.primary {
+  width: 30px;
+  height: 30px;
+  border-color: color-mix(in srgb, var(--media-mint) 40%, transparent);
+  background: color-mix(in srgb, var(--media-mint) 12%, transparent);
+}
+
+/* the transport glyphs: pure CSS shapes (border tricks), same as the
+   mock — no icon-library dependency for a control this small. */
+.card-root .mr-glyph {
+  display: block;
+  position: relative;
+}
+.card-root .mr-glyph.play {
+  width: 0;
+  height: 0;
+  border-left: 8px solid var(--overlay-fg);
+  border-top: 5px solid transparent;
+  border-bottom: 5px solid transparent;
+  margin-left: 2px;
+}
+.card-root .mr-glyph.pause {
+  width: 9px;
+  height: 10px;
+  border-left: 3px solid var(--overlay-fg);
+  border-right: 3px solid var(--overlay-fg);
+}
+.card-root .mr-glyph.prev,
+.card-root .mr-glyph.next {
+  width: 11px;
+  height: 9px;
+}
+.card-root .mr-glyph.prev::before,
+.card-root .mr-glyph.next::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  border-top: 4.5px solid transparent;
+  border-bottom: 4.5px solid transparent;
+}
+.card-root .mr-glyph.prev::before {
+  left: 2px;
+  border-right: 7px solid var(--overlay-fg);
+}
+.card-root .mr-glyph.next::before {
+  right: 2px;
+  border-left: 7px solid var(--overlay-fg);
+}
+.card-root .mr-glyph.prev::after,
+.card-root .mr-glyph.next::after {
+  content: "";
+  position: absolute;
+  top: 0;
+  width: 2px;
+  height: 9px;
+  background: var(--overlay-fg);
+}
+.card-root .mr-glyph.prev::after {
+  left: 0;
+}
+.card-root .mr-glyph.next::after {
+  right: 0;
+}
+
+/* the scrubber + timestamps, `prefix+enter`-only (spec section 9) —
+   real data (elapsedMs/durationMs -> percent), no drag-to-seek wiring
+   here (this component is presentational only, per the IPC boundary —
+   see MediaBelowBlock.tsx's own file-header comment). */
+.card-root .media-scrub {
+  position: relative;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.12);
+  margin-top: 4px;
+}
+.card-root .media-scrub .fill {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  background: var(--media-mint);
+  border-radius: 2px;
+}
+.card-root .media-scrub .knob {
+  position: absolute;
+  top: 50%;
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--media-mint);
+  box-shadow: 0 0 8px rgba(182, 245, 229, 0.7);
+  transform: translate(-50%, -50%);
+}
+.card-root .media-times {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font:
+    700 9px/1 var(--font-mono);
+  color: rgba(255, 255, 255, 0.45);
+}
+
+/* the queue preview, also `prefix+enter`-only, also real-data-or-nothing
+   (see MediaBelowBlock.tsx's own `queue` prop doc — no wire source
+   exists yet, flagged rather than improvised). */
+.card-root .queue-list {
+  margin-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+.card-root .queue-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 11px;
+  color: color-mix(in srgb, var(--overlay-fg) 66%, transparent);
+  white-space: nowrap;
+}
+.card-root .queue-row .n {
+  font:
+    700 9px/1 var(--font-mono);
+  color: rgba(255, 255, 255, 0.35);
+  width: 12px;
+  flex: none;
+}
+.card-root .queue-row .who {
+  margin-left: auto;
+  color: rgba(255, 255, 255, 0.4);
+  font-size: 10px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}

@@ -9,9 +9,11 @@ import {
   DISCLOSURE_SPRING,
   EXPAND_MS,
   HOVER_MS,
+  ICON_STRIP_STAGGER_MS,
   IDLE_GLANCE_MS,
   IDLE_REVEAL_MS,
   INTERRUPT_EXIT_MS,
+  NEWS_CHARGE_STEP_MS,
   NOTCHTAP_EASE,
   REVEAL_MS,
   ROTATION_ENTER_MS,
@@ -100,7 +102,14 @@ describe("animationTiming (plan 117)", () => {
     // plan 146b: the interrupt-exit timing token, same injection
     // discipline as the two rotation tokens above.
     expect(setProperty).toHaveBeenCalledWith("--interrupt-exit-ms", `${INTERRUPT_EXIT_MS}ms`);
-    expect(setProperty).toHaveBeenCalledTimes(8);
+    // plan 171 (tab-notch redesign): the icon strip's own two tokens,
+    // same injection discipline as every token above.
+    expect(setProperty).toHaveBeenCalledWith(
+      "--icon-strip-stagger-ms",
+      `${ICON_STRIP_STAGGER_MS}ms`,
+    );
+    expect(setProperty).toHaveBeenCalledWith("--news-charge-step-ms", `${NEWS_CHARGE_STEP_MS}ms`);
+    expect(setProperty).toHaveBeenCalledTimes(10);
   });
 
   // 2026-07-23 review fix (Duplicated Code finding): NOTCHTAP_EASE is the
@@ -213,6 +222,23 @@ describe("overlay CSS timing-parity (item 6): every transition duration is var(-
     // single-sources. Genuinely self-contained: there is no second CSS or
     // JS copy of "1s" this could drift from.
     "transform 1s linear",
+    // Plan 171 (tab-notch redesign, icon-strip.css): each entry below is
+    // a full multi-leg `transition:` value where the opacity/transform
+    // legs are already var(--*-ms, ...)-sourced (real animation-timing
+    // choices, including the reveal stagger — icon-strip-stagger-ms) and
+    // only the trailing `visibility ... 0s` leg carries a raw literal.
+    // `0s` there is not a tunable duration: visibility always snaps
+    // instantly by construction, and the actual timing choice is the
+    // DELAY value beside it (`var(--reveal-ms, 260ms)` on the rest-state
+    // rule, deliberately `0s` — snap immediately, no delay — on the
+    // hovered rule), both already token-sourced or intentionally zero.
+    // Splitting `visibility` into its own longhand `transition-property`/
+    // `-duration`/`-delay` declarations would dodge this scanner entirely
+    // (it only matches the `transition:` shorthand, by this file's own
+    // documented design) rather than actually justify the exemption, so
+    // that's deliberately not done here.
+    "opacity var(--hover-ms, 160ms) var(--ease-notchtap), transform var(--reveal-ms, 260ms) var(--ease-notchtap), visibility 0s linear var(--reveal-ms, 260ms)",
+    "opacity var(--hover-ms, 160ms) var(--ease-notchtap) var(--icon-strip-stagger-ms, 60ms), transform var(--reveal-ms, 260ms) var(--ease-notchtap), visibility 0s linear 0s",
   ]);
 
   it("sanity check: the scanner finds a nonzero number of transition declarations", () => {

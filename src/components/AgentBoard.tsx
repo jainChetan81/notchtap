@@ -8,6 +8,7 @@ import {
   agentStatePresentationFor,
   agentStatePriorityFor,
   elapsedLabel,
+  type Priority,
 } from "../lib/presentation";
 import type { AgentSessionState, AgentSessionView } from "../useAgentState";
 import type { StatusState } from "../useStatusState";
@@ -233,6 +234,57 @@ function heroFactTags(state: AgentSessionState, details: Detail[]): Fact[] {
   return facts;
 }
 
+// Plan 171 (tab-notch redesign, slice F): extracted verbatim from this
+// component's own resting-hero rendering (below) so the tab-notch
+// below-block's "viewed session" hero — a DIFFERENT session than
+// whichever one this board's own priority ranking makes `primary` — can
+// derive the identical `AgentHeroCard` props without a second, drifting
+// copy of this logic. `AgentBoard`'s render below now calls this too;
+// nothing about its own output changed.
+export function agentHeroPropsFor(
+  session: AgentSessionView,
+  capturedAtMs: number,
+  nowMs: number,
+): {
+  dotKey: string;
+  pulse: boolean;
+  title: string;
+  subtitle: string;
+  body: string | null;
+  priority: Priority;
+  facts: Fact[];
+  factsTone: FactTone;
+} {
+  const presentation = agentStatePresentationFor(session.state);
+  const projectName = session.project?.name ?? null;
+  const elapsed = elapsedLabel(liveElapsedMs(session, capturedAtMs, nowMs));
+  const priority = agentStatePriorityFor(session.state);
+  const factsRaw: Fact[] = heroFactTags(session.state, session.details);
+  if (session.state === "starting") {
+    factsRaw.push({ label: "Session", value: elapsed });
+  } else if (session.state === "completed") {
+    factsRaw.push({ label: "Duration", value: elapsed });
+  } else if (session.state === "stale") {
+    factsRaw.push({ label: "Last seen", value: `${elapsed} ago` });
+  }
+  const facts = factsRaw.slice(0, MAX_VISIBLE_DETAIL_PAIRS);
+  const factsTone: FactTone =
+    session.state === "waiting_for_permission" || session.state === "failed" ? "danger" : "accent";
+  const runtimeLabel = agentRuntimeLabel(session.runtime);
+  const subtitle = projectName !== null ? `${runtimeLabel} · ${projectName}` : runtimeLabel;
+
+  return {
+    dotKey: session.state,
+    pulse: presentation.pulse,
+    title: AGENT_HERO_TITLE[session.state],
+    subtitle,
+    body: session.summary,
+    priority,
+    facts,
+    factsTone,
+  };
+}
+
 function AgentRow({
   session,
   capturedAtMs,
@@ -449,62 +501,15 @@ export function AgentBoard({
 
   const [primary, ...rest] = sessions;
   const primaryPresentation = agentStatePresentationFor(primary.state);
-  const primaryProjectName = primary.project?.name ?? null;
-  const primaryElapsed = elapsedLabel(liveElapsedMs(primary, capturedAtMs, nowMs));
-  // Plan 169 (step 6): the priority-tier mapping that feeds the hero's
-  // Stamp/accent-stripe/fact-pill tone — see `agentStatePriorityFor`'s
-  // own doc (lib/presentation.ts) for why this table exists and how the
-  // seven states sort into low/medium/high.
-  const primaryPriority = agentStatePriorityFor(primary.state);
-  // Plan 169: fact pills for the templated hero — the same declared
-  // `session.details` ExpandedAgentRow already renders (capability-
-  // dependent, adapter-provided: tool/risk, progress, exit code, ...),
-  // plus one synthesized elapsed-in-state fact for the three states
-  // where "how long" is itself the single most useful extra fact
-  // (starting/completed/stale) — the other four states either need no
-  // extra time fact (waiting_for_input) or already surface something
-  // more actionable via their own details (waiting_for_permission's
-  // tool/risk, working's progress, failed's exit code). Capped at the
-  // SAME MAX_VISIBLE_DETAIL_PAIRS the generic branch's own pills already
-  // respect (NotificationBody.tsx) — one shared limit, not a second
-  // hand-copied one.
-  const primaryFactsRaw: Fact[] = heroFactTags(primary.state, primary.details);
-  if (primary.state === "starting") {
-    primaryFactsRaw.push({ label: "Session", value: primaryElapsed });
-  } else if (primary.state === "completed") {
-    primaryFactsRaw.push({ label: "Duration", value: primaryElapsed });
-  } else if (primary.state === "stale") {
-    primaryFactsRaw.push({ label: "Last seen", value: `${primaryElapsed} ago` });
-  }
-  const primaryFacts = primaryFactsRaw.slice(0, MAX_VISIBLE_DETAIL_PAIRS);
-  // Plan 169 (Target table): waiting_for_permission and failed are the
-  // two states the table marks "(danger tone)" on their fact pills —
-  // mirrors `AGENT_STATE_PRESENTATION`'s own "agent-waiting"/
-  // "agent-failed" alarm grouping (lib/presentation.ts), not a guess at
-  // per-detail content: there is no wire field that says "this fact is
-  // dangerous," but the session's STATE already carries that signal.
-  // Plan 169 fidelity pass: every OTHER state's pills are `tone-accent`,
-  // not the neutral pill — the mock gives all five non-danger states an
-  // accent-toned pill (`prototype/agent-board.html`'s proposal fixtures),
-  // which ties the fact back to the card's own priority accent. Generic
-  // (non-agent) cards keep the neutral pill: `NotificationBody`'s own
-  // generic branch passes no tone at all.
-  const primaryFactsTone: FactTone =
-    primary.state === "waiting_for_permission" || primary.state === "failed" ? "danger" : "accent";
-  // Plan 169 fidelity pass: the subtitle is `runtime · project` (the
-  // mock's "Claude Code · notchtap"), falling back to the runtime alone
-  // when the adapter reported no project — the hero's subtitle row is no
-  // longer optional, because the runtime name lives ONLY here now (the
-  // title above is per-state prose, `AGENT_HERO_TITLE`).
-  const primaryRuntimeLabel = agentRuntimeLabel(primary.runtime);
-  const primarySubtitle =
-    primaryProjectName !== null
-      ? `${primaryRuntimeLabel} · ${primaryProjectName}`
-      : primaryRuntimeLabel;
+  // Plan 171 (slice F): the full title/subtitle/body/facts/priority
+  // derivation now lives in `agentHeroPropsFor` above (extracted, not
+  // duplicated) — this board's own hero and the tab-notch below-block's
+  // "viewed session" hero call the same function.
+  const heroProps = agentHeroPropsFor(primary, capturedAtMs, nowMs);
 
   return (
     <div
-      className={`card-assembly expanded agent-board-shell ${primaryPriority}`}
+      className={`card-assembly expanded agent-board-shell ${heroProps.priority}`}
       data-testid="agent-board"
     >
       <span className="notch-gill notch-gill-left" aria-hidden="true" />
@@ -574,16 +579,7 @@ export function AgentBoard({
             exit={{ opacity: 0, y: -6 }}
             transition={HERO_SWAP_TRANSITION}
           >
-            <AgentHeroCard
-              dotKey={primary.state}
-              pulse={primaryPresentation.pulse}
-              title={AGENT_HERO_TITLE[primary.state]}
-              subtitle={primarySubtitle}
-              body={primary.summary}
-              priority={primaryPriority}
-              facts={primaryFacts}
-              factsTone={primaryFactsTone}
-            />
+            <AgentHeroCard {...heroProps} />
           </motion.div>
         </AnimatePresence>
         {/* Plan 142 (spec §6.2 expanded): while `expanded`, the compact

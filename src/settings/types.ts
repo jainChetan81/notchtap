@@ -137,6 +137,16 @@ export interface Config {
   // (`#[serde(default)]` on the rust side), same "required, not optional"
   // discipline as `agents` above.
   silence: SilenceConfig;
+  // plan 171 (tab-notch redesign, slice J; spec §9): the configurable
+  // tmux-style prefix (`src-tauri/src/prefix.rs`'s `PrefixState`). A
+  // plain `"⌃⇧" + one more key name` string on the wire — mirrors this
+  // app's own shipped `⌃⇧`-combo display convention
+  // (`ShortcutsSection.tsx`'s `⌃⇧N`/`⌃⇧O`/etc. table), not a structured
+  // `{modifiers, key}` object. Always present
+  // (`#[serde(default = "default_prefix_shortcut")]` on the rust side),
+  // same "required, not optional" discipline as `silence`/`agents` above.
+  // Data only in this slice — not yet wired to a live key grab.
+  prefix_shortcut: string;
 }
 
 export interface SecretStatus {

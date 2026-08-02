@@ -68,8 +68,9 @@ const OUTLOOK: OutlookPoint[] = [
 const WEATHER_STATUS: StatusState = {
   paused: false,
   waiting: 0,
+  agent: { activeSessions: 0 },
   football: { enabled: false, live: null },
-  news: { enabled: false },
+  news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
   weather: { enabled: true, current: WEATHER_CURRENT },
   media: { enabled: false, current: null },
 };
@@ -93,8 +94,9 @@ const WEATHER_STATUS_WITH_FORECAST: StatusState = {
 const LIVE_MATCH_STATUS: StatusState = {
   paused: false,
   waiting: 0,
+  agent: { activeSessions: 0 },
   football: { enabled: true, live: { label: "MTL 1-0 TOR", minute: "63'" } },
-  news: { enabled: false },
+  news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
   weather: { enabled: true, current: WEATHER_CURRENT },
   media: { enabled: false, current: null },
 };
@@ -109,8 +111,9 @@ const LIVE_MATCH_STATUS_WITH_FORECAST: StatusState = {
 const NOTHING_AMBIENT_STATUS: StatusState = {
   paused: false,
   waiting: 0,
+  agent: { activeSessions: 0 },
   football: { enabled: false, live: null },
-  news: { enabled: false },
+  news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
   weather: { enabled: false, current: null },
   media: { enabled: false, current: null },
 };
@@ -129,8 +132,9 @@ const NOW_PLAYING: NowPlayingSummary = {
 const MEDIA_STATUS: StatusState = {
   paused: false,
   waiting: 0,
+  agent: { activeSessions: 0 },
   football: { enabled: false, live: null },
-  news: { enabled: false },
+  news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
   weather: { enabled: true, current: WEATHER_CURRENT },
   media: { enabled: true, current: NOW_PLAYING },
 };
@@ -589,5 +593,63 @@ describe("IdleHoverPeek (plan 093)", () => {
     const { container } = render(<IdleHoverPeek hovered={true} />);
     expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
     expect(container.querySelector(".idle-peek-timeline")).not.toBeNull();
+  });
+
+  // plan 171 (tab-notch redesign, slice K): the `prefer` prop. Spec §7's
+  // weather bullet ("the shipped card, unchanged") and §11 ("this peek's
+  // mechanism is untouched") mean the weather/football TAB selections
+  // reach this component rather than a second copy of it — `prefer` is
+  // how the caller says which. Every case with `prefer` omitted must
+  // stay byte-identical to before the plan, which the whole rest of this
+  // file already pins.
+  describe("prefer (plan 171 slice K)", () => {
+    it("defaults to the shipped precedence chain — a live match still outranks weather", () => {
+      const { container } = render(
+        <IdleHoverPeek status={MEDIA_AND_LIVE_MATCH_STATUS} hovered={true} />,
+      );
+      expect(container.querySelector(".idle-reveal-scorecard")).not.toBeNull();
+    });
+
+    it('prefer="weather" shows the weather readout even when a live match would outrank it', () => {
+      const { container } = render(
+        <IdleHoverPeek status={MEDIA_AND_LIVE_MATCH_STATUS} hovered={true} prefer="weather" />,
+      );
+      expect(container.querySelector(".wx-peek-readout")).not.toBeNull();
+      expect(container.querySelector(".idle-reveal-scorecard")).toBeNull();
+      expect(container.querySelector(".media-row")).toBeNull();
+    });
+
+    it('prefer="football" shows the scorecard and suppresses the weather backdrop/readout', () => {
+      const { container } = render(
+        <IdleHoverPeek status={MEDIA_AND_LIVE_MATCH_STATUS} hovered={true} prefer="football" />,
+      );
+      expect(container.querySelector(".idle-reveal-scorecard")).not.toBeNull();
+      expect(container.querySelector(".wx-peek-readout")).toBeNull();
+      expect(container.querySelector(".wx-peek-backdrop")).toBeNull();
+      expect(container.querySelector(".media-row")).toBeNull();
+    });
+
+    // a preference NARROWS, it never re-orders and falls through — being
+    // shown a scorecard because you asked for weather would be a worse
+    // lie than being shown nothing.
+    it("a preferred source with no data leaves the content slot empty rather than falling through", () => {
+      const { container } = render(
+        <IdleHoverPeek status={MEDIA_STATUS} hovered={true} prefer="football" />,
+      );
+      expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
+      expect(container.querySelector(".idle-reveal-scorecard")).toBeNull();
+      expect(container.querySelector(".media-row")).toBeNull();
+      expect(container.querySelector(".wx-peek-readout")).toBeNull();
+      // the timeline is unconditional — it never depended on ambient data
+      expect(container.querySelector(".idle-peek-timeline")).not.toBeNull();
+    });
+
+    it("never routes media through prefer — the music tab has its own below-block", () => {
+      const { container } = render(
+        <IdleHoverPeek status={MEDIA_STATUS} hovered={true} prefer="weather" />,
+      );
+      expect(container.querySelector(".media-row")).toBeNull();
+      expect(container.querySelector(".wx-peek-readout")).not.toBeNull();
+    });
   });
 });

@@ -447,6 +447,79 @@ function ScoreDigit({ value }: { value: number }) {
 // shell-level effect independent of whichever content template sits
 // underneath it (StatusRailCard.tsx still computes it separately, off
 // `footballKind`/`eventKindPresentationFor`, unchanged by this plan).
+// Plan 171 (tab-notch redesign, slice G): the score-block markup,
+// extracted verbatim from `FootballHeroCard`'s own former inline JSX so
+// the crossbar variant's second (`stacked`) block below can reuse it
+// instead of a second, drifting copy. `stacked` toggles the ONE class
+// difference (`score-block` vs `score-block stacked`, live-scorecard.css)
+// — every other prop and every line of markup is identical to what the
+// primary block always rendered.
+function ScoreBlockContent({
+  stacked,
+  liveEspn,
+  pillVariant,
+  pillLabel,
+  cardsClean,
+}: {
+  stacked: boolean;
+  liveEspn: EspnMeta;
+  pillVariant: LivePillVariant;
+  pillLabel: string;
+  cardsClean: boolean;
+}) {
+  return (
+    <div className={stacked ? "score-block stacked" : "score-block"}>
+      <div className="sc-head">
+        <span className="chip chip-league">{liveEspn.league}</span>
+        <span className={`chip chip-live${pillVariant === "live" ? "" : ` ${pillVariant}`}`}>
+          {/* plan 151 (item A): the dot stays MOUNTED in every variant,
+              including `final` — it leaves by fading to `opacity: 0`
+              (live-scorecard.css `.chip-live.final .live-dot`) in step
+              with the chip's own colour morph, instead of being
+              unmounted and blinking out a frame before the colours
+              change. Smallest structural change that lets it fade; the
+              collapsed 5px+gap it leaves behind is animated in the same
+              rule. */}
+          <span className="live-dot" />
+          {pillLabel}
+        </span>
+        <span className="chip clock-pill">{liveEspn.clock}</span>
+      </div>
+      <div className="score-row">
+        <div className="side">
+          <Crest abbrev={liveEspn.homeAbbrev} path={liveEspn.homeCrest} />
+        </div>
+        <span className="score">
+          <ScoreDigit value={liveEspn.homeScore} />
+          <span className="dash">–</span>
+          <ScoreDigit value={liveEspn.awayScore} />
+        </span>
+        <div className="side">
+          <Crest abbrev={liveEspn.awayAbbrev} path={liveEspn.awayCrest} />
+        </div>
+      </div>
+      {!cardsClean && (
+        <div className="cards-line">
+          {liveEspn.homeAbbrev} {liveEspn.homeCards[0]}Y{liveEspn.homeCards[1]}R ·{" "}
+          {liveEspn.awayAbbrev} {liveEspn.awayCards[0]}Y{liveEspn.awayCards[1]}R
+        </div>
+      )}
+    </div>
+  );
+}
+
+// Plan 171 (tab-notch redesign, slice G): one ADDITIONAL live match for
+// the crossbar variant's stacked second block — every field caller-
+// computed, same "no domain-specific derivation inside this component"
+// discipline `cardsClean` already established for the primary match
+// (StatusRailCard.tsx computes it, FootballHeroCard just renders it).
+export interface SecondaryMatch {
+  liveEspn: EspnMeta;
+  pillVariant: LivePillVariant;
+  pillLabel: string;
+  cardsClean: boolean;
+}
+
 export function FootballHeroCard({
   title,
   priority,
@@ -456,6 +529,29 @@ export function FootballHeroCard({
   pillVariant,
   pillLabel,
   cardsClean,
+  // Plan 171 (tab-notch redesign, slice G): spec section 7's football
+  // bullet / the design source's own "crossbar" persistent variant
+  // (prototypes/tab-notch-panel.html: "two stacked score-blocks, no
+  // event headline, no TTL bar", reached via prefix+enter while football
+  // is selected and a match is live). Deliberately NOT a separate
+  // `crossbar` boolean — "crossbar-ness" is fully expressed by what
+  // `title` string the caller passes (the event line, vs. e.g. "2
+  // matches live") plus whether this list is non-empty; a redundant flag
+  // would just restate information the caller already controls. Defaults
+  // to empty, so every EXISTING caller (the shipped notification card)
+  // renders byte-identical to before this slice.
+  //
+  // No real caller populates this yet: nothing on the wire currently
+  // surfaces more than ONE live match at a time —
+  // `StatusState.football.live` (status.rs) is a single `Option`, and
+  // `poller.rs`'s own snapshot map (which DOES already track every
+  // watched league) explicitly collapses to "the first in-play match
+  // wins" before it ever reaches the wire. Surfacing a second
+  // simultaneously-live match would need a rust-side wire change this
+  // slice's own file scope (`NotificationBody.tsx` only) does not cover
+  // — flagged here rather than improvised; Slice K's integration (or a
+  // dedicated follow-up) is where that wire change belongs.
+  secondaryMatches = [],
 }: {
   title: string;
   priority: Priority;
@@ -465,6 +561,7 @@ export function FootballHeroCard({
   pillVariant: LivePillVariant;
   pillLabel: string;
   cardsClean: boolean;
+  secondaryMatches?: SecondaryMatch[];
 }) {
   return (
     <div className="compact">
@@ -481,43 +578,23 @@ export function FootballHeroCard({
             matching prototype/football-card.html's `<div class="score-block">`
             — it carries the 10px gap off `.title.headline` that the chips
             row otherwise butts against at 0px (live-scorecard.css). */}
-        <div className="score-block">
-          <div className="sc-head">
-            <span className="chip chip-league">{liveEspn.league}</span>
-            <span className={`chip chip-live${pillVariant === "live" ? "" : ` ${pillVariant}`}`}>
-              {/* plan 151 (item A): the dot stays MOUNTED in every variant,
-                  including `final` — it leaves by fading to `opacity: 0`
-                  (live-scorecard.css `.chip-live.final .live-dot`) in step
-                  with the chip's own colour morph, instead of being
-                  unmounted and blinking out a frame before the colours
-                  change. Smallest structural change that lets it fade; the
-                  collapsed 5px+gap it leaves behind is animated in the same
-                  rule. */}
-              <span className="live-dot" />
-              {pillLabel}
-            </span>
-            <span className="chip clock-pill">{liveEspn.clock}</span>
-          </div>
-          <div className="score-row">
-            <div className="side">
-              <Crest abbrev={liveEspn.homeAbbrev} path={liveEspn.homeCrest} />
-            </div>
-            <span className="score">
-              <ScoreDigit value={liveEspn.homeScore} />
-              <span className="dash">–</span>
-              <ScoreDigit value={liveEspn.awayScore} />
-            </span>
-            <div className="side">
-              <Crest abbrev={liveEspn.awayAbbrev} path={liveEspn.awayCrest} />
-            </div>
-          </div>
-          {!cardsClean && (
-            <div className="cards-line">
-              {liveEspn.homeAbbrev} {liveEspn.homeCards[0]}Y{liveEspn.homeCards[1]}R ·{" "}
-              {liveEspn.awayAbbrev} {liveEspn.awayCards[0]}Y{liveEspn.awayCards[1]}R
-            </div>
-          )}
-        </div>
+        <ScoreBlockContent
+          stacked={false}
+          liveEspn={liveEspn}
+          pillVariant={pillVariant}
+          pillLabel={pillLabel}
+          cardsClean={cardsClean}
+        />
+        {secondaryMatches.map((match) => (
+          <ScoreBlockContent
+            key={`${match.liveEspn.league}-${match.liveEspn.homeAbbrev}-${match.liveEspn.awayAbbrev}`}
+            stacked={true}
+            liveEspn={match.liveEspn}
+            pillVariant={match.pillVariant}
+            pillLabel={match.pillLabel}
+            cardsClean={match.cardsClean}
+          />
+        ))}
       </div>
     </div>
   );

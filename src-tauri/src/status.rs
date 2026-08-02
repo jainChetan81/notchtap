@@ -21,10 +21,24 @@ pub const STATUS_STATE_EVENT: &str = "status-state";
 pub struct StatusState {
     pub paused: bool,
     pub waiting: usize,
+    /// Plan 171 (tab-notch): live Agent Session count, sourced from the
+    /// Agent Board publisher's own recompute (an `AtomicUsize` mirror —
+    /// see `AgentBoardPublisher::publish_if_changed`), NOT a second
+    /// registry read. Drives the agent icon's present/live tiers.
+    pub agent: AgentStatus,
     pub football: FootballStatus,
     pub news: NewsStatus,
     pub weather: WeatherStatus,
     pub media: MediaStatus,
+}
+
+/// Plan 171: the agent icon's presence source. One field for now —
+/// present iff `active_sessions > 0` (an agent icon has no separate
+/// "present but idle" tier: a registered live session IS liveness).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AgentStatus {
+    pub active_sessions: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -125,6 +139,14 @@ pub struct OutlookPoint {
 #[serde(rename_all = "camelCase")]
 pub struct NewsStatus {
     pub enabled: bool,
+    /// Plan 171 (tab-notch, spec §8): the news-charge cycle, sourced
+    /// from `news_charge.rs`'s state machine (owned by `lib.rs`, fed by
+    /// `rss_poller.rs`). `charge_fraction` is `fill()` (0..=1),
+    /// `charge_count` is items waiting, `is_charged` is the edge-held
+    /// "cycle ended with a full batch" flag cleared on visit.
+    pub charge_fraction: f32,
+    pub charge_count: usize,
+    pub is_charged: bool,
 }
 
 /// plan 040 Part B: mirrors `FootballStatus` exactly — `enabled` is the
@@ -195,6 +217,11 @@ pub struct StatusInputs {
     /// snapshot `now_playing.rs`'s supervised child pushes.
     pub media: Option<NowPlayingSummary>,
     pub now_playing_enabled: bool,
+    /// Plan 171: live Agent Session count (Agent Board's atomic mirror).
+    pub agent_sessions: usize,
+    /// Plan 171: the news-charge snapshot `(fill, count, is_charged)`,
+    /// read from `news_charge.rs` under its own lock by the caller.
+    pub news_charge: (f32, usize, bool),
 }
 
 impl StatusState {
@@ -205,12 +232,18 @@ impl StatusState {
         Self {
             paused: queue.is_paused(),
             waiting: queue.total_waiting(),
+            agent: AgentStatus {
+                active_sessions: inputs.agent_sessions,
+            },
             football: FootballStatus {
                 enabled: inputs.espn_enabled,
                 live: inputs.live,
             },
             news: NewsStatus {
                 enabled: inputs.rss_enabled,
+                charge_fraction: inputs.news_charge.0,
+                charge_count: inputs.news_charge.1,
+                is_charged: inputs.news_charge.2,
             },
             weather: WeatherStatus {
                 enabled: inputs.weather_enabled,
@@ -252,6 +285,34 @@ pub fn status_state_if_changed(
 /// The single emit path, mirroring `emit_slot_state`: emit failure is
 /// logged, never propagated — by this point the state has already changed,
 /// so failing the caller would misreport the underlying mutation.
+/// Plan 171 §0: `tab-selection-changed`, `{ selected: "agent" | … |
+/// "news" | null }`, emitted on actual transitions only — the same
+/// discipline `emit_hover_changed_if_transitioned` follows for hover
+/// (`last` is the last value actually put on the wire, not the last
+/// computed). Called from every path that can move the selection: the
+/// click monitor, the prefix keymap, and the engine loop's liveness
+/// clearing.
+pub fn emit_tab_selection_if_transitioned<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    last: &std::sync::Mutex<Option<crate::tabs::Tab>>,
+    selected: Option<crate::tabs::Tab>,
+) {
+    use tauri::Emitter;
+    {
+        let mut guard = last.lock().unwrap_or_else(|e| e.into_inner());
+        if *guard == selected {
+            return;
+        }
+        *guard = selected;
+    }
+    let payload = serde_json::json!({
+        "selected": selected.map(crate::tabs::Tab::wire_label),
+    });
+    if let Err(e) = app.emit("tab-selection-changed", payload) {
+        tracing::error!("failed to emit tab-selection-changed: {e}");
+    }
+}
+
 pub fn emit_status_state<R: tauri::Runtime>(app: &tauri::AppHandle<R>, state: StatusState) {
     use tauri::Emitter;
     if let Err(e) = app.emit(STATUS_STATE_EVENT, &state) {
@@ -273,13 +334,19 @@ mod tests {
 
     fn status(live: Option<LiveMatchSummary>) -> StatusState {
         StatusState {
+            agent: AgentStatus { active_sessions: 0 },
             paused: false,
             waiting: 3,
             football: FootballStatus {
                 enabled: true,
                 live,
             },
-            news: NewsStatus { enabled: true },
+            news: NewsStatus {
+                enabled: true,
+                charge_fraction: 0.0,
+                charge_count: 0,
+                is_charged: false,
+            },
             weather: WeatherStatus {
                 enabled: false,
                 current: None,
@@ -649,6 +716,8 @@ mod tests {
                 weather_enabled: false,
                 media: None,
                 now_playing_enabled: false,
+                agent_sessions: 0,
+                news_charge: (0.0, 0, false),
             },
         );
         assert!(snap.paused);
@@ -676,6 +745,8 @@ mod tests {
                     weather_enabled: false,
                     media: None,
                     now_playing_enabled: false,
+                    agent_sessions: 0,
+                    news_charge: (0.0, 0, false),
                 },
             )
             .waiting,
@@ -696,6 +767,8 @@ mod tests {
                 weather_enabled: true,
                 media: None,
                 now_playing_enabled: false,
+                agent_sessions: 0,
+                news_charge: (0.0, 0, false),
             },
         );
         assert!(snap.weather.enabled);
@@ -715,6 +788,8 @@ mod tests {
                 weather_enabled: false,
                 media: Some(now_playing_summary()),
                 now_playing_enabled: true,
+                agent_sessions: 0,
+                news_charge: (0.0, 0, false),
             },
         );
         assert!(snap.media.enabled);
@@ -738,6 +813,8 @@ mod tests {
                 weather_enabled: false,
                 media: Some(now_playing_summary()),
                 now_playing_enabled: false,
+                agent_sessions: 0,
+                news_charge: (0.0, 0, false),
             },
         );
         assert!(!snap.media.enabled);

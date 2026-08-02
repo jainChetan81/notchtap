@@ -177,6 +177,24 @@ pub struct Config {
     /// unconditionally over Silenced). See [`SilenceConfig`].
     #[serde(default)]
     pub silence: SilenceConfig,
+    /// plan 171 (tab-notch redesign, slice J; spec §9's keyboard model):
+    /// the configurable tmux-style prefix that arms `prefix.rs`'s
+    /// `PrefixState` 2-second follow-up window. Format mirrors this app's
+    /// own shipped `⌃⇧`-combo family (`ShortcutsSection.tsx`'s
+    /// `⌃⇧N`/`⌃⇧O`/etc. display table) rather than inventing a new
+    /// keybinding grammar: the literal `⌃⇧` (Control, Shift) followed by
+    /// one more key name with no whitespace — a single glyph for most of
+    /// the existing seven, or a spelled-out name for a non-printable key,
+    /// which is exactly what the spec's own default (`⌃⇧Space`) is. Plain
+    /// `String`, not a parsed wrapper type like [`SilenceConfig::window`]
+    /// — validated at settings-save time instead
+    /// (`settings::is_valid_prefix_shortcut`), the same treatment
+    /// `espn_leagues`/rss feed urls already get as plain strings. This
+    /// slice is data-only: nothing yet parses this string into an actual
+    /// `tauri_plugin_global_shortcut` registration — see `prefix.rs`'s own
+    /// module doc for why that wiring is deferred to real-device work.
+    #[serde(default = "default_prefix_shortcut")]
+    pub prefix_shortcut: String,
 }
 
 /// See [`Config::resting_state`].
@@ -481,6 +499,12 @@ fn default_resting_state() -> RestingState {
     RestingState::Rail
 }
 
+/// Spec §9: "`⌃⇧Space` is chosen as the default prefix specifically
+/// because it's the one combo in that family nobody's already using."
+fn default_prefix_shortcut() -> String {
+    "⌃⇧Space".to_string()
+}
+
 fn default_history_enabled() -> bool {
     false
 }
@@ -627,6 +651,7 @@ impl Default for Config {
             now_playing_adapter_enabled: default_now_playing_adapter_enabled(),
             now_playing_adapter_dir: default_now_playing_adapter_dir(),
             silence: SilenceConfig::default(),
+            prefix_shortcut: default_prefix_shortcut(),
         }
     }
 }
@@ -894,6 +919,27 @@ mod tests {
         assert!(c
             .now_playing_adapter_dir
             .ends_with("Library/Application Support/notchtap/mediaremote-adapter"));
+        assert_eq!(c.prefix_shortcut, "⌃⇧Space");
+    }
+
+    #[test]
+    fn prefix_shortcut_round_trips_through_parse() {
+        // plan 171 slice J: a config file that already customized this
+        // field keeps that value, not the default — same round-trip
+        // guarantee every other plain-string field in this struct gets
+        // (e.g. `detect_path`, an `espn_leagues` entry).
+        let c = Config::parse("prefix_shortcut = \"⌃⇧X\"\n").unwrap();
+        assert_eq!(c.prefix_shortcut, "⌃⇧X");
+    }
+
+    #[test]
+    fn prefix_shortcut_absent_from_file_falls_back_to_the_shipped_default() {
+        // Guards a config written before this key existed: the struct's
+        // `#[serde(default = "default_prefix_shortcut")]` must supply
+        // "⌃⇧Space" rather than an empty string or a deserialize error.
+        let c = Config::parse("port = 4321\n").unwrap();
+        assert_eq!(c.prefix_shortcut, "⌃⇧Space");
+        assert_eq!(c.port, 4321);
     }
 
     #[test]

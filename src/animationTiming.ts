@@ -257,3 +257,24 @@ export const DISCLOSURE_SPRING = { type: "spring", stiffness: 480, damping: 37 }
 // tokenization, not a retune.
 export const IDLE_REVEAL_MS = 240;
 export const IDLE_GLANCE_MS = 200;
+
+// Plan 171 (tab-notch redesign): the icon strip's own stagger, per the
+// design source's own explanation — the flank's black paint starts at
+// 0ms, the strip's own opacity fade starts this many ms later, so there
+// is never a frame where a glyph is visible against the desktop instead
+// of the flank behind it. A deliberate feel/pacing choice (the design
+// source calls this "the entire fix for [an earlier draft's] rejected
+// screenshot"), not a self-contained structural literal — belongs here,
+// not in animationTiming.test.ts's CSS allowlist, per that test's own
+// stated bar for what qualifies for the allowlist instead.
+export const ICON_STRIP_STAGGER_MS = 60;
+
+// Plan 171: the news icon's charge-fill step — one interior fill-level
+// step per newly-landed story, ambient and silent (spec section 8: this
+// is charging, never charged; it never glows). Numerically equal to
+// EXPAND_MS (320) today but kept as its own name rather than reusing
+// that constant, same reasoning HOVER_MS/BOARD_SUMMON_MS were split out
+// of REVEAL_MS for: this governs an unrelated fill-level animation, not
+// a shell width-grow or a manifest disclosure, and the two should stay
+// free to diverge.
+export const NEWS_CHARGE_STEP_MS = 320;

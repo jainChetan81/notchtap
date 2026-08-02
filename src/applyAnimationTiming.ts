@@ -2,7 +2,9 @@ import {
   CONTENT_EXIT_MS,
   EXPAND_MS,
   HOVER_MS,
+  ICON_STRIP_STAGGER_MS,
   INTERRUPT_EXIT_MS,
+  NEWS_CHARGE_STEP_MS,
   REVEAL_MS,
   ROTATION_ENTER_MS,
   ROTATION_EXIT_MS,
@@ -63,4 +65,8 @@ export function applyAnimationTiming(
   // the JS constant directly for motion's `transition.duration`, no CSS
   // rule consumes this yet.
   root.setProperty("--interrupt-exit-ms", `${INTERRUPT_EXIT_MS}ms`);
+  // plan 171 (tab-notch redesign): the icon strip's own two CSS-consumed
+  // durations, same injection discipline as every token above.
+  root.setProperty("--icon-strip-stagger-ms", `${ICON_STRIP_STAGGER_MS}ms`);
+  root.setProperty("--news-charge-step-ms", `${NEWS_CHARGE_STEP_MS}ms`);
 }
