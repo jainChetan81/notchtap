@@ -87,6 +87,8 @@ These are not fully specified by the design spec (which describes behavior, not 
 
 **Verification**: `cargo test` clean, new tests for whatever command-dispatch logic is pure/testable (the subprocess call itself stays manual-only, same posture as every other MediaRemote surface in this codebase per `docs/TESTING_STRATEGY.md`'s own note on plan 104's operator-owed live-adapter checks).
 
+**Landed so far**: checked first, per this slice's own instruction — the vendored adapter already exposes a command path (`bin/mediaremote-adapter.pl send <MRCommand ID>`, confirmed via its own `--help` text and `include/MediaRemoteAdapter.h`'s `MRCommand` enum); plan 104 just never wired the write side. `src-tauri/src/now_playing.rs`: `MediaCommand` (Previous/PlayPause/Next) → MRCommand id, a pure tested mapping (2 tests), and `send_command`, a one-shot dispatch mirroring `run_stream_once`'s permission-check + `SYSTEM_PERL` discipline, 3s-bounded like `presentation.rs`'s own subprocess probe. Vendored tree untouched (`VENDORED.md` stays frozen). Not wired to a real caller — same Slice A click-routing gate as Slice B. `#[allow(dead_code)]` on the staged pieces, same discipline as B. 978/978 `cargo test` passing.
+
 ## Slice D — prefix keymap state machine (rust)
 
 **Files**: `src-tauri/src/lib.rs` (the existing shortcut-registration block, ~line 700-830) plus a new module if the arm/disarm state machine is substantial (`src-tauri/src/prefix.rs` or similar — executor's call), `src-tauri/src/config.rs` (the configurable prefix keybinding field + Settings surface hookup).
