@@ -44,13 +44,30 @@ edit).
 
 | plan | title | priority | effort | depends on | status |
 |---|---|---|---|---|---|
-| 175 | reconcile icon-strip rust hit-test geometry with shipped CSS | P1 | M | — | TODO |
-| 176 | place the pulled-tab below-block in its grid row | P1 | S | 175 (soft) | TODO |
-| 177 | blank pulls: ungated agent sessions on the wire + empty-tab peek fallback | P1 | M | — | TODO |
-| 178 | prefix watchdog: deadline-aware + self-healing forced release | P1 | S | — | TODO |
-| 179 | input-path robustness: live scale, poison-tolerant AppKit locks, emit-under-lock | P2 | S | — | TODO |
-| 180 | tab-wire test backfill: rejection cases, App seam, identity parity pin, whitespace unification | P2 | S | 176/177 (soft) | TODO |
-| 181 | post-171 docs truth: five stale claims, one user-visible in Settings | P3 | S | 178/179/180 (soft, land last) | TODO |
+| 175 | reconcile icon-strip rust hit-test geometry with shipped CSS | P1 | M | — | DONE (merged `1c725c5`) |
+| 176 | place the pulled-tab below-block in its grid row | P1 | S | 175 (soft) | DONE (merged `9c632eb`) |
+| 177 | blank pulls: ungated agent sessions on the wire + empty-tab peek fallback | P1 | M | — | DONE (merged `513594f`; plan amended 2026-08-03, see file) |
+| 178 | prefix watchdog: deadline-aware + self-healing forced release | P1 | S | — | DONE (merged `ea6879e`) |
+| 179 | input-path robustness: live scale, poison-tolerant AppKit locks, emit-under-lock | P2 | S | — | DONE (merged `9feba02`, incl. reviewer-authorized on_mouse_moved twin) |
+| 180 | tab-wire test backfill: rejection cases, App seam, identity parity pin, whitespace unification | P2 | S | 176/177 (soft) | DONE (merged `ace5558`; found+fixed a real U+0085/U+FEFF validator divergence) |
+| 181 | post-171 docs truth: five stale claims, one user-visible in Settings | P3 | S | 178/179/180 (soft, land last) | DONE (merged; prose-only — advisor re-verified each claim in code + gemini-2.5-pro fact-checked all five sites with citations) |
+
+**Execution 2026-08-03.** Each plan ran under an isolated-worktree Opus
+executor; every diff was then reviewed three ways before merging — by the
+advisor (hands-on, hunk-by-hunk) and by two external models via PAL over
+OpenRouter (gemini-2.5-pro + gpt-5.1-codex), per operator direction.
+Review record: 12 external APPROVE verdicts; the one REQUEST-CHANGES
+(codex, claiming plan 175's variable-length lookbehind is illegal ES) was
+refuted by direct execution — ES2018 lookbehind is unbounded and the test
+runs 5/5. Two executor STOPs were honest and correct: plan 177's first
+run caught a pre-existing test pinning the behaviour Step 1 removes (the
+plan was amended to authorize that one rewrite, and its file records it),
+and the same run flagged a disk-full condition. Suites at the post-180
+merge, recounted live: rust 1056+3+3, frontend 859/42 files — matching
+`docs/TESTING_STRATEGY.md` §0 exactly. Plan 171's on-hardware checks plus
+one new one (the resting HUD rail now widens with live-source count —
+plan 175's geometry consistency makes that deliberate) remain
+operator-owed.
 
 **Verified this session but NOT planned (awaiting selection):**
 
