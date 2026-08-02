@@ -2920,10 +2920,57 @@ describe("tab-notch integration (plan 171, slice K)", () => {
       expect(container.querySelector(".below-block.idle-peek")).toBeNull();
     });
 
-    it("selecting agent with no sessions falls back to no below-block at all, rather than an empty card", () => {
+    // Plan 177 (Step 4) rewrote this test's contract. It used to pin
+    // "no below-block at all" — but that is the blank-pull bug seen from
+    // the inside: the operator pulled a tab open and got an empty shell
+    // where the ambient peek used to be. An empty tab now degrades to
+    // the peek instead. The agent CARD is still absent, which is the
+    // half of the old assertion that was always right.
+    it("selecting agent with no sessions degrades to the ambient peek, not to a blank shell", () => {
       const { container } = hoveredIdle("agent", QUIET, []);
       expect(container.querySelector('[data-testid="agent-below-block"]')).toBeNull();
-      expect(container.querySelector(".below-block")).toBeNull();
+      expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
+      expect(container.querySelectorAll(".below-block").length).toBe(1);
+    });
+
+    // Plan 177: the other two empty-tab cases. News has no story wire at
+    // all (`TabBelowBlock`'s hard-wired `NO_NEWS_STORIES`), so it is
+    // ALWAYS empty today — selecting it used to blank the hover
+    // outright.
+    it("selecting news keeps the ambient peek, since no story wire exists to fill the block", () => {
+      const { container } = hoveredIdle("news", {
+        ...QUIET,
+        weather: { enabled: true, current: WEATHER },
+        news: { enabled: true, chargeFraction: 1, chargeCount: 3, isCharged: true },
+      });
+      expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
+      expect(container.querySelectorAll(".below-block").length).toBe(1);
+    });
+
+    it("selecting music with nothing playing keeps the ambient peek", () => {
+      const { container } = hoveredIdle("music", {
+        ...QUIET,
+        weather: { enabled: true, current: WEATHER },
+        media: { enabled: true, current: null },
+      });
+      expect(container.querySelector('[data-testid="media-below-block"]')).toBeNull();
+      expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
+      expect(container.querySelectorAll(".below-block").length).toBe(1);
+    });
+
+    // ...and the positive case the fix exists for: with the UNGATED
+    // sessions now threaded in (App.tsx reads `agentState.tabSessions`),
+    // a merely-working agent has something to render, so the peek yields
+    // to the real card.
+    it("selecting agent with live sessions mounts the agent below-block and closes the peek", () => {
+      const { container } = hoveredIdle(
+        "agent",
+        { ...QUIET, weather: { enabled: true, current: WEATHER }, agent: { activeSessions: 1 } },
+        [agentSession()],
+      );
+      expect(container.querySelector('[data-testid="agent-below-block"]')).not.toBeNull();
+      expect(container.querySelector(".below-block.idle-peek")).toBeNull();
+      expect(container.querySelectorAll(".below-block").length).toBe(1);
     });
 
     // Plan 184 (Part 1): pins that `viewedSessionIndex` — the

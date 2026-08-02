@@ -639,12 +639,41 @@ export function StatusRailCard({
   // returns null and `IdleHoverPeek` keeps its shipped ambient chain.
   const pulledTab = tabPullOpen ? selectedTab : null;
   const peekPreference = peekPreferenceFor(pulledTab);
+  // Plan 177: whether the pulled tab actually has anything to draw.
+  // Each of the first three arms is LITERALLY the empty-guard its own
+  // component already applies — `AgentBelowBlock`'s `sessions.length
+  // === 0`, `MediaBelowBlock`'s `media === null`, and the hard-wired
+  // `NO_NEWS_STORIES` that `TabBelowBlock` hands `NewsBelowBlock` (no
+  // wire source exists for news story CONTENT yet — a recorded direction
+  // option, deliberately not faked). Kept in lockstep on purpose: when a
+  // news story wire lands, the `news` arm and that constant flip
+  // TOGETHER, and this is the second of the two places to edit. The
+  // final arm is `true` for football/weather, which have no below-block
+  // at all — they are served by `IdleHoverPeek`'s own `prefer` rendering
+  // (see `peekPreferenceFor`), so "has content" is not this predicate's
+  // question for them.
+  const pulledTabHasContent =
+    pulledTab === "agent"
+      ? agentSessions.length > 0
+      : pulledTab === "music"
+        ? (status?.media.current ?? null) !== null
+        : pulledTab === "news"
+          ? false
+          : pulledTab !== null;
+  // Whether a real `.below-block` is about to mount for the pulled tab.
+  // Both this and the peek below hang off it, which is what guarantees
+  // exactly one of the two is ever on screen.
+  const pulledBelowBlockOpen = tabBelowBlockHandles(pulledTab) && pulledTabHasContent;
   // The peek stays open for no-selection (its shipped ambient behavior,
   // spec section 11's explicit non-goal) and for the two selections it
   // itself serves; the three with their own below-block close it, so
   // there is never more than one `.below-block` under the shell (the
-  // rounding law in card-chrome.css depends on that).
-  const peekOpen = tabPullOpen && !tabBelowBlockHandles(pulledTab);
+  // rounding law in card-chrome.css depends on that). Plan 177: "close
+  // it" now means "close it for a below-block that will actually
+  // RENDER something" — a tab whose source is empty (news today,
+  // music with nothing playing, agent with no live session) degrades to
+  // the ambient peek rather than to a blank shell.
+  const peekOpen = tabPullOpen && !pulledBelowBlockOpen;
 
   // plan 091: the outer shell (`.card-assembly`) now owns ONLY geometry-
   // and-effects classes — priority accent, hover diagnostic, the goal/
@@ -1092,7 +1121,14 @@ export function StatusRailCard({
           standing law — the shell itself is untouched. Durations are the
           rotation tokens, not new literals (spec section 13). */}
       <AnimatePresence mode="wait" initial={false}>
-        {pulledTab !== null && (
+        {/* Plan 177: `pulledTabHasContent` joins the mount gate so an
+            empty tab mounts NOTHING here and keeps the ambient peek
+            above instead — one surface at a time either way, which is
+            what the rounding law depends on. Football/weather are
+            unaffected (the predicate is true for them; their wrapper
+            mounts exactly as before and `TabBelowBlock` returns null for
+            them as it always has). */}
+        {pulledTab !== null && pulledTabHasContent && (
           <motion.div
             key={pulledTab}
             initial={{ opacity: 0, y: -4 }}
