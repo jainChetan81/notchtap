@@ -1937,31 +1937,36 @@ describe("StatusRailCard", () => {
     });
   });
 
-  // 2026-08-02 (operator request): hover-expand REPLACES the deleted
-  // hover "breathe" scale — hovering a live showing card now opens its
-  // manifest and grows the shell to `.expanded`'s width instead of
-  // zooming the whole shell. The OR itself lives in
-  // useExitChoreography.ts's `expanded`; these pin it end-to-end through
-  // both consumers of that one value (the shell class AND the manifest's
-  // own open state). Same precedent as App.tsx's `expanded={hovered}` on
-  // AgentBoard (plan 142).
-  describe("hover-expand on a showing card (2026-08-02)", () => {
+  // 2026-08-02: hover-expand was tried and reverted the same day (see
+  // useExitChoreography.ts's own comment on `expanded`). These pin the
+  // reverted behavior: hovering alone must never open the manifest or
+  // add `.expanded` — only `slot.expanded` (the `⌃⇧N` keyboard toggle)
+  // does.
+  describe("manifest expand is keyboard-only, not hover-driven (2026-08-02 revert)", () => {
     const COLLAPSED: SlotState = { ...GOAL, expanded: false };
+    const EXPANDED: SlotState = { ...GOAL, expanded: true };
 
-    it("renders .expanded and an open manifest while hovered, even with slot.expanded false", () => {
+    it("stays collapsed while hovered if slot.expanded is false", () => {
       const { container } = render(<StatusRailCard slot={COLLAPSED} hovered={true} />);
-      expect(container.querySelector(".card-assembly.expanded")).not.toBeNull();
-      const wrap = container.querySelector(".manifest-wrap");
-      expect(wrap?.classList.contains("expanded")).toBe(true);
-      expect(wrap?.getAttribute("aria-hidden")).toBe("false");
-    });
-
-    it("stays collapsed — no .expanded, manifest closed — while not hovered", () => {
-      const { container } = render(<StatusRailCard slot={COLLAPSED} hovered={false} />);
       expect(container.querySelector(".card-assembly.expanded")).toBeNull();
       const wrap = container.querySelector(".manifest-wrap");
       expect(wrap?.classList.contains("expanded")).toBe(false);
       expect(wrap?.getAttribute("aria-hidden")).toBe("true");
+    });
+
+    it("stays collapsed while not hovered if slot.expanded is false", () => {
+      const { container } = render(<StatusRailCard slot={COLLAPSED} hovered={false} />);
+      expect(container.querySelector(".card-assembly.expanded")).toBeNull();
+    });
+
+    it("stays expanded regardless of hover if slot.expanded is true", () => {
+      const { container: hoveredCase } = render(<StatusRailCard slot={EXPANDED} hovered={true} />);
+      expect(hoveredCase.querySelector(".card-assembly.expanded")).not.toBeNull();
+
+      const { container: notHoveredCase } = render(
+        <StatusRailCard slot={EXPANDED} hovered={false} />,
+      );
+      expect(notHoveredCase.querySelector(".card-assembly.expanded")).not.toBeNull();
     });
   });
 
@@ -2020,7 +2025,7 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".card-assembly.promoting")).toBeNull();
     });
 
-    it("is never armed by hover-expand on an already-showing card", () => {
+    it("is never armed by a hover (manifest expand is keyboard-only, reverted 2026-08-02)", () => {
       const { container, rerender } = render(
         <StatusRailCard slot={{ ...GOAL, expanded: false }} hovered={false} />,
       );
@@ -2028,9 +2033,9 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".card-assembly.promoting")).toBeNull();
 
       rerender(<StatusRailCard slot={{ ...GOAL, expanded: false }} hovered={true} />);
-      // the shell really did change width class (so a real width
-      // transition ran) — and it did so without the pop.
-      expect(container.querySelector(".card-assembly.expanded")).not.toBeNull();
+      // hover does not expand the card (reverted 2026-08-02), so the
+      // width class never changes and the pop is never armed.
+      expect(container.querySelector(".card-assembly.expanded")).toBeNull();
       expect(container.querySelector(".card-assembly.promoting")).toBeNull();
     });
 
