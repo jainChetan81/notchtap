@@ -1,12 +1,13 @@
 /* ==== football live-match scorecard (plan 084): the operator-locked
    sticky-presence card's compact render, built on 083's structured espn
    meta. Class names are lifted verbatim from prototype/football-card.html
-   so cross-referencing stays greppable. `.notif-block` replaces `.compact`
-   entirely for this branch (StatusRailCard.tsx) — no Track, no TtlBar, no
-   Manifest; see that file's live-match branch comment for why. ==== */
-.card-root .notif-block {
-  padding: 12px 16px 13px;
-}
+   so cross-referencing stays greppable — the score-row/chips/crest/digit
+   rules below this point are still the live styling for
+   `FootballHeroCard` (NotificationBody.tsx). plan 171: `.notif-block`
+   (the old bespoke wrapper `LiveMatchScorecard.tsx` — now deleted —
+   used before plan 170's unified-template migration) was removed from
+   here; `.compact` (masthead-content.css) is what wraps this content
+   now. ==== */
 
 /* plan 170: the score block is "spaced apart with its own margin-top" per
    prototype/football-card.html — without it the chips row butts against
@@ -211,15 +212,10 @@
   margin: 0 2px;
 }
 
-.card-root .event-line {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  margin-top: 9px;
-  font-size: 11px;
-  color: rgba(255, 255, 255, 0.7);
-}
+/* plan 171: `.event-line` (the old per-event icon+tint row) was removed
+   from here — `FootballHeroCard`'s `.title.headline` (NotificationBody.tsx)
+   deliberately doesn't carry an icon slot; see that component's own doc
+   comment for why. */
 
 .card-root .cards-line {
   margin-top: 6px;

@@ -122,6 +122,26 @@ describe("animationTiming (plan 117)", () => {
     const tokenValues = m ? m.slice(1, 5).map(Number) : [];
     expect(tokenValues).toEqual([...NOTCHTAP_EASE]);
   });
+
+  // plan 174 review follow-up (Standards axis): the curve actually has
+  // THREE copies, and the third — styles.css's `:root` redeclaration
+  // (plan 163's defense-in-depth twin, required because Tailwind's
+  // `@theme` scoping never reaches the overlay bundle) — was the only
+  // unguarded one; the 174 retune touched it by hand with nothing
+  // failing if it hadn't. Same parse-and-compare treatment as the
+  // vendored token above, so no copy of the ease can drift alone.
+  it("styles.css's :root --ease-notchtap redeclaration matches NOTCHTAP_EASE", () => {
+    const styles = readFileSync(
+      fileURLToPath(new NodeURL("./styles.css", import.meta.url)),
+      "utf8",
+    );
+    const m = styles.match(
+      /--ease-notchtap:\s*cubic-bezier\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*\)/,
+    );
+    expect(m).not.toBeNull();
+    const twinValues = m ? m.slice(1, 5).map(Number) : [];
+    expect(twinValues).toEqual([...NOTCHTAP_EASE]);
+  });
 });
 
 // item 6 (timing-parity enforcement): a scanner over every `src/overlay/*.css`
@@ -143,7 +163,7 @@ describe("overlay CSS timing-parity (item 6): every transition duration is var(-
   }
 
   // matches a reference to an animationTiming-fed duration var, fallback
-  // included (e.g. `var(--expand-ms, 320ms)`) — removed wholesale before
+  // included (e.g. `var(--expand-ms, 300ms)`) — removed wholesale before
   // scanning for leftover raw literals, so a var's own ms-literal FALLBACK
   // (defense-in-depth for a context that skips applyAnimationTiming, same
   // reasoning as EXPAND_MS's own doc above) is never mistaken for a

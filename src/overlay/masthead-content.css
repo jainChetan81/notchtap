@@ -31,7 +31,7 @@
      min-height rule is agent-board.css's static `.agent-board-primary`
      override, which never changes value at runtime — nothing there to
      animate, and no partner rule needed for it. */
-  transition: min-height var(--expand-ms, 320ms) var(--ease-notchtap);
+  transition: min-height var(--expand-ms, 300ms) var(--ease-notchtap);
 }
 
 .card-root .expanded .compact {

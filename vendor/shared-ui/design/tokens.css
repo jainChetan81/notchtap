@@ -75,19 +75,13 @@
   --overlay-blue: oklch(0.624 0.206 255.49);          /*           #0a84ff */
   --overlay-teal: oklch(0.798 0.119 178.03);          /*           #55d6bd */
   --overlay-coral: oklch(0.708 0.185 30.07);          /*           #ff6b57 */
-  /* notchtap visual-consistency sweep (O3): minted so the football/news
-   * green and the weather/business/card-state amber stop drifting between
-   * two hex spellings apiece (a dot-vs-card mismatch, H5) — every overlay
-   * consumer now points at these two instead of repeating the literal hex. */
+  /* upstreamed from notchtap's vendored copy (a "visual-consistency
+   * sweep" that minted these locally so its green/amber/full-strength-
+   * white overlay text stopped drifting between two hex spellings
+   * apiece) — contributed back here so future consumers get them from
+   * day one instead of re-diverging the same way. */
   --overlay-green: oklch(0.826 0.148 147.39);         /*           #7fe08d */
   --overlay-amber: oklch(0.841 0.120 83.66);          /*           #f0c46a */
-  /* notchtap visual-consistency sweep (O10): the overlay's one full-strength
-   * text white — was split between a literal `#f5f7fa` (12+ places) and one
-   * `rgb(245, 247, 250)` spelling (the idle face) for the exact same color;
-   * every solid-white overlay declaration now reads this var instead. Does
-   * NOT touch the separate rgba(255,255,255,alpha) dim-text ramps used
-   * throughout the overlay — those are an established, much larger
-   * pattern and out of scope for this pass (deliberate minimal-churn call). */
   --overlay-fg: oklch(0.975 0.005 258.32);            /*           #f5f7fa */
 }
 
@@ -179,8 +173,13 @@
   --color-overlay-amber: var(--overlay-amber);
   --color-overlay-fg: var(--overlay-fg);
 
-  /* motion — signature notchtap easing + durations */
-  --ease-notchtap: cubic-bezier(.22, 1, .36, 1);
+  /* motion — signature notchtap easing + durations.
+   * notchtap = strong ease-out: entrances/exits and UI state flips.
+   * drawer   = iOS sheet curve (settled, sheet content only).
+   * in-out-strong = on-screen movement (settled, sidebar collapse). */
+  --ease-notchtap: cubic-bezier(0.23, 1, 0.32, 1);
+  --ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
+  --ease-in-out-strong: cubic-bezier(0.77, 0, 0.175, 1);
   --duration-fast: 220ms;
   --duration-normal: 300ms;
   --duration-slow: 400ms;

@@ -41,6 +41,22 @@ per that plan's own boundary and is not yet filed as its own follow-up.
 | 169 | render the Agent Board's primary session through the shared template | N/A (proposal) | 168 | DONE |
 | 170 | render Football's promoted events through the shared template | N/A (proposal) | 168, 169 | DONE |
 
+**Deferred-animation follow-ups batch 171–174 (2026-08-02, branch
+`design/deferred-animation-followups`)** — plan 170's deferred dead-CSS
+trim, the animation review's last open duration finding, its
+width→transform perf finding (investigated, NO-GO), and the shared-ui
+0.4.0 vendor refresh that closed the "phantom motion trio" divergence
+(the retune had been sitting unpushed on the mac mini's sibling
+checkout, invisible to remote sessions — see plan 174's incident
+narrative).
+
+| plan | title | severity | depends on | status |
+|---|---|---|---|---|
+| 171 | trim live-scorecard.css's dead rules (plan 170's deferred Step 7) | LOW | 170 | DONE |
+| 172 | EXPAND_MS feel-check and retune 320ms → 300ms | LOW | 174 | DONE |
+| 173 | card-chrome width→transform feasibility spike | N/A (spike, NO-GO) | — | DONE |
+| 174 | shared-ui 0.4.0 vendor refresh: adopt the motion trio | LOW | — | DONE |
+
 **Shell-choreography review batch 163–167 (2026-07-31, `/review-animations`,
 scoped by operator request to the minimal↔idle↔compact↔expanded shell-size
 state cycle)** — a focused review of the notch/HUD shell's own
