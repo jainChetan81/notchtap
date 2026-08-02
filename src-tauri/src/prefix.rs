@@ -6,30 +6,25 @@
 //! the source of truth this module encodes.
 //!
 //! **What this module does NOT do**: register or release any actual OS
-//! key grab. Spec §9's own "Mechanism note" says the real wiring needs a
-//! genuinely different mechanism from the app's existing seven
-//! `tauri_plugin_global_shortcut` combos — the prefix itself registers
-//! globally as normal, but the SEVEN follow-up keys (`1`…`5`, `[`, `]`,
-//! `enter`/`o`, `p`, `esc`) would need to be registered only for the
-//! live 2-second window (bare, unmodified global shortcuts for keys like
-//! "1" or "Return" registered PERMANENTLY would fire on every ordinary
-//! keystroke anywhere on the system — not what's wanted), which means
-//! dynamic `register`/`unregister` calls plus a cancellable 2s timer
-//! task. That's architecturally sound (the same already-proven
-//! `tauri_plugin_global_shortcut` API the existing seven combos use, not
-//! a new native mechanism like Slice A's click-detection question), but
-//! it's a genuinely live, timing-sensitive integration this Linux dev
-//! environment cannot exercise or verify at all — left for real-device
-//! wiring, same "pure logic now, live grab/release manual-only" split
-//! the plan's own Verification section already draws. This module knows
-//! nothing about `tauri_plugin_global_shortcut`; it is ready to be
-//! driven by whichever wiring lands.
+//! key grab — that stays in `lib.rs`, and it is LIVE (shipped in
+//! `82a4598`). This module deliberately owns no `AppKit` or
+//! `tauri_plugin_global_shortcut` types so the ARM/DISARM rules stay
+//! unit-testable off-device; the grab side is inherently timing- and
+//! hardware-sensitive and is verified manually.
 //!
-//! `#![allow(dead_code)]`: staged ahead of that caller, same situation as
-//! `tabs.rs`/`news_charge.rs` (see those files' doc comments) — `cargo
-//! clippy --locked --all-targets -D warnings` (the CI gate) has no
-//! exemption for a plain unused `pub` item. Remove once the lib.rs
-//! wiring calls `on_prefix`/`on_key` for real.
+//! The live wiring, for anyone tracing a key press end to end:
+//! `lib.rs`'s `PREFIX_FOLLOWUPS` table holds the bare (unmodified)
+//! follow-up grabs — see that constant for the authoritative key list
+//! and count; `enter`/`o` both mean ExpandToggle and `esc` disarms.
+//! They are registered ONLY while an armed window is live and released
+//! the moment a key is consumed, the prefix/esc disarms, or the window
+//! lapses — permanently-registered bare shortcuts for keys like "1" or
+//! "Return" would fire on every ordinary keystroke system-wide, which is
+//! exactly what the dynamic register/unregister dance avoids.
+//! `handle_prefix_fire` arms (or re-fires as disarm),
+//! `handle_prefix_followup` consumes one key, and a watchdog
+//! (`PREFIX_WATCHDOG_TIMEOUT`) force-releases the grabs if a release ever
+//! fails, so a partial failure cannot strand the bare keys registered.
 
 use std::time::{Duration, Instant};
 

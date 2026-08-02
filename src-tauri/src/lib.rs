@@ -1363,14 +1363,20 @@ fn escape_for_eval_splice(json: &str) -> String {
 #[cfg(target_os = "macos")]
 fn apply_overlay_native_config(window: &tauri::WebviewWindow) -> tauri::Result<()> {
     use objc2_app_kit::{NSStatusWindowLevel, NSWindow, NSWindowCollectionBehavior};
-    // click-through, always (2026-07-17 bug: on notchless HUD-mode machines,
+    // click-through at boot (2026-07-17 bug: on notchless HUD-mode machines,
     // the flush-to-top/NSStatusWindowLevel placement below lands this window
     // directly over the real, interactive system menu bar — not a notch
     // cutout's dead zone — so without this, every click in its bounds
     // (including ones meant for the menu bar's own tray icons) was captured
-    // by notchtap instead of passing through. safe unconditionally: the
-    // frontend is receive-only and has no click handlers anywhere — every
-    // interaction is a global hotkey (⌃⇧N/⌃⇧O), never a click.
+    // by notchtap instead of passing through. NOTE this `true` is the BOOT
+    // DEFAULT, no longer an invariant: since plan 171 the hover path
+    // (`emit_hover_changed_if_transitioned`) conditionally flips it to
+    // `false` while the icon strip is hoverable, and a rust-side `NSEvent`
+    // monitor (`click.rs`) observes clicks — the monitor's hit-test, not
+    // this toggle, is what narrows clicks to the strip. The menu-bar
+    // pass-through above is preserved because the window only accepts
+    // events while the cursor is already over the painted card rect.
+    // `docs/ARCHITECTURE.md` §22 holds that decision.
     window.set_ignore_cursor_events(true)?;
     // tao tracks this flag in its own window state, so it survives tao's
     // internal re-applies (unlike a raw setCollectionBehavior alone).

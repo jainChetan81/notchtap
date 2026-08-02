@@ -95,18 +95,20 @@ export function TabBelowBlock({
   nowMs?: number;
   /// `prefix-[`/`prefix-]` cycles this (spec section 9), and
   /// `AgentBelowBlock.cycleSessionIndex` is the pure wraparound that
-  /// moves it. There is NO `agent-viewed-session-changed` event on the
-  /// wire at this commit (grepped `src/` and `src-tauri/src/` before
-  /// writing this) and slice D's `prefix.rs` is not wired to
-  /// `tauri_plugin_global_shortcut` yet, so nothing can move it today —
-  /// it defaults to the first session and is threaded as a prop so the
-  /// eventual wiring is a caller change, not a change to this file.
+  /// moves it. Live end to end as of plan 184: rust owns the cursor and
+  /// emits `agent-viewed-session-changed` (written by both the prefix
+  /// follow-ups and the auto-advance timer), `useAgentViewedSession`
+  /// listens for it in App.tsx, and `StatusRailCard` threads the value
+  /// down to here. Still optional so callers with no wire at all (tests,
+  /// the settings preview) render against the first session.
   viewedSessionIndex?: number;
-  /// `prefix+enter`/`o` (spec section 9's only expansion gesture). Same
-  /// still-unwired situation as `viewedSessionIndex` above — defaults to
-  /// the compact form, which spec section 2 decision 6 makes the correct
-  /// default regardless ("hover always shows the selected tab's card in
-  /// COMPACT form. Never auto-expands").
+  /// `prefix+enter`/`o` (spec section 9's only expansion gesture). Unlike
+  /// `viewedSessionIndex` above, nothing threads this one during a pull —
+  /// the prefix's ExpandToggle routes to `toggle_manual_expand`, which
+  /// drives the notification card's own manual expand, not this prop — so
+  /// it defaults to the compact form, which spec section 2 decision 6
+  /// makes the correct default regardless ("hover always shows the
+  /// selected tab's card in COMPACT form. Never auto-expands").
   expanded?: boolean;
 }) {
   if (!tabBelowBlockHandles(selected)) {
