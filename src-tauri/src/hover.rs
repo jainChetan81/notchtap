@@ -160,8 +160,10 @@ pub fn css_top_down_to_appkit_y(window_height: f64, top: f64, height: f64) -> (f
 ///   below-block is a real, FIXED-height CSS block (`styles.css`'s
 ///   `.idle-peek`), mirrored here exactly like every other duplicated
 ///   width constant above.
-/// - showing (not expanded): cutout height + `BELOW_BLOCK_SHOWING_H`.
-/// - expanded: cutout height + `BELOW_BLOCK_EXPANDED_H`.
+/// - showing (not expanded, not hover-expanded): cutout height +
+///   `BELOW_BLOCK_SHOWING_H`.
+/// - expanded (manually, or by hover — `hover_expand_open`): cutout
+///   height + `BELOW_BLOCK_EXPANDED_H`.
 ///
 /// Both non-idle estimates are deliberately CONSERVATIVE (see those
 /// constants' own doc comments) — this function still never claims to be
@@ -213,6 +215,45 @@ pub fn css_top_down_to_appkit_y(window_height: f64, top: f64, height: f64) -> (f
 /// `src/components/IdleHoverPeek.tsx` for what actually renders inside
 /// it. Only relevant while `!visible`; ignored (never read) whenever
 /// `visible` is `true`.
+///
+/// `hover_expand_open` (animation audit 2026-08-02) is `idle_peek_open`'s
+/// exact mirror image on the OTHER side of the `visible` branch, and it
+/// exists for the exact same reason. Since the hover-expand landed, a
+/// SHOWING card also renders expanded while the cursor is over it
+/// (`src/useExitChoreography.ts`: `expanded = showing ? slot.expanded ||
+/// hovered : …`), but this function only ever saw the queue's MANUAL
+/// `expanded` flag — so hovering a compact card grew the painted card to
+/// the expanded geometry (`BASE_EXPANDED` wide, `BELOW_BLOCK_EXPANDED_H`
+/// tall) while the hit-test rect stayed at the compact one
+/// (`BASE_SHOWING`/`BELOW_BLOCK_SHOWING_H`). That ~50px-per-side and
+/// ~80px-below difference was painted but not hoverable: moving the
+/// cursor DOWN into the manifest the hover had just revealed fell
+/// outside the rect, `hovered` flipped false, and the card collapsed out
+/// from under the pointer — which could then re-enter the (compact
+/// again) rect and re-fire, a flicker loop at the boundary. The same
+/// hysteresis `idle_peek_open` already applies to the idle peek fixes
+/// it: `lib.rs` passes in the hover latch's CURRENT value (read before
+/// this event can overwrite it — ONE read feeding BOTH parameters, since
+/// the two are the same latch consulted on opposite sides of the
+/// `visible` branch), so the rect GROWS to cover the newly-revealed
+/// manifest once hover has started and stays at the tight compact
+/// geometry the rest of the time. Leaving therefore requires exiting the
+/// LARGE rect while entering requires entering the SMALL one — real
+/// hysteresis, not merely a bigger rect.
+///
+/// The latch resets to false whenever the visible item changes (the M5
+/// `slot-state` listener in `lib.rs`), which is exactly right here too:
+/// a freshly promoted card starts un-hover-expanded, so its first rect
+/// is the compact one and the cursor has to re-enter that to grow it.
+/// Only relevant while `visible`; ignored (never read) whenever
+/// `visible` is `false`.
+// The 8th parameter crosses clippy's default 7-arg threshold. Same call
+// as `lib.rs`'s `hover_point_is_over_card`/
+// `emit_hover_changed_if_transitioned` (which carry the same `#[allow]`
+// for the same reason): a named-field params struct is a bigger surface
+// change than this fix's scope for a pure geometry function whose whole
+// non-test call graph is one expression in `lib.rs`.
+#[allow(clippy::too_many_arguments)]
 pub fn active_card_rect(
     mode: Mode,
     cutout_width: f64,
@@ -221,6 +262,7 @@ pub fn active_card_rect(
     visible: bool,
     expanded: bool,
     idle_peek_open: bool,
+    hover_expand_open: bool,
 ) -> Rect {
     let effective_cutout_width = match mode {
         Mode::Notch => cutout_width,
@@ -231,7 +273,15 @@ pub fn active_card_rect(
         Mode::Hud => HUD_CUTOUT_H,
     };
 
-    let raw_width = if visible && expanded {
+    // the ONE place the two expansion sources are folded together — the
+    // queue's manual `expanded` flag and the hover latch — mirroring
+    // `useExitChoreography.ts`'s own `slot.expanded || hovered` exactly,
+    // so the rect and the paint agree by construction rather than by
+    // coincidence. Read only while `visible`, matching the frontend
+    // (whose OR is inside the `showing ? … : …` branch).
+    let expanded_geometry = expanded || hover_expand_open;
+
+    let raw_width = if visible && expanded_geometry {
         (BASE_EXPANDED * scale).max(effective_cutout_width + 2.0 * MIN_FLANK_SHOWING * scale)
     } else if visible {
         (BASE_SHOWING * scale).max(effective_cutout_width + 2.0 * MIN_FLANK_SHOWING * scale)
@@ -248,7 +298,7 @@ pub fn active_card_rect(
         } else {
             0.0
         }
-    } else if expanded {
+    } else if expanded_geometry {
         BELOW_BLOCK_EXPANDED_H
     } else {
         BELOW_BLOCK_SHOWING_H
@@ -331,7 +381,7 @@ mod tests {
 
     #[test]
     fn hud_idle_is_cutout_plus_two_flanks_at_scale_1() {
-        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, false, false, false);
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, false, false, false, false);
         assert_eq!(r.x_max - r.x_min, HUD_CUTOUT_W + 2.0 * FLANK_IDLE);
     }
 
@@ -340,13 +390,13 @@ mod tests {
         // cutout(200) + 2*60 = 320, well under the 400 design floor, so
         // the floor wins — this is the common case (a real cutout is
         // never anywhere near 280px wide).
-        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, false, false);
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, false, false, false);
         assert_eq!(r.x_max - r.x_min, BASE_SHOWING);
     }
 
     #[test]
     fn hud_expanded_is_the_500_floor_at_scale_1() {
-        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, true, false);
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, true, false, false);
         assert_eq!(r.x_max - r.x_min, BASE_EXPANDED);
     }
 
@@ -357,8 +407,9 @@ mod tests {
     // whatever it sends).
     #[test]
     fn hud_mode_ignores_the_passed_cutout_width_argument() {
-        let with_zero = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, false, false, false);
-        let with_something_else = active_card_rect(Mode::Hud, 999.0, 0.0, 1.0, false, false, false);
+        let with_zero = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, false, false, false, false);
+        let with_something_else =
+            active_card_rect(Mode::Hud, 999.0, 0.0, 1.0, false, false, false, false);
         assert_eq!(with_zero, with_something_else);
         assert_eq!(
             with_zero.x_max - with_zero.x_min,
@@ -371,19 +422,19 @@ mod tests {
 
     #[test]
     fn hud_idle_scales_the_flank_term_only_at_0_8() {
-        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 0.8, false, false, false);
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 0.8, false, false, false, false);
         assert_eq!(r.x_max - r.x_min, HUD_CUTOUT_W + 2.0 * FLANK_IDLE * 0.8);
     }
 
     #[test]
     fn hud_idle_scales_the_flank_term_only_at_1_25() {
-        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.25, false, false, false);
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.25, false, false, false, false);
         assert_eq!(r.x_max - r.x_min, HUD_CUTOUT_W + 2.0 * FLANK_IDLE * 1.25);
     }
 
     #[test]
     fn hud_showing_scales_at_0_8() {
-        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 0.8, true, false, false);
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 0.8, true, false, false, false);
         assert_eq!(
             r.x_max - r.x_min,
             (BASE_SHOWING * 0.8_f64).max(HUD_CUTOUT_W + 2.0 * MIN_FLANK_SHOWING * 0.8)
@@ -397,7 +448,7 @@ mod tests {
         // immediately — that specific interaction has its own dedicated
         // test right below, `expanded_at_scale_above_1_hits_the_window_cap`.
         // This one isolates the scaling math itself, unaffected by the cap.
-        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 0.8, true, true, false);
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 0.8, true, true, false, false);
         assert_eq!(
             r.x_max - r.x_min,
             (BASE_EXPANDED * 0.8_f64).max(HUD_CUTOUT_W + 2.0 * MIN_FLANK_SHOWING * 0.8)
@@ -411,9 +462,9 @@ mod tests {
     // card, never wider).
     #[test]
     fn expanded_at_scale_above_1_hits_the_window_cap() {
-        let hud = active_card_rect(Mode::Hud, 0.0, 0.0, 1.25, true, true, false);
+        let hud = active_card_rect(Mode::Hud, 0.0, 0.0, 1.25, true, true, false, false);
         assert_eq!(hud.x_max - hud.x_min, WINDOW_WIDTH);
-        let notch = active_card_rect(Mode::Notch, 200.0, 32.0, 1.25, true, true, false);
+        let notch = active_card_rect(Mode::Notch, 200.0, 32.0, 1.25, true, true, false, false);
         assert_eq!(notch.x_max - notch.x_min, WINDOW_WIDTH);
     }
 
@@ -425,7 +476,7 @@ mod tests {
     fn notch_idle_is_measured_cutout_plus_two_flanks_at_scale_1() {
         // plan 063's own fixture (`src-tauri/src/lib.rs`'s
         // cutout_width_js_value test) — a realistic measured width.
-        let r = active_card_rect(Mode::Notch, 319.0, 32.0, 1.0, false, false, false);
+        let r = active_card_rect(Mode::Notch, 319.0, 32.0, 1.0, false, false, false, false);
         assert_eq!(r.x_max - r.x_min, 319.0 + 2.0 * FLANK_IDLE);
     }
 
@@ -433,7 +484,7 @@ mod tests {
     fn notch_showing_uses_the_measured_cutout_when_it_beats_the_floor() {
         // 319 + 2*60 = 439, which beats the 400 design floor — the
         // cutout-driven term wins here, unlike HUD's default 200px.
-        let r = active_card_rect(Mode::Notch, 319.0, 32.0, 1.0, true, false, false);
+        let r = active_card_rect(Mode::Notch, 319.0, 32.0, 1.0, true, false, false, false);
         assert_eq!(r.x_max - r.x_min, 319.0 + 2.0 * MIN_FLANK_SHOWING);
     }
 
@@ -442,7 +493,7 @@ mod tests {
         // 319 + 2*60 = 439, under the 500 expanded floor — the floor
         // wins here even though the same cutout beat the showing floor
         // above (400).
-        let r = active_card_rect(Mode::Notch, 319.0, 32.0, 1.0, true, true, false);
+        let r = active_card_rect(Mode::Notch, 319.0, 32.0, 1.0, true, true, false, false);
         assert_eq!(r.x_max - r.x_min, BASE_EXPANDED);
     }
 
@@ -457,8 +508,10 @@ mod tests {
     // below for what happens when it doesn't.
     #[test]
     fn notch_mode_cutout_term_stays_unscaled_only_the_flank_term_scales() {
-        let at_scale_1 = active_card_rect(Mode::Notch, 200.0, 32.0, 1.0, false, false, false);
-        let at_scale_1_25 = active_card_rect(Mode::Notch, 200.0, 32.0, 1.25, false, false, false);
+        let at_scale_1 =
+            active_card_rect(Mode::Notch, 200.0, 32.0, 1.0, false, false, false, false);
+        let at_scale_1_25 =
+            active_card_rect(Mode::Notch, 200.0, 32.0, 1.25, false, false, false, false);
         let width_1 = at_scale_1.x_max - at_scale_1.x_min;
         let width_1_25 = at_scale_1_25.x_max - at_scale_1_25.x_min;
         let expected_flank_delta = 2.0 * FLANK_IDLE * (1.25 - 1.0);
@@ -474,13 +527,13 @@ mod tests {
 
     #[test]
     fn notch_idle_caps_at_the_window_width_for_a_very_wide_cutout() {
-        let r = active_card_rect(Mode::Notch, 600.0, 32.0, 1.0, false, false, false);
+        let r = active_card_rect(Mode::Notch, 600.0, 32.0, 1.0, false, false, false, false);
         assert_eq!(r.x_max - r.x_min, WINDOW_WIDTH);
     }
 
     #[test]
     fn notch_showing_caps_at_the_window_width_for_a_very_wide_cutout() {
-        let r = active_card_rect(Mode::Notch, 600.0, 32.0, 1.0, true, false, false);
+        let r = active_card_rect(Mode::Notch, 600.0, 32.0, 1.0, true, false, false, false);
         assert_eq!(r.x_max - r.x_min, WINDOW_WIDTH);
     }
 
@@ -600,7 +653,7 @@ mod tests {
     // near the full 300px window — the headline fix this plan exists for.
     #[test]
     fn idle_peek_closed_y_span_is_the_cutout_height_alone() {
-        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, false, false, false);
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, false, false, false, false);
         let height = r.y_max - r.y_min;
         assert_eq!(height, HUD_CUTOUT_H);
         assert!(
@@ -613,31 +666,31 @@ mod tests {
 
     #[test]
     fn idle_peek_open_y_span_adds_the_peek_below_block_height() {
-        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, false, false, true);
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, false, false, true, false);
         assert_eq!(r.y_max - r.y_min, HUD_CUTOUT_H + IDLE_PEEK_BELOW_BLOCK_H);
     }
 
     #[test]
     fn notch_idle_peek_closed_y_span_uses_the_measured_cutout_height() {
-        let r = active_card_rect(Mode::Notch, 319.0, 40.0, 1.0, false, false, false);
+        let r = active_card_rect(Mode::Notch, 319.0, 40.0, 1.0, false, false, false, false);
         assert_eq!(r.y_max - r.y_min, 40.0);
     }
 
     #[test]
     fn notch_idle_peek_open_y_span_uses_the_measured_cutout_height_plus_peek() {
-        let r = active_card_rect(Mode::Notch, 319.0, 40.0, 1.0, false, false, true);
+        let r = active_card_rect(Mode::Notch, 319.0, 40.0, 1.0, false, false, true, false);
         assert_eq!(r.y_max - r.y_min, 40.0 + IDLE_PEEK_BELOW_BLOCK_H);
     }
 
     #[test]
     fn showing_not_expanded_y_span_adds_the_showing_below_block_estimate() {
-        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, false, false);
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, false, false, false);
         assert_eq!(r.y_max - r.y_min, HUD_CUTOUT_H + BELOW_BLOCK_SHOWING_H);
     }
 
     #[test]
     fn expanded_y_span_adds_the_expanded_below_block_estimate() {
-        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, true, false);
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, true, false, false);
         assert_eq!(r.y_max - r.y_min, HUD_CUTOUT_H + BELOW_BLOCK_EXPANDED_H);
     }
 
@@ -646,11 +699,11 @@ mod tests {
     // argument` proves the analogous width-side claim.
     #[test]
     fn idle_peek_open_is_ignored_while_visible() {
-        let showing_false = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, false, false);
-        let showing_true = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, false, true);
+        let showing_false = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, false, false, false);
+        let showing_true = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, false, true, false);
         assert_eq!(showing_false, showing_true);
-        let expanded_false = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, true, false);
-        let expanded_true = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, true, true);
+        let expanded_false = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, true, false, false);
+        let expanded_true = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, true, true, false);
         assert_eq!(expanded_false, expanded_true);
     }
 
@@ -660,7 +713,7 @@ mod tests {
     // the fixed window.
     #[test]
     fn height_caps_at_the_window_height_for_a_tall_measured_cutout() {
-        let r = active_card_rect(Mode::Notch, 200.0, 280.0, 1.0, true, true, false);
+        let r = active_card_rect(Mode::Notch, 200.0, 280.0, 1.0, true, true, false, false);
         assert_eq!(r.y_max - r.y_min, WINDOW_HEIGHT);
     }
 
@@ -673,7 +726,7 @@ mod tests {
         // inside the OLD full-300px span but below the real 32px-tall
         // card (in CSS top-down terms, y=100 — i.e. AppKit y = 300-100 =
         // 200) must no longer count as hovered.
-        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, false, false, false);
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, false, false, false, false);
         let (appkit_y_min, appkit_y_max) = css_top_down_to_appkit_y(WINDOW_HEIGHT, 0.0, 32.0);
         assert_eq!((appkit_y_min, appkit_y_max), (268.0, 300.0));
         // AppKit y=200 is well below the idle rect's low edge (268) — the
@@ -683,11 +736,98 @@ mod tests {
         assert!(point_in_rect(&r, WINDOW_WIDTH / 2.0, 280.0));
     }
 
+    // --- animation audit 2026-08-02: `hover_expand_open`, the showing
+    // card's counterpart to `idle_peek_open`'s hysteresis. Same shape of
+    // coverage the peek got above: the two geometry terms, the mirror
+    // "ignored on the other side of the `visible` branch" proof, and the
+    // behavioral case (the point that used to fall out of the rect). ---
+
+    #[test]
+    fn hover_expand_open_widens_a_showing_card_to_the_expanded_width() {
+        let compact = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, false, false, false);
+        let hover_expanded = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, false, false, true);
+        assert_eq!(compact.x_max - compact.x_min, BASE_SHOWING);
+        assert_eq!(
+            hover_expanded.x_max - hover_expanded.x_min,
+            BASE_EXPANDED,
+            "a hovered showing card paints at the expanded width, so the rect must too"
+        );
+    }
+
+    #[test]
+    fn hover_expand_open_matches_the_manually_expanded_rect_exactly() {
+        // The frontend's `slot.expanded || hovered` makes the two
+        // indistinguishable in paint; they must be indistinguishable here.
+        let manually = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, true, false, false);
+        let by_hover = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, false, false, true);
+        assert_eq!(manually, by_hover);
+        // and in notch mode, on a real measured cutout, for the same reason
+        let manually_notch =
+            active_card_rect(Mode::Notch, 319.0, 32.0, 1.0, true, true, false, false);
+        let by_hover_notch =
+            active_card_rect(Mode::Notch, 319.0, 32.0, 1.0, true, false, false, true);
+        assert_eq!(manually_notch, by_hover_notch);
+    }
+
+    #[test]
+    fn hover_expand_open_adds_the_expanded_below_block_height() {
+        let r = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, false, false, true);
+        assert_eq!(r.y_max - r.y_min, HUD_CUTOUT_H + BELOW_BLOCK_EXPANDED_H);
+    }
+
+    #[test]
+    fn hover_expand_open_is_ignored_while_not_visible() {
+        // The mirror of `idle_peek_open_is_ignored_while_visible`: an idle
+        // card's rect must not grow just because the hover latch is set —
+        // `idle_peek_open` (the same latch) already owns that side.
+        let idle_false = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, false, false, false, false);
+        let idle_true = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, false, false, false, true);
+        assert_eq!(idle_false, idle_true);
+        let peek_false = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, false, false, true, false);
+        let peek_true = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, false, false, true, true);
+        assert_eq!(peek_false, peek_true);
+    }
+
+    #[test]
+    fn hover_expand_open_is_a_no_op_on_an_already_expanded_card() {
+        let expanded_only = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, true, false, false);
+        let expanded_and_hovered =
+            active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, true, false, true);
+        assert_eq!(expanded_only, expanded_and_hovered);
+    }
+
+    // The actual behavioral fix, stated as the bug it closes: a point in
+    // the manifest the hover itself just revealed (below the compact
+    // card's bottom edge, inside the expanded card's) counts as hovered
+    // once the latch is set — WITHOUT the latch it does not, which is
+    // exactly the hysteresis (enter the small rect, leave the large one).
+    #[test]
+    fn a_point_in_the_hover_revealed_manifest_stays_inside_the_grown_rect() {
+        let compact = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, false, false, false);
+        let grown = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, false, false, true);
+        // CSS-top-down y = 250: below the compact card's 32+160 = 192px
+        // bottom edge, inside the grown card's 32+240 = 272px one.
+        let (_, appkit_y) = css_top_down_to_appkit_y(WINDOW_HEIGHT, 250.0, 0.0);
+        assert!(
+            !point_in_rect(&compact, WINDOW_WIDTH / 2.0, appkit_y),
+            "the pre-fix rect: the revealed manifest was painted but not hoverable"
+        );
+        assert!(
+            point_in_rect(&grown, WINDOW_WIDTH / 2.0, appkit_y),
+            "with the latch set the cursor stays inside, so the card cannot collapse under it"
+        );
+        // the horizontal half of the same bug: the ~50px per side the
+        // expanded width adds.
+        let flank_x = compact.x_max + 25.0;
+        assert!(!point_in_rect(&compact, flank_x, grown.y_max - 1.0));
+        assert!(point_in_rect(&grown, flank_x, grown.y_max - 1.0));
+    }
+
     // --- plan 142: board_rect ---
 
     #[test]
     fn board_rect_width_matches_the_expanded_formula() {
-        let expanded = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, true, false);
+        let expanded = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, true, false, false);
         let board = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 3);
         assert_eq!(expanded.x_max - expanded.x_min, board.x_max - board.x_min);
     }

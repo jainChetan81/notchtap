@@ -460,8 +460,12 @@ pub fn run() {
             // collapse path so a hover-exit over a NON-board card (which
             // never expanded anything) doesn't do needless window-frame
             // churn.
+            // Animation audit 2026-08-02: now a `BoardFrameState` (that
+            // same boolean plus a generation counter) because the shrink
+            // half of the collapse is deferred — see `BoardFrameState`
+            // and `collapse_board_if_expanded` for why.
             #[cfg(target_os = "macos")]
-            let board_expanded = Arc::new(StdMutex::new(false));
+            let board_frame = Arc::new(StdMutex::new(BoardFrameState::default()));
 
             // permanent-overlay pass: a plain NSWindow is never composited
             // into another app's fullscreen Space, regardless of level or
@@ -507,7 +511,7 @@ pub fn run() {
                     let app_handle = app.handle().clone();
                     let was_hovered = was_hovered.clone();
                     let agent_board = agent_board.clone();
-                    let board_expanded = board_expanded.clone();
+                    let board_frame = board_frame.clone();
                     let window = window.clone();
                     hover_handler.on_mouse_entered(move |event| {
                         let loc = event.locationInWindow();
@@ -515,15 +519,16 @@ pub fn run() {
                         // it — `hover_point_is_over_card`'s own doc
                         // explains why the CURRENT (pre-event) value is
                         // the correct hysteresis input for whether the
-                        // idle peek's rect should already be grown.
-                        let idle_peek_open = *was_hovered.lock().unwrap();
+                        // idle peek's (2026-08-02: or the showing card's
+                        // hover-expanded) rect should already be grown.
+                        let hover_latched = *was_hovered.lock().unwrap();
                         let hovered = hover_point_is_over_card(
                             &engine,
                             &app_handle,
                             mode,
                             hover_cutout_width,
                             hover_cutout_height,
-                            idle_peek_open,
+                            hover_latched,
                             agent_board.last_session_count(),
                             loc.x,
                             loc.y,
@@ -537,7 +542,7 @@ pub fn run() {
                             mode,
                             cutout,
                             &agent_board,
-                            &board_expanded,
+                            &board_frame,
                         );
                     });
                 }
@@ -546,18 +551,18 @@ pub fn run() {
                     let app_handle = app.handle().clone();
                     let was_hovered = was_hovered.clone();
                     let agent_board = agent_board.clone();
-                    let board_expanded = board_expanded.clone();
+                    let board_frame = board_frame.clone();
                     let window = window.clone();
                     hover_handler.on_mouse_moved(move |event| {
                         let loc = event.locationInWindow();
-                        let idle_peek_open = *was_hovered.lock().unwrap();
+                        let hover_latched = *was_hovered.lock().unwrap();
                         let hovered = hover_point_is_over_card(
                             &engine,
                             &app_handle,
                             mode,
                             hover_cutout_width,
                             hover_cutout_height,
-                            idle_peek_open,
+                            hover_latched,
                             agent_board.last_session_count(),
                             loc.x,
                             loc.y,
@@ -571,7 +576,7 @@ pub fn run() {
                             mode,
                             cutout,
                             &agent_board,
-                            &board_expanded,
+                            &board_frame,
                         );
                     });
                 }
@@ -580,7 +585,7 @@ pub fn run() {
                     let app_handle = app.handle().clone();
                     let was_hovered = was_hovered.clone();
                     let agent_board = agent_board.clone();
-                    let board_expanded = board_expanded.clone();
+                    let board_frame = board_frame.clone();
                     let window = window.clone();
                     // Leaving the window's tracking area is never "still
                     // hovered" regardless of where the cursor lands next —
@@ -595,7 +600,7 @@ pub fn run() {
                             mode,
                             cutout,
                             &agent_board,
-                            &board_expanded,
+                            &board_frame,
                         );
                     });
                 }
@@ -648,7 +653,7 @@ pub fn run() {
                     // paragraph above), so it can't route through
                     // `emit_hover_changed_if_transitioned` itself; it calls
                     // the same idempotent collapse helper directly instead.
-                    let board_expanded = board_expanded.clone();
+                    let board_frame = board_frame.clone();
                     let window = window.clone();
                     app.handle()
                         .listen(crate::event::SLOT_STATE_EVENT, move |event| {
@@ -660,7 +665,7 @@ pub fn run() {
                                 *last = new_id;
                                 *was_hovered.lock().unwrap_or_else(|e| e.into_inner()) = false;
                                 if is_real_notification {
-                                    collapse_board_if_expanded(&window, mode, cutout, &board_expanded);
+                                    collapse_board_if_expanded(&window, mode, cutout, &board_frame);
                                 }
                             }
                         });
@@ -689,7 +694,7 @@ pub fn run() {
                 let pause_item_for_handler = pause_item.clone();
                 let was_hovered_for_handler = was_hovered.clone();
                 let agent_board_for_handler = agent_board.clone();
-                let board_expanded_for_handler = board_expanded.clone();
+                let board_frame_for_handler = board_frame.clone();
                 let window_for_handler = window.clone();
                 app.handle().plugin(
                     tauri_plugin_global_shortcut::Builder::new()
@@ -728,7 +733,7 @@ pub fn run() {
                                         mode,
                                         cutout,
                                         &agent_board_for_handler,
-                                        &board_expanded_for_handler,
+                                        &board_frame_for_handler,
                                     );
                                 } else if *shortcut
                                     == Shortcut::new(
@@ -754,7 +759,7 @@ pub fn run() {
                                         mode,
                                         cutout,
                                         &agent_board_for_handler,
-                                        &board_expanded_for_handler,
+                                        &board_frame_for_handler,
                                     );
                                 } else if *shortcut
                                     == Shortcut::new(
@@ -1224,17 +1229,27 @@ fn cutout_height_js_value(inset: f64) -> String {
 // is still resting over the window. Lock discipline: each of
 // `engine.read_blocking`/the config lock acquires, reads, and drops
 // before the next opens — never nested (cold-read Gap 2).
-// plan 093: `cutout_height`/`idle_peek_open` added for the y-span fix —
+// plan 093: `cutout_height`/`hover_latched` added for the y-span fix —
 // see `hover::active_card_rect`'s doc comment for what each means.
-// `idle_peek_open` is the caller's job to supply (it needs `was_hovered`,
+// `hover_latched` is the caller's job to supply (it needs `was_hovered`,
 // which this function has no reason to know about); this function no
 // longer reads `StatusState` at all — `hover::status_rail_active` (the
 // old `has_status_chips` input) is gone, both the function and its call
 // here, now that the y-span's idle-peek input is hover hysteresis, not
 // ambient-data availability.
 //
+// Animation audit 2026-08-02: that one latch now feeds BOTH of
+// `active_card_rect`'s hysteresis booleans — `idle_peek_open` (consulted
+// only while `!visible`) and `hover_expand_open` (consulted only while
+// `visible`) — hence the rename from `idle_peek_open` to the neutral
+// `hover_latched` here: this parameter was never "the peek is open", it
+// was always "the latch says the cursor is already on the card," and it
+// now has two consumers on opposite sides of that branch. See
+// `hover::active_card_rect`'s doc for why the SHOWING side needs it too
+// (the hover-expand collapsing the card out from under the cursor).
+//
 // plan 093 pushed this to 8 positional params (over clippy's default 7-arg
-// threshold) by adding `cutout_height`/`idle_peek_open`. Same call as
+// threshold) by adding `cutout_height`/`hover_latched`. Same call as
 // `Engine::new`'s own `#[allow(clippy::too_many_arguments)]` (engine.rs):
 // a named-field params struct is a bigger surface change than this plan's
 // scope for a function with exactly two call sites, both in this same
@@ -1268,7 +1283,7 @@ fn hover_point_is_over_card(
     mode: presentation::Mode,
     cutout_width: f64,
     cutout_height: f64,
-    idle_peek_open: bool,
+    hover_latched: bool,
     board_session_count: usize,
     point_x: f64,
     point_y: f64,
@@ -1301,7 +1316,12 @@ fn hover_point_is_over_card(
             scale,
             visible,
             expanded,
-            idle_peek_open,
+            // idle_peek_open (read only while `!visible`) and
+            // hover_expand_open (read only while `visible`) are the same
+            // latch asked on opposite sides of that branch — one read,
+            // two consumers, never two independent states to keep in sync.
+            hover_latched,
+            hover_latched,
         )
     };
     hover::point_in_rect(&rect, point_x, point_y)
@@ -1338,7 +1358,7 @@ fn emit_hover_changed_if_transitioned(
     mode: presentation::Mode,
     cutout: Option<presentation::CutoutGeometry>,
     agent_board: &agents::board::AgentBoardPublisher,
-    board_expanded: &StdMutex<bool>,
+    board_frame: &Arc<StdMutex<BoardFrameState>>,
 ) {
     use tauri::Emitter;
 
@@ -1368,14 +1388,81 @@ fn emit_hover_changed_if_transitioned(
     // transitions-only gate — a hover entry over the Board (`!visible`,
     // at least one retained session) grows the real window frame and
     // opens pointer delivery; ANY transition to `hovered == false`
-    // restores both immediately, whether or not this specific call is
-    // the one that expanded it (`collapse_board_if_expanded` is a no-op
-    // when `board_expanded` is already false).
+    // restores both, whether or not this specific call is the one that
+    // expanded it (`collapse_board_if_expanded` is a no-op when
+    // `BoardFrameState::expanded` is already false).
+    // Animation audit 2026-08-02: "restores both" is no longer "both
+    // immediately" — click-through comes back in this tick, the frame
+    // shrink is deferred by a grace period so the webview's collapse
+    // spring isn't clipped. See `collapse_board_if_expanded`.
     if hovered {
-        try_expand_board_for_hover(engine, window, agent_board, board_expanded);
+        try_expand_board_for_hover(engine, window, agent_board, board_frame);
     } else {
-        collapse_board_if_expanded(window, mode, cutout, board_expanded);
+        collapse_board_if_expanded(window, mode, cutout, board_frame);
     }
+}
+
+/// Animation audit 2026-08-02 (finding 2): the Agent Board's window-frame
+/// bookkeeping. Was a bare `StdMutex<bool>`; the deferred shrink
+/// (`collapse_board_if_expanded`) needs a second field beside it, and both
+/// must be read/written under ONE lock so a timer can never observe a
+/// half-updated pair.
+///
+/// `generation` is bumped on EVERY frame-state transition — both the
+/// expand path and each collapse REQUEST. A pending shrink timer captures
+/// the value its request produced and refuses to act if the current value
+/// has moved on (`board_shrink_should_run`), which is what makes a
+/// re-hover during the grace period silently cancel the shrink instead of
+/// racing it. `wrapping_add` rather than `+`: a counter that only has to
+/// detect INEQUALITY has no reason to be able to panic on overflow, and
+/// wrapping cannot produce a false match here (it would take 2^64 hover
+/// transitions inside one 450ms window).
+#[cfg(target_os = "macos")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+struct BoardFrameState {
+    /// The EXPANDED window frame is currently applied. Stays `true` for
+    /// the whole grace period after a hover-exit — the frame really is
+    /// still the big one until the timer shrinks it, and lying about that
+    /// would let a re-hover skip the re-expand it still needs to do.
+    expanded: bool,
+    generation: u64,
+}
+
+/// How long a board hover-EXIT waits before actually shrinking the native
+/// window frame back to the resting one.
+///
+/// Purely an animation concern: on hover-out the webview is just STARTING
+/// its ~350ms `DISCLOSURE_SPRING` (`src/animationTiming.ts`: `{ type:
+/// "spring", stiffness: 480, damping: 37 }`, the shared spring
+/// `AgentBoard.tsx` collapses its expanded session list with) — shrinking
+/// the frame in the same tick hard-CLIPS those exiting rows at the new
+/// window edge, so the list appears to be guillotined rather than to
+/// collapse. 450ms is that spring's settle time plus headroom; it is a
+/// LOWER bound on how long the big frame must survive, not a duration
+/// anything is synchronized to, so it deliberately does not need to track
+/// the spring's exact numbers — only to stay comfortably above them. If
+/// `DISCLOSURE_SPRING` is ever made slower, raise this in the same commit.
+///
+/// The expand direction needs no equivalent delay: growing the frame
+/// first and letting the DOM catch up leaves an oversized, transparent,
+/// click-through window with nothing painted in the new area — invisible.
+/// The same reasoning is what makes deferring the shrink safe (see
+/// `collapse_board_if_expanded`).
+#[cfg(target_os = "macos")]
+const BOARD_COLLAPSE_GRACE_MS: u64 = 450;
+
+/// Pure guard for the deferred shrink: may a timer armed at
+/// `armed_generation` still act on `state`?
+///
+/// Both conditions matter. `expanded` false means some other path already
+/// performed the shrink (a second collapse request's timer beat this one),
+/// so there is nothing left to do. A moved `generation` means the frame
+/// state changed after this timer was armed — in practice a re-hover that
+/// re-expanded the board, the exact case where firing anyway would shrink
+/// a board the cursor is currently sitting on.
+#[cfg(target_os = "macos")]
+fn board_shrink_should_run(state: BoardFrameState, armed_generation: u64) -> bool {
+    state.expanded && state.generation == armed_generation
 }
 
 /// plan 142: on a hover ENTRY, expand the Board's window frame + open
@@ -1386,12 +1473,20 @@ fn emit_hover_changed_if_transitioned(
 /// non-registry read `hover_point_is_over_card` already uses to decide
 /// which hover RECT to compare against, reused here for the same "is
 /// the Board what's actually on screen" question.
+///
+/// Animation audit 2026-08-02: this also bumps `BoardFrameState::
+/// generation`, which is what cancels any shrink timer still pending from
+/// a recent hover-exit. Note the bump happens only on the paths that
+/// actually re-apply the expanded frame — the early returns above (a
+/// visible notification, or no sessions) deliberately leave a pending
+/// shrink armed, because in both of those cases the board really should
+/// go back to the resting frame.
 #[cfg(target_os = "macos")]
 fn try_expand_board_for_hover(
     engine: &Engine,
     window: &tauri::WebviewWindow,
     agent_board: &agents::board::AgentBoardPublisher,
-    board_expanded: &StdMutex<bool>,
+    board_frame: &StdMutex<BoardFrameState>,
 ) {
     use crate::event::SlotState;
 
@@ -1424,42 +1519,112 @@ fn try_expand_board_for_hover(
         tracing::warn!("board hover-expand: set_ignore_cursor_events(false) failed: {e}");
         return;
     }
-    *board_expanded.lock().unwrap_or_else(|e| e.into_inner()) = true;
+    let mut state = board_frame.lock().unwrap_or_else(|e| e.into_inner());
+    state.expanded = true;
+    state.generation = state.generation.wrapping_add(1);
 }
 
-/// plan 142: the exit-side restore — IMMEDIATE (this runs synchronously
-/// inside the same AppKit callback/shortcut handler as the transition
-/// itself, never deferred), and idempotent: a hover-exit over a card
-/// that never expanded anything (`*board_expanded == false` already)
-/// does nothing, so this is safe to call from every `hovered == false`
-/// path unconditionally.
+/// plan 142: the exit-side restore. Idempotent: a hover-exit over a card
+/// that never expanded anything (`expanded == false` already) does
+/// nothing, so this is safe to call from every `hovered == false` path
+/// unconditionally.
+///
+/// Animation audit 2026-08-02 (finding 2): the restore is now SPLIT.
+/// Click-through comes back IMMEDIATELY, synchronously, in the same
+/// AppKit callback as the transition — the enlarged frame must never
+/// stay clickable for even one frame after the cursor has left it, which
+/// was already this function's stated rule and is unchanged. The frame
+/// SHRINK, however, is deferred by [`BOARD_COLLAPSE_GRACE_MS`], because
+/// at the moment of hover-out the webview has only just STARTED its
+/// `DISCLOSURE_SPRING` collapse of the expanded session list; shrinking
+/// the native frame underneath it hard-clips those exiting rows. Leaving
+/// the frame oversized for the grace period is invisible: the expanded
+/// board frame (`agents::expand::expanded_board_frame`) differs from the
+/// resting one ONLY in height — same 500px width, same `x` centering,
+/// same `y = 0` top anchor — so an un-shrunk frame is a transparent,
+/// click-through window with extra empty space below the content, which
+/// is exactly the state the EXPAND direction already relies on being
+/// unnoticeable.
+///
+/// Edge cases, all resolved through `BoardFrameState`'s generation
+/// counter under its single lock:
+/// - **re-hover during the grace.** `try_expand_board_for_hover` bumps
+///   the generation, so the pending timer's `board_shrink_should_run`
+///   check fails and it returns without touching the window. The
+///   re-expand itself re-applies the frame and re-opens pointer
+///   delivery, so nothing is left inconsistent.
+/// - **a second collapse request during the grace** (e.g. hover-exit
+///   immediately followed by the `slot-state` listener's collapse on a
+///   promotion). It bumps the generation too, retiring the first timer
+///   and arming its own — the shrink simply happens a grace period after
+///   the LAST request, never twice and never early.
+/// - **a slot promotion during the grace.** The overlay swaps the Board
+///   out for the notification card straight away; the frame stays tall
+///   for up to `BOARD_COLLAPSE_GRACE_MS` longer. Harmless for the same
+///   height-only reason above: the card is top-anchored and centered, so
+///   it renders in exactly the same place, and the window is already
+///   click-through again by then.
+/// - **the other `position_window` callers.** There are two besides this
+///   one: boot (`setup`, before any board can have expanded) and the
+///   window-shown re-assert inside `run_on_main_thread`
+///   (`apply_overlay_native_config` alongside it). Neither RESIZES, and
+///   `position_window`'s notch branch derives `x` from the window's
+///   current `outer_size().width` — 500 in both the resting and the
+///   expanded frame — so a re-assert landing inside the grace period
+///   computes the same position either way and cannot fight the pending
+///   timer. The timer re-runs `position_window` itself after shrinking
+///   for exactly the same reason it always did, not to undo anything
+///   those callers did.
 #[cfg(target_os = "macos")]
 fn collapse_board_if_expanded(
     window: &tauri::WebviewWindow,
     mode: presentation::Mode,
     cutout: Option<presentation::CutoutGeometry>,
-    board_expanded: &StdMutex<bool>,
+    board_frame: &Arc<StdMutex<BoardFrameState>>,
 ) {
-    let mut expanded = board_expanded.lock().unwrap_or_else(|e| e.into_inner());
-    if !*expanded {
-        return;
-    }
-    // Reverse order from the expand path: restore click-through FIRST,
-    // then shrink/reposition — never leave the enlarged frame clickable
-    // for even one frame after the cursor has already left it.
+    let armed_generation = {
+        let mut state = board_frame.lock().unwrap_or_else(|e| e.into_inner());
+        if !state.expanded {
+            return;
+        }
+        state.generation = state.generation.wrapping_add(1);
+        state.generation
+    };
+
+    // IMMEDIATE, never deferred — see the doc comment. Deliberately
+    // outside the deferred block and outside the lock.
     if let Err(e) = window.set_ignore_cursor_events(true) {
         tracing::warn!("board hover-collapse: set_ignore_cursor_events(true) failed: {e}");
     }
-    if let Err(e) = window.set_size(tauri::LogicalSize::new(
-        hover::WINDOW_WIDTH,
-        hover::WINDOW_HEIGHT,
-    )) {
-        tracing::warn!("board hover-collapse: set_size failed: {e}");
-    }
-    if let Err(e) = position_window(window, mode, cutout) {
-        tracing::warn!("board hover-collapse: position_window failed: {e}");
-    }
-    *expanded = false;
+
+    // Same async idiom as `spawn_silence_task`: `tauri::async_runtime::
+    // spawn` + `tokio::time::sleep`, no new runtime and no thread parked
+    // on a sleep. The window work then hops to the main thread the same
+    // way the window-shown re-assert in `setup` does — this function's
+    // callers are AppKit callbacks and tauri event listeners, so the task
+    // itself is on neither.
+    let window = window.clone();
+    let board_frame = board_frame.clone();
+    tauri::async_runtime::spawn(async move {
+        tokio::time::sleep(std::time::Duration::from_millis(BOARD_COLLAPSE_GRACE_MS)).await;
+        let shrink_window = window.clone();
+        let _ = window.run_on_main_thread(move || {
+            let mut state = board_frame.lock().unwrap_or_else(|e| e.into_inner());
+            if !board_shrink_should_run(*state, armed_generation) {
+                return;
+            }
+            if let Err(e) = shrink_window.set_size(tauri::LogicalSize::new(
+                hover::WINDOW_WIDTH,
+                hover::WINDOW_HEIGHT,
+            )) {
+                tracing::warn!("board hover-collapse: set_size failed: {e}");
+            }
+            if let Err(e) = position_window(&shrink_window, mode, cutout) {
+                tracing::warn!("board hover-collapse: position_window failed: {e}");
+            }
+            state.expanded = false;
+        });
+    });
 }
 
 /// The pure half of the generic hover-latch reset (M5, see the
@@ -2000,6 +2165,85 @@ mod tests {
         // (matching `presentation_mode`'s own boundary) must not render a
         // negative number as if it were a real height.
         assert_eq!(cutout_height_js_value(-1.0), "null");
+    }
+
+    // ---- animation audit 2026-08-02 (finding 2): the deferred
+    // board-shrink's generation guard. Only the pure decision is testable
+    // here — the `set_size`/`set_position`/`set_ignore_cursor_events`
+    // calls `collapse_board_if_expanded` wraps around it need a live
+    // AppKit window and stay manual-verification-only, exactly like every
+    // other window call in this file (`docs/TESTING_STRATEGY.md` §5). ----
+
+    #[test]
+    fn board_shrink_runs_when_nothing_moved_since_the_timer_was_armed() {
+        let state = BoardFrameState {
+            expanded: true,
+            generation: 7,
+        };
+        assert!(board_shrink_should_run(state, 7));
+    }
+
+    #[test]
+    fn board_shrink_is_cancelled_by_a_re_expand_during_the_grace_period() {
+        // `try_expand_board_for_hover` bumped the generation past the one
+        // this timer captured — the board is expanded again, under the
+        // cursor, and must not be shrunk out from under it.
+        let state = BoardFrameState {
+            expanded: true,
+            generation: 8,
+        };
+        assert!(!board_shrink_should_run(state, 7));
+    }
+
+    #[test]
+    fn board_shrink_is_a_no_op_once_the_frame_is_already_resting() {
+        // A later collapse request's timer beat this one to the shrink.
+        let state = BoardFrameState {
+            expanded: false,
+            generation: 7,
+        };
+        assert!(!board_shrink_should_run(state, 7));
+    }
+
+    #[test]
+    fn board_shrink_is_cancelled_by_a_second_collapse_request_too() {
+        // Two collapse requests inside one grace period (hover-exit, then
+        // the `slot-state` listener on a promotion): the first timer must
+        // retire silently and let the second one own the shrink, so the
+        // window is resized exactly once.
+        let after_first_request = BoardFrameState {
+            expanded: true,
+            generation: 1,
+        };
+        let after_second_request = BoardFrameState {
+            expanded: true,
+            generation: 2,
+        };
+        assert!(board_shrink_should_run(after_first_request, 1));
+        assert!(!board_shrink_should_run(after_second_request, 1));
+        assert!(board_shrink_should_run(after_second_request, 2));
+    }
+
+    #[test]
+    fn a_fresh_board_frame_state_is_resting_so_a_collapse_is_a_no_op() {
+        // The `setup`-time default: nothing has ever expanded, so
+        // `collapse_board_if_expanded`'s early return fires and no timer
+        // is ever armed.
+        let state = BoardFrameState::default();
+        assert!(!state.expanded);
+        assert!(!board_shrink_should_run(state, state.generation));
+    }
+
+    #[test]
+    fn board_collapse_grace_clears_the_disclosure_springs_settle() {
+        // Lockstep tripwire with `src/animationTiming.ts`'s
+        // DISCLOSURE_SPRING (stiffness 480, damping 37 — ~350ms to settle).
+        // This is a LOWER bound, not a synchronized duration: raise it if
+        // that spring is ever made slower.
+        assert_eq!(BOARD_COLLAPSE_GRACE_MS, 450);
+        // a compile-time floor, so a future edit that drops the grace
+        // below the spring's settle fails to BUILD rather than to run.
+        const { assert!(BOARD_COLLAPSE_GRACE_MS >= 350) };
     }
 
     fn test_engine(app: &tauri::App<tauri::test::MockRuntime>) -> Engine<tauri::test::MockRuntime> {
