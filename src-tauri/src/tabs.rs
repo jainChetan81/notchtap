@@ -11,6 +11,15 @@
 //! environment and needs one empirical check on real macOS hardware
 //! before either is built. This module is ready for either answer; it
 //! knows about neither AppKit nor tauri events.
+//!
+//! `#![allow(dead_code)]`: every item here is staged ahead of the real
+//! caller that lands with Slice A's click-detection wiring above —
+//! `cargo clippy --all-targets -D warnings` (the CI gate, justfile's
+//! `check-rust`) has no exemption for a plain `pub fn` the way it does
+//! for `#[cfg(test)]`-reached items, so this whole module reads as dead
+//! until that caller exists. Remove this attribute the moment
+//! `TabSelection` gets a real call site outside its own tests.
+#![allow(dead_code)]
 
 /// The five sources the icon strip can select, in the strip's fixed
 /// left-to-right order (spec `docs/superpowers/specs/2026-08-02-tab-
