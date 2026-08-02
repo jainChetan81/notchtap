@@ -109,8 +109,35 @@
    multiply it. Every OTHER width in these three formulas (the flank
    px figures) IS a cosmetic design width and does scale. Every formula
    is capped at the window via `min(..., 100%)` — 090's Q2b, unchanged. */
+/* plan 175 (the icon strip's geometry re-pair): the flank term is no
+   longer a flat 85px — it is `max(the 85px rail floor, the strip's own
+   width)`, so a hovered idle shell grows as tabs light up instead of
+   clipping the extra glyphs behind the flank's `overflow: hidden`.
+   LOCKSTEP PAIR with `src-tauri/src/hover.rs`'s
+   `hovered_right_flank_width` (`(ICON_BOX + ICON_GAP) * n + FLANK_INSET`
+   vs. the same `FLANK_IDLE * scale` floor) — that function is what the
+   NSEvent click monitor hit-tests each icon against (`click.rs`), so if
+   this formula and that one ever disagree, clicks land on the wrong tab
+   or on nothing. `src/lib/stripGeometryParity.test.ts` pins the pair.
+   The `2 *` is symmetric on purpose, matching both rust's own
+   `total_width = cutout + 2 * flank_w` and this grid's symmetric
+   `1fr auto 1fr` template (base rule above): the two `1fr` flanks always
+   split the leftover width equally, so the right flank only actually
+   gets `strip_w` if the left one is granted it too.
+   `26 * n + 16` is the unscaled raw geometry (18px icon + 8px gap = the
+   26px pitch, `icon-strip.css`; 16px inset, `.flank-right` below) — only
+   the 85px cosmetic rail floor multiplies by `--card-scale`, exactly the
+   split rust preserves and the comment above states. `--present-icons`
+   (StatusRailCard.tsx) defaults to 0, which collapses this back to the
+   pre-175 flat-85px formula wherever the property never gets set. */
 .card-root .card-assembly.idle {
-  --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
+  --cw: min(
+    calc(
+      var(--notchtap-cutout-width, 200px) + 2 *
+        max(85px * var(--card-scale), calc((26 * var(--present-icons, 0) + 16) * 1px))
+    ),
+    100%
+  );
 }
 
 /* plan 165: this shell-width grow accompanies `.manifest-wrap`'s own
@@ -239,8 +266,23 @@
    gone here too — plain `.bare` above carries the identical single-leg
    `width` transition, so the reveal and un-reveal directions still
    match, which was the whole point of pairing the two rules. */
+/* plan 175: the icon-count-driven flank, identical to `.idle`'s own
+   formula above — read that rule's comment for the full lockstep story
+   (`hover.rs::hovered_right_flank_width` is the twin, the `2 *` is the
+   grid's symmetry, `--present-icons` defaults to 0). It has to be
+   repeated here rather than inherited because these are the TWO rules
+   that can match while the strip is up — bare notch mode reaches the
+   revealed rail through this one, rail mode through `.idle` — and rust
+   computes one flank width for both. The `transition` below is
+   untouched; only the value it animates toward changed. */
 .card-root .card-assembly.bare:has(.idle-peek) {
-  --cw: min(calc(var(--notchtap-cutout-width, 200px) + (2 * 85px * var(--card-scale))), 100%);
+  --cw: min(
+    calc(
+      var(--notchtap-cutout-width, 200px) + 2 *
+        max(85px * var(--card-scale), calc((26 * var(--present-icons, 0) + 16) * 1px))
+    ),
+    100%
+  );
   transition: width var(--reveal-ms, 260ms) var(--ease-notchtap);
 }
 /* 2026-07-23 (operator minimal-notch spec, Task 1.2): a hovered bare
