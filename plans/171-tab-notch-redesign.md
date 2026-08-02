@@ -172,6 +172,13 @@ These are not fully specified by the design spec (which describes behavior, not 
 5. Push, open the PR to master linking this plan, the spec, and both mocks. Wait for CodeRabbit + PR-Agent (same posture as every PR this session — read the actual posted findings, fix or rebut with evidence, don't merge on an unread review).
 6. Merge only when CI is green and both reviews are approved/addressed.
 
+**PR #13 opened early, ahead of the rest of Slice K** (steps 1/3/4 — mounting, capabilities check, animation lock-down — are still the Mac Mini hand-off's job; step 5/6, the review cycle, started as soon as slices B/C/D/F/G/H/I/J landed so review feedback could surface before more code builds on top). PR-Agent and CodeRabbit both reviewed; findings addressed on the branch:
+
+- **4 real bugs fixed**, all confirmed by tracing the actual logic first: `BoardFrameState.height` could desync from the real window on two error paths in `try_expand_board_for_hover`/`collapse_board_if_expanded` (the exact P0 bug, reintroduced via less-common failure branches); `icon_strip_rects` hardcoded `WINDOW_HEIGHT` instead of taking it as a parameter (the same lesson `board_rect`'s own P0 fix already encoded, missed here since this function was written later); `NewsGlyph`'s charge fill rect was drawn entirely outside its own clipPath bounds, rendering invisible at every charge level regardless of the `scaleY` math (which is why the existing transform-value test never caught it); the news tab's `aria-label` was static, so the visible pending-count badge never reached assistive tech.
+- **1 doc-only fix**: `prefix.rs`'s `ExpandToggle` cited the wrong existing mechanism (confirmed by reading the real `⌃⇧N` shortcut registration — it's `EXPAND_TOGGLE_SHORTCUT` → `toggle_manual_expand`, not the Agent Board's hover-driven expand).
+- **1 test deleted**: a tautological one that asserted two hand-constructed struct literals differed from each other by construction — never exercised the real functions at all.
+- **4 findings rebutted with evidence** (not applied): a `.mcp.json` credential-exposure claim (pre-existing on master since `25c007c`, predating this branch); a subprocess-timeout claim on `now_playing.rs` (the code already uses `tokio::process::Command`, confirmed via the file's own import); a `React.CSSProperties`-vs-explicit-import style suggestion (`tsc --noEmit` passes clean, and the flagged pattern already exists in `TtlBar.tsx` since plan 081); a `currentColor`→`currentcolor` Stylelint casing preference (no stylelint config exists in this repo; the capitalized form is the repo's own consistent pre-existing convention).
+
 ## Verification (whole-feature, checked at Slice K)
 
 - All gates in Slice K's step 2, clean.
