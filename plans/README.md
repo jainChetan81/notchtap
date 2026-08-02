@@ -11,7 +11,7 @@ two lands first.
 
 | plan | title | priority | effort | depends on | status |
 |---|---|---|---|---|---|
-| 182 | AgentBoard status icons: reuse IconStrip's glyphs in StatusDots | P2 | S | — | TODO |
+| 182 | AgentBoard status icons: reuse IconStrip's glyphs in StatusDots | P2 | S | — | DONE |
 | 183 | revert notification manifest hover-expand to keyboard-only | P2 | XS | — | TODO |
 | 184 | wire agent-viewed-session-changed to the display + auto-advance | P2 | M | — | TODO |
 
