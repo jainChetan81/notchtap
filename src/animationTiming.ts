@@ -108,7 +108,14 @@ export const NOTCHTAP_EASE: [number, number, number, number] = [0.23, 1, 0.32, 1
 // the 20ms offset undocumented — screenshot-verified
 // (docs/review-logs) that neither the shell's own promotion-grow nor the
 // manifest's expand toggle changed character at the unified 320ms.
-export const EXPAND_MS = 320;
+// plan 172 (2026-08-02): 320 -> 300. The animation review flagged 320 as
+// sitting above the 300ms UI-duration ceiling; a real headless
+// frame-sample (research harness, plans/172) showed the gesture's
+// PERCEIVED completion is ~250ms either way (strong ease-out front-loads
+// the motion; 320 vs 300 differs by <1 frame at t90), so this is token
+// cohesion, not a feel change: 300 equals shared-ui's --duration-normal.
+// Every CSS `var(--expand-ms, ...)` fallback moved in the same commit.
+export const EXPAND_MS = 300;
 
 // plan 127 (Step 1, /improve-animations audit finding #4): the bare<->
 // hovered rail's own reveal/paint coordination duration — StatusRailCard's
