@@ -92,8 +92,13 @@ pub enum PrefixAction {
     PreviousSession,
     NextSession,
     /// prefix+enter / prefix+o: reuses the EXISTING `⌃⇧N` expand-toggle
-    /// mechanism (`try_expand_board_for_hover`/`collapse_board_if_
-    /// expanded` in lib.rs) — not a new toggle, the same one spec §9
+    /// mechanism — `EXPAND_TOGGLE_SHORTCUT` -> `toggle_manual_expand`
+    /// (`lib.rs`), which flips the queue's own manual-expand flag. CodeRabbit
+    /// review fix (PR #13): this doc originally named `try_expand_board_
+    /// for_hover`/`collapse_board_if_expanded` here — that pair is a
+    /// DIFFERENT, hover-driven (never keyboard-driven) mechanism specific
+    /// to the Agent Board's own session-list expansion, not what `⌃⇧N`
+    /// actually calls. Not a new toggle either way — the same one spec §9
     /// calls out as the feature's only expansion gesture.
     ExpandToggle,
     /// prefix+p: reuses the EXISTING pause the tray item and `⌃⇧P`

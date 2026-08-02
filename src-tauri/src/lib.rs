@@ -1589,6 +1589,14 @@ fn try_expand_board_for_hover(
         tracing::warn!("board hover-expand: set_size failed: {e}");
         return;
     }
+    // CodeRabbit review fix (PR #13): the real window IS this tall now,
+    // whatever happens below — recording it here, right after the
+    // successful `set_size`, rather than after `set_ignore_cursor_events`
+    // (which can itself fail and return early, below), closes an error
+    // path that was reintroducing the exact desync the P0 fix exists to
+    // prevent: `state.height` staying at the stale resting value while
+    // the real window is genuinely taller.
+    board_frame.lock().unwrap_or_else(|e| e.into_inner()).height = frame.height;
     if let Err(e) = window.set_position(tauri::LogicalPosition::new(frame.x, frame.y)) {
         tracing::warn!("board hover-expand: set_position failed: {e}");
     }
@@ -1599,11 +1607,6 @@ fn try_expand_board_for_hover(
     let mut state = board_frame.lock().unwrap_or_else(|e| e.into_inner());
     state.expanded = true;
     state.generation = state.generation.wrapping_add(1);
-    // P0 fix: record the EXACT height just applied to the real window —
-    // the same `frame.height` passed to `set_size` above, never re-derived
-    // — so `hover_point_is_over_card`'s next coordinate transform can't
-    // drift from what AppKit is actually reporting mouse events against.
-    state.height = frame.height;
 }
 
 /// plan 142: the exit-side restore. Idempotent: a hover-exit over a card
@@ -1695,19 +1698,29 @@ fn collapse_board_if_expanded(
             if !board_shrink_should_run(*state, armed_generation) {
                 return;
             }
-            if let Err(e) = shrink_window.set_size(tauri::LogicalSize::new(
+            let shrank = match shrink_window.set_size(tauri::LogicalSize::new(
                 hover::WINDOW_WIDTH,
                 hover::WINDOW_HEIGHT,
             )) {
-                tracing::warn!("board hover-collapse: set_size failed: {e}");
-            }
+                Ok(()) => true,
+                Err(e) => {
+                    tracing::warn!("board hover-collapse: set_size failed: {e}");
+                    false
+                }
+            };
             if let Err(e) = position_window(&shrink_window, mode, cutout) {
                 tracing::warn!("board hover-collapse: position_window failed: {e}");
             }
             state.expanded = false;
-            // P0 fix: the real window is exactly `hover::WINDOW_HEIGHT`
-            // tall again the instant `set_size` above lands.
-            state.height = hover::WINDOW_HEIGHT;
+            // CodeRabbit review fix (PR #13): only claim the resting
+            // height if the shrink actually landed — the previous
+            // unconditional assignment here matched the exact desync bug
+            // the P0 fix elsewhere in this function closes: on a failed
+            // `set_size`, the window is still tall, but `state.height`
+            // would have claimed it was back to resting.
+            if shrank {
+                state.height = hover::WINDOW_HEIGHT;
+            }
         });
     });
 }
@@ -2330,33 +2343,23 @@ mod tests {
         assert_eq!(state.height, hover::WINDOW_HEIGHT);
     }
 
-    // --- P0 fix (tab-notch redesign): `BoardFrameState.height` tracks the
-    // exact frame applied, not a re-derived guess — the impure
-    // `set_size`/AppKit side of `try_expand_board_for_hover`/
-    // `collapse_board_if_expanded` stays manual-verification-only (same
-    // posture as every other window call in this file), but the state
-    // shape itself — that expand and collapse leave `height` and
-    // `expanded` consistent with each other — is worth pinning directly. ---
-
-    #[test]
-    fn board_frame_state_expanded_and_height_move_together_by_construction() {
-        // A resting state and an expanded one must never agree on height
-        // while disagreeing on `expanded` — `hover_point_is_over_card`
-        // trusts `height` unconditionally once `expanded` is (implicitly,
-        // via board_session_count > 0) relevant, so the two fields must be
-        // set in the same assignment everywhere this struct is mutated
-        // (`try_expand_board_for_hover` and the shrink closure in
-        // `collapse_board_if_expanded` both do exactly that — see those
-        // functions' own P0-fix comments).
-        let resting = BoardFrameState::default();
-        let expanded = BoardFrameState {
-            expanded: true,
-            generation: 1,
-            height: 520.0,
-        };
-        assert_ne!(resting.height, expanded.height);
-        assert_ne!(resting.expanded, expanded.expanded);
-    }
+    // CodeRabbit review fix (PR #13): the test that used to live here
+    // (`board_frame_state_expanded_and_height_move_together_by_
+    // construction`) asserted that two HAND-CONSTRUCTED `BoardFrameState`
+    // literals with deliberately different `height`/`expanded` values
+    // were... different — true by construction, regardless of whether
+    // `try_expand_board_for_hover`/`collapse_board_if_expanded` (the
+    // functions the invariant is actually about) work at all. Deleted
+    // rather than patched: introducing new `mark_expanded`/`mark_resting`
+    // encapsulating methods just to give this invariant a real target to
+    // test would be new production-code surface built solely to satisfy a
+    // test, and the impure `set_size`/AppKit mutation those two functions
+    // perform is already, deliberately, this file's own
+    // manual-verification-only territory (same posture as every other
+    // window call here) — the P0 fix's real correctness now lives in the
+    // two functions' own code (record height immediately after a
+    // successful `set_size`, only claim the resting height when the
+    // shrink actually lands), not in a struct-literal comparison.
 
     #[test]
     fn board_collapse_grace_clears_the_disclosure_springs_settle() {

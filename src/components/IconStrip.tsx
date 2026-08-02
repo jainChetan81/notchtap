@@ -79,6 +79,20 @@ const TAB_LABEL: Record<Tab, string> = {
   news: "News",
 };
 
+// CodeRabbit review fix (PR #13): an explicit `aria-label` overrides
+// accessible-name computation from child content entirely, so the
+// visually-rendered `.charge-count` badge (sighted-only) never reached
+// assistive tech — a screen-reader user got no indication of the
+// pending-item count sighted users see. Only the news tab has a count at
+// all; every other tab (and news with no count) renders exactly
+// `TAB_LABEL[tab]`, unchanged.
+function iconAriaLabel(tab: Tab, newsCount: number | null): string {
+  if (tab === "news" && newsCount !== null) {
+    return `${TAB_LABEL[tab]}, ${newsCount} new`;
+  }
+  return TAB_LABEL[tab];
+}
+
 // Original notchtap glyphs, 18x18 viewBox (matching --icon-box), stroke-
 // only where the mock's own drawings are stroke-only (agent, football,
 // music, news) and one closed fill path for weather's cloud (the mock's
@@ -166,7 +180,16 @@ function NewsGlyph({ charge }: { charge: number }): ReactNode {
       <rect
         className="charge"
         x="3"
-        y="15.5"
+        // CodeRabbit review fix (PR #13): this was `y="15.5"` — the rect's
+        // own unscaled bounds (y 15.5 to 28.5) never overlapped the
+        // clip region (y 2.5 to 15.5, matching the page outline above)
+        // at ANY scaleY value, so the charge fill rendered invisible at
+        // every charge level. `y="2.5"` matches the outline's own top so
+        // the rect's full (scaleY(1)) extent exactly fills it; scaling
+        // toward 0 around the bottom-anchored transformOrigin below
+        // shrinks the visible portion upward from the bottom, the
+        // liquid-filling-from-bottom effect the comment above describes.
+        y="2.5"
         width="12"
         height="13"
         clipPath={`url(#${clipId})`}
@@ -218,7 +241,7 @@ export function IconStrip({
             key={tab}
             type="button"
             className={iconClass(tab, state, isSelected, isCharged)}
-            aria-label={TAB_LABEL[tab]}
+            aria-label={iconAriaLabel(tab, newsCount)}
             aria-pressed={isSelected}
             // A hidden icon is not a real control — spec section 6's own
             // "hidden AND opacity 0 AND pointer-events none" rule

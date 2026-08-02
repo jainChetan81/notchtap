@@ -135,6 +135,17 @@ pub fn icon_strip_rects(
     cutout_height: f64,
     scale: f64,
     present_count: usize,
+    // CodeRabbit review fix (PR #13): threaded through explicitly rather
+    // than reading the `WINDOW_HEIGHT` resting constant directly — the
+    // exact same lesson `board_rect`'s own `window_height` parameter
+    // already encodes (see this file's P0 fix), not yet applied here
+    // when this function was first written. A caller wiring this up
+    // while the window is genuinely taller than resting (an active
+    // `BoardFrameState.height`, or any other future window-height
+    // driver) passes that real height; every existing call site below
+    // passes `WINDOW_HEIGHT` explicitly, preserving today's behavior
+    // byte-for-byte.
+    window_height: f64,
 ) -> Vec<Rect> {
     if present_count == 0 {
         return Vec::new();
@@ -157,7 +168,7 @@ pub fn icon_strip_rects(
     // the cutout height, not the below-block. `top: 0.0` because the
     // window is pinned flush to the physical screen top (`position_
     // window`), the same anchor every other rect in this file assumes.
-    let (y_min, y_max) = css_top_down_to_appkit_y(WINDOW_HEIGHT, 0.0, effective_cutout_height);
+    let (y_min, y_max) = css_top_down_to_appkit_y(window_height, 0.0, effective_cutout_height);
 
     (0..present_count)
         .map(|from_right| {
@@ -1084,13 +1095,19 @@ mod tests {
 
     #[test]
     fn icon_strip_rects_returns_empty_for_zero_present() {
-        assert_eq!(icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.0, 0), Vec::new());
+        assert_eq!(
+            icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.0, 0, WINDOW_HEIGHT),
+            Vec::new()
+        );
     }
 
     #[test]
     fn icon_strip_rects_returns_present_count_entries() {
         for n in 1..=5 {
-            assert_eq!(icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.0, n).len(), n);
+            assert_eq!(
+                icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.0, n, WINDOW_HEIGHT).len(),
+                n
+            );
         }
     }
 
@@ -1099,7 +1116,7 @@ mod tests {
         // 2 icons: strip_w = (18+8)*2 + 14 = 66, which loses to the 85px
         // rail floor at scale 1 — the SAME "2 icons -> 85px rail floor
         // wins" case mock 1's own spec table states explicitly.
-        let rects = icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.0, 2);
+        let rects = icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.0, 2, WINDOW_HEIGHT);
         let flank_w = hovered_right_flank_width(2, 1.0);
         assert_eq!(flank_w, FLANK_IDLE); // 85.0, the floor, not the narrower strip_w
                                          // total card width = 200 (hud cutout) + 2*85 = 370, matching the
@@ -1125,7 +1142,7 @@ mod tests {
 
     #[test]
     fn icon_strip_rects_are_in_left_to_right_order_with_no_overlap_and_correct_gaps() {
-        let rects = icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.0, 5);
+        let rects = icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.0, 5, WINDOW_HEIGHT);
         for pair in rects.windows(2) {
             let (left, right) = (pair[0], pair[1]);
             assert!(
@@ -1143,7 +1160,7 @@ mod tests {
 
     #[test]
     fn icon_strip_rects_y_span_is_the_cutout_height_alone() {
-        let rects = icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.0, 1);
+        let rects = icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.0, 1, WINDOW_HEIGHT);
         assert_eq!(rects[0].y_max - rects[0].y_min, HUD_CUTOUT_H);
         // top-anchored: the highest AppKit y in the rect equals the whole
         // window's own top, same invariant `top_of_window_maps_to_high_
@@ -1156,8 +1173,8 @@ mod tests {
         // unlike HUD mode (always the synthetic 200x32), notch mode reads
         // the real measured cutout — same discipline active_card_rect's
         // own notch-mode branch already follows.
-        let rects_notch = icon_strip_rects(Mode::Notch, 260.0, 34.0, 1.0, 2);
-        let rects_hud = icon_strip_rects(Mode::Hud, 260.0, 34.0, 1.0, 2);
+        let rects_notch = icon_strip_rects(Mode::Notch, 260.0, 34.0, 1.0, 2, WINDOW_HEIGHT);
+        let rects_hud = icon_strip_rects(Mode::Hud, 260.0, 34.0, 1.0, 2, WINDOW_HEIGHT);
         assert_ne!(rects_notch[0].x_min, rects_hud[0].x_min);
         assert_eq!(rects_notch[0].y_max - rects_notch[0].y_min, 34.0);
     }
@@ -1169,7 +1186,7 @@ mod tests {
         // — at a present_count where the strip genuinely beats the floor
         // even at an elevated scale, the icon box width itself must stay
         // exactly ICON_BOX regardless of scale.
-        let rects = icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.25, 5);
+        let rects = icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.25, 5, WINDOW_HEIGHT);
         assert_eq!(rects[0].x_max - rects[0].x_min, ICON_BOX);
     }
 }

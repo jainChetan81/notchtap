@@ -113,6 +113,20 @@ describe("IconStrip", () => {
     expect(underFill.style.transform).toBe("scaleY(0)");
   });
 
+  // CodeRabbit review fix (PR #13): the charge rect used to be drawn at
+  // y="15.5", entirely below the clipPath's own y=[2.5, 15.5] bounds —
+  // the fill never overlapped the clip at ANY scaleY value, so it
+  // rendered invisible at every charge level despite `scaleY` itself
+  // computing correctly (which is why the test above never caught this —
+  // it only asserts the transform value, never where the rect actually
+  // sits). Pinning the geometry directly so a future edit can't
+  // reintroduce the same silent-invisibility bug.
+  it("the charge rect's own y coordinate matches the page outline's top (2.5), so scaleY(1) fills it exactly", () => {
+    const { container } = render(<IconStrip {...BASE} />);
+    const fill = container.querySelector(".icon.news .charge") as SVGElement;
+    expect(fill.getAttribute("y")).toBe("2.5");
+  });
+
   it("two IconStrips in the same document never collide on the news glyph's clip-path id", () => {
     const { container } = render(
       <div>
@@ -144,5 +158,11 @@ describe("IconStrip", () => {
     for (const name of ["Agent", "Football", "Music", "Weather", "News"]) {
       expect(screen.getByRole("button", { name })).toBeTruthy();
     }
+  });
+
+  it("includes the pending count in the news tab's accessible name, since an aria-label overrides the visible badge for assistive tech (CodeRabbit review fix, PR #13)", () => {
+    render(<IconStrip {...BASE} news="present" newsCount={3} />);
+    expect(screen.getByRole("button", { name: "News, 3 new" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "News" })).toBeNull();
   });
 });
