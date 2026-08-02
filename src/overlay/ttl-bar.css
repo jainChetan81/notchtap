@@ -50,11 +50,18 @@
 .card-root .ttl-seg {
   background: color-mix(in srgb, var(--accent) 30%, transparent);
   /* plan 127 (Step 1, /improve-animations audit finding #4)/129 (C4):
-     `.track span`'s own reveal-tier transition, ported — a queue advance
-     re-renders `done` classes across segments and this fades the change
-     in on the same reveal-tier timing/easing as the flank background and
-     FlankClock/StatusDots fades (REVEAL_MS/`--ease-notchtap`,
-     animationTiming.ts). */
+     `.track span`'s own reveal-tier transition, ported — reveal-tier
+     timing/easing shared with the flank background and FlankClock/
+     StatusDots fades (REVEAL_MS/`--ease-notchtap`, animationTiming.ts).
+     2026-08-02 comment-accuracy fix: this used to claim it fades in the
+     `done`-class change a QUEUE ADVANCE produces. It does not, and never
+     could — NotificationBody.tsx renders `<TtlBar key={slot.id}>`, so a
+     queue advance that also advances the slot REMOUNTS the whole bar, and
+     a transition never fires on a node's first style resolution. What
+     this leg actually covers is a `done` change WITHIN one slot id (a
+     same-id re-emit whose `queueDone` moved — the bar stays mounted, only
+     the class flips). Kept: that case is real, and the fade is the right
+     treatment for it. */
   transition: background var(--reveal-ms, 260ms) var(--ease-notchtap);
 }
 
@@ -74,9 +81,11 @@
    2px bar. Fixed by rendering the fill at its full, unchanging width and
    animating `transform: scaleX(<fraction>)` instead (visually identical
    at 2px tall) — a compositor-only property that never touches layout.
-   `transform-origin: left` keeps the shrink anchored to the bar's start
-   (the LTR reading direction the countdown drains toward), matching the
-   old `width`-based drain exactly. `will-change: transform` hints the
+   `transform-origin` is what anchors that shrink; it read `left` when
+   this comment was written and has been `right` since the 2026-08-02
+   direction-alignment fix (see the declaration itself, ~20 lines below,
+   and its own comment for why the flip happened) — corrected here
+   2026-08-02 so the two stop disagreeing. `will-change: transform` hints the
    browser to keep this layer composited independently, same reasoning
    as any other every-frame transform in this file.
    stories merge (2026-07-24): `.ttl-fill` is now a grid item placed via an inline
@@ -113,14 +122,38 @@
 }
 
 /* O13 (TTL hover-pause affordance): `hoverPaused` used to freeze the fill
-   with zero visual change — indistinguishable from a stall. Dims slightly
-   and shifts toward `--accent-soft` (the same per-tier "consumed" tint
-   `.ttl-seg.done` already reads, ttl-bar.css above) so a paused countdown
-   reads as deliberately held, not stuck. Kept subtle on purpose — this is
-   a passive status cue, not a new attention-grabbing element. */
+   with zero visual change — indistinguishable from a stall. Dims it so a
+   paused countdown reads as deliberately held, not stuck. Kept subtle on
+   purpose — this is a passive status cue, not a new attention-grabbing
+   element.
+
+   2026-08-02 (animation audit, finding 3 — RETUNED after the brightness
+   inversion). The old values (`opacity: .72` over `color-mix(--accent
+   65%, --accent-soft 35%)`) were written when the trough underneath was
+   white-8%: a different hue, so the paused fill stayed obvious against
+   it. The inversion moved the trough to `--accent` at 30% (`.ttl-seg`
+   above) — the SAME hue — and the two nearly collapsed into each other:
+
+     trough (.ttl-seg)   effective --accent alpha = 0.30
+     paused fill (old)   0.72 opacity x (0.65 + 0.35 x ~0.24 from
+                         --accent-soft) ~= 0.72 x 0.74 = 0.53
+                         -> 0.53 / 0.30 = ~1.8x the trough
+
+   Retuned to clear the >=2.5x separation bar while staying visibly held:
+
+     paused fill (new)   0.85 opacity x 0.90 --accent = 0.765
+                         -> 0.765 / 0.30 = 2.55x the trough  [>= 2.5x OK]
+                         -> 0.765 / 1.00 = 76.5% of the unpaused solid
+                            --accent fill, i.e. ~24% dimmer  [still reads
+                            as dimmed, not as a second solid bar]
+
+   Dropping `--accent-soft` from the mix is deliberate: its alpha differs
+   per priority tier (.20/.24/.28, card-chrome.css), so the old value
+   quietly produced a different contrast ratio on every tier. The plain
+   `--accent`-with-transparent mix lands the same 2.55x on all three. */
 .card-root .ttl-fill.paused {
-  opacity: 0.72;
-  background: color-mix(in srgb, var(--accent) 65%, var(--accent-soft) 35%);
+  opacity: 0.85;
+  background: color-mix(in srgb, var(--accent) 90%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {

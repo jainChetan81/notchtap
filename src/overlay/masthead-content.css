@@ -18,6 +18,20 @@
      edge, so its content needs the extra 4px to clear it — none of the
      other blocks carry that edge. */
   padding: 12px 16px 13px 20px;
+  /* 2026-08-02 (animation audit, finding 2): `.expanded .compact` below
+     lifts this floor 74px -> 82px, and hover-expand now flips `.expanded`
+     on and off a SHOWING card from the live `hovered` prop — so that 8px
+     step was teleporting on every hover in and out while the shell width
+     and the manifest disclosure both glided over `--expand-ms`. Declared
+     on the BASE rule (not on `.expanded .compact`) so BOTH directions
+     animate: the modifier only overrides the value, exactly the shape
+     ttl-bar.css's own O13 note describes for `.ttl-fill`/`.ttl-fill.paused`.
+     Same duration/curve as the width and manifest legs of the same
+     gesture, so all three finish together. `.compact`'s only other
+     min-height rule is agent-board.css's static `.agent-board-primary`
+     override, which never changes value at runtime — nothing there to
+     animate, and no partner rule needed for it. */
+  transition: min-height var(--expand-ms, 320ms) var(--ease-notchtap);
 }
 
 .card-root .expanded .compact {

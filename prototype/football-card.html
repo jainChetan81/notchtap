@@ -332,9 +332,13 @@
      an item placed via grid-column alone into an invisible new row unless
      grid-row is also explicit). */
   .card-root .ttl-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; display: grid; grid-template-columns: repeat(var(--queue-n, 1), 1fr); grid-template-rows: 4px; gap: 3px; }
-  .card-root .ttl-seg { background: rgba(255,255,255,0.08); }
-  .card-root .ttl-seg.done { background: color-mix(in srgb, var(--accent) 30%, transparent); }
-  .card-root .ttl-fill { grid-row: 1; height: 100%; width: 100%; background: var(--accent); transform-origin: left; }
+  /* 2026-08-02: brightness inverted — an untouched segment is the BRIGHT
+     "still to come" state, a consumed one burns out dim, and the fill
+     drains left-to-right (`transform-origin: right`) so both read in one
+     direction. */
+  .card-root .ttl-seg { background: color-mix(in srgb, var(--accent) 30%, transparent); }
+  .card-root .ttl-seg.done { background: rgba(255,255,255,0.08); }
+  .card-root .ttl-fill { grid-row: 1; height: 100%; width: 100%; background: var(--accent); transform-origin: right; }
   .card-root .below-block.origin-wash { position: relative; }
   .card-root .below-block.origin-wash::before { content: ""; position: absolute; inset: 0; z-index: 0; background: radial-gradient(120% 140% at 0% 0%, var(--cat-deep), transparent 52%); pointer-events: none; }
   .card-root .below-block.origin-wash .compact { position: relative; z-index: 1; }

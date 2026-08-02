@@ -19,7 +19,8 @@
        src/lib/weatherArt.ts               — condition -> (glyph, mood class, texture class) table
        src-tauri/src/weather_poller.rs     — real alert titles/bodies (RAIN_ALERT_TITLE etc.)
        vendor/shared-ui/design/tokens.css  — --overlay-teal/-amber/-coral/-fg hexes
-     Last hand-synced against those files: 2026-07-30.
+     Last hand-synced against those files: 2026-07-30, plus a 2026-08-02
+     ttl-bar-only re-sync (brightness inversion + `transform-origin: right`).
 
      Glyphs are Meteocons static-fill SVGs (MIT, Bas Milius), vendored at
      prototype/assets/weather/ — byte-identical to src/assets/weather/, see
@@ -191,10 +192,14 @@
   }
 
   /* floor countdown strip — ttl-bar.css, a single static segment here
-     (no live rAF tick in a static file) frozen mid-drain. */
+     (no live rAF tick in a static file) frozen mid-drain. 2026-08-02:
+     brightness inverted — the untouched trough is the BRIGHT accent-30%
+     "still to come" state (a consumed `.done` segment is what burns out
+     to white-8%), and the fill drains left-to-right off
+     `transform-origin: right`. */
   .ttl-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; z-index: 1; }
-  .ttl-seg { position: relative; height: 100%; background: rgba(255,255,255,0.08); overflow: hidden; }
-  .ttl-fill { position: absolute; inset: 0; background: var(--accent); transform-origin: left; }
+  .ttl-seg { position: relative; height: 100%; background: color-mix(in srgb, var(--accent) 30%, transparent); overflow: hidden; }
+  .ttl-fill { position: absolute; inset: 0; background: var(--accent); transform-origin: right; }
 
   /* ============================================================
      condition palette — art only (mood + glyph + texture), the

@@ -4,6 +4,7 @@ import { act, cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   CONTENT_EXIT_MS,
+  EXPAND_MS,
   INTERRUPT_EASE,
   INTERRUPT_EXIT_MS,
   NOTCHTAP_EASE,
@@ -1939,6 +1940,90 @@ describe("StatusRailCard", () => {
       const wrap = container.querySelector(".manifest-wrap");
       expect(wrap?.classList.contains("expanded")).toBe(false);
       expect(wrap?.getAttribute("aria-hidden")).toBe("true");
+    });
+  });
+
+  // 2026-08-02 (animation audit, finding 1): the shell's bouncy width
+  // curve (`--ease-notchtap-pop`) used to sit on `.card-assembly`'s BASE
+  // rule, which is simply "whatever plays when nothing more specific
+  // matches" — so the hover-out that REMOVES `.expanded` resolved against
+  // it and every un-hover overshot and rebounded. The pop now rides a
+  // transient `.promoting` class (card-chrome.css), and these pin the
+  // lifecycle that scoping depends on: on for a genuine promotion
+  // entrance, off for everything else. The class is on `.card-assembly`
+  // itself (never AnimatePresence-gated), so every assertion here is
+  // synchronous — no `vi.waitFor` needed, unlike the content-swap blocks.
+  describe("arrival-pop marker (`promoting`)", () => {
+    beforeEach(() => {
+      vi.useFakeTimers();
+    });
+    afterEach(() => {
+      vi.useRealTimers();
+    });
+
+    it("lands on the very same render an idle->showing promotion arrives — no timer advance", () => {
+      const { container, rerender } = render(<StatusRailCard slot={{ state: "empty" }} />);
+      expect(container.querySelector(".card-assembly.promoting")).toBeNull();
+
+      rerender(<StatusRailCard slot={GOAL} />);
+      // The whole point of arming this in the render body rather than an
+      // effect: CSS keeps a running transition's original timing function
+      // even if the rule under it changes, so the class has to be in the
+      // SAME commit that flips the width formula to showing geometry.
+      expect(container.querySelector(".card-assembly.promoting")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.high.expanded")).not.toBeNull();
+    });
+
+    it("clears exactly EXPAND_MS after the entrance, not before", () => {
+      const { container, rerender } = render(<StatusRailCard slot={{ state: "empty" }} />);
+      rerender(<StatusRailCard slot={GOAL} />);
+
+      act(() => vi.advanceTimersByTime(EXPAND_MS - 1));
+      expect(container.querySelector(".card-assembly.promoting")).not.toBeNull();
+
+      act(() => vi.advanceTimersByTime(1));
+      expect(container.querySelector(".card-assembly.promoting")).toBeNull();
+      // the shell itself is untouched by the disarm — only the curve was
+      // ever scoped, never the geometry.
+      expect(container.querySelector(".card-assembly.high.expanded")).not.toBeNull();
+    });
+
+    it("is dropped by an ordinary showing(A)->showing(B) rotation on that same render", () => {
+      const { container, rerender } = render(<StatusRailCard slot={GOAL} />);
+      expect(container.querySelector(".card-assembly.promoting")).not.toBeNull();
+
+      rerender(<StatusRailCard slot={RED_CARD} />);
+      // synchronous — a rotation is not an arrival, so it must not carry
+      // (or inherit) the pop for even one frame.
+      expect(container.querySelector(".card-assembly.promoting")).toBeNull();
+    });
+
+    it("is never armed by hover-expand on an already-showing card", () => {
+      const { container, rerender } = render(
+        <StatusRailCard slot={{ ...GOAL, expanded: false }} hovered={false} />,
+      );
+      act(() => vi.advanceTimersByTime(EXPAND_MS));
+      expect(container.querySelector(".card-assembly.promoting")).toBeNull();
+
+      rerender(<StatusRailCard slot={{ ...GOAL, expanded: false }} hovered={true} />);
+      // the shell really did change width class (so a real width
+      // transition ran) — and it did so without the pop.
+      expect(container.querySelector(".card-assembly.expanded")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.promoting")).toBeNull();
+    });
+
+    it("is dropped on the same render a showing->idle exit begins — never coexists with `.exiting`", () => {
+      const { container, rerender } = render(<StatusRailCard slot={GOAL} />);
+      expect(container.querySelector(".card-assembly.promoting")).not.toBeNull();
+
+      // deliberately no timer advance first: this pins the render-body
+      // disarm, not the EXPAND_MS timeout. card-chrome.css's `.promoting`
+      // rule leans on the two classes being mutually exclusive (it is
+      // declared BEFORE `.exiting`, which would otherwise win the width
+      // transition by source order).
+      rerender(<StatusRailCard slot={{ state: "empty" }} />);
+      expect(container.querySelector(".card-assembly.exiting")).not.toBeNull();
+      expect(container.querySelector(".card-assembly.promoting")).toBeNull();
     });
   });
 

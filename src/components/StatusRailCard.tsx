@@ -2,6 +2,7 @@ import { AnimatePresence, motion, useReducedMotion } from "motion/react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   CONTENT_EXIT_MS,
+  EXPAND_MS,
   INTERRUPT_EASE,
   INTERRUPT_EXIT_MS,
   NOTCHTAP_EASE,
@@ -431,6 +432,43 @@ export function StatusRailCard({
   // last-anchored snapshot — see the ref's declaration doc above and the
   // re-anchor block just below for how it's kept fresh across supersede
   // top-ups/manual-expand extensions on the same key.
+  // 2026-08-02 (animation audit, finding 1): the arrival-pop marker. The
+  // shell's bouncy `--ease-notchtap-pop` width curve used to live on
+  // `.card-assembly`'s BASE rule (card-chrome.css), which meant it was
+  // whatever played when no more-specific rule matched — including the
+  // hover-out collapse that drops `.expanded`, so every un-hover
+  // overshot and rebounded. The pop now lives on `.card-assembly.promoting`,
+  // and this state is what scopes it to a genuine promotion entrance.
+  //
+  // Armed in the render body (below), NOT in an effect: the class has to
+  // land in the SAME commit that flips the shell's width formula to the
+  // showing geometry, because CSS keeps a running transition's original
+  // timing function even if the rule underneath it changes mid-flight —
+  // an effect would apply the class one commit too late to affect
+  // anything. A render-phase `setState` on the component currently
+  // rendering is React's own sanctioned mechanism for exactly this
+  // (adjust state when a prop-derived key changes), and it's already
+  // guarded by the same key-change check `isRotation` uses, so it can't
+  // loop.
+  const [promoting, setPromoting] = useState(false);
+
+  // The disarm half: EXPAND_MS after each swap the entrance has settled,
+  // so the pop must stop being the curve any LATER width change (a hover
+  // flip, a manual expand toggle) resolves against. Keyed on `swapKey`
+  // alone so each new swap restarts the window and the cleanup cancels
+  // the previous one; `setPromoting(false)` while it's already false is a
+  // React identity bailout, so the common idle case costs nothing.
+  // A showing->idle exit doesn't wait for this timer at all — `swapKey`
+  // flips to "idle" on that very render, and the render-body arm below
+  // sets `false` synchronously, which is what guarantees `.promoting` and
+  // `.exiting` can never sit on the shell together (card-chrome.css's
+  // `.promoting` rule leans on that).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: swapKey is the deliberate re-arm trigger, not a value read in the body — same shape as the pulse effect's own currentId dependency above.
+  useEffect(() => {
+    const timer = window.setTimeout(() => setPromoting(false), EXPAND_MS);
+    return () => window.clearTimeout(timer);
+  }, [swapKey]);
+
   if (wasShowingRef.current.key !== swapKey) {
     const previous = wasShowingRef.current;
     const isRotationNow = showing && previous.wasShowing;
@@ -451,6 +489,15 @@ export function StatusRailCard({
         ? { priority: slot.priority, anchoredAt: performance.now(), remainingMs: slot.remainingMs }
         : null,
     };
+    // the arrival-pop arm (see `promoting`'s own doc above). Same
+    // condition `enterAsPromotion` names further down — a genuine
+    // idle->showing promotion, or a Priority Preemption's incoming card
+    // (which enters as a promotion too) — but computed off THIS render's
+    // fresh locals, since the derived `enterAsPromotion` below reads the
+    // ref that was only just written. An ordinary same-tier rotation and
+    // every non-showing key (the exit to "idle") both disarm it, so the
+    // class is only ever on the shell during a real arrival's width grow.
+    setPromoting(showing && (!isRotationNow || isInterruptNow));
   } else if (showing && wasShowingRef.current.anchor?.remainingMs !== slot.remainingMs) {
     // plan 146b: re-anchor THIS key's own countdown snapshot whenever its
     // remainingMs actually changes without the key itself changing — a
@@ -523,6 +570,11 @@ export function StatusRailCard({
     "card-assembly",
     geometryPriority,
     expanded && "expanded",
+    // 2026-08-02 (animation audit, finding 1): the transient arrival-pop
+    // marker — see `promoting`'s own doc above, and card-chrome.css's
+    // `.card-assembly.promoting` rule for what it actually changes (the
+    // width transition's timing function, for the entrance window only).
+    promoting && "promoting",
     // the hover modifier, off the live `hovered` prop — never CSS
     // `:hover`, since the overlay window is click-through and never
     // receives real pointer events. It no longer scales the shell (the

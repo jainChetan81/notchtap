@@ -23,7 +23,11 @@
      Last synced against source: 2026-08-02 (CSS-only re-sync of the shell/
      flank/gill/ttl-bar rules for plans 164-168 plus the 2026-08-02 operator
      removal of the hover "breathe" scale; the rest of the file was already
-     current as of the 2026-07-30 full sync). -->
+     current as of the 2026-07-30 full sync). Re-synced again later the same
+     day for the 2026-08-02 animation audit: the ttl-bar brightness
+     inversion + `transform-origin: right` + retuned paused fill, the
+     arrival pop moving off the base shell rule onto `.promoting`, and
+     `.compact`'s min-height step gaining a transition. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -102,18 +106,28 @@
     isolation: isolate;
     transform-origin: top center;
     filter: drop-shadow(0 7px 18px rgba(0,0,0,0.5));
-    /* the bouncy `--ease-notchtap-pop` is reserved for a genuine arrival
-       (promotion/entrance width growth). Every hover-driven or exiting
-       width change below re-declares its own non-bouncy curve. There is
-       no `transform` leg: the hover "breathe" scale this shell used to
-       ease was deleted (operator removal, 2026-08-02 — choreography.css). */
-    transition: width var(--expand-ms) var(--ease-notchtap-pop);
+    /* 2026-08-02 (animation audit, finding 1): the base rule is the plain
+       house curve. The bouncy `--ease-notchtap-pop` used to sit here and
+       was described as "reserved for a genuine arrival" — but a base-rule
+       curve is simply what plays when nothing more specific matches, so
+       REMOVING `.expanded` (hover-out on a showing card) resolved against
+       it and every un-hover overshot and rebounded. The pop moved to the
+       transient `.promoting` class below. There is no `transform` leg:
+       the hover "breathe" scale this shell used to ease was deleted
+       (operator removal, 2026-08-02 — choreography.css). */
+    transition: width var(--expand-ms) var(--ease-notchtap);
   }
   .card-root .card-assembly.idle { --cw: min(calc(var(--notchtap-cutout-width) + (2 * 85px * var(--card-scale))), 100%); }
   /* plan 165: hover-expand grows the shell alongside the manifest's own
      plain-eased disclosure — same duration, non-bouncy curve, so the two
      halves of one disclosure finish together. */
   .card-root .card-assembly.expanded { --cw: min(max(calc(500px * var(--card-scale)), calc(var(--notchtap-cutout-width) + (2 * 60px * var(--card-scale)))), 100%); transition: width var(--expand-ms) var(--ease-notchtap); }
+  /* the arrival pop, scoped: StatusRailCard.tsx arms `.promoting` in the
+     same commit the width formula flips to showing geometry and clears it
+     EXPAND_MS later. Declared after `.expanded` on purpose — the two
+     co-occur on a promotion that arrives expanded, and they tie on
+     specificity, so source order is what lets the arrival win. */
+  .card-root .card-assembly.promoting { transition: width var(--expand-ms) var(--ease-notchtap-pop); }
   /* plan 164: the bare<->peek width change is HOVER-driven (many times a
      session), so it must not inherit the arrival pop — and it rides
      --reveal-ms to match the flank clock/status-dot fade on the same
@@ -209,7 +223,11 @@
   .card-root .card-assembly.high { --accent: var(--overlay-coral); --accent-soft: rgba(255,107,87,0.28); }
 
   /* ============== compact / masthead / title / body (masthead-content.css) ============== */
-  .card-root .compact { position: relative; box-sizing: border-box; min-height: 74px; padding: 12px 16px 13px 20px; }
+  /* the 74 -> 82px floor step is declared on the BASE rule's transition so
+     BOTH directions of hover-expand animate it, on the same clock as the
+     shell width and the manifest disclosure (2026-08-02 audit finding 2 —
+     it used to teleport while those two glided). */
+  .card-root .compact { position: relative; box-sizing: border-box; min-height: 74px; padding: 12px 16px 13px 20px; transition: min-height var(--expand-ms) var(--ease-notchtap); }
   .card-root .card-assembly.expanded .compact { min-height: 82px; }
   .card-root .compact::before { content: ""; position: absolute; left: 0; top: 12px; bottom: 12px; width: 3px; border-radius: 0 2px 2px 0; background: var(--accent); box-shadow: 0 0 12px var(--accent-soft); }
   .card-root .masthead-row { display: flex; align-items: center; gap: 10px; margin-bottom: 4px; }
@@ -251,10 +269,18 @@
      4px row — without them an implicit second row could appear and the
      bar would render at double height. */
   .card-root .ttl-bar { position: absolute; bottom: 0; left: 0; right: 0; height: 4px; display: grid; grid-template-columns: repeat(var(--queue-n, 1), 1fr); grid-template-rows: 4px; gap: 3px; }
-  .card-root .ttl-seg { background: rgba(255,255,255,0.08); transition: background var(--reveal-ms) var(--ease-notchtap); }
-  .card-root .ttl-seg.done { background: color-mix(in srgb, var(--accent) 30%, transparent); }
-  .card-root .ttl-fill { grid-row: 1; height: 100%; width: 100%; background: var(--accent); transform-origin: left; will-change: transform; transition: opacity var(--hover-ms) var(--ease-notchtap), background var(--hover-ms) var(--ease-notchtap); }
-  .card-root .ttl-fill.paused { opacity: 0.72; background: color-mix(in srgb, var(--accent) 65%, var(--accent-soft) 35%); }
+  /* 2026-08-02 (operator direction-alignment fix): brightness INVERTED —
+     an untouched segment is the BRIGHT "still to come" state and a
+     consumed one burns out DIM, so the sweep runs the same direction the
+     queue counts. The fill's `transform-origin` flipped to `right` with
+     it, so remaining time drains left-to-right too. The paused fill was
+     retuned in the same pass (2.55x the trough's effective accent alpha,
+     ~24% dimmer than the unpaused solid) — the old value was written
+     against a white-8% trough and nearly vanished into an accent-30% one. */
+  .card-root .ttl-seg { background: color-mix(in srgb, var(--accent) 30%, transparent); transition: background var(--reveal-ms) var(--ease-notchtap); }
+  .card-root .ttl-seg.done { background: rgba(255,255,255,0.08); }
+  .card-root .ttl-fill { grid-row: 1; height: 100%; width: 100%; background: var(--accent); transform-origin: right; will-change: transform; transition: opacity var(--hover-ms) var(--ease-notchtap), background var(--hover-ms) var(--ease-notchtap); }
+  .card-root .ttl-fill.paused { opacity: 0.85; background: color-mix(in srgb, var(--accent) 90%, transparent); }
 
   /* ============== news category colors (news-category.css) ============== */
   .card-root .cat-politics { --cat: #7c9df5; --cat-deep: rgba(124,157,245,0.16); --cat-pill: rgba(124,157,245,0.14); }
@@ -411,10 +437,14 @@
     <p class="note">
       The width leg eases on <code>--ease-notchtap-pop</code>
       (<code>cubic-bezier(.3,1.36,.44,1)</code>, a slight overshoot) over
-      <code>--expand-ms</code> (320ms) on the way OUT to idle/showing/expanded,
-      but on plain <code>--ease-notchtap</code> (no overshoot) over
-      <code>--swap-exit-ms</code> (175ms) while exiting — entrances get a
-      touch of physical "pop," exits settle, never bounce.
+      <code>--expand-ms</code> (320ms) for a genuine ARRIVAL only — that
+      pop lives on the transient <code>.promoting</code> class, never on
+      the base rule, so a hover-expand collapsing back down can't inherit
+      it. Everything else settles on plain <code>--ease-notchtap</code>:
+      hover-expand in and out over <code>--expand-ms</code>, the bare/peek
+      reveal over <code>--reveal-ms</code> (260ms), the exit over
+      <code>--swap-exit-ms</code> (175ms). Arrivals get a touch of
+      physical "pop," everything else settles, never bounces.
     </p>
   </section>
 

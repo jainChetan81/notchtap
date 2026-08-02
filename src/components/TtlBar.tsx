@@ -230,10 +230,17 @@ export function TtlBar({
         // segment's own mapped `<span>` above — that would put fillRef's
         // node behind a conditional (`i === current ? <div ref .../> :
         // null`), which unmounts/remounts it on every queue advance. This
-        // way the fill is ALWAYS the same DOM node across renders; only
-        // this one inline style value changes when `current` moves, so
-        // the rAF loop above (which re-reads `fillRef.current` fresh every
-        // frame regardless) never has to survive losing its node mid-tick.
+        // way the fill is the same DOM node across every render OF ONE
+        // SLOT (2026-08-02 comment-accuracy fix — it used to say "ALWAYS
+        // the same DOM node across renders" full stop: NotificationBody.tsx
+        // mounts this component as `<TtlBar key={slot.id}>`, so a new slot
+        // id remounts the whole bar, fill included. That's fine and
+        // intended — a new promotion re-anchors the countdown anyway — but
+        // it means the guarantee is scoped to a single slot id, which is
+        // exactly the window the rAF loop below needs it for); only this
+        // one inline style value changes when `current` moves, so the rAF
+        // loop above (which re-reads `fillRef.current` fresh every frame
+        // regardless) never has to survive losing its node mid-tick.
         style={{ gridColumn: current + 1 }}
       />
     </div>

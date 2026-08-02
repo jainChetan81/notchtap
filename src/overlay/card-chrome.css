@@ -76,21 +76,30 @@
      remaining whole-card transform (`goal-overshoot`) is a keyframe
      animation, which carries its own timing and never reads a transition
      leg. `--hover-ms` itself is untouched (agent-board.css still uses it).
-     FEEL-CHECK (item 2, card-entry mass): the `width` leg's timing
-     function is now `--ease-notchtap-pop` (styles.css's `:root`, with the
-     same value repeated here as an inline fallback since this shared
-     file also renders in the settings preview, which never loads
-     styles.css) — a slight overshoot so promotion/expand width growth
-     lands with a touch of physical mass, instead of the house ease's
-     pure settle. `.exiting`'s own width transition (below) deliberately
-     keeps `--ease-notchtap` — exits must not bounce. Revert = swap
-     `--ease-notchtap-pop` back to `--ease-notchtap` here.
-     2026-08-02: hover-expand (a showing card widening while hovered —
-     useExitChoreography.ts's `expanded`) is routed through `.expanded`
-     below, which declares its own non-bouncy width curve, so this pop
-     ease still only ever plays on a genuine arrival. */
-  transition: width var(--expand-ms, 320ms)
-    var(--ease-notchtap-pop, cubic-bezier(0.3, 1.36, 0.44, 1));
+     FEEL-CHECK (item 2, card-entry mass) — HISTORY, still the shipped
+     intent: the `width` leg used to declare `--ease-notchtap-pop` right
+     here, a slight overshoot so promotion width growth lands with a
+     touch of physical mass instead of the house ease's pure settle. That
+     feel is UNCHANGED; only where the pop is declared moved (see
+     `.promoting` below). `.exiting`'s own width transition (below) still
+     deliberately keeps `--ease-notchtap` — exits must not bounce.
+     2026-08-02 (animation audit, finding 1 — the pop moved off this base
+     rule): a base-rule pop is not scoped to arrivals at all. It is
+     simply what plays whenever no more-specific rule matches — and
+     REMOVING `.expanded` (hover-out on a showing card, now that the live
+     `hovered` prop drives hover-expand) resolves the collapse against
+     exactly this rule. So every hover-out dipped ~10px past its target
+     and rebounded, on an `overflow: hidden` shell, many times a day, and
+     desynced from the manifest's own disclosure (manifest.css — house
+     curve in BOTH directions): the exact desync the `.expanded` rule
+     below documents fixing for the ENTER leg. The comment that used to
+     sit here claimed the pop "still only ever plays on a genuine
+     arrival" because `.expanded` declares its own curve — true of the
+     enter leg only, false for the exit leg, which never matches
+     `.expanded` at all. Net result now: hover-expand enters AND exits on
+     the house curve at `--expand-ms`; a genuine promotion still grows
+     with the pop, via `.promoting`. */
+  transition: width var(--expand-ms, 320ms) var(--ease-notchtap);
 }
 
 /* plan 090 (Q1a/Q2b, carried forward): the cutout term
@@ -127,6 +136,35 @@
 .card-root .card-assembly.expanded {
   --cw: min(max(calc(500px * var(--card-scale)), calc(var(--notchtap-cutout-width, 200px) + (2 * 60px * var(--card-scale)))), 100%);
   transition: width var(--expand-ms, 320ms) var(--ease-notchtap);
+}
+
+/* 2026-08-02 (animation audit, finding 1): the arrival pop, now scoped to
+   a genuine promotion entrance and nothing else — the base
+   `.card-assembly` rule above has the full "why it moved off there".
+   `promoting` is a TRANSIENT class (StatusRailCard.tsx): armed in the
+   render body, in the SAME commit the shell's width formula flips to the
+   showing geometry — a later commit would be too late, since CSS keeps a
+   running transition's ORIGINAL timing function even when the rule
+   underneath it changes mid-flight — and cleared EXPAND_MS later, once
+   that entrance has settled.
+   Declared AFTER `.expanded` above on purpose: the two genuinely
+   co-occur (a promotion arriving with `expanded: true`) and they share
+   specificity exactly (`.card-root` + `.card-assembly` + one class), so
+   source order is the only thing that lets the arrival win that render.
+   No such conflict exists with `.idle`/`.bare`/`.exiting`/`.exit-to-bare`
+   below: every one of them requires the slot to have STOPPED showing,
+   which is the same render `promoting` is cleared on (StatusRailCard.tsx's
+   own doc), so they never co-occur with this class at all.
+   Scope caveat, deliberate: a hover flip landing INSIDE the entrance
+   window rides this curve too. Narrowing it (`:not(.hovered)`) would
+   strip the pop from a promotion that arrives with the cursor already
+   parked over the notch — the commoner case — so the window stays plain.
+   The inline `cubic-bezier(...)` repeats `--ease-notchtap-pop`'s value
+   (styles.css's `:root`) as a fallback, since this shared file also
+   renders in the settings preview, which never loads styles.css. */
+.card-root .card-assembly.promoting {
+  transition: width var(--expand-ms, 320ms)
+    var(--ease-notchtap-pop, cubic-bezier(0.3, 1.36, 0.44, 1));
 }
 
 /* plan 105 (Step C, fixing the plan-085 bug): bare notch mode
@@ -214,9 +252,12 @@
    so this always wins once hover lands. Paired with the `transition:
    background-color` on the base flank rule below so the paint fades in
    rather than snapping, coordinated with the same-trigger width growth
-   (`.bare:has(.idle-peek)` above, driven by `.card-assembly`'s own
-   `transition: width 320ms` — this rule intentionally doesn't redeclare
-   that duration, it only needs its OWN property to animate smoothly). */
+   (`.bare:has(.idle-peek)` above — 2026-08-02 comment-accuracy fix: that
+   rule has NOT been driven by the base `.card-assembly` rule's width
+   transition since plan 164; it declares its own `var(--reveal-ms,
+   260ms)` leg, deliberately matching this paint fade's own duration.
+   This rule still doesn't redeclare any width duration — it only needs
+   its OWN property to animate smoothly). */
 .card-root .card-assembly.bare.hovered .flank-left,
 .card-root .card-assembly.bare.hovered .flank-right {
   background: #000;
