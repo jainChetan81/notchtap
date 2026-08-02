@@ -184,11 +184,16 @@ mod tests {
         // Guard the CONSTANT itself, independent of the formula equality
         // above (review fix: a per-row check derived from that same
         // equality could never fail on its own): the budget must cover a
-        // real ExpandedAgentRow's ~90px name/summary/meta stack.
-        assert!(
-            EXPANDED_ROW_HEIGHT >= 90.0,
-            "EXPANDED_ROW_HEIGHT ({EXPANDED_ROW_HEIGHT}px) no longer covers a real expanded row"
-        );
+        // real ExpandedAgentRow's ~90px name/summary/meta stack. Const
+        // block so it fails at compile time, same pattern as lib.rs's
+        // BOARD_COLLAPSE_GRACE_MS floor (and what clippy's
+        // assertions_on_constants demands).
+        const {
+            assert!(
+                EXPANDED_ROW_HEIGHT >= 90.0,
+                "EXPANDED_ROW_HEIGHT no longer covers a real expanded row"
+            );
+        }
     }
 
     #[test]
