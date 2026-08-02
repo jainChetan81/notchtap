@@ -201,16 +201,17 @@
    but paints zero app-drawn pixels: transparent flanks, cutout-width-only
    shell so there's no wide invisible blocker sitting over the desktop.
    `.idle`'s wider rest-rail formula still applies underneath (source
-   order below it), so this narrows it back down; `:has(.idle-peek)`
-   (below) restores the normal idle width the instant the peek opens on
-   hover, since the below-block needs real room to render into. */
+   order below it), so this narrows it back down; `:has(.below-block)`
+   (below — `:has(.idle-peek)` until plan 176 widened it) restores the
+   normal idle width the instant a hover-mounted block opens, since the
+   below-block needs real room to render into. */
 /* review fix (/review-animations, fresh-agent pass): plain `.bare` (no
-   `:has(.idle-peek)`) previously had no own `transition`, so un-hovering
+   `:has(.below-block)`) previously had no own `transition`, so un-hovering
    out of the idle-peek-revealed rail (this rule becoming the sole match
    again) fell back to the base `.card-assembly` rule's bouncy
    `--ease-notchtap-pop` — reintroducing on the way OUT exactly the
    many-times-a-session bounce plan 164 scoped away on the way IN. Giving
-   `.bare` the SAME width transition as `.bare:has(.idle-peek)` below
+   `.bare` the SAME width transition as `.bare:has(.below-block)` below
    means whichever of the two matches, the curve is identical, so the
    direction stops mattering. (2026-08-02: the `transform` leg both rules
    used to carry — purely to keep the deleted hover breathe easing when
@@ -275,7 +276,21 @@
    revealed rail through this one, rail mode through `.idle` — and rust
    computes one flank width for both. The `transition` below is
    untouched; only the value it animates toward changed. */
-.card-root .card-assembly.bare:has(.idle-peek) {
+/* plan 176: keyed on `.below-block` rather than `.idle-peek`, so this
+   covers BOTH hover-mounted blocks — the ambient peek and plan 171's
+   pulled-tab card. A strict superset, not a behaviour change for the
+   peek: `IdleHoverPeek`'s own root carries `below-block idle-peek`, so
+   every DOM this used to match it still matches, at the same width. What
+   it adds is the case that was broken — selecting a tab closes the peek
+   (`peekOpen`'s `!tabBelowBlockHandles(...)` gate in StatusRailCard.tsx)
+   and mounts a `TabBelowBlock` instead, which under the old selector left
+   the bare shell at cutout width with the pulled card rendering into a
+   near-zero-width column. Widening is safe because `.bare` and a SHOWING
+   card never co-occur (`.bare` requires the idle branch), so the only
+   below-blocks this can newly see are hover-mounted ones that need the
+   room by definition. Kept in lockstep with `.idle` above regardless —
+   `stripGeometryParity.test.ts` pins both selectors and this value. */
+.card-root .card-assembly.bare:has(.below-block) {
   --cw: min(
     calc(
       var(--notchtap-cutout-width, 200px) + 2 *
@@ -295,7 +310,7 @@
    so this always wins once hover lands. Paired with the `transition:
    background-color` on the base flank rule below so the paint fades in
    rather than snapping, coordinated with the same-trigger width growth
-   (`.bare:has(.idle-peek)` above — 2026-08-02 comment-accuracy fix: that
+   (`.bare:has(.below-block)` above — 2026-08-02 comment-accuracy fix: that
    rule has NOT been driven by the base `.card-assembly` rule's width
    transition since plan 164; it declares its own `var(--reveal-ms,
    260ms)` leg, deliberately matching this paint fade's own duration.
@@ -759,10 +774,10 @@
    bottom, like the flank's own convex round elsewhere in this file).
    `:not(:has(.below-block))` matches the same law's own DOM-presence
    discipline: the instant a below-block mounts (a showing card, or the
-   hover peek — `.bare:has(.idle-peek)` above), this stops applying and
-   the cutout's base corners snap back to square, handing bottom-rounding
-   duty to that below-block instead, exactly as the law requires — no
-   double-curve gap. */
+   hover peek, or a pulled tab — `.bare:has(.below-block)` above), this
+   stops applying and the cutout's base corners snap back to square,
+   handing bottom-rounding duty to that below-block instead, exactly as
+   the law requires — no double-curve gap. */
 :root[data-notchtap-mode="hud"] .card-root .card-assembly.bare:not(:has(.below-block)) .synthetic-cutout {
   border-bottom-left-radius: var(--card-radius, 8px) min(calc(var(--card-radius, 8px) * 2), 20px);
   border-bottom-right-radius: var(--card-radius, 8px) min(calc(var(--card-radius, 8px) * 2), 20px);
@@ -841,6 +856,35 @@
      above) — only the two BOTTOM corners round; no top-radius here. */
   border-bottom-left-radius: var(--card-radius, 8px);
   border-bottom-right-radius: var(--card-radius, 8px);
+}
+
+/* plan 176: placement-only twin of the rule above, for the ONE mount path
+   whose `.below-block` is a grandchild of the grid rather than a child.
+   The pulled-tab surface (plan 171: click an icon / `prefix+N`) wraps
+   `TabBelowBlock` in an animating `motion.div`, and each tab branch
+   renders its own `.below-block` root INSIDE that wrapper. Grid placement
+   only reaches direct grid items, so without this the wrapper was
+   auto-placed into the next free cell — the left flank column, which in
+   bare notch mode can be effectively zero-width — and the pulled card
+   rendered squeezed into the flank instead of spanning the shell.
+   Why a class here and not the showing-card path's `display: contents`
+   trick (StatusRailCard.tsx's live-region wrapper): an element with
+   `display: contents` generates no box, so the wrapper's own opacity/
+   transform animation would do nothing. The element that ANIMATES has to
+   be the grid item, which means the grid item cannot be the one carrying
+   `.below-block` on this path.
+   Placement and box behaviour ONLY — no padding, background, radius or
+   any other chrome: the `.below-block` inside still owns every pixel of
+   the card's own look. `min-width: 0` is the same grid-blowout guard the
+   rule above (and the flank rule) carry; without it a spanning item's
+   `auto` minimum can push the tracks wider than `--cw`. */
+.card-root .tab-below-slot {
+  grid-column: 1 / -1;
+  grid-row: 2;
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
 }
 
 /* plan 096 (079 item 8, part (c)), renamed by plan 137 (spec §7/§12: the

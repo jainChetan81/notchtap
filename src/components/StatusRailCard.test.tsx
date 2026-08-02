@@ -3027,6 +3027,106 @@ describe("tab-notch integration (plan 171, slice K)", () => {
       expect(container.querySelector(".below-block")).toBeNull();
     });
 
+    // ---- plan 176: where the pulled card actually LANDS in the shell.
+    //
+    // `.card-assembly` is a `1fr auto 1fr` grid (flank / cutout / flank)
+    // and the rule that puts a card under the notch spans it across row 2.
+    // Grid placement only reaches DIRECT items, and every `TabBelowBlock`
+    // branch renders its own `.below-block` root inside this path's
+    // animating wrapper — i.e. a grandchild. Before this plan that wrapper
+    // carried no placement at all, so it was auto-placed into the next
+    // free cell (the left flank column, effectively zero-width in bare
+    // notch mode) and the pulled card rendered squeezed into the flank.
+    //
+    // jsdom applies no stylesheet, so these pin the machine-checkable
+    // half: the DOM shape the CSS requires (a placement class, on a direct
+    // child) and the rule that class resolves to. Whether the painted
+    // pixels really span the shell stays a hardware check
+    // (`docs/TESTING_STRATEGY.md` §5).
+    it("mounts the pulled card in a placed wrapper that is a DIRECT child of the shell", () => {
+      const { container } = hoveredIdle("agent", { ...QUIET, agent: { activeSessions: 1 } }, [
+        agentSession(),
+      ]);
+      const assembly = container.querySelector(".card-assembly");
+      const slot = container.querySelector(".tab-below-slot");
+      expect(assembly).not.toBeNull();
+      expect(slot).not.toBeNull();
+      // the whole point: one level deeper and the shell's grid cannot
+      // place it at all.
+      expect(slot?.parentElement).toBe(assembly);
+      // and the reason the class must live on the WRAPPER rather than be
+      // dropped in favour of the `.below-block` rule — that block sits one
+      // level further down, out of the grid's reach.
+      const block = container.querySelector('[data-testid="agent-below-block"]');
+      expect(block).not.toBeNull();
+      expect(block?.parentElement).toBe(slot);
+      expect(block?.className).toContain("below-block");
+    });
+
+    it("places the media tab's card through that same wrapper, not a second mechanism", () => {
+      const { container } = hoveredIdle("music", {
+        ...QUIET,
+        media: { enabled: true, current: TRACK },
+      });
+      const slot = container.querySelector(".tab-below-slot");
+      expect(slot?.parentElement).toBe(container.querySelector(".card-assembly"));
+      expect(slot?.querySelector('[data-testid="media-below-block"]')).not.toBeNull();
+    });
+
+    it("leaves the ambient peek's own already-direct mount alone — it needs no wrapper", () => {
+      const { container } = hoveredIdle(null, {
+        ...QUIET,
+        weather: { enabled: true, current: WEATHER },
+      });
+      const peek = container.querySelector(".below-block.idle-peek");
+      expect(peek?.parentElement).toBe(container.querySelector(".card-assembly"));
+      expect(container.querySelector(".tab-below-slot")).toBeNull();
+    });
+
+    it("the wrapper's class resolves to the same grid cell every other below-block occupies", () => {
+      const css = readSourceCss("../overlay-card.css");
+      const slotRule = ruleBody(css, ".card-root .tab-below-slot");
+      const blockRule = ruleBody(css, ".card-root .below-block");
+      // read off each rule rather than hardcoded twice, so a future move of
+      // the content row moves both or fails here.
+      expect(propValue(slotRule, "grid-column")).toBe(propValue(blockRule, "grid-column"));
+      expect(propValue(slotRule, "grid-row")).toBe(propValue(blockRule, "grid-row"));
+      // placement and box behaviour ONLY — the `.below-block` inside still
+      // owns every painted pixel, so any chrome declaration here would
+      // double-paint it. Asserted as the exact property list rather than a
+      // blocklist of the chrome we happened to think of.
+      const declaredProps = slotRule
+        .split(";")
+        .map((declaration) => declaration.split(":")[0].trim())
+        .filter((prop) => prop.length > 0);
+      expect(declaredProps).toEqual([
+        "grid-column",
+        "grid-row",
+        "position",
+        "box-sizing",
+        "width",
+        // the same grid-blowout guard `.below-block` and the flanks carry:
+        // a spanning item's `auto` minimum can otherwise push the tracks
+        // wider than `--cw`.
+        "min-width",
+      ]);
+    });
+
+    it("the bare shell re-widens for ANY hover-mounted block, not just the ambient peek", () => {
+      const css = readSourceCss("../overlay-card.css");
+      // plan 176 widened this selector from `:has(.idle-peek)`, which left
+      // a pulled card rendering into a cutout-width shell. `ruleBody`
+      // throws on a miss, so a revert to the peek-only form fails here
+      // instead of silently passing.
+      const bareRevealed = ruleBody(css, ".card-root .card-assembly.bare:has(.below-block)");
+      // plan 175's icon-count growth formula, still the value this rule
+      // animates toward (`stripGeometryParity.test.ts` pins its numbers).
+      expect(propValue(bareRevealed, "--cw")).toContain("--present-icons");
+      expect(() => ruleBody(css, ".card-root .card-assembly.bare:has(.idle-peek)")).toThrow(
+        /selector not found/,
+      );
+    });
+
     // the push path's regression pin: a Showing card must render exactly
     // as it did before this plan regardless of what is selected (spec
     // §7's closing rule).

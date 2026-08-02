@@ -1122,6 +1122,23 @@ export function StatusRailCard({
       <AnimatePresence mode="wait" initial={false}>
         {pulledTab !== null && (
           <motion.div
+            // plan 176: the placement class below (card-chrome.css owns
+            // the rule) is what spans this wrapper across the shell's row
+            // 2, the same cell every other below-block occupies — it
+            // carries placement and box behaviour only, never chrome. It
+            // has to live HERE, on the animating element, rather than on
+            // the `.below-block` each `TabBelowBlock` branch renders:
+            // that block is a GRANDCHILD
+            // of the `.card-assembly` grid, and grid placement only
+            // reaches direct items — so without a class on this wrapper
+            // the whole pulled card was auto-placed into the left flank
+            // column and rendered squeezed (zero-width, in bare notch
+            // mode). The live-region wrapper below solves the same problem
+            // the opposite way (`display: contents`, keeping ITS animating
+            // child the grid item); that inversion is unavailable here,
+            // because a `display: contents` box would erase this element's
+            // own opacity/y animation.
+            className="tab-below-slot"
             key={pulledTab}
             initial={{ opacity: 0, y: -4 }}
             animate={{
