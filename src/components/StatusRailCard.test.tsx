@@ -10,6 +10,7 @@ import {
   NOTCHTAP_EASE,
   ROTATION_EXIT_MS,
 } from "../animationTiming";
+import type { AgentSessionView } from "../useAgentState";
 import type { EspnMeta, SlotState, SourceKind } from "../useSlotState";
 import type { StatusState } from "../useStatusState";
 import { contentExitVariants, StatusRailCard } from "./StatusRailCard";
@@ -411,11 +412,18 @@ describe("StatusRailCard", () => {
     expect(container.querySelector(".cele-ripple")).toBeNull();
   });
 
+  // plan 171 (slice K): the right flank's idle furniture is the icon
+  // strip now, not the status dots — spec §2 decision 1 moves the dots
+  // off this surface entirely (the component itself lives on, mounted by
+  // AgentBoard). Every `.status-dots` assertion in this file became an
+  // `.icon-strip` one for the same reason; the CONTRACT under test
+  // ("idle paints its right-flank furniture") is unchanged.
   it("renders the idle clock, not a card, when the slot is empty", () => {
     const { container } = render(<StatusRailCard slot={{ state: "empty" }} />);
     expect(container.querySelector(".card-assembly.idle")).not.toBeNull();
     expect(container.querySelector(".time-only")).not.toBeNull();
-    expect(container.querySelector(".status-dots")).not.toBeNull();
+    expect(container.querySelector(".icon-strip")).not.toBeNull();
+    expect(container.querySelector(".status-dots")).toBeNull();
     expect(screen.queryByText("GOAL")).toBeNull();
   });
 
@@ -515,7 +523,12 @@ describe("StatusRailCard", () => {
     // the below-block (they live in `.flank-left`/`.flank-right`) — the
     // wrapper the region now lives on (K2) is a sibling of those too, so
     // this still holds under the new placement.
-    it("is exactly one live region while showing (non-live-match), and the clock/dots sit outside it", () => {
+    // plan 171 (slice K): the dots half of that pair is gone from this
+    // surface, and its replacement (the icon strip) doesn't mount while
+    // showing at all — so the assertion becomes "the strip isn't in the
+    // tree", which is a strictly stronger version of "it sits outside
+    // the region". The clock half is unchanged.
+    it("is exactly one live region while showing (non-live-match), and the clock sits outside it", () => {
       const { container } = render(<StatusRailCard slot={GOAL} />);
       // content mounts ~175ms after a fresh-mount promotion too (the
       // exit-choreography settle applies from the initial idle->showing
@@ -531,9 +544,8 @@ describe("StatusRailCard", () => {
       expect(clockEl).not.toBeNull();
       expect(clockEl?.closest('[role="status"]')).toBeNull();
 
-      const dotsEl = container.querySelector(".status-dots");
-      expect(dotsEl).not.toBeNull();
-      expect(dotsEl?.closest('[role="status"]')).toBeNull();
+      expect(container.querySelector(".icon-strip")).toBeNull();
+      expect(container.querySelector(".status-dots")).toBeNull();
     });
 
     // plan 127 (Step 5): a live-match card's own chrome (clock/score,
@@ -1130,18 +1142,25 @@ describe("StatusRailCard", () => {
     // pins that ordering directly: the chrome must already be gone while
     // the shell is still `.exiting.exit-to-bare` (not yet `.bare`), not
     // only after. Rail mode is the untouched control: it never sets
-    // `exitToBare`, so the same exit must leave the clock/dots mounted
+    // `exitToBare`, so the same exit must leave the clock mounted
     // throughout.
-    it("an unhovered showing->idle exit unmounts the clock and dots before `.bare` lands (not just once it does); rail mode keeps them mounted throughout the same exit", async () => {
+    // plan 171 (slice K): the "dots" half of this pin is now the icon
+    // strip, which additionally never mounts while SHOWING at all (spec
+    // §7 — a pushed card is unaffected by tab selection), so it can only
+    // be asserted on at the idle end of each leg, not at the start.
+    it("an unhovered showing->idle exit unmounts the clock before `.bare` lands (not just once it does); rail mode keeps it mounted, and brings the icon strip back, across the same exit", async () => {
       const notch = render(<StatusRailCard slot={GOAL} restingState="notch" />);
       expect(notch.container.querySelector(".time-only")).not.toBeNull();
-      expect(notch.container.querySelector(".status-dots")).not.toBeNull();
+      // never mounted while showing, in either resting mode
+      expect(notch.container.querySelector(".icon-strip")).toBeNull();
 
       notch.rerender(<StatusRailCard slot={{ state: "empty" }} restingState="notch" />);
       await vi.waitFor(() => {
         expect(notch.container.querySelector(".time-only")).toBeNull();
-        expect(notch.container.querySelector(".status-dots")).toBeNull();
       });
+      // the strip is gated off for the exit-to-bare window too — the
+      // same `!exitToBare` narrowing the clock above carries.
+      expect(notch.container.querySelector(".icon-strip")).toBeNull();
       // the chrome left BEFORE the shell settled bare — proves the gate is
       // `exitToBare` (window start), not `bare` (window end).
       expect(notch.container.querySelector(".card-assembly.bare")).toBeNull();
@@ -1153,7 +1172,8 @@ describe("StatusRailCard", () => {
         expect(rail.container.querySelector(".card-assembly.idle")).not.toBeNull();
       });
       expect(rail.container.querySelector(".time-only")).not.toBeNull();
-      expect(rail.container.querySelector(".status-dots")).not.toBeNull();
+      // back at idle, the right flank's furniture is present again
+      expect(rail.container.querySelector(".icon-strip")).not.toBeNull();
     });
   });
 
@@ -1166,14 +1186,14 @@ describe("StatusRailCard", () => {
       );
       expect(container.querySelector(".card-assembly.idle")).not.toBeNull();
       expect(container.querySelector(".time-only")).not.toBeNull();
-      expect(container.querySelector(".status-dots")).not.toBeNull();
+      expect(container.querySelector(".icon-strip")).not.toBeNull();
     });
 
     it("renders today's idle clock/status rail when restingState is omitted", () => {
       const { container } = render(<StatusRailCard slot={{ state: "empty" }} />);
       expect(container.querySelector(".card-assembly.idle")).not.toBeNull();
       expect(container.querySelector(".time-only")).not.toBeNull();
-      expect(container.querySelector(".status-dots")).not.toBeNull();
+      expect(container.querySelector(".icon-strip")).not.toBeNull();
     });
   });
 
@@ -2676,5 +2696,279 @@ describe("exit-to-bare CSS convergence invariant (plan 124 F4)", () => {
     expect(() => propValue(bareShellBody, "--this-property-does-not-exist")).toThrow(
       /property not found/,
     );
+  });
+});
+
+// ---- plan 171 (tab-notch redesign, slice K): the icon strip's mount
+// gate, the eq bars, and the selection-driven below-block swap, all
+// exercised through the whole StatusRailCard tree. Each mounted
+// component's OWN behavior is already covered in depth by its own file
+// (IconStrip/EqBars/AgentBelowBlock/MediaBelowBlock/NewsBelowBlock/
+// IdleHoverPeek) — these pin only what THIS component actually decides:
+// when each one mounts, and which props it drives them with.
+describe("tab-notch integration (plan 171, slice K)", () => {
+  afterEach(cleanup);
+
+  const QUIET: StatusState = {
+    paused: false,
+    waiting: 0,
+    agent: { activeSessions: 0 },
+    football: { enabled: false, live: null },
+    news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
+    weather: { enabled: false, current: null },
+    media: { enabled: false, current: null },
+  };
+
+  const TRACK: NonNullable<StatusState["media"]["current"]> = {
+    title: "Midnight City",
+    artist: "M83",
+    album: "Hurry Up, We're Dreaming",
+    playing: true,
+    elapsedMs: 1500,
+    durationMs: 243_000,
+    capturedAtMs: 1_753_000_000_000,
+    appBundleId: "app.zen-browser.zen",
+  };
+
+  const WEATHER: NonNullable<StatusState["weather"]["current"]> = {
+    tempDisplay: "27°",
+    condition: "Cloudy",
+    isDay: true,
+    rainPct: null,
+    todayHighDisplay: null,
+    todayLowDisplay: null,
+    outlook: [],
+  };
+
+  const LIVE_MATCH_STATUS: StatusState = {
+    ...QUIET,
+    football: { enabled: true, live: { label: "Arsenal 2–0 Chelsea", minute: "45'" } },
+    weather: { enabled: true, current: WEATHER },
+  };
+
+  function agentSession(overrides: Partial<AgentSessionView> = {}): AgentSessionView {
+    return {
+      id: "hash-1",
+      runtime: "codex",
+      state: "working",
+      capabilities: ["session_lifecycle"],
+      summary: null,
+      details: [],
+      project: null,
+      host: null,
+      subagent: null,
+      elapsedMs: 5_000,
+      retentionRemainingMs: null,
+      history: [],
+      ...overrides,
+    };
+  }
+
+  describe("the icon strip's mount gate (spec §5/§6)", () => {
+    it("mounts inside the right flank while idle, so the flank's own hover paint is what reveals it", () => {
+      const { container } = render(<StatusRailCard slot={{ state: "empty" }} status={QUIET} />);
+      expect(container.querySelector(".flank-right .icon-strip")).not.toBeNull();
+    });
+
+    it("never mounts while a card is showing, hovered or not (a pushed card is unaffected by tab selection)", () => {
+      const { container } = render(<StatusRailCard slot={GOAL} status={QUIET} hovered={true} />);
+      expect(container.querySelector(".icon-strip")).toBeNull();
+    });
+
+    it("drives each icon's tier from the status wire, not from a local guess", () => {
+      const { container } = render(
+        <StatusRailCard
+          slot={{ state: "empty" }}
+          status={{
+            ...QUIET,
+            agent: { activeSessions: 2 },
+            media: { enabled: true, current: { ...TRACK, playing: false } },
+          }}
+        />,
+      );
+      // agent: a registered session means present AND live
+      expect(container.querySelector(".icon.agent")?.className).toContain("is-live");
+      // music: loaded but paused — present, deliberately not live
+      const music = container.querySelector(".icon.music")?.className ?? "";
+      expect(music).toContain("is-present");
+      expect(music).not.toContain("is-live");
+      // football: nothing in play, so not present at all
+      expect(container.querySelector(".icon.football")?.className).not.toContain("is-present");
+      // weather/news: always present whenever the strip is up
+      expect(container.querySelector(".icon.weather")?.className).toContain("is-present");
+      expect(container.querySelector(".icon.news")?.className).toContain("is-present");
+    });
+
+    it("omits the news count badge when nothing is waiting, rather than rendering a literal 0", () => {
+      const { container } = render(
+        <StatusRailCard
+          slot={{ state: "empty" }}
+          status={{
+            ...QUIET,
+            news: { enabled: true, chargeFraction: 0.5, chargeCount: 0, isCharged: false },
+          }}
+        />,
+      );
+      expect(container.querySelector(".charge-count")).toBeNull();
+      expect(container.querySelector(".icon.news")?.className).not.toContain("is-charged");
+    });
+
+    it("renders the news count badge and charged styling once the charge has fired", () => {
+      const { container } = render(
+        <StatusRailCard
+          slot={{ state: "empty" }}
+          status={{
+            ...QUIET,
+            news: { enabled: true, chargeFraction: 1, chargeCount: 4, isCharged: true },
+          }}
+        />,
+      );
+      expect(container.querySelector(".charge-count")?.textContent).toBe("4");
+      expect(container.querySelector(".icon.news")?.className).toContain("is-charged");
+    });
+
+    it("marks the selected tab, and only that one", () => {
+      const { container } = render(
+        <StatusRailCard slot={{ state: "empty" }} status={QUIET} selectedTab="weather" />,
+      );
+      expect(container.querySelector(".icon.weather")?.className).toContain("is-selected");
+      expect(container.querySelector(".icon.news")?.className).not.toContain("is-selected");
+    });
+  });
+
+  describe("the rest-state eq bars (spec §4)", () => {
+    // the face's own delayed reveal (IdleFace.tsx's REVEAL_DELAY_MS
+    // timer) is covered by the "idle face" describe block above — this
+    // only pins that the bars share the face's cutout cluster and start
+    // silent, so nothing here waits on that timer.
+    it("renders the bars inside the idle face's own rest cluster, silent by default", () => {
+      const { container } = render(<StatusRailCard slot={{ state: "empty" }} status={QUIET} />);
+      const eq = container.querySelector(".rest-cluster .eq");
+      expect(eq).not.toBeNull();
+      expect(eq?.className).not.toContain("playing");
+    });
+
+    it("stays silent for a loaded-but-paused track", () => {
+      const { container } = render(
+        <StatusRailCard
+          slot={{ state: "empty" }}
+          status={{ ...QUIET, media: { enabled: true, current: { ...TRACK, playing: false } } }}
+        />,
+      );
+      expect(container.querySelector(".eq")?.className).not.toContain("playing");
+    });
+
+    it("plays only while audio is genuinely playing", () => {
+      const { container } = render(
+        <StatusRailCard
+          slot={{ state: "empty" }}
+          status={{ ...QUIET, media: { enabled: true, current: TRACK } }}
+        />,
+      );
+      expect(container.querySelector(".eq")?.className).toContain("playing");
+    });
+  });
+
+  describe("the selection-driven below-block swap (spec §7)", () => {
+    function hoveredIdle(
+      selectedTab: "agent" | "football" | "music" | "weather" | "news" | null,
+      status: StatusState,
+      sessions: AgentSessionView[] = [],
+    ) {
+      return render(
+        <StatusRailCard
+          slot={{ state: "empty" }}
+          status={status}
+          hovered={true}
+          selectedTab={selectedTab}
+          agentSessions={sessions}
+          agentCapturedAtMs={1_000_000}
+        />,
+      );
+    }
+
+    it("with nothing selected, keeps the shipped ambient peek — spec §11's untouched mechanism", () => {
+      const { container } = hoveredIdle(null, {
+        ...QUIET,
+        weather: { enabled: true, current: WEATHER },
+      });
+      expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
+      expect(container.querySelector('[data-testid="media-below-block"]')).toBeNull();
+    });
+
+    it("selecting music swaps the ambient peek out for the media below-block", () => {
+      const { container } = hoveredIdle("music", {
+        ...QUIET,
+        weather: { enabled: true, current: WEATHER },
+        media: { enabled: true, current: TRACK },
+      });
+      expect(container.querySelector('[data-testid="media-below-block"]')).not.toBeNull();
+      expect(container.querySelector(".below-block.idle-peek")).toBeNull();
+      expect(screen.getByText("Midnight City")).toBeTruthy();
+    });
+
+    it("selecting agent mounts the viewed session's hero", () => {
+      const { container } = hoveredIdle("agent", { ...QUIET, agent: { activeSessions: 1 } }, [
+        agentSession(),
+      ]);
+      expect(container.querySelector('[data-testid="agent-below-block"]')).not.toBeNull();
+      expect(container.querySelector(".below-block.idle-peek")).toBeNull();
+    });
+
+    it("selecting agent with no sessions falls back to no below-block at all, rather than an empty card", () => {
+      const { container } = hoveredIdle("agent", QUIET, []);
+      expect(container.querySelector('[data-testid="agent-below-block"]')).toBeNull();
+      expect(container.querySelector(".below-block")).toBeNull();
+    });
+
+    it("selecting weather shows the shipped weather card, even while a match is live", () => {
+      const { container } = hoveredIdle("weather", LIVE_MATCH_STATUS);
+      expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
+      expect(container.querySelector(".wx-peek-readout")).not.toBeNull();
+      expect(container.querySelector(".idle-reveal-scorecard")).toBeNull();
+    });
+
+    it("selecting football shows the shipped scorecard reveal, even with weather available", () => {
+      const { container } = hoveredIdle("football", LIVE_MATCH_STATUS);
+      expect(container.querySelector(".idle-reveal-scorecard")).not.toBeNull();
+      expect(container.querySelector(".wx-peek-readout")).toBeNull();
+    });
+
+    it("never mounts more than one below-block at a time (the rounding law depends on it)", () => {
+      const { container } = hoveredIdle("music", {
+        ...QUIET,
+        weather: { enabled: true, current: WEATHER },
+        media: { enabled: true, current: TRACK },
+      });
+      expect(container.querySelectorAll(".below-block").length).toBe(1);
+    });
+
+    it("mounts no tab below-block while un-hovered, however the selection stands", () => {
+      const { container } = render(
+        <StatusRailCard
+          slot={{ state: "empty" }}
+          status={{ ...QUIET, media: { enabled: true, current: TRACK } }}
+          hovered={false}
+          selectedTab="music"
+        />,
+      );
+      expect(container.querySelector(".below-block")).toBeNull();
+    });
+
+    // the push path's regression pin: a Showing card must render exactly
+    // as it did before this plan regardless of what is selected (spec
+    // §7's closing rule).
+    it("a showing card renders its own content, untouched, whatever is selected", () => {
+      const { container } = render(
+        <StatusRailCard
+          slot={GOAL}
+          status={{ ...QUIET, media: { enabled: true, current: TRACK } }}
+          hovered={true}
+          selectedTab="music"
+        />,
+      );
+      expect(container.querySelector('[data-testid="media-below-block"]')).toBeNull();
+      expect(screen.getByText("GOAL")).toBeTruthy();
+    });
   });
 });

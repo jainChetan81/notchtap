@@ -11,6 +11,7 @@ import {
   ROTATION_EXIT_MS,
   SWAP_EXIT_MS,
 } from "../animationTiming";
+import { iconPresenceFor } from "../lib/iconPresence";
 import { renderInlineMarkdown } from "../lib/markdown";
 import {
   ageLabel,
@@ -23,14 +24,18 @@ import {
   sourceClass,
 } from "../lib/presentation";
 import { weatherArtFor } from "../lib/weatherArt";
+import type { AgentSessionView } from "../useAgentState";
 import { useExitChoreography } from "../useExitChoreography";
 import type { EspnMeta, Priority, SlotState } from "../useSlotState";
 import type { StatusState } from "../useStatusState";
+import { EqBars } from "./EqBars";
 import { FlankClock } from "./FlankClock";
+import type { Tab } from "./IconStrip";
+import { IconStrip } from "./IconStrip";
 import { IdleFace } from "./IdleFace";
-import { IdleHoverPeek } from "./IdleHoverPeek";
+import { IdleHoverPeek, type PeekPreference } from "./IdleHoverPeek";
 import { FootballHeroCard, NotificationBody } from "./NotificationBody";
-import { StatusDots } from "./StatusDots";
+import { TabBelowBlock, tabBelowBlockHandles } from "./TabBelowBlock";
 
 // plan 084: the live scorecard's celebration classes — echoes the shipped
 // pulse-goal/pulse-red discipline (keyed on [currentId, currentSignal],
@@ -200,11 +205,42 @@ const PRIORITY_RANK: Record<"low" | "medium" | "high", number> = {
 // the very same instant as the interrupting enqueue to be recognized.
 const INTERRUPT_MIN_REMAINING_MS = 400;
 
+// Plan 171 (tab-notch redesign, slice K): which selections are served by
+// `IdleHoverPeek`'s own shipped rendering rather than by a dedicated
+// below-block component. Spec section 7's weather bullet ("the shipped
+// card, unchanged") and section 11 ("`IdleHoverPeek.tsx` is untouched")
+// together mean these two must reach that component, not a copy of it —
+// see `TabBelowBlock.tsx`'s header for the full split.
+function peekPreferenceFor(selected: Tab | null): PeekPreference {
+  return selected === "football" || selected === "weather" ? selected : null;
+}
+
+// The empty session list every caller that doesn't participate in the
+// tab feature (tests, the settings preview) gets by omission. A
+// module-level constant rather than a `[]` default in the destructuring
+// so it keeps a stable identity across renders — a fresh array literal
+// per render would defeat any future memoization downstream.
+const NO_AGENT_SESSIONS: AgentSessionView[] = [];
+
+// Spec section 10: the overlay stays receive-only, so the DOM click on an
+// icon decides nothing — rust's own native click monitor sees the same
+// physical click and emits `tab-selection-changed`. The strip still wants
+// a real `<button>` (for `icon-strip.css`'s `:active { scale(0.9) }`
+// press feedback and for the accessible name), so it gets a handler that
+// deliberately does nothing. Module-level so its identity is stable
+// across renders. See `IconStrip`'s own `onSelect` doc: that component
+// was written to be correct under either eventual answer to the
+// click-detection question, and this is the rust-owned answer.
+const noopSelect = (_tab: Tab): void => {};
+
 export function StatusRailCard({
   slot,
   status,
   restingState = "rail",
   hovered = false,
+  selectedTab = null,
+  agentSessions = NO_AGENT_SESSIONS,
+  agentCapturedAtMs = 0,
 }: {
   slot: SlotState;
   status?: StatusState;
@@ -219,6 +255,19 @@ export function StatusRailCard({
   // (081/082/084/idle expanded-on-hover) are each their own follow-on
   // work — this prop only proves the signal arrives.
   hovered?: boolean;
+  // Plan 171 (tab-notch redesign, slice K): the currently selected tab,
+  // sourced from the `tab-selection-changed` channel in App.tsx
+  // (`useTabSelection`) and threaded down exactly like `status` already
+  // is — this component never listens for itself, so the settings
+  // preview and every test render it with no tauri channel at all. RUST
+  // owns the selection (spec section 10); this is display state only.
+  selectedTab?: Tab | null;
+  // The Agent Session snapshot backing the agent tab's below-block —
+  // `useAgentState`'s own `sessions`/`capturedAtMs` pair, threaded from
+  // App.tsx for the same reason `status` is. Empty by default, so every
+  // existing caller renders byte-identically.
+  agentSessions?: AgentSessionView[];
+  agentCapturedAtMs?: number;
 }) {
   const showing = slot.state === "showing";
   const currentId = showing ? slot.id : null;
@@ -557,6 +606,37 @@ export function StatusRailCard({
   // "why". Read explicitly here instead and threaded through by hand.
   const reduceMotion = useReducedMotion() ?? false;
 
+  // ---- plan 171 (tab-notch redesign, slice K) ----------------------
+  // The icon strip's five tiers, derived from the ambient status wire by
+  // one pure table (`lib/iconPresence.ts`, spec section 6). Memoized on
+  // `status` alone because it depends on nothing else and `status`
+  // changes only on a genuine wire emission, unlike this component's own
+  // per-tick re-renders.
+  const iconPresence = useMemo(() => iconPresenceFor(status), [status]);
+  const newsWaitingCount = status?.news.chargeCount ?? 0;
+
+  // The IDLE-and-hovered branch. Everything tab-related below hangs off
+  // this one boolean, which is what keeps the push path untouched: a
+  // Showing card renders exactly as it did before this plan regardless
+  // of what is selected (spec section 7's closing rule — "tab selection
+  // decides what the notch shows when the operator goes looking; it
+  // never decides what the notch is allowed to tell them").
+  // `renderedShowing`, not the live `showing`, for the same
+  // delayed-swap-settle reason every other idle-flavored mount gate in
+  // this file uses.
+  const tabPullOpen = !renderedShowing && hovered;
+  // Spec section 7's "none" page falls out of this, rather than being
+  // built as its own case: with nothing selected, `TabBelowBlock`
+  // returns null and `IdleHoverPeek` keeps its shipped ambient chain.
+  const pulledTab = tabPullOpen ? selectedTab : null;
+  const peekPreference = peekPreferenceFor(pulledTab);
+  // The peek stays open for no-selection (its shipped ambient behavior,
+  // spec section 11's explicit non-goal) and for the two selections it
+  // itself serves; the three with their own below-block close it, so
+  // there is never more than one `.below-block` under the shell (the
+  // rounding law in card-chrome.css depends on that).
+  const peekOpen = tabPullOpen && !tabBelowBlockHandles(pulledTab);
+
   // plan 091: the outer shell (`.card-assembly`) now owns ONLY geometry-
   // and-effects classes — priority accent, hover diagnostic, the goal/
   // red-card pulse and the live-match celebrations. `news-shade`/`wx-card`
@@ -876,66 +956,86 @@ export function StatusRailCard({
           (2026-07-23 review fix): CSS never paints it on real notch
           hardware, so it's not rendered at all there — otherwise its
           internal reveal/gaze/blink timers would run forever for a node
-          that can never be seen. */}
-      {idleFaceEligible && <IdleFace idle={trueIdle} />}
+          that can never be seen.
+          Plan 171 (slice K, spec section 4 — "rest is exactly the shell,
+          the UNMODIFIED <IdleFace />, and the eq bars whenever audio is
+          genuinely playing"): the face is now wrapped with `<EqBars>` in
+          a `.rest-cluster` row, which takes over the face's own
+          `grid-column: 2 / grid-row: 1` placement so the two sit side by
+          side in the cutout instead of stacking in one cell — exactly
+          the design source's own `.rest-cluster` (prototypes/tab-notch-
+          rest-and-morph.html section 1c). `<IdleFace>` ITSELF is
+          untouched, as spec section 4's correction requires: its grid
+          declarations simply go inert as a flex child, and its
+          `display: none` -> HUD `display: flex` gate still governs
+          whether it paints at all. The cluster carries the same
+          HUD-only gate for the same reason, so the eq bars can never
+          paint over real notch hardware either. */}
+      {idleFaceEligible && (
+        <div className="rest-cluster" aria-hidden="true">
+          <IdleFace idle={trueIdle} />
+          {/* deliberately NARROWER than the music icon's own presence
+              gate (`iconPresenceFor`, which keeps a paused track present
+              but dim): the eq bars are a "sound is happening right now"
+              indicator, so a paused transport collapses them to zero
+              width. EqBars.tsx's own header comment reserves exactly
+              this call. */}
+          <EqBars playing={status?.media.current?.playing === true} />
+        </div>
+      )}
       <div className="flank-right">
-        {/* plan 091: StatusDots was idle-only furniture — mounted whenever
-            idle-flavored content should be visible, fading out over the
-            SWAP_EXIT_MS delayed-swap window on the idle->showing leg (plan
-            105 Step C added the `!bare` half: rail furniture, not part of
-            the "looks like a native notch" bare state).
-            2026-07-23 (operator minimal-notch spec, Task 1.2 + 1.3,
-            operator-requested behavior change): gate is now `railRevealed`
-            alone — the `!renderedShowing` half is REMOVED. The operator's
-            spec (`⟨time⟩⟨minimal⟩⟨dots⟩` above `⟨compact⟩` above
-            `⟨expanded⟩`) wants the dots to stay visible as constant rail
-            furniture THROUGH a showing notification, not hide the instant
-            one is promoted — "the top row stays the full rail" for both
-            configs. `railRevealed` already covers the bare-hover reveal
-            (Task 1.2) for free, since it's `!bare || hovered` and `bare`
-            is always false while genuinely showing/exiting. Now wrapped in
-            `AnimatePresence` (previously unnecessary — the old `!bare`-
-            gated mount only ever toggled off `bare`, which never combined
-            with `exiting`'s manual opacity dance below) so mount/unmount
-            still animates smoothly on the one remaining toggle: bare
-            <-> bare-hovered. Steady rail mode (`bare` always false) never
-            triggers this AnimatePresence exit/enter at all — the node
-            just stays mounted across idle<->showing, so the dots read as
-            one continuous shape, not a fade replay on every promotion.
-            plan 124 (F3, review fix): `&& !exitToBare` added — same
-            mismatch and same fix as FlankClock's own doc just above:
-            `railRevealed` alone stayed true through the whole exit-to-bare
-            window (bare is false throughout showing/exiting), so the dots
-            sat fully opaque while the flank painted underneath them faded
-            to transparent. Unmounting on `exitToBare` lets this node's own
-            260ms exit fade overlap the flank's fade instead of trailing
-            it. Rail mode is unaffected (`exitToBare` always false there —
-            "steady rail mode" above still never triggers this
-            AnimatePresence exit/enter). */}
-        <AnimatePresence>
-          {railRevealed && !exitToBare && (
-            <motion.div
-              key="status-dots"
-              className="card-content idle"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              // plan 127 (Step 1, /improve-animations audit findings #4/
-              // #9): was a hand-typed `{ duration: 0.26, ease: "easeOut" }`
-              // — now single-sourced off REVEAL_MS (the same reveal/paint
-              // coordination duration the flank background/padding fade
-              // and `.track span` background fade use, overlay-card.css)
-              // and NOTCHTAP_EASE (matching the flank paint's own
-              // `--ease-notchtap`, which this fade is coupled to — both
-              // read the exact same bare<->hovered/reveal trigger, so
-              // they should ease identically, not one bezier and one
-              // built-in "easeOut").
-              transition={{ duration: REVEAL_MS / 1000, ease: NOTCHTAP_EASE }}
-            >
-              <StatusDots status={status} />
-            </motion.div>
-          )}
-        </AnimatePresence>
+        {/* Plan 171 (tab-notch redesign, slice K — spec section 2
+            decision 1 and section 6): the status dots LEAVE this surface.
+            Rest is bare (shell + face + eq bars, nothing else), and the
+            right flank's one job on hover is now the icon strip. The
+            `<StatusDots>` COMPONENT and its own tests are deliberately
+            untouched and NOT deleted — `AgentBoard.tsx` still mounts it
+            (its own rail is a different surface this spec doesn't
+            reach), so removing it here orphans nothing.
+
+            Mount gate, per spec section 5 ("the icon strip arrives
+            INSIDE the right flank") and section 2 decision 2: the strip
+            is in the DOM whenever this surface is idle, and
+            `icon-strip.css` alone decides when it becomes VISIBLE — a
+            `visibility: hidden` + `opacity: 0` + `pointer-events: none`
+            baseline that only lifts under `.card-assembly.hovered`, with
+            the strip's own opacity leg staggered ICON_STRIP_STAGGER_MS
+            behind the flank's black paint so no glyph is ever visible
+            against the desktop. That discipline is entirely CSS-owned,
+            so there is no `AnimatePresence` here (the dots' old one is
+            gone with them): adding a JS opacity tween on top would fight
+            the stylesheet's own staggered fade rather than complement
+            it. `!renderedShowing` is the one thing CSS can't express —
+            a hovered SHOWING card also carries `.hovered`, and the strip
+            must not appear over a real notification (spec section 7:
+            "hover always shows the selected tab's card" is an IDLE
+            gesture; a pushed card is unaffected by selection). Same
+            `!exitToBare` narrowing FlankClock above documents. */}
+        {railRevealed && !exitToBare && !renderedShowing && (
+          <IconStrip
+            {...iconPresence}
+            newsCharge={status?.news.chargeFraction ?? 0}
+            newsCharged={status?.news.isCharged ?? false}
+            // spec section 12 open question 5's shipped default is "ship
+            // both" the fill and the badge — but a zero count is nothing
+            // to announce, so `null` (which omits the badge entirely,
+            // per IconStrip's own prop doc) is the right rendering of
+            // "no items waiting", not a literal `0`.
+            newsCount={newsWaitingCount > 0 ? newsWaitingCount : null}
+            selected={selectedTab}
+            // RUST owns selection (spec section 10): the same physical
+            // click that lands on this button is also seen by rust's own
+            // native click monitor, which decides what it selected and
+            // emits `tab-selection-changed` back. So the DOM side is
+            // purely presentational — it exists for the `:active`
+            // press-scale feedback and the accessible name, not to
+            // decide anything. Passing a real handler here would create
+            // a second, divergent copy of "what's selected"; passing
+            // none at all would lose the press feedback that makes the
+            // click feel registered. Hence a deliberate no-op.
+            onSelect={noopSelect}
+          />
+        )}
       </div>
       {/* plan 093 (079 items 9/17/18): the idle hover-expanded state —
           `open` is gated on `renderedShowing` (not the live `showing`)
@@ -952,8 +1052,34 @@ export function StatusRailCard({
           level deeper) so a promotion now lets IdleHoverPeek's own exit
           animation play while the card content mounts above it, instead
           of both changes landing as one unanimated swap. See
-          IdleHoverPeek.tsx's own doc on `open` for the full mechanism. */}
-      <IdleHoverPeek status={status} hovered={hovered} open={!renderedShowing && hovered} />
+          IdleHoverPeek.tsx's own doc on `open` for the full mechanism.
+          Plan 171 (slice K): `open` is now `peekOpen` — the same
+          `!renderedShowing && hovered` condition it always was, narrowed
+          by "and the selected tab isn't one with its own below-block",
+          so only ever ONE `.below-block` sits under the shell at a time
+          (the `:not(:has(.below-block))` rounding law in card-chrome.css
+          depends on that). `prefer` routes the football/weather
+          selections into this component's OWN shipped rendering rather
+          than a second copy of it — spec section 7's weather bullet
+          ("the shipped card, unchanged") and section 11's explicit
+          "IdleHoverPeek's mechanism is untouched". With nothing
+          selected, both props are inert and this is byte-identical to
+          before the plan. */}
+      <IdleHoverPeek status={status} hovered={hovered} open={peekOpen} prefer={peekPreference} />
+      {/* Plan 171 (slice K), spec section 7: the selection-driven
+          below-block. Mounted OUTSIDE the live-region wrapper below on
+          purpose — that region announces genuine new NOTIFICATIONS
+          (`liveRegionActive` is gated on `showing`), and a pulled card is
+          by definition something the operator went looking for, not
+          something arriving unannounced. Rendering it here also keeps
+          the push path byte-identical: `tabPullOpen` is false for the
+          whole life of a Showing card, so this is simply absent then. */}
+      <TabBelowBlock
+        selected={pulledTab}
+        status={status}
+        agentSessions={agentSessions}
+        agentCapturedAtMs={agentCapturedAtMs}
+      />
       {/* plan 129 (K2, deep-review fix): this `display: contents` div is
           the ACTUAL live-region wrapper now — `liveRegionActive`'s own
           doc (above) has the full mechanism. It is a plain, always-

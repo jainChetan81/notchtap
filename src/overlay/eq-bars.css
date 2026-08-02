@@ -6,6 +6,28 @@
    pattern. Collapsed to zero width + margin when silent so the idle
    face stays optically centered — width, margin, and opacity animate on
    one clock. */
+/* the rest cluster (plan 171, slice K) — the design source's own
+   `.rest-cluster` (prototypes/tab-notch-rest-and-morph.html section 1c):
+   the face and the eq bars side by side, optically centred in the
+   cutout. It takes over the grid placement `.idle-face` used to hold
+   directly (`grid-column: 2 / grid-row: 1`, card-chrome.css), so that
+   rule's own declarations simply go inert on a flex child — `IdleFace`
+   itself is untouched, exactly as spec section 4's correction requires.
+   The HUD-only `display` gate is copied from that same `.idle-face`
+   pair for the same reason: a real hardware notch has no app-drawn
+   cutout to paint any of this into. */
+.card-root .rest-cluster {
+  grid-column: 2;
+  grid-row: 1;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+}
+:root[data-notchtap-mode="hud"] .card-root .rest-cluster {
+  display: flex;
+}
+
 .card-root .eq {
   display: flex;
   align-items: flex-end;
