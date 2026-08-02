@@ -1015,15 +1015,26 @@ pub fn run() {
                         };
                         let session_count = auto_advance_wire.agent_sessions.load(Ordering::Relaxed);
                         let hovered = *auto_advance_hovered.lock().unwrap_or_else(|e| e.into_inner());
-                        // This task lives on the tokio runtime (spawned via
-                        // `tauri::async_runtime::spawn`), so it goes through
-                        // `Engine::apply` rather than `apply_blocking` —
-                        // `apply_blocking`'s own debug_assert requires
-                        // running OFF the tokio runtime (main-thread
-                        // tray/hotkey callers only; see
+                        // Checking `is_paused()` is a pure read — it never
+                        // mutates the queue — so this must go through
+                        // `Engine::read`, NOT `apply`/`apply_blocking`.
+                        // `apply`/`apply_blocking` are the PROPAGATING
+                        // mutation primitives: both unconditionally call
+                        // `self.wake.notify_waiters()` on every invocation,
+                        // which would spuriously wake `spawn_rotation`'s
+                        // loop every `SESSION_AUTO_ADVANCE_INTERVAL` for the
+                        // entire app runtime, regardless of whether the
+                        // Agent tab is even selected. `read`'s own doc
+                        // ("no wake, no emit, & not &mut") and its
+                        // `read_never_wakes` test are exactly the contract
+                        // this call needs. This task lives on the tokio
+                        // runtime (spawned via `tauri::async_runtime::spawn`),
+                        // so it's the async `read`, not `read_blocking` —
+                        // same off-vs-on-runtime split that ruled out
+                        // `apply_blocking` in the first place (see
                         // `apply_silence_verdict`'s identical async-twin
                         // reasoning, above).
-                        let paused = auto_advance_engine.apply(|q, _now| q.is_paused()).await;
+                        let paused = auto_advance_engine.read(|q| q.is_paused()).await;
                         if should_auto_advance_session(tab_selected, session_count, hovered, paused) {
                             let current = auto_advance_wire.viewed_session.load(Ordering::Relaxed) as isize;
                             let next = (current + 1).rem_euclid(session_count as isize) as usize;
