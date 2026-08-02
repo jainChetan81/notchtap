@@ -53,7 +53,7 @@ while transforms composite off it.
 
 Chrome trace over the expand-toggle window, real `StatusRailCard`, the
 plan-172 harness (`research/plan172-harness/`, `trace.mjs` variant),
-2026-08-02, this mac mini:
+2026-08-02, this Mac mini:
 
 | pipeline stage | runs | avg | max | total over the whole gesture |
 | --- | --- | --- | --- | --- |
@@ -69,6 +69,15 @@ frame samples over the same gesture held ~60fps (worst gap 22ms, one
 advice worries about is one tiny fixed-size overlay window whose entire
 content IS this card — there is no surrounding page to thrash.
 
+**On the 56ms hiccup**: it's a single sample, one of six scenarios, and
+none of the per-stage trace costs above (all comfortably under budget,
+worst full-pipeline frame ~1.3ms) account for a gap that size — so it
+doesn't read as width-vs-transform-caused. Left unexplained rather than
+guessed at (harness/host jitter is the likely culprit, but wasn't
+isolated); doesn't move the verdict, since the trace shows the
+animation's own per-frame cost is nowhere near large enough to produce
+it either way.
+
 ## Verdict
 
 NO-GO. The conversion's only viable shapes either break the
@@ -77,7 +86,13 @@ correctness surface (radius distortion, seam/gap regressions, clip
 choreography) — and the drop-shadow repaint dominates paint cost either
 way. `contain: layout` was considered and skipped too: the assembly is
 effectively the window's whole content, so there is nothing outside it
-to protect, and the `filter` already isolates it as a containing block.
+to protect against — layout containment exists to stop a subtree's
+reflow from invalidating an unrelated part of a larger page, and there
+is no larger page here. (`filter` does make `.card-assembly` a
+containing block for its descendants' positioning and establishes a
+stacking context, but that's a separate property from — and no
+substitute for — `contain`'s layout-invalidation guarantee; not claimed
+as one.)
 
 **Reopen only if**: a real-hardware manual-checklist pass ever shows
 dropped frames during promotion/expand (the macbook notch machine, not

@@ -3,7 +3,8 @@
 - **Status**: DONE (2026-08-02) — upstream reconciled and merged as
   shared-ui 0.4.0 (`711c792`), vendored file refreshed byte-identical,
   `--ease-notchtap` retune adopted across all three lockstep twins,
-  verify-snapshot re-pinned. `npx vitest run` 625/625,
+  verify-snapshot re-pinned. `npx vitest run` 625/625 at this commit
+  (626/626 at the branch tip — see "Doc truth-up" step 5 below),
   `node vendor/shared-ui/verify-snapshot.mjs` clean both axes.
 - **Severity**: LOW (visual: subtle; process: closes a real
   two-machines-diverged incident)
@@ -21,7 +22,7 @@ the shared-ui checkout, and concluded it "either never got
 pushed/merged, lived on a branch since deleted, or was aspirational."
 
 None of those. It was real, reviewed work (shared-ui plans 012-017,
-CHANGELOG 0.2.2, committed 2026-07-24) sitting UNPUSHED on the mac
+CHANGELOG 0.2.2, committed 2026-07-24) sitting UNPUSHED on the Mac
 mini's local `../shared-ui` main. The session that wrote the note ran
 remotely, fetched origin — which only had PR #1 (overlay trio, 0.3.0,
 version-numbered past the invisible 0.2.2) — and correctly reported
@@ -63,7 +64,12 @@ same repo in parallel, one line never pushed.
 5. **Doc truth-up (drive-by)**: plan 171's Status line claimed
    `npx vitest run` 768/768 — actually 625/625; 768 was 625 (full
    suite) + 143 (the two evidence files re-run standalone) summed by
-   mistake. Per-file counts (13, 130) re-verified exact.
+   mistake. Per-file counts (13, 130) re-verified exact. (A later
+   commit on this same branch, 17d3933, adds one more guard test —
+   `styles.css`'s `--ease-notchtap` twin-parity check in
+   `animationTiming.test.ts` — bringing the branch tip from 625/625 to
+   626/626; the counts recorded across plans 171/172/174 are each
+   accurate as of their own commit, not stale.)
 
 ## What was deliberately NOT done
 

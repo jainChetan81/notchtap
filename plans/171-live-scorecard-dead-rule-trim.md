@@ -1,6 +1,6 @@
 # 171 — Trim live-scorecard.css's dead rules (plan 170's deferred Step 7)
 
-- **Status**: DONE (2026-08-02) — `live-scorecard.css`'s `.notif-block`/`.event-line` removed as planned. Verifying `.event-line` had zero live consumers turned up a second, related dead block in a DIFFERENT file: `idle-peek.css`'s `.ev-ico*` (11 selectors) and `.event-line.tint-goal/yc/rc` — the same deprecated per-event icon+tint system, confirmed dead via the same repo-wide grep — with one correction from the 2026-08-02 Standards review: it is NOT true that "only comments survive"; `src/lib/presentation.ts`'s `EVENT_KIND_PRESENTATION` still mints `"ev-ico goal"`/`"tint-goal"`-style strings as live `iconClass`/`tintClass` FIELDS. The conclusion holds anyway (grep confirms zero readers of either field — only `celebration` is consumed, StatusRailCard.tsx), but those two dead data fields are now a re-adoption trap with their CSS gone; removing them is deferred (their table rows are pinned by presentation tests, so it's a real small plan, not a drive-by). Removed that too, same commit. `npx vitest run` 625/625 full suite (NotificationBody.test.tsx 13, StatusRailCard.test.tsx 130) — the "768/768" this line originally recorded was a double-count: 625 (full run) + 143 (those two files re-run standalone as evidence) summed by mistake; per-file counts re-verified 2026-08-02, both exact. `npx tsc --noEmit` clean.
+- **Status**: DONE (2026-08-02) — `live-scorecard.css`'s `.notif-block`/`.event-line` removed as planned. Verifying `.event-line` had zero live consumers turned up a second, related dead block in a DIFFERENT file: `idle-peek.css`'s `.ev-ico*` (11 selectors) and `.event-line.tint-goal/yc/rc` — the same deprecated per-event icon+tint system, confirmed dead via the same repo-wide grep — with one correction from the 2026-08-02 Standards review: it is NOT true that "only comments survive"; `src/lib/presentation.ts`'s `EVENT_KIND_PRESENTATION` still mints `"ev-ico goal"`/`"tint-goal"`-style strings as live `iconClass`/`tintClass` FIELDS. The conclusion holds anyway (grep confirms zero readers of either field — only `celebration` is consumed, StatusRailCard.tsx), but those two dead data fields are now a re-adoption trap with their CSS gone; removing them is deferred (their table rows are pinned by presentation tests, so it's a real small plan, not a drive-by) — `src/lib/presentation.ts` itself is untouched by this commit; only the CSS consuming those two fields is gone. `npx vitest run` 625/625 full suite (NotificationBody.test.tsx 13, StatusRailCard.test.tsx 130) — the "768/768" this line originally recorded was a double-count: 625 (full run) + 143 (those two files re-run standalone as evidence) summed by mistake; per-file counts re-verified 2026-08-02, both exact. `npx tsc --noEmit` clean. (625/625 is this commit's own count; a later commit on this branch, 17d3933, adds one more guard test, bringing the branch tip to 626/626 — see plan 174's Status.)
 - **Commit**: 01748dd (branched off 0c08e93, this doc's drift baseline)
 - **Severity**: LOW
 - **Category**: Cleanup (plan 170's own deferred boundary, not a new finding)
@@ -74,6 +74,13 @@ block since it describes a rendering path that no longer exists; and
 `.event-line` at `live-scorecard.css:214-222`). Every other rule in the
 file stays byte-identical.
 
+**Scope addendum (discovered during execution, see Status above):** the
+same dead per-event icon+tint system also had a live block in a
+DIFFERENT file — `idle-peek.css`'s `.ev-ico*` (11 selectors) and
+`.event-line.tint-goal/yc/rc`. This plan's Target grew to cover that
+block too, under the identical dead-consumer criteria; every other rule
+in `idle-peek.css` stays byte-identical as well.
+
 ## Repo conventions to follow
 
 - Match plan 170's own precedent for this exact kind of cleanup — it's
@@ -93,7 +100,9 @@ file stays byte-identical.
    comment).
 2. In the same file, delete the `.card-root .event-line` rule block
    (currently lines 214-222).
-3. Do not touch any other rule in this file.
+2b. In `src/overlay/idle-peek.css`, delete the `.ev-ico*` (11 selectors)
+   and `.event-line.tint-goal/yc/rc` blocks — the scope addendum above.
+3. Do not touch any other rule in either file.
 4. Search the repo once more for `notif-block`/`event-line` usage
    outside this file (`grep -rn "notif-block\|\.event-line" src/`) to
    confirm no other consumer was missed before finalizing — the search
@@ -127,6 +136,6 @@ file stays byte-identical.
   confirm the score-row/chips/crests/digits still render identically —
   this plan removes zero live styling, so there should be no visible
   change at all.
-- **Done when**: the two dead rule blocks are removed, `npx vitest run`
-  is clean, and a diff of `live-scorecard.css` shows nothing else
-  changed.
+- **Done when**: all three dead rule blocks (two in `live-scorecard.css`,
+  one in `idle-peek.css`) are removed, `npx vitest run` is clean, and a
+  diff of both files shows nothing else changed.

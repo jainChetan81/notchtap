@@ -5,7 +5,9 @@
   `StatusRailCard` with the actual settings-preview fixtures, Playwright
   chromium, per-rAF `getBoundingClientRect()` sampling). Decision: 300ms.
   `EXPAND_MS` and every CSS `var(--expand-ms, ...)` fallback moved
-  together. `npx vitest run` 625/625, `npx tsc --noEmit` clean.
+  together. `npx vitest run` 625/625 at this commit, `npx tsc --noEmit`
+  clean. (A later commit on this branch, 17d3933, adds one more guard
+  test — the branch tip is 626/626; see plan 174's Status.)
 - **Severity**: LOW
 - **Category**: Animation-review follow-up (the last open duration
   finding from the /review-animations pass)
