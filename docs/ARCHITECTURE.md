@@ -847,3 +847,57 @@ rewritten).
   operator choice. manual Medium, news Low, agent
   permission/input/failure High, completion Medium; all remain
   per-source configurable.
+
+## 22. tab-notch redesign: pull-based icon strip (locked 2026-08-02, plan 171)
+
+design spec: `docs/superpowers/specs/2026-08-02-tab-notch-design.md`;
+build sequence + as-built notes: `plans/171-tab-notch-redesign.md`.
+merged 2026-08-02 (PR #13). the mocks
+(`prototypes/tab-notch-rest-and-morph.html`,
+`prototypes/tab-notch-panel.html`, both r3) are binding design sources.
+
+- **the notch becomes pull-based, additively.** push behaviour
+  (interrupts, TTL, priority preemption) is completely unchanged and
+  takes precedence over everything pull-related, on every page, without
+  exception. a pushed interrupt still arrives regardless of which Tab is
+  selected. tab selection decides what the notch shows when the operator
+  goes looking; it never decides what the notch is allowed to tell them.
+- **rest is bare**: shell + the unmodified `IdleFace` + eq bars (only
+  while audio genuinely plays). no icons, no clock, no readouts at rest.
+  icons exist only inside a painted flank, hidden with
+  `visibility: hidden` (NOT `display: none`) — that choice is load-
+  bearing twice over: it keeps the strip's width reserved, and it means
+  every `infinite` icon animation MUST be gated on `.hovered` or it
+  ticks forever behind an invisible node.
+- **selection: max one, or none**, remembered across hovers, cleared if
+  its source stops being live. hover always shows the selected Tab's
+  card in COMPACT form and never auto-expands — expansion is a
+  deliberate, separate keyboard act. this is the single most important
+  behavioural line in the feature.
+- **click detection is rust-side, by necessity not preference.** the
+  overlay's `capabilities/default.json` grants event listen/unlisten and
+  nothing else — no invoke, no emit — so a click the WEBVIEW sees has no
+  channel back to the rust side that owns the selection. a native
+  `NSEvent` local monitor (`src-tauri/src/click.rs`) observes the
+  mouseDown, hit-tests it against `hover::icon_strip_rects`, and pushes
+  the result as a typed `tab-selection-changed` event, mirroring
+  `hover-changed`. **do not "simplify" this to a webview onClick** — it
+  cannot work without reopening the capability file, which §14 forbids.
+- **`set_ignore_cursor_events` is no longer unconditionally true.** it
+  opens exactly while the strip is the live hover target (hovered ∧ slot
+  idle) and reverts on hover-exit or slot promotion. the API is
+  WINDOW-granular, so "only clicks inside the strip's rect count" is
+  enforced by the monitor's hit-test, not by the toggle.
+- **the prefix keymap grabs BARE keys, temporarily.** arming registers
+  eleven unmodified keys (1-5, `[`, `]`, enter, o, p, esc) system-wide
+  for a 2s window. this is genuinely dangerous — a failed RELEASE leaves
+  a bare `Enter` grabbed across the whole machine — so it carries an
+  unconditional watchdog that ignores the generation counter, a release
+  on `RunEvent::Exit`, and ERROR-level logging on any failed release.
+  a failed *register* is benign; a failed *unregister* is not. never
+  register these outside a live armed window.
+- **hard non-goals**, standing project rules rather than oversights: no
+  `prefers-reduced-motion` handling and no accessibility variants
+  anywhere in this feature; HUD mode / mac mini scope only, with real
+  notch-hardware verification explicitly out of scope; no breaking-news
+  interrupts in v1 (news stays pure pull).

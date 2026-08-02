@@ -45,6 +45,21 @@ focused:
 | ⌃⇧X | dismiss the visible item now |
 | ⌃⇧P | toggle pause (stop/resume promotion) |
 | ⌃⇧A | open/focus the highest-ranked Agent Session's Host app |
+| ⌃⇧] | skip the visible item (re-queues a Recurring one) |
+| ⌃⇧, | open the settings window |
+
+plan 171 adds a tmux-style **prefix** alongside these, not instead of
+them — every combo above keeps working prefix-free, forever. press the
+prefix (default `⌃⇧Space`, configurable in Settings), then one key
+within 2 seconds:
+
+| after the prefix | action |
+|---|---|
+| `1`–`5` | select agent / football / music / weather / news (same key again deselects) |
+| `[` / `]` | previous / next agent session (ignored unless the agent tab is selected) |
+| `enter` / `o` | expand ↔ collapse the current card |
+| `p` | pause/resume |
+| `esc` or the prefix again | disarm, no side effect |
 
 ## tech stack
 

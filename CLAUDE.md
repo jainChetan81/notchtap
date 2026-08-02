@@ -214,6 +214,21 @@ window too, breaking the receive-only guarantee above.
 `capabilities/default.json` must never change. full contract:
 `docs/V5_TECHNICAL_SPEC.md` §2.
 
+**plan 171 added a CLICK path without touching any of the above — read
+this before assuming a click implies an invoke.** the overlay reacts to
+clicks on the icon strip, but the frontend still never talks to rust: a
+native `NSEvent` local monitor (`src-tauri/src/click.rs`) observes the
+mouseDown on the rust side, decides which icon it hit, and pushes a
+typed `tab-selection-changed` event down the same receive-only channel
+`hover-changed` already uses. this is not a stylistic preference — the
+overlay's capability file grants event listen/unlisten and NOTHING else,
+so a click the webview sees has no way to tell rust about it. if you
+ever find yourself wanting an `invoke` for a click, that is the signal
+you are about to break the boundary, not a gap to fill. relatedly,
+`set_ignore_cursor_events` is no longer unconditionally `true` — see
+`docs/ARCHITECTURE.md` §22 for exactly when it opens and why the
+hit-test, not the toggle, is what narrows clicks to the strip.
+
 ## rust error handling
 
 - **library/internal modules** (queue, event bus, event types): use

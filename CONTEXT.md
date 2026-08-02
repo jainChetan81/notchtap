@@ -215,6 +215,31 @@ in `docs/ARCHITECTURE.md`.
   members; the overlay is not one. a seam, not a code interface —
   earlier drafts said "the Notifier trait," but no trait exists (and
   none is needed until a second Connector does).
+- **Icon Strip** — the row of five neon glyphs (agent, football, music,
+  weather, news) that appears inside the hovered right flank. Hidden
+  entirely at rest. "Tab" and "icon" name the same thing: **tab** when
+  talking about selection state, **icon** when talking about the glyph.
+  (plan 171)
+- **Tab Selection** — at most one Tab is selected, or none. Selecting
+  does not open anything by itself; it decides which source's card the
+  existing hover below-block shows the next time the notch is hovered.
+  Persists across hovers, and is CLEARED — not remembered — if its
+  source stops being live. Rust owns it; the frontend renders it.
+  (plan 171)
+- **Pull** — reaching for a source deliberately (clicking a Tab, or the
+  Prefix keymap) and seeing its current state, with no Promotion and no
+  countdown. The orthogonal opposite of the app's original **push**
+  model, which is completely unchanged and takes precedence over
+  everything pull-related. A pulled card never counts down: it keeps the
+  4px floor-strip geometry but repurposes it as a position indicator
+  with no drain. (plan 171)
+- **Prefix** — the tmux-style keyboard model: one combo (default
+  `⌃⇧Space`, configurable) arms a 2-second window, then a single
+  follow-up key does exactly one thing and disarms. Additive — the seven
+  shipped `⌃⇧` combos keep working prefix-free, forever. (plan 171)
+- **News Charge** — the news Tab's two-phase fill model: items landing
+  during a poll cycle charge the glyph; a cycle ending with a full batch
+  marks it charged; visiting the news Tab clears it. (plan 171)
 - **Poller** — an internal event source that repeatedly checks an
   external service (espn in v2) and turns observed *changes* into
   Events. a Poller emits deltas only: the first sighting of a match is
