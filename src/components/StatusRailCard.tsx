@@ -622,6 +622,22 @@ export function StatusRailCard({
   // changes only on a genuine wire emission, unlike this component's own
   // per-tick re-renders.
   const iconPresence = useMemo(() => iconPresenceFor(status), [status]);
+  // plan 175: how many of those five tiers actually render as
+  // `.is-present`, fed to the shell as `--present-icons` so the two
+  // strip-visible `--cw` formulas (card-chrome.css) can grow the flanks
+  // with the strip instead of painting a flat 85px one the rust hit-test
+  // (`hover.rs::hovered_right_flank_width`) had already outgrown. Derived
+  // from the SAME `iconPresence` table IconStrip renders from — never a
+  // second presence predicate — and `state !== "hidden"` is verbatim
+  // IconStrip's own `is-present` condition (`iconClass`), so the count
+  // and the DOM can't disagree. It also equals what rust's
+  // `tabs::present_tabs` returns for the same status: both sides call a
+  // paused-but-loaded track present, which is the one case where the
+  // frontend's finer three-tier reading could have diverged.
+  const presentIconCount = useMemo(
+    () => Object.values(iconPresence).filter((state) => state !== "hidden").length,
+    [iconPresence],
+  );
   const newsWaitingCount = status?.news.chargeCount ?? 0;
 
   // The IDLE-and-hovered branch. Everything tab-related below hangs off
@@ -880,7 +896,19 @@ export function StatusRailCard({
   const liveRegionActive = showing && !isLiveCard;
 
   return (
-    <div className={cardClass} onAnimationEnd={clearPulseWhenItsAnimationEnds}>
+    <div
+      className={cardClass}
+      // plan 175: the icon-count term card-chrome.css's two strip-visible
+      // `--cw` rules read. Always set (not gated on `tabPullOpen`), because
+      // the shell's width must already know the strip's size on the very
+      // render hover lands — the growth is what the width transition
+      // animates, and a value arriving one render late would make the
+      // flank snap. Harmless in every non-strip state: no other `--cw`
+      // formula references it. Same `as React.CSSProperties` custom-property
+      // idiom PositionBar/IdleHoverPeek already use.
+      style={{ "--present-icons": presentIconCount } as React.CSSProperties}
+      onAnimationEnd={clearPulseWhenItsAnimationEnds}
+    >
       {/* 2026-07-23 review fix (wave B, Task 2 — real concave S-curve):
           the top "gill" corners — real DOM siblings of the flanks, NOT
           `.card-assembly::before`/`::after` (both already claimed by the

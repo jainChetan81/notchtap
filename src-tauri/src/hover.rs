@@ -72,33 +72,55 @@ const IDLE_PEEK_BELOW_BLOCK_H: f64 = 100.0; // IdleHoverPeek.tsx motion.div `ani
 const BELOW_BLOCK_SHOWING_H: f64 = 160.0; // conservative estimate, compact (non-expanded) content
 const BELOW_BLOCK_EXPANDED_H: f64 = 240.0; // conservative estimate, expanded (manifest) content
 
-// Plan 171 (tab-notch redesign): the icon strip's own geometry constants —
-// duplicated-constants pair with `prototypes/tab-notch-rest-and-morph.html`'s
-// `--icon-box`/`--icon-gap`/`--flank-inset` custom properties (the design
-// source of truth until this feature's own CSS ships; re-pair these against
-// the real stylesheet once it exists, same discipline the rest of this
-// file's constants already follow). `HOVER_RAIL_FLOOR` is the EXISTING
-// `FLANK_IDLE` value above, `85.0` — not redefined, reused, because the
-// mock's own hover-rail floor is explicitly "the same 85px rail floor"
-// every other hovered-but-not-showing state in this app already uses.
-// Real callers since slice A's click wiring (click.rs): staged-allow
-// ahead of their real caller, which lands with Slice A's click-detection
-// wiring (see `icon_strip_rects`'s own doc below and the plan's "Landed
-// so far" note) — `cargo clippy --all-targets -D warnings` (the CI gate,
-// justfile's `check-rust`) has no test-only exemption for a plain `fn`/
-// `const` the way it does for `#[cfg(test)]`-reached items, so these read
-// as dead until that caller exists. Remove every one of these five
-// attributes the moment `icon_strip_rects` gets a real call site.
+// Plan 171 (tab-notch redesign), re-paired against the shipped
+// stylesheet by plan 175: the icon strip's own geometry constants. These
+// are LOCKSTEP PAIRS with real CSS now — plan 171 pinned them to a frozen
+// design mock's `--icon-box`/`--icon-gap`/`--flank-inset` custom
+// properties because the feature's own CSS did not exist yet, and left a
+// "re-pair these against the real stylesheet once it exists" note. This is
+// that re-pair: no mock is a source of truth for any number here anymore
+// (CLAUDE.md — the ad-hoc `prototypes/*.html` snapshots are never synced
+// forward, so pairing shipped code to one silently rots). See plan 171 and
+// `git log` if the original mock is ever wanted as history.
+// The twins, all three of which MUST change in the same commit as any
+// change here (`src/lib/stripGeometryParity.test.ts` is the tripwire):
+//
+//   * `ICON_BOX` / `ICON_GAP` <-> `src/overlay/icon-strip.css`'s
+//     `.icon.is-present { width: 18px; margin-left: 8px }` — together the
+//     26px pitch every rect laid out below assumes.
+//   * `FLANK_INSET` <-> `src/overlay/card-chrome.css`'s flank
+//     `padding-right: 16px` (`.flank-right`, plus the `.bare.hovered`
+//     rule that restores that inset once the rail reveals). Unified at 16
+//     by plan 175 — rust carried the mock's 14, which slid every rect 2px
+//     right of the glyph it was meant to hit-test.
+//   * `hovered_right_flank_width` (below) <-> the `--cw` growth term
+//     `(26 * var(--present-icons, 0) + 16)` in card-chrome.css's
+//     `.card-assembly.idle` and `.card-assembly.bare:has(.idle-peek)`
+//     rules — the only two `--cw` formulas that can match while the strip
+//     is up. Before plan 175 the CSS painted a FLAT 85px flank there, so
+//     at 3+ present tabs the flank rust hit-tested against was wider than
+//     the one actually painted and the leftmost glyphs were clipped by
+//     the flank's own `overflow: hidden`.
+//
+// `HOVER_RAIL_FLOOR` is the EXISTING `FLANK_IDLE` value above, `85.0` —
+// not redefined, reused, because this hover rail's floor is explicitly
+// "the same 85px rail floor" every other hovered-but-not-showing state in
+// this app already uses. The real caller of all three is `click.rs`'s
+// hit-test (via `icon_strip_rects` below).
 const ICON_BOX: f64 = 18.0;
 const ICON_GAP: f64 = 8.0;
-const FLANK_INSET: f64 = 14.0;
+const FLANK_INSET: f64 = 16.0;
 
 /// The right flank's own width while hovered, given how many icons are
 /// currently present (spec §6/§0: absent icons are omitted, never
 /// `display: none`'d in place — so `present_count` is the count AFTER
-/// that filter, not always 5). Mirrors the mock's own two-step formula
-/// exactly: `strip_w` is unscaled raw geometry (icon box/gap/inset never
-/// scale with `--card-scale`), only the 85px rail floor does.
+/// that filter, not always 5). Two-step by design, and the CSS twin named
+/// in the constants block above computes the same two steps: `strip_w` is
+/// unscaled raw geometry (icon box/gap/inset never scale with
+/// `--card-scale`), only the 85px rail floor does. That split is a
+/// standing rule of this shell's geometry, not an accident — the cutout
+/// and the raw strip are hardware/pixel measurements, cosmetic widths
+/// scale (card-chrome.css's own `--card-scale` comment).
 fn hovered_right_flank_width(present_count: usize, scale: f64) -> f64 {
     let strip_w = (ICON_BOX + ICON_GAP) * present_count as f64 + FLANK_INSET;
     (FLANK_IDLE * scale).max(strip_w)
@@ -1108,9 +1130,11 @@ mod tests {
 
     #[test]
     fn icon_strip_rects_two_icons_uses_the_85px_rail_floor() {
-        // 2 icons: strip_w = (18+8)*2 + 14 = 66, which loses to the 85px
+        // 2 icons: strip_w = (18+8)*2 + 16 = 68, which loses to the 85px
         // rail floor at scale 1 — the SAME "2 icons -> 85px rail floor
-        // wins" case mock 1's own spec table states explicitly.
+        // wins" case the spec table states explicitly. (Inset 16, not the
+        // mock's old 14, since plan 175 — the floor wins either way, so
+        // this case's own numbers are unchanged.)
         let rects = icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.0, 2, WINDOW_HEIGHT);
         let flank_w = hovered_right_flank_width(2, 1.0);
         assert_eq!(flank_w, FLANK_IDLE); // 85.0, the floor, not the narrower strip_w
@@ -1126,13 +1150,35 @@ mod tests {
     }
 
     #[test]
-    fn icon_strip_rects_five_icons_matches_the_488px_worked_example() {
-        // 5 icons: strip_w = (18+8)*5 + 14 = 144, beats the 85px floor —
-        // the mock's own "5 icons -> 488px" worked example (200 + 2*144).
+    fn icon_strip_rects_five_icons_matches_the_492px_worked_example() {
+        // 5 icons: strip_w = (18+8)*5 + 16 = 146, beats the 85px floor —
+        // so the full strip makes a 200 + 2*146 = 492px shell. (Was 488
+        // at the mock's inset of 14; plan 175 unified the inset at the
+        // shipped CSS's 16, so this worked example moved with it.)
         let flank_w = hovered_right_flank_width(5, 1.0);
-        assert_eq!(flank_w, 144.0);
+        assert_eq!(flank_w, 146.0);
         let total_width = HUD_CUTOUT_W + 2.0 * flank_w;
-        assert_eq!(total_width, 488.0);
+        assert_eq!(total_width, 492.0);
+    }
+
+    #[test]
+    fn hovered_right_flank_width_pins_the_whole_icon_count_curve() {
+        // Plan 175's lockstep pin: `max(85, 26n + 16)` at scale 1, the
+        // exact curve card-chrome.css's two strip-visible `--cw` rules
+        // now compute as `max(85px * var(--card-scale), (26 *
+        // var(--present-icons, 0) + 16) * 1px)`. The floor wins at n<=2;
+        // the strip wins from n=3 on, which is precisely where the old
+        // flat-85px CSS started clipping glyphs the hit-test still
+        // believed in.
+        let expected = [85.0, 85.0, 94.0, 120.0, 146.0];
+        for (i, want) in expected.iter().enumerate() {
+            let n = i + 1;
+            assert_eq!(
+                hovered_right_flank_width(n, 1.0),
+                *want,
+                "flank width for {n} present icon(s)"
+            );
+        }
     }
 
     #[test]

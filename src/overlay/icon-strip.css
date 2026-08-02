@@ -90,6 +90,11 @@
     filter var(--hover-ms, 160ms) var(--ease-notchtap);
 }
 
+/* plan 175 — LOCKSTEP PAIR: these two numbers are `hover.rs`'s `ICON_BOX`
+   (18) and `ICON_GAP` (8), the 26px pitch the NSEvent click monitor
+   hit-tests each glyph against and the `26 * n` term in card-chrome.css's
+   two strip-visible `--cw` rules. Change one, change all three in the same
+   commit; `src/lib/stripGeometryParity.test.ts` fails loudly otherwise. */
 .card-root .icon.is-present {
   width: 18px;
   margin-left: 8px;
