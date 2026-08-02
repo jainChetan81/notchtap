@@ -1,5 +1,20 @@
 # Implementation Plans
 
+**Plans 182–184 (2026-08-02, brainstorming session, planned at `f810d58`)**
+— three independent, operator-approved specs under
+`docs/superpowers/specs/`, none overlapping the eighth audit session's
+175–181 below except one thing: 184's Part 1 (wiring
+`agent-viewed-session-changed` to the display) is the SAME gap that
+session's own "Dead prefix pull actions" backlog note (below, "verified
+but NOT planned") independently found. Do it once, from whichever of the
+two lands first.
+
+| plan | title | priority | effort | depends on | status |
+|---|---|---|---|---|---|
+| 182 | AgentBoard status icons: reuse IconStrip's glyphs in StatusDots | P2 | S | — | TODO |
+| 183 | revert notification manifest hover-expand to keyboard-only | P2 | XS | — | TODO |
+| 184 | wire agent-viewed-session-changed to the display + auto-advance | P2 | M | — | TODO |
+
 **Eighth audit session, plans 175–181 (2026-08-02, `/improve` standard,
 planned at `7ca82d5`)** — scoped to the least-audited surface: the 122
 commits since the seventh audit's `acdaeb0` baseline, dominated by plan
