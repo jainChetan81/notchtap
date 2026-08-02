@@ -620,6 +620,11 @@ mod tests {
                 agent_registry,
                 Arc::new(crate::agents::health::HealthTracker::new()),
                 crate::config::AgentRuntimesConfig::default(),
+                // http tests assert the /agent/events -> publish wiring
+                // itself, not the Board's presence gate (board.rs owns
+                // those tests) — `true` keeps every existing assertion
+                // reading the ungated snapshot it was written against.
+                true,
             ),
             agent_health: Arc::new(crate::agents::health::HealthTracker::new()),
         }

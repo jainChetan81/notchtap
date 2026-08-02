@@ -470,6 +470,16 @@ export function AgentsSection({
           }
         />
         <ToggleControl
+          id="agents-board-show-working"
+          name="Board for working sessions"
+          help="Off (the default) keeps the Agent Board out of the way until something needs you — a permission or input request, a failure, or a session that just finished. It still lists the working sessions once it's up."
+          label="Show the Agent Board while agents are only working"
+          checked={config.agents.board_show_working}
+          onChange={(board_show_working) =>
+            patchAgents(config, patchConfig, { board_show_working })
+          }
+        />
+        <ToggleControl
           id="agents-informational"
           name="Informational cards"
           help="Also show a card for ordinary progress/tool events, not just permission/input/failure/completion."

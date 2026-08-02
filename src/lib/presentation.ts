@@ -268,12 +268,25 @@ export function categoryLabel(category: string | null): string | null {
 //    of Silenced, which is explicitly display-layer-only and leaves the
 //    idle surface — Agent Board included — behaving as normal
 //    (CONTEXT.md's Silenced).
-// 3. otherwise, at least one live/retained Agent Session (a non-empty
-//    `sessions` array — the registry's own `terminal_retention_secs`
-//    sweep is what drops a session out of that array, so "present in
-//    the array at all" already means "live or retained") shows the
-//    Agent Board.
+// 3. otherwise, at least one Agent Session in the PUBLISHED snapshot (a
+//    non-empty `sessions` array) shows the Agent Board.
 // 4. otherwise, the existing clock/weather/media idle presentation.
+//
+// Rule 3 is deliberately "whatever rust published", not "whatever
+// sessions exist". Two separate rust-side filters already decide what
+// lands in that array, and this table re-derives neither:
+//   - the registry's `terminal_retention_secs`/`stale_retention_secs`
+//     sweep drops finished/dead sessions, so "present in the array at
+//     all" already means "live or retained";
+//   - the Agent Board's PRESENCE gate (operator decision 2026-08-02,
+//     `[agents] board_show_working`, default off) publishes ZERO
+//     sessions when nothing needs the operator — an agent that is merely
+//     working must not summon the Board. That gate lives in exactly one
+//     place, `AgentBoardPublisher::gate_presence` (src-tauri/src/agents/
+//     board.rs); this file must NOT grow a second copy of it. Note it
+//     gates presence only: once some session has summoned the Board,
+//     rust publishes every retained session, working ones included, and
+//     the Board lists them all.
 //
 // "when a noteworthy Agent Notification finishes, presentation returns
 // to the still-current Agent Board" falls out for free: the instant

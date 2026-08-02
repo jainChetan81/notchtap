@@ -50,7 +50,8 @@ export interface SilenceConfig {
 
 // Mirrors rust's `AgentsConfig` (config.rs) — the `[agents]` v7 config
 // block: global enable, registry retention/staleness, the two per-kind
-// card toggles (informational, completion), four per-kind Notification
+// card toggles (informational, completion), the Agent Board's own
+// presence gate (board_show_working), four per-kind Notification
 // priorities, and the four per-runtime enable flags above.
 export interface AgentsConfig {
   enabled: boolean;
@@ -61,6 +62,16 @@ export interface AgentsConfig {
   // Default `true` — a runtime fires a completion event per response
   // turn, so this is the operator's off switch for per-turn cards.
   completion_notifications: boolean;
+  // Operator decision 2026-08-02. Default `false`, INCLUDING for a
+  // config written before the key existed — a session that is merely
+  // working no longer summons the Agent Board at all; the Board appears
+  // only while something needs the operator (waiting for permission or
+  // input, failed, or a completed session still inside its retention
+  // window). Presence only: once the Board is up it still lists the
+  // working sessions. Rust owns the whole gate
+  // (`agents::board::AgentBoardPublisher::gate_presence`) — the overlay
+  // never sees this flag, it just reads the published snapshot.
+  board_show_working: boolean;
   permission_priority: PriorityLevel;
   input_priority: PriorityLevel;
   failure_priority: PriorityLevel;

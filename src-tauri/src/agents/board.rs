@@ -10,6 +10,14 @@
 //! snapshot; [`AgentBoardPublisher`]'s revision counter increments ONLY
 //! when it does — a clock-only tick (elapsed-time/retention-countdown
 //! drift alone) never bumps it and never emits.
+//!
+//! This module is also the SINGLE place the Agent Board's PRESENCE is
+//! decided (operator decision 2026-08-02, `[agents] board_show_working`):
+//! [`AgentBoardPublisher::gate_presence`] runs one layer above the dedup
+//! comparison, so a Board nobody needs publishes as zero sessions and
+//! every downstream consumer — the overlay's `presentationMode`
+//! (`src/lib/presentation.ts`) and `lib.rs`'s hover-expand alike — stays
+//! ignorant of the knob and simply reads the published snapshot.
 
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
@@ -303,6 +311,12 @@ pub struct AgentBoardPublisher<R: tauri::Runtime = tauri::Wry> {
     /// assumption `http.rs`'s `AppState::agent_runtimes` field already
     /// relies on).
     runtimes_cfg: crate::config::AgentRuntimesConfig,
+    /// `[agents] board_show_working` (config.rs), captured once at
+    /// construction for the same reason `runtimes_cfg` above is. `false`
+    /// (the default) makes this publisher apply the Board PRESENCE gate
+    /// documented on [`Self::publish_if_changed`]; `true` restores the
+    /// pre-2026-08-02 behavior where any live session shows the Board.
+    board_show_working: bool,
 }
 
 impl<R: tauri::Runtime> Clone for AgentBoardPublisher<R> {
@@ -313,6 +327,7 @@ impl<R: tauri::Runtime> Clone for AgentBoardPublisher<R> {
             state: self.state.clone(),
             health: self.health.clone(),
             runtimes_cfg: self.runtimes_cfg,
+            board_show_working: self.board_show_working,
         }
     }
 }
@@ -323,6 +338,7 @@ impl<R: tauri::Runtime> AgentBoardPublisher<R> {
         registry: AgentRegistryHandle,
         health: Arc<super::health::HealthTracker>,
         runtimes_cfg: crate::config::AgentRuntimesConfig,
+        board_show_working: bool,
     ) -> Self {
         Self {
             app,
@@ -333,18 +349,31 @@ impl<R: tauri::Runtime> AgentBoardPublisher<R> {
             })),
             health,
             runtimes_cfg,
+            board_show_working,
         }
     }
 
-    /// Reads `AgentRegistry::ordered_states` at `now` and emits
-    /// `agent-state` ONLY if it differs from the last published snapshot
+    /// Reads `AgentRegistry::ordered_states` at `now`, applies the Board
+    /// PRESENCE gate ([`Self::gate_presence`]), and emits `agent-state`
+    /// ONLY if the gated slice differs from the last published snapshot
     /// per [`states_dedup_eq`]. The revision counter bumps strictly in
     /// lockstep with an actual emit — never independently — so a
     /// suppressed no-op call can't leave the counter ahead of what the
     /// wire last actually carried. Returns whether it emitted (test
     /// hook).
+    ///
+    /// The gate runs BEFORE the dedup comparison, not after, which is
+    /// what makes this the single place Board presence is decided:
+    /// `PublishState.last` — and therefore
+    /// [`Self::last_session_count`], which `lib.rs`'s hover primitive
+    /// reads to answer "is the Board what's on screen?" — always holds
+    /// exactly what the overlay was last told. A gated-off snapshot
+    /// publishes as ZERO sessions, so the frontend's own
+    /// `presentationMode` (src/lib/presentation.ts) falls through to
+    /// idle with no knowledge of the knob, and hover-expand declines for
+    /// the same reason, without a second gate in either layer.
     pub async fn publish_if_changed(&self, now: Instant) -> bool {
-        let states = self.registry.ordered_states(now).await;
+        let states = self.gate_presence(self.registry.ordered_states(now).await);
         // poison-tolerant, matching this codebase's other `StdMutex`
         // guards — a panic elsewhere while holding this lock must not
         // permanently wedge every later publish attempt.
@@ -379,6 +408,25 @@ impl<R: tauri::Runtime> AgentBoardPublisher<R> {
         true
     }
 
+    /// The Agent Board's PRESENCE gate (operator decision 2026-08-02:
+    /// "agents that are merely working must not summon the board"). All
+    /// or nothing, never a row filter: with `board_show_working = false`
+    /// (the default), a slice holding no attention-state session at all
+    /// (`AgentSessionState::summons_board`) publishes as EMPTY — the
+    /// Board simply isn't present — but the moment ONE session needs the
+    /// operator, the whole ordered slice publishes unchanged, working
+    /// sessions and all. Presence is gated; content is not.
+    ///
+    /// `board_show_working = true` is the identity function, i.e. the
+    /// pre-2026-08-02 behavior.
+    fn gate_presence(&self, states: Vec<AgentState>) -> Vec<AgentState> {
+        if self.board_show_working || states.iter().any(|s| s.state.summons_board()) {
+            states
+        } else {
+            Vec::new()
+        }
+    }
+
     /// Plan 142 (v7 ticket 10 of 13, spec §6.2 expanded): a cheap,
     /// SYNCHRONOUS read of the session count in the last published
     /// `agent-state` snapshot. `lib.rs`'s hover primitive needs "is the
@@ -390,6 +438,12 @@ impl<R: tauri::Runtime> AgentBoardPublisher<R> {
     /// behind a plain `StdMutex`, updated in lockstep with every real
     /// publish — always at least as fresh as the last `agent-state`
     /// event the frontend itself just rendered.
+    ///
+    /// Because [`Self::gate_presence`] runs before that bookkeeping is
+    /// written, this reads `0` whenever the Board is gated off, so
+    /// hovering the idle rail can never expand a Board that isn't
+    /// displayed — no separate presence check is needed at the hover
+    /// call sites (`lib.rs`).
     pub fn last_session_count(&self) -> usize {
         self.state
             .lock()
@@ -515,8 +569,9 @@ mod tests {
         }
     }
 
-    fn publisher(
+    fn publisher_with(
         app: &tauri::App<tauri::test::MockRuntime>,
+        board_show_working: bool,
     ) -> AgentBoardPublisher<tauri::test::MockRuntime> {
         let registry = AgentRegistryHandle::new(AgentRegistry::new(
             Duration::from_secs(300),
@@ -528,7 +583,20 @@ mod tests {
             registry,
             Arc::new(crate::agents::health::HealthTracker::new()),
             crate::config::AgentRuntimesConfig::default(),
+            board_show_working,
         )
+    }
+
+    /// The dedup/revision/wire-shape tests below predate the Board's
+    /// presence gate (operator decision 2026-08-02) and assert against
+    /// the UNGATED snapshot, so they build the publisher with
+    /// `board_show_working = true`. The gate's own behavior has its own
+    /// tests at the bottom of this module, built via `publisher_with(app,
+    /// false)`.
+    fn publisher(
+        app: &tauri::App<tauri::test::MockRuntime>,
+    ) -> AgentBoardPublisher<tauri::test::MockRuntime> {
+        publisher_with(app, true)
     }
 
     fn listen_count(app: &tauri::App<tauri::test::MockRuntime>) -> Arc<AtomicUsize> {
@@ -866,5 +934,223 @@ mod tests {
 
         assert!(publisher.publish_if_changed(base).await);
         assert_eq!(publisher.last_session_count(), 1);
+    }
+
+    // --- operator decision 2026-08-02: the Board's PRESENCE gate
+    // (`[agents] board_show_working`, default false). "Agents that are
+    // merely WORKING must not summon the Agent Board" — presence is
+    // gated, content is not. ---
+
+    /// An ordinary progress event from a session that is ALREADY
+    /// working. `declared_state: Working` is what
+    /// `AgentRegistry::apply_event` reads to tell a real progress event
+    /// apart from a session-start `Informational` (which must stay at
+    /// the `Starting` baseline) — see that method's `is_session_start`
+    /// branch.
+    fn working_event(session_key: AgentSessionKey, event_id: &str) -> AgentEvent {
+        let mut e = event(session_key, event_id, AgentEventKind::Informational);
+        e.declared_state = AgentSessionState::Working;
+        e
+    }
+
+    /// What the last publish actually put on the wire (`PublishState.
+    /// last` is written from the GATED slice), as `(state, ...)` wire
+    /// tokens in Board order.
+    fn published_states(
+        publisher: &AgentBoardPublisher<tauri::test::MockRuntime>,
+    ) -> Vec<&'static str> {
+        publisher
+            .state
+            .lock()
+            .unwrap()
+            .last
+            .as_ref()
+            .map(|states| states.iter().map(|s| state_wire_label(s.state)).collect())
+            .unwrap_or_default()
+    }
+
+    #[tokio::test]
+    async fn working_only_sessions_do_not_summon_the_board() {
+        let app = tauri::test::mock_app();
+        let publisher = publisher_with(&app, false);
+        let base = Instant::now();
+        for (i, id) in ["s1", "s2"].iter().enumerate() {
+            publisher
+                .registry
+                .apply_event(
+                    working_event(key(AgentRuntime::ClaudeCode, id), &format!("e{i}")),
+                    base,
+                )
+                .await;
+        }
+
+        publisher.publish_if_changed(base).await;
+        assert!(
+            published_states(&publisher).is_empty(),
+            "working-only sessions must publish as zero sessions, so the overlay's presentationMode falls to idle"
+        );
+        // hover-expand reads exactly this — an idle rail must not expand
+        // into a Board that isn't displayed.
+        assert_eq!(publisher.last_session_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_starting_or_stale_session_alone_does_not_summon_the_board_either() {
+        let app = tauri::test::mock_app();
+        let publisher = publisher_with(&app, false);
+        let base = Instant::now();
+        // A brand-new session's first Informational leaves it at the
+        // `Starting` baseline (registry's `is_session_start` branch).
+        publisher
+            .registry
+            .apply_event(
+                event(
+                    key(AgentRuntime::Codex, "s1"),
+                    "e1",
+                    AgentEventKind::Informational,
+                ),
+                base,
+            )
+            .await;
+        publisher.publish_if_changed(base).await;
+        assert!(published_states(&publisher).is_empty(), "starting alone");
+
+        // Past `stale_after` (300s in this test's registry): Starting ->
+        // Stale. A session that went quiet on its own is the absence of
+        // news, not a request for attention.
+        let past_stale = base + Duration::from_secs(300);
+        publisher.registry.tick(past_stale).await;
+        publisher.publish_if_changed(past_stale).await;
+        assert!(published_states(&publisher).is_empty());
+        assert_eq!(publisher.last_session_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn one_waiting_session_summons_the_board_and_the_working_ones_ride_along() {
+        let app = tauri::test::mock_app();
+        let publisher = publisher_with(&app, false);
+        let base = Instant::now();
+        publisher
+            .registry
+            .apply_event(
+                working_event(key(AgentRuntime::ClaudeCode, "worker"), "e1"),
+                base,
+            )
+            .await;
+        publisher
+            .registry
+            .apply_event(
+                event(
+                    key(AgentRuntime::Codex, "asker"),
+                    "e2",
+                    AgentEventKind::PermissionRequested,
+                ),
+                base,
+            )
+            .await;
+
+        assert!(publisher.publish_if_changed(base).await);
+        // Presence is gated; CONTENT is not — the working session is
+        // still listed once something else has summoned the Board.
+        assert_eq!(
+            published_states(&publisher),
+            vec!["waiting_for_permission", "working"],
+            "the whole ordered slice publishes, in Board order, not just the attention session"
+        );
+        assert_eq!(publisher.last_session_count(), 2);
+    }
+
+    #[tokio::test]
+    async fn a_terminal_completed_session_summons_the_board_while_retained() {
+        let app = tauri::test::mock_app();
+        let publisher = publisher_with(&app, false);
+        let base = Instant::now();
+        let mut e = event(
+            key(AgentRuntime::Kimi, "s1"),
+            "e1",
+            AgentEventKind::Completed,
+        );
+        e.terminal = true;
+        publisher.registry.apply_event(e, base).await;
+
+        assert!(publisher.publish_if_changed(base).await);
+        assert_eq!(published_states(&publisher), vec!["completed"]);
+
+        // ...and stops summoning it once the registry's own
+        // `terminal_retention` (600s here) evicts it.
+        let past_retention = base + Duration::from_secs(600);
+        publisher.registry.tick(past_retention).await;
+        assert!(publisher.publish_if_changed(past_retention).await);
+        assert_eq!(publisher.last_session_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn the_board_leaves_when_the_attention_session_goes_back_to_work() {
+        let app = tauri::test::mock_app();
+        let publisher = publisher_with(&app, false);
+        let base = Instant::now();
+        let k = key(AgentRuntime::OpenCode, "s1");
+        publisher
+            .registry
+            .apply_event(
+                event(k.clone(), "e1", AgentEventKind::PermissionRequested),
+                base,
+            )
+            .await;
+        assert!(publisher.publish_if_changed(base).await);
+        assert_eq!(publisher.last_session_count(), 1);
+
+        // Permission granted, back to ordinary work — nothing needs the
+        // operator any more, so the Board goes away again.
+        publisher
+            .registry
+            .apply_event(event(k, "e2", AgentEventKind::Informational), base)
+            .await;
+        assert!(publisher.publish_if_changed(base).await);
+        assert!(published_states(&publisher).is_empty());
+        assert_eq!(publisher.last_session_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn board_show_working_true_restores_the_old_any_session_behavior() {
+        let app = tauri::test::mock_app();
+        let publisher = publisher_with(&app, true);
+        let base = Instant::now();
+        publisher
+            .registry
+            .apply_event(
+                working_event(key(AgentRuntime::ClaudeCode, "s1"), "e1"),
+                base,
+            )
+            .await;
+
+        assert!(publisher.publish_if_changed(base).await);
+        assert_eq!(published_states(&publisher), vec!["working"]);
+        assert_eq!(publisher.last_session_count(), 1);
+    }
+
+    #[tokio::test]
+    async fn a_gated_off_board_does_not_re_publish_on_every_working_session_change() {
+        let app = tauri::test::mock_app();
+        let publisher = publisher_with(&app, false);
+        let count = listen_count(&app);
+        let base = Instant::now();
+        publisher
+            .registry
+            .apply_event(working_event(key(AgentRuntime::Codex, "s1"), "e1"), base)
+            .await;
+        // First publish seeds `last` with the gated (empty) slice.
+        assert!(publisher.publish_if_changed(base).await);
+        count.store(0, Ordering::SeqCst);
+
+        // A second working session appearing is a real registry change,
+        // but not a PRESENCE change — the gate runs before dedup, so
+        // both slices are empty and nothing goes on the wire.
+        publisher
+            .registry
+            .apply_event(working_event(key(AgentRuntime::Kimi, "s2"), "e2"), base)
+            .await;
+        assert!(!publisher.publish_if_changed(base).await);
+        assert_eq!(count.load(Ordering::SeqCst), 0);
     }
 }

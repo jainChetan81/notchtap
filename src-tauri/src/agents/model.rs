@@ -88,6 +88,33 @@ impl AgentSessionState {
         )
     }
 
+    /// Whether a session in this state is on its own reason enough to
+    /// SUMMON the Agent Board (operator decision 2026-08-02: "agents that
+    /// are merely working must not summon the board — the board's job is
+    /// attention"). Consulted only when `[agents] board_show_working` is
+    /// `false` (its default), by
+    /// `agents::board::AgentBoardPublisher::publish_if_changed`, the ONE
+    /// place Board presence is decided — see that method for why the gate
+    /// lives there and nowhere else.
+    ///
+    /// `Completed`/`Failed` count because a terminal session only exists
+    /// in the registry at all while it is inside its
+    /// `terminal_retention_secs` window (`AgentRegistry::tick` evicts it
+    /// after), so "present and terminal" already means "a fresh result
+    /// worth a glance". `Stale` does NOT count: a session that went quiet
+    /// on its own is the absence of news, not a request for attention.
+    pub fn summons_board(self) -> bool {
+        match self {
+            AgentSessionState::WaitingForPermission
+            | AgentSessionState::WaitingForInput
+            | AgentSessionState::Failed
+            | AgentSessionState::Completed => true,
+            AgentSessionState::Starting | AgentSessionState::Working | AgentSessionState::Stale => {
+                false
+            }
+        }
+    }
+
     /// Urgency class rank used by the ordering key (spec §2.2 step 1):
     /// `WaitingForPermission`, `WaitingForInput`, `Failed`, `Stale`,
     /// `Working`, `Starting`, `Completed`, most urgent first (lowest
@@ -455,6 +482,21 @@ mod tests {
             ranks, sorted,
             "spec §2.2 order must already be rank-ascending"
         );
+    }
+
+    #[test]
+    fn only_attention_states_summon_the_board() {
+        use AgentSessionState::*;
+        // operator decision 2026-08-02: the Board's job is attention.
+        for s in [WaitingForPermission, WaitingForInput, Failed, Completed] {
+            assert!(s.summons_board(), "{s:?} must summon the Agent Board");
+        }
+        for s in [Starting, Working, Stale] {
+            assert!(
+                !s.summons_board(),
+                "{s:?} is not a request for attention and must not summon the Agent Board"
+            );
+        }
     }
 
     #[test]

@@ -93,6 +93,7 @@ const config: Config = {
     stale_retention_secs: 1200,
     informational_notifications: true,
     completion_notifications: false,
+    board_show_working: true,
     permission_priority: "high",
     input_priority: "medium",
     failure_priority: "high",
@@ -161,6 +162,7 @@ const rustConfigDefaults: Config = {
     stale_retention_secs: 1800,
     informational_notifications: false,
     completion_notifications: true,
+    board_show_working: false,
     permission_priority: "high",
     input_priority: "high",
     failure_priority: "high",
@@ -2115,6 +2117,48 @@ describe("SettingsApp", () => {
       expect(savedConfig!.agents.informational_notifications).toBe(true); // untouched sibling
       // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
       expect(savedConfig!.agents.completion_priority).toBe("low"); // untouched sibling
+    });
+
+    it("the board-presence toggle round-trips into the saved config payload", async () => {
+      // Operator decision 2026-08-02: agents.board_show_working gates
+      // whether a merely-working session may summon the Agent Board at
+      // all. Rust owns the gate itself; Settings only has to round-trip
+      // the key like every other [agents] key.
+      let savedConfig: Config | null = null;
+      mockIPC((command, payload) => {
+        if (command === "get_config") return config;
+        if (command === "get_secret_status") return unsetSecrets;
+        if (command === "get_default_config") return rustConfigDefaults;
+        if (command === "get_agent_health") return health;
+        if (command === "save_config_and_relaunch") {
+          savedConfig = (payload as { config: Config }).config;
+          return null;
+        }
+      });
+      await openAgents();
+
+      const toggle = await screen.findByLabelText(
+        "Show the Agent Board while agents are only working",
+      );
+      expect(isChecked(toggle)).toBe(true); // fixture: agents.board_show_working true
+      fireEvent.click(toggle);
+      expect(isChecked(toggle)).toBe(false);
+
+      fireEvent.click(screen.getByRole("button", { name: "Save & Relaunch" }));
+
+      await waitFor(() => expect(savedConfig).not.toBeNull());
+      // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
+      expect(savedConfig!.agents.board_show_working).toBe(false);
+      // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
+      expect(savedConfig!.agents.completion_notifications).toBe(false); // untouched sibling
+    });
+
+    it("rust's own defaults keep the Agent Board quiet for working-only sessions", async () => {
+      // The default this ships with is FALSE, deliberately a behaviour
+      // change for existing installs (config.rs's field doc) — pin it
+      // against the same `get_default_config` payload the Reset controls
+      // read, so a silent flip to `true` fails here.
+      expect(rustConfigDefaults.agents.board_show_working).toBe(false);
     });
   });
 });

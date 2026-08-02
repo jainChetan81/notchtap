@@ -250,6 +250,12 @@ pub fn run() {
     };
     let agent_runtimes = agents_config.runtimes;
     let agent_enabled = agents_config.enabled;
+    // Operator decision 2026-08-02: the Agent Board's PRESENCE gate,
+    // applied in exactly one place — `AgentBoardPublisher::gate_presence`
+    // (agents/board.rs). Nothing downstream of the publisher (the
+    // overlay's `presentationMode`, the hover-expand path below) knows
+    // this flag exists; they all read the published snapshot instead.
+    let agent_board_show_working = agents_config.board_show_working;
     let agent_stale_after = std::time::Duration::from_secs(agents_config.stale_after_secs);
     let agent_terminal_retention =
         std::time::Duration::from_secs(agents_config.terminal_retention_secs);
@@ -425,6 +431,7 @@ pub fn run() {
                 agent_registry,
                 agent_health.clone(),
                 agent_runtimes,
+                agent_board_show_working,
             );
             app.manage(agent_board.clone());
             agent_board.spawn_tick(agents::board::DEFAULT_TICK_INTERVAL);
@@ -1245,6 +1252,14 @@ fn cutout_height_js_value(inset: f64) -> String {
 // shape) is used instead of `hover::active_card_rect`'s idle formula
 // (sized off the small ambient clock/weather card, which is NOT what's
 // on screen in that case).
+//
+// Operator decision 2026-08-02 (`[agents] board_show_working`): that
+// count already accounts for the Board's PRESENCE gate — the publisher
+// applies it before writing the bookkeeping `last_session_count` reads
+// (`agents::board::AgentBoardPublisher::gate_presence`), so a Board that
+// working-only sessions were not allowed to summon reads `0` here and
+// this function correctly falls back to the idle card rect. No presence
+// check belongs at this call site; there is exactly one gate.
 #[allow(clippy::too_many_arguments)]
 #[cfg(target_os = "macos")]
 fn hover_point_is_over_card(

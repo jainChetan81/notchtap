@@ -214,7 +214,8 @@ impl Default for Appearance {
 
 /// `[agents]` — v7's Agent Adapter config surface (spec §7). Global
 /// enable/retention/staleness plus the two per-kind on/off gates
-/// (`informational_notifications`, `completion_notifications`) and the four
+/// (`informational_notifications`, `completion_notifications`), the
+/// Agent Board's own presence gate (`board_show_working`), and the four
 /// per-kind Notification priorities that
 /// `agents::notification::NotificationPolicy` is built from
 /// (`lib.rs`'s `setup`), and `[agents.runtimes.*]`'s four per-runtime
@@ -247,6 +248,28 @@ pub struct AgentsConfig {
     /// of the box; the struct-level `#[serde(default)]` above means a
     /// config written before this key existed still loads as `true`.
     pub completion_notifications: bool,
+    /// Operator decision 2026-08-02: whether a session that is merely
+    /// WORKING may summon the Agent Board at all. Default `false` — the
+    /// Board's job is ATTENTION, so it becomes present only while at
+    /// least one session is in an attention state
+    /// (`AgentSessionState::summons_board`: waiting-for-permission,
+    /// waiting-for-input, failed, or a completed session still inside
+    /// its `terminal_retention_secs` window). Working/Starting/Stale
+    /// sessions alone leave the notch on its ordinary idle face.
+    ///
+    /// This gates PRESENCE only, never CONTENT: once some session has
+    /// summoned the Board, it lists every retained session including the
+    /// working ones (`agents::board::AgentBoardPublisher::
+    /// publish_if_changed` publishes the whole ordered slice or nothing
+    /// at all — it never filters rows out of a published snapshot).
+    ///
+    /// BEHAVIOR CHANGE for existing installs, deliberately: the
+    /// struct-level `#[serde(default)]` means a `config.toml` written
+    /// before this key existed loads as `false` and therefore stops
+    /// summoning the Board for working-only sessions, which is the point
+    /// of the default. Set `board_show_working = true` to restore the
+    /// pre-2026-08-02 behavior (any live session shows the Board).
+    pub board_show_working: bool,
     pub permission_priority: Priority,
     pub input_priority: Priority,
     pub failure_priority: Priority,
@@ -268,6 +291,7 @@ impl Default for AgentsConfig {
             stale_retention_secs: 600,
             informational_notifications: false,
             completion_notifications: true,
+            board_show_working: false,
             permission_priority: Priority::High,
             input_priority: Priority::High,
             failure_priority: Priority::High,
@@ -826,6 +850,7 @@ mod tests {
         assert_eq!(c.agents.stale_retention_secs, 600);
         assert!(!c.agents.informational_notifications);
         assert!(c.agents.completion_notifications);
+        assert!(!c.agents.board_show_working);
         assert_eq!(c.agents.permission_priority, Priority::High);
         assert_eq!(c.agents.input_priority, Priority::High);
         assert_eq!(c.agents.failure_priority, Priority::High);
@@ -888,6 +913,25 @@ mod tests {
 
         let off = Config::parse("[agents]\ncompletion_notifications = false\n").unwrap();
         assert!(!off.agents.completion_notifications);
+    }
+
+    #[test]
+    fn board_show_working_defaults_to_false_including_for_a_config_predating_the_key() {
+        // Operator decision 2026-08-02, and DELIBERATELY a behaviour
+        // change for existing installs (unlike `completion_notifications`
+        // above, whose absent-key default preserves the old behaviour):
+        // an `[agents]` block written before this key existed must stop
+        // summoning the Agent Board for working-only sessions, because
+        // quiet-by-default is the whole point of the knob.
+        let legacy = Config::parse(
+            "[agents]\nenabled = true\nstale_after_secs = 120\ncompletion_priority = \"low\"\n",
+        )
+        .unwrap();
+        assert!(!legacy.agents.board_show_working);
+        assert_eq!(legacy.agents.stale_after_secs, 120);
+
+        let on = Config::parse("[agents]\nboard_show_working = true\n").unwrap();
+        assert!(on.agents.board_show_working);
     }
 
     #[test]

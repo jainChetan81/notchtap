@@ -38,6 +38,10 @@ function App() {
   // least one session AND the engine isn't Paused (operator feedback,
   // 2026-08-02: pausing must quiet the whole notch, Board included);
   // otherwise the existing clock/weather/media idle.
+  // Whether a working-only set of sessions is allowed to summon the
+  // Board at all (`[agents] board_show_working`, default off) is decided
+  // entirely rust-side, before publish — this component just counts what
+  // arrived. See lib/presentation.ts's rule-3 note.
   // `presentationMode` is pure data (lib/presentation.ts) — this is its
   // one call site.
   const agentState = useAgentState();

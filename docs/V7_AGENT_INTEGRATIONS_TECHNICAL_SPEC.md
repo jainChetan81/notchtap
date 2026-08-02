@@ -482,12 +482,42 @@ sorting, lifecycle inference, expiry, or history merging.
 ### 6.1 presentation precedence
 
 1. a Visible Notification owns the Slot;
-2. when the Slot is empty and at least one live/retained Agent Session
-   exists, show the Agent Board;
+2. when the Slot is empty and the published `agent-state` snapshot holds
+   at least one Agent Session, show the Agent Board;
 3. otherwise show the existing clock/weather/media idle presentation.
 
 when a noteworthy Agent Notification finishes, presentation returns to
 the still-current Agent Board.
+
+**board presence gate** (operator decision 2026-08-02): the Board's job
+is ATTENTION, so a session that is merely running does not summon it. a
+live/retained session existing is therefore no longer sufficient for
+rule 2 — `[agents] board_show_working` (default `false`) decides:
+
+- `false` (default): the Board is present only while at least one
+  session is in an ATTENTION state — `waiting_for_permission`,
+  `waiting_for_input`, `failed`, or a `completed` session still inside
+  its `terminal_retention_secs` window. `working`, `starting`, and
+  `stale` sessions alone leave the notch on its ordinary idle face.
+- `true`: the pre-2026-08-02 behaviour — any live/retained session shows
+  the Board.
+
+this gates PRESENCE, never CONTENT. once any session has summoned the
+Board, it lists every retained session in the usual §2.2 order, working
+ones included.
+
+the gate lives in exactly ONE place: `AgentBoardPublisher::
+gate_presence` (`src-tauri/src/agents/board.rs`), applied to
+`ordered_states` BEFORE the §2.3 dedup comparison. a gated-off Board
+publishes as zero sessions, so every downstream consumer follows without
+a second gate of its own — the overlay's `presentationMode`
+(`src/lib/presentation.ts`) falls through to idle, and Rust's own
+hover-expand (`last_session_count`, `try_expand_board_for_hover`) reads
+`0` and declines to expand an undisplayed Board.
+
+the default is a deliberate BEHAVIOUR CHANGE for existing installs: a
+`config.toml` predating the key loads as `false` and stops summoning the
+Board for working-only sessions. quiet-by-default is the point.
 
 ### 6.2 resting and expanded states
 
@@ -549,6 +579,7 @@ stale_after_secs = 300
 stale_retention_secs = 600
 informational_notifications = false
 completion_notifications = true
+board_show_working = false
 permission_priority = "high"
 input_priority = "high"
 failure_priority = "high"
@@ -574,6 +605,12 @@ of the box. a NON-terminal `Completed` (the per-turn stop) is not
 covered by this key at all; it rides `informational_notifications`
 (default `false`), which is what keeps per-turn cards quiet by default.
 see §5's `Completed` split.
+
+`board_show_working` (added 2026-08-02, operator decision) gates the
+Agent Board's PRESENCE, not any card — see §6.1's board presence gate
+for the full rule. it defaults `false`, and unlike
+`completion_notifications` above, a config predating the key ALSO loads
+as `false`, deliberately changing behaviour for existing installs.
 
 the existing source-level config gains `agent_ttl_secs` and
 `agent_priority` only where the flat compatibility layer still requires
