@@ -183,6 +183,14 @@ pub struct TabWire {
     /// `prefix-[`/`prefix-]` cycling) — wraps modulo the live session
     /// count; emitted to the frontend as `agent-viewed-session-changed`.
     pub viewed_session: std::sync::atomic::AtomicUsize,
+    /// Fired whenever `viewed_session` changes for ANY reason (manual
+    /// prefix-key cycling or the auto-advance timer below) — lets the
+    /// auto-advance loop's wait reset on a manual advance instead of
+    /// firing again moments later, per the spec's "manual navigation
+    /// resets the auto-advance clock" requirement. Mirrors the
+    /// `tokio::sync::Notify` pattern `engine.rs`'s own rotation loop
+    /// already uses for "sleep until deadline, wake early on mutation."
+    pub session_advanced: tokio::sync::Notify,
     /// Plan 171 slice D (PAL consensus 2026-08-03, both models): TRUE
     /// whenever the eleven bare follow-up keys are currently grabbed
     /// system-wide. The watchdog reads ONLY this — never the generation
@@ -207,6 +215,7 @@ impl TabWire {
             prefix: std::sync::Mutex::new(crate::prefix::PrefixState::Disarmed),
             prefix_generation: std::sync::atomic::AtomicU64::new(0),
             viewed_session: std::sync::atomic::AtomicUsize::new(0),
+            session_advanced: tokio::sync::Notify::new(),
             followups_registered: std::sync::atomic::AtomicBool::new(false),
             slot_occupied: std::sync::atomic::AtomicBool::new(false),
         }

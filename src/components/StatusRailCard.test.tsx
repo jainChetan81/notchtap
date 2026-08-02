@@ -2926,6 +2926,73 @@ describe("tab-notch integration (plan 171, slice K)", () => {
       expect(container.querySelector(".below-block")).toBeNull();
     });
 
+    // Plan 184 (Part 1): pins that `viewedSessionIndex` — the
+    // `agent-viewed-session-changed` wire's value, sourced by
+    // `useAgentViewedSession` and threaded down from App.tsx — actually
+    // reaches `AgentBelowBlock`/`PositionBar`, not just that the prop type
+    // exists. Before this plan the prop was never passed at all, so
+    // `AgentBelowBlock` always showed session 0 regardless of rust's own
+    // `viewed_session` state.
+    it("threads viewedSessionIndex through to the below-block, changing which session's hero renders", () => {
+      const sessions = [
+        agentSession({ project: { name: "alpha-repo", cwd: null } }),
+        agentSession({ project: { name: "beta-repo", cwd: null } }),
+      ];
+      const status: StatusState = { ...QUIET, agent: { activeSessions: 2 } };
+
+      const { container, rerender } = render(
+        <StatusRailCard
+          slot={{ state: "empty" }}
+          status={status}
+          hovered={true}
+          selectedTab="agent"
+          agentSessions={sessions}
+          agentCapturedAtMs={1_000_000}
+          viewedSessionIndex={0}
+        />,
+      );
+      expect(screen.getByText(/alpha-repo/)).toBeTruthy();
+      expect(screen.queryByText(/beta-repo/)).toBeNull();
+      const segmentsAtZero = container.querySelectorAll(".ttl-bar > *");
+      expect(segmentsAtZero[0]?.className).toContain("ttl-fill");
+      expect(segmentsAtZero[1]?.className).not.toContain("ttl-fill");
+
+      rerender(
+        <StatusRailCard
+          slot={{ state: "empty" }}
+          status={status}
+          hovered={true}
+          selectedTab="agent"
+          agentSessions={sessions}
+          agentCapturedAtMs={1_000_000}
+          viewedSessionIndex={1}
+        />,
+      );
+      expect(screen.getByText(/beta-repo/)).toBeTruthy();
+      expect(screen.queryByText(/alpha-repo/)).toBeNull();
+      const segmentsAtOne = container.querySelectorAll(".ttl-bar > *");
+      expect(segmentsAtOne[1]?.className).toContain("ttl-fill");
+      expect(segmentsAtOne[0]?.className).not.toContain("ttl-fill");
+    });
+
+    it("omits viewedSessionIndex entirely defaults to session 0, matching TabBelowBlock's own default", () => {
+      const sessions = [
+        agentSession({ project: { name: "alpha-repo", cwd: null } }),
+        agentSession({ project: { name: "beta-repo", cwd: null } }),
+      ];
+      render(
+        <StatusRailCard
+          slot={{ state: "empty" }}
+          status={{ ...QUIET, agent: { activeSessions: 2 } }}
+          hovered={true}
+          selectedTab="agent"
+          agentSessions={sessions}
+          agentCapturedAtMs={1_000_000}
+        />,
+      );
+      expect(screen.getByText(/alpha-repo/)).toBeTruthy();
+    });
+
     it("selecting weather shows the shipped weather card, even while a match is live", () => {
       const { container } = hoveredIdle("weather", LIVE_MATCH_STATUS);
       expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();

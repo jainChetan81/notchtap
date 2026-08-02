@@ -13,7 +13,7 @@ two lands first.
 |---|---|---|---|---|---|
 | 182 | AgentBoard status icons: reuse IconStrip's glyphs in StatusDots | P2 | S | — | DONE |
 | 183 | revert notification manifest hover-expand to keyboard-only | P2 | XS | — | DONE |
-| 184 | wire agent-viewed-session-changed to the display + auto-advance | P2 | M | — | TODO |
+| 184 | wire agent-viewed-session-changed to the display + auto-advance | P2 | M | — | DONE |
 
 **Eighth audit session, plans 175–181 (2026-08-02, `/improve` standard,
 planned at `7ca82d5`)** — scoped to the least-audited surface: the 122
@@ -54,15 +54,13 @@ edit).
 
 **Verified this session but NOT planned (awaiting selection):**
 
-- **Dead prefix pull actions** — `agent-viewed-session-changed` is emitted
-  (`lib.rs:2160-2166`) into the void: no frontend listener exists, and
-  `TabBelowBlock`'s `viewedSessionIndex`/`expanded` props keep their
-  defaults at the one mount site, so prefix `[`/`]` do nothing and
-  `enter`/`o` route to the queue's expand flag, a no-op while the Slot is
-  idle. Four of the eleven grabbed keys deliver zero behaviour; README/spec
-  say otherwise. Fix is M: a `useViewedSession` hook mirroring
-  `useTabSelection`, thread both props, give ExpandToggle a pull-aware
-  branch.
+- **Dead prefix pull actions** — RESOLVED by plan 184's Part 1 (the
+  `[`/`]` half — `agent-viewed-session-changed` now reaches the display
+  via `useAgentViewedSession`, threaded down from `App.tsx`). The
+  `enter`/`o` → queue's expand flag no-op (the `expanded` prop) is a
+  separate, still-open gap plan 184 didn't touch (out of its stated
+  scope) — don't re-plan the `[`/`]` half, only the `expanded` half if
+  it gets picked up.
 - **Media transport controls are complete and unreachable** —
   `now_playing.rs::send_command` is `#[allow(dead_code)]`, the buttons get
   `NOOP_MEDIA_COMMAND` (`TabBelowBlock.tsx:57`) yet render press feedback:

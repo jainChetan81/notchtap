@@ -976,6 +976,83 @@ pub fn run() {
                 silenced_indicator_item,
             );
 
+            // Plan 184 (Part 2): the Agent tab's session auto-advance
+            // timer — cycles `viewed_session` on a fixed interval while
+            // the Agent tab is selected, 2+ sessions exist, the app isn't
+            // hovered, and the engine isn't paused
+            // (`should_auto_advance_session`, above). Macos-only: it reads
+            // `was_hovered`, itself only declared under
+            // `#[cfg(target_os = "macos")]` above (hover tracking is
+            // AppKit-only), so this whole block is gated the same way —
+            // never remove this gate without also giving `was_hovered` a
+            // non-macOS fallback.
+            #[cfg(target_os = "macos")]
+            {
+                const SESSION_AUTO_ADVANCE_INTERVAL: std::time::Duration =
+                    std::time::Duration::from_secs(6);
+                let auto_advance_wire = tab_wire.clone();
+                let auto_advance_app = app.handle().clone();
+                let auto_advance_engine = engine.clone();
+                let auto_advance_hovered = was_hovered.clone();
+                tauri::async_runtime::spawn(async move {
+                    use std::sync::atomic::Ordering;
+                    loop {
+                        tokio::select! {
+                            _ = tokio::time::sleep(SESSION_AUTO_ADVANCE_INTERVAL) => {}
+                            _ = auto_advance_wire.session_advanced.notified() => {
+                                // A manual advance just happened — restart the
+                                // wait instead of also firing this tick.
+                                continue;
+                            }
+                        }
+                        let tab_selected = {
+                            let sel = auto_advance_wire
+                                .tabs
+                                .selection
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner());
+                            sel.selected()
+                        };
+                        let session_count = auto_advance_wire.agent_sessions.load(Ordering::Relaxed);
+                        let hovered = *auto_advance_hovered.lock().unwrap_or_else(|e| e.into_inner());
+                        // Checking `is_paused()` is a pure read — it never
+                        // mutates the queue — so this must go through
+                        // `Engine::read`, NOT `apply`/`apply_blocking`.
+                        // `apply`/`apply_blocking` are the PROPAGATING
+                        // mutation primitives: both unconditionally call
+                        // `self.wake.notify_waiters()` on every invocation,
+                        // which would spuriously wake `spawn_rotation`'s
+                        // loop every `SESSION_AUTO_ADVANCE_INTERVAL` for the
+                        // entire app runtime, regardless of whether the
+                        // Agent tab is even selected. `read`'s own doc
+                        // ("no wake, no emit, & not &mut") and its
+                        // `read_never_wakes` test are exactly the contract
+                        // this call needs. This task lives on the tokio
+                        // runtime (spawned via `tauri::async_runtime::spawn`),
+                        // so it's the async `read`, not `read_blocking` —
+                        // same off-vs-on-runtime split that ruled out
+                        // `apply_blocking` in the first place (see
+                        // `apply_silence_verdict`'s identical async-twin
+                        // reasoning, above).
+                        let paused = auto_advance_engine.read(|q| q.is_paused()).await;
+                        if should_auto_advance_session(tab_selected, session_count, hovered, paused) {
+                            let current = auto_advance_wire.viewed_session.load(Ordering::Relaxed) as isize;
+                            let next = (current + 1).rem_euclid(session_count as isize) as usize;
+                            auto_advance_wire.viewed_session.store(next, Ordering::Relaxed);
+                            use tauri::Emitter;
+                            if let Err(e) = auto_advance_app.emit(
+                                "agent-viewed-session-changed",
+                                serde_json::json!({ "index": next }),
+                            ) {
+                                tracing::error!(
+                                    "failed to emit agent-viewed-session-changed (auto-advance): {e}"
+                                );
+                            }
+                        }
+                    }
+                });
+            }
+
             // espn poller (v2 spec §3) — config-gated: `espn_enabled =
             // false` means it never spawns. first poll only baselines
             // (silent), so starting before the webview loads can't drop
@@ -2157,6 +2234,7 @@ fn handle_prefix_followup<R: tauri::Runtime>(
                     let current = tab_wire.viewed_session.load(Ordering::Relaxed) as isize;
                     let next = (current + delta).rem_euclid(count as isize) as usize;
                     tab_wire.viewed_session.store(next, Ordering::Relaxed);
+                    tab_wire.session_advanced.notify_one();
                     use tauri::Emitter;
                     if let Err(e) = app.emit(
                         "agent-viewed-session-changed",
@@ -2175,6 +2253,28 @@ fn handle_prefix_followup<R: tauri::Runtime>(
         }
         prefix::PrefixAction::NoOp => {}
     }
+}
+
+/// Pure decision, thin apply wrapper (house pattern — see
+/// `watchdog_verdict` in plan 178 / `silence_should_flip`'s own comment).
+/// Whether this tick should advance the Agent tab's viewed session
+/// automatically: the Agent tab must be selected, there must be 2+
+/// sessions to cycle between, the app must not be hovered (pause on
+/// hover, matching the operator's own request), and not paused (matches
+/// every other "the engine isn't delivering anything right now"
+/// precedent in this codebase, e.g. `StatusDots`' pause handling).
+///
+/// Deliberately NOT `#[cfg(target_os = "macos")]`-gated — it takes plain
+/// values and has no OS dependency, so it stays unit-testable on every
+/// platform, same reasoning `docs/TESTING_STRATEGY.md` §4.4 gives for
+/// `presentation_mode`.
+fn should_auto_advance_session(
+    tab_selected: Option<tabs::Tab>,
+    session_count: usize,
+    hovered: bool,
+    paused: bool,
+) -> bool {
+    tab_selected == Some(tabs::Tab::Agent) && session_count > 1 && !hovered && !paused
 }
 
 /// The ONE selection mutation both input paths funnel through — the click
@@ -2616,6 +2716,84 @@ fn open_current_story<R: tauri::Runtime>(engine: &Engine<R>) {
         Err(error) => {
             tracing::debug!(%error, %normalized, "open story command could not be spawned");
         }
+    }
+}
+
+/// Plan 184 (Part 2): `should_auto_advance_session`'s own tests. Kept as a
+/// plain `#[cfg(test)]` module rather than folded into `mod tests` below —
+/// that module (and everything in it, e.g. `silence_should_flip`'s own
+/// tests) compiles out entirely on non-macOS, which is fine for CI (the
+/// `rust` job in `.github/workflows/ci.yml` runs on `macos-latest` only)
+/// but would silently skip these specific tests during local dev on a
+/// non-macOS box. `should_auto_advance_session` itself is deliberately NOT
+/// `target_os`-gated (see its own doc), so its tests shouldn't be either.
+/// Placed here, immediately before `mod tests`, rather than back near the
+/// function's own definition — clippy's `items_after_test_module` lint
+/// requires every non-test item in a scope to precede any test module in
+/// that same scope, so a second test module can only sit at the very end.
+#[cfg(test)]
+mod agent_session_advance_tests {
+    use super::*;
+
+    #[test]
+    fn should_auto_advance_session_requires_agent_tab_multiple_sessions_no_hover_no_pause() {
+        assert!(should_auto_advance_session(
+            Some(tabs::Tab::Agent),
+            3,
+            false,
+            false
+        ));
+    }
+
+    #[test]
+    fn should_auto_advance_session_false_when_different_tab_selected() {
+        assert!(!should_auto_advance_session(
+            Some(tabs::Tab::Weather),
+            3,
+            false,
+            false
+        ));
+    }
+
+    #[test]
+    fn should_auto_advance_session_false_when_no_tab_selected() {
+        assert!(!should_auto_advance_session(None, 3, false, false));
+    }
+
+    #[test]
+    fn should_auto_advance_session_false_with_one_or_zero_sessions() {
+        assert!(!should_auto_advance_session(
+            Some(tabs::Tab::Agent),
+            1,
+            false,
+            false
+        ));
+        assert!(!should_auto_advance_session(
+            Some(tabs::Tab::Agent),
+            0,
+            false,
+            false
+        ));
+    }
+
+    #[test]
+    fn should_auto_advance_session_false_while_hovered() {
+        assert!(!should_auto_advance_session(
+            Some(tabs::Tab::Agent),
+            3,
+            true,
+            false
+        ));
+    }
+
+    #[test]
+    fn should_auto_advance_session_false_while_paused() {
+        assert!(!should_auto_advance_session(
+            Some(tabs::Tab::Agent),
+            3,
+            false,
+            true
+        ));
     }
 }
 
