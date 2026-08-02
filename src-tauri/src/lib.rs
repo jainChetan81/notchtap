@@ -1211,6 +1211,7 @@ pub fn run() {
             // idempotent, and macOS reclaiming the grabs on process death
             // is not something to rely on when the cost of being wrong is
             // the user's keyboard.
+            #[cfg(target_os = "macos")]
             if matches!(event, tauri::RunEvent::Exit) {
                 if let Some(tab_wire) = app_handle.try_state::<Arc<tabs::TabWire>>() {
                     force_release_prefix_followups(app_handle, &tab_wire);
@@ -1935,17 +1936,19 @@ fn position_window(
 // each PrefixAction onto the EXISTING mechanism its own doc names.
 // ---------------------------------------------------------------------------
 
+/// How long after arming the unconditional watchdog force-releases every
+/// follow-up grab. Comfortably past `PREFIX_ARM_WINDOW` (2s) so it never
+/// races a legitimate window, short enough that a stuck bare `Enter` is
+/// measured in seconds rather than "until the app restarts".
+#[cfg(target_os = "macos")]
+const PREFIX_WATCHDOG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 /// The follow-up grabs, `(Code, PrefixKey)` — registered as BARE
 /// shortcuts (no modifiers) only while an armed window is live, then
 /// unregistered the moment one key is consumed, the window times out, or
 /// the prefix/esc disarms it. `enter`/`o` both mean ExpandToggle and
 /// `esc` maps to Disarm, per spec §9's table.
-/// How long after arming the unconditional watchdog force-releases every
-/// follow-up grab. Comfortably past `PREFIX_ARM_WINDOW` (2s) so it never
-/// races a legitimate window, short enough that a stuck bare `Enter` is
-/// measured in seconds rather than "until the app restarts".
-const PREFIX_WATCHDOG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
-
+#[cfg(target_os = "macos")]
 const PREFIX_FOLLOWUPS: [(Code, prefix::PrefixKey); 11] = [
     (Code::Digit1, prefix::PrefixKey::Digit(1)),
     (Code::Digit2, prefix::PrefixKey::Digit(2)),
@@ -1967,6 +1970,7 @@ const PREFIX_FOLLOWUPS: [(Code, prefix::PrefixKey); 11] = [
 /// letters/digits get the `KeyX`/`DigitN` spelling. Unresolvable keys
 /// warn and fall back to Space rather than failing boot (fail-open,
 /// same posture as every optional surface here).
+#[cfg(target_os = "macos")]
 fn prefix_shortcut_from_config(value: &str) -> Shortcut {
     use std::str::FromStr;
     let key = value.strip_prefix("\u{2303}\u{21e7}").unwrap_or(value);
@@ -1992,6 +1996,7 @@ fn prefix_shortcut_from_config(value: &str) -> Shortcut {
 /// Which armed-window key a fired shortcut is, if any. Bare (modifierless)
 /// matches only — these shortcuts exist solely while armed, so a hit here
 /// implies an armed window opened them.
+#[cfg(target_os = "macos")]
 fn prefix_followup_key_for(shortcut: &Shortcut) -> Option<prefix::PrefixKey> {
     PREFIX_FOLLOWUPS
         .iter()
@@ -2010,6 +2015,7 @@ fn prefix_followup_key_for(shortcut: &Shortcut) -> Option<prefix::PrefixKey> {
 /// typing is broken everywhere until notchtap restarts. So a failed
 /// release is logged at ERROR and reported to the caller, which keeps
 /// `followups_registered` true so the watchdog retries.
+#[cfg(target_os = "macos")]
 fn set_prefix_followups_registered<R: tauri::Runtime>(app: &tauri::AppHandle<R>, on: bool) -> bool {
     let mut all_ok = true;
     for (code, _) in PREFIX_FOLLOWUPS {
@@ -2038,6 +2044,7 @@ fn set_prefix_followups_registered<R: tauri::Runtime>(app: &tauri::AppHandle<R>,
 /// clears the armed state regardless of generation, timer, or current
 /// state — the one path that is safe to call from anywhere, at any time,
 /// however many times.
+#[cfg(target_os = "macos")]
 fn force_release_prefix_followups<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     tab_wire: &Arc<tabs::TabWire>,
@@ -2054,6 +2061,7 @@ fn force_release_prefix_followups<R: tauri::Runtime>(
 /// The prefix combo fired: arm (register the follow-up grabs + start the
 /// cancellable disarm timer) or — if an armed window was already live —
 /// disarm (spec §9: the prefix again IS the disarm gesture).
+#[cfg(target_os = "macos")]
 fn handle_prefix_fire<R: tauri::Runtime>(app: &tauri::AppHandle<R>, tab_wire: &Arc<tabs::TabWire>) {
     use std::sync::atomic::Ordering;
     let now = std::time::Instant::now();
@@ -2106,6 +2114,7 @@ fn handle_prefix_fire<R: tauri::Runtime>(app: &tauri::AppHandle<R>, tab_wire: &A
 /// ANY consumed key, spec §9), release the grabs, cancel the timer via
 /// the generation bump, and route the resulting action onto the existing
 /// mechanism its own `PrefixAction` doc names.
+#[cfg(target_os = "macos")]
 fn handle_prefix_followup<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     key: prefix::PrefixKey,
