@@ -116,7 +116,7 @@ function AgentGlyph(): ReactNode {
   );
 }
 
-function FootballGlyph(): ReactNode {
+export function FootballGlyph(): ReactNode {
   return (
     <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
       <circle cx="9" cy="9" r="6.5" stroke="currentColor" strokeWidth="1.4" />
@@ -150,7 +150,7 @@ function MusicGlyph(): ReactNode {
   );
 }
 
-function WeatherGlyph(): ReactNode {
+export function WeatherGlyph(): ReactNode {
   return (
     <svg viewBox="0 0 18 18" fill="currentColor" aria-hidden="true">
       <path d="M5.5 13.5 a3.2 3.2 0 0 1 -0.4 -6.38 a3.6 3.6 0 0 1 6.9 -1.5 a2.9 2.9 0 0 1 -0.3 7.88 z" />
@@ -158,7 +158,7 @@ function WeatherGlyph(): ReactNode {
   );
 }
 
-function NewsGlyph({ charge }: { charge: number }): ReactNode {
+export function NewsGlyph({ charge }: { charge: number }): ReactNode {
   const clamped = Math.max(0, Math.min(1, charge));
   // A real, unique id per mount (React's useId) — not a hardcoded string.
   // Two NewsGlyphs in the same document (unlikely in the live app, real
