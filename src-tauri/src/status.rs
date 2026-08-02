@@ -286,25 +286,38 @@ pub fn status_state_if_changed(
 /// logged, never propagated — by this point the state has already changed,
 /// so failing the caller would misreport the underlying mutation.
 /// Plan 171 §0: `tab-selection-changed`, `{ selected: "agent" | … |
-/// "news" | null }`, emitted on actual transitions only — the same
-/// discipline `emit_hover_changed_if_transitioned` follows for hover
-/// (`last` is the last value actually put on the wire, not the last
-/// computed). Called from every path that can move the selection: the
-/// click monitor, the prefix keymap, and the engine loop's liveness
-/// clearing.
+/// "news" | null }`, emitted on actual transitions only (`last` is the
+/// last value actually put on the wire, not the last computed). Called
+/// from every path that can move the selection: the click monitor, the
+/// prefix keymap, and the engine loop's liveness clearing.
+///
+/// **The emit happens INSIDE the `last` guard, and that differs
+/// deliberately from `emit_hover_changed_if_transitioned`, which this
+/// otherwise mirrors.** Hover has exactly ONE writer (the AppKit
+/// tracking-area handlers, all on the main thread), so unlocking before
+/// emitting cannot reorder anything there. Tab selection has TWO: the
+/// click/prefix path on the AppKit main thread, and the engine's status
+/// loop on a tokio worker. With two writers, unlock-then-emit can put the
+/// OLDER payload on the wire LAST (both threads swap the guard, then race
+/// to `emit`), and the mismatch STICKS — the next call compares against
+/// the newer guard value and returns early, so nothing ever corrects the
+/// frontend. Holding the lock across the emit makes wire order a total
+/// order under this mutex. It adds no blocking edge: `app.emit` is a
+/// synchronous, non-blocking post (see `engine.rs`'s `apply`, which emits
+/// under its own queue lock for exactly this reason), this mutex is the
+/// only lock this function takes, and no rust-side listener subscribes to
+/// `tab-selection-changed` — do not add an `.await` inside this block.
 pub fn emit_tab_selection_if_transitioned<R: tauri::Runtime>(
     app: &tauri::AppHandle<R>,
     last: &std::sync::Mutex<Option<crate::tabs::Tab>>,
     selected: Option<crate::tabs::Tab>,
 ) {
     use tauri::Emitter;
-    {
-        let mut guard = last.lock().unwrap_or_else(|e| e.into_inner());
-        if *guard == selected {
-            return;
-        }
-        *guard = selected;
+    let mut guard = last.lock().unwrap_or_else(|e| e.into_inner());
+    if *guard == selected {
+        return;
     }
+    *guard = selected;
     let payload = serde_json::json!({
         "selected": selected.map(crate::tabs::Tab::wire_label),
     });

@@ -43,6 +43,17 @@ pub fn click_target(x: f64, y: f64, present: &[Tab], rects: &[Rect]) -> Option<T
 
 /// Everything the monitor closure needs, bundled so the install site
 /// reads as data, not a positional soup.
+///
+/// The split between what lives here and what the handler re-reads per
+/// event is deliberate: geometry inputs that CANNOT change without a
+/// relaunch are captured once (`window_number`, `mode`, `cutout_width`,
+/// `cutout_height`), while anything the running app can change under us
+/// is read fresh inside the handler. `card_scale` is the second kind —
+/// the Appearance settings hot-apply it via `set_appearance`, and the
+/// hover hit-test already re-reads it per event
+/// (`lib.rs::hover_point_is_over_card`), so a captured copy would leave
+/// the click rects on the boot scale while the hover rects and the
+/// webview both moved. `board_frame` is the same story for height.
 #[cfg(target_os = "macos")]
 pub struct ClickMonitorParams<R: tauri::Runtime> {
     pub app: tauri::AppHandle<R>,
@@ -54,7 +65,6 @@ pub struct ClickMonitorParams<R: tauri::Runtime> {
     pub mode: crate::presentation::Mode,
     pub cutout_width: f64,
     pub cutout_height: f64,
-    pub scale: f64,
     /// The REAL currently-applied window height, read fresh per click —
     /// never `hover::WINDOW_HEIGHT`. The Agent Board's hover-expand
     /// genuinely resizes this window taller while the Slot is idle,
@@ -78,6 +88,7 @@ pub struct ClickMonitorParams<R: tauri::Runtime> {
 pub fn install_click_monitor<R: tauri::Runtime>(params: ClickMonitorParams<R>) {
     use block2::RcBlock;
     use objc2_app_kit::{NSEvent, NSEventMask};
+    use tauri::Manager;
 
     let ClickMonitorParams {
         app,
@@ -87,7 +98,6 @@ pub fn install_click_monitor<R: tauri::Runtime>(params: ClickMonitorParams<R>) {
         mode,
         cutout_width,
         cutout_height,
-        scale,
         board_frame,
     } = params;
 
@@ -118,6 +128,15 @@ pub fn install_click_monitor<R: tauri::Runtime>(params: ClickMonitorParams<R>) {
             .unwrap_or_else(|e| e.into_inner())
             .clone();
         let real_window_height = board_frame.lock().unwrap_or_else(|e| e.into_inner()).height;
+        // Live, never the boot value: `set_appearance` hot-applies a new
+        // `card_scale` at runtime, and the hover hit-test reads it per
+        // event for exactly this reason (`hover_point_is_over_card`).
+        let scale = app
+            .state::<std::sync::Mutex<crate::config::Config>>()
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .appearance
+            .card_scale;
         let rects = crate::hover::icon_strip_rects(
             mode,
             cutout_width,
