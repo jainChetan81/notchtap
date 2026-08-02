@@ -308,10 +308,37 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
         errors.append(&mut appearance_errors);
     }
 
+    // plan 171 slice J (spec §9): `prefix_shortcut`'s doc comment
+    // (config.rs) has the full rationale — this is the save-time
+    // backstop, mirroring the frontend's own inline
+    // `isValidPrefixShortcut` (ShortcutsSection.tsx), which must stay in
+    // exact sync with `is_valid_prefix_shortcut` below.
+    if !is_valid_prefix_shortcut(&c.prefix_shortcut) {
+        errors.push(format!(
+            "prefix_shortcut must be \"⌃⇧\" followed by one more key name with no whitespace (got {:?})",
+            c.prefix_shortcut
+        ));
+    }
+
     if errors.is_empty() {
         Ok(())
     } else {
         Err(errors)
+    }
+}
+
+/// See [`crate::config::Config::prefix_shortcut`]'s doc for the exact
+/// rule this enforces. Kept as its own pure function (rather than inline
+/// in `validate`) so its own unit tests can exercise the boundary
+/// directly, the same split `feed_host_is_internal`/`feed_key` above get.
+fn is_valid_prefix_shortcut(value: &str) -> bool {
+    const PREFIX: &str = "⌃⇧";
+    match value.strip_prefix(PREFIX) {
+        Some(rest) => {
+            let key_chars = rest.chars().count();
+            (1..=24).contains(&key_chars) && !rest.chars().any(char::is_whitespace)
+        }
+        None => false,
     }
 }
 
@@ -1298,6 +1325,37 @@ mod tests {
     #[test]
     fn default_config_validates_clean() {
         assert!(validate(&Config::default()).is_ok());
+    }
+
+    // --- prefix_shortcut (plan 171 slice J) ---
+
+    #[test]
+    fn prefix_shortcut_accepts_the_shipped_default_and_the_existing_combo_family() {
+        assert!(is_valid_prefix_shortcut("⌃⇧Space"));
+        // a single glyph, matching the existing seven shortcuts' own
+        // shape (`⌃⇧N`, `⌃⇧]`, `⌃⇧,`, ...).
+        assert!(is_valid_prefix_shortcut("⌃⇧N"));
+    }
+
+    #[test]
+    fn prefix_shortcut_rejects_missing_prefix_empty_key_and_embedded_whitespace() {
+        assert!(!is_valid_prefix_shortcut("Space")); // no ⌃⇧ prefix at all
+        assert!(!is_valid_prefix_shortcut("⌃⇧")); // prefix with no key name
+        assert!(!is_valid_prefix_shortcut("")); // empty
+        assert!(!is_valid_prefix_shortcut("⌃⇧ Space")); // whitespace right after the prefix
+        assert!(!is_valid_prefix_shortcut("⌃⇧Sp ace")); // whitespace inside the key name
+        assert!(!is_valid_prefix_shortcut("⇧⌃Space")); // glyphs in the wrong order
+    }
+
+    #[test]
+    fn prefix_shortcut_boundary_validates_through_the_whole_config() {
+        let mut c = Config {
+            prefix_shortcut: "not-a-combo".to_string(),
+            ..Config::default()
+        };
+        assert!(validate(&c).is_err());
+        c.prefix_shortcut = "⌃⇧Space".to_string();
+        assert!(validate(&c).is_ok());
     }
 
     #[test]

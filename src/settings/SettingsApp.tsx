@@ -472,7 +472,9 @@ export function SettingsApp() {
                     {activeSection === "agents" ? (
                       <AgentsSection config={config} patchConfig={patchConfig} />
                     ) : null}
-                    {activeSection === "shortcuts" ? <ShortcutsSection /> : null}
+                    {activeSection === "shortcuts" ? (
+                      <ShortcutsSection config={config} patchConfig={patchConfig} />
+                    ) : null}
                     {activeSection === "diagnostics" ? <DiagnosticsSection /> : null}
                     {activeSection === "history" ? <HistorySection config={config} /> : null}
                     {activeSection === "queue" ? <QueueSection /> : null}

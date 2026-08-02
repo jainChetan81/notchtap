@@ -121,6 +121,7 @@ const config: Config = {
   history_enabled: true,
   now_playing_enabled: true,
   silence: { enabled: true, window: "00:00-10:00" },
+  prefix_shortcut: "⌃⇧Space",
 };
 
 // Mirrors src-tauri/src/config.rs::Config::default() (served over IPC by
@@ -190,6 +191,7 @@ const rustConfigDefaults: Config = {
   history_enabled: false,
   now_playing_enabled: false,
   silence: { enabled: true, window: "00:00-10:00" },
+  prefix_shortcut: "⌃⇧Space",
 };
 
 const unsetSecrets: SecretStatus = {
@@ -578,6 +580,66 @@ describe("SettingsApp", () => {
     await waitFor(() => expect(savedConfig).not.toBeNull());
     // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
     expect(savedConfig!.silence.window).toBe("00:00-10:00");
+  });
+
+  // plan 171 slice J: the prefix keybinding field, in the Shortcuts
+  // section, round-trips into config.prefix_shortcut through the same
+  // Save & Relaunch path as every other Settings field.
+  it("editing the prefix keybinding patches config.prefix_shortcut in the saved payload", async () => {
+    let savedConfig: Config | null = null;
+    mockIPC((command, payload) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "save_config_and_relaunch") {
+        savedConfig = (payload as { config: Config }).config;
+        return null;
+      }
+    });
+    render(<SettingsApp />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Shortcuts" }));
+    const prefixInput = await screen.findByDisplayValue("⌃⇧Space");
+    fireEvent.change(prefixInput, { target: { value: "⌃⇧X" } });
+
+    fireEvent.click(screen.getByRole("button", { name: "Save & Relaunch" }));
+
+    await waitFor(() => expect(savedConfig).not.toBeNull());
+    // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
+    expect(savedConfig!.prefix_shortcut).toBe("⌃⇧X");
+  });
+
+  // plan 171 slice J: an in-progress invalid prefix string must NOT reach
+  // patchConfig (the last valid value stays committed) and must surface
+  // an inline error — the client-side mirror of
+  // `settings::is_valid_prefix_shortcut`'s rules, ahead of the
+  // server-side ErrorPanel round-trip.
+  it("an invalid prefix keybinding shows an inline error and never patches config.prefix_shortcut", async () => {
+    let savedConfig: Config | null = null;
+    mockIPC((command, payload) => {
+      if (command === "get_config") return config;
+      if (command === "get_secret_status") return unsetSecrets;
+      if (command === "get_default_config") return rustConfigDefaults;
+      if (command === "save_config_and_relaunch") {
+        savedConfig = (payload as { config: Config }).config;
+        return null;
+      }
+    });
+    render(<SettingsApp />);
+
+    fireEvent.click(await screen.findByRole("button", { name: "Shortcuts" }));
+    const prefixInput = await screen.findByDisplayValue("⌃⇧Space");
+    fireEvent.change(prefixInput, { target: { value: "not-a-combo" } });
+
+    expect(
+      await screen.findByText("invalid — expected ⌃⇧ followed by one key, no spaces"),
+    ).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Save & Relaunch" }));
+
+    await waitFor(() => expect(savedConfig).not.toBeNull());
+    // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
+    expect(savedConfig!.prefix_shortcut).toBe("⌃⇧Space");
   });
 
   it("renders every save rejection message", async () => {
