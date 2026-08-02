@@ -1074,12 +1074,45 @@ export function StatusRailCard({
           something arriving unannounced. Rendering it here also keeps
           the push path byte-identical: `tabPullOpen` is false for the
           whole life of a Showing card, so this is simply absent then. */}
-      <TabBelowBlock
-        selected={pulledTab}
-        status={status}
-        agentSessions={agentSessions}
-        agentCapturedAtMs={agentCapturedAtMs}
-      />
+      {/* Animation lock-down (2026-08-03): keyed on the selected tab so
+          switching icons CROSS-FADES rather than jump-cutting — this is
+          the one moment the whole feature is about, and every other
+          content swap in this file is animated. `mode="wait"` matches the
+          rotation swap's own discipline (one card on stage at a time).
+          Emphasis is below-cutout content only, per animationTiming.ts's
+          standing law — the shell itself is untouched. Durations are the
+          rotation tokens, not new literals (spec section 13). */}
+      <AnimatePresence mode="wait" initial={false}>
+        {pulledTab !== null && (
+          <motion.div
+            key={pulledTab}
+            initial={{ opacity: 0, y: -4 }}
+            animate={{
+              opacity: 1,
+              y: 0,
+              transition: {
+                duration: ROTATION_ENTER_MS / 1000,
+                ease: NOTCHTAP_EASE,
+              },
+            }}
+            exit={{
+              opacity: 0,
+              y: -2,
+              transition: {
+                duration: ROTATION_EXIT_MS / 1000,
+                ease: NOTCHTAP_EASE,
+              },
+            }}
+          >
+            <TabBelowBlock
+              selected={pulledTab}
+              status={status}
+              agentSessions={agentSessions}
+              agentCapturedAtMs={agentCapturedAtMs}
+            />
+          </motion.div>
+        )}
+      </AnimatePresence>
       {/* plan 129 (K2, deep-review fix): this `display: contents` div is
           the ACTUAL live-region wrapper now — `liveRegionActive`'s own
           doc (above) has the full mechanism. It is a plain, always-

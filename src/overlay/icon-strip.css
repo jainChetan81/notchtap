@@ -65,7 +65,14 @@
     width var(--reveal-ms, 260ms) var(--ease-notchtap),
     margin-left var(--reveal-ms, 260ms) var(--ease-notchtap),
     opacity var(--hover-ms, 160ms) var(--ease-notchtap),
-    transform var(--reveal-ms, 260ms) var(--ease-notchtap-pop, cubic-bezier(0.3, 1.36, 0.44, 1));
+    /* Animation lock-down (2026-08-03): the press (`:active { scale(0.9) }`
+       below) rides THIS leg. At 260ms on an overshoot curve a tap mushes
+       going down and bounces past 1.0 coming back. 160ms matches the two
+       press affordances this repo already got right (`.mr-btn:active`,
+       `.batch-nav button:active`). The presence reveal shares the leg and
+       still reads correctly at 160ms — its opacity partner is already
+       160ms. */
+    transform var(--hover-ms, 160ms) var(--ease-notchtap-pop, cubic-bezier(0.3, 1.36, 0.44, 1));
 }
 /* the glow: a tight core (crisp stroke) plus a wide bloom (the actual
    halo), both `currentColor` so hue and glow can never drift apart —
@@ -158,7 +165,16 @@
    it. The calmest of the loud ones: an agent session is the longest-
    running source, so anything sharper becomes unbearable over a long
    build. */
-.card-root .icon.agent.is-live svg {
+/* Animation lock-down (2026-08-03): every `infinite` loop below is gated
+   on `.card-assembly.hovered`. The strip is hidden at rest with
+   `visibility: hidden`, NOT `display: none` (see the top of this file —
+   that choice is deliberate, spec section 2 decision 2), and a
+   visibility-hidden node's CSS animations keep running. Without this gate
+   five `filter: drop-shadow` re-blurs tick forever in an always-on
+   WKWebView, painting nothing. Same bug class this repo already names in
+   StatusRailCard.tsx's IdleFace note ("timers would run forever for a
+   node that can never be seen"). */
+.card-root .card-assembly.hovered .icon.agent.is-live svg {
   animation: icon-agent-pulse 1900ms ease-in-out infinite;
 }
 @keyframes icon-agent-pulse {
@@ -176,7 +192,7 @@
 /* FOOTBALL — an irregular flicker on a 2.8s loop, bursts clustered at the
    front, deliberately NOT a sine wave: a live match is jumpy, an even
    pulse reads as "loading" rather than "live". */
-.card-root .icon.football.is-live svg {
+.card-root .card-assembly.hovered .icon.football.is-live svg {
   animation: icon-football-flicker 2800ms linear infinite;
 }
 @keyframes icon-football-flicker {
@@ -220,7 +236,7 @@
    drifts mint -> teal on a slower 3.6s clock, letting the two phase
    against each other rather than locking into one mechanical pulse. The
    bob is a `transform`, compositor-only. */
-.card-root .icon.music.is-live svg {
+.card-root .card-assembly.hovered .icon.music.is-live svg {
   animation:
     icon-music-bob 900ms ease-in-out infinite,
     icon-music-hue 3600ms ease-in-out infinite;
@@ -252,7 +268,7 @@
    the always-there icon, the one that has to survive being looked at
    for a long time. Runs whenever the icon is PRESENT, not only "live" —
    weather has no live state (spec section 6's table). */
-.card-root .icon.weather.is-present svg {
+.card-root .card-assembly.hovered .icon.weather.is-present svg {
   animation: icon-weather-drift 7200ms ease-in-out infinite;
 }
 @keyframes icon-weather-drift {
@@ -282,7 +298,7 @@
 .card-root .icon.news.is-charged {
   opacity: 1;
 }
-.card-root .icon.news.is-charged svg {
+.card-root .card-assembly.hovered .icon.news.is-charged svg {
   animation: icon-news-glow 2600ms ease-in-out infinite;
 }
 @keyframes icon-news-glow {

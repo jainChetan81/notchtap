@@ -370,6 +370,9 @@ pub fn run() {
             // = `rss_max_per_poll` — a "full batch" is exactly what one
             // poll cycle is allowed to land (news_charge.rs's own doc).
             let tab_wire = std::sync::Arc::new(tabs::TabWire::new(rss_max_per_poll));
+            // Managed so the Exit hook in `run()` can reach it to
+            // force-release any live follow-up grabs (see that hook).
+            app.manage(tab_wire.clone());
             let engine = Engine::new(
                 initial_queue,
                 app.handle().clone(),
@@ -1199,8 +1202,21 @@ pub fn run() {
                 });
             }
         })
-        .run(tauri::generate_context!())
-        .expect("error while running notchtap");
+        .build(tauri::generate_context!())
+        .expect("error while running notchtap")
+        .run(|app_handle, event| {
+            // PAL consensus 2026-08-03: the other path by which a bare
+            // follow-up grab could outlive the app's own control flow —
+            // quitting while armed. Releasing on Exit is cheap and
+            // idempotent, and macOS reclaiming the grabs on process death
+            // is not something to rely on when the cost of being wrong is
+            // the user's keyboard.
+            if matches!(event, tauri::RunEvent::Exit) {
+                if let Some(tab_wire) = app_handle.try_state::<Arc<tabs::TabWire>>() {
+                    force_release_prefix_followups(app_handle, &tab_wire);
+                }
+            }
+        });
 }
 
 /// Blocking native error dialog for boot-time failures that happen
@@ -1924,6 +1940,12 @@ fn position_window(
 /// unregistered the moment one key is consumed, the window times out, or
 /// the prefix/esc disarms it. `enter`/`o` both mean ExpandToggle and
 /// `esc` maps to Disarm, per spec §9's table.
+/// How long after arming the unconditional watchdog force-releases every
+/// follow-up grab. Comfortably past `PREFIX_ARM_WINDOW` (2s) so it never
+/// races a legitimate window, short enough that a stuck bare `Enter` is
+/// measured in seconds rather than "until the app restarts".
+const PREFIX_WATCHDOG_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 const PREFIX_FOLLOWUPS: [(Code, prefix::PrefixKey); 11] = [
     (Code::Digit1, prefix::PrefixKey::Digit(1)),
     (Code::Digit2, prefix::PrefixKey::Digit(2)),
@@ -1977,7 +1999,19 @@ fn prefix_followup_key_for(shortcut: &Shortcut) -> Option<prefix::PrefixKey> {
         .map(|(_, key)| *key)
 }
 
-fn set_prefix_followups_registered<R: tauri::Runtime>(app: &tauri::AppHandle<R>, on: bool) {
+/// Registers or releases the eleven bare follow-up grabs. Returns whether
+/// EVERY key reached the requested state.
+///
+/// PAL consensus 2026-08-03 (gemini-2.5-pro + gpt-5.2, unanimous on this
+/// point): a per-key failure is asymmetric and the old "fail-open, warn,
+/// move on" comment had it backwards. Failing to REGISTER is benign — that
+/// key simply doesn't work. Failing to UNREGISTER is the catastrophic
+/// case: a bare `Enter`/`p`/`1` stays grabbed SYSTEM-WIDE and the user's
+/// typing is broken everywhere until notchtap restarts. So a failed
+/// release is logged at ERROR and reported to the caller, which keeps
+/// `followups_registered` true so the watchdog retries.
+fn set_prefix_followups_registered<R: tauri::Runtime>(app: &tauri::AppHandle<R>, on: bool) -> bool {
+    let mut all_ok = true;
     for (code, _) in PREFIX_FOLLOWUPS {
         let sc = Shortcut::new(None, code);
         let result = if on {
@@ -1986,11 +2020,35 @@ fn set_prefix_followups_registered<R: tauri::Runtime>(app: &tauri::AppHandle<R>,
             app.global_shortcut().unregister(sc)
         };
         if let Err(e) = result {
-            // Fail-open: a single un(register) failure (another app owns
-            // the key) degrades that one key, never the whole keymap.
-            tracing::warn!(?code, on, "prefix follow-up grab toggle failed: {e}");
+            all_ok = false;
+            if on {
+                tracing::warn!(?code, "prefix follow-up grab failed: {e}");
+            } else {
+                tracing::error!(
+                    ?code,
+                    "prefix follow-up RELEASE failed — this key may stay grabbed system-wide: {e}"
+                );
+            }
         }
     }
+    all_ok
+}
+
+/// The unconditional dead-man's switch. Releases every follow-up grab and
+/// clears the armed state regardless of generation, timer, or current
+/// state — the one path that is safe to call from anywhere, at any time,
+/// however many times.
+fn force_release_prefix_followups<R: tauri::Runtime>(
+    app: &tauri::AppHandle<R>,
+    tab_wire: &Arc<tabs::TabWire>,
+) {
+    use std::sync::atomic::Ordering;
+    if !tab_wire.followups_registered.swap(false, Ordering::SeqCst) {
+        return;
+    }
+    tracing::warn!("prefix watchdog: force-releasing follow-up grabs");
+    let _ = set_prefix_followups_registered(app, false);
+    *tab_wire.prefix.lock().unwrap_or_else(|e| e.into_inner()) = prefix::PrefixState::Disarmed;
 }
 
 /// The prefix combo fired: arm (register the follow-up grabs + start the
@@ -2005,11 +2063,16 @@ fn handle_prefix_fire<R: tauri::Runtime>(app: &tauri::AppHandle<R>, tab_wire: &A
         st.is_armed(now)
     };
     let generation = tab_wire.prefix_generation.fetch_add(1, Ordering::SeqCst) + 1;
-    set_prefix_followups_registered(app, armed);
+    let all_ok = set_prefix_followups_registered(app, armed);
+    // Stays true if a RELEASE partially failed, so the watchdog retries.
+    tab_wire
+        .followups_registered
+        .store(armed || !all_ok, Ordering::SeqCst);
     if armed {
-        let app = app.clone();
+        let timer_app = app.clone();
         let wire = tab_wire.clone();
         tauri::async_runtime::spawn(async move {
+            let app = timer_app;
             tokio::time::sleep(prefix::PREFIX_ARM_WINDOW).await;
             // Only the timer for the CURRENT arm acts — any later
             // consume/disarm/re-arm bumped the generation past us.
@@ -2018,8 +2081,23 @@ fn handle_prefix_fire<R: tauri::Runtime>(app: &tauri::AppHandle<R>, tab_wire: &A
                     let mut st = wire.prefix.lock().unwrap_or_else(|e| e.into_inner());
                     *st = prefix::PrefixState::Disarmed;
                 }
-                set_prefix_followups_registered(&app, false);
+                if set_prefix_followups_registered(&app, false) {
+                    wire.followups_registered.store(false, Ordering::SeqCst);
+                }
             }
+        });
+        // The watchdog (PAL consensus 2026-08-03): fires well after any
+        // legitimate window has closed and force-releases if ANYTHING is
+        // still grabbed, ignoring generation entirely. This is the net
+        // that catches what the generation-guarded timer above cannot —
+        // a wedged runtime, a lost timer, a panic that unwound past the
+        // release, or an unregister that failed per-key. Idempotent, so
+        // overlapping watchdogs from rapid re-arming are harmless.
+        let watchdog_app = app.clone();
+        let watchdog_wire = tab_wire.clone();
+        tauri::async_runtime::spawn(async move {
+            tokio::time::sleep(PREFIX_WATCHDOG_TIMEOUT).await;
+            force_release_prefix_followups(&watchdog_app, &watchdog_wire);
         });
     }
 }
@@ -2041,7 +2119,9 @@ fn handle_prefix_followup<R: tauri::Runtime>(
         st.on_key(std::time::Instant::now(), key)
     };
     tab_wire.prefix_generation.fetch_add(1, Ordering::SeqCst);
-    set_prefix_followups_registered(app, false);
+    if set_prefix_followups_registered(app, false) {
+        tab_wire.followups_registered.store(false, Ordering::SeqCst);
+    }
     match action {
         prefix::PrefixAction::Select(tab) => {
             apply_tab_select(app, tab_wire, tab);

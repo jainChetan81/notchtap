@@ -183,6 +183,12 @@ pub struct TabWire {
     /// `prefix-[`/`prefix-]` cycling) — wraps modulo the live session
     /// count; emitted to the frontend as `agent-viewed-session-changed`.
     pub viewed_session: std::sync::atomic::AtomicUsize,
+    /// Plan 171 slice D (PAL consensus 2026-08-03, both models): TRUE
+    /// whenever the eleven bare follow-up keys are currently grabbed
+    /// system-wide. The watchdog reads ONLY this — never the generation
+    /// counter — so a wedged runtime, a lost timer, or a panic that
+    /// unwound past the normal release path still gets caught.
+    pub followups_registered: std::sync::atomic::AtomicBool,
     /// Whether a pushed card currently occupies the Slot — mirrored at
     /// every `emit_slot_state` site so the click monitor (a sync
     /// main-thread AppKit callback that cannot await the queue) can gate
@@ -201,6 +207,7 @@ impl TabWire {
             prefix: std::sync::Mutex::new(crate::prefix::PrefixState::Disarmed),
             prefix_generation: std::sync::atomic::AtomicU64::new(0),
             viewed_session: std::sync::atomic::AtomicUsize::new(0),
+            followups_registered: std::sync::atomic::AtomicBool::new(false),
             slot_occupied: std::sync::atomic::AtomicBool::new(false),
         }
     }
