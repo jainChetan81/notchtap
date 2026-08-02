@@ -13,11 +13,20 @@
 //!
 //! This module is also the SINGLE place the Agent Board's PRESENCE is
 //! decided (operator decision 2026-08-02, `[agents] board_show_working`):
-//! [`AgentBoardPublisher::gate_presence`] runs one layer above the dedup
-//! comparison, so a Board nobody needs publishes as zero sessions and
-//! every downstream consumer — the overlay's `presentationMode`
-//! (`src/lib/presentation.ts`) and `lib.rs`'s hover-expand alike — stays
-//! ignorant of the knob and simply reads the published snapshot.
+//! [`AgentBoardPublisher::gate_presence`] turns the ordered registry
+//! slice into the Board's own list, so a Board nobody needs publishes as
+//! zero sessions and every downstream consumer — the overlay's
+//! `presentationMode` (`src/lib/presentation.ts`) and `lib.rs`'s
+//! hover-expand alike — stays ignorant of the knob and simply reads the
+//! published snapshot.
+//!
+//! Plan 177: that gate governs the Board's AUTONOMOUS summoning only.
+//! The snapshot also carries the UNGATED slice as `tab_sessions` for the
+//! user-initiated pull surface (the operator clicked the agent icon and
+//! is owed whatever is running), and the dedup comparison above runs
+//! against that ungated slice so gate-hidden changes still reach it —
+//! see [`AgentBoardPublisher::publish_if_changed`] for why that is a
+//! superset trigger rather than a change to Board behaviour.
 
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
@@ -33,10 +42,19 @@ use super::registry::AgentRegistryHandle;
 /// both together.
 pub const AGENT_STATE_EVENT: &str = "agent-state";
 
-/// The full `agent-state` wire snapshot (spec §6). `sessions` arrives
-/// already ordered by `AgentRegistry::ordered_states` (spec §2.2) — the
-/// overlay performs no sorting, lifecycle inference, expiry, or history
-/// merging of its own (spec §6's own words).
+/// The full `agent-state` wire snapshot (spec §6). Both session lists
+/// arrive already ordered by `AgentRegistry::ordered_states` (spec §2.2)
+/// — the overlay performs no sorting, lifecycle inference, expiry, or
+/// history merging of its own (spec §6's own words).
+///
+/// Plan 177: the snapshot carries TWO views of the same ordered slice,
+/// because the two surfaces that read it ask different questions.
+/// `sessions` is the AGENT BOARD's list — summons-gated by
+/// [`AgentBoardPublisher::gate_presence`], i.e. empty unless something
+/// actually needs the operator. `tab_sessions` is the PULL surface's
+/// list — ungated, because the operator clicked the agent icon and is
+/// asking to see whatever is running. The presence gate governs
+/// autonomous board summoning, not explicit pulls.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AgentStateSnapshot {
@@ -49,7 +67,19 @@ pub struct AgentStateSnapshot {
     /// `dedup_eq` rule: continuously varying fields must never drive a
     /// wire emission).
     pub captured_at_ms: i64,
+    /// The Agent Board's own list: gated by
+    /// [`AgentBoardPublisher::gate_presence`], so it is EMPTY whenever no
+    /// session summons the Board (`[agents] board_show_working = false`,
+    /// the shipped default).
     pub sessions: Vec<AgentSessionView>,
+    /// Plan 177: the pull surface's list — the same ordered slice
+    /// BEFORE the presence gate, so a tab the operator explicitly pulled
+    /// open renders the sessions that are genuinely running even when
+    /// none of them is asking for anything. This is the same ungated
+    /// view `tab_wire.agent_sessions` already counts for the icon strip
+    /// (plan 171), so the icon's lit/unlit tier and the block it opens
+    /// can no longer disagree.
+    pub tab_sessions: Vec<AgentSessionView>,
     /// Always empty until ticket 143 (`health.rs`) populates real
     /// per-runtime adapter health — typed now (spec §6: "the health
     /// array may be empty/stub until ticket 143") so the wire shape is
@@ -273,7 +303,19 @@ fn states_dedup_eq(a: &[AgentState], b: &[AgentState]) -> bool {
 }
 
 struct PublishState {
+    /// The GATED slice the last emit actually put in
+    /// `AgentStateSnapshot.sessions` — i.e. exactly what the overlay's
+    /// Board was last told. Read synchronously by
+    /// [`AgentBoardPublisher::last_session_count`] (lib.rs's hover
+    /// primitive), which is the whole reason this stays gated even
+    /// though the dedup below no longer compares it.
     last: Option<Vec<AgentState>>,
+    /// Plan 177: the UNGATED slice the last emit was built from — the
+    /// dedup comparison basis. See
+    /// [`AgentBoardPublisher::publish_if_changed`]'s doc for why the
+    /// comparison moved here and why that is a superset trigger rather
+    /// than a behaviour change for the Board.
+    last_ungated: Option<Vec<AgentState>>,
     revision: u64,
 }
 
@@ -352,6 +394,7 @@ impl<R: tauri::Runtime> AgentBoardPublisher<R> {
             registry,
             state: Arc::new(StdMutex::new(PublishState {
                 last: None,
+                last_ungated: None,
                 revision: 0,
             })),
             health,
@@ -363,23 +406,41 @@ impl<R: tauri::Runtime> AgentBoardPublisher<R> {
 
     /// Reads `AgentRegistry::ordered_states` at `now`, applies the Board
     /// PRESENCE gate ([`Self::gate_presence`]), and emits `agent-state`
-    /// ONLY if the gated slice differs from the last published snapshot
-    /// per [`states_dedup_eq`]. The revision counter bumps strictly in
-    /// lockstep with an actual emit — never independently — so a
-    /// suppressed no-op call can't leave the counter ahead of what the
-    /// wire last actually carried. Returns whether it emitted (test
+    /// ONLY if the UNGATED slice differs from the one the last emit was
+    /// built from, per [`states_dedup_eq`]. The revision counter bumps
+    /// strictly in lockstep with an actual emit — never independently —
+    /// so a suppressed no-op call can't leave the counter ahead of what
+    /// the wire last actually carried. Returns whether it emitted (test
     /// hook).
     ///
-    /// The gate runs BEFORE the dedup comparison, not after, which is
-    /// what makes this the single place Board presence is decided:
+    /// The gate still runs BEFORE the bookkeeping write, which is what
+    /// makes this the single place Board presence is decided:
     /// `PublishState.last` — and therefore
     /// [`Self::last_session_count`], which `lib.rs`'s hover primitive
     /// reads to answer "is the Board what's on screen?" — always holds
     /// exactly what the overlay was last told. A gated-off snapshot
-    /// publishes as ZERO sessions, so the frontend's own
+    /// publishes as ZERO sessions in `sessions`, so the frontend's own
     /// `presentationMode` (src/lib/presentation.ts) falls through to
     /// idle with no knowledge of the knob, and hover-expand declines for
     /// the same reason, without a second gate in either layer.
+    ///
+    /// **Plan 177 — why the DEDUP compares the ungated slice.** The
+    /// snapshot now also carries `tab_sessions` (the ungated list the
+    /// user-initiated pull surface renders), so suppression has to be
+    /// sensitive to changes the gate hides: with the Board gated off, a
+    /// Working session advancing is invisible in the gated slice, and
+    /// deduping on that slice would leave the pulled agent tab frozen on
+    /// stale data. Moving the comparison up is a strict SUPERSET trigger,
+    /// not a behaviour change for the Board: `gate_presence` is a pure,
+    /// deterministic function of the ungated slice, and
+    /// [`AgentState::dedup_eq`] compares `state` (the only field the gate
+    /// reads), so two ungated slices that dedup-compare equal always
+    /// produce gated slices that do too. Every publish the old comparison
+    /// would have made still happens; the extra ones carry a
+    /// byte-identical `sessions` list, so no Board consumer can observe
+    /// them. A clock-only tick is still suppressed for the same reason it
+    /// always was — `dedup_eq` normalizes the clock-derived fields away
+    /// at the layer below this one.
     pub async fn publish_if_changed(&self, now: Instant) -> bool {
         let ungated = self.registry.ordered_states(now).await;
         // Plan 171: the agent icon counts LIVE sessions (spec §6:
@@ -396,14 +457,18 @@ impl<R: tauri::Runtime> AgentBoardPublisher<R> {
                 .count(),
             std::sync::atomic::Ordering::Relaxed,
         );
-        let states = self.gate_presence(ungated);
+        // Cloned rather than moved because `ungated` is needed twice more
+        // below (as the dedup basis and as `tab_sessions`), and
+        // `gate_presence`'s by-value signature is deliberately left
+        // untouched — its behaviour is the operator's 2026-08-02 decision.
+        let states = self.gate_presence(ungated.clone());
         // poison-tolerant, matching this codebase's other `StdMutex`
         // guards — a panic elsewhere while holding this lock must not
         // permanently wedge every later publish attempt.
         let mut guard = self.state.lock().unwrap_or_else(|e| e.into_inner());
-        let changed = match &guard.last {
+        let changed = match &guard.last_ungated {
             None => true,
-            Some(prev) => !states_dedup_eq(prev, &states),
+            Some(prev) => !states_dedup_eq(prev, &ungated),
         };
         if !changed {
             return false;
@@ -411,6 +476,7 @@ impl<R: tauri::Runtime> AgentBoardPublisher<R> {
         guard.revision += 1;
         let revision = guard.revision;
         guard.last = Some(states.clone());
+        guard.last_ungated = Some(ungated.clone());
         drop(guard);
 
         let adapter_health = self
@@ -423,6 +489,7 @@ impl<R: tauri::Runtime> AgentBoardPublisher<R> {
             revision,
             captured_at_ms: now_ms(),
             sessions: states.iter().map(|s| to_view(s, now)).collect(),
+            tab_sessions: ungated.iter().map(|s| to_view(s, now)).collect(),
             adapter_health,
         };
         if let Err(e) = self.app.emit(AGENT_STATE_EVENT, &snapshot) {
@@ -633,6 +700,38 @@ mod tests {
         count
     }
 
+    /// Plan 177: every emitted payload, parsed. `listen_count` above
+    /// answers "did it emit"; this answers "what actually went on the
+    /// wire" — needed now that one emission carries two different session
+    /// lists (`sessions` gated, `tabSessions` ungated) and the interesting
+    /// assertions are about their DIFFERENCE.
+    fn emitted_snapshots(
+        app: &tauri::App<tauri::test::MockRuntime>,
+    ) -> Arc<StdMutex<Vec<serde_json::Value>>> {
+        use tauri::Listener;
+        let seen = Arc::new(StdMutex::new(Vec::<serde_json::Value>::new()));
+        let sink = seen.clone();
+        app.handle().listen(AGENT_STATE_EVENT, move |event| {
+            if let Ok(value) = serde_json::from_str::<serde_json::Value>(event.payload()) {
+                sink.lock().unwrap().push(value);
+            }
+        });
+        seen
+    }
+
+    /// The `state` wire tokens of one emitted snapshot's named session
+    /// list (`"sessions"` or `"tabSessions"`), in wire order.
+    fn wire_states(snapshot: &serde_json::Value, field: &str) -> Vec<String> {
+        snapshot[field]
+            .as_array()
+            .map(|list| {
+                list.iter()
+                    .map(|s| s["state"].as_str().unwrap_or_default().to_string())
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+
     #[test]
     fn event_name_is_pinned() {
         // The frontend listens for exactly this literal
@@ -840,6 +939,7 @@ mod tests {
             revision: 1,
             captured_at_ms: 0,
             sessions: states.iter().map(|s| to_view(s, now)).collect(),
+            tab_sessions: states.iter().map(|s| to_view(s, now)).collect(),
             adapter_health: Vec::new(),
         };
         let json = serde_json::to_value(&snapshot).unwrap();
@@ -884,6 +984,7 @@ mod tests {
             revision: 1,
             captured_at_ms: 0,
             sessions: states.iter().map(|s| to_view(s, base)).collect(),
+            tab_sessions: states.iter().map(|s| to_view(s, base)).collect(),
             adapter_health: Vec::new(),
         };
         let json = serde_json::to_value(&snapshot).unwrap();
@@ -1153,8 +1254,59 @@ mod tests {
         assert_eq!(publisher.last_session_count(), 1);
     }
 
+    // --- plan 177: the pull surface's ungated list. The presence gate
+    // above governs the Board's AUTONOMOUS summoning; a tab the operator
+    // clicked open is a user-initiated view and is owed whatever is
+    // genuinely running. ---
+
     #[tokio::test]
-    async fn a_gated_off_board_does_not_re_publish_on_every_working_session_change() {
+    async fn a_gated_off_board_republishes_working_changes_for_the_pull_surface_only() {
+        let app = tauri::test::mock_app();
+        let publisher = publisher_with(&app, false);
+        let count = listen_count(&app);
+        let snapshots = emitted_snapshots(&app);
+        let base = Instant::now();
+        publisher
+            .registry
+            .apply_event(working_event(key(AgentRuntime::Codex, "s1"), "e1"), base)
+            .await;
+        // First publish seeds both slices — `last` gated (empty),
+        // `last_ungated` with the one working session.
+        assert!(publisher.publish_if_changed(base).await);
+        count.store(0, Ordering::SeqCst);
+        snapshots.lock().unwrap().clear();
+
+        // A second working session appearing is a real registry change
+        // that the PRESENCE gate hides. Before plan 177 the dedup
+        // compared the gated slices and suppressed this entirely, which
+        // left a pulled-open agent tab frozen on stale data. It now
+        // emits — but the Board's own `sessions` list is still empty, so
+        // nothing about the Board's presence changed; only the pull
+        // surface's `tabSessions` carries the news.
+        publisher
+            .registry
+            .apply_event(working_event(key(AgentRuntime::Kimi, "s2"), "e2"), base)
+            .await;
+        assert!(publisher.publish_if_changed(base).await);
+        assert_eq!(count.load(Ordering::SeqCst), 1);
+
+        let seen = snapshots.lock().unwrap();
+        assert_eq!(seen.len(), 1);
+        assert!(
+            wire_states(&seen[0], "sessions").is_empty(),
+            "the gate is untouched: a working-only registry still publishes zero Board sessions"
+        );
+        assert_eq!(
+            wire_states(&seen[0], "tabSessions"),
+            vec!["working", "working"],
+            "the pull surface sees both working sessions"
+        );
+        // hover-expand's synchronous read still answers "no Board".
+        assert_eq!(publisher.last_session_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn a_clock_only_tick_still_does_not_publish_with_the_board_gated_off() {
         let app = tauri::test::mock_app();
         let publisher = publisher_with(&app, false);
         let count = listen_count(&app);
@@ -1163,18 +1315,91 @@ mod tests {
             .registry
             .apply_event(working_event(key(AgentRuntime::Codex, "s1"), "e1"), base)
             .await;
-        // First publish seeds `last` with the gated (empty) slice.
         assert!(publisher.publish_if_changed(base).await);
         count.store(0, Ordering::SeqCst);
 
-        // A second working session appearing is a real registry change,
-        // but not a PRESENCE change — the gate runs before dedup, so
-        // both slices are empty and nothing goes on the wire.
+        // Moving the dedup up to the ungated slice must not weaken
+        // CLAUDE.md's `dedup_eq` rule: the ungated slice's own
+        // `AgentState::dedup_eq` normalizes elapsed/last-seen/retention
+        // away, so wall-clock drift alone is still not a change.
+        let later = base + Duration::from_secs(30);
+        assert!(
+            !publisher.publish_if_changed(later).await,
+            "a clock-only tick must not publish, gated or not"
+        );
+        assert_eq!(count.load(Ordering::SeqCst), 0);
+    }
+
+    #[tokio::test]
+    async fn the_summoned_board_publishes_the_same_slice_on_both_lists() {
+        let app = tauri::test::mock_app();
+        let publisher = publisher_with(&app, false);
+        let snapshots = emitted_snapshots(&app);
+        let base = Instant::now();
         publisher
             .registry
-            .apply_event(working_event(key(AgentRuntime::Kimi, "s2"), "e2"), base)
+            .apply_event(
+                working_event(key(AgentRuntime::ClaudeCode, "worker"), "e1"),
+                base,
+            )
             .await;
-        assert!(!publisher.publish_if_changed(base).await);
-        assert_eq!(count.load(Ordering::SeqCst), 0);
+        publisher
+            .registry
+            .apply_event(
+                event(
+                    key(AgentRuntime::Codex, "asker"),
+                    "e2",
+                    AgentEventKind::PermissionRequested,
+                ),
+                base,
+            )
+            .await;
+
+        assert!(publisher.publish_if_changed(base).await);
+        let seen = snapshots.lock().unwrap();
+        let last = seen.last().unwrap();
+        // Once something summons the Board, the gate is the identity
+        // function — so the two lists agree, and the pull surface shows
+        // exactly what the Board shows.
+        assert_eq!(
+            wire_states(last, "sessions"),
+            vec!["waiting_for_permission", "working"]
+        );
+        assert_eq!(
+            wire_states(last, "tabSessions"),
+            wire_states(last, "sessions")
+        );
+    }
+
+    #[tokio::test]
+    async fn a_working_only_registry_lights_the_icon_and_fills_the_pull_surface() {
+        let app = tauri::test::mock_app();
+        let publisher = publisher_with(&app, false);
+        let snapshots = emitted_snapshots(&app);
+        let base = Instant::now();
+        publisher
+            .registry
+            .apply_event(working_event(key(AgentRuntime::Codex, "s1"), "e1"), base)
+            .await;
+        assert!(publisher.publish_if_changed(base).await);
+
+        // The whole point of the plan: the lit agent icon (plan 171's
+        // ungated `tab_wire.agent_sessions` count) and the block that
+        // opens when it is clicked now read the same registry view, so a
+        // lit icon can no longer open an empty block. (The icon count is
+        // the live-only FILTER of this list — non-terminal, non-stale —
+        // so the two agree exactly here, where the only session is
+        // working, and the list is the superset in general.)
+        let icon_count = publisher
+            .tab_wire
+            .agent_sessions
+            .load(std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(icon_count, 1, "the agent icon is lit");
+        let seen = snapshots.lock().unwrap();
+        assert_eq!(
+            wire_states(seen.last().unwrap(), "tabSessions"),
+            vec!["working"],
+            "and the pull surface has something to render"
+        );
     }
 }
