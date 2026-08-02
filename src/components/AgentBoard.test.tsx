@@ -1109,3 +1109,73 @@ describe("AgentBoard motion vitals", () => {
     }
   });
 });
+
+// Operator complaint (2026-08-02, screenshot-confirmed): the RESTING
+// Board measured 211px tall against a manual card's 135px, with a dead
+// black band under the hero's fact pills — 39px of stacked bottom
+// padding where the unified skeleton spends 13px, plus a right-aligned
+// COLUMN of pills that spent 43px of height to paint two pills. The fix
+// is CSS-only (agent-board.css), so most of it can only be pinned as
+// source text — the same discipline the "motion vitals" block above
+// already uses for its own keyframe/transition assertions. The one
+// genuinely DOM-level half is the `:has()` condition the hero-only
+// padding rule keys on, which IS assertable here.
+describe("AgentBoard resting content-hug", () => {
+  const AGENT_BOARD_CSS = readFileSync(
+    fileURLToPath(new NodeURL("../overlay/agent-board.css", import.meta.url)),
+    "utf8",
+  );
+
+  it("a one-session board mounts neither block the bottom-inset rule looks for", () => {
+    // this is the DOM half of the hug: `.agent-board:not(:has(
+    // .agent-board-rows, .agent-board-expanded-list))` drops the
+    // container's 12px bottom padding, so the hero's own `.compact`
+    // inset is the card floor exactly like every other card's is. If
+    // either block ever started mounting empty (rather than not at all)
+    // the selector would stop matching and the dead band would silently
+    // come back.
+    const { container } = render(
+      <AgentBoard sessions={[session({ id: "solo" })]} capturedAtMs={CAPTURED_AT_MS} />,
+    );
+    const board = container.querySelector(".agent-board");
+    expect(board).not.toBeNull();
+    expect(board?.querySelector(".agent-board-rows")).toBeNull();
+    expect(board?.querySelector(".agent-board-expanded-list")).toBeNull();
+  });
+
+  it("a multi-session resting board still mounts the rows block that owes the inset", () => {
+    const { container } = render(
+      <AgentBoard
+        sessions={[session({ id: "a" }), session({ id: "b" })]}
+        capturedAtMs={CAPTURED_AT_MS}
+      />,
+    );
+    expect(container.querySelector(".agent-board .agent-board-rows")).not.toBeNull();
+  });
+
+  it("the hero-only board drops the container's bottom padding", () => {
+    expect(AGENT_BOARD_CSS).toMatch(
+      /\.card-root \.agent-board:not\(:has\(\.agent-board-rows, \.agent-board-expanded-list\)\) \{\s*padding-bottom: 0;/,
+    );
+  });
+
+  it("the hero's fact pills lay out as a wrapping ROW with no TTL-bar clearance", () => {
+    // the shared `.detail-facts` block (manifest.css) stacks pills in a
+    // right-aligned column and reserves 14px under them for the TtlBar.
+    // `AgentHeroCard` renders no TtlBar, so on this path both cost pure
+    // height. Scoped to `.agent-board-primary` — generic cards keep the
+    // shared block untouched.
+    expect(AGENT_BOARD_CSS).toMatch(
+      /\.card-root \.agent-board-primary \.detail-facts \{[^}]*flex-direction: row;[^}]*flex-wrap: wrap;[^}]*margin-bottom: 0;/s,
+    );
+  });
+
+  it("the shell's permanent `expanded` class stops dragging in a taller compact", () => {
+    // `expanded` is the Board's 500px WIDTH lever (AgentBoard.tsx), not a
+    // hover state — `.expanded .compact`'s +8px min-height
+    // (masthead-content.css) is a rhythm the resting hero never asked for.
+    expect(AGENT_BOARD_CSS).toMatch(
+      /\.card-root \.agent-board-primary \.compact \{\s*min-height: 74px;/,
+    );
+  });
+});

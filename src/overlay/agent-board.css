@@ -36,6 +36,25 @@
   padding: 0 0 12px;
 }
 
+/* Operator complaint (2026-08-02, screenshot-confirmed): the RESTING
+   Board hugged nothing — measured 211px tall against a manual card's
+   135px, with a dead black band under the hero's fact pills. 39px of
+   that band was pure padding stacked three deep below the last pill
+   (`.detail-facts`'s 14px TTL clearance + `.compact`'s own 13px floor +
+   this block's 12px), where a notification card spends exactly 13px.
+   This rule reclaims the third layer: the 12px exists to keep the
+   session rows (or the expanded list) off the card's bottom edge, so it
+   is only owed when one of those blocks is actually mounted. A
+   hero-only Board (the one-session case) ends at `.compact`'s own
+   bottom inset, exactly like every other card in the skeleton.
+   `:has()` rather than a class on the container: the rows/list mount
+   and unmount through `AnimatePresence` (AgentBoard.tsx), and DOM
+   presence is the same signal card-chrome.css's own rounding law reads
+   for the same kind of "is that block there?" question. */
+.card-root .agent-board:not(:has(.agent-board-rows, .agent-board-expanded-list)) {
+  padding-bottom: 0;
+}
+
 /* Plan 169 fidelity pass: the same z-index rider card-chrome.css already
    applies to `.compact`/`.manifest` under `.below-block.agent-origin`,
    extended to the board's OWN blocks — the runtime wash is a positioned
@@ -55,6 +74,48 @@
   display: flex;
   flex-direction: column;
   gap: 4px;
+}
+
+/* CONTENT-HUG (operator, 2026-08-02) — the other two layers of the dead
+   band described on `.agent-board`'s own rule above, both scoped to the
+   hero and nothing else. Same markup, same `renderFactPills` renderer,
+   same pill vocabulary as every other card (no parallel pill system,
+   plan 169's own premise) — only the block's own box changes, on the one
+   path whose card floor is NOT a TTL bar.
+
+   `margin-bottom`: `.detail-facts`'s 14px (manifest.css) is clearance
+   for the TtlBar, which is absolutely positioned against a notification
+   card's bottom edge (ttl-bar.css). `AgentHeroCard` deliberately renders
+   no TtlBar (a status board has no TTL — NotificationBody.tsx's own
+   doc), so on this path those 14px cleared nothing and read as a black
+   gap under the pills.
+
+   `flex-direction`: the shared block stacks pills one per line, right-
+   aligned. At the two-pill widths the Board actually produces that spent
+   43px of card height to paint ~80px of pill, leaving a wide empty band
+   to their left — the "space is the problem" the complaint names. A
+   wrapping row lays the same pills on one line (20px) and still wraps
+   rather than widening the card, so the FIXED SIZE DISCIPLINE the pill
+   system documents (prototype/agent-board.html) is unchanged. Generic
+   cards keep the shared column: their own footprint was never the
+   complaint, and this rule cannot reach them.
+
+   `min-height`: the shell carries `expanded` permanently (AgentBoard.tsx
+   — it is the 500px WIDTH lever there, not a hover state), which drags
+   in `.expanded .compact`'s +8px min-height (masthead-content.css), a
+   hover-expand rhythm the resting Board never asked for. Back to the
+   unified skeleton's own 74px. Non-binding at today's hero content —
+   declared so the width lever stops silently owning a height too. */
+.card-root .agent-board-primary .compact {
+  min-height: 74px;
+}
+
+.card-root .agent-board-primary .detail-facts {
+  flex-direction: row;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 4px 6px;
+  margin-bottom: 0;
 }
 
 .card-root .agent-board-primary-head {
