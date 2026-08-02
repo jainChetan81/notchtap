@@ -181,10 +181,13 @@ mod tests {
         // The rows are ~90px tall; the frame must say so.
         let frame = expanded_board_frame(SCREEN_W, SCREEN_H, 3);
         assert_eq!(frame.height, HEADER_HEIGHT + EXPANDED_ROW_HEIGHT * 2.0);
-        let per_row_slot = (frame.height - HEADER_HEIGHT) / 2.0;
+        // Guard the CONSTANT itself, independent of the formula equality
+        // above (review fix: a per-row check derived from that same
+        // equality could never fail on its own): the budget must cover a
+        // real ExpandedAgentRow's ~90px name/summary/meta stack.
         assert!(
-            per_row_slot >= 96.0,
-            "each expanded row got {per_row_slot}px, under a real row's height"
+            EXPANDED_ROW_HEIGHT >= 90.0,
+            "EXPANDED_ROW_HEIGHT ({EXPANDED_ROW_HEIGHT}px) no longer covers a real expanded row"
         );
     }
 

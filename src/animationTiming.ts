@@ -198,9 +198,12 @@ export const SURFACE_SWAP_MS = 180;
 // (scale + drop); the operator rejected that on sight the same day
 // ("looks weird, something about its size animation") because it scaled
 // the synthetic notch cutout, which must read as fixed hardware. The
-// transform is gone, this longer clock stays — see
-// `BOARD_SURFACE_MOTION`'s FEEL-CHECK RESULT in App.tsx for the law that
-// replaced it.
+// transform is gone, this longer clock stays. The standing law, in
+// full: any future entrance emphasis on the Board animates ONLY content
+// below the cutout row (the below-block), NEVER the shell — the cutout
+// is the one element that must never scale, translate, or fade
+// independently of the hardware it impersonates. (Also recorded at
+// `BOARD_SURFACE_MOTION`'s FEEL-CHECK RESULT in App.tsx, the consumer.)
 //
 // Numerically equal to REVEAL_MS today (both 260ms — the house "a surface
 // is revealing itself" budget) but kept as its own name rather than

@@ -91,7 +91,9 @@ in `docs/ARCHITECTURE.md`.
   passive Working session; equal-urgency sessions remain FIFO.
 - **Terminal Retention** — how long a terminal Agent Session remains on the
   Agent Board before moving to its history: configurable, default 10 minutes.
-  Failed and Stale rank ahead of Completed during this grace period. Waiting
+  During this grace period Failed ranks ahead of Completed, and both rank
+  ahead of Stale — every state that can summon the Board outranks every
+  state that cannot (2026-08-02, the Board's attention principle). Waiting
   states do not expire as ordinary Notifications; they remain until the
   runtime reports a new state or the session becomes Stale.
 - **Agent Board** — the idle presentation of active Agent Sessions. its
