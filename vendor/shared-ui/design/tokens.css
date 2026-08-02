@@ -81,6 +81,16 @@
    * consumer now points at these two instead of repeating the literal hex. */
   --overlay-green: oklch(0.826 0.148 147.39);         /*           #7fe08d */
   --overlay-amber: oklch(0.841 0.120 83.66);          /*           #f0c46a */
+  /* plan 171 (tab-notch redesign): the media source's own accent — the
+   * design mock's own token (`prototypes/tab-notch-panel.html`:
+   * `--media-mint: #b6f5e5`), genuinely new rather than a retrofit of
+   * the shipped `.media-bar-fill` (idle-peek.css), which intentionally
+   * reuses `--overlay-teal` and is untouched by this addition. Referenced
+   * unguarded (no `var(..., fallback)`) by `icon-strip.css`/`eq-bars.css`/
+   * `media-below-block.css` since this slice landed — those files were
+   * correct to assume a real token would exist here, this just makes
+   * that true. */
+  --media-mint: oklch(0.923 0.067 177.33);            /*           #b6f5e5 */
   /* notchtap visual-consistency sweep (O10): the overlay's one full-strength
    * text white — was split between a literal `#f5f7fa` (12+ places) and one
    * `rgb(245, 247, 250)` spelling (the idle face) for the exact same color;
@@ -130,6 +140,7 @@
   --overlay-coral: oklch(0.708 0.185 30.07);
   --overlay-green: oklch(0.826 0.148 147.39);
   --overlay-amber: oklch(0.841 0.120 83.66);
+  --media-mint: oklch(0.923 0.067 177.33);
   --overlay-fg: oklch(0.975 0.005 258.32);
 }
 

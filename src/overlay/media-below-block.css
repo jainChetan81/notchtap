@@ -68,13 +68,11 @@
 .card-root .mr-btn:active {
   transform: scale(0.94);
 }
-/* `--media-mint`: same token icon-strip.css/eq-bars.css (slice E,
-   landed this session) already reference with no fallback — the token
-   itself has no `:root` definition anywhere in this repo yet (confirmed
-   via a repo-wide grep before writing this), a pre-existing gap in
-   those already-landed files, not introduced here. Matching their exact
-   convention rather than inventing a second, diverging one (e.g. a
-   locally-scoped fallback hex) for the same variable. */
+/* `--media-mint`: same token icon-strip.css/eq-bars.css (slice E) also
+   reference. Was missing a `:root` definition when this file first
+   landed (flagged here, in the PR description, and in the plan doc) —
+   now defined in `vendor/shared-ui/design/tokens.css`, matching the
+   design mock's own `#b6f5e5` value exactly. */
 .card-root .mr-btn.primary {
   width: 30px;
   height: 30px;
