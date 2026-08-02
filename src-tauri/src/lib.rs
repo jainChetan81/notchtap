@@ -32,6 +32,7 @@ mod news_charge;
 mod notifier;
 mod now_playing;
 mod poller;
+mod prefix;
 mod presentation;
 pub mod queue;
 mod rss_poller;
