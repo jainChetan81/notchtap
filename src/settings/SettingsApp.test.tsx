@@ -1995,10 +1995,18 @@ describe("SettingsApp", () => {
       const codexCard = findAdapterCard("Codex");
       const kimiCard = findAdapterCard("Kimi");
       const opencodeCard = findAdapterCard("OpenCode");
-      expect(within(claudeCard).getByText("Available")).toBeTruthy();
-      expect(within(codexCard).getByText("Partial")).toBeTruthy();
-      expect(within(kimiCard).getByText("Unavailable")).toBeTruthy();
-      expect(within(opencodeCard).getByText("Partial")).toBeTruthy();
+      // CI flake fix: the adapter name renders immediately from static
+      // config, but the health chip depends on the separate, async
+      // `get_agent_health` mock resolving — a race the previous
+      // synchronous getByText calls here didn't account for (it passed
+      // locally under light load, but failed in CI, a genuinely
+      // pre-existing race this PR's redesign likely widened by adding
+      // an extra render pass for the collapsed/expanded state). Await
+      // each health chip instead of asserting on it synchronously.
+      expect(await within(claudeCard).findByText("Available")).toBeTruthy();
+      expect(await within(codexCard).findByText("Partial")).toBeTruthy();
+      expect(await within(kimiCard).findByText("Unavailable")).toBeTruthy();
+      expect(await within(opencodeCard).findByText("Partial")).toBeTruthy();
     });
 
     it("renders the five named preview fixtures", async () => {
