@@ -64,7 +64,21 @@ run caught a pre-existing test pinning the behaviour Step 1 removes (the
 plan was amended to authorize that one rewrite, and its file records it),
 and the same run flagged a disk-full condition. Suites at the post-180
 merge, recounted live: rust 1056+3+3, frontend 859/42 files — matching
-`docs/TESTING_STRATEGY.md` §0 exactly. Plan 171's on-hardware checks plus
+`docs/TESTING_STRATEGY.md` §0 exactly. A post-push two-axis review
+(code-review skill: Standards + Spec sub-agents) found zero hard
+standard violations and approved on spec; its three minor notes,
+resolved 2026-08-03: a `hover.rs` lockstep comment plan 176 missed
+(fixed in the follow-up commit), plus two previously-unrecorded
+deviations now on the record — plan 180 CREATED
+`src/settings/sections/ShortcutsSection.test.ts` (no TS validator test
+existed at base), and plan 177's `tabSessions` validator deliberately
+tolerates an ABSENT field (unlike mandatory `sessions`) so older
+payload literals and tests stay valid; the rationale lives in
+`useAgentState.ts`'s comment. Five judgement-call smells recorded by
+the Standards axis (shared `lock_unpoisoned()`/`live_card_scale()`
+helpers, `\p{White_Space}` in the validator, a test tripwire for the
+news-arm lockstep) are candidates for a future polish batch, not
+defects. Plan 171's on-hardware checks plus
 one new one (the resting HUD rail now widens with live-source count —
 plan 175's geometry consistency makes that deliberate) remain
 operator-owed.

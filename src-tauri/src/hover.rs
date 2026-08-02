@@ -95,7 +95,8 @@ const BELOW_BLOCK_EXPANDED_H: f64 = 240.0; // conservative estimate, expanded (m
 //     right of the glyph it was meant to hit-test.
 //   * `hovered_right_flank_width` (below) <-> the `--cw` growth term
 //     `(26 * var(--present-icons, 0) + 16)` in card-chrome.css's
-//     `.card-assembly.idle` and `.card-assembly.bare:has(.idle-peek)`
+//     `.card-assembly.idle` and `.card-assembly.bare:has(.below-block)`
+//     (the latter widened from `:has(.idle-peek)` by plan 176)
 //     rules — the only two `--cw` formulas that can match while the strip
 //     is up. Before plan 175 the CSS painted a FLAT 85px flank there, so
 //     at 3+ present tabs the flank rust hit-tested against was wider than
