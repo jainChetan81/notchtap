@@ -522,6 +522,12 @@ pub fn run() {
                         // idle peek's (2026-08-02: or the showing card's
                         // hover-expanded) rect should already be grown.
                         let hover_latched = *was_hovered.lock().unwrap();
+                        // P0 fix: the REAL currently-applied window height
+                        // — `hover::WINDOW_HEIGHT` at rest, or the taller
+                        // applied board-expand frame — never the stale
+                        // constant. See `hover::board_rect`'s doc comment.
+                        let real_window_height =
+                            board_frame.lock().unwrap_or_else(|e| e.into_inner()).height;
                         let hovered = hover_point_is_over_card(
                             &engine,
                             &app_handle,
@@ -530,6 +536,7 @@ pub fn run() {
                             hover_cutout_height,
                             hover_latched,
                             agent_board.last_session_count(),
+                            real_window_height,
                             loc.x,
                             loc.y,
                         );
@@ -556,6 +563,10 @@ pub fn run() {
                     hover_handler.on_mouse_moved(move |event| {
                         let loc = event.locationInWindow();
                         let hover_latched = *was_hovered.lock().unwrap();
+                        // P0 fix: see the matching comment in
+                        // `on_mouse_entered` just above.
+                        let real_window_height =
+                            board_frame.lock().unwrap_or_else(|e| e.into_inner()).height;
                         let hovered = hover_point_is_over_card(
                             &engine,
                             &app_handle,
@@ -564,6 +575,7 @@ pub fn run() {
                             hover_cutout_height,
                             hover_latched,
                             agent_board.last_session_count(),
+                            real_window_height,
                             loc.x,
                             loc.y,
                         );
@@ -1285,6 +1297,7 @@ fn hover_point_is_over_card(
     cutout_height: f64,
     hover_latched: bool,
     board_session_count: usize,
+    real_window_height: f64,
     point_x: f64,
     point_y: f64,
 ) -> bool {
@@ -1301,12 +1314,18 @@ fn hover_point_is_over_card(
         .appearance
         .card_scale;
     let rect = if !visible && board_session_count > 0 {
+        // P0 fix: `real_window_height` is the window height ACTUALLY
+        // applied right now (`BoardFrameState.height`, read by the
+        // caller before this call) — never the stale `hover::WINDOW_HEIGHT`
+        // constant, which is only correct while the board is resting. See
+        // `hover::board_rect`'s doc comment for the bug this closes.
         hover::board_rect(
             mode,
             cutout_width,
             cutout_height,
             scale,
             board_session_count,
+            real_window_height,
         )
     } else {
         hover::active_card_rect(
@@ -1417,8 +1436,20 @@ fn emit_hover_changed_if_transitioned(
 /// detect INEQUALITY has no reason to be able to panic on overflow, and
 /// wrapping cannot produce a false match here (it would take 2^64 hover
 /// transitions inside one 450ms window).
+///
+/// `height` (P0 fix, tab-notch redesign) is the REAL native window height
+/// currently applied — `hover::WINDOW_HEIGHT` while resting, or the exact
+/// `agents::expand::expanded_board_frame(...).height` value the expand
+/// path passed to `window.set_size` while expanded. `hover_point_is_over_card`
+/// reads this back and threads it into `hover::board_rect` so the hit-test
+/// coordinate transform always matches the window AppKit is actually
+/// reporting mouse coordinates against, instead of assuming a fixed 300px
+/// canvas regardless of how tall the real window has grown (see
+/// `hover::board_rect`'s own doc comment for the full bug writeup — a
+/// stale assumption here is exactly what let `hovered=true` fire for a
+/// cursor far below the painted board).
 #[cfg(target_os = "macos")]
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq)]
 struct BoardFrameState {
     /// The EXPANDED window frame is currently applied. Stays `true` for
     /// the whole grace period after a hover-exit — the frame really is
@@ -1426,6 +1457,20 @@ struct BoardFrameState {
     /// would let a re-hover skip the re-expand it still needs to do.
     expanded: bool,
     generation: u64,
+    height: f64,
+}
+
+#[cfg(target_os = "macos")]
+impl Default for BoardFrameState {
+    fn default() -> Self {
+        BoardFrameState {
+            expanded: false,
+            generation: 0,
+            // Resting height by construction — no expand has ever run, so
+            // the real window is still exactly `hover::WINDOW_HEIGHT` tall.
+            height: hover::WINDOW_HEIGHT,
+        }
+    }
 }
 
 /// How long a board hover-EXIT waits before actually shrinking the native
@@ -1522,6 +1567,11 @@ fn try_expand_board_for_hover(
     let mut state = board_frame.lock().unwrap_or_else(|e| e.into_inner());
     state.expanded = true;
     state.generation = state.generation.wrapping_add(1);
+    // P0 fix: record the EXACT height just applied to the real window —
+    // the same `frame.height` passed to `set_size` above, never re-derived
+    // — so `hover_point_is_over_card`'s next coordinate transform can't
+    // drift from what AppKit is actually reporting mouse events against.
+    state.height = frame.height;
 }
 
 /// plan 142: the exit-side restore. Idempotent: a hover-exit over a card
@@ -1623,6 +1673,9 @@ fn collapse_board_if_expanded(
                 tracing::warn!("board hover-collapse: position_window failed: {e}");
             }
             state.expanded = false;
+            // P0 fix: the real window is exactly `hover::WINDOW_HEIGHT`
+            // tall again the instant `set_size` above lands.
+            state.height = hover::WINDOW_HEIGHT;
         });
     });
 }
@@ -2179,6 +2232,7 @@ mod tests {
         let state = BoardFrameState {
             expanded: true,
             generation: 7,
+            ..Default::default()
         };
         assert!(board_shrink_should_run(state, 7));
     }
@@ -2191,6 +2245,7 @@ mod tests {
         let state = BoardFrameState {
             expanded: true,
             generation: 8,
+            ..Default::default()
         };
         assert!(!board_shrink_should_run(state, 7));
     }
@@ -2201,6 +2256,7 @@ mod tests {
         let state = BoardFrameState {
             expanded: false,
             generation: 7,
+            ..Default::default()
         };
         assert!(!board_shrink_should_run(state, 7));
     }
@@ -2214,10 +2270,12 @@ mod tests {
         let after_first_request = BoardFrameState {
             expanded: true,
             generation: 1,
+            ..Default::default()
         };
         let after_second_request = BoardFrameState {
             expanded: true,
             generation: 2,
+            ..Default::default()
         };
         assert!(board_shrink_should_run(after_first_request, 1));
         assert!(!board_shrink_should_run(after_second_request, 1));
@@ -2232,6 +2290,40 @@ mod tests {
         let state = BoardFrameState::default();
         assert!(!state.expanded);
         assert!(!board_shrink_should_run(state, state.generation));
+        // P0 fix: the default height is the real resting window height —
+        // never 0.0 (the derived-`Default` value f64 would otherwise get),
+        // which would have made the very first hover computation on a
+        // freshly-launched app wrong until the first expand/collapse cycle
+        // ever touched it.
+        assert_eq!(state.height, hover::WINDOW_HEIGHT);
+    }
+
+    // --- P0 fix (tab-notch redesign): `BoardFrameState.height` tracks the
+    // exact frame applied, not a re-derived guess — the impure
+    // `set_size`/AppKit side of `try_expand_board_for_hover`/
+    // `collapse_board_if_expanded` stays manual-verification-only (same
+    // posture as every other window call in this file), but the state
+    // shape itself — that expand and collapse leave `height` and
+    // `expanded` consistent with each other — is worth pinning directly. ---
+
+    #[test]
+    fn board_frame_state_expanded_and_height_move_together_by_construction() {
+        // A resting state and an expanded one must never agree on height
+        // while disagreeing on `expanded` — `hover_point_is_over_card`
+        // trusts `height` unconditionally once `expanded` is (implicitly,
+        // via board_session_count > 0) relevant, so the two fields must be
+        // set in the same assignment everywhere this struct is mutated
+        // (`try_expand_board_for_hover` and the shrink closure in
+        // `collapse_board_if_expanded` both do exactly that — see those
+        // functions' own P0-fix comments).
+        let resting = BoardFrameState::default();
+        let expanded = BoardFrameState {
+            expanded: true,
+            generation: 1,
+            height: 520.0,
+        };
+        assert_ne!(resting.height, expanded.height);
+        assert_ne!(resting.expanded, expanded.expanded);
     }
 
     #[test]

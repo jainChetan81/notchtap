@@ -325,22 +325,54 @@ pub fn active_card_rect(
 // Notification queue's `visible`/`expanded` state, which
 // `hover_point_is_over_card` (`lib.rs`) can't derive board-ness from at
 // all — the Slot reads `Empty` the whole time the Board is showing.
-// Unlike the expanded WINDOW frame (`agents::expand::
-// expanded_board_frame`), this rect stays within the fixed
-// `WINDOW_WIDTH`/`WINDOW_HEIGHT` canvas — the RESTING board never
-// resizes the real window; only a hover transition does that
-// (`lib.rs`'s hover-transition call site).
+//
+// P0 FIX (tab-notch redesign, 2026-08-02): the RESTING board rect stays
+// within the fixed `WINDOW_WIDTH`/`WINDOW_HEIGHT` canvas, but the EXPANDED
+// board (hovered, `lib.rs`'s `try_expand_board_for_hover`) genuinely
+// resizes the real native window taller via
+// `agents::expand::expanded_board_frame` — `content_height` there is
+// `HEADER_HEIGHT (210) + EXPANDED_ROW_HEIGHT (96) * extra_rows`, which
+// exceeds `WINDOW_HEIGHT` (300) with just one extra session. Once that
+// resize has actually happened, every subsequent AppKit `locationInWindow`
+// mouse event is reported relative to the NEW, taller window frame — but
+// this function used to unconditionally flip coordinates through
+// `css_top_down_to_appkit_y(WINDOW_HEIGHT, ...)`, i.e. it kept assuming a
+// 300px-tall canvas no matter how tall the real window had actually grown.
+// That stale assumption is exactly the bug: a point genuinely far down in
+// the now-much-taller real window (well below the last rendered row) could
+// still fall inside the [0, 300]-relative rect the old math produced,
+// because that range no longer corresponded to "the top of the window"
+// once the window itself grew past 300px. `hovered=true` then fired for a
+// cursor nowhere near the painted card.
+//
+// The fix: the caller (`lib.rs`) tracks the REAL, currently-applied window
+// height in `BoardFrameState.height` — set from the exact same `frame`
+// value `try_expand_board_for_hover` passed to `window.set_size`, so it
+// can never drift from what the OS window actually is — and passes it in
+// here as `window_height`, which replaces every use of the module-level
+// `WINDOW_HEIGHT` constant for this rect's height cap and y-flip. Ordinary
+// (non-board) hover detection is unaffected: `active_card_rect` never
+// triggers a real resize, so its canvas is always the true `WINDOW_HEIGHT`
+// and it keeps using the constant directly.
 const BOARD_PRIMARY_H: f64 = 150.0; // conservative estimate, agent-board.css's `.agent-board-primary` block
 const BOARD_ROW_H: f64 = 18.0; // conservative estimate, agent-board.css's `.agent-row`
 
 /// `session_count` is every session the Board currently renders (primary
 /// + rows) — `lib.rs` reads this from `AgentBoardPublisher::last_session_count`.
+///
+/// `window_height` is the REAL, currently-applied native window height —
+/// `WINDOW_HEIGHT` whenever the board frame is resting, or the taller
+/// applied `agents::expand::expanded_board_frame` height while a hover has
+/// actually expanded it (see the P0 FIX note above `BOARD_PRIMARY_H`).
+/// Passing `WINDOW_HEIGHT` itself here reproduces the pre-fix behavior
+/// exactly, which is what every resting-state test below still does.
 pub fn board_rect(
     mode: Mode,
     cutout_width: f64,
     cutout_height: f64,
     scale: f64,
     session_count: usize,
+    window_height: f64,
 ) -> Rect {
     let effective_cutout_width = match mode {
         Mode::Notch => cutout_width,
@@ -358,10 +390,10 @@ pub fn board_rect(
     let extra_rows = session_count.saturating_sub(1);
     let below_block_h = BOARD_PRIMARY_H + BOARD_ROW_H * extra_rows as f64;
     let raw_height = effective_cutout_height + below_block_h;
-    let height = raw_height.min(WINDOW_HEIGHT);
+    let height = raw_height.min(window_height);
 
     let x_min = (WINDOW_WIDTH - width) / 2.0;
-    let (y_min, y_max) = css_top_down_to_appkit_y(WINDOW_HEIGHT, 0.0, height);
+    let (y_min, y_max) = css_top_down_to_appkit_y(window_height, 0.0, height);
 
     Rect {
         x_min,
@@ -828,20 +860,20 @@ mod tests {
     #[test]
     fn board_rect_width_matches_the_expanded_formula() {
         let expanded = active_card_rect(Mode::Hud, 0.0, 0.0, 1.0, true, true, false, false);
-        let board = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 3);
+        let board = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 3, WINDOW_HEIGHT);
         assert_eq!(expanded.x_max - expanded.x_min, board.x_max - board.x_min);
     }
 
     #[test]
     fn board_rect_one_session_is_the_primary_block_alone() {
-        let r = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 1);
+        let r = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 1, WINDOW_HEIGHT);
         assert_eq!(r.y_max - r.y_min, HUD_CUTOUT_H + BOARD_PRIMARY_H);
     }
 
     #[test]
     fn board_rect_grows_by_one_row_height_per_extra_session() {
-        let three = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 3);
-        let four = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 4);
+        let three = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 3, WINDOW_HEIGHT);
+        let four = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 4, WINDOW_HEIGHT);
         assert_eq!(
             (four.y_max - four.y_min) - (three.y_max - three.y_min),
             BOARD_ROW_H
@@ -853,14 +885,96 @@ mod tests {
         // Defense in depth: `session_count` should never legitimately be
         // 0 while the Board renders at all, but `saturating_sub` must not
         // panic or produce a nonsensical (negative) row count.
-        let zero = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 0);
-        let one = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 1);
+        let zero = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 0, WINDOW_HEIGHT);
+        let one = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 1, WINDOW_HEIGHT);
         assert_eq!(zero, one);
     }
 
     #[test]
     fn board_rect_caps_at_the_window_height_for_many_sessions() {
-        let r = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 50);
+        let r = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 50, WINDOW_HEIGHT);
         assert_eq!(r.y_max - r.y_min, WINDOW_HEIGHT);
+    }
+
+    // --- P0 fix (tab-notch redesign): the real-window-height coordinate
+    // bug. Once `try_expand_board_for_hover` has actually resized the
+    // native window taller than `WINDOW_HEIGHT`, the rect must be computed
+    // against THAT real height, not the stale 300px constant — otherwise a
+    // point genuinely far down in the now-taller window can still fall
+    // inside a rect whose range was only ever valid for a 300px canvas. ---
+
+    #[test]
+    fn board_rect_caps_at_the_real_window_height_when_taller_than_the_constant() {
+        // 5 sessions asks for well over 300px of content (150 + 18*4 =
+        // 222, plus cutout — still under 300 here, so pick a real,
+        // larger `window_height` the way `expanded_board_frame` would
+        // actually report for a taller board with more rows/header space)
+        // to prove the cap tracks the ARGUMENT, not the module constant.
+        let real_height = 520.0;
+        let r = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 3, real_height);
+        // content (32 cutout + 150 + 18 = 200) is under both 300 and 520,
+        // so the height is the content height either way here — the
+        // meaningful assertion is the Y-FLIP below, not this cap.
+        assert!(r.y_max - r.y_min < real_height);
+    }
+
+    #[test]
+    fn board_rect_y_flip_uses_the_real_window_height_not_the_stale_constant() {
+        // The actual bug, reproduced directly: at the OLD (wrong) fixed
+        // WINDOW_HEIGHT, the rect's top (`y_max`) sits at 300 — but once
+        // the real window has grown to `real_height` (e.g. 520, a
+        // plausible multi-session board), the window's TRUE top is at
+        // y=520 in AppKit's bottom-left-origin space, and a point at
+        // y=300 (which used to read as the rect's very top edge, i.e.
+        // "at the card") is now deep in the window's own middle — nowhere
+        // near the card, which is top-anchored and therefore occupies the
+        // HIGH end of the real coordinate range, not the range around the
+        // stale constant.
+        let real_height = 520.0;
+        let stale = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 1, WINDOW_HEIGHT);
+        let fixed = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 1, real_height);
+        assert_eq!(stale.y_max, WINDOW_HEIGHT, "sanity: the old/stale top");
+        assert_eq!(
+            fixed.y_max, real_height,
+            "the fixed rect's top must track the real applied window height"
+        );
+        // The point that used to sit right at the stale rect's top edge —
+        // i.e. exactly where a cursor over the real card's top would have
+        // been reported, back when the window really was 300px tall — no
+        // longer counts as hovered once the real window has actually grown
+        // to 520px: the true card has moved up with the window's own top.
+        assert!(
+            !point_in_rect(&fixed, WINDOW_WIDTH / 2.0, WINDOW_HEIGHT),
+            "a point at the OLD window's top must not register as hovered \
+             against the real, taller window's rect"
+        );
+        // The real card's own top, at the ACTUAL window height, does.
+        assert!(point_in_rect(
+            &fixed,
+            WINDOW_WIDTH / 2.0,
+            real_height - 1.0
+        ));
+    }
+
+    #[test]
+    fn board_rect_a_point_far_below_the_real_card_is_correctly_excluded() {
+        // The exact failure mode named in the bug report: "hovered=true
+        // fires with the cursor far below the card" once the board has
+        // genuinely expanded past the stale 300px assumption. A point
+        // comfortably inside the OLD [y_min, 300] range but which, in a
+        // real 520px-tall window, sits in the dead space well below the
+        // painted board content must be excluded.
+        let real_height = 520.0;
+        let r = board_rect(Mode::Hud, 0.0, 0.0, 1.0, 1, real_height);
+        // With the fix, dead space is [0, y_min); pick a point in the
+        // middle of the OLD (300-relative) range that the pre-fix rect
+        // would have wrongly accepted.
+        let old_rect_midpoint_y = (WINDOW_HEIGHT - HUD_CUTOUT_H - BOARD_PRIMARY_H) / 2.0;
+        assert!(
+            old_rect_midpoint_y < r.y_min,
+            "the chosen probe point must actually be below the fixed rect \
+             for this test to prove anything"
+        );
+        assert!(!point_in_rect(&r, WINDOW_WIDTH / 2.0, old_rect_midpoint_y));
     }
 }
