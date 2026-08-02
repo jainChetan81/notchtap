@@ -132,7 +132,8 @@ export function TtlBar({
     // `.card-assembly`'s `filter: drop-shadow` — mutating a layout
     // property (`width`) every frame forced a re-layout/re-rasterize of
     // that whole filtered group. Animating `transform: scaleX(fraction)`
-    // instead (CSS: `transform-origin: left`, full-width base) is
+    // instead (CSS: `transform-origin: right` since the 2026-08-02
+    // direction-alignment fix — see ttl-bar.css — full-width base) is
     // visually identical at this bar's 2px height and stays
     // compositor-only.
     //

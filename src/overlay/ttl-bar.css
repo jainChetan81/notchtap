@@ -40,11 +40,15 @@
 }
 
 /* the per-segment trough — `.track span`'s old role, ported onto the
-   merged bar. Plain (no `.done`) is the "not reached yet" empty trough;
-   the CURRENT segment is ALSO plain (no `.done`) since it hosts the live
-   `.ttl-fill` on top of it, not a static color of its own. */
+   merged bar. 2026-08-02 (operator direction-alignment fix): brightness
+   INVERTED — the bar now starts fully bright and burns out dim left-to-
+   right as items consume, so "bright = still to come, dim = already
+   run" and the dimming sweep runs the same direction the queue counts.
+   Plain (no `.done`) is therefore the BRIGHT "not reached yet" state;
+   the CURRENT segment is ALSO plain since it hosts the live `.ttl-fill`
+   on top of it. */
 .card-root .ttl-seg {
-  background: rgba(255, 255, 255, 0.08);
+  background: color-mix(in srgb, var(--accent) 30%, transparent);
   /* plan 127 (Step 1, /improve-animations audit finding #4)/129 (C4):
      `.track span`'s own reveal-tier transition, ported — a queue advance
      re-renders `done` classes across segments and this fades the change
@@ -54,10 +58,11 @@
   transition: background var(--reveal-ms, 260ms) var(--ease-notchtap);
 }
 
-/* queue slider (plan 033, ported by 132): consumed segments read as a
-   30%-accent dim, matching the old priority-load rail's dim treatment. */
+/* queue slider (plan 033, ported by 132; brightness inverted 2026-08-02,
+   see `.ttl-seg` above): consumed segments read as the DIM burned-out
+   trough — already run, spent. */
 .card-root .ttl-seg.done {
-  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 /* 2026-07-23 review fix (Performance finding — per-frame layout width):
@@ -87,7 +92,13 @@
   height: 100%;
   width: 100%;
   background: var(--accent);
-  transform-origin: left;
+  /* 2026-08-02 (direction-alignment fix, with the `.ttl-seg` inversion
+     above): origin flipped left -> right so the bright remaining-time
+     fill keeps its RIGHT edge anchored and its left edge sweeps
+     rightward as time runs out — consumption eats the segment in the
+     same left-to-right direction the done-segment dimming accumulates,
+     one continuous reading direction across the whole bar. */
+  transform-origin: right;
   will-change: transform;
   /* O13: the transition (not just the `.paused` values below) lives here
      on the base rule — the standard "declare the transition on the base
