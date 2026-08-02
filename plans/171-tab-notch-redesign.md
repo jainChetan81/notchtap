@@ -149,6 +149,8 @@ These are not fully specified by the design spec (which describes behavior, not 
 
 **Verification**: `npx vitest run` — batch count/position rendering, prev/next navigation, "visited clears the charge" wired back to Slice B's charge state.
 
+**Landed so far**: `NewsBatchHeader.tsx` (new, presentational) + `NewsBelowBlock.tsx` (new, composes the header + a re-rendered copy of `NotificationBody.tsx`'s news card content + the existing `<Manifest>` + the shared `PositionBar`), 19 tests. Deliberately does NOT use the mock's own `.batch-dots` markup — spec §8 resolves that ambiguity to the shared `PositionBar`, not a second dot-strip. Deliberately no `.compact-hint` node (wrong-key risk, depends on Slice J's configurable prefix string). News card content rebuilt rather than imported (`NotificationBody.tsx`'s news branch isn't its own exported function, unlike `AgentHeroCard`/`ScoreBlockContent`) — verified line-for-line equivalent, flagged for a future extraction. "Visited clears the charge" documented as the intended flow only — no real wire source exists yet (`StatusState.news` is still `{enabled: bool}`), same flagged-gap posture as Slices C/G.
+
 ## Slice J — settings UI for the prefix keybinding (frontend)
 
 **Files**: a new Settings section or an addition to an existing one (`src/settings/sections/`) — genuinely disjoint from every other frontend slice.
