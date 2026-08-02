@@ -26,11 +26,14 @@
 // `onPrevious`/`onNext` are presentational callbacks only, same "click
 // routing deferred" posture every other new interactive surface in this
 // plan follows (see `AgentBelowBlock.tsx`'s `cycleSessionIndex`,
-// `IconStrip.tsx`'s `onSelect`): real click detection is Slice A's still-
-// open Mac-Mini hand-off (`plans/171-tab-notch-redesign.md`, Slice A item
-// 2), and the prefix keymap's own `[`/`]`-equivalent wiring for news is
-// Slice D's/Slice K's. This component never calls `invoke()` and knows
-// nothing about how a click or prefix action actually reaches it.
+// `IconStrip.tsx`'s `onSelect`). The click-detection MECHANISM is settled
+// and shipped — a rust-side `NSEvent` local monitor
+// (`src-tauri/src/click.rs`, `docs/ARCHITECTURE.md` §22) observes clicks
+// and pushes typed events down the receive-only channel. What is still
+// missing is click ROUTING for these specific nav buttons (an open item
+// tracked in `plans/README.md`), and the prefix keymap's own
+// `[`/`]`-equivalent for news. This component never calls `invoke()` and
+// knows nothing about how a click or prefix action actually reaches it.
 export function NewsBatchHeader({
   freshCount,
   cycleEndedAgo,

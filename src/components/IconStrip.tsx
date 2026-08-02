@@ -64,10 +64,14 @@ export interface IconStripProps {
    * (a `hidden` icon is not interactive — `pointer-events: none` in
    * CSS backs this up, this prop is the React-side mirror of that
    * rule for anyone testing the component directly). Deliberately
-   * optional and deliberately just a callback, not a rust round-trip:
-   * see plans/171-tab-notch-redesign.md's slice A note on the still-
-   * open click-detection mechanism question — this component is
-   * written to be correct under EITHER eventual answer. */
+   * optional and deliberately just a callback, not a rust round-trip.
+   * The click-detection mechanism is settled and shipped: a rust-side
+   * `NSEvent` local monitor (`src-tauri/src/click.rs`) observes the
+   * mouseDown, hit-tests it against the strip, and pushes a
+   * `tab-selection-changed` event down the receive-only channel — the
+   * webview never tells rust about a click. So this prop is purely
+   * presentational, kept for rendering the component directly in
+   * tests. */
   onSelect?: (tab: Tab) => void;
 }
 

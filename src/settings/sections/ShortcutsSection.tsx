@@ -127,7 +127,7 @@ export function ShortcutsSection({
     <div className="section-stack">
       <SettingsGroup
         title="Prefix keybinding"
-        description="A tmux-style prefix for the tab-notch icon strip (plan 171). Not yet wired to a live key grab — this is the configurable value only."
+        description="A tmux-style prefix for the tab-notch icon strip: press it, then press one follow-up key within 2 seconds. 1–5 select a tab, [ and ] cycle agent sessions, enter or o expands, p pauses, esc cancels."
       >
         <PrefixShortcutControl
           value={config.prefix_shortcut}
