@@ -85,8 +85,11 @@ it either way.
 NO-GO. The conversion's only viable shapes either break the
 fixed-cutout law outright or replace a 0.09ms/frame cost with a large
 correctness surface (radius distortion, seam/gap regressions, clip
-choreography) — and the drop-shadow repaint dominates paint cost either
-way. `contain: layout` was considered and skipped too: the assembly is
+choreography) — and the shell's `filter: drop-shadow` repaint is
+unavoidable during the animation either way (the trace above reports
+aggregate Paint timings, not a per-cause breakdown, so this is stated
+as an unavoidable cost, not a measured dominant one). `contain: layout`
+was considered and skipped too: the assembly is
 effectively the window's whole content, so there is nothing outside it
 to protect against — layout containment exists to stop a subtree's
 reflow from invalidating an unrelated part of a larger page, and there
