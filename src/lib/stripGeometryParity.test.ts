@@ -78,12 +78,19 @@ function ruleBody(css: string, selector: string): string {
 // The strip's growth term, verbatim. The two `--cw` rules below are the
 // ONLY ones that can match while the strip is up (rail mode reaches the
 // revealed rail through `.idle`, bare notch mode through
-// `.bare:has(.idle-peek)`) — every other `--cw` formula in the file
+// `.bare:has(.below-block)`) — every other `--cw` formula in the file
 // governs a state where no icon is on screen to click.
+//
+// Plan 176 widened that second selector from `:has(.idle-peek)` to
+// `:has(.below-block)` so it also covers the pulled-tab card, not just
+// the ambient peek. That is a strict superset (the peek's own root
+// carries both classes), so it is still exactly ONE rule and still the
+// only bare-mode route to a revealed rail — the count assertion below is
+// unaffected.
 const STRIP_TERM = "(26 * var(--present-icons, 0) + 16)";
 const STRIP_VISIBLE_RULES = [
   ".card-root .card-assembly.idle",
-  ".card-root .card-assembly.bare:has(.idle-peek)",
+  ".card-root .card-assembly.bare:has(.below-block)",
 ];
 
 describe("icon strip geometry: rust hit-test constants match the shipped CSS", () => {
