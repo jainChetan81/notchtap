@@ -206,6 +206,17 @@ Add/extend rust tests in `board.rs`'s `#[cfg(test)]` block: an
 ungated-only change (Working session advances state with the gate closed)
 now publishes; a clock-only tick still does not.
 
+**Known, authorized test update (2026-08-03 amendment, first-execution
+finding):** the existing test
+`a_gated_off_board_does_not_re_publish_on_every_working_session_change`
+(`board.rs:1156-1179`) pins the OLD behaviour this step deliberately
+removes (gate-closed + second Working session → no emit). Update THAT ONE
+test to pin the new intent: the call now returns true (emits), the
+snapshot's `sessions` stays EMPTY (gate unchanged), and `tab_sessions`
+carries the working sessions. Rename it to describe the new contract and
+rewrite its `:1170-1172` comment. No other pre-existing test may change
+behaviourally.
+
 **Verify**: from `src-tauri/`, `cargo test --locked board` → all pass.
 
 ### Step 2: Carry the ungated sessions on the snapshot
@@ -287,7 +298,7 @@ output.
 - [ ] `grep -n "tab_sessions" src-tauri/src/agents/board.rs` → snapshot field + fill site
 - [ ] `grep -n "tabSessions" src/useAgentState.ts src/App.tsx` → validator + threading
 - [ ] New tests from the Test plan exist and pass
-- [ ] Board presence behaviour unchanged: every pre-existing `board.rs` and `gate_presence` test passes unmodified (test edits allowed only for constructor/fixture arity)
+- [ ] Board presence behaviour unchanged: every pre-existing `board.rs` and `gate_presence` test passes unmodified (test edits allowed only for constructor/fixture arity), EXCEPT the one test named in Step 1's 2026-08-03 amendment, which is updated to the new contract
 - [ ] No files outside the in-scope list are modified (`git status`)
 - [ ] `plans/README.md` status row updated; `docs/TESTING_STRATEGY.md` §0 recounted
 
@@ -300,8 +311,9 @@ Stop and report back (do not improvise) if:
 - `lib.rs`'s `last_session_count` (hover-expand) turns out to read
   anything other than the gated `last` slice — the split in Step 1 would
   be wrong; report the actual consumer graph.
-- Any existing board/gate test needs a **behavioural** (not fixture-arity)
-  change to pass — that means this plan is altering the presence gate,
+- Any existing board/gate test OTHER THAN the one authorized in Step 1's
+  2026-08-03 amendment needs a **behavioural** (not fixture-arity) change
+  to pass — that would mean this plan is altering the presence gate,
   which is out of scope.
 - The `agent-state` payload has a size guard or schema pin somewhere this
   plan doesn't list (search `AGENT_STATE_EVENT` consumers first).
