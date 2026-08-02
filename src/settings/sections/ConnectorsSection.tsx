@@ -64,7 +64,12 @@ function SecretRow({
         >
           {label}
         </label>
-        <MetaChip aria-live="polite" uppercase active={!!status} className="status-chip flex-none">
+        <MetaChip
+          aria-live="polite"
+          uppercase
+          tone={status ? "positive" : "neutral"}
+          className="status-chip flex-none"
+        >
           {status ?? "unset"}
         </MetaChip>
       </div>

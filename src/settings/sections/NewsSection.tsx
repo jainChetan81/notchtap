@@ -15,7 +15,7 @@ import {
 import { Segmented } from "../controls/Segmented";
 import { settingsInvoke } from "../ipc";
 import type { Config } from "../types";
-import { PRIORITY_SEGMENT_OPTIONS } from "../types";
+import { PRIORITY_SEGMENT_OPTIONS, PRIORITY_TONES } from "../types";
 
 // plan 130 Step 3: an ad-hoc, unpersisted search — same ActionStatus
 // pattern as ConnectorsSection's SecretRow (pending disables, success
@@ -182,6 +182,7 @@ export function NewsSection({
         name="Priority"
         help="Which tier a waiting headline promotes in."
         options={PRIORITY_SEGMENT_OPTIONS}
+        optionTones={PRIORITY_TONES}
         value={config.rss_priority}
         onChange={(rss_priority) => patchConfig({ rss_priority })}
       />

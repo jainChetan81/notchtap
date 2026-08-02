@@ -81,7 +81,7 @@ function weatherArtFromDetails(details: Detail[]) {
 }
 
 // plan 12x (wave 2): mirrors shared-ui's `--ease-notchtap`
-// (vendor/shared-ui/design/tokens.css: `cubic-bezier(.22, 1, .36, 1)`) —
+// (vendor/shared-ui/design/tokens.css) —
 // motion's `transition.ease` takes a bezier array, not a CSS var, so this
 // is the JS-side twin of that token for the showing-flavored content swap
 // below (mirrors card-enter-showing/card-exit-showing's old

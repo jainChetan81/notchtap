@@ -24,7 +24,7 @@
      stylesheet) — same defense-in-depth convention animationTiming.ts's
      own injected vars use. Revert = swap that consumer's timing function
      back to `var(--ease-notchtap)`. */
-  --ease-notchtap: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-notchtap: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-notchtap-pop: cubic-bezier(0.3, 1.36, 0.44, 1);
 }
 

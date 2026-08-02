@@ -75,29 +75,34 @@ const siblingPath = join(here, "..", "..", "..", "shared-ui", "design", "tokens.
 // ahead of upstream by those three tokens) — treat that as expected here, not
 // as accidental local editing.
 //
-// Which is why the sibling branch below no longer demands BYTE-EQUALITY with
-// the vendored copy: with a bespoke local layer on top, byte-equality is
-// permanently impossible, so that assertion could only ever fail from here on.
-// It compares the sibling against its OWN recorded hash instead
-// (PINNED_SIBLING_SHA256) — same drift-detection job (upstream moves => this
-// fails and someone makes a deliberate decision), minus the impossible demand.
-const UPSTREAM_SHA = "2321f37";
+// 2026-08-02 upstream-contribution refresh: the three bespoke
+// --overlay-green/--overlay-amber/--overlay-fg tokens were CONTRIBUTED
+// upstream this round (shared-ui PR #1, merged f1d2bf7, version 0.3.0) —
+// they're no longer a local-only layer, so the vendored copy is now
+// BYTE-IDENTICAL to the sibling checkout again, first time since 892d661.
+// Both hashes below are the same value as a result.
+//
+// 2026-08-02 (later the same day) motion-trio adoption, closing the
+// mystery the previous refresh flagged: "0.2.2 / tokens commit 4722b88"
+// was NOT aspirational — it was real, reviewed work sitting UNPUSHED on
+// the mac mini's own ../shared-ui checkout, invisible to the remote
+// session that wrote that note (it fetched origin, which only had PR #1).
+// The two lines were merged upstream as shared-ui 0.4.0 (merge commit
+// 711c792: overlay trio from PR #1 + motion trio from 4722b88, both
+// preserved with their original SHAs). This refresh vendors the merged
+// file, so the vendored copy is again BYTE-IDENTICAL to the sibling and
+// both hashes below share one value. Adopting the --ease-notchtap retune
+// (cubic-bezier(.22, 1, .36, 1) -> (0.23, 1, 0.32, 1)) IS the deliberate
+// animation decision the old note anticipated — its JS/CSS lockstep
+// twins (animationTiming.ts NOTCHTAP_EASE, styles.css's :root
+// redeclaration) move in the same commit, guarded by
+// animationTiming.test.ts's token-parity tests — the styles.css twin
+// had no guard of its own until this round's review added one.
+const UPSTREAM_SHA = "711c792";
 const PINNED_TOKENS_SHA256 =
-  "376dbce9245f1ed42d27c10848ad9403cb27cbdce682f391be107fca1ae6e816";
-// The sibling checkout as reviewed on 2026-08-02 (shared-ui 0.2.2, tokens
-// commit 4722b88). It differs from the vendored snapshot in exactly two ways,
-// both known and both deliberate:
-//   1. the three bespoke --overlay-green/--overlay-amber/--overlay-fg tokens
-//      (892d661) exist only in the vendored copy — this app's own layer,
-//      never sent upstream;
-//   2. upstream's 0.2.2 "motion trio" (--ease-notchtap retuned to
-//      cubic-bezier(0.23, 1, 0.32, 1), plus new --ease-drawer /
-//      --ease-in-out-strong) is NOT adopted here — the overlay's whole motion
-//      system is tuned against the vendored cubic-bezier(.22, 1, .36, 1), so
-//      adopting it is an animation decision, not a snapshot refresh.
-// Update this hash only alongside a deliberate look at what upstream changed.
+  "cdba5a467dfb81c51e425fb829d39724bbee7c91e19cbda482970f6376742e31";
 const PINNED_SIBLING_SHA256 =
-  "33e55ba7297bfb7b8b1d591bc1e039b7088ac15f1885b333f9c89819df97ac84";
+  "cdba5a467dfb81c51e425fb829d39724bbee7c91e19cbda482970f6376742e31";
 
 function sha256(path) {
   return createHash("sha256").update(readFileSync(path)).digest("hex");
@@ -130,6 +135,6 @@ if (siblingSha !== PINNED_SIBLING_SHA256) {
 }
 
 console.log(
-  "sibling ../shared-ui/design/tokens.css matches its reviewed 2026-08-02 state. No new upstream drift. (It is NOT byte-identical to the vendored copy — see PINNED_SIBLING_SHA256's own comment for the two known, deliberate deltas.)",
+  "sibling ../shared-ui/design/tokens.css matches its reviewed 2026-08-02 state. No new upstream drift. (It IS byte-identical to the vendored copy as of this refresh — the bespoke overlay-green/amber/fg layer was contributed upstream, see PINNED_TOKENS_SHA256's own comment.)",
 );
 process.exit(0);

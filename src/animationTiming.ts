@@ -82,12 +82,16 @@ export const CONTENT_EXIT_MS = 105;
 
 // 2026-07-23 review fix (Duplicated Code finding): the overlay's signature
 // easing curve, single-sourced for every JS/motion consumer. This is the
-// numeric twin of shared-ui's `--ease-notchtap: cubic-bezier(.22,1,.36,1)`
+// numeric twin of shared-ui's `--ease-notchtap: cubic-bezier(0.23,1,0.32,1)`
 // token (vendor/shared-ui/design/tokens.css) — a real cross-file lockstep
 // pair, now GUARDED by a test in animationTiming.test.ts that parses the
 // token and compares it to this array, so drift fails CI instead of
 // shipping two subtly different eases.
-export const NOTCHTAP_EASE: [number, number, number, number] = [0.22, 1, 0.36, 1];
+// 2026-08-02 (shared-ui 0.4.0 vendor refresh): retuned from
+// [0.22, 1, 0.36, 1] alongside the token itself — upstream's motion-trio
+// pass unified notchtap onto this slightly stronger ease-out. The third
+// lockstep twin is src/styles.css's `--ease-notchtap` redeclaration.
+export const NOTCHTAP_EASE: [number, number, number, number] = [0.23, 1, 0.32, 1];
 
 // 2026-07-23 review fix (Duplicated Code finding, wave C — CSS custom-
 // property injection): the shell's own entrance width-grow (base
@@ -104,7 +108,14 @@ export const NOTCHTAP_EASE: [number, number, number, number] = [0.22, 1, 0.36, 1
 // the 20ms offset undocumented — screenshot-verified
 // (docs/review-logs) that neither the shell's own promotion-grow nor the
 // manifest's expand toggle changed character at the unified 320ms.
-export const EXPAND_MS = 320;
+// plan 172 (2026-08-02): 320 -> 300. The animation review flagged 320 as
+// sitting above the 300ms UI-duration ceiling; a real headless
+// frame-sample (research harness, plans/172) showed the gesture's
+// PERCEIVED completion is ~250ms either way (strong ease-out front-loads
+// the motion; 320 vs 300 differs by <1 frame at t90), so this is token
+// cohesion, not a feel change: 300 equals shared-ui's --duration-normal.
+// Every CSS `var(--expand-ms, ...)` fallback moved in the same commit.
+export const EXPAND_MS = 300;
 
 // plan 127 (Step 1, /improve-animations audit finding #4): the bare<->
 // hovered rail's own reveal/paint coordination duration — StatusRailCard's

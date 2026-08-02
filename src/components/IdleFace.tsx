@@ -178,8 +178,8 @@ export function IdleFace({ idle }: { idle: boolean }) {
               scaleY rides the SAME `transform` property (folded into one
               translate+scaleY string) so one transition covers both
               glance and blink with a single declaration. 200ms /
-              cubic-bezier(0.22, 1, 0.36, 1) is the house curve
-              (animationTiming.ts's NOTCHTAP_EASE, [0.22, 1, 0.36, 1]).
+              the house curve (animationTiming.ts's NOTCHTAP_EASE,
+              interpolated below — never hand-typed here).
               plan 129 (C6, deep-review fix): the plan-125 comment above
               used to claim the bezier had to be hand-typed here because
               "animationTiming only exports the numeric array form" and a

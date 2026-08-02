@@ -66,7 +66,7 @@ describe("IdleFace (plan 125)", () => {
 
   describe("eyes: CSS transition, not a motion spring", () => {
     // plan 129 (C6, deep-review fix): built from the NOTCHTAP_EASE import
-    // itself, not a hand-typed "0.22, 1, 0.36, 1" echo — the component
+    // itself, not a hand-typed cubic-bezier echo — the component
     // now builds its own transition string the same way
     // (`NOTCHTAP_EASE.join(", ")`), so this test would silently stop
     // proving anything if a future edit to the constant weren't also

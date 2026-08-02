@@ -9,7 +9,7 @@
    own entrance width-grow (`.card-assembly`'s base `transition: width`,
    above) for no documented reason — just two separate polish passes
    that each touched one but not the other. Unified onto
-   `var(--expand-ms, 320ms)` (EXPAND_MS, animationTiming.ts) — see that
+   `var(--expand-ms, 300ms)` (EXPAND_MS, animationTiming.ts) — see that
    constant's own doc for the "why unify" reasoning and the screenshot
    verification. */
 .card-root .manifest-wrap {
@@ -17,8 +17,8 @@
   grid-template-rows: 0fr;
   opacity: 0;
   transition:
-    grid-template-rows var(--expand-ms, 320ms) var(--ease-notchtap),
-    opacity var(--expand-ms, 320ms) var(--ease-notchtap);
+    grid-template-rows var(--expand-ms, 300ms) var(--ease-notchtap),
+    opacity var(--expand-ms, 300ms) var(--ease-notchtap);
 }
 .card-root .manifest-wrap.expanded {
   grid-template-rows: 1fr;

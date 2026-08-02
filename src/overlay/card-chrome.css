@@ -63,7 +63,8 @@
      literal 320ms moved to `var(--expand-ms, 320ms)` — EXPAND_MS in
      animationTiming.ts, injected by applyAnimationTiming.ts at both real
      entry points. See that constant's own doc for why it's now also the
-     manifest disclosure's duration (below). The `320ms` fallback keeps
+     manifest disclosure's duration (below). The fallback (300ms since
+     plan 172 retuned the constant — fallback literals track it) keeps
      this rule correct even in a hypothetical context that never calls
      applyAnimationTiming.
      plan 127 (Step 4, /improve-animations audit finding #5): `filter` is
@@ -99,7 +100,7 @@
      `.expanded` at all. Net result now: hover-expand enters AND exits on
      the house curve at `--expand-ms`; a genuine promotion still grows
      with the pop, via `.promoting`. */
-  transition: width var(--expand-ms, 320ms) var(--ease-notchtap);
+  transition: width var(--expand-ms, 300ms) var(--ease-notchtap);
 }
 
 /* plan 090 (Q1a/Q2b, carried forward): the cutout term
@@ -135,7 +136,7 @@
    makes it `.expanded` in the first place. */
 .card-root .card-assembly.expanded {
   --cw: min(max(calc(500px * var(--card-scale)), calc(var(--notchtap-cutout-width, 200px) + (2 * 60px * var(--card-scale)))), 100%);
-  transition: width var(--expand-ms, 320ms) var(--ease-notchtap);
+  transition: width var(--expand-ms, 300ms) var(--ease-notchtap);
 }
 
 /* 2026-08-02 (animation audit, finding 1): the arrival pop, now scoped to
@@ -163,7 +164,7 @@
    (styles.css's `:root`) as a fallback, since this shared file also
    renders in the settings preview, which never loads styles.css. */
 .card-root .card-assembly.promoting {
-  transition: width var(--expand-ms, 320ms)
+  transition: width var(--expand-ms, 300ms)
     var(--ease-notchtap-pop, cubic-bezier(0.3, 1.36, 0.44, 1));
 }
 
@@ -306,12 +307,12 @@
      duration exactly as before; this leg only ever becomes active once
      that rule stops matching (a below-block has newly mounted), which is
      precisely the entrance moment that previously had no transition
-     context at all. Uses `--expand-ms` (320ms), matching the shell's own
-     width-grow duration for the same promotion. */
+     context at all. Uses `--expand-ms` (300ms, plan 172), matching the
+     shell's own width-grow duration for the same promotion. */
   transition:
     background-color var(--reveal-ms, 260ms) var(--ease-notchtap),
     padding var(--reveal-ms, 260ms) var(--ease-notchtap),
-    border-radius var(--expand-ms, 320ms) var(--ease-notchtap);
+    border-radius var(--expand-ms, 300ms) var(--ease-notchtap);
   /* grid items default to `min-width: auto` (their content's min-content
      size), which can force the whole grid wider than `--cw` if content
      ever doesn't wrap — the clock/dots content here is always
@@ -431,8 +432,8 @@
    number) — by the time `.exiting` clears and `.idle` actually applies,
    `--cw` is already sitting at the identical value, so the handoff never
    re-triggers a transition or jumps.
-   `transition` is redeclared here with `width` shortened — 320ms ->
-   175ms, matching SWAP_EXIT_MS (src/animationTiming.ts) exactly, so the
+   `transition` is redeclared here with `width` shortened — `--expand-ms`
+   (300ms) -> 175ms, matching SWAP_EXIT_MS (src/animationTiming.ts) exactly, so the
    shell has fully reached idle width by the same tick the geometry-class
    freeze itself lets go — never before (content spill) and never
    conspicuously after (a lagging tail).
@@ -653,7 +654,7 @@
      boundary for the "does this mode exist at all" question — only the
      "is it currently showing" question below moves to opacity). */
   opacity: 0;
-  transition: opacity var(--expand-ms, 320ms) var(--ease-notchtap);
+  transition: opacity var(--expand-ms, 300ms) var(--ease-notchtap);
 }
 /* plan 167: within HUD mode, the gill stays permanently in the render
    tree (a tiny, absolutely-positioned, pointer-events:none pair of

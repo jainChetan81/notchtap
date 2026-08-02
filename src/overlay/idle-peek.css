@@ -361,115 +361,13 @@
   box-shadow: 0 0 10px rgba(182, 245, 229, 0.75);
 }
 
-/* event icon set (item 6 + plan 043's richer events): CSS shapes, no
-   emoji — goal = filled green ball, penalty = green ring, own goal =
-   hollow grey ball, yellow/red = slips, foul = whistle triangle, offside
-   = flag, VAR = monitor, substitution = up/down triangles. Adapted
-   verbatim from prototype/football-card.html. */
-.card-root .ev-ico {
-  width: 9px;
-  height: 9px;
-  border-radius: 50%;
-  flex: none;
-}
-.card-root .ev-ico.goal {
-  background: var(--overlay-green);
-  box-shadow: 0 0 6px rgba(127, 224, 141, 0.7);
-}
-.card-root .ev-ico.pen {
-  background: transparent;
-  border: 2px solid var(--overlay-green);
-  width: 7px;
-  height: 7px;
-}
-.card-root .ev-ico.og {
-  background: transparent;
-  border: 2px solid rgba(255, 255, 255, 0.4);
-  width: 7px;
-  height: 7px;
-}
-.card-root .ev-ico.yc,
-.card-root .ev-ico.rc {
-  width: 7px;
-  height: 10px;
-  border-radius: 1.5px;
-}
-.card-root .ev-ico.yc {
-  background: var(--overlay-amber);
-}
-.card-root .ev-ico.rc {
-  background: var(--overlay-coral);
-}
-.card-root .ev-ico.foul {
-  width: 0;
-  height: 0;
-  border-radius: 0;
-  border-left: 5px solid transparent;
-  border-right: 5px solid transparent;
-  border-bottom: 8px solid rgba(255, 255, 255, 0.55);
-}
-.card-root .ev-ico.off {
-  position: relative;
-  width: 3px;
-  height: 12px;
-  border-radius: 0;
-  background: rgba(255, 255, 255, 0.5);
-}
-.card-root .ev-ico.off::after {
-  content: "";
-  position: absolute;
-  top: 0;
-  left: 3px;
-  width: 7px;
-  height: 5px;
-  background: var(--overlay-amber);
-  border-radius: 0 2px 2px 0;
-}
-.card-root .ev-ico.var {
-  width: 11px;
-  height: 8px;
-  border-radius: 2px;
-  background: transparent;
-  border: 1.5px solid #7c9df5;
-}
-.card-root .ev-ico.sub {
-  position: relative;
-  width: 12px;
-  height: 11px;
-  border-radius: 0;
-  background: transparent;
-}
-.card-root .ev-ico.sub::before {
-  content: "";
-  position: absolute;
-  left: 0;
-  top: 0;
-  border-left: 4px solid transparent;
-  border-right: 4px solid transparent;
-  border-bottom: 5px solid var(--overlay-green);
-}
-.card-root .ev-ico.sub::after {
-  content: "";
-  position: absolute;
-  right: 0;
-  bottom: 0;
-  border-left: 4px solid transparent;
-  border-right: 4px solid transparent;
-  border-top: 5px solid var(--overlay-coral);
-}
-
-.card-root .event-line.tint-goal {
-  color: var(--overlay-green);
-  font-weight: 600;
-}
-.card-root .event-line.tint-yc {
-  color: var(--overlay-amber);
-  font-weight: 600;
-}
-.card-root .event-line.tint-rc {
-  color: var(--overlay-coral);
-  font-weight: 600;
-}
+/* plan 171: the event icon set (`.ev-ico*`) and `.event-line.tint-*`
+   were removed from here — both belonged to the old, now-deleted
+   `LiveMatchScorecard.tsx`'s per-event icon+tint row (plan 043/084 era);
+   plan 170's `FootballHeroCard` deliberately doesn't carry an icon slot
+   (see NotificationBody.tsx's own doc comment on `.title.headline`), so
+   neither class had a live consumer left in either this file or
+   live-scorecard.css (confirmed via a repo-wide grep before removal). */
 
 /* celebrations (plan 084): goal/penalty = green glow + ring, yellow =
    amber ring, red = two-pulse coral strobe — visually echo pulse-goal/

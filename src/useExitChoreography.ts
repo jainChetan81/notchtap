@@ -150,7 +150,7 @@ export function useExitChoreography(
   // rules on top of that: `.bare:has(.idle-peek)` re-widens `--cw` back to
   // the full idle formula (overlay-card.css:165-167) and `.bare.hovered`
   // repaints the flanks opaque again. Net effect: a 175ms shrink to
-  // cutout width immediately followed by a ~320ms rebound back out to
+  // cutout width immediately followed by a ~300ms (--expand-ms) rebound back out to
   // idle width — a visible wobble the exit-to-bare mechanism exists
   // specifically to prevent. `!hovered` routes a hovered exit back onto
   // the plain `.exiting` rule instead (wide/idle-shaped `--cw`, the same

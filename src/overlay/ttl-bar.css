@@ -48,7 +48,7 @@
    the CURRENT segment is ALSO plain since it hosts the live `.ttl-fill`
    on top of it. */
 .card-root .ttl-seg {
-  background: color-mix(in srgb, var(--accent) 30%, transparent);
+  background: color-mix(in srgb, var(--accent) 33%, transparent);
   /* plan 127 (Step 1, /improve-animations audit finding #4)/129 (C4):
      `.track span`'s own reveal-tier transition, ported — reveal-tier
      timing/easing shared with the flank background and FlankClock/
@@ -141,7 +141,7 @@
 
    Retuned to clear the >=2.5x separation bar while staying visibly held:
 
-     paused fill (new)   0.85 opacity x 0.90 --accent = 0.765
+     paused fill (old)   0.85 opacity x 0.90 --accent = 0.765
                          -> 0.765 / 0.30 = 2.55x the trough  [>= 2.5x OK]
                          -> 0.765 / 1.00 = 76.5% of the unpaused solid
                             --accent fill, i.e. ~24% dimmer  [still reads
@@ -150,10 +150,38 @@
    Dropping `--accent-soft` from the mix is deliberate: its alpha differs
    per priority tier (.20/.24/.28, card-chrome.css), so the old value
    quietly produced a different contrast ratio on every tier. The plain
-   `--accent`-with-transparent mix lands the same 2.55x on all three. */
+   `--accent`-with-transparent mix lands the same ratio on all three.
+
+   2026-08-02 (operator vividness pass): status pills/bars asked to read
+   more colorful at a glance. Both legs of this same ratio nudged up
+   together — trough alpha AND paused-fill strength — so the >=2.5x
+   separation this block exists to protect is preserved, not spent:
+
+     trough (.ttl-seg)   30% -> 33% --accent
+     paused fill (new)   0.87 opacity x 0.95 --accent = 0.8265
+                         -> 0.8265 / 0.33 = 2.50x the trough  [>= 2.5x OK,
+                            same bar as the retune above, not loosened]
+                         -> 0.8265 / 1.00 = 82.65% of the unpaused solid
+                            --accent fill, i.e. ~17% dimmer  [gap to solid
+                            narrower than the 24% above by design — this
+                            pass is about MORE color showing everywhere,
+                            including the held state; 17% is still a real,
+                            legible dim against a static (non-animating)
+                            reference, not a rewrite of the held-vs-live
+                            distinction itself]
+
+   Deliberately did NOT give `.low` (grey, no hue to begin with) its own
+   larger bump here to "catch up" to teal/high's saturation: the
+   percentage bump above is uniform across all three tiers (same
+   multiplier on whatever --accent resolves to), so low keeps its
+   correct relative position — quieter than medium/high, which is the
+   priority system doing its job, not a vividness bug. Grey reading as
+   the least colorful of the three is the point of it being LOW
+   priority; propping its alpha up disproportionately to "match" the
+   saturated tiers would blur that signal instead of just polishing it. */
 .card-root .ttl-fill.paused {
-  opacity: 0.85;
-  background: color-mix(in srgb, var(--accent) 90%, transparent);
+  opacity: 0.87;
+  background: color-mix(in srgb, var(--accent) 95%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {
