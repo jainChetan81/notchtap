@@ -72,6 +72,99 @@ const IDLE_PEEK_BELOW_BLOCK_H: f64 = 100.0; // IdleHoverPeek.tsx motion.div `ani
 const BELOW_BLOCK_SHOWING_H: f64 = 160.0; // conservative estimate, compact (non-expanded) content
 const BELOW_BLOCK_EXPANDED_H: f64 = 240.0; // conservative estimate, expanded (manifest) content
 
+// Plan 171 (tab-notch redesign): the icon strip's own geometry constants —
+// duplicated-constants pair with `prototypes/tab-notch-rest-and-morph.html`'s
+// `--icon-box`/`--icon-gap`/`--flank-inset` custom properties (the design
+// source of truth until this feature's own CSS ships; re-pair these against
+// the real stylesheet once it exists, same discipline the rest of this
+// file's constants already follow). `HOVER_RAIL_FLOOR` is the EXISTING
+// `FLANK_IDLE` value above, `85.0` — not redefined, reused, because the
+// mock's own hover-rail floor is explicitly "the same 85px rail floor"
+// every other hovered-but-not-showing state in this app already uses.
+const ICON_BOX: f64 = 18.0;
+const ICON_GAP: f64 = 8.0;
+const FLANK_INSET: f64 = 14.0;
+
+/// The right flank's own width while hovered, given how many icons are
+/// currently present (spec §6/§0: absent icons are omitted, never
+/// `display: none`'d in place — so `present_count` is the count AFTER
+/// that filter, not always 5). Mirrors the mock's own two-step formula
+/// exactly: `strip_w` is unscaled raw geometry (icon box/gap/inset never
+/// scale with `--card-scale`), only the 85px rail floor does.
+fn hovered_right_flank_width(present_count: usize, scale: f64) -> f64 {
+    let strip_w = (ICON_BOX + ICON_GAP) * present_count as f64 + FLANK_INSET;
+    (FLANK_IDLE * scale).max(strip_w)
+}
+
+/// One `Rect` per PRESENT icon, in the strip's fixed left-to-right order
+/// (agent, football, music, weather, news) — the caller passes exactly the
+/// present-icon list it already computed (this function does not know
+/// which of the five sources is live; it only knows how many boxes to
+/// lay out and how wide the right flank consequently is), and must zip
+/// the returned `Vec` against that SAME list, index for index.
+///
+/// Icons are right-aligned inside the flank with `FLANK_INSET` as the
+/// flank's own right padding (`.hovered .flank-right { padding-right:
+/// var(--flank-inset) }`) and pack leftward from there — so the
+/// RIGHTMOST returned rect (last in the Vec) sits flush against that
+/// inset, and each icon to its left is offset by one more
+/// `ICON_BOX + ICON_GAP`. This is a plan-171 sibling of `active_card_rect`
+/// above: only used while the shell is hovered AND the Slot is idle (the
+/// icon strip is an idle-only affordance, same gating `board_rect` already
+/// uses for `!visible`) — callers must not call this while a pushed card
+/// is showing, and this function does not itself check `visible` (kept
+/// pure/parameter-driven, matching this file's own house style; the
+/// `!visible` gate belongs at the call site, mirroring `try_expand_board_
+/// for_hover`'s own `if visible || session_count == 0 { return; }` guard).
+pub fn icon_strip_rects(
+    mode: Mode,
+    cutout_width: f64,
+    cutout_height: f64,
+    scale: f64,
+    present_count: usize,
+) -> Vec<Rect> {
+    if present_count == 0 {
+        return Vec::new();
+    }
+    let effective_cutout_width = match mode {
+        Mode::Notch => cutout_width,
+        Mode::Hud => HUD_CUTOUT_W,
+    };
+    let effective_cutout_height = match mode {
+        Mode::Notch => cutout_height,
+        Mode::Hud => HUD_CUTOUT_H,
+    };
+    let flank_w = hovered_right_flank_width(present_count, scale);
+    let total_width = (effective_cutout_width + 2.0 * flank_w).min(WINDOW_WIDTH);
+    let card_x_min = (WINDOW_WIDTH - total_width) / 2.0;
+    let card_x_max = card_x_min + total_width;
+
+    // The strip lives inside the cutout's own row (grid-row: 1, same row
+    // the flanks and the synthetic cutout share) — its y-span is exactly
+    // the cutout height, not the below-block. `top: 0.0` because the
+    // window is pinned flush to the physical screen top (`position_
+    // window`), the same anchor every other rect in this file assumes.
+    let (y_min, y_max) = css_top_down_to_appkit_y(WINDOW_HEIGHT, 0.0, effective_cutout_height);
+
+    (0..present_count)
+        .map(|from_right| {
+            let right_edge = card_x_max - FLANK_INSET - from_right as f64 * (ICON_BOX + ICON_GAP);
+            let left_edge = right_edge - ICON_BOX;
+            Rect {
+                x_min: left_edge,
+                x_max: right_edge,
+                y_min,
+                y_max,
+            }
+        })
+        // built right-to-left above (from_right ascends outward from the
+        // flank's own inset edge); reversed once here so the returned
+        // Vec reads left-to-right, matching the strip's fixed visual
+        // order and sparing every caller from re-deriving the reversal.
+        .rev()
+        .collect()
+}
+
 /// A screen-space rect in AppKit window coordinates (bottom-left origin,
 /// y grows UP) — the region where hover should count as "over the
 /// card." Plain numbers, no AppKit types, so `point_in_rect` and every
@@ -976,5 +1069,98 @@ mod tests {
              for this test to prove anything"
         );
         assert!(!point_in_rect(&r, WINDOW_WIDTH / 2.0, old_rect_midpoint_y));
+    }
+
+    // --- plan 171 (tab-notch redesign): icon_strip_rects ---
+
+    #[test]
+    fn icon_strip_rects_returns_empty_for_zero_present() {
+        assert_eq!(icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.0, 0), Vec::new());
+    }
+
+    #[test]
+    fn icon_strip_rects_returns_present_count_entries() {
+        for n in 1..=5 {
+            assert_eq!(icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.0, n).len(), n);
+        }
+    }
+
+    #[test]
+    fn icon_strip_rects_two_icons_uses_the_85px_rail_floor() {
+        // 2 icons: strip_w = (18+8)*2 + 14 = 66, which loses to the 85px
+        // rail floor at scale 1 — the SAME "2 icons -> 85px rail floor
+        // wins" case mock 1's own spec table states explicitly.
+        let rects = icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.0, 2);
+        let flank_w = hovered_right_flank_width(2, 1.0);
+        assert_eq!(flank_w, FLANK_IDLE); // 85.0, the floor, not the narrower strip_w
+        // total card width = 200 (hud cutout) + 2*85 = 370, matching the
+        // mock's own worked example ("hovered, 2 icons: shell width 370px").
+        let total_width = HUD_CUTOUT_W + 2.0 * flank_w;
+        assert_eq!(total_width, 370.0);
+        let card_x_min = (WINDOW_WIDTH - total_width) / 2.0;
+        let card_x_max = card_x_min + total_width;
+        // rightmost icon (index 1, last in the returned left-to-right Vec)
+        // sits flush against the flank's own FLANK_INSET right padding.
+        assert_eq!(rects[1].x_max, card_x_max - FLANK_INSET);
+    }
+
+    #[test]
+    fn icon_strip_rects_five_icons_matches_the_488px_worked_example() {
+        // 5 icons: strip_w = (18+8)*5 + 14 = 144, beats the 85px floor —
+        // the mock's own "5 icons -> 488px" worked example (200 + 2*144).
+        let flank_w = hovered_right_flank_width(5, 1.0);
+        assert_eq!(flank_w, 144.0);
+        let total_width = HUD_CUTOUT_W + 2.0 * flank_w;
+        assert_eq!(total_width, 488.0);
+    }
+
+    #[test]
+    fn icon_strip_rects_are_in_left_to_right_order_with_no_overlap_and_correct_gaps() {
+        let rects = icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.0, 5);
+        for pair in rects.windows(2) {
+            let (left, right) = (pair[0], pair[1]);
+            assert!(
+                left.x_max <= right.x_min,
+                "icons must never overlap: {left:?} vs {right:?}"
+            );
+            // exactly ICON_GAP between the left icon's right edge and the
+            // next icon's left edge — not "at least", the packed formula
+            // is exact.
+            assert_eq!(right.x_min - left.x_max, ICON_GAP);
+            // every icon is exactly ICON_BOX wide.
+            assert_eq!(left.x_max - left.x_min, ICON_BOX);
+        }
+    }
+
+    #[test]
+    fn icon_strip_rects_y_span_is_the_cutout_height_alone() {
+        let rects = icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.0, 1);
+        assert_eq!(rects[0].y_max - rects[0].y_min, HUD_CUTOUT_H);
+        // top-anchored: the highest AppKit y in the rect equals the whole
+        // window's own top, same invariant `top_of_window_maps_to_high_
+        // appkit_y_not_low` already pins for every other rect in this file.
+        assert_eq!(rects[0].y_max, WINDOW_HEIGHT);
+    }
+
+    #[test]
+    fn icon_strip_rects_notch_mode_uses_the_real_measured_cutout() {
+        // unlike HUD mode (always the synthetic 200x32), notch mode reads
+        // the real measured cutout — same discipline active_card_rect's
+        // own notch-mode branch already follows.
+        let rects_notch = icon_strip_rects(Mode::Notch, 260.0, 34.0, 1.0, 2);
+        let rects_hud = icon_strip_rects(Mode::Hud, 260.0, 34.0, 1.0, 2);
+        assert_ne!(rects_notch[0].x_min, rects_hud[0].x_min);
+        assert_eq!(rects_notch[0].y_max - rects_notch[0].y_min, 34.0);
+    }
+
+    #[test]
+    fn icon_strip_rects_scale_only_affects_the_rail_floor_not_the_raw_icon_geometry() {
+        // ICON_BOX/ICON_GAP/FLANK_INSET are unscaled raw px per the mock's
+        // own formula (only the 85px rail floor multiplies by --card-scale)
+        // — at a present_count where the strip genuinely beats the floor
+        // even at an elevated scale, the icon box width itself must stay
+        // exactly ICON_BOX regardless of scale.
+        let rects = icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.25, 5);
+        assert_eq!(rects[0].x_max - rects[0].x_min, ICON_BOX);
     }
 }
