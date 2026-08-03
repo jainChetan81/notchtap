@@ -530,10 +530,9 @@ export function FootballHeroCard({
   pillLabel,
   cardsClean,
   // Plan 171 (tab-notch redesign, slice G): spec section 7's football
-  // bullet / the design source's own "crossbar" persistent variant
-  // (prototypes/tab-notch-panel.html: "two stacked score-blocks, no
-  // event headline, no TTL bar", reached via prefix+enter while football
-  // is selected and a match is live). Deliberately NOT a separate
+  // "crossbar" persistent variant uses two stacked score blocks, no event
+  // headline, and no TTL bar when football is selected and a match is
+  // live. Deliberately NOT a separate
   // `crossbar` boolean — "crossbar-ness" is fully expressed by what
   // `title` string the caller passes (the event line, vs. e.g. "2
   // matches live") plus whether this list is non-empty; a redundant flag

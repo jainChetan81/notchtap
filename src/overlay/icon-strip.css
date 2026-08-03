@@ -1,8 +1,6 @@
 /* ==== the tab-notch icon strip (plan 171) ====
-   Design source: prototypes/tab-notch-rest-and-morph.html section 2 (r3).
    Hidden entirely at rest (visibility:hidden + opacity:0 + pointer-events:
-   none — belt, braces, and a third belt, per that file's own comment: the
-   rule that the icons must never paint over the desktop is the single
+   none): the rule that the icons must never paint over the desktop is the single
    load-bearing rule of this whole feature). Visible only under `.hovered`
    on the ancestor `.card-assembly` (card-chrome.css), i.e. only once the
    flank behind it has already started painting #000 — the strip's own

@@ -22,9 +22,8 @@
      Last hand-synced against those files: 2026-07-30, plus a 2026-08-02
      ttl-bar-only re-sync (brightness inversion + `transform-origin: right`).
 
-     Glyphs are Meteocons static-fill SVGs (MIT, Bas Milius), vendored at
-     prototype/assets/weather/ — byte-identical to src/assets/weather/, see
-     that directory's own NOTICE file for full attribution. -->
+     Glyphs are Meteocons static-fill SVGs (MIT, Bas Milius), loaded from
+     ../src/assets/weather/ — see that directory's NOTICE for attribution. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -315,7 +314,7 @@
           <div class="below-block src-weather">
             <div class="wx-mood wx-rain"></div>
             <div class="wx-texture wx-rain-streaks"></div>
-            <img class="wx-icon" src="assets/weather/rain.svg" alt="Rain">
+            <img class="wx-icon" src="../src/assets/weather/rain.svg" alt="Rain">
             <div class="compact">
               <div class="masthead-row">
                 <div class="masthead"><span class="dot"></span>Weather</div>
@@ -342,7 +341,7 @@
           </div>
           <div class="below-block src-weather">
             <div class="wx-mood wx-clear-day"></div>
-            <img class="wx-icon" src="assets/weather/clear-day.svg" alt="Clear day">
+            <img class="wx-icon" src="../src/assets/weather/clear-day.svg" alt="Clear day">
             <div class="compact">
               <div class="masthead-row">
                 <div class="masthead"><span class="dot"></span>Weather</div>
@@ -370,7 +369,7 @@
           <div class="below-block src-weather">
             <div class="wx-mood wx-snow"></div>
             <div class="wx-texture wx-snow-dots"></div>
-            <img class="wx-icon" src="assets/weather/snow.svg" alt="Snow">
+            <img class="wx-icon" src="../src/assets/weather/snow.svg" alt="Snow">
             <div class="compact">
               <div class="masthead-row">
                 <div class="masthead"><span class="dot"></span>Weather</div>
@@ -405,28 +404,28 @@
       <div>
         <div class="rig-label">Clear &middot; night</div>
         <div class="wx-swatch wx-clear-night">
-          <div class="wx-cond-label"><img class="wx-icon" src="assets/weather/clear-night.svg" alt=""></div>
+          <div class="wx-cond-label"><img class="wx-icon" src="../src/assets/weather/clear-night.svg" alt=""></div>
         </div>
       </div>
 
       <div>
         <div class="rig-label">Cloudy &middot; day</div>
         <div class="wx-swatch wx-partly-cloudy-day">
-          <div class="wx-cond-label"><img class="wx-icon" src="assets/weather/partly-cloudy-day.svg" alt=""></div>
+          <div class="wx-cond-label"><img class="wx-icon" src="../src/assets/weather/partly-cloudy-day.svg" alt=""></div>
         </div>
       </div>
 
       <div>
         <div class="rig-label">Cloudy &middot; night</div>
         <div class="wx-swatch wx-partly-cloudy-night">
-          <div class="wx-cond-label"><img class="wx-icon" src="assets/weather/partly-cloudy-night.svg" alt=""></div>
+          <div class="wx-cond-label"><img class="wx-icon" src="../src/assets/weather/partly-cloudy-night.svg" alt=""></div>
         </div>
       </div>
 
       <div>
         <div class="rig-label">Fog (no night variant vendored)</div>
         <div class="wx-swatch wx-fog">
-          <div class="wx-cond-label"><img class="wx-icon" src="assets/weather/fog.svg" alt=""></div>
+          <div class="wx-cond-label"><img class="wx-icon" src="../src/assets/weather/fog.svg" alt=""></div>
         </div>
       </div>
 
@@ -434,7 +433,7 @@
         <div class="rig-label">Rain / Showers &middot; night</div>
         <div class="wx-swatch wx-rainy-night">
           <div class="wx-texture wx-rain-streaks"></div>
-          <div class="wx-cond-label"><img class="wx-icon" src="assets/weather/rain.svg" alt=""></div>
+          <div class="wx-cond-label"><img class="wx-icon" src="../src/assets/weather/rain.svg" alt=""></div>
         </div>
       </div>
 
@@ -442,14 +441,14 @@
         <div class="rig-label">Storm (reuses wx-rain-streaks texture)</div>
         <div class="wx-swatch wx-thunderstorm">
           <div class="wx-texture wx-rain-streaks"></div>
-          <div class="wx-cond-label"><img class="wx-icon" src="assets/weather/thunderstorms.svg" alt=""></div>
+          <div class="wx-cond-label"><img class="wx-icon" src="../src/assets/weather/thunderstorms.svg" alt=""></div>
         </div>
       </div>
 
       <div>
         <div class="rig-label">Neutral fallback &mdash; unrecognized condition word</div>
         <div class="wx-swatch wx-overcast">
-          <div class="wx-cond-label"><img class="wx-icon" src="assets/weather/overcast.svg" alt=""></div>
+          <div class="wx-cond-label"><img class="wx-icon" src="../src/assets/weather/overcast.svg" alt=""></div>
         </div>
       </div>
 
@@ -490,7 +489,7 @@
         <div class="peek-content">
           <div class="wx-peek-weather-stack">
             <div class="wx-peek-readout">
-              <img class="wx-peek-icon" src="assets/weather/rain.svg" alt="">
+              <img class="wx-peek-icon" src="../src/assets/weather/rain.svg" alt="">
               <span class="wx-peek-temp">19&deg;</span>
               <span class="wx-peek-hilo"><span>H 24&deg;</span><span>L 16&deg;</span></span>
               <span class="chip wx-peek-condition">Rain</span>
@@ -498,15 +497,15 @@
             </div>
             <div class="wx-forecast-strip">
               <span class="wx-forecast-point">
-                <img class="wx-forecast-icon" src="assets/weather/partly-cloudy-day.svg" alt="">
+                <img class="wx-forecast-icon" src="../src/assets/weather/partly-cloudy-day.svg" alt="">
                 <span class="wx-forecast-temp">22&deg;</span><span class="wx-forecast-hour">6 PM</span>
               </span>
               <span class="wx-forecast-point">
-                <img class="wx-forecast-icon" src="assets/weather/rain.svg" alt="">
+                <img class="wx-forecast-icon" src="../src/assets/weather/rain.svg" alt="">
                 <span class="wx-forecast-temp">19&deg;</span><span class="wx-forecast-hour">8 PM</span>
               </span>
               <span class="wx-forecast-point">
-                <img class="wx-forecast-icon" src="assets/weather/clear-night.svg" alt="">
+                <img class="wx-forecast-icon" src="../src/assets/weather/clear-night.svg" alt="">
                 <span class="wx-forecast-temp">17&deg;</span><span class="wx-forecast-hour">10 PM</span>
               </span>
             </div>
@@ -556,14 +555,11 @@
 
   <footer>
     <b>License:</b> glyphs are Meteocons, MIT license, by Bas Milius &mdash;
-    <code>github.com/basmilius/weather-icons</code>. Vendored copies live in
-    <code>prototype/assets/weather/</code>, byte-identical to
-    <code>src/assets/weather/</code> (see that directory's own
-    <code>NOTICE</code>). Of the 12 vendored files, 10 are actively assigned
-    in <code>weatherArt.ts</code>; <code>extreme-rain.svg</code>,
-    <code>wind.svg</code>, and <code>hail.svg</code> remain vendored but
-    unassigned &mdash; spare buckets for a future condition mapping. The
-    gradient moods are ours, no third-party art. Day/night is keyed off
+    <code>github.com/basmilius/weather-icons</code>. The runtime-owned files
+    live in <code>src/assets/weather/</code> (see that directory's
+    <code>NOTICE</code>); this static reference loads those same files rather
+    than carrying a second copy. The gradient moods are ours, no third-party
+    art. Day/night is keyed off
     rust's own <code>is_day</code> read (the weather poller's coordinates),
     not a local wall-clock heuristic &mdash; see <code>weatherArt.ts</code>'s
     and <code>IdleHoverPeek.tsx</code>'s plan-110 notes.

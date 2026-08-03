@@ -852,9 +852,9 @@ rewritten).
 
 design spec: `docs/superpowers/specs/2026-08-02-tab-notch-design.md`;
 build sequence + as-built notes: `plans/171-tab-notch-redesign.md`.
-merged 2026-08-02 (PR #13). the mocks
-(`prototypes/tab-notch-rest-and-morph.html`,
-`prototypes/tab-notch-panel.html`, both r3) are binding design sources.
+merged 2026-08-02 (PR #13). the shipped React/CSS implementation under
+`src/` is authoritative; the pre-implementation review mocks were removed
+after the feature landed.
 
 - **the notch becomes pull-based, additively.** push behaviour
   (interrupts, TTL, priority preemption) is completely unchanged and

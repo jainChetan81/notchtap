@@ -45,11 +45,9 @@
     below," not a live guarantee.
   </p>
   <p class="note">
-    This complements, not replaces, <code>DESIGN.html</code> at the repo
-    root (the token/law/motion reference) — that file predates the Agent
-    Board and the per-card-type richness these files cover; treat these as
-    the current per-surface visual truth and <code>DESIGN.html</code> as
-    the system-level rulebook.
+    The React/CSS implementation under <code>src/</code> is authoritative.
+    This is the repository's only static UI reference and must be updated
+    from the shipped source whenever it is intentionally kept in sync.
   </p>
 
   <div class="list">
@@ -60,12 +58,12 @@
     </a>
     <a class="row" href="agent-board.html">
       <span class="n">02</span>
-      <span><span class="name">agent-board</span><span class="desc">Coding-agent sessions — all seven states, all four runtime identities, resting (hero + compact rows) and hover-expanded (full scrollable list with per-row history). Also includes a proposal section (§⚠) showing the same states through the unified card template.</span></span>
+      <span><span class="name">agent-board</span><span class="desc">Coding-agent sessions — all seven states, all four runtime identities, resting (hero + compact rows) and hover-expanded (full scrollable list with per-row history).</span></span>
       <span class="synced">2026-08-01</span>
     </a>
     <a class="row" href="football-card.html">
       <span class="n">03</span>
-      <span><span class="name">football-card</span><span class="desc">Two real render paths: the resting hover-reveal scorecard peek, and the promoted goal/card/kickoff notification with its celebration motion. Also includes a proposal section (§⚠) showing the same events through the unified card template.</span></span>
+      <span><span class="name">football-card</span><span class="desc">Two real render paths: the resting hover-reveal scorecard peek, and the promoted goal/card/kickoff notification with its celebration motion.</span></span>
       <span class="synced">2026-08-01</span>
     </a>
     <a class="row" href="news-card.html">
@@ -95,23 +93,10 @@
     </a>
   </div>
 
-  <h2 style="font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:0.1em;color:#f0c46a;margin:40px 0 4px;">proposals — not current reality</h2>
-  <p class="lede" style="margin-bottom:16px;">Explorations of a different direction, clearly separate from the mirror above.</p>
-  <div class="list">
-    <a class="row" href="proposal-unified-card.html">
-      <span class="n">P1</span>
-      <span><span class="name">proposal-unified-card</span><span class="desc">One shared shell + one shared content template (masthead/stamp/accent-stripe/manifest — "the CMUX card") for every origin, including Agent and Football, instead of each growing its own bespoke layout.</span></span>
-      <span class="synced">2026-08-01</span>
-    </a>
-  </div>
-
   <footer>
-    Also in this repo: <code>DESIGN.html</code> (root) — the token/law/motion
-    system reference, last synced 2026-07-22 (predates the Agent Board).
-    <code>prototypes/</code> (plural, sibling folder) holds this session's
-    working scratch files (an animation-fix walkthrough, a broader design
-    reference) — useful context, not the source-of-truth mirror this folder
-    is.
+    Source implementation: <code>src/</code>. Static reference entry point:
+    <code>prototype/index.html</code>. No proposal or scratch mock belongs in
+    this directory.
   </footer>
 </main>
 </body>

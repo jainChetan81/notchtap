@@ -1,6 +1,6 @@
 // plan 111: the enforcement that replaces the old hand-maintained-mirror
-// review discipline ("change one, change both, in the same commit" —
-// DESIGN.html, now retired). `src/settings/preview-overlay.css` is gone;
+// review discipline ("change one, change both, in the same commit", now
+// retired). `src/settings/preview-overlay.css` is gone;
 // both entry points share `src/overlay-card.css`, scoped under
 // `.card-root`. The one thing that could silently bring the mirror back
 // is a context stylesheet (`src/styles.css`, `src/settings/base.css`)

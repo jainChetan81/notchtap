@@ -8,10 +8,9 @@
 // (`news-category.css`'s `.batch-head` rule) so it reads as card chrome,
 // not a toolbar — the spec's own wording for this exact line.
 //
-// Ported from `prototypes/tab-notch-panel.html`'s own `.batch-head`
-// markup (`data-page="news"`, ~line 1107-1118) MINUS that markup's own
-// `.batch-dots` span. **This is a deliberate, spec-mandated deviation
-// from the mock, not an oversight**: spec section 8 ("The session bar /
+// Plan 171's pre-implementation sketch included a bespoke `.batch-dots`
+// span. The shipped component deliberately omits it: spec section 8
+// ("The session bar /
 // floor-strip position indicator") explicitly overrides the mock here —
 // "News's version needs a plan-time decision the mock's own markup
 // leaves ambiguous... Default: implement news's floor strip identically

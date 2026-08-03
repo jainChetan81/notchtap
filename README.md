@@ -125,9 +125,7 @@ command — `brew install just` first.
 | [`docs/design/`](docs/design/) | spike/design docs from `/improve` sessions — read alongside `plans/README.md` |
 | [`docs/recipes/kuma-webhook.md`](docs/recipes/kuma-webhook.md) | recipe: wiring an Uptime Kuma webhook into notchtap's `/notify` endpoint (docs only, verified against kuma v2.4.0) |
 | `docs/archive/` (removed 2026-07-23) | v1/v2/v3 specs + planning-pass audit (`BLIND_REVIEW.md`, `CHANGES_SUMMARY.md`) — all three phases shipped, superseded by the specs above; removed at repo close-out, retrievable via `git log -- docs/archive/` |
-| [`CONTEXT.md`](CONTEXT.md) | glossary / ubiquitous language (Promotion, Visible/Waiting, Paused, …) |
-| [`CLAUDE.md`](CLAUDE.md) | guidance for Claude Code when working in this repo |
-| [`AGENTS.md`](AGENTS.md) | guidance for Codex when working in this repo |
+| [`CLAUDE.md`](CLAUDE.md) | canonical repository guidance and domain glossary (`AGENTS.md` and `CONTEXT.md` are compatibility symlinks to this file) |
 
 ## scope
 
