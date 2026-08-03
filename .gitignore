@@ -34,8 +34,9 @@ opencode.json
 opencode.json.bak*
 .opencode/
 
-# Cross-tool skill discovery. The tracked root `skills` symlink points to
-# the canonical `.claude/skills` tree; nested copies and other state stay local.
+# Cross-tool skill discovery. The one tracked path here is the
+# `.agents/skills` symlink, which points at the canonical `.claude/skills`
+# tree; every other `.agents/` entry (nested copies, tool state) stays local.
 **/.agents/
 !/.agents/
 /.agents/*

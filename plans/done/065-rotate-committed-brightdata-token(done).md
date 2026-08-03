@@ -284,9 +284,13 @@ premise of this acceptance.
 
 ## Cleanup addendum — 2026-08-03
 
-The operator explicitly reopened the repository-cleanliness part of this
-decision while consolidating AI-tooling files. `.mcp.json` and the obsolete
-`mcp-servers/` tree were removed from the working tree, and project-local MCP
-configuration is now ignored. This removes the current checked-out copies but
-does not erase the credential from Git history; rotation remains necessary if
-the account is still relevant. No history rewrite was performed.
+The working-tree copies are gone, as a side effect of an operator-requested
+AI-tooling cleanup (not a reopening of the risk decision above). `.mcp.json`
+and the obsolete `mcp-servers/` tree were deleted, and project-local MCP
+config is now gitignored, so no checked-out file carries the token anymore.
+
+**The acceptance above still stands, unchanged.** No history rewrite was
+performed, so the credential remains in Git history exactly as the closure
+note describes, and it is still a free-tier BrightData key with nothing to
+spend. Do not re-audit or re-file on the strength of this addendum — the
+only thing that reopens the question is the account going paid.

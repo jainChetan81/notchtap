@@ -18,6 +18,28 @@ don't tell you.
   `.agents/skills` is a tracked compatibility symlink to it. never copy
   skills between tool-specific directories. machine-local AI settings,
   credentials, caches, and worktrees stay ignored.
+- **repo cleanup, 2026-08-03** — removed, not lost. everything below is
+  in `git log` and can be restored with `git checkout <commit> -- <path>`
+  if it's ever wanted again; nothing here was consumed by the app build,
+  which is why the removals are safe:
+  - `prototypes/` (plural) — proposal/scratch mocks, including the two
+    r3 tab-notch design mocks. those two are also still on branch
+    `feat/tab-notch-redesign`. the tab feature has shipped, so `src/`
+    is authoritative over them now; the spec that cites them
+    (`docs/superpowers/specs/2026-08-02-tab-notch-design.md`) says so.
+  - `DESIGN.html` — the old system-level token/law reference. it
+    predated the Agent Board and had gone stale;
+    `prototype/index.html` + `vendor/shared-ui/design/tokens.css` are
+    the live equivalents.
+  - `.mcp.json` + `mcp-servers/` — project-local MCP config and an
+    unused research server. the PAL server this repo actually uses is
+    configured at USER level (`~/.claude.json`) and is unaffected.
+    `.mcp.json` is now gitignored, so a local one can be recreated
+    without it landing in a commit.
+  - `skills-lock.json`, `assets/branding/build_branding.py`, the
+    unreferenced weather glyphs, and the ios/android/windows icon sets
+    tauri never bundles (`tauri.conf.json` names only the five mac/win
+    icons that remain).
 - the test suite must stay green (`cargo test` from `src-tauri/`,
   `npx vitest run` from repo root, all gated by ci). current test
   counts live in `docs/TESTING_STRATEGY.md` §0 and only there — don't
