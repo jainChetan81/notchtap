@@ -7,13 +7,12 @@
 //
 // Glyphs are Meteocons (MIT, Bas Milius) vendored at src/assets/weather/
 // — see the NOTICE file there for full attribution. Mood gradients and
-// class names below are lifted verbatim from the approved gallery,
-// prototype/weather-art.html — do not rename the wx-* classes without
-// updating both that file's role as the source of truth and this
-// module's future readers (plan 087).
+// class names below are mirrored in prototype/weather-art.html. This
+// module and the shipped styles are authoritative; update the static
+// reference when those names intentionally change.
 //
 // Glyph URLs use the explicit `new URL(..., import.meta.url).href` form
-// with a `?no-inline` query suffix. All 12 SVGs are 745-3017 bytes,
+// with a `?no-inline` query suffix. All nine SVGs are under 4 KB,
 // under vite's default 4 KB assetsInlineLimit — verified empirically
 // against this repo's installed vite (v7.3.6): NEITHER the plain `?url`
 // suffix NOR a bare `new URL(...).href` bypasses that limit on its own,

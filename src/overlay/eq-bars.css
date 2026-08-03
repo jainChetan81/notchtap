@@ -1,14 +1,12 @@
 /* ==== rest-state eq bars (plan 171) ====
-   Design source: prototypes/tab-notch-rest-and-morph.html section 1b
-   ("APPROVED TWICE — do not redraw"). Three 2px bars in --media-mint,
+   Three 2px bars in --media-mint,
    scaleY off a bottom origin (compositor-only; never animate `height`),
    three different durations so they never phase-lock into one marching
    pattern. Collapsed to zero width + margin when silent so the idle
    face stays optically centered — width, margin, and opacity animate on
    one clock. */
-/* the rest cluster (plan 171, slice K) — the design source's own
-   `.rest-cluster` (prototypes/tab-notch-rest-and-morph.html section 1c):
-   the face and the eq bars side by side, optically centred in the
+/* the rest cluster (plan 171, slice K): the face and the eq bars sit
+   side by side, optically centred in the
    cutout. It takes over the grid placement `.idle-face` used to hold
    directly (`grid-column: 2 / grid-row: 1`, card-chrome.css), so that
    rule's own declarations simply go inert on a flex child — `IdleFace`

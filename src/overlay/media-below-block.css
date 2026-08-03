@@ -1,16 +1,14 @@
 /* ==== the media tab's below-block, transport controls (plan 171, slice
    H) ====
-   Design source: prototypes/tab-notch-panel.html, data-page="music"
-   (~line 1003-1039 for the markup, ~561-616 for the CSS this file ports
-   from). Deliberately does NOT redeclare `.media-art` (base)/
+   Deliberately does NOT redeclare `.media-art` (base)/
    `.media-transport`/`.media-bar`/`.media-bar-fill`/`.media-time` —
    those are the shipped `idle-peek.css` rules, reused verbatim by
    `MediaBelowBlock.tsx` (same classNames, same `.card-root` scope), per
    spec section 7's "the shipped `.media-bar`" instruction. Only the
    genuinely new classes this slice's markup introduces live here: the
    big album-art modifier, the transport buttons (the ONE new
-   interactive surface this whole feature adds — mock's own comment,
-   ported below), and the expanded-only scrubber/queue preview. */
+   interactive surface this whole feature adds), and the expanded-only
+   scrubber/queue preview. */
 
 .card-root .media-art.big {
   width: 44px;

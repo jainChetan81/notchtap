@@ -25,15 +25,22 @@ dist-ssr
 
 # swift package build output
 notchtap-detect/.build
-.claude/worktrees/
 
-# opencode: local config + credentials (PAL endpoint, openrouter key)
+# local AI-tool state and credentials
+.claude/settings.local.json
+.claude/worktrees/
+.mcp.json
 opencode.json
 opencode.json.bak*
 .opencode/
 
-# agent tooling, not app code
-.agents/
+# Cross-tool skill discovery. The one tracked path here is the
+# `.agents/skills` symlink, which points at the canonical `.claude/skills`
+# tree; every other `.agents/` entry (nested copies, tool state) stays local.
+**/.agents/
+!/.agents/
+/.agents/*
+!/.agents/skills
 
 # throwaway exploratory captures (live-API research, screenshots, etc.)
 research/

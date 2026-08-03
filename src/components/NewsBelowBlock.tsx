@@ -47,9 +47,8 @@
 // ternary arm in `NotificationBody.tsx` is the piece to extract —
 // flagged here, not done silently.
 //
-// **Deliberately no `.compact-hint` ("⌃⇧N more") node**, even though the
-// mock's own markup for this page includes one
-// (`prototypes/tab-notch-panel.html` ~line 1131): spec section 9 states
+// **Deliberately no `.compact-hint` ("⌃⇧N more") node**: plan 171's
+// pre-implementation sketch included one, but spec section 9 states
 // plainly that `prefix enter`/`o` is "the ONLY expansion gesture that
 // exists anywhere in this feature" for a tab-summoned card — `⌃⇧N` is a
 // different, unrelated shortcut that stays wired to the shipped

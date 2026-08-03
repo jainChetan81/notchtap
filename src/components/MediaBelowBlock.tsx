@@ -10,12 +10,10 @@
 //   Transport buttons (prev/play-pause/next) are new ... No TTL anywhere
 //   on this page — media is a live surface, not an event."
 //
-// Design reference: prototypes/tab-notch-panel.html, data-page="music"
-// (~line 1003-1039) — the ONLY place `.media-body`/`.mr-btn`/`.mr-glyph`/
-// `.media-scrub`/`.media-times`/`.queue-list` markup exists today; none of
-// it is shipped CSS yet (confirmed via repo-wide grep before writing
-// this), so this slice adds a small new stylesheet
-// (`src/overlay/media-below-block.css`) for exactly those classes,
+// Plan 171 introduced the `.media-body`/`.mr-btn`/`.mr-glyph`/
+// `.media-scrub`/`.media-times`/`.queue-list` markup. The shipped
+// implementation and `src/overlay/media-below-block.css` are now the
+// authoritative versions of those classes,
 // following the same "new surface gets its own file, appended to
 // overlay-card.css's import list" convention icon-strip.css/eq-bars.css
 // (slice E) already established this same session — `.media-bar`/
@@ -23,8 +21,8 @@
 // verbatim from the shipped `idle-peek.css` rule (see the progress-bar
 // comment below).
 //
-// No Stamp badge: the mock's own `<div class="stamp">Live</div>` is a
-// hand-typed placeholder, not a real `<Stamp priority=... signal=...
+// No Stamp badge: the pre-implementation mock's `<div class="stamp">Live</div>`
+// was a hand-typed placeholder, not a real `<Stamp priority=... signal=...
 // eventType=... />` call — `NowPlayingSummary` (useStatusState.ts)
 // carries no `Priority`/`EventSignal`/`EventType` at all (media is an
 // ambient PULL surface, never a push event; now_playing.rs's own doc:

@@ -281,3 +281,16 @@ point it at this closure note. The calculus changes ONLY if the
 BrightData account is ever upgraded to paid — that would reopen the
 question, since "free tier, nothing to spend" is the load-bearing
 premise of this acceptance.
+
+## Cleanup addendum — 2026-08-03
+
+The working-tree copies are gone, as a side effect of an operator-requested
+AI-tooling cleanup (not a reopening of the risk decision above). `.mcp.json`
+and the obsolete `mcp-servers/` tree were deleted, and project-local MCP
+config is now gitignored, so no checked-out file carries the token anymore.
+
+**The acceptance above still stands, unchanged.** No history rewrite was
+performed, so the credential remains in Git history exactly as the closure
+note describes, and it is still a free-tier BrightData key with nothing to
+spend. Do not re-audit or re-file on the strength of this addendum — the
+only thing that reopens the question is the account going paid.

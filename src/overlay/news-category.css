@@ -52,12 +52,9 @@
 .card-root .news-shade .compact,
 .card-root .news-shade .manifest,
 /* plan 171 (slice I): `.batch-head` needs the same treatment — it sits
-   above `.news-shade::before`'s z-index:0 ambient wash too, matching the
-   mock's own equivalent rule (`prototypes/tab-notch-panel.html:330`:
-   ".news-shade .compact, .news-shade .manifest, .news-shade .batch-head
-   { position: relative; z-index: 1; }"), just split across two
-   selectors instead of one comma list so this file's per-rule doc
-   comments stay attached to the right block. */
+   above `.news-shade::before`'s z-index:0 ambient wash too. The rule is
+   split from the comma list so this file's per-rule doc comments stay
+   attached to the right block. */
 .card-root .news-shade .batch-head { position: relative; z-index: 1; }
 
 /* plan 092: `.masthead-row` pairs the masthead with the priority Stamp
@@ -247,11 +244,9 @@
    spec section 7's news bullet, verbatim
    (`docs/superpowers/specs/2026-08-02-tab-notch-design.md`).
 
-   Ported from `prototypes/tab-notch-panel.html`'s own `.batch-head`/
-   `.batch-nav` rules (~line 618-637), values kept verbatim per this
-   repo's own mock-wins-on-values convention, MINUS that mock's own
-   `.batch-dots` rules — spec section 8 explicitly overrides the mock
-   there: the position indicator is the shared `PositionBar` component
+   The pre-implementation sketch included `.batch-dots`, but spec section
+   8 overrides that idea: the position indicator is the shared
+   `PositionBar` component
    (`.ttl-bar`/`.ttl-seg` above this block, Slice F), not a second
    bespoke dot-strip. See `src/components/NewsBatchHeader.tsx`'s own
    header comment for the full citation.

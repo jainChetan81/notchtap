@@ -78,10 +78,9 @@ const BELOW_BLOCK_EXPANDED_H: f64 = 240.0; // conservative estimate, expanded (m
 // design mock's `--icon-box`/`--icon-gap`/`--flank-inset` custom
 // properties because the feature's own CSS did not exist yet, and left a
 // "re-pair these against the real stylesheet once it exists" note. This is
-// that re-pair: no mock is a source of truth for any number here anymore
-// (CLAUDE.md — the ad-hoc `prototypes/*.html` snapshots are never synced
-// forward, so pairing shipped code to one silently rots). See plan 171 and
-// `git log` if the original mock is ever wanted as history.
+// that re-pair: no mock is a source of truth for any number here anymore.
+// The ad-hoc snapshots were removed after shipping because pairing live code
+// to one silently rots. See plan 171 and git history for the original review.
 // The twins, all three of which MUST change in the same commit as any
 // change here (`src/lib/stripGeometryParity.test.ts` is the tripwire):
 //

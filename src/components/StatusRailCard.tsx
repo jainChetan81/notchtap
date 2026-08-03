@@ -1028,10 +1028,9 @@ export function StatusRailCard({
           genuinely playing"): the face is now wrapped with `<EqBars>` in
           a `.rest-cluster` row, which takes over the face's own
           `grid-column: 2 / grid-row: 1` placement so the two sit side by
-          side in the cutout instead of stacking in one cell — exactly
-          the design source's own `.rest-cluster` (prototypes/tab-notch-
-          rest-and-morph.html section 1c). `<IdleFace>` ITSELF is
-          untouched, as spec section 4's correction requires: its grid
+          side in the cutout instead of stacking in one cell. The shipped
+          `.rest-cluster` is authoritative. `<IdleFace>` ITSELF is untouched,
+          as spec section 4's correction requires: its grid
           declarations simply go inert as a flex child, and its
           `display: none` -> HUD `display: flex` gate still governs
           whether it paints at all. The cluster carries the same
