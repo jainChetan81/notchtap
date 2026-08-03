@@ -289,8 +289,25 @@ AI-tooling cleanup (not a reopening of the risk decision above). `.mcp.json`
 and the obsolete `mcp-servers/` tree were deleted, and project-local MCP
 config is now gitignored, so no checked-out file carries the token anymore.
 
-**The acceptance above still stands, unchanged.** No history rewrite was
-performed, so the credential remains in Git history exactly as the closure
-note describes, and it is still a free-tier BrightData key with nothing to
-spend. Do not re-audit or re-file on the strength of this addendum — the
-only thing that reopens the question is the account going paid.
+No history rewrite was performed, so the old string is still reachable in
+Git history exactly as the closure note describes.
+
+## FULLY RESOLVED — token rotated 2026-08-03
+
+**The operator rotated the exposed BrightData credential** (reported at the
+close of the PR #18 cleanup review, after PR-Agent re-raised it). The
+committed token is therefore dead: it is still readable in Git history, but
+it no longer authenticates anything, which is the outcome the original plan
+asked for.
+
+This supersedes the "accepted risk, not fixed" resolution above — that
+paragraph is now historical record, not current policy. Nothing further is
+owed on this finding:
+
+- no history rewrite is needed (a dead string is not a credential);
+- the working-tree copies are already gone (addendum above);
+- project-local MCP config is gitignored, so a replacement key cannot land
+  in a commit by accident.
+
+If a future audit flags this token again, the correct answer is "rotated
+2026-08-03, dead" — not a rotation request and not a history rewrite.
