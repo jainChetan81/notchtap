@@ -8,6 +8,7 @@ import { applyAnimationTiming } from "./applyAnimationTiming";
 // already follows — so overlay-card.css and styles.css can reference
 // them below instead of hand-copying literal values.
 import "@chetanjain/shared-ui/design/tokens.css";
+import "./notchtap-tokens.css";
 // plan 111: shared card-shape stylesheet next, then this window's own
 // residue (window-level reset + the `.card-root` scoping rule) — fixed
 // order so overlay-only declarations load after and win any specificity

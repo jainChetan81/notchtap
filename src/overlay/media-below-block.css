@@ -66,11 +66,8 @@
 .card-root .mr-btn:active {
   transform: scale(0.94);
 }
-/* `--media-mint`: same token icon-strip.css/eq-bars.css (slice E) also
-   reference. Was missing a `:root` definition when this file first
-   landed (flagged here, in the PR description, and in the plan doc) —
-   now defined in `vendor/shared-ui/design/tokens.css`, matching the
-   design mock's own `#b6f5e5` value exactly. */
+/* `--media-mint`: same token icon-strip.css/eq-bars.css consume. It is
+   a notchtap-only extension defined in `src/notchtap-tokens.css`. */
 .card-root .mr-btn.primary {
   width: 30px;
   height: 30px;

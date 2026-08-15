@@ -44,8 +44,26 @@ describe("entry-file CSS import order (plan 111)", () => {
   it("main.tsx imports shared-ui tokens.css before overlay-card.css", () => {
     const source = readSource("./main.tsx");
     const tokensIdx = importOrderIndex(source, "@chetanjain/shared-ui/design/tokens.css");
+    const appTokensIdx = importOrderIndex(source, "./notchtap-tokens.css");
     const overlayIdx = importOrderIndex(source, "./overlay-card.css");
-    expect(tokensIdx).toBeLessThan(overlayIdx);
+    expect(tokensIdx).toBeLessThan(appTokensIdx);
+    expect(appTokensIdx).toBeLessThan(overlayIdx);
+  });
+
+  it("settings/base.css imports shared tokens before notchtap extensions", () => {
+    const source = readSource("./settings/base.css");
+    const sharedIdx = source.indexOf('@import "@chetanjain/shared-ui/design/tokens.css"');
+    const appIdx = source.indexOf('@import "../notchtap-tokens.css"');
+    expect(sharedIdx).toBeGreaterThanOrEqual(0);
+    expect(appIdx).toBeGreaterThan(sharedIdx);
+  });
+
+  it("keeps media-mint in the notchtap extension instead of shared-ui", () => {
+    const shared = readSource("../vendor/shared-ui/design/tokens.css");
+    const local = readSource("./notchtap-tokens.css");
+    expect(shared.includes("--media-mint")).toBe(false);
+    expect(local).toContain("--media-mint: oklch(0.923 0.067 177.33)");
+    expect(local).toContain("--color-media-mint: var(--media-mint)");
   });
 
   // plan 112 Step 5: settings.css is gone (its rules relocated into

@@ -1,0 +1,19 @@
+/* notchtap-only design tokens.
+ *
+ * shared values stay in @chetanjain/shared-ui/design/tokens.css. This file
+ * loads immediately after that package in both UI entries and owns only
+ * application-specific extensions.
+ */
+
+:root {
+  /* Media source accent used by the icon strip, equaliser, and media card. */
+  --media-mint: oklch(0.923 0.067 177.33); /* #b6f5e5 */
+}
+
+.dark {
+  --media-mint: oklch(0.923 0.067 177.33);
+}
+
+@theme inline {
+  --color-media-mint: var(--media-mint);
+}
