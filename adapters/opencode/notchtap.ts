@@ -675,4 +675,9 @@ export const NotchtapPlugin = async () => {
   };
 };
 
-export default NotchtapPlugin;
+export const server = NotchtapPlugin;
+
+export default {
+  id: "notchtap",
+  server,
+};
