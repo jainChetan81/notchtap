@@ -57,6 +57,18 @@ The overlay (`main`) window is **receive-only**: it listens for rust-published e
 - **library/internal modules** (queue, event bus, registry): `thiserror` for structured, matchable variants; tests assert `matches!(err, MyError::QueueFull)`.
 - **application boundary** (main.rs, HTTP handlers, CLI entrypoint): `anyhow` for ergonomic propagation. HTTP returns specific status codes (400 malformed, 429 tier full, 500 unexpected) without the internal error type leaking into every signature.
 
+## file structure — frontend and backend
+
+Consistent placement, one file one domain, no utils junk drawer.
+
+- **`src/lib/` — pure helpers, no I/O, no hooks, no Tauri.** `constants.ts` owns shared constants (animation timings, default port, limits) — `animationTiming.ts` re-exports for compat. `guards.ts` owns type guards (`isString`, `isNumber`, `isNonNegativeInteger` — single copy, imported by `useAgentState`/`useSlotState`/`useStatusState`). `format.ts` owns formatters (`formatBytes`, `formatBytePair`, `formatUptime`, `formatClockTime`, `formatRecordedAt` — single import for all formatters, `settings/byteFormat.ts` and `settings/timeFormat.ts` re-export until deleted). `error.ts` owns `ActionError` and `describeActionError` — single import for error-to-string. `utils.ts` owns `cn` only. `presentation.ts` and `sourceColors.ts` own presentation tables. New helpers go where Kharcha would put them: constants in `constants`, formatters in `format`, validators in `validation` — wait for the second use before creating a file.
+- **`src/hooks/` — data hooks, one hook per file.** `useAgentState`, `useSlotState`, `useStatusState`, `useTabSelection`, `useAgentViewedSession`, `useDelayedSwap`, `useClock`, `useExitChoreography` live here (currently at `src/` root with re-exports for compat). Screens and `App.tsx` import from hooks, never from `window.__NOTCHTAP_*` or `listen()` directly.
+- **`src/components/` — rendering only.** `components/ui/` holds primitives (`button`, `meta-chip`, `switch`). Per-feature components (`AgentBoard`, `StatusRailCard`, `IconStrip`) stay next to their CSS (`src/overlay/`).
+- **`src/settings/` — settings window only.** `sections/` holds one file per section. No format or guard helpers live here — import from `src/lib/`.
+- **`src-tauri/src/` — rust core.** `agents/` owns the Agent Registry and provider parsers — ~120 lines of shared security code live in one shared module, not copied across three providers. `queue.rs` and `lib.rs` are the two giant files, handled alone. Small files keep present-tense comments only.
+
+Generic rule: wait for the second use before extracting a util, keep it pure, keep it named, keep it tested — one test file per util file next to it.
+
 ---
 
 ## domain glossary

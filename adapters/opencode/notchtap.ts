@@ -478,24 +478,27 @@ function mapSessionDeleted(event: BusEvent, ctx: EventContext): AgentWireEvent |
   return wire;
 }
 
-const BUS_EVENT_MAPPERS = {
-  "permission.asked": mapPermissionAsked,
-  "permission.replied": mapPermissionReplied,
-  "session.created": mapSessionCreated,
-  "session.updated": mapSessionUpdated,
-  "session.status": mapSessionStatus,
-  "session.idle": mapSessionIdle,
-  "session.error": mapSessionError,
-  "session.deleted": mapSessionDeleted,
-} satisfies Record<BusEventType, (event: BusEvent, ctx: EventContext) => AgentWireEvent | null>;
+const BUS_EVENT_MAPPERS = new Map<
+  BusEventType,
+  (event: BusEvent, ctx: EventContext) => AgentWireEvent | null
+>([
+  ["permission.asked", mapPermissionAsked],
+  ["permission.replied", mapPermissionReplied],
+  ["session.created", mapSessionCreated],
+  ["session.updated", mapSessionUpdated],
+  ["session.status", mapSessionStatus],
+  ["session.idle", mapSessionIdle],
+  ["session.error", mapSessionError],
+  ["session.deleted", mapSessionDeleted],
+]);
 
 /** The single pure entry point for the `event` hook. Returns `null` for
  * any event type this adapter doesn't recognize (including future
  * OpenCode event types) or one whose session id can't be established —
  * the binding layer simply skips delivery in that case. */
 export function mapBusEvent(event: BusEvent, ctx: EventContext): AgentWireEvent | null {
-  // SAFETY: validated via preceding checks; type assertion safe here.
-  const mapper = BUS_EVENT_MAPPERS[event.type as BusEventType];
+  // SAFETY: BusEventType is a closed union of known OpenCode bus event types — the Map lookup is the runtime check, and a miss returns null for future unknown types.
+  const mapper = BUS_EVENT_MAPPERS.get(event.type as BusEventType);
   if (!mapper) return null;
   return mapper(event, ctx);
 }

@@ -39,8 +39,10 @@ function historyEventTypeLabel(eventType: string): string {
 // renders as nothing). Falls back to the raw wire value, same "total
 // lookup" shape as `historyEventTypeLabel` just above.
 function historyPriorityLabel(priority: string): string {
-  // SAFETY: PRIORITY_LABELS is a statically-known const object of string labels; the cast only widens its index to an untrusted wire string, and the `?? priority` fallback returns the raw value on a miss — no shape of the wire value is assumed.
-  return (PRIORITY_LABELS as Record<string, string>)[priority] ?? priority;
+  // SAFETY: hasOwn is the runtime check that priority is a known PriorityLevel — the cast only narrows the lookup after that check.
+  return Object.prototype.hasOwnProperty.call(PRIORITY_LABELS, priority)
+    ? PRIORITY_LABELS[priority as keyof typeof PRIORITY_LABELS]
+    : priority;
 }
 
 function historyRotationLabel(rotation: HistoryRotationSpec): string {
@@ -80,8 +82,10 @@ function historyEspnSummary(espn: HistoryEspnMeta): string {
 // manual/football/agent/news have a colour; an unrecognized origin
 // (hand-edited history file only) renders with no inline style.
 function historyOriginColor(origin: string): string | undefined {
-  // SAFETY: SOURCE_ORIGIN_COLORS is a statically-known const object; the casts only widen the index/wire-string to that lookup, and an unknown origin (miss) returns undefined, gated by the caller's `? { color: ... } : undefined` — no wire shape is assumed.
-  return (SOURCE_ORIGIN_COLORS as Record<string, string>)[origin as SourceOriginToken];
+  // SAFETY: hasOwn is the runtime check that origin is a known SourceOriginToken — the cast only narrows the lookup after that check.
+  return Object.prototype.hasOwnProperty.call(SOURCE_ORIGIN_COLORS, origin)
+    ? SOURCE_ORIGIN_COLORS[origin as SourceOriginToken]
+    : undefined;
 }
 
 function historyNonBlank(value: string | null | undefined): string | null {

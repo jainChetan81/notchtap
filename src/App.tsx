@@ -183,10 +183,7 @@ function App() {
                 sessions={agentState.sessions}
                 capturedAtMs={agentState.capturedAtMs}
                 status={status}
-                // Same `hover-changed` boolean StatusRailCard's own hover
-                // consumers use — mounted only while `mode === "board"`,
-                // so `hovered` always means "over the Board" here.
-                expanded={hovered}
+                expanded={hovered || (slot.state === "showing" && slot.expanded)}
               />
             </motion.div>
           ) : (
