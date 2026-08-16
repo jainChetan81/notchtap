@@ -113,6 +113,13 @@
   <li>Ends at 0 errors with the linter wired into CI and <code>just check-web</code> so slop can't return.</li>
 </ul>
 
+<h2>6b · Workstream F — test-suite trim <span class="small">(added during execution, owner-requested)</span></h2>
+<ul>
+  <li>The suite is oversized for a solo app: Rust is 54% test code; many tests re-prove one branch with cosmetic fixture changes.</li>
+  <li>Trim rule: cut redundant granularity and trivial label/class assertions; collapse near-identical groups; KEEP all behavior contracts (promotion, preemption, rotation, silence, HTTP codes, config healing) and every safety-net parity test — those are untouchable.</li>
+  <li>Target: roughly 30–45% fewer tests, zero lost behavior classes. An audit agent produces the named cut list first; runs AFTER the comment purge and lint fixes so the full net stays under the risky edits.</li>
+</ul>
+
 <h2>7 · Defects fixed in this run</h2>
 <ul>
   <li>The <code>enter</code>/<code>o</code> prefix key: the whole chain WORKS (Rust key handling → queue → wire → card CSS class — verified hop by hop). The only gap: the agent-board surface ignores the expand flag — App.tsx passes hover-only instead of the flag. <strong>Fix is ONE line on the board's expand prop; touch nothing else in that chain.</strong></li>
