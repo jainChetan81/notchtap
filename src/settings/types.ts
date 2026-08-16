@@ -201,19 +201,19 @@ export interface AdapterHealthDto {
 
 export type TestSource = "football" | "news" | "manual" | "agent";
 
-export const PRIORITY_LABELS: Record<PriorityLevel, string> = {
+export const PRIORITY_LABELS = {
   low: "Low",
   medium: "Medium",
   high: "High",
-};
+} satisfies Record<PriorityLevel, string>;
 export const PRIORITY_LEVELS: PriorityLevel[] = ["low", "medium", "high"];
 
-export const SOURCE_LABELS: Record<SourceKind, string> = {
+export const SOURCE_LABELS = {
   football: "Football",
   manual: "Manual / CLI push",
   news: "News",
   agent: "Agent",
-};
+} satisfies Record<SourceKind, string>;
 
 // Precomputed once so call sites don't rebuild the array every render.
 export const PRIORITY_SEGMENT_OPTIONS: ReadonlyArray<{ label: string; value: PriorityLevel }> =
@@ -223,8 +223,8 @@ export const PRIORITY_SEGMENT_OPTIONS: ReadonlyArray<{ label: string; value: Pri
 // per-tier accent scheme (src/overlay/card-chrome.css) so selected priority
 // reads as the notification card's own distinction. Literal Tailwind class
 // strings only — see Segmented's `optionTones` doc for why.
-export const PRIORITY_TONES: Record<PriorityLevel, string> = {
+export const PRIORITY_TONES = {
   low: "bg-muted-foreground/20 text-foreground",
   medium: "bg-overlay-teal/20 text-overlay-teal",
   high: "bg-overlay-coral/20 text-overlay-coral",
-};
+} satisfies Record<PriorityLevel, string>;

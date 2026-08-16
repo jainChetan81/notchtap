@@ -176,6 +176,7 @@ const MAX_DETAILS = 12;
  * C0 controls + DEL + C1 controls), not the broader "whitespace" or
  * "format" categories — same scope as adapter.rs's `sanitize_trim`. */
 // biome-ignore lint/suspicious/noControlCharactersInRegex: intentionally matching control characters to strip them
+// oxlint-disable-next-line eslint/no-control-regex
 const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/gu;
 
 /** Trim outer whitespace FIRST, then strip control characters — same
@@ -293,19 +294,22 @@ function baseEvent(
   terminal: boolean,
   ctx: EventContext,
 ): AgentWireEvent {
-  return {
+  const event: AgentWireEvent = {
     schemaVersion: SCHEMA_VERSION,
     eventId: sanitizeId(ctx.eventId),
     runtime: RUNTIME,
     sessionId: sanitizeId(sessionId),
     occurredAtMs: ctx.occurredAtMs,
-    ...(ctx.sequence !== undefined ? { sequence: ctx.sequence } : {}),
     nativeEvent,
     kind,
     state,
     terminal,
     capabilities: [...OPENCODE_CAPABILITIES],
   };
+  if (ctx.sequence !== undefined) {
+    event.sequence = ctx.sequence;
+  }
+  return event;
 }
 
 /** Reads a session id out of an undocumented `event.properties` shape.
@@ -344,7 +348,11 @@ function extractProjectCwd(properties: Record<string, unknown> | undefined): str
 function extractProject(properties: Record<string, unknown> | undefined): WireProject | undefined {
   const name = extractProjectName(properties);
   const cwd = extractProjectCwd(properties);
-  return name || cwd ? { ...(name ? { name } : {}), ...(cwd ? { cwd } : {}) } : undefined;
+  if (name) {
+    if (cwd) return { name, cwd };
+    return { name };
+  }
+  return cwd ? { cwd } : undefined;
 }
 
 function mapPermissionAsked(event: BusEvent, ctx: EventContext): AgentWireEvent | null {

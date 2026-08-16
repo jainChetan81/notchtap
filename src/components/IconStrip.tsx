@@ -71,11 +71,11 @@ export interface IconStripProps {
   onSelect?: (tab: Tab) => void;
 }
 
-const TAB_LABEL: Record<Tab, string> = {
+const TAB_LABEL = {
   agent: "Agent",
   football: "Football",
   news: "News",
-};
+} satisfies Record<Tab, string>;
 
 // An explicit `aria-label` overrides accessible-name computation from
 // child content entirely, so the visually-rendered `.charge-count` badge
@@ -194,7 +194,7 @@ export function IconStrip({
   selected,
   onSelect,
 }: IconStripProps) {
-  const states: Record<Tab, IconVisualState> = { agent, football, news };
+  const states = { agent, football, news } satisfies Record<Tab, IconVisualState>;
   return (
     <span className="icon-strip">
       {TAB_ORDER.map((tab) => {

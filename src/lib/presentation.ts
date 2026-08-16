@@ -21,7 +21,7 @@ function assertNever(x: never): never {
 // documented lookup table, never derived from parsing title/body text.
 // The wire enum is exhaustive, so adding a new EventSignal forces this
 // table to compile.
-const SIGNAL_STAMPS: Record<Exclude<EventSignal, "generic">, string> = {
+const SIGNAL_STAMPS = {
   goal: "Live",
   kickoff: "Live",
   halftime: "Break",
@@ -32,16 +32,16 @@ const SIGNAL_STAMPS: Record<Exclude<EventSignal, "generic">, string> = {
   offside: "Offside",
   var_check: "VAR",
   substitution: "Sub",
-};
+} satisfies Record<Exclude<EventSignal, "generic">, string>;
 
 // `generic` sources (agent/CLI/any future non-football source) have no
 // specific signal to key off, so this falls back to priority alone —
 // still a typed-enum lookup, not text parsing.
-const GENERIC_PRIORITY_STAMPS: Record<Priority, string> = {
+const GENERIC_PRIORITY_STAMPS = {
   low: "Live",
   medium: "Done",
   high: "Now",
-};
+} satisfies Record<Priority, string>;
 
 export function stampFor(priority: Priority, signal: EventSignal, eventType: EventType): string {
   if (signal === "generic") {
@@ -95,7 +95,7 @@ export interface EventKindPresentation {
   celebration: Celebration;
 }
 
-const EVENT_KIND_PRESENTATION: Record<FootballEventKind, EventKindPresentation> = {
+const EVENT_KIND_PRESENTATION = {
   goal: { iconClass: "ev-ico goal", tintClass: "tint-goal", celebration: "cele-goal" },
   // Penalty scored counts as a goal — same green celebration family,
   // distinct ring-shaped icon only.
@@ -111,7 +111,7 @@ const EVENT_KIND_PRESENTATION: Record<FootballEventKind, EventKindPresentation> 
   offside: { iconClass: "ev-ico off", tintClass: null, celebration: null },
   var_check: { iconClass: "ev-ico var", tintClass: null, celebration: null },
   substitution: { iconClass: "ev-ico sub", tintClass: null, celebration: null },
-};
+} satisfies Record<FootballEventKind, EventKindPresentation>;
 
 export function eventKindPresentationFor(kind: FootballEventKind): EventKindPresentation {
   switch (kind) {
@@ -289,10 +289,7 @@ export function presentationMode(
 // variant (no separate visual language for a session's first few
 // hundred ms) but keeps its own entry so the state-table lookup is
 // total over every wire value `useAgentState.ts` can deliver.
-const AGENT_STATE_PRESENTATION: Record<
-  AgentSessionState,
-  { label: string; className: string; pulse: boolean }
-> = {
+const AGENT_STATE_PRESENTATION = {
   waiting_for_permission: { label: "Needs approval", className: "agent-waiting", pulse: true },
   waiting_for_input: { label: "Needs input", className: "agent-waiting", pulse: true },
   failed: { label: "Failed", className: "agent-failed", pulse: false },
@@ -300,17 +297,20 @@ const AGENT_STATE_PRESENTATION: Record<
   working: { label: "Working", className: "agent-working", pulse: true },
   starting: { label: "Starting", className: "agent-working", pulse: true },
   completed: { label: "Completed", className: "agent-completed", pulse: false },
-};
+} satisfies Record<
+  AgentSessionState,
+  { label: string; className: string; pulse: boolean }
+>;
 
 // Mirrors rust's `agents::notification::runtime_display_name` exactly —
 // the Agent Board's own display-label table (never the wire token
 // itself, see AgentRuntime's own doc in useAgentState.ts).
-const AGENT_RUNTIME_LABEL: Record<AgentRuntime, string> = {
+const AGENT_RUNTIME_LABEL = {
   "claude-code": "Claude Code",
   codex: "Codex",
   kimi: "Kimi",
   opencode: "OpenCode",
-};
+} satisfies Record<AgentRuntime, string>;
 
 export function agentRuntimeLabel(runtime: AgentRuntime): string {
   return AGENT_RUNTIME_LABEL[runtime];
@@ -320,12 +320,12 @@ export function agentRuntimeLabel(runtime: AgentRuntime): string {
 // identity colour class (source-identity.css), consumed wherever an
 // agent-originated card needs to paint itself distinctly from a generic
 // agent, football, or manual/CLI card.
-const AGENT_RUNTIME_CLASS: Record<AgentRuntime, string> = {
+const AGENT_RUNTIME_CLASS = {
   "claude-code": "src-claude-code",
   codex: "src-codex",
   kimi: "src-kimi",
   opencode: "src-opencode",
-};
+} satisfies Record<AgentRuntime, string>;
 
 export function agentRuntimeClass(runtime: AgentRuntime): string {
   return AGENT_RUNTIME_CLASS[runtime];
@@ -370,7 +370,7 @@ export function agentStatePresentationFor(state: AgentSessionState): {
 // quiet states read as "low". `starting` groups with `working` (same
 // in-flight family AGENT_STATE_PRESENTATION above already treats them
 // as); `stale` groups with `completed` (both "nothing to do here").
-const AGENT_STATE_PRIORITY: Record<AgentSessionState, Priority> = {
+const AGENT_STATE_PRIORITY = {
   waiting_for_permission: "high",
   waiting_for_input: "high",
   failed: "high",
@@ -378,7 +378,7 @@ const AGENT_STATE_PRIORITY: Record<AgentSessionState, Priority> = {
   starting: "medium",
   completed: "low",
   stale: "low",
-};
+} satisfies Record<AgentSessionState, Priority>;
 
 export function agentStatePriorityFor(state: AgentSessionState): Priority {
   return AGENT_STATE_PRIORITY[state];

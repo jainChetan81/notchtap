@@ -154,27 +154,27 @@ const ADAPTER_CARDS: readonly AdapterCardCopy[] = [
   },
 ];
 
-const AVAILABILITY_LABELS: Record<AdapterAvailability, string> = {
+const AVAILABILITY_LABELS = {
   available: "Available",
   partial: "Partial",
   unavailable: "Unavailable",
-};
+} satisfies Record<AdapterAvailability, string>;
 
 // tone redesign: a binary active/not chip couldn't say "partial" apart
 // from "unavailable" — both just read as un-emphasized. Real tri-state
 // color so a glance at the dot tells you which of the three it is,
 // without reading the word.
-const AVAILABILITY_TONE: Record<AdapterAvailability, "positive" | "caution" | "critical"> = {
+const AVAILABILITY_TONE = {
   available: "positive",
   partial: "caution",
   unavailable: "critical",
-};
+} satisfies Record<AdapterAvailability, "positive" | "caution" | "critical">;
 
-const ERROR_CATEGORY_LABELS: Record<AdapterErrorCategory, string> = {
+const ERROR_CATEGORY_LABELS = {
   malformed_payload: "Malformed payload",
   unsupported_runtime: "Unsupported runtime",
   internal: "Internal error",
-};
+} satisfies Record<AdapterErrorCategory, string>;
 
 function formatLastSeen(ms: number | null): string {
   if (ms === null) return "Never";

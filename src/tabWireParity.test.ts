@@ -165,11 +165,11 @@ describe("tab wire parity (plan 180) — rust's three tabs match the frontend's"
     // `TAB_ORDER` is typed `readonly Tab[]`, so a token the union does not
     // contain is a tsc error, not a runtime one — this assertion exists to
     // catch the OTHER direction: a union member nobody put in the array.
-    const covered: Record<Tab, true> = {
+    const covered = {
       agent: true,
       football: true,
       news: true,
-    };
+    } satisfies Record<Tab, true>;
     expect(Object.keys(covered).sort(), SIX_SITES).toEqual([...TAB_ORDER].sort());
   });
 

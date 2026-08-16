@@ -7,17 +7,9 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath, URL as NodeURL } from "node:url";
 import { cleanup, render } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { StatusRailCard } from "./components/StatusRailCard";
 import type { SlotState } from "./useSlotState";
-
-// plan 084's `Crest` (StatusRailCard.tsx) calls `convertFileSrc` itself at
-// module scope — mocked here (same shim as StatusRailCard.test.tsx) purely
-// so importing the component doesn't require a real tauri runtime; the
-// goal fixture below never hits the live-match/Crest branch.
-vi.mock("@tauri-apps/api/core", () => ({
-  convertFileSrc: (path: string) => `asset://converted${path}`,
-}));
 
 afterEach(cleanup);
 

@@ -78,7 +78,7 @@ const navigation: ReadonlyArray<{
   { id: "about", label: "About", icon: Info },
 ];
 
-const sectionCopy: Record<SectionId, { index: string; title: string; description: string }> = {
+const sectionCopy = {
   general: {
     index: "01",
     title: "General",
@@ -130,7 +130,7 @@ const sectionCopy: Record<SectionId, { index: string; title: string; description
     title: "About",
     description: "What notchtap is, how to use it, and live process/system stats.",
   },
-};
+} satisfies Record<SectionId, { index: string; title: string; description: string }>;
 
 function copyConfig(config: Config): Config {
   return {

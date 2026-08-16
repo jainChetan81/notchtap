@@ -39,6 +39,27 @@ function parameterName(parameter: Parameter, sourceText: string): string {
     : sourceText.replace(/\s*:\s*unknown\s*$/u, "");
 }
 
+type RuntimeFunction = ESTree.ArrowFunctionExpression | ESTree.Function;
+
+function isRuntimeFunction(node: ESTree.Node): node is RuntimeFunction {
+  return (
+    node.type === "ArrowFunctionExpression" ||
+    node.type === "FunctionDeclaration" ||
+    node.type === "FunctionExpression"
+  );
+}
+
+function isInsideTypeGuard(node: ESTree.Node): boolean {
+  let current: ESTree.Node | null = node.parent;
+  while (current !== null && current.type !== "Program") {
+    if (isRuntimeFunction(current)) {
+      return current.returnType?.typeAnnotation.type === "TSTypePredicate";
+    }
+    current = current.parent;
+  }
+  return false;
+}
+
 /** Disallow unknown inputs except explicitly named error-cause enrichment. */
 export const noUnknownParametersRule = defineRule({
   meta: {
@@ -51,6 +72,16 @@ export const noUnknownParametersRule = defineRule({
       unknownParameter:
         "Parameter `{{parameter}}` leaves input unparsed. Accept a named domain type; run the expected schema or parser at the I/O boundary before calling this function.",
     },
+    schema: [
+      {
+        type: "object",
+        properties: {
+          allowInTypeGuards: { type: "boolean" },
+        },
+        additionalProperties: false,
+      },
+    ],
+    defaultOptions: [{ allowInTypeGuards: false }],
   },
   createOnce(context) {
     const checkParameters = (node: ParameterOwner) => {
@@ -59,6 +90,27 @@ export const noUnknownParametersRule = defineRule({
         if (annotation?.typeAnnotation.type !== "TSUnknownKeyword") continue;
         const name = parameterName(parameter, context.sourceCode.getText(parameter));
         if (name === "cause") continue;
+        const option = context.options?.[0];
+        const allowInTypeGuards =
+          typeof option === "object" &&
+          option !== null &&
+          !Array.isArray(option) &&
+          (option as { allowInTypeGuards?: boolean }).allowInTypeGuards === true;
+        if (allowInTypeGuards) {
+          const owner = node as unknown as ESTree.Node & {
+            returnType?: { typeAnnotation?: { type?: string } };
+          };
+          // Direct check: the function itself is a type guard (v is T)
+          if (
+            (owner.type === "ArrowFunctionExpression" ||
+              owner.type === "FunctionDeclaration" ||
+              owner.type === "FunctionExpression") &&
+            owner.returnType?.typeAnnotation?.type === "TSTypePredicate"
+          ) {
+            continue;
+          }
+          if (isInsideTypeGuard(owner)) continue;
+        }
         context.report({
           node: annotation.typeAnnotation,
           messageId: "unknownParameter",

@@ -1,29 +1,5 @@
 <!doctype html>
-<!-- Weather art mirror: markup/CSS built to match the shipped overlay's
-     weather-origin surfaces, not a design exploration that preceded them.
-     Still a standalone static file (no build step, no imported stylesheets)
-     — this is a hand-authored REPRODUCTION of the real classes/structure,
-     not a literal include of the app's CSS.
-
-     Source of truth this was built from (re-sync by hand if these move):
-       src/components/StatusRailCard.tsx   — the promoted weather ALERT card
-       src/components/IdleHoverPeek.tsx    — idle hover-peek backdrop/readout/forecast strip
-       src/components/NotificationBody.tsx — masthead/title/body/details markup the ALERT card uses
-       src/overlay/weather-art.css         — mood gradients, glyph, rain/snow drift animations
-       src/overlay/card-chrome.css         — shell geometry, priority accent vars
-       src/overlay/masthead-content.css    — .compact / .title / .notif-body / .compact-hint / .stamp
-       src/overlay/news-category.css       — .masthead-row / .masthead .dot / .chip
-       src/overlay/idle-peek.css           — .wx-peek-* / .wx-forecast-* / .media-* / .idle-peek-timeline
-       src/overlay/source-identity.css     — .src-weather's --cat (amber)
-       src/overlay/ttl-bar.css             — the floor countdown strip
-       src/lib/weatherArt.ts               — condition -> (glyph, mood class, texture class) table
-       src-tauri/src/weather_poller.rs     — real alert titles/bodies (RAIN_ALERT_TITLE etc.)
-       vendor/shared-ui/design/tokens.css  — --overlay-teal/-amber/-coral/-fg hexes
-     Last hand-synced against those files: 2026-07-30, plus a 2026-08-02
-     ttl-bar-only re-sync (brightness inversion + `transform-origin: right`).
-
-     Glyphs are Meteocons static-fill SVGs (MIT, Bas Milius), loaded from
-     ../src/assets/weather/ — see that directory's NOTICE for attribution. -->
+<!-- Weather art mirror — static mock of the shipped overlay. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">

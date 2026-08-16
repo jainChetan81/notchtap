@@ -28,12 +28,12 @@ const REVEAL_DELAY_MS = 4500;
 // targets — center is revisited between every glance so the motion always
 // returns to a resting pose instead of drifting.
 type GazeName = "center" | "left" | "right" | "up";
-const GAZE_OFFSETS: Record<GazeName, { x: number; y: number }> = {
+const GAZE_OFFSETS = {
   center: { x: 0, y: 0 },
   left: { x: -3, y: 0 },
   right: { x: 3, y: 0 },
   up: { x: 0, y: -2 },
-};
+} satisfies Record<GazeName, { x: number; y: number }>;
 const GAZE_SEQUENCE: GazeName[] = ["center", "left", "center", "right", "center", "up", "center"];
 
 function randomBetween(minMs: number, maxMs: number): number {

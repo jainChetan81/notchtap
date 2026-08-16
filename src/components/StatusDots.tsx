@@ -29,7 +29,7 @@ function configuredLabel(name: string, configured: boolean | undefined): string 
   return configured ? `${name} — enabled` : `${name} — disabled`;
 }
 
-function shapeClass(configured: boolean | undefined): string {
+function configStateClass(configured: boolean | undefined): string {
   if (configured === undefined) {
     return "shape-unavailable";
   }
@@ -45,14 +45,14 @@ export function StatusDots({ status }: { status?: StatusState }) {
   return (
     <span className="status-dots">
       <span
-        className={`status-dot football ${shapeClass(footballConfigured)}${football ? " active" : " dim"}`}
+        className={`status-dot football ${configStateClass(footballConfigured)}${football ? " active" : " dim"}`}
         role="img"
         aria-label={configuredLabel("Football", footballConfigured)}
       >
         <FootballGlyph />
       </span>
       <span
-        className={`status-dot news ${shapeClass(newsConfigured)}${news ? " active" : " dim"}`}
+        className={`status-dot news ${configStateClass(newsConfigured)}${news ? " active" : " dim"}`}
         role="img"
         aria-label={configuredLabel("News", newsConfigured)}
       >

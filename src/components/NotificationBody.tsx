@@ -72,14 +72,14 @@ function renderFactPills(facts: Fact[], tone: FactTone | null = null) {
   );
 }
 
-const GENERIC_MASTHEAD_KICKER: Record<SourceKind, string> = {
+const GENERIC_MASTHEAD_KICKER = {
   manual: "cli",
   football: "football",
   news: "news",
   // agent-originated cards (`SourceKind::Agent`) get their own kicker
   // label, same table-driven discipline as every other origin here.
   agent: "agent",
-};
+} satisfies Record<SourceKind, string>;
 
 // The whole non-live-match content fragment (compact + manifest +
 // ttl-bar together) — hence NOT named `CompactBody`: `.compact` is

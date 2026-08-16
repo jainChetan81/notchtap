@@ -123,7 +123,7 @@ function liveElapsedMs(session: AgentSessionView, capturedAtMs: number, nowMs: n
 // "needs input" is what both mean to the operator. Exhaustive
 // `Record`: a new `AgentSessionState` is a compile error here until
 // this table names it.
-const AGENT_HERO_TITLE: Record<AgentSessionState, string> = {
+const AGENT_HERO_TITLE = {
   waiting_for_permission: "Agent needs input",
   waiting_for_input: "Agent needs input",
   working: "Agent working",
@@ -131,7 +131,7 @@ const AGENT_HERO_TITLE: Record<AgentSessionState, string> = {
   completed: "Agent turn completed",
   failed: "Agent session failed",
   stale: "Agent session stale",
-};
+} satisfies Record<AgentSessionState, string>;
 
 // The risk values that earn the coloured `DESTRUCTIVE` tag on a
 // permission request's tool pill. Any other risk value (e.g.

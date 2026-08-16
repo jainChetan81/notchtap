@@ -38,11 +38,11 @@ import { TabBelowBlock, tabBelowBlockHandles } from "./TabBelowBlock";
 // Which keyframe (styles.css) ends each live-branch celebration — cleared on
 // animationend, scoped to the espn branch so a live goal never stacks both
 // `pulse-goal` and `cele-goal` (see the `isLiveCard` gate below).
-const CELEBRATION_END_ANIMATION: Record<NonNullable<Celebration>, string> = {
+const CELEBRATION_END_ANIMATION = {
   "cele-goal": "cele-ring",
   "cele-yc": "cele-ring",
   "cele-rc": "red-strobe",
-};
+} satisfies Record<NonNullable<Celebration>, string>;
 
 // Exported so NotificationBody.tsx imports the shape — one definition, not two.
 export type Detail = { label: string; value: string };
@@ -53,10 +53,10 @@ type Pulse = "pulse-goal" | "pulse-red" | null;
 // only place either duration lives; clearing on animationend keeps no JS-side
 // copy. `pulse-goal` clears on `ripple-out`, the LAST thing the goal celebration
 // plays (the staggered rings outlive the shell keyframe).
-const PULSE_END_ANIMATION: Record<NonNullable<Pulse>, string> = {
+const PULSE_END_ANIMATION = {
   "pulse-goal": "ripple-out",
   "pulse-red": "red-alert",
-};
+} satisfies Record<NonNullable<Pulse>, string>;
 
 // How many `.cele-ripple` rings the goal celebration mounts — `ripple-out` ends
 // once per ring and only the last means the celebration is over; the JSX below
@@ -87,11 +87,11 @@ export const contentExitVariants = {
 
 // Mirrors rust's `Priority` ordering (`event.rs`/`queue.rs` derive `Ord`,
 // declaration order Low < Medium < High).
-const PRIORITY_RANK: Record<"low" | "medium" | "high", number> = {
+const PRIORITY_RANK = {
   low: 0,
   medium: 1,
   high: 2,
-};
+} satisfies Record<"low" | "medium" | "high", number>;
 
 // The wire carries no explicit "preempted" flag (queue.rs's `try_preempt_visible`
 // is rust-internal), so a preemption is inferred: an ordinary rotation fires with
