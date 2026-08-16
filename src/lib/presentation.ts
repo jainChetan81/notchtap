@@ -270,7 +270,7 @@ export function categoryLabel(category: string | null): string | null {
 //    (CONTEXT.md's Silenced).
 // 3. otherwise, at least one Agent Session in the PUBLISHED snapshot (a
 //    non-empty `sessions` array) shows the Agent Board.
-// 4. otherwise, the existing clock/weather/media idle presentation.
+// 4. otherwise, the existing clock idle presentation.
 //
 // Rule 3 is deliberately "whatever rust published", not "whatever
 // sessions exist". Two separate rust-side filters already decide what
@@ -350,7 +350,7 @@ export function agentRuntimeLabel(runtime: AgentRuntime): string {
 // Plan 147: the paint-channel twin of AGENT_RUNTIME_LABEL — each agent
 // runtime's identity colour class (source-identity.css), consumed
 // wherever an agent-originated card needs to paint itself distinctly
-// from a generic agent, football, weather, or manual/CLI card.
+// from a generic agent, football, or manual/CLI card.
 const AGENT_RUNTIME_CLASS: Record<AgentRuntime, string> = {
   "claude-code": "src-claude-code",
   codex: "src-codex",
@@ -378,8 +378,6 @@ export function sourceClass(
   switch (origin) {
     case "football":
       return "src-football";
-    case "weather":
-      return "src-weather";
     case "manual":
       return "src-manual";
     case "agent":

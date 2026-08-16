@@ -212,16 +212,6 @@ describe("overlay CSS timing-parity (item 6): every transition duration is var(-
   // carry its own justification comment; an unjustified addition here
   // defeats the point of this test.
   const ALLOWLISTED_TRANSITIONS: ReadonlySet<string> = new Set([
-    // item 4 (media progress glide): idle-peek.css's `.media-bar-fill`
-    // glides continuously between IdleHoverPeek.tsx's own `useLiveTick`
-    // ticks, which re-render on a hand-typed `window.setInterval(..., 1000)`
-    // — the 1s transition duration IS that polling cadence, a structural
-    // pairing with a JS interval literal that lives in a component file,
-    // not an animation-feel pacing choice that belongs in
-    // animationTiming.ts alongside the enter/exit/hover/reveal timings it
-    // single-sources. Genuinely self-contained: there is no second CSS or
-    // JS copy of "1s" this could drift from.
-    "transform 1s linear",
     // Plan 171 (tab-notch redesign, icon-strip.css): each entry below is
     // a full multi-leg `transition:` value where the opacity/transform
     // legs are already var(--*-ms, ...)-sourced (real animation-timing

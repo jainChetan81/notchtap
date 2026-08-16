@@ -233,14 +233,6 @@ export function GeneralSection({
           checked={config.history_enabled}
           onChange={(history_enabled) => patchConfig({ history_enabled })}
         />
-        <ToggleControl
-          id="now-playing-enabled"
-          name="Now playing"
-          help="Show what's currently playing (Music, a browser tab, etc.) in the idle hover peek. Requires the vendored adapter installed via `just build-media-adapter` — see VENDORED.md. Applies after Save & Relaunch."
-          label="Enable now playing"
-          checked={config.now_playing_enabled}
-          onChange={(now_playing_enabled) => patchConfig({ now_playing_enabled })}
-        />
         <NumberControl
           id="port"
           name="Listener port"

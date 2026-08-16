@@ -1554,9 +1554,7 @@ pub fn spawn_espn_poller(
 mod tests {
     use super::*;
     use crate::event::{test_fixtures, EventType, Priority, SlotState};
-    use crate::notifier::ConnectorHandle;
     use crate::queue::SingleSlotQueue;
-    use std::sync::Arc;
     use wiremock::matchers::{method, path, query_param};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
@@ -1581,22 +1579,15 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn poller_accepted_events_fan_out_and_rejected_do_not() {
-        // regression for the 2026-07-16 v3 review finding: score events
-        // must reach connectors the same as http pushes (plan §3). one
-        // visible slot, no waiting room: first accepted, second rejected.
-        // plan 037: the fan-out path is Engine::accept now.
-        let (tx, mut rx) = tokio::sync::mpsc::channel(8);
-        let connector = ConnectorHandle::new("test", tx);
+    async fn poller_accepted_events_enter_the_slot_and_rejected_do_not() {
+        // one visible slot, no waiting room: first accepted, second
+        // rejected. plan 037: the ingest path is Engine::accept.
         let app = tauri::test::mock_app();
         let engine = Engine::new(
             SingleSlotQueue::new(0),
             app.handle().clone(),
-            Arc::new(vec![connector]),
             true,
             true,
-            false,
-            false,
             None,
             std::sync::Arc::new(crate::tabs::TabWire::default()),
         );
@@ -1611,9 +1602,6 @@ mod tests {
             SlotState::Showing { title, .. } => assert_eq!(title, "accepted"),
             SlotState::Empty => panic!("expected a Showing slot state"),
         }
-        let fanned = rx.try_recv().expect("accepted score event must fan out");
-        assert_eq!(fanned.payload.title, "accepted");
-        assert!(rx.try_recv().is_err(), "rejected event must not fan out");
     }
 
     fn baseline(fixture: &str) -> (Snapshot, Scoreboard) {
@@ -2331,22 +2319,16 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn live_card_cycle_collapses_to_one_slot_and_still_fans_out() {
+    async fn live_card_cycle_collapses_to_one_slot() {
         // end-to-end: the flag-on sequence through a real Engine +
         // SingleSlotQueue must collapse to one Slot occupant (topic
-        // supersession), while every delta still reaches connectors
-        // (fan-out survives supersession under Engine::accept).
-        let (tx, mut rx) = tokio::sync::mpsc::channel(8);
-        let connector = ConnectorHandle::new("test", tx);
+        // supersession).
         let app = tauri::test::mock_app();
         let engine = Engine::new(
             SingleSlotQueue::new(0),
             app.handle().clone(),
-            Arc::new(vec![connector]),
             true,
             true,
-            false,
-            false,
             None,
             std::sync::Arc::new(crate::tabs::TabWire::default()),
         );
@@ -2360,11 +2342,6 @@ mod tests {
             SlotState::Showing { body, .. } => assert_eq!(body, "full-time"),
             SlotState::Empty => panic!("expected a Showing slot state"),
         }
-        for expected in ["kickoff", "goal", "full-time"] {
-            let fanned = rx.try_recv().expect("every event must fan out");
-            assert_eq!(fanned.payload.body, expected);
-        }
-        assert!(rx.try_recv().is_err(), "no extra events may fan out");
     }
 
     #[test]

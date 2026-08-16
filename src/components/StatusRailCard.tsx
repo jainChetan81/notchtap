@@ -23,12 +23,10 @@ import {
   livePillVariantFor,
   sourceClass,
 } from "../lib/presentation";
-import { weatherArtFor } from "../lib/weatherArt";
 import type { AgentSessionView } from "../useAgentState";
 import { useExitChoreography } from "../useExitChoreography";
 import type { EspnMeta, Priority, SlotState } from "../useSlotState";
 import type { StatusState } from "../useStatusState";
-import { EqBars } from "./EqBars";
 import { FlankClock } from "./FlankClock";
 import type { Tab } from "./IconStrip";
 import { IconStrip } from "./IconStrip";
@@ -50,35 +48,10 @@ const CELEBRATION_END_ANIMATION: Record<NonNullable<Celebration>, string> = {
   "cele-rc": "red-strobe",
 };
 
-// plan 082: weather ALERT cards ride the plan-035 display-only `details`
-// channel to carry condition + day/night art inputs — plan 096 later put
-// `origin` on the slot-state wire, but weather art derivation has no
-// reason to move off these markers (they carry condition/day-night, which
-// `origin: "weather"` alone doesn't). Every pair whose label starts with
-// "wx-" is a MARKER, never real content: it must be read to derive the
-// mood/glyph art, then excluded from every place `details` is rendered as
-// visible text (the marker-leak guard).
-function isWxMarker(label: string): boolean {
-  return label.startsWith("wx-");
-}
-
 // plan 120: exported so NotificationBody.tsx (src/components/) can import
 // the shape rather than duplicating this two-field structural type — one
 // definition, not two that can drift.
 export type Detail = { label: string; value: string };
-
-function visibleDetails(details: Detail[]): Detail[] {
-  return details.filter((detail) => !isWxMarker(detail.label));
-}
-
-function weatherArtFromDetails(details: Detail[]) {
-  const condition = details.find((detail) => detail.label === "wx-condition")?.value;
-  if (condition === undefined) {
-    return null;
-  }
-  const isDay = details.find((detail) => detail.label === "wx-is-day")?.value === "1";
-  return weatherArtFor(condition, isDay);
-}
 
 // plan 12x (wave 2): mirrors shared-ui's `--ease-notchtap`
 // (vendor/shared-ui/design/tokens.css) —
@@ -207,12 +180,11 @@ const INTERRUPT_MIN_REMAINING_MS = 400;
 
 // Plan 171 (tab-notch redesign, slice K): which selections are served by
 // `IdleHoverPeek`'s own shipped rendering rather than by a dedicated
-// below-block component. Spec section 7's weather bullet ("the shipped
-// card, unchanged") and section 11 ("`IdleHoverPeek.tsx` is untouched")
-// together mean these two must reach that component, not a copy of it —
-// see `TabBelowBlock.tsx`'s header for the full split.
+// below-block component. Spec section 11 ("`IdleHoverPeek.tsx` is
+// untouched") means football must reach that component, not a copy of
+// it — see `TabBelowBlock.tsx`'s header for the full split.
 function peekPreferenceFor(selected: Tab | null): PeekPreference {
-  return selected === "football" || selected === "weather" ? selected : null;
+  return selected === "football" ? selected : null;
 }
 
 // The empty session list every caller that doesn't participate in the
@@ -285,7 +257,7 @@ export function StatusRailCard({
   const news = showing && slot.eventType === "news_item";
   // plan 084: detect the live-match football branch by the structured
   // `espn` block's presence (POST-083 contract), never by string-sniffing
-  // eventType/signal — off the LIVE slot, matching how `news`/`wxArt`
+  // eventType/signal — off the LIVE slot, matching how `news`
   // above are computed, so the pulse-vs-celebration gate below always
   // reflects the arriving item.
   const isLiveCard = showing && slot.espn !== undefined;
@@ -412,16 +384,9 @@ export function StatusRailCard({
     }
   }
 
-  // plan 082: weather ALERT cards carry their art derived from the live
-  // slot's `wx-*` marker pairs — same live-`slot` basis as `news`/
-  // `categoryClass` above (not `renderedSlot`), so the below-block's mood
-  // updates in lockstep with every other live-slot-derived class, not
-  // delayed by the 220ms content swap. `null` for every non-weather card,
-  // so it renders byte-identical to today.
-  const wxArt = showing ? weatherArtFromDetails(slot.details) : null;
   // plan 096, renamed by plan 137 (cmux relay superseded by the v7 Agent
   // Adapter layer, spec §7/§12): the agent accent's below-block hairline
-  // gate — same live-slot basis as `news`/`wxArt` above, for the same
+  // gate — same live-slot basis as `news` above, for the same
   // lockstep-with-below-block reason. Deliberately NOT part of
   // `cardClass` (the shell): the shell owns the priority accent channel
   // only, and origin must never share that channel (see the CSS comment
@@ -656,26 +621,23 @@ export function StatusRailCard({
   const pulledTab = tabPullOpen ? selectedTab : null;
   const peekPreference = peekPreferenceFor(pulledTab);
   // Plan 177: whether the pulled tab actually has anything to draw.
-  // Each of the first three arms is LITERALLY the empty-guard its own
+  // Each of the first two arms is LITERALLY the empty-guard its own
   // component already applies — `AgentBelowBlock`'s `sessions.length
-  // === 0`, `MediaBelowBlock`'s `media === null`, and the hard-wired
-  // `NO_NEWS_STORIES` that `TabBelowBlock` hands `NewsBelowBlock` (no
-  // wire source exists for news story CONTENT yet — a recorded direction
-  // option, deliberately not faked). Kept in lockstep on purpose: when a
-  // news story wire lands, the `news` arm and that constant flip
-  // TOGETHER, and this is the second of the two places to edit. The
-  // final arm is `true` for football/weather, which have no below-block
-  // at all — they are served by `IdleHoverPeek`'s own `prefer` rendering
-  // (see `peekPreferenceFor`), so "has content" is not this predicate's
-  // question for them.
+  // === 0`, and the hard-wired `NO_NEWS_STORIES` that `TabBelowBlock`
+  // hands `NewsBelowBlock` (no wire source exists for news story CONTENT
+  // yet — a recorded direction option, deliberately not faked). Kept in
+  // lockstep on purpose: when a news story wire lands, the `news` arm
+  // and that constant flip TOGETHER, and this is the second of the two
+  // places to edit. The final arm is `true` for football, which has no
+  // below-block at all — it is served by `IdleHoverPeek`'s own `prefer`
+  // rendering (see `peekPreferenceFor`), so "has content" is not this
+  // predicate's question for it.
   const pulledTabHasContent =
     pulledTab === "agent"
       ? agentSessions.length > 0
-      : pulledTab === "music"
-        ? (status?.media.current ?? null) !== null
-        : pulledTab === "news"
-          ? false
-          : pulledTab !== null;
+      : pulledTab === "news"
+        ? false
+        : pulledTab !== null;
   // Whether a real `.below-block` is about to mount for the pulled tab.
   // Both this and the peek below hang off it, which is what guarantees
   // exactly one of the two is ever on screen.
@@ -686,16 +648,16 @@ export function StatusRailCard({
   // there is never more than one `.below-block` under the shell (the
   // rounding law in card-chrome.css depends on that). Plan 177: "close
   // it" now means "close it for a below-block that will actually
-  // RENDER something" — a tab whose source is empty (news today,
-  // music with nothing playing, agent with no live session) degrades to
-  // the ambient peek rather than to a blank shell.
+  // RENDER something" — a tab whose source is empty (news today, agent
+  // with no live session) degrades to the ambient peek rather than to a
+  // blank shell.
   const peekOpen = tabPullOpen && !pulledBelowBlockOpen;
 
   // plan 091: the outer shell (`.card-assembly`) now owns ONLY geometry-
   // and-effects classes — priority accent, hover diagnostic, the goal/
-  // red-card pulse and the live-match celebrations. `news-shade`/`wx-card`
-  // (and their mood/texture riders) move to `belowBlockClass` below: they
-  // are content presentation, not shell, and the below-block is the block
+  // red-card pulse and the live-match celebrations. `news-shade` (and
+  // its mood/texture riders) moves to `belowBlockClass` below: it is
+  // content presentation, not shell, and the below-block is the block
   // that actually carries that content now (Step 4's ownership split).
   // The old idle/idle-status width split (plan 034) is gone — the new
   // idle has one width formula regardless of status chips (Geometry
@@ -739,7 +701,7 @@ export function StatusRailCard({
   ]
     .filter(Boolean)
     .join(" ");
-  // plan 091: below-block's own class list — the news/weather mood
+  // plan 091: below-block's own class list — the news mood
   // presentation, still derived off the LIVE slot (not `renderedSlot`) for
   // the same "no delayed-swap lag" reason the comment above always gave;
   // only WHERE these classes attach moved (below-block, not the shell).
@@ -761,9 +723,6 @@ export function StatusRailCard({
     // `belowBlockOpen` (below) never mounts this block while idle, so the
     // fallback string was already inert there — no behavior change.
     !news && showing && slot.origin !== "news" && sourceClass(slot.origin, slot.agentRuntime),
-    wxArt && "wx-card",
-    wxArt?.moodClass,
-    wxArt?.textureClass,
     agentOrigin && "agent-origin",
   ]
     .filter(Boolean)
@@ -771,7 +730,7 @@ export function StatusRailCard({
 
   // plan 12x (wave 2): the swapped card BODY (everything inside
   // `.card-content`, below) now reads the LIVE `slot` directly, like
-  // `news`/`wxArt`/`isLiveCard` above — there is no more `renderedSlot`
+  // `news`/`isLiveCard` above — there is no more `renderedSlot`
   // stand-in for content. `AnimatePresence` (in the JSX below) is what
   // now supplies the "outgoing content stays frozen through its own
   // exit" behavior: an exiting `motion.div` keeps whatever it last
@@ -783,12 +742,7 @@ export function StatusRailCard({
   // and the below-block/StatusDots mount gates below) — never content.
   const newsCategory = news ? categoryLabel(slot.category) : null;
   const newsAge = news ? ageLabel(slot.publishedAtMs, Date.now()) : null;
-  // plan 082 marker-leak guard: every `wx-*` pair is a mood/glyph input,
-  // never real content — strip it from `details` before it reaches EITHER
-  // place details render as visible text (the collapsed loop below and
-  // the expanded Manifest). Every non-weather card's `details` has no
-  // `wx-*` labels, so this filter is a no-op there — byte-identical.
-  const liveVisibleDetails = showing ? visibleDetails(slot.details) : [];
+  const liveVisibleDetails = showing ? slot.details : [];
 
   // plan 069 (folded into 078; re-scoped to live `slot` in wave 2): memoized
   // so unrelated re-renders don't re-tokenize the markdown.
@@ -894,7 +848,7 @@ export function StatusRailCard({
   // score chrome, both of which would re-announce to assistive tech on
   // every routine wire tick, not just genuine new-notification arrivals.
   // `liveRegionActive` gates the region to exactly the case that should
-  // announce: a non-live-match card (news/generic/agent/weather ALERT —
+  // announce: a non-live-match card (news/generic/agent —
   // stable title/body text that only changes on a genuine new item or
   // rotation) that's actually mounted.
   //
@@ -1023,29 +977,17 @@ export function StatusRailCard({
           hardware, so it's not rendered at all there — otherwise its
           internal reveal/gaze/blink timers would run forever for a node
           that can never be seen.
-          Plan 171 (slice K, spec section 4 — "rest is exactly the shell,
-          the UNMODIFIED <IdleFace />, and the eq bars whenever audio is
-          genuinely playing"): the face is now wrapped with `<EqBars>` in
-          a `.rest-cluster` row, which takes over the face's own
-          `grid-column: 2 / grid-row: 1` placement so the two sit side by
-          side in the cutout instead of stacking in one cell. The shipped
-          `.rest-cluster` is authoritative. `<IdleFace>` ITSELF is untouched,
-          as spec section 4's correction requires: its grid
-          declarations simply go inert as a flex child, and its
-          `display: none` -> HUD `display: flex` gate still governs
-          whether it paints at all. The cluster carries the same
-          HUD-only gate for the same reason, so the eq bars can never
-          paint over real notch hardware either. */}
+          Plan 171 (slice K): the face sits in a `.rest-cluster` row,
+          which takes over the face's own `grid-column: 2 / grid-row: 1`
+          placement. The shipped `.rest-cluster` is authoritative.
+          `<IdleFace>` ITSELF is untouched: its grid declarations simply
+          go inert as a flex child, and its `display: none` -> HUD
+          `display: flex` gate still governs whether it paints at all.
+          The cluster carries the same HUD-only gate for the same
+          reason. */}
       {idleFaceEligible && (
         <div className="rest-cluster" aria-hidden="true">
           <IdleFace idle={trueIdle} />
-          {/* deliberately NARROWER than the music icon's own presence
-              gate (`iconPresenceFor`, which keeps a paused track present
-              but dim): the eq bars are a "sound is happening right now"
-              indicator, so a paused transport collapses them to zero
-              width. EqBars.tsx's own header comment reserves exactly
-              this call. */}
-          <EqBars playing={status?.media.current?.playing === true} />
         </div>
       )}
       <div className="flank-right">
@@ -1123,13 +1065,11 @@ export function StatusRailCard({
           by "and the selected tab isn't one with its own below-block",
           so only ever ONE `.below-block` sits under the shell at a time
           (the `:not(:has(.below-block))` rounding law in card-chrome.css
-          depends on that). `prefer` routes the football/weather
-          selections into this component's OWN shipped rendering rather
-          than a second copy of it — spec section 7's weather bullet
-          ("the shipped card, unchanged") and section 11's explicit
-          "IdleHoverPeek's mechanism is untouched". With nothing
-          selected, both props are inert and this is byte-identical to
-          before the plan. */}
+          depends on that). `prefer` routes the football selection into
+          this component's OWN shipped rendering rather than a second
+          copy of it — spec section 11's explicit "IdleHoverPeek's
+          mechanism is untouched". With nothing selected, both props are
+          inert and this is byte-identical to before the plan. */}
       <IdleHoverPeek status={status} hovered={hovered} open={peekOpen} prefer={peekPreference} />
       {/* Plan 171 (slice K), spec section 7: the selection-driven
           below-block. Mounted OUTSIDE the live-region wrapper below on
@@ -1151,10 +1091,10 @@ export function StatusRailCard({
         {/* Plan 177: `pulledTabHasContent` joins the mount gate so an
             empty tab mounts NOTHING here and keeps the ambient peek
             above instead — one surface at a time either way, which is
-            what the rounding law depends on. Football/weather are
-            unaffected (the predicate is true for them; their wrapper
-            mounts exactly as before and `TabBelowBlock` returns null for
-            them as it always has). */}
+            what the rounding law depends on. Football is unaffected (the
+            predicate is true for it; its wrapper mounts exactly as
+            before and `TabBelowBlock` returns null for it as it always
+            has). */}
         {pulledTab !== null && pulledTabHasContent && (
           <motion.div
             // plan 176: the placement class below (card-chrome.css owns
@@ -1264,12 +1204,6 @@ export function StatusRailCard({
               exit={{ opacity: 0, height: 0 }}
               transition={{ duration: CONTENT_EXIT_MS / 1000, ease: NOTCHTAP_EASE }}
             >
-              {/* plan 082: the condition glyph — a background-layer image,
-              same z-order tier as .news-shade::before (behind
-              .compact/.manifest, which the CSS below lifts to z-index 1).
-              Live-slot-derived, like belowBlockClass's mood/texture
-              classes above, so it never waits on the content swap. */}
-              {wxArt && <img className="wx-icon" src={wxArt.glyphUrl} alt="" />}
               {/* plan 12x (wave 2): the actual content-swap animation — was a
               hand-rolled `useDelayedSwap` freeze + CSS
               `card-enter-showing`/`card-exit-showing` keyframes, now real

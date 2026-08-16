@@ -67,7 +67,6 @@ describe("sourceClass", () => {
 
   it("maps every non-agent, non-news origin to its own identity class", () => {
     expect(sourceClass("football", null)).toBe("src-football");
-    expect(sourceClass("weather", null)).toBe("src-weather");
     expect(sourceClass("manual", null)).toBe("src-manual");
   });
 

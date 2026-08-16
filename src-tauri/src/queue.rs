@@ -61,7 +61,6 @@ fn source_kind_label(source: SourceKind) -> String {
         SourceKind::Football => "football",
         SourceKind::News => "news",
         SourceKind::Manual => "manual",
-        SourceKind::Weather => "weather",
         SourceKind::Agent => "agent",
     }
     .to_string()
@@ -3698,13 +3697,13 @@ mod tests {
     }
 
     // plan 124 R3: `source_kind_label` (used by `waiting_summaries`'
-    // `source` field) has five variants — until now only "manual" was
+    // `source` field) has four variants — until now only "manual" was
     // pinned by name (the assertion above). `types.ts` claims this
-    // five-string union as a typed wire contract, so every spelling needs
+    // four-string union as a typed wire contract, so every spelling needs
     // its own assert, not just coverage-by-coincidence of whichever
     // origin a fixture happened to use.
     #[test]
-    fn waiting_summaries_source_pins_all_five_source_kind_label_spellings() {
+    fn waiting_summaries_source_pins_all_four_source_kind_label_spellings() {
         let mut q = SingleSlotQueue::new(50);
         let t0 = Instant::now();
         // visible slot absorbs the first enqueue — everything below stays
@@ -3725,11 +3724,6 @@ mod tests {
             .unwrap();
         q.enqueue(event_from("a", Priority::Medium, 8, SourceKind::Agent), t0)
             .unwrap();
-        q.enqueue(
-            event_from("w", Priority::Medium, 8, SourceKind::Weather),
-            t0,
-        )
-        .unwrap();
 
         let summaries = q.waiting_summaries();
         let by_title: std::collections::HashMap<&str, &str> = summaries
@@ -3740,7 +3734,6 @@ mod tests {
         assert_eq!(by_title.get("n"), Some(&"news"));
         assert_eq!(by_title.get("m"), Some(&"manual"));
         assert_eq!(by_title.get("a"), Some(&"agent"));
-        assert_eq!(by_title.get("w"), Some(&"weather"));
     }
 
     // plan 124 R4(b): the settings window's Queue section shows WAITING
@@ -4346,7 +4339,6 @@ mod proptest_queue {
             Just(SourceKind::News),
             Just(SourceKind::Manual),
             Just(SourceKind::Agent),
-            Just(SourceKind::Weather),
         ]
     }
 
@@ -4368,9 +4360,8 @@ mod proptest_queue {
             SourceKind::News,
             SourceKind::Manual,
             SourceKind::Agent,
-            SourceKind::Weather,
         ];
-        (Just(all).prop_shuffle(), 0usize..=5).prop_map(|(mut v, len)| {
+        (Just(all).prop_shuffle(), 0usize..=4).prop_map(|(mut v, len)| {
             v.truncate(len);
             v
         })

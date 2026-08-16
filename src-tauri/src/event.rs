@@ -69,17 +69,6 @@ pub enum Priority {
     High,
 }
 
-/// Temperature display units for the weather source (plan 040 Part B).
-/// Display-only: Open-Meteo does the conversion server-side via its
-/// `temperature_unit` query param; alert thresholds are always stored
-/// and compared in Celsius regardless of this value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Units {
-    Celsius,
-    Fahrenheit,
-}
-
 /// The source that produced an [`Event`] (v6: `Config.rotation_order`
 /// tie-break). A closed set, same rigor as [`EventType`]/[`EventSignal`] —
 /// unknown values are rejected at deserialization, never silently coerced.
@@ -89,7 +78,6 @@ pub enum SourceKind {
     Football,
     News,
     Manual,
-    Weather,
     /// v7 (plan 135/137, spec §0/§7): the provider-neutral Agent Adapter
     /// origin, and — as of plan 137 — the sole successor to the removed
     /// `Cmux` variant. `#[serde(alias = "cmux")]` is the one-release
@@ -522,7 +510,6 @@ mod tests {
             (SourceKind::Football, "football"),
             (SourceKind::News, "news"),
             (SourceKind::Manual, "manual"),
-            (SourceKind::Weather, "weather"),
             (SourceKind::Agent, "agent"),
         ] {
             assert_eq!(serde_json::to_value(kind).unwrap(), wire);
@@ -585,10 +572,10 @@ mod tests {
             signal: EventSignal::Goal,
             // plan 096: origin deliberately doesn't match event_type/source
             // here — this test pins the WIRE SHAPE (every field's JSON key
-            // and value), not a semantically-coherent payload; Weather is
-            // chosen (plan 137: Cmux no longer exists) because it's a
-            // variant unrelated to the ScoreUpdate/NDTV fixture around it.
-            origin: SourceKind::Weather,
+            // and value), not a semantically-coherent payload; Manual is
+            // chosen because it's a variant unrelated to the
+            // ScoreUpdate/NDTV fixture around it.
+            origin: SourceKind::Manual,
             expanded: false,
             source: Some("NDTV".to_string()),
             category: Some("politics".to_string()),
@@ -623,7 +610,7 @@ mod tests {
         // plan 096: origin joins the wire, camelCase key (no rename needed —
         // the field name is already one word), snake_case value per
         // SourceKind's own serde attr.
-        assert_eq!(json["origin"], "weather");
+        assert_eq!(json["origin"], "manual");
         assert_eq!(json["expanded"], false);
         assert_eq!(json["source"], "NDTV");
         assert_eq!(json["category"], "politics");
@@ -892,7 +879,7 @@ mod tests {
 
         let before = showing_with_origin(SourceKind::Manual);
         let after_same_origin = showing_with_origin(SourceKind::Manual);
-        let after_new_origin = showing_with_origin(SourceKind::Weather);
+        let after_new_origin = showing_with_origin(SourceKind::News);
 
         assert!(
             before.dedup_eq(&after_same_origin),

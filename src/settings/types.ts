@@ -14,8 +14,7 @@ export type PriorityLevel = "low" | "medium" | "high";
 // plan 137 (spec §7/§12): "cmux" is gone — migrated onto "agent"
 // (rust's `SourceKind::Cmux` was removed and its slot taken by
 // `SourceKind::Agent`, the v7 Agent Adapter's origin).
-export type SourceKind = "football" | "manual" | "news" | "weather" | "agent";
-export type Units = "celsius" | "fahrenheit";
+export type SourceKind = "football" | "manual" | "news" | "agent";
 export type RestingState = "rail" | "notch";
 
 export interface AppearanceConfig {
@@ -107,32 +106,10 @@ export interface Config {
   // (`#[serde(default)]` on the rust side), so this field is required,
   // not optional, here.
   agents: AgentsConfig;
-  weather_enabled: boolean;
-  weather_lat: number;
-  weather_lon: number;
-  weather_units: Units;
-  weather_poll_secs: number;
-  weather_rain_threshold_pct: number;
-  weather_rain_lookahead_mins: number;
-  weather_temp_hot_c: number;
-  weather_temp_cold_c: number;
-  weather_priority: PriorityLevel;
   rotation_order: SourceKind[];
   appearance: AppearanceConfig;
   resting_state: RestingState;
   history_enabled: boolean;
-  // plan 104: the panel-editable toggle only. The rust-side kill-switch
-  // field and the adapter install-dir field are deliberately OMITTED from
-  // this type — a done criterion for this plan forbids this file from
-  // naming the kill switch at all. The real config object the settings
-  // window round-trips (`get_config`/`save_config_and_relaunch`) still
-  // carries both fields at runtime regardless of this type's shape (TS
-  // types are erased, not enforced against the actual JSON payload), and
-  // the rust save path pins both to the booted value server-side either
-  // way (`settings.rs`'s `pin_uneditable_fields`) — so omitting them here
-  // costs nothing functionally, unlike `detect_path` above, which stays
-  // in this type only because nothing in this plan required removing it.
-  now_playing_enabled: boolean;
   // plan 146a: the `[silence]` block — always present on the wire
   // (`#[serde(default)]` on the rust side), same "required, not optional"
   // discipline as `agents` above.
@@ -147,10 +124,6 @@ export interface Config {
   // same "required, not optional" discipline as `silence`/`agents` above.
   // Data only in this slice — not yet wired to a live key grab.
   prefix_shortcut: string;
-}
-
-export interface SecretStatus {
-  openrouter_api_key: string | null;
 }
 
 // Wire shape of get_history (plan 089) — mirrors HistoryEntry/Event in
@@ -271,9 +244,7 @@ export interface AdapterHealthDto {
   compatibilityMessage: string | null;
 }
 
-export type SecretField = keyof SecretStatus;
-
-export type TestSource = "football" | "news" | "manual" | "weather" | "agent";
+export type TestSource = "football" | "news" | "manual" | "agent";
 
 export const PRIORITY_LABELS: Record<PriorityLevel, string> = {
   low: "Low",
@@ -282,17 +253,10 @@ export const PRIORITY_LABELS: Record<PriorityLevel, string> = {
 };
 export const PRIORITY_LEVELS: PriorityLevel[] = ["low", "medium", "high"];
 
-export const UNITS_LABELS: Record<Units, string> = {
-  celsius: "Celsius",
-  fahrenheit: "Fahrenheit",
-};
-export const UNITS_OPTIONS: Units[] = ["celsius", "fahrenheit"];
-
 export const SOURCE_LABELS: Record<SourceKind, string> = {
   football: "Football",
   manual: "Manual / CLI push",
   news: "News",
-  weather: "Weather",
   agent: "Agent",
 };
 
@@ -324,6 +288,3 @@ export const PRIORITY_TONES: Record<PriorityLevel, string> = {
   medium: "bg-overlay-teal/20 text-overlay-teal",
   high: "bg-overlay-coral/20 text-overlay-coral",
 };
-
-export const UNITS_SEGMENT_OPTIONS: ReadonlyArray<{ label: string; value: Units }> =
-  UNITS_OPTIONS.map((unit) => ({ label: UNITS_LABELS[unit], value: unit }));

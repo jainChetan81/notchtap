@@ -102,7 +102,6 @@ function renderFactPills(facts: Fact[], tone: FactTone | null = null) {
 const GENERIC_MASTHEAD_KICKER: Record<SourceKind, string> = {
   manual: "cli",
   football: "football",
-  weather: "weather",
   news: "news",
   // plan 135: agent-originated cards (`SourceKind::Agent`) get their own
   // kicker label, same table-driven discipline as every other origin here.

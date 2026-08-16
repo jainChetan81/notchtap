@@ -77,7 +77,7 @@ function historyEspnSummary(espn: HistoryEspnMeta): string {
 // source/category string of only whitespace reads as absent, same as null.
 // `event.origin` is an untyped wire string (same "runtime-untrusted
 // IPC" note as historyPriorityLabel above) — only the four
-// Every SourceOriginToken (manual/football/weather/agent/news) has a
+// Every SourceOriginToken (manual/football/agent/news) has a
 // colour; an unrecognized origin (only possible via a hand-edited
 // history file) renders with no inline style at all.
 function historyOriginColor(origin: string): string | undefined {

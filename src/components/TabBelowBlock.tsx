@@ -6,17 +6,16 @@
 //
 // This component owns ONLY the routing decision. Every branch below is a
 // component another slice already built and tested (`AgentBelowBlock`
-// slice F, `MediaBelowBlock` slice H, `NewsBelowBlock` slice I) — nothing
-// here re-renders card markup of its own.
+// slice F, `NewsBelowBlock` slice I) — nothing here re-renders card
+// markup of its own.
 //
-// **Where the two missing branches went.** Football and weather are
-// deliberately NOT routed through here: spec section 7's weather bullet
-// is explicit that the weather card "does not change", and section 11
-// keeps `IdleHoverPeek.tsx`'s own mechanism untouched, so both selections
-// reach that shipped component via its `prefer` prop instead (see
-// `StatusRailCard.tsx`'s own mount site and `PeekPreference`'s doc). A
-// second copy of either card here would be exactly the drift this plan's
-// "reuse what's shipped" discipline exists to prevent.
+// **Where the football branch went.** Football is deliberately NOT
+// routed through here: section 11 keeps `IdleHoverPeek.tsx`'s own
+// mechanism untouched, so that selection reaches that shipped component
+// via its `prefer` prop instead (see `StatusRailCard.tsx`'s own mount
+// site and `PeekPreference`'s doc). A second copy of the card here would
+// be exactly the drift this plan's "reuse what's shipped" discipline
+// exists to prevent.
 //
 // **Nothing selected is not a special case.** Spec section 7's "none"
 // page falls out of `selected === null` returning `null` here — with no
@@ -27,34 +26,17 @@ import type { AgentSessionView } from "../useAgentState";
 import type { StatusState } from "../useStatusState";
 import { AgentBelowBlock } from "./AgentBelowBlock";
 import type { Tab } from "./IconStrip";
-import type { MediaCommand } from "./MediaBelowBlock";
-import { MediaBelowBlock } from "./MediaBelowBlock";
 import { NewsBelowBlock, type NewsStoryView } from "./NewsBelowBlock";
 
-/// The tabs this component actually renders. Football/weather are
-/// handled by `IdleHoverPeek`'s `prefer` prop instead (see the header
-/// note) — expressed in the type so a caller can't route them here by
-/// accident and silently get the "none" page.
-export type TabBelowBlockTab = Exclude<Tab, "football" | "weather">;
+/// The tabs this component actually renders. Football is handled by
+/// `IdleHoverPeek`'s `prefer` prop instead (see the header note) —
+/// expressed in the type so a caller can't route it here by accident and
+/// silently get the "none" page.
+export type TabBelowBlockTab = Extract<Tab, "agent" | "news">;
 
 export function tabBelowBlockHandles(selected: Tab | null): selected is TabBelowBlockTab {
-  return selected === "agent" || selected === "music" || selected === "news";
+  return selected === "agent" || selected === "news";
 }
-
-// Transport dispatch is a rust-side concern, not a frontend one (spec
-// section 10: "a click on a transport button is detected and dispatched
-// to the vendored MediaRemote adapter ... from the rust side; the
-// frontend never talks to the adapter directly"). Slice C already landed
-// the dispatch half (`now_playing.rs`'s `MediaCommand`/`send_command`);
-// what is still missing is the ROUTING half — rust needs per-button
-// rects, the same way `hover.rs::icon_strip_rects` already gives it
-// per-icon rects, so a real click can be attributed to prev/play-pause/
-// next before it ever reaches this component. Until that lands, this is
-// a genuine no-op rather than an invented `invoke()`: adding one would
-// break the overlay's receive-only guarantee (CLAUDE.md's ipc/security
-// section), which spec section 10 marks as a STOP-and-report condition,
-// not a judgment call. Flagged follow-up, deliberately not improvised.
-const NOOP_MEDIA_COMMAND = (_command: MediaCommand): void => {};
 
 // No wire source exists for news story CONTENT. `StatusState.news`
 // carries the charge cycle only (`chargeFraction`/`chargeCount`/
@@ -82,7 +64,7 @@ export function TabBelowBlock({
   /// Optional for the same reason `StatusRailCard`'s own `status` prop
   /// is — the settings-window preview and most component tests render
   /// that card with no status wire at all. A missing wire simply means
-  /// no media session and a zero fresh-count.
+  /// a zero fresh-count.
   status: StatusState | undefined;
   agentSessions: AgentSessionView[];
   agentCapturedAtMs: number;
@@ -128,14 +110,6 @@ export function TabBelowBlock({
           viewedIndex={viewedSessionIndex}
           capturedAtMs={agentCapturedAtMs}
           nowMs={nowMs}
-        />
-      );
-    case "music":
-      return (
-        <MediaBelowBlock
-          media={status?.media.current ?? null}
-          expanded={expanded}
-          onCommand={NOOP_MEDIA_COMMAND}
         />
       );
     case "news":

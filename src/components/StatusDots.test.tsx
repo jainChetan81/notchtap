@@ -15,19 +15,6 @@ const ALL_ON: StatusState = {
   agent: { activeSessions: 0 },
   football: { enabled: true, live: { label: "Arsenal 2–0 Chelsea", minute: "45'" } },
   news: { enabled: true, chargeFraction: 0, chargeCount: 0, isCharged: false },
-  weather: {
-    enabled: true,
-    current: {
-      tempDisplay: "27°",
-      condition: "Cloudy",
-      isDay: true,
-      rainPct: null,
-      todayHighDisplay: null,
-      todayLowDisplay: null,
-      outlook: [],
-    },
-  },
-  media: { enabled: false, current: null },
 };
 
 const ALL_OFF: StatusState = {
@@ -36,18 +23,15 @@ const ALL_OFF: StatusState = {
   agent: { activeSessions: 0 },
   football: { enabled: false, live: null },
   news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
-  weather: { enabled: false, current: null },
-  media: { enabled: false, current: null },
 };
 
 describe("StatusDots", () => {
-  it("renders exactly three dots in Football/News/Weather order", () => {
+  it("renders exactly two dots in Football/News order", () => {
     const { container } = render(<StatusDots status={ALL_ON} />);
     const dots = container.querySelectorAll(".status-dot");
-    expect(dots).toHaveLength(3);
+    expect(dots).toHaveLength(2);
     expect(dots[0].classList.contains("football")).toBe(true);
     expect(dots[1].classList.contains("news")).toBe(true);
-    expect(dots[2].classList.contains("weather")).toBe(true);
   });
 
   it("marks every dot active when every source is enabled", () => {
@@ -77,18 +61,15 @@ describe("StatusDots", () => {
           agent: { activeSessions: 0 },
           football: { enabled: true, live: null },
           news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
-          weather: { enabled: true, current: null },
-          media: { enabled: false, current: null },
         }}
       />,
     );
-    const [football, news, weather] = Array.from(container.querySelectorAll(".status-dot"));
+    const [football, news] = Array.from(container.querySelectorAll(".status-dot"));
     expect(football.classList.contains("active")).toBe(true);
     expect(news.classList.contains("dim")).toBe(true);
-    expect(weather.classList.contains("active")).toBe(true);
   });
 
-  // plan 034's live-match/weather-reading text is old rail furniture — the
+  // plan 034's live-match text is old rail furniture — the
   // dots carry no text content at all, only color/glow state.
   it("carries no text content (dots only, no labels)", () => {
     const { container } = render(<StatusDots status={ALL_ON} />);
@@ -100,7 +81,7 @@ describe("StatusDots", () => {
   it("dims every dot when status is omitted", () => {
     const { container } = render(<StatusDots />);
     const dots = container.querySelectorAll(".status-dot");
-    expect(dots).toHaveLength(3);
+    expect(dots).toHaveLength(2);
     for (const dot of Array.from(dots)) {
       expect(dot.classList.contains("dim")).toBe(true);
     }
@@ -119,8 +100,6 @@ describe("StatusDots", () => {
             agent: { activeSessions: 0 },
             football: { enabled: true, live: null },
             news: { enabled: true, chargeFraction: 0, chargeCount: 0, isCharged: false },
-            weather: { enabled: true, current: null },
-            media: { enabled: false, current: null },
           }}
         />,
       );
@@ -157,8 +136,7 @@ describe("StatusDots", () => {
       render(<StatusDots status={ALL_ON} />);
       const football = screen.getByRole("img", { name: "Football — enabled" });
       const news = screen.getByRole("img", { name: "News — enabled" });
-      const weather = screen.getByRole("img", { name: "Weather — enabled" });
-      for (const dot of [football, news, weather]) {
+      for (const dot of [football, news]) {
         expect(dot.classList.contains("shape-enabled")).toBe(true);
       }
     });
@@ -167,8 +145,7 @@ describe("StatusDots", () => {
       render(<StatusDots status={ALL_OFF} />);
       const football = screen.getByRole("img", { name: "Football — disabled" });
       const news = screen.getByRole("img", { name: "News — disabled" });
-      const weather = screen.getByRole("img", { name: "Weather — disabled" });
-      for (const dot of [football, news, weather]) {
+      for (const dot of [football, news]) {
         expect(dot.classList.contains("shape-disabled")).toBe(true);
       }
     });
@@ -177,8 +154,7 @@ describe("StatusDots", () => {
       render(<StatusDots />);
       const football = screen.getByRole("img", { name: "Football — status unavailable" });
       const news = screen.getByRole("img", { name: "News — status unavailable" });
-      const weather = screen.getByRole("img", { name: "Weather — status unavailable" });
-      for (const dot of [football, news, weather]) {
+      for (const dot of [football, news]) {
         expect(dot.classList.contains("shape-unavailable")).toBe(true);
       }
     });
@@ -192,14 +168,11 @@ describe("StatusDots", () => {
             agent: { activeSessions: 0 },
             football: { enabled: true, live: null },
             news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
-            weather: { enabled: true, current: null },
-            media: { enabled: false, current: null },
           }}
         />,
       );
       expect(screen.getByRole("img", { name: "Football — enabled" })).toBeTruthy();
       expect(screen.getByRole("img", { name: "News — disabled" })).toBeTruthy();
-      expect(screen.getByRole("img", { name: "Weather — enabled" })).toBeTruthy();
     });
 
     // The core bug this plan fixes: the label must come from the RAW
@@ -216,8 +189,6 @@ describe("StatusDots", () => {
             agent: { activeSessions: 0 },
             football: { enabled: true, live: null },
             news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
-            weather: { enabled: true, current: null },
-            media: { enabled: false, current: null },
           }}
         />,
       );
@@ -294,11 +265,10 @@ describe("StatusDots", () => {
   });
 
   describe("StatusDots glyphs", () => {
-    it("renders the football, news, and weather glyphs as SVGs, not plain shape divs", () => {
+    it("renders the football and news glyphs as SVGs, not plain shape divs", () => {
       const { container } = render(<StatusDots />);
       expect(container.querySelector(".status-dot.football svg")).not.toBeNull();
       expect(container.querySelector(".status-dot.news svg")).not.toBeNull();
-      expect(container.querySelector(".status-dot.weather svg")).not.toBeNull();
     });
   });
 });

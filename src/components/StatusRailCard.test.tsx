@@ -207,38 +207,6 @@ const AGENT_RICH: SlotState = {
   remainingMs: 8000,
 };
 
-// plan 082: a weather ALERT card — the rust core attaches wx-condition/
-// wx-is-day marker pairs (plan 035's details channel, reused) so the
-// frontend can derive mood/glyph art. Weather art is keyed off those
-// markers, not `origin` (plan 096 put `origin` on the wire, but the
-// weather mood/glyph derivation predates that and has no reason to move
-// off the markers now).
-const WEATHER_ALERT: SlotState = {
-  state: "showing",
-  id: "wx-1",
-  title: "Rain expected soon",
-  body: "75% chance of rain within ~30 min",
-  eventType: "generic",
-  priority: "medium",
-  signal: "generic",
-  origin: "weather",
-  agentRuntime: null,
-  expanded: false,
-  source: null,
-  category: null,
-  publishedAtMs: null,
-  link: null,
-  subtitle: null,
-  details: [
-    { label: "wx-condition", value: "Rain" },
-    { label: "wx-is-day", value: "1" },
-  ],
-  queueTotal: 1,
-  queueDone: 0,
-  ttlMs: 8000,
-  remainingMs: 8000,
-};
-
 // plan 084: the structured espn meta (POST-083 contract) — a base fixture
 // plus a small helper to build a showing slot around it, one event/state
 // at a time, so each scorecard test only overrides what it's about.
@@ -441,8 +409,6 @@ describe("StatusRailCard", () => {
       agent: { activeSessions: 0 },
       football: { enabled: true, live: { label: "MTL 0–0 TOR", minute: "12'" } },
       news: { enabled: true, chargeFraction: 0, chargeCount: 0, isCharged: false },
-      weather: { enabled: false, current: null },
-      media: { enabled: false, current: null },
     };
     const inactive: StatusState = {
       paused: false,
@@ -450,8 +416,6 @@ describe("StatusRailCard", () => {
       agent: { activeSessions: 0 },
       football: { enabled: false, live: null },
       news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
-      weather: { enabled: false, current: null },
-      media: { enabled: false, current: null },
     };
 
     const { container, rerender } = render(
@@ -959,8 +923,8 @@ describe("StatusRailCard", () => {
     // `origin === "agent" ? "agent" : "cli"` ternary would mislabel
     // football live cards and weather cards as "cli". The kicker maps
     // every `SourceKind` explicitly (`GENERIC_MASTHEAD_KICKER`); "manual"
-    // is the `/notify` CLI path (-> "cli"), "football"/"weather" get
-    // their own label, and "news" (reachable here only because this
+    // is the `/notify` CLI path (-> "cli"), "football" gets
+    // its own label, and "news" (reachable here only because this
     // fixture's `eventType` stays "generic" regardless of the origin
     // override) is the defensive fallback that just echoes the origin
     // string.
@@ -969,9 +933,8 @@ describe("StatusRailCard", () => {
         football: "football",
         news: "news",
         manual: "cli",
-        weather: "weather",
       };
-      for (const origin of ["football", "news", "manual", "weather"] as const) {
+      for (const origin of ["football", "news", "manual"] as const) {
         const { container, unmount } = render(<StatusRailCard slot={genericSlot(origin)} />);
         expect(container.querySelector(".masthead")?.textContent).toContain(expectedKicker[origin]);
         expect(container.querySelector(".chip-cmux")).toBeNull();
@@ -1045,14 +1008,6 @@ describe("StatusRailCard", () => {
     it("resolves src-football for a football-origin slot", () => {
       const { container } = render(<StatusRailCard slot={GOAL} />);
       expect(belowBlockClasses(container)).toContain("src-football");
-    });
-
-    it("resolves src-weather alongside the existing wx-card mood classes, without breaking them", () => {
-      const { container } = render(<StatusRailCard slot={WEATHER_ALERT} />);
-      const classes = belowBlockClasses(container);
-      expect(classes).toContain("src-weather");
-      expect(classes).toContain("wx-card");
-      expect(classes).toContain("wx-rain");
     });
 
     it("keeps cat-* on a news slot and adds no src-* class", () => {
@@ -1194,108 +1149,6 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".card-assembly.idle")).not.toBeNull();
       expect(container.querySelector(".time-only")).not.toBeNull();
       expect(container.querySelector(".icon-strip")).not.toBeNull();
-    });
-  });
-
-  // plan 082: weather ALERT cards get their mood+glyph art from the
-  // wx-condition/wx-is-day marker pairs, and those markers must never
-  // leak into the visible detail cells (collapsed or expanded) — the
-  // marker-leak guard.
-  describe("weather ALERT card art (plan 082)", () => {
-    // plan 091: wx-card/mood/texture classes moved from the outer shell
-    // to `.below-block` — required for the mood gradient to actually
-    // paint (see the comment on the news-shade assertions above for the
-    // stacking-order reason) and matching the locked prototype's own
-    // placement. `classesOf` now reads `.below-block`'s className, not
-    // the outer `.card-assembly`'s.
-    function classesOf(container: HTMLElement): string[] {
-      return (container.querySelector(".below-block")?.className ?? "").split(" ").filter(Boolean);
-    }
-
-    it("applies the mood class and renders the condition glyph for a weather alert", () => {
-      const { container } = render(<StatusRailCard slot={WEATHER_ALERT} />);
-      const classes = classesOf(container);
-      expect(classes).toContain("wx-card");
-      expect(classes).toContain("wx-rain"); // Rain + day (wx-is-day: "1")
-      expect(classes).toContain("wx-rain-streaks");
-      const icon = container.querySelector("img.wx-icon");
-      expect(icon).not.toBeNull();
-      expect(icon?.getAttribute("src")).toMatch(/rain.*\.svg/);
-    });
-
-    it("keys night (wx-is-day: 0) to the rainy-night mood, not the day mood", () => {
-      const { container } = render(
-        <StatusRailCard
-          slot={{
-            ...WEATHER_ALERT,
-            details: [
-              { label: "wx-condition", value: "Rain" },
-              { label: "wx-is-day", value: "0" },
-            ],
-          }}
-        />,
-      );
-      const classes = classesOf(container);
-      expect(classes).toContain("wx-rainy-night");
-      expect(classes).not.toContain("wx-rain");
-    });
-
-    it("never renders wx-condition/wx-is-day as visible detail cells while collapsed", () => {
-      const { container } = render(<StatusRailCard slot={WEATHER_ALERT} />);
-      const compact = container.querySelector(".compact") as HTMLElement;
-      expect(within(compact).queryByText("wx-condition")).toBeNull();
-      expect(within(compact).queryByText("wx-is-day")).toBeNull();
-      expect(within(compact).queryByText("Rain")).toBeNull();
-      // plan 169: fact pills (`.detail-facts`/`.fact-pill`), not the old
-      // `.detail-label`/`.detail-value` stack.
-      expect(compact.querySelector(".detail-facts")).toBeNull();
-      expect(compact.querySelector(".fact-pill")).toBeNull();
-    });
-
-    it("never renders wx-condition/wx-is-day as visible detail cells while expanded (Manifest)", () => {
-      const { container } = render(<StatusRailCard slot={{ ...WEATHER_ALERT, expanded: true }} />);
-      const manifest = container.querySelector(".manifest") as HTMLElement;
-      expect(within(manifest).queryByText("wx-condition")).toBeNull();
-      expect(within(manifest).queryByText("wx-is-day")).toBeNull();
-      // the manifest's Message cell legitimately contains the alert body
-      // text, so assert there's no *label* cell for either marker rather
-      // than banning the word "Rain" outright.
-      const labels = Array.from(manifest.querySelectorAll(".fp-label")).map((el) => el.textContent);
-      expect(labels).not.toContain("wx-condition");
-      expect(labels).not.toContain("wx-is-day");
-    });
-
-    it("falls back to the neutral overcast mood for an unrecognized condition word", () => {
-      const { container } = render(
-        <StatusRailCard
-          slot={{
-            ...WEATHER_ALERT,
-            details: [
-              { label: "wx-condition", value: "—" },
-              { label: "wx-is-day", value: "1" },
-            ],
-          }}
-        />,
-      );
-      // plan 091: mood classes live on `.below-block` now.
-      const block = container.querySelector(".below-block");
-      expect(block?.className).toContain("wx-overcast");
-    });
-
-    // Regression pin: a generic card WITHOUT wx markers (the existing
-    // AGENT_RICH fixture) must render exactly as it did before this plan —
-    // no wx-card class, no glyph image, and its own (non-wx) detail pairs
-    // still render normally.
-    it("renders a non-weather generic card byte-identically (no wx classes, no glyph, own details intact)", () => {
-      const { container } = render(<StatusRailCard slot={AGENT_RICH} />);
-      const block = container.querySelector(".below-block");
-      expect(block?.className).not.toContain("wx-card");
-      expect(container.querySelector("img.wx-icon")).toBeNull();
-      // detail pairs are compact-only now (2026-07-24 declutter) — assert
-      // on `.compact`, not the manifest.
-      const compact = container.querySelector(".compact") as HTMLElement;
-      expect(within(compact).getByText("Tool")).toBeTruthy();
-      expect(within(compact).getByText("Bash")).toBeTruthy();
     });
   });
 
@@ -2061,30 +1914,17 @@ describe("StatusRailCard", () => {
   // component's own behavior in depth; these pin how StatusRailCard
   // actually wires `hovered`/`status` into both of them.
   describe("idle hover-expanded peek/reveal (plan 093)", () => {
-    const WEATHER_STATUS: StatusState = {
+    const AMBIENT_STATUS: StatusState = {
       paused: false,
       waiting: 0,
       agent: { activeSessions: 0 },
-      football: { enabled: false, live: null },
+      football: { enabled: true, live: { label: "MTL 1-0 TOR", minute: "63'" } },
       news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
-      weather: {
-        enabled: true,
-        current: {
-          tempDisplay: "27°",
-          condition: "Cloudy",
-          isDay: true,
-          rainPct: null,
-          todayHighDisplay: null,
-          todayLowDisplay: null,
-          outlook: [],
-        },
-      },
-      media: { enabled: false, current: null },
     };
 
     it("mounts no below-block while idle and not hovered (flanks stay rounded — 091's shell untouched)", () => {
       const { container } = render(
-        <StatusRailCard slot={{ state: "empty" }} status={WEATHER_STATUS} hovered={false} />,
+        <StatusRailCard slot={{ state: "empty" }} status={AMBIENT_STATUS} hovered={false} />,
       );
       expect(container.querySelector(".below-block")).toBeNull();
     });
@@ -2095,7 +1935,7 @@ describe("StatusRailCard", () => {
     // un-round while the peek is open" true without editing that rule.
     it("mounts a .below-block.idle-peek while idle and hovered", () => {
       const { container } = render(
-        <StatusRailCard slot={{ state: "empty" }} status={WEATHER_STATUS} hovered={true} />,
+        <StatusRailCard slot={{ state: "empty" }} status={AMBIENT_STATUS} hovered={true} />,
       );
       const peek = container.querySelector(".below-block.idle-peek");
       expect(peek).not.toBeNull();
@@ -2705,12 +2545,12 @@ describe("exit-to-bare CSS convergence invariant (plan 124 F4)", () => {
 });
 
 // ---- plan 171 (tab-notch redesign, slice K): the icon strip's mount
-// gate, the eq bars, and the selection-driven below-block swap, all
-// exercised through the whole StatusRailCard tree. Each mounted
-// component's OWN behavior is already covered in depth by its own file
-// (IconStrip/EqBars/AgentBelowBlock/MediaBelowBlock/NewsBelowBlock/
-// IdleHoverPeek) — these pin only what THIS component actually decides:
-// when each one mounts, and which props it drives them with.
+// gate and the selection-driven below-block swap, all exercised through
+// the whole StatusRailCard tree. Each mounted component's OWN behavior
+// is already covered in depth by its own file (IconStrip/
+// AgentBelowBlock/NewsBelowBlock/IdleHoverPeek) — these pin only what
+// THIS component actually decides: when each one mounts, and which
+// props it drives them with.
 describe("tab-notch integration (plan 171, slice K)", () => {
   afterEach(cleanup);
 
@@ -2720,35 +2560,11 @@ describe("tab-notch integration (plan 171, slice K)", () => {
     agent: { activeSessions: 0 },
     football: { enabled: false, live: null },
     news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
-    weather: { enabled: false, current: null },
-    media: { enabled: false, current: null },
-  };
-
-  const TRACK: NonNullable<StatusState["media"]["current"]> = {
-    title: "Midnight City",
-    artist: "M83",
-    album: "Hurry Up, We're Dreaming",
-    playing: true,
-    elapsedMs: 1500,
-    durationMs: 243_000,
-    capturedAtMs: 1_753_000_000_000,
-    appBundleId: "app.zen-browser.zen",
-  };
-
-  const WEATHER: NonNullable<StatusState["weather"]["current"]> = {
-    tempDisplay: "27°",
-    condition: "Cloudy",
-    isDay: true,
-    rainPct: null,
-    todayHighDisplay: null,
-    todayLowDisplay: null,
-    outlook: [],
   };
 
   const LIVE_MATCH_STATUS: StatusState = {
     ...QUIET,
     football: { enabled: true, live: { label: "Arsenal 2–0 Chelsea", minute: "45'" } },
-    weather: { enabled: true, current: WEATHER },
   };
 
   function agentSession(overrides: Partial<AgentSessionView> = {}): AgentSessionView {
@@ -2787,20 +2603,14 @@ describe("tab-notch integration (plan 171, slice K)", () => {
           status={{
             ...QUIET,
             agent: { activeSessions: 2 },
-            media: { enabled: true, current: { ...TRACK, playing: false } },
           }}
         />,
       );
       // agent: a registered session means present AND live
       expect(container.querySelector(".icon.agent")?.className).toContain("is-live");
-      // music: loaded but paused — present, deliberately not live
-      const music = container.querySelector(".icon.music")?.className ?? "";
-      expect(music).toContain("is-present");
-      expect(music).not.toContain("is-live");
       // football: nothing in play, so not present at all
       expect(container.querySelector(".icon.football")?.className).not.toContain("is-present");
-      // weather/news: always present whenever the strip is up
-      expect(container.querySelector(".icon.weather")?.className).toContain("is-present");
+      // news: always present whenever the strip is up
       expect(container.querySelector(".icon.news")?.className).toContain("is-present");
     });
 
@@ -2834,49 +2644,16 @@ describe("tab-notch integration (plan 171, slice K)", () => {
 
     it("marks the selected tab, and only that one", () => {
       const { container } = render(
-        <StatusRailCard slot={{ state: "empty" }} status={QUIET} selectedTab="weather" />,
+        <StatusRailCard slot={{ state: "empty" }} status={QUIET} selectedTab="news" />,
       );
-      expect(container.querySelector(".icon.weather")?.className).toContain("is-selected");
-      expect(container.querySelector(".icon.news")?.className).not.toContain("is-selected");
-    });
-  });
-
-  describe("the rest-state eq bars (spec §4)", () => {
-    // the face's own delayed reveal (IdleFace.tsx's REVEAL_DELAY_MS
-    // timer) is covered by the "idle face" describe block above — this
-    // only pins that the bars share the face's cutout cluster and start
-    // silent, so nothing here waits on that timer.
-    it("renders the bars inside the idle face's own rest cluster, silent by default", () => {
-      const { container } = render(<StatusRailCard slot={{ state: "empty" }} status={QUIET} />);
-      const eq = container.querySelector(".rest-cluster .eq");
-      expect(eq).not.toBeNull();
-      expect(eq?.className).not.toContain("playing");
-    });
-
-    it("stays silent for a loaded-but-paused track", () => {
-      const { container } = render(
-        <StatusRailCard
-          slot={{ state: "empty" }}
-          status={{ ...QUIET, media: { enabled: true, current: { ...TRACK, playing: false } } }}
-        />,
-      );
-      expect(container.querySelector(".eq")?.className).not.toContain("playing");
-    });
-
-    it("plays only while audio is genuinely playing", () => {
-      const { container } = render(
-        <StatusRailCard
-          slot={{ state: "empty" }}
-          status={{ ...QUIET, media: { enabled: true, current: TRACK } }}
-        />,
-      );
-      expect(container.querySelector(".eq")?.className).toContain("playing");
+      expect(container.querySelector(".icon.news")?.className).toContain("is-selected");
+      expect(container.querySelector(".icon.agent")?.className).not.toContain("is-selected");
     });
   });
 
   describe("the selection-driven below-block swap (spec §7)", () => {
     function hoveredIdle(
-      selectedTab: "agent" | "football" | "music" | "weather" | "news" | null,
+      selectedTab: "agent" | "football" | "news" | null,
       status: StatusState,
       sessions: AgentSessionView[] = [],
     ) {
@@ -2893,23 +2670,9 @@ describe("tab-notch integration (plan 171, slice K)", () => {
     }
 
     it("with nothing selected, keeps the shipped ambient peek — spec §11's untouched mechanism", () => {
-      const { container } = hoveredIdle(null, {
-        ...QUIET,
-        weather: { enabled: true, current: WEATHER },
-      });
+      const { container } = hoveredIdle(null, QUIET);
       expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
-      expect(container.querySelector('[data-testid="media-below-block"]')).toBeNull();
-    });
-
-    it("selecting music swaps the ambient peek out for the media below-block", () => {
-      const { container } = hoveredIdle("music", {
-        ...QUIET,
-        weather: { enabled: true, current: WEATHER },
-        media: { enabled: true, current: TRACK },
-      });
-      expect(container.querySelector('[data-testid="media-below-block"]')).not.toBeNull();
-      expect(container.querySelector(".below-block.idle-peek")).toBeNull();
-      expect(screen.getByText("Midnight City")).toBeTruthy();
+      expect(container.querySelector('[data-testid="agent-below-block"]')).toBeNull();
     });
 
     it("selecting agent mounts the viewed session's hero", () => {
@@ -2940,20 +2703,8 @@ describe("tab-notch integration (plan 171, slice K)", () => {
     it("selecting news keeps the ambient peek, since no story wire exists to fill the block", () => {
       const { container } = hoveredIdle("news", {
         ...QUIET,
-        weather: { enabled: true, current: WEATHER },
         news: { enabled: true, chargeFraction: 1, chargeCount: 3, isCharged: true },
       });
-      expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
-      expect(container.querySelectorAll(".below-block").length).toBe(1);
-    });
-
-    it("selecting music with nothing playing keeps the ambient peek", () => {
-      const { container } = hoveredIdle("music", {
-        ...QUIET,
-        weather: { enabled: true, current: WEATHER },
-        media: { enabled: true, current: null },
-      });
-      expect(container.querySelector('[data-testid="media-below-block"]')).toBeNull();
       expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
       expect(container.querySelectorAll(".below-block").length).toBe(1);
     });
@@ -2963,11 +2714,9 @@ describe("tab-notch integration (plan 171, slice K)", () => {
     // a merely-working agent has something to render, so the peek yields
     // to the real card.
     it("selecting agent with live sessions mounts the agent below-block and closes the peek", () => {
-      const { container } = hoveredIdle(
-        "agent",
-        { ...QUIET, weather: { enabled: true, current: WEATHER }, agent: { activeSessions: 1 } },
-        [agentSession()],
-      );
+      const { container } = hoveredIdle("agent", { ...QUIET, agent: { activeSessions: 1 } }, [
+        agentSession(),
+      ]);
       expect(container.querySelector('[data-testid="agent-below-block"]')).not.toBeNull();
       expect(container.querySelector(".below-block.idle-peek")).toBeNull();
       expect(container.querySelectorAll(".below-block").length).toBe(1);
@@ -3040,25 +2789,15 @@ describe("tab-notch integration (plan 171, slice K)", () => {
       expect(screen.getByText(/alpha-repo/)).toBeTruthy();
     });
 
-    it("selecting weather shows the shipped weather card, even while a match is live", () => {
-      const { container } = hoveredIdle("weather", LIVE_MATCH_STATUS);
-      expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
-      expect(container.querySelector(".wx-peek-readout")).not.toBeNull();
-      expect(container.querySelector(".idle-reveal-scorecard")).toBeNull();
-    });
-
-    it("selecting football shows the shipped scorecard reveal, even with weather available", () => {
+    it("selecting football shows the shipped scorecard reveal", () => {
       const { container } = hoveredIdle("football", LIVE_MATCH_STATUS);
       expect(container.querySelector(".idle-reveal-scorecard")).not.toBeNull();
-      expect(container.querySelector(".wx-peek-readout")).toBeNull();
     });
 
     it("never mounts more than one below-block at a time (the rounding law depends on it)", () => {
-      const { container } = hoveredIdle("music", {
-        ...QUIET,
-        weather: { enabled: true, current: WEATHER },
-        media: { enabled: true, current: TRACK },
-      });
+      const { container } = hoveredIdle("agent", { ...QUIET, agent: { activeSessions: 1 } }, [
+        agentSession(),
+      ]);
       expect(container.querySelectorAll(".below-block").length).toBe(1);
     });
 
@@ -3066,9 +2805,11 @@ describe("tab-notch integration (plan 171, slice K)", () => {
       const { container } = render(
         <StatusRailCard
           slot={{ state: "empty" }}
-          status={{ ...QUIET, media: { enabled: true, current: TRACK } }}
+          status={{ ...QUIET, agent: { activeSessions: 1 } }}
           hovered={false}
-          selectedTab="music"
+          selectedTab="agent"
+          agentSessions={[agentSession()]}
+          agentCapturedAtMs={1_000_000}
         />,
       );
       expect(container.querySelector(".below-block")).toBeNull();
@@ -3110,21 +2851,8 @@ describe("tab-notch integration (plan 171, slice K)", () => {
       expect(block?.className).toContain("below-block");
     });
 
-    it("places the media tab's card through that same wrapper, not a second mechanism", () => {
-      const { container } = hoveredIdle("music", {
-        ...QUIET,
-        media: { enabled: true, current: TRACK },
-      });
-      const slot = container.querySelector(".tab-below-slot");
-      expect(slot?.parentElement).toBe(container.querySelector(".card-assembly"));
-      expect(slot?.querySelector('[data-testid="media-below-block"]')).not.toBeNull();
-    });
-
     it("leaves the ambient peek's own already-direct mount alone — it needs no wrapper", () => {
-      const { container } = hoveredIdle(null, {
-        ...QUIET,
-        weather: { enabled: true, current: WEATHER },
-      });
+      const { container } = hoveredIdle(null, QUIET);
       const peek = container.querySelector(".below-block.idle-peek");
       expect(peek?.parentElement).toBe(container.querySelector(".card-assembly"));
       expect(container.querySelector(".tab-below-slot")).toBeNull();
@@ -3181,12 +2909,14 @@ describe("tab-notch integration (plan 171, slice K)", () => {
       const { container } = render(
         <StatusRailCard
           slot={GOAL}
-          status={{ ...QUIET, media: { enabled: true, current: TRACK } }}
+          status={{ ...QUIET, agent: { activeSessions: 1 } }}
           hovered={true}
-          selectedTab="music"
+          selectedTab="agent"
+          agentSessions={[agentSession()]}
+          agentCapturedAtMs={1_000_000}
         />,
       );
-      expect(container.querySelector('[data-testid="media-below-block"]')).toBeNull();
+      expect(container.querySelector('[data-testid="agent-below-block"]')).toBeNull();
       expect(screen.getByText("GOAL")).toBeTruthy();
     });
   });

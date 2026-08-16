@@ -1,10 +1,8 @@
 import {
   Bot,
-  CloudSun,
   Command,
   History,
   Info,
-  KeyRound,
   ListOrdered,
   type LucideIcon,
   Newspaper,
@@ -24,7 +22,6 @@ import { settingsInvoke } from "./ipc";
 import { AboutSection } from "./sections/AboutSection";
 import { AgentsSection } from "./sections/AgentsSection";
 import { AppearanceSection } from "./sections/AppearanceSection";
-import { ConnectorsSection } from "./sections/ConnectorsSection";
 import { DiagnosticsSection } from "./sections/DiagnosticsSection";
 import { FootballSection } from "./sections/FootballSection";
 import { GeneralSection } from "./sections/GeneralSection";
@@ -32,8 +29,7 @@ import { HistorySection } from "./sections/HistorySection";
 import { NewsSection } from "./sections/NewsSection";
 import { QueueSection } from "./sections/QueueSection";
 import { ShortcutsSection } from "./sections/ShortcutsSection";
-import { WeatherSection } from "./sections/WeatherSection";
-import type { Config, SecretStatus } from "./types";
+import type { Config } from "./types";
 
 // Type re-exports (plan 119): SettingsApp.tsx used to define every wire
 // type inline; they now live in ./types so sections/controls/ipc can
@@ -53,17 +49,13 @@ export type {
   QueueItemSummary,
   RestingState,
   RssFeedConfig,
-  SecretStatus,
   SourceKind,
-  Units,
 } from "./types";
 
 type SectionId =
   | "general"
   | "football"
   | "news"
-  | "weather"
-  | "connectors"
   | "agents"
   | "shortcuts"
   | "appearance"
@@ -80,8 +72,6 @@ const navigation: ReadonlyArray<{
   { id: "general", label: "General", icon: SlidersHorizontal },
   { id: "football", label: "Football", icon: Trophy },
   { id: "news", label: "News", icon: Newspaper },
-  { id: "weather", label: "Weather", icon: CloudSun },
-  { id: "connectors", label: "Connectors & Keys", icon: KeyRound },
   { id: "agents", label: "Agents", icon: Bot },
   { id: "shortcuts", label: "Shortcuts", icon: Command },
   { id: "appearance", label: "Appearance", icon: Palette },
@@ -107,50 +97,39 @@ const sectionCopy: Record<SectionId, { index: string; title: string; description
     title: "News",
     description: "Manage RSS sources and the pace of headline delivery.",
   },
-  weather: {
-    index: "04",
-    title: "Weather",
-    description:
-      "Show ambient conditions in the idle rail and alert on rain and temperature thresholds.",
-  },
-  connectors: {
-    index: "05",
-    title: "Connectors & Keys",
-    description: "Manage write-only credentials for outbound integrations.",
-  },
   agents: {
-    index: "06",
+    index: "04",
     title: "Agents",
     description:
       "Accept coding-agent lifecycle events, tune notification priority, and set up each adapter.",
   },
   shortcuts: {
-    index: "07",
+    index: "05",
     title: "Shortcuts",
     description: "A reference for the global controls available while notchtap runs.",
   },
   appearance: {
-    index: "08",
+    index: "06",
     title: "Appearance",
     description: "Preview the overlay's shape and animations, and send live test notifications.",
   },
   diagnostics: {
-    index: "09",
+    index: "07",
     title: "Diagnostics",
     description: "Read the app's recent log lines without leaving settings.",
   },
   history: {
-    index: "10",
+    index: "08",
     title: "History",
     description: "Review and clear recorded past notifications.",
   },
   queue: {
-    index: "11",
+    index: "09",
     title: "Queue",
     description: "See what's waiting behind the visible card, and skip or clear it.",
   },
   about: {
-    index: "12",
+    index: "10",
     title: "About",
     description: "What notchtap is, how to use it, and live process/system stats.",
   },
@@ -237,7 +216,6 @@ export function SettingsApp() {
   const [config, setConfig] = useState<Config | null>(null);
   const [lastLoadedConfig, setLastLoadedConfig] = useState<Config | null>(null);
   const [defaults, setDefaults] = useState<Config | null>(null);
-  const [secretStatus, setSecretStatus] = useState<SecretStatus | null>(null);
   const [espnLeaguesText, setEspnLeaguesText] = useState("");
   const [rssFeedsText, setRssFeedsText] = useState("");
   const [rssTopicsText, setRssTopicsText] = useState("");
@@ -268,20 +246,15 @@ export function SettingsApp() {
     setErrors([]);
   }
 
-  async function refreshSecretStatus() {
-    setSecretStatus(await settingsInvoke("get_secret_status"));
-  }
-
   // biome-ignore lint/correctness/useExhaustiveDependencies: mount-only config loader — applyForm is re-created every render, so adding it would re-invoke get_config on every render.
   useEffect(() => {
     let active = true;
-    Promise.all([settingsInvoke("get_config"), settingsInvoke("get_secret_status")])
-      .then(([loadedConfig, loadedStatus]) => {
+    settingsInvoke("get_config")
+      .then((loadedConfig) => {
         if (active) {
           const loaded = copyConfig(loadedConfig);
           setLastLoadedConfig(loaded);
           applyForm(loaded);
-          setSecretStatus(loadedStatus);
         }
       })
       .catch((reason: unknown) => {
@@ -458,15 +431,6 @@ export function SettingsApp() {
                         patchConfig={patchConfig}
                         setFeedsText={setRssFeedsText}
                         setTopicsText={setRssTopicsText}
-                      />
-                    ) : null}
-                    {activeSection === "weather" ? (
-                      <WeatherSection config={config} patchConfig={patchConfig} />
-                    ) : null}
-                    {activeSection === "connectors" ? (
-                      <ConnectorsSection
-                        secretStatus={secretStatus}
-                        refreshSecretStatus={refreshSecretStatus}
                       />
                     ) : null}
                     {activeSection === "agents" ? (

@@ -11,7 +11,7 @@
    (vendor/shared-ui/design/tokens.css) rather than minting new colors:
    --overlay-amber (waiting — same "needs attention" meaning it already
    carries for the agent-origin hairline (plan 137: renamed from
-   cmux-origin) and the weather/business category dot), --overlay-coral
+   cmux-origin) and the business category dot), --overlay-coral
    (failure), --overlay-blue (working —
    the same blue as Settings' primary accent), --overlay-green
    (completed). Stale reads as a dim, desaturated neutral — deliberately

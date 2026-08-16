@@ -13,13 +13,11 @@ use std::time::{Duration, Instant};
 use tokio::sync::Mutex;
 
 use crate::error::QueueError;
-use crate::event::{emit_slot_state, Event, RotationSpec, SlotState, SourceKind};
+use crate::event::{emit_slot_state, Event, RotationSpec, SlotState};
 use crate::history::HistoryStore;
-use crate::notifier::ConnectorHandle;
 use crate::queue::SingleSlotQueue;
 use crate::status::{
-    emit_status_state, status_state_if_changed, LiveMatchSummary, NowPlayingSummary, StatusInputs,
-    StatusState, WeatherSummary,
+    emit_status_state, status_state_if_changed, LiveMatchSummary, StatusInputs, StatusState,
 };
 
 /// A single ambient status side-channel: an `Arc<Mutex<Option<T>>>` plus
@@ -27,9 +25,9 @@ use crate::status::{
 /// read/clone/drop snapshot shape, both previously hand-duplicated once
 /// per channel (plan 073 generalization — see `update_live_match`'s doc
 /// comment for the history this replaces). Parameterized by the summary
-/// type so `live`/`weather` (and any future ambient channel) share one
+/// type so `live` (and any future ambient channel) share one
 /// implementation instead of copying the ~10-line lock/compare/store/wake
-/// block per channel. Deliberately NOT `derive(Clone)`: that would add an
+/// block per channel (only `live` remains today). Deliberately NOT `derive(Clone)`: that would add an
 /// unneeded `T: Clone` bound on the derive itself (the manual impl below
 /// only ever clones the `Arc`, never `T`).
 struct AmbientSlot<T> {
@@ -55,8 +53,7 @@ impl<T> Clone for AmbientSlot<T> {
 impl<T: Clone + PartialEq> AmbientSlot<T> {
     /// Locks, compares to the new value, stores it, and wakes `wake`
     /// ONLY if it changed — the same compare-then-store-then-wake shape
-    /// `update_live_match`/`update_weather` each used to implement
-    /// inline. The handle is written independently of the queue lock;
+    /// `update_live_match` used to implement inline. The handle is written independently of the queue lock;
     /// nobody holds both at the same time (callers pass `&self.wake`,
     /// never the queue).
     fn update(&self, value: Option<T>, wake: &tokio::sync::Notify) {
@@ -87,9 +84,9 @@ impl<T: Clone + PartialEq> AmbientSlot<T> {
     }
 }
 
-/// Owns the queue, the heartbeat wake, the app handle, the Connectors,
-/// and (plan 034's territory, folded into plan 037) the live-match handle
-/// and source-enabled flags the rotation loop needs to also be the sole
+/// Owns the queue, the heartbeat wake, the app handle, and (plan 034's
+/// territory, folded into plan 037) the live-match handle and
+/// source-enabled flags the rotation loop needs to also be the sole
 /// StatusState emitter — all private. Nothing outside this module can
 /// lock the queue or touch the wake, so the mutate→wake→emit protocol is
 /// structural, not conventional.
@@ -97,21 +94,9 @@ pub struct Engine<R: tauri::Runtime = tauri::Wry> {
     queue: Arc<Mutex<SingleSlotQueue>>,
     wake: Arc<tokio::sync::Notify>,
     app: tauri::AppHandle<R>,
-    connectors: Arc<Vec<ConnectorHandle>>,
     live: AmbientSlot<LiveMatchSummary>,
-    weather: AmbientSlot<WeatherSummary>,
-    /// plan 104: the now-playing ambient summary — same `AmbientSlot`
-    /// shape as `live`/`weather`, fed by `now_playing.rs`'s supervised
-    /// streaming child instead of a timer-polled http fetch.
-    now_playing: AmbientSlot<NowPlayingSummary>,
     espn_enabled: bool,
     rss_enabled: bool,
-    weather_enabled: bool,
-    /// plan 104: the panel-editable half of the two-gate design
-    /// (`config.rs`'s `now_playing_enabled` doc comment) — gates
-    /// `MediaStatus.enabled`/`current` in the status assembly exactly like
-    /// `weather_enabled` gates `WeatherStatus`.
-    now_playing_enabled: bool,
     /// plan 088: `None` when history is disabled (the default) — the
     /// `accept` hook is then a no-op and behavior is byte-identical to
     /// pre-088. `Some` when the operator opted in and the store opened
@@ -131,14 +116,9 @@ impl<R: tauri::Runtime> Clone for Engine<R> {
             queue: self.queue.clone(),
             wake: self.wake.clone(),
             app: self.app.clone(),
-            connectors: self.connectors.clone(),
             live: self.live.clone(),
-            weather: self.weather.clone(),
-            now_playing: self.now_playing.clone(),
             espn_enabled: self.espn_enabled,
             rss_enabled: self.rss_enabled,
-            weather_enabled: self.weather_enabled,
-            now_playing_enabled: self.now_playing_enabled,
             history: self.history.clone(),
             tab_wire: self.tab_wire.clone(),
         }
@@ -159,21 +139,12 @@ impl<R: tauri::Runtime> Engine<R> {
     // the codebase's existing precedent of allowing a targeted clippy
     // lint with a comment (see `SlotState`'s `large_enum_variant` allow
     // in event.rs) rather than restructuring around it.
-    // plan 104 pushed this to 9 positional params by adding
-    // `now_playing_enabled` alongside `weather_enabled` — same accepted
-    // tradeoff plan 088's own comment above this allow already explains
-    // for `history`: a named-field params struct would touch every one
-    // of this method's call sites' shape, which is a bigger surface
-    // change than either plan's scope.
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         queue: SingleSlotQueue,
         app: tauri::AppHandle<R>,
-        connectors: Arc<Vec<ConnectorHandle>>,
         espn_enabled: bool,
         rss_enabled: bool,
-        weather_enabled: bool,
-        now_playing_enabled: bool,
         history: Option<Arc<HistoryStore>>,
         tab_wire: Arc<crate::tabs::TabWire>,
     ) -> Self {
@@ -181,14 +152,9 @@ impl<R: tauri::Runtime> Engine<R> {
             queue: Arc::new(Mutex::new(queue)),
             wake: Arc::new(tokio::sync::Notify::new()),
             app,
-            connectors,
             live: AmbientSlot::new(),
-            weather: AmbientSlot::new(),
-            now_playing: AmbientSlot::new(),
             espn_enabled,
             rss_enabled,
-            weather_enabled,
-            now_playing_enabled,
             history,
             tab_wire,
         }
@@ -283,24 +249,21 @@ impl<R: tauri::Runtime> Engine<R> {
     }
 
     /// The one ingest path (replaces http's old shared enqueue helper,
-    /// rss's inline loop, AND espn's old fan-out helper): enqueue with the
-    /// mutate→wake→emit protocol, then Connector fan-out. The CONTEXT.md
-    /// Connector rule is encoded HERE: an Event whose origin is
-    /// SourceKind::News is never offered. QueueFull returns early — no
-    /// wake, no offer (the old shared helper's semantics): a malformed
-    /// `/notify` request never reaches this function at all (the
-    /// title/body `MissingField` checks in `notify_handler` return a 400
-    /// before an `Event` is even constructed), and every accepted event
-    /// is fanned out, emitted, and used to wake the rotation loop —
-    /// routed through this one shared method rather than duplicated at
-    /// each caller, so a mutation without a wake is structurally
-    /// impossible to express here.
+    /// rss's inline loop, AND espn's old fan-out helper): enqueue with
+    /// the mutate→wake→emit protocol. QueueFull returns early — no wake
+    /// (the old shared helper's semantics): a malformed `/notify` request
+    /// never reaches this function at all (the title/body `MissingField`
+    /// checks in `notify_handler` return a 400 before an `Event` is even
+    /// constructed), and every accepted event is emitted and used to
+    /// wake the rotation loop — routed through this one shared method
+    /// rather than duplicated at each caller, so a mutation without a
+    /// wake is structurally impossible to express here.
     pub async fn accept(
         &self,
         event: Event,
         bypass_pause_when_slot_empty: bool,
     ) -> Result<(), QueueError> {
-        let to_offer = event.clone();
+        let recorded = event.clone();
         let now = Instant::now();
         {
             let mut q = self.queue.lock().await;
@@ -310,10 +273,10 @@ impl<R: tauri::Runtime> Engine<R> {
                 q.enqueue(event, now)
             };
             if let Err(ref e) = enqueue_result {
-                tracing::warn!(id = %to_offer.id, origin = ?to_offer.origin, error = ?e, "accept: enqueue rejected");
+                tracing::warn!(id = %recorded.id, origin = ?recorded.origin, error = ?e, "accept: enqueue rejected");
             }
             enqueue_result?;
-            tracing::debug!(id = %to_offer.id, origin = ?to_offer.origin, priority = ?to_offer.priority, "accept: enqueued");
+            tracing::debug!(id = %recorded.id, origin = ?recorded.origin, priority = ?recorded.priority, "accept: enqueued");
             // emit under the lock, same fix and rationale as `apply`
             // above (see its doc comment) — a preempted `accept`/`apply`
             // must never be able to deliver a stale slot-state after a
@@ -328,11 +291,6 @@ impl<R: tauri::Runtime> Engine<R> {
                 emit_slot_state(&self.app, state);
             }
         }
-        if to_offer.origin != SourceKind::News {
-            for connector in self.connectors.iter() {
-                connector.offer(&to_offer);
-            }
-        }
         // plan 088: best-effort history append. ONE-SHOT ONLY —
         // `Recurring` is the ambient live-scoreboard card, which
         // topic-supersedes on every poll cycle; recording it would bury
@@ -342,9 +300,9 @@ impl<R: tauri::Runtime> Engine<R> {
         // Log id/origin only — never title/body, matching this function's
         // existing content-clean logging.
         if let Some(store) = &self.history {
-            if matches!(to_offer.rotation, RotationSpec::OneShot { .. }) {
-                if let Err(e) = store.append(&to_offer) {
-                    tracing::warn!(id = %to_offer.id, origin = ?to_offer.origin, error = %e, "history append failed");
+            if matches!(recorded.rotation, RotationSpec::OneShot { .. }) {
+                if let Err(e) = store.append(&recorded) {
+                    tracing::warn!(id = %recorded.id, origin = ?recorded.origin, error = %e, "history append failed");
                 }
             }
         }
@@ -354,28 +312,10 @@ impl<R: tauri::Runtime> Engine<R> {
     /// Replaces the espn poller's direct `live.lock().unwrap()` +
     /// `wake.notify_waiters()` dance (poller.rs, plan 034): compares to
     /// the new summary, stores it, and wakes the rotation loop ONLY if it
-    /// changed — via the shared `AmbientSlot::update` (plan 073; was
-    /// hand-written inline here and in `update_weather` until then). Not
+    /// changed — via the shared `AmbientSlot::update` (plan 073). Not
     /// `apply`/`accept`: it never touches the queue.
     pub fn update_live_match(&self, summary: Option<LiveMatchSummary>) {
         self.live.update(summary, &self.wake);
-    }
-
-    /// The weather twin of `update_live_match` (plan 040 Part B): the
-    /// ambient weather summary the weather poller folds into the idle
-    /// rail. Same `AmbientSlot::update` call, same shape, just a
-    /// different summary type.
-    pub fn update_weather(&self, summary: Option<WeatherSummary>) {
-        self.weather.update(summary, &self.wake);
-    }
-
-    /// The now-playing twin of `update_weather` (plan 104): the ambient
-    /// media summary `now_playing.rs`'s supervised streaming child pushes
-    /// on every changed adapter diff line. Same `AmbientSlot::update`
-    /// call, same shape, just a different summary type and producer
-    /// lifecycle (a held-open child, not a timer).
-    pub fn update_now_playing(&self, summary: Option<NowPlayingSummary>) {
-        self.now_playing.update(summary, &self.wake);
     }
 
     /// The rotation loop (formerly lib.rs spawn_heartbeat), moved inside
@@ -400,12 +340,8 @@ impl<R: tauri::Runtime> Engine<R> {
         let queue = self.queue.clone();
         let wake = self.wake.clone();
         let live = self.live.clone();
-        let weather = self.weather.clone();
-        let now_playing = self.now_playing.clone();
         let espn_enabled = self.espn_enabled;
         let rss_enabled = self.rss_enabled;
-        let weather_enabled = self.weather_enabled;
-        let now_playing_enabled = self.now_playing_enabled;
         let tab_wire = self.tab_wire.clone();
         tauri::async_runtime::spawn(async move {
             let mut last_status: Option<StatusState> = None;
@@ -422,8 +358,6 @@ impl<R: tauri::Runtime> Engine<R> {
                     // live-match handle BEFORE locking the queue — nobody
                     // holds both at the same time.
                     let live_summary = live.snapshot();
-                    let weather_summary = weather.snapshot();
-                    let now_playing_summary = now_playing.snapshot();
                     let mut q = queue.lock().await;
                     q.tick(Instant::now());
                     if let Some(state) = q.slot_state_if_changed() {
@@ -446,10 +380,6 @@ impl<R: tauri::Runtime> Engine<R> {
                             live: live_summary,
                             espn_enabled,
                             rss_enabled,
-                            weather: weather_summary,
-                            weather_enabled,
-                            media: now_playing_summary,
-                            now_playing_enabled,
                             agent_sessions: tab_wire
                                 .agent_sessions
                                 .load(std::sync::atomic::Ordering::Relaxed),
@@ -560,11 +490,9 @@ impl<R: tauri::Runtime> Engine<R> {
     /// above) `lib.rs`'s on_page_load site, which calls this directly so
     /// it can plant the `window.__NOTCHTAP_STATUS_STATE__` global before
     /// emitting rather than after. Lock discipline matches every caller:
-    /// live/weather locked and dropped before the queue lock.
+    /// the live handle locked and dropped before the queue lock.
     pub fn status_snapshot_blocking(&self) -> StatusState {
         let live_summary = self.live.snapshot();
-        let weather_summary = self.weather.snapshot();
-        let now_playing_summary = self.now_playing.snapshot();
         let q = self.queue.blocking_lock();
         StatusState::snapshot(
             &q,
@@ -572,10 +500,6 @@ impl<R: tauri::Runtime> Engine<R> {
                 live: live_summary,
                 espn_enabled: self.espn_enabled,
                 rss_enabled: self.rss_enabled,
-                weather: weather_summary,
-                weather_enabled: self.weather_enabled,
-                media: now_playing_summary,
-                now_playing_enabled: self.now_playing_enabled,
                 agent_sessions: self
                     .tab_wire
                     .agent_sessions
@@ -634,22 +558,11 @@ mod tests {
         Engine::new(
             SingleSlotQueue::new(50),
             app.handle().clone(),
-            Arc::new(Vec::new()),
             true,
             true,
-            false,
-            false,
             None,
             std::sync::Arc::new(crate::tabs::TabWire::default()),
         )
-    }
-
-    /// a connector whose receiving end the test holds, so fan-out can be
-    /// asserted without any worker or network (pattern from http.rs's
-    /// test_connector)
-    fn test_connector() -> (ConnectorHandle, tokio::sync::mpsc::Receiver<Event>) {
-        let (tx, rx) = tokio::sync::mpsc::channel(8);
-        (ConnectorHandle::new("test", tx), rx)
     }
 
     #[tokio::test]
@@ -695,52 +608,13 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn accept_offers_manual_but_never_news() {
-        // The CONTEXT.md Connector rule, encoded in `accept`: every accepted
-        // event is offered EXCEPT News-origin ones. First coverage of this
-        // rule — before plan 037, a News test notification leaked to
-        // telegram via the old shared enqueue path's offer-all loop.
-        let app = tauri::test::mock_app();
-        let (connector, mut rx) = test_connector();
-        let engine = Engine::new(
-            SingleSlotQueue::new(50),
-            app.handle().clone(),
-            Arc::new(vec![connector]),
-            true,
-            true,
-            false,
-            false,
-            None,
-            std::sync::Arc::new(crate::tabs::TabWire::default()),
-        );
-
-        engine.accept(event(Priority::Medium), false).await.unwrap();
-        let offered = rx
-            .try_recv()
-            .expect("manual event must reach the connector");
-        assert_eq!(offered.payload.title, "t");
-
-        let mut news = event(Priority::Medium);
-        news.origin = SourceKind::News;
-        engine.accept(news, false).await.unwrap();
-        assert!(
-            rx.try_recv().is_err(),
-            "News-origin events are never offered to connectors"
-        );
-    }
-
-    #[tokio::test]
     async fn accept_queue_full_propagates_nothing() {
         let app = tauri::test::mock_app();
-        let (connector, mut rx) = test_connector();
         let engine = Engine::new(
             SingleSlotQueue::new(1),
             app.handle().clone(),
-            Arc::new(vec![connector]),
             true,
             true,
-            false,
-            false,
             None,
             std::sync::Arc::new(crate::tabs::TabWire::default()),
         );
@@ -749,8 +623,6 @@ mod tests {
         // second takes the one waiting slot
         engine.accept(event(Priority::Medium), false).await.unwrap();
         engine.accept(event(Priority::Medium), false).await.unwrap();
-        let _ = rx.try_recv();
-        let _ = rx.try_recv();
 
         let notified = engine.wake.notified();
         tokio::pin!(notified);
@@ -767,7 +639,6 @@ mod tests {
                 .is_err(),
             "QueueFull must not wake the rotation loop"
         );
-        assert!(rx.try_recv().is_err(), "QueueFull must not fan out");
     }
 
     #[tokio::test]
@@ -1003,10 +874,7 @@ mod tests {
         let engine = Engine::new(
             SingleSlotQueue::new(50),
             app.handle().clone(),
-            Arc::new(Vec::new()),
             true,
-            false,
-            false,
             false,
             None,
             std::sync::Arc::new(crate::tabs::TabWire::default()),
@@ -1070,53 +938,6 @@ mod tests {
             .expect("a changed summary must wake again");
     }
 
-    fn weather_summary(temp: &str) -> WeatherSummary {
-        WeatherSummary {
-            temp_display: temp.to_string(),
-            condition: "Cloudy".to_string(),
-            is_day: true,
-            rain_pct: None,
-            today_high_display: None,
-            today_low_display: None,
-            outlook: Vec::new(),
-        }
-    }
-
-    #[tokio::test]
-    async fn update_weather_wakes_only_on_change() {
-        // The weather twin of update_live_match_wakes_only_on_change
-        // (plan 040 Part B): store-on-change wakes; re-store does not.
-        let app = tauri::test::mock_app();
-        let engine = test_engine(&app);
-
-        let notified = engine.wake.notified();
-        tokio::pin!(notified);
-        notified.as_mut().enable();
-        engine.update_weather(Some(weather_summary("27°")));
-        tokio::time::timeout(Duration::from_millis(200), notified)
-            .await
-            .expect("a new weather summary must wake the rotation loop");
-
-        let notified = engine.wake.notified();
-        tokio::pin!(notified);
-        notified.as_mut().enable();
-        engine.update_weather(Some(weather_summary("27°")));
-        assert!(
-            tokio::time::timeout(Duration::from_millis(100), notified)
-                .await
-                .is_err(),
-            "an unchanged summary must not wake"
-        );
-
-        let notified = engine.wake.notified();
-        tokio::pin!(notified);
-        notified.as_mut().enable();
-        engine.update_weather(Some(weather_summary("28°")));
-        tokio::time::timeout(Duration::from_millis(200), notified)
-            .await
-            .expect("a changed summary must wake again");
-    }
-
     // plan 088: history hook tests. `with_limits` in a fresh temp dir per
     // test — never the real config dir (see history.rs's own temp_dir()
     // helper for why a shared dir is unsafe here too).
@@ -1136,11 +957,8 @@ mod tests {
         let engine = Engine::new(
             SingleSlotQueue::new(50),
             app.handle().clone(),
-            Arc::new(Vec::new()),
             true,
             true,
-            false,
-            false,
             Some(store.clone()),
             std::sync::Arc::new(crate::tabs::TabWire::default()),
         );
@@ -1167,11 +985,8 @@ mod tests {
         let engine = Engine::new(
             SingleSlotQueue::new(50),
             app.handle().clone(),
-            Arc::new(Vec::new()),
             true,
             true,
-            false,
-            false,
             Some(store.clone()),
             std::sync::Arc::new(crate::tabs::TabWire::default()),
         );
@@ -1231,11 +1046,8 @@ mod tests {
         let engine = Engine::new(
             SingleSlotQueue::new(50),
             app.handle().clone(),
-            Arc::new(Vec::new()),
             true,
             true,
-            false,
-            false,
             Some(store.clone()),
             std::sync::Arc::new(crate::tabs::TabWire::default()),
         );

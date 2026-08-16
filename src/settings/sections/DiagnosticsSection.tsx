@@ -7,7 +7,7 @@ import { settingsInvoke } from "../ipc";
 // plan 077: read-only tail of the active log file. Fetched on section-open
 // (this component mounts only while the Diagnostics section is active), not
 // on app load — the same advisory, isolated-from-panel-load pattern as
-// get_default_config / get_connector_health. No live tail; the Refresh
+// get_default_config. No live tail; the Refresh
 // button re-invokes manually.
 export function DiagnosticsSection() {
   const [logLines, setLogLines] = useState<string[] | null>(null);

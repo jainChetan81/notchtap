@@ -579,7 +579,6 @@ impl IntoResponse for HttpError {
 mod tests {
     use super::*;
     use crate::event::test_fixtures;
-    use crate::notifier::ConnectorHandle;
     use crate::queue::SingleSlotQueue;
     use axum::http::Request;
     use std::sync::Arc;
@@ -587,24 +586,14 @@ mod tests {
     use tower::ServiceExt;
 
     fn test_state(queue: SingleSlotQueue) -> AppState<tauri::test::MockRuntime> {
-        test_state_with_connectors(queue, Vec::new())
-    }
-
-    fn test_state_with_connectors(
-        queue: SingleSlotQueue,
-        connectors: Vec<ConnectorHandle>,
-    ) -> AppState<tauri::test::MockRuntime> {
         let app = tauri::test::mock_app();
         let agent_registry = test_agent_registry();
         AppState {
             engine: Engine::new(
                 queue,
                 app.handle().clone(),
-                Arc::new(connectors),
                 true,
                 true,
-                false,
-                false,
                 None,
                 std::sync::Arc::new(crate::tabs::TabWire::default()),
             ),
@@ -638,13 +627,6 @@ mod tests {
             crate::agents::registry::DEFAULT_TERMINAL_RETENTION,
             crate::agents::registry::DEFAULT_STALE_RETENTION,
         ))
-    }
-
-    /// a connector whose receiving end the test holds, so fan-out can be
-    /// asserted without any worker or network
-    fn test_connector() -> (ConnectorHandle, tokio::sync::mpsc::Receiver<Event>) {
-        let (tx, rx) = tokio::sync::mpsc::channel(8);
-        (ConnectorHandle::new("test", tx), rx)
     }
 
     fn json_request(body: &str) -> Request<Body> {
@@ -923,50 +905,6 @@ mod tests {
         assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
     }
 
-    // --- v3 acceptance fan-out (spec §1 / TESTING_STRATEGY.md §4.9) ---
-
-    #[tokio::test]
-    async fn accepted_push_fans_out_to_connectors() {
-        let (connector, mut rx) = test_connector();
-        let app = router(test_state_with_connectors(
-            SingleSlotQueue::new(50),
-            vec![connector],
-        ));
-        let response = app
-            .oneshot(json_request(r#"{"title":"t","body":"b"}"#))
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-
-        let event = rx
-            .try_recv()
-            .expect("accepted event must reach the connector");
-        assert_eq!(event.payload.title, "t");
-    }
-
-    #[tokio::test]
-    async fn rejected_push_reaches_no_connector() {
-        let (connector, mut rx) = test_connector();
-        let app = router(test_state_with_connectors(
-            SingleSlotQueue::new(0),
-            vec![connector],
-        ));
-        let first = app
-            .clone()
-            .oneshot(json_request(r#"{"title":"t","body":"b"}"#))
-            .await
-            .unwrap();
-        assert_eq!(first.status(), StatusCode::OK);
-        rx.try_recv().expect("first accepted push must fan out");
-
-        let second = app
-            .oneshot(json_request(r#"{"title":"t2","body":"b2"}"#))
-            .await
-            .unwrap();
-        assert_eq!(second.status(), StatusCode::TOO_MANY_REQUESTS);
-        assert!(rx.try_recv().is_err(), "429 must not fan out");
-    }
-
     // --- v3.6 priority field (spec §3.3) ---
 
     #[tokio::test]
@@ -1134,26 +1072,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn paused_202_push_still_fans_out() {
-        // v3 spec §1: a paused overlay is exactly when outbound matters
-        // most — acceptance succeeded, so connectors hear about it.
-        let (connector, mut rx) = test_connector();
-        let mut queue = SingleSlotQueue::new(50);
-        queue.pause();
-        let app = router(test_state_with_connectors(queue, vec![connector]));
-        let response = app
-            .oneshot(json_request(r#"{"title":"t","body":"b"}"#))
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::ACCEPTED);
-
-        let event = rx
-            .try_recv()
-            .expect("paused-202 event must reach the connector");
-        assert_eq!(event.payload.title, "t");
     }
 
     // --- §9.2 (docs/TESTING_STRATEGY.md) — burst and boundary cases ---

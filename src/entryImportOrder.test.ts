@@ -58,12 +58,11 @@ describe("entry-file CSS import order (plan 111)", () => {
     expect(appIdx).toBeGreaterThan(sharedIdx);
   });
 
-  it("keeps media-mint in the notchtap extension instead of shared-ui", () => {
+  it("keeps media-mint out of shared-ui (the token left with the now-playing vertical)", () => {
     const shared = readSource("../vendor/shared-ui/design/tokens.css");
     const local = readSource("./notchtap-tokens.css");
     expect(shared.includes("--media-mint")).toBe(false);
-    expect(local).toContain("--media-mint: oklch(0.923 0.067 177.33)");
-    expect(local).toContain("--color-media-mint: var(--media-mint)");
+    expect(local.includes("--media-mint:")).toBe(false);
   });
 
   // plan 112 Step 5: settings.css is gone (its rules relocated into

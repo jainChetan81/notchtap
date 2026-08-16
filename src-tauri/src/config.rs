@@ -2,7 +2,7 @@ use std::path::PathBuf;
 
 use serde::{Deserialize, Serialize};
 
-use crate::event::{Priority, SourceKind, Units};
+use crate::event::{Priority, SourceKind};
 use crate::silence::Window;
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -94,34 +94,18 @@ pub struct Config {
     /// per-runtime enable flags. See [`AgentsConfig`].
     #[serde(default)]
     pub agents: AgentsConfig,
-    /// plan 040 Part B: weather source (Open-Meteo, keyless). default
-    /// false — ambient sources are opt-in per machine, same rule as rss.
-    pub weather_enabled: bool,
-    /// Raw coordinates the operator sets once — no geocoding, no
-    /// city-name lookup, no second API dependency.
-    pub weather_lat: f64,
-    pub weather_lon: f64,
-    /// Display units only: Open-Meteo converts server-side via its
-    /// `temperature_unit` query param; alert thresholds below are always
-    /// stored/compared in Celsius regardless of this field.
-    pub weather_units: Units,
-    pub weather_poll_secs: u64,
-    pub weather_rain_threshold_pct: u8,
-    pub weather_rain_lookahead_mins: u16,
-    pub weather_temp_hot_c: f64,
-    pub weather_temp_cold_c: f64,
-    /// Medium by default: bracketed by espn (High — live sports is
-    /// urgent) and rss (Low — news is ambient).
-    pub weather_priority: Priority,
-    /// Deliberately does NOT inherit `default_ttl` the way
-    /// `espn_ttl_secs`/`agent_ttl_secs` do in `Config::parse`'s heal —
-    /// the pre-field behaviour was a hardcoded 8s in `weather_poller.rs`
-    /// regardless of `default_ttl`, so a plain serde default of 8
-    /// preserves exactly what an existing config file already produced.
-    pub weather_ttl_secs: u64,
     /// v6/v6.1: same-tier promotion tie-break, checked before arrival
-    /// order. Must be a permutation of all five `SourceKind` variants —
-    /// enforced by `settings::validate`.
+    /// order. Must be a permutation of all four `SourceKind` variants —
+    /// enforced by `settings::validate`. Deserialized leniently
+    /// (`lenient_rotation_order`): entries naming a REMOVED origin (an
+    /// on-disk config written while e.g. `weather` still existed) are
+    /// silently dropped rather than failing the whole file, and the
+    /// parse-time heal below then re-appends anything missing — boot
+    /// must never crash on a stale rotation_order.
+    #[serde(
+        deserialize_with = "lenient_rotation_order",
+        default = "default_rotation_order"
+    )]
     pub rotation_order: Vec<SourceKind>,
     pub appearance: Appearance,
     /// plan 085: the overlay's RESTING (idle) render choice — the cheap
@@ -135,42 +119,12 @@ pub struct Config {
     /// plan 088 (from plan 059's operator decision): persist accepted
     /// one-shot notifications to `~/.config/notchtap/history.jsonl` for
     /// later browsing. Defaults to `false` like every other opt-in surface
-    /// here (`rss_enabled`, `weather_enabled`, `espn_live_card`,
+    /// here (`rss_enabled`, `espn_live_card`,
     /// `espn_rich_events`) — this one writes notification CONTENT to disk,
     /// including agent-originated payloads (formerly cmux relay ones), so
     /// off-by-default is load-bearing, not stylistic.
     #[serde(default = "default_history_enabled")]
     pub history_enabled: bool,
-    /// plan 104: user feature toggle for the ambient now-playing peek row.
-    /// Default `false` — same opt-in convention as `weather_enabled`/
-    /// `rss_enabled`: ambient sources never default on top of the app's
-    /// primary agent-notification purpose. The panel-editable half of the
-    /// two-gate design (`docs/design/now-playing-adapter.md`'s GO
-    /// conditions) — the child process spawns only when this AND
-    /// `now_playing_adapter_enabled` are both true.
-    #[serde(default = "default_now_playing_enabled")]
-    pub now_playing_enabled: bool,
-    /// plan 104: the kill switch, deliberately separate from the feature
-    /// toggle above and deliberately NOT exposed in the settings UI
-    /// (`docs/design/now-playing-adapter.md` §7 risk #1: if Apple closes
-    /// the `com.apple.*` MediaRemote oversight this adapter relies on, the
-    /// failure degrades silently to "no data," indistinguishable from
-    /// "nothing playing" — this flag is the config-file-only escape hatch
-    /// so an operator can mute a dead feature without losing every other
-    /// setting or waiting for a rebuild). Default `true`: once a user
-    /// opts into `now_playing_enabled`, the adapter runs unless someone
-    /// has explicitly muted it here by hand.
-    #[serde(default = "default_now_playing_adapter_enabled")]
-    pub now_playing_adapter_enabled: bool,
-    /// plan 104: mirrors `detect_path`'s runtime-path convention exactly —
-    /// built/installed out of band (`justfile`'s `build-media-adapter`
-    /// recipe), never by the rust core itself. Expected to contain
-    /// `bin/mediaremote-adapter.pl` + `MediaRemoteAdapter.framework`. Like
-    /// `detect_path`, this is pinned server-side and never editable via
-    /// the settings panel (`settings::pin_uneditable_fields`) — it names
-    /// an executed subprocess path, not a display preference.
-    #[serde(default = "default_now_playing_adapter_dir")]
-    pub now_playing_adapter_dir: PathBuf,
     /// plan 146a: the `[silence]` block — the daily Silent Period
     /// (`CONTEXT.md`'s Silenced/Silent Period entries). Queue-level gate,
     /// evaluated beside `start_paused`/the tray Pause toggle (Paused wins
@@ -451,50 +405,6 @@ fn default_agent_ttl_secs() -> u64 {
     8
 }
 
-fn default_weather_enabled() -> bool {
-    false
-}
-
-fn default_weather_lat() -> f64 {
-    0.0
-}
-
-fn default_weather_lon() -> f64 {
-    0.0
-}
-
-fn default_weather_units() -> Units {
-    Units::Celsius
-}
-
-fn default_weather_poll_secs() -> u64 {
-    900
-}
-
-fn default_weather_rain_threshold_pct() -> u8 {
-    60
-}
-
-fn default_weather_rain_lookahead_mins() -> u16 {
-    30
-}
-
-fn default_weather_temp_hot_c() -> f64 {
-    36.0
-}
-
-fn default_weather_temp_cold_c() -> f64 {
-    14.0
-}
-
-fn default_weather_priority() -> Priority {
-    Priority::Medium
-}
-
-fn default_weather_ttl_secs() -> u64 {
-    8
-}
-
 fn default_resting_state() -> RestingState {
     RestingState::Rail
 }
@@ -509,37 +419,25 @@ fn default_history_enabled() -> bool {
     false
 }
 
-fn default_now_playing_enabled() -> bool {
-    false
-}
-
-fn default_now_playing_adapter_enabled() -> bool {
-    true
-}
-
-/// plan 104 revision (reviewer 2026-07-22): the original
-/// `/usr/local/lib/notchtap/mediaremote-adapter` default requires
-/// root-owned `/usr/local/lib` on a stock macOS install — verified live
-/// on this exact machine (`mkdir -p` there fails with `Permission
-/// denied`, no sudo), which means an operator's very first
-/// `just build-media-adapter` run would fail before ever reaching the
-/// adapter itself. `~/Library/Application Support/notchtap/` is the
-/// macOS-conventional, user-writable location, resolved the same way
-/// `Config::load`/`settings::notchtap_config_dir` already resolve home
-/// (`dirs::home_dir()`, not a raw env lookup — this repo's one
-/// home-resolution idiom, mirrored here rather than reimplemented).
-/// Falls back to the old `/usr/local/lib` path only if home can't be
-/// determined at all, so this default (like every other `default_*` fn
-/// in this file) stays infallible and never empty.
-fn default_now_playing_adapter_dir() -> PathBuf {
-    dirs::home_dir()
-        .map(|home| {
-            home.join("Library")
-                .join("Application Support")
-                .join("notchtap")
-                .join("mediaremote-adapter")
+/// See [`Config::rotation_order`]: parse each entry through
+/// `SourceKind`'s own serde impl (so the `"cmux"` alias keeps working)
+/// and DROP anything it rejects — a rotation_order entry naming a
+/// removed origin (e.g. `"weather"`) must degrade, never brick boot.
+/// The parse-time heal in [`Config::parse`] appends any missing
+/// variants afterwards, so the surviving array still validates as a
+/// permutation.
+fn lenient_rotation_order<'de, D>(deserializer: D) -> Result<Vec<SourceKind>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    use serde::Deserialize as _;
+    let raw: Vec<String> = Vec::deserialize(deserializer)?;
+    Ok(raw
+        .iter()
+        .filter_map(|s| {
+            SourceKind::deserialize(serde::de::value::StrDeserializer::<D::Error>::new(s)).ok()
         })
-        .unwrap_or_else(|| PathBuf::from("/usr/local/lib/notchtap/mediaremote-adapter"))
+        .collect())
 }
 
 fn default_rotation_order() -> Vec<SourceKind> {
@@ -551,16 +449,9 @@ fn default_rotation_order() -> Vec<SourceKind> {
     // install already running both should see the pre-existing, more
     // established Manual path win any such tie by default, not the
     // Agent origin (formerly Cmux).
-    // plan 040 Part B: Weather sits right after Manual — it shares
-    // Manual's Medium tier by default, and the more established Manual
-    // path wins that tie.
-    // plan 137 (spec §7): new default order is
-    // `[Football, Manual, Weather, Agent, News]` — Cmux's old slot is
-    // now Agent's, in place.
     vec![
         SourceKind::Football,
         SourceKind::Manual,
-        SourceKind::Weather,
         SourceKind::Agent,
         SourceKind::News,
     ]
@@ -632,24 +523,10 @@ impl Default for Config {
             agent_priority: default_agent_priority(),
             agent_ttl_secs: default_agent_ttl_secs(),
             agents: AgentsConfig::default(),
-            weather_enabled: default_weather_enabled(),
-            weather_lat: default_weather_lat(),
-            weather_lon: default_weather_lon(),
-            weather_units: default_weather_units(),
-            weather_poll_secs: default_weather_poll_secs(),
-            weather_rain_threshold_pct: default_weather_rain_threshold_pct(),
-            weather_rain_lookahead_mins: default_weather_rain_lookahead_mins(),
-            weather_temp_hot_c: default_weather_temp_hot_c(),
-            weather_temp_cold_c: default_weather_temp_cold_c(),
-            weather_priority: default_weather_priority(),
-            weather_ttl_secs: default_weather_ttl_secs(),
             rotation_order: default_rotation_order(),
             appearance: default_appearance(),
             resting_state: default_resting_state(),
             history_enabled: default_history_enabled(),
-            now_playing_enabled: default_now_playing_enabled(),
-            now_playing_adapter_enabled: default_now_playing_adapter_enabled(),
-            now_playing_adapter_dir: default_now_playing_adapter_dir(),
             silence: SilenceConfig::default(),
             prefix_shortcut: default_prefix_shortcut(),
         }
@@ -762,9 +639,10 @@ impl Config {
             }
         }
         // heal a `rotation_order` written before a `SourceKind` variant
-        // existed (e.g. an install from before plan 040 Part B added
-        // `weather`): `settings::validate` requires a permutation of all
-        // five variants, but the settings UI's rotation-order list is a
+        // existed (or after one was REMOVED — `lenient_rotation_order`
+        // above drops unknown names, which can leave the array short):
+        // `settings::validate` requires a permutation of all four
+        // variants, but the settings UI's rotation-order list is a
         // fixed reorder-only widget (it just renders whatever's already in
         // the array) with no way for the user to add a missing one back —
         // so a stale array fails validation on every save, permanently,
@@ -778,7 +656,7 @@ impl Config {
         // for any future newly-added source too, not just this one.
         // dedupe first (keep first occurrence — a malformed hand-edited config
         // might repeat a source; without this, a duplicate-plus-missing array
-        // would grow past 5 elements and fail `validate`'s permutation check
+        // would grow past 4 elements and fail `validate`'s permutation check
         // forever, the same lockout this heal exists to prevent). `SourceKind`
         // doesn't derive `Hash`, so this tracks "seen" sources in a small `Vec`
         // rather than a `HashSet` — negligible at this size.
@@ -884,23 +762,11 @@ mod tests {
         assert!(c.agents.runtimes.codex.enabled);
         assert!(c.agents.runtimes.kimi.enabled);
         assert!(c.agents.runtimes.opencode.enabled);
-        assert!(!c.weather_enabled);
-        assert_eq!(c.weather_lat, 0.0);
-        assert_eq!(c.weather_lon, 0.0);
-        assert_eq!(c.weather_units, Units::Celsius);
-        assert_eq!(c.weather_poll_secs, 900);
-        assert_eq!(c.weather_rain_threshold_pct, 60);
-        assert_eq!(c.weather_rain_lookahead_mins, 30);
-        assert_eq!(c.weather_temp_hot_c, 36.0);
-        assert_eq!(c.weather_temp_cold_c, 14.0);
-        assert_eq!(c.weather_priority, Priority::Medium);
-        assert_eq!(c.weather_ttl_secs, 8);
         assert_eq!(
             c.rotation_order,
             [
                 SourceKind::Football,
                 SourceKind::Manual,
-                SourceKind::Weather,
                 SourceKind::Agent,
                 SourceKind::News
             ]
@@ -911,14 +777,6 @@ mod tests {
         assert_eq!(c.resting_state, RestingState::Rail);
         assert!(!c.espn_rich_events);
         assert!(!c.history_enabled);
-        assert!(!c.now_playing_enabled);
-        assert!(c.now_playing_adapter_enabled);
-        // plan 104 revision: user-writable default — pin the suffix, not
-        // the whole absolute path, since the leading component is this
-        // test-runner's own $HOME (CI/local machines differ).
-        assert!(c
-            .now_playing_adapter_dir
-            .ends_with("Library/Application Support/notchtap/mediaremote-adapter"));
         assert_eq!(c.prefix_shortcut, "⌃⇧Space");
     }
 
@@ -1004,33 +862,6 @@ mod tests {
 
         let rail = Config::parse("resting_state = \"rail\"\n").unwrap();
         assert_eq!(rail.resting_state, RestingState::Rail);
-    }
-
-    #[test]
-    fn now_playing_disabled_by_default() {
-        // plan 104: ambient sources are opt-in per machine — same rule as
-        // weather_enabled/rss_enabled. A config file predating this field
-        // (or one that simply never sets it) heals to `false`.
-        let c = Config::parse("").unwrap();
-        assert!(!c.now_playing_enabled);
-        // the kill switch defaults `true`: once a user opts into the
-        // feature, the adapter runs unless someone has explicitly muted
-        // it in config.toml by hand.
-        assert!(c.now_playing_adapter_enabled);
-    }
-
-    #[test]
-    fn now_playing_fields_are_overridable() {
-        let c = Config::parse(
-            "now_playing_enabled = true\nnow_playing_adapter_enabled = false\nnow_playing_adapter_dir = \"/opt/mediaremote-adapter\"\n",
-        )
-        .unwrap();
-        assert!(c.now_playing_enabled);
-        assert!(!c.now_playing_adapter_enabled);
-        assert_eq!(
-            c.now_playing_adapter_dir,
-            PathBuf::from("/opt/mediaremote-adapter")
-        );
     }
 
     #[test]
@@ -1261,12 +1092,13 @@ url = "https://example.com/without-meta"
         let c = Config::parse(legacy).unwrap();
         assert_eq!(c.agent_priority, Priority::Low);
         assert_eq!(c.agent_ttl_secs, 42);
+        // "weather" (a removed origin) is dropped by the lenient
+        // deserializer; "cmux" still aliases to Agent.
         assert_eq!(
             c.rotation_order,
             [
                 SourceKind::Football,
                 SourceKind::Manual,
-                SourceKind::Weather,
                 SourceKind::Agent,
                 SourceKind::News,
             ]
@@ -1312,52 +1144,9 @@ url = "https://example.com/without-meta"
     }
 
     #[test]
-    fn weather_fields_are_overridable() {
-        let c = Config::parse(
-            "weather_enabled = true\nweather_lat = 12.97\nweather_lon = 77.59\nweather_units = \"fahrenheit\"\nweather_poll_secs = 300\nweather_rain_threshold_pct = 80\nweather_rain_lookahead_mins = 60\nweather_temp_hot_c = 40.0\nweather_temp_cold_c = 10.0\nweather_priority = \"high\"\n",
-        )
-        .unwrap();
-        assert!(c.weather_enabled);
-        assert_eq!(c.weather_lat, 12.97);
-        assert_eq!(c.weather_lon, 77.59);
-        assert_eq!(c.weather_units, Units::Fahrenheit);
-        assert_eq!(c.weather_poll_secs, 300);
-        assert_eq!(c.weather_rain_threshold_pct, 80);
-        assert_eq!(c.weather_rain_lookahead_mins, 60);
-        assert_eq!(c.weather_temp_hot_c, 40.0);
-        assert_eq!(c.weather_temp_cold_c, 10.0);
-        assert_eq!(c.weather_priority, Priority::High);
-    }
-
-    #[test]
-    fn weather_ttl_secs_is_overridable() {
-        let c = Config::parse("weather_ttl_secs = 20\n").unwrap();
-        assert_eq!(c.weather_ttl_secs, 20);
-    }
-
-    #[test]
-    fn weather_ttl_secs_does_not_inherit_default_ttl() {
-        // unlike espn_ttl_secs/agent_ttl_secs (the heal in
-        // `Config::parse`), weather never had a shared-default_ttl era —
-        // its pre-field behaviour was a hardcoded 8 regardless of
-        // `default_ttl`, so the absence of `weather_ttl_secs` must keep
-        // yielding 8 even when `default_ttl` is customized.
-        let c = Config::parse("default_ttl = 30\n").unwrap();
-        assert_eq!(c.default_ttl, 30);
-        assert_eq!(c.weather_ttl_secs, 8);
-    }
-
-    #[test]
-    fn unknown_units_string_is_a_parse_error() {
-        assert!(Config::parse("weather_units = \"kelvin\"").is_err());
-    }
-
-    #[test]
     fn rotation_order_is_overridable() {
-        let c = Config::parse(
-            "rotation_order = [\"news\", \"football\", \"agent\", \"manual\", \"weather\"]\n",
-        )
-        .unwrap();
+        let c = Config::parse("rotation_order = [\"news\", \"football\", \"agent\", \"manual\"]\n")
+            .unwrap();
         assert_eq!(
             c.rotation_order,
             [
@@ -1365,7 +1154,6 @@ url = "https://example.com/without-meta"
                 SourceKind::Football,
                 SourceKind::Agent,
                 SourceKind::Manual,
-                SourceKind::Weather,
             ]
         );
     }
@@ -1378,29 +1166,7 @@ url = "https://example.com/without-meta"
     // rather than in isolation.
     #[test]
     fn legacy_cmux_rotation_entry_is_rewritten_in_place_to_agent() {
-        let c = Config::parse(
-            "rotation_order = [\"news\", \"football\", \"cmux\", \"manual\", \"weather\"]\n",
-        )
-        .unwrap();
-        assert_eq!(
-            c.rotation_order,
-            [
-                SourceKind::News,
-                SourceKind::Football,
-                SourceKind::Agent,
-                SourceKind::Manual,
-                SourceKind::Weather,
-            ]
-        );
-    }
-
-    #[test]
-    fn rotation_order_missing_a_source_is_healed_by_appending_it() {
-        // a config written before `weather` existed (e.g. pre-plan-040):
-        // the settings UI's rotation-order list can't add a missing source
-        // back on its own, so `Config::parse` must heal it at load time or
-        // every save attempt fails `validate`'s permutation check forever.
-        let c = Config::parse("rotation_order = [\"news\", \"football\", \"agent\", \"manual\"]\n")
+        let c = Config::parse("rotation_order = [\"news\", \"football\", \"cmux\", \"manual\"]\n")
             .unwrap();
         assert_eq!(
             c.rotation_order,
@@ -1409,46 +1175,90 @@ url = "https://example.com/without-meta"
                 SourceKind::Football,
                 SourceKind::Agent,
                 SourceKind::Manual,
-                SourceKind::Weather,
             ]
         );
     }
 
     #[test]
-    fn rotation_order_with_duplicate_and_missing_sources_heals_to_exactly_five() {
+    fn rotation_order_missing_a_source_is_healed_by_appending_it() {
+        // a config written before a source existed: the settings UI's
+        // rotation-order list can't add a missing source back on its own,
+        // so `Config::parse` must heal it at load time or every save
+        // attempt fails `validate`'s permutation check forever.
+        let c = Config::parse("rotation_order = [\"news\", \"football\", \"manual\"]\n").unwrap();
+        assert_eq!(
+            c.rotation_order,
+            [
+                SourceKind::News,
+                SourceKind::Football,
+                SourceKind::Manual,
+                SourceKind::Agent,
+            ]
+        );
+    }
+
+    #[test]
+    fn rotation_order_with_duplicate_and_missing_sources_heals_to_exactly_four() {
         // a malformed config: `football` appears twice, `news` and `agent`
         // are both missing entirely. The heal must both dedupe the
         // duplicate AND append the two missing sources, landing at exactly
-        // 5 unique entries — not 6, which would still fail `validate`'s
+        // 4 unique entries — not 5, which would still fail `validate`'s
         // permutation check.
-        let c = Config::parse(
-            "rotation_order = [\"football\", \"football\", \"manual\", \"weather\"]\n",
-        )
-        .unwrap();
-        assert_eq!(c.rotation_order.len(), 5);
+        let c =
+            Config::parse("rotation_order = [\"football\", \"football\", \"manual\"]\n").unwrap();
+        assert_eq!(c.rotation_order.len(), 4);
         let mut sorted = c.rotation_order.clone();
         sorted.sort_by_key(|s| format!("{s:?}"));
         let mut expected = vec![
             SourceKind::Football,
             SourceKind::Manual,
-            SourceKind::Weather,
             SourceKind::News,
             SourceKind::Agent,
         ];
         expected.sort_by_key(|s| format!("{s:?}"));
         assert_eq!(sorted, expected);
         // first-occurrence order preserved for what the file already had:
-        // football (deduped to one), manual, weather stay in that relative
+        // football (deduped to one) and manual stay in that relative
         // order; only the appended news/agent go at the end.
         assert_eq!(c.rotation_order[0], SourceKind::Football);
         assert_eq!(c.rotation_order[1], SourceKind::Manual);
-        assert_eq!(c.rotation_order[2], SourceKind::Weather);
+    }
+
+    // --- removed-origin compat (the weather vertical was removed) ---
+
+    #[test]
+    fn rotation_order_containing_removed_weather_origin_boots_instead_of_crashing() {
+        // an existing on-disk config.toml may still carry "weather" in
+        // rotation_order from before the vertical was removed. Boot must
+        // NOT crash: the lenient deserializer drops the unknown name and
+        // the heal re-validates the remaining four as a permutation.
+        let c = Config::parse(
+            "rotation_order = [\"football\", \"manual\", \"weather\", \"agent\", \"news\"]\n",
+        )
+        .unwrap();
+        assert_eq!(
+            c.rotation_order,
+            [
+                SourceKind::Football,
+                SourceKind::Manual,
+                SourceKind::Agent,
+                SourceKind::News,
+            ]
+        );
+        assert!(crate::settings::validate(&c).is_ok());
     }
 
     #[test]
-    fn unknown_priority_or_source_kind_string_is_a_parse_error() {
+    fn rotation_order_of_entirely_unknown_names_heals_to_the_full_default() {
+        let c = Config::parse("rotation_order = [\"weather\", \"pigeon\"]\n").unwrap();
+        assert_eq!(c.rotation_order, default_rotation_order());
+    }
+
+    #[test]
+    fn unknown_priority_string_is_a_parse_error() {
         assert!(Config::parse("espn_priority = \"urgent\"").is_err());
-        assert!(Config::parse("rotation_order = [\"pigeon\"]").is_err());
+        // rotation_order is deliberately NOT a parse error for unknown
+        // names — see the removed-origin compat tests above.
     }
 
     // plan 097: `validate_appearance` (settings.rs) only guards the

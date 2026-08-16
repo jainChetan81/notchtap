@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { NowPlayingSummary, StatusState } from "../useStatusState";
+import type { StatusState } from "../useStatusState";
 import { iconPresenceFor } from "./iconPresence";
 
 // The same all-gates-off shape `useStatusState.ts`'s own FALLBACK_STATUS
@@ -12,32 +12,17 @@ const QUIET: StatusState = {
   agent: { activeSessions: 0 },
   football: { enabled: false, live: null },
   news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
-  weather: { enabled: false, current: null },
-  media: { enabled: false, current: null },
-};
-
-const TRACK: NowPlayingSummary = {
-  title: "Midnight City",
-  artist: "M83",
-  album: "Hurry Up, We're Dreaming",
-  playing: true,
-  elapsedMs: 1500,
-  durationMs: 243_000,
-  capturedAtMs: 1_753_000_000_000,
-  appBundleId: "app.zen-browser.zen",
 };
 
 describe("iconPresenceFor (plan 171, spec §6's presence/liveness table)", () => {
-  it("hides agent, football, and music when nothing is running", () => {
+  it("hides agent and football when nothing is running", () => {
     const presence = iconPresenceFor(QUIET);
     expect(presence.agent).toBe("hidden");
     expect(presence.football).toBe("hidden");
-    expect(presence.music).toBe("hidden");
   });
 
-  it("keeps weather and news present whenever the strip is up, even with every gate off", () => {
+  it("keeps news present whenever the strip is up, even with every gate off", () => {
     const presence = iconPresenceFor(QUIET);
-    expect(presence.weather).toBe("present");
     expect(presence.news).toBe("present");
   });
 
@@ -67,47 +52,6 @@ describe("iconPresenceFor (plan 171, spec §6's presence/liveness table)", () =>
     it("stays hidden when the source is enabled but nothing is in play", () => {
       const presence = iconPresenceFor({ ...QUIET, football: { enabled: true, live: null } });
       expect(presence.football).toBe("hidden");
-    });
-  });
-
-  describe("music — the one source with a real present-but-not-live tier", () => {
-    it("goes live while audio is genuinely playing", () => {
-      const presence = iconPresenceFor({ ...QUIET, media: { enabled: true, current: TRACK } });
-      expect(presence.music).toBe("live");
-    });
-
-    it("stays present, not live, while a track is loaded but paused", () => {
-      const presence = iconPresenceFor({
-        ...QUIET,
-        media: { enabled: true, current: { ...TRACK, playing: false } },
-      });
-      expect(presence.music).toBe("present");
-    });
-
-    it("hides entirely when there is no now-playing session at all", () => {
-      const presence = iconPresenceFor({ ...QUIET, media: { enabled: true, current: null } });
-      expect(presence.music).toBe("hidden");
-    });
-  });
-
-  describe("weather — always present, never live", () => {
-    it("stays present rather than escalating once a real reading arrives", () => {
-      const presence = iconPresenceFor({
-        ...QUIET,
-        weather: {
-          enabled: true,
-          current: {
-            tempDisplay: "27°",
-            condition: "Cloudy",
-            isDay: true,
-            rainPct: null,
-            todayHighDisplay: null,
-            todayLowDisplay: null,
-            outlook: [],
-          },
-        },
-      });
-      expect(presence.weather).toBe("present");
     });
   });
 
@@ -141,8 +85,6 @@ describe("iconPresenceFor (plan 171, spec §6's presence/liveness table)", () =>
     expect(iconPresenceFor(undefined)).toEqual({
       agent: "hidden",
       football: "hidden",
-      music: "hidden",
-      weather: "present",
       news: "present",
     });
     // the whole point of that early return: no wire reads exactly like a
@@ -155,8 +97,6 @@ describe("iconPresenceFor (plan 171, spec §6's presence/liveness table)", () =>
     expect(presence).toEqual({
       agent: "live",
       football: "hidden",
-      music: "hidden",
-      weather: "present",
       news: "present",
     });
   });

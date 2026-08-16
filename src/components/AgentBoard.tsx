@@ -138,9 +138,8 @@ export function nowTickIntervalMs(
 
 /// `session.elapsedMs` is a snapshot as of `capturedAtMs` (the wire
 /// anchor) — the live value is that snapshot plus however much wall
-/// time has passed since, same `elapsedMs + (Date.now() - capturedAtMs)`
-/// shape `NowPlayingSummary` already established (StatusDots/IdleHoverPeek
-/// media rendering).
+/// time has passed since (`elapsedMs + (Date.now() - capturedAtMs)`),
+/// so a continuously-varying value never rides the wire.
 function liveElapsedMs(session: AgentSessionView, capturedAtMs: number, nowMs: number): number {
   return session.elapsedMs + Math.max(0, nowMs - capturedAtMs);
 }

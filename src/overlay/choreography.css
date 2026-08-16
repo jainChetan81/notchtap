@@ -5,7 +5,7 @@
    every hover. Nothing replaced it here; there is no hover transform on
    this shell anymore. `.hovered` itself is very much alive and still
    drives every other hover consumer: rail reveal (card-chrome.css's
-   `.bare.hovered` flank paint), the idle weather peek, TTL hover-pause,
+   `.bare.hovered` flank paint), the idle peek, TTL hover-pause,
    and hover-expand (a showing card opens its manifest while hovered —
    useExitChoreography.ts's `expanded`). */
 

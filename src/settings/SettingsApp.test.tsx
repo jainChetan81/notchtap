@@ -15,7 +15,6 @@ import {
   type HistoryRotationSpec,
   type PriorityLevel,
   type QueueItemSummary,
-  type SecretStatus,
   SettingsApp,
 } from "./SettingsApp";
 import type { AdapterHealthDto } from "./types";
@@ -105,21 +104,10 @@ const config: Config = {
       opencode: { enabled: false },
     },
   },
-  weather_enabled: true,
-  weather_lat: 12.97,
-  weather_lon: 77.59,
-  weather_units: "celsius",
-  weather_poll_secs: 900,
-  weather_rain_threshold_pct: 60,
-  weather_rain_lookahead_mins: 30,
-  weather_temp_hot_c: 36,
-  weather_temp_cold_c: 14,
-  weather_priority: "medium",
-  rotation_order: ["news", "agent", "manual", "weather", "football"],
+  rotation_order: ["news", "agent", "manual", "football"],
   appearance: { card_scale: 1, card_radius: 8, card_opacity: 0.9 },
   resting_state: "notch",
   history_enabled: true,
-  now_playing_enabled: true,
   silence: { enabled: true, window: "00:00-10:00" },
   prefix_shortcut: "⌃⇧Space",
 };
@@ -175,27 +163,12 @@ const rustConfigDefaults: Config = {
       opencode: { enabled: true },
     },
   },
-  weather_enabled: false,
-  weather_lat: 0,
-  weather_lon: 0,
-  weather_units: "celsius",
-  weather_poll_secs: 900,
-  weather_rain_threshold_pct: 60,
-  weather_rain_lookahead_mins: 30,
-  weather_temp_hot_c: 36,
-  weather_temp_cold_c: 14,
-  weather_priority: "medium",
-  rotation_order: ["football", "manual", "weather", "agent", "news"],
+  rotation_order: ["football", "manual", "agent", "news"],
   appearance: { card_scale: 1, card_radius: 16, card_opacity: 0.9 },
   resting_state: "rail",
   history_enabled: false,
-  now_playing_enabled: false,
   silence: { enabled: true, window: "00:00-10:00" },
   prefix_shortcut: "⌃⇧Space",
-};
-
-const unsetSecrets: SecretStatus = {
-  openrouter_api_key: null,
 };
 
 // get_history's wire shape (plan 089) — snake_case throughout, including
@@ -284,10 +257,9 @@ const historyEntryFullMeta: HistoryEntry = {
   },
 };
 
-function mockLoads(status: SecretStatus = unsetSecrets) {
+function mockLoads() {
   mockIPC((command) => {
     if (command === "get_config") return config;
-    if (command === "get_secret_status") return status;
     if (command === "get_default_config") return rustConfigDefaults;
   });
 }
@@ -314,7 +286,6 @@ describe("SettingsApp", () => {
     // superseded by the v7 Agent Adapter layer; plan 143 replaces it
     // with the Agents section asserted below.
     expect(screen.queryByRole("button", { name: "Cmux" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Connectors & Keys" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Agents" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Shortcuts" })).toBeTruthy();
 
@@ -328,14 +299,6 @@ describe("SettingsApp", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "News" }));
     expect(await screen.findByRole("heading", { level: 1, name: "News" })).toBeTruthy();
-
-    fireEvent.click(screen.getByRole("button", { name: "Connectors & Keys" }));
-    expect(
-      await screen.findByRole("heading", {
-        level: 1,
-        name: "Connectors & Keys",
-      }),
-    ).toBeTruthy();
 
     fireEvent.click(screen.getByRole("button", { name: "Shortcuts" }));
     expect(await screen.findByRole("heading", { level: 1, name: "Shortcuts" })).toBeTruthy();
@@ -361,7 +324,7 @@ describe("SettingsApp", () => {
     expect(mark.getAttribute("src")).toBeTruthy();
   });
 
-  it("Appearance section is enabled and renders all eight preview cards", async () => {
+  it("Appearance section is enabled and renders all seven preview cards", async () => {
     mockLoads();
     render(<SettingsApp />);
 
@@ -381,7 +344,6 @@ describe("SettingsApp", () => {
     // never show — the ones most sensitive to CSS drift.
     expect(await screen.findByText("Compact (collapsed manifest, medium priority)")).toBeTruthy();
     expect(await screen.findByText("Live match (recurring scorecard, football)")).toBeTruthy();
-    expect(await screen.findByText("Weather alert (medium priority)")).toBeTruthy();
     expect(await screen.findByText("News headline, compact (single timestamp)")).toBeTruthy();
     expect(await screen.findByText("GOAL")).toBeTruthy();
     expect(
@@ -419,7 +381,7 @@ describe("SettingsApp", () => {
     await screen.findByText("GOAL");
 
     const stages = container.querySelectorAll(".preview-stage.card-root");
-    expect(stages.length).toBe(8);
+    expect(stages.length).toBe(7);
     stages.forEach((stage) => {
       expect(stage.querySelector(".card-assembly")).not.toBeNull();
     });
@@ -446,7 +408,6 @@ describe("SettingsApp", () => {
     const setAppearance = vi.fn();
     mockIPC((command, payload) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "set_appearance") {
         setAppearance(payload);
@@ -500,7 +461,6 @@ describe("SettingsApp", () => {
     let savedConfig: Config | null = null;
     mockIPC((command, payload) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "save_config_and_relaunch") {
         savedConfig = (payload as { config: Config }).config;
@@ -529,7 +489,6 @@ describe("SettingsApp", () => {
     let savedConfig: Config | null = null;
     mockIPC((command, payload) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "save_config_and_relaunch") {
         savedConfig = (payload as { config: Config }).config;
@@ -561,7 +520,6 @@ describe("SettingsApp", () => {
     let savedConfig: Config | null = null;
     mockIPC((command, payload) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "save_config_and_relaunch") {
         savedConfig = (payload as { config: Config }).config;
@@ -589,7 +547,6 @@ describe("SettingsApp", () => {
     let savedConfig: Config | null = null;
     mockIPC((command, payload) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "save_config_and_relaunch") {
         savedConfig = (payload as { config: Config }).config;
@@ -618,7 +575,6 @@ describe("SettingsApp", () => {
     let savedConfig: Config | null = null;
     mockIPC((command, payload) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "save_config_and_relaunch") {
         savedConfig = (payload as { config: Config }).config;
@@ -645,7 +601,6 @@ describe("SettingsApp", () => {
   it("renders every save rejection message", async () => {
     mockIPC((command) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "save_config_and_relaunch") {
         return Promise.reject([
@@ -663,42 +618,6 @@ describe("SettingsApp", () => {
     expect(screen.getByText("Config rejected")).toBeTruthy();
   });
 
-  it("saves a key with its snake_case field, clears the input, and refreshes status", async () => {
-    let statusReads = 0;
-    const setSecret = vi.fn();
-    mockIPC((command, payload) => {
-      if (command === "get_config") return config;
-      if (command === "get_default_config") return rustConfigDefaults;
-      if (command === "get_secret_status") {
-        statusReads += 1;
-        return statusReads === 1
-          ? unsetSecrets
-          : { ...unsetSecrets, openrouter_api_key: "set (…9xyz)" };
-      }
-      if (command === "set_secret") {
-        setSecret(payload);
-        return null;
-      }
-    });
-    render(<SettingsApp />);
-
-    await screen.findByRole("heading", { level: 1, name: "General" });
-    fireEvent.click(screen.getByRole("button", { name: "Connectors & Keys" }));
-
-    const input = (await screen.findByLabelText("OpenRouter API key")) as HTMLInputElement;
-    fireEvent.change(input, { target: { value: "sk-or-secret-9xyz" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save OpenRouter API key" }));
-
-    await waitFor(() => {
-      expect(setSecret).toHaveBeenCalledWith({
-        field: "openrouter_api_key",
-        value: "sk-or-secret-9xyz",
-      });
-      expect(input.value).toBe("");
-    });
-    expect(await screen.findByText("set (…9xyz)")).toBeTruthy();
-  });
-
   it("Reset restores the values returned by get_config", async () => {
     mockLoads();
     render(<SettingsApp />);
@@ -712,7 +631,7 @@ describe("SettingsApp", () => {
     expect(isChecked(screen.getByLabelText("Start paused"))).toBe(true);
   });
 
-  it('a NumberControl clearing to retype doesn\'t snap to 0, and decimal fields carry step="any"', async () => {
+  it("a NumberControl clearing to retype doesn't snap to 0", async () => {
     mockLoads();
     render(<SettingsApp />);
 
@@ -726,26 +645,6 @@ describe("SettingsApp", () => {
     expect(port.value).toBe("8");
     fireEvent.change(port, { target: { value: "80" } });
     expect(port.value).toBe("80");
-
-    // latitude/longitude are decimal signed fields: step="any" (not the
-    // HTML default of 1) is what stops a value like 12.5 or -77.59 from
-    // registering as a stepMismatch.
-    fireEvent.click(screen.getByRole("button", { name: "Weather" }));
-    const lat = (await screen.findByLabelText("Latitude")) as HTMLInputElement;
-    const lon = (await screen.findByLabelText("Longitude")) as HTMLInputElement;
-    expect(lat.step).toBe("any");
-    expect(lon.step).toBe("any");
-    expect(lat.value).toBe("12.97");
-    expect(lon.value).toBe("77.59");
-
-    // a full decimal replacement round-trips correctly (jsdom's own
-    // number-input sanitization — same as real browsers — only
-    // discards genuinely-invalid intermediate strings like a bare "."
-    // or "-"; this NumberControl no longer forces `Number(value)` back
-    // onto the field on every keystroke, so a complete decimal is never
-    // fought by the controlled value).
-    fireEvent.change(lat, { target: { value: "13.5" } });
-    expect(lat.value).toBe("13.5");
   });
 
   it("a NumberControl left empty on blur restores the last-committed value", async () => {
@@ -766,7 +665,7 @@ describe("SettingsApp", () => {
 
     await screen.findByDisplayValue("4321");
     // get_default_config now resolves on its own microtask, separate from
-    // get_config/get_secret_status — wait for it to land (button enabled)
+    // get_config — wait for it to land (button enabled)
     // before clicking, rather than assuming it's already there.
     await waitFor(() => {
       expect(
@@ -787,13 +686,7 @@ describe("SettingsApp", () => {
     expect(isChecked(screen.getByLabelText("Start paused"))).toBe(false);
     expect(isChecked(screen.getByLabelText("Hide overlay when idle"))).toBe(false);
     expect(selectedPriorityLabel(screen.getByLabelText("Manual push priority"))).toBe("Medium");
-    expect(rotationOrderRowNames()).toEqual([
-      "Football",
-      "Manual / CLI push",
-      "Weather",
-      "Agent",
-      "News",
-    ]);
+    expect(rotationOrderRowNames()).toEqual(["Football", "Manual / CLI push", "Agent", "News"]);
 
     fireEvent.click(screen.getByRole("button", { name: "Football" }));
     expect(isChecked(await screen.findByLabelText("Enable ESPN scores"))).toBe(true);
@@ -807,7 +700,6 @@ describe("SettingsApp", () => {
   it("Appearance controls re-seed from config after Reset to defaults", async () => {
     mockIPC((command) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "set_appearance") return null;
     });
@@ -884,7 +776,6 @@ describe("SettingsApp", () => {
     let savedConfig: Config | null = null;
     mockIPC((command, payload) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "save_config_and_relaunch") {
         savedConfig = (payload as { config: Config }).config;
@@ -921,7 +812,6 @@ describe("SettingsApp", () => {
     let savedConfig: Config | null = null;
     mockIPC((command, payload) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "save_config_and_relaunch") {
         savedConfig = (payload as { config: Config }).config;
@@ -959,7 +849,6 @@ describe("SettingsApp", () => {
     let savedConfig: Config | null = null;
     mockIPC((command, payload) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "save_config_and_relaunch") {
         savedConfig = (payload as { config: Config }).config;
@@ -1009,7 +898,6 @@ describe("SettingsApp", () => {
       let invokedQuery: string | null = null;
       mockIPC((command, payload) => {
         if (command === "get_config") return config;
-        if (command === "get_secret_status") return unsetSecrets;
         if (command === "get_default_config") return rustConfigDefaults;
         if (command === "search_news_now") {
           invokedQuery = (payload as { query: string }).query;
@@ -1031,7 +919,6 @@ describe("SettingsApp", () => {
     it("shows the singular form for a single result", async () => {
       mockIPC((command) => {
         if (command === "get_config") return config;
-        if (command === "get_secret_status") return unsetSecrets;
         if (command === "get_default_config") return rustConfigDefaults;
         if (command === "search_news_now") return 1;
       });
@@ -1047,7 +934,6 @@ describe("SettingsApp", () => {
     it("surfaces a rejection as an error and leaves the input for retry", async () => {
       mockIPC((command) => {
         if (command === "get_config") return config;
-        if (command === "get_secret_status") return unsetSecrets;
         if (command === "get_default_config") return rustConfigDefaults;
         if (command === "search_news_now") return Promise.reject("already searching");
       });
@@ -1065,7 +951,6 @@ describe("SettingsApp", () => {
       const searchNow = vi.fn();
       mockIPC((command) => {
         if (command === "get_config") return config;
-        if (command === "get_secret_status") return unsetSecrets;
         if (command === "get_default_config") return rustConfigDefaults;
         if (command === "search_news_now") {
           searchNow();
@@ -1119,16 +1004,10 @@ describe("SettingsApp", () => {
     render(<SettingsApp />);
 
     await screen.findByRole("heading", { level: 1, name: "General" });
-    expect(rotationOrderRowNames()).toEqual([
-      "News",
-      "Agent",
-      "Manual / CLI push",
-      "Weather",
-      "Football",
-    ]);
+    expect(rotationOrderRowNames()).toEqual(["News", "Agent", "Manual / CLI push", "Football"]);
 
     const rows = screen.getAllByRole("listitem");
-    const [newsRow, agentRow, manualRow, , footballRow] = rows;
+    const [newsRow, agentRow, manualRow, footballRow] = rows;
     // M12: the boundary buttons are marked `aria-disabled` rather than
     // native `disabled`, so they stay in the tab order (a boundary move
     // no longer strands keyboard focus on <body>); `move` no-ops when the
@@ -1153,13 +1032,7 @@ describe("SettingsApp", () => {
     ).toBe("false");
 
     fireEvent.click(within(manualRow).getByRole("button", { name: /earlier/ }));
-    expect(rotationOrderRowNames()).toEqual([
-      "News",
-      "Manual / CLI push",
-      "Agent",
-      "Weather",
-      "Football",
-    ]);
+    expect(rotationOrderRowNames()).toEqual(["News", "Manual / CLI push", "Agent", "Football"]);
   });
 
   it("Diagnostics section renders the lines returned by get_recent_log_lines", async () => {
@@ -1167,7 +1040,6 @@ describe("SettingsApp", () => {
     // fetch fires on section-open and resolves on its own microtask.
     mockIPC((command) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "get_recent_log_lines") {
         return ["INFO notchtap: boot complete", "WARN notchtap: queue full"];
@@ -1188,7 +1060,6 @@ describe("SettingsApp", () => {
     // the UI must reverse them for display, not the mock.
     mockIPC((command) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "get_history") return [historyEntryOlder, historyEntryNewer];
     });
@@ -1220,7 +1091,6 @@ describe("SettingsApp", () => {
   it("History origin spans carry each origin's SOURCE_ORIGIN_COLORS colour (news included, plan 147 finisher)", async () => {
     mockIPC((command) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "get_history") return [historyEntryOlder, historyEntryNewer];
     });
@@ -1254,7 +1124,6 @@ describe("SettingsApp", () => {
     // as "on, nothing recorded" rather than "off".
     mockIPC((command) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "get_history") return [];
     });
@@ -1273,7 +1142,6 @@ describe("SettingsApp", () => {
     const disabledConfig: Config = { ...config, history_enabled: false };
     mockIPC((command) => {
       if (command === "get_config") return disabledConfig;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "get_history") return [];
     });
@@ -1294,7 +1162,6 @@ describe("SettingsApp", () => {
     const clearHistory = vi.fn();
     mockIPC((command) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "get_history") return [historyEntryOlder];
       if (command === "clear_history") {
@@ -1326,7 +1193,6 @@ describe("SettingsApp", () => {
     let entries: HistoryEntry[] = [historyEntryOlder];
     mockIPC((command) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "get_history") return entries;
       if (command === "clear_history") {
@@ -1365,7 +1231,6 @@ describe("SettingsApp", () => {
     function mockHistory(entries: HistoryEntry[]) {
       mockIPC((command) => {
         if (command === "get_config") return config;
-        if (command === "get_secret_status") return unsetSecrets;
         if (command === "get_default_config") return rustConfigDefaults;
         if (command === "get_history") return entries;
       });
@@ -1538,7 +1403,6 @@ describe("SettingsApp", () => {
     const disabledConfig: Config = { ...config, history_enabled: false };
     mockIPC((command, payload) => {
       if (command === "get_config") return disabledConfig;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "save_config_and_relaunch") {
         savedConfig = (payload as { config: Config }).config;
@@ -1560,47 +1424,6 @@ describe("SettingsApp", () => {
     expect(savedConfig!.history_enabled).toBe(true);
   });
 
-  // plan 104: weather_enabled's own round-trip test is this test's pattern.
-  it("the now_playing_enabled toggle round-trips into the saved config payload", async () => {
-    let savedConfig: Config | null = null;
-    const disabledConfig: Config = { ...config, now_playing_enabled: false };
-    mockIPC((command, payload) => {
-      if (command === "get_config") return disabledConfig;
-      if (command === "get_secret_status") return unsetSecrets;
-      if (command === "get_default_config") return rustConfigDefaults;
-      if (command === "save_config_and_relaunch") {
-        savedConfig = (payload as { config: Config }).config;
-        return null;
-      }
-    });
-    render(<SettingsApp />);
-
-    const toggle = await screen.findByLabelText("Enable now playing");
-    expect(isChecked(toggle)).toBe(false);
-
-    fireEvent.click(toggle);
-    expect(isChecked(toggle)).toBe(true);
-
-    fireEvent.click(screen.getByRole("button", { name: "Save & Relaunch" }));
-
-    await waitFor(() => expect(savedConfig).not.toBeNull());
-    // biome-ignore lint/style/noNonNullAssertion: guaranteed non-null by the waitFor above.
-    expect(savedConfig!.now_playing_enabled).toBe(true);
-  });
-
-  // done criterion: the kill switch must never surface in this UI.
-  it("never renders a control for the now_playing_adapter_enabled kill switch", async () => {
-    mockIPC((command) => {
-      if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
-      if (command === "get_default_config") return rustConfigDefaults;
-    });
-    render(<SettingsApp />);
-    await screen.findByLabelText("Enable now playing");
-    expect(screen.queryByText(/adapter.enabled/i)).toBeNull();
-    expect(screen.queryByLabelText(/kill switch/i)).toBeNull();
-  });
-
   // plan 121: settings-window queue visibility + clear/skip.
   describe("Queue section (plan 121)", () => {
     const waitingHigh: QueueItemSummary = {
@@ -1617,7 +1440,6 @@ describe("SettingsApp", () => {
     function mockQueue(items: QueueItemSummary[]) {
       mockIPC((command) => {
         if (command === "get_config") return config;
-        if (command === "get_secret_status") return unsetSecrets;
         if (command === "get_default_config") return rustConfigDefaults;
         if (command === "get_queue") return items;
       });
@@ -1662,7 +1484,6 @@ describe("SettingsApp", () => {
       let queueItems: QueueItemSummary[] = [waitingHigh];
       mockIPC((command) => {
         if (command === "get_config") return config;
-        if (command === "get_secret_status") return unsetSecrets;
         if (command === "get_default_config") return rustConfigDefaults;
         if (command === "get_queue") return queueItems;
         if (command === "skip_current") {
@@ -1688,7 +1509,6 @@ describe("SettingsApp", () => {
       let queueItems: QueueItemSummary[] = [waitingHigh, waitingLow];
       mockIPC((command) => {
         if (command === "get_config") return config;
-        if (command === "get_secret_status") return unsetSecrets;
         if (command === "get_default_config") return rustConfigDefaults;
         if (command === "get_queue") return queueItems;
         if (command === "clear_queue") {
@@ -1724,7 +1544,6 @@ describe("SettingsApp", () => {
       let queueItems: QueueItemSummary[] = [waitingHigh];
       mockIPC((command) => {
         if (command === "get_config") return config;
-        if (command === "get_secret_status") return unsetSecrets;
         if (command === "get_default_config") return rustConfigDefaults;
         if (command === "get_queue") return queueItems;
         if (command === "clear_queue") {
@@ -1758,7 +1577,6 @@ describe("SettingsApp", () => {
     it("a failed get_queue reports an error via ActionStatus", async () => {
       mockIPC((command) => {
         if (command === "get_config") return config;
-        if (command === "get_secret_status") return unsetSecrets;
         if (command === "get_default_config") return rustConfigDefaults;
         if (command === "get_queue") return Promise.reject("disk error");
       });
@@ -1784,7 +1602,6 @@ describe("SettingsApp", () => {
       const getQueue = vi.fn();
       mockIPC((command) => {
         if (command === "get_config") return config;
-        if (command === "get_secret_status") return unsetSecrets;
         if (command === "get_default_config") return rustConfigDefaults;
         if (command === "get_queue") {
           getQueue();
@@ -1836,7 +1653,6 @@ describe("SettingsApp", () => {
       // `get_queue` return a genuinely different list.
       mockIPC((command) => {
         if (command === "get_config") return config;
-        if (command === "get_secret_status") return unsetSecrets;
         if (command === "get_default_config") return rustConfigDefaults;
         if (command === "get_queue") return queueItems;
       });
@@ -1916,7 +1732,6 @@ describe("SettingsApp", () => {
     function mockAbout() {
       mockIPC((command) => {
         if (command === "get_config") return config;
-        if (command === "get_secret_status") return unsetSecrets;
         if (command === "get_default_config") return rustConfigDefaults;
         if (command === "get_about_info") return aboutInfo;
       });
@@ -1951,7 +1766,6 @@ describe("SettingsApp", () => {
     it("shows a loading state before get_about_info resolves and an error state if it rejects", async () => {
       mockIPC((command) => {
         if (command === "get_config") return config;
-        if (command === "get_secret_status") return unsetSecrets;
         if (command === "get_default_config") return rustConfigDefaults;
         if (command === "get_about_info") return Promise.reject("engine unavailable");
       });
@@ -2013,7 +1827,6 @@ describe("SettingsApp", () => {
     function mockAgents() {
       mockIPC((command) => {
         if (command === "get_config") return config;
-        if (command === "get_secret_status") return unsetSecrets;
         if (command === "get_default_config") return rustConfigDefaults;
         if (command === "get_agent_health") return health;
       });
@@ -2110,7 +1923,6 @@ describe("SettingsApp", () => {
       let sentRuntime: string | null = null;
       mockIPC((command, payload) => {
         if (command === "get_config") return config;
-        if (command === "get_secret_status") return unsetSecrets;
         if (command === "get_default_config") return rustConfigDefaults;
         if (command === "get_agent_health") return health;
         if (command === "send_agent_test_event") {
@@ -2213,7 +2025,6 @@ describe("SettingsApp", () => {
       let savedConfig: Config | null = null;
       mockIPC((command, payload) => {
         if (command === "get_config") return config;
-        if (command === "get_secret_status") return unsetSecrets;
         if (command === "get_default_config") return rustConfigDefaults;
         if (command === "get_agent_health") return health;
         if (command === "save_config_and_relaunch") {
@@ -2245,7 +2056,6 @@ describe("SettingsApp", () => {
       let savedConfig: Config | null = null;
       mockIPC((command, payload) => {
         if (command === "get_config") return config;
-        if (command === "get_secret_status") return unsetSecrets;
         if (command === "get_default_config") return rustConfigDefaults;
         if (command === "get_agent_health") return health;
         if (command === "save_config_and_relaunch") {
@@ -2279,7 +2089,6 @@ describe("SettingsApp", () => {
       let savedConfig: Config | null = null;
       mockIPC((command, payload) => {
         if (command === "get_config") return config;
-        if (command === "get_secret_status") return unsetSecrets;
         if (command === "get_default_config") return rustConfigDefaults;
         if (command === "get_agent_health") return health;
         if (command === "save_config_and_relaunch") {
@@ -2323,7 +2132,6 @@ describe("SettingsApp — action status (plan 108)", () => {
     const setAppearance = vi.fn();
     mockIPC((command, payload) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "set_appearance") {
         setAppearance(payload);
@@ -2352,7 +2160,6 @@ describe("SettingsApp — action status (plan 108)", () => {
     const setAppearance = vi.fn();
     mockIPC((command, payload) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "set_appearance") {
         setAppearance(payload);
@@ -2379,7 +2186,6 @@ describe("SettingsApp — action status (plan 108)", () => {
   it("a failed live-apply from Reset still resets the form, and renders the shared, announced appearance error", async () => {
     mockIPC((command) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "set_appearance") return Promise.reject("overlay unreachable");
     });
@@ -2404,7 +2210,6 @@ describe("SettingsApp — action status (plan 108)", () => {
   it("a failed live-apply from Reset to defaults still resets the form, and renders the shared, announced appearance error", async () => {
     mockIPC((command) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "set_appearance") return Promise.reject("overlay unreachable");
     });
@@ -2433,7 +2238,6 @@ describe("SettingsApp — action status (plan 108)", () => {
     let shouldFail = true;
     mockIPC((command) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "set_appearance") {
         return shouldFail ? Promise.reject("overlay unreachable") : null;
@@ -2473,7 +2277,6 @@ describe("SettingsApp — action status (plan 108)", () => {
     let resolveInvoke: (() => void) | null = null;
     mockIPC((command) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "send_test_notification") {
         return new Promise<void>((resolve) => {
@@ -2502,7 +2305,6 @@ describe("SettingsApp — action status (plan 108)", () => {
   it("Send test failure shows the rejection reason inline, announced", async () => {
     mockIPC((command) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "send_test_notification") return Promise.reject("queue is full");
     });
@@ -2526,7 +2328,6 @@ describe("SettingsApp — action status (plan 108)", () => {
     // longer per-test timeout to match.
     mockIPC((command) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "send_test_notification") return null;
     });
@@ -2548,7 +2349,6 @@ describe("SettingsApp — action status (plan 108)", () => {
   it("History load failure renders 'Couldn't load history' without aria-live — a passive mount read", async () => {
     mockIPC((command) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "get_history") return Promise.reject("disk error");
     });
@@ -2565,7 +2365,6 @@ describe("SettingsApp — action status (plan 108)", () => {
     let rejectClear: ((reason?: unknown) => void) | null = null;
     mockIPC((command) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "get_history") return [historyEntryOlder];
       if (command === "clear_history") {
@@ -2597,7 +2396,6 @@ describe("SettingsApp — action status (plan 108)", () => {
   it("History clear success shows 'History cleared', distinct from the load status's own location", async () => {
     mockIPC((command) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "get_history") return [historyEntryOlder];
       if (command === "clear_history") return null;
@@ -2617,7 +2415,6 @@ describe("SettingsApp — action status (plan 108)", () => {
   it("Diagnostics passive mount-read failure has no aria-live", async () => {
     mockIPC((command) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "get_recent_log_lines") return Promise.reject("log file missing");
     });
@@ -2634,7 +2431,6 @@ describe("SettingsApp — action status (plan 108)", () => {
     let callCount = 0;
     mockIPC((command) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return rustConfigDefaults;
       if (command === "get_recent_log_lines") {
         callCount += 1;
@@ -2657,7 +2453,6 @@ describe("SettingsApp — action status (plan 108)", () => {
   it("get_default_config failure renders the disabled-reason note by Reset to defaults, which stays disabled", async () => {
     mockIPC((command) => {
       if (command === "get_config") return config;
-      if (command === "get_secret_status") return unsetSecrets;
       if (command === "get_default_config") return Promise.reject("defaults endpoint down");
     });
     render(<SettingsApp />);

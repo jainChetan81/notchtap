@@ -1,8 +1,8 @@
 import type { StatusState } from "../useStatusState";
-import { FootballGlyph, NewsGlyph, WeatherGlyph } from "./IconStrip";
+import { FootballGlyph, NewsGlyph } from "./IconStrip";
 
-// plan 091 (079 item 2): the right flank's three status dots — fixed order
-// Football/News/Weather, per the locked reference
+// plan 091 (079 item 2): the right flank's status dots — fixed order
+// Football/News, per the locked reference
 // (`prototype/notch-states.html:222-228`, `.status-dots`/`.status-dot`).
 // Replaces the old text-pill `.src-rail` entirely (rewritten, not
 // restyled): "active" now means simply "this source is enabled" (glow +
@@ -30,7 +30,7 @@ import { FootballGlyph, NewsGlyph, WeatherGlyph } from "./IconStrip";
 // `aria-label` and a non-color configured-state SHAPE, both independent of
 // the pause-luminance (active/dim) treatment above. The label/shape read
 // off the RAW config flag (`status.<source>.enabled`), never the
-// pause-suppressed `football`/`news`/`weather` booleans below — those
+// pause-suppressed `football`/`news` booleans below — those
 // already fold in `!paused`, so while paused every dot would otherwise
 // announce "disabled" even for a source that's actually configured on, a
 // false statement about CONFIGURATION sitting right next to the pause
@@ -61,10 +61,8 @@ export function StatusDots({ status }: { status?: StatusState }) {
   const paused = status?.paused ?? false;
   const footballConfigured = status ? status.football.enabled : undefined;
   const newsConfigured = status ? status.news.enabled : undefined;
-  const weatherConfigured = status ? status.weather.enabled : undefined;
   const football = !paused && (footballConfigured ?? false);
   const news = !paused && (newsConfigured ?? false);
-  const weather = !paused && (weatherConfigured ?? false);
   return (
     <span className="status-dots">
       <span
@@ -80,13 +78,6 @@ export function StatusDots({ status }: { status?: StatusState }) {
         aria-label={configuredLabel("News", newsConfigured)}
       >
         <NewsGlyph charge={0} />
-      </span>
-      <span
-        className={`status-dot weather ${shapeClass(weatherConfigured)}${weather ? " active" : " dim"}`}
-        role="img"
-        aria-label={configuredLabel("Weather", weatherConfigured)}
-      >
-        <WeatherGlyph />
       </span>
       {paused && (
         <span className="pause-glyph" role="img" aria-label="Notifications paused">

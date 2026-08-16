@@ -3,11 +3,11 @@
 // build.rs's `AppManifest::commands` allowlist, `lib.rs`'s
 // `generate_handler!` registration, and `capabilities/settings.json`'s
 // `allow-<kebab-name>` permission list must all name exactly these
-// seventeen commands (plan 121 added get_queue/clear_queue/skip_current
-// to the original eleven; plan 130 added search_news_now; the About
-// section batch added get_about_info; plan 143 added
-// get_agent_health/send_agent_test_event; the telegram-connector removal
-// dropped get_connector_health). Until now
+// fifteen commands (plan 121 added get_queue/clear_queue/skip_current;
+// plan 130 added search_news_now; the About section batch added
+// get_about_info; plan 143 added get_agent_health/send_agent_test_event;
+// the telegram-connector removal dropped get_connector_health; the
+// secrets-store removal dropped get_secret_status/set_secret). Until now
 // only convention (plus a CLAUDE.md sentence) held that triple
 // together, and the failure mode is FAIL-OPEN: a command added to
 // `generate_handler!` and forgotten here would silently become
@@ -59,11 +59,9 @@ pub(crate) const SETTINGS_COMMANDS: &[&str] = &[
     "get_history",
     "get_queue",
     "get_recent_log_lines",
-    "get_secret_status",
     "save_config_and_relaunch",
     "search_news_now",
     "send_agent_test_event",
-    "set_secret",
     "send_test_notification",
     "set_appearance",
     "skip_current",
@@ -78,8 +76,8 @@ mod tests {
     // array literal itself (typo, duplicate, stray removal) doesn't slip
     // by unnoticed alongside the two parity checks below.
     #[test]
-    fn canonical_list_has_the_documented_seventeen_commands() {
-        assert_eq!(SETTINGS_COMMANDS.len(), 17);
+    fn canonical_list_has_the_documented_fifteen_commands() {
+        assert_eq!(SETTINGS_COMMANDS.len(), 15);
         assert!(SETTINGS_COMMANDS.contains(&"get_history"));
         assert!(SETTINGS_COMMANDS.contains(&"clear_history"));
         assert!(SETTINGS_COMMANDS.contains(&"get_queue"));

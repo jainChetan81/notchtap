@@ -43,6 +43,5 @@
 .card-root .src-agent { --cat: var(--overlay-amber); --cat-deep: color-mix(in srgb, var(--overlay-amber) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-amber) 13%, transparent); }
 
 .card-root .src-football { --cat: var(--overlay-green); --cat-deep: color-mix(in srgb, var(--overlay-green) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-green) 13%, transparent); }
-.card-root .src-weather  { --cat: var(--overlay-amber); --cat-deep: color-mix(in srgb, var(--overlay-amber) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-amber) 13%, transparent); }
 /* "CLI blue" — the manual/notchtap-cli origin. */
 .card-root .src-manual   { --cat: var(--overlay-blue);  --cat-deep: color-mix(in srgb, var(--overlay-blue) 15%, transparent);  --cat-pill: color-mix(in srgb, var(--overlay-blue) 13%, transparent); }

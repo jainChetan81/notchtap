@@ -231,7 +231,7 @@ describe("useSlotState", () => {
   // above). plan 137: "cmux" replaced by "agent" — the wire never sends
   // "cmux" anymore (event.rs's `SourceKind` dropped the variant).
   it("accepts a showing payload with each recognized origin value", () => {
-    for (const origin of ["football", "news", "manual", "agent", "weather"] as const) {
+    for (const origin of ["football", "news", "manual", "agent"] as const) {
       window.__NOTCHTAP_SLOT_STATE__ = { ...SHOWING_N1, origin };
       const { result } = renderHook(() => useSlotState());
       expect(result.current).toMatchObject({ origin });

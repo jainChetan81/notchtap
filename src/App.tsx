@@ -144,7 +144,7 @@ function App() {
   // the independently-updating `agent-state` channel currently holds at
   // least one session AND the engine isn't Paused (operator feedback,
   // 2026-08-02: pausing must quiet the whole notch, Board included);
-  // otherwise the existing clock/weather/media idle.
+  // otherwise the existing clock idle.
   // Whether a working-only set of sessions is allowed to summon the
   // Board at all (`[agents] board_show_working`, default off) is decided
   // entirely rust-side, before publish — this component just counts what

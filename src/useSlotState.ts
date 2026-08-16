@@ -53,7 +53,7 @@ export type Priority = (typeof PRIORITIES)[number];
 // `Agent`, with `"cmux"` accepted only as a one-release deserialize-only
 // alias server-side). The frontend's own closed set drops it outright:
 // nothing on the wire ever sends `"origin":"cmux"` anymore.
-const SOURCE_KINDS = ["football", "news", "manual", "weather", "agent"] as const;
+const SOURCE_KINDS = ["football", "news", "manual", "agent"] as const;
 export type SourceKind = (typeof SOURCE_KINDS)[number];
 
 // plan 083: structured live-match fields (mirrors rust's `EspnMeta`) —

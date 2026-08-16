@@ -202,7 +202,7 @@
   display: block;
   line-height: 1;
   /* `will-change` is deliberately absent: unlike the ambient loops in
-     this codebase (`.media-bar-fill`, the weather textures) this moves
+     this codebase this moves
      only on a goal, so permanently promoting two layers for a
      once-a-match 360ms roll would be the wrong trade. */
 }

@@ -127,9 +127,9 @@ fn hovered_right_flank_width(present_count: usize, scale: f64) -> f64 {
 }
 
 /// One `Rect` per PRESENT icon, in the strip's fixed left-to-right order
-/// (agent, football, music, weather, news) — the caller passes exactly the
+/// (agent, football, news) — the caller passes exactly the
 /// present-icon list it already computed (this function does not know
-/// which of the five sources is live; it only knows how many boxes to
+/// which of the three sources is live; it only knows how many boxes to
 /// lay out and how wide the right flank consequently is), and must zip
 /// the returned `Vec` against that SAME list, index for index.
 ///
@@ -290,7 +290,7 @@ pub fn css_top_down_to_appkit_y(window_height: f64, top: f64, height: f64) -> (f
 ///   exactly the cutout row's height, not an estimate.
 /// - idle, peek/reveal open (`idle_peek_open`): cutout height +
 ///   `IDLE_PEEK_BELOW_BLOCK_H` — the hover-expanded idle state (plan 093:
-///   the weather peek / scorecard reveal / day-progress timeline), whose
+///   the scorecard reveal / day-progress timeline), whose
 ///   below-block is a real, FIXED-height CSS block (`styles.css`'s
 ///   `.idle-peek`), mirrored here exactly like every other duplicated
 ///   width constant above.
@@ -333,7 +333,7 @@ pub fn css_top_down_to_appkit_y(window_height: f64, top: f64, height: f64) -> (f
 /// `_has_status_chips` slot — plan 034's idle/idle-status WIDTH split it
 /// was named for collapsed in 091, and this plan repurposes the spare
 /// boolean rather than adding an 8th positional parameter) is
-/// deliberately NOT "is there weather/live-match data available" — it is
+/// deliberately NOT "is there live-match data available" — it is
 /// hover HYSTERESIS: "as of the last computed frame, was the cursor
 /// already registered as hovering." `lib.rs`'s `hover_point_is_over_card`
 /// passes in `was_hovered`'s CURRENT value (read before this event can
@@ -345,7 +345,7 @@ pub fn css_top_down_to_appkit_y(window_height: f64, top: f64, height: f64) -> (f
 /// not hovered — the overwhelming majority of an idle card's lifetime).
 /// The idle-hover-expanded state itself is unconditional on ambient data
 /// (item 18's decision: the day-progress timeline lives here regardless
-/// of whether weather/football happen to be configured) — see
+/// of whether football happens to be configured) — see
 /// `src/components/IdleHoverPeek.tsx` for what actually renders inside
 /// it. Only relevant while `!visible`; ignored (never read) whenever
 /// `visible` is `true`.
@@ -1150,15 +1150,14 @@ mod tests {
     }
 
     #[test]
-    fn icon_strip_rects_five_icons_matches_the_492px_worked_example() {
-        // 5 icons: strip_w = (18+8)*5 + 16 = 146, beats the 85px floor —
-        // so the full strip makes a 200 + 2*146 = 492px shell. (Was 488
-        // at the mock's inset of 14; plan 175 unified the inset at the
-        // shipped CSS's 16, so this worked example moved with it.)
-        let flank_w = hovered_right_flank_width(5, 1.0);
-        assert_eq!(flank_w, 146.0);
+    fn icon_strip_rects_three_icons_matches_the_388px_worked_example() {
+        // 3 icons (the full strip since the 5->3 shrink): strip_w =
+        // (18+8)*3 + 16 = 94, beats the 85px floor — so the full strip
+        // makes a 200 + 2*94 = 388px shell.
+        let flank_w = hovered_right_flank_width(3, 1.0);
+        assert_eq!(flank_w, 94.0);
         let total_width = HUD_CUTOUT_W + 2.0 * flank_w;
-        assert_eq!(total_width, 492.0);
+        assert_eq!(total_width, 388.0);
     }
 
     #[test]

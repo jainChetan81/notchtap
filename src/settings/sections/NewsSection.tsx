@@ -18,10 +18,9 @@ import type { Config } from "../types";
 import { PRIORITY_SEGMENT_OPTIONS, PRIORITY_TONES } from "../types";
 
 // plan 130 Step 3: an ad-hoc, unpersisted search — same ActionStatus
-// pattern as ConnectorsSection's SecretRow (pending disables, success
+// pattern as the other per-section action rows (pending disables, success
 // announces, the input clears only on success). Local component (not
-// controls.tsx) since it's News-only, same precedent as SecretRow living
-// in ConnectorsSection.tsx rather than the shared controls module.
+// controls.tsx) since it's News-only.
 // Plan 147: read-only legend for the category colours the overlay's
 // news cards actually paint with (news-category.css, mirrored in
 // SOURCE_CATEGORY_COLORS) — `generic` deliberately excluded, it's the

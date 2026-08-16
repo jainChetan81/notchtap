@@ -1,95 +1,9 @@
-// plan 122: same technique celebrationStacking.test.tsx uses — jsdom has
-// no layout/paint engine, so a "no rule keeps it position:absolute"
-// assertion has to be pinned at the string level against the real
-// stylesheet source, not computed style.
-import { readFileSync } from "node:fs";
-import { fileURLToPath, URL as NodeURL } from "node:url";
 import { cleanup, render } from "@testing-library/react";
-import { Globe, Music, Play, Tv } from "lucide-react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import type {
-  NowPlayingSummary,
-  OutlookPoint,
-  StatusState,
-  WeatherSummary,
-} from "../useStatusState";
-import { IdleHoverPeek, iconForBundleId } from "./IdleHoverPeek";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type { StatusState } from "../useStatusState";
+import { IdleHoverPeek } from "./IdleHoverPeek";
 
 afterEach(cleanup);
-
-// css split (2026-07-24): overlay-card.css split into src/overlay/*.css chunks, pulled
-// back together via plain `@import "./relative.css";` lines — inlined here
-// so this still returns the full literal stylesheet text callers expect,
-// unchanged from before the split (imports are one level deep; no chunk
-// file itself contains an @import).
-function readSourceCss(relativePath: string): string {
-  const url = new NodeURL(relativePath, import.meta.url);
-  const raw = readFileSync(fileURLToPath(url), "utf-8");
-  return raw.replace(/^@import\s+["'](\.[^"']+)["'];\s*$/gm, (_match, importPath: string) =>
-    readFileSync(fileURLToPath(new NodeURL(importPath, url)), "utf-8"),
-  );
-}
-
-function ruleBody(css: string, selector: string): string {
-  const marker = `${selector} {`;
-  const start = css.indexOf(marker);
-  if (start === -1) {
-    throw new Error(`selector not found in stylesheet: ${selector}`);
-  }
-  const braceStart = start + marker.length - 1;
-  const braceEnd = css.indexOf("}", braceStart);
-  if (braceEnd === -1) {
-    throw new Error(`unterminated rule for selector: ${selector}`);
-  }
-  return css.slice(braceStart + 1, braceEnd);
-}
-
-const overlayCardCss = readSourceCss("../overlay-card.css");
-
-// plan 131: the shared base "current" content — every status fixture
-// below spreads this and overrides only what that fixture actually
-// varies, so a future WeatherSummary field only needs updating here.
-const WEATHER_CURRENT: WeatherSummary = {
-  tempDisplay: "27°",
-  condition: "Cloudy",
-  isDay: true,
-  rainPct: null,
-  todayHighDisplay: null,
-  todayLowDisplay: null,
-  outlook: [],
-};
-
-const OUTLOOK: OutlookPoint[] = [
-  { hourLabel: "08:00", tempDisplay: "27°", condition: "Clear", isDay: true },
-  { hourLabel: "10:00", tempDisplay: "30°", condition: "Rain", isDay: true },
-  { hourLabel: "12:00", tempDisplay: "31°", condition: "Storm", isDay: false },
-];
-
-const WEATHER_STATUS: StatusState = {
-  paused: false,
-  waiting: 0,
-  agent: { activeSessions: 0 },
-  football: { enabled: false, live: null },
-  news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
-  weather: { enabled: true, current: WEATHER_CURRENT },
-  media: { enabled: false, current: null },
-};
-
-// plan 131: same weather-owned peek state as WEATHER_STATUS, but with a
-// populated forecast strip + hi/lo — the fixture the strip-specific tests
-// render against.
-const WEATHER_STATUS_WITH_FORECAST: StatusState = {
-  ...WEATHER_STATUS,
-  weather: {
-    enabled: true,
-    current: {
-      ...WEATHER_CURRENT,
-      todayHighDisplay: "30°",
-      todayLowDisplay: "22°",
-      outlook: OUTLOOK,
-    },
-  },
-};
 
 const LIVE_MATCH_STATUS: StatusState = {
   paused: false,
@@ -97,15 +11,6 @@ const LIVE_MATCH_STATUS: StatusState = {
   agent: { activeSessions: 0 },
   football: { enabled: true, live: { label: "MTL 1-0 TOR", minute: "63'" } },
   news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
-  weather: { enabled: true, current: WEATHER_CURRENT },
-  media: { enabled: false, current: null },
-};
-
-// plan 131: a live match with a forecast ALSO available — proves the
-// strip stays gone (football outranks the weather readout entirely).
-const LIVE_MATCH_STATUS_WITH_FORECAST: StatusState = {
-  ...LIVE_MATCH_STATUS,
-  weather: WEATHER_STATUS_WITH_FORECAST.weather,
 };
 
 const NOTHING_AMBIENT_STATUS: StatusState = {
@@ -114,41 +19,6 @@ const NOTHING_AMBIENT_STATUS: StatusState = {
   agent: { activeSessions: 0 },
   football: { enabled: false, live: null },
   news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
-  weather: { enabled: false, current: null },
-  media: { enabled: false, current: null },
-};
-
-const NOW_PLAYING: NowPlayingSummary = {
-  title: "Midnight City",
-  artist: "M83",
-  album: "Hurry Up, We're Dreaming",
-  playing: true,
-  elapsedMs: 1500,
-  durationMs: 243_000,
-  capturedAtMs: Date.now(),
-  appBundleId: "app.zen-browser.zen",
-};
-
-const MEDIA_STATUS: StatusState = {
-  paused: false,
-  waiting: 0,
-  agent: { activeSessions: 0 },
-  football: { enabled: false, live: null },
-  news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
-  weather: { enabled: true, current: WEATHER_CURRENT },
-  media: { enabled: true, current: NOW_PLAYING },
-};
-
-// plan 131: media with a forecast ALSO available — proves the strip
-// stays gone (media outranks the weather readout in `.peek-content`).
-const MEDIA_STATUS_WITH_FORECAST: StatusState = {
-  ...MEDIA_STATUS,
-  weather: WEATHER_STATUS_WITH_FORECAST.weather,
-};
-
-const MEDIA_AND_LIVE_MATCH_STATUS: StatusState = {
-  ...LIVE_MATCH_STATUS,
-  media: { enabled: true, current: NOW_PLAYING },
 };
 
 describe("IdleHoverPeek (plan 093)", () => {
@@ -157,7 +27,7 @@ describe("IdleHoverPeek (plan 093)", () => {
   });
 
   it("renders nothing while not hovered", () => {
-    const { container } = render(<IdleHoverPeek status={WEATHER_STATUS} hovered={false} />);
+    const { container } = render(<IdleHoverPeek status={LIVE_MATCH_STATUS} hovered={false} />);
     expect(container.querySelector(".idle-peek")).toBeNull();
   });
 
@@ -167,7 +37,7 @@ describe("IdleHoverPeek (plan 093)", () => {
   // renders the node synchronously in jsdom — no `.open`/`.closing`
   // classes anymore, just DOM presence.
   it("opens (mounts a .below-block.idle-peek) when hovered is true", () => {
-    const { container } = render(<IdleHoverPeek status={WEATHER_STATUS} hovered={true} />);
+    const { container } = render(<IdleHoverPeek status={LIVE_MATCH_STATUS} hovered={true} />);
     expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
   });
 
@@ -178,415 +48,17 @@ describe("IdleHoverPeek (plan 093)", () => {
     const { container } = render(<IdleHoverPeek status={NOTHING_AMBIENT_STATUS} hovered={true} />);
     expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
     expect(container.querySelector(".idle-peek-timeline")).not.toBeNull();
-    expect(container.querySelector(".wx-peek-backdrop")).toBeNull();
     expect(container.querySelector(".idle-reveal-scorecard")).toBeNull();
   });
 
-  it("renders the weather mood backdrop and readout when weather data is available", () => {
-    const { container } = render(<IdleHoverPeek status={WEATHER_STATUS} hovered={true} />);
-    expect(container.querySelector(".wx-peek-backdrop.wx-card")).not.toBeNull();
-    expect(container.querySelector("img.wx-peek-icon")).not.toBeNull();
-    expect(container.querySelector(".wx-peek-temp")?.textContent).toBe("27°");
-    expect(container.querySelector(".wx-peek-condition")?.textContent).toBe("Cloudy");
-    expect(container.querySelector(".idle-peek-timeline")).not.toBeNull();
-  });
-
-  // plan 122 (Part A): the glyph moved out of the absolute backdrop into
-  // the readout's own in-flow row — structural proof it's a descendant
-  // of the weather header row (`.wx-peek-readout`), never of the
-  // backdrop, and that the backdrop itself carries no image at all
-  // anymore (jsdom has no layout, so this is what "impossible by
-  // construction" is checked as here).
-  it("places the weather icon inside the readout row, never inside the backdrop", () => {
-    const { container } = render(<IdleHoverPeek status={WEATHER_STATUS} hovered={true} />);
-    const icon = container.querySelector(".wx-peek-icon");
-    expect(icon).not.toBeNull();
-    expect(icon?.closest(".wx-peek-readout")).not.toBeNull();
-    expect(icon?.closest(".wx-peek-backdrop")).toBeNull();
-    expect(container.querySelector(".wx-peek-backdrop img")).toBeNull();
-  });
-
-  // plan 122 (Part A): the ALERT card's own `.wx-icon` (StatusRailCard.tsx,
-  // untouched — non-goal) must never leak into this peek's markup; the
-  // peek uses the dedicated `.wx-peek-icon` class exclusively.
-  it("never renders the shared .wx-icon class in the peek (that's the ALERT card's own class)", () => {
-    const { container } = render(<IdleHoverPeek status={WEATHER_STATUS} hovered={true} />);
-    expect(container.querySelector("img.wx-icon")).toBeNull();
-  });
-
-  // plan 122 (Part A): class-level assertion (jsdom can't compute layout,
-  // see this file's own readSourceCss/ruleBody helpers, same technique as
-  // celebrationStacking.test.tsx) that the peek's own icon rule is
-  // in-flow. The shared `.wx-icon` rule (the ALERT card's, untouched —
-  // non-goal) is deliberately NOT asserted against here: it is expected
-  // to keep `position: absolute` for that card, which is exactly why
-  // this peek uses a separate class instead of overriding it.
-  it("overlay-card.css: .wx-peek-icon carries no position:absolute rule", () => {
-    const body = ruleBody(overlayCardCss, ".card-root .wx-peek-icon");
-    expect(body).not.toContain("position: absolute");
-    expect(body).not.toContain("position:absolute");
-  });
-
-  // plan 110 (Step B): the mood art must key off the wire's `isDay`, never
-  // the wall clock (the deleted `isDaytimeNow()`) — freeze the system
-  // clock at each side's OPPOSITE time of day and prove the art still
-  // follows the payload, not `Date`.
-  describe("weather art keys off the wire's isDay, not the wall clock (plan 110)", () => {
-    beforeEach(() => {
-      vi.useFakeTimers();
-    });
-
-    it("renders the day mood at isDay: true even with the system clock at midnight", () => {
-      vi.setSystemTime(new Date("2026-07-22T00:00:00"));
-      const status: StatusState = {
-        ...WEATHER_STATUS,
-        weather: {
-          enabled: true,
-          current: { ...WEATHER_CURRENT, isDay: true },
-        },
-      };
-      const { container } = render(<IdleHoverPeek status={status} hovered={true} />);
-      expect(container.querySelector(".wx-partly-cloudy-day")).not.toBeNull();
-      expect(container.querySelector(".wx-partly-cloudy-night")).toBeNull();
-    });
-
-    it("renders the night mood at isDay: false even with the system clock at noon", () => {
-      vi.setSystemTime(new Date("2026-07-22T12:00:00"));
-      const status: StatusState = {
-        ...WEATHER_STATUS,
-        weather: {
-          enabled: true,
-          current: { ...WEATHER_CURRENT, isDay: false },
-        },
-      };
-      const { container } = render(<IdleHoverPeek status={status} hovered={true} />);
-      expect(container.querySelector(".wx-partly-cloudy-night")).not.toBeNull();
-      expect(container.querySelector(".wx-partly-cloudy-day")).toBeNull();
-    });
-  });
-
-  // plan 105 (Step B): the operator wanted the weather art kept behind the
-  // media row rather than replaced by it — the backdrop is now independent
-  // of the precedence chain that picks what renders in `.peek-content`.
-  it("keeps the weather backdrop behind the media row when both are available", () => {
-    const { container } = render(<IdleHoverPeek status={MEDIA_STATUS} hovered={true} />);
-    expect(container.querySelector(".wx-peek-backdrop.wx-card")).not.toBeNull();
-    expect(container.querySelector(".media-row")).not.toBeNull();
-    // the readout itself still yields to the media row — one visible
-    // "content" slot at a time, per the existing precedence rule.
-    expect(container.querySelector(".wx-peek-readout")).toBeNull();
-    // plan 122 (Part A): with the readout gone, its icon is gone too —
-    // the media row's transport region has NOTHING absolutely positioned
-    // (or otherwise) over it. This is the actual collision the operator
-    // hit: before the fix, the glyph rendered here via the backdrop
-    // regardless of the readout, overlapping the transport below.
-    expect(container.querySelector(".wx-peek-icon")).toBeNull();
-    expect(container.querySelector("img.wx-icon")).toBeNull();
-  });
-
-  it("has no weather backdrop when a live match is showing (scorecard keeps its own visual)", () => {
-    const { container } = render(<IdleHoverPeek status={LIVE_MATCH_STATUS} hovered={true} />);
-    expect(container.querySelector(".idle-reveal-scorecard")).not.toBeNull();
-    expect(container.querySelector(".wx-peek-backdrop")).toBeNull();
-  });
-
-  // plan 092 (item 10) retired `.pill` entirely — the condition label
-  // must reuse `.chip`, never reintroduce a pill class.
-  it("reuses .chip for the condition label, never a pill", () => {
-    const { container } = render(<IdleHoverPeek status={WEATHER_STATUS} hovered={true} />);
-    const label = container.querySelector(".wx-peek-condition");
-    expect(label?.classList.contains("chip")).toBe(true);
-    expect(container.querySelector(".pill")).toBeNull();
-  });
-
-  // plan 122 (Part B): rain-chance chip — already floor-filtered
-  // rust-side, so the frontend's only job is a presence check.
-  describe("rain-chance chip (plan 122)", () => {
-    it("renders the rain chip when rainPct is present", () => {
-      const status: StatusState = {
-        ...WEATHER_STATUS,
-        weather: {
-          enabled: true,
-          current: { ...WEATHER_CURRENT, rainPct: 75 },
-        },
-      };
-      const { container } = render(<IdleHoverPeek status={status} hovered={true} />);
-      const chip = container.querySelector(".wx-peek-rain");
-      expect(chip).not.toBeNull();
-      expect(chip?.textContent).toBe("Rain 75%");
-      expect(chip?.classList.contains("chip")).toBe(true);
-    });
-
-    it("hides the rain chip entirely when rainPct is null (absent or below the operator's floor)", () => {
-      // WEATHER_STATUS already carries rainPct: null.
-      const { container } = render(<IdleHoverPeek status={WEATHER_STATUS} hovered={true} />);
-      expect(container.querySelector(".wx-peek-rain")).toBeNull();
-    });
-
-    // plan 127 (Step 7, missed opportunity): rainPct can flip mid-peek (a
-    // live status update while already hovered), not just appear/disappear
-    // with the peek's own mount/unmount — the chip used to snap bare on
-    // that flip; it's now wrapped in its own AnimatePresence. This proves
-    // the chip mounts/unmounts correctly across a mid-peek rerender in
-    // BOTH directions (the actual bug the fix targets), independent of the
-    // peek's own open/close lifecycle.
-    it("mounts and unmounts the rain chip across a mid-peek rainPct flip (not just at peek open/close)", () => {
-      const withoutRain = WEATHER_STATUS;
-      const withRain: StatusState = {
-        ...WEATHER_STATUS,
-        weather: {
-          enabled: true,
-          current: { ...WEATHER_CURRENT, rainPct: 60 },
-        },
-      };
-
-      const { container, rerender } = render(<IdleHoverPeek status={withoutRain} hovered={true} />);
-      expect(container.querySelector(".wx-peek-rain")).toBeNull();
-
-      rerender(<IdleHoverPeek status={withRain} hovered={true} />);
-      const chip = container.querySelector(".wx-peek-rain");
-      expect(chip).not.toBeNull();
-      expect(chip?.textContent).toBe("Rain 60%");
-
-      rerender(<IdleHoverPeek status={withoutRain} hovered={true} />);
-      // AnimatePresence keeps the exiting node mounted while its own exit
-      // plays (same idiom as StatusRailCard.test.tsx's peek/below-block
-      // exit tests) — assert eventual removal via real time, not an
-      // immediate synchronous check.
-      return vi.waitFor(() => {
-        expect(container.querySelector(".wx-peek-rain")).toBeNull();
-      });
-    });
-  });
-
-  // item 3's precedence rule: football outranks ambient weather, one
-  // below-block at a time.
-  it("shows the scorecard reveal instead of the weather peek when a live match exists", () => {
+  // item 3's precedence rule: a live match fills the content slot.
+  it("shows the scorecard reveal when a live match exists", () => {
     const { container } = render(<IdleHoverPeek status={LIVE_MATCH_STATUS} hovered={true} />);
     expect(container.querySelector(".idle-reveal-scorecard")).not.toBeNull();
     expect(container.querySelector(".idle-reveal-label")?.textContent).toBe("MTL 1-0 TOR");
     expect(container.querySelector(".clock-pill")?.textContent).toBe("63'");
-    expect(container.querySelector(".wx-peek-readout")).toBeNull();
     // the timeline still rides along underneath the reveal.
     expect(container.querySelector(".idle-peek-timeline")).not.toBeNull();
-  });
-
-  // plan 104: media row precedence + rendering.
-
-  it("renders the media row and timeline when a now-playing session is available", () => {
-    const { container } = render(<IdleHoverPeek status={MEDIA_STATUS} hovered={true} />);
-    expect(container.querySelector(".media-row")).not.toBeNull();
-    expect(container.querySelector(".media-title")?.textContent).toBe("Midnight City");
-    expect(container.querySelector(".media-subtitle")?.textContent).toBe("M83");
-    // plan 118: play/paused state renders as a lucide icon (svg), not
-    // text — lucide-react stamps a "lucide-<name>" class on every icon.
-    expect(container.querySelector(".media-state .lucide-play")).not.toBeNull();
-    expect(container.querySelector(".idle-peek-timeline")).not.toBeNull();
-    // media outranks weather in the content slot — one visible readout at
-    // a time — but (plan 105) the weather backdrop itself still shows
-    // behind it; see the dedicated backdrop test above.
-    expect(container.querySelector(".wx-peek-readout")).toBeNull();
-  });
-
-  it("renders the pause icon for a paused now-playing session", () => {
-    const paused: StatusState = {
-      ...MEDIA_STATUS,
-      media: { enabled: true, current: { ...NOW_PLAYING, playing: false } },
-    };
-    const { container } = render(<IdleHoverPeek status={paused} hovered={true} />);
-    expect(container.querySelector(".media-state .lucide-pause")).not.toBeNull();
-  });
-
-  it("football outranks media — the scorecard reveal wins when both are available", () => {
-    const { container } = render(
-      <IdleHoverPeek status={MEDIA_AND_LIVE_MATCH_STATUS} hovered={true} />,
-    );
-    expect(container.querySelector(".idle-reveal-scorecard")).not.toBeNull();
-    expect(container.querySelector(".media-row")).toBeNull();
-  });
-
-  // plan 151 (item C): the progress bar's 1s linear glide belongs to
-  // steady playback only. Every discontinuity (pause, seek backwards,
-  // track change) must snap, which the component expresses as an inline
-  // `transition: none` for exactly that render — so these assert on the
-  // inline style, the one thing jsdom can see (the glide itself lives in
-  // the CSS rule, asserted separately below).
-  describe("media progress-bar discontinuities (plan 151)", () => {
-    function mediaStatus(overrides: Partial<NowPlayingSummary>): StatusState {
-      return {
-        ...MEDIA_STATUS,
-        media: {
-          enabled: true,
-          current: { ...NOW_PLAYING, capturedAtMs: Date.now(), ...overrides },
-        },
-      };
-    }
-    function barTransition(container: HTMLElement): string {
-      const fill = container.querySelector(".media-bar-fill") as HTMLElement | null;
-      if (fill === null) {
-        throw new Error("no .media-bar-fill rendered");
-      }
-      return fill.style.transition;
-    }
-
-    it("glides (no inline override) on a steady forward playback tick", () => {
-      const { container, rerender } = render(
-        <IdleHoverPeek status={mediaStatus({ elapsedMs: 30_000 })} hovered={true} />,
-      );
-      // first render has nothing to glide FROM, so it snaps ...
-      expect(barTransition(container)).toBe("none");
-      // ... the next steady tick hands the fill back to the CSS rule.
-      rerender(<IdleHoverPeek status={mediaStatus({ elapsedMs: 31_000 })} hovered={true} />);
-      expect(barTransition(container)).toBe("");
-    });
-
-    it("snaps when the transport pauses (no post-pause creep)", () => {
-      const { container, rerender } = render(
-        <IdleHoverPeek status={mediaStatus({ elapsedMs: 30_000 })} hovered={true} />,
-      );
-      rerender(<IdleHoverPeek status={mediaStatus({ elapsedMs: 31_000 })} hovered={true} />);
-      expect(barTransition(container)).toBe("");
-      rerender(
-        <IdleHoverPeek
-          status={mediaStatus({ elapsedMs: 31_000, playing: false })}
-          hovered={true}
-        />,
-      );
-      expect(barTransition(container)).toBe("none");
-    });
-
-    it("snaps on a track change, even when the new track starts further along", () => {
-      const { container, rerender } = render(
-        <IdleHoverPeek status={mediaStatus({ elapsedMs: 30_000 })} hovered={true} />,
-      );
-      rerender(<IdleHoverPeek status={mediaStatus({ elapsedMs: 31_000 })} hovered={true} />);
-      expect(barTransition(container)).toBe("");
-      // a FORWARD progress jump — the progress check alone would miss
-      // this one; the title is what gives it away.
-      rerender(
-        <IdleHoverPeek
-          status={mediaStatus({ elapsedMs: 90_000, title: "Reunion" })}
-          hovered={true}
-        />,
-      );
-      expect(barTransition(container)).toBe("none");
-    });
-
-    it("snaps when progress goes backwards (seek, or a new track starting at 0)", () => {
-      const { container, rerender } = render(
-        <IdleHoverPeek status={mediaStatus({ elapsedMs: 90_000 })} hovered={true} />,
-      );
-      rerender(<IdleHoverPeek status={mediaStatus({ elapsedMs: 91_000 })} hovered={true} />);
-      expect(barTransition(container)).toBe("");
-      rerender(<IdleHoverPeek status={mediaStatus({ elapsedMs: 2_000 })} hovered={true} />);
-      expect(barTransition(container)).toBe("none");
-    });
-
-    it("keeps the 1s linear glide in the CSS rule (the steady-playback case)", () => {
-      expect(ruleBody(overlayCardCss, ".card-root .media-bar-fill")).toContain(
-        "transition: transform 1s linear;",
-      );
-    });
-  });
-
-  it("renders no media row when media.current is null (no-media renders nothing extra)", () => {
-    const { container } = render(<IdleHoverPeek status={WEATHER_STATUS} hovered={true} />);
-    expect(container.querySelector(".media-row")).toBeNull();
-  });
-
-  // plan 131: hi/lo inline with the current temp.
-  describe("hi/lo (plan 131)", () => {
-    it("renders hi/lo inline with the current temp when both are present", () => {
-      const { container } = render(
-        <IdleHoverPeek status={WEATHER_STATUS_WITH_FORECAST} hovered={true} />,
-      );
-      expect(container.querySelector(".wx-peek-hi")?.textContent).toBe("H 30°");
-      expect(container.querySelector(".wx-peek-lo")?.textContent).toBe("L 22°");
-    });
-
-    it("renders no hi/lo when either is absent", () => {
-      // WEATHER_STATUS carries todayHighDisplay/todayLowDisplay: null.
-      const { container } = render(<IdleHoverPeek status={WEATHER_STATUS} hovered={true} />);
-      expect(container.querySelector(".wx-peek-hi")).toBeNull();
-      expect(container.querySelector(".wx-peek-lo")).toBeNull();
-    });
-
-    it("renders no hi/lo when only one of the pair is present", () => {
-      const highOnly: StatusState = {
-        ...WEATHER_STATUS,
-        weather: {
-          enabled: true,
-          current: { ...WEATHER_CURRENT, todayHighDisplay: "30°", todayLowDisplay: null },
-        },
-      };
-      const { container } = render(<IdleHoverPeek status={highOnly} hovered={true} />);
-      expect(container.querySelector(".wx-peek-hi")).toBeNull();
-      expect(container.querySelector(".wx-peek-lo")).toBeNull();
-    });
-  });
-
-  // plan 131: the minimal forecast strip — one compact row of the 3
-  // OutlookPoints, rendered only in the weather-owned peek state.
-  describe("forecast strip (plan 131)", () => {
-    it("renders exactly 3 points (glyph/temp/hour label) when outlook is present", () => {
-      const { container } = render(
-        <IdleHoverPeek status={WEATHER_STATUS_WITH_FORECAST} hovered={true} />,
-      );
-      const points = container.querySelectorAll(".wx-forecast-point");
-      expect(points).toHaveLength(3);
-      const icons = container.querySelectorAll("img.wx-forecast-icon");
-      expect(icons).toHaveLength(3);
-      expect(container.querySelectorAll(".wx-forecast-temp")[0]?.textContent).toBe("27°");
-      expect(container.querySelectorAll(".wx-forecast-hour")[0]?.textContent).toBe("08:00");
-      expect(container.querySelectorAll(".wx-forecast-temp")[1]?.textContent).toBe("30°");
-      expect(container.querySelectorAll(".wx-forecast-hour")[1]?.textContent).toBe("10:00");
-      expect(container.querySelectorAll(".wx-forecast-temp")[2]?.textContent).toBe("31°");
-      expect(container.querySelectorAll(".wx-forecast-hour")[2]?.textContent).toBe("12:00");
-    });
-
-    it("renders no forecast strip when outlook is empty", () => {
-      // WEATHER_STATUS carries outlook: [].
-      const { container } = render(<IdleHoverPeek status={WEATHER_STATUS} hovered={true} />);
-      expect(container.querySelector(".wx-forecast-strip")).toBeNull();
-    });
-
-    it("never renders the forecast strip alongside media, even when outlook is present", () => {
-      const { container } = render(
-        <IdleHoverPeek status={MEDIA_STATUS_WITH_FORECAST} hovered={true} />,
-      );
-      expect(container.querySelector(".media-row")).not.toBeNull();
-      expect(container.querySelector(".wx-forecast-strip")).toBeNull();
-    });
-
-    it("never renders the forecast strip alongside the scorecard reveal, even when outlook is present", () => {
-      const { container } = render(
-        <IdleHoverPeek status={LIVE_MATCH_STATUS_WITH_FORECAST} hovered={true} />,
-      );
-      expect(container.querySelector(".idle-reveal-scorecard")).not.toBeNull();
-      expect(container.querySelector(".wx-forecast-strip")).toBeNull();
-    });
-  });
-
-  describe("iconForBundleId (plan 104 Step 7, plan 118 lucide swap)", () => {
-    it("maps a Music bundle id to the note icon", () => {
-      expect(iconForBundleId("com.apple.Music")).toBe(Music);
-    });
-
-    it("maps a TV bundle id to the tv icon", () => {
-      expect(iconForBundleId("com.apple.TV")).toBe(Tv);
-    });
-
-    it("maps a browser bundle id to the globe icon, case-insensitively", () => {
-      expect(iconForBundleId("com.apple.Safari")).toBe(Globe);
-      expect(iconForBundleId("app.zen-browser.zen")).toBe(Globe);
-      expect(iconForBundleId("com.google.Chrome")).toBe(Globe);
-      expect(iconForBundleId("org.mozilla.firefox")).toBe(Globe);
-    });
-
-    it("falls back to the play icon for anything else, including null", () => {
-      expect(iconForBundleId("com.example.SomeApp")).toBe(Play);
-      expect(iconForBundleId(null)).toBe(Play);
-    });
   });
 
   it("renders with no status prop at all (settings preview / older callers)", () => {
@@ -595,61 +67,36 @@ describe("IdleHoverPeek (plan 093)", () => {
     expect(container.querySelector(".idle-peek-timeline")).not.toBeNull();
   });
 
-  // plan 171 (tab-notch redesign, slice K): the `prefer` prop. Spec §7's
-  // weather bullet ("the shipped card, unchanged") and §11 ("this peek's
-  // mechanism is untouched") mean the weather/football TAB selections
-  // reach this component rather than a second copy of it — `prefer` is
-  // how the caller says which. Every case with `prefer` omitted must
-  // stay byte-identical to before the plan, which the whole rest of this
-  // file already pins.
+  // plan 171 (tab-notch redesign, slice K): the `prefer` prop. §11 ("this
+  // peek's mechanism is untouched") means the football TAB selection
+  // reaches this component rather than a second copy of it — `prefer` is
+  // how the caller says so. Every case with `prefer` omitted must stay
+  // byte-identical to before the plan, which the rest of this file
+  // already pins.
   describe("prefer (plan 171 slice K)", () => {
-    it("defaults to the shipped precedence chain — a live match still outranks weather", () => {
-      const { container } = render(
-        <IdleHoverPeek status={MEDIA_AND_LIVE_MATCH_STATUS} hovered={true} />,
-      );
+    it("defaults to the shipped precedence chain — a live match fills the slot", () => {
+      const { container } = render(<IdleHoverPeek status={LIVE_MATCH_STATUS} hovered={true} />);
       expect(container.querySelector(".idle-reveal-scorecard")).not.toBeNull();
     });
 
-    it('prefer="weather" shows the weather readout even when a live match would outrank it', () => {
+    it('prefer="football" shows the scorecard', () => {
       const { container } = render(
-        <IdleHoverPeek status={MEDIA_AND_LIVE_MATCH_STATUS} hovered={true} prefer="weather" />,
-      );
-      expect(container.querySelector(".wx-peek-readout")).not.toBeNull();
-      expect(container.querySelector(".idle-reveal-scorecard")).toBeNull();
-      expect(container.querySelector(".media-row")).toBeNull();
-    });
-
-    it('prefer="football" shows the scorecard and suppresses the weather backdrop/readout', () => {
-      const { container } = render(
-        <IdleHoverPeek status={MEDIA_AND_LIVE_MATCH_STATUS} hovered={true} prefer="football" />,
+        <IdleHoverPeek status={LIVE_MATCH_STATUS} hovered={true} prefer="football" />,
       );
       expect(container.querySelector(".idle-reveal-scorecard")).not.toBeNull();
-      expect(container.querySelector(".wx-peek-readout")).toBeNull();
-      expect(container.querySelector(".wx-peek-backdrop")).toBeNull();
-      expect(container.querySelector(".media-row")).toBeNull();
     });
 
     // a preference NARROWS, it never re-orders and falls through — being
-    // shown a scorecard because you asked for weather would be a worse
-    // lie than being shown nothing.
+    // shown something else because you asked for football would be a
+    // worse lie than being shown nothing.
     it("a preferred source with no data leaves the content slot empty rather than falling through", () => {
       const { container } = render(
-        <IdleHoverPeek status={MEDIA_STATUS} hovered={true} prefer="football" />,
+        <IdleHoverPeek status={NOTHING_AMBIENT_STATUS} hovered={true} prefer="football" />,
       );
       expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
       expect(container.querySelector(".idle-reveal-scorecard")).toBeNull();
-      expect(container.querySelector(".media-row")).toBeNull();
-      expect(container.querySelector(".wx-peek-readout")).toBeNull();
       // the timeline is unconditional — it never depended on ambient data
       expect(container.querySelector(".idle-peek-timeline")).not.toBeNull();
-    });
-
-    it("never routes media through prefer — the music tab has its own below-block", () => {
-      const { container } = render(
-        <IdleHoverPeek status={MEDIA_STATUS} hovered={true} prefer="weather" />,
-      );
-      expect(container.querySelector(".media-row")).toBeNull();
-      expect(container.querySelector(".wx-peek-readout")).not.toBeNull();
     });
   });
 });

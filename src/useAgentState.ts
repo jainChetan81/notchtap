@@ -83,8 +83,7 @@ export type AgentSessionView = {
   // Clock-derived at the moment rust captured this snapshot
   // (`capturedAtMs` below is the shared anchor) — the frontend derives
   // LIVE elapsed-in-state time locally: `elapsedMs + (Date.now() -
-  // capturedAtMs)`, same pattern `NowPlayingSummary`'s
-  // elapsedMs/capturedAtMs pair already uses (useStatusState.ts).
+  // capturedAtMs)`, so a continuously-varying value never rides the wire.
   elapsedMs: number;
   retentionRemainingMs: number | null;
   history: AgentTransition[];

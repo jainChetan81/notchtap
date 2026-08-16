@@ -1,7 +1,7 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 import type { AgentSessionView } from "../useAgentState";
-import type { NowPlayingSummary, StatusState } from "../useStatusState";
+import type { StatusState } from "../useStatusState";
 import { TabBelowBlock, tabBelowBlockHandles } from "./TabBelowBlock";
 
 afterEach(cleanup);
@@ -15,19 +15,6 @@ const QUIET: StatusState = {
   agent: { activeSessions: 0 },
   football: { enabled: false, live: null },
   news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
-  weather: { enabled: false, current: null },
-  media: { enabled: false, current: null },
-};
-
-const TRACK: NowPlayingSummary = {
-  title: "Midnight City",
-  artist: "M83",
-  album: "Hurry Up, We're Dreaming",
-  playing: true,
-  elapsedMs: 1500,
-  durationMs: 243_000,
-  capturedAtMs: CAPTURED_AT_MS,
-  appBundleId: "app.zen-browser.zen",
 };
 
 function session(overrides: Partial<AgentSessionView> = {}): AgentSessionView {
@@ -65,18 +52,16 @@ function renderTab(
 }
 
 describe("tabBelowBlockHandles (plan 171, slice K)", () => {
-  it("claims exactly the three tabs with their own below-block component", () => {
+  it("claims exactly the tabs with their own below-block component", () => {
     expect(tabBelowBlockHandles("agent")).toBe(true);
-    expect(tabBelowBlockHandles("music")).toBe(true);
     expect(tabBelowBlockHandles("news")).toBe(true);
   });
 
-  // football/weather are served by IdleHoverPeek's own shipped rendering
-  // instead (spec §7's weather bullet, §11's untouched-mechanism rule) —
-  // see TabBelowBlock.tsx's header comment for the full split.
-  it("does not claim football or weather, which reuse the shipped hover peek", () => {
+  // football is served by IdleHoverPeek's own shipped rendering instead
+  // (spec §11's untouched-mechanism rule) — see TabBelowBlock.tsx's
+  // header comment for the full split.
+  it("does not claim football, which reuses the shipped hover peek", () => {
     expect(tabBelowBlockHandles("football")).toBe(false);
-    expect(tabBelowBlockHandles("weather")).toBe(false);
   });
 
   it("does not claim the no-selection state", () => {
@@ -92,10 +77,8 @@ describe("TabBelowBlock (plan 171, slice K)", () => {
     expect(container.firstChild).toBeNull();
   });
 
-  it("renders nothing for the two tabs the hover peek serves", () => {
+  it("renders nothing for the tab the hover peek serves", () => {
     expect(renderTab("football").container.firstChild).toBeNull();
-    cleanup();
-    expect(renderTab("weather").container.firstChild).toBeNull();
   });
 
   describe("agent", () => {
@@ -140,39 +123,6 @@ describe("TabBelowBlock (plan 171, slice K)", () => {
     });
   });
 
-  describe("music", () => {
-    it("mounts the media below-block off the now-playing snapshot", () => {
-      const { container } = renderTab("music", {
-        ...QUIET,
-        media: { enabled: true, current: TRACK },
-      });
-      expect(container.querySelector('[data-testid="media-below-block"]')).not.toBeNull();
-      expect(screen.getByText("Midnight City")).toBeTruthy();
-    });
-
-    it("renders nothing when nothing is playing", () => {
-      const { container } = renderTab("music", QUIET);
-      expect(container.firstChild).toBeNull();
-    });
-
-    // spec §10: transport dispatch is rust's job. The buttons exist for
-    // the press feedback and the accessible name; clicking one must not
-    // throw, and there is no invoke() anywhere behind it.
-    it("renders working transport buttons whose handler is a safe no-op", () => {
-      renderTab("music", { ...QUIET, media: { enabled: true, current: TRACK } });
-      const next = screen.getByLabelText("Next track");
-      expect(() => next.click()).not.toThrow();
-    });
-
-    it("stays compact by default — spec §2 decision 6 forbids auto-expanding", () => {
-      const { container } = renderTab("music", {
-        ...QUIET,
-        media: { enabled: true, current: TRACK },
-      });
-      expect(container.querySelector(".media-scrub")).toBeNull();
-    });
-  });
-
   describe("news", () => {
     // Flagged gap, not a bug: `StatusState.news` carries the charge cycle
     // only — no story content exists on the wire at this commit, so
@@ -190,7 +140,7 @@ describe("TabBelowBlock (plan 171, slice K)", () => {
   it("tolerates a missing status wire entirely (settings preview / older callers)", () => {
     const { container } = render(
       <TabBelowBlock
-        selected="music"
+        selected="news"
         status={undefined}
         agentSessions={[]}
         agentCapturedAtMs={CAPTURED_AT_MS}

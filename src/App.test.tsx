@@ -22,37 +22,22 @@ const emitStatus = (paused: boolean) =>
       football: { enabled: false, live: null },
       news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
       weather: { enabled: false, current: null },
-      media: { enabled: false, current: null },
     }),
   );
 
-// plan 180 (Step 2): the same full status shape as `emitStatus` above,
-// but with a track on the wire — the media below-block renders nothing at
-// all for `media.current === null` (MediaBelowBlock.tsx's own early
-// return), so the seam test needs real content to distinguish "the
+// plan 180 (Step 2): an agent session on the UNGATED tab list only —
+// `sessions` stays empty so `presentationMode` keeps the idle rail (not
+// the Agent Board) mounted, while the agent tab's below-block has real
+// content to render. The seam test needs content to distinguish "the
 // selection arrived" from "the selection arrived and rendered nothing".
-const emitStatusWithMedia = () =>
+const emitAgentTabSession = () =>
   act(() =>
-    emitTo("status-state", {
-      paused: false,
-      waiting: 0,
-      agent: { activeSessions: 0 },
-      football: { enabled: false, live: null },
-      news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
-      weather: { enabled: false, current: null },
-      media: {
-        enabled: true,
-        current: {
-          title: "Midnight City",
-          artist: "M83",
-          album: "Hurry Up, We're Dreaming",
-          playing: true,
-          elapsedMs: 1500,
-          durationMs: 243_000,
-          capturedAtMs: 1_753_000_000_000,
-          appBundleId: "app.zen-browser.zen",
-        },
-      },
+    emitTo("agent-state", {
+      revision: 1,
+      capturedAtMs: Date.now(),
+      sessions: [],
+      tabSessions: [agentSession("tab-s1")],
+      adapterHealth: [],
     }),
   );
 
@@ -559,19 +544,19 @@ describe("App", () => {
   // is the silent "nothing is selected" page (spec §7's "none").
   //
   // Three events are needed to reach the seam, and all three are real
-  // rust-emitted channels, not test scaffolding: a status wire with a
-  // track on it (the below-block renders nothing without content), the
-  // hover that opens the tab pull at all (`tabPullOpen = !showing &&
+  // rust-emitted channels, not test scaffolding: an agent-state wire with
+  // a session on it (the below-block renders nothing without content),
+  // the hover that opens the tab pull at all (`tabPullOpen = !showing &&
   // hovered`, StatusRailCard.tsx), and the selection itself.
   describe("tab selection seam (plan 180)", () => {
     it("mounts the selected tab's below-block once hovered", async () => {
       const { container } = render(<App />);
-      emitStatusWithMedia();
+      emitAgentTabSession();
       emitHover(true);
-      emitTabSelection({ selected: "music" });
+      emitTabSelection({ selected: "agent" });
 
       await vi.waitFor(() => {
-        expect(container.querySelector('[data-testid="media-below-block"]')).not.toBeNull();
+        expect(container.querySelector('[data-testid="agent-below-block"]')).not.toBeNull();
       });
       // ...and the ambient peek yields to it, leaving exactly one
       // `.below-block` under the shell once the swap settles — the
@@ -588,18 +573,18 @@ describe("App", () => {
 
     it("is inert until the operator hovers — a selection alone opens nothing", async () => {
       const { container } = render(<App />);
-      emitStatusWithMedia();
-      emitTabSelection({ selected: "music" });
+      emitAgentTabSession();
+      emitTabSelection({ selected: "agent" });
 
       await act(async () => {
         await Promise.resolve();
       });
-      expect(container.querySelector('[data-testid="media-below-block"]')).toBeNull();
+      expect(container.querySelector('[data-testid="agent-below-block"]')).toBeNull();
     });
 
     it("ignores an unknown tab token instead of rendering a broken page", async () => {
       const { container } = render(<App />);
-      emitStatusWithMedia();
+      emitAgentTabSession();
       emitHover(true);
       emitTabSelection({ selected: "definitely-not-a-tab" });
 
@@ -610,25 +595,25 @@ describe("App", () => {
       // closed-set check against `TAB_ORDER` returns "nothing selected"
       // for anything it does not recognise, never an error) — which is
       // also why `tabWireParity.test.ts` exists: rust-side drift in the
-      // five wire tokens would land here and read as a working app that
+      // wire tokens would land here and read as a working app that
       // simply never selects anything.
-      expect(container.querySelector('[data-testid="media-below-block"]')).toBeNull();
+      expect(container.querySelector('[data-testid="agent-below-block"]')).toBeNull();
       // ...and the shipped ambient peek is what fills the gap, unchanged.
       expect(container.querySelector(".idle-peek")).not.toBeNull();
     });
 
     it("drops back to the ambient peek when an unknown token follows a good one", async () => {
       const { container } = render(<App />);
-      emitStatusWithMedia();
+      emitAgentTabSession();
       emitHover(true);
-      emitTabSelection({ selected: "music" });
+      emitTabSelection({ selected: "agent" });
       await vi.waitFor(() => {
-        expect(container.querySelector('[data-testid="media-below-block"]')).not.toBeNull();
+        expect(container.querySelector('[data-testid="agent-below-block"]')).not.toBeNull();
       });
 
       emitTabSelection({ selected: 5 });
       await vi.waitFor(() => {
-        expect(container.querySelector('[data-testid="media-below-block"]')).toBeNull();
+        expect(container.querySelector('[data-testid="agent-below-block"]')).toBeNull();
       });
       expect(container.querySelector(".idle-peek")).not.toBeNull();
     });

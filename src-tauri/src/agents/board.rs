@@ -61,11 +61,9 @@ pub struct AgentStateSnapshot {
     pub revision: u64,
     /// Wall-clock epoch millis at the moment this snapshot was built —
     /// the anchor the frontend derives LIVE per-session elapsed-in-state
-    /// time from locally on its own interval, same `capturedAtMs` +
-    /// `elapsedMs` pattern `NowPlayingSummary` already uses (status.rs)
-    /// rather than Rust publishing a per-second clock tick (CLAUDE.md's
-    /// `dedup_eq` rule: continuously varying fields must never drive a
-    /// wire emission).
+    /// time from locally on its own interval, rather than Rust
+    /// publishing a per-second clock tick (CLAUDE.md's `dedup_eq` rule:
+    /// continuously varying fields must never drive a wire emission).
     pub captured_at_ms: i64,
     /// The Agent Board's own list: gated by
     /// [`AgentBoardPublisher::gate_presence`], so it is EMPTY whenever no
@@ -279,9 +277,8 @@ fn to_view(state: &AgentState, now: Instant) -> AgentSessionView {
 }
 
 /// Wall-clock epoch millis "now" — same technique as
-/// `now_playing.rs::now_ms`/`history.rs::now_ms`, each module's own
-/// private copy rather than a shared crate-internal helper (neither of
-/// those two is in this ticket's scope to refactor).
+/// `history.rs::now_ms`, each module's own private copy rather than a
+/// shared crate-internal helper.
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

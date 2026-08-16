@@ -13,17 +13,15 @@
 //! tauri events — the monitor calls in, never the other way.
 //!
 
-/// The five sources the icon strip can select, in the strip's fixed
+/// The three sources the icon strip can select, in the strip's fixed
 /// left-to-right order (spec `docs/superpowers/specs/2026-08-02-tab-
-/// notch-design.md` §6's table) — the SAME order `prefix+1..5` maps onto
-/// (spec §9's keymap table: "1…5 select agent/football/music/weather/
-/// news, strip order, left to right").
+/// notch-design.md` §6's table, minus the removed music/weather
+/// verticals) — the SAME order `prefix+1..3` maps onto (spec §9's
+/// keymap table: digits select in strip order, left to right).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum Tab {
     Agent,
     Football,
-    Music,
-    Weather,
     News,
 }
 
@@ -31,15 +29,9 @@ impl Tab {
     /// Fixed strip order — the single source of truth every other "which
     /// index is which tab" mapping (icon-rect layout, `prefix+N`) reads
     /// from, so the order can never drift between the two call sites.
-    pub const ORDER: [Tab; 5] = [
-        Tab::Agent,
-        Tab::Football,
-        Tab::Music,
-        Tab::Weather,
-        Tab::News,
-    ];
+    pub const ORDER: [Tab; 3] = [Tab::Agent, Tab::Football, Tab::News];
 
-    /// `prefix+1`..`prefix+5` (spec §9) — `None` for anything outside
+    /// `prefix+1`..`prefix+3` (spec §9) — `None` for anything outside
     /// that range, so the caller's "anything else: disarm, do nothing"
     /// rule (spec §9's keymap table, last row) falls out of a plain
     /// `if let Some(tab) = Tab::from_prefix_digit(k) { … }` at the call
@@ -48,9 +40,7 @@ impl Tab {
         match digit {
             1 => Some(Tab::Agent),
             2 => Some(Tab::Football),
-            3 => Some(Tab::Music),
-            4 => Some(Tab::Weather),
-            5 => Some(Tab::News),
+            3 => Some(Tab::News),
             _ => None,
         }
     }
@@ -73,7 +63,7 @@ impl TabSelection {
 
     /// A click on `tab` (spec §2 decision 5): the SAME tab clicked again
     /// deselects; a different tab (or nothing previously selected) moves
-    /// the selection to it. This is also what `prefix+1..5` drives (spec
+    /// the selection to it. This is also what `prefix+1..3` drives (spec
     /// §9's keymap table: "the same key again deselects") — one rule,
     /// two callers, not two mechanisms; see `select` below.
     pub fn select(&mut self, tab: Tab) {
@@ -91,10 +81,10 @@ impl TabSelection {
     /// Spec §2 decision 5 / §3's "a selection whose icon disappears is
     /// cleared, not remembered": call after every liveness change with a
     /// predicate answering "is the CURRENTLY selected tab still present"
-    /// (weather/news are always present whenever the strip is up, per
-    /// spec §6's table, so this is a no-op for them by construction —
-    /// only agent/football/music can genuinely go present -> absent
-    /// mid-selection). A no-op when nothing is selected.
+    /// (news is always present whenever the strip is up, per spec §6's
+    /// table, so this is a no-op for it by construction — only
+    /// agent/football can genuinely go present -> absent mid-selection).
+    /// A no-op when nothing is selected.
     pub fn clear_if_gone(&mut self, is_present: impl FnOnce(Tab) -> bool) {
         if let Some(tab) = self.selected {
             if !is_present(tab) {
@@ -106,23 +96,19 @@ impl TabSelection {
 
 impl Tab {
     /// The wire token `tab-selection-changed` carries (plan 171 §0 pins
-    /// the closed set: `"agent" | "football" | "music" | "weather" |
-    /// "news"`). "music", not "media" — the strip's own vocabulary, per
-    /// the spec's §6 table.
+    /// the closed set: `"agent" | "football" | "news"`).
     pub fn wire_label(self) -> &'static str {
         match self {
             Tab::Agent => "agent",
             Tab::Football => "football",
-            Tab::Music => "music",
-            Tab::Weather => "weather",
             Tab::News => "news",
         }
     }
 }
 
 /// Which tabs are PRESENT given the current ambient state (spec §6's
-/// visibility rule): weather and news always, agent/football/music only
-/// while genuinely live. Returned in `Tab::ORDER` order — the same order
+/// visibility rule): news always, agent/football only while genuinely
+/// live. Returned in `Tab::ORDER` order — the same order
 /// `hover::icon_strip_rects` lays boxes out in, so a caller can zip the
 /// two index-for-index (that pairing is the whole click hit-test).
 pub fn present_tabs(state: &crate::status::StatusState) -> Vec<Tab> {
@@ -132,8 +118,7 @@ pub fn present_tabs(state: &crate::status::StatusState) -> Vec<Tab> {
         .filter(|tab| match tab {
             Tab::Agent => state.agent.active_sessions > 0,
             Tab::Football => state.football.live.is_some(),
-            Tab::Music => state.media.current.is_some(),
-            Tab::Weather | Tab::News => true,
+            Tab::News => true,
         })
         .collect()
 }
@@ -244,7 +229,7 @@ impl Default for TabWire {
 #[cfg(test)]
 mod wire_tests {
     use super::*;
-    use crate::status::{FootballStatus, MediaStatus, NewsStatus, StatusState, WeatherStatus};
+    use crate::status::{FootballStatus, NewsStatus, StatusState};
 
     fn base_state() -> StatusState {
         StatusState {
@@ -261,33 +246,25 @@ mod wire_tests {
                 charge_count: 0,
                 is_charged: false,
             },
-            weather: WeatherStatus {
-                enabled: true,
-                current: None,
-            },
-            media: MediaStatus {
-                enabled: true,
-                current: None,
-            },
         }
     }
 
     #[test]
     fn wire_labels_are_the_pinned_closed_set() {
         let labels: Vec<&str> = Tab::ORDER.iter().map(|t| t.wire_label()).collect();
-        assert_eq!(labels, ["agent", "football", "music", "weather", "news"]);
+        assert_eq!(labels, ["agent", "football", "news"]);
     }
 
     #[test]
-    fn weather_and_news_are_always_present_even_with_nothing_live() {
-        assert_eq!(present_tabs(&base_state()), vec![Tab::Weather, Tab::News]);
+    fn news_is_always_present_even_with_nothing_live() {
+        assert_eq!(present_tabs(&base_state()), vec![Tab::News]);
     }
 
     #[test]
     fn agent_presence_follows_active_session_count() {
         let mut s = base_state();
         s.agent.active_sessions = 1;
-        assert_eq!(present_tabs(&s), vec![Tab::Agent, Tab::Weather, Tab::News]);
+        assert_eq!(present_tabs(&s), vec![Tab::Agent, Tab::News]);
     }
 
     #[test]
@@ -298,17 +275,7 @@ mod wire_tests {
             label: "A 1-0 B".to_string(),
             minute: "45'".to_string(),
         });
-        s.media.current = Some(crate::status::NowPlayingSummary {
-            title: "t".to_string(),
-            artist: None,
-            album: None,
-            playing: true,
-            elapsed_ms: 0,
-            duration_ms: None,
-            captured_at_ms: 0,
-            app_bundle_id: None,
-        });
-        assert_eq!(present_tabs(&s), Tab::ORDER.to_vec());
+        assert_eq!(present_tabs(&s), vec![Tab::Agent, Tab::Football, Tab::News]);
     }
 }
 
@@ -324,22 +291,22 @@ mod tests {
     #[test]
     fn selecting_a_tab_selects_it() {
         let mut s = TabSelection::default();
-        s.select(Tab::Weather);
-        assert_eq!(s.selected(), Some(Tab::Weather));
+        s.select(Tab::News);
+        assert_eq!(s.selected(), Some(Tab::News));
     }
 
     #[test]
     fn selecting_the_same_tab_again_deselects_it() {
         let mut s = TabSelection::default();
-        s.select(Tab::Weather);
-        s.select(Tab::Weather);
+        s.select(Tab::News);
+        s.select(Tab::News);
         assert_eq!(s.selected(), None);
     }
 
     #[test]
     fn selecting_a_different_tab_moves_the_selection_not_adds_to_it() {
         let mut s = TabSelection::default();
-        s.select(Tab::Weather);
+        s.select(Tab::Football);
         s.select(Tab::News);
         assert_eq!(s.selected(), Some(Tab::News));
     }
@@ -364,31 +331,31 @@ mod tests {
     #[test]
     fn clear_if_gone_clears_only_when_the_selected_tab_is_no_longer_present() {
         let mut s = TabSelection::default();
-        s.select(Tab::Music);
-        s.clear_if_gone(|tab| tab != Tab::Music); // Music is absent
+        s.select(Tab::Football);
+        s.clear_if_gone(|tab| tab != Tab::Football); // Football is absent
         assert_eq!(s.selected(), None);
     }
 
     #[test]
     fn clear_if_gone_leaves_the_selection_when_still_present() {
         let mut s = TabSelection::default();
-        s.select(Tab::Music);
-        s.clear_if_gone(|tab| tab == Tab::Music); // still present
-        assert_eq!(s.selected(), Some(Tab::Music));
+        s.select(Tab::Football);
+        s.clear_if_gone(|tab| tab == Tab::Football); // still present
+        assert_eq!(s.selected(), Some(Tab::Football));
     }
 
     #[test]
-    fn from_prefix_digit_maps_1_through_5_in_strip_order() {
+    fn from_prefix_digit_maps_1_through_3_in_strip_order() {
         assert_eq!(Tab::from_prefix_digit(1), Some(Tab::Agent));
         assert_eq!(Tab::from_prefix_digit(2), Some(Tab::Football));
-        assert_eq!(Tab::from_prefix_digit(3), Some(Tab::Music));
-        assert_eq!(Tab::from_prefix_digit(4), Some(Tab::Weather));
-        assert_eq!(Tab::from_prefix_digit(5), Some(Tab::News));
+        assert_eq!(Tab::from_prefix_digit(3), Some(Tab::News));
     }
 
     #[test]
-    fn from_prefix_digit_rejects_anything_out_of_1_to_5() {
+    fn from_prefix_digit_rejects_anything_out_of_1_to_3() {
         assert_eq!(Tab::from_prefix_digit(0), None);
+        assert_eq!(Tab::from_prefix_digit(4), None);
+        assert_eq!(Tab::from_prefix_digit(5), None);
         assert_eq!(Tab::from_prefix_digit(6), None);
     }
 

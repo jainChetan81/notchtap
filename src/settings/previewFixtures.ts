@@ -3,7 +3,7 @@
 // independently. Covers the states most sensitive to the card-CSS drift
 // this same plan's shared-stylesheet work (overlay-card.css) exists to
 // prevent: the original four expanded samples, PLUS one compact
-// (collapsed) card, one live ESPN scorecard, one weather alert, and one
+// (collapsed) card, one live ESPN scorecard, and one
 // compact news card (110's single `.notif-time-inline` timestamp).
 //
 // Deliberately OUT (per the plan's own scoping note): idle rail / idle
@@ -199,38 +199,6 @@ export const PREVIEW_SAMPLES: ReadonlyArray<PreviewSample> = [
       remainingMs: 5000,
       agentRuntime: null,
       espn: ESPN_BASE,
-    },
-  },
-  {
-    label: "Weather alert (medium priority)",
-    slot: {
-      state: "showing",
-      id: "preview-weather",
-      title: "Rain expected soon",
-      body: "75% chance of rain within ~30 min",
-      eventType: "generic",
-      priority: "medium",
-      signal: "generic",
-      origin: "weather",
-      expanded: false,
-      source: null,
-      category: null,
-      publishedAtMs: null,
-      link: null,
-      subtitle: null,
-      // plan 082's wx-condition/wx-is-day marker pair (plan 035's details
-      // channel, reused) — same shape StatusRailCard.test.tsx's own
-      // WEATHER_ALERT fixture uses. plan 110 reads wx-is-day for the
-      // wire-driven day/night art variant; "1" is day.
-      details: [
-        { label: "wx-condition", value: "Rain" },
-        { label: "wx-is-day", value: "1" },
-      ],
-      queueTotal: 1,
-      queueDone: 0,
-      ttlMs: 8000,
-      remainingMs: 5000,
-      agentRuntime: null,
     },
   },
   {

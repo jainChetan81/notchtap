@@ -5,15 +5,6 @@
  * application-specific extensions.
  */
 
-:root {
-  /* Media source accent used by the icon strip, equaliser, and media card. */
-  --media-mint: oklch(0.923 0.067 177.33); /* #b6f5e5 */
-}
-
-.dark {
-  --media-mint: oklch(0.923 0.067 177.33);
-}
-
-@theme inline {
-  --color-media-mint: var(--media-mint);
-}
+/* No app-only tokens currently — the media accent (--media-mint) left
+ * with the now-playing vertical. This file stays as the designated home
+ * for future notchtap-only extensions. */

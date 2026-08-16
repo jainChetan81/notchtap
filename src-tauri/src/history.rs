@@ -67,8 +67,8 @@ impl HistoryStore {
     pub fn with_limits(dir: impl AsRef<Path>, max_size: u64, max_files: usize) -> io::Result<Self> {
         let dir = dir.as_ref().to_path_buf();
         fs::create_dir_all(&dir)?;
-        // history.jsonl holds sensitive notification content — same
-        // posture as settings.rs's secrets.toml (0600). `create_dir_all`
+        // history.jsonl holds sensitive notification content — 0600,
+        // same posture as settings.rs's config.toml. `create_dir_all`
         // makes the dir with the umask-derived default mode, so pin it
         // down explicitly too (0700) rather than trusting the umask.
         fs::set_permissions(&dir, fs::Permissions::from_mode(0o700))?;
@@ -280,6 +280,38 @@ mod tests {
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].event.payload.title, "good-1");
         assert_eq!(entries[1].event.payload.title, "good-2");
+    }
+
+    // Removed-origin compat: an on-disk history.jsonl may hold entries
+    // recorded while a since-removed origin (e.g. `weather`) still
+    // existed. Those lines no longer deserialize (`SourceKind` rejects
+    // unknown values), and loading must SKIP them — same non-fatal
+    // degrade as the malformed-line test above — never fail the read.
+    #[test]
+    fn entry_with_removed_weather_origin_is_skipped_not_fatal() {
+        let dir = temp_dir();
+        fs::create_dir_all(&dir).unwrap();
+        let store = HistoryStore::with_limits(&dir, DEFAULT_MAX_SIZE, DEFAULT_MAX_FILES).unwrap();
+
+        let good = serde_json::to_string(&HistoryEntry {
+            recorded_at_ms: 1,
+            event: test_fixtures::event("good"),
+        })
+        .unwrap();
+        // build the stale line from a real serialized entry so every
+        // OTHER field stays wire-accurate — only the origin is the
+        // removed spelling.
+        let stale = good.replace("\"origin\":\"manual\"", "\"origin\":\"weather\"");
+        assert_ne!(
+            good, stale,
+            "fixture must actually carry a manual origin to rewrite"
+        );
+        let contents = format!("{stale}\n{good}\n");
+        fs::write(store.path(), contents).unwrap();
+
+        let entries = store.read_recent(10).unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].event.payload.title, "good");
     }
 
     #[test]

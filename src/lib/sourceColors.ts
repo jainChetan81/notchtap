@@ -9,22 +9,20 @@
 // from the rules that actually paint the overlay.
 //
 // Origin/runtime entries whose CSS rides a `var(--overlay-*)` /
-// `var(--overlay-fg)` token (kimi, football, weather, manual, the
+// `var(--overlay-fg)` token (kimi, football, manual, the
 // agent fallback, sports, business) are resolved here to that token's
 // underlying hex from vendor/shared-ui/design/tokens.css (:74-91) —
 // each such entry is commented with the token name it mirrors.
 
 // ---- non-news origins (source-identity.css) ----------------------------
 
-export type SourceOriginToken = "manual" | "football" | "weather" | "agent" | "news";
+export type SourceOriginToken = "manual" | "football" | "agent" | "news";
 
 export const SOURCE_ORIGIN_COLORS: Record<SourceOriginToken, string> = {
   // --overlay-blue ("CLI blue")
   manual: "#0a84ff",
   // --overlay-green
   football: "#7fe08d",
-  // --overlay-amber
-  weather: "#f0c46a",
   // --overlay-amber (runtime-unknown agent fallback, src-agent)
   agent: "#f0c46a",
   // --overlay-coral — the ORIGIN-level news identity (the news

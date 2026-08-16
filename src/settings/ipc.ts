@@ -6,8 +6,6 @@ import type {
   Config,
   HistoryEntry,
   QueueItemSummary,
-  SecretField,
-  SecretStatus,
   TestSource,
 } from "./types";
 
@@ -32,13 +30,11 @@ export interface SettingsCommands {
   get_history: { args: undefined; result: HistoryEntry[] };
   get_queue: { args: undefined; result: QueueItemSummary[] };
   get_recent_log_lines: { args: undefined; result: string[] };
-  get_secret_status: { args: undefined; result: SecretStatus };
   save_config_and_relaunch: { args: { config: Config }; result: null };
   search_news_now: { args: { query: string }; result: number };
   send_agent_test_event: { args: { runtime: AgentWireRuntime }; result: null };
   send_test_notification: { args: { source: TestSource }; result: null };
   set_appearance: { args: { scale: number; radius: number; opacity: number }; result: null };
-  set_secret: { args: { field: SecretField; value: string }; result: null };
   skip_current: { args: undefined; result: null };
 }
 

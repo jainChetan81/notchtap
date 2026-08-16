@@ -622,7 +622,7 @@ fn feed_log_ref(config: &RssFeedConfig) -> String {
 // threading a new field through `Engine::new` (whose ~dozen call sites,
 // mostly test doubles, would otherwise all need updating for a poller
 // this deliberately isn't unit-tested — see this module's own top
-// comment referenced from `weather_poller.rs`).
+// comment).
 #[allow(clippy::too_many_arguments)]
 pub fn spawn_rss_poller(
     engine: Engine,

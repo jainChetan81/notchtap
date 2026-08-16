@@ -30,15 +30,13 @@ mod logging;
 mod login_item;
 mod net;
 mod news_charge;
-mod notifier;
-mod now_playing;
 mod poller;
 mod prefix;
 mod presentation;
 pub mod queue;
 mod rss_poller;
 mod settings;
-// The single source of truth for the eighteen settings-window commands
+// The single source of truth for the fifteen settings-window commands
 // (see this module's own doc comment) — build.rs's AppManifest::commands
 // allowlist, the generate_handler![...] registration just below, and
 // capabilities/settings.json must all name exactly the commands listed
@@ -47,7 +45,6 @@ mod settings_commands;
 pub mod silence;
 mod status;
 mod tabs;
-mod weather_poller;
 
 use std::sync::{Arc, Mutex as StdMutex, Once, OnceLock};
 
@@ -220,7 +217,7 @@ pub fn run() {
     let espn_live_card = config.espn_live_card;
     let espn_rich_events = config.espn_rich_events;
     // plan 083 workstream a: `~/.config/notchtap/crests/`, a sibling of
-    // config.toml/secrets.toml under the same directory
+    // config.toml under the same directory
     // (`Config::dir_from_home`) — the repo's first binary-asset cache.
     // Crest PNGs are runtime-cached here, never committed to git.
     let crests = dirs::home_dir()
@@ -264,33 +261,13 @@ pub fn run() {
     let agent_terminal_retention =
         std::time::Duration::from_secs(agents_config.terminal_retention_secs);
     let agent_stale_retention = std::time::Duration::from_secs(agents_config.stale_retention_secs);
-    let weather_enabled = config.weather_enabled;
-    let weather_lat = config.weather_lat;
-    let weather_lon = config.weather_lon;
-    let weather_units = config.weather_units;
-    let weather_poll_secs = config.weather_poll_secs;
-    let weather_rain_threshold_pct = config.weather_rain_threshold_pct;
-    let weather_rain_lookahead_mins = config.weather_rain_lookahead_mins;
-    let weather_temp_hot_c = config.weather_temp_hot_c;
-    let weather_temp_cold_c = config.weather_temp_cold_c;
-    let weather_ttl_secs = config.weather_ttl_secs;
-    let weather_priority = config.weather_priority;
     let history_enabled = config.history_enabled;
-    let now_playing_enabled = config.now_playing_enabled;
-    let now_playing_adapter_enabled = config.now_playing_adapter_enabled;
-    let now_playing_adapter_dir = config.now_playing_adapter_dir.clone();
     // plan 146a: the `[silence]` block feeds `SilenceController::new` at
     // boot (below, in `setup`) — session-only mute/skip state is never
     // read from config, only the daily schedule.
     let silence_schedule_enabled = config.silence.enabled;
     let silence_window = config.silence.window;
 
-    // v3 outbound connectors: built here (channel needs no runtime), any
-    // worker future would be spawned in setup once the runtime exists. no
-    // connectors are wired up currently — the fan-out framework
-    // (`ConnectorHandle`) stays in place for a future connector (plan 128).
-    let connector_handles: Vec<notifier::ConnectorHandle> = Vec::new();
-    let connectors = Arc::new(connector_handles);
     let server_once = Arc::new(Once::new());
 
     let builder = tauri::Builder::default();
@@ -308,10 +285,8 @@ pub fn run() {
             settings::get_history,
             settings::get_queue,
             settings::get_recent_log_lines,
-            settings::get_secret_status,
             settings::save_config_and_relaunch,
             settings::search_news_now,
-            settings::set_secret,
             settings::send_test_notification,
             settings::set_appearance,
             settings::skip_current,
@@ -376,11 +351,8 @@ pub fn run() {
             let engine = Engine::new(
                 initial_queue,
                 app.handle().clone(),
-                connectors.clone(),
                 espn_enabled,
                 rss_enabled,
-                weather_enabled,
-                now_playing_enabled,
                 history,
                 tab_wire.clone(),
             );
@@ -1081,39 +1053,6 @@ pub fn run() {
                 );
             }
 
-            // weather poller (plan 040 Part B) — config-gated the same
-            // way: `weather_enabled = false` (the default) means it never
-            // spawns and the idle rail shows no weather chip.
-            if weather_enabled {
-                weather_poller::spawn_weather_poller(
-                    engine.clone(),
-                    weather_lat,
-                    weather_lon,
-                    weather_units,
-                    weather_poll_secs,
-                    weather_rain_threshold_pct,
-                    weather_rain_lookahead_mins,
-                    weather_temp_hot_c,
-                    weather_temp_cold_c,
-                    weather_ttl_secs,
-                    weather_priority,
-                );
-            }
-
-            // now-playing ambient source (plan 104) — config-gated by
-            // BOTH the feature toggle and the kill switch; the module's
-            // own spawn function additionally requires the vendored
-            // adapter's two files to exist at `now_playing_adapter_dir`
-            // before starting the child (clean degrade, one warn-level
-            // log, never a startup error — mirrors `detect_path`'s own
-            // missing-binary tolerance).
-            now_playing::spawn_now_playing_poller(
-                engine.clone(),
-                now_playing_enabled,
-                now_playing_adapter_enabled,
-                now_playing_adapter_dir,
-            );
-
             Ok(())
         })
         .on_page_load(move |webview, payload| {
@@ -1493,7 +1432,7 @@ fn cutout_height_js_value(inset: f64) -> String {
 // count while `!visible` means the Board is what's actually rendered
 // under the cursor, so `hover::board_rect` (sized off the Board's own
 // shape) is used instead of `hover::active_card_rect`'s idle formula
-// (sized off the small ambient clock/weather card, which is NOT what's
+// (sized off the small ambient clock card, which is NOT what's
 // on screen in that case).
 //
 // Operator decision 2026-08-02 (`[agents] board_show_working`): that
@@ -2035,12 +1974,10 @@ const PREFIX_WATCHDOG_TIMEOUT: std::time::Duration = std::time::Duration::from_s
 /// the prefix/esc disarms it. `enter`/`o` both mean ExpandToggle and
 /// `esc` maps to Disarm, per spec §9's table.
 #[cfg(target_os = "macos")]
-const PREFIX_FOLLOWUPS: [(Code, prefix::PrefixKey); 11] = [
+const PREFIX_FOLLOWUPS: [(Code, prefix::PrefixKey); 9] = [
     (Code::Digit1, prefix::PrefixKey::Digit(1)),
     (Code::Digit2, prefix::PrefixKey::Digit(2)),
     (Code::Digit3, prefix::PrefixKey::Digit(3)),
-    (Code::Digit4, prefix::PrefixKey::Digit(4)),
-    (Code::Digit5, prefix::PrefixKey::Digit(5)),
     (Code::BracketLeft, prefix::PrefixKey::BracketLeft),
     (Code::BracketRight, prefix::PrefixKey::BracketRight),
     (Code::Enter, prefix::PrefixKey::ExpandToggle),
@@ -2090,7 +2027,7 @@ fn prefix_followup_key_for(shortcut: &Shortcut) -> Option<prefix::PrefixKey> {
         .map(|(_, key)| *key)
 }
 
-/// Registers or releases the eleven bare follow-up grabs. Returns whether
+/// Registers or releases the nine bare follow-up grabs. Returns whether
 /// EVERY key reached the requested state.
 ///
 /// PAL consensus 2026-08-03 (gemini-2.5-pro + gpt-5.2, unanimous on this
@@ -2964,7 +2901,7 @@ mod agent_session_advance_tests {
     #[test]
     fn should_auto_advance_session_false_when_different_tab_selected() {
         assert!(!should_auto_advance_session(
-            Some(tabs::Tab::Weather),
+            Some(tabs::Tab::News),
             3,
             false,
             false
@@ -3197,9 +3134,6 @@ mod tests {
         Engine::new(
             SingleSlotQueue::new(50),
             app.handle().clone(),
-            Arc::new(Vec::new()),
-            false,
-            false,
             false,
             false,
             None,

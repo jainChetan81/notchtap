@@ -34,7 +34,7 @@ function expectHexAppearsIn(hex: string, css: string) {
 }
 
 describe("sourceColors parity with source-identity.css / news-category.css", () => {
-  const ORIGIN_TOKENS: SourceOriginToken[] = ["manual", "football", "weather", "agent", "news"];
+  const ORIGIN_TOKENS: SourceOriginToken[] = ["manual", "football", "agent", "news"];
   const RUNTIME_TOKENS: SourceRuntimeToken[] = ["claude-code", "codex", "kimi", "opencode"];
   const CATEGORY_TOKENS: SourceCategoryToken[] = [
     "politics",
@@ -58,16 +58,10 @@ describe("sourceColors parity with source-identity.css / news-category.css", () 
     expect(Object.keys(SOURCE_CATEGORY_COLORS).sort()).toEqual([...CATEGORY_TOKENS].sort());
   });
 
-  // var()-backed: manual/football/weather/agent/news all resolve to
+  // var()-backed: manual/football/agent/news all resolve to
   // --overlay-blue / --overlay-green / --overlay-amber / --overlay-coral
   // tokens.
-  const VAR_BACKED_ORIGINS: SourceOriginToken[] = [
-    "manual",
-    "football",
-    "weather",
-    "agent",
-    "news",
-  ];
+  const VAR_BACKED_ORIGINS: SourceOriginToken[] = ["manual", "football", "agent", "news"];
 
   it("every var()-backed origin hex appears in tokens.css", () => {
     for (const token of VAR_BACKED_ORIGINS) {
