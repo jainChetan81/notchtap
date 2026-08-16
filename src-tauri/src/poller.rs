@@ -14,8 +14,7 @@ use crate::status::LiveMatchSummary;
 
 // ---------------------------------------------------------------------------
 // scoreboard wire shape — minimal, tolerant structs for the fields the diff
-// actually uses. field names verified against real captured payloads on
-// 2026-07-16 (src-tauri/tests/fixtures/scoreboard-*.json); everything is
+// uses, matching the checked-in tests/fixtures payloads. everything is
 // defaulted so a missing field degrades to "no delta", never a parse error.
 // ---------------------------------------------------------------------------
 
@@ -38,7 +37,7 @@ pub struct SbStatus {
     #[serde(rename = "type")]
     pub status_type: SbStatusType,
     // espn's own clock text ("45'", "120'") — the idle rail's live chip
-    // shows it verbatim as the match minute (plan 034).
+    // shows it verbatim as the match minute.
     #[serde(rename = "displayClock", default)]
     pub display_clock: String,
 }
@@ -75,19 +74,16 @@ pub struct SbCompetitor {
 
 #[derive(Debug, Deserialize, Default)]
 pub struct SbTeam {
-    // plan 042: per-side card bucketing cross-references card details'
-    // `team.id` against this competitor-level id.
+    // per-side card bucketing cross-references card details' `team.id`
+    // against this competitor-level id.
     #[serde(default)]
     pub id: String,
     #[serde(default)]
     pub abbreviation: String,
-    /// plan 083 workstream a: ESPN already sends a direct crest CDN url
-    /// per team on the scoreboard response we already fetch — zero extra
-    /// discovery cost. Verified present in the checked-in
-    /// `scoreboard-esp.1.json` fixture (`.../teamlogos/soccer/500/{id}.png`).
-    /// Detail-level card `team` objects (`SbDetail::team`, which reuses
-    /// this same struct) never carry `logo` — defaults to `None` there,
-    /// harmlessly.
+    /// ESPN sends a direct crest CDN url per team on the scoreboard
+    /// response (`.../teamlogos/soccer/500/{id}.png`). Detail-level card
+    /// `team` objects reuse this struct and never carry `logo` — defaults
+    /// to `None` there, harmlessly.
     #[serde(default)]
     pub logo: Option<String>,
 }
@@ -98,27 +94,22 @@ pub struct SbDetail {
     pub detail_type: Option<SbDetailType>,
     #[serde(rename = "scoringPlay", default)]
     pub scoring_play: bool,
-    // structural card-color signal (v3.6 EventSignal work) — espn's real
-    // payload carries this boolean per detail (and a matching yellowCard
-    // one we don't need: within a "Card" detail it's binary, not-red
-    // means yellow). verified against the checked-in uefa.champions
-    // fixture. reading it directly avoids text-matching "Red"/"Yellow"
-    // out of the composed detail_type.text.
+    // structural card-color signal — espn carries this boolean per detail
+    // (within a "Card" detail it's binary: not-red means yellow). reading
+    // it avoids text-matching "Red"/"Yellow" out of detail_type.text.
     #[serde(rename = "redCard", default)]
     pub red_card: bool,
-    // structural own-goal signal, exactly like `red_card` above — read
-    // directly instead of guessing at whatever free-text label ESPN uses
-    // for an own goal (unverified; no checked-in fixture has one).
+    // structural own-goal signal, same discipline as `red_card` — read
+    // directly instead of guessing at ESPN's free-text own-goal label.
     #[serde(rename = "ownGoal", default)]
     pub own_goal: bool,
     #[serde(default)]
     pub clock: Option<SbClock>,
     #[serde(rename = "athletesInvolved", default)]
     pub athletes: Vec<SbAthlete>,
-    // espn's detail-level team object is just `{"id": "..."}` — reuse
-    // SbTeam (no new struct): `abbreviation` simply defaults to empty.
-    // structural side attribution, same discipline as `red_card`/
-    // `own_goal` above (plan 042).
+    // espn's detail-level team object is just `{"id": "..."}` — reuses
+    // SbTeam; `abbreviation` defaults to empty. structural side
+    // attribution, same discipline as `red_card`/`own_goal` above.
     #[serde(default)]
     pub team: Option<SbTeam>,
 }
@@ -159,30 +150,25 @@ pub struct MatchSnapshot {
     pub away_score: u32,
     pub state: String,
     pub status_name: String,
-    /// espn's displayClock at last sighting ("45'"). Tracked here (not
-    /// read off the raw feed) so the idle rail's live chip survives the
-    /// absent-poll carry-forward below instead of flickering off during a
-    /// transient feed blip. Never diffed — clock advance alone emits no
-    /// queue event.
+    /// espn's displayClock at last sighting ("45'"). Tracked here so the
+    /// idle rail's live chip survives the absent-poll carry-forward below
+    /// instead of flickering off during a transient feed blip. Never
+    /// diffed — clock advance alone emits no queue event.
     pub display_clock: String,
     /// per-side (yellow, red) card counts, bucketed by cross-referencing
-    /// each card detail's `team.id` against the competitors' team ids
-    /// (plan 042 — replaces the single aggregate `cards: usize`; the
-    /// collapsed scorecard shows the split, not a bare total).
+    /// each card detail's `team.id` against the competitors' team ids.
     pub home_cards: (u32, u32),
     pub away_cards: (u32, u32),
     /// consecutive polls this match has been absent from its league's
     /// feed. reset to 0 whenever it appears; evicted at
-    /// ABSENT_POLLS_BEFORE_EVICTION (review fix, 2026-07-16: a
-    /// transient empty-but-valid espn response must not silently drop
-    /// live matches and lose their in-window events).
+    /// ABSENT_POLLS_BEFORE_EVICTION so a transient empty-but-valid espn
+    /// response can't silently drop live matches.
     pub missed_polls: usize,
 }
 
 impl MatchSnapshot {
     /// sum of all four per-side counters — the card event-emission
-    /// gate's comparison value (plan 042: fires on exactly the
-    /// transitions the old aggregate `cards > old.cards` did).
+    /// gate's comparison value.
     pub fn total_cards(&self) -> u32 {
         self.home_cards.0 + self.home_cards.1 + self.away_cards.0 + self.away_cards.1
     }
@@ -218,10 +204,8 @@ fn detail_line(d: &SbDetail) -> String {
 }
 
 // shared "{kind} — {line}" formatting for the card and scoring-play
-// extractions in `view()` below, so the two sites can't drift. a scoring
-// play can arrive with no detail_type label (a case `last_card` can't
-// hit — its search filters on the label), so an empty `kind` must fall
-// back to the bare line rather than produce a stray leading "— ...".
+// extractions in `view()`, so the two sites can't drift. an empty `kind`
+// (scoring play with no detail_type label) falls back to the bare line.
 fn labeled_detail_line(kind: &str, d: &SbDetail) -> String {
     let line = detail_line(d);
     match (kind.is_empty(), line.is_empty()) {
@@ -270,11 +254,9 @@ fn view(event: &SbEvent) -> MatchView<'_> {
     }
 
     let details = comp.map(|c| c.details.as_slice()).unwrap_or(&[]);
-    // per-side (yellow, red) bucketing (plan 042 — replaces the old
-    // aggregate count): cross-reference each card detail's own `team.id`
-    // against the competitor ids above — structural, same discipline as
-    // `red_card`/`own_goal`. a card whose team id matches neither side
-    // is not counted (no verified payload does this).
+    // per-side (yellow, red) bucketing: cross-reference each card detail's
+    // own `team.id` against the competitor ids above. a card whose team id
+    // matches neither side is not counted.
     let mut home_cards = (0u32, 0u32);
     let mut away_cards = (0u32, 0u32);
     for d in details.iter().filter(|d| {
@@ -305,9 +287,9 @@ fn view(event: &SbEvent) -> MatchView<'_> {
         .find(|d| d.scoring_play)
         .map(|d| {
             // own_goal checked FIRST and short-circuits the text lookup —
-            // the own-goal label never depends on ESPN's (unverified)
-            // own-goal text string; every other case passes ESPN's own
-            // label ("Goal", "Penalty - Scored") through verbatim.
+            // the own-goal label never depends on ESPN's own-goal text
+            // string; every other case passes ESPN's own label ("Goal",
+            // "Penalty - Scored") through verbatim.
             let kind = if d.own_goal {
                 "Own Goal".to_string()
             } else {
@@ -368,8 +350,8 @@ fn league_label(league: &str) -> &str {
 
 fn matchup(league: &str, s: &MatchSnapshot) -> String {
     // league-tagged, away-first (matching espn's "ARS @ PSG"
-    // orientation): "UCL: ARS 1–1 PSG" (review fix, 2026-07-16 — two
-    // simultaneous matches can share team abbreviations across leagues)
+    // orientation): "UCL: ARS 1–1 PSG" — two simultaneous matches can
+    // share team abbreviations across leagues, so the tag disambiguates
     format!(
         "{}: {} {}–{} {}",
         league_label(league),
@@ -380,19 +362,16 @@ fn matchup(league: &str, s: &MatchSnapshot) -> String {
     )
 }
 
-/// plan 083 workstream a: (team id -> logo url) pairs from a freshly
-/// fetched scoreboard — pure, fixture-testable, no I/O. Read directly
-/// off the raw feed (not off `MatchSnapshot`, which doesn't carry team
-/// ids) so a crest fetch can be scheduled even for matches this poll
-/// won't otherwise emit an event for.
+/// (team id -> logo url) pairs from a freshly fetched scoreboard — pure,
+/// fixture-testable, no I/O. Read off the raw feed (not `MatchSnapshot`,
+/// which carries no team ids) so a crest fetch can be scheduled even for
+/// matches this poll emits no event for.
 ///
-/// plan 132: `team.logo` is untrusted feed input (SSRF hardening) — a
-/// URL that doesn't pass `crest_url_allowed` is filtered out here, at
-/// the map-building side, so it never reaches the fetch-scheduling
-/// loop and never reaches `CrestCache::fetch_and_store`. This is
-/// deliberately NOT enforced inside `crests.rs::try_fetch` — that
-/// function's wiremock tests fetch from `http://127.0.0.1:<port>` mock
-/// servers and must keep exercising fetch/cache mechanics unmodified.
+/// `team.logo` is untrusted feed input (SSRF hardening): a URL failing
+/// `crest_url_allowed` is filtered out here, at the map-building side, so
+/// it never reaches fetch scheduling or `CrestCache::fetch_and_store`.
+/// Deliberately NOT enforced inside `crests.rs::try_fetch` — its wiremock
+/// tests fetch from `http://127.0.0.1:<port>` mock servers.
 fn team_logos(fetched: &Scoreboard) -> HashMap<String, String> {
     let mut out = HashMap::new();
     for event in &fetched.events {
@@ -424,12 +403,10 @@ fn team_logos(fetched: &Scoreboard) -> HashMap<String, String> {
     out
 }
 
-/// plan 083 workstream a: (match id -> (home team id, away team id))
-/// pairs from a freshly fetched scoreboard — pure, fixture-testable, no
-/// I/O. Read directly off the raw feed, same reasoning as `team_logos`
-/// above: `MatchSnapshot` doesn't carry team ids, and a full-time event
-/// evicts its match from the *next* snapshot before crest-patching runs,
-/// so this can't be derived from post-diff state either.
+/// (match id -> (home team id, away team id)) pairs from a freshly
+/// fetched scoreboard — pure, no I/O. Read off the raw feed:
+/// `MatchSnapshot` carries no team ids, and a full-time event evicts its
+/// match from the *next* snapshot before crest-patching runs.
 fn team_ids_by_match(fetched: &Scoreboard) -> HashMap<String, (String, String)> {
     let mut out = HashMap::new();
     for event in &fetched.events {
@@ -451,20 +428,11 @@ fn team_ids_by_match(fetched: &Scoreboard) -> HashMap<String, (String, String)> 
     out
 }
 
-/// plan 083 workstream a: patch `home_crest`/`away_crest` onto every
-/// emitted event's `EspnMeta` (if any) using the match's team ids and
-/// whatever's already cache-hit on disk — pure aside from the
-/// `CrestCache::cached_path` filesystem stat, no network. Kept separate
-/// from `diff_scoreboard` (which never touches the filesystem) so that
-/// function stays the pure, fixture-tested surface it's always been;
-/// this is the untested-by-design fetch-loop's job, mirroring the
-/// module's existing "tested pure core, thin untested wiring" split.
-///
-/// Matches by parsing the match id back out of the event's own Topic
-/// string (`espn:{league}:{match_id}`) — reliable because crest
-/// patching only ever has something to do when `EspnMeta` is present,
-/// which is exactly the same `espn_live_card`-on gate that populates
-/// `topic` in the first place.
+/// Patches `home_crest`/`away_crest` onto every emitted event's
+/// `EspnMeta` from whatever's already cache-hit on disk — no network.
+/// Kept out of `diff_scoreboard` so that function stays pure and
+/// fixture-tested. Matches by parsing the match id out of the event's own
+/// Topic string (`espn:{league}:{match_id}`).
 fn patch_crests(
     events: &mut [Event],
     league: &str,
@@ -487,12 +455,11 @@ fn patch_crests(
     }
 }
 
-/// plan 039: how one match's event lands in the Slot, bundled into a
-/// single parameter so `make_event` stays under clippy's 7-arg
-/// `too_many_arguments` threshold.
+/// How one match's event lands in the Slot, bundled into a single
+/// parameter so `make_event` stays under clippy's `too_many_arguments`
+/// threshold.
 enum CardTopic {
-    /// `espn_live_card` off: today's one-shot, topicless burst —
-    /// `topic: None`, `OneShot`, byte-for-byte the pre-039 behavior.
+    /// `espn_live_card` off: one-shot, topicless burst.
     Off,
     /// flag on, non-final event: shared per-match Topic, `Recurring`
     /// rotation — kickoff/goal/card/half-time supersede each other in
@@ -538,10 +505,9 @@ fn make_event(
     Event {
         id: Uuid::new_v4(),
         event_type,
-        // v6: configurable via `Config.espn_priority` (default `High`,
-        // matching the v3.6-spec-§3.4 hardcoded behavior this replaces).
-        // `signal` is presentation-only (icon/animation selection) and
-        // deliberately doesn't affect this.
+        // configurable via `Config.espn_priority`; `signal` is
+        // presentation-only (icon/animation selection) and deliberately
+        // doesn't affect this.
         priority,
         rotation,
         topic,
@@ -552,20 +518,14 @@ fn make_event(
     }
 }
 
-/// Pure per-match delta (extracted from `diff_scoreboard`, M4 fix): compares
-/// one freshly-fetched match view against its prior snapshot entry (`None`
-/// on first sighting) and returns the events this match's delta generates
-/// plus the snapshot entry to carry forward *if the poller commits it*
-/// (`None` means "don't track this match" — either a first sighting that's
-/// already final, or it just went final this poll).
+/// Pure per-match delta: compares one freshly-fetched match view against
+/// its prior snapshot entry (`None` on first sighting) and returns the
+/// events this delta generates plus the snapshot entry to carry forward
+/// (`None` means "don't track this match").
 ///
-/// This function does NOT decide whether the returned entry is actually
-/// committed — that's the caller's job. `diff_scoreboard` below always
-/// commits (its fixture tests assume an infallible sink); the live poll
-/// loop in `spawn_espn_poller` commits only when every returned event was
-/// accepted, reverting to `old` otherwise, so a `QueueFull` drop doesn't
-/// permanently erase the delta (M4: the old code advanced the snapshot
-/// unconditionally, before `accept` was even attempted).
+/// Committing the returned entry is the caller's job: `diff_scoreboard`
+/// always commits; the live poll loop commits only when every returned
+/// event was accepted, so a `QueueFull` drop doesn't erase the delta.
 fn diff_match(
     league: &str,
     v: &MatchView,
@@ -576,10 +536,9 @@ fn diff_match(
 ) -> (Vec<Event>, Option<MatchSnapshot>) {
     let mut out = Vec::new();
     let final_now = v.snap.state == "post";
-    // plan 039: opt-in live-match card — one Topic per match so the
-    // single Slot shows a single updating card per live match instead
-    // of a burst of one-shots. `None` when the flag is off (zero
-    // behavior change).
+    // opt-in live-match card — one Topic per match so the single Slot
+    // shows one updating card per live match instead of a burst of
+    // one-shots. `None` when the flag is off.
     let topic = espn_live_card.then(|| format!("espn:{league}:{}", v.id));
 
     match old {
@@ -591,12 +550,10 @@ fn diff_match(
         }
         Some(old) => {
             let title = matchup(league, &v.snap);
-            // plan 042: collapsed-scorecard cells, built once per
-            // match and attached unchanged to every event this poll
-            // pushes for it (a single poll can push goal + full-time
-            // together). `topic.is_some()` is the same value for all
-            // of them, so this stays default (byte-identical to
-            // pre-039) exactly when the live-card flag is off.
+            // collapsed-scorecard cells, built once per match and
+            // attached unchanged to every event this poll pushes for it
+            // (a single poll can push goal + full-time together); stays
+            // default exactly when the live-card flag is off.
             let meta = if topic.is_some() {
                 let mut details = vec![DetailItem {
                     label: "Clock".to_string(),
@@ -615,14 +572,11 @@ fn diff_match(
                         ),
                     });
                 }
-                // plan 083 item 4: the structured sibling of the
-                // details cells just above — same fields, unjoined,
-                // so 084's card can lay out crest–score–crest instead
-                // of parsing `matchup()`'s pre-joined string. Crest
-                // paths are always `None` here (populated afterward
-                // by the crest cache patch in `spawn_espn_poller` —
-                // that step is async I/O and this function stays
-                // pure/sync/fixture-tested, plan 083 workstream a).
+                // structured sibling of the details cells just above —
+                // same fields, unjoined, so the card can lay out
+                // crest–score–crest without parsing `matchup()`. Crest
+                // paths stay `None` here (patched afterward by the async
+                // poll loop; this function stays pure/sync).
                 let espn = EspnMeta {
                     league: league_label(league).to_string(),
                     home_abbrev: v.snap.home_abbrev.clone(),
@@ -728,12 +682,10 @@ fn diff_match(
     }
 }
 
-/// Carries forward any `prev` match absent from this poll's fetched feed
-/// (review fix, 2026-07-16): evict only after sustained absence, never on
-/// one missing poll — no events are emitted for absent matches, this only
-/// mutates `next`. Shared between `diff_scoreboard` (whole-league pure
-/// diff, still the fixture-tested surface) and the live poll loop's
-/// per-match commit-or-revert path in `spawn_espn_poller` (M4 fix) so the
+/// Carries forward any `prev` match absent from this poll's fetched feed:
+/// evict only after sustained absence, never on one missing poll — no
+/// events are emitted for absent matches, this only mutates `next`.
+/// Shared between `diff_scoreboard` and the live poll loop so the
 /// eviction rule can't drift between the two call sites.
 fn carry_forward_absent(prev: &Snapshot, fetched: &Scoreboard, next: &mut Snapshot, league: &str) {
     for (id, old) in prev {
@@ -754,40 +706,10 @@ fn carry_forward_absent(prev: &Snapshot, fetched: &Scoreboard, next: &mut Snapsh
     }
 }
 
-/// Pure delta logic (v2 spec §3). Compares the fetched scoreboard against
-/// the previous snapshot and returns the Events to emit plus the snapshot
-/// to carry forward. Eviction falls out of construction: the new snapshot
-/// only contains matches still present in the feed and not yet final.
-///
-/// Emission rules:
-/// - first sighting of a match: silent baseline (no restart flood); a match
-///   first seen already-final is never tracked at all
-/// - score changed → ScoreUpdate, body = latest scoring play ("K. Havertz
-///   6'") when the feed carries one, else "goal"
-/// - state pre→in → MatchState "kickoff"; status name becomes
-///   STATUS_HALFTIME → "half-time"; state →post → "full-time" (and the
-///   match drops from the snapshot). the halftime→second-half resumption is
-///   deliberately silent — kickoff/ht/ft are the moments that matter.
-/// - card count increased → MatchState with the latest card's detail
-///   ("Yellow Card — B. Saka 54'"). "everything espn reports"
-///   (ARCHITECTURE.md §16) includes yellows, chosen with eyes open.
-/// - a match merely *absent* from the feed is carried forward (counter
-///   incremented) and only evicted after ABSENT_POLLS_BEFORE_EVICTION
-///   consecutive misses — so a transient empty-but-valid response
-///   neither drops live matches nor loses the goals scored during the
-///   blip (they diff against the carried snapshot on reappearance).
-///   only an explicit "post" evicts immediately.
-///
-/// Whole-league wrapper (this is the fixture-tested surface). Runs
-/// `diff_match` per match and always commits its result unconditionally
-/// (this function has no notion of `accept`/`QueueFull`; the live poll
-/// loop in `spawn_espn_poller` calls `diff_match` itself instead of this
-/// function so it can commit per match only on full acceptance — see
-/// `diff_match`'s doc, M4 fix).
-///
-/// Production now calls `diff_match` per match directly (to commit only
-/// accepted deltas); this whole-league wrapper survives only as the
-/// fixture tests' entry point, hence `#[cfg(test)]`.
+/// Whole-league pure diff and the fixture tests' entry point (hence
+/// `#[cfg(test)]`): runs `diff_match` per match and always commits its
+/// result unconditionally. Production calls `diff_match` directly so it
+/// can commit per match only on full acceptance — see `diff_match`'s doc.
 #[cfg(test)]
 pub fn diff_scoreboard(
     prev: &Snapshot,
@@ -815,12 +737,11 @@ pub fn diff_scoreboard(
     (out, next)
 }
 
-/// plan 034: the idle rail's live-match chip, computed over the poll
-/// loop's whole snapshot map (every watched league). The first in-play
-/// match wins — deterministic (league slug, then match id) because
-/// HashMap iteration order is not; a second simultaneous live match is
-/// deliberately out of scope (plan 034's STOP list: multi-live layout is
-/// an operator decision, not a guess). `None` when nothing is in-play.
+/// The idle rail's live-match chip, computed over the poll loop's whole
+/// snapshot map (every watched league). The first in-play match wins —
+/// deterministic (league slug, then match id) because HashMap iteration
+/// order is not; a second simultaneous live match is deliberately out of
+/// scope. `None` when nothing is in-play.
 pub fn live_match_summary(snapshots: &HashMap<String, Snapshot>) -> Option<LiveMatchSummary> {
     let mut leagues: Vec<(&String, &Snapshot)> = snapshots.iter().collect();
     leagues.sort_by(|a, b| a.0.cmp(b.0));
@@ -829,9 +750,9 @@ pub fn live_match_summary(snapshots: &HashMap<String, Snapshot>) -> Option<LiveM
         matches.sort_by(|a, b| a.0.cmp(b.0));
         if let Some((_id, m)) = matches.into_iter().find(|(_, m)| m.state == "in") {
             return Some(LiveMatchSummary {
-                // "Home X–Y Away" (plan 034 step 2) — deliberately NOT
-                // matchup()'s away-first, league-tagged orientation: the
-                // rail chip is a glanceable readout, not an alert title.
+                // "Home X–Y Away" — deliberately NOT matchup()'s
+                // away-first, league-tagged orientation: the rail chip is
+                // a glanceable readout, not an alert title.
                 label: format!(
                     "{} {}–{} {}",
                     m.home_abbrev, m.home_score, m.away_score, m.away_abbrev
@@ -844,8 +765,8 @@ pub fn live_match_summary(snapshots: &HashMap<String, Snapshot>) -> Option<LiveM
 }
 
 // ---------------------------------------------------------------------------
-// per-league backoff (v2 spec §3): 30s → 60s → 120s → … cap 300s, reset on
-// that league's first success. pure state machine, unit-tested directly.
+// per-league backoff: 30s → 60s → 120s → … cap 300s, reset on that league's
+// first success. pure state machine, unit-tested directly.
 // ---------------------------------------------------------------------------
 
 const BACKOFF_BASE: Duration = Duration::from_secs(30);
@@ -884,33 +805,23 @@ impl Backoff {
 }
 
 // ---------------------------------------------------------------------------
-// plan 083 workstream c (item 6a): richer live-match events — foul,
-// offside, VAR check, substitution. Goal/penalty/own-goal/yellow/red
-// already flow from the scoreboard feed above and are NEVER re-emitted
-// here (see `classify_rich_type`'s "scoreboard-owned" comment). Opt-in
+// richer live-match events — foul, offside, VAR check, substitution.
+// Goal/penalty/own-goal/yellow/red already flow from the scoreboard feed
+// above and are NEVER re-emitted here (see `classify_rich_type`). Opt-in
 // via `espn_rich_events` (default false), mirroring `espn_live_card`.
 //
-// Wire shapes below are synthesized to match the DOCUMENTED evidence in
-// `plans/suspended/043-richer-match-events.md`'s "Step 0: CONFIRMED
-// against a genuinely live match" section — that plan's own
-// `research/043-worldcup-final-verification/` raw evidence directory is
-// gitignored (`.gitignore`: "throwaway exploratory captures") and not
-// present in this checkout, so the shapes here are built from the
-// checked-in plan's summary of that evidence (key names `commentary`/
-// `keyEvents`, the `commentary` entry's `sequence`/`time`/`text`/`play`
-// shape, the `keyEvents` entry's `id`/`type`/`text`/`clock`/`scoringPlay`
-// shape, and the confirmed fallback chain to the core API's
-// `/competitions/{id}/plays`, paginated 25/page) — not independently
-// re-verified against a live match this pass. Pure parse/classify/dedup
-// logic is fully fixture-tested below; the two endpoints' exact field
-// set beyond what's documented is necessarily best-effort, same posture
-// as the scoreboard structs above ("everything is defaulted so a
-// missing field degrades to no delta, never a parse error").
+// Wire shapes: ESPN's `summary?event={id}` endpoint serves `commentary`
+// (entries carrying `sequence`/`time`/`text`/`play`) and `keyEvents`
+// (entries carrying `id`/`type`/`text`/`clock`/`scoringPlay`); the core
+// API's `/competitions/{id}/plays` is the fallback, paginated 25/page.
+// The endpoints' exact field set beyond that is best-effort, so
+// everything is defaulted — a missing field degrades to no delta, never a
+// parse error, same posture as the scoreboard structs above. Pure
+// parse/classify/dedup logic is fully fixture-tested below.
 // ---------------------------------------------------------------------------
 
 /// The `summary?event={id}` endpoint's response — only the two fields
-/// this plan's approach depends on (`plans/suspended/043...md` point 1:
-/// "The key names are `commentary` and `keyEvents`").
+/// the rich-event chain depends on.
 #[derive(Debug, Deserialize)]
 pub struct SummaryResponse {
     #[serde(default)]
@@ -919,15 +830,11 @@ pub struct SummaryResponse {
     pub key_events: Vec<KeyEventEntry>,
 }
 
-/// One `commentary` array entry (`plans/suspended/043...md` point 2):
-/// `sequence`, `time` (`{value, displayValue}`), `text`, plus an
-/// embedded `play` object. Parsed in full for parity with the
-/// documented shape (satisfying "parse commentary/keyEvents into a
-/// typed event stream"); `extract_rich_events` (below) builds the
-/// actual EMITTED stream from `key_events` instead (see that function's
-/// doc for why) — `#[allow(dead_code)]` here is deliberate: these fields
-/// are parsed and available (e.g. to a future 084 richer-detail view),
-/// just not read by anything yet.
+/// One `commentary` array entry: `sequence`, `time` (`{value,
+/// displayValue}`), `text`, plus an embedded `play` object. Parsed in
+/// full for shape parity; `extract_rich_events` builds the actual EMITTED
+/// stream from `key_events` instead — `#[allow(dead_code)]` is
+/// deliberate: these fields are parsed and available, just not read yet.
 #[derive(Debug, Deserialize)]
 #[allow(dead_code)]
 pub struct CommentaryEntry {
@@ -961,14 +868,11 @@ pub struct CommentaryPlay {
     pub team: Option<SbTeam>,
 }
 
-/// One `keyEvents` array entry (`plans/suspended/043...md` point 3):
-/// `id`, `type`, `text`, `clock`, `scoringPlay`. This is the "filtered/
-/// significant-events-only view" the research called out as "likely the
-/// better source for card-worthy event selection" — `extract_rich_events`
-/// builds the emitted stream from this array. `id`/`scoring_play` are
-/// parsed for shape completeness but not consumed by extraction (dedup
-/// keys on kind+clock, not id; scoreboard-owned filtering happens on
-/// `event_type` before `scoring_play` would matter).
+/// One `keyEvents` array entry: `id`, `type`, `text`, `clock`,
+/// `scoringPlay` — the significant-events-only view `extract_rich_events`
+/// builds the emitted stream from. `id`/`scoring_play` are parsed for
+/// shape completeness but not consumed by extraction (dedup keys on
+/// kind+clock, not id).
 #[derive(Debug, Deserialize)]
 pub struct KeyEventEntry {
     #[serde(default)]
@@ -986,10 +890,8 @@ pub struct KeyEventEntry {
 }
 
 /// The core API's `/competitions/{id}/plays` fallback response —
-/// paginated (`plans/suspended/043...md` point 4: "25/page"). Only
-/// `pageCount` and `items` are consumed: `pageCount` drives the
-/// newest-page-only fetch, `items` are parsed the same way as
-/// `keyEvents`.
+/// paginated, 25/page. Only `pageCount` (drives the newest-page-only
+/// fetch) and `items` (parsed the same way as `keyEvents`) are consumed.
 #[derive(Debug, Deserialize, Default)]
 pub struct PlaysResponse {
     #[serde(default, rename = "pageCount")]
@@ -1028,8 +930,8 @@ pub fn parse_plays(body: &str) -> Result<PlaysResponse, serde_json::Error> {
     serde_json::from_str(body)
 }
 
-/// The four locked informational event kinds (079 item 6a) — everything
-/// else (scoreboard-owned or genuinely unrecognized) is dropped, never
+/// The four locked informational event kinds — everything else
+/// (scoreboard-owned or genuinely unrecognized) is dropped, never
 /// emitted, by `classify_rich_type` below.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RichEventKind {
@@ -1044,9 +946,7 @@ pub enum RichEventKind {
 /// BOTH a scoreboard-owned type (goal, penalty-scored, yellow-card,
 /// red-card, own-goal, kickoff, half-time, full-time, …) AND any
 /// genuinely unrecognized type. Both cases are dropped outright here,
-/// not merely deduped by key later — "drop any summary/plays event
-/// whose type is scoreboard-owned outright (redundant by construction,
-/// not just by key-collision)" (plan 083 step 4).
+/// not merely deduped by key later.
 fn classify_rich_type(raw: &str) -> Option<RichEventKind> {
     match raw {
         "foul" => Some(RichEventKind::Foul),
@@ -1066,14 +966,9 @@ pub struct RichEventCandidate {
 }
 
 /// Extracts informational candidates from a `summary` response's
-/// `keyEvents` array — the documented "better source for card-worthy
-/// event selection" (`plans/suspended/043...md` point 3). `commentary`
-/// is parsed above (satisfying "parse commentary/keyEvents into a typed
-/// event stream") but not used for emission here: `keyEvents` already
-/// carries a clean `type` tag and a ready-to-display `text`, so it's the
-/// simpler and more faithful-to-research source for the four locked
-/// kinds; `commentary`'s fuller play-by-play detail is left for 084 (or
-/// a later plan) to consume if the collapsed scorecard ever wants it.
+/// `keyEvents` array — it carries a clean `type` tag and a
+/// ready-to-display `text`. `commentary` is parsed above but not used
+/// for emission here.
 fn extract_rich_events(summary: &SummaryResponse) -> Vec<RichEventCandidate> {
     summary
         .key_events
@@ -1114,31 +1009,23 @@ fn extract_rich_events_from_plays(plays: &PlaysResponse) -> Vec<RichEventCandida
         .collect()
 }
 
-/// `summary`'s "returns empty" fallback trigger (plan 083 step 4: "when
-/// `summary` errors, 404s, or returns empty for a match known-live").
+/// `summary`'s "returned empty for a known-live match" fallback trigger.
 fn is_empty_summary(resp: &SummaryResponse) -> bool {
     resp.commentary.is_empty() && resp.key_events.is_empty()
 }
 
 /// Dedup key: (kind, clock) — a re-poll re-fetching the same event must
-/// not re-emit it. No athlete field is documented on `keyEvents`/`plays`
-/// beyond the embedded `commentary.play`, which isn't the extraction
-/// source (see `extract_rich_events`'s doc), so (kind, clock) is the
-/// key's full extent for now — sufficient because two distinct events
-/// of the same kind at the same displayed clock string are not
-/// realistically distinguishable from this feed anyway.
+/// not re-emit it. `keyEvents`/`plays` carry no athlete field, and two
+/// distinct events of the same kind at the same displayed clock string
+/// aren't distinguishable from this feed anyway.
 fn dedup_key(candidate: &RichEventCandidate) -> String {
     format!("{:?}|{}", candidate.kind, candidate.clock)
 }
 
-/// Filters `candidates` down to ones not already in `seen`, inserting
-/// each survivor's key so a later call (next poll) drops the repeat.
-// Returns the candidates whose dedup key is not already in `seen`, WITHOUT
-// mutating `seen`. Committing a key is deferred to the caller, which only
-// records it AFTER `engine.accept` succeeds (M4-class fix, 2026-07-25): the
-// old version inserted the key as it filtered, so a `QueueFull` drop of a
-// rich event consumed its dedup key and the event was lost forever instead
-// of re-emitting on a later poll.
+/// Returns the candidates whose dedup key is not already in `seen`,
+/// WITHOUT mutating `seen` — the caller records a key only AFTER
+/// `engine.accept` succeeds, so a `QueueFull` drop re-emits on a later
+/// poll instead of being lost forever.
 fn filter_new(
     seen: &HashSet<String>,
     candidates: Vec<RichEventCandidate>,
@@ -1149,20 +1036,11 @@ fn filter_new(
         .collect()
 }
 
-/// H1 fix (2026-07-25): evicts `rich_seen` entries whose `(league,
-/// match_id)` key is no longer present in ANY currently-tracked league's
-/// snapshot. Called once per TICK, after every league in a poll pass has
-/// been processed — never per league — so that finishing league A's pass
-/// can't wipe league B's still-live dedup state (the bug: the old
-/// `retain()` ran inside the per-league loop and compared against only
-/// that one league's snapshot, so any OTHER league's match ids — never
-/// present in league A's snapshot — were evicted every single tick,
-/// resetting their `rich_seen` set to empty and re-admitting their whole
-/// event list as "new" on the very next poll of that league).
-///
-/// Extracted as a small pure function (no async, no wiremock) so the
-/// cross-league behavior is directly unit-testable without spinning up
-/// `spawn_espn_poller`'s live poll loop.
+/// Evicts `rich_seen` entries whose `(league, match_id)` key is absent
+/// from EVERY tracked league's snapshot. Called once per TICK, after all
+/// leagues are processed — per-league eviction would wipe other leagues'
+/// still-live dedup state. Pure so the cross-league behavior is directly
+/// unit-testable.
 fn evict_rich_seen(
     rich_seen: &mut HashMap<(String, String), HashSet<String>>,
     snapshots: &HashMap<String, Snapshot>,
@@ -1176,10 +1054,9 @@ fn evict_rich_seen(
 }
 
 /// Builds the emitted `Event` for one informational candidate — a
-/// one-shot (never a Topic/Recurring card; the sticky live-match card
-/// is the existing Topic machinery's job, not new code here, per plan
-/// 083 step 4), Football-origin, same TTL/priority as every other
-/// football event.
+/// one-shot (never a Topic/Recurring card; the sticky live-match card is
+/// the existing Topic machinery's job), Football-origin, same
+/// TTL/priority as every other football event.
 fn make_rich_event(
     league: &str,
     snap: &MatchSnapshot,
@@ -1213,18 +1090,16 @@ fn make_rich_event(
 }
 
 // ---------------------------------------------------------------------------
-// fetch loop — deliberately thin and untested (v2 spec §3): everything below
-// the "here is a response body" line is the tested surface above. the capped
-// body read is no longer inline here — it's the shared, wiremock-tested
-// helper in `net.rs` (plan 025), which both pollers now call.
+// fetch loop — deliberately thin and untested: everything below the "here is
+// a response body" line is the tested surface above. capped body reads go
+// through the shared, wiremock-tested helper in `net.rs`.
 // ---------------------------------------------------------------------------
 
 async fn fetch_league(client: &reqwest::Client, league: &str) -> anyhow::Result<String> {
-    // plan <this fix, L-sec4>: `league` is a fixed, config-driven slug in
-    // practice, but it's still interpolated straight into a URL path, so
-    // it's built via `Url::path_segments_mut` (percent-encoding each
-    // segment) rather than `format!`, same discipline as
-    // `rss_poller::expand_topic_url`'s query-side encoding.
+    // `league` is a fixed, config-driven slug in practice, but it's still
+    // interpolated straight into a URL path, so it's built via
+    // `Url::path_segments_mut` (percent-encoding each segment) rather
+    // than `format!`.
     let mut url = reqwest::Url::parse("https://site.api.espn.com/apis/site/v2/sports/soccer")?;
     url.path_segments_mut()
         .map_err(|_| anyhow::anyhow!("espn scoreboard base url cannot-be-a-base"))?
@@ -1235,11 +1110,9 @@ async fn fetch_league(client: &reqwest::Client, league: &str) -> anyhow::Result<
     Ok(String::from_utf8(bytes)?)
 }
 
-// plan 083 workstream c: production base URLs for the summary/plays
-// fetch chain, matching the same host families verified in
-// `plans/suspended/043-richer-match-events.md`. `base` is a parameter on
-// the fetch functions below (not baked in) so the fallback-chain
-// orchestration is wiremock-testable, same posture as `net.rs`.
+// production base URLs for the summary/plays fetch chain. `base` is a
+// parameter on the fetch functions below (not baked in) so the
+// fallback-chain orchestration is wiremock-testable.
 const ESPN_SUMMARY_BASE: &str = "https://site.api.espn.com/apis/site/v2/sports/soccer";
 const ESPN_CORE_BASE: &str = "https://sports.core.api.espn.com/v2/sports/soccer/leagues";
 const MAX_RICH_EVENT_BYTES: usize = 512 * 1024;
@@ -1250,7 +1123,7 @@ async fn fetch_summary(
     league: &str,
     event_id: &str,
 ) -> anyhow::Result<String> {
-    // L-sec4: `event_id` comes off the feed we just fetched (not directly
+    // `event_id` comes off the feed we just fetched (not directly
     // attacker-controlled, but still untrusted), interpolated into a URL —
     // percent-encoded via `Url::path_segments_mut`/`query_pairs_mut`
     // instead of raw `format!` interpolation.
@@ -1266,11 +1139,7 @@ async fn fetch_summary(
 }
 
 /// ESPN's soccer events are single-competition (no doubleheaders), so
-/// `competition_id == event_id` in practice — an assumption carried over
-/// from `plans/suspended/043-richer-match-events.md`'s URL, not
-/// independently re-verified this pass (that plan's live verification
-/// confirmed the URL shape worked, but didn't specifically probe a
-/// competition_id divergent from event_id).
+/// `competition_id == event_id` in practice.
 async fn fetch_plays_page(
     client: &reqwest::Client,
     base: &str,
@@ -1293,10 +1162,9 @@ async fn fetch_plays_page(
     Ok(String::from_utf8(bytes)?)
 }
 
-/// Fetches the NEWEST page only (plan 083 step 4's pagination rule: "25
-/// plays/page ... fetch the newest page only each poll ... do not
-/// backfill pages") — one request to learn `pageCount`, a second to the
-/// last page only when there's more than one.
+/// Fetches the NEWEST page only, never backfilling — one request to learn
+/// `pageCount`, a second to the last page only when there's more than
+/// one.
 async fn fetch_newest_plays(
     client: &reqwest::Client,
     base: &str,
@@ -1313,11 +1181,10 @@ async fn fetch_newest_plays(
     }
 }
 
-/// The fallback-chain orchestration (plan 083 step 4): `summary` first;
-/// if it errors OR parses to an empty response, fall through to the core
-/// API's `/plays` (newest page only); if THAT also fails, give up
-/// silently for this poll — the next poll retries both from scratch,
-/// same posture as the scoreboard feed's absent-poll carry-forward.
+/// The fallback-chain orchestration: `summary` first; if it errors OR
+/// parses to an empty response, fall through to the core API's `/plays`
+/// (newest page only); if THAT also fails, give up silently for this poll
+/// — the next poll retries both from scratch.
 async fn poll_rich_events(
     client: &reqwest::Client,
     summary_base: &str,
@@ -1352,13 +1219,11 @@ async fn poll_rich_events(
     }
 }
 
-/// plan 037: ingest goes through `Engine::accept` — the one shared path
-/// that enqueues with the mutate→wake→emit protocol and then fans
-/// accepted events out to every connector (plan §3: "every accepted
-/// event goes to every enabled connector, always" — with one recorded
-/// exception: rss/news events are overlay-only and never offered,
-/// `IMPLEMENTATION_PLAN.md` §4.6 — a rule `accept` encodes via the
-/// origin gate, so no per-caller flag is needed here).
+/// Ingest goes through `Engine::accept` — the one shared path that
+/// enqueues with the mutate→wake→emit protocol and then fans accepted
+/// events out to every connector (exception: rss/news events are
+/// overlay-only and never offered, `IMPLEMENTATION_PLAN.md` §4.6 — a rule
+/// `accept` encodes via the origin gate, so no per-caller flag here).
 #[allow(clippy::too_many_arguments)] // untested outer wiring, same reasoning as CardTopic's bundling for the pure/tested side
 pub fn spawn_espn_poller(
     engine: Engine,
@@ -1380,21 +1245,10 @@ pub fn spawn_espn_poller(
         };
         let mut snapshots: HashMap<String, Snapshot> = HashMap::new();
         let mut backoffs: HashMap<String, Backoff> = HashMap::new();
-        // plan 083 workstream c: per-match dedup key sets for the richer
-        // event feed — keyed by (league, match id) so a match id
-        // collision across leagues can't happen even in theory, evicted
-        // once per tick (H1 fix, below) against the union of every
+        // per-match dedup key sets for the richer event feed — keyed by
+        // (league, match id) so a match id collision across leagues can't
+        // happen, evicted once per tick against the union of every
         // league's fresh snapshot so this never grows unbounded.
-        //
-        // H1 fix (2026-07-25): this used to be keyed by match id alone
-        // and evicted INSIDE the per-league loop against only that one
-        // league's current snapshot — so processing league A's retain()
-        // call wiped every entry belonging to league B/C (their match
-        // ids aren't in A's snapshot), and the next time B/C were
-        // processed `rich_seen.entry(..).or_default()` started them from
-        // an empty set again, re-admitting their whole event list every
-        // tick (duplicate-card flood). Keying by (league, id) plus a
-        // single eviction pass after all leagues are processed fixes it.
         let mut rich_seen: HashMap<(String, String), HashSet<String>> = HashMap::new();
         let mut interval = tokio::time::interval(Duration::from_secs(poll_secs.max(5)));
         interval.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
@@ -1427,10 +1281,10 @@ pub fn spawn_espn_poller(
                     }
                 };
 
-                // plan 083 workstream a: schedule a background fetch for
-                // any team whose crest isn't cached yet — before the diff,
-                // so a crest that lands mid-poll is available for
-                // `patch_crests` below even on the same poll it completes.
+                // schedule a background fetch for any team whose crest
+                // isn't cached yet — before the diff, so a crest that
+                // lands mid-poll is available for `patch_crests` below
+                // even on the same poll it completes.
                 for (team_id, logo_url) in team_logos(&scoreboard) {
                     if crests.should_fetch(&team_id) {
                         let crests = crests.clone();
@@ -1442,19 +1296,11 @@ pub fn spawn_espn_poller(
                 }
                 let team_ids = team_ids_by_match(&scoreboard);
 
-                // M4 fix (2026-07-25): commit each match's diffed
-                // snapshot entry only once every event that match
-                // generated THIS poll was accepted. `diff_scoreboard`'s
-                // caller used to advance the whole league's snapshot
-                // unconditionally before any `accept` call was even
-                // made — so a `QueueFull` drop (overlay paused + tier
-                // full) permanently lost that match's delta: the
-                // snapshot had already moved, so the next poll diffed
-                // against the NEW state and saw no change. Diffing here
-                // per match (via `diff_match`, the same pure logic
-                // `diff_scoreboard` itself calls) lets a failed match
-                // keep its PRIOR entry so the identical delta re-diffs
-                // and re-emits on a later tick instead of vanishing.
+                // commit each match's diffed snapshot entry only once
+                // every event that match generated THIS poll was accepted
+                // — a `QueueFull` drop keeps the PRIOR entry, so the
+                // identical delta re-diffs and re-emits on a later tick
+                // instead of vanishing.
                 let prev_snapshot = snapshots.entry(league.clone()).or_default().clone();
                 let mut next_snapshot = Snapshot::new();
                 for sb_event in &scoreboard.events {
@@ -1483,10 +1329,10 @@ pub fn spawn_espn_poller(
                 carry_forward_absent(&prev_snapshot, &scoreboard, &mut next_snapshot, league);
                 snapshots.insert(league.clone(), next_snapshot);
 
-                // plan 083 workstream c: for every currently-live match,
-                // poll the richer summary/plays fallback chain and emit
-                // any newly-seen informational event. Only when opted in
-                // — this is materially heavier per-match polling.
+                // for every currently-live match, poll the richer
+                // summary/plays fallback chain and emit any newly-seen
+                // informational event. Only when opted in — this is
+                // materially heavier per-match polling.
                 if espn_rich_events {
                     if let Some(current) = snapshots.get(league) {
                         let live_matches: Vec<(String, MatchSnapshot)> = current
@@ -1503,15 +1349,12 @@ pub fn spawn_espn_poller(
                                 &match_id,
                             )
                             .await;
-                            // H1 fix: keyed by (league, match_id) — see
-                            // the `rich_seen` declaration's doc.
                             let seen = rich_seen
                                 .entry((league.clone(), match_id.clone()))
                                 .or_default();
-                            // M4-class fix: commit the dedup key ONLY after a
-                            // successful accept, so a `QueueFull` drop re-emits
-                            // on a later poll instead of being silently lost
-                            // (mirrors the scoreboard/weather paths).
+                            // commit the dedup key ONLY after a successful
+                            // accept, so a `QueueFull` drop re-emits on a
+                            // later poll instead of being silently lost.
                             for candidate in filter_new(seen, candidates) {
                                 let key = dedup_key(&candidate);
                                 let event =
@@ -1530,20 +1373,17 @@ pub fn spawn_espn_poller(
                 }
             }
 
-            // H1 fix: evict `rich_seen` once per TICK (not once per
-            // league, inside the loop above) — see `evict_rich_seen`'s
-            // doc for why per-league eviction was the bug.
+            // evict `rich_seen` once per TICK, not per league — see
+            // `evict_rich_seen`'s doc.
             if espn_rich_events {
                 evict_rich_seen(&mut rich_seen, &snapshots);
             }
 
-            // plan 034: refresh the idle rail's live-match chip once per
-            // poll pass, over every watched league's snapshot — the single
-            // chokepoint where a tick ends. The rotation loop is the sole
-            // status-state emitter; the poller's only status-side act is
-            // this write, which wakes the loop when (and only when) the
-            // summary actually changed (plan 037: behind a narrow Engine
-            // method, no raw handles).
+            // refresh the idle rail's live-match chip once per poll pass,
+            // over every watched league's snapshot. The rotation loop is
+            // the sole status-state emitter; the poller's only status-side
+            // act is this write, which wakes the loop only when the
+            // summary actually changed.
             let summary = live_match_summary(&snapshots);
             engine.update_live_match(summary);
         }
@@ -1581,7 +1421,7 @@ mod tests {
     #[tokio::test]
     async fn poller_accepted_events_enter_the_slot_and_rejected_do_not() {
         // one visible slot, no waiting room: first accepted, second
-        // rejected. plan 037: the ingest path is Engine::accept.
+        // rejected.
         let app = tauri::test::mock_app();
         let engine = Engine::new(
             SingleSlotQueue::new(0),
@@ -1622,9 +1462,8 @@ mod tests {
         assert_eq!(v.snap.state, "pre");
     }
 
-    // plan 083 workstream a: crest logo parsing + the two pure lookup
-    // helpers the async poll loop uses to schedule fetches and patch
-    // `EspnMeta.home_crest`/`away_crest`.
+    // crest logo parsing + the two pure lookup helpers the async poll
+    // loop uses to schedule fetches and patch crests onto `EspnMeta`.
 
     #[test]
     fn team_logo_url_parses_from_the_real_fixture() {
@@ -1669,10 +1508,10 @@ mod tests {
 
     #[test]
     fn team_logos_filters_out_non_espncdn_or_non_https_logo_urls() {
-        // plan 132: a team whose `logo` fails the crest URL allowlist
-        // (wrong scheme, wrong host) must not enter the id->logo map —
-        // that map is what directly feeds the fetch-scheduling loop, so
-        // this also proves the disallowed URL never gets scheduled.
+        // a team whose `logo` fails the crest URL allowlist (wrong
+        // scheme, wrong host) must not enter the id->logo map — that map
+        // directly feeds the fetch-scheduling loop, so this also proves
+        // the disallowed URL never gets scheduled.
         let json = r#"{
             "events": [{
                 "id": "1",
@@ -1869,8 +1708,7 @@ mod tests {
 
     #[test]
     fn absent_match_is_carried_forward_not_evicted() {
-        // review fix 2026-07-16: a transient empty-but-valid response
-        // must not drop live matches
+        // a transient empty-but-valid response must not drop live matches
         let (snap, mut sb) = baseline(USA);
         sb.events.remove(0);
         let (events, next) = diff_scoreboard(&snap, &sb, 8, "usa.1", Priority::High, false);
@@ -1995,10 +1833,10 @@ mod tests {
 
     #[test]
     fn ucl_fixture_cards_bucket_per_side_and_color() {
-        // plan 042 ground truth, verified directly against the raw
-        // fixture json: 6 yellows, 0 reds — home PSG (team.id 160) 2Y,
-        // away ARS (team.id 359) 4Y. if these numbers come out different,
-        // the `team.id` cross-reference is misattributing cards.
+        // ground truth, verified directly against the raw fixture json:
+        // 6 yellows, 0 reds — home PSG (team.id 160) 2Y, away ARS
+        // (team.id 359) 4Y. if these numbers come out different, the
+        // `team.id` cross-reference is misattributing cards.
         let sb = parse_scoreboard(UCL).unwrap();
         let snap = view(&sb.events[0]).snap;
         assert_eq!(snap.home_abbrev, "PSG");
@@ -2126,7 +1964,7 @@ mod tests {
         assert_eq!(events[1].payload.body, "full-time");
     }
 
-    // plan 039: opt-in live-match card — one Topic per match
+    // opt-in live-match card — one Topic per match
     // (`espn:{league}:{match_id}`), `Recurring` while in play, `OneShot`
     // full-time on the same Topic.
 
@@ -2160,9 +1998,8 @@ mod tests {
 
     #[test]
     fn live_card_off_keeps_one_shot_topicless_events() {
-        // regression pin, not new behavior: `espn_live_card` defaults off,
-        // and off must remain byte-for-byte today's burst of one-shot,
-        // topicless cards.
+        // regression pin: `espn_live_card` off must stay a burst of
+        // one-shot, topicless cards.
         let events = live_cycle_events(false);
         assert_eq!(events.len(), 3);
         assert_eq!(events[0].payload.body, "kickoff");
@@ -2193,13 +2030,13 @@ mod tests {
         assert_eq!(events[2].rotation, RotationSpec::OneShot { ttl_secs: 8 });
     }
 
-    // plan 042: collapsed-scorecard meta.details — Clock always (flag
-    // on), per-side Cards only when any exist; flag off stays default.
+    // collapsed-scorecard meta.details — Clock always (flag on),
+    // per-side Cards only when any exist; flag off stays default.
 
     #[test]
     fn live_card_off_keeps_meta_default() {
-        // regression pin: with the flag off, meta is byte-identical to
-        // pre-039 behavior — fully default, empty details.
+        // regression pin: flag off keeps meta fully default, empty
+        // details.
         let events = live_cycle_events(false);
         assert_eq!(events.len(), 3);
         for event in &events {
@@ -2238,8 +2075,8 @@ mod tests {
         );
     }
 
-    // plan 083 item 4: EspnMeta — the structured sibling of the Clock/Cards
-    // detail cells above, same values, unjoined.
+    // EspnMeta — the structured sibling of the Clock/Cards detail cells
+    // above, same values, unjoined.
 
     #[test]
     fn live_card_on_attaches_structured_espn_meta() {
@@ -2268,17 +2105,16 @@ mod tests {
         assert_eq!(espn.clock, "120'");
         assert_eq!(espn.home_cards, (2, 0));
         assert_eq!(espn.away_cards, (4, 0));
-        // crest paths are patched in afterward by the async poller loop
-        // (workstream a) — diff_scoreboard itself never touches the
-        // filesystem, so both stay None here.
+        // crest paths are patched in afterward by the async poller loop —
+        // diff_scoreboard itself never touches the filesystem, so both
+        // stay None here.
         assert_eq!(espn.home_crest, None);
         assert_eq!(espn.away_crest, None);
     }
 
     #[test]
     fn live_card_off_leaves_espn_meta_none() {
-        // regression pin: flag off must stay byte-identical — no EspnMeta,
-        // same as the pre-083 `meta == EventMeta::default()` pin above.
+        // regression pin: flag off leaves EspnMeta unset.
         let events = live_cycle_events(false);
         for event in &events {
             assert_eq!(event.meta.espn, None);
@@ -2382,14 +2218,8 @@ mod tests {
     }
 
     // -----------------------------------------------------------------
-    // plan 083 workstream c (079 item 6a): richer live-match events.
-    //
-    // `SUMMARY_LIVE` is SYNTHESIZED, not a captured live-network payload
-    // — the raw research evidence directory
-    // (`research/043-worldcup-final-verification/`) is gitignored and not
-    // present in this checkout (`.gitignore`: "throwaway exploratory
-    // captures"). This fixture matches the DOCUMENTED shape recorded in
-    // the checked-in `plans/suspended/043-richer-match-events.md` (key
+    // richer live-match events. `SUMMARY_LIVE` is SYNTHESIZED, not a
+    // captured live-network payload — it matches the endpoint shape (key
     // names `commentary`/`keyEvents`; `keyEvents` entry fields `id`/
     // `type`/`text`/`clock`/`scoringPlay`), with one entry per locked
     // rich-event kind plus a scoreboard-owned goal/yellow-card (must be
@@ -2500,8 +2330,8 @@ mod tests {
         };
         let first_poll = filter_new(&seen, vec![candidate.clone()]);
         assert_eq!(first_poll.len(), 1, "first sighting must pass through");
-        // filter_new no longer commits the key itself — the caller records
-        // it only after a successful accept; simulate that here.
+        // the caller records the key only after a successful accept;
+        // simulate that here.
         seen.insert(dedup_key(&candidate));
         let second_poll = filter_new(&seen, vec![candidate]);
         assert!(
@@ -2534,16 +2364,10 @@ mod tests {
 
     #[test]
     fn evict_rich_seen_does_not_wipe_other_leagues_h1_regression() {
-        // H1 regression (2026-07-25): eviction used to run once per
-        // LEAGUE, inside the per-league poll loop, comparing `rich_seen`
-        // against only that ONE league's current snapshot — so finishing
-        // league A's pass wiped every entry belonging to league B/C
-        // (their match ids are never present in A's snapshot), even
-        // though B/C are still live and their dedup state is still
-        // valid. The fix moves eviction to run once per TICK, over the
-        // union of every league's snapshot — `evict_rich_seen` is that
-        // fix, extracted so this can be asserted without spinning up the
-        // async poll loop.
+        // eviction runs once per TICK, over the union of every league's
+        // snapshot — per-league eviction would wipe other leagues'
+        // entries (their match ids never appear in this league's
+        // snapshot), re-admitting their whole event list every tick.
         let mut rich_seen: HashMap<(String, String), HashSet<String>> = HashMap::new();
         rich_seen.insert(
             ("usa.1".to_string(), "AAA".to_string()),
@@ -2590,8 +2414,8 @@ mod tests {
     #[test]
     fn evict_rich_seen_still_evicts_matches_no_longer_tracked_anywhere() {
         // eviction must still fire when a match is genuinely gone from
-        // every league's snapshot — H1's fix must not turn into "never
-        // evict anything".
+        // every league's snapshot — the cross-league fix must not turn
+        // into "never evict anything".
         let mut rich_seen: HashMap<(String, String), HashSet<String>> = HashMap::new();
         rich_seen.insert(
             ("usa.1".to_string(), "GONE".to_string()),
@@ -2609,17 +2433,11 @@ mod tests {
 
     #[test]
     fn diff_match_delta_is_reproducible_when_not_committed() {
-        // M4 regression (2026-07-25): the live poll loop (`spawn_espn_
-        // poller`) advances a match's snapshot only when EVERY event
-        // `diff_match` returned for it was accepted; on a `QueueFull`
-        // drop it keeps the OLD entry instead of the tentative one (see
-        // the `committed_entry` logic there), so the identical delta
-        // re-diffs and re-emits on the next tick rather than being
-        // silently and permanently lost. This proves the pure half of
-        // that contract: `diff_match` itself is a pure function of
-        // `(old, v)` — calling it again with the SAME `old` (as if the
-        // first call's result was never committed) reproduces the
-        // identical event, not an empty diff.
+        // the live poll loop advances a match's snapshot only when EVERY
+        // event `diff_match` returned was accepted; a `QueueFull` drop
+        // keeps the OLD entry so the identical delta re-emits later. This
+        // proves the pure half: `diff_match` called again with the SAME
+        // `old` reproduces the identical event, not an empty diff.
         let (snap, mut sb) = baseline(USA);
         sb.events[0].competitions[0].competitors[0].score = Some("1".to_string());
         let old = snap.get("761659").unwrap();

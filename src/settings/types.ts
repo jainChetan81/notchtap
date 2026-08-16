@@ -1,8 +1,5 @@
-// Wire/config types shared by the settings window (plan 119: extracted
-// from SettingsApp.tsx so sections, controls, and the ipc map can import
-// them without pulling in the whole shell). SettingsApp.tsx re-exports
-// everything here, so external import paths (the test suite) are
-// unchanged.
+// Wire/config types shared by the settings window. SettingsApp.tsx re-exports
+// everything here, so external import paths are unchanged.
 
 export interface RssFeedConfig {
   url: string;
@@ -11,9 +8,6 @@ export interface RssFeedConfig {
 }
 
 export type PriorityLevel = "low" | "medium" | "high";
-// plan 137 (spec §7/§12): "cmux" is gone — migrated onto "agent"
-// (rust's `SourceKind::Cmux` was removed and its slot taken by
-// `SourceKind::Agent`, the v7 Agent Adapter's origin).
 export type SourceKind = "football" | "manual" | "news" | "agent";
 export type RestingState = "rail" | "notch";
 
@@ -23,8 +17,8 @@ export interface AppearanceConfig {
   card_opacity: number;
 }
 
-// Plan 143 (v7 ticket 11 of 13): mirrors rust's `AgentRuntimesConfig`
-// (config.rs) — one enable flag per supported runtime.
+// Mirrors rust's `AgentRuntimesConfig` (config.rs) — one enable flag per
+// supported runtime.
 export interface AgentRuntimeToggle {
   enabled: boolean;
 }
@@ -38,20 +32,15 @@ export interface AgentRuntimesConfig {
 
 export type AgentAdapterRuntime = "claude_code" | "codex" | "kimi" | "opencode";
 
-// plan 146a: mirrors rust's `SilenceConfig` (config.rs) — the `[silence]`
-// block. `window` is a plain `"HH:MM-HH:MM"` (24h) string on the wire —
-// `silence::Window`'s own `Serialize`/`Deserialize` impls round-trip it
-// through `Display`/`parse`, never a structured `{start, end}` object.
+// Mirrors rust's `SilenceConfig` (config.rs) — the `[silence]` block. `window`
+// is a plain `"HH:MM-HH:MM"` (24h) string on the wire, never a structured
+// `{start, end}` object.
 export interface SilenceConfig {
   enabled: boolean;
   window: string;
 }
 
-// Mirrors rust's `AgentsConfig` (config.rs) — the `[agents]` v7 config
-// block: global enable, registry retention/staleness, the two per-kind
-// card toggles (informational, completion), the Agent Board's own
-// presence gate (board_show_working), four per-kind Notification
-// priorities, and the four per-runtime enable flags above.
+// Mirrors rust's `AgentsConfig` (config.rs) — the `[agents]` config block.
 export interface AgentsConfig {
   enabled: boolean;
   terminal_retention_secs: number;
@@ -61,15 +50,9 @@ export interface AgentsConfig {
   // Default `true` — a runtime fires a completion event per response
   // turn, so this is the operator's off switch for per-turn cards.
   completion_notifications: boolean;
-  // Operator decision 2026-08-02. Default `false`, INCLUDING for a
-  // config written before the key existed — a session that is merely
-  // working no longer summons the Agent Board at all; the Board appears
-  // only while something needs the operator (waiting for permission or
-  // input, failed, or a completed session still inside its retention
-  // window). Presence only: once the Board is up it still lists the
-  // working sessions. Rust owns the whole gate
-  // (`agents::board::AgentBoardPublisher::gate_presence`) — the overlay
-  // never sees this flag, it just reads the published snapshot.
+  // Default `false`: a merely-working session never summons the Agent Board;
+  // it appears only while something needs the operator. Presence only — once
+  // up, the Board still lists working sessions. Rust owns the gate.
   board_show_working: boolean;
   permission_priority: PriorityLevel;
   input_priority: PriorityLevel;
@@ -101,39 +84,26 @@ export interface Config {
   manual_default_priority: PriorityLevel;
   agent_priority: PriorityLevel;
   agent_ttl_secs: number;
-  // plan 143 (v7 ticket 11 of 13): the `[agents]` config block — see
-  // `AgentsConfig`'s own doc. Always present on the wire
-  // (`#[serde(default)]` on the rust side), so this field is required,
-  // not optional, here.
+  // Always present on the wire (`#[serde(default)]` rust-side), so required
+  // here, not optional.
   agents: AgentsConfig;
   rotation_order: SourceKind[];
   appearance: AppearanceConfig;
   resting_state: RestingState;
   history_enabled: boolean;
-  // plan 146a: the `[silence]` block — always present on the wire
-  // (`#[serde(default)]` on the rust side), same "required, not optional"
-  // discipline as `agents` above.
+  // Always present on the wire (`#[serde(default)]` rust-side), so required
+  // here, not optional.
   silence: SilenceConfig;
-  // plan 171 (tab-notch redesign, slice J; spec §9): the configurable
-  // tmux-style prefix (`src-tauri/src/prefix.rs`'s `PrefixState`). A
-  // plain `"⌃⇧" + one more key name` string on the wire — mirrors this
-  // app's own shipped `⌃⇧`-combo display convention
-  // (`ShortcutsSection.tsx`'s `⌃⇧N`/`⌃⇧O`/etc. table), not a structured
-  // `{modifiers, key}` object. Always present
-  // (`#[serde(default = "default_prefix_shortcut")]` on the rust side),
-  // same "required, not optional" discipline as `silence`/`agents` above.
-  // Data only in this slice — not yet wired to a live key grab.
+  // The configurable tmux-style Prefix (src-tauri/src/prefix.rs). A plain
+  // `"⌃⇧" + key name` string on the wire, not a structured `{modifiers, key}`
+  // object. Always present (`#[serde(default)]` rust-side), so required here.
   prefix_shortcut: string;
 }
 
-// Wire shape of get_history (plan 089) — mirrors HistoryEntry/Event in
-// src-tauri/src/history.rs and event.rs. Unlike AboutInfo/AdapterHealthDto
-// below and unlike the camelCase SlotState wire (useSlotState.ts), this shape
-// is snake_case throughout, INCLUDING `meta` — the one camelCase island
-// is the optional `meta.espn` block (EspnMeta derives
-// `rename_all = "camelCase"`), absent entirely unless the espn live card
-// populated it. Verified against a live serde_json::to_string print of a
-// real HistoryEntry, not derived from the SlotState convention.
+// Wire shape of get_history — mirrors HistoryEntry/Event in
+// src-tauri/src/history.rs and event.rs. snake_case throughout; the one
+// camelCase island is the optional `meta.espn` block (EspnMeta derives
+// `rename_all = "camelCase"`), absent unless the espn live card populated it.
 export interface HistoryDetailItem {
   label: string;
   value: string;
@@ -183,27 +153,18 @@ export interface HistoryEntry {
   event: HistoryEvent;
 }
 
-// Wire shape of get_queue (plan 121) — mirrors QueueItemSummary in
-// src-tauri/src/queue.rs. `priority`/`source` are plain lowercase
-// strings on the rust side, produced by an exhaustive match rather than
-// serialized from the `Priority`/`SourceKind` enums directly — but the
-// wire spelling is identical to `PriorityLevel`/`SourceKind` elsewhere
-// in this file, so those existing types (and their label maps) apply
-// here unchanged rather than duplicating a third "priority string"
-// type.
+// Wire shape of get_queue — mirrors QueueItemSummary in src-tauri/src/queue.rs.
+// Wire spellings match `PriorityLevel`/`SourceKind`, so those types and their
+// label maps apply unchanged.
 export interface QueueItemSummary {
   title: string;
   priority: PriorityLevel;
   source: SourceKind;
 }
 
-// Wire shape of get_about_info (About section) — mirrors AboutInfo in
-// src-tauri/src/about.rs. camelCase throughout, same convention as
-// AdapterHealthDto below. The two "None on best-effort failure" fields
-// (bundleSizeBytes for a dev build, disk*Bytes if no disk mounts at "/")
-// stay nullable here rather than defaulting to 0 — a real zero-byte
-// bundle isn't a state this app can be in, so `null` unambiguously means
-// "not available" instead of colliding with a real reading.
+// Wire shape of get_about_info — mirrors AboutInfo in src-tauri/src/about.rs,
+// camelCase. `bundleSizeBytes`/`disk*Bytes` are null when unavailable (dev
+// build, no disk at "/") — never 0, so null can't collide with a real reading.
 export interface AboutInfo {
   version: string;
   bundleId: string;
@@ -218,19 +179,13 @@ export interface AboutInfo {
   uptimeSecs: number;
 }
 
-// Plan 143 (v7 ticket 11 of 13): the wire-token spelling
-// (`agents::adapter::runtime_wire_label`) — kebab-case, distinct from
-// `AgentsConfig.runtimes`'s snake_case config-field keys above. Mirrors
-// `src/useAgentState.ts`'s own `AgentRuntime` union (kept as a separate
-// local type here rather than importing across the overlay/settings
-// entry-point boundary — see `vite.config.ts`'s two-entry split).
+// Wire-token spelling (`agents::adapter::runtime_wire_label`) — kebab-case,
+// distinct from `AgentsConfig.runtimes`'s snake_case config keys. Kept local
+// rather than imported across the overlay/settings entry-point boundary.
 export type AgentWireRuntime = "claude-code" | "codex" | "kimi" | "opencode";
 
-// Wire shape of `get_agent_health` (plan 143) — mirrors
-// `agents::board::AdapterHealthView` in src-tauri/src/agents/board.rs,
-// the same conversion the `agent-state` overlay channel's Adapter Health
-// rows use (`health_to_view`). camelCase throughout, same convention as
-// `AboutInfo` above.
+// Wire shape of `get_agent_health` — mirrors `agents::board::AdapterHealthView`
+// in src-tauri/src/agents/board.rs, camelCase.
 export type AdapterAvailability = "available" | "partial" | "unavailable";
 export type AdapterErrorCategory = "malformed_payload" | "unsupported_runtime" | "internal";
 
@@ -260,29 +215,14 @@ export const SOURCE_LABELS: Record<SourceKind, string> = {
   agent: "Agent",
 };
 
-// Segmented option lists for the priority and units controls (plan 119:
-// precomputed once so call sites don't rebuild the array every render,
-// matching the static module-level arrays the old per-control components
-// closed over).
+// Precomputed once so call sites don't rebuild the array every render.
 export const PRIORITY_SEGMENT_OPTIONS: ReadonlyArray<{ label: string; value: PriorityLevel }> =
   PRIORITY_LEVELS.map((level) => ({ label: PRIORITY_LABELS[level], value: level }));
 
-// Segmented's `optionTones` prop for every priority picker in the app —
-// mirrors the overlay's own priority accent scheme, one named hue per tier
-// (src/overlay/card-chrome.css's `.card-assembly.low/medium/high`: grey,
-// overlay-teal, overlay-coral respectively), so the settings window's
-// selected-priority color reads as the same real distinction the overlay
-// notification card itself makes, not a settings-only invention. Literal
-// Tailwind class strings only (not built from a color name at runtime) —
-// see Segmented's own `optionTones` doc for why.
-// CodeRabbit review (PR #11): `low`'s foreground used to be
-// `text-muted-foreground` — byte-identical to Segmented's own unselected
-// text color, so a selected Low segment was nearly indistinguishable
-// from an unselected one (only the faint 20%-opacity background tint
-// differed). `text-foreground` keeps the neutral/grey background tint
-// (Low is correctly the quiet, uncolored tier) while giving selection
-// itself a real, visible contrast bump — matching how `medium`/`high`'s
-// saturated text already reads as clearly "on."
+// Segmented's `optionTones` for every priority picker — mirrors the overlay's
+// per-tier accent scheme (src/overlay/card-chrome.css) so selected priority
+// reads as the notification card's own distinction. Literal Tailwind class
+// strings only — see Segmented's `optionTones` doc for why.
 export const PRIORITY_TONES: Record<PriorityLevel, string> = {
   low: "bg-muted-foreground/20 text-foreground",
   medium: "bg-overlay-teal/20 text-overlay-teal",

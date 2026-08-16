@@ -1,5 +1,4 @@
-//! `notchtap-agent` — the shared v7 Agent Adapter hook-delivery binary
-//! (plan 138, `docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md` §4.1).
+//! `notchtap-agent` — the shared Agent Adapter hook-delivery binary.
 //!
 //! ```text
 //! notchtap-agent hook claude-code|codex|kimi
@@ -8,24 +7,16 @@
 //! notchtap-agent doctor
 //! ```
 //!
-//! Kept thin on purpose: this file is argv dispatch plus the impure
-//! "generate an event id / read the clock / read stdin" glue; every
-//! actual decision (native payload parsing, wire-body shape, delivery
-//! rules, diagnostic logging) lives in `notchtap_lib::agents::providers`
-//! (`src/agents/providers/`), so it's covered by that module's own
-//! `cargo test` suite rather than needing its own integration harness
-//! here. No heavyweight arg-parsing crate — the surface is three fixed
-//! subcommands with at most one positional argument each, hand-matched
-//! below (matches this crate's existing dependency posture: no `clap`/
-//! `structopt` anywhere in `Cargo.toml`).
+//! Kept thin on purpose: argv dispatch plus impure "generate an event
+//! id / read the clock / read stdin" glue; every actual decision lives
+//! in `notchtap_lib::agents::providers`, where it's unit-tested. No
+//! arg-parsing crate — a few fixed subcommands, hand-matched.
 //!
-//! `hook` mode NEVER writes to stdout (Claude Code, and presumably
-//! Codex/Kimi, may interpret hook stdout as structured decision output
-//! — spec §4.1: "no decision JSON... mutation of the native event") and
-//! ALWAYS exits 0 (fail open — a provider session must never be blocked
-//! by notchtap's absence or a delivery failure). `test`/`status` are
-//! interactive diagnostic subcommands, not hook targets, and use stdout
-//! normally.
+//! `hook` mode NEVER writes to stdout (providers may interpret hook
+//! stdout as structured decision output) and ALWAYS exits 0 (fail open
+//! — a provider session must never be blocked by notchtap's absence or
+//! a delivery failure). `test`/`status` are interactive diagnostic
+//! subcommands, not hook targets, and use stdout normally.
 
 use std::io::{self, ErrorKind, Read};
 use std::path::PathBuf;
@@ -66,11 +57,11 @@ fn occurred_at_ms() -> i64 {
         .unwrap_or(0)
 }
 
-/// `hook` reads exactly one native JSON payload from stdin (spec §4.1),
-/// normalizes + delivers it, and always exits 0. Stdin is fully drained
-/// up front regardless of which runtime/outcome follows, so a provider
-/// waiting on this process's stdin pipe to close is never left hanging
-/// by an early return.
+/// `hook` reads exactly one native JSON payload from stdin, normalizes
+/// and delivers it, and always exits 0. Stdin is fully drained up front
+/// regardless of runtime/outcome, so a provider waiting on this
+/// process's stdin pipe to close is never left hanging by an early
+/// return.
 async fn run_hook(runtime: Option<&str>) -> ExitCode {
     let mut buf = Vec::new();
     if let Err(e) = io::stdin().read_to_end(&mut buf) {
@@ -93,17 +84,12 @@ async fn run_hook(runtime: Option<&str>) -> ExitCode {
     }
 }
 
-/// Fix 3 (review batch, 2026-07-26): the shared body of
-/// `deliver_claude_code`/`deliver_codex`/`deliver_kimi` — the three were
-/// near-identical (parse via the runtime's pure `normalize` fn, build the
-/// wire body, resolve the port, deliver, log any failure) modulo the
-/// runtime label and which `normalize` to call. `runtime_label` is both
-/// the diagnostic-log prefix and the wire `runtime` token
-/// (`adapter::runtime_wire_label`'s inverse-facing string — see
-/// `wire::build_wire_body`'s own `runtime` parameter). Kimi's version
-/// gate runs BEFORE this helper (in `deliver_kimi`), not inside it — it's
-/// the one piece of per-runtime behavior this dedup deliberately doesn't
-/// try to swallow.
+/// Shared body of `deliver_claude_code`/`deliver_codex`/`deliver_kimi`:
+/// parse via the runtime's pure `normalize` fn, build the wire body,
+/// resolve the port, deliver, log any failure. `runtime_label` is both
+/// the diagnostic-log prefix and the wire `runtime` token. Kimi's
+/// version gate runs BEFORE this helper (in `deliver_kimi`), not inside
+/// it — the one per-runtime behavior this dedup deliberately keeps out.
 async fn deliver_via<E: std::fmt::Display>(
     runtime_label: &str,
     stdin: &[u8],
@@ -132,8 +118,7 @@ async fn deliver_via<E: std::fmt::Display>(
     }
 
     // Always 0 — delivery outcome never changes this process's exit
-    // status (spec §4.1: "delivery failure never changes a provider
-    // process's exit status", §10).
+    // status.
     ExitCode::SUCCESS
 }
 
@@ -141,23 +126,19 @@ async fn deliver_claude_code(stdin: &[u8]) -> ExitCode {
     deliver_via("claude-code", stdin, claude_code::normalize).await
 }
 
-/// Ticket 139 (spec §4.3): the Codex hook path — no version gate (Codex's
-/// hook surface has no documented version-gating story the way Kimi's
-/// does), otherwise identical shape to [`deliver_claude_code`].
+/// Codex hook path — no version gate (Codex's hook surface has no
+/// documented version-gating story the way Kimi's does), otherwise
+/// identical shape to [`deliver_claude_code`].
 async fn deliver_codex(stdin: &[u8]) -> ExitCode {
     deliver_via("codex", stdin, codex::normalize).await
 }
 
-/// Ticket 140 (spec §4.4): the Kimi hook path. Unlike Codex/Claude Code,
-/// this refuses to deliver below [`kimi_version::MINIMUM_HOOK_VERSION`]
-/// — still fail-open (always exits 0, never blocks the provider), but the
-/// event itself is dropped with a bounded diagnostic rather than posted,
-/// per this ticket's "refuses (fail-open exit 0, diagnostic) below the
-/// minimum version" and spec §4.4's "NO terminal scraping fallback,
-/// ever" (i.e. no attempt to deliver anyway and let the endpoint sort it
-/// out). The version gate stays its own pre-check ahead of
-/// [`deliver_via`] rather than folding into it — it's Kimi-specific and
-/// has nothing to do with the shared parse/build/send body.
+/// Kimi hook path. Unlike Codex/Claude Code, refuses to deliver below
+/// [`kimi_version::MINIMUM_HOOK_VERSION`] — still fail-open (always
+/// exits 0, never blocks the provider), but the event is dropped with a
+/// bounded diagnostic rather than posted; never "deliver anyway and let
+/// the endpoint sort it out". The gate stays a Kimi-specific pre-check
+/// ahead of [`deliver_via`].
 async fn deliver_kimi(stdin: &[u8]) -> ExitCode {
     match kimi_version::probe_hook_support() {
         kimi_version::HookSupport::Unavailable { detected, minimum } => {
@@ -179,25 +160,15 @@ async fn deliver_kimi(stdin: &[u8]) -> ExitCode {
 const KNOWN_RUNTIMES: [&str; 4] = ["claude-code", "codex", "kimi", "opencode"];
 
 /// `notchtap-agent test <runtime>` posts a synthetic, terminal
-/// `completed` schema-v1 event — a session-end stand-in — so a user
-/// can verify their notchtap install/wiring produces an actual VISIBLE
-/// card, not just a silent registry update. Fix 2 (review batch,
-/// 2026-07-26): this used to post an `informational` event, which is
-/// suppressed by default (spec §5's table: Informational is "off by
-/// default") — a user running this command would see nothing happen and
-/// have no way to tell working from broken. `completed`+`terminal:true`
-/// is always noteworthy (spec §5: "Completed | Medium | one-shot (both
-/// per-turn Stop and session end)"). Fix (operator feedback, 2026-07-27):
-/// this used to post `terminal:false`, which never sets `terminal_at` —
-/// the registry's terminal sweep (`agents::registry::AgentRegistry::tick`)
-/// only evicts sessions that have gone terminal, so a `terminal:false`
-/// test event sat on the Agent Board forever, permanently suppressing
-/// the idle face. Posting a genuinely terminal `Completed` state instead
-/// makes the test session evict after `agents.terminal_retention_secs`
-/// like any real completed turn. Unlike `hook`, this is an interactive
-/// command: it prints its outcome and returns a non-zero exit code on
-/// failure (a user running this by hand wants to know it didn't work,
-/// unlike a hook that must never block a provider).
+/// `completed` schema-v1 event so a user can verify their wiring
+/// produces an actual VISIBLE card, not just a silent registry update.
+/// Must stay `completed`+`terminal:true`: `informational` is suppressed
+/// by default (the user would see nothing), and a `terminal:false`
+/// event never sets `terminal_at`, so the registry's terminal sweep
+/// (`agents::registry::AgentRegistry::tick`) would leave the test
+/// session on the Agent Board forever, suppressing the idle face.
+/// Unlike `hook`, this is interactive: it prints its outcome and
+/// returns non-zero on failure.
 async fn run_test(runtime: Option<&str>) -> ExitCode {
     let Some(runtime) = runtime else {
         eprintln!("usage: notchtap-agent test <claude-code|codex|kimi|opencode>");
@@ -241,11 +212,9 @@ async fn run_test(runtime: Option<&str>) -> ExitCode {
 }
 
 /// `notchtap-agent status` — a quick "is anything listening on the
-/// configured loopback port" check. Deliberately a bare TCP connect
-/// rather than an HTTP request against a dedicated health route: none
-/// of notchtap's existing HTTP handlers (`http.rs`, off limits to this
-/// ticket) expose a GET/health endpoint, and a raw connect is enough to
-/// answer "port in use" without inventing one.
+/// configured loopback port" check. A bare TCP connect, not an HTTP
+/// request: `http.rs` exposes no health endpoint and a raw connect
+/// answers "port in use" without inventing one.
 fn run_status() -> ExitCode {
     let port = delivery::resolve_port();
     let listener_ok = match doctor::listener_reachable(port) {
@@ -259,9 +228,7 @@ fn run_status() -> ExitCode {
         }
     };
 
-    // Ticket 140 (spec §4.4): "Settings shows the detected compatibility
-    // state and setup snippet... until then visible via `notchtap-agent
-    // status`" — a stand-in for that Settings surface.
+    // CLI stand-in for the Settings compatibility surface.
     match kimi_version::probe_hook_support() {
         kimi_version::HookSupport::Supported { detected } => {
             println!(
@@ -284,23 +251,16 @@ fn run_status() -> ExitCode {
     }
 }
 
-/// `notchtap-agent doctor` (plan 152) — the read-only "is my Agent
-/// Adapter actually wired?" report that `status` can't give: `status`
-/// only answers "is notchtap listening", and Settings' Adapter Health
-/// cards only report what has been *received*, so an un-wired runtime
-/// and a wired-but-idle one look identical there.
-///
-/// This is a thin shell by design (same rule as the rest of this file):
-/// it resolves the home directory, reads four files, and asks
-/// `notchtap_lib::agents::providers::doctor` what they mean. Every
-/// decision — what counts as wired, what a command string points at,
-/// what the exit code should be — lives in that module, where it's
-/// unit-testable. Mapping an `io::Error` to a variant and calling
-/// `is_file()` are filesystem reads, not decisions, so they stay here.
+/// `notchtap-agent doctor` — the read-only "is my Agent Adapter
+/// actually wired?" report `status` can't give: Adapter Health only
+/// reports what has been *received*, so un-wired and wired-but-idle
+/// look identical there. Thin shell: reads the config files and asks
+/// `providers::doctor` what they mean; every decision lives in that
+/// module, where it's unit-testable.
 ///
 /// **It never writes.** Repairing or installing a runtime's hooks is
-/// explicitly not this command's job (spec §4.6: "v7 does not silently
-/// edit a user's global provider configuration").
+/// not this command's job — notchtap never silently edits a user's
+/// global provider configuration.
 fn run_doctor() -> ExitCode {
     let Some(home) = dirs::home_dir() else {
         println!("notchtap doctor: cannot resolve a home directory");
@@ -358,9 +318,8 @@ fn run_doctor() -> ExitCode {
         });
     }
 
-    // OpenCode ships a plugin file rather than hook entries, so presence
-    // is the whole check. The path is rendered in the output so a user
-    // who named the file differently can see what was looked for.
+    // OpenCode ships a plugin file rather than hook entries, so
+    // presence is the whole check; the path is rendered in the output.
     let opencode_path = home.join(".config/opencode/plugins/notchtap.ts");
     runtimes.push(doctor::RuntimeReport {
         runtime: AgentRuntime::OpenCode,
@@ -369,16 +328,15 @@ fn run_doctor() -> ExitCode {
         command_targets: Vec::new(),
     });
 
-    // Only probe the version gate when Kimi is actually wired — running
-    // `kimi --version` for a user who doesn't have Kimi installed just
-    // adds a subprocess and a confusing line.
+    // Only probe the version gate when Kimi is actually wired — no
+    // subprocess or confusing line for users without Kimi.
     let kimi_note = kimi_inspected.then(|| match kimi_version::probe_hook_support() {
         kimi_version::HookSupport::Supported { detected } => format!(
             "kimi {detected} detected (hooks require >= {}) — supported",
             kimi_version::MINIMUM_HOOK_VERSION_STR
         ),
         // Split on `detected`: folding `None` into the same sentence
-        // produced "kimi no kimi on PATH detected (…)".
+        // reads as "kimi no kimi on PATH detected".
         kimi_version::HookSupport::Unavailable {
             detected: Some(detected),
             minimum,

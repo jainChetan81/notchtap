@@ -1,51 +1,28 @@
-//! Plan 144 (v7 ticket 12 of 13, spec §6.3): the `⌃⇧A` Open/Focus
-//! Session shortcut.
-//!
-//! Spec §6.3's security model, restated as this module's invariants:
+//! The `⌃⇧A` Open/Focus Session shortcut. Security invariants:
 //!
 //! - supported Host bundle IDs and activation strategies are owned by
-//!   notchtap code, keyed by a small enum ([`Host`]) — never read off
-//!   the wire;
-//! - unknown Host metadata (an [`AgentHost`] whose `name` doesn't match
-//!   a known [`Host`]) is advisory text only, never actionable;
-//! - focus tries the known Host application first;
-//! - an optional provider-native deep link is allowed only from a
-//!   code-owned scheme allowlist ([`DEEP_LINK_ALLOWLIST`], currently
-//!   empty — see its doc) and only when it matches the session's
+//!   notchtap code, keyed by the [`Host`] enum — never read off the
+//!   wire;
+//! - unknown Host metadata is advisory text only, never actionable;
+//! - a provider-native deep link is allowed only from the code-owned
+//!   [`DEEP_LINK_ALLOWLIST`] and only when it matches the session's
 //!   provider;
 //! - no `sh -c`, arbitrary executable path, or adapter-provided
 //!   argument ever reaches an exec boundary — [`activate`] takes the
-//!   [`Host`] enum, not a string, so this is enforced by the function
-//!   signature, not by runtime validation;
-//! - failure is logged and surfaced as a quiet status (a `tracing::warn!`
-//!   line today; Adapter Health, ticket 143, is the future UI surface —
-//!   no UI work happens in this module), never a shell fallback.
+//!   [`Host`] enum, not a string, so the signature enforces this;
+//! - failure is logged as a quiet status, never a shell fallback.
 //!
-//! The pure decision logic ([`decide_focus`]) is separated from the
-//! subprocess/activation call ([`activate`]), mirroring
-//! `presentation::presentation_mode`'s split from its own subprocess
-//! caller (`docs/TESTING_STRATEGY.md` §4.4): the decision is a plain
-//! function over already-fetched state and is unit-testable; the
-//! `Command::spawn` call is not.
+//! Pure decision ([`decide_focus`]) is separated from the activation
+//! call ([`activate`]) so the decision stays unit-testable.
 
 use std::process::Command;
 
 use super::model::{AgentHost, AgentRuntime, AgentState};
 
-/// The small, code-owned set of Host applications notchtap knows how to
-/// activate (spec §6.3). Every variant here must carry a REAL, verified
-/// macOS bundle id — never a guess. Only two are verified today:
-///
-/// - Terminal.app: `com.apple.Terminal` (Apple's built-in terminal,
-///   stable bundle id across macOS releases).
-/// - iTerm2: `com.googlecode.iterm2` (iTerm2's published bundle id,
-///   unchanged across its release history).
-///
-/// T3 Code is the other Host the spec calls out (§0, §3.1's example
-/// payload uses `"name": "T3 Code"` with an explicitly placeholder
-/// `bundleId` of `"validated.adapter-owned.value"` — not a real value).
-/// No real T3 Code bundle id has been verified in this repo's docs or
-/// config, so it is deliberately NOT a variant here yet:
+/// The small, code-owned set of Host applications notchtap knows how
+/// to activate. Every variant must carry a REAL, verified macOS bundle
+/// id — never a guess. No real T3 Code bundle id has been verified, so
+/// it is deliberately NOT a variant yet:
 ///
 /// ```ignore
 /// // T3Code, // TODO(plan 144 follow-up): add once a real bundle id is
@@ -53,8 +30,7 @@ use super::model::{AgentHost, AgentRuntime, AgentState};
 /// ```
 ///
 /// Adding a variant means adding a REAL bundle id plus updating
-/// [`Host::from_name`]'s alias list; it must never be inferred from
-/// wire data.
+/// [`Host::from_name`]'s alias list; never infer one from wire data.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Host {
     Terminal,
@@ -63,8 +39,8 @@ pub enum Host {
 
 impl Host {
     /// The bundle id notchtap itself owns for this Host — never the
-    /// wire's `AgentHost::bundle_id`, which is advisory-only per spec
-    /// §6.3 and is never read by this module.
+    /// wire's `AgentHost::bundle_id`, which is advisory-only and never
+    /// read by this module.
     pub const fn bundle_id(self) -> &'static str {
         match self {
             Host::Terminal => "com.apple.Terminal",
@@ -85,44 +61,35 @@ impl Host {
     }
 
     /// Recognizes a Host from an [`AgentHost`]'s advisory metadata.
-    /// Deliberately reads only `name` — `bundle_id` is adapter-supplied
-    /// and is never trusted for anything, including recognition; the
-    /// bundle id actually used for activation always comes from
-    /// [`Host::bundle_id`] on the variant selected here.
+    /// Deliberately reads only `name` — the adapter-supplied
+    /// `bundle_id` is never trusted for anything, including
+    /// recognition; activation always uses [`Host::bundle_id`].
     fn from_agent_host(host: &AgentHost) -> Option<Host> {
         host.name.as_deref().and_then(Host::from_name)
     }
 }
 
-/// One code-owned provider-native deep link scheme, gated to a specific
-/// [`AgentRuntime`] (spec §6.3: "only when it matches the session's
-/// provider").
+/// One code-owned provider-native deep link scheme, gated to a
+/// specific [`AgentRuntime`].
 #[derive(Debug, Clone, Copy)]
 pub struct DeepLinkEntry {
     pub runtime: AgentRuntime,
     pub scheme: &'static str,
 }
 
-/// The provider-native deep link allowlist (spec §6.3). Empty today —
-/// no provider deep link scheme has been verified against a real
-/// runtime yet. This is intentionally shipped as a structure with zero
-/// entries rather than skipped: [`deep_link_for`] and its tests prove
-/// the matching rule (runtime match AND scheme match, both against
-/// code-owned values, never the caller's raw string) works, so a future
-/// verified scheme is a one-line addition here, not new logic.
+/// The provider-native deep link allowlist. Empty — no scheme verified
+/// against a real runtime yet — but shipped as a structure so the
+/// matching rule (runtime match AND scheme match, both against
+/// code-owned values) is proven; a verified scheme is a one-line
+/// addition here, not new logic.
 pub const DEEP_LINK_ALLOWLIST: &[DeepLinkEntry] = &[];
 
-/// Looks up a code-owned deep link scheme for `runtime`, but only
-/// returns it if `requested_scheme` (whatever a caller thinks it wants)
-/// matches the allowlisted entry's own scheme string. This means an
-/// unlisted scheme is always rejected, and a scheme that IS listed but
-/// for a different runtime is also rejected — the two required
-/// rejections (spec §6.3, this plan's test list).
-///
-/// The returned `&'static str`, not `requested_scheme`, is what a future
-/// activation call would use — so even a caller that already validated
-/// `requested_scheme` never gets to hand its own copy to an exec
-/// boundary.
+/// Looks up a code-owned deep link scheme for `runtime`, returned only
+/// if `requested_scheme` matches the allowlisted entry's own scheme:
+/// unlisted schemes and listed-but-wrong-runtime schemes both reject.
+/// The returned `&'static str`, not `requested_scheme`, is what an
+/// activation call would use — a caller never hands its own copy to an
+/// exec boundary.
 pub fn deep_link_for(runtime: AgentRuntime, requested_scheme: &str) -> Option<&'static str> {
     deep_link_for_allowlist(DEEP_LINK_ALLOWLIST, runtime, requested_scheme)
 }
@@ -139,8 +106,8 @@ fn deep_link_for_allowlist(
 }
 
 /// Why [`decide_focus`] chose not to activate anything. Purely
-/// informational (logged, spec §6.3's "quiet status") — never rendered
-/// in the overlay, which stays receive-only.
+/// informational (logged) — never rendered in the overlay, which stays
+/// receive-only.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum NoFocusReason {
     /// No Agent Sessions are tracked at all.
@@ -150,12 +117,10 @@ pub enum NoFocusReason {
     UnknownHost,
 }
 
-/// The pure outcome of [`decide_focus`]: either a known [`Host`] to
-/// activate, or a reason nothing will happen. Carrying [`Host`] (an
-/// enum) rather than a bundle id string here is what makes "no code
-/// path passes wire strings to the exec call" true by construction —
-/// [`activate`] only accepts this enum, so the only strings that can
-/// ever reach `Command` are the two literals in [`Host::bundle_id`].
+/// The pure outcome of [`decide_focus`]. Carrying [`Host`] (an enum)
+/// rather than a bundle id string makes "no wire string reaches the
+/// exec call" true by construction — the only strings that can reach
+/// `Command` are the literals in [`Host::bundle_id`].
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum FocusDecision {
     Activate(Host),
@@ -163,10 +128,9 @@ pub enum FocusDecision {
 }
 
 /// Selects the highest-ranked Agent Session's Host and decides whether
-/// it's actionable (spec §6.3). `ordered_states` must already be in
-/// Board order (`AgentRegistry::ordered_states`'s ordering, spec §2.2)
-/// — the highest-ranked session is simply its first element, so this
-/// function does no ranking of its own.
+/// it's actionable. `ordered_states` must already be in Board order
+/// (`AgentRegistry::ordered_states`) — the first element is the
+/// highest-ranked; this function does no ranking of its own.
 pub fn decide_focus(ordered_states: &[AgentState]) -> FocusDecision {
     let Some(top) = ordered_states.first() else {
         return FocusDecision::NoAction(NoFocusReason::EmptyRegistry);
@@ -177,16 +141,11 @@ pub fn decide_focus(ordered_states: &[AgentState]) -> FocusDecision {
     }
 }
 
-/// Activates `host` via `open -b <bundle-id>` — a fixed two-element arg
-/// array, never a shell string (spec §6.3: "NO `sh -c`, arbitrary
-/// executable path, or adapter-provided arguments"). `host.bundle_id()`
-/// is the only string this ever passes to `Command`, and it can only be
-/// one of the literals on [`Host::bundle_id`] because `host` is the enum,
-/// not a caller-supplied string.
-///
-/// Failure (the `open` binary missing, a non-zero exit, spawn error) is
-/// logged and swallowed — never converted into a shell fallback, per
-/// spec §6.3.
+/// Activates `host` via `open -b <bundle-id>` — a fixed two-element
+/// arg array, never a shell string. `host.bundle_id()` is the only
+/// string this ever passes to `Command`, and it can only be a
+/// [`Host::bundle_id`] literal because `host` is the enum. Failure is
+/// logged and swallowed — never converted into a shell fallback.
 pub fn activate(host: Host) {
     match Command::new("open").args(["-b", host.bundle_id()]).status() {
         Ok(status) if status.success() => {
@@ -212,8 +171,7 @@ pub fn activate(host: Host) {
 /// Runs [`decide_focus`] against `ordered_states` and, on
 /// [`FocusDecision::Activate`], calls [`activate`]. `NoAction` is a
 /// quiet no-op: logged at debug level, no shell fallback, no overlay
-/// involvement (the overlay stays receive-only; this is Rust-only, spec
-/// §6.2/§6.3).
+/// involvement (the overlay stays receive-only).
 pub fn focus_highest_ranked(ordered_states: &[AgentState]) {
     match decide_focus(ordered_states) {
         FocusDecision::Activate(host) => activate(host),

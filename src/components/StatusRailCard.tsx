@@ -35,95 +35,41 @@ import { IdleHoverPeek, type PeekPreference } from "./IdleHoverPeek";
 import { FootballHeroCard, NotificationBody } from "./NotificationBody";
 import { TabBelowBlock, tabBelowBlockHandles } from "./TabBelowBlock";
 
-// plan 084: the live scorecard's celebration classes — echoes the shipped
-// pulse-goal/pulse-red discipline (keyed on [currentId, currentSignal],
-// cleared on the ending keyframe's animationend) but scoped to the
-// espn-structured-meta branch so a live-branch goal never stacks BOTH
+// Which keyframe (styles.css) ends each live-branch celebration — cleared on
+// animationend, scoped to the espn branch so a live goal never stacks both
 // `pulse-goal` and `cele-goal` (see the `isLiveCard` gate below).
-// `Celebration` (lib/presentation.ts) already IS the class-name union, so
-// there's no separate translation table to keep in sync with Step 1's.
 const CELEBRATION_END_ANIMATION: Record<NonNullable<Celebration>, string> = {
   "cele-goal": "cele-ring",
   "cele-yc": "cele-ring",
   "cele-rc": "red-strobe",
 };
 
-// plan 120: exported so NotificationBody.tsx (src/components/) can import
-// the shape rather than duplicating this two-field structural type — one
-// definition, not two that can drift.
+// Exported so NotificationBody.tsx imports the shape — one definition, not two.
 export type Detail = { label: string; value: string };
-
-// plan 12x (wave 2): mirrors shared-ui's `--ease-notchtap`
-// (vendor/shared-ui/design/tokens.css) —
-// motion's `transition.ease` takes a bezier array, not a CSS var, so this
-// is the JS-side twin of that token for the showing-flavored content swap
-// below (mirrors card-enter-showing/card-exit-showing's old
-// `var(--ease-notchtap)`). 2026-07-23: the literal moved to
-// animationTiming.ts's exported NOTCHTAP_EASE (imported above) with a
-// token-parity guard test — no local copy here anymore. The idle-flavored
-// swap (StatusDots) keeps motion's built-in "easeOut", matching the old
-// card-enter-idle/card-exit-idle's plain `ease-out`.
 
 type Pulse = "pulse-goal" | "pulse-red" | null;
 
-// Which @keyframes name (styles.css) ends each pulse — the *only* place
-// either duration lives is the CSS animation itself; clearing on
-// animationend means there's no JS-side duration to keep in sync with it.
-// plan 150 (Step 1): `pulse-goal` moved off `goal-overshoot` (the 1240ms
-// SHELL keyframe) onto `ripple-out` — the LAST thing the goal celebration
-// plays. The three `.cele-ripple` rings run 1440ms with 280ms/560ms
-// stagger, so the family only truly finishes at ~2000ms; clearing on the
-// shell's end tore ring 3 out at 62% of its life, mid-expansion (the
-// `.cele-ripple` layer is mounted by the `pulse === "pulse-goal"` gate
-// further down, so clearing the state unmounts the rings outright).
-// Holding the class the extra ~760ms is safe: `goal-overshoot`/
-// `goal-burst`/`goal-ring` are all one-shot, finite, and fill-mode-less
-// (choreography.css) — once they end they revert to their base rules
-// (`::after`/`::before` both rest at `opacity: 0`), and a class that
-// merely stays applied never re-runs an animation.
+// Which @keyframes name (styles.css) ends each pulse — the CSS animation is the
+// only place either duration lives; clearing on animationend keeps no JS-side
+// copy. `pulse-goal` clears on `ripple-out`, the LAST thing the goal celebration
+// plays (the staggered rings outlive the shell keyframe).
 const PULSE_END_ANIMATION: Record<NonNullable<Pulse>, string> = {
   "pulse-goal": "ripple-out",
   "pulse-red": "red-alert",
 };
 
-// plan 150 (Step 1): how many `.cele-ripple` rings the goal celebration
-// mounts (the three <span>s below) — `ripple-out` therefore ends three
-// times per celebration, staggered, and only the THIRD one means "the
-// celebration is over". Kept next to the table above because the two are
-// read together in `clearPulseWhenItsAnimationEnds`; the JSX below must
-// mount exactly this many spans.
+// How many `.cele-ripple` rings the goal celebration mounts — `ripple-out` ends
+// once per ring and only the last means the celebration is over; the JSX below
+// must mount exactly this many spans.
 const RIPPLE_RING_COUNT = 3;
 
-// plan 127 (Step 3, /improve-animations audit finding #3): the content
-// swap's `exit` leg, as a motion `variants` function keyed on
-// `isRotation` (below) — the exiting `motion.div` (the OLD `swapKey`)
-// stops receiving fresh props from this component's own render the
-// instant its key drops out of the JSX, so there is no other way to
-// hand it the freshly-computed `isRotation` boolean than `AnimatePresence`'s
-// own `custom` prop, which motion re-evaluates variant FUNCTIONS with for
-// exiting children specifically (the documented mechanism the plan's own
-// doc names). `initial`/`animate` don't need this: the ENTERING child is
-// still live in the render tree, so they read `isRotation` directly from
-// closure, no variants indirection needed — only `exit` is a variant
-// label here, kept as a module-level constant (not per-render) since it
-// depends on nothing but its `custom` argument.
-// plan 129 (T3, deep-review fix): exported (test-only export, same
-// precedent as `iconForBundleId` in IdleHoverPeek.tsx) so
-// StatusRailCard.test.tsx can pin the two durations/ease directly
-// against this object rather than only indirectly, through rendered
-// motion output — jsdom/motion don't expose a committed animation's
-// `transition` back onto the DOM the way plain CSS values are
-// inspectable, so the variant function itself is the only place these
-// three values are actually checkable.
-// plan 146b: `custom` widened from a plain `isRotation` boolean to
-// `{ isRotation, isInterrupt }` — a Priority Preemption handover is
-// ALWAYS also a showing(A)->showing(B) rotation (`isRotation` true, see
-// `isInterrupt`'s own doc further down for why), but it must NOT play
-// the gentle rotation fade: it needs its own faster, sharper "yanked"
-// exit (INTERRUPT_EXIT_MS + INTERRUPT_EASE, plus a small downward/scale
-// pull so it reads as cut short, not merely quicker). `isInterrupt` is
-// checked first and wins outright — the plain `isRotation` branch below
-// only ever runs for an ordinary end-of-turn rotation.
+// Content-swap exit leg. An exiting motion.div stops receiving props once its
+// key leaves the JSX, so AnimatePresence's `custom` prop is the only channel
+// that can hand it `{ isRotation, isInterrupt }`; `isInterrupt` wins outright —
+// a Priority Preemption is structurally also a rotation but plays the sharper
+// "yanked" exit. Test-only export: jsdom/motion don't expose a committed
+// animation's `transition`, so this object is the only place the values are
+// checkable (StatusRailCard.test.tsx).
 export const contentExitVariants = {
   exit: (custom: { isRotation: boolean; isInterrupt: boolean }) => {
     if (custom.isInterrupt) {
@@ -139,58 +85,34 @@ export const contentExitVariants = {
   },
 };
 
-// plan 146b: rank map backing `isInterrupt`'s "strictly higher priority"
-// check below — mirrors rust's `Priority` ordering (`event.rs`/`queue.rs`
-// derive `Ord` with declaration order Low < Medium < High). Kept local
-// to this file (not exported from useSlotState.ts) since nothing else
-// needs a numeric Priority rank today.
+// Mirrors rust's `Priority` ordering (`event.rs`/`queue.rs` derive `Ord`,
+// declaration order Low < Medium < High).
 const PRIORITY_RANK: Record<"low" | "medium" | "high", number> = {
   low: 0,
   medium: 1,
   high: 2,
 };
 
-// plan 146b: how much of the OUTGOING item's Rotation window must still
-// plausibly remain, estimated client-side, before a showing(A)->
-// showing(B) swap is treated as a genuine Priority Preemption rather
-// than an ordinary end-of-turn Promotion. The wire carries no explicit
-// "preempted" flag (queue.rs's `try_preempt_visible` is rust-internal —
-// spec's deliberate "no wire change"), so this is inferred from the same
-// ttl/remaining fields TtlBar.tsx already anchors locally: an ordinary
-// rotation only ever happens once the outgoing item's countdown has
-// actually run out (estimated remaining ~0, modulo the engine's own
-// small tick-to-emission latency), while a preemption cuts the item off
-// with real time still on the clock. 400ms comfortably clears that
-// tick/emission jitter (the rotation loop wakes ~10ms past its own
-// deadline — see engine.rs) without requiring a preemption to land in
-// the very same instant as the interrupting enqueue to be recognized.
+// The wire carries no explicit "preempted" flag (queue.rs's `try_preempt_visible`
+// is rust-internal), so a preemption is inferred: an ordinary rotation fires with
+// ~0 remaining, a preemption cuts the item off with real time left. 400ms clears
+// the engine's tick/emission jitter (engine.rs wakes ~10ms past its deadline).
 const INTERRUPT_MIN_REMAINING_MS = 400;
 
-// Plan 171 (tab-notch redesign, slice K): which selections are served by
-// `IdleHoverPeek`'s own shipped rendering rather than by a dedicated
-// below-block component. Spec section 11 ("`IdleHoverPeek.tsx` is
-// untouched") means football must reach that component, not a copy of
-// it — see `TabBelowBlock.tsx`'s header for the full split.
+// Selections served by `IdleHoverPeek`'s own rendering rather than a dedicated
+// below-block component — see `TabBelowBlock.tsx`'s header for the split.
 function peekPreferenceFor(selected: Tab | null): PeekPreference {
   return selected === "football" ? selected : null;
 }
 
-// The empty session list every caller that doesn't participate in the
-// tab feature (tests, the settings preview) gets by omission. A
-// module-level constant rather than a `[]` default in the destructuring
-// so it keeps a stable identity across renders — a fresh array literal
-// per render would defeat any future memoization downstream.
+// Module-level (not a `[]` destructuring default) so callers omitting the prop
+// get a stable identity across renders.
 const NO_AGENT_SESSIONS: AgentSessionView[] = [];
 
-// Spec section 10: the overlay stays receive-only, so the DOM click on an
-// icon decides nothing — rust's own native click monitor sees the same
-// physical click and emits `tab-selection-changed`. The strip still wants
-// a real `<button>` (for `icon-strip.css`'s `:active { scale(0.9) }`
-// press feedback and for the accessible name), so it gets a handler that
-// deliberately does nothing. Module-level so its identity is stable
-// across renders. See `IconStrip`'s own `onSelect` doc: that component
-// was written to be correct under either eventual answer to the
-// click-detection question, and this is the rust-owned answer.
+// The overlay is receive-only: rust's native click monitor sees the same
+// physical click and emits `tab-selection-changed`, so the DOM click decides
+// nothing — the button keeps a handler only for `:active` press feedback and
+// the accessible name. Module-level for a stable identity.
 const noopSelect = (_tab: Tab): void => {};
 
 export function StatusRailCard({
@@ -205,37 +127,17 @@ export function StatusRailCard({
 }: {
   slot: SlotState;
   status?: StatusState;
-  // plan 085: the resting-state render choice. Optional, defaulting to
-  // "rail" — every existing caller (tests, the settings preview) that
-  // never passes it keeps today's idle rail, byte-identical.
   restingState?: "rail" | "notch";
-  // plan 087: the hover primitive's one diagnostic consumer — a real
-  // `hover-changed` event drives this in the shipped app; every other
-  // caller (tests, the settings preview) that never passes it keeps
-  // today's un-hovered render, byte-identical. Consuming features
-  // (081/082/084/idle expanded-on-hover) are each their own follow-on
-  // work — this prop only proves the signal arrives.
+  // Driven by rust's `hover-changed` event in the shipped app; never CSS :hover.
   hovered?: boolean;
-  // Plan 171 (tab-notch redesign, slice K): the currently selected tab,
-  // sourced from the `tab-selection-changed` channel in App.tsx
-  // (`useTabSelection`) and threaded down exactly like `status` already
-  // is — this component never listens for itself, so the settings
-  // preview and every test render it with no tauri channel at all. RUST
-  // owns the selection (spec section 10); this is display state only.
+  // Rust owns the selection (`tab-selection-changed` channel, threaded from
+  // App.tsx); this component never listens for itself — display state only.
   selectedTab?: Tab | null;
-  // The Agent Session snapshot backing the agent tab's below-block —
-  // `useAgentState`'s own `sessions`/`capturedAtMs` pair, threaded from
-  // App.tsx for the same reason `status` is. Empty by default, so every
-  // existing caller renders byte-identically.
+  // `useAgentState`'s snapshot pair, threaded from App.tsx like `status` is.
   agentSessions?: AgentSessionView[];
   agentCapturedAtMs?: number;
-  // Plan 184 (Part 1): the Agent tab's viewed-session cursor —
-  // `useAgentViewedSession`'s return value, sourced in App.tsx and
-  // threaded down for the same reason `selectedTab` above is (this
-  // component never listens for itself). Optional and undefined by
-  // default so every existing caller (tests, the settings preview) keeps
-  // rendering byte-identically; `TabBelowBlock`'s own `viewedSessionIndex`
-  // prop already defaults an absent value to session 0.
+  // The Agent tab's viewed-session cursor (`useAgentViewedSession`), threaded
+  // from App.tsx; `TabBelowBlock` defaults an absent value to session 0.
   viewedSessionIndex?: number;
 }) {
   const showing = slot.state === "showing";
@@ -243,46 +145,29 @@ export function StatusRailCard({
   const currentSignal = showing ? slot.signal : null;
   const currentBody = showing ? slot.body : null;
   const news = showing && slot.eventType === "news_item";
-  // plan 084: detect the live-match football branch by the structured
-  // `espn` block's presence (POST-083 contract), never by string-sniffing
-  // eventType/signal — off the LIVE slot, matching how `news`
-  // above are computed, so the pulse-vs-celebration gate below always
-  // reflects the arriving item.
+  // Live-match branch detected by the structured `espn` block's presence, never
+  // by string-sniffing eventType/signal.
   const isLiveCard = showing && slot.espn !== undefined;
 
   const [pulse, setPulse] = useState<Pulse>(null);
 
-  // plan 150 (Step 2): a render-independent mirror of `pulse`, so the
-  // re-trigger effect below can ask "is the class I'm about to apply the
-  // one that's already on the element?" WITHOUT taking `pulse` as a
-  // dependency (which would make the effect re-run on its own writes).
-  // Every write to `pulse` goes through `setPulseNow` so the two can't
-  // drift.
+  // Render-independent mirror of `pulse` so the re-trigger effect can check the
+  // applied class without taking `pulse` as a dependency; every write goes
+  // through `setPulseNow` so the two can't drift.
   const pulseRef = useRef<Pulse>(null);
   const setPulseNow = useCallback((next: Pulse) => {
     pulseRef.current = next;
     setPulse(next);
   }, []);
 
-  // plan 150 (Step 1): how many `ripple-out` animationend events this
-  // celebration has seen so far — reset whenever a goal pulse is (re)armed
-  // below, counted up in `clearPulseWhenItsAnimationEnds`.
+  // `ripple-out` animationend events seen this celebration — reset when a goal
+  // pulse (re)arms, counted up in `clearPulseWhenItsAnimationEnds`.
   const rippleEndsSeenRef = useRef(0);
 
-  // plan 127 (Step 3): backs `isRotation` below (computed right where
-  // `swapKey` is, further down) — declared up here with the component's
-  // other hooks, per this file's usual convention. `key` starts at
-  // `undefined` (never equal to a real `swapKey` on the very first
-  // render, guaranteeing the guard below never mistakes mount for a
-  // same-key re-render); `isRotation`/`wasShowing` both start `false`
-  // since nothing has ever "shown" yet.
-  // plan 146b: `isInterrupt` and `anchor` added alongside. `anchor` is
-  // THIS key's own countdown snapshot (priority + the wall-clock instant
-  // it was last (re)anchored + the `remainingMs` it was anchored at) —
-  // read back only once, at the render where a DIFFERENT key eventually
-  // replaces this one, to estimate how much of ITS turn was actually left
-  // at that instant (see `isInterrupt`'s own doc below for why that's the
-  // only signal available). `null` until the first showing render sets it.
+  // Backs `isRotation`/`isInterrupt` below. `key` starts `undefined` so mount
+  // never reads as a same-key re-render; `anchor` is this key's own countdown
+  // snapshot, read back once when a different key replaces it to estimate how
+  // much of its turn was left at that instant.
   const wasShowingRef = useRef<{
     key: unknown;
     isRotation: boolean;
@@ -297,33 +182,21 @@ export function StatusRailCard({
     anchor: null,
   });
 
-  // Keyed on [currentId, currentSignal], never on priority — the actual
-  // acceptance criterion this field exists for: a High-priority agent
-  // "needs input" alert (signal: "generic") must never play the goal
-  // celebration. Not keyed on `expanded` either, so toggling the manual
-  // hotkey on an already-visible item doesn't replay the burst.
+  // Keyed on [currentId, currentSignal], never on priority — a High-priority
+  // non-football alert must never play the goal celebration — and not on
+  // `expanded`, so the manual hotkey doesn't replay the burst.
   // biome-ignore lint/correctness/useExhaustiveDependencies: currentId is the deliberate re-trigger key documented above — a new item with the same signal must replay the pulse; dropping it would change that behavior.
   useEffect(() => {
     const nextPulse: Pulse =
       currentSignal === "goal" ? "pulse-goal" : currentSignal === "red_card" ? "pulse-red" : null;
 
-    // plan 150 (Step 1): a fresh celebration starts its ring count over —
-    // otherwise a second goal arriving mid-flight would inherit the first
-    // one's partial tally and clear early.
+    // A fresh celebration starts its ring count over.
     rippleEndsSeenRef.current = 0;
 
-    // plan 150 (Step 2): the same-signal replay fix. Two goals in a row
-    // (a NEW `currentId`, same `signal`) compute the SAME class string,
-    // and `setPulse("pulse-goal")` while `pulse` is already "pulse-goal"
-    // is a React `Object.is` state bailout — no re-render, so the DOM
-    // `class` attribute is never rewritten and the CSS animations neither
-    // restart nor replay: the second goal celebrated nothing. Clearing to
-    // `null` and re-applying on the NEXT frame remounts the class (and
-    // the `.cele-ripple` layer with it), which is what actually restarts a
-    // CSS animation. The one blank frame this costs is ~16ms, invisible at
-    // 60fps, and is the standard restart technique. Only taken when the
-    // class is genuinely unchanged — a first goal (from `null`) or a
-    // goal-after-red-card applies synchronously, exactly as before.
+    // Same-signal replay: re-applying an identical class is a React Object.is
+    // bailout — no re-render, no CSS restart. Clearing to null and re-applying
+    // next frame remounts the class, which is what actually restarts a CSS
+    // animation; only taken when the class is genuinely unchanged.
     if (nextPulse !== null && pulseRef.current === nextPulse) {
       setPulseNow(null);
       const frame = requestAnimationFrame(() => setPulseNow(nextPulse));
@@ -335,12 +208,9 @@ export function StatusRailCard({
 
   const [liveCelebration, setLiveCelebration] = useState<Celebration>(null);
 
-  // Same [currentId, currentSignal] re-trigger discipline as the pulse
-  // effect above — `currentBody` is read inside (not a dependency) because
-  // it always arrives paired with currentId/currentSignal on the same slot
-  // object; the goal/penalty/own-goal split needs it (see
-  // `footballEventKindFor`'s doc), but it can't independently change
-  // without a new id, so it isn't a re-trigger key in its own right.
+  // Same [currentId, currentSignal] re-trigger discipline as the pulse effect —
+  // `currentBody` arrives paired with the id on the same slot object and can't
+  // change without a new one, so it isn't a re-trigger key in its own right.
   // biome-ignore lint/correctness/useExhaustiveDependencies: currentBody isn't a re-trigger key (see comment above) — only currentId/currentSignal decide whether to replay.
   useEffect(() => {
     if (!isLiveCard || currentSignal === null || currentBody === null) {
@@ -353,12 +223,9 @@ export function StatusRailCard({
 
   function clearPulseWhenItsAnimationEnds(event: React.AnimationEvent<HTMLDivElement>) {
     if (pulse && event.animationName === PULSE_END_ANIMATION[pulse]) {
-      // plan 150 (Step 1): `ripple-out` ends once per ring (three rings,
-      // staggered 0/280/560ms) and they all bubble to this one handler —
-      // only the LAST one means the goal celebration is actually over.
-      // `pulse-red` has no ripple layer at all (the `.cele-ripple` mount
-      // below is gated on `pulse === "pulse-goal"`), so its own end
-      // keyframe still clears on the first arrival.
+      // `ripple-out` ends once per ring, all bubbling here — only the last one
+      // means the goal is over. `pulse-red` has no ripple layer, so it clears
+      // on the first arrival.
       const isGoal = pulse === "pulse-goal";
       if (isGoal) {
         rippleEndsSeenRef.current += 1;
@@ -372,107 +239,26 @@ export function StatusRailCard({
     }
   }
 
-  // plan 096, renamed by plan 137 (cmux relay superseded by the v7 Agent
-  // Adapter layer, spec §7/§12): the agent accent's below-block hairline
-  // gate — same live-slot basis as `news` above, for the same
-  // lockstep-with-below-block reason. Deliberately NOT part of
-  // `cardClass` (the shell): the shell owns the priority accent channel
-  // only, and origin must never share that channel (see the CSS comment
-  // on `.below-block.agent-origin`).
+  // Agent accent's below-block hairline gate — deliberately NOT part of
+  // `cardClass`: the shell owns the priority accent channel only, and origin
+  // never shares it (see the CSS on `.below-block.agent-origin`).
   const agentOrigin = showing && slot.origin === "agent";
 
-  // plan 120: `swapKey` also feeds the below-block's AnimatePresence
-  // `key` directly (JSX further down), not just `useExitChoreography`'s
-  // internal `useDelayedSwap` call — so it stays computed here too,
-  // deliberately duplicating the identical one-line derivation the hook
-  // now also does internally (same pattern this file already uses for
-  // `showing` itself: cheap, pure, recomputed rather than threaded
-  // across the hook boundary as an extra return value just for one JSX
-  // consumer).
+  // Also feeds the below-block's AnimatePresence `key` directly, deliberately
+  // duplicating the hook's identical internal derivation.
   const swapKey = showing ? slot.id : "idle";
 
-  // plan 127 (Step 3, finding #3): whether the swap THAT LANDED THIS
-  // `swapKey` was a same-slot rotation — showing(A)->showing(B) — rather
-  // than a promotion (idle->showing) or an exit (showing->idle).
-  // `wasShowingRef` holds the previous DISTINCT key's own showing-ness,
-  // updated only on the render where `swapKey` actually changes (guarded
-  // by comparing against the last key this ref saw) — deliberately NOT
-  // unconditional every render: this component re-renders for reasons
-  // that have nothing to do with the swap (e.g. the pulse/celebration
-  // effects just above call `setPulse`/`setLiveCelebration` right after
-  // mount, forcing an immediate second render with the SAME `swapKey`),
-  // and an unconditional write would let that unrelated extra render
-  // overwrite the ref before this render's own `isRotation` value is
-  // even read back on a later actual key change — corrupting the history
-  // the very next real transition depends on. Guarding on the key
-  // ensures `isRotation` stays STABLE for a given key's entire mounted
-  // lifetime (every same-key re-render — the queue-slider tick, the
-  // pulse effect, ...) reads the SAME cached value AnimatePresence's
-  // `custom` was actually given at the transition, never a stale
-  // recomputation.
-  // Mutated directly in the render body (not an effect) — the standard,
-  // React-sanctioned "remember a previous render's value" idiom (same
-  // shape as a hand-rolled `usePrevious`), safe here because the write is
-  // deterministic given this render's own `swapKey`/`showing` and has no
-  // visible side effect other than being read by a later render.
-  // The three-way split falls out for free from just two booleans:
-  // idle->showing has the previous key's `wasShowing` false (idle was
-  // never "showing"), so `isRotation` is false; showing->idle has the
-  // live `showing` itself false, so `isRotation` is false regardless of
-  // history; only showing(A)->showing(B), where both are true, yields
-  // true. Promotion and exit legs are therefore byte-identical to before
-  // this plan — only the true showing->showing case changes at all.
-  // plan 146b: `isInterrupt` — computed in the SAME guarded block, at the
-  // SAME instant `isRotation` is (the render where `swapKey` actually
-  // changes), for the same "must stay stable for the whole mounted
-  // lifetime of this key" reason documented above. A Priority Preemption
-  // is, structurally, ALWAYS a showing(A)->showing(B) rotation too (the
-  // Slot never empties in between) — the wire gives no other signal that
-  // distinguishes "cut short by something more important" from "finished
-  // its turn, next item promoted," including when that next item happens
-  // to outrank the one it replaced by ordinary priority-drain order (the
-  // queue always promotes its highest-priority Waiting item, so a plain
-  // priority INCREASE across a rotation is common and unremarkable on its
-  // own). The two extra facts that jointly and only hold for a genuine
-  // preemption: (1) the arriving item's priority is STRICTLY higher than
-  // the outgoing one's (queue.rs's own `try_preempt_visible` contract —
-  // equal or lower never preempts), and (2) the outgoing item's own
-  // countdown, estimated from its last anchor, still had real time left
-  // (an ordinary end-of-turn rotation only ever fires once that countdown
-  // has actually run out). `previous.anchor` is the OUTGOING key's own
-  // last-anchored snapshot — see the ref's declaration doc above and the
-  // re-anchor block just below for how it's kept fresh across supersede
-  // top-ups/manual-expand extensions on the same key.
-  // 2026-08-02 (animation audit, finding 1): the arrival-pop marker. The
-  // shell's bouncy `--ease-notchtap-pop` width curve used to live on
-  // `.card-assembly`'s BASE rule (card-chrome.css), which meant it was
-  // whatever played when no more-specific rule matched — including the
-  // hover-out collapse that drops `.expanded`, so every un-hover
-  // overshot and rebounded. The pop now lives on `.card-assembly.promoting`,
-  // and this state is what scopes it to a genuine promotion entrance.
-  //
-  // Armed in the render body (below), NOT in an effect: the class has to
-  // land in the SAME commit that flips the shell's width formula to the
-  // showing geometry, because CSS keeps a running transition's original
-  // timing function even if the rule underneath it changes mid-flight —
-  // an effect would apply the class one commit too late to affect
-  // anything. A render-phase `setState` on the component currently
-  // rendering is React's own sanctioned mechanism for exactly this
-  // (adjust state when a prop-derived key changes), and it's already
-  // guarded by the same key-change check `isRotation` uses, so it can't
-  // loop.
+  // `promoting` scopes the bouncy `--ease-notchtap-pop` width curve to a genuine
+  // promotion entrance (`.card-assembly.promoting`, card-chrome.css). Armed in
+  // the render body, NOT an effect: the class must land in the SAME commit that
+  // flips the shell's width formula, because CSS keeps a running transition's
+  // original timing function even if the rule underneath changes mid-flight.
   const [promoting, setPromoting] = useState(false);
 
-  // The disarm half: EXPAND_MS after each swap the entrance has settled,
-  // so the pop must stop being the curve any LATER width change (a hover
-  // flip, a manual expand toggle) resolves against. Keyed on `swapKey`
-  // alone so each new swap restarts the window and the cleanup cancels
-  // the previous one; `setPromoting(false)` while it's already false is a
-  // React identity bailout, so the common idle case costs nothing.
-  // A showing->idle exit doesn't wait for this timer at all — `swapKey`
-  // flips to "idle" on that very render, and the render-body arm below
-  // sets `false` synchronously, which is what guarantees `.promoting` and
-  // `.exiting` can never sit on the shell together (card-chrome.css's
+  // Disarm: EXPAND_MS after each swap the entrance has settled, so the pop stops
+  // being the curve later width changes (hover flip, manual expand) resolve
+  // against. A showing->idle exit disarms synchronously in the render body,
+  // guaranteeing `.promoting` and `.exiting` never coexist (card-chrome.css's
   // `.promoting` rule leans on that).
   // biome-ignore lint/correctness/useExhaustiveDependencies: swapKey is the deliberate re-arm trigger, not a value read in the body — same shape as the pulse effect's own currentId dependency above.
   useEffect(() => {

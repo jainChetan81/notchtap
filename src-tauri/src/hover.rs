@@ -1,43 +1,31 @@
-//! Plan 087: the hover primitive's pure geometry/state logic — no AppKit
-//! types anywhere in this module. `lib.rs` wires the `tauri-nspanel`
+//! The hover primitive's pure geometry/state logic — no AppKit types
+//! anywhere in this module. `lib.rs` wires the `tauri-nspanel`
 //! tracking-area callbacks to the functions here; this module never
 //! touches a window, a lock, or an event object, so it is unit-testable
 //! without a GUI, the same discipline `presentation::presentation_mode`
 //! follows (`docs/TESTING_STRATEGY.md` §4.4).
 //!
-//! Rationale of record: `docs/design/hover-cursor-tracking.md` (the
-//! spike this module implements) — §2 for why a tracking area works at
-//! all under `set_ignore_cursor_events(true)`, §6 for the rect-derivation
-//! decision and the rejected `report_card_bounds` alternative, §7 for the
-//! recommendation.
+//! Rationale of record: `docs/design/hover-cursor-tracking.md` — §2 for
+//! why a tracking area works at all under
+//! `set_ignore_cursor_events(true)`, §6 for the rect-derivation decision.
 
 use crate::presentation::Mode;
 
 /// The fixed overlay window's size — `src-tauri/tauri.conf.json`'s
-/// `"width": 500, "height": 300`, `"resizable": false`. The window frame
-/// never changes; only the CSS width *within* it does (see the width
-/// table below). Duplicated here as named constants (not read from the
-/// conf file at runtime) because this module takes no I/O — it is pure
-/// numbers in, pure `Rect` out.
-// plan 142: `pub(crate)` (was private) — `lib.rs`'s board hover-expand
-// call site needs these two to restore the RESTING window frame exactly
-// (`agents::expand::RESTING_WINDOW_HEIGHT`/`EXPANDED_BOARD_WIDTH` are
-// that module's own duplicated-constants copies of these two, per that
-// module's doc).
+/// `"width": 500, "height": 300`, `"resizable": false`. Duplicated here
+/// as named constants (not read from the conf file at runtime) because
+/// this module takes no I/O — pure numbers in, pure `Rect` out.
+/// `pub(crate)`: `lib.rs`'s board hover-expand call site needs these two
+/// to restore the RESTING window frame exactly.
 pub(crate) const WINDOW_WIDTH: f64 = 500.0;
 pub(crate) const WINDOW_HEIGHT: f64 = 300.0;
 
 // Geometry-contract constants — duplicated-constants pair with
 // `src/styles.css`'s `.card-assembly`/`.card-assembly.idle`/
 // `.card-assembly.expanded` rules and App.tsx's HUD synthetic constants.
-// Any future change to one of these numbers anywhere MUST change every
-// other copy in the same commit (see the `active_card_rect` doc comment
-// and the named-constant test below, which is the tripwire).
-// plan 091: replaces the old BASE_WIDTH/EXPANDED_WIDTH/IDLE_WIDTH/
-// IDLE_STATUS_WIDTH/NOTCH_CLAMP_MIN/NOTCH_CLAMP_MAX set — the idle/idle-
-// status width split (plan 034's 270/460 distinction) deliberately
-// collapses here too: the new idle has ONE width formula regardless of
-// status chips, because the status dots replace the chip rail entirely.
+// Any change to one of these numbers anywhere MUST change every other
+// copy in the same commit (see the `active_card_rect` doc comment and
+// the named-constant test below, which is the tripwire).
 const FLANK_IDLE: f64 = 85.0; // idle flank width, styles.css .card-assembly.idle
 const MIN_FLANK_SHOWING: f64 = 60.0; // showing/expanded minimum flank width
 const BASE_SHOWING: f64 = 400.0; // .card-assembly (showing) design-width floor
@@ -45,123 +33,70 @@ const BASE_EXPANDED: f64 = 500.0; // .card-assembly.expanded design-width floor
 const HUD_CUTOUT_W: f64 = 200.0; // App.tsx's HUD synthetic cutout width
 const HUD_CUTOUT_H: f64 = 32.0; // App.tsx's HUD synthetic cutout height
 
-// plan 093: the y-span constants. `IDLE_PEEK_BELOW_BLOCK_H` is a REAL
-// duplicated-constant (styles.css's `.idle-peek` fixed target height —
-// unlike the showing/expanded below-block, which is CSS `auto`-sized off
-// real content, the peek is a deliberately FIXED-height block, same
-// technique as the locked reference's own `.wx-peek { height: 78px }`,
-// `prototype/notch-states.html:119`) — any change to one MUST change the
-// other in the same commit, same discipline as every other constant
-// above.
+// y-span constants. `IDLE_PEEK_BELOW_BLOCK_H` is a REAL duplicated
+// constant (the peek is a deliberately FIXED-height block) — any change
+// to one copy MUST change the other in the same commit.
 //
 // `BELOW_BLOCK_SHOWING_H`/`BELOW_BLOCK_EXPANDED_H` are NOT duplicated
-// constants in that sense — the real showing/expanded below-block is CSS
-// `auto`-height, sized by whatever content the card carries (a short
-// compact body vs. a long news article vs. a full manifest), so there is
-// no single true number in styles.css to mirror. These are deliberately
-// CONSERVATIVE ESTIMATES (never intended to be pixel-exact) chosen to
-// close most of the ~240px dead-zone gap 079 item 17 flagged while
-// staying safely UNDER what a real card of that kind renders — the
-// hover rect must never claim MORE height than the card actually
-// occupies, per this file's standing CONSERVATIVE philosophy (err
-// small, not generous, when in doubt). If a future redesign changes the
-// compact/manifest content shape enough to make these feel wrong,
-// adjust them directly; there is no styles.css number to keep them "in
-// sync" with.
-const IDLE_PEEK_BELOW_BLOCK_H: f64 = 100.0; // IdleHoverPeek.tsx motion.div `animate={{ height: 100 }}` — lockstep pair (was styles.css pre-motion-migration)
+// constants — the real showing/expanded below-block is CSS `auto`-height,
+// sized by content, so there is no single true number to mirror. They are
+// deliberately CONSERVATIVE ESTIMATES, staying safely UNDER what a real
+// card renders: the hover rect must never claim MORE height than the
+// card actually occupies (err small, not generous, when in doubt).
+const IDLE_PEEK_BELOW_BLOCK_H: f64 = 100.0; // IdleHoverPeek.tsx motion.div `animate={{ height: 100 }}` — lockstep pair
 const BELOW_BLOCK_SHOWING_H: f64 = 160.0; // conservative estimate, compact (non-expanded) content
 const BELOW_BLOCK_EXPANDED_H: f64 = 240.0; // conservative estimate, expanded (manifest) content
 
-// Plan 171 (tab-notch redesign), re-paired against the shipped
-// stylesheet by plan 175: the icon strip's own geometry constants. These
-// are LOCKSTEP PAIRS with real CSS now — plan 171 pinned them to a frozen
-// design mock's `--icon-box`/`--icon-gap`/`--flank-inset` custom
-// properties because the feature's own CSS did not exist yet, and left a
-// "re-pair these against the real stylesheet once it exists" note. This is
-// that re-pair: no mock is a source of truth for any number here anymore.
-// The ad-hoc snapshots were removed after shipping because pairing live code
-// to one silently rots. See plan 171 and git history for the original review.
-// The twins, all three of which MUST change in the same commit as any
-// change here (`src/lib/stripGeometryParity.test.ts` is the tripwire):
-//
+// Icon-strip geometry — LOCKSTEP PAIRS with real CSS. All three twins
+// MUST change in the same commit as any change here
+// (`src/lib/stripGeometryParity.test.ts` is the tripwire):
 //   * `ICON_BOX` / `ICON_GAP` <-> `src/overlay/icon-strip.css`'s
-//     `.icon.is-present { width: 18px; margin-left: 8px }` — together the
-//     26px pitch every rect laid out below assumes.
+//     `.icon.is-present { width: 18px; margin-left: 8px }` — together
+//     the 26px pitch every rect laid out below assumes.
 //   * `FLANK_INSET` <-> `src/overlay/card-chrome.css`'s flank
-//     `padding-right: 16px` (`.flank-right`, plus the `.bare.hovered`
-//     rule that restores that inset once the rail reveals). Unified at 16
-//     by plan 175 — rust carried the mock's 14, which slid every rect 2px
-//     right of the glyph it was meant to hit-test.
+//     `padding-right: 16px` (`.flank-right`).
 //   * `hovered_right_flank_width` (below) <-> the `--cw` growth term
-//     `(26 * var(--present-icons, 0) + 16)` in card-chrome.css's
-//     `.card-assembly.idle` and `.card-assembly.bare:has(.below-block)`
-//     (the latter widened from `:has(.idle-peek)` by plan 176)
-//     rules — the only two `--cw` formulas that can match while the strip
-//     is up. Before plan 175 the CSS painted a FLAT 85px flank there, so
-//     at 3+ present tabs the flank rust hit-tested against was wider than
-//     the one actually painted and the leftmost glyphs were clipped by
-//     the flank's own `overflow: hidden`.
-//
-// `HOVER_RAIL_FLOOR` is the EXISTING `FLANK_IDLE` value above, `85.0` —
-// not redefined, reused, because this hover rail's floor is explicitly
-// "the same 85px rail floor" every other hovered-but-not-showing state in
-// this app already uses. The real caller of all three is `click.rs`'s
-// hit-test (via `icon_strip_rects` below).
+//     `(26 * var(--present-icons, 0) + 16)` in card-chrome.css.
+// The rail floor reuses `FLANK_IDLE` (85.0) above. Real caller of all
+// three: `click.rs`'s hit-test, via `icon_strip_rects` below.
 const ICON_BOX: f64 = 18.0;
 const ICON_GAP: f64 = 8.0;
 const FLANK_INSET: f64 = 16.0;
 
 /// The right flank's own width while hovered, given how many icons are
-/// currently present (spec §6/§0: absent icons are omitted, never
-/// `display: none`'d in place — so `present_count` is the count AFTER
-/// that filter, not always 5). Two-step by design, and the CSS twin named
-/// in the constants block above computes the same two steps: `strip_w` is
-/// unscaled raw geometry (icon box/gap/inset never scale with
-/// `--card-scale`), only the 85px rail floor does. That split is a
-/// standing rule of this shell's geometry, not an accident — the cutout
-/// and the raw strip are hardware/pixel measurements, cosmetic widths
-/// scale (card-chrome.css's own `--card-scale` comment).
+/// currently present (absent icons are omitted, never `display: none`'d
+/// in place — `present_count` is the count AFTER that filter, not always
+/// 5). Two-step by design, and the CSS twin named in the constants block
+/// above computes the same two steps: `strip_w` is unscaled raw geometry
+/// (icon box/gap/inset never scale with `--card-scale`), only the 85px
+/// rail floor does.
 fn hovered_right_flank_width(present_count: usize, scale: f64) -> f64 {
     let strip_w = (ICON_BOX + ICON_GAP) * present_count as f64 + FLANK_INSET;
     (FLANK_IDLE * scale).max(strip_w)
 }
 
 /// One `Rect` per PRESENT icon, in the strip's fixed left-to-right order
-/// (agent, football, news) — the caller passes exactly the
-/// present-icon list it already computed (this function does not know
-/// which of the three sources is live; it only knows how many boxes to
-/// lay out and how wide the right flank consequently is), and must zip
-/// the returned `Vec` against that SAME list, index for index.
+/// (agent, football, news) — the caller passes exactly the present-icon
+/// list it already computed and must zip the returned `Vec` against that
+/// SAME list, index for index.
 ///
 /// Icons are right-aligned inside the flank with `FLANK_INSET` as the
-/// flank's own right padding (`.hovered .flank-right { padding-right:
-/// var(--flank-inset) }`) and pack leftward from there — so the
-/// RIGHTMOST returned rect (last in the Vec) sits flush against that
-/// inset, and each icon to its left is offset by one more
-/// `ICON_BOX + ICON_GAP`. This is a plan-171 sibling of `active_card_rect`
-/// above: only used while the shell is hovered AND the Slot is idle (the
-/// icon strip is an idle-only affordance, same gating `board_rect` already
-/// uses for `!visible`) — callers must not call this while a pushed card
-/// is showing, and this function does not itself check `visible` (kept
-/// pure/parameter-driven, matching this file's own house style; the
-/// `!visible` gate belongs at the call site, mirroring `try_expand_board_
-/// for_hover`'s own `if visible || session_count == 0 { return; }` guard).
+/// flank's own right padding and pack leftward from there — the RIGHTMOST
+/// returned rect sits flush against that inset, each icon to its left
+/// offset by one more `ICON_BOX + ICON_GAP`. The icon strip is an
+/// idle-only affordance: callers must not call this while a pushed card
+/// is showing, and this function does not itself check `visible` — the
+/// `!visible` gate belongs at the call site.
 pub fn icon_strip_rects(
     mode: Mode,
     cutout_width: f64,
     cutout_height: f64,
     scale: f64,
     present_count: usize,
-    // CodeRabbit review fix (PR #13): threaded through explicitly rather
-    // than reading the `WINDOW_HEIGHT` resting constant directly — the
-    // exact same lesson `board_rect`'s own `window_height` parameter
-    // already encodes (see this file's P0 fix), not yet applied here
-    // when this function was first written. A caller wiring this up
-    // while the window is genuinely taller than resting (an active
-    // `BoardFrameState.height`, or any other future window-height
-    // driver) passes that real height; every existing call site below
-    // passes `WINDOW_HEIGHT` explicitly, preserving today's behavior
-    // byte-for-byte.
+    // threaded through explicitly rather than reading the `WINDOW_HEIGHT`
+    // resting constant directly — a caller wiring this up while the
+    // window is genuinely taller than resting passes that real height;
+    // every existing call site passes `WINDOW_HEIGHT` explicitly.
     window_height: f64,
 ) -> Vec<Rect> {
     if present_count == 0 {
@@ -225,11 +160,11 @@ pub fn point_in_rect(rect: &Rect, x: f64, y: f64) -> bool {
     x >= rect.x_min && x <= rect.x_max && y >= rect.y_min && y <= rect.y_max
 }
 
-/// Cold-read Gap 3: the coordinate-space flip. `locationInWindow`
-/// (AppKit) is bottom-left origin, y grows UP; the CSS card is laid out
-/// top-down in a window pinned flush to the physical screen top (`y`
-/// stays `0.0`, `position_window`). Getting this backwards is silent — a
-/// y-comparison never panics, it just stops matching the rendered card.
+/// The coordinate-space flip. `locationInWindow` (AppKit) is bottom-left
+/// origin, y grows UP; the CSS card is laid out top-down in a window
+/// pinned flush to the physical screen top (`y` stays `0.0`,
+/// `position_window`). Getting this backwards is silent — a y-comparison
+/// never panics, it just stops matching the rendered card.
 ///
 /// Formula: a top-down rect at CSS y-offset `top` with height `height`,
 /// inside a window of height `window_height`, occupies AppKit y from
@@ -247,140 +182,54 @@ pub fn css_top_down_to_appkit_y(window_height: f64, top: f64, height: f64) -> (f
 /// The screen-space rect, in AppKit window coordinates, currently
 /// covered by the rendered card — the region where hover should count.
 /// Deliberately CONSERVATIVE: it may be slightly wider than the true
-/// rendered edge (the spike's §6 decision), never narrower.
+/// rendered edge, never narrower.
 ///
-/// Mirrors the Geometry contract in
-/// `plans/091-cutout-card-shape-and-idle.md` and `src/styles.css`'s
-/// `.card-assembly`/`.card-assembly.idle`/`.card-assembly.expanded`
-/// rules. Any change to a width formula there MUST change the constants
-/// at the top of this file — see
+/// Mirrors `src/styles.css`'s `.card-assembly`/`.card-assembly.idle`/
+/// `.card-assembly.expanded` rules. Any change to a width formula there
+/// MUST change the constants at the top of this file — see
 /// `active_card_rect_geometry_constants_match_named_style_constants`.
 ///
-/// plan 091 (Decision 6, "no mode branch" in the shape itself): the
-/// WIDTH FORMULA no longer branches on `mode` at all — idle/showing/
-/// expanded use the exact same three formulas in both notch and HUD
-/// mode now, mirroring `src/styles.css`'s own `.card-assembly` rules
-/// (which read `var(--notchtap-cutout-width)` unconditionally, gated by
-/// state classes, never by `[data-notchtap-mode]`). `mode` is used for
-/// exactly one thing: resolving the cutout-width TERM those formulas
-/// take as input — the measured hardware value in notch mode, or the
-/// same `HUD_CUTOUT_W` synthetic constant App.tsx now sets the CSS var
-/// to in HUD mode (previously HUD's `cutout_width` argument was simply
-/// unused; leaving it unresolved here would under-measure the idle rect
-/// in HUD mode, violating the CONSERVATIVE philosophy — see the 090
-/// doc-comment paragraph below for why the term itself still can't be
-/// scaled). This also fixes a pre-existing limitation the old
-/// `Mode::Notch` arm had: today's rect ignored `visible`/`expanded`
-/// entirely in notch mode (always the idle-clamped width even while a
-/// card was showing) — Decision 6 removes that special case along with
-/// the mode branch itself.
+/// The WIDTH FORMULA never branches on `mode` — idle/showing/expanded
+/// use the same three formulas in both notch and HUD mode. `mode`
+/// resolves exactly one thing: the cutout TERM those formulas take as
+/// input — the measured hardware value in notch mode, the
+/// `HUD_CUTOUT_W`/`HUD_CUTOUT_H` synthetic constants in HUD mode.
 ///
-/// The vertical span (plan 093 — replaces the pre-093 "always the full
-/// window" behavior 091 shipped, flagged in its own now-deleted comment
-/// here as a carried-forward limitation, and in 079 item 17's bracketed
-/// note as "~240px of empty space below the card currently registers as
-/// hovered"): `top` is always `0.0` (`.card-assembly` has no vertical
-/// margin — `src/styles.css`'s `html,body,#root { margin:0 }` plus
-/// `.card-assembly`'s own `margin: 0 auto` centers horizontally only),
-/// and `height` is derived from the actual assembly state rather than
-/// hardcoded to `WINDOW_HEIGHT`:
-/// - idle, peek/reveal closed: `effective_cutout_height` alone — during
-///   idle, `.card-assembly`'s grid row 2 (`auto`) has no content in it at
-///   all (no below-block mounted), so its real rendered height IS
-///   exactly the cutout row's height, not an estimate.
-/// - idle, peek/reveal open (`idle_peek_open`): cutout height +
-///   `IDLE_PEEK_BELOW_BLOCK_H` — the hover-expanded idle state (plan 093:
-///   the scorecard reveal / day-progress timeline), whose
-///   below-block is a real, FIXED-height CSS block (`styles.css`'s
-///   `.idle-peek`), mirrored here exactly like every other duplicated
-///   width constant above.
-/// - showing (not expanded, not hover-expanded): cutout height +
-///   `BELOW_BLOCK_SHOWING_H`.
-/// - expanded (manually, or by hover — `hover_expand_open`): cutout
-///   height + `BELOW_BLOCK_EXPANDED_H`.
+/// The vertical span: `top` is always `0.0`, and `height` derives from
+/// the assembly state — idle with peek closed: cutout height alone; idle
+/// with peek open (`idle_peek_open`): `IDLE_PEEK_BELOW_BLOCK_H` added;
+/// showing: `BELOW_BLOCK_SHOWING_H` added; expanded (manually or by
+/// hover): `BELOW_BLOCK_EXPANDED_H` added. Total capped at
+/// `WINDOW_HEIGHT`, flipped through `css_top_down_to_appkit_y` so the
+/// one coordinate-flip seam stays in exactly one place.
 ///
-/// Both non-idle estimates are deliberately CONSERVATIVE (see those
-/// constants' own doc comments) — this function still never claims to be
-/// pixel-perfect, only close enough to kill the ~240px dead zone. The
-/// total is capped at `WINDOW_HEIGHT`, the same `min(..., 100%)`
-/// discipline the width formula already uses, via the same
-/// `css_top_down_to_appkit_y` flip (never hardcoded inline) so the one
-/// coordinate-flip seam stays in exactly one place.
+/// `scale` is `Config.appearance.card_scale` — a COSMETIC preference. It
+/// multiplies every design width (the flank px figures, matching
+/// `styles.css`'s `var(--card-scale)`) but must NOT multiply the cutout
+/// terms in ANY mode: those are hardware/synthetic measurements (the
+/// physical `NSScreen` safe-area inset via `notchtap-detect`, or the HUD
+/// constants), never user-scalable design values. Do not "fix" a cutout
+/// term back to multiplying by `scale` — that reverts a deliberate,
+/// decided exemption, not an oversight.
 ///
-/// `scale` is `Config.appearance.card_scale` (user-configurable via the
-/// Settings Appearance section, default `1.0`) — a COSMETIC preference.
+/// `idle_peek_open` is deliberately NOT "is there live-match data" — it
+/// is hover HYSTERESIS: "as of the last computed frame, was the cursor
+/// already registered as hovering." It lets the rect GROW to cover the
+/// peek's newly-opened area once hover starts (so moving further down
+/// into the just-revealed area doesn't snap the peek shut), while
+/// staying at the tight cutout-only height the rest of the time. Only
+/// relevant while `!visible`; ignored whenever `visible` is `true`.
 ///
-/// Plan 090 (Q1a), extended by 091: `scale` must NOT multiply the cutout
-/// term in ANY mode now. In notch mode that term mirrors
-/// `--notchtap-cutout-width`, itself a hardware measurement — the
-/// physical `NSScreen` safe-area inset, read via the `notchtap-detect`
-/// subprocess — not a design width; in HUD mode it's `HUD_CUTOUT_W`,
-/// equally not a user-scalable design value (a notchless mac doesn't
-/// grow a bigger synthetic notch because the user picked a bigger
-/// card). Every OTHER width in these formulas (the flank px figures) IS
-/// a cosmetic design width and IS multiplied by `scale`, matching
-/// `styles.css`'s `var(--card-scale)` exactly. Do not "fix" either
-/// cutout term back to multiplying by `scale` — that reverts a
-/// deliberate, decided exemption, not an oversight
-/// (`plans/090-card-scale-vs-hardware-geometry.md` has the original
-/// rationale and the operator's Decision). `cutout_height` (plan 093,
-/// notch mode only — `HUD_CUTOUT_H` is a synthetic constant in HUD mode,
-/// never a measured term) follows the exact same exemption for the exact
-/// same reason: a hardware/synthetic measurement, never a cosmetic
-/// design height, so it is likewise never multiplied by `scale`.
-///
-/// `idle_peek_open` (plan 093: replaces the formerly-unused
-/// `_has_status_chips` slot — plan 034's idle/idle-status WIDTH split it
-/// was named for collapsed in 091, and this plan repurposes the spare
-/// boolean rather than adding an 8th positional parameter) is
-/// deliberately NOT "is there live-match data available" — it is
-/// hover HYSTERESIS: "as of the last computed frame, was the cursor
-/// already registered as hovering." `lib.rs`'s `hover_point_is_over_card`
-/// passes in `was_hovered`'s CURRENT value (read before this event can
-/// overwrite it). This is what lets the rect GROW to cover the peek's
-/// newly-opened area once hover starts (so moving the cursor further
-/// down, into the area that only just became visible, doesn't
-/// immediately fall outside the rect and snap the peek shut), while
-/// staying at the tight cutout-only height the rest of the time (idle,
-/// not hovered — the overwhelming majority of an idle card's lifetime).
-/// The idle-hover-expanded state itself is unconditional on ambient data
-/// (item 18's decision: the day-progress timeline lives here regardless
-/// of whether football happens to be configured) — see
-/// `src/components/IdleHoverPeek.tsx` for what actually renders inside
-/// it. Only relevant while `!visible`; ignored (never read) whenever
-/// `visible` is `true`.
-///
-/// `hover_expand_open` (animation audit 2026-08-02) is `idle_peek_open`'s
-/// exact mirror image on the OTHER side of the `visible` branch, and it
-/// exists for the exact same reason. Since the hover-expand landed, a
-/// SHOWING card also renders expanded while the cursor is over it
-/// (`src/useExitChoreography.ts`: `expanded = showing ? slot.expanded ||
-/// hovered : …`), but this function only ever saw the queue's MANUAL
-/// `expanded` flag — so hovering a compact card grew the painted card to
-/// the expanded geometry (`BASE_EXPANDED` wide, `BELOW_BLOCK_EXPANDED_H`
-/// tall) while the hit-test rect stayed at the compact one
-/// (`BASE_SHOWING`/`BELOW_BLOCK_SHOWING_H`). That ~50px-per-side and
-/// ~80px-below difference was painted but not hoverable: moving the
-/// cursor DOWN into the manifest the hover had just revealed fell
-/// outside the rect, `hovered` flipped false, and the card collapsed out
-/// from under the pointer — which could then re-enter the (compact
-/// again) rect and re-fire, a flicker loop at the boundary. The same
-/// hysteresis `idle_peek_open` already applies to the idle peek fixes
-/// it: `lib.rs` passes in the hover latch's CURRENT value (read before
-/// this event can overwrite it — ONE read feeding BOTH parameters, since
-/// the two are the same latch consulted on opposite sides of the
-/// `visible` branch), so the rect GROWS to cover the newly-revealed
-/// manifest once hover has started and stays at the tight compact
-/// geometry the rest of the time. Leaving therefore requires exiting the
-/// LARGE rect while entering requires entering the SMALL one — real
-/// hysteresis, not merely a bigger rect.
-///
-/// The latch resets to false whenever the visible item changes (the M5
-/// `slot-state` listener in `lib.rs`), which is exactly right here too:
-/// a freshly promoted card starts un-hover-expanded, so its first rect
-/// is the compact one and the cursor has to re-enter that to grow it.
-/// Only relevant while `visible`; ignored (never read) whenever
-/// `visible` is `false`.
+/// `hover_expand_open` is its exact mirror on the OTHER side of the
+/// `visible` branch: a SHOWING card also paints expanded while hovered
+/// (`src/useExitChoreography.ts`: `slot.expanded || hovered`), so the
+/// rect must grow the same way or the revealed manifest is painted but
+/// not hoverable and the card collapses out from under the pointer in a
+/// flicker loop. `lib.rs` feeds ONE latch read into BOTH parameters;
+/// entering requires the SMALL rect, leaving requires exiting the LARGE
+/// one — real hysteresis. The latch resets whenever the visible item
+/// changes (the `slot-state` listener in `lib.rs`), so a freshly
+/// promoted card starts compact. Only relevant while `visible`.
 // The 8th parameter crosses clippy's default 7-arg threshold. Same call
 // as `lib.rs`'s `hover_point_is_over_card`/
 // `emit_hover_changed_if_transitioned` (which carry the same `#[allow]`

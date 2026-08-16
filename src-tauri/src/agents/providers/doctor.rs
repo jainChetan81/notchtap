@@ -1,27 +1,18 @@
-//! Plan 152: the read-only setup-inspection half of `notchtap-agent
-//! doctor`.
+//! Read-only setup-inspection half of `notchtap-agent doctor`: is the
+//! Agent Adapter actually installed, and does the command its hooks
+//! point at resolve to something executable? (Adapter Health only
+//! reports what has been *received*, so un-wired and wired-but-idle
+//! look identical there.)
 //!
-//! The Settings window's Adapter Health cards only report what has been
-//! *received*, so an un-wired Agent Runtime and a correctly-wired-but-idle
-//! one look identical ("no events yet"). This module answers the other
-//! question: is the Agent Adapter actually installed, and does the command
-//! its hooks point at resolve to something executable?
+//! **This module NEVER writes.** It must never create, edit, or repair
+//! a runtime's hook config — notchtap never silently edits a user's
+//! global provider configuration.
 //!
-//! **This module NEVER writes.** It reads each runtime's hook config file
-//! and reports what it finds. It must never create, edit, or repair one —
-//! spec §4.6: "v7 does not silently edit a user's global provider
-//! configuration".
-//!
-//! Same pure/impure split this repo applies to `presentation_mode` and
-//! [`super::kimi_version`] (CLAUDE.md: "keep the pure decision logic...
-//! separate from that subprocess call — the function is unit-testable, the
-//! subprocess call is not"): every decision function here takes file
-//! *contents* (a `&str`), a `bool`, or an explicit `&Path`, and resolves
-//! nothing from the environment. The handful of impure helpers
-//! ([`is_executable_file`], [`path_dirs_from_env`], [`listener_reachable`])
-//! are deliberately tiny and hold no decision logic, so tests never need to
-//! touch the real home directory (see [`super::diagnostics`] for why that
-//! matters in this test binary).
+//! Every decision function takes file *contents* (a `&str`), a `bool`,
+//! or an explicit `&Path`, resolving nothing from the environment; the
+//! impure helpers ([`is_executable_file`], [`path_dirs_from_env`],
+//! [`listener_reachable`]) are tiny and hold no decision logic, so
+//! tests never touch the real home directory.
 
 use std::net::TcpStream;
 use std::path::{Path, PathBuf};
@@ -61,11 +52,8 @@ pub const CODEX_HOOK_EVENTS: [&str; 8] = [
 
 /// The hook events `AgentsSection.tsx`'s Kimi setup snippet installs.
 /// Pinned against that file by `src/settings/hookEventParity.test.ts`.
-///
-/// Byte-identical to [`CLAUDE_CODE_HOOK_EVENTS`] today, and deliberately
-/// NOT shared with it: each const is pinned to its own setup snippet, so
-/// either provider can add or drop an event without dragging the other
-/// with it. Collapsing them into one would silently couple two
+/// Byte-identical to [`CLAUDE_CODE_HOOK_EVENTS`] and deliberately NOT
+/// shared with it — collapsing them would silently couple two
 /// independent providers' contracts.
 pub const KIMI_HOOK_EVENTS: [&str; 10] = [
     "SessionStart",
@@ -122,9 +110,8 @@ pub enum CommandTarget {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct RuntimeReport {
-    /// The typed Agent Runtime (CONTEXT.md's term), not a loose token —
-    /// `render` turns it back into its wire label through
-    /// `adapter::runtime_wire_label`, the mapping this repo already owns.
+    /// The typed Agent Runtime, not a loose token — `render` turns it
+    /// back into its wire label via `adapter::runtime_wire_label`.
     pub runtime: AgentRuntime,
     /// Already home-relative — produced by [`display_path`] before this
     /// struct is built, so [`render`] stays a pure formatter with no
@@ -523,9 +510,7 @@ mod tests {
 
     #[test]
     fn claude_code_missing_events_reported_in_canonical_order() {
-        // Deliberately scrambled file order, and missing two events that
-        // are NOT adjacent: SessionEnd (canonical index 1) and
-        // PostToolUse (index 6).
+        // Scrambled file order, missing two non-adjacent events.
         let present = [
             "SubagentStop",
             "PostToolUseFailure",
@@ -688,21 +673,17 @@ mod tests {
     #[test]
     fn classify_absolute_path_that_exists_but_is_not_executable_is_broken() {
         // `is_executable_file` requires the execute bit, not just
-        // existence. Fixtures are this crate's own committed files (never
-        // anything under the user's home directory): `Cargo.toml` is a
-        // real mode-644 file, and the manifest directory has the execute
-        // bit but is not a program.
+        // existence. Fixtures are this crate's own committed files —
+        // never anything under the user's home directory.
         let manifest_dir = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         let cargo_toml = manifest_dir.join("Cargo.toml");
         assert!(cargo_toml.is_file(), "fixture must exist");
         assert!(!is_executable_file(&cargo_toml));
         assert!(!is_executable_file(&manifest_dir));
 
-        // ...and `classify_command` turns that into Broken. Run it against
-        // the REAL fixture path with the REAL predicate: an injected
-        // always-false closure would make this case mechanically identical
-        // to "the path does not exist" above, which is the one thing this
-        // test exists to distinguish.
+        // Run against the REAL fixture path with the REAL predicate: an
+        // injected always-false closure would make this identical to the
+        // "path does not exist" case this test exists to distinguish.
         let command = cargo_toml.to_str().expect("fixture path is utf-8");
         assert!(
             !command.contains(char::is_whitespace),
@@ -829,9 +810,7 @@ mod tests {
 
     #[test]
     fn render_carries_the_listener_failure_reason_when_there_is_one() {
-        // `notchtap-agent status` has always printed why the listener was
-        // unreachable; `doctor` renders the same reason rather than a bare
-        // "not reachable", which tells a user nothing they can act on.
+        // A bare "not reachable" tells a user nothing they can act on.
         let mut down = wired_claude_code_report();
         down.listener_ok = false;
         down.listener_error = Some("Connection refused (os error 61)".to_string());
