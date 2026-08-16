@@ -6,7 +6,7 @@ export function isNumber(v: unknown): v is number {
   return typeof v === "number";
 }
 
-export function isFunction(v: unknown): v is (...args: never[]) => unknown {
+export function isFunction(v: unknown): v is (...args: never[]) => void {
   return typeof v === "function";
 }
 

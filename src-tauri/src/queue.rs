@@ -1019,7 +1019,7 @@ impl SingleSlotQueue {
     /// `SlotState::dedup_eq` — NOT the derived `PartialEq`. The
     /// derived equality would compare `remaining_ms` too, which is a pure
     /// function of `Instant::now()` and so is never stable between two
-    /// calls even milliseconds apart; using it here reintroduces 
+    /// calls even milliseconds apart; using it here reintroduces
     /// attempt 1's double-emission bug (the rotation loop's post-wake
     /// recheck always seeing "changed"). See `SlotState::dedup_eq`'s doc
     /// for the full mechanism.

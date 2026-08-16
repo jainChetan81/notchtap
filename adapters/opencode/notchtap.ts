@@ -178,9 +178,8 @@ const MAX_DETAILS = 12;
 /** Unicode "control" category only (matches Rust's `char::is_control`:
  * C0 controls + DEL + C1 controls), not the broader "whitespace" or
  * "format" categories — same scope as adapter.rs's `sanitize_trim`. */
-// oxlint-disable-next-line eslint/no-control-regex
 // biome-ignore lint/suspicious/noControlCharactersInRegex: intentionally matching control characters to strip them
-const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/gu;
+const CONTROL_CHARS = /[\u0000-\u001f\u007f-\u009f]/gu; // oxlint-disable-line eslint/no-control-regex
 
 /** Trim outer whitespace FIRST, then strip control characters — same
  * order as adapter.rs's `sanitize_trim`, for the same reason: stripping

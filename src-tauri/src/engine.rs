@@ -476,7 +476,7 @@ impl<R: tauri::Runtime> Engine<R> {
     /// for 's hover tracking-area handler (`lib.rs`), which
     /// needed this on every mouse-move to derive
     /// `hover::status_rail_active`, the idle-card WIDTH formula's
-    /// `has_status_chips` input — that need went away when 
+    /// `has_status_chips` input — that need went away when
     /// collapsed the idle/idle-status width split (there is no wider
     /// idle variant to pick anymore), and 's y-span rect no
     /// longer needs `StatusState` either (its `idle_peek_open` input is
@@ -734,11 +734,11 @@ mod tests {
     // event.rs) existed. With the dedup split in place, this must be
     // exactly 1: the rotation loop's recheck sees an unchanged `ttl_ms` and
     // no other differing field, so it dedupes and does not re-emit.
-        //
+    //
     // If a future change makes this assert !=1 again, it means either the
     // dedup split broke, or a new non-deduping emitter was introduced
     // elsewhere — do not "fix" this test by loosening the assertion.
-        //
+    //
     // Ordering note: `accept()` runs BEFORE `spawn_rotation()` here,
     // deliberately — `tauri::async_runtime::spawn` schedules onto Tauri's
     // own (real, separate) async runtime, not this test's `#[tokio::test]`

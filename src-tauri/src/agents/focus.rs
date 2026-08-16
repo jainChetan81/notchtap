@@ -1,15 +1,15 @@
 //! The `⌃⇧A` Open/Focus Session shortcut. Security invariants:
 //!
 //! - supported Host bundle IDs and activation strategies are owned by
-//! notchtap code, keyed by the [`Host`] enum — never read off the
-//! wire;
+//!   notchtap code, keyed by the [`Host`] enum — never read off the
+//!   wire;
 //! - unknown Host metadata is advisory text only, never actionable;
 //! - a provider-native deep link is allowed only from the code-owned
-//! [`DEEP_LINK_ALLOWLIST`] and only when it matches the session's
-//! provider;
+//!   [`DEEP_LINK_ALLOWLIST`] and only when it matches the session's
+//!   provider;
 //! - no `sh -c`, arbitrary executable path, or adapter-provided
-//! argument ever reaches an exec boundary — [`activate`] takes the
-//! [`Host`] enum, not a string, so the signature enforces this;
+//!   argument ever reaches an exec boundary — [`activate`] takes the
+//!   [`Host`] enum, not a string, so the signature enforces this;
 //! - failure is logged as a quiet status, never a shell fallback.
 //!
 //! Pure decision ([`decide_focus`]) is separated from the activation

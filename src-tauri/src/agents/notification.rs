@@ -51,12 +51,12 @@
 //! already has:
 //!
 //! - `Completed` + `terminal` — a REAL session end. Noteworthy per
-//! `policy.completion_notifications` (default on) at
-//! `policy.completion_priority` (default Medium).
+//!   `policy.completion_notifications` (default on) at
+//!   `policy.completion_priority` (default Medium).
 //! - `Completed` + `!terminal` — a per-turn stop. Reads as
-//! informational: gated behind `policy.informational_notifications`
-//! (default OFF, so quiet) at the fixed `Priority::Medium` every
-//! Informational gets. Identical treatment to a non-terminal `Failed`.
+//!   informational: gated behind `policy.informational_notifications`
+//!   (default OFF, so quiet) at the fixed `Priority::Medium` every
+//!   Informational gets. Identical treatment to a non-terminal `Failed`.
 //!
 //! `registry::next_state` already split the same pair (terminal ->
 //! `Completed`, non-terminal -> `WaitingForInput`), so the Agent Board
@@ -232,7 +232,7 @@ pub struct NotificationContent<'a> {
 /// `completion_notifications` is off (that gate defaults on, so this is
 /// opt-in silence, not the default).
 ///
-/// `ttl_secs` is the caller's own one-shot rotation window — 
+/// `ttl_secs` is the caller's own one-shot rotation window —
 /// wired `http.rs`'s call site to the real `agent_ttl_secs` config field
 /// (renamed from `cmux_ttl_secs`, itself a migration target for that
 /// same v6.1 flat field), this module itself stays agnostic to where the

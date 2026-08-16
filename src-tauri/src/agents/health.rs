@@ -6,16 +6,16 @@
 //! separate from that subprocess call"):
 //!
 //! - pure derivation ([`declared_capabilities`], [`availability_for`],
-//! [`compatibility_message`], [`build_adapter_health`]) — unit-tested
-//! directly, no clock/subprocess/lock involved;
+//!   [`compatibility_message`], [`build_adapter_health`]) — unit-tested
+//!   directly, no clock/subprocess/lock involved;
 //! - [`HealthTracker`], the impure, shared bookkeeping [`http.rs`]'s
-//! `/agent/events` handler updates on every accepted/rejected event
-//! (last-accepted-event time, last bounded error category) and that
-//! caches the one genuinely impure input this module needs — Kimi's
-//! `kimi --version` hook-support probe (`providers::kimi_version`) —
-//! so a live health read (the `agent-state` publish path, and the
-//! Settings `get_agent_health` command) never shells out more than
-//! once per [`KIMI_PROBE_CACHE_TTL`].
+//!   `/agent/events` handler updates on every accepted/rejected event
+//!   (last-accepted-event time, last bounded error category) and that
+//!   caches the one genuinely impure input this module needs — Kimi's
+//!   `kimi --version` hook-support probe (`providers::kimi_version`) —
+//!   so a live health read (the `agent-state` publish path, and the
+//!   Settings `get_agent_health` command) never shells out more than
+//!   once per [`KIMI_PROBE_CACHE_TTL`].
 //!
 //! Spec §10's five Adapter Health fields land as [`AdapterHealth`]'s five
 //! non-runtime fields: availability, declared capabilities, last

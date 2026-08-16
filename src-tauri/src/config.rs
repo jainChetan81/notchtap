@@ -131,7 +131,7 @@ pub struct Config {
     /// unconditionally over Silenced). See [`SilenceConfig`].
     #[serde(default)]
     pub silence: SilenceConfig,
-    /// 
+    ///
     /// the configurable tmux-style prefix that arms `prefix.rs`'s
     /// `PrefixState` 2-second follow-up window. Format mirrors this app's
     /// own shipped `⌃⇧`-combo family (`ShortcutsSection.tsx`'s
@@ -596,7 +596,7 @@ impl Config {
         // defaulted them to) lets us inherit the file's effective
         // default_ttl exactly where the old shared-field behavior would
         // have applied it.
-                //
+        //
         // the espn arm is conditional on the file ALSO having
         // customized default_ttl — the inherit exists only for configs
         // that customized the old shared default_ttl; a config that never
@@ -604,7 +604,7 @@ impl Config {
         // re-inheriting the generic default. The agent arm stays
         // unconditional (its default intentionally tracks default_ttl),
         // same as the cmux arm it replaces.
-                //
+        //
         // `cmux_priority`/`cmux_ttl_secs` are the
         // one-release migration aliases for `agent_priority`/
         // `agent_ttl_secs` — consulted ONLY when the new key is absent

@@ -547,7 +547,7 @@ fn build_test_event(config: &Config, source: SourceKind) -> Event {
                 body: "This is how agent notifications look".into(),
             },
             // preview mirrors what a real claude-code completion carries
-                        //
+            //
             meta: EventMeta {
                 subtitle: Some("notchtap".into()),
                 details: vec![DetailItem {
@@ -1095,14 +1095,14 @@ mod tests {
     }
 
     // --- the shared whitespace fixture table ---
-        //
+    //
     // THIS FUNCTION IS ONE HALF OF A TWO-LANGUAGE TEST. The identical
     // strings run against `isValidPrefixShortcut` in
     // `src/settings/sections/ShortcutsSection.test.ts`; that TS mirror
     // decides whether the Settings field looks valid, this one decides
     // whether the config actually saves. A disagreement shows up as a
     // field that reads "valid" and a save that quietly refuses it.
-        //
+    //
     // They did disagree until rust's `char::is_whitespace` is
     // Unicode `White_Space`, while JavaScript's `\s` misses U+0085 (NEL)
     // and adds U+FEFF (ZWNBSP). Both of those are in the table below.
@@ -1792,7 +1792,7 @@ mod tests {
     }
 
     // --- build_test_event: one test per SourceKind branch ---
-        //
+    //
     // Guards against the copy-paste failure mode a 5-way match like this
     // is prone to — a branch silently reading a sibling's config field.
     // NOTE for future editors: if a 6th SourceKind is ever added,

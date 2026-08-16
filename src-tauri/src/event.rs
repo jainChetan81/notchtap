@@ -275,7 +275,7 @@ pub struct EspnMeta {
 // `Empty` is a trivial sentinel — the asymmetry clippy's large_enum_variant
 // flags is by design. Boxing wouldn't help honestly here: this enum is
 // short-lived (built per emit, serialized, dropped), never stored in bulk,
-// and boxing a field would only muddy the serde wire shape. Since 
+// and boxing a field would only muddy the serde wire shape. Since
 // added subtitle/details it crossed the 200-byte threshold, so allow it.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize)]

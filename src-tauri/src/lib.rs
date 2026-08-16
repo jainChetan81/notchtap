@@ -1805,32 +1805,32 @@ fn try_expand_board_for_hover(
 /// Edge cases, all resolved through `BoardFrameState`'s generation
 /// counter under its single lock:
 /// - **re-hover during the grace.** `try_expand_board_for_hover` bumps
-/// the generation, so the pending timer's `board_shrink_should_run`
-/// check fails and it returns without touching the window. The
-/// re-expand itself re-applies the frame and re-opens pointer
-/// delivery, so nothing is left inconsistent.
+///   the generation, so the pending timer's `board_shrink_should_run`
+///   check fails and it returns without touching the window. The
+///   re-expand itself re-applies the frame and re-opens pointer
+///   delivery, so nothing is left inconsistent.
 /// - **a second collapse request during the grace** (e.g. hover-exit
-/// immediately followed by the `slot-state` listener's collapse on a
-/// promotion). It bumps the generation too, retiring the first timer
-/// and arming its own — the shrink simply happens a grace period after
-/// the LAST request, never twice and never early.
+///   immediately followed by the `slot-state` listener's collapse on a
+///   promotion). It bumps the generation too, retiring the first timer
+///   and arming its own — the shrink simply happens a grace period after
+///   the LAST request, never twice and never early.
 /// - **a slot promotion during the grace.** The overlay swaps the Board
-/// out for the notification card straight away; the frame stays tall
-/// for up to `BOARD_COLLAPSE_GRACE_MS` longer. Harmless for the same
-/// height-only reason above: the card is top-anchored and centered, so
-/// it renders in exactly the same place, and the window is already
-/// click-through again by then.
+///   out for the notification card straight away; the frame stays tall
+///   for up to `BOARD_COLLAPSE_GRACE_MS` longer. Harmless for the same
+///   height-only reason above: the card is top-anchored and centered, so
+///   it renders in exactly the same place, and the window is already
+///   click-through again by then.
 /// - **the other `position_window` callers.** There are two besides this
-/// one: boot (`setup`, before any board can have expanded) and the
-/// window-shown re-assert inside `run_on_main_thread`
-/// (`apply_overlay_native_config` alongside it). Neither RESIZES, and
-/// `position_window`'s notch branch derives `x` from the window's
-/// current `outer_size().width` — 500 in both the resting and the
-/// expanded frame — so a re-assert landing inside the grace period
-/// computes the same position either way and cannot fight the pending
-/// timer. The timer re-runs `position_window` itself after shrinking
-/// for exactly the same reason it always did, not to undo anything
-/// those callers did.
+///   one: boot (`setup`, before any board can have expanded) and the
+///   window-shown re-assert inside `run_on_main_thread`
+///   (`apply_overlay_native_config` alongside it). Neither RESIZES, and
+///   `position_window`'s notch branch derives `x` from the window's
+///   current `outer_size().width` — 500 in both the resting and the
+///   expanded frame — so a re-assert landing inside the grace period
+///   computes the same position either way and cannot fight the pending
+///   timer. The timer re-runs `position_window` itself after shrinking
+///   for exactly the same reason it always did, not to undo anything
+///   those callers did.
 #[cfg(target_os = "macos")]
 fn collapse_board_if_expanded(
     window: &tauri::WebviewWindow,

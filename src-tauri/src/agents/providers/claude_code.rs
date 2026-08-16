@@ -11,16 +11,16 @@
 //! bound length/count, but can't undo a forwarding decision made here:
 //!
 //! - forwards `tool_name` (a short provider-defined identifier) —
-//! never `tool_input`/`tool_result` wholesale;
+//!   never `tool_input`/`tool_result` wholesale;
 //! - extracts a `Path` detail ONLY from a known path-shaped key
-//! (`file_path`/`path`/`notebook_path`), keeping just the basename —
-//! never the full path, and never `tool_input.command` (the one place
-//! a full shell command would live);
+//!   (`file_path`/`path`/`notebook_path`), keeping just the basename —
+//!   never the full path, and never `tool_input.command` (the one place
+//!   a full shell command would live);
 //! - builds every `summary` from a fixed template plus already-sanitized
-//! closed-enum fields — never `message`, `last_assistant_message`,
-//! `error_message`, or any other free-text/model-authored field;
+//!   closed-enum fields — never `message`, `last_assistant_message`,
+//!   `error_message`, or any other free-text/model-authored field;
 //! - never inspects `tool_result` at all — the `tool_use_succeeded`
-//! boolean plus the tool name is the whole PostToolUse(Failure) story.
+//!   boolean plus the tool name is the whole PostToolUse(Failure) story.
 //!
 //! `Notification`'s `notification_type` is a closed enum;
 //! [`classify_notification`] switches on that field, never on `message`

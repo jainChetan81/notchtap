@@ -16,19 +16,19 @@
 //! Two units, both plain integers:
 //!
 //! - [`Minute`] (`u16`, `0..1440`) — a minute-of-day, local wall-clock
-//! time-of-day only (no date). This is what a [`Window`] is expressed
-//! and compared in.
+//!   time-of-day only (no date). This is what a [`Window`] is expressed
+//!   and compared in.
 //! - [`AbsoluteMinute`] (`u64`) — an ever-increasing minute counter the
-//! caller supplies for "now" and for mute/skip deadlines. The one
-//! contract: `absolute_minute % 1440` MUST equal the actual local
-//! minute-of-day (`local_hour * 60 + local_minute`), and it must
-//! increase by exactly `1440` every local midnight — i.e. it behaves
-//! like "days-since-some-fixed-point * 1440 + minute-of-day", not a
-//! UTC epoch counter (UTC epoch minutes modulo 1440 do not line up with
-//! *local* midnight for any timezone offset that isn't a whole number
-//! of days). [`absolute_minute`] below does this conversion from a
-//! `chrono::NaiveDateTime` (feed it `chrono::Local::now().naive_local()`)
-//! so callers don't have to hand-roll the arithmetic.
+//!   caller supplies for "now" and for mute/skip deadlines. The one
+//!   contract: `absolute_minute % 1440` MUST equal the actual local
+//!   minute-of-day (`local_hour * 60 + local_minute`), and it must
+//!   increase by exactly `1440` every local midnight — i.e. it behaves
+//!   like "days-since-some-fixed-point * 1440 + minute-of-day", not a
+//!   UTC epoch counter (UTC epoch minutes modulo 1440 do not line up with
+//!   *local* midnight for any timezone offset that isn't a whole number
+//!   of days). [`absolute_minute`] below does this conversion from a
+//!   `chrono::NaiveDateTime` (feed it `chrono::Local::now().naive_local()`)
+//!   so callers don't have to hand-roll the arithmetic.
 //!
 //! ## Intended call pattern
 //!

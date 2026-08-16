@@ -58,16 +58,16 @@ pub struct BoardWindowFrame {
 /// same units `current_monitor()` reports post `to_logical`).
 ///
 /// - width: `EXPANDED_BOARD_WIDTH`, capped at `screen_width` so a
-/// narrow screen never produces an off-screen window;
+///   narrow screen never produces an off-screen window;
 /// - height: `HEADER_HEIGHT + EXPANDED_ROW_HEIGHT * (session_count - 1)`
-/// — the primary session lives in the hero block, so only the OTHER
-/// sessions are rows (`AgentBoard.tsx` renders `sessions[1..]`) —
-/// floored at `RESTING_WINDOW_HEIGHT`, capped at
-/// `screen_height * MAX_SCREEN_FRACTION`; content beyond that
-/// scrolls in the frontend's bounded container;
+///   — the primary session lives in the hero block, so only the OTHER
+///   sessions are rows (`AgentBoard.tsx` renders `sessions[1..]`) —
+///   floored at `RESTING_WINDOW_HEIGHT`, capped at
+///   `screen_height * MAX_SCREEN_FRACTION`; content beyond that
+///   scrolls in the frontend's bounded container;
 /// - horizontally centered; anchored FLUSH at the screen's top edge
-/// (`y = 0`) like `lib.rs::position_window` — any top margin makes
-/// the shell visibly detach on hover and re-attach on leave.
+///   (`y = 0`) like `lib.rs::position_window` — any top margin makes
+///   the shell visibly detach on hover and re-attach on leave.
 pub fn expanded_board_frame(
     screen_width: f64,
     screen_height: f64,

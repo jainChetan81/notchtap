@@ -264,7 +264,7 @@ impl AgentRegistry {
         // SessionStart in disguise (no dedicated wire kind exists for
         // it) and must leave the session at its `Starting` baseline
         // rather than immediately advancing to `Working`.
-                //
+        //
         // `declared_state` is what disambiguates it. "New to this
         // registry" is NOT enough on its own: notchtap restarting while
         // an agent session is already running makes that session's next

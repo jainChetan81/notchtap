@@ -5,12 +5,12 @@
 //! snapshot (`SlotState`):
 //!
 //! - [`AgentSession`] is the registry's own mutable, `Instant`-clocked
-//! record of one Agent Session. It is never serialized.
+//!   record of one Agent Session. It is never serialized.
 //! - [`AgentState`] is the (future) wire-facing snapshot built from an
-//! `AgentSession` via [`AgentSession::to_state`] — this ticket builds
-//! the type and its handwritten [`AgentState::dedup_eq`] (spec §2.3)
-//! now so later tickets only have to wire emission, not invent the
-//! dedup contract under time pressure.
+//!   `AgentSession` via [`AgentSession::to_state`] — this ticket builds
+//!   the type and its handwritten [`AgentState::dedup_eq`] (spec §2.3)
+//!   now so later tickets only have to wire emission, not invent the
+//!   dedup contract under time pressure.
 //!
 //! `AgentSessionKey` (runtime + native session id) is the sole registry
 //! identity — see its own doc for why metadata never merges sessions.

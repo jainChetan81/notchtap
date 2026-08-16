@@ -1075,7 +1075,7 @@ mod tests {
     }
 
     // --- §9.2 (docs/TESTING_STRATEGY.md) — burst and boundary cases ---
-        //
+    //
     // Retargeted from the pre-v3.6 max_concurrent/max_queued framing to
     // today's single-slot-plus-per-tier-cap model: only one item is ever
     // visible, so "burst" here means bursting one priority tier's
@@ -1925,14 +1925,14 @@ mod tests {
     }
 
     // --- log hygiene: raw session id / cwd never reach the log line ---
-        //
+    //
     // this test used to install its OWN `Subscriber` per-run
     // via `tracing::subscriber::set_default` (thread-local). That's the
     // textbook pattern, but it has a well-known sharp edge under real
     // parallelism: `tracing`'s per-callsite `Interest` (whether a given
     // `tracing::info!` call site is "worth" constructing an event for at
     // all) is cached PROCESS-WIDE, not per-thread, and is decided the
-    // FIRST time any thread ever touches that exact call site. 
+    // FIRST time any thread ever touches that exact call site.
     // added new lines above `agent_events_handler`'s `tracing::info!`
     // call (the notification-mapping block), which shifts it to a source
     // location tracing has never seen before — and this ticket also added
@@ -1944,7 +1944,7 @@ mod tests {
     // whole process — before this test's own thread ever gets a turn.
     // `tracing::callsite::rebuild_interest_cache()` cannot outrun that:
     // another thread can re-lose the race a moment later.
-        //
+    //
     // The fix is the standard one for this exact pitfall: install exactly
     // ONE global default `Subscriber` for the whole test binary (so
     // `Interest` is decided once, consistently, the same way regardless
