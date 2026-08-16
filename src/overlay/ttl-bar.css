@@ -1,37 +1,25 @@
-/* plan 081: the TTL progress bar (TtlBar.tsx) on every showing card.
+/* The TTL progress bar (TtlBar.tsx) on every showing card.
    `.ttl-fill`'s scale is JS-driven per animation frame (TtlBar.tsx),
    never a CSS transition — no `transition` here to fight the rAF loop.
    Accent color is deliberate on every card type (priority accent, not
    the news `--cat` var) — the bar is card chrome, like the priority
    border, not news content.
-   plan 100: moved to be the card's bottom edge — last child of
-   `.below-block`, absolutely positioned to its bottom, left, and right
-   edges. `.below-block`'s `overflow: hidden` + bottom-corner radii clip
-   it to the rounded corners for free. It must never regain static-flow
+   Sits on the card's bottom edge — last child of `.below-block`,
+   absolutely positioned to its bottom, left, and right edges.
+   `.below-block`'s `overflow: hidden` + bottom-corner radii clip it to
+   the rounded corners for free. It must never regain static-flow
    position — that recreates the double-border artifact above the
-   manifest wrap that this plan fixed.
-   stories merge (2026-07-24): this bar and the old separate
-   `.track` queue slider (plan 033, formerly here) read as a double
-   border stacked on top of each other — `.track` is gone, and this bar
-   is now segmented BY the same queue batch `.track` used to visualize
-   (TtlBar.tsx's `total`/`done` props). Still a single absolutely-
-   positioned floor strip — segmentation is a `display: grid` over the
-   same footprint, `--queue-n` fed by TtlBar.tsx exactly as it fed
-   `.track`'s grid template before. No `padding`/base `gap` inset at the
-   container level: at the degenerate `--queue-n: 1` case (no queue to
-   show) this must stay pixel-identical to the old unsegmented bar — a
-   single grid cell already fills the full 0-to-100% span with nothing to
-   gap against. */
+   manifest wrap. Segmentation by queue batch is a `display: grid` over
+   the same footprint, `--queue-n` fed by TtlBar.tsx; at the degenerate
+   `--queue-n: 1` case (no queue to show) a single grid cell already
+   fills the full 0-to-100% span with nothing to gap against. */
 .card-root .ttl-bar {
   position: absolute;
   bottom: 0;
   left: 0;
   right: 0;
-  /* 2026-07-24 visibility fix: the merge initially kept the old ttl-bar's
-     2px hairline, which made the queue slider read as REMOVED — the old
-     `.track` was 4px with 3px gaps and that presence is the slider's
-     whole job. The merged bar inherits the track's metrics, not the
-     hairline's. */
+  /* the merged bar inherits the track's metrics — 4px tall with 3px
+     gaps, the presence the queue slider's whole job is to show. */
   height: 4px;
   display: grid;
   grid-template-columns: repeat(var(--queue-n, 1), 1fr);
@@ -39,146 +27,90 @@
   gap: 3px;
 }
 
-/* the per-segment trough — `.track span`'s old role, ported onto the
-   merged bar. 2026-08-02 (operator direction-alignment fix): brightness
-   INVERTED — the bar now starts fully bright and burns out dim left-to-
-   right as items consume, so "bright = still to come, dim = already
-   run" and the dimming sweep runs the same direction the queue counts.
-   Plain (no `.done`) is therefore the BRIGHT "not reached yet" state;
-   the CURRENT segment is ALSO plain since it hosts the live `.ttl-fill`
-   on top of it. */
+/* the per-segment trough: starts fully bright and burns out dim
+   left-to-right as items consume — bright = still to come, dim =
+   already run; the dimming sweep runs the same direction the queue
+   counts. Plain (no `.done`) is therefore the BRIGHT "not reached yet"
+   state; the CURRENT segment is ALSO plain since it hosts the live
+   `.ttl-fill` on top of it. */
 .card-root .ttl-seg {
   background: color-mix(in srgb, var(--accent) 33%, transparent);
-  /* plan 127 (Step 1, /improve-animations audit finding #4)/129 (C4):
-     `.track span`'s own reveal-tier transition, ported — reveal-tier
-     timing/easing shared with the flank background and FlankClock/
-     StatusDots fades (REVEAL_MS/`--ease-notchtap`, animationTiming.ts).
-     2026-08-02 comment-accuracy fix: this used to claim it fades in the
-     `done`-class change a QUEUE ADVANCE produces. It does not, and never
-     could — NotificationBody.tsx renders `<TtlBar key={slot.id}>`, so a
-     queue advance that also advances the slot REMOUNTS the whole bar, and
-     a transition never fires on a node's first style resolution. What
-     this leg actually covers is a `done` change WITHIN one slot id (a
-     same-id re-emit whose `queueDone` moved — the bar stays mounted, only
-     the class flips). Kept: that case is real, and the fade is the right
-     treatment for it. */
+  /* reveal-tier timing/easing shared with the flank background and
+     FlankClock/StatusDots fades (animationTiming.ts). This leg covers a
+     `done` change WITHIN one slot id (a same-id re-emit whose
+     `queueDone` moved — the bar stays mounted, only the class flips);
+     a queue advance that also advances the slot REMOUNTS the whole bar
+     (TtlBar.tsx renders it with `key={slot.id}`), and a transition
+     never fires on a node's first style resolution. Number literals
+     for durations are never written in this file's comments —
+     celebrationStacking.test.tsx pins how many times a duration token
+     appears, and a comment restating one would trip that count. */
   transition: background var(--reveal-ms, 260ms) var(--ease-notchtap);
 }
 
-/* queue slider (plan 033, ported by 132; brightness inverted 2026-08-02,
-   see `.ttl-seg` above): consumed segments read as the DIM burned-out
-   trough — already run, spent. */
+/* consumed segments read as the DIM burned-out trough — already run,
+   spent. */
 .card-root .ttl-seg.done {
   background: rgba(255, 255, 255, 0.08);
 }
 
-/* 2026-07-23 review fix (Performance finding — per-frame layout width):
-   TtlBar.tsx used to mutate `style.width` every rAF frame. `.ttl-fill`
-   sits under `.card-assembly`'s own `filter: drop-shadow` (base rule,
-   above in this file) — a width change is a LAYOUT property, so every
-   single frame forced the browser to re-run layout and re-rasterize the
-   whole filtered group the drop-shadow belongs to, not just repaint a
-   2px bar. Fixed by rendering the fill at its full, unchanging width and
-   animating `transform: scaleX(<fraction>)` instead (visually identical
-   at 2px tall) — a compositor-only property that never touches layout.
-   `transform-origin` is what anchors that shrink; it read `left` when
-   this comment was written and has been `right` since the 2026-08-02
-   direction-alignment fix (see the declaration itself, ~20 lines below,
-   and its own comment for why the flip happened) — corrected here
-   2026-08-02 so the two stop disagreeing. `will-change: transform` hints the
-   browser to keep this layer composited independently, same reasoning
-   as any other every-frame transform in this file.
-   stories merge (2026-07-24): `.ttl-fill` is now a grid item placed via an inline
-   `grid-column` (TtlBar.tsx), not a lone full-bar child — `width: 100%`
-   therefore resolves against its OWN assigned column (one queue segment),
-   not the whole bar, so `scaleX` still drains that segment left-to-right
-   exactly as it drained the whole bar pre-merge, just scoped to whichever
-   segment is current. Grid's default `justify-self: stretch` is what
-   makes `width: 100%` redundant-but-harmless here; kept explicit to match
-   this rule's pre-merge shape. */
+/* `.ttl-fill` is JS-driven per-rAF (no CSS transition on fill width):
+   it renders at full, unchanging width and TtlBar.tsx animates
+   `transform: scaleX(<fraction>)` — a compositor-only property that
+   never touches layout (a width change would re-run layout and
+   re-rasterize the whole `filter: drop-shadow` group the fill sits
+   under every single frame, not just repaint a 2px bar).
+   `transform-origin` anchors that shrink — it reads `right` (see the
+   declaration itself below and its comment for why). `will-change:
+   transform` hints the browser to keep this layer composited
+   independently, same reasoning as any other every-frame transform in
+   this file.
+   A grid item placed via an inline `grid-column` (TtlBar.tsx), not a
+   lone full-bar child — `width: 100%` therefore resolves against its
+   OWN assigned column (one queue segment), not the whole bar, so
+   `scaleX` still drains that segment left-to-right exactly as it
+   drained the whole pre-segmented bar. Grid's default `justify-self:
+   stretch` is what makes `width: 100%` redundant-but-harmless here;
+   kept explicit to match this rule's original shape. */
 .card-root .ttl-fill {
   grid-row: 1;
   height: 100%;
   width: 100%;
   background: var(--accent);
-  /* 2026-08-02 (direction-alignment fix, with the `.ttl-seg` inversion
-     above): origin flipped left -> right so the bright remaining-time
-     fill keeps its RIGHT edge anchored and its left edge sweeps
-     rightward as time runs out — consumption eats the segment in the
-     same left-to-right direction the done-segment dimming accumulates,
-     one continuous reading direction across the whole bar. */
+  /* transform-origin: right — the bright remaining-time fill keeps its
+     RIGHT edge anchored while its left edge sweeps rightward as time
+     runs out, eating the segment in the same left-to-right direction
+     the done-segment dimming accumulates: one continuous reading
+     direction across the whole bar. */
   transform-origin: right;
   will-change: transform;
-  /* O13: the transition (not just the `.paused` values below) lives here
-     on the base rule — the standard "declare the transition on the base
-     rule, the modifier class only overrides values" shape — so the
-     fade-in on pause AND the fade-back-out on resume both animate, not
-     just one direction. (This used to cite `.card-assembly.hovered`'s
-     scale as the in-repo example of that shape; that rule was removed
-     2026-08-02 — see choreography.css's own note.) */
+  /* the transition (not just the `.paused` values) lives here on the
+     base rule — the standard "declare the transition on the base rule,
+     the modifier class only overrides values" shape — so the fade-in on
+     pause AND the fade-back-out on resume both animate, not just one
+     direction. */
   transition:
     opacity var(--hover-ms, 160ms) var(--ease-notchtap),
     background var(--hover-ms, 160ms) var(--ease-notchtap);
 }
 
-/* O13 (TTL hover-pause affordance): `hoverPaused` used to freeze the fill
-   with zero visual change — indistinguishable from a stall. Dims it so a
-   paused countdown reads as deliberately held, not stuck. Kept subtle on
+/* TTL hover-pause affordance: `hoverPaused` freezes the fill with no
+   visual change — indistinguishable from a stall. Dims it so a paused
+   countdown reads as deliberately held, not stuck. Kept subtle on
    purpose — this is a passive status cue, not a new attention-grabbing
    element.
 
-   2026-08-02 (animation audit, finding 3 — RETUNED after the brightness
-   inversion). The old values (`opacity: .72` over `color-mix(--accent
-   65%, --accent-soft 35%)`) were written when the trough underneath was
-   white-8%: a different hue, so the paused fill stayed obvious against
-   it. The inversion moved the trough to `--accent` at 30% (`.ttl-seg`
-   above) — the SAME hue — and the two nearly collapsed into each other:
-
-     trough (.ttl-seg)   effective --accent alpha = 0.30
-     paused fill (old)   0.72 opacity x (0.65 + 0.35 x ~0.24 from
-                         --accent-soft) ~= 0.72 x 0.74 = 0.53
-                         -> 0.53 / 0.30 = ~1.8x the trough
-
-   Retuned to clear the >=2.5x separation bar while staying visibly held:
-
-     paused fill (old)   0.85 opacity x 0.90 --accent = 0.765
-                         -> 0.765 / 0.30 = 2.55x the trough  [>= 2.5x OK]
-                         -> 0.765 / 1.00 = 76.5% of the unpaused solid
-                            --accent fill, i.e. ~24% dimmer  [still reads
-                            as dimmed, not as a second solid bar]
-
-   Dropping `--accent-soft` from the mix is deliberate: its alpha differs
-   per priority tier (.20/.24/.28, card-chrome.css), so the old value
-   quietly produced a different contrast ratio on every tier. The plain
-   `--accent`-with-transparent mix lands the same ratio on all three.
-
-   2026-08-02 (operator vividness pass): status pills/bars asked to read
-   more colorful at a glance. Both legs of this same ratio nudged up
-   together — trough alpha AND paused-fill strength — so the >=2.5x
-   separation this block exists to protect is preserved, not spent:
-
-     trough (.ttl-seg)   30% -> 33% --accent
-     paused fill (new)   0.87 opacity x 0.95 --accent = 0.8265
-                         -> 0.8265 / 0.33 = 2.50x the trough  [>= 2.5x OK,
-                            same bar as the retune above, not loosened]
-                         -> 0.8265 / 1.00 = 82.65% of the unpaused solid
-                            --accent fill, i.e. ~17% dimmer  [gap to solid
-                            narrower than the 24% above by design — this
-                            pass is about MORE color showing everywhere,
-                            including the held state; 17% is still a real,
-                            legible dim against a static (non-animating)
-                            reference, not a rewrite of the held-vs-live
-                            distinction itself]
-
-   Deliberately did NOT give `.low` (grey, no hue to begin with) its own
-   larger bump here to "catch up" to teal/high's saturation: the
-   percentage bump above is uniform across all three tiers (same
-   multiplier on whatever --accent resolves to), so low keeps its
-   correct relative position — quieter than medium/high, which is the
-   priority system doing its job, not a vividness bug. Grey reading as
-   the least colorful of the three is the point of it being LOW
-   priority; propping its alpha up disproportionately to "match" the
-   saturated tiers would blur that signal instead of just polishing it. */
+   Separation invariant: the paused fill must keep a >=2.5x contrast
+   over the trough underneath while staying visibly dimmer than the
+   live solid fill. Trough and paused fill share the SAME hue
+   (`--accent`, `.ttl-seg` above) — with the trough at ~1/3 `--accent`
+   alpha, a paused fill near full saturation would collapse into it.
+   The plain `--accent`-with-transparent mix keeps the ratio uniform
+   across all three priority tiers (a per-tier `--accent-soft` alpha
+   would vary the contrast on every tier). `.low`'s grey deliberately
+   keeps its correct relative position — quieter than medium/high is
+   the priority system doing its job, not a vividness bug; propping
+   its alpha up to "match" the saturated tiers would blur that signal. */
 .card-root .ttl-fill.paused {
   opacity: 0.87;
   background: color-mix(in srgb, var(--accent) 95%, transparent);

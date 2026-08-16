@@ -1,13 +1,9 @@
-// Plan 171 (tab-notch redesign, slice K): the one place `StatusState`
-// (the ambient wire, `src/useStatusState.ts`) is turned into the icon
-// strip's three `IconVisualState`s. Deliberately data, not logic — the
-// same "a config table, not a new render path" discipline
-// `lib/presentation.ts` follows, kept in its own file because it reads
-// the STATUS wire (`useStatusState.ts`) rather than the SLOT wire
-// (`useSlotState.ts`) that file is otherwise built around.
-//
-// Spec `docs/superpowers/specs/2026-08-02-tab-notch-design.md` section
-// 6's table, transcribed literally:
+// The one place `StatusState` (the ambient wire, `src/useStatusState.ts`)
+// is turned into the icon strip's three `IconVisualState`s. Deliberately
+// data, not logic — the same "a config table, not a new render path"
+// discipline `lib/presentation.ts` follows, kept in its own file because
+// it reads the STATUS wire rather than the SLOT wire that file is built
+// around.
 //
 //   | tab      | present when                            | live when        |
 //   |----------|-----------------------------------------|------------------|

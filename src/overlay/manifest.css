@@ -1,17 +1,9 @@
-/* plan 078: expand/collapse is a grid-template-rows 0fr→1fr transition
-   (the standard animatable-"auto"-height technique, no JS measuring) —
-   the manifest content stays mounted at all times, at zero height when
-   collapsed, so no re-mount/re-tokenize on every toggle. The wrapper
-   carries aria-hidden when collapsed (Manifest.tsx) to replace the DOM
-   removal AnimatePresence used to provide.
-   2026-07-23 review fix (wave C, CSS custom-property injection): this
-   used to carry its own hand-tuned 300ms literal, 20ms off the shell's
-   own entrance width-grow (`.card-assembly`'s base `transition: width`,
-   above) for no documented reason — just two separate polish passes
-   that each touched one but not the other. Unified onto
-   `var(--expand-ms, 300ms)` (EXPAND_MS, animationTiming.ts) — see that
-   constant's own doc for the "why unify" reasoning and the screenshot
-   verification. */
+/* Expand/collapse is a grid-template-rows 0fr→1fr transition
+   (animatable-"auto"-height, no JS measuring) — content stays mounted,
+   at zero height when collapsed, so no re-mount on toggle. Wrapper
+   carries aria-hidden when collapsed (Manifest.tsx). Duration:
+   `var(--expand-ms, 300ms)`, lockstep with EXPAND_MS in
+   animationTiming.ts. */
 .card-root .manifest-wrap {
   display: grid;
   grid-template-rows: 0fr;
@@ -35,23 +27,11 @@
   background: linear-gradient(180deg, rgba(255, 255, 255, 0.025), transparent);
 }
 
-/* plan 169: `.detail-label`/`.detail-value` (the stacked label-over-
-   value pair the generic branch used to render, one per detail — a
-   visual language nothing else in the overlay shared) are gone,
-   replaced by the fact-pill system below — one pill per fact, an
-   optional muted mono label prefix (`.fp-label`), an optional colored
-   qualifier tag (`.fp-tag`), never a stacked block. NotificationBody.tsx's
-   generic branch and its new agent-aware branch (AgentBoard.tsx's
-   primary-session hero) both render through this SAME markup now — no
-   second, parallel pill system for agent's own facts.
-   `.detail-value.message` (the one variant that carried full prose,
-   plan 032) is gone too, not just converted: at implementation time
-   nothing in the live component tree still applied a `message` class
-   alongside `.detail-value` (Manifest.tsx's own message cell has always
-   used `.manifest-text`/`.manifest-label` instead — a different pair of
-   classes entirely, untouched by this plan) — the rule was already dead
-   before this change, and prose doesn't fit a pill shape regardless, so
-   there is no replacement pill variant for it. */
+/* Fact-pill system: one pill per fact, optional muted mono label prefix
+   (`.fp-label`), optional colored qualifier tag (`.fp-tag`) — never a
+   stacked block. NotificationBody.tsx's generic branch and AgentBoard.tsx's
+   hero render through this SAME markup. No prose pill variant —
+   message cells use `.manifest-text`/`.manifest-label` instead. */
 .card-root .detail-facts {
   display: flex;
   flex-direction: column;
@@ -112,12 +92,10 @@
   color: var(--overlay-green);
 }
 
-/* plan 091: the flank clock — the prototype's own class name
-   (`prototype/notch-states.html:63`, `.time-only`), rendered by
-   `<FlankClock>` at both call sites (idle's left flank AND showing/
-   exiting's left flank — the SAME shared component, per Step 4's
-   ownership split). Deliberately not scoped under `.flank-left` alone:
-   there is only ever one clock in the assembly at a time. */
+/* Flank clock — `.time-only` from `prototype/notch-states.html:63`,
+   rendered by `<FlankClock>` at both idle and showing/exiting left
+   flanks (one shared component). Deliberately not scoped under
+   `.flank-left` alone: only one clock in the assembly at a time. */
 .card-root .time-only {
   font: 800 15px/1 var(--font-mono);
   letter-spacing: 0.02em;

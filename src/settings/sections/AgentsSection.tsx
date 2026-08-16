@@ -26,7 +26,7 @@ import type {
 } from "../types";
 import { PRIORITY_SEGMENT_OPTIONS, PRIORITY_TONES } from "../types";
 
-// --- adapter card static content (plan 143, spec §4.6/§8) --------------
+// --- adapter card static content ---------------------------------------
 //
 // Sourced from the committed `adapters/*/README.md` setup snippets (and
 // the OpenCode plugin's own header comment) — inlined as constants so
@@ -273,14 +273,12 @@ function AdapterCard({
             HistorySection.tsx convention. */}
         <button
           type="button"
-          // CodeRabbit review (PR #11): two fixes matching the same
-          // findings applied to button.tsx/switch.tsx/Segmented.tsx —
           // `transition-transform` doesn't cover Tailwind v4's `scale-*`
           // utility (a standalone `scale` property), so the press scale
-          // was snapping instead of animating; and `aria-controls` must
-          // not point at an id with no matching element — the detail
-          // panel is conditionally MOUNTED (not just hidden), so while
-          // collapsed there is no `detailId` element in the DOM at all.
+          // snaps instead of animating; and `aria-controls` must not point
+          // at an id with no matching element — the detail panel is
+          // conditionally MOUNTED (not just hidden), so while collapsed
+          // there is no `detailId` element in the DOM at all.
           className="agent-card-trigger flex min-w-0 flex-1 items-center gap-1.5 rounded-sm text-left outline-none transition-[scale] duration-[140ms] ease-notchtap focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.97]"
           aria-expanded={expanded}
           aria-controls={expanded ? detailId : undefined}
@@ -433,8 +431,8 @@ function AdapterCard({
   );
 }
 
-// Plan 143 (spec §8): static preview rows for the five Agent Board
-// states the plan names — a simple, truthful text summary (runtime /
+// Static preview rows for the five Agent Board
+// states — a simple, truthful text summary (runtime /
 // state / summary), not a full card mockup. The Agent Board itself lives
 // in the overlay (`App.tsx`), which the settings window never renders —
 // see AppearanceSection's own preview-fixture doc for why the settings

@@ -1,31 +1,18 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
 
-// Plan 136 (v7 ticket 4 of 13, spec §6): the Agent Board's `agent-state`
-// channel. Duplicates useSlotState.ts's/useStatusState.ts's delivery
-// discipline — runtime-validated payload, dead-listener console.error —
-// on a third, listen-only channel: `agent-state` (rust:
-// agents/board.rs::AGENT_STATE_EVENT). The overlay stays receive-only;
-// no invoke rides this work, and there is deliberately NO sorting,
-// lifecycle inference, expiry, or history merging here — `sessions`
-// arrives already Rust-ordered (spec §2.2) and this hook renders it
-// as-is (spec §6's own words).
-//
-// Unlike slot-state/status-state, there is no `window.__NOTCHTAP_*__`
-// boot-shield seed for this channel yet — a fresh page load starts at
-// the empty snapshot below and picks up the live channel from the next
-// `/agent/events` mutation or periodic tick's publish. A future ticket
-// can add the same eval-planted-global dual-path shield those two
-// channels use if the reload gap turns out to matter in practice.
+// The Agent Board's `agent-state` channel — same delivery discipline as
+// slot-state/status-state: runtime-validated payload, dead-listener
+// console.error, overlay stays receive-only. No sorting, lifecycle
+// inference, expiry, or history merging here — `sessions` arrives
+// already Rust-ordered and renders as-is. No `__NOTCHTAP_*__` boot-shield
+// seed yet: fresh loads start empty and pick up the live channel.
 
 const AGENT_RUNTIMES = ["claude-code", "codex", "kimi", "opencode"] as const;
 export type AgentRuntime = (typeof AGENT_RUNTIMES)[number];
 
-// Mirrors rust's `AgentSessionState` wire tokens exactly
-// (`agents::adapter::state_wire_label`) — a closed set, same rejection
-// discipline as every other enum on this app's wires (SOURCE_KINDS,
-// EVENT_TYPES, ...): an unrecognized state drops that session from the
-// validated payload rather than rendering with an undefined state.
+// Mirrors rust's `AgentSessionState` wire tokens (closed set) — an
+// unrecognized state drops that session from the validated payload.
 const AGENT_SESSION_STATES = [
   "starting",
   "working",
@@ -52,20 +39,13 @@ export type AgentCapability = (typeof AGENT_CAPABILITIES)[number];
 export type AgentDetail = { label: string; value: string };
 export type AgentProject = { name: string | null; cwd: string | null };
 export type AgentHost = { name: string | null; bundleId: string | null };
-// Plan 147 wave 2: a session's own active subagent, when the runtime
-// reports one (`subagents` capability territory) — `id` is always
-// present when the object itself is present, `label`/`state` are
-// nullable exactly like every other adapter-optional string field on
-// this type (AgentProject.name/cwd, AgentHost.name/bundleId).
+// A session's active subagent, when the runtime reports one — `id` always
+// present; `label`/`state` nullable like every adapter-optional string.
 export type AgentSubagent = { id: string; label: string | null; state: string | null };
 
-// Plan 142 (v7 ticket 10 of 13, spec §6.2 expanded): one entry of a
-// session's bounded transition history (rust: `agents::board::
-// AgentTransitionView`), oldest first — the same "no sorting" rule the
-// wire snapshot as a whole already carries applies here too.
-// `elapsedMs` is clock-derived (milliseconds since that transition
-// started, as of `capturedAtMs`) — same live-tick shape as the session's
-// own `elapsedMs`.
+// One entry of a session's bounded transition history, oldest first — the
+// same "no sorting" rule the wire snapshot carries. `elapsedMs` is
+// clock-derived, same live-tick shape as the session's own.
 export type AgentTransition = { state: AgentSessionState; elapsedMs: number };
 
 export type AgentSessionView = {
@@ -77,13 +57,11 @@ export type AgentSessionView = {
   details: AgentDetail[];
   project: AgentProject | null;
   host: AgentHost | null;
-  // Plan 147 wave 2: the session's active subagent, when the runtime
-  // reports one — `null` (not just absent) when there is none.
+  // `null` (not just absent) when there is no active subagent.
   subagent: AgentSubagent | null;
-  // Clock-derived at the moment rust captured this snapshot
-  // (`capturedAtMs` below is the shared anchor) — the frontend derives
-  // LIVE elapsed-in-state time locally: `elapsedMs + (Date.now() -
-  // capturedAtMs)`, so a continuously-varying value never rides the wire.
+  // Clock-derived at capture (`capturedAtMs` is the anchor); the frontend
+  // derives live time locally — a continuously-varying field never rides
+  // the wire (mirrors rust's dedup exemption rule).
   elapsedMs: number;
   retentionRemainingMs: number | null;
   history: AgentTransition[];
@@ -98,25 +76,20 @@ export type AgentState = {
   revision: number;
   capturedAtMs: number;
   /// The Agent BOARD's list — summons-gated on the rust side
-  /// (`board.rs::gate_presence`), so it is empty whenever nothing needs
-  /// the operator. This is what `presentationMode` reads to decide
-  /// whether the Board is on screen at all.
+  /// (`board.rs::gate_presence`), empty whenever nothing needs the
+  /// operator; drives whether the Board is on screen.
   sessions: AgentSessionView[];
-  /// Plan 177: the PULL surface's list — the same ordered slice before
-  /// that gate. The agent tab's below-block renders this one, because a
-  /// tab the operator clicked open is a user-initiated view: the gate
-  /// governs the Board summoning itself, not an explicit pull. Optional
-  /// on this type (and only on this type) because it doubles as the
-  /// constructed payload shape in tests and older payloads predate the
-  /// field — `useAgentState` itself always returns it filled, see
-  /// `sanitizeAgentState`.
+  /// The PULL surface's list — same ordered slice before the gate; the
+  /// agent tab's below-block renders this one (a clicked-open tab is a
+  /// user-initiated view, not a summoning). Optional on this type only
+  /// because older payloads predate the field — `useAgentState` always
+  /// fills it (see `sanitizeAgentState`).
   tabSessions?: AgentSessionView[];
   adapterHealth: AdapterHealthView[];
 };
 
-/// What the HOOK hands back, as opposed to what the wire may carry:
-/// `tabSessions` is guaranteed present here because `sanitizeAgentState`
-/// fills it, so a consumer never has to repeat the `?? []` itself.
+/// What the hook hands back: `tabSessions` always present — consumers
+/// never repeat `?? []`.
 export type ResolvedAgentState = AgentState & { tabSessions: AgentSessionView[] };
 
 function emptyAgentState(): ResolvedAgentState {
@@ -172,10 +145,8 @@ function isValidHost(v: unknown): v is AgentHost {
   return isNullableString(o.name) && isNullableString(o.bundleId);
 }
 
-// Mirrors isValidProject/isValidHost's exact idiom: the value itself
-// may be `null` (no active subagent), and when present, `id` is
-// required while `label`/`state` are null-tolerant like every other
-// adapter-optional string field on this wire.
+// Same null-tolerant idiom as project/host: null, or `id` required with
+// nullable `label`/`state`.
 function isValidSubagent(v: unknown): v is AgentSubagent {
   if (v === null) {
     return true;
@@ -212,16 +183,13 @@ function isValidSession(v: unknown): v is AgentSessionView {
     isDetailArray(o.details) &&
     (o.project === undefined || isValidProject(o.project)) &&
     (o.host === undefined || isValidHost(o.host)) &&
-    // Plan 147 wave 2: same absent/null-tolerant idiom as project/host
-    // above — an older cached payload without `subagent` at all must
-    // not drop the session either.
+    // Absent/null-tolerant like project/host — older payloads without
+    // `subagent` must not drop the session.
     (o.subagent === undefined || isValidSubagent(o.subagent)) &&
     isNonNegativeInteger(o.elapsedMs) &&
     (o.retentionRemainingMs === null || isNonNegativeInteger(o.retentionRemainingMs)) &&
-    // Plan 142: `history` is optional at validation time (defaults to
-    // `[]` below) — an older cached/boot payload without it must not
-    // drop the whole session, same "degrade, don't crash" discipline
-    // every other optional field on this type already follows.
+    // Optional at validation time (defaults to `[]` below) — older
+    // payloads without it must not drop the session.
     (o.history === undefined || (Array.isArray(o.history) && o.history.every(isValidTransition)))
   );
 }
@@ -234,12 +202,9 @@ function isValidAdapterHealth(v: unknown): v is AdapterHealthView {
   return typeof o.runtime === "string" && typeof o.status === "string";
 }
 
-// Validated rather than trusted blindly, same defense-in-depth rationale
-// isValidSlotState's own doc gives (useSlotState.ts): this is arbitrary
-// rust-serialized JSON crossing the tauri IPC boundary. A malformed
-// individual session is DROPPED (not the whole payload) — one adapter
-// sending a bad event shouldn't blank the entire board out from under
-// every other session's row.
+// Arbitrary rust-serialized JSON crossing the IPC boundary — validated,
+// not trusted. A malformed session is DROPPED, not the whole payload:
+// one bad adapter shouldn't blank the board for every other session.
 export function isValidAgentState(v: unknown): v is AgentState {
   if (typeof v !== "object" || v === null) {
     return false;
@@ -249,20 +214,16 @@ export function isValidAgentState(v: unknown): v is AgentState {
     isNonNegativeInteger(o.revision) &&
     isNonNegativeInteger(o.capturedAtMs) &&
     Array.isArray(o.sessions) &&
-    // Plan 177: absent is tolerated (an older payload predating the
-    // field must not blank the board — the same "degrade, don't crash"
-    // discipline `history` already follows), but present-and-not-an-array
-    // is malformed and rejects the whole payload, exactly like
-    // `sessions` above. Per-session validation happens in the sanitizer,
-    // through the very same `isValidSession`.
+    // Absent tolerated (older payloads); present-and-not-an-array rejects
+    // the whole payload, like `sessions`. Per-session validation happens
+    // in the sanitizer via `isValidSession`.
     (o.tabSessions === undefined || Array.isArray(o.tabSessions)) &&
     Array.isArray(o.adapterHealth) &&
     (o.adapterHealth as unknown[]).every(isValidAdapterHealth)
   );
 }
 
-// The one per-session pass both lists get — shared rather than
-// duplicated so the two can't drift apart in what they accept.
+// The one per-session pass both lists share — can't drift apart.
 function sanitizeSessions(list: AgentSessionView[] | undefined): AgentSessionView[] {
   return (list ?? [])
     .filter(isValidSession)
@@ -273,8 +234,7 @@ function sanitizeAgentState(v: AgentState): ResolvedAgentState {
   return {
     ...v,
     sessions: sanitizeSessions(v.sessions),
-    // Always an array after this, never `undefined` — the hook's
-    // consumers get a safe `[]` for a payload that omitted the field.
+    // Always an array after this — safe `[]` for an omitted field.
     tabSessions: sanitizeSessions(v.tabSessions),
   };
 }
@@ -290,10 +250,8 @@ export function useAgentState(): ResolvedAgentState {
       if (isValidAgentState(payload)) {
         setState(sanitizeAgentState(payload));
       }
-      // an invalid payload is dropped, not blanked to empty — mirrors
-      // `isValidSlotState`'s own comment: a well-tagged-but-incomplete
-      // object must fall back safely, but here "safely" means "keep
-      // showing the last good board," never a jarring blank-then-refill.
+      // Invalid payload dropped, not blanked — keep showing the last good
+      // board, never a jarring blank-then-refill.
     })
       .then((fn) => {
         if (unmounted) {

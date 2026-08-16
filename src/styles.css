@@ -2,28 +2,12 @@
   --card-scale: 1;
   --card-radius: 8px;
   --card-opacity: 1;
-  /* plan 163: `--ease-notchtap` is only ever defined inside
-     vendor/shared-ui/design/tokens.css's `@theme inline {}` block, which
-     Tailwind's Vite plugin only expands for CSS reachable through an
-     `@import "tailwindcss";` root — the overlay's entry (main.tsx ->
-     overlay-card.css/styles.css) never has one (only
-     src/settings/base.css does), so the token silently never resolves
-     here. Same defense-in-depth convention `--ease-notchtap-pop` already
-     uses in this file: redeclare the plain value directly so every
-     overlay consumer (45 usages across 10 files) gets a real, working
-     custom property regardless of Tailwind's theme-scoping. Numeric
-     value is the exact twin of tokens.css's own `--ease-notchtap` and of
-     animationTiming.ts's `NOTCHTAP_EASE` array — keep all three in sync
-     if this curve is ever retuned.
-     FEEL-CHECK (item 2, card-entry mass): a dedicated ease with a slight
-     overshoot (vs. the house `--ease-notchtap`'s pure settle), used ONLY
-     by `.card-assembly`'s base width transition (card-chrome.css) so
-     promotion/expand width growth lands with a touch of physical mass.
-     Also declared with an inline fallback at its one consumer (shared
-     file, read by the settings preview too, which never loads this
-     stylesheet) — same defense-in-depth convention animationTiming.ts's
-     own injected vars use. Revert = swap that consumer's timing function
-     back to `var(--ease-notchtap)`. */
+  /* `--ease-notchtap` resolves only inside tokens.css's `@theme inline`
+     block, which Tailwind expands only for CSS reached via an
+     `@import "tailwindcss"` root — the overlay entry never has one, so
+     redeclare the plain value here (defense-in-depth, same convention as
+     `--ease-notchtap-pop`). Value must stay the exact twin of tokens.css
+     and animationTiming.ts's `NOTCHTAP_EASE` — keep all three in sync. */
   --ease-notchtap: cubic-bezier(0.23, 1, 0.32, 1);
   --ease-notchtap-pop: cubic-bezier(0.3, 1.36, 0.44, 1);
 }
@@ -38,30 +22,19 @@ body,
 }
 
 body {
-  /* plan 114: adopt shared-ui's --font-sans instead of the hand-copied
-     stack — this restores "Helvetica Neue" to the fallback chain, which
-     the old literal here had dropped. deliberate visual change. */
   font-family: var(--font-sans);
   -webkit-font-smoothing: antialiased;
   user-select: none;
 }
 
-/* plan 111: overlay-only residue. Everything the shared card shape used
-   to define directly in this file (the `.card-assembly` block onward)
-   now lives in `../src/overlay-card.css`, imported ahead of this file
-   from `main.tsx` so this file's rules still win any specificity tie by
-   source order. The only overlay-specific things left here are the
-   window-level reset above (`:root`'s --card-* var defaults, the
-   html/body/#root chrome) and this one wrapper rule: `App.tsx` needed a
-   NEW ancestor element around `<StatusRailCard>` to host the shared
-   file's `.card-root` scope (StatusRailCard's own root element IS
-   `.card-assembly` — there was no pre-existing container to reuse).
-   `display: contents` makes that wrapper a layout-neutral scoping node —
-   it participates in selector matching but contributes no box of its
-   own, so it changes zero overlay geometry (rect-diffed in plan 111's
-   before/after evidence). The settings preview's equivalent scope host
-   (`.preview-stage`, in settings.css) is a REAL layout box already —
-   this override must stay overlay-only and never apply there. */
+/* Overlay-only residue: the shared card shape lives in
+   `../src/overlay-card.css`, imported ahead of this file so these rules
+   still win any specificity tie by source order. Left here: the
+   window-level reset and this wrapper. `App.tsx` needed a NEW ancestor
+   around `<StatusRailCard>` to host `.card-root`; `display: contents`
+   makes it a layout-neutral scoping node (matches but contributes no
+   box). The settings preview's scope host (`.preview-stage`) is a REAL
+   layout box — this override must stay overlay-only. */
 .card-root {
   display: contents;
 }

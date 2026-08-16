@@ -1,15 +1,11 @@
-/* ==== football live-match scorecard (plan 084): the operator-locked
-   sticky-presence card's compact render, built on 083's structured espn
-   meta. Class names are lifted verbatim from prototype/football-card.html
-   so cross-referencing stays greppable — the score-row/chips/crest/digit
-   rules below this point are still the live styling for
-   `FootballHeroCard` (NotificationBody.tsx). plan 171: `.notif-block`
-   (the old bespoke wrapper `LiveMatchScorecard.tsx` — now deleted —
-   used before plan 170's unified-template migration) was removed from
-   here; `.compact` (masthead-content.css) is what wraps this content
-   now. ==== */
+/* ==== football live-match scorecard: the operator-locked sticky-
+   presence card's compact render, built on structured espn meta. Class
+   names are lifted verbatim from prototype/football-card.html so cross-
+   referencing stays greppable. Styles `FootballHeroCard`
+   (NotificationBody.tsx); `.compact` (masthead-content.css) wraps this
+   content. ==== */
 
-/* plan 170: the score block is "spaced apart with its own margin-top" per
+/* score block spaced apart with its own margin-top, per
    prototype/football-card.html — without it the chips row butts against
    `.title.headline` at 0px. */
 .card-root .score-block {
@@ -22,9 +18,8 @@
   gap: 8px;
 }
 
-/* plan 092 (item 10): chip-converged from `.league-chip` — `.chip` (the
-   base rule, near the news meta-row section above) supplies the shared
-   shape/type; `.chip-league` carries the neutral tint only. */
+/* `.chip` (base rule, near the news meta-row section above) supplies the
+   shared shape/type; `.chip-league` carries the neutral tint only. */
 .card-root .chip-league {
   flex: none;
   color: rgba(255, 255, 255, 0.6);
@@ -32,36 +27,27 @@
   border: 1px solid rgba(255, 255, 255, 0.12);
 }
 
-/* chip-converged from `.live-pill` — the state chip: Live (green) /
-   Break (amber) / Final (dim). There is no "Soon" (pre-match) variant
-   here: no wire signal exists for it (see StatusRailCard.tsx's
-   live-match branch doc), so it's omitted rather than half-built against
-   a state the backend never sends. */
+/* state chip: Live (green) / Break (amber) / Final (dim). No "Soon"
+   (pre-match) variant — no wire signal exists for it (see
+   StatusRailCard.tsx's live-match branch doc). */
 .card-root .chip-live {
   flex: none;
   gap: 5px;
-  /* O3/H5: tokenized onto --overlay-green (same value) — unifies with the
-     status dot's own football color and the ev-ico/tint-goal green. */
+  /* tokenized onto --overlay-green — unifies with the status dot's
+     football color and the tint-goal green. */
   color: var(--overlay-green);
   background: rgba(127, 224, 141, 0.12);
   border: 1px solid rgba(127, 224, 141, 0.35);
-  /* plan 151 (item A): LIVE -> HT -> FT used to be a hard cut — the
-     `.break`/`.final` rules below only ever swap colours, and with no
-     transition declared here the chip changed identity in a single
-     frame. The match state is a real, meaningful transition (the game
-     stopped), so it morphs over the standard reveal window instead.
-     Colour-only, so this stays paint-work: no layout property is
-     transitioned on the chip itself. */
+  /* match-state changes morph over the reveal window, colour-only — no
+     layout property is transitioned on the chip itself. */
   transition:
     color var(--reveal-ms, 260ms) var(--ease-notchtap),
     background-color var(--reveal-ms, 260ms) var(--ease-notchtap),
     border-color var(--reveal-ms, 260ms) var(--ease-notchtap);
 }
 
-/* plan 105 (scope extension to Step A): steady glow, not a blink — same
-   operator request as the status dots. The static `box-shadow` glow below
-   already reads as a liveness signal on its own; only the looping
-   keyframe animation (now deleted) is gone. */
+/* steady glow, not a blink — the static `box-shadow` reads as the
+   liveness signal; no looping keyframe. */
 .card-root .chip-live .live-dot {
   width: 5px;
   height: 5px;
@@ -69,13 +55,9 @@
   border-radius: 50%;
   background: var(--overlay-green);
   box-shadow: 0 0 6px rgba(127, 224, 141, 0.9);
-  /* plan 151 (item A): the dot is now mounted in EVERY variant
-     (LiveMatchScorecard.tsx) so full-time can fade it out in step with
-     the chip's colour morph above instead of unmounting it a frame
-     early. `width`/`margin-right` ride along in the `.final` rule so the
-     chip doesn't keep a phantom 5px + 5px-gap hole where the dot was —
-     a one-shot 260ms collapse on a chip this small, not a per-frame
-     layout loop. */
+  /* dot mounted in every variant; `.final` fades + collapses it in step
+     with the chip's colour morph — `width`/`margin-right` ride along so
+     the chip keeps no phantom gap where the dot was. */
   transition:
     opacity var(--reveal-ms, 260ms) var(--ease-notchtap),
     background var(--reveal-ms, 260ms) var(--ease-notchtap),
@@ -84,8 +66,7 @@
 }
 
 .card-root .chip-live.break {
-  /* O3: tokenized onto --overlay-amber (same value) — same "Break state"
-     meaning the amber-consolidation finding named explicitly. */
+  /* tokenized onto --overlay-amber — same "Break state" meaning. */
   color: var(--overlay-amber);
   background: rgba(240, 196, 106, 0.12);
   border-color: rgba(240, 196, 106, 0.35);
@@ -103,10 +84,9 @@
   border-color: rgba(255, 255, 255, 0.12);
 }
 
-/* plan 151 (item A): full-time's dot leaves by fading + collapsing, not
-   by unmounting. `margin-right: -5px` cancels `.chip-live`'s own 5px
-   flex gap as the width reaches 0, so the label ends up exactly where a
-   dot-less chip would have put it. */
+/* full-time's dot leaves by fading + collapsing, not unmounting.
+   `margin-right: -5px` cancels `.chip-live`'s own 5px flex gap as width
+   reaches 0, so the label ends up where a dot-less chip would put it. */
 .card-root .chip-live.final .live-dot {
   opacity: 0;
   width: 0;
@@ -114,13 +94,11 @@
   box-shadow: none;
 }
 
-/* O12: was a hand-rolled pill (own padding/border-radius/display) outside
-   the `.chip` language `.chip-league`/`.chip-live` beside it already use —
-   now carries the `chip` class too (LiveMatchScorecard.tsx,
-   IdleHoverPeek.tsx) and this rule only overrides what's genuinely
-   different: the larger/bolder numeric-clock font (`.chip`'s own font is
-   for short uppercase labels) and the neutral tint, with letter-spacing/
-   text-transform reset since a clock reading isn't a label. */
+/* carries the `chip` class (IdleHoverPeek.tsx) — this rule only
+   overrides what's genuinely different: the larger/bolder numeric-clock
+   font (`.chip`'s own font is for short uppercase labels) and the
+   neutral tint, with letter-spacing/text-transform reset since a clock
+   reading isn't a label. */
 .card-root .clock-pill {
   margin-left: auto;
   flex: none;
@@ -149,7 +127,7 @@
 }
 
 /* the crest circle: an <img> (StatusRailCard.tsx's `Crest`, converted via
-   `convertFileSrc`) when 083 cached a real crest, else the text-abbrev
+   `convertFileSrc`) when a real crest is cached, else the text-abbrev
    fallback rendered as the span's own text content — same box either way,
    so the layout never shifts between the two states. */
 .card-root .crest {
@@ -174,10 +152,10 @@
 }
 
 .card-root .score {
-  /* plan 151 (item B): inline-flex so the two odometer clips and the
-     dash sit on one centred row — the clips are fixed-height blocks, and
-     baseline alignment across an `overflow: hidden` box is not reliable
-     the way plain inline text was. Visually identical at rest. */
+  /* inline-flex so the two odometer clips and the dash sit on one
+     centred row — baseline alignment across an `overflow: hidden` box
+     isn't reliable the way plain inline text is. Visually identical at
+     rest. */
   display: inline-flex;
   align-items: center;
   font: 800 24px/1 var(--font-mono);
@@ -185,9 +163,9 @@
   letter-spacing: 0.02em;
 }
 
-/* plan 151 (item B): the odometer clip — one per side. Height is exactly
-   the score's own line box (`font: .../1`, so 1em = 24px), which is what
-   makes a `y: ±100%` translate on the inner span move it exactly one
+/* the odometer clip — one per side. Height is exactly the score's own
+   line box (`font: .../1`, so 1em = 24px), which is what makes a
+   `y: ±100%` translate on the inner span move it exactly one
    digit-height: the incoming digit rises from directly below the clip,
    the outgoing one leaves through the top. `overflow: hidden` is the
    whole illusion. */
@@ -201,10 +179,9 @@
 .card-root .score-digit-roll {
   display: block;
   line-height: 1;
-  /* `will-change` is deliberately absent: unlike the ambient loops in
-     this codebase this moves
-     only on a goal, so permanently promoting two layers for a
-     once-a-match 360ms roll would be the wrong trade. */
+  /* `will-change` is deliberately absent: this moves only on a goal, so
+     permanently promoting two layers for a once-a-match 360ms roll would
+     be the wrong trade. */
 }
 
 .card-root .score .dash {
@@ -212,16 +189,15 @@
   margin: 0 2px;
 }
 
-/* plan 171: `.event-line` (the old per-event icon+tint row) was removed
-   from here — `FootballHeroCard`'s `.title.headline` (NotificationBody.tsx)
-   deliberately doesn't carry an icon slot; see that component's own doc
-   comment for why. */
+/* no `.event-line` here — `FootballHeroCard`'s `.title.headline`
+   (NotificationBody.tsx) deliberately doesn't carry an icon slot; see
+   that component's own doc comment for why. */
 
 .card-root .cards-line {
   margin-top: 6px;
   text-align: center;
   font: 600 9px/1 var(--font-mono);
-  /* O9: was 0.06em — collapsed onto the 3-step 0.08/0.12/0.16em scale. */
+  /* letter-spacing collapsed onto the shared 0.08/0.12/0.16em scale. */
   letter-spacing: 0.08em;
   color: rgba(255, 255, 255, 0.38);
 }

@@ -1,9 +1,8 @@
-// Plan 171 (tab-notch redesign, spec docs/superpowers/specs/2026-08-02-
-// tab-notch-design.md section 6): the three neon icon-tabs, right-aligned
-// inside the right flank, hidden entirely at rest and revealed only once
-// the flank behind them has already painted black (the flank's own
-// `.hovered` gate lives in the caller's CSS, not here — this component
-// always renders all three icons; `icon-strip.css`'s `.hovered .icon-strip`
+// The three neon icon-tabs, right-aligned inside the right flank, hidden
+// entirely at rest and revealed only once the flank behind them has already
+// painted black (the flank's own `.hovered` gate lives in the caller's CSS,
+// not here — this component always renders all three icons;
+// `icon-strip.css`'s `.hovered .icon-strip`
 // rule is what makes them visible, matching `hover::icon_strip_rects`
 // (src-tauri/src/hover.rs)'s own "present icons occupy space, absent ones
 // collapse to zero width" contract exactly: this component renders every
@@ -78,12 +77,12 @@ const TAB_LABEL: Record<Tab, string> = {
   news: "News",
 };
 
-// CodeRabbit review fix (PR #13): an explicit `aria-label` overrides
-// accessible-name computation from child content entirely, so the
-// visually-rendered `.charge-count` badge (sighted-only) never reached
-// assistive tech — a screen-reader user got no indication of the
-// pending-item count sighted users see. Only the news tab has a count at
-// all; every other tab (and news with no count) renders exactly
+// An explicit `aria-label` overrides accessible-name computation from
+// child content entirely, so the visually-rendered `.charge-count` badge
+// (sighted-only) never reaches assistive tech — a screen-reader user gets
+// no indication of the pending-item count sighted users see. Only the
+// news tab has a count at all; every other tab (and news with no count)
+// renders exactly
 // `TAB_LABEL[tab]`, unchanged.
 function iconAriaLabel(tab: Tab, newsCount: number | null): string {
   if (tab === "news" && newsCount !== null) {
@@ -149,12 +148,12 @@ export function NewsGlyph({ charge }: { charge: number }): ReactNode {
       <rect
         className="charge"
         x="3"
-        // CodeRabbit review fix (PR #13): this was `y="15.5"` — the rect's
-        // own unscaled bounds (y 15.5 to 28.5) never overlapped the
-        // clip region (y 2.5 to 15.5, matching the page outline above)
-        // at ANY scaleY value, so the charge fill rendered invisible at
-        // every charge level. `y="2.5"` matches the outline's own top so
-        // the rect's full (scaleY(1)) extent exactly fills it; scaling
+        // `y="15.5"` never worked: the rect's own unscaled bounds (y 15.5
+        // to 28.5) never overlapped the clip region (y 2.5 to 15.5,
+        // matching the page outline above) at ANY scaleY value, so the
+        // charge fill rendered invisible at every charge level. `y="2.5"`
+        // matches the outline's own top so the rect's full (scaleY(1))
+        // extent exactly fills it; scaling
         // toward 0 around the bottom-anchored transformOrigin below
         // shrinks the visible portion upward from the bottom, the
         // liquid-filling-from-bottom effect the comment above describes.

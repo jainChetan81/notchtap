@@ -1,24 +1,17 @@
 import { useEffect, useRef } from "react";
 
-// stories merge (2026-07-24): the two thin strips a compact card
-// used to carry — this bar (rotation countdown) and Track.tsx's separate
-// queue slider — read as a double border stacked on top of each other.
-// Track is gone; its segment-count/proportional-index math is folded in
-// here verbatim (ported from Track.tsx before its deletion, same
-// MAX_SEGMENTS=10 ceiling, same `floor(done * MAX / total)` mapping past
-// it) so the floor bar's segments now ARE the queue slider. `total`/`done`
-// default to 1/0 (a single, un-segmented bar) so every caller that never
-// had a queue to report — including every existing test below that
-// predates this merge — keeps rendering the pre-merge single-segment
-// shape without needing to pass anything new.
+// One strip carries both the rotation countdown and the queue position:
+// the segment-count/proportional-index math (MAX_SEGMENTS=10 ceiling,
+// `floor(done * MAX / total)` mapping past it) makes the floor bar's
+// segments the queue slider. `total`/`done` default to 1/0 (a single,
+// un-segmented bar) so every caller without a queue — including tests —
+// keeps the plain single-segment shape without passing anything.
 const MAX_SEGMENTS = 10;
 
-// plan 081: the thin rotation-countdown bar every showing card carries.
-// Deliberately NOT React state per frame — the prototype
-// (prototype/notch-states.html §4's ttlTick) mutates the fill node's
-// style.width directly via rAF, and this component follows that: a
-// re-render per animation frame would be needless work for a value React
-// never needs to read back.
+// The thin rotation-countdown bar every showing card carries.
+// Deliberately NOT React state per frame — the rAF loop mutates the fill
+// node's transform directly; a re-render per animation frame would be
+// needless work for a value React never needs to read back.
 //
 // Anchoring: `remainingMs` is a snapshot taken server-side at emission
 // time (queue.rs's current_slot_state) — by the time this component
@@ -38,18 +31,16 @@ export function TtlBar({
   slotId: string;
   ttlMs: number;
   remainingMs: number;
-  // plan 093: 081's deferred half. Freezes the countdown for as long as
-  // the caller reports the card hovered — driven by `App.tsx`'s
-  // `hover-changed`-sourced `hovered` prop (never CSS `:hover`, per the
-  // hover primitive's own rule), NOT by re-anchoring off a fresh
-  // `remainingMs`: the rust side never re-emits `slot-state` purely for a
-  // hover transition (`SlotState::dedup_eq` excludes `remaining_ms`,
-  // CLAUDE.md's own rule, so a hover-only mutation is never wire-visible
-  // here) — this prop is the ONLY signal this component gets. The actual
-  // rotation-deadline hold lives rust-side (`queue.rs`'s
-  // `hover_started_at`/`hover_paused_total`); this is purely the LOCAL
-  // visual mirror of that hold, decoupled from it but kept honest because
-  // both sides pause/resume off the same tracking-area transition.
+  // `hoverPaused` freezes the countdown while the caller reports the
+  // card hovered — driven by the `hovered` prop (never CSS `:hover`, per
+  // the hover primitive's own rule), NOT by re-anchoring off a fresh
+  // `remainingMs`: rust never re-emits `slot-state` purely for a hover
+  // transition (`SlotState::dedup_eq` excludes `remaining_ms`, so a
+  // hover-only mutation is never wire-visible here). The rotation-deadline
+  // hold itself lives rust-side (`queue.rs`'s `hover_started_at`/
+  // `hover_paused_total`); this is purely the LOCAL visual mirror, kept
+  // honest because both sides pause/resume off the same tracking-area
+  // transition.
   hoverPaused?: boolean;
   // stories merge (2026-07-24): former Track.tsx props, absorbed. `total` = current batch
   // size (`slot.queueTotal`), `done` = items already consumed
@@ -64,16 +55,13 @@ export function TtlBar({
   // array) — a ref, not a second effect, so pause/resume never resets
   // `deadline`.
   const hoverPausedRef = useRef(hoverPaused);
-  // 2026-07-23 review fix (Performance finding — rAF loop kept running
-  // while hover-paused): `frameIdRef` is the shared handshake between the
-  // anchoring effect below and the pause-edge effect right after it.
-  // `null` means "no frame currently in flight" — either genuinely
-  // bailed out on a hover pause, or expired, or not yet armed. `resumeRef`
-  // holds a closure (set up fresh by the anchoring effect, on every
-  // slotId/ttlMs/remainingMs re-anchor) that re-arms exactly one frame;
-  // the pause-edge effect calls it on the paused->unpaused transition,
-  // and only when frameIdRef is actually null, so it never double-
-  // schedules a frame that's already in flight.
+  // Handshake between the anchoring effect below and the pause-edge
+  // effect after it: `frameIdRef` `null` means "no frame currently in
+  // flight" (bailed on pause, expired, or not yet armed). `resumeRef`
+  // holds a closure, set up fresh by the anchoring effect on every
+  // re-anchor, that re-arms exactly one frame; the pause-edge effect
+  // calls it on the paused->unpaused edge only while `frameIdRef` is
+  // null, so it never double-schedules a frame already in flight.
   const frameIdRef = useRef<number | null>(null);
   const resumeRef = useRef<(() => void) | null>(null);
 
@@ -105,9 +93,9 @@ export function TtlBar({
       return;
     }
 
-    // Idle-CPU discipline (plans 015/018): a non-positive ttl means there
-    // is nothing to count down — render a static, un-scaled fill and never
-    // arm the loop.
+    // Idle-CPU discipline: a non-positive ttl means there is nothing to
+    // count down — render a static, un-scaled fill and never arm the
+    // loop.
     if (ttlMs <= 0) {
       fill.style.transform = "scaleX(1)";
       resumeRef.current = null;
@@ -115,32 +103,29 @@ export function TtlBar({
     }
 
     const deadline = performance.now() + remainingMs;
-    // plan 093: total time already spent paused (banked once a pause
-    // ends) plus, while a pause is currently open, the in-flight duration
-    // since it started — the same freeze-via-subtraction technique
-    // queue.rs's `hover_frozen_rotation_elapsed` uses rust-side, kept
-    // independent here since this component never round-trips a fresh
-    // remainingMs to resync against (see the `hoverPaused` prop doc).
+    // Pause accounting: total time already spent paused (banked once a
+    // pause ends) plus, while a pause is open, the in-flight duration
+    // since it started — freeze-via-subtraction, mirroring `queue.rs`'s
+    // `hover_frozen_rotation_elapsed` rust-side, kept independent here
+    // since this component never round-trips a fresh remainingMs to
+    // resync against (see the `hoverPaused` prop doc).
     let pausedAccumMs = 0;
     let pauseStartedAt: number | null = hoverPausedRef.current ? performance.now() : null;
     let cancelled = false;
 
-    // 2026-07-23 review fix (Performance finding): `.ttl-fill` sits under
-    // `.card-assembly`'s `filter: drop-shadow` — mutating a layout
-    // property (`width`) every frame forced a re-layout/re-rasterize of
-    // that whole filtered group. Animating `transform: scaleX(fraction)`
-    // instead (CSS: `transform-origin: right` since the 2026-08-02
-    // direction-alignment fix — see ttl-bar.css — full-width base) is
-    // visually identical at this bar's 2px height and stays
-    // compositor-only.
+    // `.ttl-fill` sits under `.card-assembly`'s `filter: drop-shadow` —
+    // animating `transform: scaleX(fraction)` rather than a layout
+    // property (`width`) is visually identical at this bar's 2px height
+    // and stays compositor-only (`transform-origin: right`, full-width
+    // base — see ttl-bar.css).
     //
     // While paused, this still paints the frozen value on the FIRST tick
     // after the pause begins (so the bar visibly holds at the right
-    // position, not whatever it happened to be mid-frame), then bails —
-    // no `requestAnimationFrame` call, so no more per-frame work at all
-    // until the pause-edge effect above calls `resumeRef.current()`.
-    // Also stops permanently once `remaining` reaches 0 (expired), same
-    // idle-CPU discipline as the ttlMs <= 0 early return above.
+    // position), then bails — no `requestAnimationFrame` call, so no
+    // per-frame work at all until the pause-edge effect above calls
+    // `resumeRef.current()`. Also stops permanently once `remaining`
+    // reaches 0 (expired), same idle-CPU discipline as the ttlMs <= 0
+    // early return above.
     function tick() {
       if (cancelled) {
         return;
@@ -190,14 +175,11 @@ export function TtlBar({
     };
   }, [slotId, ttlMs, remainingMs]);
 
-  // stories merge (2026-07-24): segment count/current-index math ported verbatim from
-  // Track.tsx (deleted by this plan) — same MAX_SEGMENTS ceiling, same
+  // Segment count/current-index math: same MAX_SEGMENTS ceiling, same
   // proportional mapping past it. `current` is additionally clamped to
-  // `n - 1`: Track never needed this (its own formula never produced an
-  // out-of-range index for the totals it was ever called with), but this
-  // bar's `total`/`done` now default independently of each other, so the
-  // clamp is cheap insurance against an index that would otherwise point
-  // at a segment past the grid's last column.
+  // `n - 1` — this bar's `total`/`done` default independently of each
+  // other, so the clamp is cheap insurance against an index that would
+  // otherwise point at a segment past the grid's last column.
   const segmentCount = Math.min(Math.max(total, 1), MAX_SEGMENTS);
   const rawCurrent = total > MAX_SEGMENTS ? Math.floor((done * MAX_SEGMENTS) / total) : done;
   const current = Math.min(rawCurrent, segmentCount - 1);
@@ -215,29 +197,24 @@ export function TtlBar({
         <span key={i} className={i < current ? "ttl-seg done" : "ttl-seg"} />
       ))}
       <div
-        // O13: `paused` is a pure CSS hook (ttl-bar.css) giving the freeze
-        // a subtle, legible look — without it, a hover-pause is visually
+        // `paused` is a pure CSS hook (ttl-bar.css) giving the freeze a
+        // subtle, legible look — without it, a hover-pause is visually
         // identical to a stall (both just stop moving). Driven straight
-        // off the `hoverPaused` prop, not the rAF loop's own internal
-        // pause bookkeeping, so it flips in lockstep with the freeze/
-        // resume the loop above already performs.
+        // off the `hoverPaused` prop, so it flips in lockstep with the
+        // freeze/resume the loop above already performs.
         className={hoverPaused ? "ttl-fill paused" : "ttl-fill"}
         ref={fillRef}
         // Placed via `grid-column` rather than nested inside the `current`
         // segment's own mapped `<span>` above — that would put fillRef's
         // node behind a conditional (`i === current ? <div ref .../> :
         // null`), which unmounts/remounts it on every queue advance. This
-        // way the fill is the same DOM node across every render OF ONE
-        // SLOT (2026-08-02 comment-accuracy fix — it used to say "ALWAYS
-        // the same DOM node across renders" full stop: NotificationBody.tsx
-        // mounts this component as `<TtlBar key={slot.id}>`, so a new slot
-        // id remounts the whole bar, fill included. That's fine and
-        // intended — a new promotion re-anchors the countdown anyway — but
-        // it means the guarantee is scoped to a single slot id, which is
-        // exactly the window the rAF loop below needs it for); only this
-        // one inline style value changes when `current` moves, so the rAF
-        // loop above (which re-reads `fillRef.current` fresh every frame
-        // regardless) never has to survive losing its node mid-tick.
+        // way the fill is the same DOM node across every render of one
+        // slot — `NotificationBody.tsx` mounts this component as
+        // `<TtlBar key={slot.id}>`, so a new slot id remounts the whole
+        // bar (fine and intended: a new promotion re-anchors the
+        // countdown anyway); only this one inline style value changes
+        // when `current` moves, so the rAF loop above never has to
+        // survive losing its node mid-tick.
         style={{ gridColumn: current + 1 }}
       />
     </div>

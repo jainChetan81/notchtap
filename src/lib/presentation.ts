@@ -18,13 +18,9 @@ function assertNever(x: never): never {
 }
 
 // Fixed per-signal text for anything with a real football signal — a
-// documented lookup table, never derived from parsing title/body text
-// (the notification-kind-sniffing this session already rejected).
-// plan 083 workstream c: minimal exhaustive-arm additions for the four
-// new richer-event signals (foul/offside/var_check/substitution) — a
-// wire-enum addition forces this table to compile, on purpose (the
-// "seam working" the plan calls out). Visual/wording choices beyond
-// this placeholder text are 084's territory.
+// documented lookup table, never derived from parsing title/body text.
+// The wire enum is exhaustive, so adding a new EventSignal forces this
+// table to compile.
 const SIGNAL_STAMPS: Record<Exclude<EventSignal, "generic">, string> = {
   goal: "Live",
   kickoff: "Live",
@@ -55,10 +51,9 @@ export function stampFor(priority: Priority, signal: EventSignal, eventType: Eve
       case "generic":
       case "score_update":
       case "match_state":
-      // plan 135: an agent-originated card has no football signal either
-      // (same as CLI/any other `generic`-signal source) — falls back to
-      // priority alone, same as the other non-football event types grouped
-      // here.
+      // An agent-originated card has no football signal either — falls
+      // back to priority alone, same as the other non-football event
+      // types grouped here.
       case "agent_event":
         return GENERIC_PRIORITY_STAMPS[priority];
       default:
@@ -68,21 +63,16 @@ export function stampFor(priority: Priority, signal: EventSignal, eventType: Eve
   return SIGNAL_STAMPS[signal];
 }
 
-// plan 084: the football scorecard's event-kind → (icon class, tint class,
+// The football scorecard's event-kind → (icon class, tint class,
 // celebration) table — the ONE place a new live-match event type
-// registers its presentation (see the maintenance note in plan 084's
-// spec). Deliberately distinct from SIGNAL_STAMPS above, which 083 already
-// populated and this plan does not touch: a wire `EventSignal` alone
-// can't distinguish a regular goal from a penalty or an own goal — all
-// three carry `EventSignal::Goal` (poller.rs's `labeled_detail_line`
-// passes ESPN's own label through verbatim, with "Own Goal" checked
-// first and short-circuited). `footballEventKindFor` below resolves the
-// richer `FootballEventKind` from (signal, body) before this table is
-// consulted. Reading the body's "Own Goal — "/"Penalty - Scored — "
-// prefix here is NOT the rejected generic notification-kind-sniffing
-// (SIGNAL_STAMPS's doc above) — it's reading a specific, tested,
-// backend-guaranteed prefix that poller.rs's own tests pin byte-for-byte
-// (`own_goal_body_derived_from_structural_flag`, `penalty_body_names_the_event`).
+// registers its presentation. Deliberately distinct from SIGNAL_STAMPS:
+// a wire EventSignal alone can't distinguish a regular goal from a
+// penalty or an own goal — all three carry `EventSignal::Goal`.
+// `footballEventKindFor` below resolves the richer FootballEventKind
+// from (signal, body) before this table is consulted. Reading the
+// body's "Own Goal — "/"Penalty - Scored — " prefix here is not generic
+// notification-kind-sniffing — it's a specific, backend-guaranteed
+// prefix poller.rs emits, pinned byte-for-byte by its own tests.
 export type FootballEventKind =
   | "goal"
   | "penalty_scored"
@@ -107,17 +97,16 @@ export interface EventKindPresentation {
 
 const EVENT_KIND_PRESENTATION: Record<FootballEventKind, EventKindPresentation> = {
   goal: { iconClass: "ev-ico goal", tintClass: "tint-goal", celebration: "cele-goal" },
-  // penalty scored counts as a goal — same green celebration family
-  // (prototype lock: "Penalty scored. Counts as a goal — same green
-  // celebration."), distinct ring-shaped icon only.
+  // Penalty scored counts as a goal — same green celebration family,
+  // distinct ring-shaped icon only.
   penalty_scored: { iconClass: "ev-ico pen", tintClass: "tint-goal", celebration: "cele-goal" },
   // own-goal updates the score with NO celebration — hollow-ball icon,
   // neutral (no tint) event line, per the operator-locked model.
   own_goal: { iconClass: "ev-ico og", tintClass: null, celebration: null },
   yellow_card: { iconClass: "ev-ico yc", tintClass: "tint-yc", celebration: "cele-yc" },
   red_card: { iconClass: "ev-ico rc", tintClass: "tint-rc", celebration: "cele-rc" },
-  // plan 043's informational events (item 6a) open the card quietly: no
-  // tint, no celebration, just the neutral CSS-shape icon.
+  // Informational events open the card quietly: no tint, no celebration,
+  // just the neutral CSS-shape icon.
   foul: { iconClass: "ev-ico foul", tintClass: null, celebration: null },
   offside: { iconClass: "ev-ico off", tintClass: null, celebration: null },
   var_check: { iconClass: "ev-ico var", tintClass: null, celebration: null },
@@ -213,8 +202,7 @@ const CATEGORY_CLASSES = {
   sports: "cat-sports",
   business: "cat-business",
   world: "cat-world",
-  // plan 147: science split off from tech (see rss_poller.rs's
-  // CATEGORY_KEYWORDS retarget) — its own cat-science shader class.
+  // Science has its own cat-science shader class.
   science: "cat-science",
   generic: "cat-generic",
 } as const;
@@ -246,55 +234,37 @@ export function categoryLabel(category: string | null): string | null {
   return `${category.charAt(0).toUpperCase()}${category.slice(1)}`;
 }
 
-// Plan 136 (v7 ticket 4 of 13, spec §6.1): the presentation precedence
-// machine — a pure data mapping, same "config table, not a new render
-// path" philosophy every other function in this file already follows.
+// Presentation precedence — a pure data mapping, same "config table,
+// not a new render path" philosophy every other function here follows.
 // `App.tsx` is the ONE call site: it decides between `StatusRailCard`
-// (both "notification" and "idle" — the existing card already handles
-// slot-empty idle rendering on its own) and the new `AgentBoard`
-// component for "board", rather than teaching StatusRailCard's own
-// (already elaborate) exit-choreography state machine a third mode.
+// (both "notification" and "idle" — the card handles slot-empty idle
+// rendering on its own) and `AgentBoard` for "board".
 //
 // 1. a Visible Notification (slot.state === "showing") owns the Slot —
-//    always wins, regardless of the Agent Board's own state (and
-//    regardless of `paused`: rust's queue already stops PROMOTING while
-//    paused, and an already-Visible Notification finishes its natural
-//    Rotation, CONTEXT.md's Paused — the frontend adds no slot logic of
-//    its own).
+//    always wins, regardless of the Agent Board's own state.
 // 2. otherwise, while the engine is Paused the Board is hidden: Paused
-//    means "quiet the whole notch," not just "stop promoting"
-//    (operator feedback, 2026-08-02 — a paused engine still showed the
-//    Board ticking with live agent activity). Note this is the opposite
-//    of Silenced, which is explicitly display-layer-only and leaves the
-//    idle surface — Agent Board included — behaving as normal
-//    (CONTEXT.md's Silenced).
+//    means "quiet the whole notch," not just "stop promoting" — unlike
+//    Silenced, which is display-layer-only and leaves the idle surface
+//    (Agent Board included) behaving as normal.
 // 3. otherwise, at least one Agent Session in the PUBLISHED snapshot (a
 //    non-empty `sessions` array) shows the Agent Board.
 // 4. otherwise, the existing clock idle presentation.
 //
 // Rule 3 is deliberately "whatever rust published", not "whatever
-// sessions exist". Two separate rust-side filters already decide what
-// lands in that array, and this table re-derives neither:
-//   - the registry's `terminal_retention_secs`/`stale_retention_secs`
-//     sweep drops finished/dead sessions, so "present in the array at
-//     all" already means "live or retained";
-//   - the Agent Board's PRESENCE gate (operator decision 2026-08-02,
-//     `[agents] board_show_working`, default off) publishes ZERO
-//     sessions when nothing needs the operator — an agent that is merely
-//     working must not summon the Board. That gate lives in exactly one
-//     place, `AgentBoardPublisher::gate_presence` (src-tauri/src/agents/
-//     board.rs); this file must NOT grow a second copy of it. Note it
-//     gates presence only: once some session has summoned the Board,
-//     rust publishes every retained session, working ones included, and
-//     the Board lists them all.
+// sessions exist". Two rust-side filters already decide that array and
+// this table re-derives neither: the registry's retention sweep drops
+// finished/dead sessions, and the Board's presence gate
+// (`board_show_working`) lives in exactly one place,
+// `AgentBoardPublisher::gate_presence`; this file must NOT grow a
+// second copy of it. The gate gates presence only: once some session
+// has summoned the Board, rust publishes every retained session,
+// working ones included.
 //
 // "when a noteworthy Agent Notification finishes, presentation returns
 // to the still-current Agent Board" falls out for free: the instant
-// `slot` goes back to "empty", this function re-evaluates against
+// `slot` returns to "empty", this function re-evaluates against
 // whatever `sessionCount` the (independently-updating) `agent-state`
-// channel currently holds — there is no separate "was a board active
-// before this notification" flag to thread through, because the two
-// channels were never coupled to begin with.
+// channel currently holds — the two channels were never coupled.
 export type PresentationMode = "notification" | "board" | "idle";
 
 export function presentationMode(
@@ -311,15 +281,14 @@ export function presentationMode(
   return sessionCount > 0 ? "board" : "idle";
 }
 
-// Plan 136 (spec §6.2): the resting board's "strong but non-alarming"
-// visual distinction between waiting / failure / working / completed —
-// a closed lookup table, same discipline as SIGNAL_STAMPS/
-// EVENT_KIND_PRESENTATION above. `className` is the CSS hook
-// (agent-board.css); `label` is the short state word the resting card
-// renders. `starting` reads as a `working` variant (no separate visual
-// language for a session's first few hundred ms) but keeps its own
-// entry so a state-table lookup is total, not partial, over every wire
-// value `useAgentState.ts` can deliver.
+// The resting board's "strong but non-alarming" visual distinction
+// between waiting / failure / working / completed — a closed lookup
+// table, same discipline as SIGNAL_STAMPS/EVENT_KIND_PRESENTATION.
+// `className` is the CSS hook (agent-board.css); `label` is the short
+// state word the resting card renders. `starting` reads as a `working`
+// variant (no separate visual language for a session's first few
+// hundred ms) but keeps its own entry so the state-table lookup is
+// total over every wire value `useAgentState.ts` can deliver.
 const AGENT_STATE_PRESENTATION: Record<
   AgentSessionState,
   { label: string; className: string; pulse: boolean }
@@ -347,10 +316,10 @@ export function agentRuntimeLabel(runtime: AgentRuntime): string {
   return AGENT_RUNTIME_LABEL[runtime];
 }
 
-// Plan 147: the paint-channel twin of AGENT_RUNTIME_LABEL — each agent
-// runtime's identity colour class (source-identity.css), consumed
-// wherever an agent-originated card needs to paint itself distinctly
-// from a generic agent, football, or manual/CLI card.
+// The paint-channel twin of AGENT_RUNTIME_LABEL — each agent runtime's
+// identity colour class (source-identity.css), consumed wherever an
+// agent-originated card needs to paint itself distinctly from a generic
+// agent, football, or manual/CLI card.
 const AGENT_RUNTIME_CLASS: Record<AgentRuntime, string> = {
   "claude-code": "src-claude-code",
   codex: "src-codex",
@@ -362,15 +331,12 @@ export function agentRuntimeClass(runtime: AgentRuntime): string {
   return AGENT_RUNTIME_CLASS[runtime];
 }
 
-// Plan 147: resolves a card's SOURCE identity colour class
-// (source-identity.css) — deliberately NOT news's business. News cards
-// keep using `categoryClass` above (per-category colour, e.g.
-// cat-science); callers must branch on origin === "news" themselves
-// and keep calling `categoryClass` for that case rather than routing
-// news through this function. `agentRuntime` is only consulted when
-// `origin === "agent"`; any other origin ignores it. An agent card
-// with `agentRuntime === null` (runtime not yet known/unrecognized)
-// falls back to the neutral `src-agent` amber.
+// Resolves a card's SOURCE identity colour class (source-identity.css) —
+// deliberately NOT news's business. News cards keep using `categoryClass`
+// above (per-category colour); callers must branch on origin === "news"
+// themselves. `agentRuntime` is only consulted when `origin === "agent"`;
+// a null runtime (not yet known/unrecognized) falls back to the neutral
+// `src-agent` amber.
 export function sourceClass(
   origin: Exclude<SourceKind, "news">,
   agentRuntime: AgentRuntime | null,
@@ -395,24 +361,15 @@ export function agentStatePresentationFor(state: AgentSessionState): {
   return AGENT_STATE_PRESENTATION[state];
 }
 
-// Plan 169 (step 6): the Agent Board's primary-session hero now renders
-// through the SAME priority-accent channel (`--accent`/`--accent-soft`,
+// The Agent Board's primary-session hero renders through the SAME
+// priority-accent channel (`--accent`/`--accent-soft`,
 // `.card-assembly.low/.medium/.high`, card-chrome.css) every other
-// origin's card already drives via `slot.priority` — until this plan,
-// Agent Board carried no notion of "priority" at all (it painted state
-// entirely through its own separate `--agent-accent` system,
-// agent-board.css, untouched by this table). This is a NEW semantic,
-// not a port of an existing one, so the mapping is a documented,
-// implementer-chosen default rather than a spec-given constant: the two
-// states that need the operator's attention NOW (a live decision or a
-// hard stop) read as "high" — that's also the pairing the Target table
-// (plan 169) marks "(danger tone)" on the hero's fact pills; the two
-// states that are actively in flight read as "medium"; the two settled/
+// origin's card drives via `slot.priority`. The two states that need
+// the operator's attention NOW (a live decision or a hard stop) read as
+// "high"; the two actively in flight read as "medium"; the two settled/
 // quiet states read as "low". `starting` groups with `working` (same
-// "in flight" family `AGENT_STATE_PRESENTATION` above already treats
-// them as, both `agent-working`); `stale` groups with `completed` (both
-// "nothing to do here" from the operator's perspective, just for
-// different reasons).
+// in-flight family AGENT_STATE_PRESENTATION above already treats them
+// as); `stale` groups with `completed` (both "nothing to do here").
 const AGENT_STATE_PRIORITY: Record<AgentSessionState, Priority> = {
   waiting_for_permission: "high",
   waiting_for_input: "high",
@@ -427,13 +384,12 @@ export function agentStatePriorityFor(state: AgentSessionState): Priority {
   return AGENT_STATE_PRIORITY[state];
 }
 
-// Plan 136 (spec §6.2's "elapsed-in-state time"): formats a duration in
-// milliseconds as a short "Xs"/"Xm"/"Xh Ym" label — the Agent Board row's
-// own twin of `ageLabel` above (news' "Xm ago"), but relative duration
-// only, no "ago" suffix (a session's elapsed-in-state time is a live
-// stopwatch, not a past timestamp). Floors, never rounds, so the label
-// never reads ahead of the actual elapsed time (matching TtlBar's own
-// floor-not-round countdown discipline).
+// Formats a duration in milliseconds as a short "Xs"/"Xm"/"Xh Ym" label —
+// the Agent Board row's twin of `ageLabel` (news' "Xm ago"), but
+// relative duration only, no "ago" suffix (elapsed-in-state time is a
+// live stopwatch, not a past timestamp). Floors, never rounds, so the
+// label never reads ahead of the actual elapsed time (matching TtlBar's
+// own floor-not-round countdown discipline).
 export function elapsedLabel(elapsedMs: number): string {
   const totalSeconds = Math.floor(Math.max(0, elapsedMs) / 1000);
   if (totalSeconds < 60) {
@@ -448,15 +404,13 @@ export function elapsedLabel(elapsedMs: number): string {
   return minutes === 0 ? `${hours}h` : `${hours}h ${minutes}m`;
 }
 
-// Plan 146 follow-up (operator feedback, 2026-07-27): the Agent Board's
-// expanded rows surface `project.cwd` verbatim — an absolute path is
-// wide and mostly noise once you already know it's under the user's
-// home directory. This is a display-only heuristic, not a real
-// `$HOME` lookup: the receive-only overlay has no OS/env access (no
-// invoke commands ride the main window, CLAUDE.md's ipc/security
-// section), so it pattern-matches the two conventional per-user home
-// prefixes (`/Users/<name>` macOS, `/home/<name>` Linux) rather than
-// resolving an actual home directory.
+// Display-only heuristic: the Agent Board's expanded rows surface
+// `project.cwd` verbatim — an absolute path is wide and mostly noise
+// once you already know it's under the user's home directory. Not a
+// real `$HOME` lookup: the receive-only overlay has no OS/env access
+// (no invoke commands ride the main window), so it pattern-matches the
+// two conventional per-user home prefixes (`/Users/<name>` macOS,
+// `/home/<name>` Linux) rather than resolving an actual home directory.
 export function abbreviateHome(path: string): string {
   const match = path.match(/^\/(?:Users|home)\/[^/]+(\/.*)?$/);
   if (!match) {

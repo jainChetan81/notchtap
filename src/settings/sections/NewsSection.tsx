@@ -17,14 +17,13 @@ import { settingsInvoke } from "../ipc";
 import type { Config } from "../types";
 import { PRIORITY_SEGMENT_OPTIONS, PRIORITY_TONES } from "../types";
 
-// plan 130 Step 3: an ad-hoc, unpersisted search — same ActionStatus
-// pattern as the other per-section action rows (pending disables, success
-// announces, the input clears only on success). Local component (not
-// controls.tsx) since it's News-only.
-// Plan 147: read-only legend for the category colours the overlay's
-// news cards actually paint with (news-category.css, mirrored in
-// SOURCE_CATEGORY_COLORS) — `generic` deliberately excluded, it's the
-// fallback, not a category anyone picks.
+// Ad-hoc, unpersisted search — same ActionStatus pattern as the other
+// per-section action rows (pending disables, success announces, input
+// clears only on success). Local component (not controls.tsx) since it's
+// News-only.
+// Read-only legend for the category colours the overlay's news cards
+// paint with (news-category.css, mirrored in SOURCE_CATEGORY_COLORS) —
+// `generic` deliberately excluded, it's the fallback, not a category.
 const CATEGORY_LEGEND_TOKENS: readonly SourceCategoryToken[] = [
   "politics",
   "tech",
@@ -67,9 +66,9 @@ function SearchNowRow() {
       errorMessage: (reason) =>
         typeof reason === "string" ? reason : "search could not be completed",
     }).then((count) => {
-      // The input clears only on success (plan 130 Step 3) — `run`
-      // resolves `undefined` on a caught rejection, so a failed search
-      // leaves the typed query in place to retry/edit.
+      // The input clears only on success — `run` resolves `undefined` on
+      // a caught rejection, so a failed search leaves the typed query in
+      // place to retry/edit.
       if (count !== undefined) setQuery("");
     });
   }

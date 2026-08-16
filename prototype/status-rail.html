@@ -1,34 +1,5 @@
 <!doctype html>
-<!-- SYNC NOTE (2026-07-30): this file was fully re-synced against the shipped
-     overlay. Every selector/value below is copied from the real stylesheets
-     (`src/overlay-card.css` + `src/overlay/*.css` + `vendor/shared-ui/design/tokens.css`),
-     scoped exactly as they ship (`.card-root ...`); the DOM each `render*()` helper
-     builds mirrors `src/components/StatusRailCard.tsx` and the sub-components it
-     renders (`NotificationBody`, `Manifest`, `Stamp`, `TtlBar`, `StatusDots`,
-     `FlankClock`, `IdleFace`, `IdleHoverPeek`, `LiveMatchScorecard`) as of that
-     commit. The card shape changed completely since this file's previous sync
-     (2026-07-23, plan 106): the old single-shell `.rail-card` is gone, replaced by
-     the cutout/flank grid (`.card-assembly` — plan 091 onward) with a real notch
-     cutout, a persistent clock+status-dot rail, an idle face, and a hover-reveal
-     peek. This page has NO build step and pulls in no framework — motion's spring/
-     AnimatePresence choreography is approximated here with plain CSS transitions
-     using the same duration/easing *fallback* values the real CSS custom properties
-     carry (e.g. `var(--expand-ms, 320ms)`) — the shipped app injects the real
-     tokens from `src/animationTiming.ts` at runtime, which this static page never
-     loads, so it always renders on those fallbacks. Weather glyphs are hand-drawn
-     placeholder SVGs standing in for the vendored Meteocons assets
-     (`src/assets/weather/*.svg`) — real MediaRemote/team-crest artwork is likewise
-     unavailable to a static file, so media rows and crest-less scorecards fall back
-     to the same abbreviation/icon-glyph paths the shipped app itself falls back to
-     when no cached asset exists. Everything else — class names, DOM nesting, CSS
-     values, state-machine boundaries (bare/rail/hovered, idle/showing/expanded,
-     the priority accent channel vs the origin/category paint channel) — is real.
-     PARTIAL RE-SYNC (2026-08-02): the shell/flank/gill/ttl-bar rules above were
-     re-read off the shipped CSS for plans 164-168 (per-state width curves, the
-     flank's border-radius transition leg, the opacity-driven notch gill, the
-     ttl-bar single-row grid fix) and for the operator's 2026-08-02 removal of
-     the hover "breathe" scale. Everything else still dates from the 2026-07-30
-     full sync above. -->
+<!-- Status Rail mirror — static mock of the shipped overlay. -->
 <html lang="en">
 <head>
 <meta charset="utf-8" />

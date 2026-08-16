@@ -79,8 +79,8 @@ function App() {
   // starts false and only moves via the hover-changed listener below.
   const [hovered, setHovered] = useState(false);
   // Which tab rust has selected — decided rust-side, threaded down as a
-  // plain prop so StatusRailCard listens for nothing itself; no `invoke()`
-  // anywhere on the path.
+  // plain prop so StatusRailCard listens for nothing itself. The overlay
+  // is receive-only: it listens for rust-published events, invokes nothing.
   const selectedTab = useTabSelection();
   // The Agent tab's viewed-session cursor — rust owns the value; this
   // hook only renders what it's told.
@@ -161,36 +161,20 @@ function App() {
     };
   }, []);
 
-  // plan 111: `.card-root` scopes the shared card-shape stylesheet
-  // (overlay-card.css) — StatusRailCard's own root element IS
-  // `.card-assembly`, so this wrapper is the only ancestor available to
-  // host that scope. `display: contents` (styles.css, overlay-only
-  // residue) makes it a layout-neutral scoping node: it changes zero
-  // overlay geometry, only which selectors match.
-  // Plan 136: the Agent Board is its own top-level swap, not a mode
-  // grafted into StatusRailCard's own showing<->idle exit choreography
-  // (see AgentBoard.tsx's own doc for why). `initial={false}` skips the
-  // entrance fade on first mount — every existing "renders synchronously"
-  // assertion (App.test.tsx) stays true; only a genuine board<->rail
-  // SWAP crossfades. `mode === "board"`'s own key never changes across a
-  // notification<->idle transition (both map to "status-rail"), so
-  // StatusRailCard itself is never remounted by this wrapper — its own
-  // `.card-assembly` identity stays stable exactly as before this plan.
-  // 2026-08-02 animation audit: both branches crossfade, but on
-  // different clocks — the rail keeps the plain symmetric fade, the Board
-  // arrives on the longer summon clock and leaves on the short shared one
-  // (`BOARD_SURFACE_MOTION`/`RAIL_SURFACE_MOTION` above). Neither branch
-  // transforms the shell (see `BOARD_SURFACE_MOTION`'s FEEL-CHECK RESULT),
-  // and both are stacked in one grid cell so the overlap shifts nothing.
-  // `initial={false}` is unchanged, so the first-mount contract above
-  // holds exactly as written.
+  // `.card-root` scopes overlay-card.css onto StatusRailCard, whose own
+  // root IS `.card-assembly` — this wrapper is the only ancestor hosting
+  // that scope; `display: contents` keeps it layout-neutral.
+  // The Agent Board is a top-level swap, not a mode inside StatusRailCard:
+  // `initial={false}` keeps first-mount renders synchronous (App.test.tsx),
+  // and the `agent-board` key changes only on a genuine board<->rail swap
+  // (notification<->idle both map to "status-rail"), so StatusRailCard is
+  // never remounted by this wrapper.
+  // Both branches crossfade opacity-only on different clocks; never
+  // transform the shell (the cutout must read as fixed hardware).
   return (
     <div className="card-root">
-      {/* 2026-08-02 animation audit (finding #1a): the single-cell grid
-          that keeps the two surfaces stacked instead of queued in flow
-          during a swap — see `SURFACE_STACK_STYLE`'s own doc above for
-          why it lives here rather than on `.card-root`, and why it
-          preserves that element's documented zero-geometry guarantee. */}
+      {/* Single-cell grid keeps the two surfaces stacked instead of queued
+          in flow during a swap — see `SURFACE_STACK_STYLE` above. */}
       <div className="surface-stack" style={SURFACE_STACK_STYLE}>
         <AnimatePresence initial={false}>
           {mode === "board" ? (
@@ -199,12 +183,9 @@ function App() {
                 sessions={agentState.sessions}
                 capturedAtMs={agentState.capturedAtMs}
                 status={status}
-                // Plan 142 (v7 ticket 10 of 13, spec §6.2 expanded): the
-                // SAME `hover-changed`-sourced boolean StatusRailCard's
-                // own hover consumers already use — meaningful here
-                // because this component is only ever mounted while
-                // `mode === "board"`, so `hovered` always means "over the
-                // Board" in this branch, never some other card.
+                // Same `hover-changed` boolean StatusRailCard's own hover
+                // consumers use — mounted only while `mode === "board"`,
+                // so `hovered` always means "over the Board" here.
                 expanded={hovered}
               />
             </motion.div>
@@ -215,18 +196,12 @@ function App() {
                 status={status}
                 restingState={restingState}
                 hovered={hovered}
-                // Plan 171 (slice K): the tab surface's three inputs.
-                // `agentState` is already read above for the Board's own
-                // presentation branch — the agent tab's below-block reads
-                // the same snapshot rather than a second subscription.
-                // Plan 177: but the OTHER list on that snapshot.
-                // `sessions` is summons-gated (empty unless something
-                // needs the operator, which is what keeps merely-working
-                // agents from summoning the Board); `tabSessions` is the
-                // ungated view the agent ICON is already lit from. A pull
-                // is user-initiated, so it gets the ungated one — reading
-                // `sessions` here is what made a lit icon open an empty
-                // block. The Board's own render above is untouched.
+                // Tab surface inputs: `agentState` read above for the
+                // Board's own branch — same snapshot, no second
+                // subscription. `sessions` is summons-gated, `tabSessions`
+                // the ungated view the agent ICON is lit from; a pull is
+                // user-initiated, so it reads the ungated one — `sessions`
+                // would open an empty block. Board render untouched.
                 selectedTab={selectedTab}
                 agentSessions={agentState.tabSessions}
                 agentCapturedAtMs={agentState.capturedAtMs}

@@ -1,26 +1,17 @@
-// Plan 171 (tab-notch redesign, slice I): the news tab's batch header —
-// "N fresh · cycle ended Xm ago" plus prev/next nav, mounted above the
-// existing shipped news card content inside `NewsBelowBlock.tsx`. New
-// because a tab-summoned news card is not a promotion (spec section 7's
-// news bullet, `docs/superpowers/specs/2026-08-02-tab-notch-design.md`):
-// nothing pushed it, the operator asked for it, so it has to say how big
-// the pile is and let them walk it. Set in the masthead's own mono type
-// (`news-category.css`'s `.batch-head` rule) so it reads as card chrome,
-// not a toolbar — the spec's own wording for this exact line.
+// The news tab's batch header — "N fresh · cycle ended Xm ago" plus
+// prev/next nav, mounted above the shipped news card content inside
+// `NewsBelowBlock.tsx`. New because a tab-summoned news card is not a
+// promotion: nothing pushed it, the operator asked for it, so it has to
+// say how big the pile is and let them walk it. Set in the masthead's own
+// mono type (`news-category.css`'s `.batch-head` rule) so it reads as card
+// chrome, not a toolbar.
 //
-// Plan 171's pre-implementation sketch included a bespoke `.batch-dots`
-// span. The shipped component deliberately omits it: spec section 8
-// ("The session bar /
-// floor-strip position indicator") explicitly overrides the mock here —
-// "News's version needs a plan-time decision the mock's own markup
-// leaves ambiguous... Default: implement news's floor strip identically
-// to agent's" — meaning the position indicator is the SHARED
-// `PositionBar` component (`src/components/PositionBar.tsx`, built in
-// Slice F specifically so this slice wouldn't invent a second one), not
-// a bespoke dot-strip built inside this header. `PositionBar` mounts as
-// `NewsBelowBlock`'s own separate sibling element (absolutely positioned
-// to the card floor via the shared `.ttl-bar` CSS), not nested in here.
-// This component renders ONLY the text row + nav buttons.
+// Deliberately no bespoke `.batch-dots` span: the position indicator is
+// the SHARED `PositionBar` component (`src/components/PositionBar.tsx`,
+// news's floor strip implemented identically to agent's), which mounts as
+// `NewsBelowBlock`'s separate sibling (absolutely positioned to the card
+// floor via the shared `.ttl-bar` CSS), not nested in here. This component
+// renders ONLY the text row + nav buttons.
 //
 // `onPrevious`/`onNext` are presentational callbacks only, same "click
 // routing deferred" posture every other new interactive surface in this

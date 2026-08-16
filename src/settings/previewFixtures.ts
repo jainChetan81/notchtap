@@ -1,19 +1,12 @@
-// Appearance gallery fixtures — extracted out of SettingsApp.tsx (plan
-// 111 Step 3) so the gallery module and the settings shell can evolve
-// independently. Covers the states most sensitive to the card-CSS drift
-// this same plan's shared-stylesheet work (overlay-card.css) exists to
-// prevent: the original four expanded samples, PLUS one compact
-// (collapsed) card, one live ESPN scorecard, and one
-// compact news card (110's single `.notif-time-inline` timestamp).
+// Appearance gallery fixtures — kept separate from the settings shell so
+// the two evolve independently. Covers the states most sensitive to
+// card-CSS drift: the four expanded samples PLUS one compact (collapsed)
+// card, one live ESPN scorecard, and one compact news card (single
+// `.notif-time-inline` timestamp).
 //
-// Deliberately OUT (per the plan's own scoping note): idle rail / idle
-// hover-peek / bare notch. Those are window-level
-// overlay states (idle clock, hover-driven peek reveal, the notchless-
-// vs-notch shell paint) that the preview frame — a static per-sample
-// `.preview-stage` box, never the real overlay window, never hover-
-// driven — has no honest way to host. A dedicated dev-only living
-// gallery could show them; that's out of scope here (see plan 111's
-// maintenance notes).
+// Deliberately OUT: idle rail / idle hover-peek / bare notch — window-level
+// overlay states (idle clock, hover-driven peek, notchless-vs-notch shell
+// paint) a static per-sample `.preview-stage` box has no honest way to host.
 import type { EspnMeta, SlotState } from "../useSlotState";
 
 type ShowingSlotState = Extract<SlotState, { state: "showing" }>;
@@ -23,9 +16,8 @@ export interface PreviewSample {
   slot: ShowingSlotState;
 }
 
-// plan 084's structured espn meta (POST-083 contract), same base shape
-// StatusRailCard.test.tsx's own ESPN_BASE fixture uses — kept in lockstep
-// with that file's `EspnMeta` shape rather than inventing a new one.
+// Same base shape as StatusRailCard.test.tsx's ESPN_BASE fixture — kept
+// in lockstep with that file's `EspnMeta` shape.
 const ESPN_BASE: EspnMeta = {
   league: "UCL",
   homeAbbrev: "ARS",
@@ -100,19 +92,16 @@ export const PREVIEW_SAMPLES: ReadonlyArray<PreviewSample> = [
       eventType: "generic",
       priority: "high",
       signal: "generic",
-      // this sample is the agent accent's own preview vehicle (plan 096,
-      // renamed by plan 137: cmux relay superseded by the v7 Agent
-      // Adapter layer) — it's the one origin the settings preview can
-      // actually show the accent for; label above says "agent" for
-      // exactly this reason.
+      // The one origin the settings preview can show the agent accent
+      // for — label above says "agent" for this reason.
       origin: "agent",
       expanded: true,
       source: null,
       category: null,
       publishedAtMs: null,
       link: null,
-      // preview samples keep subtitle/details empty (plan 035): the render
-      // path for populated cells is exercised in StatusRailCard.test.tsx.
+      // Sample cells keep subtitle/details empty — populated-cell render
+      // path is exercised in StatusRailCard.test.tsx.
       subtitle: null,
       details: [],
       queueTotal: 3,
@@ -147,9 +136,8 @@ export const PREVIEW_SAMPLES: ReadonlyArray<PreviewSample> = [
       agentRuntime: null,
     },
   },
-  // plan 111 (Step 3): the states most sensitive to CSS drift are exactly
-  // the ones the old four-expanded-sample gallery could never show —
-  // added below, one per state.
+  // The states most sensitive to CSS drift, one per sample below:
+  // compact (collapsed), recurring live scorecard, single-stamp news.
   {
     label: "Compact (collapsed manifest, medium priority)",
     slot: {
@@ -215,12 +203,10 @@ export const PREVIEW_SAMPLES: ReadonlyArray<PreviewSample> = [
       expanded: false,
       source: "NDTV",
       category: "business",
-      // plan 110: news collapses to ONE timestamp — a non-null
-      // publishedAtMs here exercises that single-stamp compact render
-      // (age reads from `.notif-time-inline`, not a duplicated pill).
-      // Fixed epoch ms (not Date.now()) so the gallery renders
-      // deterministically — required for the frozen-state rendered-
-      // equivalence screenshots (plan 111 Step 2).
+      // News collapses to ONE timestamp — non-null publishedAtMs exercises
+      // the single-stamp compact render (age reads from
+      // `.notif-time-inline`, not a duplicated pill). Fixed epoch ms (not
+      // Date.now()) so the gallery renders deterministically.
       publishedAtMs: 2_000_000_000_000 - 5 * 60_000,
       link: "https://example.com/markets",
       subtitle: null,

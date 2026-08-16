@@ -1,27 +1,20 @@
-// Plan 171 (tab-notch redesign, slice K): the selection-driven
-// below-block swap. Spec `docs/superpowers/specs/2026-08-02-tab-notch-
-// design.md` section 7 — "the below-block that mounts on hover-with-a-
-// selection is the shipped card for that source, reused, not
-// reinvented".
+// Selection-driven below-block swap: hovering with a selection mounts the
+// shipped card for that source, reused, not reinvented.
 //
 // This component owns ONLY the routing decision. Every branch below is a
-// component another slice already built and tested (`AgentBelowBlock`
-// slice F, `NewsBelowBlock` slice I) — nothing here re-renders card
-// markup of its own.
+// component another slice already built and tested (`AgentBelowBlock`,
+// `NewsBelowBlock`) — nothing here re-renders card markup of its own.
 //
-// **Where the football branch went.** Football is deliberately NOT
-// routed through here: section 11 keeps `IdleHoverPeek.tsx`'s own
-// mechanism untouched, so that selection reaches that shipped component
-// via its `prefer` prop instead (see `StatusRailCard.tsx`'s own mount
-// site and `PeekPreference`'s doc). A second copy of the card here would
-// be exactly the drift this plan's "reuse what's shipped" discipline
-// exists to prevent.
+// Football is deliberately NOT routed here: `IdleHoverPeek.tsx`'s own
+// mechanism stays untouched, and selection reaches that shipped component
+// via its `prefer` prop instead (see `StatusRailCard.tsx`'s mount site and
+// `PeekPreference`'s doc). A second copy of the card here would be exactly
+// the drift "reuse what's shipped" exists to prevent.
 //
-// **Nothing selected is not a special case.** Spec section 7's "none"
-// page falls out of `selected === null` returning `null` here — with no
-// `.below-block` in the DOM, `card-chrome.css`'s existing
+// "Nothing selected" is not a special case: `selected === null` returns
+// `null`, so with no `.below-block` in the DOM, `card-chrome.css`'s
 // `:not(:has(.below-block))` rounding law hands the outer corners back to
-// the flanks by itself, exactly as the spec says it should.
+// the flanks by itself.
 import type { AgentSessionView } from "../useAgentState";
 import type { StatusState } from "../useStatusState";
 import { AgentBelowBlock } from "./AgentBelowBlock";

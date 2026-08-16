@@ -12,10 +12,9 @@ import { formatClockTime, formatRecordedAt } from "../timeFormat";
 import type { Config, HistoryEntry, HistoryEspnMeta, HistoryRotationSpec } from "../types";
 import { PRIORITY_LABELS } from "../types";
 
-// plan 110 (Step A): local formatting helpers for the history row's
-// metadata chips + expandable details — deliberately duplicated rather
-// than imported from lib/presentation.ts, per HistorySection's own
-// "plain scannable list, not a card renderer" rule below.
+// Row formatting helpers — deliberately duplicated rather than imported
+// from lib/presentation.ts: history is a plain scannable list, not a
+// card renderer.
 const HISTORY_EVENT_TYPE_LABELS: Record<string, string> = {
   generic: "Generic",
   score_update: "Score update",
@@ -59,8 +58,8 @@ function historyRotationLabel(rotation: HistoryRotationSpec): string {
   return typeof raw.kind === "string" ? raw.kind : "unknown rotation";
 }
 
-// Text only, no crest artwork (Step A's explicit field disposition) — a
-// compact one-line score/clock/cards summary for the expandable details.
+// Text only, no crest artwork — compact one-line score/clock/cards
+// summary for the expandable details.
 function historyEspnSummary(espn: HistoryEspnMeta): string {
   const cardsClean =
     espn.homeCards[0] === 0 &&
@@ -73,13 +72,10 @@ function historyEspnSummary(espn: HistoryEspnMeta): string {
   return `${espn.league}: ${espn.homeAbbrev} ${espn.homeScore}–${espn.awayScore} ${espn.awayAbbrev} (${espn.clock})${cards}`;
 }
 
-// "Absent when null/undefined OR blank after trim" (Step A §1) — a
-// source/category string of only whitespace reads as absent, same as null.
-// `event.origin` is an untyped wire string (same "runtime-untrusted
-// IPC" note as historyPriorityLabel above) — only the four
-// Every SourceOriginToken (manual/football/agent/news) has a
-// colour; an unrecognized origin (only possible via a hand-edited
-// history file) renders with no inline style at all.
+// Absent on null/undefined OR whitespace-only — a blank source/category
+// reads as absent. `event.origin` is an untyped wire string: only
+// manual/football/agent/news have a colour; an unrecognized origin
+// (hand-edited history file only) renders with no inline style.
 function historyOriginColor(origin: string): string | undefined {
   return (SOURCE_ORIGIN_COLORS as Record<string, string>)[origin as SourceOriginToken];
 }
@@ -92,15 +88,11 @@ function historyNonBlank(value: string | null | undefined): string | null {
   return trimmed.length > 0 ? trimmed : null;
 }
 
-// plan 110 (Step A): one recorded entry — the always-present metadata row
-// (source when present, category when present, priority, event_type, and
-// the formatted rotation window — rotation, priority, and event_type are
-// Event's own required fields, so they always render) plus a conditional
-// native `<details>` for the optional richness (subtitle, topic,
-// published time, an espn score/clock/cards summary, each `details[]`
-// pair, and the link). `signal`/`id` are intentionally never rendered —
-// internal/debug identifiers, not user-facing content (`id` is used only
-// as the list key, which isn't rendering).
+// One recorded entry: metadata row (source/category when present; priority,
+// event_type, rotation always render — they're Event's required fields)
+// plus a conditional native `<details>` for the optional richness (subtitle,
+// topic, published time, espn summary, `details[]` pairs, link).
+// `signal`/`id` never render — internal identifiers (`id` is only the key).
 function HistoryRow({ entry }: { entry: HistoryEntry }) {
   const { event } = entry;
   const source = historyNonBlank(event.meta.source);
@@ -117,10 +109,7 @@ function HistoryRow({ entry }: { entry: HistoryEntry }) {
     event.meta.published_at_ms !== null ||
     event.meta.espn !== undefined;
 
-  // plan 112 Step 4 (History): utilities only, over the native
-  // li/details/summary structure Plan 110 landed — the semantics,
-  // metadata gate, and the escaped-text (never an <a href>) discipline
-  // for `link` all stay verbatim.
+  // Detail label/value classes — `link` is escaped text, never an <a href>.
   const detailLabelClass =
     "history-detail-label text-fs-caption tracking-[0.04em] text-muted-foreground uppercase";
   const detailValueClass =
@@ -213,11 +202,8 @@ function HistoryRow({ entry }: { entry: HistoryEntry }) {
             {link !== null && (
               <div className="history-detail-field grid min-w-0 grid-cols-[minmax(0,1fr)] gap-px">
                 <span className={detailLabelClass}>Link</span>
-                {/* plan 110 (Step A): untrusted feed data (RSS/ESPN) —
-                    literal, selectable TEXT, never an <a href> or
-                    in-webview navigation. No vetted external-open
-                    precedent exists in this webview; adding one is a
-                    separate IPC/capability plan. */}
+                {/* untrusted feed data (RSS/ESPN) — literal, selectable
+                    TEXT, never an <a href> or in-webview navigation. */}
                 <span className={cn(detailValueClass, "history-link-text select-text")}>
                   {link}
                 </span>
@@ -230,19 +216,16 @@ function HistoryRow({ entry }: { entry: HistoryEntry }) {
   );
 }
 
-// plan 089: read-only recent history, newest first (088's read_recent
-// contract itself stays oldest -> newest; the reversal happens here at
-// the display layer, not in the rust store). Same advisory mount-only
-// fetch shape as DiagnosticsSection above. Not a card renderer — this
-// deliberately does not import overlay components or presentation.ts;
-// history is a plain scannable list.
+// Read-only recent history, newest first — reversal happens here at the
+// display layer; the rust store stays oldest -> newest. Advisory
+// mount-only fetch, same as DiagnosticsSection. Not a card renderer —
+// deliberately no overlay/presentation.ts imports: plain scannable list.
 export function HistorySection({ config }: { config: Config }) {
   const [entries, setEntries] = useState<HistoryEntry[] | null>(null);
   const [confirmingClear, setConfirmingClear] = useState(false);
-  // History load and clear are independent operations (plan 108): distinct
-  // status instances, distinct UI locations, distinct announce behavior.
-  // There is deliberately no manual Refresh control for history — the only
-  // read attempt is the passive mount fetch below.
+  // Load and clear are independent operations: distinct status instances,
+  // distinct UI locations, distinct announce behavior. No manual Refresh
+  // control — the only read attempt is the passive mount fetch below.
   const loadStatus = useActionStatus("history-load");
   const clearStatus = useActionStatus("history-clear");
 
@@ -273,8 +256,6 @@ export function HistorySection({ config }: { config: Config }) {
       announce: true,
       okMessage: "History cleared",
       errorMessage: (reason) => {
-        // Errors are surfaced inline now, but the console line costs
-        // nothing and helps a dev watching the console too.
         console.error("clear_history failed:", reason);
         return "Couldn't clear history";
       },
@@ -299,9 +280,8 @@ export function HistorySection({ config }: { config: Config }) {
         <p className="history-empty m-0 py-3 text-fs-body text-muted-foreground">Loading…</p>
       ) : (
         <>
-          {/* plan 129 (K1): sibling of the <ul> below, not a replacement
-              for it — see the AnimatePresence comment inside the <ul> for
-              why the two can no longer share a ternary branch. */}
+          {/* Sibling of the <ul> below, not a replacement — see the
+              AnimatePresence comment inside the <ul>. */}
           {newestFirst.length === 0 && (
             <p className="history-empty m-0 py-3 text-fs-body text-muted-foreground">
               {config.history_enabled
@@ -312,22 +292,13 @@ export function HistorySection({ config }: { config: Config }) {
           <ul
             className={cn("history-list flex flex-col", newestFirst.length > 0 && "py-1 pb-[11px]")}
           >
-            {/* plan 126: initial={false} so the section's own first mount (and
-                a load that happens to return the same entries) never
-                cascades — only a row genuinely appearing or leaving animates.
-                Clear collapses the rows it removes. plan 129 (K1): the
-                <ul> + AnimatePresence themselves now stay mounted even once
-                `newestFirst` is empty — the prior
-                `newestFirst.length === 0 ? <p> : <ul>…` ternary unmounted
-                the whole list (AnimatePresence included) synchronously the
-                instant the array emptied, so nothing exited on a wholesale
-                Clear (the exact parent-level-conditional bug plan 127 Step
-                2 fixed for the peek). The empty-state <p> is now the
-                sibling above, gated on `newestFirst.length === 0` directly,
-                so it can appear immediately while the last row(s) still
-                exit. The `py-1 pb-[11px]` vertical padding is likewise
-                gated on `newestFirst.length > 0` so an empty <ul>
-                contributes no gap. */}
+            {/* initial={false}: first mount and unchanged re-fetch never
+                cascade — only rows genuinely appearing/leaving animate;
+                Clear collapses removed rows. <ul> + AnimatePresence stay
+                mounted while empty; the empty-state <p> is the sibling
+                above, gated directly on `newestFirst.length === 0`, so it
+                appears while last rows still exit. `py-1 pb-[11px]` gated
+                on `length > 0` so an empty <ul> adds no gap. */}
             <AnimatePresence initial={false}>
               {newestFirst.map((entry) => (
                 <HistoryRow key={entry.event.id} entry={entry} />
@@ -349,12 +320,9 @@ export function HistorySection({ config }: { config: Config }) {
           size="sm"
           className="text-fs-secondary"
           disabled={clearStatus.status.state === "pending"}
-          // the <label htmlFor="clear-history"> above would otherwise
-          // become this button's accessible name via native label
-          // association, freezing it at "Clear history" even once the
-          // visible text flips to "Really clear?" — aria-label takes
-          // precedence and keeps the accessible name in sync with what's
-          // on screen.
+          // The <label htmlFor="clear-history"> above would freeze the
+          // accessible name at "Clear history"; aria-label keeps it in
+          // sync with the visible text.
           aria-label={confirmingClear ? "Really clear?" : "Clear history"}
           onClick={() => void handleClearClick()}
         >

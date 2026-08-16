@@ -23,23 +23,17 @@ const shortcuts = [
   { keys: "⌃⇧,", action: "Open settings", status: "active" },
 ] as const;
 
-// plan 112 Step 4 (Shortcuts): the table STAYS a real native
-// table/thead/tbody/th/td (Plan 109's contract, pinned by the "the
-// shortcuts cheatsheet is a real <table>..." test) — only utility
-// classes land on it, using
-// shared-ui/playground/src/components/ui/table.tsx purely as a STYLING
-// reference for which utility groups to reach for (row border/hover,
-// header padding/weight), not as a component to swap in; generating or
-// importing a shadcn Table primitive here would wrap the semantics in a
-// non-table container div and was explicitly ruled out. `-mx-[13px]`
-// bleeds the table to the Card's own edge (matching the old `.shortcut-
-// table { margin: 0 -13px }`, since CardContent carries `px-[13px]`),
-// and each cell's own `px-[13px]` restores the visual inset.
+// The table STAYS a real native table/thead/tbody/th/td — only utility
+// classes land on it (shared-ui/playground table.tsx is a STYLING
+// reference only; a shadcn Table primitive would wrap the semantics in a
+// non-table container div). `-mx-[13px]` bleeds the table to the Card's
+// own edge (CardContent carries `px-[13px]`), and each cell's own
+// `px-[13px]` restores the visual inset.
 const SHORTCUT_CELL = "border-b border-border/60 px-[13px] py-2.5 text-left align-middle";
 
 const PREFIX_GLYPHS = "⌃⇧";
 
-// plan 180 (Step 4): the Unicode `White_Space` property, spelled out.
+// The Unicode `White_Space` property, spelled out.
 //
 // `src-tauri/src/settings.rs`'s `is_valid_prefix_shortcut` is the
 // AUTHORITATIVE twin of the validator below, and it rejects whitespace
@@ -61,15 +55,12 @@ const PREFIX_GLYPHS = "⌃⇧";
 const UNICODE_WHITE_SPACE =
   /[\t\n\v\f\r \u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]/;
 
-// plan 171 slice J (spec §9): mirrors `src-tauri/src/settings.rs`'s
-// `is_valid_prefix_shortcut` EXACTLY — starts with the literal `⌃⇧`
-// (Control, Shift) this app's existing seven shortcuts above already use
-// for display, followed by one more key name with no whitespace
-// anywhere. Accepts both a single glyph (`N`, `]`, `,`) and a
-// spelled-out key name (`Space`) — the spec's own chosen default is the
-// latter. Exported so it can be unit-tested the same way
-// `isValidSilenceWindow` (GeneralSection.tsx) is; both sides' tests run
-// the same fixture table (see that file's header).
+// Mirrors `src-tauri/src/settings.rs`'s `is_valid_prefix_shortcut`
+// EXACTLY — starts with the literal `⌃⇧` (Control, Shift) the seven
+// shortcuts above also use for display, followed by one more key name
+// with no whitespace anywhere. Accepts both a single glyph (`N`, `]`,
+// `,`) and a spelled-out key name (`Space`). Exported to be unit-tested
+// the same way `isValidSilenceWindow` (GeneralSection.tsx) is.
 export function isValidPrefixShortcut(raw: string): boolean {
   if (!raw.startsWith(PREFIX_GLYPHS)) {
     return false;
@@ -78,14 +69,12 @@ export function isValidPrefixShortcut(raw: string): boolean {
   return rest.length >= 1 && rest.length <= 24 && !UNICODE_WHITE_SPACE.test(rest.join(""));
 }
 
-// plan 171 slice J: the one new text field this slice adds, following
-// `SilenceWindowControl`'s established idiom exactly (GeneralSection.tsx)
+// Follows `SilenceWindowControl`'s established idiom (GeneralSection.tsx)
 // — a local `raw` string mirror of the committed value, re-synced via
 // `useEffect` only when the EXTERNAL value changes (Reset, a fresh
 // `get_config`), so mid-edit keystrokes are never fought. `patchConfig`
-// only fires once the text validates per `isValidPrefixShortcut` above;
-// an inline error replaces the caption while invalid, matching the
-// silence-window control's own error styling.
+// fires only once the text validates per `isValidPrefixShortcut` above;
+// an inline error replaces the caption while invalid.
 function PrefixShortcutControl({
   value,
   onChange,

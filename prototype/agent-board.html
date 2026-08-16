@@ -1,35 +1,5 @@
 <!doctype html>
-<!-- This mock mirrors the CURRENT shipped Agent Board — not a historical
-     design exploration, and not a "proposal" (the old file's unified-shell
-     section drew as speculative is now what's actually shipped; the
-     speculative section is gone). Rewritten 2026-08-02 against the
-     `fix/board-motion-polish` branch (PR #10, merge commit `0252767`,
-     repo HEAD `25c007c2` at the time of this pass) — that branch reworked
-     the hero's summon entrance, converged the resting<->expanded swap onto
-     a single continuous morph, and added the `board_show_working` presence
-     gate. Read directly from source:
-       src/components/AgentBoard.tsx     — hero mount, compact rows, expanded list, the resting<->expanded swap, all named transitions
-       src/App.tsx                       — the OUTER Board<->status-rail surface swap (BOARD_SURFACE_MOTION/RAIL_SURFACE_MOTION), the summon's own arrival/exit clocks
-       src/components/NotificationBody.tsx — AgentHeroCard: the hero now renders through the SAME masthead/stamp/title/subtitle/body/fact-pill template every other card uses, not a bespoke block
-       src/lib/presentation.ts           — AGENT_STATE_PRESENTATION, AGENT_STATE_PRIORITY, elapsedLabel, presentationMode
-       src/animationTiming.ts            — BOARD_SUMMON_MS, SURFACE_SWAP_MS, DISCLOSURE_SPRING, REVEAL_MS, HOVER_MS
-       src/overlay/agent-board.css       — layout, state accents, the stacked-cell swap, the CONTENT-HUG hero fixes
-       src/overlay/masthead-content.css, news-category.css, manifest.css — the shared `.compact`/`.masthead`/`.stamp`/`.detail-facts`/`.fact-pill` template the hero now reuses
-       src/overlay/card-chrome.css        — shell geometry, the `.agent-origin` runtime wash, the low/medium/high priority accent
-       src-tauri/src/agents/board.rs      — the `agent-state` wire shape and the ONE place Board presence is gated (`AgentBoardPublisher::gate_presence`)
-       src-tauri/src/agents/model.rs      — `AgentSessionState::summons_board`/`urgency_rank` — which states earn the Board at all, and why a summoning session always leads the hero
-       src-tauri/src/config.rs            — `[agents] board_show_working` (default `false`) and `completion_notifications` (default `true`, a separate knob)
-       src/settings/sections/AgentsSection.tsx — the two toggles' actual copy
-     This file is still the missing sibling of notch-states.html — that
-     file's own header explicitly scopes the Agent Board out ("was never
-     part of this file's scope"), since AgentBoard.tsx is a separate
-     top-level mode App.tsx swaps in, not a StatusRailCard variant. It is
-     still a static, hand-authored mock (no React, no `motion` library, no
-     build step) — the height/spring animations below are CSS
-     approximations of the real physics, called out inline wherever they
-     diverge; verify against source before treating a specific pixel value
-     as current truth.
-     Last synced against source: 2026-08-02. -->
+<!-- Agent Board mirror — static mock of the shipped Agent Board. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">

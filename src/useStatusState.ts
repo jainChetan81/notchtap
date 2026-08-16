@@ -1,11 +1,9 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
 
-// plan 034: idle source-status rail. Duplicates useSlotState.ts's delivery
-// discipline exactly — validator + eval-planted global seed + listener +
-// dead-listener console.error — on a second, listen-only channel:
-// `status-state` (rust: status.rs's STATUS_STATE_EVENT). The overlay stays
-// receive-only; no invoke rides this work.
+// Idle source-status rail — same delivery discipline as useSlotState.ts
+// (validator + eval-planted global seed + listener + dead-listener
+// console.error) on the `status-state` channel. Overlay stays receive-only.
 export type LiveMatchSummary = {
   label: string;
   minute: string;
@@ -14,16 +12,15 @@ export type LiveMatchSummary = {
 export type StatusState = {
   paused: boolean;
   waiting: number;
-  /// Plan 171 (tab-notch): live Agent Session count — the agent icon's
-  /// present/live source (present iff > 0; for agent, present IS live).
+  /// Live Agent Session count — the agent icon's present/live source
+  /// (present iff > 0; for agent, present IS live).
   agent: { activeSessions: number };
   football: { enabled: boolean; live: LiveMatchSummary | null };
   news: {
     enabled: boolean;
-    // Plan 171 (spec §8): the news-charge cycle. chargeFraction is
-    // 0..=1 fill, chargeCount items waiting, isCharged the edge-held
-    // "cycle ended with a full batch" flag (cleared on visiting the
-    // news tab).
+    // The news-charge cycle: chargeFraction 0..=1 fill, chargeCount items
+    // waiting, isCharged held while "cycle ended with a full batch"
+    // (cleared on visiting the news tab).
     chargeFraction: number;
     chargeCount: number;
     isCharged: boolean;
@@ -37,7 +34,7 @@ declare global {
 }
 
 // Before the first valid payload (and after any invalid one): every gate
-// off, nothing queued, engine unpaused — until rust's seed lands.
+// off, nothing queued, engine unpaused.
 const FALLBACK_STATUS: StatusState = {
   paused: false,
   waiting: 0,
@@ -46,8 +43,7 @@ const FALLBACK_STATUS: StatusState = {
   news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
 };
 
-// same rule as the slot-state queue-slider fields (plan 033): the rail
-// renders "N queued" straight off this, so reject anything but a
+// The rail renders "N queued" straight off this — reject anything but a
 // non-negative integer.
 function isNonNegativeInteger(v: unknown): v is number {
   return typeof v === "number" && Number.isInteger(v) && v >= 0;
@@ -62,8 +58,7 @@ function isValidLiveMatch(v: unknown): v is LiveMatchSummary {
 }
 
 // Every field checked, not just the top level: a well-shaped-but-partial
-// payload (e.g. football missing `enabled`) must fall back, not render
-// with undefined fields — same defense-in-depth as isValidSlotState.
+// payload falls back, never renders undefined fields.
 function isValidStatusState(v: unknown): v is StatusState {
   if (typeof v !== "object" || v === null) {
     return false;

@@ -3,12 +3,10 @@ import { useEffect, useState } from "react";
 import type { Tab } from "./components/IconStrip";
 import { TAB_ORDER } from "./components/IconStrip";
 
-// Plan 171 (tab-notch redesign, slice K — spec
-// `docs/superpowers/specs/2026-08-02-tab-notch-design.md` section 10):
-// the frontend half of the `tab-selection-changed` channel. Duplicates
-// `useStatusState.ts`'s delivery discipline exactly — a strict
-// validator, a listener, a dead-listener `console.error` — on a third,
-// listen-only channel.
+// The frontend half of the `tab-selection-changed` channel. Duplicates
+// `useStatusState.ts`'s delivery discipline exactly — a strict validator,
+// a listener, a dead-listener `console.error` — on a third, listen-only
+// channel.
 //
 // **Rust owns selection, not this hook and not the DOM.** Spec section
 // 10 is explicit: the overlay stays receive-only for commands, so a

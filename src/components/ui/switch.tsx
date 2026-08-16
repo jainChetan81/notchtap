@@ -15,47 +15,23 @@ function Switch({
       data-slot="switch"
       data-size={size}
       className={cn(
-        // 2026-07-23 (operator switch restyle): resized to a clean,
-        // iOS-like proportion — track h-22px/w-36px (default),
-        // h-16px/w-28px (sm) — so the thumb below (18px/12px, with a
-        // consistent 2px inset baked into ITS OWN translate math, not
-        // this element) never overflows. `transition-colors
-        // duration-150` replaces the old bare `transition-all` so the
-        // track's own on/off color swap is explicitly pinned to the
-        // spec'd 150ms, matching the thumb's own transition below.
-        // Dropped the old `dark:data-unchecked:bg-input/80` half-opacity
-        // dimming — that was on top of `--input` (already a fairly dark
-        // token), the root cause of the "barely-visible track"
-        // complaint; plain `bg-input` alone reads at full, readable
-        // contrast against the window background in every state.
-        // `p-0` (2026-07-23 finding): this window's Tailwind entry is a
-        // deliberate NO-preflight build (settings/base.css's own header
-        // comment), so nothing ever zeroes a plain `<button>`'s native UA
-        // padding — Radix's Switch root IS a real `<button>`. Measured in
-        // headless Chrome: `1px 6px` (Chrome's default button padding),
-        // silently eating into the thumb's available travel and making
-        // the OLD `calc(100% - 2px)` checked-only inset look plausible
-        // purely by accident. Every OTHER shadcn button-family component
-        // happens to set its own explicit padding (overriding the UA
-        // default without ever naming it), which is why this never
-        // surfaced before a component with intentionally NO padding.
-        // 2026-08-02 (operator press-feedback pass, matching button.tsx):
-        // `active:scale-[0.97]` alone read as a nudge, not a press — added
-        // an inset shadow alongside it so the track reads as depressing
-        // rather than just shrinking. Same shadow value button.tsx uses
-        // (borrowed from `--shadow-selected` in settings/base.css, flipped
-        // to `inset`) rather than inventing a new one, so all three
-        // pressable primitives in the settings window share one shadow
-        // vocabulary for "pressed." Scale stays at 0.97 (not button.tsx's
-        // 0.96) — the track is the smaller, secondary tactile surface, per
-        // that file's own comment. `box-shadow` added to the transition
-        // list so the press/release both animate instead of the shadow
-        // snapping in and out.
-        // CodeRabbit review (PR #11): `transform` in the transition list
-        // doesn't cover Tailwind v4's `scale-*` utility (a standalone
-        // `scale` CSS property, not `transform`) — swapped so the press
-        // scale actually animates instead of snapping. Same fix as
-        // button.tsx.
+        // Track is sized so the thumb (18px/12px with a consistent 2px
+        // inset in its own translate math) never overflows. `duration-150`
+        // pins the track's on/off color swap to the spec'd 150ms, matching
+        // the thumb. No `dark:data-unchecked:bg-input/80` dim — `--input`
+        // alone reads at full contrast against the window. This window's
+        // Tailwind is a NO-preflight build (settings/base.css header), so
+        // nothing zeroes a plain `<button>`'s native 1px 6px UA padding —
+        // Radix's Switch root IS a real button, hence the explicit `p-0`,
+        // or the padding silently eats the thumb's travel.
+        // Press: `active:scale-[0.97]` plus an inset shadow (same value as
+        // button.tsx, borrowed from `--shadow-selected` flipped to inset) so
+        // the track reads as depressing. Scale stays 0.97, not button's
+        // 0.96 — the track is the smaller, secondary surface. `box-shadow`
+        // is transitioned so press/release both animate.
+        // Tailwind v4 emits `scale-*` as a standalone `scale` property, not
+        // `transform` — the transition list must name `scale` for the press
+        // to animate.
         "peer group/switch relative inline-flex shrink-0 items-center rounded-full border border-transparent p-0 transition-[color,background-color,border-color,box-shadow,scale] duration-150 ease-out outline-none after:absolute after:-inset-x-1 after:-inset-y-1.5 focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 aria-invalid:border-destructive aria-invalid:ring-3 aria-invalid:ring-destructive/20 data-[size=default]:h-[22px] data-[size=default]:w-9 data-[size=sm]:h-4 data-[size=sm]:w-7 dark:aria-invalid:border-destructive/50 dark:aria-invalid:ring-destructive/40 data-checked:bg-primary data-unchecked:bg-input data-disabled:cursor-not-allowed data-disabled:opacity-50 active:scale-[0.97] active:shadow-[var(--shadow-pressed)]",
         className,
       )}
@@ -64,55 +40,25 @@ function Switch({
       <SwitchPrimitive.Thumb
         data-slot="switch-thumb"
         className={cn(
-          // 2026-07-23 (operator switch restyle): `translate-x-px` (1px)
-          // is now the BASE (unchecked) position, not `translate-x-0` —
-          // the old unchecked thumb sat flush against the track's inner
-          // edge with zero inset while the checked thumb's inset came
-          // from a `calc(100% - 2px)` translate, an asymmetry that read
-          // as the thumb "overflowing" the track on one side. Both
-          // states now carry the SAME 2px inset from the track's OUTER
-          // (visible) edge — verified in headless Chrome, not just
-          // arithmetic: the track's own `border` (1px, transparent at
-          // rest, colored on `focus-visible`) is real box model, not
-          // decoration, so the thumb's un-translated static position
-          // already starts 1px in from the border-box edge; every
-          // translate value below is the REMAINING 1px/13px/15px needed
-          // on top of that, landing the thumb exactly 2px from the
-          // track's outer edge in every state (confirmed via
-          // `getBoundingClientRect` on both the track and thumb, not just
-          // computed from track/thumb size alone — the vertical axis
-          // gets this for free from `items-center`, since a symmetric
-          // flex-centered slack cancels the border term algebraically;
-          // the horizontal axis has no such symmetry, hence the
-          // border-aware pixel math here):
-          //   default: static(1px border) + translate(1px) = 2px unchecked;
-          //            static(1px) + translate(15px) = 16px checked, and
-          //            36 (track) - 16 - 18 (thumb) = 2px on the right.
-          //   sm:      static(1px) + translate(1px) = 2px unchecked;
-          //            static(1px) + translate(13px) = 14px checked, and
-          //            28 (track) - 14 - 12 (thumb) = 2px on the right.
-          // Thumb height is sized so track-height minus 18px/12px leaves
-          // exactly 2px top+bottom too (22 - 18 = 4; 16 - 12 = 4) — same
-          // 2px inset, all four sides, both states, both sizes.
-          // `bg-background` is the non-dark fallback (kept from the
-          // original, in case this ever renders outside the always-`.dark`
-          // settings window) — the `dark:` pair below is what actually
-          // paints in this app today.
+          // `translate-x-px` is the BASE (unchecked) position, not `translate-x-0`,
+          // so both states carry the same 2px inset from the track's OUTER
+          // edge. The track's `border` (1px, transparent at rest) is real
+          // box model, so the thumb's static position already starts 1px in
+          // from the border-box edge; each translate is the REMAINING px on
+          // top of that: unchecked static(1)+translate(1)=2px; checked
+          // default static(1)+translate(15)=16px (36-16-18=2px right);
+          // sm static(1)+translate(13)=14px (28-14-12=2px right). Thumb
+          // height leaves the same 2px top+bottom (22-18=4, 16-12=4).
+          // `bg-background` is the non-dark fallback (this window is always
+          // `.dark`); the `dark:` pair is what paints today.
           "pointer-events-none block translate-x-px rounded-full bg-background ring-0 transition-transform duration-150 ease-out",
           "group-data-[size=default]/switch:size-[18px] group-data-[size=default]/switch:data-checked:translate-x-[15px]",
           "group-data-[size=sm]/switch:size-3 group-data-[size=sm]/switch:data-checked:translate-x-[13px]",
-          // checked keeps the existing AA-safe dark-thumb-on-blue-track
-          // pair, unchanged. Pinned to `bg-background` rather than
-          // `bg-primary-foreground` so the switch doesn't ride on
-          // `--primary-foreground`'s meaning — the two are currently
-          // byte-identical (`oklch(0.121 0.004 245.47)`), but
-          // `--primary-foreground` is upstream's shared, deliberately
-          // dark token (see button.tsx's default-variant comment and
-          // tokens.css), and this thumb's own color choice shouldn't
-          // depend on it.
-          // unchecked moves off the old bright-white `bg-foreground` to
-          // a muted light gray, so an off switch doesn't read as a
-          // blown-out white blob against its (now-visible) dark track.
+          // checked keeps the AA-safe dark-thumb-on-blue-track pair, pinned
+          // to `bg-background` (not `--primary-foreground`) so the switch
+          // doesn't ride on that token's meaning. unchecked moves off the
+          // old bright-white `bg-foreground` to a muted light gray so an off
+          // switch doesn't read as a blown-out white blob.
           "dark:data-checked:bg-background dark:data-unchecked:bg-muted-foreground",
         )}
       />

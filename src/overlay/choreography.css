@@ -1,57 +1,14 @@
-/* hover no longer scales the shell (operator removal, 2026-08-02): the
-   old plan-087/127 "breathe" (`.card-assembly.hovered { transform:
-   scale(1.02) }`) is
-   deleted — the zoom read as the shell DETACHING from the notch top on
-   every hover. Nothing replaced it here; there is no hover transform on
-   this shell anymore. `.hovered` itself is very much alive and still
-   drives every other hover consumer: rail reveal (card-chrome.css's
-   `.bare.hovered` flank paint), the idle peek, TTL hover-pause,
-   and hover-expand (a showing card opens its manifest while hovered —
-   useExitChoreography.ts's `expanded`). */
+/* hover: no transform on shell. `.hovered` still drives rail reveal
+   (card-chrome.css `.bare.hovered` flank paint), the idle peek, TTL
+   hover-pause, and hover-expand (useExitChoreography.ts `expanded`). */
 
-/* signature moment #1 — Goal: a bright confetti-spray burst over the
-   card surface, an expanding ring, plus a quick scale overshoot on the
-   card itself. plays once, never loops (this sits in a persistent
-   overlay). keyed by <StatusRailCard> off slot.signal, never
-   slot.priority.
-   pure CSS — no lottie, nothing to fetch or lazy-load (2026-07-18,
-   plan 023): the confetti is built from layered radial gradients on
-   ::after and an expanding ::before ring, so the whole moment is
-   self-contained and can't fail to mount.
-   z-index 0, NOT -1 (2026-07-17 live smoke): the card background is
-   opaque, so a negative-z layer paints behind it — rendered but
-   invisible. effects at 0 (over the surface, briefly), background below.
-   `isolation` pins the stacking context so 0/-1 mean the card, not the
-   page. (plan 091: `.card-assembly` already declares `isolation: isolate`
-   in its own definition above — this used to be a second, separate
-   single-purpose rule on the old shell class purely for that one
-   property; folded away as a duplicate now that both live in the same
-   block.)
+/* goal celebration: effects at z-index 0, `.card-content` at z-index 1
+   (stacking contract low-to-high); `isolation` pins the context. keyed
+   by <StatusRailCard> on slot.signal; pinned at string level by
+   celebrationStacking.test.ts. */
 
-   plan 107: the FULL stacking contract, low to high — card background
-   (bottom), burst/ring effects at z-index 0 (over the surface, briefly),
-   `.card-content` at z-index 1 (its own rule below, `:card-content`)
-   above BOTH. The z-index-0 argument above only ever proved "over the
-   background" — it never addressed the burst painting over the card's
-   TEXT, which it did (title/body unreadable for roughly the first half
-   of the animation). `.card-content` now gets `position: relative;
-   z-index: 1` specifically so it wins paint order against this
-   non-positioned-by-default pseudo-element. Peak burst opacity is also
-   cut (core alpha 0.95 -> 0.55, the `goal-burst` keyframe capped at 0.7
-   instead of 1) so even the brief top layer never fully washes the card
-   out. jsdom can't compute cascade from stylesheets, so this is pinned
-   at the string level (both this file and the mirror) plus a DOM check
-   that `.card-content` mounts during a goal celebration —
-   `celebrationStacking.test.ts`, cross-referenced here by name.
-
-   plan 091: these effects stay on the outer `.card-assembly` (not
-   below-block) — a full-card celebration reads better than one confined
-   to just the content block, and it exactly preserves the pre-091
-   visual (the burst/ring/box-shadow always spanned the whole card). */
-
-/* the confetti spray: a warm core, six offset color sparks, and an
-   outer coral glow, all in one layered background so a single ::after
-   reads as a full particle field on the dark 400px card. */
+/* confetti: one layered background so a single ::after reads as a
+   full particle field on the dark 400px card. */
 .card-root .card-assembly::after {
   content: "";
   position: absolute;
@@ -59,9 +16,8 @@
   z-index: 0;
   border-radius: 50%;
   background:
-    /* plan 107: bright core 0.95 -> 0.55 — the brightest layer, dialed
-       back so the burst never fully washes out the card text it now sits
-       under (z-index 1, see the comment above). */
+    /* core at 0.55 so the burst never washes out card text (z-index 1
+       above). */
     radial-gradient(circle at 50% 50%, rgba(255, 224, 130, 0.55), transparent 40%),
     radial-gradient(circle at 22% 32%, rgba(255, 107, 87, 0.9), transparent 12%),
     radial-gradient(circle at 78% 30%, rgba(120, 224, 200, 0.85), transparent 12%),
@@ -73,37 +29,16 @@
   pointer-events: none;
 }
 
-/* plan 127 (Step 6, /improve-animations audit finding #7): `goal-overshoot`
-   scales the WHOLE card assembly (`transform: scale(...)`, the
-   `@keyframes` below) but, unlike the hover "breathe" rule
-   (`.card-assembly.hovered`, which pinned `transform-origin: top center`
-   with its own comment explaining the physical anchor — the notch cutout
-   never moves, only the shell grows outward from it), this rule had no
-   `transform-origin` at all — so it defaulted to `50% 50%` (center) and
-   grew symmetrically, visibly lifting the shell's TOP edge off the notch
-   cutout for the celebration's duration. `transform-origin: top center`
-   matched the hover rule's own anchor for the same physical reason.
-   `::before`/`::after` (the ring/burst pseudo-elements just below) stay
-   center-origin on purpose — they're explosions radiating from the
-   card's center, not the card shape itself growing.
-   plan 129 (C5, deep-review fix): the own-copy `transform-origin: top
-   center` this rule used to declare is GONE — moved to the base
-   `.card-assembly` rule (see that declaration's own doc for the "clears
-   mid-flight" bug this fixes), which this rule inherits from for free
-   now. This paragraph's own physical reasoning (matches the notch
-   cutout's fixed position) is unchanged, just no longer redeclared per
-   modifier class. */
+/* goal-overshoot: transform-origin top center — matches the notch
+   cutout anchor; the shell grows from it, the top edge never lifts.
+   (the ring/burst pseudos stay center-origin: they radiate from the
+   card centre.) */
 .card-root .card-assembly.pulse-goal {
   animation: goal-overshoot 1240ms var(--ease-notchtap);
 }
 
-/* plan 127 (Step 6, audit finding #8): `ease-out` -> `var(--ease-notchtap)`
-   — unifies this burst's easing with the card-shape scale (`goal-overshoot`
-   above, already on `--ease-notchtap`) it plays alongside; the two used to
-   ease on two different curves for no documented reason, a small but real
-   "two things happening at once, animated on two different feels" split.
-   Duration untouched (operator-tuned — plan 100; see
-   celebrationStacking.test.tsx's own durations-byte-unchanged pin). */
+/* eases unified on var(--ease-notchtap). Never restate a duration in a
+   comment — celebrationStacking.test.tsx pins duration-token counts. */
 .card-root .card-assembly.pulse-goal::after {
   animation: goal-burst 1240ms var(--ease-notchtap);
 }
@@ -124,10 +59,8 @@
   border: 2px solid rgba(255, 224, 130, 0.9);
   opacity: 0;
   pointer-events: none;
-  /* plan 127 (Step 6, finding #8): `ease-out` -> `var(--ease-notchtap)`,
-     same unification and same reasoning as `::after`'s own comment
-     above. Duration untouched (operator-tuned — plan 100; see
-     celebrationStacking.test.tsx's own durations-byte-unchanged pin). */
+  /* eases unified on var(--ease-notchtap); duration untouched (pinned
+     by celebrationStacking.test.tsx, never restated here). */
   animation: goal-ring 1240ms var(--ease-notchtap);
 }
 
@@ -146,9 +79,8 @@
   }
 }
 
-/* plan 107: peak opacity capped at 0.7 (was 1) — same proportional shape
-   (35%/70% stops scaled by the same ~0.7 factor: 1->0.7, 0.85->0.6), just
-   never bright enough to obscure `.card-content` (z-index 1) above it. */
+/* goal-burst: peak opacity capped at 0.7 so it never obscures
+   `.card-content` (z-index 1) above it. */
 @keyframes goal-burst {
   0% {
     opacity: 0;
@@ -182,10 +114,9 @@
   }
 }
 
-/* goal celebration, part B (plan 032): three staggered concentric accent
-   rings rippling out from the card centre — the prototype's ripple
-   candidate, layered over the same z-0 effects surface as the burst.
-   mounted by <StatusRailCard> only while the goal pulse is live. */
+/* goal celebration, part B: three staggered concentric accent rings
+   rippling out from the card centre on the z-0 effects surface;
+   mounted by <StatusRailCard> while the goal pulse is live. */
 .card-root .cele-ripple {
   position: absolute;
   inset: 0;
@@ -203,19 +134,10 @@
   border-radius: 50%;
   opacity: 0;
   transform: translate(-50%, -50%) scale(0.4);
-  /* plan 150 (Step 3): `ease-out` -> `var(--ease-notchtap)` — the last
-     celebration still on the stock curve after plan 127 (Step 6) moved
-     `goal-overshoot`/`goal-burst`/`goal-ring` above, for the same "two
-     things happening at once, animated on two different feels" reason.
-     Duration untouched: the ring family deliberately outlives the shell
-     keyframes above (with the 280ms/560ms stagger below, ring 3 lands at
-     ~2.0s against the shell's ~1.24s), and the pulse GATE now respects
-     that instead of truncating it — StatusRailCard.tsx clears
-     `pulse-goal` on the THIRD `ripple-out` end, not on `goal-overshoot`'s.
-     (Durations are written here without their `NNNNms` literal on
-     purpose: celebrationStacking.test.tsx pins how many times each
-     duration token appears in this stylesheet, and a comment restating
-     one would trip that count.) */
+  /* ripple-out gate: StatusRailCard clears `pulse-goal` on the third
+     `ripple-out` end, not on `goal-overshoot`'s. eases unified on
+     var(--ease-notchtap); no NNNNms literals in comments (test pins
+     duration-token counts). */
   animation: ripple-out 1440ms var(--ease-notchtap) forwards;
 }
 
@@ -244,17 +166,8 @@
   animation: red-alert 920ms steps(1, end) 2;
 }
 
-/* H4 (phantom celebration shadow): the rest endpoints used to restate
-   the card's OLD per-block resting shadow (`0 14px 32px rgba(0,0,0,0.32)`)
-   — that shadow hasn't been the card's real resting depth since depth
-   moved onto `.card-assembly`'s own `filter: drop-shadow(...)` (see that
-   rule's own comment); the real rest value is no shadow at all. Restating
-   the stale value here meant every red-card alert snapped a phantom
-   second shadow on at frame 0 and off at frame end, on top of the
-   filter's own drop-shadow. `steps(1, end)` (the animation's own timing
-   function) makes this a hard discrete swap either way — no interpolation
-   to preserve by keeping a non-`none` rest value. The 50% frame (the
-   actual strobe) is untouched. */
+/* red-alert: rest endpoints hold `box-shadow: none` (no phantom
+   shadow); `steps(1, end)` makes the strobe a hard discrete swap. */
 @keyframes red-alert {
   0%,
   100% {
@@ -268,20 +181,12 @@
   }
 }
 
-/* plan 12x (wave 2): the idle/showing content-swap moved off this
-   file's hand-rolled `@keyframes` and onto `motion` (`motion/react`,
-   `AnimatePresence` + `motion.div` in StatusRailCard.tsx) — the same
-   migration IdleHoverPeek.tsx made in wave 1. `.card-content` no longer
-   carries its own `animation`; motion inline-styles opacity/transform
-   on the node directly. `position: relative; z-index: 1` stays a plain
-   rule below, unrelated to the swap itself. */
-/* plan 107: `position: relative; z-index: 1` is the decisive stacking
-   declaration against the celebration burst (`.card-assembly::after`,
-   `z-index: 0`, above) — `position: relative` alone leaves `z-index:
-   auto`, and an auto-z-index positioned box still paints below an
-   earlier `z-index: 0` sibling in the same stacking context (source
-   order alone doesn't win once ANY sibling declares a real z-index).
-   see the fuller contract comment on `.card-assembly::after` above. */
+/* content-swap moved to `motion/react` (AnimatePresence + motion.div
+   in StatusRailCard.tsx); `.card-content` no longer animates here.
+   `position: relative; z-index: 1` stays a plain rule below. */
+/* `.card-content` keeps `position: relative; z-index: 1`: wins paint
+   order against the z-0 celebration burst (auto z-index would still
+   paint below a real z-index sibling). */
 .card-root .card-content {
   position: relative;
   z-index: 1;
