@@ -1,4 +1,4 @@
-//! Plan 133: the authoritative in-memory Agent Registry (spec §2's
+//! the authoritative in-memory Agent Registry (spec §2's
 //! transition rules, §2.2's ordering, §2.3's dedup contract, §3.2's
 //! caps table).
 //!
@@ -24,7 +24,7 @@ pub const MAX_REMEMBERED_EVENT_IDS: usize = 2048;
 /// Default `agents.terminal_retention_secs` (spec §2.1; 600 -> 60 by
 /// operator decision 2026-07-27 — see `AgentsConfig`'s field doc).
 pub const DEFAULT_TERMINAL_RETENTION: Duration = Duration::from_secs(60);
-/// Default `agents.stale_retention_secs` (plan 146 follow-up; 1800 -> 600
+/// Default `agents.stale_retention_secs` ( follow-up; 1800 -> 600
 /// with the 2026-07-27 stale-timing tighten — see `AgentsConfig`).
 pub const DEFAULT_STALE_RETENTION: Duration = Duration::from_secs(600);
 
@@ -158,8 +158,8 @@ pub struct AgentRegistry {
     // Both read by `tick`/`ordered_states`, wired into the live
     // `agent-state` publish path (`agents/board.rs`'s
     // `AgentBoardPublisher`) from real `[agents]` config at the
-    // `lib.rs` construction site (plan 137). `stale_retention` mirrors
-    // `terminal_retention`'s role for `Stale` sessions (plan 146
+    // `lib.rs` construction site. `stale_retention` mirrors
+    // `terminal_retention`'s role for `Stale` sessions (
     // follow-up) — see `tick`'s doc.
     stale_after: Duration,
     terminal_retention: Duration,

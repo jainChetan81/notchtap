@@ -1,18 +1,18 @@
-// Plan 180 (Step 3): the cross-language pin for plan 171's five-tab
+// the cross-language pin for 's three-tab
 // identity set. That set is hand-written in SIX places, three of them in
 // one rust file and three spread across two languages:
 //
-//   1. `src-tauri/src/tabs.rs` — `Tab::ORDER` (the strip's left-to-right
-//      order, which the click hit-test zips against `hover.rs`'s rects)
-//   2. `src-tauri/src/tabs.rs` — `Tab::from_prefix_digit` (`prefix+1..5`)
-//   3. `src-tauri/src/tabs.rs` — `Tab::wire_label` (the `tab-selection-
-//      changed` tokens; note "music", NOT "media")
-//   4. `src/components/IconStrip.tsx` — the `Tab` union and `TAB_ORDER`
-//   5. `src-tauri/src/lib.rs` — `PREFIX_FOLLOWUPS`' `Digit1..Digit5` rows
-//   6. `src/lib/iconPresence.ts` — the `IconPresence` record's keys
+// 1. `src-tauri/src/tabs.rs` — `Tab::ORDER` (the strip's left-to-right
+// order, which the click hit-test zips against `hover.rs`'s rects)
+// 2. `src-tauri/src/tabs.rs` — `Tab::from_prefix_digit` (`prefix+1..3`)
+// 3. `src-tauri/src/tabs.rs` — `Tab::wire_label` (the `tab-selection-
+// changed` tokens)
+// 4. `src/components/IconStrip.tsx` — the `Tab` union and `TAB_ORDER`
+// 5. `src-tauri/src/lib.rs` — `PREFIX_FOLLOWUPS`' `Digit1..Digit3` rows
+// 6. `src/lib/iconPresence.ts` — the `IconPresence` record's keys
 //
 // (A seventh site, `icon-strip.css`'s per-tab selectors, is deliberately
-// NOT pinned here — plan 175's own geometry pin already covers it, and
+// NOT pinned here — 's own geometry pin already covers it, and
 // double-pinning would mean two tests failing for one edit.)
 //
 // **Why this needs a test at all: the drift is silent, and it fails in
@@ -40,7 +40,7 @@ import { iconPresenceFor } from "./lib/iconPresence";
 /// here is never "edit this test" — it is "one of these six lists moved
 /// and the other five did not".
 const SIX_SITES =
-  "the five-tab identity set is hand-synced across SIX sites — tabs.rs's Tab::ORDER, " +
+  "the three-tab identity set is hand-synced across SIX sites — tabs.rs's Tab::ORDER, " +
   "Tab::from_prefix_digit, and Tab::wire_label; IconStrip.tsx's Tab union + TAB_ORDER; " +
   "lib.rs's PREFIX_FOLLOWUPS digit rows; and iconPresence.ts's IconPresence keys. " +
   "Update ALL of them together (icon-strip.css too — pinned separately by plan 175)";
@@ -67,7 +67,7 @@ function pairs(text: string, pattern: RegExp): [string, string][] {
   return [...text.matchAll(pattern)].map((match) => [match[1], match[2]]);
 }
 
-// `"\n    }"` — the 4-space-indented closing brace — is the end of an
+// `"\n }"` — the 4-space-indented closing brace — is the end of an
 // `impl` method: every brace INSIDE these two bodies (the `match`'s own)
 // closes at 8 spaces, so this marker cannot land early. `Tab::ORDER` and
 // `PREFIX_FOLLOWUPS` are plain array consts and end at `];`, exactly as
@@ -102,8 +102,8 @@ function prefixFollowupDigits(): [string, string][] {
   );
 }
 
-describe("tab wire parity (plan 180) — rust's five tabs match the frontend's", () => {
-  it("wire_label emits exactly TAB_ORDER's five tokens, in TAB_ORDER's order", () => {
+describe("tab wire parity (plan 180) — rust's three tabs match the frontend's", () => {
+  it("wire_label emits exactly TAB_ORDER's three tokens, in TAB_ORDER's order", () => {
     const arms = wireLabelArms();
     // the tokens rust actually puts on `tab-selection-changed`...
     expect(
@@ -111,30 +111,24 @@ describe("tab wire parity (plan 180) — rust's five tabs match the frontend's",
       SIX_SITES,
     ).toEqual([...TAB_ORDER]);
     // ...and the variant each one came from, so a swapped pair of arms
-    // (`Music => "weather"`) fails even though the token SET is intact.
+    // fails even though the token SET is intact.
     expect(
       arms.map(([variant]) => variant),
       SIX_SITES,
-    ).toEqual(["Agent", "Football", "Music", "Weather", "News"]);
-    // "music", not "media" — the strip's own vocabulary (tabs.rs's own
-    // note on `wire_label`). The frontend calls the SOURCE `media`
-    // everywhere else, so this one token is the likeliest to be
-    // "corrected" into a bug.
-    expect(arms.map(([, token]) => token)).toContain("music");
-    expect(arms.map(([, token]) => token)).not.toContain("media");
+    ).toEqual(["Agent", "Football", "News"]);
   });
 
-  it("Tab::ORDER lists the same five variants, in the same order", () => {
+  it("Tab::ORDER lists the same three variants, in the same order", () => {
     expect(orderVariants(), SIX_SITES).toEqual(wireLabelArms().map(([variant]) => variant));
     expect(orderVariants().length).toBe(TAB_ORDER.length);
   });
 
-  it("from_prefix_digit maps 1..5 onto Tab::ORDER positionally", () => {
+  it("from_prefix_digit maps 1..3 onto Tab::ORDER positionally", () => {
     const arms = prefixDigitArms();
     expect(
       arms.map(([digit]) => digit),
       SIX_SITES,
-    ).toEqual(["1", "2", "3", "4", "5"]);
+    ).toEqual(["1", "2", "3"]);
     // `prefix+N` selects the Nth icon from the left — the spec §9 keymap
     // rule, expressed as "these arms ARE Tab::ORDER, in order".
     expect(
@@ -143,12 +137,12 @@ describe("tab wire parity (plan 180) — rust's five tabs match the frontend's",
     ).toEqual(orderVariants());
   });
 
-  it("PREFIX_FOLLOWUPS grabs Digit1..Digit5 and hands each its own digit", () => {
+  it("PREFIX_FOLLOWUPS grabs Digit1..Digit3 and hands each its own digit", () => {
     const rows = prefixFollowupDigits();
     expect(
       rows.map(([code]) => code),
       SIX_SITES,
-    ).toEqual(["1", "2", "3", "4", "5"]);
+    ).toEqual(["1", "2", "3"]);
     // an off-by-one here (`Digit3 -> Digit(2)`) would select the wrong
     // tab from the keyboard while the mouse path stayed perfect.
     for (const [code, key] of rows) {
@@ -159,7 +153,7 @@ describe("tab wire parity (plan 180) — rust's five tabs match the frontend's",
     }
   });
 
-  it("iconPresence's table is keyed by exactly those five tokens", () => {
+  it("iconPresence's table is keyed by exactly those three tokens", () => {
     // the sixth site, checked by import rather than by text — a missing
     // key here is a tab whose icon can never light up.
     expect(Object.keys(iconPresenceFor(undefined)).sort(), SIX_SITES).toEqual(
@@ -171,13 +165,11 @@ describe("tab wire parity (plan 180) — rust's five tabs match the frontend's",
     // `TAB_ORDER` is typed `readonly Tab[]`, so a token the union does not
     // contain is a tsc error, not a runtime one — this assertion exists to
     // catch the OTHER direction: a union member nobody put in the array.
-    const covered: Record<Tab, true> = {
+    const covered = {
       agent: true,
       football: true,
-      music: true,
-      weather: true,
       news: true,
-    };
+    } satisfies Record<Tab, true>;
     expect(Object.keys(covered).sort(), SIX_SITES).toEqual([...TAB_ORDER].sort());
   });
 
@@ -199,10 +191,10 @@ describe("tab wire parity (plan 180) — rust's five tabs match the frontend's",
     });
 
     it("extracts a non-empty list from every region (no silent empty match)", () => {
-      expect(wireLabelArms().length).toBe(5);
-      expect(orderVariants().length).toBe(5);
-      expect(prefixDigitArms().length).toBe(5);
-      expect(prefixFollowupDigits().length).toBe(5);
+      expect(wireLabelArms().length).toBe(3);
+      expect(orderVariants().length).toBe(3);
+      expect(prefixDigitArms().length).toBe(3);
+      expect(prefixFollowupDigits().length).toBe(3);
     });
   });
 });

@@ -1,98 +1,50 @@
-//! Plan 142 (v7 ticket 10 of 13, `docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`
-//! §6.2 expanded): pure geometry for the Agent Board's hover-EXPANDED
-//! window frame.
+//! Pure geometry for the Agent Board's hover-EXPANDED window frame.
 //!
-//! `hover::active_card_rect`'s own doc states its governing invariant
-//! plainly: "the window frame never changes; only the CSS width within
-//! it does." That invariant holds for every OTHER card shape in this
-//! app, but the expanded Board deliberately breaks it — spec §6.2's own
-//! words are "screen-bounded maximum height and scrolling," which the
-//! fixed 300px canvas (`hover::WINDOW_HEIGHT`) cannot satisfy once
-//! enough sessions are retained. This module is the one, deliberate,
-//! documented exception: [`expanded_board_frame`] computes a REAL
-//! window frame (`lib.rs`'s hover-transition call site does the actual
-//! `set_size`/`set_position`), not a CSS width.
-//!
-//! Width stays pinned to `hover::BASE_EXPANDED` (the same 500px design
-//! width the RESTING board already renders at via its permanent
-//! `.card-assembly.expanded` class, `AgentBoard.tsx`) — only the height
-//! and vertical position change between the resting frame and the
-//! expanded one. No AppKit types anywhere here, mirroring
-//! `presentation::presentation_mode`'s split from its own subprocess
-//! caller (`docs/TESTING_STRATEGY.md` §4.4): this is a plain function
-//! over already-fetched numbers, unit-testable without a GUI; the
-//! `NSScreen`/`NSWindow` calls that gather `screen_width`/`screen_height`
-//! and apply the result live only in `lib.rs`.
+//! The one deliberate exception to `hover::active_card_rect`'s "the
+//! window frame never changes; only the CSS width within it does":
+//! [`expanded_board_frame`] computes a REAL window frame (`lib.rs`'s
+//! hover-transition call site applies it via `set_size`/`set_position`),
+//! because a screen-bounded scrolling Board cannot fit the fixed
+//! `hover::WINDOW_HEIGHT` canvas. Width stays pinned to
+//! `hover::BASE_EXPANDED`; only height and vertical position change.
+//! No AppKit types here — plain function over already-fetched numbers;
+//! the `NSScreen`/`NSWindow` calls live only in `lib.rs`.
 
-/// Duplicated-constants pair with `hover::BASE_EXPANDED` — see that
-/// constant's own doc for the discipline. Any change to one MUST change
-/// the other in the same commit.
+/// Duplicated-constants pair with `hover::BASE_EXPANDED` — any change
+/// to one MUST change the other in the same commit.
 pub const EXPANDED_BOARD_WIDTH: f64 = 500.0;
 
 /// Duplicated-constants pair with `hover::WINDOW_HEIGHT` — the resting
-/// frame's own fixed height, and the floor this module's expanded
-/// height formula never drops below (a Board with exactly one session
-/// should never look SMALLER expanded than it did resting).
+/// frame's fixed height, and the floor the expanded height formula
+/// never drops below.
 pub const RESTING_WINDOW_HEIGHT: f64 = 300.0;
 
-/// Conservative estimate (same CONSERVATIVE-never-generous discipline
-/// `hover.rs`'s own `BELOW_BLOCK_SHOWING_H`/`BELOW_BLOCK_EXPANDED_H`
-/// constants document) of everything the expanded Board draws ABOVE its
-/// scrollable session list: the shell's own flank/cutout row, the
-/// primary session's HERO card (`AgentHeroCard`'s masthead/title/
-/// subtitle/body/fact-pill template, `AgentBoard.tsx`), and the list's
-/// own top margin.
-///
-/// Operator feedback (2026-08-02): the hero used to be REPLACED by the
-/// expanded list, so this constant only had to cover a bare header —
-/// hovering a one-session Board swapped its big hero for one skinny
-/// row, i.e. hover made the card look smaller. The hero now stays
-/// mounted in BOTH states and the list carries only the OTHER sessions,
-/// so this height must budget for the hero itself.
-///
+/// Conservative budget for everything the expanded Board draws ABOVE
+/// its scrollable session list: shell flank/cutout row, the primary
+/// session's HERO card (`AgentBoard.tsx`), and the list's top margin.
 /// Lockstep pair with `agent-board.css`'s
 /// `.agent-board-expanded-scroll { max-height: calc(100vh - 210px) }` —
-/// that reserve is this same above-the-list block, measured against the
-/// window height this module computes. Any change to one MUST change
-/// the other in the same commit.
+/// any change to one MUST change the other in the same commit.
 const HEADER_HEIGHT: f64 = 210.0;
 
-/// Conservative per-row budget for what the hover-EXPANDED Board
-/// actually renders below its hero: one `ExpandedAgentRow`
-/// (`AgentBoard.tsx`), whose `agent-board.css` template is a multi-line
-/// stack — name row, summary line, meta row — plus the list's
-/// between-row gap. Lockstep-references that component: if its template
-/// gains or loses a line, this number must move in the same commit.
-///
-/// Operator feedback (2026-08-02): this budget used to be a 34px
-/// `ROW_HEIGHT`, which is the COMPACT RESTING row's height
-/// (`.agent-row`) and roughly a third of an expanded row's. The resting
-/// board is a fixed [`RESTING_WINDOW_HEIGHT`] canvas that no per-row
-/// arithmetic drives, so that constant never belonged in this formula
-/// at all; with it, a three-session Board sized its window to give each
-/// expanded row a ~68px slot and visibly clipped them mid-row. It has
-/// been deleted rather than kept — nothing in the frame math is allowed
-/// to reach for a resting-row number.
-///
-/// Deliberately budgets the COMMON row shape only (review note,
-/// 2026-08-02): a row's OPTIONAL blocks — per-event detail pairs and
-/// the hover-revealed history disclosure — are unbounded, dynamic
-/// content and are NOT budgeted here. When they push the list past
-/// this frame, the `.agent-board-expanded-scroll` max-height cap
-/// scrolls them by design; sizing the window for the maximum possible
-/// row would oversize it for every ordinary hover instead.
+/// Conservative per-row budget for one `ExpandedAgentRow`
+/// (`AgentBoard.tsx` / `agent-board.css`) plus the between-row gap; if
+/// that template gains or loses a line, this number must move in the
+/// same commit. Budgets the COMMON row shape only — optional blocks
+/// (detail pairs, history disclosure) are unbounded and scroll via the
+/// `.agent-board-expanded-scroll` cap instead; sizing for the maximum
+/// possible row would oversize every ordinary hover. Never reach for a
+/// resting-row number in this frame math.
 const EXPANDED_ROW_HEIGHT: f64 = 96.0;
 
 /// Never claim more than this fraction of the screen's height, however
-/// many sessions are retained — "screen-bounded," not "however tall the
-/// content wants to be."
+/// many sessions are retained.
 const MAX_SCREEN_FRACTION: f64 = 0.75;
 
 /// A window frame in the same screen-space, top-left-origin convention
-/// `lib.rs::position_top_center` already uses for `PhysicalPosition`/
-/// `LogicalPosition` (NOT `hover::Rect`'s AppKit bottom-left convention —
-/// that type describes a region WITHIN a fixed window; this one
-/// describes the window itself).
+/// as `lib.rs::position_top_center` — NOT `hover::Rect`'s AppKit
+/// bottom-left convention, which describes a region WITHIN a fixed
+/// window rather than the window itself.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct BoardWindowFrame {
     pub x: f64,
@@ -101,26 +53,21 @@ pub struct BoardWindowFrame {
     pub height: f64,
 }
 
-/// The expanded Board's window frame for a `session_count`-session board
-/// on a `screen_width` x `screen_height` monitor (logical points, same
-/// units `current_monitor()` reports post `to_logical`).
+/// The expanded Board's window frame for a `session_count`-session
+/// board on a `screen_width` x `screen_height` monitor (logical points,
+/// same units `current_monitor()` reports post `to_logical`).
 ///
-/// - width: `EXPANDED_BOARD_WIDTH`, capped at `screen_width` (an
-///   unrealistically narrow screen must never produce an off-screen
-///   window);
-/// - height: `HEADER_HEIGHT + EXPANDED_ROW_HEIGHT * (session_count - 1)` — the
-///   primary session lives in the HERO block `HEADER_HEIGHT` already
-///   budgets for, so only the OTHER sessions are rows (`AgentBoard.tsx`
-///   renders exactly `sessions[1..]` as expanded rows) — floored at
-///   `RESTING_WINDOW_HEIGHT` (never shrink below the resting frame) and
-///   capped at `screen_height * MAX_SCREEN_FRACTION` (the screen-bounded
-///   maximum spec §6.2 calls for — content beyond that scrolls, per the
-///   frontend's own bounded scroll container);
+/// - width: `EXPANDED_BOARD_WIDTH`, capped at `screen_width` so a
+///   narrow screen never produces an off-screen window;
+/// - height: `HEADER_HEIGHT + EXPANDED_ROW_HEIGHT * (session_count - 1)`
+///   — the primary session lives in the hero block, so only the OTHER
+///   sessions are rows (`AgentBoard.tsx` renders `sessions[1..]`) —
+///   floored at `RESTING_WINDOW_HEIGHT`, capped at
+///   `screen_height * MAX_SCREEN_FRACTION`; content beyond that
+///   scrolls in the frontend's bounded container;
 /// - horizontally centered; anchored FLUSH at the screen's top edge
-///   (`y = 0`), exactly like the resting frame `lib.rs::position_window`
-///   places. Operator feedback (2026-08-02): an 8px top margin here made
-///   the whole shell visibly detach from the top of the screen on hover
-///   and re-attach on leave.
+///   (`y = 0`) like `lib.rs::position_window` — any top margin makes
+///   the shell visibly detach on hover and re-attach on leave.
 pub fn expanded_board_frame(
     screen_width: f64,
     screen_height: f64,
@@ -161,12 +108,9 @@ mod tests {
 
     #[test]
     fn a_handful_of_sessions_under_the_cap_grows_linearly_with_count() {
-        // 3 and 5, not e.g. 1 and 2: content_height(2) = 210 + 96 = 306 is
-        // only just over the RESTING_WINDOW_HEIGHT (300) floor, and
-        // content_height(1) = 210 is under it, so a lower pair would
-        // compare FLOORED heights instead of exercising the linear-growth
-        // formula this test targets. Not 7+ either: content_height(7) =
-        // 210 + 96*6 = 786 is already over the 0.75 * 982 = 736.5 cap.
+        // 3 and 5 specifically: lower counts hit the resting-height
+        // floor, 7+ hits the screen-fraction cap — either would stop
+        // this pair from exercising the linear-growth formula.
         let three = expanded_board_frame(SCREEN_W, SCREEN_H, 3);
         let five = expanded_board_frame(SCREEN_W, SCREEN_H, 5);
         assert_eq!(five.height - three.height, EXPANDED_ROW_HEIGHT * 2.0);
@@ -174,28 +118,17 @@ mod tests {
 
     #[test]
     fn the_primary_session_is_the_hero_not_a_row_so_only_the_rest_are_counted() {
-        // Operator feedback (2026-08-02): the hero card stays mounted while
-        // expanded, and the list below it carries `sessions[1..]` only —
-        // so N sessions is a hero plus N-1 rows, never N rows.
         let frame = expanded_board_frame(SCREEN_W, SCREEN_H, 6);
         assert_eq!(frame.height, HEADER_HEIGHT + EXPANDED_ROW_HEIGHT * 5.0);
     }
 
     #[test]
     fn three_sessions_budget_a_full_expanded_row_each_never_a_clipped_slot() {
-        // Operator screenshot (2026-08-02): the frame used to budget the
-        // COMPACT resting row's 34px per row, so a three-session Board gave
-        // each `ExpandedAgentRow` a ~68px slot and clipped them mid-row.
-        // The rows are ~90px tall; the frame must say so.
         let frame = expanded_board_frame(SCREEN_W, SCREEN_H, 3);
         assert_eq!(frame.height, HEADER_HEIGHT + EXPANDED_ROW_HEIGHT * 2.0);
         // Guard the CONSTANT itself, independent of the formula equality
-        // above (review fix: a per-row check derived from that same
-        // equality could never fail on its own): the budget must cover a
-        // real ExpandedAgentRow's ~90px name/summary/meta stack. Const
-        // block so it fails at compile time, same pattern as lib.rs's
-        // BOARD_COLLAPSE_GRACE_MS floor (and what clippy's
-        // assertions_on_constants demands).
+        // above: the budget must cover a real ExpandedAgentRow's ~90px
+        // name/summary/meta stack. Const block fails at compile time.
         const {
             assert!(
                 EXPANDED_ROW_HEIGHT >= 90.0,
@@ -206,8 +139,7 @@ mod tests {
 
     #[test]
     fn many_sessions_caps_at_the_screen_fraction_not_content_height() {
-        // 30 sessions would want HEADER_HEIGHT + 29*EXPANDED_ROW_HEIGHT =
-        // 2994px — far over 0.75 * 982 = 736.5, so the cap must win.
+        // 30 sessions want ~2994px of content — far over the cap.
         let frame = expanded_board_frame(SCREEN_W, SCREEN_H, 30);
         let uncapped_content = HEADER_HEIGHT + EXPANDED_ROW_HEIGHT * 29.0;
         assert!(frame.height < uncapped_content);
@@ -216,13 +148,9 @@ mod tests {
 
     #[test]
     fn eight_sessions_the_plans_own_test_floor_hits_the_cap_and_scrolls() {
-        // The plan's own manual-check floor ("many (8+) sessions"). With the
-        // real ~96px expanded-row budget the cap now binds well before 8 on
-        // a 982pt screen (content would be 210 + 96*7 = 882 > 736.5), so the
-        // contract this exercises is the OTHER half of spec §6.2: the frame
-        // stays screen-bounded and the surplus scrolls inside the
-        // frontend's own bounded container. It is not a regression that this
-        // count is capped — it is the cap doing its job.
+        // The cap binds before 8 sessions on a 982pt screen; the frame
+        // stays screen-bounded and the surplus scrolls in the frontend's
+        // bounded container — capped is the cap doing its job.
         let frame = expanded_board_frame(SCREEN_W, SCREEN_H, 8);
         assert_eq!(frame.height, SCREEN_H * MAX_SCREEN_FRACTION);
         assert!(frame.height < HEADER_HEIGHT + EXPANDED_ROW_HEIGHT * 7.0);
@@ -248,10 +176,9 @@ mod tests {
 
     #[test]
     fn anchored_flush_at_the_screen_top_edge_exactly_like_the_resting_frame() {
-        // Operator feedback (2026-08-02): any nonzero y here makes the whole
-        // shell visibly drop away from the top of the screen on hover-expand
-        // and snap back on leave. The resting frame sits at y = 0
-        // (`lib.rs::position_window`); the expanded one must too.
+        // Any nonzero y makes the shell visibly drop away from the
+        // screen top on hover-expand and snap back on leave; the resting
+        // frame sits at y = 0 (`lib.rs::position_window`).
         for session_count in [0, 1, 4, 30] {
             let frame = expanded_board_frame(SCREEN_W, SCREEN_H, session_count);
             assert_eq!(frame.y, 0.0);
@@ -260,10 +187,8 @@ mod tests {
 
     #[test]
     fn named_constants_match_hovers_own_duplicated_constants() {
-        // Tripwire, same discipline as `hover.rs`'s own
-        // `active_card_rect_geometry_constants_match_named_style_constants`
-        // — a reviewer diffing this file sees the citation and checks both
-        // sides if either number ever moves.
+        // Tripwire for the duplicated-constant pairs in `hover.rs` — if
+        // either number moves, check both sides.
         assert_eq!(EXPANDED_BOARD_WIDTH, 500.0);
         assert_eq!(RESTING_WINDOW_HEIGHT, 300.0);
     }

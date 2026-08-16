@@ -1,50 +1,5 @@
 <!doctype html>
-<!-- Control panel (Settings window) mockup — mirrors the settings window as of
-     2026-07-30. Rewritten from scratch against the live source (previous
-     revisions of this file carried a "HISTORICAL PROTOTYPE" banner; the
-     operator has since decided this file should track the shipped UI
-     instead of a frozen design-exploration snapshot — see git history for
-     that banner's prior text if it's ever needed again).
-
-     Sources read to build this:
-       - src/settings/SettingsApp.tsx        shell, sidebar nav, section list/order/copy
-       - src/settings/sections/*.tsx         one file per section, every control + copy string
-       - src/settings/base.css               Tailwind v4 entry, --fs-*/--radius-*/scrollbar rules
-       - src/settings/controls/controls.tsx  shared control-row/Card/Switch/Number/Textarea shapes
-       - src/settings/controls/Segmented.tsx the one segmented-control component
-       - src/components/ui/*.tsx             shadcn-derived Button/Switch/Badge/MetaChip/Input/etc.
-       - vendor/shared-ui/design/tokens.css  oklch colour tokens (hex originals kept in its comments)
-
-     This is still a static, standalone mock: no build step, no import of the
-     real React app. It uses plain CSS `color-mix()` in a few places to
-     reproduce Tailwind arbitrary values like `color-mix(in oklch, var(--primary),
-     var(--background) 25%)` (button.tsx's default-variant background) — that
-     works natively in a modern WebKit/Chromium webview, so it's not a build-step
-     workaround, just literal CSS.
-
-     Known, deliberate simplifications (see the note banner below too):
-       - Sidebar icons are plain generic placeholder glyphs, not the actual
-         Lucide icon paths SettingsApp.tsx imports (Bot/CloudSun/Command/
-         History/Info/KeyRound/ListOrdered/Newspaper/Palette/ScrollText/
-         SlidersHorizontal/Trophy) — reproducing 12 exact icon paths by hand
-         risked getting them subtly wrong, which felt worse than an honest
-         placeholder. Order, labels, and count (12) are exact.
-       - Three sections are drawn out control-by-control (General, Agents,
-         Connectors & Keys); the other nine are summarized in prose with
-         accurate control counts/copy, not fully laid out — same
-         "representative sample, not full pixel export" approach the
-         previous revision of this file used, just resynced to the current
-         12-section reality (up from the 9/10 sections it last recorded).
-       - Numeric field values shown are illustrative (chosen to look
-         plausible), not read from a live config — except where noted, they
-         match this build's actual defaults (src-tauri/src/config.rs), e.g.
-         rotation seconds 8, queue cap 50, ESPN/RSS poll interval 30s/60s,
-         listener port 9789, rotation order Football → Manual → Weather →
-         Agent → News.
-       - Agents' four adapter cards are drawn for Claude Code and Codex only
-         (Kimi and OpenCode follow the identical card shape — see the note
-         inline).
--->
+<!-- Control panel — static mock of the shipped Settings window. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -247,7 +202,7 @@
   <section class="rig">
     <h2>01 — General</h2>
     <p class="rig-sub">
-      Four groups: Engine (start-paused/hide-when-idle/history/now-playing
+      Four groups: Engine (start-paused/hide-when-idle/history
       toggles, listener port, a test-notification button), Rotation and
       priority (rotation seconds, queue cap per tier, manual push priority),
       Rotation order (a reorderable list — same-tier tie-break), and
@@ -297,10 +252,6 @@
                 <div class="control-row">
                   <div><span class="control-name">Record notification history</span><span class="control-help">Records notification content (including agent-originated payloads) to ~/.config/notchtap/history.jsonl. Applies after Save &amp; Relaunch.</span></div>
                   <div class="switch is-checked"><div class="switch-thumb"></div></div>
-                </div>
-                <div class="control-row">
-                  <div><span class="control-name">Now playing</span><span class="control-help">Show what's currently playing (Music, a browser tab, etc.) in the idle hover peek. Requires the vendored adapter installed via <code style="color:inherit;font-size:inherit">just build-media-adapter</code>. Applies after Save &amp; Relaunch.</span></div>
-                  <div class="switch"><div class="switch-thumb"></div></div>
                 </div>
                 <div class="control-row">
                   <div><span class="control-name">Listener port</span><span class="control-help">Local loopback port used by the notchtap CLI.</span></div>

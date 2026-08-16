@@ -27,7 +27,7 @@ import { cn } from "@/lib/utils";
 // is for chips with a real positive/caution/critical status to report.
 export type ChipTone = "neutral" | "positive" | "caution" | "critical" | "accent";
 
-const TONE_CLASSES: Record<Exclude<ChipTone, "neutral">, string> = {
+const TONE_CLASSES = {
   // adapter available, secret saved, connector reachable
   positive: "border-overlay-green/45 bg-overlay-green/15 text-overlay-green",
   // adapter partial/stale, degraded but not down
@@ -37,7 +37,7 @@ const TONE_CLASSES: Record<Exclude<ChipTone, "neutral">, string> = {
   // a non-status "this is set/on" emphasis (kept distinct from `active`'s
   // plain neutral so a caller can opt into color for a non-tri-state flag)
   accent: "border-overlay-teal/45 bg-overlay-teal/15 text-overlay-teal",
-};
+} satisfies Record<Exclude<ChipTone, "neutral">, string>;
 
 export function MetaChip({
   active = false,

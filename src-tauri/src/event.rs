@@ -54,7 +54,7 @@ pub enum EventType {
     ScoreUpdate,
     MatchState,
     NewsItem,
-    /// v7 (plan 135, spec §5): a noteworthy Agent Event promoted into the
+    /// v7: a noteworthy Agent Event promoted into the
     /// existing Notification Slot. Always paired with `origin:
     /// SourceKind::Agent` and a populated `EventMeta.agent` — see
     /// `agents::notification::build_notification`, the one constructor.
@@ -69,17 +69,6 @@ pub enum Priority {
     High,
 }
 
-/// Temperature display units for the weather source (plan 040 Part B).
-/// Display-only: Open-Meteo does the conversion server-side via its
-/// `temperature_unit` query param; alert thresholds are always stored
-/// and compared in Celsius regardless of this value.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum Units {
-    Celsius,
-    Fahrenheit,
-}
-
 /// The source that produced an [`Event`] (v6: `Config.rotation_order`
 /// tie-break). A closed set, same rigor as [`EventType`]/[`EventSignal`] —
 /// unknown values are rejected at deserialization, never silently coerced.
@@ -89,10 +78,8 @@ pub enum SourceKind {
     Football,
     News,
     Manual,
-    Weather,
-    /// v7 (plan 135/137, spec §0/§7): the provider-neutral Agent Adapter
-    /// origin, and — as of plan 137 — the sole successor to the removed
-    /// `Cmux` variant. `#[serde(alias = "cmux")]` is the one-release
+    /// The provider-neutral Agent Adapter origin, the sole successor to
+    /// the removed `Cmux` variant. `#[serde(alias = "cmux")]` is the one-release
     /// migration path spec §7 requires ("legacy `"cmux"` deserializes as
     /// `Agent` for one release"): it accepts the old wire/TOML/history
     /// literal `"cmux"` as an alternate spelling of this variant on
@@ -129,7 +116,7 @@ pub enum RotationSpec {
 /// ```
 ///
 /// Sources that can't know a specific signal (the CLI, the Agent Adapter
-/// layer — superseded in v7's cmux relay, plan 137) omit the field on the
+/// layer) omit the field on the
 /// wire and get `Generic` via `#[serde(default)]` on the containing
 /// struct — see `http.rs`'s `NotifyRequest`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
@@ -143,7 +130,7 @@ pub enum EventSignal {
     Kickoff,
     Halftime,
     Fulltime,
-    /// plan 083 workstream c (079 item 6a) — the four locked richer
+    /// workstream c (079 item 6a) — the four locked richer
     /// event kinds, sourced from ESPN's `summary`/`plays` fallback chain
     /// rather than the scoreboard feed. Presentation-only, same rigor as
     /// every other variant here.
@@ -159,7 +146,7 @@ pub struct EventPayload {
     pub body: String,
 }
 
-/// A single label/value pair rendered as one manifest cell (plan 035).
+/// A single label/value pair rendered as one manifest cell.
 /// Display-only, like the rest of [`EventMeta`] — never consulted by
 /// queue/rotation/priority logic. `details` come from untrusted hook
 /// input, so the `/notify` handler caps label/value length (and the
@@ -171,7 +158,7 @@ pub struct DetailItem {
 }
 
 /// Presentation metadata for a noteworthy Agent Event's Notification
-/// (plan 135, spec §5: "the generated existing-domain `Event` uses
+/// ("the generated existing-domain `Event` uses
 /// `EventType::AgentEvent` and an `AgentSignal` carrying runtime, session
 /// key, kind, and sanitized summary"). Built exactly once, by
 /// `agents::notification::build_notification`.
@@ -199,7 +186,7 @@ pub struct AgentSignal {
     pub summary: Option<String>,
 }
 
-/// News-source metadata (v5) plus the rich-relay fields (plan 035:
+/// News-source metadata (v5) plus the rich-relay fields (
 /// `subtitle`/`details`): the rss poller populates source/category/
 /// published/link, and `/notify` callers populate subtitle/details;
 /// every other source leaves them default. Presentation-only — never
@@ -211,37 +198,37 @@ pub struct EventMeta {
     pub category: Option<String>,
     pub published_at_ms: Option<i64>,
     pub link: Option<String>,
-    /// A first-class optional subtitle (plan 035): the CLI's `--subtitle`
+    /// A first-class optional subtitle: the CLI's `--subtitle`
     /// used to fold into the body CLI-side; it is now its own wire field.
     pub subtitle: Option<String>,
-    /// Label/value detail pairs (plan 035), capped server-side.
+    /// Label/value detail pairs, capped server-side.
     pub details: Vec<DetailItem>,
-    /// Structured live-match fields (plan 083 item 4 — decided STRUCTURED,
+    /// Structured live-match fields ( item 4 — decided STRUCTURED,
     /// not pre-joined into `matchup()`'s display string). Populated by the
     /// espn poller only when `espn_live_card` is on (the same gate as the
     /// `details` Clock/Cards cells above); every other source, and espn
     /// itself with the flag off, leaves this `None`. `skip_serializing_if`
     /// is deliberate here (unlike every other `Option` field above, which
     /// serializes explicit `null`): without it, EVERY payload — manual,
-    /// agent (superseded cmux relay, plan 137), news, flag-off espn —
+    /// agent (superseded cmux relay, ), news, flag-off espn —
     /// would gain a literal `"espn": null` key
     /// on the wire, breaking the flag-off byte-identical pin at the JSON
     /// level (see `espn_field_is_omitted_from_wire_when_absent` below).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub espn: Option<EspnMeta>,
-    /// v7 (plan 135): populated only on an Agent-originated Notification's
+    /// v7: populated only on an Agent-originated Notification's
     /// `Event` (see [`AgentSignal`]'s own doc). `skip_serializing_if` for
     /// the same reason as `espn` above — every non-agent payload (and an
     /// agent payload built before this ticket's own tests were written)
     /// must keep an identical wire shape, no literal `"agent": null` key.
-    /// Mirrored onto `SlotState::Showing.agent_runtime` (plan 147) so the
+    /// Mirrored onto `SlotState::Showing.agent_runtime` so the
     /// overlay can style/label agent-originated cards by runtime; see that
     /// field's doc for the wire shape.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub agent: Option<AgentSignal>,
 }
 
-/// plan 083: structured live-match fields (079 item 4 — decided
+/// structured live-match fields (079 item 4 — decided
 /// STRUCTURED, not pre-joined). Present only on Football events when
 /// the live-card flag is on; everything else leaves it `None` and the
 /// wire is unchanged. Display-only, like the rest of `EventMeta` — never
@@ -287,7 +274,7 @@ pub struct EspnMeta {
 // `Empty` is a trivial sentinel — the asymmetry clippy's large_enum_variant
 // flags is by design. Boxing wouldn't help honestly here: this enum is
 // short-lived (built per emit, serialized, dropped), never stored in bulk,
-// and boxing a field would only muddy the serde wire shape. Since plan 035
+// and boxing a field would only muddy the serde wire shape. Since
 // added subtitle/details it crossed the 200-byte threshold, so allow it.
 #[allow(clippy::large_enum_variant)]
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -302,10 +289,10 @@ pub enum SlotState {
         event_type: EventType,
         priority: Priority,
         signal: EventSignal,
-        /// Which source produced this item (plan 096) — mirrors
+        /// Which source produced this item — mirrors
         /// `Event.origin` (v6, rotation-order tie-break) onto the wire so
         /// the frontend can style/label cards by their origin; today's only
-        /// consumer is the agent accent in `StatusRailCard.tsx` (plan 137:
+        /// consumer is the agent accent in `StatusRailCard.tsx` (
         /// this superseded the earlier cmux accent), but any future
         /// per-source presentation can key off this without another wire
         /// change. Time-invariant: it's assigned once when the event
@@ -318,12 +305,12 @@ pub enum SlotState {
         category: Option<String>,
         published_at_ms: Option<i64>,
         link: Option<String>,
-        /// Rich-relay fields (plan 035), mirrored from `EventMeta` — the
+        /// Rich-relay fields, mirrored from `EventMeta` — the
         /// manifest renders `subtitle` as its own cell and one cell per
         /// `details` pair. Display-only, camelCase on the wire.
         subtitle: Option<String>,
         details: Vec<DetailItem>,
-        /// Structured live-match fields (plan 083), mirrored from
+        /// Structured live-match fields, mirrored from
         /// `EventMeta.espn` — see that field's doc for the gate and the
         /// `skip_serializing_if` rationale (applies here identically: an
         /// absent block must be an absent JSON key, not an explicit
@@ -331,7 +318,7 @@ pub enum SlotState {
         /// level).
         #[serde(skip_serializing_if = "Option::is_none")]
         espn: Option<EspnMeta>,
-        /// Queue-slider position within the current batch (plan 033):
+        /// Queue-slider position within the current batch:
         /// `queue_total` is the batch size (never below 1 while Showing),
         /// `queue_done` how many items completed (capped at
         /// `queue_total - 1` so the current segment stays lit).
@@ -340,7 +327,7 @@ pub enum SlotState {
         /// Total rotation window for this showing, milliseconds — includes
         /// `extension_secs` and resolves OneShot ttl vs Recurring
         /// display_secs exactly as `rotation_window(self.window_expanded)`
-        /// does (plan 081). Time-free: it only changes at discrete
+        /// does. Time-free: it only changes at discrete
         /// lifecycle moments (promotion, supersede top-up, manual expand),
         /// which is exactly what makes it safe to keep in the dedup
         /// comparison below — see `dedup_eq`.
@@ -353,12 +340,12 @@ pub enum SlotState {
         /// honest shape. Deliberately EXCLUDED from the dedup comparison
         /// (`dedup_eq`) — it's a pure function of wall-clock time and so
         /// never matches between two calls even microseconds apart, which
-        /// would defeat deduping entirely (plan 081 attempt 1 measured 2
+        /// would defeat deduping entirely ( attempt 1 measured 2
         /// emissions per 1 `accept()` before this exclusion existed).
         remaining_ms: u64,
         /// The agent runtime wire token ("claude-code"|"codex"|"kimi"|
         /// "opencode") for an Agent-originated item, mirrored from
-        /// `Event.meta.agent.runtime` (plan 147); `None` for every
+        /// `Event.meta.agent.runtime`; `None` for every
         /// non-agent origin. Serializes plainly like `source`/`category`
         /// above (explicit `null` when absent, no `skip_serializing_if`) —
         /// unlike `espn`/`agent` on `EventMeta`, this field is cheap and
@@ -379,7 +366,7 @@ impl SlotState {
     /// after every mutation's own emit. Without this exclusion that second,
     /// structurally-unavoidable call always sees a "changed" state (because
     /// `remaining_ms` ticked down) and always re-emits, doubling emission
-    /// volume system-wide (plan 081 attempt 1's finding).
+    /// volume system-wide.
     ///
     /// `ttl_ms` stays IN the comparison on purpose: it only changes at real
     /// lifecycle events (promotion, supersede extension, manual expand),
@@ -387,14 +374,14 @@ impl SlotState {
     /// the gate still fires — with a fresh `remaining_ms` — right when the
     /// bar needs to re-anchor.
     ///
-    /// `origin` (plan 096) stays IN the comparison for the same reason as
+    /// `origin` stays IN the comparison for the same reason as
     /// `ttl_ms`: it is set once per item and never varies on its own, so
     /// normalizing it away here would be pure risk (masking a genuine
     /// origin change, which cannot happen today but would be a silent bug
     /// if it ever could) for zero benefit (there is no re-emit storm to
     /// prevent, since it never ticks like `remaining_ms` does).
     ///
-    /// `agent_runtime` (plan 147) stays IN the comparison for the same
+    /// `agent_runtime` stays IN the comparison for the same
     /// reason as `origin`: it is set once at `build_notification` time and
     /// never ticks for that item's lifetime, so — unlike `remaining_ms` —
     /// there is no re-emit storm to guard against by normalizing it away.
@@ -522,7 +509,6 @@ mod tests {
             (SourceKind::Football, "football"),
             (SourceKind::News, "news"),
             (SourceKind::Manual, "manual"),
-            (SourceKind::Weather, "weather"),
             (SourceKind::Agent, "agent"),
         ] {
             assert_eq!(serde_json::to_value(kind).unwrap(), wire);
@@ -536,7 +522,7 @@ mod tests {
         assert!(serde_json::from_str::<SourceKind>(r#""pigeon""#).is_err());
     }
 
-    // plan 137 (spec §7): the legacy `"cmux"` literal is a one-release
+    // the legacy `"cmux"` literal is a one-release
     // deserialize-only alias for `Agent` — it must parse successfully but
     // must never come back out of `Serialize`.
     #[test]
@@ -583,12 +569,12 @@ mod tests {
             event_type: EventType::ScoreUpdate,
             priority: Priority::High,
             signal: EventSignal::Goal,
-            // plan 096: origin deliberately doesn't match event_type/source
+            // origin deliberately doesn't match event_type/source
             // here — this test pins the WIRE SHAPE (every field's JSON key
-            // and value), not a semantically-coherent payload; Weather is
-            // chosen (plan 137: Cmux no longer exists) because it's a
-            // variant unrelated to the ScoreUpdate/NDTV fixture around it.
-            origin: SourceKind::Weather,
+            // and value), not a semantically-coherent payload; Manual is
+            // chosen because it's a variant unrelated to the
+            // ScoreUpdate/NDTV fixture around it.
+            origin: SourceKind::Manual,
             expanded: false,
             source: Some("NDTV".to_string()),
             category: Some("politics".to_string()),
@@ -620,16 +606,16 @@ mod tests {
         assert_eq!(json["eventType"], "score_update");
         assert_eq!(json["priority"], "high");
         assert_eq!(json["signal"], "goal");
-        // plan 096: origin joins the wire, camelCase key (no rename needed —
+        // origin joins the wire, camelCase key (no rename needed —
         // the field name is already one word), snake_case value per
         // SourceKind's own serde attr.
-        assert_eq!(json["origin"], "weather");
+        assert_eq!(json["origin"], "manual");
         assert_eq!(json["expanded"], false);
         assert_eq!(json["source"], "NDTV");
         assert_eq!(json["category"], "politics");
         assert_eq!(json["publishedAtMs"], 1_789_600_000_000_i64);
         assert_eq!(json["link"], "https://example.com/story");
-        // plan 035: subtitle is a first-class string field; details is an
+        // subtitle is a first-class string field; details is an
         // array of {label, value} pairs (own field names, not camelCased).
         assert_eq!(json["subtitle"], "Permission request");
         assert_eq!(json["details"][0]["label"], "Tool");
@@ -638,10 +624,10 @@ mod tests {
         assert_eq!(json["details"][1]["value"], "git push");
         assert_eq!(json["queueTotal"], 5);
         assert_eq!(json["queueDone"], 2);
-        // plan 081: timing fields, camelCase, milliseconds.
+        // timing fields, camelCase, milliseconds.
         assert_eq!(json["ttlMs"], 8000);
         assert_eq!(json["remainingMs"], 6000);
-        // plan 147: agent_runtime is present, camelCase, non-skipped.
+        // agent_runtime is present, camelCase, non-skipped.
         assert_eq!(json["agentRuntime"], "claude-code");
         assert!(json.get("event_type").is_none());
         assert!(json.get("published_at_ms").is_none());
@@ -681,19 +667,19 @@ mod tests {
         assert!(json["category"].is_null());
         assert!(json["publishedAtMs"].is_null());
         assert!(json["link"].is_null());
-        // plan 147: absent agent_runtime serializes explicit null (no
+        // absent agent_runtime serializes explicit null (no
         // skip_serializing_if), matching source/category above.
         assert!(json["agentRuntime"].is_null());
-        // plan 081: timing fields are always present (never optional).
+        // timing fields are always present (never optional).
         assert_eq!(json["ttlMs"], 4000);
         assert_eq!(json["remainingMs"], 4000);
-        // plan 035: absent subtitle serializes null; absent details is an
+        // absent subtitle serializes null; absent details is an
         // empty array (never null/absent), so the frontend can map over it.
         assert!(json["subtitle"].is_null());
         assert_eq!(json["details"], serde_json::json!([]));
         assert_eq!(json["queueTotal"], 1);
         assert_eq!(json["queueDone"], 0);
-        // plan 083: unlike every other Option field above, an absent espn
+        // unlike every other Option field above, an absent espn
         // block must be an ABSENT KEY, not an explicit null — the
         // flag-off byte-identical pin depends on this at the JSON level.
         assert!(
@@ -756,7 +742,7 @@ mod tests {
 
     #[test]
     fn detail_item_round_trips_with_own_field_names() {
-        // plan 035: DetailItem fields are `label`/`value` on the wire (no
+        // DetailItem fields are `label`/`value` on the wire (no
         // camelCase rename — the frontend reads exactly these keys).
         let item = DetailItem {
             label: "Command".to_string(),
@@ -778,7 +764,7 @@ mod tests {
         let meta = EventMeta::default();
         assert_eq!(meta.subtitle, None);
         assert!(meta.details.is_empty());
-        // plan 083: same back-compat rule for the new structured block —
+        // same back-compat rule for the new structured block —
         // every non-football source, and football itself with
         // `espn_live_card` off, leaves this `None`.
         assert_eq!(meta.espn, None);
@@ -786,7 +772,7 @@ mod tests {
 
     #[test]
     fn event_meta_espn_field_is_omitted_from_wire_when_absent() {
-        // plan 083: the one deliberate house-style deviation — every other
+        // the one deliberate house-style deviation — every other
         // Option field on EventMeta serializes explicit null (see
         // `event_meta_deserializes_subtitle_and_details_from_wire` and the
         // slot-state sibling test above), but `espn` must be an omitted
@@ -804,7 +790,7 @@ mod tests {
 
     #[test]
     fn dedup_eq_treats_a_changed_espn_block_as_a_real_change() {
-        // plan 083: EspnMeta must participate in dedup_eq normally (it is
+        // EspnMeta must participate in dedup_eq normally (it is
         // NOT time-varying — it only changes at real match-state moments,
         // exactly when a re-emit is wanted) — unlike `remaining_ms`, which
         // dedup_eq deliberately normalizes away.
@@ -858,7 +844,7 @@ mod tests {
         );
     }
 
-    // plan 096: `origin` is time-invariant (constant per queued item), so
+    // `origin` is time-invariant (constant per queued item), so
     // — unlike `remaining_ms` — it must stay IN `dedup_eq`'s comparison.
     // This is the tripwire the plan calls out by name: if two SlotStates
     // differing ONLY in origin ever dedup_eq as equal, the field is not
@@ -892,7 +878,7 @@ mod tests {
 
         let before = showing_with_origin(SourceKind::Manual);
         let after_same_origin = showing_with_origin(SourceKind::Manual);
-        let after_new_origin = showing_with_origin(SourceKind::Weather);
+        let after_new_origin = showing_with_origin(SourceKind::News);
 
         assert!(
             before.dedup_eq(&after_same_origin),
@@ -904,7 +890,7 @@ mod tests {
         );
     }
 
-    // plan 147: agent_runtime mirrors the origin tripwire above — it is
+    // agent_runtime mirrors the origin tripwire above — it is
     // also time-invariant (set once at build_notification), so it must
     // stay IN dedup_eq's comparison too.
     #[test]
@@ -984,7 +970,7 @@ mod tests {
     }
 }
 
-/// Shared test fixture builder (plan 028): the ONE place tests build
+/// Shared test fixture builder: the ONE place tests build
 /// `Event`s, so a new field is a one-file test change. Production code
 /// must never use this — `#[cfg(test)]` enforces it.
 #[cfg(test)]

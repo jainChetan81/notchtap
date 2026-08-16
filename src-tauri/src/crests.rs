@@ -1,4 +1,4 @@
-//! plan 083 workstream a: club crest fetch + on-disk cache.
+//! club crest fetch + on-disk cache.
 //!
 //! **Legal/scope rule (hard, not a style preference)**: crest PNGs are
 //! runtime-cached by rust, NEVER committed to git — trademarked club
@@ -10,7 +10,7 @@
 //! tree — it lives under `~/.config/notchtap/crests/`, alongside
 //! `config.toml`/`secrets.toml` (`Config::dir_from_home`).
 //!
-//! Cache policy (deliberately v1-minimal, per plan 083's scope):
+//! Cache policy (deliberately v1-minimal, per
 //! - fetch on cache miss only; a cache hit (on-disk PNG, which persists
 //!   across restarts) never re-fetches.
 //! - one fetch ATTEMPT per team per process lifetime — `should_fetch`

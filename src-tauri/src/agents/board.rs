@@ -1,4 +1,4 @@
-//! Plan 136 (v7 ticket 4 of 13, `docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`
+//! (v7 ticket 4 of 13, `docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`
 //! §6/§6.1/§6.2 resting): the `agent-state` IPC — a Rust-ordered
 //! `AgentSessionView[]` wire snapshot, published independently of
 //! `slot-state`/`status-state` (`event.rs`/`status.rs`).
@@ -20,7 +20,7 @@
 //! hover-expand alike — stays ignorant of the knob and simply reads the
 //! published snapshot.
 //!
-//! Plan 177: that gate governs the Board's AUTONOMOUS summoning only.
+//! that gate governs the Board's AUTONOMOUS summoning only.
 //! The snapshot also carries the UNGATED slice as `tab_sessions` for the
 //! user-initiated pull surface (the operator clicked the agent icon and
 //! is owed whatever is running), and the dedup comparison above runs
@@ -47,7 +47,7 @@ pub const AGENT_STATE_EVENT: &str = "agent-state";
 /// — the overlay performs no sorting, lifecycle inference, expiry, or
 /// history merging of its own (spec §6's own words).
 ///
-/// Plan 177: the snapshot carries TWO views of the same ordered slice,
+/// the snapshot carries TWO views of the same ordered slice,
 /// because the two surfaces that read it ask different questions.
 /// `sessions` is the AGENT BOARD's list — summons-gated by
 /// [`AgentBoardPublisher::gate_presence`], i.e. empty unless something
@@ -61,23 +61,21 @@ pub struct AgentStateSnapshot {
     pub revision: u64,
     /// Wall-clock epoch millis at the moment this snapshot was built —
     /// the anchor the frontend derives LIVE per-session elapsed-in-state
-    /// time from locally on its own interval, same `capturedAtMs` +
-    /// `elapsedMs` pattern `NowPlayingSummary` already uses (status.rs)
-    /// rather than Rust publishing a per-second clock tick (CLAUDE.md's
-    /// `dedup_eq` rule: continuously varying fields must never drive a
-    /// wire emission).
+    /// time from locally on its own interval, rather than Rust
+    /// publishing a per-second clock tick (CLAUDE.md's `dedup_eq` rule:
+    /// continuously varying fields must never drive a wire emission).
     pub captured_at_ms: i64,
     /// The Agent Board's own list: gated by
     /// [`AgentBoardPublisher::gate_presence`], so it is EMPTY whenever no
     /// session summons the Board (`[agents] board_show_working = false`,
     /// the shipped default).
     pub sessions: Vec<AgentSessionView>,
-    /// Plan 177: the pull surface's list — the same ordered slice
+    /// the pull surface's list — the same ordered slice
     /// BEFORE the presence gate, so a tab the operator explicitly pulled
     /// open renders the sessions that are genuinely running even when
     /// none of them is asking for anything. This is the same ungated
     /// view `tab_wire.agent_sessions` already counts for the icon strip
-    /// (plan 171), so the icon's lit/unlit tier and the block it opens
+    ///, so the icon's lit/unlit tier and the block it opens
     /// can no longer disagree.
     pub tab_sessions: Vec<AgentSessionView>,
     /// Always empty until ticket 143 (`health.rs`) populates real
@@ -94,7 +92,7 @@ pub struct AgentStateSnapshot {
 pub struct AgentSessionView {
     /// `agents::model::session_hash_hex` — never the raw native session
     /// id (spec §9's persistence/privacy rule), same discipline
-    /// `AgentSignal.session_hash` already follows (event.rs, plan 135).
+    /// `AgentSignal.session_hash` already follows (event.rs, ).
     /// Doubles as the frontend's React list key.
     pub id: String,
     /// The same wire token an adapter itself would send (spec §3.1),
@@ -111,11 +109,11 @@ pub struct AgentSessionView {
     pub details: Vec<AgentDetailView>,
     pub project: Option<AgentProjectView>,
     pub host: Option<AgentHostView>,
-    /// Plan 147: the session's own subagent summary (spec §3.1's
+    /// the session's own subagent summary (spec §3.1's
     /// `subagent` object), mirrored 1:1 from `AgentState.subagent` — was
     /// stubbed `None` unconditionally at this ticket's predecessor
-    /// (plan 136); the registry (`registry.rs:288`) has populated the
-    /// domain field since plan 133/134, this view just hadn't surfaced it.
+    ///; the registry (`registry.rs:288`) has populated the
+    /// domain field since /134, this view just hadn't surfaced it.
     pub subagent: Option<AgentSubagentView>,
     /// Clock-derived: milliseconds since `state_entered_at`, as of
     /// `captured_at_ms` above — changes on every publish even with zero
@@ -125,7 +123,7 @@ pub struct AgentSessionView {
     /// `Some` only for a terminal (`Completed`/`Failed`) session,
     /// counting down as `agents.terminal_retention_secs` elapses.
     pub retention_remaining_ms: Option<u64>,
-    /// Plan 142 (v7 ticket 10 of 13, spec §6.2 expanded): the session's
+    /// the session's
     /// bounded transition history (`AgentState.history`, capped at
     /// `registry::MAX_TRANSITIONS_PER_SESSION` upstream — this view maps
     /// 1:1, it never re-derives or re-caps), oldest first, exactly the
@@ -143,7 +141,7 @@ pub struct AgentDetailView {
     pub value: String,
 }
 
-/// One entry of `AgentSessionView.history` (plan 142). `elapsed_ms` is
+/// One entry of `AgentSessionView.history`. `elapsed_ms` is
 /// CLOCK-DERIVED (milliseconds since that transition started, as of
 /// `captured_at_ms`) — same live-tick shape as `AgentSessionView.
 /// elapsed_ms` — but that's safe here specifically because publish
@@ -173,7 +171,7 @@ pub struct AgentHostView {
     pub bundle_id: Option<String>,
 }
 
-/// Plan 147: mirrors `AgentSubagentSummary` (model.rs) 1:1 — same
+/// mirrors `AgentSubagentSummary` (model.rs) 1:1 — same
 /// "wire-shape view struct, no re-derivation" idiom as
 /// `AgentProjectView`/`AgentHostView` above.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -227,7 +225,7 @@ pub(crate) fn health_to_view(health: &super::health::AdapterHealth) -> AdapterHe
     }
 }
 
-/// `now` (plan 142) is used ONLY to derive each history entry's
+/// `now` is used ONLY to derive each history entry's
 /// `elapsed_ms` (see `AgentTransitionView`'s own doc for why that's safe
 /// dedup-wise) — every other field here was already `now`-independent
 /// before this ticket.
@@ -279,9 +277,8 @@ fn to_view(state: &AgentState, now: Instant) -> AgentSessionView {
 }
 
 /// Wall-clock epoch millis "now" — same technique as
-/// `now_playing.rs::now_ms`/`history.rs::now_ms`, each module's own
-/// private copy rather than a shared crate-internal helper (neither of
-/// those two is in this ticket's scope to refactor).
+/// `history.rs::now_ms`, each module's own private copy rather than a
+/// shared crate-internal helper.
 fn now_ms() -> i64 {
     std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
@@ -310,7 +307,7 @@ struct PublishState {
     /// primitive), which is the whole reason this stays gated even
     /// though the dedup below no longer compares it.
     last: Option<Vec<AgentState>>,
-    /// Plan 177: the UNGATED slice the last emit was built from — the
+    /// the UNGATED slice the last emit was built from — the
     /// dedup comparison basis. See
     /// [`AgentBoardPublisher::publish_if_changed`]'s doc for why the
     /// comparison moved here and why that is a superset trigger rather
@@ -335,7 +332,7 @@ pub struct AgentBoardPublisher<R: tauri::Runtime = tauri::Wry> {
     app: tauri::AppHandle<R>,
     registry: AgentRegistryHandle,
     state: Arc<StdMutex<PublishState>>,
-    /// Plan 143 (ticket 11 of 13): the shared Adapter Health bookkeeping
+    /// the shared Adapter Health bookkeeping
     /// `http.rs`'s `/agent/events` handler writes to on every
     /// accepted/rejected event — read fresh into every EMITTED snapshot
     /// below (not itself part of `states_dedup_eq`'s comparison: a
@@ -359,7 +356,7 @@ pub struct AgentBoardPublisher<R: tauri::Runtime = tauri::Wry> {
     /// documented on [`Self::publish_if_changed`]; `true` restores the
     /// pre-2026-08-02 behavior where any live session shows the Board.
     board_show_working: bool,
-    /// Plan 171: live-session count mirror for the agent icon — stored
+    /// live-session count mirror for the agent icon — stored
     /// UNGATED (before `gate_presence`) in `publish_if_changed`, because
     /// the icon's "a session is genuinely running" tier must see Working
     /// sessions even when `board_show_working` hides them from the Board.
@@ -424,7 +421,7 @@ impl<R: tauri::Runtime> AgentBoardPublisher<R> {
     /// idle with no knowledge of the knob, and hover-expand declines for
     /// the same reason, without a second gate in either layer.
     ///
-    /// **Plan 177 — why the DEDUP compares the ungated slice.** The
+    /// ** — why the DEDUP compares the ungated slice.** The
     /// snapshot now also carries `tab_sessions` (the ungated list the
     /// user-initiated pull surface renders), so suppression has to be
     /// sensitive to changes the gate hides: with the Board gated off, a
@@ -443,7 +440,7 @@ impl<R: tauri::Runtime> AgentBoardPublisher<R> {
     /// at the layer below this one.
     pub async fn publish_if_changed(&self, now: Instant) -> bool {
         let ungated = self.registry.ordered_states(now).await;
-        // Plan 171: the agent icon counts LIVE sessions (spec §6:
+        // the agent icon counts LIVE sessions (spec §6:
         // "a session is genuinely running") — non-terminal, non-stale —
         // from the ungated registry view, independent of the Board's own
         // show-working presence gate.
@@ -517,7 +514,7 @@ impl<R: tauri::Runtime> AgentBoardPublisher<R> {
         }
     }
 
-    /// Plan 142 (v7 ticket 10 of 13, spec §6.2 expanded): a cheap,
+    /// a cheap,
     /// SYNCHRONOUS read of the session count in the last published
     /// `agent-state` snapshot. `lib.rs`'s hover primitive needs "is the
     /// Board currently showing any sessions at all" from inside an
@@ -579,7 +576,7 @@ impl<R: tauri::Runtime> AgentBoardPublisher<R> {
 
 /// Default interval for [`AgentBoardPublisher::spawn_tick`] — fine
 /// enough granularity for a resting-card elapsed-time/stale sweep
-/// without being a busy poll; not yet config-wired (plan 137's job, same
+/// without being a busy poll; not yet config-wired ('s job, same
 /// as `stale_after`/`terminal_retention_secs` themselves — see
 /// `AgentRegistry`'s own doc).
 pub const DEFAULT_TICK_INTERVAL: Duration = Duration::from_secs(5);
@@ -597,7 +594,7 @@ mod tests {
         AgentSessionKey::new(runtime, id).unwrap()
     }
 
-    // plan 147: same "build an AgentState directly" idiom as
+    // same "build an AgentState directly" idiom as
     // `focus.rs::state_with_host` — `to_view` is private to this module,
     // so its unit tests live here rather than round-tripping through the
     // registry/publisher.
@@ -700,7 +697,7 @@ mod tests {
         count
     }
 
-    /// Plan 177: every emitted payload, parsed. `listen_count` above
+    /// every emitted payload, parsed. `listen_count` above
     /// answers "did it emit"; this answers "what actually went on the
     /// wire" — needed now that one emission carries two different session
     /// lists (`sessions` gated, `tabSessions` ungated) and the interesting
@@ -955,7 +952,7 @@ mod tests {
         assert_ne!(session["id"], "s1");
     }
 
-    // --- plan 142 (v7 ticket 10 of 13, spec §6.2 expanded): the wire
+    // --- the wire
     // view's new `history` field + the publisher's synchronous session
     // count read. ---
 
@@ -1254,7 +1251,7 @@ mod tests {
         assert_eq!(publisher.last_session_count(), 1);
     }
 
-    // --- plan 177: the pull surface's ungated list. The presence gate
+    // --- the pull surface's ungated list. The presence gate
     // above governs the Board's AUTONOMOUS summoning; a tab the operator
     // clicked open is a user-initiated view and is owed whatever is
     // genuinely running. ---
@@ -1277,7 +1274,7 @@ mod tests {
         snapshots.lock().unwrap().clear();
 
         // A second working session appearing is a real registry change
-        // that the PRESENCE gate hides. Before plan 177 the dedup
+        // that the PRESENCE gate hides. Before the dedup
         // compared the gated slices and suppressed this entirely, which
         // left a pulled-open agent tab frozen on stale data. It now
         // emits — but the Board's own `sessions` list is still empty, so
@@ -1383,7 +1380,7 @@ mod tests {
             .await;
         assert!(publisher.publish_if_changed(base).await);
 
-        // The whole point of the plan: the lit agent icon (plan 171's
+        // The whole point of the plan: the lit agent icon ('s
         // ungated `tab_wire.agent_sessions` count) and the block that
         // opens when it is clicked now read the same registry view, so a
         // lit icon can no longer open an empty block. (The icon count is

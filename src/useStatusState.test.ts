@@ -15,8 +15,6 @@ const FALLBACK: StatusState = {
   agent: { activeSessions: 0 },
   football: { enabled: false, live: null },
   news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
-  weather: { enabled: false, current: null },
-  media: { enabled: false, current: null },
 };
 
 const LIVE: StatusState = {
@@ -25,19 +23,6 @@ const LIVE: StatusState = {
   agent: { activeSessions: 0 },
   football: { enabled: true, live: { label: "Arsenal 2–0 Chelsea", minute: "45'" } },
   news: { enabled: true, chargeFraction: 0, chargeCount: 0, isCharged: false },
-  weather: { enabled: false, current: null },
-  media: { enabled: false, current: null },
-};
-
-const NOW_PLAYING: StatusState["media"]["current"] = {
-  title: "Midnight City",
-  artist: "M83",
-  album: "Hurry Up, We're Dreaming",
-  playing: true,
-  elapsedMs: 1500,
-  durationMs: 243_000,
-  capturedAtMs: 1_753_000_000_000,
-  appBundleId: "app.zen-browser.zen",
 };
 
 describe("useStatusState", () => {
@@ -155,28 +140,7 @@ describe("useStatusState", () => {
     expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
   });
 
-  it("ignores a payload with a missing weather gate or a malformed weather summary", () => {
-    const { weather: _weather, ...missingWeather } = LIVE;
-    window.__NOTCHTAP_STATUS_STATE__ = missingWeather;
-    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
-
-    window.__NOTCHTAP_STATUS_STATE__ = {
-      ...LIVE,
-      weather: { enabled: "yes", current: null },
-    };
-    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
-
-    window.__NOTCHTAP_STATUS_STATE__ = {
-      ...LIVE,
-      weather: {
-        enabled: true,
-        current: { tempDisplay: 27, condition: "Cloudy", isDay: true },
-      },
-    };
-    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
-  });
-
-  // --- plan 180: the wire fields plan 171 added to the validator ---
+  // --- the wire fields added to the validator ---
   //
   // The four clauses below (`agent.activeSessions`, `news.chargeFraction`
   // with its `[0, 1]` range, `news.chargeCount`, `news.isCharged`) shipped
@@ -252,195 +216,6 @@ describe("useStatusState", () => {
     expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
   });
 
-  // --- plan 110 (Step B): the isDay guard ---
-
-  it("accepts a valid weather summary with isDay", () => {
-    const withWeather: StatusState = {
-      ...LIVE,
-      weather: {
-        enabled: true,
-        current: {
-          tempDisplay: "27°",
-          condition: "Cloudy",
-          isDay: true,
-          rainPct: null,
-          todayHighDisplay: null,
-          todayLowDisplay: null,
-          outlook: [],
-        },
-      },
-    };
-    window.__NOTCHTAP_STATUS_STATE__ = withWeather;
-    const { result } = renderHook(() => useStatusState());
-    expect(result.current).toEqual(withWeather);
-  });
-
-  // --- plan 122: the rainPct guard ---
-
-  it("accepts a weather summary with a numeric rainPct", () => {
-    const withRain: StatusState = {
-      ...LIVE,
-      weather: {
-        enabled: true,
-        current: {
-          tempDisplay: "27°",
-          condition: "Cloudy",
-          isDay: true,
-          rainPct: 75,
-          todayHighDisplay: null,
-          todayLowDisplay: null,
-          outlook: [],
-        },
-      },
-    };
-    window.__NOTCHTAP_STATUS_STATE__ = withRain;
-    const { result } = renderHook(() => useStatusState());
-    expect(result.current).toEqual(withRain);
-  });
-
-  // --- plan 131: the todayHighDisplay/todayLowDisplay/outlook guards ---
-
-  it("accepts a weather summary with hi/lo and a populated outlook", () => {
-    const withForecast: StatusState = {
-      ...LIVE,
-      weather: {
-        enabled: true,
-        current: {
-          tempDisplay: "27°",
-          condition: "Cloudy",
-          isDay: true,
-          rainPct: null,
-          todayHighDisplay: "30°",
-          todayLowDisplay: "22°",
-          outlook: [
-            { hourLabel: "08:00", tempDisplay: "27°", condition: "Clear", isDay: true },
-            { hourLabel: "10:00", tempDisplay: "30°", condition: "Rain", isDay: true },
-            { hourLabel: "12:00", tempDisplay: "31°", condition: "Storm", isDay: true },
-          ],
-        },
-      },
-    };
-    window.__NOTCHTAP_STATUS_STATE__ = withForecast;
-    const { result } = renderHook(() => useStatusState());
-    expect(result.current).toEqual(withForecast);
-  });
-
-  it("ignores a weather summary missing todayHighDisplay/todayLowDisplay/outlook", () => {
-    window.__NOTCHTAP_STATUS_STATE__ = {
-      ...LIVE,
-      weather: {
-        enabled: true,
-        current: { tempDisplay: "27°", condition: "Cloudy", isDay: true, rainPct: null },
-      },
-    };
-    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
-  });
-
-  it("ignores a weather summary with a non-array outlook or a malformed point in it", () => {
-    window.__NOTCHTAP_STATUS_STATE__ = {
-      ...LIVE,
-      weather: {
-        enabled: true,
-        current: {
-          tempDisplay: "27°",
-          condition: "Cloudy",
-          isDay: true,
-          rainPct: null,
-          todayHighDisplay: null,
-          todayLowDisplay: null,
-          outlook: "nope",
-        },
-      },
-    };
-    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
-
-    window.__NOTCHTAP_STATUS_STATE__ = {
-      ...LIVE,
-      weather: {
-        enabled: true,
-        current: {
-          tempDisplay: "27°",
-          condition: "Cloudy",
-          isDay: true,
-          rainPct: null,
-          todayHighDisplay: null,
-          todayLowDisplay: null,
-          outlook: [{ hourLabel: "08:00", tempDisplay: "27°", condition: "Clear" }],
-        },
-      },
-    };
-    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
-  });
-
-  it("ignores a weather summary with a non-string, non-null todayHighDisplay or todayLowDisplay", () => {
-    window.__NOTCHTAP_STATUS_STATE__ = {
-      ...LIVE,
-      weather: {
-        enabled: true,
-        current: {
-          tempDisplay: "27°",
-          condition: "Cloudy",
-          isDay: true,
-          rainPct: null,
-          todayHighDisplay: 30,
-          todayLowDisplay: null,
-          outlook: [],
-        },
-      },
-    };
-    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
-  });
-
-  it("ignores a weather summary missing rainPct, rather than reaching the renderer as undefined", () => {
-    window.__NOTCHTAP_STATUS_STATE__ = {
-      ...LIVE,
-      weather: {
-        enabled: true,
-        current: { tempDisplay: "27°", condition: "Cloudy", isDay: true },
-      },
-    };
-    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
-  });
-
-  it("ignores a weather summary with a non-numeric, non-null rainPct", () => {
-    window.__NOTCHTAP_STATUS_STATE__ = {
-      ...LIVE,
-      weather: {
-        enabled: true,
-        current: { tempDisplay: "27°", condition: "Cloudy", isDay: true, rainPct: "75" },
-      },
-    };
-    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
-  });
-
-  it("ignores a weather summary missing isDay, rather than reaching the renderer as undefined", () => {
-    window.__NOTCHTAP_STATUS_STATE__ = {
-      ...LIVE,
-      weather: { enabled: true, current: { tempDisplay: "27°", condition: "Cloudy" } },
-    };
-    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
-  });
-
-  it("ignores a weather summary with a non-boolean isDay", () => {
-    window.__NOTCHTAP_STATUS_STATE__ = {
-      ...LIVE,
-      weather: {
-        enabled: true,
-        current: { tempDisplay: "27°", condition: "Cloudy", isDay: 0 },
-      },
-    };
-    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
-
-    window.__NOTCHTAP_STATUS_STATE__ = {
-      ...LIVE,
-      weather: {
-        enabled: true,
-        current: { tempDisplay: "27°", condition: "Cloudy", isDay: "false" },
-      },
-    };
-    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
-  });
-
   it("accepts the live=null all-clear shape rust sends when nothing is in-play", () => {
     const allClear: StatusState = {
       paused: false,
@@ -448,76 +223,10 @@ describe("useStatusState", () => {
       agent: { activeSessions: 0 },
       football: { enabled: false, live: null },
       news: { enabled: true, chargeFraction: 0, chargeCount: 0, isCharged: false },
-      weather: { enabled: false, current: null },
-      media: { enabled: false, current: null },
     };
     window.__NOTCHTAP_STATUS_STATE__ = allClear;
     const { result } = renderHook(() => useStatusState());
     expect(result.current).toEqual(allClear);
-  });
-
-  // --- plan 104: the media validator ---
-
-  it("accepts a valid now-playing summary", () => {
-    const withMedia: StatusState = {
-      ...LIVE,
-      media: { enabled: true, current: NOW_PLAYING },
-    };
-    window.__NOTCHTAP_STATUS_STATE__ = withMedia;
-    const { result } = renderHook(() => useStatusState());
-    expect(result.current).toEqual(withMedia);
-  });
-
-  it("accepts a now-playing summary with null artist/album/durationMs/appBundleId", () => {
-    const minimal: StatusState = {
-      ...LIVE,
-      media: {
-        enabled: true,
-        current: {
-          title: "Some Video",
-          artist: null,
-          album: null,
-          playing: false,
-          elapsedMs: 0,
-          durationMs: null,
-          capturedAtMs: 1_753_000_000_000,
-          appBundleId: null,
-        },
-      },
-    };
-    window.__NOTCHTAP_STATUS_STATE__ = minimal;
-    const { result } = renderHook(() => useStatusState());
-    expect(result.current).toEqual(minimal);
-  });
-
-  it("ignores a payload with a missing media gate or a malformed now-playing summary", () => {
-    const { media: _media, ...missingMedia } = LIVE;
-    window.__NOTCHTAP_STATUS_STATE__ = missingMedia;
-    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
-
-    window.__NOTCHTAP_STATUS_STATE__ = {
-      ...LIVE,
-      media: { enabled: "yes", current: null },
-    };
-    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
-
-    window.__NOTCHTAP_STATUS_STATE__ = {
-      ...LIVE,
-      media: { enabled: true, current: { ...NOW_PLAYING, title: 5 } },
-    };
-    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
-
-    window.__NOTCHTAP_STATUS_STATE__ = {
-      ...LIVE,
-      media: { enabled: true, current: { ...NOW_PLAYING, elapsedMs: -1 } },
-    };
-    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
-
-    window.__NOTCHTAP_STATUS_STATE__ = {
-      ...LIVE,
-      media: { enabled: true, current: { ...NOW_PLAYING, playing: "yes" } },
-    };
-    expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
   });
 
   it("updates from the status-state event even when a valid global was also planted", async () => {

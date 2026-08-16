@@ -1,4 +1,4 @@
-//! Plan 133: the provider-neutral Agent domain model (spec §2).
+//! the provider-neutral Agent domain model (spec §2).
 //!
 //! Two shapes live here, mirroring the `queue.rs` / `event.rs` split
 //! between the mutable internal item (`QueueItem`) and the wire-facing
@@ -186,7 +186,7 @@ impl AgentSessionKey {
 
     /// Builds the suffixed fallback key used when a provider incorrectly
     /// reuses a terminal session's native id (spec §2.1's last
-    /// paragraph, plan 133's "terminal-never-reactivates" requirement).
+    /// paragraph, 's "terminal-never-reactivates" requirement).
     /// `generation` is a 1-based reuse counter so repeated collisions on
     /// the same original id keep producing distinct keys
     /// (`...#reuse1`, `...#reuse2`, ...) rather than colliding with each
@@ -204,8 +204,8 @@ impl AgentSessionKey {
 /// [`AgentSessionKey`]. Shared by every place that must refer to a
 /// session without ever surfacing its raw `native_session_id`: the §10
 /// `agent.session_hash` structured log field (`http.rs`'s
-/// `agent_events_handler`, plan 134) and `AgentSignal.session_hash`
-/// (`event.rs`, plan 135) — see that struct's doc for why persisting the
+/// `agent_events_handler`, ) and `AgentSignal.session_hash`
+/// (`event.rs`, ) — see that struct's doc for why persisting the
 /// raw id would violate spec §9. `DefaultHasher::new()` uses a fixed
 /// SipHash key (unlike `HashMap`'s own `RandomState`), so the same
 /// session hashes identically across every event in this process.

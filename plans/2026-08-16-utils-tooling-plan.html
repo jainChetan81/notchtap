@@ -1,0 +1,138 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Utils & Tooling — notchtap (draft plan)</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --ink:#e8eaf0; --muted:#9aa3b2; --accent:#4fd1a5; --warn:#f0b429; --risk:#ef6a6a; --line:#262b36; --chip:#222835; }
+  @media (prefers-color-scheme: light) { :root{--bg:#f7f8fa;--panel:#fff;--ink:#1c2330;--muted:#5b6577;--accent:#0e8a63;--warn:#9a6b00;--risk:#c0392b;--line:#e3e7ee;--chip:#eef1f6;} }
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,"SF Pro Text",Segoe UI,Roboto,sans-serif}
+  main{max-width:920px;margin:0 auto;padding:40px 24px 80px}
+  h1{font-size:28px;line-height:1.2;margin:0 0 4px} h2{font-size:21px;margin:44px 0 12px;border-bottom:1px solid var(--line);padding-bottom:8px}
+  h3{font-size:16px;margin:22px 0 8px;color:var(--ink)} .sub{color:var(--muted);margin-bottom:28px}
+  .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:16px 0}
+  .tldr{border-left:4px solid var(--accent)} .warn{border-left:4px solid var(--warn)} .risk{border-left:4px solid var(--risk)}
+  .ok{color:var(--accent);font-weight:600} .tag{display:inline-block;background:var(--chip);border-radius:999px;padding:2px 10px;font-size:13px;color:var(--muted);margin-right:6px}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14.5px} th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+  th{color:var(--muted);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.04em}
+  code{background:var(--chip);border-radius:5px;padding:1px 6px;font:13.5px/1.5 "SF Mono",ui-monospace,Menlo,monospace}
+  ul,ol{padding-left:22px} li{margin:5px 0} .small{font-size:13.5px;color:var(--muted)} details{margin:10px 0} summary{cursor:pointer;color:var(--muted);font-size:14px}
+</style>
+</head>
+<body>
+<main>
+
+<h1>Utils & Tooling — notchtap</h1>
+<p class="sub">Where shared helpers should live, when to extract them, and how to keep them lean · draft 1 · 2026-08-16 · branch <code>chore/anti-slop-cleanup</code></p>
+
+<div class="panel tldr">
+<strong>TL;DR</strong>
+<ul>
+<li><code>src/lib</code> has only 7 files but the app repeats the same small helpers in many places — 35 <code>typeof</code> guards, 3 copies of <code>isNonNegativeInteger</code>, 2 of <code>isDetailArray</code>, and similar ad-hoc validators in every <code>use*State</code> hook.</li>
+<li>This plan does not add utils for their own sake. It sets one rule: <strong>extract when a pure helper exists in 2+ domains or would prevent a copy-paste on the next feature.</strong></li>
+<li>Result: 4 small new modules (<code>guards</code>, <code>parse</code>, <code>format</code>, <code>error</code>), one tests rule, and one lint rule. No utils folder sprawl. Every export stays named, tested, and tree-shakable.</li>
+</ul>
+</div>
+
+<h2>1 · What we found</h2>
+<div class="panel">
+<p class="small">Quick audit on <code>chore/anti-slop-cleanup</code> (2026-08-16). Counts exclude <code>*.test.*</code>.</p>
+<table>
+<tr><th>Signal</th><th>Where</th><th>Copies</th><th>Note</th></tr>
+<tr><td><code>isNonNegativeInteger</code></td><td><code>useAgentState.ts:105</code>, <code>useSlotState.ts:197</code>, <code>useStatusState.ts:50</code></td><td>3</td><td>Identical body. Each file also re-defines its own <code>isDetailArray</code> variant.</td></tr>
+<tr><td><code>isDetailArray</code> / detail guards</td><td><code>useAgentState:113</code>, <code>useSlotState:181</code></td><td>2 + variants</td><td>Same shape — <code>{label,value}</code>. <code>useAgentState</code> uses <code>AgentDetail</code>, <code>useSlotState</code> inlines the type.</td></tr>
+<tr><td><code>isNullableString</code></td><td><code>useAgentState:109</code> only</td><td>1</td><td>Used 6× inside that file but useful across all boundary parsers.</td></tr>
+<tr><td><code>typeof x === "string"/"number"</code></td><td>35 hits across <code>src/</code></td><td>—</td><td>The anti-slop lint already flags 9 of them (actionStatus, presentationFacts, news/history/agents sections, adapter). Central guard would eat most.</td></tr>
+<tr><td><code>isValid*Payload</code> validators</td><td><code>useSlotState</code>, <code>useStatusState</code>, <code>useAgentState</code>, <code>useTabSelection</code>, <code>useAgentViewedSession</code></td><td>5 files</td><td>Each file repeats the same "unknown → typed" preamble (null check, typeof checks, queueTotal checks). Same structure, different field list.</td></tr>
+<tr><td><code>formatBytes / formatBytePair / formatUptime</code></td><td><code>src/settings/byteFormat.ts</code> → used only in <code>AboutSection</code></td><td>1 place</td><td>Already well-placed; not duplicated. Template for the new helpers.</td></tr>
+<tr><td><code>describeActionError / ActionError</code></td><td><code>settings/actionStatus.tsx</code> (+ 2 call sites)</td><td>1 def, 2 uses</td><td>Error-to-string is central but adapters re-do their own <code>typeof reason</code> branching.</td></tr>
+<tr><td><code>satisfies Record&lt;Token,string&gt;</code> maps</td><td>14 maps (presentation, sourceColors, StatusRailCard, IconStrip…)</td><td>—</td><td>Not duplicated, already idiomatic. Keep as-is; new utils must follow the same <code>satisfies</code> style, not <code>as Record</code>.</td></tr>
+</table>
+<p class="small">What we did <strong>not</strong> find: duplicated components, duplicated hooks with state, or cross-Rust helpers worth sharing yet — Rust dupes are ~120 lines of provider security copied in 3 files (already tracked in the Big Cleanup plan, Workstream C). The web gap is almost entirely <em>small pure guards and parsers</em>.</p>
+</div>
+
+<h2>2 · Rules for new utilities</h2>
+<div class="panel">
+<h3>2.1 When to extract</h3>
+<ul>
+<li><strong>2+ domains rule:</strong> a pure helper used in two domains (e.g., agent + slot) or copied verbatim twice gets extracted. A helper used twice inside one file stays local.</li>
+<li><strong>Purity rule:</strong> only pure, no-I/O, no-React-state helpers go in <code>src/lib</code>. Anything needing hooks, <code>window</code>, or Tauri stays colocated or in <code>src/settings/*</code>.</li>
+<li><strong>No speculative utils:</strong> don't create a file because it "might be useful." Wait for the second use.</li>
+</ul>
+<h3>2.2 Where it lives</h3>
+<ul>
+<li><code>src/lib/guards.ts</code> — tiny type guards: <code>isNonNegativeInteger</code>, <code>isNullableString</code>, <code>isString</code>, <code>isNumber</code>, <code>isDetailArray</code>. No domain imports.</li>
+<li><code>src/lib/parse.ts</code> — boundary parsers that compose guards (e.g., <code>parseNonNegativeInt</code>, <code>parseNullableString</code>). Re-exports guards it uses.</li>
+<li><code>src/lib/format.ts</code> — display formatters (bytes, uptime already exist; add <code>formatDuration</code> if needed). Extends <code>src/settings/byteFormat.ts</code> rather than replacing it — byte helpers stay where settings already imports them, or re-export from <code>lib/format</code>.</li>
+<li><code>src/lib/error.ts</code> — <code>describeActionError</code> + <code>ActionError</code> type + <code>isActionError</code>. Single import for all error-to-string.</li>
+<li><code>src/lib/*</code> never imports from <code>src/settings/*</code> or <code>src/components/*</code>. Direction is always inward.</li>
+<li>Rust stays separate: <code>src-tauri/src/util.rs</code> (or <code>src-tauri/src/lib/parse.rs</code>) only if the same Rust helper appears 3×. Don't pre-split.</li>
+</ul>
+<h3>2.3 How it looks</h3>
+<ul>
+<li>Named exports only. No default exports. No barrel <code>index.ts</code> that re-exports everything — import straight from the file so tree-shaking and grep stay honest.</li>
+<li>Every export has a 1-line present-tense doc comment or a <code>SAFETY:</code> note if it uses <code>as</code>. No history, no plan numbers.</li>
+<li>Maps use <code>satisfies Record&lt;Key, Value&gt;</code>, never <code>as Record</code>. Exhaustiveness is checked by the type, not a cast.</li>
+<li>Guards are <code>(v: unknown) =&gt; v is T</code> and handle <code>null</code> explicitly — callers don't add extra null checks around them.</li>
+<li>Tests live next to the file: <code>src/lib/guards.test.ts</code>, etc. One test file per util file, not a big shared suite.</li>
+</ul>
+<h3>2.4 What we don't do</h3>
+<ul>
+<li>No <code>src/utils</code> junk drawer. If you can't name the file after its domain (<code>guards</code>, <code>format</code>, <code>error</code>), it doesn't deserve a file.</li>
+<li>No wrapping a one-liner in a util to "be consistent." <code>typeof x === "string"</code> with a single use stays inline; the lint exception for guards covers narrow, reviewed sites (see §4).</li>
+<li>No utils that secretly read global state or the Tauri bridge.</li>
+</ul>
+</div>
+
+<h2>3 · Concrete extraction list (from the audit)</h2>
+<table>
+<tr><th>#</th><th>New home</th><th>What moves</th><th>From</th><th>Risk</th></tr>
+<tr><td>U1</td><td><code>src/lib/guards.ts</code></td><td><code>isNonNegativeInteger</code>, <code>isNullableString</code>, <code>isDetailArray</code>, <code>isString</code>/<code>isNumber</code> conveniences</td><td><code>useAgentState</code>, <code>useSlotState</code>, <code>useStatusState</code></td><td class="ok">low</td></tr>
+<tr><td>U2</td><td><code>src/lib/parse.ts</code></td><td>Shared <code>parse*Payload</code> preamble helper (null/typeof/record check) used by all <code>isValid*Payload</code> fns</td><td>5 <code>use*State</code> hooks + tab/viewed validators</td><td class="ok">low</td></tr>
+<tr><td>U3</td><td><code>src/lib/error.ts</code></td><td>Move <code>describeActionError</code> + <code>ActionError</code> out of <code>settings/actionStatus.tsx</code>, keep re-export there for compat</td><td><code>settings/actionStatus.tsx</code> → lib</td><td class="ok">low</td></tr>
+<tr><td>U4</td><td><code>src/lib/format.ts</code> (or extend <code>byteFormat.ts</code>)</td><td>Consolidate any future duration/time formatters; leave current byte helpers as-is, add re-export</td><td><code>byteFormat.ts</code></td><td class="ok">none</td></tr>
+<tr><td>U5</td><td><code>src-tauri/src/util/parse.rs</code> (if needed)</td><td>Deduplicate the 120-line provider security copy (already in Big Cleanup C) + any repeated <code>serde</code> boundary helpers</td><td>3 provider files</td><td class="ok">low-med</td></tr>
+</table>
+<p class="small">U1 is the only one that deletes duplicated code immediately (3 → 1, 2 → 1). U2–U4 prevent the next copy-paste. None change behavior — same checks, same return values, same error strings.</p>
+
+<h2>4 · Lint & review gates</h2>
+<ul>
+<li>The <code>anti-slop</code> oxlint plugin stays the gate. Guard helpers in <code>src/lib/guards.ts</code> are the <em>allowed</em> place for narrow <code>typeof</code> checks; the <code>no-runtime-typeof</code> rule should permit them there (or those files get a narrow override), everywhere else the rule keeps firing.</li>
+<li><code>require-safety-comment-for-type-assertion</code> still applies in utils — every <code>as</code> needs its <code>SAFETY:</code> line. No new exception.</li>
+<li><code>no-unknown-parameters</code> prefers named payload types over <code>Record&lt;string, unknown&gt;</code> — new parse helpers must take <code>unknown</code> at the boundary and return a narrowed type, not widen to <code>any</code>.</li>
+<li>CI stays <code>npx oxlint</code> + <code>npx tsc --noEmit</code> + <code>npx vitest run</code>. No new tool.</li>
+</ul>
+
+<h2>5 · Implementation order (small, reversible steps)</h2>
+<div class="panel">
+<ol>
+<li><strong>Create <code>src/lib/guards.ts</code> + test.</strong> Move the three guard bodies verbatim, keep original files re-exporting or importing. Run <code>npx oxlint</code> — <code>typeof</code> errors should drop 35 → ~26 and the 3 duplicated guards disappear.</li>
+<li><strong>Point existing call sites at it.</strong> Replace inline bodies in <code>useAgentState</code>, <code>useSlotState</code>, <code>useStatusState</code> with imports. Delete the local copies. Verify <code>cargo test</code> / <code>npx vitest run</code> green.</li>
+<li><strong>Move <code>describeActionError</code> → <code>src/lib/error.ts</code>.</strong> Keep <code>settings/actionStatus.tsx</code> re-exporting it so no consumer changes import paths in this step.</li>
+<li><strong>Introduce <code>src/lib/parse.ts</code> only when the next validator is touched.</strong> Don't rewrite all 5 validators at once — do it file-by-file when that hook is otherwise being edited.</li>
+<li><strong>Rust (U5) after web.</strong> Share the provider security module, then look for repeated serde helpers only if a third copy appears.</li>
+</ol>
+<p class="small">Each step is one commit, one file + its test, and must keep <code>npx tsc --noEmit</code> and <code>npx vitest run</code> green. If a step doesn't reduce a duplication count, revert it — that util wasn't needed.</p>
+</div>
+
+<h2>6 · What "done" looks like</h2>
+<ul>
+<li><code>rg "function isNonNegativeInteger" src --glob '!*.test.*'</code> → 1 hit (<code>src/lib/guards.ts</code>).</li>
+<li><code>rg "isDetailArray" src</code> → 1 definition, N imports.</li>
+<li>The 9 remaining <code>no-runtime-typeof</code> lint errors are either inside <code>src/lib/guards.ts</code> (allowed) or have been replaced by guard calls.</li>
+<li>No new <code>src/utils</code> folder, no barrel index, no default exports, no util that imports from components.</li>
+</ul>
+
+<h2>7 · Also: current cleanup standing (so this plan slots in)</h2>
+<div class="panel small">
+<ul>
+<li>Branch <code>chore/anti-slop-cleanup</code>. <code>npx tsc --noEmit</code> is green. <code>npx vitest run</code> is 741/741. <code>npx oxlint</code> is 10 errors (was 328) — all <code>no-runtime-typeof</code> (9) plus safety/type-assertion stragglers.</li>
+<li>Workstream A (comments) partially done — CSS/web mostly purged, ~12.6k lines targeted, Rust big files deferred. Workstream E (lint) is the current bottleneck; F (test trim) is queued after lint is at 0.</li>
+<li>This utils plan is <em>additive</em> and should run after Workstream E hits 0, or interleaved as U1 only (the low-risk guard dedupe) to help E close.</li>
+</ul>
+</div>
+
+</main>
+</body>
+</html>

@@ -1,71 +1,41 @@
-//! Plan 140 (v7 ticket 8 of 13, `docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`
-//! §4.4): the real, pure Kimi Code hook-payload parser, plus the version
-//! gate that decides whether a locally installed Kimi even supports
-//! hooks (see [`super::kimi_version`]).
+//! Pure Kimi Code hook-payload parser; the version gate deciding
+//! whether a local Kimi even supports hooks lives in
+//! [`super::kimi_version`]. [`normalize`] takes the raw JSON bytes Kimi
+//! writes to a hook command's stdin and returns a
+//! [`super::wire::NormalizedEvent`].
 //!
-//! [`normalize`] takes the raw JSON bytes Kimi Code writes to a hook
-//! command's stdin and returns a [`super::wire::NormalizedEvent`] ready
-//! for [`super::wire::build_wire_body`]. It is pure: no I/O, no clock
-//! read, no randomness.
+//! ## Field-name assumption: NEEDS VERIFICATION
 //!
-//! ## Doc verification and a doc-vs-spec discrepancy: no documented field
-//! names for most payloads
-//!
-//! Verified against
-//! <https://moonshotai.github.io/kimi-code/en/customization/hooks> on
-//! 2026-07-26. That page documents the **event list** precisely — 14
-//! lifecycle events including `SessionStart`, `SessionEnd`,
-//! `PermissionRequest`, `PermissionResult`, `Notification`, `Stop`,
-//! `StopFailure`, `PostToolUse`, `PostToolUseFailure`, `SubagentStart`,
-//! `SubagentStop`, `PreToolUse`, `UserPromptSubmit`, `Interrupt`,
-//! `PreCompact`/`PostCompact` — and a base payload shape
-//! (`hook_event_name`, `session_id`, `cwd`, "specific events append
-//! additional fields using snake_case naming"), but it does **not**
-//! publish full per-event field tables the way Claude Code's hooks page
-//! does. Kimi Code's own docs (`docs/AGENTS.md`, this repo's own
-//! `CLAUDE.md`-equivalent for that project) and its hook event *names*
-//! are a verbatim match for Claude Code's set (this ticket's instructions
-//! call this the "equivalents of the §4.2 set" — the doc confirms it is
-//! not just a rough equivalence but the same named events). Per this
-//! ticket's instruction to "mirror `claude_code.rs`'s structural-enum-
-//! only discipline", this parser assumes the **same field names** Claude
+//! Kimi's hooks page documents the event list and base payload shape
+//! but no per-event field tables; its event names match Claude Code's
+//! set verbatim, so this parser assumes the SAME field names Claude
 //! Code's documented payloads use (`source`, `end_reason`, `tool_name`,
 //! `tool_input`, `notification_type`, `error_type`, `agent_id`,
-//! `agent_type`) for the events both runtimes share, rather than
-//! inventing new ones with no doc support. This is a recorded assumption,
-//! not a verified fact — it needs confirmation against a real Kimi Code
-//! hook payload (this ticket's own manual-smoke checklist item) before
-//! being treated as load-bearing; the fixtures below are named/shaped to
-//! make that a one-file diff if real payloads differ.
+//! `agent_type`) rather than inventing new ones. A recorded assumption,
+//! not a verified fact — confirm against a real Kimi hook payload
+//! before treating it as load-bearing; fixtures are shaped so real
+//! payloads differing is a one-file diff.
 //!
-//! `notification_type`'s possible values are a second, narrower
-//! assumption: Kimi's `Notification` hook is documented only as
-//! "Background task status changes" with an example matcher of
-//! `task.completed` — differently scoped from Claude Code's idle/
-//! permission-prompt notifications. [`classify_notification`] still
-//! treats `permission_prompt`/`idle_prompt`/`agent_needs_input` as the
-//! two recognized closed-enum values (matching Claude Code, per the
-//! "equivalent events" framing) and everything else — including
-//! `task.completed` — falls through to `Informational`, never inferred
-//! from `message` wording.
+//! `notification_type` values are a second, narrower assumption:
+//! [`classify_notification`] recognizes
+//! `permission_prompt`/`idle_prompt`/`agent_needs_input` as the closed
+//! enum; everything else — including Kimi's documented `task.completed`
+//! — falls through to `Informational`, never inferred from `message`
+//! wording.
 //!
-//! ## Sanitization (spec §3.2)
+//! ## Sanitization
 //!
-//! Identical discipline to `claude_code.rs`: `tool_name` forwarded as a
-//! short identifier; `tool_input`/`tool_result` never forwarded wholesale
-//! (`command` is never read); a `Path` detail extracted only from a known
-//! path-shaped `tool_input` key, basename only; free-text fields
-//! (`message`, `last_assistant_message`, `error_message`) never
-//! forwarded.
+//! Identical discipline to `claude_code.rs`: `tool_name` forwarded as
+//! a short identifier; `tool_input`/`tool_result` never forwarded
+//! wholesale (`command` is never read); `Path` detail only from a known
+//! path-shaped key, basename only; free-text fields never forwarded.
 
 use thiserror::Error;
 
 use super::wire::NormalizedEvent;
 
-/// Spec §1's Kimi capability row — the full Claude-Code-equivalent set
-/// (this ticket's instructions: "input_required is notification-derived
-/// per §1 — mirror claude_code.rs's structural-enum-only discipline").
-/// Sent unchanged on every event this parser produces.
+/// Kimi's declared capability set — the full Claude-Code-equivalent
+/// set. Sent unchanged on every event this parser produces.
 pub const CAPABILITIES: [&str; 7] = [
     "session_lifecycle",
     "permission_requests",
@@ -76,8 +46,7 @@ pub const CAPABILITIES: [&str; 7] = [
     "subagents",
 ];
 
-/// Typed parse errors (repo rule, CLAUDE.md: `thiserror` + matchable
-/// variants for library/internal modules).
+/// Typed parse errors.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum KimiParseError {
     #[error("malformed json: {0}")]
@@ -90,10 +59,9 @@ pub enum KimiParseError {
     UnsupportedHookEvent(String),
 }
 
-/// The raw wire shape assumed for Kimi Code hooks — see this module's top
-/// doc for the field-name assumption this makes and why. Every field is
-/// `Option` so a payload missing a field this parser doesn't use for a
-/// given event still deserializes cleanly.
+/// The raw wire shape ASSUMED for Kimi Code hooks — see the module doc.
+/// Every field is `Option` so a payload missing a field this parser
+/// doesn't use for a given event still deserializes cleanly.
 #[derive(Debug, serde::Deserialize)]
 struct RawHookPayload {
     session_id: Option<String>,
@@ -228,9 +196,8 @@ fn map_event(hook_event_name: &str, payload: &RawHookPayload) -> Result<Mapped, 
             }
         }
         "Notification" => classify_notification(payload.notification_type.as_deref()),
-        // Operator decision 2026-07-26 (spec §2.1): `Stop` fires once per
-        // turn, not once per session — non-terminal, mirrors
-        // `claude_code.rs`'s `"Stop"` arm.
+        // `Stop` fires once per turn, not once per session —
+        // non-terminal, mirrors `claude_code.rs`'s `"Stop"` arm.
         "Stop" => Mapped {
             kind: "completed",
             state: "completed",
@@ -239,12 +206,9 @@ fn map_event(hook_event_name: &str, payload: &RawHookPayload) -> Result<Mapped, 
             details: Vec::new(),
             subagent: None,
         },
-        // `StopFailure` is `Stop`'s failure counterpart at the same
-        // per-turn point, not a session end — non-terminal for the same
-        // reason as `claude_code.rs`'s `"StopFailure"` arm (see that
-        // file's doc comment): treating it as terminal would fragment one
-        // multi-turn session into a suffixed reuse key on every turn that
-        // fails.
+        // `StopFailure` fires at the same per-turn point, not session
+        // end — non-terminal for the same reason as `claude_code.rs`'s
+        // `"StopFailure"` arm.
         "StopFailure" => {
             let error_type = payload
                 .error_type
@@ -333,10 +297,9 @@ fn map_event(hook_event_name: &str, payload: &RawHookPayload) -> Result<Mapped, 
 }
 
 /// Parses one Kimi Code hook stdin payload into a [`NormalizedEvent`].
-/// Pure — see this module's top doc. Callers (the `notchtap-agent hook
-/// kimi` CLI path) are responsible for the version gate
-/// ([`super::kimi_version`]) BEFORE calling this — this function itself
-/// does not know or care what Kimi version produced the payload.
+/// Pure. Callers must run the version gate ([`super::kimi_version`])
+/// BEFORE calling this — this function does not know or care what Kimi
+/// version produced the payload.
 pub fn normalize(stdin: &[u8]) -> Result<NormalizedEvent, KimiParseError> {
     let payload: RawHookPayload =
         serde_json::from_slice(stdin).map_err(|e| KimiParseError::MalformedJson(e.to_string()))?;
@@ -470,9 +433,9 @@ mod tests {
 
     #[test]
     fn notification_generic_maps_to_informational() {
-        // notification_type "task.completed" — a Kimi-specific value not
-        // in the recognized closed enum — must never be inferred as
-        // permission/idle from wording; falls through to Informational.
+        // notification_type "task.completed" is outside the recognized
+        // closed enum — falls through to Informational, never inferred
+        // from wording.
         let event = normalize(fixture("notification-generic").as_bytes()).unwrap();
         assert_eq!(event.kind, "informational");
         assert_eq!(event.state, "working");
@@ -480,7 +443,7 @@ mod tests {
 
     #[test]
     fn stop_maps_to_completed_non_terminal() {
-        // Operator decision 2026-07-26: per-turn Stop must not be terminal.
+        // Per-turn Stop must not be terminal.
         let event = normalize(fixture("stop").as_bytes()).unwrap();
         assert_eq!(event.kind, "completed");
         assert!(
@@ -552,7 +515,7 @@ mod tests {
     }
 
     // --- sanitization: a fixture with a fake secret/full command line
-    // never emits it (spec §3.2) -------------------------------------
+    // never emits it ---------------------------------------------------
 
     #[test]
     fn secret_and_full_command_line_never_appear_in_normalized_output() {
@@ -652,7 +615,7 @@ mod tests {
         }
     }
 
-    // --- declared capabilities vs. fixture suite must agree (spec §14) -
+    // --- declared capabilities vs. fixture suite must agree ------------
 
     #[test]
     fn declared_capabilities_match_the_spec_1_kimi_row() {

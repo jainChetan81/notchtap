@@ -1,4 +1,4 @@
-// Plan 180 (Step 4): the TS half of a two-language fixture table.
+// the TS half of a two-language fixture table.
 //
 // `isValidPrefixShortcut` (ShortcutsSection.tsx) and
 // `is_valid_prefix_shortcut` (src-tauri/src/settings.rs) are hand-written

@@ -34,7 +34,7 @@ describe("useTabSelection", () => {
     expect(listen).toHaveBeenCalledWith("tab-selection-changed", expect.any(Function));
   });
 
-  it.each(["agent", "football", "music", "weather", "news"] as const)(
+  it.each(["agent", "football", "news"] as const)(
     "renders %s when rust selects it",
     async (tab) => {
       const { result } = await renderReady();
@@ -52,14 +52,14 @@ describe("useTabSelection", () => {
 
   it("an explicit null deselects (spec's 'none' page), and is not treated as malformed", async () => {
     const { result } = await renderReady();
-    emit({ selected: "music" });
+    emit({ selected: "football" });
     emit({ selected: null });
     expect(result.current).toBeNull();
   });
 
   it("an unknown tab token falls back to nothing selected rather than rendering a phantom tab", async () => {
     const { result } = await renderReady();
-    emit({ selected: "music" });
+    emit({ selected: "football" });
     emit({ selected: "podcast" });
     expect(result.current).toBeNull();
   });
@@ -72,7 +72,7 @@ describe("useTabSelection", () => {
     ["an array", ["agent"]],
   ])("%s falls back to nothing selected", async (_label, payload) => {
     const { result } = await renderReady();
-    emit({ selected: "weather" });
+    emit({ selected: "football" });
     emit(payload);
     expect(result.current).toBeNull();
   });
@@ -88,7 +88,7 @@ describe("useTabSelection", () => {
 
 describe("isValidTabSelection", () => {
   it("accepts every tab in the strip's own order plus null", () => {
-    for (const tab of ["agent", "football", "music", "weather", "news"]) {
+    for (const tab of ["agent", "football", "news"]) {
       expect(isValidTabSelection({ selected: tab })).toBe(true);
     }
     expect(isValidTabSelection({ selected: null })).toBe(true);

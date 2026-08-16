@@ -1,9 +1,8 @@
-// Plan 171 (tab-notch redesign, spec docs/superpowers/specs/2026-08-02-
-// tab-notch-design.md section 6): the five neon icon-tabs, right-aligned
-// inside the right flank, hidden entirely at rest and revealed only once
-// the flank behind them has already painted black (the flank's own
-// `.hovered` gate lives in the caller's CSS, not here — this component
-// always renders all five icons; `icon-strip.css`'s `.hovered .icon-strip`
+// The three neon icon-tabs, right-aligned inside the right flank, hidden
+// entirely at rest and revealed only once the flank behind them has already
+// painted black (the flank's own `.hovered` gate lives in the caller's CSS,
+// not here — this component always renders all three icons;
+// `icon-strip.css`'s `.hovered .icon-strip`
 // rule is what makes them visible, matching `hover::icon_strip_rects`
 // (src-tauri/src/hover.rs)'s own "present icons occupy space, absent ones
 // collapse to zero width" contract exactly: this component renders every
@@ -11,34 +10,31 @@
 // opacity/scale transitions do the collapsing — never `display: none`,
 // per spec section 6's own "must never jump mid-hover" rule.
 //
-// All five glyphs are original notchtap drawings (CLAUDE.md "naming";
+// All glyphs are original notchtap drawings (CLAUDE.md "naming";
 // spec section 2 decision 13) — hand-authored paths, not a third-party
 // icon set. Redraw freely; the shapes here are a first pass, not a
 // locked asset.
 import { type ReactNode, useId } from "react";
 
-export type Tab = "agent" | "football" | "music" | "weather" | "news";
+export type Tab = "agent" | "football" | "news";
 
-export const TAB_ORDER: readonly Tab[] = ["agent", "football", "music", "weather", "news"];
+export const TAB_ORDER: readonly Tab[] = ["agent", "football", "news"];
 
-// Spec section 6's three-tier luminance scheme, uniform across all five
+// Spec section 6's three-tier luminance scheme, uniform across all
 // icons: "hidden" never renders as `.is-present` at all (zero width,
 // invisible — the strip's own baseline `.icon` rule), "present" is the
-// dim 0.62-opacity tier ("present but idle — weather, quiet news" per
-// the design source), "live" is full 1.0 opacity ("genuinely live —
-// agent/match/audio"). Agent/football/music are only ever "hidden" or
-// "live" in practice (spec section 6's table: each is present ONLY
-// while genuinely live, so there is no "present but not live" state for
-// them) — "present" mainly exists for weather (always present, rarely
-// escalated) and news (dim while charging, escalating only once
+// dim 0.62-opacity tier ("present but idle — quiet news" per the design
+// source), "live" is full 1.0 opacity ("genuinely live — agent/match").
+// Agent/football are only ever "hidden" or "live" in practice (spec
+// section 6's table: each is present ONLY while genuinely live, so
+// there is no "present but not live" state for them) — "present" mainly
+// exists for news (dim while charging, escalating only once
 // `newsCharged` below is separately true).
 export type IconVisualState = "hidden" | "present" | "live";
 
 export interface IconStripProps {
   agent: IconVisualState;
   football: IconVisualState;
-  music: IconVisualState;
-  weather: IconVisualState;
   news: IconVisualState;
   /** Spec section 8: 0..1 fill level, rising silently across the poll
    * cycle. Purely visual (a `scaleY` on the glyph's own interior
@@ -75,20 +71,18 @@ export interface IconStripProps {
   onSelect?: (tab: Tab) => void;
 }
 
-const TAB_LABEL: Record<Tab, string> = {
+const TAB_LABEL = {
   agent: "Agent",
   football: "Football",
-  music: "Music",
-  weather: "Weather",
   news: "News",
-};
+} satisfies Record<Tab, string>;
 
-// CodeRabbit review fix (PR #13): an explicit `aria-label` overrides
-// accessible-name computation from child content entirely, so the
-// visually-rendered `.charge-count` badge (sighted-only) never reached
-// assistive tech — a screen-reader user got no indication of the
-// pending-item count sighted users see. Only the news tab has a count at
-// all; every other tab (and news with no count) renders exactly
+// An explicit `aria-label` overrides accessible-name computation from
+// child content entirely, so the visually-rendered `.charge-count` badge
+// (sighted-only) never reaches assistive tech — a screen-reader user gets
+// no indication of the pending-item count sighted users see. Only the
+// news tab has a count at all; every other tab (and news with no count)
+// renders exactly
 // `TAB_LABEL[tab]`, unchanged.
 function iconAriaLabel(tab: Tab, newsCount: number | null): string {
   if (tab === "news" && newsCount !== null) {
@@ -97,10 +91,8 @@ function iconAriaLabel(tab: Tab, newsCount: number | null): string {
   return TAB_LABEL[tab];
 }
 
-// Original notchtap glyphs, 18x18 viewBox (matching --icon-box), stroke-
-// only where the mock's own drawings are stroke-only (agent, football,
-// music, news) and one closed fill path for weather's cloud (the mock's
-// own exception — "one closed cubic path"). `currentColor` throughout so
+// Original notchtap glyphs, 18x18 viewBox (matching --icon-box), all
+// stroke-only (agent, football, news). `currentColor` throughout so
 // the per-tab `--hue` custom property (icon-strip.css) drives both the
 // stroke/fill AND, via the two stacked `drop-shadow`s on the parent
 // `<svg>` wrapper in CSS, the glow — one value, never two to keep in
@@ -134,34 +126,6 @@ export function FootballGlyph(): ReactNode {
   );
 }
 
-function MusicGlyph(): ReactNode {
-  return (
-    <svg viewBox="0 0 18 18" fill="none" aria-hidden="true">
-      <circle cx="6" cy="13" r="2.6" fill="currentColor" />
-      <path
-        d="M8.5 13 V4.5 L14 3 V6.5"
-        stroke="currentColor"
-        strokeWidth="1.4"
-        strokeLinecap="round"
-      />
-      <path
-        d="M8.5 4.5 L14 3 M8.5 7.2 L14 5.7"
-        stroke="currentColor"
-        strokeWidth="1.1"
-        strokeLinecap="round"
-      />
-    </svg>
-  );
-}
-
-export function WeatherGlyph(): ReactNode {
-  return (
-    <svg viewBox="0 0 18 18" fill="currentColor" aria-hidden="true">
-      <path d="M5.5 13.5 a3.2 3.2 0 0 1 -0.4 -6.38 a3.6 3.6 0 0 1 6.9 -1.5 a2.9 2.9 0 0 1 -0.3 7.88 z" />
-    </svg>
-  );
-}
-
 export function NewsGlyph({ charge }: { charge: number }): ReactNode {
   const clamped = Math.max(0, Math.min(1, charge));
   // A real, unique id per mount (React's useId) — not a hardcoded string.
@@ -184,12 +148,12 @@ export function NewsGlyph({ charge }: { charge: number }): ReactNode {
       <rect
         className="charge"
         x="3"
-        // CodeRabbit review fix (PR #13): this was `y="15.5"` — the rect's
-        // own unscaled bounds (y 15.5 to 28.5) never overlapped the
-        // clip region (y 2.5 to 15.5, matching the page outline above)
-        // at ANY scaleY value, so the charge fill rendered invisible at
-        // every charge level. `y="2.5"` matches the outline's own top so
-        // the rect's full (scaleY(1)) extent exactly fills it; scaling
+        // `y="15.5"` never worked: the rect's own unscaled bounds (y 15.5
+        // to 28.5) never overlapped the clip region (y 2.5 to 15.5,
+        // matching the page outline above) at ANY scaleY value, so the
+        // charge fill rendered invisible at every charge level. `y="2.5"`
+        // matches the outline's own top so the rect's full (scaleY(1))
+        // extent exactly fills it; scaling
         // toward 0 around the bottom-anchored transformOrigin below
         // shrinks the visible portion upward from the bottom, the
         // liquid-filling-from-bottom effect the comment above describes.
@@ -223,8 +187,6 @@ function iconClass(tab: Tab, state: IconVisualState, selected: boolean, charged:
 export function IconStrip({
   agent,
   football,
-  music,
-  weather,
   news,
   newsCharge,
   newsCharged,
@@ -232,7 +194,7 @@ export function IconStrip({
   selected,
   onSelect,
 }: IconStripProps) {
-  const states: Record<Tab, IconVisualState> = { agent, football, music, weather, news };
+  const states = { agent, football, news } satisfies Record<Tab, IconVisualState>;
   return (
     <span className="icon-strip">
       {TAB_ORDER.map((tab) => {
@@ -256,8 +218,6 @@ export function IconStrip({
           >
             {tab === "agent" && <AgentGlyph />}
             {tab === "football" && <FootballGlyph />}
-            {tab === "music" && <MusicGlyph />}
-            {tab === "weather" && <WeatherGlyph />}
             {tab === "news" && <NewsGlyph charge={newsCharge} />}
             {tab === "news" && newsCount !== null && (
               <span className="charge-count">{newsCount}</span>

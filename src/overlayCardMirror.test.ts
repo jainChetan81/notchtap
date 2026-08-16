@@ -1,4 +1,4 @@
-// plan 111: the enforcement that replaces the old hand-maintained-mirror
+// the enforcement that replaces the old hand-maintained-mirror
 // review discipline ("change one, change both, in the same commit", now
 // retired). `src/settings/preview-overlay.css` is gone;
 // both entry points share `src/overlay-card.css`, scoped under
@@ -7,7 +7,7 @@
 // re-declaring one of overlay-card.css's own selectors as an UNSCOPED
 // duplicate — this file is the automated guard against that, run on
 // every test pass instead of relying on a reviewer noticing.
-// plan 112 Step 5: settings.css (the previous settings-side context
+// settings.css (the previous settings-side context
 // file this guard checked) is deleted; every rule it still carried —
 // including the Appearance preview frame chrome this guard exists to
 // protect — is now inside base.css, so the check below moved there
@@ -23,7 +23,7 @@
 // compare individual comma-list members. No CSS parser: this is
 // deliberately the same "cheap but effective" register as
 // celebrationStacking.test.tsx's string pins, not a cascade engine.
-// plan 112: @types/node is now a devDependency (Step 1), so these two
+// @types/node is now a devDependency (Step 1), so these two
 // Node imports typecheck directly — no @ts-expect-error needed. Node's
 // own `URL` is still imported explicitly (not the ambient global)
 // because jsdom's global `URL` shadow resolves a relative path against a
@@ -251,7 +251,7 @@ describe("overlay-card.css mirror invariant (plan 111)", () => {
     expect(findRedefinitions(baseCss, inventory)).toEqual([]);
   });
 
-  // the override block itself: plan 111's done criteria caps it at the
+  // the override block itself: 's done criteria caps it at the
   // Step-0 deliberate-adaptation count. That count is 0 (see
   // ALLOWLISTED_SELECTORS's own comment) — pin it so a future override
   // added here is a deliberate, reviewed act, not silent growth.

@@ -1,9 +1,9 @@
-// Plan 175: string-level parity pin between the icon strip's THREE
+// string-level parity pin between the icon strip's THREE
 // geometry sites — `hover.rs`'s constants (what the NSEvent click monitor
 // hit-tests each glyph against, via `icon_strip_rects`), `icon-strip.css`'s
 // per-icon footprint (what actually gets painted), and `card-chrome.css`'s
 // two strip-visible `--cw` formulas (how wide the flank those glyphs live
-// in grows). Plan 171 shipped the first two paired against a design mock
+// in grows). shipped the first two paired against a design mock
 // instead of each other, and they drifted: rust inset 14 vs. CSS 16, and a
 // flat 85px CSS flank vs. rust's icon-count-driven one. At 3+ present tabs
 // the rects slid right of the glyphs (~9px at 3, ~35px at 4, ~61px at 5,
@@ -81,7 +81,7 @@ function ruleBody(css: string, selector: string): string {
 // `.bare:has(.below-block)`) — every other `--cw` formula in the file
 // governs a state where no icon is on screen to click.
 //
-// Plan 176 widened that second selector from `:has(.idle-peek)` to
+// has(.idle-peek)` to
 // `:has(.below-block)` so it also covers the pulled-tab card, not just
 // the ambient peek. That is a strict superset (the peek's own root
 // carries both classes), so it is still exactly ONE rule and still the
@@ -97,7 +97,7 @@ describe("icon strip geometry: rust hit-test constants match the shipped CSS", (
   it("hover.rs pins the 18px box, 8px gap and 16px inset", () => {
     expect(hoverRs).toContain("const ICON_BOX: f64 = 18.0;");
     expect(hoverRs).toContain("const ICON_GAP: f64 = 8.0;");
-    // 16, not plan 171's 14: the shipped flank padding won that
+    // 16, not the shipped flank padding won that
     // reconciliation because adopting it is a zero-pixel visual change.
     expect(hoverRs).toContain("const FLANK_INSET: f64 = 16.0;");
   });

@@ -1,4 +1,4 @@
-//! Pure, clock-free scheduling for **Silenced** (plan 146a; `CONTEXT.md`'s
+//! Pure, clock-free scheduling for **Silenced** (; `CONTEXT.md`'s
 //! Silenced/Silent Period/Timed Mute/Skip glossary entries).
 //!
 //! This module never reads the system clock — every function here takes
@@ -42,13 +42,13 @@
 //!
 //! // to sleep instead of poll:
 //! if let Some(boundary) = controller.next_boundary(now) {
-//!     let wake_in_minutes = boundary.saturating_sub(now);
-//!     // schedule a timer for `wake_in_minutes` out, then re-evaluate
+//! let wake_in_minutes = boundary.saturating_sub(now);
+//! // schedule a timer for `wake_in_minutes` out, then re-evaluate
 //! }
 //!
 //! // tray actions:
-//! controller.start_mute(30, now);   // "Mute 30m"
-//! controller.cancel_mute();         // "Cancel mute"
+//! controller.start_mute(30, now); // "Mute 30m"
+//! controller.cancel_mute(); // "Cancel mute"
 //! controller.skip_current_window(now); // "Skip today"
 //! ```
 

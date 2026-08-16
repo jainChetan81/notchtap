@@ -1,4 +1,4 @@
-//! Shared HTTP posture for the outbound pollers (plan 025): one client
+//! Shared HTTP posture for the outbound pollers: one client
 //! builder and one capped body reader, so the espn and rss fetch paths
 //! cannot drift apart again (they did once — the streaming cap landed
 //! on rss only).

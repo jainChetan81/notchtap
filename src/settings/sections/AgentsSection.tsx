@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { MetaChip } from "@/components/ui/meta-chip";
 import { Switch } from "@/components/ui/switch";
+import { isString } from "@/lib/guards";
 import { SOURCE_RUNTIME_COLORS } from "@/lib/sourceColors";
 import { cn } from "@/lib/utils";
 import { ActionStatus, useActionStatus } from "../actionStatus";
@@ -26,7 +27,7 @@ import type {
 } from "../types";
 import { PRIORITY_SEGMENT_OPTIONS, PRIORITY_TONES } from "../types";
 
-// --- adapter card static content (plan 143, spec §4.6/§8) --------------
+// --- adapter card static content ---------------------------------------
 //
 // Sourced from the committed `adapters/*/README.md` setup snippets (and
 // the OpenCode plugin's own header comment) — inlined as constants so
@@ -154,27 +155,27 @@ const ADAPTER_CARDS: readonly AdapterCardCopy[] = [
   },
 ];
 
-const AVAILABILITY_LABELS: Record<AdapterAvailability, string> = {
+const AVAILABILITY_LABELS = {
   available: "Available",
   partial: "Partial",
   unavailable: "Unavailable",
-};
+} satisfies Record<AdapterAvailability, string>;
 
 // tone redesign: a binary active/not chip couldn't say "partial" apart
 // from "unavailable" — both just read as un-emphasized. Real tri-state
 // color so a glance at the dot tells you which of the three it is,
 // without reading the word.
-const AVAILABILITY_TONE: Record<AdapterAvailability, "positive" | "caution" | "critical"> = {
+const AVAILABILITY_TONE = {
   available: "positive",
   partial: "caution",
   unavailable: "critical",
-};
+} satisfies Record<AdapterAvailability, "positive" | "caution" | "critical">;
 
-const ERROR_CATEGORY_LABELS: Record<AdapterErrorCategory, string> = {
+const ERROR_CATEGORY_LABELS = {
   malformed_payload: "Malformed payload",
   unsupported_runtime: "Unsupported runtime",
   internal: "Internal error",
-};
+} satisfies Record<AdapterErrorCategory, string>;
 
 function formatLastSeen(ms: number | null): string {
   if (ms === null) return "Never";
@@ -253,8 +254,7 @@ function AdapterCard({
     await runTest(() => settingsInvoke("send_agent_test_event", { runtime: copy.wireRuntime }), {
       announce: true,
       okMessage: "Sent",
-      errorMessage: (reason) =>
-        typeof reason === "string" ? reason : "couldn't send a test event",
+      errorMessage: (reason) => (isString(reason) ? reason : "couldn't send a test event"),
     });
   }
 
@@ -273,14 +273,12 @@ function AdapterCard({
             HistorySection.tsx convention. */}
         <button
           type="button"
-          // CodeRabbit review (PR #11): two fixes matching the same
-          // findings applied to button.tsx/switch.tsx/Segmented.tsx —
           // `transition-transform` doesn't cover Tailwind v4's `scale-*`
           // utility (a standalone `scale` property), so the press scale
-          // was snapping instead of animating; and `aria-controls` must
-          // not point at an id with no matching element — the detail
-          // panel is conditionally MOUNTED (not just hidden), so while
-          // collapsed there is no `detailId` element in the DOM at all.
+          // snaps instead of animating; and `aria-controls` must not point
+          // at an id with no matching element — the detail panel is
+          // conditionally MOUNTED (not just hidden), so while collapsed
+          // there is no `detailId` element in the DOM at all.
           className="agent-card-trigger flex min-w-0 flex-1 items-center gap-1.5 rounded-sm text-left outline-none transition-[scale] duration-[140ms] ease-notchtap focus-visible:ring-2 focus-visible:ring-ring active:scale-[0.97]"
           aria-expanded={expanded}
           aria-controls={expanded ? detailId : undefined}
@@ -433,8 +431,8 @@ function AdapterCard({
   );
 }
 
-// Plan 143 (spec §8): static preview rows for the five Agent Board
-// states the plan names — a simple, truthful text summary (runtime /
+// Static preview rows for the five Agent Board
+// states — a simple, truthful text summary (runtime /
 // state / summary), not a full card mockup. The Agent Board itself lives
 // in the overlay (`App.tsx`), which the settings window never renders —
 // see AppearanceSection's own preview-fixture doc for why the settings

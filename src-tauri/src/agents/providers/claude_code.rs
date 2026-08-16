@@ -1,61 +1,38 @@
-//! Plan 138 (v7 ticket 6 of 13, `docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`
-//! §4.2): the real, pure Claude Code hook-payload parser.
+//! Pure Claude Code hook-payload parser. [`normalize`] takes the raw
+//! JSON bytes Claude Code writes to a hook command's stdin and returns
+//! a [`super::wire::NormalizedEvent`]. Every native event name is read
+//! from the payload's own `hook_event_name` field, so one hook command
+//! entry registered against every event is enough.
 //!
-//! [`normalize`] takes the raw JSON bytes Claude Code writes to a hook
-//! command's stdin (one native payload per invocation — see
-//! <https://code.claude.com/docs/en/hooks>) and returns a
-//! [`super::wire::NormalizedEvent`] ready for
-//! [`super::wire::build_wire_body`]. It is pure: no I/O, no clock read,
-//! no randomness — every native event name this function recognizes is
-//! read from the payload's own `hook_event_name` field, so a single
-//! `notchtap-agent hook claude-code` command entry (registered against
-//! every hook event Claude Code fires) is enough; there is no need for
-//! the CLI invocation itself to know in advance which event is coming.
+//! ## Sanitization
 //!
-//! ## Sanitization (spec §3.2)
+//! This parser is the one place that decides what payload content is
+//! safe to forward at all — the server-side caps in `agents::adapter`
+//! bound length/count, but can't undo a forwarding decision made here:
 //!
-//! This parser is the one place that decides what Claude Code payload
-//! content is safe to forward at all — the server-side caps in
-//! `agents::adapter` bound length/count, but they can't undo a decision
-//! made here to forward something that should never leave this process.
-//! Concretely, this parser:
+//! - forwards `tool_name` (a short provider-defined identifier) —
+//!   never `tool_input`/`tool_result` wholesale;
+//! - extracts a `Path` detail ONLY from a known path-shaped key
+//!   (`file_path`/`path`/`notebook_path`), keeping just the basename —
+//!   never the full path, and never `tool_input.command` (the one place
+//!   a full shell command would live);
+//! - builds every `summary` from a fixed template plus already-sanitized
+//!   closed-enum fields — never `message`, `last_assistant_message`,
+//!   `error_message`, or any other free-text/model-authored field;
+//! - never inspects `tool_result` at all — the `tool_use_succeeded`
+//!   boolean plus the tool name is the whole PostToolUse(Failure) story.
 //!
-//! - forwards `tool_name` (a short provider-defined identifier, e.g.
-//!   `"Bash"`, `"Edit"`) — never `tool_input`/`tool_result` wholesale;
-//! - extracts a `Path` detail ONLY by picking a known path-shaped key
-//!   (`file_path`/`path`/`notebook_path`) out of `tool_input` and
-//!   keeping just [`std::path::Path::file_name`] — never the full path,
-//!   and never `tool_input.command` (the one place a full shell command
-//!   would live);
-//! - builds every `summary` from a fixed, bounded template plus a small
-//!   number of already-sanitized fields (tool name, `source`/
-//!   `end_reason`/`error_type` — all closed, provider-defined enum-ish
-//!   strings) — it never forwards `message`, `last_assistant_message`,
-//!   `error_message`, `task_description`, or any other free-text/
-//!   model-authored field from the native payload;
-//! - never inspects `tool_result` at all (success or failure) — the
-//!   `tool_use_succeeded` boolean plus the tool name is the whole
-//!   PostToolUse(Failure) story this parser tells.
-//!
-//! ## Notification (spec §4.2)
-//!
-//! `Notification`'s `notification_type` field is a closed enum
-//! (`permission_prompt`, `idle_prompt`, `agent_needs_input`,
-//! `auth_success`, `elicitation_dialog`, `elicitation_complete`,
-//! `elicitation_response`, `agent_completed`) — [`classify_notification`]
-//! switches on that field, never on `message` text, matching spec's
-//! "wording is never parsed to infer state".
+//! `Notification`'s `notification_type` is a closed enum;
+//! [`classify_notification`] switches on that field, never on `message`
+//! text — wording is never parsed to infer state.
 
 use thiserror::Error;
 
 use super::wire::NormalizedEvent;
 
-/// Spec §1's Claude Code capability row, restricted to the seven
-/// capability strings this ticket's instructions enumerate (not
-/// `open_or_focus`, which is Host-dependent and not part of what an
-/// event's own `capabilities` array declares). Sent unchanged on every
-/// event this parser produces — see [`NormalizedEvent::capabilities`]'s
-/// doc for why a fixed per-provider set, not a per-event computation.
+/// Claude Code's declared capability set (not `open_or_focus`, which
+/// is Host-dependent and not part of an event's own `capabilities`
+/// array). Sent unchanged on every event this parser produces.
 pub const CAPABILITIES: [&str; 7] = [
     "session_lifecycle",
     "permission_requests",
@@ -66,8 +43,7 @@ pub const CAPABILITIES: [&str; 7] = [
     "subagents",
 ];
 
-/// Typed parse errors (repo rule, CLAUDE.md: `thiserror` + matchable
-/// variants for library/internal modules).
+/// Typed parse errors.
 #[derive(Debug, Error, PartialEq, Eq)]
 pub enum ClaudeCodeParseError {
     #[error("malformed json: {0}")]
@@ -80,10 +56,9 @@ pub enum ClaudeCodeParseError {
     UnsupportedHookEvent(String),
 }
 
-/// The raw wire shape Claude Code hooks send (spec §4.2, doc-verified
-/// against <https://code.claude.com/docs/en/hooks>) — every field
-/// is `Option` so a payload missing a field this parser doesn't use for
-/// a given event still deserializes cleanly.
+/// The raw wire shape Claude Code hooks send — every field is `Option`
+/// so a payload missing a field this parser doesn't use for a given
+/// event still deserializes cleanly.
 #[derive(Debug, serde::Deserialize)]
 struct RawHookPayload {
     session_id: Option<String>,
@@ -132,12 +107,11 @@ fn safe_tool_name(tool_name: Option<&str>) -> String {
         .to_string()
 }
 
-/// Pulls a basename-only path detail out of `tool_input` (spec §3.2:
-/// "basename only for paths in summaries") — only from a small, known
-/// set of path-shaped keys, NEVER from `command` (where a full shell
-/// command line would live) or any other key. Returns `None` when
-/// `tool_input` is absent, not an object, or has none of the known
-/// keys as a string.
+/// Pulls a basename-only path detail out of `tool_input` — only from a
+/// small, known set of path-shaped keys, NEVER from `command` (where a
+/// full shell command line would live) or any other key. Returns
+/// `None` when `tool_input` is absent, not an object, or has none of
+/// the known keys as a string.
 fn safe_path_detail(tool_input: Option<&serde_json::Value>) -> Option<(String, String)> {
     let obj = tool_input?.as_object()?;
     for key in ["file_path", "path", "notebook_path"] {
@@ -149,11 +123,9 @@ fn safe_path_detail(tool_input: Option<&serde_json::Value>) -> Option<(String, S
     None
 }
 
-/// Spec §4.2: "`Notification` is accepted only for documented
-/// permission/idle input notifications. generic notifications become
-/// `Informational`; wording is not parsed to infer state." — this
-/// switches on the closed `notification_type` enum only, never
-/// `message`.
+/// `Notification` maps by its closed `notification_type` enum only,
+/// never `message` — generic notifications become `Informational`;
+/// wording is never parsed to infer state.
 fn classify_notification(notification_type: Option<&str>) -> Mapped {
     match notification_type {
         Some("permission_prompt") => Mapped {
@@ -226,13 +198,10 @@ fn map_event(
             }
         }
         "Notification" => classify_notification(payload.notification_type.as_deref()),
-        // Operator decision 2026-07-26 (spec §2.1): `Stop` fires once per
-        // turn, not once per session — the session stays live and the
-        // registry resolves this non-terminal `completed` into
-        // `WaitingForInput`, not a terminal state. `state` here is kept as
-        // the wire label for the un-terminal-ized "completed" kind; the
-        // registry (not this parser) is what actually lands the session in
-        // `WaitingForInput` (`agents::registry::next_state`).
+        // `Stop` fires once per turn, not once per session — the session
+        // stays live; the registry (not this parser) resolves this
+        // non-terminal `completed` into `WaitingForInput`
+        // (`agents::registry::next_state`).
         "Stop" => Mapped {
             kind: "completed",
             state: "completed",
@@ -241,16 +210,11 @@ fn map_event(
             details: Vec::new(),
             subagent: None,
         },
-        // `StopFailure` is `Stop`'s failure counterpart — it fires when the
-        // SAME per-turn lifecycle point is reached abnormally, not when the
-        // session itself ends. Treating it as terminal would fragment one
-        // multi-turn session into a suffixed reuse key on every turn that
-        // happens to fail (`AgentRegistry::apply_event`'s terminal-reuse
-        // redirect), which is exactly the bug class the operator's Stop
-        // decision was meant to close. So this is non-terminal too: the
-        // session remains live (registry resolves non-terminal `Failed` to
-        // `Working` — `agents::registry::next_state`) and only an explicit
-        // `SessionEnd` closes the session for good.
+        // `StopFailure` fires at the same per-turn point as `Stop`, not
+        // at session end. Terminal here would fragment one multi-turn
+        // session into a suffixed reuse key on every failed turn
+        // (`AgentRegistry::apply_event`'s terminal-reuse redirect) —
+        // only an explicit `SessionEnd` closes the session for good.
         "StopFailure" => {
             let error_type = payload
                 .error_type
@@ -284,10 +248,8 @@ fn map_event(
             let tool = safe_tool_name(payload.tool_name.as_deref());
             Mapped {
                 kind: "failed",
-                // Non-terminal tool failure: `terminal: false` keeps the
-                // session `Working` in the registry (spec §2.1's
-                // "AgentEventKind::Failed if terminal else Working" —
-                // `agents::registry::next_state`).
+                // Non-terminal tool failure keeps the session `Working`
+                // in the registry (`agents::registry::next_state`).
                 state: "working",
                 terminal: false,
                 summary: Some(format!("Tool failed: {tool}")),
@@ -493,9 +455,7 @@ mod tests {
 
     #[test]
     fn stop_maps_to_completed_non_terminal() {
-        // Operator decision 2026-07-26: per-turn Stop must not be terminal
-        // — the session stays live (registry resolves this into
-        // `WaitingForInput`, not the terminal `Completed` state).
+        // Per-turn Stop must not be terminal — the session stays live.
         let event = normalize(fixture("stop").as_bytes()).unwrap();
         assert_eq!(event.kind, "completed");
         assert!(
@@ -507,10 +467,8 @@ mod tests {
 
     #[test]
     fn stop_failure_maps_to_failed_non_terminal_with_safe_error_type() {
-        // `StopFailure` is `Stop`'s failure counterpart, firing at the same
-        // per-turn point — same non-terminal treatment, for the same
-        // reason (see this file's `map_event` doc comment on the
-        // `"StopFailure"` arm).
+        // Same non-terminal treatment as `Stop` — see `map_event`'s
+        // `"StopFailure"` arm.
         let event = normalize(fixture("stop-failure").as_bytes()).unwrap();
         assert_eq!(event.kind, "failed");
         assert!(
@@ -571,7 +529,7 @@ mod tests {
     }
 
     // --- sanitization: a fixture with a fake secret/full command line
-    // never emits it (spec §3.2) --------------------------------------
+    // never emits it ----------------------------------------------------
 
     #[test]
     fn secret_and_full_command_line_never_appear_in_normalized_output() {
@@ -679,7 +637,7 @@ mod tests {
         }
     }
 
-    // --- declared capabilities vs. fixture suite must agree (spec §14) -
+    // --- declared capabilities vs. fixture suite must agree ------------
 
     #[test]
     fn declared_capabilities_match_the_spec_1_claude_code_row() {
@@ -700,12 +658,9 @@ mod tests {
 
     #[test]
     fn fixture_suite_exercises_every_declared_capability() {
-        // Which capability each fixture is written to demonstrate, per
-        // spec §1's Claude Code row. This is the "declaration and
-        // fixture suite must agree" check (spec §14): every capability
-        // this parser declares must have at least one fixture whose
-        // native event is documented evidence of it, and nothing here
-        // should need a capability the parser doesn't declare.
+        // Declaration and fixture suite must agree: every capability the
+        // parser declares needs at least one fixture demonstrating it,
+        // and no fixture needs an undeclared capability.
         let exercised: std::collections::BTreeSet<&str> = [
             ("session-start", "session_lifecycle"),
             ("session-end", "session_lifecycle"),
@@ -728,9 +683,8 @@ mod tests {
             "every declared capability must be exercised by the committed fixture suite, and vice versa"
         );
 
-        // And every event that's supposed to demonstrate a capability
-        // does in fact carry the full declared set on the wire (spec:
-        // capabilities are sent on every event, not derived per-event).
+        // And every event carries the full declared set on the wire —
+        // capabilities are sent on every event, not derived per-event.
         for name in [
             "session-start",
             "session-end",

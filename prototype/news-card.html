@@ -1,18 +1,5 @@
 <!doctype html>
-<!-- This mock mirrors the CURRENT shipped overlay's news-origin notification
-     card. Markup shape is copied from StatusRailCard.tsx + NotificationBody.tsx's
-     render output for a `news_item` slot (compact + expanded); CSS values are
-     copied verbatim from src/overlay/card-chrome.css (shell grid), src/overlay/
-     masthead-content.css (.compact/.title/.stamp), src/overlay/news-category.css
-     (category tokens, news-shade, chips), src/overlay/ttl-bar.css (the queue-
-     segmented floor bar), src/overlay/manifest.css + src/components/Manifest.tsx
-     (expanded panel), src/overlay/status-dots.css (the flank-right rail dots),
-     and vendor/shared-ui/design/tokens.css (color/ease tokens). Static and
-     standalone by design (CLAUDE.md: prototype/*.html are mocks, not wired into
-     the build) — not a build artifact, just a hand-maintained visual reference
-     kept in sync by hand when the shipped card changes. If this drifts from the
-     real component again, re-sync it rather than re-adding a "diverged on
-     purpose" banner. -->
+<!-- News card — static mock of the shipped overlay. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">

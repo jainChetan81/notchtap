@@ -1,13 +1,13 @@
-// Plan 171 (tab-notch redesign, slice F): the agent tab's below-block —
+// the agent tab's below-block —
 // mounted by whichever parent owns the icon-strip's hover-with-a-
 // selection shell (slice K's integration; this component only renders
 // what goes INSIDE `.below-block`, the same scope every other slice in
 // this plan keeps to). Spec section 7's agent bullet, verbatim:
 //
-//   "the hero (one, the VIEWED session) through the same unified
-//   template AgentHeroCard/AgentBoard.tsx already render ... at shipped
-//   card height — hero only in compact, no roster rows. Below the hero,
-//   the session position bar (§8) replaces the roster stack."
+// "the hero (one, the VIEWED session) through the same unified
+// template AgentHeroCard/AgentBoard.tsx already render ... at shipped
+// card height — hero only in compact, no roster rows. Below the hero,
+// the session position bar (§8) replaces the roster stack."
 //
 // Deliberately NOT `AgentBoard.tsx` reused wholesale: that component
 // mounts its OWN shell (`.card-assembly.agent-board-shell`), has its own

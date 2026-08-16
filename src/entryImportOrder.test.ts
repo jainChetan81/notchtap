@@ -1,4 +1,4 @@
-// plan 111 Step 1.2: the shared card-shape stylesheet must load BEFORE
+// the shared card-shape stylesheet must load BEFORE
 // each window's own residue, at both real entry points, so context-only
 // declarations win any specificity tie by source order (same discipline
 // the old single-file styles.css/preview-overlay.css pair relied on
@@ -6,7 +6,7 @@
 // instruction) — the ordering lives in these two TypeScript entry files
 // instead, so it's pinned here by reading their literal source text: a
 // jsdom/vitest run doesn't otherwise observe CSS load order at all.
-// plan 112: @types/node is now a devDependency (Step 1), so these two
+// @types/node is now a devDependency (Step 1), so these two
 // Node imports typecheck directly — no @ts-expect-error needed. Node's
 // own `URL` is still imported explicitly (not the ambient global)
 // because jsdom's global `URL` shadow resolves a relative path against a
@@ -37,18 +37,35 @@ describe("entry-file CSS import order (plan 111)", () => {
     expect(overlayIdx).toBeLessThan(stylesIdx);
   });
 
-  // plan 114: the overlay window must import shared-ui's design tokens
+  // the overlay window must import shared-ui's design tokens
   // (--font-sans/--font-mono/--ease-notchtap, etc.) before overlay-card.css
   // so the token-consuming declarations in that file resolve — same
   // discipline settings/base.css already follows for the settings window.
   it("main.tsx imports shared-ui tokens.css before overlay-card.css", () => {
     const source = readSource("./main.tsx");
     const tokensIdx = importOrderIndex(source, "@chetanjain/shared-ui/design/tokens.css");
+    const appTokensIdx = importOrderIndex(source, "./notchtap-tokens.css");
     const overlayIdx = importOrderIndex(source, "./overlay-card.css");
-    expect(tokensIdx).toBeLessThan(overlayIdx);
+    expect(tokensIdx).toBeLessThan(appTokensIdx);
+    expect(appTokensIdx).toBeLessThan(overlayIdx);
   });
 
-  // plan 112 Step 5: settings.css is gone (its rules relocated into
+  it("settings/base.css imports shared tokens before notchtap extensions", () => {
+    const source = readSource("./settings/base.css");
+    const sharedIdx = source.indexOf('@import "@chetanjain/shared-ui/design/tokens.css"');
+    const appIdx = source.indexOf('@import "../notchtap-tokens.css"');
+    expect(sharedIdx).toBeGreaterThanOrEqual(0);
+    expect(appIdx).toBeGreaterThan(sharedIdx);
+  });
+
+  it("keeps media-mint out of shared-ui (the token left with the now-playing vertical)", () => {
+    const shared = readSource("../vendor/shared-ui/design/tokens.css");
+    const local = readSource("./notchtap-tokens.css");
+    expect(shared.includes("--media-mint")).toBe(false);
+    expect(local.includes("--media-mint:")).toBe(false);
+  });
+
+  // settings.css is gone (its rules relocated into
   // base.css); the load-bearing pair is now base.css (establishes
   // @layer theme/utilities before any plain CSS) then overlay-card.css
   // (unlayered, so it still wins any specificity tie by source order).

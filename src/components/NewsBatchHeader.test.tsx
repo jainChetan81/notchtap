@@ -53,6 +53,8 @@ describe("NewsBatchHeader (plan 171, slice I)", () => {
     const { container } = render(
       <NewsBatchHeader freshCount={4} cycleEndedAgo={null} onPrevious={onPrevious} />,
     );
+    // SAFETY: NewsBatchHeader always renders the previous-story nav button for
+    // this freshCount fixture, so the match is non-null.
     const button = container.querySelector('[aria-label="previous story"]') as HTMLButtonElement;
     fireEvent.click(button);
     expect(onPrevious).toHaveBeenCalledTimes(1);
@@ -63,6 +65,8 @@ describe("NewsBatchHeader (plan 171, slice I)", () => {
     const { container } = render(
       <NewsBatchHeader freshCount={4} cycleEndedAgo={null} onNext={onNext} />,
     );
+    // SAFETY: NewsBatchHeader always renders the next-story nav button for
+    // this freshCount fixture, so the match is non-null.
     const button = container.querySelector('[aria-label="next story"]') as HTMLButtonElement;
     fireEvent.click(button);
     expect(onNext).toHaveBeenCalledTimes(1);

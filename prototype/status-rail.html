@@ -1,34 +1,5 @@
 <!doctype html>
-<!-- SYNC NOTE (2026-07-30): this file was fully re-synced against the shipped
-     overlay. Every selector/value below is copied from the real stylesheets
-     (`src/overlay-card.css` + `src/overlay/*.css` + `vendor/shared-ui/design/tokens.css`),
-     scoped exactly as they ship (`.card-root ...`); the DOM each `render*()` helper
-     builds mirrors `src/components/StatusRailCard.tsx` and the sub-components it
-     renders (`NotificationBody`, `Manifest`, `Stamp`, `TtlBar`, `StatusDots`,
-     `FlankClock`, `IdleFace`, `IdleHoverPeek`, `LiveMatchScorecard`) as of that
-     commit. The card shape changed completely since this file's previous sync
-     (2026-07-23, plan 106): the old single-shell `.rail-card` is gone, replaced by
-     the cutout/flank grid (`.card-assembly` — plan 091 onward) with a real notch
-     cutout, a persistent clock+status-dot rail, an idle face, and a hover-reveal
-     peek. This page has NO build step and pulls in no framework — motion's spring/
-     AnimatePresence choreography is approximated here with plain CSS transitions
-     using the same duration/easing *fallback* values the real CSS custom properties
-     carry (e.g. `var(--expand-ms, 320ms)`) — the shipped app injects the real
-     tokens from `src/animationTiming.ts` at runtime, which this static page never
-     loads, so it always renders on those fallbacks. Weather glyphs are hand-drawn
-     placeholder SVGs standing in for the vendored Meteocons assets
-     (`src/assets/weather/*.svg`) — real MediaRemote/team-crest artwork is likewise
-     unavailable to a static file, so media rows and crest-less scorecards fall back
-     to the same abbreviation/icon-glyph paths the shipped app itself falls back to
-     when no cached asset exists. Everything else — class names, DOM nesting, CSS
-     values, state-machine boundaries (bare/rail/hovered, idle/showing/expanded,
-     the priority accent channel vs the origin/category paint channel) — is real.
-     PARTIAL RE-SYNC (2026-08-02): the shell/flank/gill/ttl-bar rules above were
-     re-read off the shipped CSS for plans 164-168 (per-state width curves, the
-     flank's border-radius transition leg, the opacity-driven notch gill, the
-     ttl-bar single-row grid fix) and for the operator's 2026-08-02 removal of
-     the hover "breathe" scale. Everything else still dates from the 2026-07-30
-     full sync above. -->
+<!-- Status Rail mirror — static mock of the shipped overlay. -->
 <html lang="en">
 <head>
 <meta charset="utf-8" />
@@ -405,17 +376,14 @@
 }
 .card-root .status-dot.football { background: var(--overlay-green); }
 .card-root .status-dot.news { background: var(--overlay-coral); }
-.card-root .status-dot.weather { background: var(--overlay-amber); }
 .card-root .status-dot.active { box-shadow: 0 0 8px 1px currentColor; }
 .card-root .status-dot.football.active { color: var(--overlay-green); }
 .card-root .status-dot.news.active { color: var(--overlay-coral); }
-.card-root .status-dot.weather.active { color: var(--overlay-amber); }
 .card-root .status-dot.dim { opacity: 0.22; box-shadow: none; }
 .card-root .status-dot.shape-disabled, .card-root .status-dot.shape-unavailable { background: transparent; }
 .card-root .status-dot.shape-disabled { border-radius: 2px; }
 .card-root .status-dot.football.shape-disabled { border: 1.5px solid var(--overlay-green); }
 .card-root .status-dot.news.shape-disabled { border: 1.5px solid var(--overlay-coral); }
-.card-root .status-dot.weather.shape-disabled { border: 1.5px solid var(--overlay-amber); }
 .card-root .status-dot.shape-unavailable { border: 1.5px solid rgba(255,255,255,0.35); }
 .card-root .pause-glyph { display: inline-flex; align-items: center; gap: 2px; flex: none; animation: pause-glyph-fade-in var(--hover-ms, 160ms) var(--ease-notchtap); }
 @keyframes pause-glyph-fade-in { from { opacity: 0; } to { opacity: 1; } }
@@ -460,37 +428,7 @@
 .card-root .src-opencode { --cat: #9d7cd8; --cat-deep: rgba(157,124,216,0.15); --cat-pill: rgba(157,124,216,0.13); }
 .card-root .src-agent { --cat: var(--overlay-amber); --cat-deep: color-mix(in srgb, var(--overlay-amber) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-amber) 13%, transparent); }
 .card-root .src-football { --cat: var(--overlay-green); --cat-deep: color-mix(in srgb, var(--overlay-green) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-green) 13%, transparent); }
-.card-root .src-weather  { --cat: var(--overlay-amber); --cat-deep: color-mix(in srgb, var(--overlay-amber) 15%, transparent); --cat-pill: color-mix(in srgb, var(--overlay-amber) 13%, transparent); }
 .card-root .src-manual   { --cat: var(--overlay-blue);  --cat-deep: color-mix(in srgb, var(--overlay-blue) 15%, transparent);  --cat-pill: color-mix(in srgb, var(--overlay-blue) 13%, transparent); }
-
-/* ============ src/overlay/weather-art.css ============ */
-.card-root .wx-card::before { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; }
-.card-root .wx-card .compact, .card-root .wx-card .manifest { position: relative; z-index: 1; }
-.card-root .wx-icon { position: absolute; top: 10px; right: 14px; z-index: 0; width: 48px; height: 48px; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.45)); pointer-events: none; }
-.card-root .wx-card.wx-clear-day::before          { background: linear-gradient(180deg, #163149 0%, #0e2436 100%); }
-.card-root .wx-card.wx-clear-night::before        { background: linear-gradient(180deg, #0d1226 0%, #070a16 100%); }
-.card-root .wx-card.wx-partly-cloudy-day::before  { background: linear-gradient(180deg, #1a3a52 0%, #122b3d 100%); }
-.card-root .wx-card.wx-partly-cloudy-night::before{ background: linear-gradient(180deg, #141a33 0%, #0c1022 100%); }
-.card-root .wx-card.wx-overcast::before           { background: linear-gradient(180deg, #232a33 0%, #161b21 100%); }
-.card-root .wx-card.wx-rain::before               { background: linear-gradient(180deg, #2b3d4d 0%, #1b2731 100%); }
-.card-root .wx-card.wx-rainy-night::before        { background: linear-gradient(180deg, #171b35 0%, #262c52 55%, #12142a 100%); }
-.card-root .wx-card.wx-thunderstorm::before       { background: linear-gradient(180deg, #1d1430 0%, #110a1e 100%); }
-.card-root .wx-card.wx-snow::before               { background: linear-gradient(180deg, #26313f 0%, #18212b 100%); }
-.card-root .wx-card.wx-fog::before                { background: linear-gradient(180deg, #2a2f36 0%, #1a1e24 100%); }
-.card-root .wx-card.wx-rain-streaks::after, .card-root .wx-card.wx-snow-dots::after { content: ""; position: absolute; inset: 0; z-index: 0; pointer-events: none; }
-.card-root .wx-card.wx-rain-streaks::after {
-  background-image: repeating-linear-gradient(115deg, rgba(180,210,255,0.16) 0px, rgba(180,210,255,0.16) 1px, transparent 1px, transparent 10px);
-  animation: rain-fall 2.6s linear infinite; will-change: transform;
-}
-.card-root .wx-card.wx-snow-dots::after {
-  background-image: radial-gradient(circle, rgba(255,255,255,0.35) 1px, transparent 1.6px);
-  background-size: 22px 22px;
-  animation: snow-fall-y 6.6s linear infinite, snow-sway-x 14s ease-in-out infinite alternate;
-  will-change: translate, transform;
-}
-@keyframes rain-fall { from { transform: translateY(0); } to { transform: translateY(23.66px); } }
-@keyframes snow-fall-y { from { translate: 0 0; } to { translate: 0 66px; } }
-@keyframes snow-sway-x { from { transform: translateX(0); } to { transform: translateX(22px); } }
 
 /* ============ src/overlay/live-scorecard.css ============ */
 .card-root .notif-block { padding: 12px 16px 13px; }
@@ -539,33 +477,7 @@
 
 /* ============ src/overlay/idle-peek.css (subset StatusRailCard mounts) ============ */
 .card-root .below-block.idle-peek { padding: 12px 16px 13px; display: flex; flex-direction: column; gap: 8px; overflow: hidden; height: 100px; box-sizing: border-box; }
-.card-root .wx-peek-backdrop { position: absolute; inset: 0; z-index: 0; border-radius: 0 0 var(--card-radius, 8px) var(--card-radius, 8px); overflow: hidden; }
 .card-root .peek-content { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 8px; }
-.card-root .wx-peek-readout { display: flex; align-items: center; gap: 8px; padding: 10px 12px; }
-.card-root .wx-peek-icon { width: 28px; height: 28px; flex: none; filter: drop-shadow(0 2px 6px rgba(0,0,0,0.45)); pointer-events: none; }
-.card-root .wx-peek-temp { font: 800 18px/1 var(--font-mono); color: var(--overlay-fg); }
-.card-root .wx-peek-hilo { display: inline-flex; align-items: center; gap: 4px; font: 700 9px/1 var(--font-mono); color: rgba(255,255,255,0.65); white-space: nowrap; }
-.card-root .wx-peek-hilo::before { content: "·"; opacity: 0.5; }
-.card-root .wx-peek-condition { color: rgba(255,255,255,0.7); background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14); }
-.card-root .wx-peek-rain { color: rgba(180,210,255,0.85); background: rgba(180,210,255,0.12); border: 1px solid rgba(180,210,255,0.35); }
-.card-root .wx-peek-weather-stack { display: flex; flex-direction: column; gap: 4px; }
-.card-root .wx-forecast-strip { display: flex; align-items: center; justify-content: space-between; padding: 0 12px; }
-.card-root .wx-forecast-point { display: flex; align-items: center; gap: 3px; }
-.card-root .wx-forecast-icon { width: 10px; height: 10px; flex: none; filter: drop-shadow(0 1px 3px rgba(0,0,0,0.4)); pointer-events: none; }
-.card-root .wx-forecast-temp { font: 700 8px/1 var(--font-mono); color: var(--overlay-fg); }
-.card-root .wx-forecast-hour { font: 600 7px/1 var(--font-mono); color: rgba(255,255,255,0.55); }
-.card-root .media-row { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
-.card-root .media-track { display: flex; align-items: center; gap: 9px; min-width: 0; }
-.card-root .media-art { width: 26px; height: 26px; flex: none; border-radius: 6px; display: flex; align-items: center; justify-content: center; font-size: 13px; line-height: 1; background: rgba(255,255,255,0.08); border: 1px solid rgba(255,255,255,0.14); color: var(--overlay-fg); }
-.card-root .media-art-icon { width: 13px; height: 13px; }
-.card-root .media-meta { min-width: 0; display: flex; flex-direction: column; }
-.card-root .media-title { font-size: 12px; font-weight: 600; color: var(--overlay-fg); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.card-root .media-subtitle { font-size: 10.5px; color: rgba(255,255,255,0.6); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.card-root .media-transport { display: flex; align-items: center; gap: 6px; flex: none; font-size: 10.5px; color: rgba(255,255,255,0.85); }
-.card-root .media-state-icon { width: 12px; height: 12px; }
-.card-root .media-bar { width: 56px; height: 4px; border-radius: 2px; background: rgba(255,255,255,0.12); overflow: hidden; }
-.card-root .media-bar-fill { display: block; width: 100%; height: 100%; background: #b6f5e5; transform-origin: left; transition: transform 1s linear; will-change: transform; }
-.card-root .media-time { font-variant-numeric: tabular-nums; min-width: 30px; text-align: right; }
 .card-root .idle-reveal-scorecard { display: flex; flex-direction: column; gap: 8px; }
 .card-root .idle-reveal-label { text-align: center; font: 700 13px/1.3 var(--font-sans); color: var(--overlay-fg); display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .card-root .idle-peek-timeline { position: relative; display: block; height: 1px; margin-top: 2px; background: rgba(255,255,255,0.14); }
@@ -577,7 +489,6 @@
 @media (prefers-reduced-motion: reduce) {
   .card-root .card-assembly.pulse-goal, .card-root .card-assembly.pulse-goal::before, .card-root .card-assembly.pulse-goal::after,
   .card-root .card-assembly.pulse-red, .card-root .cele-ripple span, .card-root .news-shade::before,
-  .card-root .wx-card.wx-rain-streaks::after, .card-root .wx-card.wx-snow-dots::after,
   .card-root .card-assembly.cele-goal, .card-root .card-assembly.cele-goal::after, .card-root .card-assembly.cele-yc::after, .card-root .card-assembly.cele-rc,
   .card-root .chip-category, .card-root .notif-meta-row .notif-time-inline {
     animation: none;
@@ -640,7 +551,7 @@ button.ctl.active { background: #3b4757; border-color: #5b7089; }
   <code>src/overlay/*.css</code>. See the top-of-file HTML comment for exactly what's
   faithful (selectors/values/DOM nesting) vs. substituted for a static file (motion
   springs approximated with CSS transitions on their documented fallback durations;
-  weather/media/crest artwork replaced with placeholder glyphs).
+  crest artwork replaced with placeholder glyphs).
 </p>
 
 <div class="appearance-bar" id="appearance-bar">
@@ -678,7 +589,7 @@ button.ctl.active { background: #3b4757; border-color: #5b7089; }
   CSS grid, <code>.flank-left</code> / the notch cutout (<code>.synthetic-cutout</code>,
   HUD-mode only — real notch hardware draws nothing here) / <code>.flank-right</code>
   on row 1, <code>.below-block</code> spanning row 2 when a card is showing. The clock
-  (<code>FlankClock</code>) and the three status dots (<code>StatusDots</code>) are
+  (<code>FlankClock</code>) and the two status dots (<code>StatusDots</code>) are
   <b>rail furniture</b> — they persist through a showing notification in rail mode
   (<code>railRevealed</code>), not just at idle. The idle face fades in after ~4.5s of
   true idle. HUD mode is shown by default (the dev machine, per <code>CLAUDE.md</code>,
@@ -696,14 +607,14 @@ button.ctl.active { background: #3b4757; border-color: #5b7089; }
 </p>
 <div class="grid" id="tiers"></div>
 
-<h2>2 · Card content — generic/agent, news, weather, live-match</h2>
+<h2>2 · Card content — generic/agent, news, live-match</h2>
 <p class="note">
   <code>NotificationBody.tsx</code> renders one of two branches (news vs. everything
   else) into <code>.compact</code>, plus the disclosure <code>Manifest</code> and the
   <code>TtlBar</code> floor strip. A live-match football card (structured ESPN meta)
   skips all three — <code>LiveMatchScorecard.tsx</code> replaces <code>.compact</code>
   entirely with <code>.notif-block</code>. Origin/category paint (<code>below-block</code>
-  wash — <code>news-shade</code>/<code>src-*</code>/<code>wx-card</code>) is a
+  wash — <code>news-shade</code>/<code>src-*</code>) is a
   deliberately separate channel from the priority accent above; a card only ever
   carries one of the two paint systems.
 </p>
@@ -762,10 +673,9 @@ button.ctl.active { background: #3b4757; border-color: #5b7089; }
 <p class="note">
   <code>IdleHoverPeek.tsx</code> — mounted only while genuinely hovered
   (<code>open</code>), never just because ambient data exists. Precedence: a live
-  football match &gt; now-playing media &gt; weather &gt; the bare day-progress
-  timeline alone. Real crest/media artwork isn't available to a static file, so the
-  scorecard reveal falls back to team abbreviations and the media row uses a
-  placeholder glyph — the same fallback paths the shipped app itself takes when no
+  football match &gt; the bare day-progress timeline alone. Real crest artwork
+  isn't available to a static file, so the scorecard reveal falls back to team
+  abbreviations — the same fallback path the shipped app itself takes when no
   cached asset exists.
 </p>
 <div class="grid" id="idle-peek-states"></div>
@@ -798,9 +708,9 @@ const AGENT_RUNTIME_CLASS = { 'claude-code': 'src-claude-code', codex: 'src-code
 const AGENT_RUNTIME_LABEL = { 'claude-code': 'Claude Code', codex: 'Codex', kimi: 'Kimi', opencode: 'OpenCode' };
 function sourceClass(origin, runtime) {
   if (origin === 'agent') return runtime ? AGENT_RUNTIME_CLASS[runtime] : 'src-agent';
-  return { football: 'src-football', weather: 'src-weather', manual: 'src-manual' }[origin] || 'src-agent';
+  return { football: 'src-football', manual: 'src-manual' }[origin] || 'src-agent';
 }
-const GENERIC_MASTHEAD_KICKER = { manual: 'cli', football: 'football', weather: 'weather', news: 'news', agent: 'agent' };
+const GENERIC_MASTHEAD_KICKER = { manual: 'cli', football: 'football', news: 'news', agent: 'agent' };
 
 /* ---------- lib/markdown.tsx mirror (inline code/bold/italic + line breaks) ---------- */
 function esc(s) { return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;'); }
@@ -813,41 +723,6 @@ function mdInline(s) {
       .replace(/\*([^*]+)\*/g, '<em>$1</em>')
   ).join('<br/>');
 }
-
-/* ---------- lib/weatherArt.ts mirror — hand-drawn placeholder glyphs
-   standing in for the vendored Meteocons SVGs (see top-of-file note) ---------- */
-function wxIconSvg(mood) {
-  const sun = '<circle cx="12" cy="12" r="5" fill="#ffd166"/><g stroke="#ffd166" stroke-width="1.6" stroke-linecap="round"><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M4.9 19.1L7 17M17 7l2.1-2.1"/></g>';
-  const moon = '<path d="M15 3a9 9 0 1 0 6 15 8 8 0 0 1-6-15z" fill="#cfd8ff"/>';
-  const cloud = '<path d="M7 18a4.5 4.5 0 0 1-.4-9A5.5 5.5 0 0 1 17 8.6 4 4 0 0 1 16.5 18H7z" fill="#c9d3de"/>';
-  const rain = cloud + '<g stroke="#8fb4ff" stroke-width="1.6" stroke-linecap="round"><path d="M8 20l-1 2M12 20l-1 2M16 20l-1 2"/></g>';
-  const snow = cloud + '<g fill="#e8f0ff"><circle cx="8" cy="21" r="1"/><circle cx="12" cy="22" r="1"/><circle cx="16" cy="21" r="1"/></g>';
-  const storm = cloud + '<path d="M12 18l-2.5 4h2l-1 3 3.5-4.5h-2z" fill="#ffd166"/>';
-  const fog = '<g stroke="#c9d3de" stroke-width="1.6" stroke-linecap="round"><path d="M4 10h16M3 14h18M5 18h14"/></g>';
-  if (mood.indexOf('clear-day') >= 0) return sun;
-  if (mood.indexOf('clear-night') >= 0) return moon;
-  if (mood.indexOf('partly-cloudy-night') >= 0) return moon + cloud;
-  if (mood.indexOf('partly-cloudy') >= 0) return sun + cloud;
-  if (mood.indexOf('rain') >= 0 || mood.indexOf('rainy') >= 0) return rain;
-  if (mood.indexOf('thunderstorm') >= 0) return storm;
-  if (mood.indexOf('snow') >= 0) return snow;
-  if (mood.indexOf('fog') >= 0) return fog;
-  return cloud;
-}
-const WEATHER_TABLE = {
-  Clear: { day: { moodClass: 'wx-clear-day', textureClass: null }, night: { moodClass: 'wx-clear-night', textureClass: null } },
-  Cloudy: { day: { moodClass: 'wx-partly-cloudy-day', textureClass: null }, night: { moodClass: 'wx-partly-cloudy-night', textureClass: null } },
-  Fog: { day: { moodClass: 'wx-fog', textureClass: null }, night: { moodClass: 'wx-fog', textureClass: null } },
-  Rain: { day: { moodClass: 'wx-rain', textureClass: 'wx-rain-streaks' }, night: { moodClass: 'wx-rainy-night', textureClass: 'wx-rain-streaks' } },
-  Storm: { day: { moodClass: 'wx-thunderstorm', textureClass: 'wx-rain-streaks' }, night: { moodClass: 'wx-thunderstorm', textureClass: 'wx-rain-streaks' } },
-  Snow: { day: { moodClass: 'wx-snow', textureClass: 'wx-snow-dots' }, night: { moodClass: 'wx-snow', textureClass: 'wx-snow-dots' } },
-};
-function weatherArtFor(condition, isDay) {
-  const entry = WEATHER_TABLE[condition] || { day: { moodClass: 'wx-overcast', textureClass: null }, night: { moodClass: 'wx-overcast', textureClass: null } };
-  const pick = isDay ? entry.day : entry.night;
-  return { moodClass: pick.moodClass, textureClass: pick.textureClass, svg: wxIconSvg(pick.moodClass) };
-}
-function wxIcon(cls, mood) { return `<svg class="${cls}" viewBox="0 0 24 24">${wxIconSvg(mood)}</svg>`; }
 
 /* Track.tsx / TtlBar.tsx segment math, verbatim */
 const MAX_SEGMENTS = 10;
@@ -949,7 +824,7 @@ function statusDotsHtml(status) {
     return `<span class="status-dot ${name} ${shapeClass(configured)}${active ? ' active' : ' dim'}" role="img" aria-label="${name}"></span>`;
   };
   const pause = paused ? '<span class="pause-glyph" role="img" aria-label="Notifications paused"><span></span><span></span></span>' : '';
-  return `<span class="status-dots">${dot('football', status && status.football)}${dot('news', status && status.news)}${dot('weather', status && status.weather)}${pause}</span>`;
+  return `<span class="status-dots">${dot('football', status && status.football)}${dot('news', status && status.news)}${pause}</span>`;
 }
 
 /* ---------- IdleFace.tsx ---------- */
@@ -964,7 +839,7 @@ function idleFaceHtml() {
 function clockDisplay() { return new Intl.DateTimeFormat('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }).format(new Date()); }
 function dayProgressPct() { const now = new Date(); return (((now.getHours() * 60 + now.getMinutes()) / 1440) * 100).toFixed(1); }
 
-/* ---------- IdleHoverPeek.tsx (subset: weather / media / football reveal + timeline) ---------- */
+/* ---------- IdleHoverPeek.tsx (subset: football reveal + timeline) ---------- */
 function idlePeekHtml(cfg) {
   let backdrop = '';
   let content = '';
@@ -972,33 +847,6 @@ function idlePeekHtml(cfg) {
     content = `<div class="idle-reveal-scorecard">
       <div class="sc-head"><span class="chip chip-live"><span class="live-dot" aria-hidden="true"></span>Live</span><span class="chip clock-pill">${esc(cfg.live.minute)}</span></div>
       <div class="idle-reveal-label">${esc(cfg.live.label)}</div>
-    </div>`;
-  } else if (cfg.media) {
-    const m = cfg.media;
-    content = `<div class="media-row">
-      <div class="media-track">
-        <span class="media-art" aria-hidden="true"><svg class="media-art-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 18V5l12-2v13"/><circle cx="6" cy="18" r="3"/><circle cx="18" cy="16" r="3"/></svg></span>
-        <span class="media-meta"><span class="media-title">${esc(m.title)}</span><span class="media-subtitle">${esc(m.subtitle)}</span></span>
-      </div>
-      <div class="media-transport">
-        <span class="media-state" aria-hidden="true"><svg class="media-state-icon" viewBox="0 0 24 24" fill="currentColor">${m.playing ? '<rect x="6" y="5" width="4" height="14"/><rect x="14" y="5" width="4" height="14"/>' : '<path d="M7 5l12 7-12 7z"/>'}</svg></span>
-        <span class="media-bar"><span class="media-bar-fill" style="transform:scaleX(${m.fraction})"></span></span>
-        <span class="media-time">${esc(m.elapsed)}</span>
-      </div>
-    </div>`;
-  } else if (cfg.weather) {
-    const w = cfg.weather;
-    const art = weatherArtFor(w.condition, w.isDay);
-    backdrop = `<div class="wx-card wx-peek-backdrop ${art.moodClass}${art.textureClass ? ' ' + art.textureClass : ''}"></div>`;
-    const hilo = w.hi && w.lo ? `<span class="wx-peek-hilo"><span class="wx-peek-hi">H ${esc(w.hi)}</span><span class="wx-peek-lo">L ${esc(w.lo)}</span></span>` : '';
-    const rain = w.rainPct !== null && w.rainPct !== undefined ? `<span class="chip wx-peek-rain">${w.rainPct}% rain</span>` : '';
-    const strip = (w.forecast || []).length ? `<div class="wx-forecast-strip">${w.forecast.map((p) => {
-      const a = weatherArtFor(p.condition, p.isDay);
-      return `<span class="wx-forecast-point">${wxIcon('wx-forecast-icon', a.moodClass)}<span class="wx-forecast-temp">${esc(p.temp)}</span><span class="wx-forecast-hour">${esc(p.hour)}</span></span>`;
-    }).join('')}</div>` : '';
-    content = `<div class="wx-peek-weather-stack">
-      <div class="wx-peek-readout">${wxIcon('wx-peek-icon', art.moodClass)}<span class="wx-peek-temp">${esc(w.tempDisplay)}</span>${hilo}<span class="chip wx-peek-condition">${esc(w.condition)}</span>${rain}</div>
-      ${strip}
     </div>`;
   }
   return `<div class="below-block idle-peek">
@@ -1029,7 +877,6 @@ function shellHtml(cfg) {
   let belowBlock = '';
   if (cfg.showing) {
     belowBlock = `<div class="${cfg.belowBlockClass}">
-      ${cfg.wxIconHtml || ''}
       <div class="card-content">${cfg.bodyHtml}</div>
     </div>`;
   } else if (showPeek) {
@@ -1086,15 +933,15 @@ function replay(assemblyEl, cls, endAnim, withRipple) {
 
 /* ================= 0 · shell states ================= */
 const shellGrid = document.getElementById('shell-states');
-frame(shellGrid, shellHtml({ status: { football: true, news: true, weather: true } }),
-  'idle rail · all sources on', 'clock + 3 status dots, no idle face yet');
-frame(shellGrid, shellHtml({ status: { football: false, news: true, weather: false } }),
-  'idle rail · football/weather off', 'hollow-square dots — configured-off, not unavailable');
-frame(shellGrid, shellHtml({ status: { paused: true, football: true, news: true, weather: true } }),
+frame(shellGrid, shellHtml({ status: { football: true, news: true } }),
+  'idle rail · all sources on', 'clock + 2 status dots, no idle face yet');
+frame(shellGrid, shellHtml({ status: { football: false, news: true } }),
+  'idle rail · football off', 'hollow-square dot — configured-off, not unavailable');
+frame(shellGrid, shellHtml({ status: { paused: true, football: true, news: true } }),
   'idle rail · engine paused', 'every dot forced dim + pause-glyph, two static bars');
 frame(shellGrid, shellHtml({ status: {}, idleFace: true }),
   'true idle · idle face', 'no <code>status</code> prop -&gt; every dot "unavailable" (hollow circle)');
-frame(shellGrid, shellHtml({ showing: true, priority: 'high', expanded: false, status: { football: true, news: true, weather: true },
+frame(shellGrid, shellHtml({ showing: true, priority: 'high', expanded: false, status: { football: true, news: true },
     belowBlockClass: 'below-block', bodyHtml: notificationBodyHtml({ priority: 'high', eventType: 'generic', origin: 'agent', title: 'Agent needs input', body: 'Workspace command is waiting', queueTotal: 3, queueDone: 1 }) }),
   'showing · rail furniture stays', 'clock + dots persist through a live card (railRevealed)');
 
@@ -1124,13 +971,6 @@ frame(contentTypes, shellHtml({ showing: true, priority: 'low', status: {},
   belowBlockClass: 'below-block news-shade ' + categoryClass('politics'),
   bodyHtml: notificationBodyHtml({ priority: 'low', eventType: 'news_item', title: 'Parliament passes the landmark digital rights bill', source: 'NDTV', category: 'politics', age: '42m ago', link: true, queueTotal: 5, queueDone: 2 }) }),
   'news card', 'per-category shader — never the same channel as source identity');
-frame(contentTypes, (() => {
-  const art = weatherArtFor('Rain', true);
-  return shellHtml({ showing: true, priority: 'medium', status: {},
-    belowBlockClass: 'below-block wx-card ' + art.moodClass + (art.textureClass ? ' ' + art.textureClass : ''),
-    wxIconHtml: wxIcon('wx-icon', art.moodClass),
-    bodyHtml: notificationBodyHtml({ priority: 'medium', eventType: 'generic', origin: 'weather', title: 'Rain expected soon', body: '75% chance of rain within ~30 min', queueTotal: 1, queueDone: 0 }) });
-})(), 'weather ALERT card', 'mood gradient + texture + glyph, z-index 0 under content');
 frame(contentTypes, shellHtml({ showing: true, priority: 'low', status: {}, isLiveCard: true, belowBlockClass: 'below-block',
   bodyHtml: liveMatchHtml({ espn: { league: 'Premier League', clock: "58'", homeAbbrev: 'ARS', awayAbbrev: 'CHE', homeScore: 2, awayScore: 0, homeCards: [1, 0], awayCards: [2, 1] },
     pillVariant: 'live', body: "58' · Saka (assist Ødegaard)", eventIcon: 'ev-ico goal', eventTint: 'tint-goal' }) }),
@@ -1255,23 +1095,18 @@ frame(sourceIdentity, shellHtml({ showing: true, priority: 'low', status: {},
 
 /* ================= 8 · idle hover-peek ================= */
 const peekGrid = document.getElementById('idle-peek-states');
-frame(peekGrid, shellHtml({ hovered: true, peek: { weather: { tempDisplay: '72°F', condition: 'Cloudy', isDay: true, hi: '75°', lo: '58°', rainPct: 20,
-    forecast: [{ condition: 'Cloudy', isDay: true, temp: '71°', hour: '15:00' }, { condition: 'Rain', isDay: true, temp: '68°', hour: '18:00' }, { condition: 'Clear', isDay: false, temp: '61°', hour: '21:00' }] } } }),
-  'weather peek + forecast strip', 'football &gt; media &gt; weather &gt; timeline precedence');
-frame(peekGrid, shellHtml({ hovered: true, peek: { media: { title: 'Everything In Its Right Place', subtitle: 'Radiohead — Kid A', playing: true, fraction: 0.42, elapsed: '1:47' } } }),
-  'now-playing media', 'lucide-style transport glyphs (placeholder here)');
 frame(peekGrid, shellHtml({ hovered: true, peek: { live: { label: 'ARS 2–0 CHE', minute: 'Halftime' } } }),
   'live-match reveal', 'lighter render than the sticky scorecard — label/minute only');
 frame(peekGrid, shellHtml({ hovered: true, peek: {} }),
-  'timeline only', 'no live match / media / weather to show — bare day-progress dot');
+  'timeline only', 'no live match to show — bare day-progress dot');
 
 /* ================= 9 · bare vs rail ================= */
 const bareGrid = document.getElementById('bare-states');
 frame(bareGrid, shellHtml({ bare: true, status: {} }),
   'bare · resting_state: notch', 'cutout-width-only, transparent flanks — zero app pixels');
-frame(bareGrid, shellHtml({ bare: true, hovered: true, peek: { weather: { tempDisplay: '68°F', condition: 'Clear', isDay: true } }, status: { football: true, news: true, weather: true } }),
+frame(bareGrid, shellHtml({ bare: true, hovered: true, peek: { live: { label: 'ARS 2–0 CHE', minute: 'Halftime' } }, status: { football: true, news: true } }),
   'bare · hovered', 'widens back to rail formula, flanks repaint black, peek opens');
-frame(bareGrid, shellHtml({ status: { football: true, news: true, weather: true } }),
+frame(bareGrid, shellHtml({ status: { football: true, news: true } }),
   'rail · resting_state: rail (default)', 'always the full clock+dots rail, bare never applies');
 frame(bareGrid, shellHtml({ showing: true, priority: 'medium', status: {}, belowBlockClass: 'below-block',
   bodyHtml: notificationBodyHtml({ priority: 'medium', eventType: 'generic', origin: 'manual', title: 'Showing while bare-configured', body: 'A showing card is never bare — bare only ever applies to true idle.', queueTotal: 1, queueDone: 0 }) }),

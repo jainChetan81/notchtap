@@ -1,4 +1,4 @@
-//! Plan 135 (v7 ticket 3 of 13, spec §5): maps a noteworthy Agent Event
+//! maps a noteworthy Agent Event
 //! into the existing-domain [`Event`], the ONE seam that lets an Agent
 //! Session's permission/input/failure/completion moments enter the
 //! Notification Slot and obey every existing Queue/Slot rule (Priority,
@@ -73,7 +73,7 @@ use super::adapter::{kind_wire_label, runtime_wire_label};
 use super::model::{session_hash_hex, AgentDetail, AgentEventKind, AgentRuntime, AgentSessionKey};
 
 /// Priority/gating knobs for the registry→Notification mapping (spec §5's
-/// table + spec §7's future `[agents]` config block). Plan 137 wires these
+/// table + spec §7's future `[agents]` config block). wires these
 /// to real config (`agents.informational_notifications`,
 /// `agents.permission_priority`, etc.) — until then every call site
 /// (`http.rs`'s `agent_events_handler`, `settings.rs`'s agent preview arm)
@@ -82,7 +82,7 @@ use super::model::{session_hash_hex, AgentDetail, AgentEventKind, AgentRuntime, 
 /// spec §5's table pins it at a fixed Medium ("Informational | Medium |
 /// off by default"), unlike the other four kinds, which each get their
 /// own configurable priority in §7's toml block — there is no
-/// `informational_priority` key to wire in plan 137, so this struct
+/// `informational_priority` key to wire in , so this struct
 /// doesn't invent one.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct NotificationPolicy {
@@ -209,7 +209,7 @@ fn default_body_for(kind: AgentEventKind, terminal: bool) -> String {
 /// Everything [`build_notification`] needs about what an Agent Event's
 /// card should SAY — as opposed to its routing/policy facts
 /// (`session_key`/`kind`/`terminal`/`ttl_secs`/`policy`, which stay their
-/// own positional params). Plan 147 added `project_name`/`details`
+/// own positional params). added `project_name`/`details`
 /// alongside the pre-existing `summary`; bundling all three keeps
 /// `build_notification` under clippy's `too_many_arguments` limit instead
 /// of growing an already-long positional list.
@@ -232,18 +232,18 @@ pub struct NotificationContent<'a> {
 /// `completion_notifications` is off (that gate defaults on, so this is
 /// opt-in silence, not the default).
 ///
-/// `ttl_secs` is the caller's own one-shot rotation window — plan 137
+/// `ttl_secs` is the caller's own one-shot rotation window —
 /// wired `http.rs`'s call site to the real `agent_ttl_secs` config field
 /// (renamed from `cmux_ttl_secs`, itself a migration target for that
 /// same v6.1 flat field), this module itself stays agnostic to where the
 /// value came from.
 ///
-/// `project_name`/`details` (plan 147, spec's parity item) are the
+/// `project_name`/`details` are the
 /// already-sanitized/capped `AgentProject.name`/`Vec<AgentDetail>` the
 /// registry itself accepted off the same wire event — NOT the cwd (spec
 /// distinguishes `project.name` from `project.cwd`; only the name is
 /// display-appropriate). They ride onto `EventMeta.subtitle`/`.details`,
-/// the same two fields the manual `/notify` rich-relay path (plan 035)
+/// the same two fields the manual `/notify` rich-relay path
 /// already populates, so an agent card renders identically to a manual
 /// one that supplies the same shape. Absent project or empty details
 /// leave those fields at `EventMeta::default()`'s None/empty — wire
@@ -831,9 +831,9 @@ mod tests {
         assert_eq!(event.payload.body, "Waiting for your input.");
     }
 
-    // --- plan 147: notification parity — project name -> subtitle,
+    // --- notification parity — project name -> subtitle,
     // AgentDetail -> DetailItem, matching the manual `/notify` rich-relay
-    // shape (plan 035) ---
+    // shape ---
 
     #[test]
     fn project_name_becomes_subtitle() {

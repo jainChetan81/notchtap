@@ -1,18 +1,14 @@
-/* ==== plan 093 (079 items 9/17/18): the idle hover-expanded state —
-   weather peek / scorecard reveal / day-progress timeline, all sharing
-   ONE below-block (`IdleHoverPeek.tsx`). Mounted ONLY while `hovered` is
-   true (never continuously whenever ambient data merely exists) — see
-   that component's own doc comment for why: `.card-assembly`'s existing,
-   UNTOUCHED `:not(:has(.below-block))` rounding law (above) is what makes
-   "flanks un-round while the peek is open" true, and that only works if
-   this block's mere DOM presence tracks "open," not "data available."
+/* ==== the idle hover-expanded state — scorecard reveal /
+   day-progress timeline, sharing ONE below-block (`IdleHoverPeek.tsx`).
+   Mounted ONLY while `hovered` is true (never whenever ambient data
+   merely exists): `.card-assembly`'s existing `:not(:has(.below-block))`
+   rounding law only works if this block's DOM presence tracks "open,"
+   not "data available."
 
-   plan 12x: the mount/unmount animation (height 0->100px, opacity/fade)
-   moved to `motion` (`AnimatePresence` + `motion.div`, IdleHoverPeek.tsx)
-   — this app's animation law now routes all animation through that
-   library rather than hand-drawn CSS `@keyframes`, and never hand-tweens
-   layout props. `height`/`opacity` are set inline by `motion` now; this
-   rule only carries the non-animated box model. */
+   The mount/unmount animation (height 0->100px, opacity/fade) is
+   `motion`'s (`AnimatePresence` + `motion.div`, IdleHoverPeek.tsx) —
+   `height`/`opacity` are set inline by `motion` now; this rule only
+   carries the non-animated box model. */
 .card-root .below-block.idle-peek {
   padding: 12px 16px 13px;
   display: flex;
@@ -21,292 +17,13 @@
   overflow: hidden;
 }
 
-/* plan 105 (Step B): the weather art, split out of the old combined
-   `.wx-peek-scene` into its own backdrop layer so it can sit BEHIND
-   whatever the precedence chain (football/media/weather) puts in
-   `.peek-content`, instead of being replaced by it — the operator wanted
-   the mood art kept once the media row took over the readout slot.
-   Reuses `.wx-card`'s mood-gradient `::before`/texture `::after` (weather
-   ALERT card block, above). `inset: 0` fills `.below-block.idle-peek`'s
-   own animated height (that block is already `position: relative` — see
-   its rule above), so no min-height is needed here the way
-   `.wx-peek-scene` used to carry one: this layer is the full block, not
-   a sub-box inside it.
-
-   plan 122: this is now PURE art — no glyph. The condition icon used to
-   live here too (absolutely positioned via the shared `.wx-icon` rule
-   above), which put it in the SAME top-right corner the media row's
-   transport occupies — whenever media played, the two collided. The
-   glyph moved to `.wx-peek-icon` below, in flow inside `.wx-peek-readout`
-   instead. */
-.card-root .wx-peek-backdrop {
-  position: absolute;
-  inset: 0;
-  z-index: 0;
-  /* top corners square — the backdrop meets card content above, not an
-     outer edge, so rounding there reads as a floating chip instead of a
-     section of the card. Only the bottom corners round, where the
-     backdrop coincides with the card's own bottom edge.
-     M14: was a hardcoded `10px` — undershoots/overshoots the user-
-     configurable `--card-radius` (default 8px, styles.css) the parent
-     shape actually rounds by. Reads the same var so the backdrop's own
-     corner always matches the card's, whatever the setting. */
-  border-radius: 0 0 var(--card-radius, 8px) var(--card-radius, 8px);
-  overflow: hidden;
-}
-/* the real content (scorecard/media/weather readout + timeline) sits
-   above the backdrop, same z-order discipline as `.wx-card .compact`
-   above. */
+/* the real content (scorecard + timeline). */
 .card-root .peek-content {
   position: relative;
   z-index: 1;
   display: flex;
   flex-direction: column;
   gap: 8px;
-}
-.card-root .wx-peek-readout {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 10px 12px;
-}
-/* plan 122: the condition glyph, relocated here from the backdrop
-   (`.wx-peek-backdrop`, above) — a flex sibling of `.wx-peek-temp`/
-   `.wx-peek-condition`/`.wx-peek-rain`, in normal layout flow so it can
-   never overlap the media row's transport region by construction. This
-   is a DEDICATED class, deliberately not the shared `.wx-icon` the
-   weather ALERT card still uses absolutely-positioned in its own corner
-   (untouched — non-goal): reusing that class here would mean either an
-   override fighting its `position: absolute` or breaking the alert
-   card's own layout. Sized well under the alert card's 48px (28px) so
-   this row doesn't grow past the readout's pre-plan-122 height — the
-   peek's own outer block is a fixed 100px regardless of content
-   (`hover.rs`'s `IDLE_PEEK_BELOW_BLOCK_H` mirror), not intrinsic. */
-.card-root .wx-peek-icon {
-  width: 28px;
-  height: 28px;
-  flex: none;
-  filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.45));
-  pointer-events: none;
-}
-.card-root .wx-peek-temp {
-  font: 800 18px/1 var(--font-mono);
-  color: var(--overlay-fg);
-}
-/* plan 131: hi/lo, inline with the current temp ("21° · H 24° L 16°") —
-   a flex sibling of `.wx-peek-temp`/`.wx-peek-condition`/`.wx-peek-rain`
-   in the SAME `.wx-peek-readout` row, so it adds no vertical height (the
-   row's cross-size is already dominated by the 28px icon above) — only
-   ever mounted when BOTH hi and lo are present (IdleHoverPeek.tsx). */
-.card-root .wx-peek-hilo {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font: 700 9px/1 var(--font-mono);
-  color: rgba(255, 255, 255, 0.65);
-  white-space: nowrap;
-}
-.card-root .wx-peek-hilo::before {
-  content: "·";
-  opacity: 0.5;
-}
-/* plan 092 (item 10): the condition label is `.chip` — 092 retired the
-   old pill vocabulary entirely; a bespoke pill here would silently undo
-   that. Neutral tint, matching `.chip-league`'s treatment above (this
-   isn't a priority/category signal, just a plain label). */
-.card-root .wx-peek-condition {
-  color: rgba(255, 255, 255, 0.7);
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-}
-/* plan 122 (Part B): the rain-chance chip — same `.chip` base, tinted
-   with the same light blue the weather ALERT card's own rain-streaks
-   texture already uses (`.wx-rain-streaks::after`, above), rather than
-   inventing a new color for "rain" in this one spot. Only ever mounted
-   when `weather.rainPct` is non-null (already floor-filtered rust-side
-   — IdleHoverPeek.tsx). */
-.card-root .wx-peek-rain {
-  color: rgba(180, 210, 255, 0.85);
-  background: rgba(180, 210, 255, 0.12);
-  border: 1px solid rgba(180, 210, 255, 0.35);
-}
-
-/* plan 131: the minimal forecast strip's outer wrapper — groups the
-   readout + strip into ONE flex child of `.peek-content`, so
-   `.peek-content`'s own `gap: 8px` still applies exactly ONCE (between
-   this whole block and `PeekTimeline`), whether or not the strip is
-   mounted, exactly as it did before this plan (IdleHoverPeek.tsx's
-   `WeatherPeekWithForecast` doc comment).
-
-   THE HEIGHT BUDGET (why the strip's type/glyph sizes below are this
-   small): the peek's outer block is a FIXED 100px (`hover.rs`'s
-   `IDLE_PEEK_BELOW_BLOCK_H` mirror, `.below-block.idle-peek`'s own doc
-   comment — untouched by this plan). Content area = 100 - 12 (padding-
-   top) - 13 (padding-bottom) = 75px. `.peek-content`'s own gap (8px)
-   plus `.idle-peek-timeline`'s box (2px margin-top + 1px height = 3px)
-   already claim 11px, leaving 64px for this stack. `.wx-peek-readout`
-   itself is a fixed 48px (10px+10px padding + the 28px icon, its
-   tallest child) — leaving 64 - 48 = 16px for [this wrapper's own gap +
-   the strip]. At `gap: 4px` that's a 12px ceiling for `.wx-forecast-
-   point`'s cross-size; the 10px icon below (its tallest child) leaves 2px
-   to spare — genuinely fits, not a redesign of the peek's height. */
-.card-root .wx-peek-weather-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-.card-root .wx-forecast-strip {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0 12px;
-}
-.card-root .wx-forecast-point {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-}
-/* deliberately its own tiny size, well under `.wx-peek-icon`'s 28px —
-   see `.wx-peek-weather-stack`'s doc comment above for the exact budget
-   this was shrunk to fit. */
-.card-root .wx-forecast-icon {
-  width: 10px;
-  height: 10px;
-  flex: none;
-  filter: drop-shadow(0 1px 3px rgba(0, 0, 0, 0.4));
-  pointer-events: none;
-}
-.card-root .wx-forecast-temp {
-  font: 700 8px/1 var(--font-mono);
-  color: var(--overlay-fg);
-}
-.card-root .wx-forecast-hour {
-  font: 600 7px/1 var(--font-mono);
-  color: rgba(255, 255, 255, 0.55);
-}
-
-/* plan 104: the now-playing media row — slots between the scorecard
-   reveal and the weather scene in `IdleHoverPeek.tsx`'s precedence
-   (football > media > weather > timeline). Text glyphs only (no artwork
-   transport, per the plan's own decision 6) — `.media-art`'s tile reuses
-   `.wx-peek-condition`'s exact neutral chip tint (above) rather than
-   inventing a new color; `.media-bar-fill` reuses `.idle-peek-timeline`'s
-   own teal (below) for the same reason — no new colors beyond existing
-   tokens, per this step's own constraint. Chip/gauge sizing stays
-   consistent with the rest of `.idle-peek`'s vocabulary. */
-.card-root .media-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 10px;
-}
-.card-root .media-track {
-  display: flex;
-  align-items: center;
-  gap: 9px;
-  min-width: 0;
-}
-.card-root .media-art {
-  width: 26px;
-  height: 26px;
-  flex: none;
-  border-radius: 6px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 13px;
-  line-height: 1;
-  background: rgba(255, 255, 255, 0.08);
-  border: 1px solid rgba(255, 255, 255, 0.14);
-  color: var(--overlay-fg);
-}
-/* plan 118: the source-app glyph is now a lucide icon (svg), not a text
-   character — sized to match the `.media-art` font-size above (13px) so
-   the 26x26 tile's centered content keeps the same visual footprint and
-   the media row doesn't shift. Color still inherits via currentColor,
-   same as the text glyph it replaces. */
-.card-root .media-art-icon {
-  width: 13px;
-  height: 13px;
-}
-.card-root .media-meta {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
-}
-.card-root .media-title {
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--overlay-fg);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.card-root .media-subtitle {
-  font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.6);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.card-root .media-transport {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  flex: none;
-  font-size: 10.5px;
-  color: rgba(255, 255, 255, 0.85);
-}
-.card-root .media-state {
-  font-size: 12px;
-  line-height: 1;
-}
-/* plan 118: play/pause is now a lucide icon (svg), not a text glyph —
-   sized to match the `.media-state` font-size above (12px) so it doesn't
-   grow the `.media-transport` row. Color inherits via currentColor. */
-.card-root .media-state-icon {
-  width: 12px;
-  height: 12px;
-}
-.card-root .media-bar {
-  width: 56px;
-  height: 4px;
-  border-radius: 2px;
-  background: rgba(255, 255, 255, 0.12);
-  overflow: hidden;
-}
-/* item 4 (media progress glide): was a per-tick inline `width: NN%` that
-   jumped once a second (`useLiveTick`, IdleHoverPeek.tsx); now a static
-   full-width bar scaled with `transform: scaleX(fraction)` (inline style,
-   set by the component) — same visual grammar as `.ttl-fill`'s own
-   compositor-only drain (ttl-bar.css). `transition: transform 1s linear`
-   lets it glide continuously between ticks instead of snapping;
-   `transform-origin: left` anchors the scale to the bar's start, matching
-   the old width-based drain's LTR shrink. `border-radius` is intentionally
-   NOT redeclared here (was `2px` when this was width-based): scaling a
-   rounded corner horizontally distorts it into a flattened ellipse at
-   small fractions. `.media-bar` (above) already clips with its own
-   `overflow: hidden` + matching `border-radius`, so the fill's visible
-   shape is rounded by the track's clip at every fraction instead.
-   plan 151 (item C): the 1s linear glide below is for STEADY PLAYBACK
-   ONLY. IdleHoverPeek.tsx suppresses it with an inline `transition:
-   none` on any discontinuity (pause, seek/backwards jump, track change)
-   — a reset must read as a reset, not as a leisurely slide back to the
-   start. Keep that rule in mind before widening what this transition
-   covers. */
-.card-root .media-bar-fill {
-  display: block;
-  width: 100%;
-  height: 100%;
-  background: #b6f5e5;
-  transform-origin: left;
-  transition: transform 1s linear;
-  will-change: transform;
-}
-.card-root .media-time {
-  font-variant-numeric: tabular-nums;
-  min-width: 30px;
-  text-align: right;
 }
 
 /* the football scorecard-reveal half — a lighter render than the
@@ -322,13 +39,12 @@
 }
 .card-root .idle-reveal-label {
   text-align: center;
-  /* O11: was a hand-copied font stack that dropped "Helvetica Neue" from
-     the fallback chain — reads the shared --font-sans instead so this
-     never drifts from the house stack again. */
+  /* reads the shared --font-sans so this never drifts from the house
+     stack again. */
   font: 700 13px/1.3 var(--font-sans);
   color: var(--overlay-fg);
-  /* O11: a long team-name label (e.g. two full club names either side of
-     a score) could otherwise grow past the fixed 100px peek — same
+  /* a long team-name label (e.g. two full club names either side of a
+     score) could otherwise grow past the fixed 100px peek — same
      -webkit-box clamp idiom used everywhere else in this file. */
   display: -webkit-box;
   -webkit-line-clamp: 2;
@@ -336,11 +52,8 @@
   overflow: hidden;
 }
 
-/* item 18: the day-progress timeline, relocated from the deleted
-   `.idle-view .timeline` (091 removed the old always-on idle view along
-   with this rule) into its new, sole home — same thin-line-plus-dot
-   shape, rebuilt fresh since the original selector no longer exists
-   anywhere to reuse. */
+/* the day-progress timeline — thin line plus dot; sole home of the
+   shape. */
 .card-root .idle-peek-timeline {
   position: relative;
   display: block;
@@ -361,34 +74,18 @@
   box-shadow: 0 0 10px rgba(182, 245, 229, 0.75);
 }
 
-/* plan 171: the event icon set (`.ev-ico*`) and `.event-line.tint-*`
-   were removed from here — both belonged to the old, now-deleted
-   `LiveMatchScorecard.tsx`'s per-event icon+tint row (plan 043/084 era);
-   plan 170's `FootballHeroCard` deliberately doesn't carry an icon slot
-   (see NotificationBody.tsx's own doc comment on `.title.headline`), so
-   neither class had a live consumer left in either this file or
-   live-scorecard.css (confirmed via a repo-wide grep before removal). */
+/* no `.ev-ico*`/`.event-line.tint-*` classes here — `FootballHeroCard`
+   deliberately doesn't carry an icon slot (see NotificationBody.tsx's
+   own doc comment on `.title.headline`). */
 
-/* celebrations (plan 084): goal/penalty = green glow + ring, yellow =
-   amber ring, red = two-pulse coral strobe — visually echo pulse-goal/
-   pulse-red (signature moments #1/#2 above) without replacing them; the
-   two never stack (StatusRailCard.tsx gates pulse-goal/pulse-red off
-   while `isLiveCard`). Reuses `.card-assembly`'s own `::after` for the
-   ring, like pulse-goal's confetti does — mutually exclusive in practice
-   (isLiveCard vs the generic pulse path never both apply to one card),
-   so `background: transparent` here simply neutralizes the inherited
-   confetti gradient rather than fighting it.
-   item 5 (celebration ease cohesion): `ease-out` -> `var(--ease-notchtap)`
-   on all four animations below (`.cele-goal`, `.cele-goal::after`,
-   `.cele-yc::after`, `.cele-rc`) — the same unification plan 127 (Step 6)
-   already did for the generic `pulse-goal`/`pulse-red` set just above
-   (`goal-overshoot`/`goal-burst`/`goal-ring` all moved off stock
-   `ease-out` onto the house ease for the same "two things happening at
-   once, animated on two different feels" reason). This live-match set was
-   the one signature-moment family plan 127 didn't touch; there was no
-   documented reason for the two families to ease differently, just an
-   accumulated gap. Durations are untouched — operator-tuned, plan
-   084/100 — only the timing function changes. */
+/* celebrations: goal/penalty = green glow + ring, yellow = amber ring,
+   red = two-pulse coral strobe — visually echo pulse-goal/pulse-red
+   (signature moments) without replacing them; the two never stack
+   (StatusRailCard.tsx gates them off while `isLiveCard`). Reuses
+   `.card-assembly`'s own `::after` for the ring; `background:
+   transparent` neutralizes the inherited confetti gradient. All four
+   reach animations below share `var(--ease-notchtap)`; durations stay
+   operator-tuned. */
 .card-root .card-assembly.cele-goal {
   animation: goal-glow 1800ms var(--ease-notchtap);
 }
@@ -400,12 +97,10 @@
   animation: cele-ring 1800ms var(--ease-notchtap);
 }
 
-/* H4 (phantom celebration shadow): the 0%/100% rest endpoints used to
-   restate the card's OLD per-block resting shadow — stale since depth
-   moved onto `.card-assembly`'s own `filter: drop-shadow(...)`
-   (card-chrome.css). `none` lets the 30% glow fade in/out from nothing
-   instead of cross-fading with a phantom second shadow the filter already
-   supplies. The 30% frame (the actual glow) is untouched. */
+/* rest endpoints state `none` because depth lives on
+   `.card-assembly`'s own `filter: drop-shadow(...)` (card-chrome.css) —
+   the glow fades in/out from nothing rather than cross-fading with a
+   second shadow. The 30% frame (the actual glow) is untouched. */
 @keyframes goal-glow {
   0% {
     box-shadow: none;
@@ -434,12 +129,9 @@
   inset: -6px;
   border-radius: 18px;
   border: 2px solid rgba(240, 196, 106, 0.65);
-  /* plan 150 (Step 4): 1400ms -> 1800ms — `cele-ring` is a SHARED
-     keyframe (`.cele-goal::after` above uses it too) and it was running
-     at two different speeds with nothing at either site explaining the
-     split, so the same ring visibly expanded at two rates depending on
-     which card played it. One keyframe, one speed; the yellow-card ring
-     stays distinct through its own colour, not a covert tempo change. */
+  /* `cele-ring` is a SHARED keyframe (`.cele-goal::after` above uses
+     it too) — one keyframe, one speed; the yellow-card ring stays
+     distinct through its own colour, not a covert tempo change. */
   animation: cele-ring 1800ms var(--ease-notchtap);
 }
 
@@ -447,10 +139,8 @@
   animation: red-strobe 1800ms var(--ease-notchtap);
 }
 
-/* H4 (phantom celebration shadow): only the 100% rest endpoint restated
-   the card's OLD per-block resting shadow — same stale-value bug as
-   `goal-glow` above (see its own comment). The two strobe pulses (0%/45%
-   and 20%/70%) are untouched. */
+/* same stale-shadow rest endpoint as `goal-glow` above — the 100% frame
+   is `none`; the two strobe pulses are untouched. */
 @keyframes red-strobe {
   0%,
   45% {
@@ -462,14 +152,5 @@
   }
   100% {
     box-shadow: none;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .card-root .card-assembly.cele-goal,
-  .card-root .card-assembly.cele-goal::after,
-  .card-root .card-assembly.cele-yc::after,
-  .card-root .card-assembly.cele-rc {
-    animation: none;
   }
 }

@@ -1,18 +1,18 @@
-// plan 151 (items A + B): the football scorecard's own motion contract —
+// the football scorecard's own motion contract —
 // the match-state chip morphs rather than cuts, and the score digits roll
 // on a goal (and ONLY on a goal). The component's rendering is otherwise
 // covered end-to-end through StatusRailCard.test.tsx's "live-match
 // football scorecard" block; this file exists for the two things that
 // block can't express, which both need the component rendered DIRECTLY so
 // a prop can be changed in place:
-//   - DOM-identity assertions across a re-render (does a clock tick
-//     remount the score spans?), and
-//   - the CSS rules the animation actually lives in (jsdom has no layout
-//     or transition engine, so those are pinned at the string level
-//     against the real stylesheet — the same technique
-//     celebrationStacking.test.tsx and IdleHoverPeek.test.tsx use).
+// - DOM-identity assertions across a re-render (does a clock tick
+// remount the score spans?), and
+// - the CSS rules the animation actually lives in (jsdom has no layout
+// or transition engine, so those are pinned at the string level
+// against the real stylesheet — the same technique
+// celebrationStacking.test.tsx and IdleHoverPeek.test.tsx use).
 //
-// plan 170: this file used to be `LiveMatchScorecard.test.tsx`, direct-
+// this file used to be `LiveMatchScorecard.test.tsx`, direct-
 // rendering the now-deleted `LiveMatchScorecard` component. That
 // component's content moved into `FootballHeroCard` (this file's own
 // `NotificationBody.tsx`), rendered through the shared masthead/stamp/
@@ -217,7 +217,7 @@ describe("FootballHeroCard match-state chip (plan 151 item A)", () => {
   });
 });
 
-// Plan 171 (tab-notch redesign, slice G): the crossbar persistent
+// the crossbar persistent
 // variant — a second, stacked score-block for a secondary live match.
 describe("FootballHeroCard crossbar variant (plan 171, slice G)", () => {
   const SECOND_ESPN: EspnMeta = {
@@ -277,6 +277,8 @@ describe("FootballHeroCard crossbar variant (plan 171, slice G)", () => {
         ]}
       />,
     );
+    // SAFETY: a `secondaryMatches` fixture makes FootballHeroCard render the
+    // `.score-block.stacked` wrapper, so the match is non-null.
     const stacked = container.querySelector(".score-block.stacked") as HTMLElement;
     expect(stacked.querySelector(".chip-league")?.textContent).toBe("EPL");
     expect(stacked.querySelector(".chip-live")?.classList.contains("break")).toBe(true);
@@ -324,6 +326,8 @@ describe("FootballHeroCard crossbar variant (plan 171, slice G)", () => {
         ]}
       />,
     );
+    // SAFETY: the `secondaryMatches` fixture renders the `.score-block.stacked`
+    // wrapper, so the match is non-null.
     const stacked = container.querySelector(".score-block.stacked") as HTMLElement;
     expect(stacked.querySelector(".cards-line")).not.toBeNull();
     expect(container.querySelector(".score-block:not(.stacked) .cards-line")).toBeNull();
@@ -356,7 +360,7 @@ describe("FootballHeroCard crossbar variant (plan 171, slice G)", () => {
   });
 });
 
-// Plan 169 fidelity pass (2026-08-02): the shared fact-pill renderer's
+// the shared fact-pill renderer's
 // two knobs — the optional `.fp-tag` qualifier and the per-call tone —
 // asserted directly on the two components that pass them differently.
 // The mock (`prototype/agent-board.html`, proposal section) gives the

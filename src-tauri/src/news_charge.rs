@@ -1,4 +1,4 @@
-//! Plan 171 (tab-notch redesign, slice B): the news icon's CHARGE state
+//! the news icon's CHARGE state
 //! machine — pure, no I/O, same discipline `tabs.rs` follows
 //! (`docs/TESTING_STRATEGY.md` §4.4). Tracks how many items have landed
 //! since the news icon was last visited and whether a full batch has
@@ -6,14 +6,13 @@
 //! `docs/superpowers/specs/2026-08-02-tab-notch-design.md` §8 / open
 //! question 4's default (ship both the fill level and the count badge).
 //!
-//! Mirrors `weather_poller.rs`'s `WeatherAlertState` edge-trigger
+//! An edge-trigger
 //! discipline: `charged` is not live "is a full batch sitting there right
 //! now" arithmetic re-evaluated on every read — `cycle_end()` sets it
 //! once, at the moment a cycle closes with the batch full, and only
 //! `visit()` clears it. A charge earned on one cycle survives however
-//! many further cycles pass without a visit, the same way
-//! `WeatherAlertState::rain_fired` stays `true` until the condition
-//! clears rather than the next poll silently unfiring it.
+//! many further cycles pass without a visit — it stays fired until
+//! visited rather than the next poll silently unfiring it.
 //!
 //! **Design decision, recorded rather than left implicit**: "charged"
 //! means cycle-ended AND the batch is FULL (`items_since_visit >=
@@ -71,8 +70,7 @@ impl NewsCharge {
     /// `interval.tick()`, after every source in that tick has been
     /// diffed). Sets `charged` when the accumulated count has reached the
     /// batch size; leaves an already-`true` flag untouched on a cycle
-    /// that lands nothing new, the same "stays fired until it clears"
-    /// persistence `WeatherAlertState` uses.
+    /// that lands nothing new ("stays fired until it clears").
     pub fn cycle_end(&mut self) {
         if self.items_since_visit >= self.batch_size {
             self.charged = true;

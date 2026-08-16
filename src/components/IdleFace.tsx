@@ -17,29 +17,23 @@ import { IDLE_GLANCE_MS, IDLE_REVEAL_MS, NOTCHTAP_EASE } from "../animationTimin
 // showing/exiting, or a hover, must hide the face immediately (no fade
 // delay on the way OUT, only on the way in).
 //
-// COST NOTE (plan 125, /improve-animations audit finding #1, HIGH):
-// once revealed, this component used to re-arm a JS timer every
-// 1.5-2.5s (gaze) and 3-6s (blink) forever, plus drive the eyes with a
-// `motion` spring (a per-frame rAF loop while it settles) — on the
-// Mac mini (`idleFaceEligible`) that meant the overlay's main thread
-// never slept longer than ~2.5s, 24/7, in exactly the "bare notch ≈
-// zero cost" resting state the app is supposed to have. The cadence
-// constants below and the eyes' CSS-transition approach (see
-// useGazeCycle/useBlink and the eyes' `style` below) exist to cut that
-// wakeup rate roughly 4x and drop the rAF loop entirely, without
-// changing what the face LOOKS like doing.
+// COST NOTE: at rest, the overlay's main thread must stay asleep ("bare
+// notch ≈ zero cost") — the cadence constants below and the eyes'
+// CSS-transition approach (see useGazeCycle/useBlink and the eyes'
+// `style` below) keep the wakeup rate low and drop the rAF loop
+// entirely, without changing what the face LOOKS like doing.
 const REVEAL_DELAY_MS = 4500;
 
 // A short, hand-picked "looks around" loop rather than fully random
 // targets — center is revisited between every glance so the motion always
 // returns to a resting pose instead of drifting.
 type GazeName = "center" | "left" | "right" | "up";
-const GAZE_OFFSETS: Record<GazeName, { x: number; y: number }> = {
+const GAZE_OFFSETS = {
   center: { x: 0, y: 0 },
   left: { x: -3, y: 0 },
   right: { x: 3, y: 0 },
   up: { x: 0, y: -2 },
-};
+} satisfies Record<GazeName, { x: number; y: number }>;
 const GAZE_SEQUENCE: GazeName[] = ["center", "left", "center", "right", "center", "up", "center"];
 
 function randomBetween(minMs: number, maxMs: number): number {
@@ -50,10 +44,6 @@ function randomBetween(minMs: number, maxMs: number): number {
 // glances) while `active`; resets to center (and stops scheduling) the
 // instant `active` goes false, so the face never keeps ticking in the
 // background once it's hidden.
-//
-// plan 125: was 1500-2500ms — a glance every ~8s still reads as calm
-// (arguably calmer than the old fidgety ~2s cadence), while cutting
-// the idle-cost wakeup rate roughly 4x (see the file-header COST NOTE).
 function useGazeCycle(active: boolean): GazeName {
   const [gaze, setGaze] = useState<GazeName>("center");
 
@@ -77,12 +67,8 @@ function useGazeCycle(active: boolean): GazeName {
 }
 
 // An occasional quick blink (scaleY dip on the eyes group), independent of
-// the gaze loop above — same active-gated start/stop discipline.
-//
-// plan 125: the gap between blinks was 3000-6000ms — widened to
-// 6000-12000ms alongside the gaze cadence above, same idle-cost
-// rationale. The blink's own open/close leg (140ms) is untouched; only
-// how often a blink gets scheduled changed.
+// the gaze loop above — same active-gated start/stop discipline. Gap
+// 6000–12000ms; the open/close leg stays short (140ms).
 function useBlink(active: boolean): boolean {
   const [blinking, setBlinking] = useState(false);
 
@@ -142,56 +128,32 @@ export function IdleFace({ idle }: { idle: boolean }) {
         <motion.div
           className="idle-face"
           aria-hidden="true"
-          /* plan 125 (character finding #11): scale 0.85 -> 0.92 and the
-             transition's duration/ease moved onto the house vocabulary
-             (300ms UI ceiling -> 0.24s here, NOTCHTAP_EASE instead of
-             motion's built-in "easeOut") — the old 0.5s/easeOut/0.85 was
-             both slower than every other reveal in the app and used a
-             different curve, so the face's entrance read as slightly out
-             of place next to the rest of the overlay's motion. */
+          /* Reveal motion on the house vocabulary: 0.24s, NOTCHTAP_EASE,
+             entrance scale 0.92 — the face's entrance reads in step with
+             the rest of the overlay's motion. */
           initial={{ opacity: 0, scale: 0.92 }}
           animate={{ opacity: 1, scale: 1 }}
           /* Per-variant exit override: the file's contract above says a
              card/hover must hide the face immediately — "no fade delay on
              the way OUT, only on the way in." Without this, the reveal
              transition also governed exit, so the face lingered into
-             every promotion/hover (2026-07-23 review finding). 0.1s reads
-             as instant without a one-frame hard cut. Left exactly as-is
-             (0.85/easeOut/0.1s) — this override is a documented review
-             fix, not part of plan 125's scope. */
+             every promotion/hover. 0.1s reads as instant without a
+             one-frame hard cut. */
           exit={{ opacity: 0, scale: 0.85, transition: { duration: 0.1, ease: "easeOut" } }}
-          /* plan 148: was a bare `0.24` — same value, now named
-             (animationTiming.ts's IDLE_REVEAL_MS) so the gap between it
-             and its neighbouring tokens is documented rather than
-             looking like an untracked near-miss. */
+          /* Duration is animationTiming.ts's IDLE_REVEAL_MS — same
+             value, now named rather than a bare literal. */
           transition={{ duration: IDLE_REVEAL_MS / 1000, ease: NOTCHTAP_EASE }}
         >
-          {/* plan 125 (perf finding #1): was a `motion.div` animating via
-              a `{ type: "spring", stiffness: 140, damping: 16 }` spring —
-              damping ratio ~0.68, visibly wobblier than the app's house
-              spring (IdleHoverPeek's 480/37, ~0.84), and springs run a
-              main-thread rAF loop for every glance/blink on top of the
-              gaze/blink timers themselves. A plain element with a CSS
-              `transition` on `transform` is browser-driven (composited-
-              eligible) and self-ending — no rAF loop, no per-frame
-              React/JS involvement once the style is set. The blink's
-              scaleY rides the SAME `transform` property (folded into one
-              translate+scaleY string) so one transition covers both
-              glance and blink with a single declaration. 200ms /
-              the house curve (animationTiming.ts's NOTCHTAP_EASE,
-              interpolated below — never hand-typed here).
-              plan 129 (C6, deep-review fix): the plan-125 comment above
-              used to claim the bezier had to be hand-typed here because
-              "animationTiming only exports the numeric array form" and a
-              string export would need a new plan to add — false:
-              `NOTCHTAP_EASE.join(", ")` turns the already-imported array
-              into exactly the comma-joined bezier-argument string CSS
-              needs, no new export required. Interpolated below; the
-              array (imported at the top of this file already, for the
-              reveal transition above) is now the only place these four
-              numbers are written.
-              plan 148: the 200ms is likewise no longer hand-typed here —
-              it's animationTiming.ts's IDLE_GLANCE_MS, same value. */}
+          {/* Plain element with a CSS `transition` on `transform` —
+              browser-driven (composited-eligible) and self-ending, no
+              rAF loop, no per-frame React/JS once the style is set. The
+              blink's scaleY rides the SAME `transform` property (one
+              translate+scaleY string), so one transition covers both
+              glance and blink with a single declaration. The curve is
+              animationTiming.ts's NOTCHTAP_EASE, interpolated via
+              `NOTCHTAP_EASE.join(", ")` below — the imported array is
+              the only place these four numbers are written; the
+              duration is animationTiming.ts's IDLE_GLANCE_MS. */}
           <div
             className="idle-face-eyes"
             style={{

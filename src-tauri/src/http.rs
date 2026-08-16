@@ -29,7 +29,7 @@ use crate::event::{
 // generic over the tauri runtime so tests can use tauri::test::mock_app()
 // (MockRuntime) while the app runs on the default Wry runtime
 pub struct AppState<R: tauri::Runtime = tauri::Wry> {
-    /// plan 037: the one propagation module — ingest goes through
+    /// the one propagation module — ingest goes through
     /// `Engine::accept`, the paused/waiting response reads through
     /// `Engine::read`.
     pub engine: Engine<R>,
@@ -38,49 +38,49 @@ pub struct AppState<R: tauri::Runtime = tauri::Wry> {
     /// (`Config.manual_default_priority`, default `Medium`) — a request
     /// that sets `priority` explicitly still overrides this.
     pub manual_default_priority: Priority,
-    /// plan 137 (spec §7): renamed from v6.1's `cmux_priority` — the
+    /// renamed from v6.1's `cmux_priority` — the
     /// `/notify` cmux self-declared source is gone (superseded by the v7
     /// Agent Adapter layer), so this flat field has no direct consumer in
     /// this struct today; it's carried here only because `Config`'s own
     /// `agent_priority` field (this value's source) is itself a migration
     /// target, not because `/notify`/`agent_events_handler` reads it.
     pub agent_priority: Priority,
-    /// plan 137 (spec §7): renamed from v6.1's `cmux_ttl_secs`. UNLIKE
+    /// renamed from v6.1's `cmux_ttl_secs`. UNLIKE
     /// `agent_priority` above, this one has a live consumer:
     /// `agent_events_handler` passes it as the one-shot rotation window to
     /// `agents::notification::build_notification` for every noteworthy
     /// Agent Notification — the same role `cmux_ttl_secs` played for a
     /// cmux-originated `/notify` push.
     pub agent_ttl_secs: u64,
-    /// v7 (plan 137, spec §5/§7): the four kind-priority/informational
+    /// v7: the four kind-priority/informational
     /// knobs `[agents]` config resolves to — built once in `lib.rs`'s
     /// `setup` and reused for every `/agent/events` call, replacing the
     /// `NotificationPolicy::default()` ticket-135 placeholder.
     pub agent_notification_policy: NotificationPolicy,
-    /// v7 (plan 137, spec §7): per-runtime `[agents.runtimes.*]` enable
+    /// v7: per-runtime `[agents.runtimes.*]` enable
     /// flags, read by `agent_events_handler` to decide whether a known,
     /// syntactically valid runtime's event still reaches the Agent
     /// Registry/Notification Engine — see that handler's own doc for the
     /// "why 202, not 400" reasoning.
     pub agent_runtimes: crate::config::AgentRuntimesConfig,
-    /// v7 (plan 137, spec §7): the `[agents]` master switch, independent
+    /// v7: the `[agents]` master switch, independent
     /// of the four per-runtime flags above — `agent_events_handler` skips
     /// the same registry/notification path when this is `false`,
     /// regardless of which runtime sent the event.
     pub agent_enabled: bool,
-    /// v7 (plan 133/134): the one Agent Registry, behind the same
+    /// v7: the one Agent Registry, behind the same
     /// application-state boundary as `engine` above — see
     /// `agents/registry.rs::AgentRegistryHandle`'s own doc for why it's
     /// a cheap `Clone` handle rather than the registry by value.
     pub agent_registry: AgentRegistryHandle,
-    /// v7 (plan 136): the `agent-state` IPC publisher — see
+    /// v7: the `agent-state` IPC publisher — see
     /// `agents/board.rs::AgentBoardPublisher`'s own doc. Called here
     /// after every `Applied` `/agent/events` mutation (spec §6: "after
     /// every accepted /agent/events mutation"); the periodic
     /// stale/retention tick is driven independently by
     /// `AgentBoardPublisher::spawn_tick` (`lib.rs`'s `setup` closure).
     pub agent_board: AgentBoardPublisher<R>,
-    /// Plan 143 (v7 ticket 11 of 13, spec §4.6/§8/§10): shared Adapter
+    /// shared Adapter
     /// Health bookkeeping — this handler records "last accepted event"
     /// and "last bounded error category" into it on every request; the
     /// Settings `get_agent_health` command and `agent_board`'s own
@@ -119,14 +119,14 @@ struct NotifyRequest {
     // `priority`'s `unwrap_or` pattern in this same file.
     #[serde(default)]
     signal: EventSignal,
-    // plan 137 (spec §7/§12): the v6.1 `source: "cmux"` self-declaration
+    // the v6.1 `source: "cmux"` self-declaration
     // is gone — the cmux relay is superseded by the v7 Agent Adapter
     // layer, which posts to `/agent/events`, not `/notify`. A `/notify`
     // caller has exactly one origin now: `SourceKind::Manual`. An old
     // client that still sends a `"source"` key is unaffected — this
     // struct has no `deny_unknown_fields`, so the unrecognized field is
     // silently ignored, same as any other stray key always was.
-    // plan 035: a first-class optional subtitle (no longer folded into the
+    // a first-class optional subtitle (no longer folded into the
     // body CLI-side) and optional label/value detail pairs. Both are
     // `Option` — a missing field deserializes to `None` (serde special-cases
     // `Option`), so old payloads that set neither stay byte-identical. Both
@@ -266,7 +266,7 @@ fn check_json_content_type(headers: &HeaderMap, endpoint: &str) -> Result<(), Ht
 /// the `Host` header — a browser sets it from the URL's origin, which
 /// is the attacker's domain, not `127.0.0.1`. The legitimate `notchtap`
 /// CLI and (v7) Agent Adapter helpers (superseded the earlier cmux relay,
-/// plan 137) always talk to
+/// ) always talk to
 /// `http://127.0.0.1:<port>/...`, so they always send a loopback Host.
 /// Reject anything else (including a missing header).
 fn check_loopback_host(headers: &HeaderMap, endpoint: &str) -> Result<(), HttpError> {
@@ -308,7 +308,7 @@ async fn notify_handler<R: tauri::Runtime>(
     })?;
     let body = truncate_with_ellipsis(&body, BODY_MAX_CHARS);
 
-    // plan 137: `/notify` has exactly one origin now — the cmux
+    // `/notify` has exactly one origin now — the cmux
     // self-declaration is gone (see `NotifyRequest`'s own doc).
     let (origin, default_priority, ttl_secs) = (
         SourceKind::Manual,
@@ -316,7 +316,7 @@ async fn notify_handler<R: tauri::Runtime>(
         state.default_ttl,
     );
 
-    // plan 035: subtitle/details are the only meta a `/notify` caller may
+    // subtitle/details are the only meta a `/notify` caller may
     // set (source/category/published/link stay poller-only); both are
     // sanitized/capped here — this is the trust boundary for hook input.
     let meta = EventMeta {
@@ -360,7 +360,7 @@ async fn notify_handler<R: tauri::Runtime>(
     Ok(response.into_response())
 }
 
-/// `POST /agent/events` (spec §3, plan 134). Shares `/notify`'s
+/// `POST /agent/events` (spec §3, ). Shares `/notify`'s
 /// listener, loopback binding, Host-header defense, and body-limit
 /// posture (`router`, above) — see `check_json_content_type`/
 /// `check_loopback_host`'s docs for why those two checks are factored
@@ -386,7 +386,7 @@ async fn agent_events_handler<R: tauri::Runtime>(
 
     let parsed = adapter::parse_wire_event(&body).map_err(|e| {
         tracing::warn!(error = %e, "agent/events: rejected — {e}");
-        // Plan 143 (spec §10's "last bounded error category"): attribute
+        // attribute
         // the rejection to a known runtime's Adapter Health card
         // whenever the body at least named one — see
         // `best_effort_runtime_hint`'s own doc for why this is a
@@ -407,12 +407,12 @@ async fn agent_events_handler<R: tauri::Runtime>(
     let event_id = event.event_id.clone();
     let kind = event.kind;
     let terminal = event.terminal;
-    // Cloned before `event` moves into `apply_event` below — plan 135's
+    // Cloned before `event` moves into `apply_event` below — 's
     // notification mapping (`notification::build_notification`) needs the
     // same already-sanitized summary the registry itself just accepted,
     // not a second untrusted read of the wire body.
     let summary = event.summary.clone();
-    // Plan 147: same clone-before-move for the parity fields — the project
+    // same clone-before-move for the parity fields — the project
     // NAME (not cwd) and the already-sanitized/capped details the registry
     // just accepted, so an agent card's subtitle/details match what a
     // manual `/notify` rich-relay call would populate for the same shape.
@@ -421,7 +421,7 @@ async fn agent_events_handler<R: tauri::Runtime>(
     let runtime = session_key.runtime;
     let native_event = parsed.native_event;
 
-    // Plan 143 (spec §10's "last accepted event time"): a well-formed
+    // a well-formed
     // event was just parsed off the wire for this runtime — recorded
     // regardless of the admin-disabled check just below, since this
     // field answers "is the adapter actually delivering", not "did
@@ -433,7 +433,7 @@ async fn agent_events_handler<R: tauri::Runtime>(
         .unwrap_or(0);
     state.agent_health.record_accepted(runtime, now_ms);
 
-    // plan 137 (spec §7): a KNOWN, syntactically valid runtime
+    // a KNOWN, syntactically valid runtime
     // (`adapter::parse_wire_event` already 400s an unrecognized runtime
     // string — that's the "unsupported runtime" spec §3.2 means) whose
     // `[agents.runtimes.*]` toggle is administratively off skips BOTH the
@@ -485,7 +485,7 @@ async fn agent_events_handler<R: tauri::Runtime>(
         ApplyOutcome::DuplicateEventId | ApplyOutcome::StaleSequence
     );
 
-    // Plan 135 (spec §5): only a freshly `Applied` event is ever eligible
+    // only a freshly `Applied` event is ever eligible
     // for a Notification — a duplicate/stale no-op must never re-offer one
     // (the registry itself already made zero state change for those, so a
     // second card would be pure duplication, not a queue-full retry).
@@ -498,7 +498,7 @@ async fn agent_events_handler<R: tauri::Runtime>(
     // event that WAS attempted and lost to a full queue tier.
     let mut notification_queued: Option<bool> = None;
     if matches!(outcome, ApplyOutcome::Applied) {
-        // plan 137: `NotificationPolicy`/the agent-notification ttl now
+        // `NotificationPolicy`/the agent-notification ttl now
         // come from real `[agents]` config — `state.agent_notification_policy`
         // (built once in `lib.rs`'s `setup` from `agents.*_priority`/
         // `agents.informational_notifications`) and `state.agent_ttl_secs`
@@ -579,7 +579,6 @@ impl IntoResponse for HttpError {
 mod tests {
     use super::*;
     use crate::event::test_fixtures;
-    use crate::notifier::ConnectorHandle;
     use crate::queue::SingleSlotQueue;
     use axum::http::Request;
     use std::sync::Arc;
@@ -587,24 +586,14 @@ mod tests {
     use tower::ServiceExt;
 
     fn test_state(queue: SingleSlotQueue) -> AppState<tauri::test::MockRuntime> {
-        test_state_with_connectors(queue, Vec::new())
-    }
-
-    fn test_state_with_connectors(
-        queue: SingleSlotQueue,
-        connectors: Vec<ConnectorHandle>,
-    ) -> AppState<tauri::test::MockRuntime> {
         let app = tauri::test::mock_app();
         let agent_registry = test_agent_registry();
         AppState {
             engine: Engine::new(
                 queue,
                 app.handle().clone(),
-                Arc::new(connectors),
                 true,
                 true,
-                false,
-                false,
                 None,
                 std::sync::Arc::new(crate::tabs::TabWire::default()),
             ),
@@ -640,13 +629,6 @@ mod tests {
         ))
     }
 
-    /// a connector whose receiving end the test holds, so fan-out can be
-    /// asserted without any worker or network
-    fn test_connector() -> (ConnectorHandle, tokio::sync::mpsc::Receiver<Event>) {
-        let (tx, rx) = tokio::sync::mpsc::channel(8);
-        (ConnectorHandle::new("test", tx), rx)
-    }
-
     fn json_request(body: &str) -> Request<Body> {
         // a hand-built `Request` (unlike a real hyper client) doesn't get
         // a `Host` header for free, so every test that expects to reach
@@ -679,7 +661,7 @@ mod tests {
         )
     }
 
-    // plan 147: same shape as `valid_agent_body` but carrying `project`/
+    // same shape as `valid_agent_body` but carrying `project`/
     // `details`, for the notification-parity pin below.
     fn valid_agent_body_with_project_and_details(event_id: &str, session_id: &str) -> String {
         format!(
@@ -923,50 +905,6 @@ mod tests {
         assert_eq!(response.status(), StatusCode::METHOD_NOT_ALLOWED);
     }
 
-    // --- v3 acceptance fan-out (spec §1 / TESTING_STRATEGY.md §4.9) ---
-
-    #[tokio::test]
-    async fn accepted_push_fans_out_to_connectors() {
-        let (connector, mut rx) = test_connector();
-        let app = router(test_state_with_connectors(
-            SingleSlotQueue::new(50),
-            vec![connector],
-        ));
-        let response = app
-            .oneshot(json_request(r#"{"title":"t","body":"b"}"#))
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-
-        let event = rx
-            .try_recv()
-            .expect("accepted event must reach the connector");
-        assert_eq!(event.payload.title, "t");
-    }
-
-    #[tokio::test]
-    async fn rejected_push_reaches_no_connector() {
-        let (connector, mut rx) = test_connector();
-        let app = router(test_state_with_connectors(
-            SingleSlotQueue::new(0),
-            vec![connector],
-        ));
-        let first = app
-            .clone()
-            .oneshot(json_request(r#"{"title":"t","body":"b"}"#))
-            .await
-            .unwrap();
-        assert_eq!(first.status(), StatusCode::OK);
-        rx.try_recv().expect("first accepted push must fan out");
-
-        let second = app
-            .oneshot(json_request(r#"{"title":"t2","body":"b2"}"#))
-            .await
-            .unwrap();
-        assert_eq!(second.status(), StatusCode::TOO_MANY_REQUESTS);
-        assert!(rx.try_recv().is_err(), "429 must not fan out");
-    }
-
     // --- v3.6 priority field (spec §3.3) ---
 
     #[tokio::test]
@@ -1034,7 +972,7 @@ mod tests {
         );
     }
 
-    // --- plan 137 (spec §7/§12): the v6.1 cmux source field is gone ---
+    // --- the v6.1 cmux source field is gone ---
 
     #[tokio::test]
     async fn a_source_field_on_the_wire_is_silently_ignored_and_stays_manual() {
@@ -1134,26 +1072,6 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
-    }
-
-    #[tokio::test]
-    async fn paused_202_push_still_fans_out() {
-        // v3 spec §1: a paused overlay is exactly when outbound matters
-        // most — acceptance succeeded, so connectors hear about it.
-        let (connector, mut rx) = test_connector();
-        let mut queue = SingleSlotQueue::new(50);
-        queue.pause();
-        let app = router(test_state_with_connectors(queue, vec![connector]));
-        let response = app
-            .oneshot(json_request(r#"{"title":"t","body":"b"}"#))
-            .await
-            .unwrap();
-        assert_eq!(response.status(), StatusCode::ACCEPTED);
-
-        let event = rx
-            .try_recv()
-            .expect("paused-202 event must reach the connector");
-        assert_eq!(event.payload.title, "t");
     }
 
     // --- §9.2 (docs/TESTING_STRATEGY.md) — burst and boundary cases ---
@@ -1262,7 +1180,7 @@ mod tests {
         // unrecognized field is silently ignored (no
         // `#[serde(deny_unknown_fields)]`), and the server's configured
         // `default_ttl` still applies. Verified via `next_deadline()`:
-        // plan 033 arms the auto-retract at promotion, so the earliest
+        // arms the auto-retract at promotion, so the earliest
         // deadline is the retract at half the base window — ~now +
         // default_ttl/2, not anywhere near the attempted wire value.
         let state = test_state(SingleSlotQueue::new(50)); // default_ttl: 8
@@ -1288,7 +1206,7 @@ mod tests {
         );
     }
 
-    // --- plan 035: rich-relay subtitle/details wire fields + caps ---
+    // --- rich-relay subtitle/details wire fields + caps ---
 
     #[test]
     fn sanitize_subtitle_empties_and_caps() {
@@ -1463,7 +1381,7 @@ mod tests {
         }
     }
 
-    // --- plan 134: POST /agent/events (spec §3.2 status-code rows) ---
+    // --- POST /agent/events (spec §3.2 status-code rows) ---
 
     #[tokio::test]
     async fn valid_agent_event_returns_202_accepted() {
@@ -1490,7 +1408,7 @@ mod tests {
         assert_eq!(state.agent_registry.session_count().await, 1);
     }
 
-    // --- plan 137 (spec §7): per-runtime `[agents.runtimes.*]` gate ---
+    // --- per-runtime `[agents.runtimes.*]` gate ---
 
     #[tokio::test]
     async fn disabled_runtime_skips_both_registry_and_notification_and_returns_202() {
@@ -1547,7 +1465,7 @@ mod tests {
         assert_eq!(state.agent_registry.session_count().await, 1);
     }
 
-    // --- plan 135 (spec §5): registry → Notification mapping ---------
+    // --- registry → Notification mapping ---------
 
     #[tokio::test]
     async fn noteworthy_agent_event_also_queues_a_notification() {
@@ -1581,7 +1499,7 @@ mod tests {
         }
     }
 
-    // plan 147: the parity companion to the pin above — a noteworthy event
+    // the parity companion to the pin above — a noteworthy event
     // that also carries `project`/`details` must thread the project NAME
     // onto `subtitle` and the details onto `details`, the same
     // `notification::build_notification` parity mapping unit-tested
@@ -2008,13 +1926,13 @@ mod tests {
 
     // --- log hygiene: raw session id / cwd never reach the log line ---
     //
-    // plan 135 fix: this test used to install its OWN `Subscriber` per-run
+    // this test used to install its OWN `Subscriber` per-run
     // via `tracing::subscriber::set_default` (thread-local). That's the
     // textbook pattern, but it has a well-known sharp edge under real
     // parallelism: `tracing`'s per-callsite `Interest` (whether a given
     // `tracing::info!` call site is "worth" constructing an event for at
     // all) is cached PROCESS-WIDE, not per-thread, and is decided the
-    // FIRST time any thread ever touches that exact call site. Plan 135
+    // FIRST time any thread ever touches that exact call site.
     // added new lines above `agent_events_handler`'s `tracing::info!`
     // call (the notification-mapping block), which shifts it to a source
     // location tracing has never seen before — and this ticket also added
@@ -2107,7 +2025,7 @@ mod tests {
 
         let raw_session_id = "SUPER-SECRET-RAW-SESSION-ID-0xdeadbeef";
         let raw_cwd = "/Users/nobody/very-secret-project-path";
-        // plan 135: `kind: "informational"` (progress, not noteworthy under
+        // `kind: "informational"` (progress, not noteworthy under
         // the default policy) rather than `permission_requested` — this
         // test's own concern is log hygiene (`apply_event` + the
         // `agent/events` log line), not the notification-queueing seam

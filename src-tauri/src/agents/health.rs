@@ -1,4 +1,4 @@
-//! Plan 143 (v7 ticket 11 of 13, `docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`
+//! (v7 ticket 11 of 13, `docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`
 //! §4.6/§8/§10): per-runtime Adapter Health.
 //!
 //! Two halves, same split this crate already uses elsewhere

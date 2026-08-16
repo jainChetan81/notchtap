@@ -8,35 +8,34 @@ built for two machines: a MacBook with a notch, and a Mac mini without
 one. same codebase runs unmodified on both — only window placement
 branches at runtime.
 
----
-
 ## what it does
 
 - runs permanently as a menu-bar app (no dock icon)
 - a **single visible slot**: at most one notification on screen at a
   time, permanently rotating — not a stacked queue
-- accepts pushes from five sources: the `notchtap` cli, the v7 Agent
-  Adapter layer (superseded the v6 cmux notification relay; includes
-  claude code "agent needs input" alerts), an ESPN live-football
-  poller, an rss news poller, and an Open-Meteo weather poller (ambient
-  idle-rail chip plus rain/temperature threshold alerts)
+- accepts pushes from four sources: the `notchtap` cli, the Agent
+  Adapter layer (Claude Code / Codex / Kimi / OpenCode lifecycle hooks,
+  including "agent needs input" alerts), an ESPN live-football poller,
+  and an rss news poller
 - each source has a configurable Priority (`Low`/`Medium`/`High`);
   within a tier, a configurable Rotation Order breaks ties ahead of
   plain arrival order
-- news items render as status-rail cards and are overlay-only — never
+- an idle **Agent Board** shows live coding-agent sessions when nothing
+  is promoted; a hoverable **icon strip** lets you pull any live
+  source's current state on demand
+- news items render as overlay cards and are overlay-only — never
   relayed outbound
-- a settings window (opened from the tray) edits config and secrets;
-  saving relaunches the app — there's no hot-reload
-- renders as a slick, animated overlay — notch-cutout-aware on the
-  MacBook, floating HUD on the Mac mini
+- a settings window (opened from the tray) edits config; saving
+  relaunches the app — there's no hot-reload
+- daily Silent Period + tray timed mutes quiet Medium/Low cards while
+  High still breaks through
 - wraps long-running commands and pushes a completion card when they
   finish: `notchtap run -- pnpm build` (skips the push for fast,
   successful runs; a failure always pushes)
 
 ### global hotkeys
 
-these are OS-level global grabs — they work even when notchtap isn't
-focused:
+OS-level global grabs — they work even when notchtap isn't focused:
 
 | shortcut | action |
 |---|---|
@@ -48,15 +47,14 @@ focused:
 | ⌃⇧] | skip the visible item (re-queues a Recurring one) |
 | ⌃⇧, | open the settings window |
 
-plan 171 adds a tmux-style **prefix** alongside these, not instead of
-them — every combo above keeps working prefix-free, forever. press the
-prefix (default `⌃⇧Space`, configurable in Settings), then one key
-within 2 seconds:
+a tmux-style **prefix** exists alongside these, not instead of them.
+press the prefix (default `⌃⇧Space`, configurable in Settings), then
+one key within 2 seconds:
 
 | after the prefix | action |
 |---|---|
-| `1`–`5` | select agent / football / music / weather / news (same key again deselects) |
-| `[` / `]` | previous / next agent session (ignored unless the agent tab is selected) |
+| a digit | select a source tab — agent / football / news (same key again deselects) |
+| `[` / `]` | previous / next agent session (agent tab only) |
 | `enter` / `o` | expand ↔ collapse the current card |
 | `p` | pause/resume |
 | `esc` or the prefix again | disarm, no side effect |
@@ -64,43 +62,32 @@ within 2 seconds:
 ## tech stack
 
 - **core**: Rust (Tauri) — HTTP listener, event bus, notification queue
-- **UI**: React + TypeScript + CSS keyframes — rendering and animation
+- **UI**: React + TypeScript — rendering and animation
 - **native shim**: tiny Swift CLI (`notchtap-detect`) for notch geometry
-- **HTTP**: Axum (testable in-process via `tower::ServiceExt::oneshot`)
 - **testing**: `cargo test` (Rust) + `vitest` (frontend)
 
-see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for full rationale on every
-decision (why Tauri over Electron, why no App Store, why this stack,
-etc.).
+see [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) for the rationale on
+every decision (why Tauri over Electron, why no App Store, etc.).
 
 ## quick start
 
 ```bash
-# install dependencies
-npm install
-
-# dev mode
-npm run tauri dev
-
-# run tests
+npm install             # install dependencies
+npm run tauri dev       # dev mode
 cargo test              # from src-tauri/
 npx vitest run          # from repo root
-
-# trigger a notification manually (flags only — no positional form)
-notchtap --title "hello" --body "world"
+notchtap --title "hello" --body "world"   # flags only, no positional form
 ```
 
 or use the [`justfile`](justfile): `just setup` installs web deps on a
-fresh clone, and `just test-all` runs every check CI runs (fmt, clippy,
-tests, audits, tsc, vitest, vite build, cli + swift checks) in one
+fresh clone, and `just test-all` runs every check CI runs in one
 command — `brew install just` first.
 
 ## setup
 
-- rust toolchain via [`rustup`](https://rustup.rs) — required for
-  `cargo build`/`cargo test`
+- rust toolchain via [`rustup`](https://rustup.rs)
 - build the notch-detection helper and symlink it where the app expects
-  it (or point `detect_path` in config at it instead):
+  it (or point `detect_path` in config at it):
   ```bash
   swift build -c release   # from notchtap-detect/
   ln -s "$(pwd)/.build/release/notchtap-detect" /usr/local/bin/notchtap-detect
@@ -116,21 +103,14 @@ command — `brew install just` first.
 
 | doc | purpose |
 |---|---|
-| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | locked decisions: scope phasing, stack, cross-device behavior, distribution |
-| [`docs/IMPLEMENTATION_PLAN.md`](docs/IMPLEMENTATION_PLAN.md) | phased build sequence and exit criteria through v7 |
-| [`docs/TESTING_STRATEGY.md`](docs/TESTING_STRATEGY.md) | what gets automated vs. manual, framework choices, per-component test plan |
-| [`docs/V3_6_TECHNICAL_SPEC.md`](docs/V3_6_TECHNICAL_SPEC.md) | v0 draft: permanent rotating overlay — single-slot queue, priority tiers, global hotkeys |
-| [`docs/V5_TECHNICAL_SPEC.md`](docs/V5_TECHNICAL_SPEC.md) | v0 draft: settings window |
-| [`docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`](docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md) | v0 draft: provider-neutral coding-agent adapters and the Agent Board |
-| [`docs/design/`](docs/design/) | spike/design docs from `/improve` sessions — read alongside `plans/README.md` |
-| [`docs/recipes/kuma-webhook.md`](docs/recipes/kuma-webhook.md) | recipe: wiring an Uptime Kuma webhook into notchtap's `/notify` endpoint (docs only, verified against kuma v2.4.0) |
-| `docs/archive/` (removed 2026-07-23) | v1/v2/v3 specs + planning-pass audit (`BLIND_REVIEW.md`, `CHANGES_SUMMARY.md`) — all three phases shipped, superseded by the specs above; removed at repo close-out, retrievable via `git log -- docs/archive/` |
-| [`CLAUDE.md`](CLAUDE.md) | canonical repository guidance and domain glossary (`AGENTS.md` and `CONTEXT.md` are compatibility symlinks to this file) |
+| [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) | locked decisions: scope, stack, cross-device behavior, IPC security, agent adapter contract |
+| [`docs/TESTING_STRATEGY.md`](docs/TESTING_STRATEGY.md) | what gets automated vs. manual, framework choices, the hardware checklist |
+| [`docs/recipes/kuma-webhook.md`](docs/recipes/kuma-webhook.md) | recipe: wiring an Uptime Kuma webhook into notchtap's `/notify` endpoint |
+| [`CLAUDE.md`](CLAUDE.md) | canonical repository guidance and domain glossary (`AGENTS.md` and `CONTEXT.md` are symlinks to it) |
 
 ## scope
 
 - **macOS only** — no Windows/Linux target, ever
-- **personal use** — runs on the author's own two machines, no App Store,
-  no paid Apple Developer account required
+- **personal use** — the author's own two machines, no App Store
 - **clean-room build** — no code, IP, or branding from any third-party
-  reference app is used
+  reference app

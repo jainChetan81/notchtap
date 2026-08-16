@@ -1,10 +1,8 @@
-/* ==== plan 091 (079 item 2): the idle right flank's three status dots —
-   replaces the old text-pill `.src-rail`/`.src-chip` rail entirely
-   (rewritten, not restyled — <StatusDots>). Fixed Football/News/Weather
-   order and coloring, straight from the locked reference
+/* ==== Idle right flank's three status dots (<StatusDots>): fixed
+   Football/News/Weather order and coloring, from the locked reference
    (`prototype/notch-states.html:62-74`). `active` = enabled (glow + a
-   1.8s pulse); `dim` = disabled (flat, low opacity) — plain color/glow
-   state, no text content at all now that the pill labels are gone. ==== */
+   1.8s pulse); `dim` = disabled (flat, low opacity) — plain color/glow,
+   no text content. ==== */
 .card-root .status-dots {
   display: flex;
   align-items: center;
@@ -12,25 +10,11 @@
   flex: none;
 }
 
-/* plan 127 (Step 7, /improve-animations audit — missed opportunity): a
-   pause/config flip (active<->dim opacity+glow, or a shape change —
-   circle<->square via `border-radius` — on the source enabled/disabled
-   toggle) used to snap instantly, no transition at all. This is a
-   state-FLIP soften (opacity/box-shadow/border-radius settling to a new
-   RESTING value), not a loop — the operator's plan-105 decision to
-   remove the dot-pulse (a continuous, always-running animation) stays
-   fully respected here; nothing here ever runs while nothing is
-   changing.
-   plan 129 (C2, deep-review fix): the enabled<->disabled shape flip
-   doesn't ONLY change `border-radius` the way the paragraph above
-   describes — `.shape-disabled`/`.shape-unavailable` (below) also flip
-   `background` (filled circle -> transparent) and `border` (none ->
-   1.5px solid), and those two were left un-softened: corners rounded
-   smoothly while the fill and outline snapped instantly, a visible two-
-   phase glitch on one logical state change. Added `background-color`,
-   `border-color`, and `border-width` legs, same `--hover-ms`/
-   `--ease-notchtap` pairing as the three already here, so every part of
-   the shape flip settles in the same single motion. */
+/* State-flip soften, not a loop — opacity/box-shadow/border-radius/
+   background-color/border-color/border-width settle to a new RESTING
+   value; nothing runs while nothing is changing. The enabled<->disabled
+   shape flip changes `border-radius` AND `background` AND `border`, so
+   all legs share the same `--hover-ms`/`--ease-notchtap` transition. */
 .card-root .status-dot {
   box-sizing: border-box;
   width: 9px;
@@ -46,37 +30,26 @@
     border-width var(--hover-ms, 160ms) var(--ease-notchtap);
 }
 
-/* plan 182 (glyph swap): SVG elements from the reused IconStrip glyphs
-   (18x18 viewBox, no explicit width/height) render at the browser's
-   default replaced-element size (~300x150px) if unsized, breaking the
-   9x9px dot box. Match icon-strip.css:81-83 which sizes IconStrip's own
-   use of these identical glyphs. Use `100%` to respect the dot's own
-   width/height and any future resizing. */
+/* IconStrip glyph SVGs (18x18 viewBox, no explicit size) render at the
+   default replaced-element size if unsized, breaking the 9x9px dot box.
+   lockstep: icon-strip.css:81-83 sizes the same glyphs. `100%` respects
+   the dot's own width/height. */
 .card-root .status-dot svg {
   width: 100%;
   height: 100%;
 }
 
-/* H5: was #3ddc70/#ff5c5c — a SECOND green/red the dots alone used,
-   diverging from the #7fe08d/#ff6b57 every football/news CARD element
-   already reads (live-scorecard.css, idle-peek.css, news-category.css).
-   Unified onto the same --overlay-green/--overlay-coral tokens (O3) the
-   cards use, so the dot and the card it summons are always the same
-   color. Weather's #f0c46a already matched --overlay-amber's value —
-   tokenized here too, for the same drift-proofing reason. */
+/* Same --overlay-green/--overlay-coral tokens as every football/news
+   card element (live-scorecard.css, idle-peek.css, news-category.css) —
+   the dot and the card it summons always match. */
 .card-root .status-dot.football {
   background: var(--overlay-green);
 }
 .card-root .status-dot.news {
   background: var(--overlay-coral);
 }
-.card-root .status-dot.weather {
-  background: var(--overlay-amber);
-}
 
-/* plan 105 (item A): steady glow, not a blink — the pulse read as
-   distracting in peripheral vision during live use. Strengthened the
-   resting glow slightly to compensate for losing the animated emphasis. */
+/* Steady glow, not a blink — resting glow strengthened to compensate. */
 .card-root .status-dot.active {
   box-shadow: 0 0 8px 1px currentColor;
 }
@@ -86,9 +59,6 @@
 .card-root .status-dot.news.active {
   color: var(--overlay-coral);
 }
-.card-root .status-dot.weather.active {
-  color: var(--overlay-amber);
-}
 
 .card-root .status-dot.dim {
   opacity: 0.22;
@@ -96,14 +66,12 @@
   animation: none;
 }
 
-/* plan 110 (Step D): the non-color configured-state shape — independent
-   of the active/dim pause-luminance treatment above (pause changes
-   brightness only; it never overrides these). `shape-enabled` is the
-   pre-091 default filled circle (no override needed, listed here only
-   for completeness); `shape-disabled` is a hollow square, per-source
-   outline; `shape-unavailable` is a hollow circle with a neutral outline
-   (no known source state to color it by). Same 9x9 footprint throughout
-   — `box-sizing: border-box` above keeps the border from growing the box. */
+/* Non-color configured-state shape — independent of active/dim
+   luminance (pause changes brightness only, never these):
+   `shape-disabled` = hollow square with per-source outline;
+   `shape-unavailable` = hollow circle with neutral outline. `shape-enabled`
+   is the plain filled circle — no override needed. Same 9x9 footprint:
+   `box-sizing: border-box` keeps the border from growing the box. */
 .card-root .status-dot.shape-disabled,
 .card-root .status-dot.shape-unavailable {
   background: transparent;
@@ -119,31 +87,18 @@
 .card-root .status-dot.news.shape-disabled {
   border: 1.5px solid var(--overlay-coral);
 }
-.card-root .status-dot.weather.shape-disabled {
-  border: 1.5px solid var(--overlay-amber);
-}
 
 .card-root .status-dot.shape-unavailable {
   border: 1.5px solid rgba(255, 255, 255, 0.35);
 }
 
-/* plan 092 (item 11): the paused indicator — while `status.paused` is
-   true, every dot renders forced-dim (StatusDots.tsx overrides the
-   per-source active/dim read) plus this small static two-bar glyph
-   beside the dot row. Nested INSIDE `.status-dots` (StatusDots.tsx), so
-   the existing `gap: 8px` on that flex row spaces it from the last dot —
-   no extra margin needed here. Receive-only, like the dots themselves: an
-   indicator, never a button. Retires the old "News paused" idle text
-   remnant (091 already removed IdleView; this is its replacement).
-   plan 110 (Step D): `role="img"` + `aria-label="Notifications paused"`
-   now (was `aria-hidden`) — a sighted-only signal before this.
-   plan 127 (Step 7, missed opportunity): the glyph mounts/unmounts via a
-   React conditional (`{paused && (...)}`, StatusDots.tsx), not a class
-   toggle on an always-present node — a CSS `transition` has nothing to
-   animate FROM on a fresh mount. A one-shot `animation` fade-in instead:
-   rare (only fires on a genuine pause-state flip) and self-ending (no
-   loop, same "flip, not loop" discipline as the dots' own transition
-   above), so it doesn't reopen plan 105's removed dot-pulse decision. */
+/* Paused indicator: while `status.paused` is true every dot renders
+   forced-dim (StatusDots.tsx) plus this static two-bar glyph nested
+   INSIDE `.status-dots` — the existing `gap: 8px` spaces it from the
+   last dot. Receive-only, never a button. `role="img"` +
+   `aria-label="Notifications paused"`. Mounts via a React conditional —
+   a CSS transition has nothing to animate FROM on fresh mount, so it
+   uses a one-shot self-ending fade-in: flip, not loop. */
 .card-root .pause-glyph {
   display: inline-flex;
   align-items: center;

@@ -1,4 +1,4 @@
-//! Plan 171 (tab-notch redesign, slice D): the tmux-style prefix keymap's
+//! the tmux-style prefix keymap's
 //! ARM/DISARM state machine — pure, no AppKit types, no
 //! `tauri_plugin_global_shortcut` dependency, same discipline `tabs.rs`
 //! follows (`docs/TESTING_STRATEGY.md` §4.4). Spec
@@ -52,7 +52,7 @@ pub enum PrefixState {
 /// last row: "disarm silently — never beep, never flash an error."
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrefixKey {
-    /// 1..5 — the caller passes the raw digit; out-of-range values are a
+    /// 1..3 — the caller passes the raw digit; out-of-range values are a
     /// no-op via `Tab::from_prefix_digit`'s own `None` case, not a panic.
     Digit(u8),
     BracketLeft,
@@ -67,11 +67,11 @@ pub enum PrefixKey {
 }
 
 /// What the caller should DO in response to a consumed key — this slice
-/// documents which EXISTING mechanism each maps to (plan's own §0 ask);
+/// documents which EXISTING mechanism each maps to;
 /// the caller (lib.rs, once wired) is what actually calls it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrefixAction {
-    /// prefix+1..5: `TabSelection::select` (tabs.rs) with the tab
+    /// prefix+1..3: `TabSelection::select` (tabs.rs) with the tab
     /// `Tab::from_prefix_digit` resolves the digit to — same toggle
     /// semantics a click would drive (spec §9: "same key again
     /// deselects").
@@ -221,7 +221,7 @@ mod tests {
         let mut s = PrefixState::default();
         s.on_prefix(t0);
         let action = s.on_key(t0 + Duration::from_millis(100), PrefixKey::Digit(3));
-        assert_eq!(action, PrefixAction::Select(Tab::Music));
+        assert_eq!(action, PrefixAction::Select(Tab::News));
     }
 
     #[test]

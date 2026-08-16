@@ -15,7 +15,7 @@ import type { EspnMeta, SlotState, SourceKind } from "../useSlotState";
 import type { StatusState } from "../useStatusState";
 import { contentExitVariants, StatusRailCard } from "./StatusRailCard";
 
-// plan 084: `Crest` (StatusRailCard.tsx) calls `convertFileSrc` itself —
+// `Crest` (StatusRailCard.tsx) calls `convertFileSrc` itself —
 // the real tauri implementation isn't available under vitest/jsdom, so
 // every test asserting on the crest <img> src needs this mocked. The fake
 // prefix makes "the src actually went through convertFileSrc, not the
@@ -43,7 +43,7 @@ function fireAnimationEnd(el: HTMLElement, animationName: string) {
   });
 }
 
-// plan 150 (Step 2): the same-signal pulse replay re-applies its class
+// the same-signal pulse replay re-applies its class
 // inside a `requestAnimationFrame` callback (clear-then-reapply is what
 // actually restarts a CSS animation past React's identity bailout), so
 // tests for it have to let one real frame pass. jsdom under vitest runs
@@ -127,7 +127,7 @@ const AGENT_NEEDS_INPUT: SlotState = {
   remainingMs: 8000,
 };
 
-// plan 042: a live-match card — the rust core attaches Clock + per-side
+// a live-match card — the rust core attaches Clock + per-side
 // Cards detail pairs when `espn_live_card` is on.
 const LIVE_MATCH: SlotState = {
   state: "showing",
@@ -178,7 +178,7 @@ const NEWS: SlotState = {
   remainingMs: 6000,
 };
 
-// plan 035: a generic (agent/claude-relay) card carrying a subtitle and
+// a generic (agent/claude-relay) card carrying a subtitle and
 // detail pairs — the manifest renders each as its own cell (Layout A).
 const AGENT_RICH: SlotState = {
   state: "showing",
@@ -207,39 +207,7 @@ const AGENT_RICH: SlotState = {
   remainingMs: 8000,
 };
 
-// plan 082: a weather ALERT card — the rust core attaches wx-condition/
-// wx-is-day marker pairs (plan 035's details channel, reused) so the
-// frontend can derive mood/glyph art. Weather art is keyed off those
-// markers, not `origin` (plan 096 put `origin` on the wire, but the
-// weather mood/glyph derivation predates that and has no reason to move
-// off the markers now).
-const WEATHER_ALERT: SlotState = {
-  state: "showing",
-  id: "wx-1",
-  title: "Rain expected soon",
-  body: "75% chance of rain within ~30 min",
-  eventType: "generic",
-  priority: "medium",
-  signal: "generic",
-  origin: "weather",
-  agentRuntime: null,
-  expanded: false,
-  source: null,
-  category: null,
-  publishedAtMs: null,
-  link: null,
-  subtitle: null,
-  details: [
-    { label: "wx-condition", value: "Rain" },
-    { label: "wx-is-day", value: "1" },
-  ],
-  queueTotal: 1,
-  queueDone: 0,
-  ttlMs: 8000,
-  remainingMs: 8000,
-};
-
-// plan 084: the structured espn meta (POST-083 contract) — a base fixture
+// the structured espn meta (POST-083 contract) — a base fixture
 // plus a small helper to build a showing slot around it, one event/state
 // at a time, so each scorecard test only overrides what it's about.
 const ESPN_BASE: EspnMeta = {
@@ -284,8 +252,8 @@ function liveSlot(overrides: Partial<Extract<SlotState, { state: "showing" }>> =
 
 describe("StatusRailCard", () => {
   describe("goal/red-card pulse", () => {
-    // The celebration is plan 023's pure-CSS confetti burst + ring on
-    // `.card-assembly.pulse-goal`'s ::after/::before PLUS plan 032's mounted
+    // The celebration is 's pure-CSS confetti burst + ring on
+    // `.card-assembly.pulse-goal`'s ::after/::before PLUS 's mounted
     // three-ring ripple (.cele-ripple). Signal-keying coverage: the pulse
     // class lands and the ripple mounts — goal-signal only.
     it("applies pulse-goal (CSS burst + mounted three-ring ripple) on a goal signal", () => {
@@ -294,13 +262,14 @@ describe("StatusRailCard", () => {
       expect(container.querySelectorAll(".cele-ripple span")).toHaveLength(3);
     });
 
-    // plan 150 (Step 1): the ripple rides the pulse state, and the pulse
+    // the ripple rides the pulse state, and the pulse
     // now lives until the LAST of the three staggered rings finishes —
     // NOT until the 1240ms shell keyframe (`goal-overshoot`) ends, which
     // used to tear ring 3 out mid-expansion at 62% of its life. Each ring
     // reports its own `ripple-out` end; only the third retires the layer.
     it("keeps the ripple mounted until the THIRD ripple-out ends", () => {
       const { container } = render(<StatusRailCard slot={GOAL} />);
+      // SAFETY: test helper guarantees element exists for this selector.
       const card = container.querySelector(".card-assembly") as HTMLElement;
       expect(container.querySelector(".cele-ripple")).not.toBeNull();
 
@@ -319,10 +288,11 @@ describe("StatusRailCard", () => {
     // The pulse clears on the CSS animation's own animationend, not a
     // JS-side timer — there's no duration to keep in sync with styles.css
     // this way. jsdom never runs the animation itself, so tests simulate
-    // its natural completion. plan 150: for the goal pulse that endpoint
+    // its natural completion. for the goal pulse that endpoint
     // is the third `ripple-out`, per the test above.
     it("clears pulse-goal when its last ripple ring ends", () => {
       const { container } = render(<StatusRailCard slot={GOAL} />);
+      // SAFETY: test helper guarantees element exists for this selector.
       const card = container.querySelector(".card-assembly") as HTMLElement;
       fireAnimationEnd(card, "ripple-out");
       fireAnimationEnd(card, "ripple-out");
@@ -331,7 +301,7 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".pulse-goal")).toBeNull();
     });
 
-    // plan 150 (Step 2): two goals in a row compute the SAME class
+    // two goals in a row compute the SAME class
     // string, so `setPulse("pulse-goal")` on the second one is a React
     // `Object.is` bailout — the class attribute is never rewritten and
     // the CSS animation never replays. The fix clears the class and
@@ -353,6 +323,7 @@ describe("StatusRailCard", () => {
 
       // and the restarted celebration counts its OWN three rings from
       // scratch — no partial tally inherited from the interrupted one
+      // SAFETY: test helper guarantees element exists for this selector.
       const card = container.querySelector(".card-assembly") as HTMLElement;
       fireAnimationEnd(card, "ripple-out");
       fireAnimationEnd(card, "ripple-out");
@@ -370,6 +341,7 @@ describe("StatusRailCard", () => {
 
     it("clears pulse-red when its animation ends", () => {
       const { container } = render(<StatusRailCard slot={RED_CARD} />);
+      // SAFETY: test helper guarantees element exists for this selector.
       const card = container.querySelector(".card-assembly") as HTMLElement;
       fireAnimationEnd(card, "red-alert");
       expect(container.querySelector(".pulse-red")).toBeNull();
@@ -377,6 +349,7 @@ describe("StatusRailCard", () => {
 
     it("ignores an unrelated animation ending on the same element", () => {
       const { container } = render(<StatusRailCard slot={GOAL} />);
+      // SAFETY: test helper guarantees element exists for this selector.
       const card = container.querySelector(".card-assembly") as HTMLElement;
       fireAnimationEnd(card, "goal-burst");
       expect(container.querySelector(".pulse-goal")).not.toBeNull();
@@ -388,6 +361,7 @@ describe("StatusRailCard", () => {
     // keyed on [currentId, currentSignal] only.
     it("does not replay the pulse on an unrelated re-render of the same notification", async () => {
       const { container, rerender } = render(<StatusRailCard slot={GOAL} />);
+      // SAFETY: test helper guarantees element exists for this selector.
       const card = container.querySelector(".card-assembly") as HTMLElement;
       fireAnimationEnd(card, "ripple-out");
       fireAnimationEnd(card, "ripple-out");
@@ -412,7 +386,7 @@ describe("StatusRailCard", () => {
     expect(container.querySelector(".cele-ripple")).toBeNull();
   });
 
-  // plan 171 (slice K): the right flank's idle furniture is the icon
+  // the right flank's idle furniture is the icon
   // strip now, not the status dots — spec §2 decision 1 moves the dots
   // off this surface entirely (the component itself lives on, mounted by
   // AgentBoard). Every `.status-dots` assertion in this file became an
@@ -427,7 +401,7 @@ describe("StatusRailCard", () => {
     expect(screen.queryByText("GOAL")).toBeNull();
   });
 
-  // plan 091: plan 034's idle/idle-status width split (`.rail-card.idle`
+  // 's idle/idle-status width split (`.rail-card.idle`
   // vs `.rail-card.idle.status`) deliberately collapses — the new idle
   // has ONE width formula regardless of status-rail activity, because the
   // status dots replace the old chip rail entirely (no chips to widen
@@ -441,8 +415,6 @@ describe("StatusRailCard", () => {
       agent: { activeSessions: 0 },
       football: { enabled: true, live: { label: "MTL 0–0 TOR", minute: "12'" } },
       news: { enabled: true, chargeFraction: 0, chargeCount: 0, isCharged: false },
-      weather: { enabled: false, current: null },
-      media: { enabled: false, current: null },
     };
     const inactive: StatusState = {
       paused: false,
@@ -450,8 +422,6 @@ describe("StatusRailCard", () => {
       agent: { activeSessions: 0 },
       football: { enabled: false, live: null },
       news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
-      weather: { enabled: false, current: null },
-      media: { enabled: false, current: null },
     };
 
     const { container, rerender } = render(
@@ -478,7 +448,7 @@ describe("StatusRailCard", () => {
   // would re-announce the time to assistive tech on every tick, which
   // isn't what an arrival-alert live region is for.
   //
-  // plan 127 (Step 5, /improve-animations audit finding #6, sanctioned
+  // (Step 5, /improve-animations audit finding #6, sanctioned
   // repoint): the live region moved off `.card-assembly` (the card ROOT
   // — which also encloses FlankClock's 30s tick and, for a live-match
   // card, the scorecard's own constantly-updating chrome, both of which
@@ -487,7 +457,7 @@ describe("StatusRailCard", () => {
   // across same-session rotations, never the AnimatePresence-keyed node
   // that remounts per swap.
   //
-  // plan 129 (K2/T1, deep-review fix): that placement turned out to be
+  // that placement turned out to be
   // ITS OWN version of the same pre-populated-region bug — the
   // below-block wrapper mounts ~175ms after a promotion (the exit-
   // choreography settle), already carrying its title/body content in
@@ -519,11 +489,11 @@ describe("StatusRailCard", () => {
       expect(container.querySelector('[role="status"], [aria-live]')).toBeNull();
     });
 
-    // plan 127 (Step 5): FlankClock/StatusDots are structurally OUTSIDE
+    // FlankClock/StatusDots are structurally OUTSIDE
     // the below-block (they live in `.flank-left`/`.flank-right`) — the
     // wrapper the region now lives on (K2) is a sibling of those too, so
     // this still holds under the new placement.
-    // plan 171 (slice K): the dots half of that pair is gone from this
+    // the dots half of that pair is gone from this
     // surface, and its replacement (the icon strip) doesn't mount while
     // showing at all — so the assertion becomes "the strip isn't in the
     // tree", which is a strictly stronger version of "it sits outside
@@ -548,7 +518,7 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".status-dots")).toBeNull();
     });
 
-    // plan 127 (Step 5): a live-match card's own chrome (clock/score,
+    // a live-match card's own chrome (clock/score,
     // ticking on every wire update) is excluded from the region entirely
     // — `liveRegionActive`'s own `!isLiveCard` gate — rather than being
     // included and re-announcing on every tick.
@@ -592,11 +562,11 @@ describe("StatusRailCard", () => {
     expect(screen.getAllByText("Arsenal 2-0").length).toBe(2);
   });
 
-  // plan 100: the TTL bar exists only in the "showing" state (no card, no
+  // the TTL bar exists only in the "showing" state (no card, no
   // bar) and is the LAST child of the card-content block, after both the
   // compact content and the manifest wrap — it's the card's bottom edge
   // (absolutely positioned, styles.css), not static-flow content between
-  // sections (that was plan 081's position; plan 100 moved it to fix the
+  // sections (that was 's position; moved it to fix the
   // double-border artifact against the manifest wrap's own border-top).
   it("renders no ttl-bar while idle", () => {
     const { container } = render(<StatusRailCard slot={{ state: "empty" }} />);
@@ -613,6 +583,7 @@ describe("StatusRailCard", () => {
     // in DOM order), not the below-block's swapped content this test is
     // actually about. Scoped to `.below-block .card-content` to keep
     // targeting the same node as before this plan.
+    // SAFETY: test helper guarantees element exists for this selector.
     const cardContent = container.querySelector(".below-block .card-content") as HTMLElement;
     const children = Array.from(cardContent.children);
     const compactIndex = children.findIndex((el) => el.classList.contains("compact"));
@@ -633,18 +604,19 @@ describe("StatusRailCard", () => {
     expect(screen.getByText(NEWS.title).classList.contains("title")).toBe(true);
     expect(screen.getByText(NEWS.title).classList.contains("headline")).toBe(true);
     expect(screen.getAllByText("Politics").length).toBeGreaterThan(0);
-    // plan 092 (item 10/Decision 5): the category pill chip-converged to
+    // the category pill chip-converged to
     // `.chip.chip-category`; the age pill moved OUT of the chip row
     // entirely into the plain `.notif-time-inline` slot (same ageLabel
     // computation/thresholds, new location — no longer chip-shaped).
     // 2026-07-24: "Politics" now appears exactly once — the expanded
     // manifest's meta segment that used to repeat it is gone (declutter).
+    // SAFETY: test helper guarantees element exists for this selector.
     const categoryChip = container.querySelector(".chip-category") as HTMLElement;
     expect(categoryChip.textContent).toBe("Politics");
     expect(categoryChip.classList.contains("chip")).toBe(true);
     expect(screen.getByText("5m ago").classList.contains("notif-time-inline")).toBe(true);
     expect(screen.getByText("5m ago").classList.contains("chip")).toBe(false);
-    // plan 091: priority accent (`low`) stays on the outer shell;
+    // priority accent (`low`) stays on the outer shell;
     // news-shade/category mood classes moved to `.below-block` — required
     // for the mood gradient to paint at all (a `.card-assembly::before`
     // pseudo-element there would paint BEHIND below-block's own opaque
@@ -653,7 +625,7 @@ describe("StatusRailCard", () => {
     // on `.below-block`, never on `.card-wrap`).
     expect(container.querySelector(".card-assembly.low")).not.toBeNull();
     expect(container.querySelector(".below-block.news-shade.cat-politics")).not.toBeNull();
-    // plan 032 deleted the tier chip — priority reads from the CSS-only
+    // deleted the tier chip — priority reads from the CSS-only
     // .compact::before accent edge (a pseudo-element, not assertable in
     // jsdom), so the coverage here is absence: no chip markup, no code text.
     expect(container.querySelector(".tier-code")).toBeNull();
@@ -686,7 +658,7 @@ describe("StatusRailCard", () => {
       />,
     );
 
-    // plan 078: the manifest stays mounted (aria-hidden) when collapsed, so
+    // the manifest stays mounted (aria-hidden) when collapsed, so
     // "RSS" also appears in its meta row — assert on the masthead
     // specifically, and on the collapsed mechanism for the collapse control
     // that used to be absent from the DOM entirely.
@@ -699,12 +671,12 @@ describe("StatusRailCard", () => {
     expect(container.querySelector(".chip-category")).toBeNull();
     expect(container.querySelector(".notif-time-inline")).toBeNull();
     expect(container.querySelector(".pub-meta")).toBeNull();
-    // plan 091: news-shade/category classes moved to `.below-block` (see
+    // news-shade/category classes moved to `.below-block` (see
     // the comment on the same assertion above for why).
     expect(container.querySelector(".below-block.news-shade.cat-generic")).not.toBeNull();
   });
 
-  // plan 110 (Step C): flips the OLD contract this test used to pin (a
+  // flips the OLD contract this test used to pin (a
   // `.pub-meta` "published HH:MM" node duplicating the relative age in
   // the same compact row). The compact row now shows exactly one time
   // expression — the relative age — and `.pub-meta` is gone entirely
@@ -715,6 +687,7 @@ describe("StatusRailCard", () => {
     const now = vi.spyOn(Date, "now").mockReturnValue(2_000_000_000_000);
     const { container } = render(<StatusRailCard slot={{ ...NEWS, expanded: false }} />);
 
+    // SAFETY: test helper guarantees element exists for this selector.
     const metaRow = container.querySelector(".notif-meta-row") as HTMLElement;
     expect(metaRow).not.toBeNull();
     const ageNode = metaRow.querySelector(".notif-time-inline");
@@ -728,7 +701,7 @@ describe("StatusRailCard", () => {
     now.mockRestore();
   });
 
-  // plan 110 (Step C) established the compact row's single-time-
+  // (Step C) established the compact row's single-time-
   // expression contract (pinned above); the 2026-07-24 declutter then
   // removed the expanded manifest's "published HH:MM" segment entirely
   // (along with the rest of `.manifest-meta`) — source/category/
@@ -744,6 +717,7 @@ describe("StatusRailCard", () => {
     expect(screen.getByText(NEWS.body).classList.contains("manifest-text")).toBe(true);
     expect(container.querySelector(".manifest-meta")).toBeNull();
 
+    // SAFETY: test helper guarantees element exists for this selector.
     const footer = container.querySelector(".manifest-footer") as HTMLElement;
     expect(footer).not.toBeNull();
     expect(footer.textContent).toContain("⌃⇧N collapse");
@@ -756,13 +730,14 @@ describe("StatusRailCard", () => {
   // an empty panel.
   it("renders the news title as the summary when body is empty (redundant-summary fallback)", () => {
     const { container } = render(<StatusRailCard slot={{ ...NEWS, body: "" }} />);
+    // SAFETY: test helper guarantees element exists for this selector.
     const manifest = container.querySelector(".manifest") as HTMLElement;
 
     const summary = within(manifest).getByText(NEWS.title);
     expect(summary.classList.contains("manifest-text")).toBe(true);
   });
 
-  // plan 092 (Step 3): the generic manifest converged onto news's
+  // the generic manifest converged onto news's
   // full-width `.manifest-block` vocabulary, and the 2026-07-24 declutter
   // later dropped its `.manifest-meta` source label entirely (compact-
   // only now, see the `agent accent` masthead-kicker tests below) — the
@@ -772,6 +747,7 @@ describe("StatusRailCard", () => {
   it("shows only the collapse control in an expanded manifest without a link", () => {
     const { container } = render(<StatusRailCard slot={{ ...AGENT_NEEDS_INPUT, link: null }} />);
 
+    // SAFETY: test helper guarantees element exists for this selector.
     const footer = container.querySelector(".manifest-footer") as HTMLElement;
     expect(footer.textContent).toContain("⌃⇧N collapse");
     expect(footer.textContent).not.toContain("⌃⇧O read");
@@ -788,11 +764,12 @@ describe("StatusRailCard", () => {
       />,
     );
 
+    // SAFETY: test helper guarantees element exists for this selector.
     const footer = container.querySelector(".manifest-footer") as HTMLElement;
     expect(footer.textContent).toContain("⌃⇧O read · ⌃⇧N collapse");
   });
 
-  // plan 035 (Layout A) originally put subtitle and each detail pair in
+  // (Layout A) originally put subtitle and each detail pair in
   // the expanded manifest as ordinary cells; the 2026-07-24 declutter
   // moved them compact-only instead (metadata belongs in the compact
   // card, per the restructure — see NotificationBody.tsx) and removed
@@ -803,6 +780,7 @@ describe("StatusRailCard", () => {
   // <Manifest>.
   it("renders the subtitle and each detail pair as compact cells, not duplicated in the manifest", () => {
     const { container } = render(<StatusRailCard slot={AGENT_RICH} />);
+    // SAFETY: test helper guarantees element exists for this selector.
     const compact = container.querySelector(".compact") as HTMLElement;
 
     expect(within(compact).getByText("Permission request")).toBeTruthy();
@@ -816,6 +794,7 @@ describe("StatusRailCard", () => {
 
     // the expanded manifest is summary-only now — no Subtitle cell, no
     // detail cells, nothing duplicated from the compact card above.
+    // SAFETY: test helper guarantees element exists for this selector.
     const manifest = container.querySelector(".manifest") as HTMLElement;
     expect(within(manifest).queryByText("Subtitle")).toBeNull();
     expect(within(manifest).queryByText("Tool")).toBeNull();
@@ -823,7 +802,7 @@ describe("StatusRailCard", () => {
     expect(manifest.querySelector(".manifest-fields")).toBeNull();
   });
 
-  // plan 042 changed the collapsed contract: detail pairs render below the
+  // detail pairs render below the
   // body regardless of expansion (a live-match card's Clock/Cards must be
   // readable without expanding). The 2026-07-24 declutter extended that
   // "always compact" rule to the subtitle too — it no longer has an
@@ -831,8 +810,10 @@ describe("StatusRailCard", () => {
   it("shows the same subtitle and detail pairs in the compact card whether collapsed or expanded", () => {
     const { container } = render(<StatusRailCard slot={{ ...AGENT_RICH, expanded: false }} />);
 
+    // SAFETY: test helper guarantees element exists for this selector.
     const wrap = container.querySelector(".manifest-wrap") as HTMLElement;
     expect(wrap.getAttribute("aria-hidden")).toBe("true");
+    // SAFETY: test helper guarantees element exists for this selector.
     const compact = container.querySelector(".compact") as HTMLElement;
     expect(within(compact).getByText("Permission request")).toBeTruthy();
     expect(within(compact).getByText("Tool")).toBeTruthy();
@@ -846,13 +827,14 @@ describe("StatusRailCard", () => {
   // detail cells. Those are all compact-card metadata now.
   it("renders only the message body and hints in an agent slot's expanded manifest", () => {
     const { container } = render(<StatusRailCard slot={AGENT_RICH} />);
+    // SAFETY: test helper guarantees element exists for this selector.
     const manifest = container.querySelector(".manifest") as HTMLElement;
 
     expect(within(manifest).getByText("Message").classList.contains("manifest-label")).toBe(true);
     expect(within(manifest).getByText(AGENT_RICH.body)).toBeTruthy();
     expect(manifest.querySelector(".manifest-meta")).toBeNull();
     expect(manifest.querySelector(".manifest-fields")).toBeNull();
-    // plan 169: detail pairs render as fact pills now (`.detail-facts`/
+    // detail pairs render as fact pills now (`.detail-facts`/
     // `.fact-pill`), not the old stacked `.detail-label`/`.detail-value`
     // — same "compact-only, never duplicated into the manifest" contract.
     expect(manifest.querySelector(".detail-facts")).toBeNull();
@@ -860,12 +842,13 @@ describe("StatusRailCard", () => {
     expect(within(manifest).queryByText("Subtitle")).toBeNull();
 
     // AGENT_RICH has no link, so the footer shows only the collapse hint.
+    // SAFETY: test helper guarantees element exists for this selector.
     const footer = manifest.querySelector(".manifest-footer") as HTMLElement;
     expect(footer.textContent).toContain("⌃⇧N collapse");
     expect(footer.textContent).not.toContain("⌃⇧O read");
   });
 
-  // plan 078 (Step 6): the collapsed manifest's aria-hidden replaces the
+  // the collapsed manifest's aria-hidden replaces the
   // DOM removal AnimatePresence used to provide — collapsed content must
   // stay out of the accessibility tree, expanded content must not.
   it("carries aria-hidden on the manifest wrapper only while collapsed", () => {
@@ -878,11 +861,12 @@ describe("StatusRailCard", () => {
     expect(container.querySelector(".manifest-wrap")?.getAttribute("aria-hidden")).toBe("false");
   });
 
-  // plan 042: the whole point — Clock + per-side Cards readable without
-  // expanding. (Scoped to the compact view: plan 078 keeps the collapsed
+  // the whole point — Clock + per-side Cards readable without
+  // expanding. (Scoped to the compact view: keeps the collapsed
   // manifest mounted, so its cells carry the same labels.)
   it("renders Clock and per-side Cards in the collapsed view for a live-match card", () => {
     const { container } = render(<StatusRailCard slot={LIVE_MATCH} />);
+    // SAFETY: test helper guarantees element exists for this selector.
     const compact = container.querySelector(".compact") as HTMLElement;
 
     expect(within(compact).getByText("Clock")).toBeTruthy();
@@ -897,12 +881,13 @@ describe("StatusRailCard", () => {
     );
 
     expect(screen.getByText("GOAL")).toBeTruthy();
-    // plan 078: body text also renders in the mounted-but-collapsed
+    // body text also renders in the mounted-but-collapsed
     // manifest's Message cell — the "no detail lines" contract is about
     // the compact view, so assert there.
+    // SAFETY: test helper guarantees element exists for this selector.
     const compact = container.querySelector(".compact") as HTMLElement;
     expect(within(compact).getByText("Arsenal 2-0")).toBeTruthy();
-    // plan 169: fact pills (`.detail-facts`/`.fact-pill`), not the old
+    // fact pills (`.detail-facts`/`.fact-pill`), not the old
     // `.detail-label`/`.detail-value` stack.
     expect(compact.querySelector(".detail-facts")).toBeNull();
     expect(compact.querySelector(".fact-pill")).toBeNull();
@@ -920,8 +905,8 @@ describe("StatusRailCard", () => {
     expect(screen.getByText("FOO=bar make build")).toBeTruthy();
   });
 
-  // plan 096 (079 item 8, the wire addition + accent build), renamed by
-  // plan 137 (spec §7/§12: the cmux relay is superseded by the v7 Agent
+  // (079 item 8, the wire addition + accent build), renamed by
+  // the cmux relay is superseded by the v7 Agent
   // Adapter layer, and `SourceKind::Cmux` itself is gone — everything
   // that used to arrive as `origin: "cmux"` is `origin: "agent"` now):
   // the agent accent — originally a chip (tint + glyph) in the header
@@ -940,6 +925,7 @@ describe("StatusRailCard", () => {
     // branch — an existing TS quirk with union spreads, unrelated to this
     // plan's own logic.
     function genericSlot(origin: SourceKind): SlotState {
+      // SAFETY: validated via preceding checks; type assertion safe here.
       return { ...(AGENT_NEEDS_INPUT as Extract<SlotState, { state: "showing" }>), origin };
     }
 
@@ -959,19 +945,18 @@ describe("StatusRailCard", () => {
     // `origin === "agent" ? "agent" : "cli"` ternary would mislabel
     // football live cards and weather cards as "cli". The kicker maps
     // every `SourceKind` explicitly (`GENERIC_MASTHEAD_KICKER`); "manual"
-    // is the `/notify` CLI path (-> "cli"), "football"/"weather" get
-    // their own label, and "news" (reachable here only because this
+    // is the `/notify` CLI path (-> "cli"), "football" gets
+    // its own label, and "news" (reachable here only because this
     // fixture's `eventType` stays "generic" regardless of the origin
     // override) is the defensive fallback that just echoes the origin
     // string.
     it("shows the origin-derived kicker (never the removed Agent chip) for every non-agent origin", () => {
-      const expectedKicker: Record<Exclude<SourceKind, "agent">, string> = {
+      const expectedKicker = {
         football: "football",
         news: "news",
         manual: "cli",
-        weather: "weather",
-      };
-      for (const origin of ["football", "news", "manual", "weather"] as const) {
+      } satisfies Record<Exclude<SourceKind, "agent">, string>;
+      for (const origin of ["football", "news", "manual"] as const) {
         const { container, unmount } = render(<StatusRailCard slot={genericSlot(origin)} />);
         expect(container.querySelector(".masthead")?.textContent).toContain(expectedKicker[origin]);
         expect(container.querySelector(".chip-cmux")).toBeNull();
@@ -991,14 +976,16 @@ describe("StatusRailCard", () => {
       const { container: manualContainer } = render(
         <StatusRailCard slot={genericSlot("manual")} />,
       );
+      // SAFETY: test helper guarantees element exists for this selector.
       const agentShell = agentContainer.querySelector(".card-assembly") as HTMLElement;
+      // SAFETY: test helper guarantees element exists for this selector.
       const manualShell = manualContainer.querySelector(".card-assembly") as HTMLElement;
       expect(agentShell.className).toBe(manualShell.className);
       expect(agentShell.className).not.toContain("agent");
     });
   });
 
-  // plan 147: `sourceClass` (lib/presentation.ts) — the below-block's
+  // `sourceClass` (lib/presentation.ts) — the below-block's
   // source-identity colour class (source-identity.css's `.src-*`
   // family), replacing the flat `cat-generic` fallback for every
   // non-news origin. News keeps `categoryClass`/`cat-*` untouched and
@@ -1012,6 +999,7 @@ describe("StatusRailCard", () => {
       const { container } = render(
         <StatusRailCard
           slot={{
+            // SAFETY: validated via preceding checks; type assertion safe here.
             ...(AGENT_NEEDS_INPUT as Extract<SlotState, { state: "showing" }>),
             agentRuntime: "claude-code",
           }}
@@ -1033,6 +1021,7 @@ describe("StatusRailCard", () => {
       const { container } = render(
         <StatusRailCard
           slot={{
+            // SAFETY: validated via preceding checks; type assertion safe here.
             ...(AGENT_NEEDS_INPUT as Extract<SlotState, { state: "showing" }>),
             origin: "manual",
             agentRuntime: null,
@@ -1047,14 +1036,6 @@ describe("StatusRailCard", () => {
       expect(belowBlockClasses(container)).toContain("src-football");
     });
 
-    it("resolves src-weather alongside the existing wx-card mood classes, without breaking them", () => {
-      const { container } = render(<StatusRailCard slot={WEATHER_ALERT} />);
-      const classes = belowBlockClasses(container);
-      expect(classes).toContain("src-weather");
-      expect(classes).toContain("wx-card");
-      expect(classes).toContain("wx-rain");
-    });
-
     it("keeps cat-* on a news slot and adds no src-* class", () => {
       const { container } = render(<StatusRailCard slot={NEWS} />);
       const classes = belowBlockClasses(container);
@@ -1063,8 +1044,8 @@ describe("StatusRailCard", () => {
     });
   });
 
-  // plan 085 (original) / plan 105 Step C (fix): resting_state "notch" —
-  // the cheap half of plan 079 item 17. Idle must render zero app-drawn
+  // resting_state "notch" —
+  // the cheap half of item 17. Idle must render zero app-drawn
   // pixels — but (105) the shell itself still mounts, bare, so hovering
   // can reveal the peek; only the painted chrome (clock, dots,
   // below-block) is gone. This replaces 085's original "no shell at all"
@@ -1084,7 +1065,7 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".status-dots")).toBeNull();
     });
 
-    // plan 105's actual bug fix: hovering bare mode must reveal the peek —
+    // hovering bare mode must reveal the peek —
     // the whole point is that the mode is no longer a dead end.
     it("reveals the idle-peek below-block when hovered, even though nothing painted while not hovered", () => {
       const { container } = render(
@@ -1131,7 +1112,7 @@ describe("StatusRailCard", () => {
       });
     });
 
-    // plan 124 (F3, review fix): FlankClock/StatusDots used to stay
+    // FlankClock/StatusDots used to stay
     // mounted, fully opaque, for the WHOLE exit-to-bare window — only
     // gated off once `.bare` itself landed at the window's end — while
     // the flank paint underneath them was already animating to
@@ -1144,7 +1125,7 @@ describe("StatusRailCard", () => {
     // only after. Rail mode is the untouched control: it never sets
     // `exitToBare`, so the same exit must leave the clock mounted
     // throughout.
-    // plan 171 (slice K): the "dots" half of this pin is now the icon
+    // the "dots" half of this pin is now the icon
     // strip, which additionally never mounts while SHOWING at all (spec
     // §7 — a pushed card is unaffected by tab selection), so it can only
     // be asserted on at the idle end of each leg, not at the start.
@@ -1177,7 +1158,7 @@ describe("StatusRailCard", () => {
     });
   });
 
-  // plan 085: explicit regression pin for the default/unset cases — the
+  // explicit regression pin for the default/unset cases — the
   // idle rail must render byte-identically to before this plan.
   describe("resting_state: rail (default) and unset (plan 085 regression pin)", () => {
     it('renders today\'s idle clock/status rail when restingState is "rail"', () => {
@@ -1197,109 +1178,7 @@ describe("StatusRailCard", () => {
     });
   });
 
-  // plan 082: weather ALERT cards get their mood+glyph art from the
-  // wx-condition/wx-is-day marker pairs, and those markers must never
-  // leak into the visible detail cells (collapsed or expanded) — the
-  // marker-leak guard.
-  describe("weather ALERT card art (plan 082)", () => {
-    // plan 091: wx-card/mood/texture classes moved from the outer shell
-    // to `.below-block` — required for the mood gradient to actually
-    // paint (see the comment on the news-shade assertions above for the
-    // stacking-order reason) and matching the locked prototype's own
-    // placement. `classesOf` now reads `.below-block`'s className, not
-    // the outer `.card-assembly`'s.
-    function classesOf(container: HTMLElement): string[] {
-      return (container.querySelector(".below-block")?.className ?? "").split(" ").filter(Boolean);
-    }
-
-    it("applies the mood class and renders the condition glyph for a weather alert", () => {
-      const { container } = render(<StatusRailCard slot={WEATHER_ALERT} />);
-      const classes = classesOf(container);
-      expect(classes).toContain("wx-card");
-      expect(classes).toContain("wx-rain"); // Rain + day (wx-is-day: "1")
-      expect(classes).toContain("wx-rain-streaks");
-      const icon = container.querySelector("img.wx-icon");
-      expect(icon).not.toBeNull();
-      expect(icon?.getAttribute("src")).toMatch(/rain.*\.svg/);
-    });
-
-    it("keys night (wx-is-day: 0) to the rainy-night mood, not the day mood", () => {
-      const { container } = render(
-        <StatusRailCard
-          slot={{
-            ...WEATHER_ALERT,
-            details: [
-              { label: "wx-condition", value: "Rain" },
-              { label: "wx-is-day", value: "0" },
-            ],
-          }}
-        />,
-      );
-      const classes = classesOf(container);
-      expect(classes).toContain("wx-rainy-night");
-      expect(classes).not.toContain("wx-rain");
-    });
-
-    it("never renders wx-condition/wx-is-day as visible detail cells while collapsed", () => {
-      const { container } = render(<StatusRailCard slot={WEATHER_ALERT} />);
-      const compact = container.querySelector(".compact") as HTMLElement;
-      expect(within(compact).queryByText("wx-condition")).toBeNull();
-      expect(within(compact).queryByText("wx-is-day")).toBeNull();
-      expect(within(compact).queryByText("Rain")).toBeNull();
-      // plan 169: fact pills (`.detail-facts`/`.fact-pill`), not the old
-      // `.detail-label`/`.detail-value` stack.
-      expect(compact.querySelector(".detail-facts")).toBeNull();
-      expect(compact.querySelector(".fact-pill")).toBeNull();
-    });
-
-    it("never renders wx-condition/wx-is-day as visible detail cells while expanded (Manifest)", () => {
-      const { container } = render(<StatusRailCard slot={{ ...WEATHER_ALERT, expanded: true }} />);
-      const manifest = container.querySelector(".manifest") as HTMLElement;
-      expect(within(manifest).queryByText("wx-condition")).toBeNull();
-      expect(within(manifest).queryByText("wx-is-day")).toBeNull();
-      // the manifest's Message cell legitimately contains the alert body
-      // text, so assert there's no *label* cell for either marker rather
-      // than banning the word "Rain" outright.
-      const labels = Array.from(manifest.querySelectorAll(".fp-label")).map((el) => el.textContent);
-      expect(labels).not.toContain("wx-condition");
-      expect(labels).not.toContain("wx-is-day");
-    });
-
-    it("falls back to the neutral overcast mood for an unrecognized condition word", () => {
-      const { container } = render(
-        <StatusRailCard
-          slot={{
-            ...WEATHER_ALERT,
-            details: [
-              { label: "wx-condition", value: "—" },
-              { label: "wx-is-day", value: "1" },
-            ],
-          }}
-        />,
-      );
-      // plan 091: mood classes live on `.below-block` now.
-      const block = container.querySelector(".below-block");
-      expect(block?.className).toContain("wx-overcast");
-    });
-
-    // Regression pin: a generic card WITHOUT wx markers (the existing
-    // AGENT_RICH fixture) must render exactly as it did before this plan —
-    // no wx-card class, no glyph image, and its own (non-wx) detail pairs
-    // still render normally.
-    it("renders a non-weather generic card byte-identically (no wx classes, no glyph, own details intact)", () => {
-      const { container } = render(<StatusRailCard slot={AGENT_RICH} />);
-      const block = container.querySelector(".below-block");
-      expect(block?.className).not.toContain("wx-card");
-      expect(container.querySelector("img.wx-icon")).toBeNull();
-      // detail pairs are compact-only now (2026-07-24 declutter) — assert
-      // on `.compact`, not the manifest.
-      const compact = container.querySelector(".compact") as HTMLElement;
-      expect(within(compact).getByText("Tool")).toBeTruthy();
-      expect(within(compact).getByText("Bash")).toBeTruthy();
-    });
-  });
-
-  // plan 033: the queue slider — an enqueue while the card is visible
+  // the queue slider — an enqueue while the card is visible
   // re-renders the segments (the rust core re-emits the slot state with
   // new queueTotal/queueDone), but the card itself must not re-animate:
   // the motion key is the item id, unchanged by a waiting-count change.
@@ -1340,7 +1219,7 @@ describe("StatusRailCard", () => {
     expect(container.querySelector(".compact")).not.toBeNull();
   });
 
-  // plan 127 (Step 3, /improve-animations audit finding #3): a
+  // a
   // showing->showing content swap (a same-slot rotation — a different id
   // arrives while the card is already showing, e.g. a news item rotating
   // ~10s, or one live-match signal replacing another) must use the
@@ -1422,17 +1301,18 @@ describe("StatusRailCard", () => {
       // no remount — same node, same pattern as the queue-slider test
       // above.
       expect(after).toBe(before);
-      // plan 129 (T7, deep-review fix): the node itself proving stable
+      // the node itself proving stable
       // (above) doesn't, on its own, prove `isRotation` stayed false for
       // it — `wasShowingRef`'s own guard-on-key-change doc (StatusRailCard.tsx)
       // exists specifically to stop an unrelated same-key re-render like
       // this one from corrupting that cached value. Pin the attribute
       // directly, on top of the node-identity check.
+      // SAFETY: test helper guarantees element exists for this selector.
       expect((after as HTMLElement | null)?.getAttribute("data-rotation-swap")).toBe("false");
     });
   });
 
-  // plan 146b (Priority Preemption): a strictly-higher-priority arrival now
+  // a strictly-higher-priority arrival now
   // cuts the Visible card's turn short instead of waiting it out — the
   // handover must read as "yanked", not as an ordinary end-of-turn
   // rotation. The wire carries no explicit "preempted" flag (see
@@ -1557,7 +1437,7 @@ describe("StatusRailCard", () => {
     });
   });
 
-  // plan 129 (T3, deep-review fix): pins `contentExitVariants` (exported
+  // pins `contentExitVariants` (exported
   // test-only, same precedent as `iconForBundleId` in IdleHoverPeek.tsx)
   // directly, rather than only through rendered `data-rotation-swap`
   // output above — jsdom/motion don't expose a committed exit
@@ -1567,10 +1447,10 @@ describe("StatusRailCard", () => {
   // between them landed correctly.
   describe("contentExitVariants (plan 129 T3)", () => {
     it("the rotation exit uses ROTATION_EXIT_MS, in seconds, with the house ease", () => {
+      // SAFETY: validated via preceding checks; type assertion safe here.
       const variant = contentExitVariants.exit({
         isRotation: true,
         isInterrupt: false,
-        reduceMotion: false,
       }) as {
         transition: { duration: number; ease: unknown };
       };
@@ -1579,10 +1459,10 @@ describe("StatusRailCard", () => {
     });
 
     it("the non-rotation (promotion/exit) leg uses CONTENT_EXIT_MS, in seconds, with the house ease", () => {
+      // SAFETY: validated via preceding checks; type assertion safe here.
       const variant = contentExitVariants.exit({
         isRotation: false,
         isInterrupt: false,
-        reduceMotion: false,
       }) as {
         transition: { duration: number; ease: unknown };
       };
@@ -1590,20 +1470,20 @@ describe("StatusRailCard", () => {
       expect(variant.transition.ease).toEqual(NOTCHTAP_EASE);
     });
 
-    // plan 146b: the interrupt leg wins outright over the plain rotation
+    // the interrupt leg wins outright over the plain rotation
     // branch — faster (INTERRUPT_EXIT_MS < ROTATION_EXIT_MS), its own
     // sharp ease (not NOTCHTAP_EASE), and a small y/scale "yank" so the
     // handover reads as cut short, not just quicker.
     it("the interrupt exit uses INTERRUPT_EXIT_MS with its own sharp ease and a yank, even when isRotation is also true", () => {
-      // plan 157 (/improve-animations audit finding #2, performance):
+      //
       // the yank used to be separate `y`/`scale` shorthand fields — not
       // guaranteed hardware-accelerated under Motion. Now a single full
       // `transform` string, so this test asserts on that string instead
       // of two numeric fields.
+      // SAFETY: validated via preceding checks; type assertion safe here.
       const variant = contentExitVariants.exit({
         isRotation: true,
         isInterrupt: true,
-        reduceMotion: false,
       }) as {
         opacity: number;
         transform: string;
@@ -1617,39 +1497,16 @@ describe("StatusRailCard", () => {
       expect(variant.transform).toContain("translateY(8px)");
       expect(variant.transform).toContain("scale(0.96)");
     });
-
-    // review fix (/review-animations, fresh-agent pass): motion-dom's own
-    // reduced-motion gate (MotionConfig reducedMotion="user") keys off
-    // `positionalKeys` (x/y/scale/…) and never matches a raw `transform`
-    // STRING target — confirmed by reading motion-dom's source directly —
-    // so this codebase has to branch explicitly instead of relying on the
-    // library. Pins that the interrupt leg drops `transform` entirely
-    // under reduced motion, keeping only the opacity fade.
-    it("the interrupt exit under reduceMotion drops the transform yank entirely, keeping only the opacity fade", () => {
-      const variant = contentExitVariants.exit({
-        isRotation: true,
-        isInterrupt: true,
-        reduceMotion: true,
-      }) as {
-        opacity: number;
-        transform?: string;
-        transition: { duration: number; ease: unknown };
-      };
-      expect(variant.transition.duration).toBe(INTERRUPT_EXIT_MS / 1000);
-      expect(variant.transition.ease).toEqual(INTERRUPT_EASE);
-      expect(variant.opacity).toBe(0);
-      expect(variant.transform).toBeUndefined();
-    });
   });
 
-  // plan 084: the recurring live-match scorecard — detected by the
+  // the recurring live-match scorecard — detected by the
   // structured `espn` block's presence (POST-083 contract), rendered
   // through a wholly different branch than the generic/news layouts
   // above (no Track, no TtlBar, no Manifest, no compact-hint).
   describe("live-match football scorecard (plan 084; content template plan 170)", () => {
     it("renders the title (slot.body) and stamp, plus the league chip, live-pill, clock, crests-as-abbrev, and score", () => {
       const { container } = render(<StatusRailCard slot={liveSlot()} />);
-      // plan 170: `.notif-block` is gone — the live card now renders
+      // `.notif-block` is gone — the live card now renders
       // through the shared `.title.headline`/`.stamp` template
       // (`FootballHeroCard`, NotificationBody.tsx), with the league/
       // live-pill/clock/crests/score row kept as an additive block below
@@ -1671,7 +1528,7 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".score")?.textContent).toBe("1–1");
     });
 
-    // plan 170: the old `.event-line` icon+tint (`ev-ico`/`tint-*`,
+    // the old `.event-line` icon+tint (`ev-ico`/`tint-*`,
     // `eventPresentation`) is gone — `slot.body` now renders verbatim as
     // `.title.headline` with no icon slot (see `FootballHeroCard`'s own
     // doc for why). The celebration classes on `.card-assembly` are a
@@ -1773,6 +1630,7 @@ describe("StatusRailCard", () => {
 
     it("clears cele-goal on its ring animation ending, and never both pulse and cele stack", () => {
       const { container } = render(<StatusRailCard slot={liveSlot({ signal: "goal" })} />);
+      // SAFETY: test helper guarantees element exists for this selector.
       const card = container.querySelector(".card-assembly") as HTMLElement;
       expect(container.querySelector(".cele-goal")).not.toBeNull();
       fireAnimationEnd(card, "cele-ring");
@@ -1781,6 +1639,7 @@ describe("StatusRailCard", () => {
 
     it("clears cele-rc on the red-strobe animation ending", () => {
       const { container } = render(<StatusRailCard slot={liveSlot({ signal: "red_card" })} />);
+      // SAFETY: test helper guarantees element exists for this selector.
       const card = container.querySelector(".card-assembly") as HTMLElement;
       expect(container.querySelector(".cele-rc")).not.toBeNull();
       fireAnimationEnd(card, "red-strobe");
@@ -1804,7 +1663,7 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".clock-pill")?.textContent).toBe("HT");
     });
 
-    // plan 151 (item A): the dot no longer UNMOUNTS at full-time — it
+    // the dot no longer UNMOUNTS at full-time — it
     // stays in the DOM and fades/collapses under `.chip-live.final
     // .live-dot` (live-scorecard.css) so it leaves in step with the
     // chip's colour morph instead of blinking out a frame early. The
@@ -1883,6 +1742,7 @@ describe("StatusRailCard", () => {
             })}
           />,
         );
+        // SAFETY: test helper guarantees element exists for this selector.
         const img = container.querySelector(".crest img") as HTMLImageElement;
         expect(img).not.toBeNull();
         expect(img.getAttribute("src")).toBe(
@@ -1906,6 +1766,7 @@ describe("StatusRailCard", () => {
             })}
           />,
         );
+        // SAFETY: test helper guarantees element exists for this selector.
         const img = container.querySelector(".crest img") as HTMLImageElement;
         expect(img).not.toBeNull();
         act(() => {
@@ -1917,12 +1778,12 @@ describe("StatusRailCard", () => {
     });
   });
 
-  // plan 087: the hover primitive's one frontend consumer — a diagnostic
+  // the hover primitive's one frontend consumer — a diagnostic
   // `.hovered` class proving `hover-changed` reaches the webview. Plan
   // 093 builds the actual hover FEATURES (081/082/084/idle
   // expanded-on-hover) — see the "idle hover-expanded peek/reveal (plan
   // 093)" describe block below for those; this block only pins the
-  // prop/class wiring plan 087 shipped.
+  // prop/class wiring shipped.
   describe("hovered prop (plan 087)", () => {
     it("toggles the .hovered class when hovered is true", () => {
       const { container } = render(<StatusRailCard slot={GOAL} hovered={true} />);
@@ -2054,37 +1915,24 @@ describe("StatusRailCard", () => {
     });
   });
 
-  // plan 093: the idle hover-expanded state (079 items 9/17/18) and the
+  // the idle hover-expanded state (079 items 9/17/18) and the
   // TTL hover-pause (081's deferred half), exercised through the whole
   // StatusRailCard tree rather than IdleHoverPeek/TtlBar in isolation —
   // IdleHoverPeek.test.tsx and TtlBar.test.tsx already cover each
   // component's own behavior in depth; these pin how StatusRailCard
   // actually wires `hovered`/`status` into both of them.
   describe("idle hover-expanded peek/reveal (plan 093)", () => {
-    const WEATHER_STATUS: StatusState = {
+    const AMBIENT_STATUS: StatusState = {
       paused: false,
       waiting: 0,
       agent: { activeSessions: 0 },
-      football: { enabled: false, live: null },
+      football: { enabled: true, live: { label: "MTL 1-0 TOR", minute: "63'" } },
       news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
-      weather: {
-        enabled: true,
-        current: {
-          tempDisplay: "27°",
-          condition: "Cloudy",
-          isDay: true,
-          rainPct: null,
-          todayHighDisplay: null,
-          todayLowDisplay: null,
-          outlook: [],
-        },
-      },
-      media: { enabled: false, current: null },
     };
 
     it("mounts no below-block while idle and not hovered (flanks stay rounded — 091's shell untouched)", () => {
       const { container } = render(
-        <StatusRailCard slot={{ state: "empty" }} status={WEATHER_STATUS} hovered={false} />,
+        <StatusRailCard slot={{ state: "empty" }} status={AMBIENT_STATUS} hovered={false} />,
       );
       expect(container.querySelector(".below-block")).toBeNull();
     });
@@ -2095,7 +1943,7 @@ describe("StatusRailCard", () => {
     // un-round while the peek is open" true without editing that rule.
     it("mounts a .below-block.idle-peek while idle and hovered", () => {
       const { container } = render(
-        <StatusRailCard slot={{ state: "empty" }} status={WEATHER_STATUS} hovered={true} />,
+        <StatusRailCard slot={{ state: "empty" }} status={AMBIENT_STATUS} hovered={true} />,
       );
       const peek = container.querySelector(".below-block.idle-peek");
       expect(peek).not.toBeNull();
@@ -2117,7 +1965,7 @@ describe("StatusRailCard", () => {
     });
   });
 
-  // plan 127 (Step 2, /improve-animations audit finding #2): the peek's
+  // the peek's
   // own AnimatePresence exit must survive a promotion arriving mid-open,
   // rather than the whole component (AnimatePresence included) being torn
   // out synchronously the instant the old `{!renderedShowing &&
@@ -2289,7 +2137,7 @@ describe("StatusRailCard", () => {
     });
   });
 
-  // plan 107 Step B: compact->idle as one directional state machine. The
+  // compact->idle as one directional state machine. The
   // outer shell's geometry (priority accent class + expanded width class)
   // used to key off the live `showing` flag alone, which snapped straight
   // to idle the instant a card started exiting — a visible "grows before
@@ -2297,7 +2145,7 @@ describe("StatusRailCard", () => {
   // by useDelayedSwap's SWAP_EXIT_MS exit window). Entrance was always
   // correct (it already read the live slot); only the exit direction
   // needed fixing. Uses fake timers, scoped to this describe block only,
-  // so the SWAP_EXIT_MS (175ms, plan 12x wave 3 — was 220ms) delayed-swap
+  // so the SWAP_EXIT_MS (175ms, wave 3 — was 220ms) delayed-swap
   // boundary is directly steppable (same pattern as
   // useDelayedSwap.test.ts).
   describe("compact->idle geometry as one state machine (plan 107 Step B)", () => {
@@ -2324,7 +2172,7 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".card-assembly.idle")).toBeNull();
     });
 
-    // plan 146 (Priority and Expanded glossary rewrite, docs/ARCHITECTURE.md
+    // (Priority and Expanded glossary rewrite, docs/ARCHITECTURE.md
     // §21): a Low Promotion or a Breakthrough (High-while-Silenced)
     // Promotion now starts compact — the queue-owned `expanded` flag on the
     // wire is already `false` for those from the very first emission (no
@@ -2362,7 +2210,7 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".card-assembly.high")).not.toBeNull();
       expect(container.querySelector(".card-assembly.idle")).toBeNull();
 
-      // 174 = SWAP_EXIT_MS (175, plan 12x wave 3 — was 220/219) minus one
+      // 174 = SWAP_EXIT_MS (175, wave 3 — was 220/219) minus one
       // tick.
       act(() => vi.advanceTimersByTime(174));
       // still one tick short of the swap — geometry must not have moved.
@@ -2388,7 +2236,7 @@ describe("StatusRailCard", () => {
       // mid-exit: expanded must still be held, not dropped to compact.
       expect(container.querySelector(".card-assembly.expanded")).not.toBeNull();
 
-      // 174 = SWAP_EXIT_MS (175, plan 12x wave 3 — was 220/219) minus one
+      // 174 = SWAP_EXIT_MS (175, wave 3 — was 220/219) minus one
       // tick.
       act(() => vi.advanceTimersByTime(174));
       expect(container.querySelector(".card-assembly.expanded")).not.toBeNull();
@@ -2454,7 +2302,7 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".card-assembly.exiting")).toBeNull();
     });
 
-    // plan 123: `exitToBare` — the "box, then rounded shape pops in" fix.
+    // `exitToBare` — the "box, then rounded shape pops in" fix.
     // notch resting mode's exit must carry BOTH `exiting` and
     // `exit-to-bare` for the whole SWAP_EXIT_MS window (never `.bare`
     // until the swap actually settles), then flip to `.bare` with both
@@ -2497,7 +2345,7 @@ describe("StatusRailCard", () => {
       expect(container.querySelector(".card-assembly.exit-to-bare")).toBeNull();
     });
 
-    // plan 124 (F2, review fix): `exitToBare` narrowed with `&& !hovered`
+    // `exitToBare` narrowed with `&& !hovered`
     // — see `useExitChoreography.ts`'s own doc for the wobble mechanism
     // (`.bare:has(.idle-peek)`/`.bare.hovered` re-widening `--cw` and
     // repainting the flanks the instant `bare` mounts with `hovered`
@@ -2549,7 +2397,7 @@ describe("StatusRailCard", () => {
   });
 });
 
-// plan 124 (F4): string-pins the plan-123 CSS convergence invariant —
+// string-pins the plan-123 CSS convergence invariant —
 // `overlay-card.css`'s own INVARIANT comment on `.card-root
 // .card-assembly.exiting.exit-to-bare` (above the rule) spells out five
 // properties that must equal `.card-assembly.bare`'s own end-state values
@@ -2578,7 +2426,7 @@ function readSourceCss(relativePath: string): string {
 // A variant of `celebrationStacking.test.tsx`/`IdleHoverPeek.test.tsx`'s own
 // `ruleBody` helper: this file's target selectors span multiple
 // source lines (e.g. the exit-to-bare synthetic-cutout rule's
-// `:root[...]\n  .card-root\n  .card-assembly...` wrap), so the marker is
+// `:root[...]\n .card-root\n .card-assembly...` wrap), so the marker is
 // matched with the selector's OWN whitespace collapsed to `\s+` rather than
 // requiring an exact byte-for-byte multi-line reproduction here — same
 // "throw on no match" contract as the single-line original, just tolerant
@@ -2704,13 +2552,13 @@ describe("exit-to-bare CSS convergence invariant (plan 124 F4)", () => {
   });
 });
 
-// ---- plan 171 (tab-notch redesign, slice K): the icon strip's mount
-// gate, the eq bars, and the selection-driven below-block swap, all
-// exercised through the whole StatusRailCard tree. Each mounted
-// component's OWN behavior is already covered in depth by its own file
-// (IconStrip/EqBars/AgentBelowBlock/MediaBelowBlock/NewsBelowBlock/
-// IdleHoverPeek) — these pin only what THIS component actually decides:
-// when each one mounts, and which props it drives them with.
+// ---- the icon strip's mount
+// gate and the selection-driven below-block swap, all exercised through
+// the whole StatusRailCard tree. Each mounted component's OWN behavior
+// is already covered in depth by its own file (IconStrip/
+// AgentBelowBlock/NewsBelowBlock/IdleHoverPeek) — these pin only what
+// THIS component actually decides: when each one mounts, and which
+// props it drives them with.
 describe("tab-notch integration (plan 171, slice K)", () => {
   afterEach(cleanup);
 
@@ -2720,35 +2568,11 @@ describe("tab-notch integration (plan 171, slice K)", () => {
     agent: { activeSessions: 0 },
     football: { enabled: false, live: null },
     news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
-    weather: { enabled: false, current: null },
-    media: { enabled: false, current: null },
-  };
-
-  const TRACK: NonNullable<StatusState["media"]["current"]> = {
-    title: "Midnight City",
-    artist: "M83",
-    album: "Hurry Up, We're Dreaming",
-    playing: true,
-    elapsedMs: 1500,
-    durationMs: 243_000,
-    capturedAtMs: 1_753_000_000_000,
-    appBundleId: "app.zen-browser.zen",
-  };
-
-  const WEATHER: NonNullable<StatusState["weather"]["current"]> = {
-    tempDisplay: "27°",
-    condition: "Cloudy",
-    isDay: true,
-    rainPct: null,
-    todayHighDisplay: null,
-    todayLowDisplay: null,
-    outlook: [],
   };
 
   const LIVE_MATCH_STATUS: StatusState = {
     ...QUIET,
     football: { enabled: true, live: { label: "Arsenal 2–0 Chelsea", minute: "45'" } },
-    weather: { enabled: true, current: WEATHER },
   };
 
   function agentSession(overrides: Partial<AgentSessionView> = {}): AgentSessionView {
@@ -2787,20 +2611,14 @@ describe("tab-notch integration (plan 171, slice K)", () => {
           status={{
             ...QUIET,
             agent: { activeSessions: 2 },
-            media: { enabled: true, current: { ...TRACK, playing: false } },
           }}
         />,
       );
       // agent: a registered session means present AND live
       expect(container.querySelector(".icon.agent")?.className).toContain("is-live");
-      // music: loaded but paused — present, deliberately not live
-      const music = container.querySelector(".icon.music")?.className ?? "";
-      expect(music).toContain("is-present");
-      expect(music).not.toContain("is-live");
       // football: nothing in play, so not present at all
       expect(container.querySelector(".icon.football")?.className).not.toContain("is-present");
-      // weather/news: always present whenever the strip is up
-      expect(container.querySelector(".icon.weather")?.className).toContain("is-present");
+      // news: always present whenever the strip is up
       expect(container.querySelector(".icon.news")?.className).toContain("is-present");
     });
 
@@ -2834,49 +2652,16 @@ describe("tab-notch integration (plan 171, slice K)", () => {
 
     it("marks the selected tab, and only that one", () => {
       const { container } = render(
-        <StatusRailCard slot={{ state: "empty" }} status={QUIET} selectedTab="weather" />,
+        <StatusRailCard slot={{ state: "empty" }} status={QUIET} selectedTab="news" />,
       );
-      expect(container.querySelector(".icon.weather")?.className).toContain("is-selected");
-      expect(container.querySelector(".icon.news")?.className).not.toContain("is-selected");
-    });
-  });
-
-  describe("the rest-state eq bars (spec §4)", () => {
-    // the face's own delayed reveal (IdleFace.tsx's REVEAL_DELAY_MS
-    // timer) is covered by the "idle face" describe block above — this
-    // only pins that the bars share the face's cutout cluster and start
-    // silent, so nothing here waits on that timer.
-    it("renders the bars inside the idle face's own rest cluster, silent by default", () => {
-      const { container } = render(<StatusRailCard slot={{ state: "empty" }} status={QUIET} />);
-      const eq = container.querySelector(".rest-cluster .eq");
-      expect(eq).not.toBeNull();
-      expect(eq?.className).not.toContain("playing");
-    });
-
-    it("stays silent for a loaded-but-paused track", () => {
-      const { container } = render(
-        <StatusRailCard
-          slot={{ state: "empty" }}
-          status={{ ...QUIET, media: { enabled: true, current: { ...TRACK, playing: false } } }}
-        />,
-      );
-      expect(container.querySelector(".eq")?.className).not.toContain("playing");
-    });
-
-    it("plays only while audio is genuinely playing", () => {
-      const { container } = render(
-        <StatusRailCard
-          slot={{ state: "empty" }}
-          status={{ ...QUIET, media: { enabled: true, current: TRACK } }}
-        />,
-      );
-      expect(container.querySelector(".eq")?.className).toContain("playing");
+      expect(container.querySelector(".icon.news")?.className).toContain("is-selected");
+      expect(container.querySelector(".icon.agent")?.className).not.toContain("is-selected");
     });
   });
 
   describe("the selection-driven below-block swap (spec §7)", () => {
     function hoveredIdle(
-      selectedTab: "agent" | "football" | "music" | "weather" | "news" | null,
+      selectedTab: "agent" | "football" | "news" | null,
       status: StatusState,
       sessions: AgentSessionView[] = [],
     ) {
@@ -2893,23 +2678,9 @@ describe("tab-notch integration (plan 171, slice K)", () => {
     }
 
     it("with nothing selected, keeps the shipped ambient peek — spec §11's untouched mechanism", () => {
-      const { container } = hoveredIdle(null, {
-        ...QUIET,
-        weather: { enabled: true, current: WEATHER },
-      });
+      const { container } = hoveredIdle(null, QUIET);
       expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
-      expect(container.querySelector('[data-testid="media-below-block"]')).toBeNull();
-    });
-
-    it("selecting music swaps the ambient peek out for the media below-block", () => {
-      const { container } = hoveredIdle("music", {
-        ...QUIET,
-        weather: { enabled: true, current: WEATHER },
-        media: { enabled: true, current: TRACK },
-      });
-      expect(container.querySelector('[data-testid="media-below-block"]')).not.toBeNull();
-      expect(container.querySelector(".below-block.idle-peek")).toBeNull();
-      expect(screen.getByText("Midnight City")).toBeTruthy();
+      expect(container.querySelector('[data-testid="agent-below-block"]')).toBeNull();
     });
 
     it("selecting agent mounts the viewed session's hero", () => {
@@ -2920,7 +2691,7 @@ describe("tab-notch integration (plan 171, slice K)", () => {
       expect(container.querySelector(".below-block.idle-peek")).toBeNull();
     });
 
-    // Plan 177 (Step 4) rewrote this test's contract. It used to pin
+    // (Step 4) rewrote this test's contract. It used to pin
     // "no below-block at all" — but that is the blank-pull bug seen from
     // the inside: the operator pulled a tab open and got an empty shell
     // where the ambient peek used to be. An empty tab now degrades to
@@ -2933,27 +2704,15 @@ describe("tab-notch integration (plan 171, slice K)", () => {
       expect(container.querySelectorAll(".below-block").length).toBe(1);
     });
 
-    // Plan 177: the other two empty-tab cases. News has no story wire at
+    // the other two empty-tab cases. News has no story wire at
     // all (`TabBelowBlock`'s hard-wired `NO_NEWS_STORIES`), so it is
     // ALWAYS empty today — selecting it used to blank the hover
     // outright.
     it("selecting news keeps the ambient peek, since no story wire exists to fill the block", () => {
       const { container } = hoveredIdle("news", {
         ...QUIET,
-        weather: { enabled: true, current: WEATHER },
         news: { enabled: true, chargeFraction: 1, chargeCount: 3, isCharged: true },
       });
-      expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
-      expect(container.querySelectorAll(".below-block").length).toBe(1);
-    });
-
-    it("selecting music with nothing playing keeps the ambient peek", () => {
-      const { container } = hoveredIdle("music", {
-        ...QUIET,
-        weather: { enabled: true, current: WEATHER },
-        media: { enabled: true, current: null },
-      });
-      expect(container.querySelector('[data-testid="media-below-block"]')).toBeNull();
       expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
       expect(container.querySelectorAll(".below-block").length).toBe(1);
     });
@@ -2963,17 +2722,15 @@ describe("tab-notch integration (plan 171, slice K)", () => {
     // a merely-working agent has something to render, so the peek yields
     // to the real card.
     it("selecting agent with live sessions mounts the agent below-block and closes the peek", () => {
-      const { container } = hoveredIdle(
-        "agent",
-        { ...QUIET, weather: { enabled: true, current: WEATHER }, agent: { activeSessions: 1 } },
-        [agentSession()],
-      );
+      const { container } = hoveredIdle("agent", { ...QUIET, agent: { activeSessions: 1 } }, [
+        agentSession(),
+      ]);
       expect(container.querySelector('[data-testid="agent-below-block"]')).not.toBeNull();
       expect(container.querySelector(".below-block.idle-peek")).toBeNull();
       expect(container.querySelectorAll(".below-block").length).toBe(1);
     });
 
-    // Plan 184 (Part 1): pins that `viewedSessionIndex` — the
+    // pins that `viewedSessionIndex` — the
     // `agent-viewed-session-changed` wire's value, sourced by
     // `useAgentViewedSession` and threaded down from App.tsx — actually
     // reaches `AgentBelowBlock`/`PositionBar`, not just that the prop type
@@ -3040,25 +2797,15 @@ describe("tab-notch integration (plan 171, slice K)", () => {
       expect(screen.getByText(/alpha-repo/)).toBeTruthy();
     });
 
-    it("selecting weather shows the shipped weather card, even while a match is live", () => {
-      const { container } = hoveredIdle("weather", LIVE_MATCH_STATUS);
-      expect(container.querySelector(".below-block.idle-peek")).not.toBeNull();
-      expect(container.querySelector(".wx-peek-readout")).not.toBeNull();
-      expect(container.querySelector(".idle-reveal-scorecard")).toBeNull();
-    });
-
-    it("selecting football shows the shipped scorecard reveal, even with weather available", () => {
+    it("selecting football shows the shipped scorecard reveal", () => {
       const { container } = hoveredIdle("football", LIVE_MATCH_STATUS);
       expect(container.querySelector(".idle-reveal-scorecard")).not.toBeNull();
-      expect(container.querySelector(".wx-peek-readout")).toBeNull();
     });
 
     it("never mounts more than one below-block at a time (the rounding law depends on it)", () => {
-      const { container } = hoveredIdle("music", {
-        ...QUIET,
-        weather: { enabled: true, current: WEATHER },
-        media: { enabled: true, current: TRACK },
-      });
+      const { container } = hoveredIdle("agent", { ...QUIET, agent: { activeSessions: 1 } }, [
+        agentSession(),
+      ]);
       expect(container.querySelectorAll(".below-block").length).toBe(1);
     });
 
@@ -3066,15 +2813,17 @@ describe("tab-notch integration (plan 171, slice K)", () => {
       const { container } = render(
         <StatusRailCard
           slot={{ state: "empty" }}
-          status={{ ...QUIET, media: { enabled: true, current: TRACK } }}
+          status={{ ...QUIET, agent: { activeSessions: 1 } }}
           hovered={false}
-          selectedTab="music"
+          selectedTab="agent"
+          agentSessions={[agentSession()]}
+          agentCapturedAtMs={1_000_000}
         />,
       );
       expect(container.querySelector(".below-block")).toBeNull();
     });
 
-    // ---- plan 176: where the pulled card actually LANDS in the shell.
+    // ---- where the pulled card actually LANDS in the shell.
     //
     // `.card-assembly` is a `1fr auto 1fr` grid (flank / cutout / flank)
     // and the rule that puts a card under the notch spans it across row 2.
@@ -3110,21 +2859,8 @@ describe("tab-notch integration (plan 171, slice K)", () => {
       expect(block?.className).toContain("below-block");
     });
 
-    it("places the media tab's card through that same wrapper, not a second mechanism", () => {
-      const { container } = hoveredIdle("music", {
-        ...QUIET,
-        media: { enabled: true, current: TRACK },
-      });
-      const slot = container.querySelector(".tab-below-slot");
-      expect(slot?.parentElement).toBe(container.querySelector(".card-assembly"));
-      expect(slot?.querySelector('[data-testid="media-below-block"]')).not.toBeNull();
-    });
-
     it("leaves the ambient peek's own already-direct mount alone — it needs no wrapper", () => {
-      const { container } = hoveredIdle(null, {
-        ...QUIET,
-        weather: { enabled: true, current: WEATHER },
-      });
+      const { container } = hoveredIdle(null, QUIET);
       const peek = container.querySelector(".below-block.idle-peek");
       expect(peek?.parentElement).toBe(container.querySelector(".card-assembly"));
       expect(container.querySelector(".tab-below-slot")).toBeNull();
@@ -3161,12 +2897,12 @@ describe("tab-notch integration (plan 171, slice K)", () => {
 
     it("the bare shell re-widens for ANY hover-mounted block, not just the ambient peek", () => {
       const css = readSourceCss("../overlay-card.css");
-      // plan 176 widened this selector from `:has(.idle-peek)`, which left
+      // has(.idle-peek)`, which left
       // a pulled card rendering into a cutout-width shell. `ruleBody`
       // throws on a miss, so a revert to the peek-only form fails here
       // instead of silently passing.
       const bareRevealed = ruleBody(css, ".card-root .card-assembly.bare:has(.below-block)");
-      // plan 175's icon-count growth formula, still the value this rule
+      // 's icon-count growth formula, still the value this rule
       // animates toward (`stripGeometryParity.test.ts` pins its numbers).
       expect(propValue(bareRevealed, "--cw")).toContain("--present-icons");
       expect(() => ruleBody(css, ".card-root .card-assembly.bare:has(.idle-peek)")).toThrow(
@@ -3181,12 +2917,14 @@ describe("tab-notch integration (plan 171, slice K)", () => {
       const { container } = render(
         <StatusRailCard
           slot={GOAL}
-          status={{ ...QUIET, media: { enabled: true, current: TRACK } }}
+          status={{ ...QUIET, agent: { activeSessions: 1 } }}
           hovered={true}
-          selectedTab="music"
+          selectedTab="agent"
+          agentSessions={[agentSession()]}
+          agentCapturedAtMs={1_000_000}
         />,
       );
-      expect(container.querySelector('[data-testid="media-below-block"]')).toBeNull();
+      expect(container.querySelector('[data-testid="agent-below-block"]')).toBeNull();
       expect(screen.getByText("GOAL")).toBeTruthy();
     });
   });

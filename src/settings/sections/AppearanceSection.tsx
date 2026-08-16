@@ -12,11 +12,10 @@ export function AppearanceSection({
 }: {
   config: Config;
   patchConfig: (patch: Partial<Config>) => void;
-  // Owned by SettingsApp, not this component (plan 108 step A): this
-  // section may be unmounted while another section is open — but
-  // Reset/Reset to defaults are footer buttons, clickable from any
-  // section. So the function lives one level up, and its status renders in
-  // the footer (always visible), not here — see the settings-footer JSX.
+  // Owned by SettingsApp, not this component: this section may be unmounted
+  // while another section is open — but Reset/Reset to defaults are footer
+  // buttons, clickable from any section. So the function lives one level up,
+  // and its status renders in the footer (always visible), not here.
   applyAppearanceLive: (scale: number, radius: number, opacity: number) => void;
 }) {
   const { card_scale: scale, card_radius: radius, card_opacity: opacity } = config.appearance;
@@ -39,6 +38,7 @@ export function AppearanceSection({
     updateAppearance({ card_opacity: next });
   }
 
+  // SAFETY: the cast only lets literals with fixed CSS custom-property keys (--card-scale/radius/opacity, all consumed by the preview's own stylesheet) pass as React.CSSProperties, which lacks an index signature; no runtime shape of untrusted data is asserted.
   const previewStyle: CSSProperties = {
     "--card-scale": scale,
     "--card-radius": `${radius}px`,
@@ -96,14 +96,13 @@ export function AppearanceSection({
           {PREVIEW_SAMPLES.map(({ label, slot }) => (
             <div className="preview-row" key={slot.id}>
               <div className="preview-label">{label}</div>
-              {/* plan 111: `.card-root` scopes the shared card-shape
-                  stylesheet (overlay-card.css) — each sample gets its OWN
-                  scope (one wrapper per card, matching the overlay's
-                  one-wrapper-per-card shape), and `.preview-stage` is
-                  already the per-sample frame box, so the scope class
-                  composes onto it rather than adding a further nested
-                  element. `.appearance-preview` itself stays frame chrome
-                  only (settings.css) — never the scope host. */}
+              {/* `.card-root` scopes the shared card-shape stylesheet
+                  (overlay-card.css) — each sample gets its OWN scope (one
+                  wrapper per card), and `.preview-stage` is already the
+                  per-sample frame box, so the scope class composes onto it
+                  rather than adding a nested element. `.appearance-preview`
+                  itself stays frame chrome only (settings.css) — never the
+                  scope host. */}
               <div className="preview-stage card-root">
                 <StatusRailCard slot={slot} />
               </div>

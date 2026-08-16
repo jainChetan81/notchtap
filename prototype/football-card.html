@@ -1,25 +1,5 @@
 <!doctype html>
-<!-- Football / live-match card mock — mirrors the CURRENT SHIPPED overlay.
-     Markup/class names/colors are pulled directly from the real render
-     path, not invented:
-       - src/components/StatusRailCard.tsx   (card shell, celebration gating)
-       - src/components/LiveMatchScorecard.tsx (the full event-driven scorecard)
-       - src/components/IdleHoverPeek.tsx    (the resting hover-reveal peek)
-       - src/overlay/card-chrome.css         (the notch-cutout grid shell)
-       - src/overlay/choreography.css        (hover breathe, generic pulse)
-       - src/overlay/live-scorecard.css      (scorecard-specific styling)
-       - src/overlay/idle-peek.css           (hover-peek layout, event icons,
-                                               live-match celebrations)
-       - vendor/shared-ui/design/tokens.css  (color/ease tokens)
-     This is a static, hand-authored HTML/CSS file — no build step, not
-     wired into the app — kept as a visual reference for the football
-     card's current shape. Class names are namespaced under `.card-root`
-     everywhere, exactly like the shipped stylesheet, so this file can be
-     diffed against the real CSS by eye. Where the real component tree
-     omits something the previous version of this mock assumed (e.g. team
-     names under the crest, a pre-match "Soon" pill), it's omitted here
-     too — see the footer for the specific corrections made and the
-     judgment calls behind them. -->
+<!-- Football card — static mock of the shipped overlay. -->
 <html lang="en" data-notchtap-mode="hud">
 <head>
 <meta charset="utf-8">

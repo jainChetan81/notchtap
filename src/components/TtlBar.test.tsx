@@ -18,36 +18,25 @@ afterEach(cleanup);
 // only the DOM property being read moved from `style.width` to
 // `style.transform`.
 function fillScalePercent(container: HTMLElement): number {
+  // SAFETY: nullable cast because querySelector may miss; the very next
+  // line's `not.toBeNull()` guards it before `fill` is dereferenced.
   const fill = container.querySelector(".ttl-fill") as HTMLElement | null;
   expect(fill).not.toBeNull();
+  // SAFETY: `fill` is confirmed non-null one line above, so reading `.style`
+  // through this narrowed cast cannot dereference null here.
   const transform = (fill as HTMLElement).style.transform;
   const match = transform.match(/^scaleX\(([\d.]+)\)$/);
   expect(match).not.toBeNull();
   return Number(match?.[1]) * 100;
 }
 
-function mockReducedMotion(matches: boolean) {
-  vi.stubGlobal("matchMedia", (query: string) => ({
-    matches,
-    media: query,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    addListener: () => {},
-    removeListener: () => {},
-    onchange: null,
-    dispatchEvent: () => false,
-  }));
-}
-
 describe("TtlBar (plan 081)", () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame", "performance"] });
-    mockReducedMotion(false);
   });
 
   afterEach(() => {
     vi.useRealTimers();
-    vi.unstubAllGlobals();
   });
 
   it("renders the ttl-bar/ttl-fill DOM nodes", () => {
@@ -117,22 +106,6 @@ describe("TtlBar (plan 081)", () => {
     expect(fillScalePercent(container)).toBeGreaterThan(90);
   });
 
-  it("renders a static, un-scaled fill and skips the rAF loop under prefers-reduced-motion", () => {
-    mockReducedMotion(true);
-    const rafSpy = vi.spyOn(window, "requestAnimationFrame");
-    const { container } = render(<TtlBar slotId="n1" ttlMs={8000} remainingMs={4000} />);
-
-    expect(fillScalePercent(container)).toBe(100);
-    expect(rafSpy).not.toHaveBeenCalled();
-
-    // advancing time must not start ticking it down either — the loop was
-    // never armed (idle-CPU discipline, plans 015/018), not merely paused.
-    act(() => {
-      vi.advanceTimersByTime(5000);
-    });
-    expect(fillScalePercent(container)).toBe(100);
-  });
-
   it("cancels the rAF loop on unmount", () => {
     const cancelSpy = vi.spyOn(window, "cancelAnimationFrame");
     const { unmount } = render(<TtlBar slotId="n1" ttlMs={8000} remainingMs={8000} />);
@@ -141,7 +114,7 @@ describe("TtlBar (plan 081)", () => {
     });
     unmount();
     expect(cancelSpy).toHaveBeenCalled();
-    // plan 093: this project's vitest config sets neither `restoreMocks`
+    // this project's vitest config sets neither `restoreMocks`
     // nor `clearMocks` (vite.config.ts), so an unrestored spy on a global
     // like `cancelAnimationFrame` silently outlives this test — the next
     // test's fake-timers instance (a fresh one per `beforeEach` above)
@@ -158,7 +131,7 @@ describe("TtlBar (plan 081)", () => {
     cancelSpy.mockRestore();
   });
 
-  // plan 093: 081's deferred hover-pause half.
+  // 081's deferred hover-pause half.
   describe("hoverPaused (plan 093)", () => {
     // O13 (visual-consistency sweep, finding "TTL hover-pause affordance"):
     // freezing the fill alone read as indistinguishable from a stall — no
@@ -323,6 +296,8 @@ describe("TtlBar (plan 081)", () => {
       expect(all[2].classList.contains("done")).toBe(false);
       expect(all.slice(2).every((s) => s.className === "ttl-seg")).toBe(true);
 
+      // SAFETY: TtlBar always renders `.ttl-fill` (fixture passes
+      // ttlMs/remainingMs); the next line's null-guard protects the cast.
       const fill = container.querySelector(".ttl-fill") as HTMLElement;
       expect(fill).not.toBeNull();
       // grid-column is 1-indexed; current=2 -> column 3.
@@ -334,6 +309,8 @@ describe("TtlBar (plan 081)", () => {
       const all = segs(container);
       expect(all).toHaveLength(1);
       expect(all[0].classList.contains("done")).toBe(false);
+      // SAFETY: TtlBar renders `.ttl-fill` even when total/done are omitted
+      // (single un-segmented bar), so the match is non-null.
       const fill = container.querySelector(".ttl-fill") as HTMLElement;
       expect(fill.style.gridColumn).toBe("1");
     });
@@ -366,6 +343,8 @@ describe("TtlBar (plan 081)", () => {
       expect(midSegs).toHaveLength(10);
       expect(midSegs.slice(0, 5).every((s) => s.classList.contains("done"))).toBe(true);
       expect(midSegs[5].classList.contains("done")).toBe(false);
+      // SAFETY: `.ttl-fill` always renders inside a mid-batch segmented bar
+      // (total=20 fixture), so the inline match is non-null.
       expect((mid.container.querySelector(".ttl-fill") as HTMLElement).style.gridColumn).toBe("6");
 
       // the last item of the batch lights the final segment (floor(19*10/20)=9)
@@ -375,6 +354,8 @@ describe("TtlBar (plan 081)", () => {
       const lastSegs = segs(last.container);
       expect(lastSegs.slice(0, 9).every((s) => s.classList.contains("done"))).toBe(true);
       expect(lastSegs[9].classList.contains("done")).toBe(false);
+      // SAFETY: `.ttl-fill` always renders inside the last-batch segment bar
+      // (total=20 fixture), so the inline match is non-null.
       expect((last.container.querySelector(".ttl-fill") as HTMLElement).style.gridColumn).toBe(
         "10",
       );
@@ -384,6 +365,8 @@ describe("TtlBar (plan 081)", () => {
       const { container } = render(
         <TtlBar slotId="n1" ttlMs={8000} remainingMs={8000} total={4} done={0} />,
       );
+      // SAFETY: TtlBar always renders its `.ttl-bar` container for this
+      // total/done fixture, so the match to read --queue-n is non-null.
       const bar = container.querySelector(".ttl-bar") as HTMLElement;
       expect(bar.style.getPropertyValue("--queue-n")).toBe("4");
     });
@@ -396,6 +379,8 @@ describe("TtlBar (plan 081)", () => {
       rerender(<TtlBar slotId="n1" ttlMs={8000} remainingMs={8000} total={5} done={2} />);
       const fillAfter = container.querySelector(".ttl-fill");
       expect(fillAfter).toBe(fillBefore);
+      // SAFETY: `.ttl-fill` stays mounted across the rerender (pinned by the
+      // `toBe(fillBefore)` check just above), so this read is non-null.
       expect((fillAfter as HTMLElement).style.gridColumn).toBe("3");
     });
 

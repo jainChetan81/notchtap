@@ -1,4 +1,4 @@
-// plan 112: @types/node is now a devDependency (Step 1), so these two
+// @types/node is now a devDependency (Step 1), so these two
 // Node imports typecheck directly — no @ts-expect-error needed. Node's
 // own `URL` is still imported explicitly (not the ambient global)
 // because jsdom's global `URL` shadow resolves a relative path against a
@@ -7,28 +7,20 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath, URL as NodeURL } from "node:url";
 import { cleanup, render } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { StatusRailCard } from "./components/StatusRailCard";
 import type { SlotState } from "./useSlotState";
-
-// plan 084's `Crest` (StatusRailCard.tsx) calls `convertFileSrc` itself at
-// module scope — mocked here (same shim as StatusRailCard.test.tsx) purely
-// so importing the component doesn't require a real tauri runtime; the
-// goal fixture below never hits the live-match/Crest branch.
-vi.mock("@tauri-apps/api/core", () => ({
-  convertFileSrc: (path: string) => `asset://converted${path}`,
-}));
 
 afterEach(cleanup);
 
 // jsdom can't compute cascade from stylesheets (no layout/paint engine), so
-// plan 107's stacking contract — `.card-content` above the celebration
+// 's stacking contract — `.card-content` above the celebration
 // burst — is pinned at the STRING level here: read the rule text straight
 // out of the shared CSS file and assert the decisive declarations are
 // present. Cross-referenced by name (`celebrationStacking.test.tsx`) from
 // the contract comment on `.card-assembly::after`.
 //
-// plan 111: this used to pin the SAME contract twice — once in styles.css,
+// this used to pin the SAME contract twice — once in styles.css,
 // once in its hand-maintained mirror (src/settings/preview-overlay.css,
 // now deleted). Both entry points now import ONE shared stylesheet
 // (src/overlay-card.css, `.card-root`-scoped) — there is only one rule
@@ -82,9 +74,9 @@ describe("celebration stacking — CSS string pins (plan 107)", () => {
     expect(body).toContain("z-index: 0");
   });
 
-  // plan 100's 2x celebration pacing is explicitly out of scope for this
+  // 's 2x celebration pacing is explicitly out of scope for this
   // plan (Step A spends none of that timing budget) — pin the durations
-  // byte-unchanged, matching the plan's own baseline counts. plan 111:
+  // byte-unchanged, matching the plan's own baseline counts.
   // was 2x these counts pre-unification (once per mirrored file) — now
   // 1x, since there is exactly one copy of this CSS.
   it("plan-100 celebration durations are byte-unchanged", () => {

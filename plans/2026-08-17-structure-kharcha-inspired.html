@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Structure — notchtap, Kharcha-inspired</title>
+<style>
+  :root { --bg:#0f1115; --panel:#171a21; --ink:#e8eaf0; --muted:#9aa3b2; --accent:#4fd1a5; --warn:#f0b429; --line:#262b36; --chip:#222835; }
+  @media (prefers-color-scheme: light) { :root{--bg:#f7f8fa;--panel:#fff;--ink:#1c2330;--muted:#5b6577;--accent:#0e8a63;--warn:#9a6b00;--line:#e3e7ee;--chip:#eef1f6;} }
+  *{box-sizing:border-box} body{margin:0;background:var(--bg);color:var(--ink);font:16px/1.6 -apple-system,"SF Pro Text",Segoe UI,Roboto,sans-serif}
+  main{max-width:920px;margin:0 auto;padding:40px 24px 80px} h1{font-size:28px;margin:0 0 4px} h2{font-size:21px;margin:44px 0 12px;border-bottom:1px solid var(--line);padding-bottom:8px}
+  .sub{color:var(--muted);margin-bottom:28px} .panel{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:18px 20px;margin:16px 0}
+  .tldr{border-left:4px solid var(--accent)} code{background:var(--chip);border-radius:5px;padding:1px 6px;font:13.5px/1.5 "SF Mono",ui-monospace,Menlo,monospace}
+  table{width:100%;border-collapse:collapse;margin:12px 0;font-size:14.5px} th,td{padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top;text-align:left}
+  th{color:var(--muted);font-weight:600;font-size:13px;text-transform:uppercase;letter-spacing:.04em} ul,ol{padding-left:22px} li{margin:5px 0} .small{font-size:13.5px;color:var(--muted)}
+</style>
+</head>
+<body>
+<main>
+<h1>Structure — notchtap, Kharcha-inspired</h1>
+<p class="sub">How Kharcha organizes <code>lib</code>, <code>hooks</code>, <code>components</code> and what notchtap should steal — recorded 2026-08-17, branch <code>chore/anti-slop-cleanup</code></p>
+
+<div class="panel tldr">
+<strong>TL;DR</strong>
+<ul>
+<li>Kharcha's strength: one <code>lib/</code> for pure helpers, one <code>hooks/</code> for data, one <code>components/ui/</code> for primitives, no utils junk drawer. Constants, format, validation, and date helpers each own a file. Screens never call query directly.</li>
+<li>Notchtap today: <code>src/lib/</code> already has <code>guards</code> and <code>error</code>, but constants are scattered in <code>animationTiming.ts</code>, formatting is split between <code>byteFormat.ts</code> and <code>timeFormat.ts</code> inside <code>settings/</code>, and 7 hooks live at <code>src/*.ts</code> root. No central <code>lib/constants.ts</code>, no <code>lib/format.ts</code>, no <code>src/hooks/</code>.</li>
+<li>This pass creates <code>src/lib/constants.ts</code>, <code>src/lib/format.ts</code>, <code>src/lib/validation.ts</code>, and <code>src/hooks/</code>, moves the 7 hooks there with re-exports for compat, and deletes the two <code>settings/</code> format files after re-exporting. No behavior change, all imports stay green.</li>
+</ul>
+</div>
+
+<h2>1 · Kharcha — what to steal</h2>
+<table>
+<tr><th>Kharcha path</th><th>Role</th><th>Notchtap takeaway</th></tr>
+<tr><td><code>lib/constants.ts</code></td><td>Single source for SCREENS, QUERY_KEYS, COLORS, DATE_FORMAT, PAGE_SIZE</td><td>Create <code>src/lib/constants.ts</code> for animation timings, default port, DB names, limits. Today these live in <code>animationTiming.ts</code>, <code>config.rs</code> mirrors, and scattered <code>settings/types.ts</code>.</td></tr>
+<tr><td><code>lib/utils.ts</code></td><td><code>cn</code> + platform helpers only, 1 export per file</td><td>Already good: <code>src/lib/utils.ts</code> has <code>cn</code>. Keep it. Don't add platform helpers here; Tauri is desktop-only.</td></tr>
+<tr><td><code>lib/format.ts</code></td><td><code>formatCurrency</code>, <code>sanitizeDecimalInput</code>, <code>smartCapitalize</code>, <code>historyHref</code></td><td>Create <code>src/lib/format.ts</code> that re-exports <code>formatBytes</code>, <code>formatBytePair</code>, <code>formatUptime</code> (from <code>byteFormat.ts</code>) and <code>formatClockTime</code>, <code>formatRecordedAt</code> (from <code>timeFormat.ts</code>). Delete the two settings-owned files after re-export.</td></tr>
+<tr><td><code>lib/validation.ts</code></td><td>Zod schemas, reusable field schemas</td><td>Create <code>src/lib/validation.ts</code> that re-exports the boundary validators now in <code>useAgentState</code>, <code>useSlotState</code>, <code>useStatusState</code>. Those hooks keep their validators but import the shared guards from <code>lib/guards.ts</code>.</td></tr>
+<tr><td><code>lib/date.ts</code></td><td><code>getPresetRange</code> with date-fns</td><td>Not needed: notchtap's time helpers are already in <code>timeFormat.ts</code> → will move into <code>lib/format.ts</code>.</td></tr>
+<tr><td><code>lib/db/</code></td><td>Drizzle schema, connection, per-table files</td><td>Rust owns the DB in notchtap (<code>src-tauri/src/*.rs</code>). No TypeScript <code>lib/db</code> needed. Keep Rust's <code>agents/</code>, <code>history.rs</code>, <code>config.rs</code> as is.</td></tr>
+<tr><td><code>hooks/</code></td><td>All data access through hooks, screens never call query directly</td><td>Create <code>src/hooks/</code>. Move 7 hooks there. Screens and <code>App.tsx</code> import from hooks, not from root.</td></tr>
+<tr><td><code>components/ui/</code></td><td>Primitives with single responsibility</td><td>Already good. Keep <code>src/components/ui/</code>.</td></tr>
+</table>
+
+<h2>2 · Notchtap — before and after</h2>
+<pre class="panel small"><code>src/
+  lib/
+    guards.ts              # already good (isString, isNonNegativeInteger…)
+    error.ts               # already good (describeActionError)
+    utils.ts               # cn — keep
+    constants.ts           # NEW — animationTiming + default port/limits
+    format.ts              # NEW — re-exports byteFormat + timeFormat
+    validation.ts          # NEW — re-exports shared validators
+    presentation.ts        # keep (presentationMode, categoryClass)
+    sourceColors.ts        # keep
+  hooks/                   # NEW folder
+    useAgentState.ts
+    useSlotState.ts
+    useStatusState.ts
+    useTabSelection.ts
+    useAgentViewedSession.ts
+    useDelayedSwap.ts
+    useClock.ts
+    useExitChoreography.ts
+  components/
+    ui/                    # keep
+  settings/
+    byteFormat.ts          # DELETE after re-export in lib/format.ts
+    timeFormat.ts          # DELETE after re-export in lib/format.ts
+    sections/              # keep
+  animationTiming.ts       # keep but import constants from lib/constants.ts
+</code></pre>
+
+<h2>3 · Rules stolen from Kharcha</h2>
+<ul>
+<li><strong>One file, one domain.</strong> <code>constants.ts</code> holds constants, <code>format.ts</code> holds formatters, <code>validation.ts</code> holds validators. No <code>utils.ts</code> junk drawer.</li>
+<li><strong>Named exports only.</strong> Every helper is a named export. No default exports, no barrel <code>index.ts</code> that re-exports everything.</li>
+<li><strong>Hooks own data.</strong> Screens call hooks, hooks call Tauri events. No screen reaches directly into <code>window.__NOTCHTAP_*</code> or <code>listen()</code>.</li>
+<li><strong>Re-export, don't duplicate.</strong> When moving <code>byteFormat.ts</code> → <code>lib/format.ts</code>, the old path re-exports until all importers are migrated, then is deleted. Same for hooks at root.</li>
+<li><strong>Colocate CSS with its component.</strong> <code>src/overlay/*.css</code> stays next to the overlay components, like Kharcha's <code>components/ui/*.tsx</code> keeps its own styling.</li>
+</ul>
+
+<h2>4 · Implementation — 4 small commits</h2>
+<ol>
+<li><strong>Create <code>src/lib/constants.ts</code></strong> — move animation timing constants (<code>HOVER_MS</code>, <code>REVEAL_MS</code>, <code>BOARD_SUMMON_MS</code>, <code>SURFACE_SWAP_MS</code>, <code>NOTCHTAP_EASE</code>) and default port/limits from <code>animationTiming.ts</code> and <code>types.ts</code>. Keep <code>animationTiming.ts</code> as a thin re-export for compat until callers migrate.</li>
+<li><strong>Create <code>src/lib/format.ts</code></strong> — re-export <code>formatBytes</code>, <code>formatBytePair</code>, <code>formatUptime</code>, <code>formatClockTime</code>, <code>formatRecordedAt</code>. Update importers, delete <code>settings/byteFormat.ts</code> and <code>settings/timeFormat.ts</code>.</li>
+<li><strong>Create <code>src/lib/validation.ts</code></strong> — thin wrapper that re-exports <code>isValidAgentState</code>, <code>isValidSlotState</code>, <code>isValidStatusState</code> for future shared use. No validator logic moves yet; this is the seam for the next pass.</li>
+<li><strong>Create <code>src/hooks/</code> and move 7 hooks</strong> — <code>useAgentState</code>, <code>useSlotState</code>, <code>useStatusState</code>, <code>useTabSelection</code>, <code>useAgentViewedSession</code>, <code>useDelayedSwap</code>, <code>useClock</code>, <code>useExitChoreography</code>. Update imports in <code>App.tsx</code>, <code>SettingsApp.tsx</code>, tests, and keep a one-line re-export at the old <code>src/use*.ts</code> path until the move is complete, then delete.</li>
+</ol>
+<p class="small">Each commit must keep <code>npx tsc --noEmit</code>, <code>npx oxlint</code> 0, and <code>npx vitest run</code> 748 green. Verify with <code>just test-all</code> (cargo test 953).</p>
+
+<h2>5 · Done means</h2>
+<ul>
+<li><code>src/hooks/</code> exists and holds the 7 hooks. No <code>src/use*.ts</code> at root.</li>
+<li><code>src/lib/format.ts</code> is the one import for all formatters. No <code>settings/byteFormat.ts</code> or <code>settings/timeFormat.ts</code>.</li>
+<li><code>src/lib/constants.ts</code> is the one import for shared constants.</li>
+<li>All callers updated, no barrel <code>index.ts</code>, no default exports.</li>
+</ul>
+
+</main>
+</body>
+</html>

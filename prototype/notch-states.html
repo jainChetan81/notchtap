@@ -1,33 +1,5 @@
 <!doctype html>
-<!-- This mock mirrors the CURRENT shipped overlay — not a historical design
-     exploration. Geometry formulas, class names, color tokens, and timing
-     constants below are read directly from the real source:
-       src/App.tsx                     — top-level mode switch (AgentBoard vs StatusRailCard)
-       src/components/StatusRailCard.tsx — the general notification card (idle/showing/expanded/exiting)
-       src/useExitChoreography.ts      — the showing<->idle geometry state machine
-       src/components/IdleHoverPeek.tsx — the idle hover-reveal (weather/media/football/timeline)
-       src/components/StatusDots.tsx, TtlBar.tsx, FlankClock.tsx, NotificationBody.tsx, Manifest.tsx
-       src/overlay/card-chrome.css, choreography.css, idle-peek.css, masthead-content.css,
-         news-category.css, source-identity.css, weather-art.css, ttl-bar.css, manifest.css, status-dots.css
-       src/animationTiming.ts          — the single-sourced JS/CSS timing constants
-       vendor/shared-ui/design/tokens.css — the overlay accent color tokens
-     This file is still hand-authored, standalone HTML/CSS/JS (no build step,
-     no React, no `motion` library) — it is NOT compiled against or tested
-     against the app, so treat every value here as "read off source on the
-     date below," not as a live guarantee. It intentionally covers the same
-     scope the previous version of this file did (shell states, idle rail +
-     hover peek, the general notification lifecycle, the resting-state
-     option) — it does not attempt to also model the Agent Board surface
-     (src/components/AgentBoard.tsx), which App.tsx swaps in as a separate
-     top-level mode and was never part of this file's scope.
-     Last synced against source: 2026-08-02 (CSS-only re-sync of the shell/
-     flank/gill/ttl-bar rules for plans 164-168 plus the 2026-08-02 operator
-     removal of the hover "breathe" scale; the rest of the file was already
-     current as of the 2026-07-30 full sync). Re-synced again later the same
-     day for the 2026-08-02 animation audit: the ttl-bar brightness
-     inversion + `transform-origin: right` + retuned paused fill, the
-     arrival pop moving off the base shell rule onto `.promoting`, and
-     `.compact`'s min-height step gaining a transition. -->
+<!-- Notch states mirror — static mock of the shipped overlay. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">

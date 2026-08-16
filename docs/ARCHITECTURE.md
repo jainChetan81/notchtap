@@ -4,900 +4,554 @@ macos only. no windows/linux target, ever. independent, clean-room
 build — not a fork or clone of any specific third-party app; no
 external branding, code, or assets are used.
 
----
-
-## 0. phased scope
-
-| | v1 | v2 | v3 |
-|---|---|---|---|
-| core engine + notification queue | yes | — | — |
-| cli push (manual + historical relay) | yes | + push to other sources | — |
-| animation | one generic template | per-event-type variety | — |
-| live football scores (espn public api) | — | yes | — |
-| posture module (airpods motion, optional) | — | optional | — |
-| outbound connector framework (telegram shipped v3, removed 2026-07-27; zero connectors currently) | — | — | yes |
-| notch overlay / mac mini hud | yes (both machines from day one) | — | — |
-
-v1 was deliberately thin: engine + queue + one animation + cli push.
-its original terminal-specific relay shipped, then was superseded by
-the provider-neutral Agent Adapter architecture in §20.
+decisions recorded here are locked — don't re-litigate without the
+operator explicitly reopening one.
 
 ---
 
-## 1. what we're building (v1)
+## 1. what this is
 
 a background utility that:
 
 - runs a notification queue engine, permanently, as a menu-bar/notch app
-- accepts manual pushes from the command line; v7 additionally accepts
-  normalized provider-native Agent Adapter events (§20)
+- accepts manual pushes from the command line, normalized coding-agent
+  lifecycle events from provider-native Agent Adapters (§10), and
+  events from internal pollers (ESPN football scores, RSS news)
 - renders each push as a notch-anchored overlay on the macbook, and an
   equivalent floating hud on the mac mini (no notch) — same build, both
   machines
-- shows one animation template for v1 (see §4) — variety comes in v2
-
----
-
-## 2. system architecture
 
 ```
-┌───────────────────────────────────────────────────────────┐
-│                     current input sources                    │
-│ direct cli │ provider-native Agent Adapters │ internal pollers│
-│  (manual)  │  (structured lifecycle hooks)  │ (score/news/wx) │
-└───────────────┬───────────────────────────┬─────────────────┘
+┌──────────────────────────────────────────────────────────────┐
+│                        input sources                          │
+│ direct cli │ provider-native Agent Adapters │ internal pollers │
+│  (manual)  │  (structured lifecycle hooks)  │ (football, news) │
+└───────────────┬───────────────────────────┬──────────────────┘
                 │                           │
                 ▼                           ▼
         ┌───────────────────────────────────────────┐
-        │           core engine (rust)                │
-        │  - event bus (typed, v1 has one "generic"   │
-        │    type; v2 adds score/goal/posture)        │
-        │  - notification queue (fifo, max n           │
-        │    concurrent, ttl per item)                  │
-        │  - dispatch router                            │
-        └───────┬─────────────────────────────────────┘
+        │              core engine (rust)            │
+        │  - typed event bus                         │
+        │  - single-slot priority queue (rotation,   │
+        │    per-tier waiting lines)                 │
+        │  - dispatch router                         │
+        └───────┬───────────────────────────────────┘
                 │
                 ▼
     ┌───────────────────────────────┐
-    │      presentation ui             │
-    │  (react/ts window)               │
-    │  - notch mode (macbook)          │
-    │  - hud mode (mac mini)           │
-    │  - animation engine (1 template  │
-    │    in v1, table-driven in v2)    │
+    │        presentation ui         │
+    │  (react/ts webview window)     │
+    │  - notch mode (macbook)        │
+    │  - hud mode (mac mini)         │
+    │  - animation layer             │
     └───────────────────────────────┘
 ```
 
-v3 adds a connectors layer at event *acceptance* — telegram shipped
-first, then was removed 2026-07-27 (see §7); the generic
-`ConnectorHandle` fan-out framework remains, currently with zero
-connectors, kept for plan 128 (Tavily). deliberately not drawn here,
-it's out of scope until v3.
-
 the same core (rust) and ui (react/ts webview) run unmodified on both
 machines. only one module differs: **window placement** — notch-aware
-on the macbook, plain top-center hud on the mac mini. detect at runtime
-via `NSScreen.main?.safeAreaInsets.top > 0` (native call, thin swift
-shim either way) and switch presentation mode automatically.
+on the macbook, plain top-center hud on the mac mini. detected at
+runtime via `NSScreen.main?.safeAreaInsets.top > 0` (native call,
+through a thin swift shim), never at build time.
 
----
-
-## 3. notification queue design
-
-each event enqueues as:
-
-```
-{ id, type, priority, ttl, payload }
-```
-
-- **concurrency**: cap visible items (e.g. 3), render as a stack; excess
-  wait in queue.
-- **lifecycle per item**: `enter → hold → exit`.
-- **pause** (from the tray, §6): pause disables *promotion* only. pushes
-  are still accepted into the waiting queue — the http response tells
-  the caller so (`202` + `{"status": "paused", "queued": <n>}`, vs the
-  normal `200`), and `max_queued`/`429` still applies — and
-  already-visible items finish their natural ttl and exit. resume
-  re-enables promotion immediately; nothing buffered is dropped. pause
-  state is in-memory only — the app always launches unpaused.
-  **(amended 2026-07-17, v5, §17)**: the *toggle* stays session-only,
-  but a persisted `start_paused` config flag can make the app launch
-  already paused — the master kill switch. same paused semantics,
-  only the launch state changes.
-- v1 is info-only — auto-dismiss after ttl, no approve/deny action wired
-  to anything. an interactive "this blocks until you respond" model is
-  a separately approved future concern if true remote-approve is ever
-  wanted (see §20's heads-up-only boundary).
-
-**default values (v1)**:
-
-| parameter | default | notes |
-|---|---|---|
-| `ttl` | `8` seconds | time from enter-complete to exit-start |
-| `max_concurrent` | `3` | visible stack items; excess wait in queue |
-| `max_queued` | `50` | hard cap on waiting items; new pushes return `429` when exceeded |
-| `enter_duration` | `300` ms | animation in |
-| `exit_duration` | `300` ms | animation out |
-| `queue_overflow` | reject with `429` | prevents unbounded memory growth if the ui is stuck |
-
-**superseded 2026-07-17 (v3.6, locked via grilling session, see
-`IMPLEMENTATION_PLAN.md` §3.6 and `V3_6_TECHNICAL_SPEC.md`)**: the
-whole "cap-3 visible stack" model above is retired, not just tuned.
-`max_concurrent` is gone entirely — exactly one item is ever visible
-(the **Slot**, see `CONTEXT.md`) — and promotion is priority-ordered
-(`low | medium | high`) rather than pure fifo, though a priority
-arrival still never interrupts the currently-visible item mid-display.
-`ttl` is renamed **rotation**, and gains a `Recurring` kind that
-requeues instead of dropping. `max_queued` becomes
-`max_queued_per_tier`, applied independently per priority tier (a
-`Low` burst can't starve `High`'s own waiting room). this table is
-kept as the v1 historical record; `V3_6_TECHNICAL_SPEC.md` §3/§4 is
-the current design.
-
----
-
-## 4. animation system
-
-v1: **one** generic template — enter/hold/exit via **css keyframes**, no per-type branching.
-gets the pipe working end to end before investing in variety.
-
-v2: swap the single template for a config table (event type →
-animation), e.g. goal = confetti + bounce, posture-alert = shake,
-generic/agent = simple slide. **css keyframes** (locked — framer motion
-was the alternative, evaluated and declined 2026-07-16 in favour of
-zero new dependencies, see §16) keeps this a config change, not a new
-code path.
-
-**reversed 2026-07-17**: the css-keyframes lock above is reopened by
-the user — the ui is migrating wholesale to **framer motion + lucide
-icons** (migration in flight in the working tree as of this note, not
-yet specced in docs). the data-not-code principle survives the stack
-change: per-event-type variety stays a table, it just moves from the
-stylesheet into the component layer. the migration gets its own
-spec/plan entry when it stabilizes; §16's addendum records the
-decision trail.
-
-**reduce-motion fallback (decided 2026-07-18, plan 023).** the two
-signature moments — the goal confetti burst + overshoot + ring
-(`.rail-card.pulse-goal`) and the red-card strobe (`.rail-card.pulse-red`)
-— are **suppressed entirely under `prefers-reduced-motion: reduce`**:
-the fallback is *deliberately nothing*, not a static substitute. the
-card, its priority accent, stamp, and copy still render and still
-announce via the `aria-live` region; only the celebratory animation is
-withheld. this is implemented purely in the stylesheet
-(`@media (prefers-reduced-motion: reduce) { … animation: none }` in
-`src/styles.css`, mirrored in `src/settings/preview-overlay.css`), which
-is why the goal celebration is authored as CSS (`::after`/`::before`
-pseudo-elements) rather than a JS-driven lottie player — a css rule can
-be turned off by the media query, an autoplaying player cannot. the
-`motion` components elsewhere are covered separately by
-`<MotionConfig reducedMotion="user">` in `App.tsx`; these two plain-CSS
-pulses need (and have) their own override.
-
----
-
-## 5. cross-device behaviour
-
-| | macbook (has notch) | mac mini (no notch) |
-|---|---|---|
-| window anchor | pinned over notch cutout, using `NSScreen.auxiliaryTopLeftArea`/`auxiliaryTopRightArea` | top-center floating hud, always visible (no cutout to hide behind) |
-| detection | `safeAreaInsets.top > 0` at runtime | same check, fails → hud mode |
-| everything else | identical — same queue, same animation, same cli input | identical |
-
-this native screen-geometry call is the one piece of appkit that can't
-be avoided regardless of stack choice — budget for a small
-swift/objective-c shim here even if the rest is rust + web.
-
-**integration pattern**: the swift code is compiled as a tiny standalone
-cli tool (`notchtap-detect`) that prints json to stdout and exits.
-the rust core calls it via `std::process::command` and parses the output.
-this avoids ffi complexity entirely, keeps the swift boundary isolated
-and testable, and lets the rust core stay a plain tauri/rust binary.
-
----
-
-## 6. always-on background behaviour
-
-standard pattern, v1 day one:
-
-- `LSUIElement = true` in the bundle's info.plist → no dock icon,
-  menu-bar presence only
-- register as a login item via `SMAppService.mainApp.register()`
-  (current macos api; requires **macos 13+**)
-- menu-bar tray icon (tauri's tray api) with two always-present items:
-  **pause** (semantics in §3 — label toggles to "resume" while paused)
-  and **quit**, plus — only when `espn_enabled = true` — **pause
-  football scores** (v2): stops the espn poller from issuing new
-  network fetches (takes effect at the next poll tick), independent of
-  the promotion pause; resuming re-baselines silently (no burst of
-  stale score alerts). like pause, it's in-memory only — polling
-  always starts active on launch. the original "exactly two items"
-  decision was reopened and approved 2026-07-16 to admit this one
-  conditional third item; the bar for further tray items stays high.
-  **(reopened again 2026-07-17, v5, §17)**: a fourth item,
-  **settings…**, opens the settings window — the tray itself stays
-  minimal; anything richer than a toggle belongs in that window, not
-  in more tray items. the "no settings ui beyond that — the config
-  file (§10) is the settings surface" line that used to close this
-  bullet is superseded by §17: the config file remains the *storage*,
-  the settings window becomes the *editing surface*. tauri's default
-  icon is fine until the deferred real-icon
-  item (`IMPLEMENTATION_PLAN.md` §5)
-- **always-on-top** (`setAlwaysOnTop` / `NSWindowLevel.floating`) — v1
-day one. a notification overlay buried under other windows is useless.
-- **transparent overlay window** — the main window is undecorated,
-transparent, shadowless, non-resizable, and never takes focus. on macos
-a transparent tauri webview requires `macOSPrivateApi: true` in
-`tauri.conf.json`; that private-api use is the accepted cost of the
-overlay look (added 2026-07-16, post-implementation review — it was in
-the code but undocumented). app-store distribution is already ruled out
-by §9, so the private-api restriction has no practical bite.
-
-**minimum macos version**: v1 targets **macos 13 (ventura)** and later.
-`SMAppService.mainApp.register()` is unavailable on macos 12 (monterey)
-and earlier, which would require the legacy `SMLoginItemSetEnabled`
-approach. if either target machine runs macos 12 or older, adjust the
-login-item registration method before building.
-
-**posture module (future, not v2)**: a real, shipping approach for this
-exists using `CMHeadphoneMotionManager` (apple's public coremotion
-api) to read airpods motion data, ~60 samples/sec, fully on-device,
-inside app sandbox. if picked up later it's a clean addition: a new
-event source feeding the same v1 queue, no rework.
-
-### 6.1 hover primitive (plan 087)
-
-the overlay window sits at `NSStatusWindowLevel`, flush over the real
-menu bar (not just a notch cutout's dead zone) — `apply_overlay_native_config`
-(`src-tauri/src/lib.rs`) calls `window.set_ignore_cursor_events(true)`
-unconditionally there to stop it swallowing clicks meant for other
-apps' menu-bar tray icons (the 2026-07-17 bug). plan 086's spike
-(`docs/design/hover-cursor-tracking.md`) found, empirically, that a
-`tauri-nspanel` tracking area's mouseEntered/mouseMoved/mouseExited
-still fire normally under `ignoresMouseEvents = true` — click dispatch
-and tracking-area notifications are gated by independent AppKit
-mechanisms. plan 087 built on that: a tracking area on the same
-`OverlayPanel`, a pure rust rect-derivation function
-(`src-tauri/src/hover.rs`), and a `hover-changed` event to the webview —
-with zero change to `set_ignore_cursor_events` or
-`capabilities/default.json`. see the spike doc for the rationale and
-the rejected alternative (a frontend-reported-bounds invoke command).
-
----
-
-## 7. cli push — v1's actual notification source
-
-**direct**: any script or terminal command calls the local cli/socket
-directly. this is the baseline — always available, zero dependencies.
-
-**cli contract (locked)**: flags only, one form for humans and scripts
-alike — `notchtap --title <t> --body <b> [--subtitle <s>] [--detail Label=Value]... [--port <p>]`.
-no positional form. as of plan 035, `--subtitle` is a first-class
-*optional* wire field — it is **no longer folded** into the body — and
-the `/notify` schema also accepts optional `details: [{label, value}]`
-pairs (each repeatable `--detail Label=Value` on the cli, split on the
-first `=`). both are display-only, capped/truncated server-side for the
-fixed overlay window, and never influence priority/rotation. existing
-callers are unaffected: `subtitle` was always optional and `details`
-defaults to absent, so an old `{title, body}` payload behaves
-byte-identically. port resolution: `--port` flag → `$NOTCHTAP_PORT` env var →
-`9789`. the cli is a shell script (`jq` + `curl`, see the technical
-spec §12) and never reads `config.toml` — if the server's port is ever
-changed in config, set `$NOTCHTAP_PORT` to match on that machine.
-
-**default port**: `127.0.0.1:9789`. the `/notify` endpoint binds to
-loopback only, no external exposure. this port is unassigned in the iana
-registry and unlikely to collide with common local services. if the port
-is in use at startup, the rust core should exit with a clear error rather
-than silently falling back to an arbitrary port — the user can override
-via the config file.
-
-one scope note on that boundary: loopback-only prevents *network*
-exposure, but it is not an authentication boundary between local
-processes — anything running on the machine can post notifications.
-that's acceptable by design for a single-user personal tool; revisit
-only if that assumption ever changes.
-
-**historical agent relay — superseded by §20:** v1/v2 accepted a
-terminal-specific notification command and later optional hook scripts.
-that proved the heads-up use case, but flattened independent agent
-sessions into generic strings and coupled the product to a Host instead
-of the Agent Runtime. v7 removes that relay, its Origin/config/UI/hook
-surfaces, and replaces it with provider-native Agent Adapters. Git
-history retains the shipped implementation; it is not an active
-compatibility target.
-
-**v3**: outbound connectors sit here as additional sinks observing
-accepted events — telegram first (bot api: free, instant, no approval
-process). the earlier "whatsapp via twilio recommended" preference was
-reopened and reversed 2026-07-16: twilio's sandbox needs a 72h re-join
-and meta's template rules block freeform alerts — wrong fit for an
-always-on personal notifier. whatsapp is "maybe later", re-evaluated
-only if telegram proves insufficient. decisions in
-`IMPLEMENTATION_PLAN.md` §3; contract was `archive/V3_TECHNICAL_SPEC.md`
-(v3 shipped; removed at repo close-out 2026-07-23,
-see `git log -- docs/archive/`).
-
-**reversal, 2026-07-27**: the telegram connector itself was removed by
-operator decision — a week of use showed it felt unnecessary given the
-external bot setup it required, and there are better ways to get
-notifications on the phone. the generic `ConnectorHandle` fan-out
-framework and the `secrets.toml` design it depends on are unaffected
-and remain (currently zero connectors; kept for plan 128's Tavily
-connector). the worker/notifier code, `[connectors.telegram]` config,
-and telegram secret fields are gone; see `git log` for the removal
-commit.
-
----
-
-## 8. tech stack recommendation
+## 2. tech stack
 
 **constraint that changes the usual calculus**: both target machines
 are macos. cross-platform reach — electron's and tauri's headline
-justification — isn't actually needed here.
+justification — isn't needed here.
 
-**recommendation: tauri (rust core + react/ts ui), with a small native
-swift shim for notch geometry + window-level click-through/always-on-top
-flags.**
+**the stack: tauri (rust core + react/ts ui), with a small native
+swift shim for notch geometry.**
 
-reasoning:
-
-- **footprint/perf** — tauri sits far closer to native (tens of mb,
-  low idle cpu) than electron (hundreds of mb baseline, a full chromium +
+- **footprint/perf** — tauri sits far closer to native (tens of mb, low
+  idle cpu) than electron (hundreds of mb baseline, a full chromium +
   node runtime per app). matters because this runs 24/7 in the
-  background on a mac mini presumably doing other things too.
-- **developer experience (dx)/ecosystem fit** — the queue/animation/ui layer is the strongest
+  background.
+- **dx/ecosystem fit** — the queue/animation/ui layer is the strongest
   surface (react, ts, css). rust handles polling/ipc/cli dispatch —
-  bounded, real practice in a language already being learned.
-- **pure native swift** wins on every technical axis except current
-  fluency and iteration speed — right call for a long-term polished
-  product, not for something wanted working soon.
+  bounded, real practice.
+- **pure native swift** wins on every technical axis except fluency and
+  iteration speed — right call for a long-term polished product, not
+  for a personal tool that must keep shipping.
 
-net: tauri ships fast in a familiar stack, stays light enough to run
-forever in the background, gives real rust practice. the one
-unavoidable native surface (notch bounds + window flags) is small and
-isolated.
+the ui animation layer is framer motion (`motion`) + lucide icons in
+the settings window, and CSS transitions/keyframes in the overlay path;
+per-event-type variety stays data (a table/stylesheet keyed by event
+type), never a new render path.
 
----
+**reduce-motion**: deliberately not handled, anywhere — no
+`prefers-reduced-motion` media queries, no `MotionConfig
+reducedMotion`, no JS gates. a standing app-wide non-goal (operator
+decree, 2026-08-16): this is a personal overlay for one operator's own
+machines, and its motion always plays.
 
-## 9. distribution / install
+## 3. cross-device behaviour
 
-the apple developer program is $99/yr. for personal use — the user's
-own two machines, nobody else installing it — it's likely not needed
-at all:
-
-- the ios 7-day reinstall pain some prior personal projects hit is
-  specific to **ios on-device provisioning profiles** issued to a free
-  apple id ("personal team"). apple caps those at 7 days for sideloaded
-  iphone/ipad apps — an ios sideloading limitation, not a macos one.
-- **macos doesn't have that limit.** a mac app built locally (via
-  xcode or tauri's build) and run on the machine that built it, never
-  downloaded through a browser, isn't subject to ios-style expiry at
-  all. a free apple id can still sign the app (ad-hoc/personal-team
-  signing); gatekeeper's notarization check specifically targets files
-  carrying the "downloaded from the internet" quarantine flag
-  (`com.apple.quarantine`), which a locally built binary never gets.
-- **moving between the macbook and mac mini**: build from source on
-  each machine (git clone + build locally), or copy the built `.app`
-  via a method that doesn't set the quarantine flag (local network
-  share, usb, `scp`). if it ever does get flagged, one command clears
-  it: `xattr -cr YourApp.app`. no recurring cost, no recurring
-  reinstall.
-
-**when the $99/yr would actually be needed:**
-- distributing the built app to other people (so gatekeeper doesn't
-  warn *them*)
-- publishing on the mac app store
-- a small number of advanced entitlements/services that specifically
-  require a paid team
-
-none of those apply to "runs on my macbook and my mac mini, built by
-me." skip the fee unless this is ever handed to someone else.
-
-**app store is the wrong channel regardless of cost** — sandboxing
-blocks the persistent overlay + (any future) accessibility-based
-automation this app needs, and review tends to reject apps that mimic
-system chrome or automate other applications.
-
----
-
-## 10. configuration & settings
-
-v1 needs a minimal config file. suggested location:
-`~/.config/notchtap/config.toml` (or json, whatever is easier with the
-chosen rust deserializer).
-
-**v1 fields**:
-
-| field | default | description |
+| | macbook (has notch) | mac mini (no notch) |
 |---|---|---|
-| `port` | `9789` | local http listener port |
-| `default_ttl` | `8` | seconds per notification |
-| `max_concurrent` | `3` | visible stack items |
-| `max_queued` | `50` | waiting items before rejecting |
-| `detect_path` | `/usr/local/bin/notchtap-detect` | absolute path to the notch-detection helper — gui/login-item-launched apps get a minimal `PATH`, so the core never does a `PATH` lookup (added 2026-07-16, consensus review) |
+| window anchor | pinned over the notch cutout | top-center floating hud |
+| detection | `safeAreaInsets.top > 0` at runtime | same check, fails → hud mode |
+| everything else | identical — same queue, same animation, same cli input | identical |
 
-v2 adds (locked 2026-07-16, §16): `espn_enabled` (default `true`),
-`espn_leagues` (default `["eng.1", "uefa.champions", "esp.1"]`),
-`espn_poll_secs` (default `30`). posture module remains future, not
-v2. api keys (the openrouter key today) live in a separate secrets
-file (`secrets.toml`, see `archive/V3_TECHNICAL_SPEC.md` §4 — v3
-shipped; removed at repo close-out 2026-07-23,
-see `git log -- docs/archive/` for the removed text — not env vars;
-login items don't inherit shell env) — never in the committed config.
-(v3 also introduced a telegram bot token in this file; telegram was
-removed 2026-07-27 and its secret field with it — see §7.)
+**integration pattern — subprocess, not ffi**: the one unavoidable
+native call (`NSScreen` safe-area geometry) is compiled as a tiny
+standalone swift cli (`notchtap-detect`) that prints json to stdout and
+exits. the rust core calls it via `std::process::Command` and parses
+the output. this avoids ffi complexity, keeps the swift boundary
+isolated, and keeps the pure decision function
+(`fn presentation_mode(safe_area_top_inset: f64) -> Mode`)
+unit-testable apart from the untestable subprocess call.
 
-v3.6 (locked 2026-07-17, see `V3_6_TECHNICAL_SPEC.md` §4.6) removes
-`max_concurrent` outright (no longer meaningful — see §3's addendum
-above) and renames `max_queued` to `max_queued_per_tier` (same default,
-`50`, now applied independently per priority tier rather than as one
-shared cap).
+**multi-display**: the notch exists only on the built-in display. the
+window uses the screen containing the menu bar; that is acceptable
+behaviour for this two-machine product.
 
-plan 083 adds `~/.config/notchtap/crests/` — a sibling of
-`config.toml`/`secrets.toml` under the same directory — as the repo's
-first binary-asset cache: club crest PNGs, fetched at runtime from
-ESPN's scoreboard-provided logo URLs and never committed to git.
-Lifecycle: fetched once per team per process lifetime on a cache miss,
-persists across restarts, no eviction (bounded by the watched leagues'
-team counts). Served to the overlay webview via tauri's asset protocol,
-scoped to this directory only.
+## 4. always-on background behaviour
 
-the rust core reads this file once at startup. changes require a restart
-in v1; a file-watcher or settings ui is a v2+ convenience. **(resolved
-2026-07-17, v5, §17)**: the settings ui is that convenience — a
-settings window whose save path validates, writes this file
-atomically, and relaunches the app. the read-once-at-boot rule is
-unchanged and now permanent: there is no file-watcher and no
-hot-reload; restart *is* the reload mechanism. **(2026-07-18, plan
-013)**: boot now runs the loaded config through the settings window's
-`validate()` and logs each violation as a warning, continuing with the
-file's values rather than exiting — malformed TOML still fails fast in
-`Config::load`.
+- `LSUIElement = true` → no dock icon, menu-bar presence only.
+- login item via `SMAppService.mainApp.register()` — requires macos 13+.
+- menu-bar tray with a deliberately small item set: **pause** (label
+  toggles to "resume"), the silence controls (timed mutes, skip
+  today's Silent Period), **settings…**, and **quit**. anything richer
+  than a toggle belongs in the settings window, not in more tray items.
+- **always-on-top** (`NSWindowLevel` above standard windows) — a
+  notification overlay buried under other windows is useless.
+- **transparent overlay window** — undecorated, transparent,
+  shadowless, non-resizable, never takes focus. a transparent tauri
+  webview requires `macOSPrivateApi: true` in `tauri.conf.json`; the
+  private-api use is an accepted cost (app-store distribution is
+  already ruled out by §13, so it has no practical bite).
 
----
+### 4.1 hover primitive
 
-## 11. logging & observability
+the overlay window sits at `NSStatusWindowLevel`, flush over the real
+menu bar, with `set_ignore_cursor_events(true)` so it never swallows
+clicks meant for other apps' menu-bar icons. a `tauri-nspanel` tracking
+area's mouseEntered/mouseMoved/mouseExited still fire under
+`ignoresMouseEvents = true` — click dispatch and tracking-area
+notifications are gated by independent AppKit mechanisms (verified
+empirically; see `docs/design/hover-cursor-tracking.md`, including the
+rejected frontend-reported-bounds alternative). the hover machinery is:
+a tracking area on the `OverlayPanel`, a pure rust rect-derivation
+function (`src-tauri/src/hover.rs`), and a `hover-changed` event to the
+webview — with zero change to the overlay's capability file. the one
+carve-out from unconditional click-through is the icon strip (§11).
 
-- **rust core**: use `tracing` (already pulled in by tauri/axum). write
-to a rotating log file at `~/Library/Logs/notchtap/notchtap.log`
-(`src-tauri/src/logging.rs`). rotate at 10 mb, keep 3
-backups. log level `info` in release, `debug` in dev.
-- **frontend errors**: superseded 2026-07-17: never built; the overlay
-is receive-only (§14/§17), so frontend errors are devtools-only by
-design — no tauri command carries them back to the log file, and none
-should be added.
-- **macos console**: optionally bridge `tracing` events to `os_log` via
-a small adapter, but file logs are the primary source of truth.
+## 5. cli push and the `/notify` endpoint
 
-this is a background app — when something breaks, the user needs a log
-to read. set this up in v1, not as an afterthought.
+**direct**: any script calls the local endpoint. always available, zero
+dependencies.
 
----
+**cli contract (locked)**: flags only, one form for humans and scripts —
+`notchtap --title <t> --body <b> [--subtitle <s>] [--detail Label=Value]... [--port <p>]`.
+no positional form. `subtitle` and repeatable `details: [{label,
+value}]` pairs are optional wire fields, display-only, capped/truncated
+server-side, and never influence priority/rotation. a bare
+`{title, body}` payload works unchanged. port resolution: `--port` flag
+→ `$NOTCHTAP_PORT` env var → `9789`. the cli is a shell script (`jq` +
+`curl`) and never reads `config.toml` — if the server port is changed
+in config, set `$NOTCHTAP_PORT` to match. the cli also has a `run`
+subcommand: `notchtap run -- <command>` wraps a long-running command
+and pushes a completion card when it finishes (successful runs under
+`--min-secs` skip the push; a failure always pushes).
 
-## 12. multi-display edge case
+**default port**: `127.0.0.1:9789`. loopback only, no external
+exposure. if the port is in use at startup, the core exits with a clear
+error rather than silently picking another port.
 
-the notch exists only on the built-in macbook display. if the user has
-an external monitor and the menu bar is on the external display, the
-notification should still appear on the screen that has the notch (the
-built-in one) in notch mode, and on the primary screen in hud mode.
+scope note on that boundary: loopback-only prevents *network* exposure,
+but it is not an authentication boundary between local processes —
+anything running on the machine can post notifications. acceptable by
+design for a single-user personal tool.
 
-v1 behavior: use tauri's default screen (the one containing the menu
-bar). this is acceptable for v1. v2 may query `NSScreen.screens` via
-the swift shim to find the notch-bearing display explicitly.
+**dedup posture**: no content-hash deduplication — duplicate pushes
+queue as duplicates, acceptable for trusted local sources. the
+`/agent/events` endpoint (§10) has identity-level event-ID/sequence
+idempotency, which is a different thing from fuzzy content dedup.
 
----
+**relays are heads-up only**: an external tool forwarding its own
+notifications in (e.g. the uptime-kuma recipe in
+`docs/recipes/kuma-webhook.md`) can never answer back into the tool
+that raised the alert.
 
-## 13. deduplication
+## 6. queue model — single slot, priority tiers, rotation
 
-v1 has **no content-hash deduplication** — if a producer fires the same
-notification twice in rapid succession, or a script loops with the
-same message, the queue will contain duplicates. this is acceptable for
-a personal tool with trusted, local sources. v7's Agent endpoint adds
-identity-level event-ID/sequence idempotency, not fuzzy content dedup.
+the domain glossary in `CLAUDE.md` defines the terms; the shape:
 
-if duplicate spam becomes a problem in practice, v2 can add a
-`(title, body)` hash deduplication window (e.g., 5 seconds): identical
-content within the window is silently dropped. this is tracked but not
-implemented until the pain is real.
+- **exactly one item is ever visible** (the Slot). accepted items wait
+  in three per-priority lines (`Low | Medium | High`), each
+  independently capped (`max_queued_per_tier`) — a `Low` burst can't
+  starve `High`'s waiting room; pushes beyond a tier's cap get `429`.
+- **promotion** is priority-ordered: highest non-empty tier first, then
+  the configured Rotation Order rank over Origin, then arrival order.
+- **rotation, not ttl**: display time is measured from promotion. a
+  `Recurring` rotation kind requeues to the back of its own tier after
+  its turn; `OneShot` drops. a **Topic** gives a Recurring event a
+  supersession identity — a fresh event sharing the Topic updates the
+  existing card in place (waiting or visible) instead of queueing a
+  second one, with a small capped extension when remaining time is low.
+- **preemption**: a strictly-higher-priority arrival cuts the visible
+  card short; the preempted card re-queues at the head of its own tier
+  with its remaining turn intact. equal priority never preempts.
+- **pause** disables promotion only. pushes are still accepted and
+  buffered (the http response says so: `202` +
+  `{"status": "paused", "queued": <n>}`), the visible item finishes its
+  natural rotation, and resume promotes immediately — nothing dropped.
+  the tray toggle is session-only; the persisted `start_paused` config
+  flag (the kill switch) makes the app *launch* paused.
+- **display-only**: notifications auto-dismiss by rotation; there is no
+  approve/deny action. an interactive "blocks until you respond" model
+  would need the agent runtimes' own permission hooks answering back —
+  deliberately out of scope (§10's heads-up-only boundary) until
+  explicitly requested.
 
----
+every mutation of the Slot and the waiting lines flows through one
+module — the Engine (`src-tauri/src/engine.rs`); queue, wake, and the
+live-match handle are private to it, so its guarantees are structural
+rather than convention.
 
-## 14. ipc security model
+## 7. silenced state & priority preemption
 
-the frontend is **untrusted code running in a webview** — even though
-it's first-party. the rust core treats it as a display-only consumer:
-
-- frontend **receives** events via tauri `emit` / `listen`
-- frontend **does not invoke** commands back into rust in v1
-- the tauri capabilities file should reflect this: listen-only event
-  permissions (`core:event:allow-listen`/`allow-unlisten`, not the
-  `core:event:default` set, which would also grant emit), no
-  filesystem, no shell, no network from the frontend
-- the webview csp restricts `connect-src` to tauri's ipc endpoints
-  only — the frontend cannot `fetch()` the local `/notify` endpoint
-  (or anything else). a `csp: null` config would leave that network
-  path open even with locked-down capabilities (added 2026-07-16,
-  post-implementation review)
-
-**amended 2026-07-17 (v5, §17)**: everything above now describes the
-*overlay* window (`main`), where it stays permanent — that window
-never gains an invoke command. the v5 settings window (`settings`) is
-a second, separately-scoped webview with exactly four invoke commands,
-gated per-window through the capability acl (which for app-defined
-commands requires the explicit `build.rs` opt-in — see
-`V5_TECHNICAL_SPEC.md` §2; without it tauri allows app commands to
-every window, which would silently void this section). one-way data
-flow into the overlay remains the rule that keeps v3-style untrusted
-content safe.
-
-**amended 2026-07-18**: the settings window's invoke-command count grew
-past the four quoted above — v5.1 (`efa1bd2`) added `send_test_notification`
-and `set_appearance` (six), and plan 020 (`9774930`) added
-`get_default_config` — seven invoke commands total as of that date. the
-mechanism described above (the `build.rs` opt-in gating a per-window
-acl) is unchanged; only the count grew. `src-tauri/build.rs` and
-`V5_TECHNICAL_SPEC.md` §2 remain the authoritative list.
-
-**amended 2026-07-22**: as of 2026-07-22 the count is eleven (history
-×2, connector-health, log-lines added); `src-tauri/build.rs` is the
-authority.
-
-**amended 2026-07-23**: as of 2026-07-23 the count is fourteen (plan
-121 added `get_queue`, `clear_queue`, `skip_current` — queue
-visibility and controls in the settings window); `src-tauri/build.rs`
-is the authority.
-
-this boundary matters if the app ever processes untrusted content (e.g.,
-whatsapp messages from unknown senders in v3). establishing the
-one-way data flow in v1 means v3 doesn't accidentally open a hole.
-
----
-
-## 15. status
-
-all decisions above are locked — scope, stack, distribution model,
-cross-device behaviour. see `IMPLEMENTATION_PLAN.md` in this folder for
-the phased build sequence and exit criteria.
-
----
-
-## 16. v2 decisions (locked 2026-07-16)
-
-- **leagues**: premier league (`eng.1`), champions league
-  (`uefa.champions`), la liga (`esp.1`) — the default `espn_leagues`
-  config list (§10); changing leagues is a config edit, never code.
-- **trigger scope**: every scoreboard delta espn reports — score
-  changes (goals), match-state transitions (kickoff, half-time,
-  full-time), and card/situation events where the payload actually
-  carries them. chosen over "goals only" with eyes open about noise;
-  if it proves too chatty, narrowing is a filter/config change, not a
-  redesign.
-- **animation library**: css keyframes, no framer motion (resolves
-  §4's deferred evaluation) — zero new dependencies; the "config
-  table" is the stylesheet keyed by event type. **reversed 2026-07-17
-  by the user**: the ui is migrating to framer motion + lucide icons
-  (see §4's addendum). the zero-new-dependencies rationale is
-  consciously traded for the richer ui; this line is kept as the
-  historical record, not the current decision.
-- **v2 absorbs three hardening fixes** from the 2026-07-16
-  implementation consensus review (frontend wall-clock deadline
-  recheck against sleep/timer-throttle staleness; `app_handle.exit(1)`
-  instead of `process::exit` in the server task; a runtime-thread
-  guard before the tray's `blocking_lock`). notch-precise positioning
-  stays deferred (`IMPLEMENTATION_PLAN.md` §5) — it needs the macbook
-  physically present.
-- the original terminal relay needed no v2 work and was live-verified
-  on the mac mini on 2026-07-16. it is a historical result only;
-  §20 supersedes the integration and removes the macbook setup item.
-
-code-level detail for all of the above was `archive/V2_TECHNICAL_SPEC.md`
-(v2 shipped; was a v0 draft, same rules as the v1 spec; removed at
-repo close-out 2026-07-23, see `git log -- docs/archive/`).
-
----
-
-## 17. v5 decisions (locked 2026-07-17) — settings window (control panel)
-
-reopens two locked lines with eyes open: §6's "no settings ui — the
-config file is the settings surface" and §14's receive-only frontend
-(for **one new window only**; the overlay's receive-only rule is
-unchanged and permanent). code-level contract in
-`V5_TECHNICAL_SPEC.md`; build sequence in `IMPLEMENTATION_PLAN.md`
-§4.5.
-
-- **entry point**: a fourth tray item, **settings…**, opening a second
-  webview window (label `settings`) — a normal decorated, closable,
-  activating window (tailscale-style), nothing like the overlay panel.
-  the tray stays minimal; the window exists because the tray can't
-  hold key entry or (future) animation previews.
-- **two windows, two trust levels**: the overlay (`main`) keeps its
-  listen-only capability file byte-for-byte. the settings window gets
-  its own capability with exactly the invoke commands it needs
-  (`get_config`, `get_secret_status`, `save_config_and_relaunch`,
-  `set_secret`). the tauri v2 gotcha that makes this a decision
-  rather than a formality: app-defined commands are allowed to *all*
-  windows by default — per-window gating requires the explicit
-  `tauri_build::AppManifest::commands` opt-in in `build.rs` plus
-  autogenerated `allow-*` permissions granted only to the `settings`
-  capability, with a label check inside each handler as
-  defense-in-depth (spec §2).
-- **save & relaunch**: config is still read exactly once at boot.
-  saving validates rust-side, writes `config.toml` atomically
-  (same-dir temp file + rename — a half-written file is a bricked
-  boot given §10's fail-fast rule), then relaunches the app. **no
-  hot-reload plumbing, ever** — restart is the reload mechanism; no
-  file-watcher.
-- **secrets stay in `secrets.toml` (0600), plaintext**: the same
-  file-permissions pattern the v3 telegram bot token established
-  (§10, v3; telegram itself removed 2026-07-27, but the loader and file
-  design it proved out survive and now serve the openrouter api key).
-  "hash the key" was raised and rejected — hashing is one-way; an
-  outbound api key must be sent as-is, so hashing would destroy it.
-  macos keychain was evaluated and declined: encryption-at-rest buys
-  little on a single-user machine and costs a dependency plus prompts.
-  the honest security model here is file permissions.
-- **keys are write-only across ipc**: the settings window can *set* a
-  secret and read a masked status ("set (…a1b2)"); a full secret
-  value never crosses ipc outbound. an **openrouter api key** field
-  lands now — storage ahead of the ai features it will serve (the key
-  sits unused until the first such feature; adding the field commits
-  to nothing else).
-- **master kill switch**: a persisted `start_paused` config flag —
-  the app launches with promotion paused (tray reads "resume").
-  amends §3's "always launches unpaused"; the tray toggle itself
-  stays session-only. reuses paused semantics wholesale, no new
-  queue states.
-- **panel scope (v5)**: `start_paused`, espn on/off + leagues + poll
-  interval, `default_ttl` / `port` / `max_queued_per_tier`, openrouter
-  key. (telegram enable + token/chat-id were in-scope here too; removed
-  2026-07-27 along with the connector.) `detect_path` stays
-  file-only. **extended 2026-07-17** (same day, after the
-  `v5-news-backend` merge landed rss config): news on/off + feeds +
-  poll interval + ttl + max-per-poll (`rss_*` fields) join the panel —
-  "i decide when to poll news" was the panel's founding ask.
-
----
-
-## 18. espn live-match card (locked 2026-07-19, plan 039)
-
-the queue's Topic-supersession / `RotationSpec::Recurring` machinery
-gets its first producer: the espn poller. governing design:
-`docs/design/scoreboard-topic-card.md` (plan 031 spike, approved).
-
-- **opt-in, default off**: new config flag `espn_live_card` (default
-  `false`). off remains byte-for-byte today's behavior — a burst of
-  one-shot, topicless cards per match. on flips one live match into a
-  single updating card.
-- **topic identity**: `espn:{league}:{match_id}` (espn's own event id).
-  every event for one match shares it, so kickoff/goal/card/half-time
-  supersede each other in the single Slot instead of queueing as
-  separate items.
-- **rotation**: `Recurring { display_secs: espn_ttl_secs }` while in
-  play (reuses the existing ttl — no new dwell knob); the full-time
-  event is emitted `OneShot` on the *same* Topic, so supersession flips
-  the visible card's rotation in place and it retires via the ordinary
-  one-shot path — no bespoke teardown.
-- **connector semantics unchanged**: every delta still fans out to
-  every enabled connector even though the overlay shows one
-  consolidated card (`Engine::accept` clones before enqueue, and the
-  offer loop runs regardless of merge-vs-promote).
-- **multi-match deferred**: scope is single-match correctness. multiple
-  concurrent live matches each get their own Topic and share the tier
-  via rotation-order/FIFO exactly as today's multi-match burst already
-  does — no special arbitration.
-- no `engine.rs`/`queue.rs` change was needed: `Engine::accept` is
-  Topic/Rotation-agnostic by construction; all supersession and
-  `Recurring`-requeue logic already lived in `queue.rs`, unit- and
-  proptest-covered. this plan is that machinery's first caller, not a
-  change to it.
-
-## 19. weather source (locked 2026-07-19, plan 040 Part B)
-
-a fifth `SourceKind` (`Weather`) and a new poller
-(`src-tauri/src/weather_poller.rs`) against Open-Meteo — keyless, no
-auth, no secrets handling, same `net.rs` client posture as the other
-pollers. opt-in, default off (`weather_enabled = false`), same rule as
-rss: ambient sources must not default on top of the app's primary
-agent-notification purpose.
-
-- **location is raw `weather_lat`/`weather_lon` config numbers** — no
-  geocoding, no city-name lookup, no second API dependency.
-- **ambient vs card is the football split, reused.** current conditions
-  are *not* an `Event`: the poller hands an already-display-formatted
-  `WeatherSummary` ("27°" + "Cloudy") to `engine.update_weather`, which
-  folds it into the idle rail's `StatusState` exactly like the
-  live-match summary (compare-then-store, wake only on change).
-  threshold alerts are ordinary `accept()`-routed one-shot cards with
-  `origin: SourceKind::Weather`. the two mechanisms never conflate
-  "current conditions" with "a card."
-- **units are display-only.** the poller requests the operator's unit
-  (`weather_units`, default Celsius) directly from Open-Meteo via its
-  `temperature_unit` query param — no client-side conversion for
-  display. alert thresholds (`weather_temp_hot_c` = 36.0,
-  `weather_temp_cold_c` = 14.0) are always stored and compared in
-  Celsius regardless.
-- **alerts are rain-incoming + temperature threshold only** — Open-Meteo
-  has no severe-weather-warnings feed, so no third category exists.
-  rain lookahead is hourly-resolution data: the "30-minute lookahead"
-  reads the hourly entry closest to poll-time+30min, rounded to the
-  nearest hour.
-- **alert re-fire is edge-triggered, not level-triggered**: an alert
-  fires once on crossing into alert territory, stays silent while the
-  condition holds, and re-arms only after it clears — the poller carries
-  per-alert "already fired" state across polls, the same shape
-  `poller.rs`'s `Snapshot` uses for kickoff/half-time.
-- **defaults**: `weather_poll_secs` = 900, rain = 30-min lookahead @
-  60% probability, `weather_priority` = Medium (bracketed by espn High
-  and rss Low), rotation-order slot right after Manual:
-  `[Football, Manual, Weather, Agent, News]` after v7's migration.
-- **no new ipc**: `get_config`/`get_default_config` serialize the whole
-  `Config`; the overlay stays receive-only. settings window gains a
-  Weather section and a per-source test-notification button (the
-  existing `send_test_notification` command, no new `#[tauri::command]`).
-
-## 20. agent integrations and Agent Board (locked 2026-07-26)
-
-v7 restores the product's original coding-agent focus without coupling
-it to a terminal or IDE. the initial Agent Runtimes are Claude Code,
-Codex, Kimi, and OpenCode. each runtime integrates through its own
-documented lifecycle hooks/plugin and normalizes into one Agent model.
-T3 Code needs no special adapter: it launches those ordinary runtimes,
-so their normal hook configuration remains the integration surface.
-
-- **one Origin, separate Runtime and Host**: every adapter-produced
-  Event has Origin `Agent`. Runtime selects compatibility and
-  presentation policy. optional Host metadata (T3 Code, terminal, IDE)
-  exists only for display/Open-or-Focus behavior and never participates
-  in identity or Rotation Order.
-- **independent sessions forever**: identity is Runtime + the provider's
-  native session ID. project path is metadata, never identity. every
-  session owns its own bounded transition history; two histories are
-  never merged even when runtime/project match.
-- **capability-declared adapters**: partial provider support is valid
-  and visible. the UI omits unsupported data rather than inferring it
-  from notification wording. Kimi support is version-gated; Codex's
-  currently undocumented input/terminal-failure gaps remain explicit.
-- **hooks, not MCP**: lifecycle delivery is proactive and deterministic.
-  v7 adds no MCP server. an MCP control plane is reconsidered only if a
-  future standardized proactive event surface or separately approved
-  model-invoked query/control use case justifies it.
-- **heads-up only**: Permission Requested and Input Required are
-  high-priority heads-up states. notchtap never approves, rejects,
-  replies, launches, supervises, or scrapes the runtime. Open/Focus
-  Session is allowed only through code-owned Host allowlists.
-- **two presentation paths**: noteworthy Agent Events use the existing
-  Notification Queue/Slot. session lifecycle/progress updates the
-  separate Rust-owned Agent Registry and Agent Board without creating a
-  card for every tick.
-- **Agent Board**: when the Slot is empty, live/retained Agent Sessions
-  take precedence over ordinary idle content. resting shows the
-  highest-ranked session richly and represents every other session
-  individually. hover expands to a screen-bounded scrollable list.
-  ordering is urgency first, FIFO within equal urgency. terminal
-  retention is configurable and defaults to ten minutes; waiting
-  states do not expire like Notifications.
-- **overlay security remains locked**: the overlay still receives only
-  Rust-published state/hover events; `capabilities/default.json` does
-  not change. initial Open/Focus is a global shortcut targeting the
-  highest-ranked session. native pointer delivery is enabled only
-  inside the expanded Board's tracked rect for scrolling, then restored
-  to pass-through on exit.
-- **loopback structured ingestion**: Agent Adapters post a versioned,
-  bounded normalized schema to `POST /agent/events`. raw hook payloads,
-  prompts, tool output, secrets, and arbitrary executable actions never
-  enter frontend IPC or persistence.
-- **cmux is retired completely**: v7 removes its Origin, request source,
-  config keys after migration aliases, CLI autodetection, hook, Settings
-  section, labels, fixtures, and active documentation. old serialized
-  values migrate to `Agent`; Git history is the only recovery path.
-
-the project remains an independent clean-room product. runtime names are
-a narrow compatibility exception to the no-third-party-names rule:
-neutral names are allowed only in adapter identifiers, setup docs,
-fixtures/tests, and UI labels. no third-party branding, logos, assets,
-copied trade dress, or implied affiliation.
-
-code-level contract: `V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`. build
-sequence: `IMPLEMENTATION_PLAN.md` §9. test contract:
-`TESTING_STRATEGY.md` §4.13.
-
-## 21. silenced state & priority preemption (locked 2026-07-27)
-
-grilled and ratified 2026-07-27; spec/PRD at `plans/146-silenced-and-
-preemption.md`; glossary terms already in `CONTEXT.md` (Silenced,
-Silent Period, Timed Mute, Skip, Breakthrough; Priority and Expanded
-rewritten).
-
-- **Silenced is a second quiet state, distinct from Paused, and
-  Paused stays absolute.** while Silenced, Medium/Low pushes buffer
-  exactly as under Paused (nothing dropped) but a High Event still
-  promotes (Breakthrough) as a compact card. the tray Pause toggle and
-  the `start_paused` Kill Switch keep their show-nothing meaning —
-  Breakthrough does not apply to them. rationale: one lever that is
-  priority-gated for routine quiet, one that is absolute for "kill
-  it"; merging them would let a spammy High source defeat the kill
-  switch.
-- **silence is display-only.** it only affects what promotes to the
-  overlay. the HTTP contract is unchanged, and any future connector
-  fan-out (the generic `ConnectorHandle` framework, currently with
-  zero connectors since telegram's 2026-07-27 removal) would observe
-  acceptance the same way it always did, unaffected by silence.
-  pollers keep observing; the idle surface (clock, weather, Agent
-  Board) is unchanged.
+- **Silenced is a second quiet state, distinct from Paused, and Paused
+  stays absolute.** while Silenced, Medium/Low pushes buffer exactly as
+  under Paused (nothing dropped) but a High event still promotes
+  (**Breakthrough**) as a compact card. Pause and the `start_paused`
+  kill switch keep their show-nothing meaning — Breakthrough does not
+  apply to them. rationale: one lever that is priority-gated for
+  routine quiet, one that is absolute; merging them would let a spammy
+  High source defeat the kill switch.
+- **silence is display-only.** it affects only what promotes to the
+  overlay; the HTTP contract is unchanged, pollers keep observing, and
+  the idle surface (clock, Agent Board) behaves normally.
 - **two silence sources, unioned**: the daily Silent Period (default
-  ON, `00:00-10:00`, one window per day, local wall clock, persisted
-  in the `[silence]` config block) and tray Timed Mutes (30m/1h/2h
+  ON, `00:00-10:00`, one window per day, local wall clock, persisted in
+  the `[silence]` config block) and tray Timed Mutes (30m/1h/2h
   presets, auto-resume, session-only). Skip ends today's window early
   and re-arms at the next window start. calendar-driven silence was
   rejected: it would pull OAuth/network into a loopback-only app.
-- **strictly-higher priority preempts the Visible card.** this
-  reverses the v3.6 "a Priority arrival never interrupts the
-  currently-Visible item" contract. High preempts Medium/Low, Medium
-  preempts Low, equal never preempts. the preempted card re-queues at
-  the head of its own tier with its remaining turn intact — an
-  interruption costs the card time, never existence. the handover is
-  a deliberate interrupt exit animation (no reduced-motion variant,
-  per the standing non-goal).
-- **expansion becomes a Medium/High privilege**: Low Promotions and
-  Breakthrough Promotions start compact; the manual expand hotkey
-  still grows any visible card. (narrows plan 033's expand-all.)
-- **default priorities are unchanged.** football goals deliberately
-  stay High — a goal preempts the screen and breaks sleep by explicit
-  operator choice. manual Medium, news Low, agent
-  permission/input/failure High, completion Medium; all remain
-  per-source configurable.
+- **expansion is a Medium/High privilege**: Low promotions and
+  Breakthrough promotions start compact; the manual expand hotkey still
+  grows any visible card.
+- **default priorities**: football goals deliberately High — a goal
+  preempts the screen and breaks silence by explicit operator choice.
+  manual Medium, news Low, agent permission/input/failure High,
+  completion Medium; all per-source configurable.
 
-## 22. tab-notch redesign: pull-based icon strip (locked 2026-08-02, plan 171)
+## 8. configuration
 
-design spec: `docs/superpowers/specs/2026-08-02-tab-notch-design.md`;
-build sequence + as-built notes: `plans/171-tab-notch-redesign.md`.
-merged 2026-08-02 (PR #13). the shipped React/CSS implementation under
-`src/` is authoritative; the pre-implementation review mocks were removed
-after the feature landed.
+`~/.config/notchtap/config.toml`, read exactly once at startup.
+**restart is the reload mechanism** — no file-watcher, no hot-reload,
+ever. the settings window (§9) is the editing surface; the file is the
+storage. boot runs the loaded config through the settings window's
+`validate()` and logs each violation as a warning, continuing with the
+file's values; malformed TOML still fails fast in `Config::load`.
 
-- **the notch becomes pull-based, additively.** push behaviour
-  (interrupts, TTL, priority preemption) is completely unchanged and
-  takes precedence over everything pull-related, on every page, without
-  exception. a pushed interrupt still arrives regardless of which Tab is
-  selected. tab selection decides what the notch shows when the operator
-  goes looking; it never decides what the notch is allowed to tell them.
-- **rest is bare**: shell + the unmodified `IdleFace` + eq bars (only
-  while audio genuinely plays). no icons, no clock, no readouts at rest.
-  icons exist only inside a painted flank, hidden with
-  `visibility: hidden` (NOT `display: none`) — that choice is load-
-  bearing twice over: it keeps the strip's width reserved, and it means
-  every `infinite` icon animation MUST be gated on `.hovered` or it
-  ticks forever behind an invisible node.
+`detect_path` (default `/usr/local/bin/notchtap-detect`) is an absolute
+path because gui/login-item-launched apps get a minimal `PATH` — the
+core never does a `PATH` lookup. `detect_path` is file-only, not
+editable from the settings window.
+
+`~/.config/notchtap/crests/` is the one binary-asset cache: club crest
+PNGs fetched at runtime from ESPN's scoreboard-provided logo URLs
+(https + espncdn hosts only), one attempt per team per process
+lifetime, no eviction (bounded by the watched leagues' team counts),
+served to the overlay via tauri's asset protocol scoped to that
+directory alone.
+
+**football (espn) decisions**: default leagues `eng.1`,
+`uefa.champions`, `esp.1` — changing leagues is a config edit, never
+code. trigger scope is every scoreboard delta espn reports (goals,
+kickoff/half-time/full-time, cards where the payload carries them);
+narrowing is a filter change, not a redesign. the opt-in
+`espn_live_card` flag flips a live match into a single updating card:
+Topic identity `espn:{league}:{match_id}`, `Recurring` while in play,
+the full-time event emitted `OneShot` on the same Topic so the card
+retires through the ordinary path — no bespoke teardown. multi-match
+stays unarbitrated: each concurrent match gets its own Topic and shares
+the tier via ordinary rotation-order/FIFO.
+
+**news (rss) decisions**: news items are overlay-only by design — they
+never leave the machine. feeds plus `rss_topics` (Google News query
+feeds) are config; polling is opt-in.
+
+## 9. ipc security model — two windows, two trust levels
+
+the frontend is **untrusted code running in a webview** — even though
+it's first-party. the rust core treats it as a display-only consumer.
+
+**the overlay window (`main`) is receive-only, permanently:**
+
+- it receives events via tauri `emit`/`listen` and invokes nothing.
+- `capabilities/default.json` grants listen-only event permissions
+  (`core:event:allow-listen`/`allow-unlisten` — not
+  `core:event:default`, which would also grant emit), no filesystem, no
+  shell, no network. **it must never change.**
+- the webview csp restricts `connect-src` to tauri's ipc endpoints —
+  the frontend cannot `fetch()` the local `/notify` endpoint or
+  anything else. a `csp: null` config would leave that path open even
+  with locked-down capabilities.
+
+**the settings window (`settings`) is the one exception, opt-in-gated,
+not default-safe.** tauri v2 allows app-defined commands to *every*
+window by default; the capability file does not gate them unless the
+commands are opted into the acl. the receive-only overlay guarantee
+rests on three legs, all required:
+
+1. **`build.rs` opt-in** — `tauri_build::AppManifest::commands(&[...])`
+   turns allow-all into deny-by-default. `src-tauri/build.rs` is the
+   authoritative command list. **never add a new `#[tauri::command]`
+   without adding it to that list** — otherwise it silently becomes
+   callable from the overlay window too.
+2. **dedicated capability** `src-tauri/capabilities/settings.json` —
+   `"windows": ["settings"]`, granting the autogenerated `allow-*`
+   permission per command plus `core:event:allow-listen`/`allow-unlisten`.
+   `capabilities/default.json` is not touched.
+3. **defense-in-depth label check** — every command takes the calling
+   window and rejects any label other than `settings`
+   (`ensure_settings_window`). the acl should make this unreachable; it
+   exists because the acl doesn't protect against handler scope bugs,
+   and a `generate_handler` edit that forgot the `build.rs` list would
+   otherwise fail open.
+
+the settings-window commands (all in `src-tauri/src/settings.rs` and
+siblings; `build.rs` is the authority if this list drifts):
+
+| command | purpose |
+|---|---|
+| `get_config` | the **booted** config (managed state), not a fresh file read |
+| `get_default_config` | `Config::default()` — single source of truth for "Reset to defaults" |
+| `save_config_and_relaunch` | validate → atomic write (same-dir temp file + rename — a half-written file is a bricked boot) → relaunch; the `Err` arm carries per-field messages |
+| `set_appearance` | validates range, atomically writes `[appearance]`, updates managed state, emits `appearance-changed` to the overlay — the one live-apply path |
+| `send_test_notification` | canned per-source test event through the same path `/notify` uses |
+| `send_agent_test_event` | synthetic agent event through the `/agent/events` path |
+| `get_agent_health` | per-runtime Adapter Health snapshot |
+| `get_queue` / `clear_queue` / `skip_current` | waiting-line visibility and controls |
+| `get_history` / `clear_history` | notification history (JSONL store) |
+| `get_recent_log_lines` | read-only log tail panel |
+| `search_news_now` | one-shot news poll for the configured topics |
+| `get_about_info` | version/bundle/system stats card |
+
+the secrets commands (`set_secret`, `get_secret_status`) are removed
+along with the secrets store — no command carries a secret across ipc
+in either direction.
+
+**save & relaunch**: config is read once at boot, so saving validates
+rust-side, writes atomically, then relaunches the app. no hot-reload
+plumbing (the `set_appearance` live-apply is the deliberate, narrow
+exception).
+
+**clicks do not imply invoke.** the overlay reacts to clicks on the
+icon strip (§11), but the frontend still never talks to rust: a native
+`NSEvent` local monitor on the rust side observes the mouseDown,
+decides what it hit, and pushes a typed event down the same
+receive-only channel. wanting an `invoke` for a click is the signal
+you're about to break this boundary, not a gap to fill.
+
+## 10. agent integrations and the Agent Board
+
+the product's coding-agent focus, without coupling to a terminal or
+IDE. the Agent Runtimes are Claude Code, Codex, Kimi, and OpenCode;
+each integrates through its own documented lifecycle hooks/plugin and
+normalizes into one Agent model. T3 Code needs no special adapter: it
+launches ordinary runtimes, so their normal hook configuration remains
+the integration surface.
+
+- **one Origin, separate Runtime and Host**: every adapter-produced
+  event has Origin `Agent`. Runtime selects compatibility and
+  presentation policy. optional Host metadata (T3 Code, terminal, IDE)
+  exists only for display and Open/Focus behavior — never identity,
+  never Rotation Order.
+- **independent sessions forever**: identity is Runtime + the
+  provider's native session ID. project path is metadata, never
+  identity. two session histories are never merged.
+- **capability-declared adapters**: partial provider support is valid
+  and visible. the UI omits unsupported data rather than inferring it
+  from notification wording. Kimi support is version-gated; Codex's
+  undocumented input/terminal-failure gaps stay declared gaps.
+- **hooks, not MCP**: lifecycle delivery is proactive and
+  deterministic. there is no notchtap MCP server; an MCP control plane
+  is reconsidered only for a separately approved model-invoked use
+  case.
+- **heads-up only**: Permission Requested and Input Required are
+  high-priority heads-up states. notchtap never approves, rejects,
+  replies, launches, supervises, or scrapes the runtime. Open/Focus
+  Session goes only through code-owned Host allowlists.
+- **two presentation paths**: noteworthy Agent Events use the existing
+  queue/Slot. session lifecycle/progress updates the separate
+  rust-owned Agent Registry and Agent Board without creating a card per
+  tick.
+- **Agent Board**: when the Slot is empty, live/retained sessions take
+  precedence over ordinary idle content. resting shows the
+  highest-ranked session richly and represents every other session
+  individually; hover expands to a screen-bounded scrollable list.
+  ordering is urgency first, FIFO within equal urgency. terminal
+  retention is configurable (default ten minutes); waiting states do
+  not expire like notifications.
+
+### 10.1 `POST /agent/events` — the ingestion contract
+
+provider hooks do not post to `/notify` — session updates are not
+notifications, and overloading the old schema would discard the
+state/identity contract. the endpoint reuses `/notify`'s listener,
+loopback binding, Host-header defense, body-limit posture, and logging.
+
+schema v1 (normalized by the adapter, never a raw provider payload):
+
+```json
+{
+  "schemaVersion": 1,
+  "eventId": "runtime-generated-id",
+  "runtime": "codex",
+  "sessionId": "native-session-id",
+  "occurredAtMs": 1785067200000,
+  "sequence": 12,
+  "nativeEvent": "PermissionRequest",
+  "kind": "permission_requested",
+  "state": "waiting_for_permission",
+  "summary": "Approval needed to run a command",
+  "details": [{ "label": "Tool", "value": "shell" }],
+  "capabilities": ["session_lifecycle", "permission_requests"],
+  "project": { "name": "notchtap", "cwd": "/path" },
+  "host": { "name": "T3 Code", "bundleId": "allowlisted-value" },
+  "subagent": { "id": "native-id", "label": "test runner", "state": "working" },
+  "terminal": false
+}
+```
+
+`sequence`, project, host, subagent, summary, and details are optional.
+validation and bounds (hard caps centralized in `agents/adapter.rs`):
+unknown `schemaVersion`, malformed JSON/enum, absent identity, or
+unsupported runtime → `400`; oversized body → `413`; accepted → `202`;
+duplicate `eventId` or stale sequence → idempotent `202` with no
+registry/notification change; internal failure → `500`. body 64 KiB;
+IDs 256 bytes; summary 500 scalars; names/labels 120; cwd/detail
+values 1,024; details 12; capabilities 16; 50 retained transitions per
+session; 2,048 remembered event IDs (LRU). strings are trimmed and
+control characters removed before storage or rendering. secrets,
+prompts, raw tool input/output, environment values, and complete
+command lines are never forwarded — adapters may extract a safe tool
+name, a basename, and a short human summary. with a `sequence`, lower
+or equal than last accepted is stale; without one, receive order is
+authoritative and `eventId` supplies duplicate protection.
+
+### 10.2 adapter delivery
+
+a small rust binary, `notchtap-agent` (`hook <runtime>`, `test`,
+`status`, `doctor`), is the shared delivery helper for Claude Code,
+Codex, and Kimi; OpenCode uses a TypeScript plugin
+(`adapters/opencode/notchtap.ts`) because its lifecycle surface is a
+plugin event bus — same schema, limits, sanitization, and fail-open
+semantics. delivery rules:
+
+- connect/read timeout at most 750 ms;
+- **fail open**: provider sessions are never blocked by notchtap
+  absence or malformed optional data; exit 0 even on delivery failure,
+  writing a bounded diagnostic to the adapter log, never stdout;
+- no decision JSON, approval answer, or mutation of the native event;
+- no daemon, background supervisor, shell interpolation, or `jq`
+  dependency; `NOTCHTAP_PORT` is the port override.
+
+`doctor` is read-only: it inspects the runtimes' hook config files and
+reports which expected hook events are wired and whether each command
+string resolves to an executable — it never creates, edits, or repairs
+them. setup ownership stays with the user: Settings shows
+detected/undetected status, setup snippets and exact target file, a
+test event, last-seen time, declared capabilities, and uninstall
+instructions; notchtap never silently edits a user's global provider
+configuration.
+
+### 10.3 security invariants
+
+- both ingestion endpoints remain loopback-only; local-process spoofing
+  stays inside the single-user trust boundary;
+- `/agent/events` accepts data, never executable behavior;
+- the overlay remains receive-only; `capabilities/default.json` remains
+  byte-for-byte unchanged;
+- settings commands remain allowlisted and window-label guarded;
+- adapters are fail-open observers and never answer permissions;
+- Host focus uses code-owned allowlists only;
+- raw provider payloads never cross into frontend IPC or persistence.
+
+runtime names are a narrow compatibility exception to the project's
+third-party naming rule: neutral names may appear in adapter IDs, setup
+docs, tests/fixtures, and UI labels. no third-party logos, assets,
+copied trade dress, or implied affiliation.
+
+## 11. tab-notch pull model: the icon strip
+
+design spec: `docs/superpowers/specs/2026-08-02-tab-notch-design.md`.
+the shipped implementation under `src/` is authoritative.
+
+- **the notch is pull-based, additively.** push behaviour (interrupts,
+  rotation, priority preemption) is completely unchanged and takes
+  precedence over everything pull-related, without exception. tab
+  selection decides what the notch shows when the operator goes
+  looking; it never decides what the notch is allowed to tell them.
+- **rest is bare**: shell + idle face only. icons exist only inside a
+  hovered flank, hidden with `visibility: hidden` (NOT `display:
+  none`) — that choice is load-bearing twice: it keeps the strip's
+  width reserved, and it means every `infinite` icon animation MUST be
+  gated on `.hovered` or it ticks forever behind an invisible node.
 - **selection: max one, or none**, remembered across hovers, cleared if
-  its source stops being live. hover always shows the selected Tab's
+  its source stops being live. hover always shows the selected tab's
   card in COMPACT form and never auto-expands — expansion is a
   deliberate, separate keyboard act. this is the single most important
   behavioural line in the feature.
 - **click detection is rust-side, by necessity not preference.** the
-  overlay's `capabilities/default.json` grants event listen/unlisten and
-  nothing else — no invoke, no emit — so a click the WEBVIEW sees has no
+  overlay's capability file grants event listen/unlisten and nothing
+  else — no invoke, no emit — so a click the WEBVIEW sees has no
   channel back to the rust side that owns the selection. a native
   `NSEvent` local monitor (`src-tauri/src/click.rs`) observes the
   mouseDown, hit-tests it against `hover::icon_strip_rects`, and pushes
   the result as a typed `tab-selection-changed` event, mirroring
   `hover-changed`. **do not "simplify" this to a webview onClick** — it
-  cannot work without reopening the capability file, which §14 forbids.
-- **`set_ignore_cursor_events` is no longer unconditionally true.** it
-  opens exactly while the strip is the live hover target (hovered ∧ slot
+  cannot work without reopening the capability file, which §9 forbids.
+- **`set_ignore_cursor_events` is not unconditionally true.** it opens
+  exactly while the strip is the live hover target (hovered ∧ slot
   idle) and reverts on hover-exit or slot promotion. the API is
   WINDOW-granular, so "only clicks inside the strip's rect count" is
   enforced by the monitor's hit-test, not by the toggle.
 - **the prefix keymap grabs BARE keys, temporarily.** arming registers
-  eleven unmodified keys (1-5, `[`, `]`, enter, o, p, esc) system-wide
-  for a 2s window. this is genuinely dangerous — a failed RELEASE leaves
-  a bare `Enter` grabbed across the whole machine — so it carries an
-  unconditional watchdog that ignores the generation counter, a release
-  on `RunEvent::Exit`, and ERROR-level logging on any failed release.
-  a failed *register* is benign; a failed *unregister* is not. never
-  register these outside a live armed window.
+  unmodified keys (source digits, `[`, `]`, enter, o, p, esc)
+  system-wide for a 2s window. this is genuinely dangerous — a failed
+  RELEASE leaves a bare `Enter` grabbed across the whole machine — so
+  it carries an unconditional watchdog that ignores the generation
+  counter, a release on `RunEvent::Exit`, and ERROR-level logging on
+  any failed release. a failed *register* is benign; a failed
+  *unregister* is not. never register these outside a live armed
+  window.
 - **hard non-goals**, standing project rules rather than oversights: no
-  `prefers-reduced-motion` handling and no accessibility variants
-  anywhere in this feature; HUD mode / mac mini scope only, with real
-  notch-hardware verification explicitly out of scope; no breaking-news
-  interrupts in v1 (news stays pure pull).
+  `prefers-reduced-motion` handling (an app-wide non-goal, §2) and no
+  accessibility variants in this feature; HUD-mode/mac-mini scope, with
+  real notch-hardware verification operator-owed; no breaking-news
+  interrupts (news stays pure pull).
+
+## 12. logging & observability
+
+- **rust core**: `tracing`, writing a rotating log at
+  `~/Library/Logs/notchtap/notchtap.log` (`src-tauri/src/logging.rs`),
+  10 mb × 3 backups, `info` in release, `debug` in dev. this is a
+  background app — when something breaks, the user needs a log to read.
+- **frontend errors**: devtools-only by design — the overlay is
+  receive-only, so no tauri command carries them back to the log file,
+  and none should be added.
+
+## 13. distribution / install
+
+no apple developer program fee needed for personal use:
+
+- the ios 7-day reinstall pain is specific to ios sideloading
+  provisioning profiles. **macos has no such limit.**
+- a mac app built locally and run on the machine that built it never
+  gets the `com.apple.quarantine` flag, so gatekeeper's notarization
+  check doesn't apply. a free apple id can ad-hoc sign it.
+- moving between the two machines: build from source on each, or copy
+  the built `.app` via a non-quarantining method (local share, usb,
+  `scp`); `xattr -cr YourApp.app` clears a stray flag.
+
+the $99/yr would be needed only for distributing to other people, the
+app store, or paid-team entitlements — none apply. **the app store is
+the wrong channel regardless of cost**: sandboxing blocks the
+persistent overlay, and review rejects apps that mimic system chrome.
+
+**minimum macos version**: 13 (ventura) — `SMAppService` is unavailable
+earlier.

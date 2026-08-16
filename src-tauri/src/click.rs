@@ -1,4 +1,4 @@
-//! Plan 171 (tab-notch redesign, slice A item 2): the click-detection
+//! the click-detection
 //! mechanism, resolved on real hardware 2026-08-03 as **mechanism (a), a
 //! native `NSEvent` LOCAL monitor** — and not merely by preference:
 //! mechanism (b) (a plain webview `onClick`) can never satisfy the
@@ -17,7 +17,7 @@
 //! to us — which requires `set_ignore_cursor_events(false)`, toggled by
 //! `lib.rs`'s hover transition handler exactly while the icon strip is
 //! the live hover target (spec §10's narrow click-through carve-out).
-//! The shipped board-expand scroll path (plan 142) already proved
+//! The shipped board-expand scroll path already proved
 //! NSEvents reach this NonactivatingPanel while it is never key.
 //!
 //! Split per the house rule (`CLAUDE.md`, `presentation_mode`): the
@@ -178,7 +178,7 @@ mod tests {
 
     #[test]
     fn click_inside_an_icon_box_selects_that_tab() {
-        let present = vec![Tab::Weather, Tab::News];
+        let present = vec![Tab::Football, Tab::News];
         let rects = vec![rect(400.0, 418.0), rect(426.0, 444.0)];
         assert_eq!(
             click_target(430.0, 280.0, &present, &rects),
@@ -188,14 +188,14 @@ mod tests {
 
     #[test]
     fn click_in_the_gap_between_icons_selects_nothing() {
-        let present = vec![Tab::Weather, Tab::News];
+        let present = vec![Tab::Football, Tab::News];
         let rects = vec![rect(400.0, 418.0), rect(426.0, 444.0)];
         assert_eq!(click_target(420.0, 280.0, &present, &rects), None);
     }
 
     #[test]
     fn click_outside_the_strip_y_band_selects_nothing() {
-        let present = vec![Tab::Weather];
+        let present = vec![Tab::News];
         let rects = vec![rect(400.0, 418.0)];
         assert_eq!(click_target(410.0, 100.0, &present, &rects), None);
     }
@@ -204,11 +204,11 @@ mod tests {
     fn present_list_and_rects_zip_index_for_index() {
         // Three present icons — the middle one must map to the middle
         // rect, not to its Tab::ORDER position among all five.
-        let present = vec![Tab::Agent, Tab::Weather, Tab::News];
+        let present = vec![Tab::Agent, Tab::News, Tab::News];
         let rects = vec![rect(374.0, 392.0), rect(400.0, 418.0), rect(426.0, 444.0)];
         assert_eq!(
             click_target(410.0, 280.0, &present, &rects),
-            Some(Tab::Weather)
+            Some(Tab::News)
         );
     }
 }

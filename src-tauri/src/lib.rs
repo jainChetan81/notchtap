@@ -1,8 +1,8 @@
 mod about;
-// v7 (plan 133/134/138): provider-neutral Agent domain model + registry
-// (`model.rs`/`registry.rs`, plan 133) plus wire parsing and the
-// `/agent/events` route (`adapter.rs`, plan 134) — see `agents/mod.rs`'s
-// doc for the ticket boundary. `pub` (plan 138, otherwise this module's
+// v7: provider-neutral Agent domain model + registry
+// (`model.rs`/`registry.rs`, ) plus wire parsing and the
+// `/agent/events` route (`adapter.rs`, ) — see `agents/mod.rs`'s
+// doc for the ticket boundary. `pub` (, otherwise this module's
 // comment above `error`/`event`/`queue` would still hold: "nothing else
 // consumes this crate as a library") is the one-line exception those
 // three already carved out — the `notchtap-agent` bin target
@@ -30,15 +30,13 @@ mod logging;
 mod login_item;
 mod net;
 mod news_charge;
-mod notifier;
-mod now_playing;
 mod poller;
 mod prefix;
 mod presentation;
 pub mod queue;
 mod rss_poller;
 mod settings;
-// The single source of truth for the eighteen settings-window commands
+// The single source of truth for the fifteen settings-window commands
 // (see this module's own doc comment) — build.rs's AppManifest::commands
 // allowlist, the generate_handler![...] registration just below, and
 // capabilities/settings.json must all name exactly the commands listed
@@ -47,7 +45,6 @@ mod settings_commands;
 pub mod silence;
 mod status;
 mod tabs;
-mod weather_poller;
 
 use std::sync::{Arc, Mutex as StdMutex, Once, OnceLock};
 
@@ -68,13 +65,13 @@ use crate::settings::AppearanceChangedPayload;
 #[cfg(target_os = "macos")]
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
-// plan 045: tauri-nspanel v2.1's to_panel() requires an explicit panel
+// tauri-nspanel v2.1's to_panel() requires an explicit panel
 // type. can_become_key_window: true preserves the pinned rev's behavior
 // (RawNSPanel hardcoded canBecomeKeyWindow -> YES); can_become_main_window:
 // false matches NSPanel's AppKit default, which the pinned rev never
 // overrode.
 //
-// plan 087: `with: { tracking_area: {...} }` attaches a real
+// `with: { tracking_area: {...} }` attaches a real
 // NSTrackingArea to the panel's content view — this is what makes
 // mouseEntered/mouseMoved/mouseExited observable at all. Empirically
 // verified (docs/design/hover-cursor-tracking.md §2) to fire normally
@@ -137,7 +134,7 @@ const OPEN_SETTINGS_SHORTCUT: (Option<Modifiers>, Code) = (
     Code::Comma,
 );
 
-// plan 144 (v7 ticket 12 of 13, spec §6.3): the Open/Focus Session
+// the Open/Focus Session
 // shortcut — ⌃⇧A, chosen by the same "avoid the combos already listed
 // above and common ⌘-based shortcuts" rule as SKIP/OPEN_SETTINGS.
 #[cfg(target_os = "macos")]
@@ -177,7 +174,7 @@ pub fn run() {
         }
     };
 
-    // Boot-time contract parity with the settings window (plan 013): the
+    // Boot-time contract parity with the settings window: the
     // file is the other editing surface, so it gets the same validation —
     // but warn-and-continue, not exit: a range violation must not brick an
     // always-on login item. Malformed TOML still fails fast in Config::load.
@@ -203,7 +200,7 @@ pub fn run() {
         initial_queue.pause();
         tracing::info!("start_paused: launching with promotion paused");
     }
-    // plan 037: the bare queue moves into `setup`, where Engine::new takes
+    // the bare queue moves into `setup`, where Engine::new takes
     // it BY VALUE and creates the wake and live-match handle internally —
     // after that, no code outside engine.rs can hold any of the three.
     let start_paused = config.start_paused;
@@ -219,8 +216,8 @@ pub fn run() {
     let espn_ttl_secs = config.espn_ttl_secs;
     let espn_live_card = config.espn_live_card;
     let espn_rich_events = config.espn_rich_events;
-    // plan 083 workstream a: `~/.config/notchtap/crests/`, a sibling of
-    // config.toml/secrets.toml under the same directory
+    // `~/.config/notchtap/crests/`, a sibling of
+    // config.toml under the same directory
     // (`Config::dir_from_home`) — the repo's first binary-asset cache.
     // Crest PNGs are runtime-cached here, never committed to git.
     let crests = dirs::home_dir()
@@ -239,7 +236,7 @@ pub fn run() {
     let manual_default_priority = config.manual_default_priority;
     let agent_priority = config.agent_priority;
     let agent_ttl_secs = config.agent_ttl_secs;
-    // v7 (plan 137, spec §7): `[agents]` config drives both the Agent
+    // v7: `[agents]` config drives both the Agent
     // Registry's stale/retention durations (below, at registry
     // construction) and the `agent_events_handler`'s `NotificationPolicy`/
     // per-runtime gate (`http::AppState`, further down in `setup`).
@@ -264,33 +261,13 @@ pub fn run() {
     let agent_terminal_retention =
         std::time::Duration::from_secs(agents_config.terminal_retention_secs);
     let agent_stale_retention = std::time::Duration::from_secs(agents_config.stale_retention_secs);
-    let weather_enabled = config.weather_enabled;
-    let weather_lat = config.weather_lat;
-    let weather_lon = config.weather_lon;
-    let weather_units = config.weather_units;
-    let weather_poll_secs = config.weather_poll_secs;
-    let weather_rain_threshold_pct = config.weather_rain_threshold_pct;
-    let weather_rain_lookahead_mins = config.weather_rain_lookahead_mins;
-    let weather_temp_hot_c = config.weather_temp_hot_c;
-    let weather_temp_cold_c = config.weather_temp_cold_c;
-    let weather_ttl_secs = config.weather_ttl_secs;
-    let weather_priority = config.weather_priority;
     let history_enabled = config.history_enabled;
-    let now_playing_enabled = config.now_playing_enabled;
-    let now_playing_adapter_enabled = config.now_playing_adapter_enabled;
-    let now_playing_adapter_dir = config.now_playing_adapter_dir.clone();
-    // plan 146a: the `[silence]` block feeds `SilenceController::new` at
+    // the `[silence]` block feeds `SilenceController::new` at
     // boot (below, in `setup`) — session-only mute/skip state is never
     // read from config, only the daily schedule.
     let silence_schedule_enabled = config.silence.enabled;
     let silence_window = config.silence.window;
 
-    // v3 outbound connectors: built here (channel needs no runtime), any
-    // worker future would be spawned in setup once the runtime exists. no
-    // connectors are wired up currently — the fan-out framework
-    // (`ConnectorHandle`) stays in place for a future connector (plan 128).
-    let connector_handles: Vec<notifier::ConnectorHandle> = Vec::new();
-    let connectors = Arc::new(connector_handles);
     let server_once = Arc::new(Once::new());
 
     let builder = tauri::Builder::default();
@@ -308,10 +285,8 @@ pub fn run() {
             settings::get_history,
             settings::get_queue,
             settings::get_recent_log_lines,
-            settings::get_secret_status,
             settings::save_config_and_relaunch,
             settings::search_news_now,
-            settings::set_secret,
             settings::send_test_notification,
             settings::set_appearance,
             settings::skip_current,
@@ -322,12 +297,12 @@ pub fn run() {
         .setup(move |app| {
             #[cfg(target_os = "macos")]
             app.set_activation_policy(ActivationPolicy::Accessory);
-            // About section (plan: get_about_info) reports process uptime
+            // About section reports process uptime
             // from this, not system uptime — captured once, here, before
             // anything else in setup can meaningfully delay boot.
             app.manage(std::time::Instant::now());
             app.manage(StdMutex::new(config_for_state));
-            // plan 130: the ONE SeenStore both the rss poller loop (below)
+            // the ONE SeenStore both the rss poller loop (below)
             // and the settings window's `search_news_now` one-shot command
             // dedup against — app-managed state (same mechanism as Config
             // above), reached by the poller via its AppHandle and by the
@@ -335,19 +310,19 @@ pub fn run() {
             // `rss_enabled`: an ad-hoc search should work even with
             // continuous polling off.
             app.manage(StdMutex::new(rss_poller::SeenStore::default()));
-            // plan 130: serializes concurrent `search_news_now` calls — a
+            // serializes concurrent `search_news_now` calls — a
             // second call while one is in flight errors "already
             // searching" rather than racing the same SeenStore/http
             // client (settings.rs's own doc comment on the command has
             // the full rationale).
             app.manage(std::sync::atomic::AtomicBool::new(false));
-            // plan 037: the ONE Engine. By-value construction means `run()`
+            // the ONE Engine. By-value construction means `run()`
             // holds no queue/wake/live binding after this line — a retained
             // alias is a compile error, not a convention. Managed as state
             // so the settings commands (send_test_notification) and the
             // on_page_load/server_once closures below can reach the same
             // Engine the rotation loop and pollers run on.
-            // plan 088: `None` when disabled (the default) — the Engine's
+            // `None` when disabled (the default) — the Engine's
             // hook is then a no-op and behavior is byte-identical to
             // pre-088. A store that fails to open (unwritable config dir)
             // degrades to `None` with a warning rather than failing boot;
@@ -366,7 +341,7 @@ pub fn run() {
             } else {
                 None
             };
-            // Plan 171: the ONE shared tab-notch wire bundle. Batch size
+            // the ONE shared tab-notch wire bundle. Batch size
             // = `rss_max_per_poll` — a "full batch" is exactly what one
             // poll cycle is allowed to land (news_charge.rs's own doc).
             let tab_wire = std::sync::Arc::new(tabs::TabWire::new(rss_max_per_poll));
@@ -376,17 +351,14 @@ pub fn run() {
             let engine = Engine::new(
                 initial_queue,
                 app.handle().clone(),
-                connectors.clone(),
                 espn_enabled,
                 rss_enabled,
-                weather_enabled,
-                now_playing_enabled,
                 history,
                 tab_wire.clone(),
             );
             app.manage(engine.clone());
 
-            // plan 146a: the one SilenceController, managed the same way as
+            // the one SilenceController, managed the same way as
             // `engine` above (an `Arc<StdMutex<_>>` rather than the
             // Engine's own `Arc<Mutex<_>>` because this is read/mutated
             // from the tray's main-thread handlers as well as the async
@@ -401,7 +373,7 @@ pub fn run() {
             )));
             app.manage(silence_controller.clone());
 
-            // v7 (plan 133/134/137): the one Agent Registry, managed exactly
+            // v7: the one Agent Registry, managed exactly
             // like `engine` above so both the HTTP layer (`http::AppState`,
             // below) and later tickets (IPC, settings) can reach the same
             // instance via `AppHandle::state`. `stale_after`/
@@ -410,7 +382,7 @@ pub fn run() {
             // `agent_stale_retention`, hoisted above from
             // `config.agents.stale_after_secs`/`terminal_retention_secs`/
             // `stale_retention_secs`) rather than the spec-default
-            // hardcodes plan 134 shipped with.
+            // hardcodes shipped with.
             let agent_registry = agents::registry::AgentRegistryHandle::new(
                 agents::registry::AgentRegistry::new(
                     agent_stale_after,
@@ -420,7 +392,7 @@ pub fn run() {
             );
             app.manage(agent_registry.clone());
 
-            // Plan 143 (v7 ticket 11 of 13, spec §4.6/§8/§10): the shared
+            // the shared
             // Adapter Health tracker — managed exactly like
             // `agent_registry` above so `server_once`'s `http::AppState`
             // (below), `agent_board`'s own publish path, and the Settings
@@ -431,7 +403,7 @@ pub fn run() {
             let agent_health = std::sync::Arc::new(agents::health::HealthTracker::new());
             app.manage(agent_health.clone());
 
-            // v7 (plan 136, spec §6): the `agent-state` IPC publisher —
+            // v7: the `agent-state` IPC publisher —
             // managed the same way as `engine`/`agent_registry` above so
             // `server_once`'s `http::AppState` (below) can reach the same
             // instance the periodic tick (`spawn_tick`, right after) also
@@ -454,7 +426,7 @@ pub fn run() {
                 .expect("main window missing from tauri.conf.json");
             window.set_always_on_top(true)?;
 
-            // plan 097: hoisted out of the tracking-area block below so the
+            // hoisted out of the tracking-area block below so the
             // global-shortcut handler (registered further down, in its own
             // `#[cfg(target_os = "macos")]` block) can also reach it — the
             // dismiss/skip hotkeys replace the visible card with no mouse
@@ -464,7 +436,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             let was_hovered = Arc::new(StdMutex::new(false));
 
-            // plan 142 (v7 ticket 10 of 13, spec §6.2 expanded): whether
+            // whether
             // the Agent Board's window frame is CURRENTLY the expanded
             // one (and pointer delivery is temporarily enabled) — set the
             // instant a board hover-entry expands it, cleared the instant
@@ -480,7 +452,7 @@ pub fn run() {
             #[cfg(target_os = "macos")]
             let board_frame = Arc::new(StdMutex::new(BoardFrameState::default()));
 
-            // plan 171 (tab-notch redesign, slice A): `tabs::TabSelection`
+            // `tabs::TabSelection`
             // (the icon strip's own selection state — see tabs.rs) is
             // deliberately NOT wired up as app state here yet. It needs a
             // real consumer (the click detection mechanism, still an open
@@ -509,7 +481,7 @@ pub fn run() {
                 // is borderless (mask 0), so the panel bit is the whole mask.
                 panel.set_style_mask(objc2_app_kit::NSWindowStyleMask::NonactivatingPanel);
 
-                // plan 087: the hover primitive. `set_ignore_cursor_events
+                // the hover primitive. `set_ignore_cursor_events
                 // (true)` (apply_overlay_native_config, below) is NEVER
                 // touched by any of this — the tracking area's mouseEntered/
                 // mouseMoved/mouseExited fire independent of click-through,
@@ -519,7 +491,7 @@ pub fn run() {
                 // per mouse-move.
                 let hover_handler = OverlayPanelEventHandler::new();
                 let hover_cutout_width = cutout.map(|c| c.width).unwrap_or(0.0);
-                // plan 093: the y-span fix's cutout-HEIGHT term. Mirrors
+                // the y-span fix's cutout-HEIGHT term. Mirrors
                 // `cutout_height_js_value`'s own reasoning (lib.rs, near
                 // the on_page_load eval-splice site) — `CutoutGeometry`
                 // carries no height field, so `inset`
@@ -541,7 +513,7 @@ pub fn run() {
                     let window = window.clone();
                     hover_handler.on_mouse_entered(move |event| {
                         let loc = event.locationInWindow();
-                        // plan 093: read BEFORE this event can overwrite
+                        // read BEFORE this event can overwrite
                         // it — `hover_point_is_over_card`'s own doc
                         // explains why the CURRENT (pre-event) value is
                         // the correct hysteresis input for whether the
@@ -650,7 +622,7 @@ pub fn run() {
 
                 panel.set_event_handler(Some(hover_handler.as_ref()));
 
-                // Generic hover-latch reset (M5): plan 097 reset
+                // Generic hover-latch reset (M5): reset
                 // `was_hovered` back to false after the dismiss/skip
                 // hotkeys specifically, because those replace the visible
                 // card with no mouse event firing to trip the
@@ -678,14 +650,14 @@ pub fn run() {
                 // the bug report, already moving in the case this exists
                 // to fix) recomputes fresh for the new item instead of
                 // staying latched true from the old one and never firing.
-                // Same accepted residual as plan 097's resets: a perfectly
+                // Same accepted residual as a perfectly
                 // stationary cursor doesn't recompute until it moves 1px.
                 {
                     use tauri::Listener;
                     let was_hovered = was_hovered.clone();
                     let last_visible_id: Arc<StdMutex<Option<String>>> =
                         Arc::new(StdMutex::new(None));
-                    // plan 142: also clone in the board-collapse inputs — a
+                    // also clone in the board-collapse inputs — a
                     // new Notification taking the Slot (a real `id` arriving
                     // here) means the overlay's own `presentationMode`
                     // switches away from the Board entirely (spec §6.1's
@@ -710,7 +682,7 @@ pub fn run() {
                                     &mut *was_hovered.lock().unwrap_or_else(|e| e.into_inner()),
                                     false,
                                 );
-                                // plan 171: the latch reset is also the
+                                // the latch reset is also the
                                 // strip's death — if the window was in a
                                 // hovered state (and so may be accepting
                                 // cursor events for the strip), restore
@@ -734,7 +706,7 @@ pub fn run() {
                 }
             }
 
-            // Plan 171 slice A item 2: the icon-strip click monitor —
+            // the icon-strip click monitor —
             // mechanism (a), an NSEvent LOCAL monitor (click.rs's module
             // doc records why (b) alone can never satisfy the receive-only
             // overlay). Installed once, before the native config below
@@ -781,7 +753,7 @@ pub fn run() {
             // is needed for this.
             #[cfg(target_os = "macos")]
             {
-                // plan 171 slice D: the configured prefix combo, parsed
+                // the configured prefix combo, parsed
                 // once. An unparseable key logs and falls back to Space —
                 // fail-open, matching the validator's own permissive
                 // grammar (settings::is_valid_prefix_shortcut).
@@ -813,7 +785,7 @@ pub fn run() {
                                     == Shortcut::new(DISMISS_SHORTCUT.0, DISMISS_SHORTCUT.1)
                                 {
                                     dismiss_current(&engine_for_handler);
-                                    // plan 097: the dismiss hotkey replaces the
+                                    // the dismiss hotkey replaces the
                                     // visible card with no mouse event firing, so
                                     // the AppKit-side latch never resets on its
                                     // own and the transitions-only gate then
@@ -845,7 +817,7 @@ pub fn run() {
                                     == Shortcut::new(SKIP_SHORTCUT.0, SKIP_SHORTCUT.1)
                                 {
                                     skip_current(&engine_for_handler);
-                                    // plan 097: same hover-latch desync as the
+                                    // same hover-latch desync as the
                                     // dismiss arm above — the skip hotkey also
                                     // replaces the visible card with no mouse
                                     // event.
@@ -889,7 +861,7 @@ pub fn run() {
                                         FOCUS_SESSION_SHORTCUT.1,
                                     )
                                 {
-                                    // plan 144 (spec §6.3): Rust-only, no
+                                    // Rust-only, no
                                     // overlay involvement — the overlay
                                     // stays receive-only. The registry
                                     // lock is async, so the lookup +
@@ -932,7 +904,7 @@ pub fn run() {
                     FOCUS_SESSION_SHORTCUT.0,
                     FOCUS_SESSION_SHORTCUT.1,
                 ))?;
-                // plan 171 slice D: the prefix combo — the ONLY
+                // the prefix combo — the ONLY
                 // always-registered addition. The seven follow-up keys
                 // are bare, system-wide grabs and are registered only
                 // inside a live armed window (spec §9's mechanism note),
@@ -958,12 +930,12 @@ pub fn run() {
             // ARCHITECTURE.md §17's "richer than a toggle lives in
             // Settings" rule). Each poller below simply doesn't spawn when
             // its `_enabled` flag is false.
-            // plan 037: the rotation loop (formerly spawn_heartbeat) lives
+            // the rotation loop (formerly spawn_heartbeat) lives
             // inside the Engine — it is the consumer of the wake, so the
             // wake never escapes engine.rs.
             engine.spawn_rotation();
 
-            // plan 146a: the Silenced schedule/mute timer — always spawned
+            // the Silenced schedule/mute timer — always spawned
             // (unlike the pollers below, which are config-gated) because
             // even a disabled schedule can still have a tray mute started
             // against it; the task itself is what makes a disabled
@@ -974,7 +946,7 @@ pub fn run() {
                 silenced_indicator_item,
             );
 
-            // Plan 184 (Part 2): the Agent tab's session auto-advance
+            // the Agent tab's session auto-advance
             // timer — cycles `viewed_session` on a fixed interval while
             // the Agent tab is selected, 2+ sessions exist, the app isn't
             // hovered, and the engine isn't paused
@@ -1081,39 +1053,6 @@ pub fn run() {
                 );
             }
 
-            // weather poller (plan 040 Part B) — config-gated the same
-            // way: `weather_enabled = false` (the default) means it never
-            // spawns and the idle rail shows no weather chip.
-            if weather_enabled {
-                weather_poller::spawn_weather_poller(
-                    engine.clone(),
-                    weather_lat,
-                    weather_lon,
-                    weather_units,
-                    weather_poll_secs,
-                    weather_rain_threshold_pct,
-                    weather_rain_lookahead_mins,
-                    weather_temp_hot_c,
-                    weather_temp_cold_c,
-                    weather_ttl_secs,
-                    weather_priority,
-                );
-            }
-
-            // now-playing ambient source (plan 104) — config-gated by
-            // BOTH the feature toggle and the kill switch; the module's
-            // own spawn function additionally requires the vendored
-            // adapter's two files to exist at `now_playing_adapter_dir`
-            // before starting the child (clean degrade, one warn-level
-            // log, never a startup error — mirrors `detect_path`'s own
-            // missing-binary tolerance).
-            now_playing::spawn_now_playing_poller(
-                engine.clone(),
-                now_playing_enabled,
-                now_playing_adapter_enabled,
-                now_playing_adapter_dir,
-            );
-
             Ok(())
         })
         .on_page_load(move |webview, payload| {
@@ -1124,7 +1063,7 @@ pub fn run() {
             // 200-drop.
             if payload.event() == PageLoadEvent::Finished && webview.label() == "main" {
                 let app_handle = webview.app_handle().clone();
-                // plan 037: retrieve the ONE Engine via managed state —
+                // retrieve the ONE Engine via managed state —
                 // this closure is built before `setup` runs, so it cannot
                 // capture the Engine; a second Engine::new here would
                 // create a second wake AND a second live-match handle no
@@ -1168,7 +1107,7 @@ pub fn run() {
                     crate::event::emit_slot_state(&app_handle, current_state);
                 }
 
-                // plan 034: the status rail gets the identical dual-path
+                // the status rail gets the identical dual-path
                 // race shield — eval-planted global for late-mounting
                 // react, one emit for an already-registered listener, same
                 // escaping helper, same plant-before-emit ordering as the
@@ -1188,7 +1127,7 @@ pub fn run() {
                 // an emit for listeners already registered.
                 {
                     use tauri::Emitter;
-                    // plan 085: the seed must carry resting_state too — a
+                    // the seed must carry resting_state too — a
                     // fresh boot learns the flag ONLY from this seed, so
                     // building the payload from the whole Config (not just
                     // Appearance) is required, not optional.
@@ -1202,9 +1141,9 @@ pub fn run() {
                     let _ = webview.emit("appearance-changed", &payload);
                 }
 
-                // plan 063: presentation facts for the frontend — the mode boolean and
+                // presentation facts for the frontend — the mode boolean and
                 // the numeric cutout width, one eval, same page-load site as the other
-                // boot facts. plan 060 will consume __NOTCHTAP_MODE__ when it lands.
+                // boot facts. will consume __NOTCHTAP_MODE__ when it lands.
                 {
                     let mode_str = match mode {
                         presentation::Mode::Notch => "notch",
@@ -1343,7 +1282,7 @@ fn escape_for_osascript(s: &str) -> String {
 
 /// Makes a serde_json string safe to splice into eval'd JS source:
 /// payloads may carry arbitrary caller text (espn scoring-play strings,
-/// agent titles — superseded the earlier cmux relay, plan 137).
+/// agent titles — superseded the earlier cmux relay, ).
 /// U+2028/U+2029 are legal in JSON but illegal raw in JS
 /// source, and `<` closes the gap JSON leaves (it doesn't escape `/`,
 /// so a literal "</script>" would otherwise break out of the script
@@ -1369,7 +1308,7 @@ fn apply_overlay_native_config(window: &tauri::WebviewWindow) -> tauri::Result<(
     // cutout's dead zone — so without this, every click in its bounds
     // (including ones meant for the menu bar's own tray icons) was captured
     // by notchtap instead of passing through. NOTE this `true` is the BOOT
-    // DEFAULT, no longer an invariant: since plan 171 the hover path
+    // DEFAULT, no longer an invariant: since the hover path
     // (`emit_hover_changed_if_transitioned`) conditionally flips it to
     // `false` while the icon strip is hoverable, and a rust-side `NSEvent`
     // monitor (`click.rs`) observes clicks — the monitor's hit-test, not
@@ -1415,7 +1354,7 @@ fn position_top_center(window: &tauri::WebviewWindow) -> tauri::Result<()> {
     Ok(())
 }
 
-// plan 063: the cutout width as a JS literal for the page-load eval splice
+// the cutout width as a JS literal for the page-load eval splice
 // — a positive JSON number when the shim reported a cutout, `null`
 // otherwise (hud mode, or an older/zero-width report). `width <= 0.0`
 // cannot occur here: `presentation::DetectOutput::cutout()` normalizes it
@@ -1427,7 +1366,7 @@ fn cutout_width_js_value(cutout: Option<presentation::CutoutGeometry>) -> String
     }
 }
 
-// plan 091: the notch cutout's HEIGHT, exposed through the same eval-splice
+// the notch cutout's HEIGHT, exposed through the same eval-splice
 // site as its width, one line below the width's own splice. `CutoutGeometry`
 // carries no height field (it's purely the horizontal bounds the shim
 // reports) — the height is `DetectOutput::safe_area_top_inset`
@@ -1450,14 +1389,14 @@ fn cutout_height_js_value(inset: f64) -> String {
     }
 }
 
-// plan 087: called fresh from every tracking-area callback (mouseEntered/
+// called fresh from every tracking-area callback (mouseEntered/
 // mouseMoved) — cheap (a few short-lived mutex locks, no lock held across
 // the return) rather than cached, since the card's rect can change
 // between events (a new item promoted, expand toggled) while the cursor
 // is still resting over the window. Lock discipline: each of
 // `engine.read_blocking`/the config lock acquires, reads, and drops
 // before the next opens — never nested (cold-read Gap 2).
-// plan 093: `cutout_height`/`hover_latched` added for the y-span fix —
+// `cutout_height`/`hover_latched` added for the y-span fix —
 // see `hover::active_card_rect`'s doc comment for what each means.
 // `hover_latched` is the caller's job to supply (it needs `was_hovered`,
 // which this function has no reason to know about); this function no
@@ -1476,14 +1415,14 @@ fn cutout_height_js_value(inset: f64) -> String {
 // `hover::active_card_rect`'s doc for why the SHOWING side needs it too
 // (the hover-expand collapsing the card out from under the cursor).
 //
-// plan 093 pushed this to 8 positional params (over clippy's default 7-arg
+// pushed this to 8 positional params (over clippy's default 7-arg
 // threshold) by adding `cutout_height`/`hover_latched`. Same call as
 // `Engine::new`'s own `#[allow(clippy::too_many_arguments)]` (engine.rs):
 // a named-field params struct is a bigger surface change than this plan's
 // scope for a function with exactly two call sites, both in this same
 // file.
 //
-// plan 142 (v7 ticket 10 of 13, spec §6.2): `board_session_count` — when
+// `board_session_count` — when
 // the Slot reads `Empty` (`!visible`), that alone can't tell this
 // function whether the ambient idle surface is showing or the Agent
 // Board is (the Slot has no concept of the Board at all — spec §6.1's
@@ -1493,7 +1432,7 @@ fn cutout_height_js_value(inset: f64) -> String {
 // count while `!visible` means the Board is what's actually rendered
 // under the cursor, so `hover::board_rect` (sized off the Board's own
 // shape) is used instead of `hover::active_card_rect`'s idle formula
-// (sized off the small ambient clock/weather card, which is NOT what's
+// (sized off the small ambient clock card, which is NOT what's
 // on screen in that case).
 //
 // Operator decision 2026-08-02 (`[agents] board_show_working`): that
@@ -1567,22 +1506,22 @@ fn hover_point_is_over_card(
     hover::point_in_rect(&rect, point_x, point_y)
 }
 
-// plan 087: the transitions-only guard — `hover-changed` must fire when
+// the transitions-only guard — `hover-changed` must fire when
 // the boolean flips and never per mouse-move (a moving cursor generates
 // many mouseMoved events per second; emitting on every one would flood
 // the webview and violate the idle-cost discipline plans 015/018
 // established). Same emission shape as `appearance-changed`
 // (`settings.rs:564`).
 //
-// plan 093: this is also the ONE place the TTL hover-pause hooks into
+// this is also the ONE place the TTL hover-pause hooks into
 // the Engine — the same transitions-only gate that protects the webview
 // from a flood of `hover-changed` events also protects the queue from a
 // flood of pointless hover_enter/hover_exit calls (both are no-ops once
 // already in the state they'd be set to, but there's no reason to pay a
 // queue lock per mouse-move when nothing changed). `apply_blocking`
-// carries the mutate→wake→emit protocol (plan 036/037) — no new side
+// carries the mutate→wake→emit protocol — no new side
 // channel, no second wake path: this is the existing protocol, reused.
-// plan 142: pushed well past clippy's default arg threshold by the five
+// pushed well past clippy's default arg threshold by the five
 // new board-expand parameters — same "named-field params struct is a
 // bigger surface change than this ticket's scope" call as
 // `hover_point_is_over_card`'s own `#[allow]` just above, and for the
@@ -1624,7 +1563,7 @@ fn emit_hover_changed_if_transitioned(
         }
     });
 
-    // plan 142 (v7 ticket 10 of 13, spec §6.2 expanded): the Agent
+    // the Agent
     // Board's hover-expand orchestration piggybacks on this SAME
     // transitions-only gate — a hover entry over the Board (`!visible`,
     // at least one retained session) grows the real window frame and
@@ -1642,7 +1581,7 @@ fn emit_hover_changed_if_transitioned(
         collapse_board_if_expanded(window, mode, cutout, board_frame);
     }
 
-    // plan 171 slice A item 3: the icon-strip click-through toggle,
+    // the icon-strip click-through toggle,
     // landing in the SAME commit as the click monitor (click.rs) per the
     // plan's own regression constraint — never alone. Scope note the OS
     // forces on us: `set_ignore_cursor_events` is WINDOW-granular, so
@@ -1650,15 +1589,15 @@ fn emit_hover_changed_if_transitioned(
     // monitor's hit-test (clicks elsewhere in the window select nothing
     // and are otherwise inert), not by the toggle itself. The gate here
     // decides WHEN the window accepts cursor events at all:
-    //   hovered && slot idle  → accept (the strip is what's on screen —
-    //     and `hovered` requires the cursor to be over the painted card
-    //     rect, so a click that lands while accepting is over the card,
-    //     never over desktop dead space);
-    //   hovered && slot occupied → stay click-through (today's TTL-pause
-    //     hover behavior over a showing card, unchanged);
-    //   hover ends → restore click-through, unless the Board-expand path
-    //     currently owns the window (its collapse restores it with its
-    //     own grace-period semantics — don't fight it).
+    // hovered && slot idle → accept (the strip is what's on screen —
+    // and `hovered` requires the cursor to be over the painted card
+    // rect, so a click that lands while accepting is over the card,
+    // never over desktop dead space);
+    // hovered && slot occupied → stay click-through (today's TTL-pause
+    // hover behavior over a showing card, unchanged);
+    // hover ends → restore click-through, unless the Board-expand path
+    // currently owns the window (its collapse restores it with its
+    // own grace-period semantics — don't fight it).
     // Accepted gap (documented in the plan): a card PROMOTING while the
     // strip is hovered leaves events accepted until the next hover
     // transition — clicks during that window land on the showing card
@@ -1774,7 +1713,7 @@ fn board_shrink_should_run(state: BoardFrameState, armed_generation: u64) -> boo
     state.expanded && state.generation == armed_generation
 }
 
-/// plan 142: on a hover ENTRY, expand the Board's window frame + open
+/// on a hover ENTRY, expand the Board's window frame + open
 /// pointer delivery — but ONLY when the Slot is empty and the Board
 /// actually has sessions to show (a hover entry over an ordinary
 /// showing/idle card must never touch the window frame at all). Reads
@@ -1841,7 +1780,7 @@ fn try_expand_board_for_hover(
     state.generation = state.generation.wrapping_add(1);
 }
 
-/// plan 142: the exit-side restore. Idempotent: a hover-exit over a card
+/// the exit-side restore. Idempotent: a hover-exit over a card
 /// that never expanded anything (`expanded == false` already) does
 /// nothing, so this is safe to call from every `hovered == false` path
 /// unconditionally.
@@ -1975,7 +1914,7 @@ fn visible_id_from_slot_state_payload(payload: &str) -> Option<String> {
         .map(str::to_string)
 }
 
-// notch-morph nudge (plan §3.5): anchor to the reported cutout when we have
+// notch-morph nudge: anchor to the reported cutout when we have
 // notch-precise geometry, else fall back to screen-center (covers hud mode,
 // and notch mode when the shim couldn't report a cutout).
 fn position_window(
@@ -2015,7 +1954,7 @@ fn position_window(
 }
 
 // ---------------------------------------------------------------------------
-// plan 171 slice D: the prefix keymap's live wiring. The state machine is
+// the prefix keymap's live wiring. The state machine is
 // prefix.rs (pure, tested); everything here is the impure shell: parsing
 // the configured combo, the temporary system-wide grab of the seven
 // follow-up keys while armed, the cancellable disarm timer, and routing
@@ -2035,12 +1974,10 @@ const PREFIX_WATCHDOG_TIMEOUT: std::time::Duration = std::time::Duration::from_s
 /// the prefix/esc disarms it. `enter`/`o` both mean ExpandToggle and
 /// `esc` maps to Disarm, per spec §9's table.
 #[cfg(target_os = "macos")]
-const PREFIX_FOLLOWUPS: [(Code, prefix::PrefixKey); 11] = [
+const PREFIX_FOLLOWUPS: [(Code, prefix::PrefixKey); 9] = [
     (Code::Digit1, prefix::PrefixKey::Digit(1)),
     (Code::Digit2, prefix::PrefixKey::Digit(2)),
     (Code::Digit3, prefix::PrefixKey::Digit(3)),
-    (Code::Digit4, prefix::PrefixKey::Digit(4)),
-    (Code::Digit5, prefix::PrefixKey::Digit(5)),
     (Code::BracketLeft, prefix::PrefixKey::BracketLeft),
     (Code::BracketRight, prefix::PrefixKey::BracketRight),
     (Code::Enter, prefix::PrefixKey::ExpandToggle),
@@ -2090,7 +2027,7 @@ fn prefix_followup_key_for(shortcut: &Shortcut) -> Option<prefix::PrefixKey> {
         .map(|(_, key)| *key)
 }
 
-/// Registers or releases the eleven bare follow-up grabs. Returns whether
+/// Registers or releases the nine bare follow-up grabs. Returns whether
 /// EVERY key reached the requested state.
 ///
 /// PAL consensus 2026-08-03 (gemini-2.5-pro + gpt-5.2, unanimous on this
@@ -2143,7 +2080,7 @@ enum WatchdogVerdict {
 /// `docs/TESTING_STRATEGY.md` §4.4). ALL watchdog policy lives here; the
 /// async loop in `handle_prefix_fire` only sleeps and applies.
 ///
-/// Plan 178: the watchdog stays generation-BLIND on purpose — gating it on
+/// the watchdog stays generation-BLIND on purpose — gating it on
 /// `prefix_generation` would blind it to the "follow-up consumed
 /// (generation bumped) but its release failed" case, which is precisely
 /// the case only the watchdog can catch. What it needs instead is a TIME
@@ -2195,7 +2132,7 @@ fn force_release_prefix_followups<R: tauri::Runtime>(
     tracing::warn!("prefix watchdog: force-releasing follow-up grabs");
     let all_ok = set_prefix_followups_registered(app, false);
     if !all_ok {
-        // Plan 178, the invariant every other caller honours (see
+        // , the invariant every other caller honours (see
         // `handle_prefix_fire` / `handle_prefix_followup`): a failed
         // RELEASE keeps the flag true so the watchdog retries. Clearing it
         // unconditionally used to LIE — the flag said "released", every
@@ -2225,7 +2162,7 @@ fn handle_prefix_fire<R: tauri::Runtime>(app: &tauri::AppHandle<R>, tab_wire: &A
     };
     let generation = tab_wire.prefix_generation.fetch_add(1, Ordering::SeqCst) + 1;
     if armed {
-        // Plan 178: the deadline every watchdog — including ones spawned by
+        // the deadline every watchdog — including ones spawned by
         // EARLIER arms — measures itself against.
         *tab_wire
             .last_arm_at
@@ -2262,7 +2199,7 @@ fn handle_prefix_fire<R: tauri::Runtime>(app: &tauri::AppHandle<R>, tab_wire: &A
         // a wedged runtime, a lost timer, a panic that unwound past the
         // release, or an unregister that failed per-key.
         //
-        // Plan 178: generation-blind BY DESIGN (a generation gate would
+        // generation-blind BY DESIGN (a generation gate would
         // blind it to the "follow-up consumed, but its release failed"
         // case — the one only this net can catch), but DEADLINE-aware, so
         // it can no longer kill a newer legitimate window: each wake-up
@@ -2370,7 +2307,7 @@ fn handle_prefix_followup<R: tauri::Runtime>(
 }
 
 /// Pure decision, thin apply wrapper (house pattern — see
-/// `watchdog_verdict` in plan 178 / `silence_should_flip`'s own comment).
+/// `watchdog_verdict` in / `silence_should_flip`'s own comment).
 /// Whether this tick should advance the Agent tab's viewed session
 /// automatically: the Agent tab must be selected, there must be 2+
 /// sessions to cycle between, the app must not be hovered (pause on
@@ -2423,9 +2360,9 @@ pub(crate) fn apply_tab_select<R: tauri::Runtime>(
 }
 
 fn toggle_pause<R: tauri::Runtime>(engine: &Engine<R>, pause_item: &MenuItem<R>) {
-    // plan 037: the mutation goes through Engine::apply_blocking (which
+    // the mutation goes through Engine::apply_blocking (which
     // keeps the off-tokio-runtime debug_assert, wakes the rotation loop —
-    // plan 015: resume/pause may change the visible item's rotation
+    // resume/pause may change the visible item's rotation
     // deadline — and emits any slot-state change). The tray label stays
     // at the caller, driven by the closure's return value: the Engine
     // never touches menus.
@@ -2570,7 +2507,7 @@ fn start_mute_from_tray<R: tauri::Runtime>(
     refresh_silence_indicator(engine, controller, indicator_item);
 }
 
-/// plan 146a: the Silenced schedule/mute timer. Computes the verdict from
+/// the Silenced schedule/mute timer. Computes the verdict from
 /// the CURRENT wall clock on every wake — never from a stored deadline —
 /// so a clock jump (system sleep, DST, a manual date change) self-heals on
 /// the very next iteration instead of needing dedicated handling; this is
@@ -2626,7 +2563,7 @@ fn spawn_silence_task<R: tauri::Runtime>(
 /// "everything richer than a toggle lives [in Settings], not in more tray
 /// items" rule, which this tray had not yet caught up to).
 ///
-/// plan 146a added the Silenced indicator and the mute/skip items beside
+/// added the Silenced indicator and the mute/skip items beside
 /// Pause — still rust-side only (no new invoke commands, `CLAUDE.md`'s ipc
 /// & security section): every one of these mutates the session-only
 /// `SilenceController` and applies the result to the queue the exact same
@@ -2756,16 +2693,16 @@ fn open_settings_window<R: tauri::Runtime>(app: &tauri::AppHandle<R>) {
     }
 }
 
-// v3.6 spec §7.1.1 + plan 033: with expand-all, every promotion starts
+// v3.6 spec §7.1.1 + with expand-all, every promotion starts
 // expanded, so the hotkey always flips — a press on an auto-expanded card
 // collapses it (render-only, and disarms the auto-retract); a press on a
 // collapsed card expands it and extends its rotation window 3× (manual
-// expansion is the only kind that extends the turn). plan 008's High
+// expansion is the only kind that extends the turn). 's High
 // no-op guard is gone: there is no longer an "automatic for High" state
 // to protect, since automatic expansion is now universal.
 #[cfg(target_os = "macos")]
 fn toggle_manual_expand<R: tauri::Runtime>(engine: &Engine<R>) {
-    // plan 015: expanded changes the rotation window, so the rotation
+    // expanded changes the rotation window, so the rotation
     // loop's next deadline must be recomputed — apply_blocking wakes it.
     engine.apply_blocking(|q, _now| q.toggle_expanded());
 }
@@ -2833,7 +2770,7 @@ fn open_current_story<R: tauri::Runtime>(engine: &Engine<R>) {
     }
 }
 
-/// Plan 184 (Part 2): `should_auto_advance_session`'s own tests. Kept as a
+/// `should_auto_advance_session`'s own tests. Kept as a
 /// plain `#[cfg(test)]` module rather than folded into `mod tests` below —
 /// that module (and everything in it, e.g. `silence_should_flip`'s own
 /// tests) compiles out entirely on non-macOS, which is fine for CI (the
@@ -2845,7 +2782,7 @@ fn open_current_story<R: tauri::Runtime>(engine: &Engine<R>) {
 /// function's own definition — clippy's `items_after_test_module` lint
 /// requires every non-test item in a scope to precede any test module in
 /// that same scope, so a second test module can only sit at the very end.
-/// Plan 178: `watchdog_verdict`'s own tests. A plain `#[cfg(test)]` module
+/// `watchdog_verdict`'s own tests. A plain `#[cfg(test)]` module
 /// for the same reason `agent_session_advance_tests` below is one — `mod
 /// tests` compiles out entirely on non-macOS, and the function under test
 /// is deliberately not `target_os`-gated.
@@ -2964,7 +2901,7 @@ mod agent_session_advance_tests {
     #[test]
     fn should_auto_advance_session_false_when_different_tab_selected() {
         assert!(!should_auto_advance_session(
-            Some(tabs::Tab::Weather),
+            Some(tabs::Tab::News),
             3,
             false,
             false
@@ -3024,7 +2961,7 @@ mod tests {
         test_fixtures::with_priority(test_fixtures::event("t"), priority)
     }
 
-    // ---- plan 146a: silence_should_flip / silence_indicator_label ----
+    // ---- silence_should_flip / silence_indicator_label ----
 
     #[test]
     fn silence_should_flip_is_none_when_already_matching() {
@@ -3197,9 +3134,6 @@ mod tests {
         Engine::new(
             SingleSlotQueue::new(50),
             app.handle().clone(),
-            Arc::new(Vec::new()),
-            false,
-            false,
             false,
             false,
             None,
@@ -3213,8 +3147,8 @@ mod tests {
         let engine = test_engine(&app);
         engine.apply_blocking(|q, now| q.enqueue(event(Priority::High), now).unwrap());
 
-        // every promotion auto-expands (plan 033) — confirm that baseline
-        // first, then prove the hotkey flips it: plan 008's High no-op
+        // every promotion auto-expands — confirm that baseline
+        // first, then prove the hotkey flips it: 's High no-op
         // guard is deleted, so the press must collapse the card.
         match engine.read_blocking(|q| q.current_slot_state()) {
             SlotState::Showing { expanded, .. } => {
@@ -3239,7 +3173,7 @@ mod tests {
         let engine = test_engine(&app);
         engine.apply_blocking(|q, now| q.enqueue(event(Priority::Medium), now).unwrap());
 
-        // Medium auto-expands on promotion too (plan 033): the first press
+        // Medium auto-expands on promotion too: the first press
         // collapses, the second re-expands.
         toggle_manual_expand(&engine);
         match engine.read_blocking(|q| q.current_slot_state()) {
@@ -3359,7 +3293,7 @@ mod tests {
         for raw in [
             "https://example.com/a",
             "http://example.com",
-            "  https://example.com  ",
+            "  https://example.com ",
             "https://exa\tmple.com/pa\nth",
         ] {
             let expected = reqwest::Url::parse(raw).unwrap().to_string();

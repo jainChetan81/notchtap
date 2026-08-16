@@ -7,8 +7,6 @@ afterEach(cleanup);
 const BASE: IconStripProps = {
   agent: "hidden",
   football: "hidden",
-  music: "hidden",
-  weather: "present",
   news: "present",
   newsCharge: 0,
   newsCharged: false,
@@ -17,11 +15,11 @@ const BASE: IconStripProps = {
 };
 
 describe("IconStrip", () => {
-  it("renders all five tabs, in the fixed strip order, regardless of presence", () => {
+  it("renders all three tabs, in the fixed strip order, regardless of presence", () => {
     const { container } = render(<IconStrip {...BASE} />);
     const buttons = container.querySelectorAll(".icon");
-    expect(buttons).toHaveLength(5);
-    expect(TAB_ORDER).toEqual(["agent", "football", "music", "weather", "news"]);
+    expect(buttons).toHaveLength(3);
+    expect(TAB_ORDER).toEqual(["agent", "football", "news"]);
     // class list order mirrors TAB_ORDER -- the strip must never reorder
     // icons based on which are present, per the design source's "fixed
     // order" rule.
@@ -33,6 +31,8 @@ describe("IconStrip", () => {
 
   it("a hidden icon carries no is-present/is-live class and is disabled", () => {
     const { container } = render(<IconStrip {...BASE} agent="hidden" />);
+    // SAFETY: IconStrip always renders all three tabs regardless of presence —
+    // even agent="hidden" mounts the `.icon.agent` glyph.
     const agentIcon = container.querySelector(".icon.agent") as HTMLButtonElement;
     expect(agentIcon.classList.contains("is-present")).toBe(false);
     expect(agentIcon.classList.contains("is-live")).toBe(false);
@@ -40,11 +40,13 @@ describe("IconStrip", () => {
   });
 
   it("present-but-not-live carries is-present without is-live", () => {
-    const { container } = render(<IconStrip {...BASE} weather="present" />);
-    const weatherIcon = container.querySelector(".icon.weather") as HTMLButtonElement;
-    expect(weatherIcon.classList.contains("is-present")).toBe(true);
-    expect(weatherIcon.classList.contains("is-live")).toBe(false);
-    expect(weatherIcon.disabled).toBe(false);
+    const { container } = render(<IconStrip {...BASE} news="present" />);
+    // SAFETY: IconStrip always renders the news tab (fixed three-tab order), so
+    // `.icon.news` is present even when the source is only present, not live.
+    const newsIcon = container.querySelector(".icon.news") as HTMLButtonElement;
+    expect(newsIcon.classList.contains("is-present")).toBe(true);
+    expect(newsIcon.classList.contains("is-live")).toBe(false);
+    expect(newsIcon.disabled).toBe(false);
   });
 
   it("live carries both is-present and is-live", () => {
@@ -55,20 +57,20 @@ describe("IconStrip", () => {
   });
 
   it("marks the selected tab is-selected and aria-pressed, and only that one", () => {
-    const { container } = render(<IconStrip {...BASE} weather="present" selected="weather" />);
-    const weatherIcon = container.querySelector(".icon.weather");
+    const { container } = render(<IconStrip {...BASE} agent="live" selected="agent" />);
+    const agentIcon = container.querySelector(".icon.agent");
     const newsIcon = container.querySelector(".icon.news");
-    expect(weatherIcon?.classList.contains("is-selected")).toBe(true);
-    expect(weatherIcon?.getAttribute("aria-pressed")).toBe("true");
+    expect(agentIcon?.classList.contains("is-selected")).toBe(true);
+    expect(agentIcon?.getAttribute("aria-pressed")).toBe("true");
     expect(newsIcon?.classList.contains("is-selected")).toBe(false);
     expect(newsIcon?.getAttribute("aria-pressed")).toBe("false");
   });
 
   it("clicking a present icon fires onSelect with that tab", () => {
     const onSelect = vi.fn();
-    render(<IconStrip {...BASE} weather="present" onSelect={onSelect} />);
-    fireEvent.click(screen.getByRole("button", { name: "Weather" }));
-    expect(onSelect).toHaveBeenCalledWith("weather");
+    render(<IconStrip {...BASE} news="present" onSelect={onSelect} />);
+    fireEvent.click(screen.getByRole("button", { name: "News" }));
+    expect(onSelect).toHaveBeenCalledWith("news");
     expect(onSelect).toHaveBeenCalledTimes(1);
   });
 
@@ -101,14 +103,20 @@ describe("IconStrip", () => {
 
   it("news charge fill scaleY reflects newsCharge, clamped to [0,1]", () => {
     const { container: mid } = render(<IconStrip {...BASE} newsCharge={0.4} />);
+    // SAFETY: the `.charge` rect always renders inside the news glyph, so a
+    // mid-charge fixture's match is a real SVGElement.
     const midFill = mid.querySelector(".icon.news .charge") as SVGElement;
     expect(midFill.style.transform).toBe("scaleY(0.4)");
 
     const { container: over } = render(<IconStrip {...BASE} newsCharge={1.5} />);
+    // SAFETY: the `.charge` rect always renders inside the news glyph, so an
+    // over-100% fixture's match is a real SVGElement.
     const overFill = over.querySelector(".icon.news .charge") as SVGElement;
     expect(overFill.style.transform).toBe("scaleY(1)");
 
     const { container: under } = render(<IconStrip {...BASE} newsCharge={-0.3} />);
+    // SAFETY: the `.charge` rect always renders inside the news glyph, so a
+    // negative-charge fixture's match is a real SVGElement.
     const underFill = under.querySelector(".icon.news .charge") as SVGElement;
     expect(underFill.style.transform).toBe("scaleY(0)");
   });
@@ -123,6 +131,8 @@ describe("IconStrip", () => {
   // reintroduce the same silent-invisibility bug.
   it("the charge rect's own y coordinate matches the page outline's top (2.5), so scaleY(1) fills it exactly", () => {
     const { container } = render(<IconStrip {...BASE} />);
+    // SAFETY: the `.charge` rect always renders inside the news glyph in the
+    // BASE fixture, so the match to read its `y` attribute is non-null.
     const fill = container.querySelector(".icon.news .charge") as SVGElement;
     expect(fill.getAttribute("y")).toBe("2.5");
   });
@@ -145,17 +155,8 @@ describe("IconStrip", () => {
   });
 
   it("every present icon has an accessible name matching its tab", () => {
-    render(
-      <IconStrip
-        {...BASE}
-        agent="live"
-        football="live"
-        music="live"
-        weather="present"
-        news="present"
-      />,
-    );
-    for (const name of ["Agent", "Football", "Music", "Weather", "News"]) {
+    render(<IconStrip {...BASE} agent="live" football="live" news="present" />);
+    for (const name of ["Agent", "Football", "News"]) {
       expect(screen.getByRole("button", { name })).toBeTruthy();
     }
   });

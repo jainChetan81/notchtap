@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MetaChip } from "@/components/ui/meta-chip";
+import { isString } from "@/lib/guards";
 import { SOURCE_CATEGORY_COLORS, type SourceCategoryToken } from "@/lib/sourceColors";
 import { ActionStatus, useActionStatus } from "../actionStatus";
 import {
@@ -17,15 +18,13 @@ import { settingsInvoke } from "../ipc";
 import type { Config } from "../types";
 import { PRIORITY_SEGMENT_OPTIONS, PRIORITY_TONES } from "../types";
 
-// plan 130 Step 3: an ad-hoc, unpersisted search — same ActionStatus
-// pattern as ConnectorsSection's SecretRow (pending disables, success
-// announces, the input clears only on success). Local component (not
-// controls.tsx) since it's News-only, same precedent as SecretRow living
-// in ConnectorsSection.tsx rather than the shared controls module.
-// Plan 147: read-only legend for the category colours the overlay's
-// news cards actually paint with (news-category.css, mirrored in
-// SOURCE_CATEGORY_COLORS) — `generic` deliberately excluded, it's the
-// fallback, not a category anyone picks.
+// Ad-hoc, unpersisted search — same ActionStatus pattern as the other
+// per-section action rows (pending disables, success announces, input
+// clears only on success). Local component (not controls.tsx) since it's
+// News-only.
+// Read-only legend for the category colours the overlay's news cards
+// paint with (news-category.css, mirrored in SOURCE_CATEGORY_COLORS) —
+// `generic` deliberately excluded, it's the fallback, not a category.
 const CATEGORY_LEGEND_TOKENS: readonly SourceCategoryToken[] = [
   "politics",
   "tech",
@@ -65,12 +64,11 @@ function SearchNowRow() {
     await run(() => settingsInvoke("search_news_now", { query: trimmed }), {
       announce: true,
       okMessage: (count) => `${count} ${count === 1 ? "story" : "stories"} queued`,
-      errorMessage: (reason) =>
-        typeof reason === "string" ? reason : "search could not be completed",
+      errorMessage: (reason) => (isString(reason) ? reason : "search could not be completed"),
     }).then((count) => {
-      // The input clears only on success (plan 130 Step 3) — `run`
-      // resolves `undefined` on a caught rejection, so a failed search
-      // leaves the typed query in place to retry/edit.
+      // The input clears only on success — `run` resolves `undefined` on
+      // a caught rejection, so a failed search leaves the typed query in
+      // place to retry/edit.
       if (count !== undefined) setQuery("");
     });
   }

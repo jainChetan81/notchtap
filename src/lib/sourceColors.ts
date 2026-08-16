@@ -9,22 +9,20 @@
 // from the rules that actually paint the overlay.
 //
 // Origin/runtime entries whose CSS rides a `var(--overlay-*)` /
-// `var(--overlay-fg)` token (kimi, football, weather, manual, the
+// `var(--overlay-fg)` token (kimi, football, manual, the
 // agent fallback, sports, business) are resolved here to that token's
 // underlying hex from vendor/shared-ui/design/tokens.css (:74-91) —
 // each such entry is commented with the token name it mirrors.
 
 // ---- non-news origins (source-identity.css) ----------------------------
 
-export type SourceOriginToken = "manual" | "football" | "weather" | "agent" | "news";
+export type SourceOriginToken = "manual" | "football" | "agent" | "news";
 
-export const SOURCE_ORIGIN_COLORS: Record<SourceOriginToken, string> = {
+export const SOURCE_ORIGIN_COLORS = {
   // --overlay-blue ("CLI blue")
   manual: "#0a84ff",
   // --overlay-green
   football: "#7fe08d",
-  // --overlay-amber
-  weather: "#f0c46a",
   // --overlay-amber (runtime-unknown agent fallback, src-agent)
   agent: "#f0c46a",
   // --overlay-coral — the ORIGIN-level news identity (the news
@@ -32,13 +30,13 @@ export const SOURCE_ORIGIN_COLORS: Record<SourceOriginToken, string> = {
   // `cat-*` instead; this entry exists for origin-keyed surfaces
   // (History) where the category isn't the unit of identity.
   news: "#ff6b57",
-};
+} satisfies Record<SourceOriginToken, string>;
 
 // ---- agent runtimes (source-identity.css) -------------------------------
 
 export type SourceRuntimeToken = "claude-code" | "codex" | "kimi" | "opencode";
 
-export const SOURCE_RUNTIME_COLORS: Record<SourceRuntimeToken, string> = {
+export const SOURCE_RUNTIME_COLORS = {
   // Anthropic "crail" terracotta
   "claude-code": "#d97757",
   // OpenAI green
@@ -47,7 +45,7 @@ export const SOURCE_RUNTIME_COLORS: Record<SourceRuntimeToken, string> = {
   kimi: "#f5f7fa",
   // OpenCode's own TUI accent purple
   opencode: "#9d7cd8",
-};
+} satisfies Record<SourceRuntimeToken, string>;
 
 // ---- news categories (news-category.css) --------------------------------
 
@@ -60,7 +58,7 @@ export type SourceCategoryToken =
   | "science"
   | "generic";
 
-export const SOURCE_CATEGORY_COLORS: Record<SourceCategoryToken, string> = {
+export const SOURCE_CATEGORY_COLORS = {
   politics: "#7c9df5",
   tech: "#5fd4e8",
   // --overlay-green
@@ -70,4 +68,4 @@ export const SOURCE_CATEGORY_COLORS: Record<SourceCategoryToken, string> = {
   world: "#c99df0",
   science: "#f2a2c8",
   generic: "#aab3bd",
-};
+} satisfies Record<SourceCategoryToken, string>;

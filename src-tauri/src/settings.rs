@@ -5,8 +5,8 @@
 //! (the tauri acl does not protect against scope bugs in handlers, so the
 //! label check stays even though the acl should make it unreachable).
 //!
-//! Everything decision-shaped in here is a pure function (validate, mask,
-//! merge); the commands are thin wrappers. Write paths are atomic
+//! Everything decision-shaped in here is a pure function (validate);
+//! the commands are thin wrappers. Write paths are atomic
 //! (same-dir temp file + rename) because a half-written `config.toml` is
 //! a bricked boot given `Config::load`'s fail-fast rule.
 
@@ -14,7 +14,6 @@ use std::path::{Path, PathBuf};
 use std::sync::Mutex as StdMutex;
 
 use chrono::Local;
-use serde::{Deserialize, Serialize};
 
 use crate::config::{
     Appearance, Config, RestingState, CARD_OPACITY_RANGE, CARD_RADIUS_RANGE, CARD_SCALE_RANGE,
@@ -30,7 +29,7 @@ use tauri::Manager;
 // validation (pure, unit-tested — spec §3)
 // ---------------------------------------------------------------------------
 
-/// Normalized match key for a feed url (plan 021 — mirrors the frontend's
+/// Normalized match key for a feed url ( — mirrors the frontend's
 /// `feedKey` in `SettingsApp.tsx`): clear the fragment and trim a single
 /// trailing slash so a cosmetic variant (trailing "/", a `#anchor`) is
 /// recognized as the same feed for duplicate rejection. Falls back to the
@@ -124,12 +123,6 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
         errors.push(format!(
             "agent_ttl_secs must be 1–3600 seconds (got {})",
             c.agent_ttl_secs
-        ));
-    }
-    if !(1..=3600).contains(&c.weather_ttl_secs) {
-        errors.push(format!(
-            "weather_ttl_secs must be 1–3600 seconds (got {})",
-            c.weather_ttl_secs
         ));
     }
     // The asymmetry below is deliberate, not an oversight. Zero RETENTION
@@ -233,48 +226,10 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
         errors.push("rss_enabled is on but rss_feeds is empty — add a feed or disable".into());
     }
 
-    if !(-90.0..=90.0).contains(&c.weather_lat) {
-        errors.push(format!(
-            "weather_lat must be -90.0–90.0 (got {})",
-            c.weather_lat
-        ));
-    }
-    if !(-180.0..=180.0).contains(&c.weather_lon) {
-        errors.push(format!(
-            "weather_lon must be -180.0–180.0 (got {})",
-            c.weather_lon
-        ));
-    }
-    if !(5..=3600).contains(&c.weather_poll_secs) {
-        errors.push(format!(
-            "weather_poll_secs must be 5–3600 (got {})",
-            c.weather_poll_secs
-        ));
-    }
-    if c.weather_rain_threshold_pct > 100 {
-        errors.push(format!(
-            "weather_rain_threshold_pct must be 0–100 (got {})",
-            c.weather_rain_threshold_pct
-        ));
-    }
-    if !(5..=120).contains(&c.weather_rain_lookahead_mins) {
-        errors.push(format!(
-            "weather_rain_lookahead_mins must be 5–120 (got {})",
-            c.weather_rain_lookahead_mins
-        ));
-    }
-    // cross-field check: the hot threshold must sit strictly above the
-    // cold one, or the temp alert would fire on every poll.
-    if c.weather_temp_hot_c <= c.weather_temp_cold_c {
-        errors.push(format!(
-            "weather_temp_hot_c must be greater than weather_temp_cold_c (got {} <= {})",
-            c.weather_temp_hot_c, c.weather_temp_cold_c
-        ));
-    }
     {
         // Duplicate feeds double the poll's network work per tick even
         // though the SeenStore hides the duplicate notifications — reject
-        // rather than silently pay that cost (plan 021).
+        // rather than silently pay that cost.
         let mut seen_keys = std::collections::HashSet::new();
         for feed in &c.rss_feeds {
             if !seen_keys.insert(feed_key(&feed.url)) {
@@ -283,13 +238,12 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
         }
     }
 
-    // rotation_order must be a permutation of all five SourceKind variants
-    // — the ui is a fixed 5-row reorder list, never add/remove, so any
+    // rotation_order must be a permutation of all four SourceKind variants
+    // — the ui is a fixed 4-row reorder list, never add/remove, so any
     // other shape means the ipc caller bypassed it.
     let expected_sources = [
         crate::event::SourceKind::Football,
         crate::event::SourceKind::Manual,
-        crate::event::SourceKind::Weather,
         crate::event::SourceKind::News,
         crate::event::SourceKind::Agent,
     ];
@@ -299,7 +253,7 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
             .all(|source| c.rotation_order.contains(source));
     if !is_permutation {
         errors.push(
-            "rotation_order must contain each of football, manual, weather, news, and agent exactly once"
+            "rotation_order must contain each of football, manual, news, and agent exactly once"
                 .into(),
         );
     }
@@ -308,7 +262,7 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
         errors.append(&mut appearance_errors);
     }
 
-    // plan 171 slice J (spec §9): `prefix_shortcut`'s doc comment
+    // `prefix_shortcut`'s doc comment
     // (config.rs) has the full rationale — this is the save-time
     // backstop, mirroring the frontend's own inline
     // `isValidPrefixShortcut` (ShortcutsSection.tsx), which must stay in
@@ -342,7 +296,7 @@ fn is_valid_prefix_shortcut(value: &str) -> bool {
     }
 }
 
-// plan 097: ranges live in `config::CARD_*_RANGE` so this save-path check
+// ranges live in `config::CARD_*_RANGE` so this save-path check
 // and `Config::parse`'s load-path self-heal can never drift apart.
 pub fn validate_appearance(a: &Appearance) -> Result<(), Vec<String>> {
     let mut errors = Vec::new();
@@ -369,116 +323,13 @@ pub fn validate_appearance(a: &Appearance) -> Result<(), Vec<String>> {
 }
 
 // ---------------------------------------------------------------------------
-// secret masking (pure, unit-tested — spec §4)
-// ---------------------------------------------------------------------------
-
-/// `"set (…a1b2)"` for values of 8+ chars, plain `"set"` below that —
-/// short values would leak most of themselves through their own tail.
-/// The full value never crosses ipc outbound; this string is all the
-/// settings window ever sees.
-pub fn mask(value: &str) -> String {
-    let chars: Vec<char> = value.chars().collect();
-    if chars.len() >= 8 {
-        let last4: String = chars[chars.len() - 4..].iter().collect();
-        format!("set (…{last4})")
-    } else {
-        "set".to_string()
-    }
-}
-
-// ---------------------------------------------------------------------------
-// secrets document (read-modify-write target — spec §4)
-// ---------------------------------------------------------------------------
-
-/// The whole-file shape of `secrets.toml` as the settings writer sees it:
-/// every table and field optional, so setting one field never demands the
-/// others exist.
-///
-/// The `extra` map (2026-07-17 review) preserves unknown tables and
-/// unknown fields inside known tables across a read-modify-write —
-/// without it, serde would silently drop anything this struct doesn't
-/// model, and "setting one key deletes a hand-added table" would violate
-/// the never-clobber rule this module promises. That also means a
-/// leftover `[telegram]` table from before the telegram connector was
-/// removed round-trips untouched through `extra` — nothing here needs to
-/// know its shape anymore.
-#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct SecretsDoc {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub openrouter: Option<OpenRouterTable>,
-    #[serde(default, flatten)]
-    pub extra: toml::Table,
-}
-
-#[derive(Debug, Default, PartialEq, Serialize, Deserialize)]
-pub struct OpenRouterTable {
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub api_key: Option<String>,
-    #[serde(default, flatten)]
-    pub extra: toml::Table,
-}
-
-/// The one settable field — a closed set, so the ipc surface can never
-/// be steered at an arbitrary toml path.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
-#[serde(rename_all = "snake_case")]
-pub enum SecretField {
-    OpenrouterApiKey,
-}
-
-/// Masked per-field status for the settings form (spec §2) — presence and
-/// completeness in one shape, never a value.
-#[derive(Debug, PartialEq, Serialize)]
-pub struct SecretStatus {
-    pub openrouter_api_key: Option<String>,
-}
-
-// ---------------------------------------------------------------------------
-// pure merge + status (unit-tested against in-memory docs)
-// ---------------------------------------------------------------------------
-
-/// Sets exactly one field, materializing its table if needed and touching
-/// nothing else — "set openrouter preserves other tables" is the tested
-/// contract (spec §7).
-pub fn merge_secret(doc: &mut SecretsDoc, field: SecretField, value: String) {
-    match field {
-        SecretField::OpenrouterApiKey => {
-            doc.openrouter.get_or_insert_with(Default::default).api_key = Some(value);
-        }
-    }
-}
-
-pub fn secret_status(doc: &SecretsDoc) -> SecretStatus {
-    SecretStatus {
-        openrouter_api_key: doc
-            .openrouter
-            .as_ref()
-            .and_then(|t| t.api_key.as_deref())
-            .map(mask),
-    }
-}
-
-/// Secret values are validated for shape only (spec §4): non-empty, no
-/// whitespace. Nothing reads the openrouter key in v5 — it waits for the
-/// first ai feature.
-pub fn validate_secret_value(value: &str) -> Result<(), String> {
-    if value.is_empty() {
-        return Err("secret value must not be empty".into());
-    }
-    if value.chars().any(char::is_whitespace) {
-        return Err("secret value must not contain whitespace".into());
-    }
-    Ok(())
-}
-
-// ---------------------------------------------------------------------------
 // write paths (atomic; integration-tested against temp dirs, never $HOME)
 // ---------------------------------------------------------------------------
 
 /// A fresh, never-before-existing temp path in `dir` (2026-07-17 review):
 /// a *fixed* temp name could pre-exist with permissive permissions, and
-/// `OpenOptions::mode` only applies at creation — writing a secret into a
-/// stale world-readable temp file would void the 0600 guarantee. Unique
+/// `OpenOptions::mode` only applies at creation — writing 0600 content
+/// into a stale world-readable temp file would void the guarantee. Unique
 /// name + `create_new` makes creation (and therefore the mode) certain.
 fn unique_tmp(dir: &Path, base: &str) -> PathBuf {
     dir.join(format!("{base}.tmp.{}", uuid::Uuid::new_v4()))
@@ -512,15 +363,15 @@ fn write_then_rename(
     attempt
 }
 
-/// Create `dir` (config/secrets/history all share `Config::dir_from_home`)
+/// Create `dir` (config/history share `Config::dir_from_home`)
 /// and pin it to `0700` (L-sec1): `create_dir_all` only applies the
 /// umask-derived default, which on a stock macOS install is world-
 /// readable+executable — mirrors `history.rs`'s `HistoryStore::with_limits`
 /// posture exactly, except that store only ever ran (and only ever locked
 /// the dir down) when `history_enabled` was set. Calling this from both
-/// write paths below means the dir is locked down the first time EITHER
-/// config.toml or secrets.toml is written, not conditionally on history
-/// ever having been turned on.
+/// the write path below means the dir is locked down the first time
+/// config.toml is written, not conditionally on history ever having been
+/// turned on.
 fn ensure_config_dir(dir: &Path) -> anyhow::Result<()> {
     use std::os::unix::fs::PermissionsExt;
     std::fs::create_dir_all(dir)?;
@@ -533,10 +384,8 @@ fn ensure_config_dir(dir: &Path) -> anyhow::Result<()> {
 /// atomic, and a torn `config.toml` is a bricked boot. Known, accepted
 /// loss (spec §3): hand-written comments in the file don't survive.
 ///
-/// L-sec1: written `0600` like `secrets.toml` — config.toml can carry
-/// feed urls, coordinates, etc; nothing here is as sensitive as
-/// `secrets.toml`'s credentials, but there's no reason to leave it
-/// world-readable either.
+/// L-sec1: written `0600` — config.toml can carry feed urls,
+/// coordinates, etc; there's no reason to leave it world-readable.
 pub fn write_config_atomic(dir: &Path, config: &Config) -> anyhow::Result<()> {
     ensure_config_dir(dir)?;
     let serialized = toml::to_string_pretty(config)?;
@@ -546,62 +395,6 @@ pub fn write_config_atomic(dir: &Path, config: &Config) -> anyhow::Result<()> {
         &serialized,
         Some(0o600),
     )
-}
-
-/// Atomically replace `secrets.toml` in `dir`, mode `0600` from the first
-/// byte — the temp file is `create_new` with the final permissions, so
-/// there is no window where secret content sits with any other mode.
-pub fn write_secrets_atomic(dir: &Path, doc: &SecretsDoc) -> anyhow::Result<()> {
-    ensure_config_dir(dir)?;
-    let serialized = toml::to_string_pretty(doc)?;
-    write_then_rename(
-        &unique_tmp(dir, "secrets.toml"),
-        &dir.join("secrets.toml"),
-        &serialized,
-        Some(0o600),
-    )
-}
-
-/// Load the secrets doc for a read-modify-write. Missing file → empty doc
-/// (first key ever pasted creates it). **Malformed file → hard error**,
-/// never a clobber — the user may have hand-edited it wrong, and silently
-/// overwriting would destroy whatever they meant to keep (spec §4).
-///
-/// The parse error itself is deliberately withheld (2026-07-17 review):
-/// `toml::de::Error`'s Display can echo the offending source line — which
-/// in this file is secret material — straight across ipc.
-pub fn load_secrets_doc(dir: &Path) -> Result<SecretsDoc, String> {
-    let path = dir.join("secrets.toml");
-    match std::fs::read_to_string(&path) {
-        Ok(content) => toml::from_str(&content).map_err(|_| {
-            "secrets.toml is malformed — fix or delete it by hand \
-             (parse detail withheld: it could echo secret material)"
-                .to_string()
-        }),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(SecretsDoc::default()),
-        Err(e) => Err(format!("secrets.toml unreadable: {e}")),
-    }
-}
-
-/// Serializes every secrets read-modify-write (2026-07-17 review): two
-/// concurrent `set_secret` invocations would otherwise both read the old
-/// doc and one field would silently overwrite the other. In-process only —
-/// the app has no single-instance enforcement, but two running copies
-/// already fail loudly at the port bind, so a file lock is unearned.
-static SECRETS_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-/// The one full set-a-secret path the command wraps: trim → validate →
-/// load → merge → atomic 0600 write, all under [`SECRETS_LOCK`]. The trim
-/// (2026-07-17 review) forgives the trailing newline every clipboard
-/// paste carries — rejecting it as "contains whitespace" would make the
-/// most common paste fail confusingly.
-pub fn set_secret_in(dir: &Path, field: SecretField, value: String) -> Result<(), String> {
-    let value = value.trim().to_string();
-    validate_secret_value(&value)?;
-    let _guard = SECRETS_LOCK.lock().unwrap_or_else(|e| e.into_inner());
-    let mut doc = load_secrets_doc(dir)?;
-    merge_secret(&mut doc, field, value);
-    write_secrets_atomic(dir, &doc).map_err(|e| format!("could not write secrets.toml: {e}"))
 }
 
 fn notchtap_config_dir() -> Result<PathBuf, String> {
@@ -633,7 +426,7 @@ fn ensure_settings_window<R: tauri::Runtime>(
 /// appearance channel. The field names stay camelCase-free; the frontend's
 /// listener mirrors this shape directly.
 ///
-/// plan 085: `resting_state` widened this beyond pure card styling — it's a
+/// `resting_state` widened this beyond pure card styling — it's a
 /// top-level `Config` field, not part of `Appearance`, so this payload is
 /// always built from the whole `Config` (`from_config`), never from
 /// `Appearance` alone. That matters even for a pure appearance-only change
@@ -731,26 +524,7 @@ fn build_test_event(config: &Config, source: SourceKind) -> Event {
             signal: EventSignal::Generic,
             origin: SourceKind::Manual,
         },
-        SourceKind::Weather => Event {
-            id: uuid::Uuid::new_v4(),
-            event_type: EventType::Generic,
-            priority: config.weather_priority,
-            // the preview must show the same window the real poller
-            // applies — reading default_ttl here previewed a different
-            // ttl than weather_ttl_secs actually produces.
-            rotation: RotationSpec::OneShot {
-                ttl_secs: config.weather_ttl_secs,
-            },
-            topic: None,
-            payload: EventPayload {
-                title: "Test weather alert".into(),
-                body: timestamp_body(),
-            },
-            meta: EventMeta::default(),
-            signal: EventSignal::Generic,
-            origin: SourceKind::Weather,
-        },
-        // plan 137 (spec §7): the flat `agent_priority`/`agent_ttl_secs`
+        // the flat `agent_priority`/`agent_ttl_secs`
         // config now exists (the one-release migration target for the
         // former `cmux_priority`/`cmux_ttl_secs`) — this preview arm reads
         // them directly, same role the removed `Cmux` arm's
@@ -773,7 +547,7 @@ fn build_test_event(config: &Config, source: SourceKind) -> Event {
                 body: "This is how agent notifications look".into(),
             },
             // preview mirrors what a real claude-code completion carries
-            // since plan 147.
+            //
             meta: EventMeta {
                 subtitle: Some("notchtap".into()),
                 details: vec![DetailItem {
@@ -811,21 +585,13 @@ pub fn get_config(
 }
 
 /// Serves Config::default() so the frontend never mirrors defaults
-/// (plan 020) — the "Reset to defaults" source of truth is config.rs.
+/// — the "Reset to defaults" source of truth is config.rs.
 #[tauri::command]
 pub fn get_default_config<R: tauri::Runtime>(
     window: tauri::WebviewWindow<R>,
 ) -> Result<Config, String> {
     ensure_settings_window(&window)?;
     Ok(Config::default())
-}
-
-#[tauri::command]
-pub fn get_secret_status(window: tauri::WebviewWindow) -> Result<SecretStatus, String> {
-    ensure_settings_window(&window)?;
-    let dir = notchtap_config_dir()?;
-    let doc = load_secrets_doc(&dir)?;
-    Ok(secret_status(&doc))
 }
 
 /// The panel never edits `detect_path` (ARCHITECTURE.md §17: file-only) —
@@ -836,18 +602,10 @@ pub fn get_secret_status(window: tauri::WebviewWindow) -> Result<SecretStatus, S
 /// submits.
 pub fn pin_uneditable_fields(mut submitted: Config, booted: &Config) -> Config {
     submitted.detect_path = booted.detect_path.clone();
-    // plan 104: same treatment as `detect_path` — `now_playing_adapter_dir`
-    // names another executed subprocess path, and `now_playing_adapter_enabled`
-    // is the deliberately-not-in-UI kill switch (config.rs's own doc
-    // comment) — both must round-trip from the booted value regardless of
-    // what the settings window submits, not just because the panel
-    // doesn't render an editor for them.
-    submitted.now_playing_adapter_enabled = booted.now_playing_adapter_enabled;
-    submitted.now_playing_adapter_dir = booted.now_playing_adapter_dir.clone();
     submitted
 }
 
-/// Best-effort pre-flight (plan 021): the relaunched app `exit(1)`s on a
+/// Best-effort pre-flight: the relaunched app `exit(1)`s on a
 /// taken port with no UI — catch the common collision before writing. A
 /// race remains possible (port taken between check and relaunch); this
 /// narrows the window, it doesn't close it — accepted. The `new != booted`
@@ -869,7 +627,7 @@ pub fn preflight_port(new: u16, booted: u16) -> Result<(), String> {
 /// before a reply could matter.
 ///
 /// C9: ONE guard held across clone(booted) -> validate -> preflight ->
-/// disk write -> memory mutate, matching `set_appearance`'s (plan 132)
+/// disk write -> memory mutate, matching `set_appearance`'s
 /// discipline — two separate lock/unlock pairs let a concurrent
 /// `set_appearance` call (which already holds the lock across its own
 /// clone->write->mutate) interleave between this command's read of
@@ -904,17 +662,6 @@ pub fn save_config_and_relaunch(
 }
 
 #[tauri::command]
-pub fn set_secret(
-    window: tauri::WebviewWindow,
-    field: SecretField,
-    value: String,
-) -> Result<(), String> {
-    ensure_settings_window(&window)?;
-    let dir = notchtap_config_dir()?;
-    set_secret_in(&dir, field, value)
-}
-
-#[tauri::command]
 pub async fn send_test_notification(
     window: tauri::WebviewWindow,
     state: tauri::State<'_, StdMutex<Config>>,
@@ -928,14 +675,14 @@ pub async fn send_test_notification(
         .unwrap_or_else(|e| e.into_inner())
         .clone();
     let event = build_test_event(&config, source);
-    // plan 037: Engine::accept performs the enqueue with the one
+    // Engine::accept performs the enqueue with the one
     // mutate→wake→emit protocol (a test notification pushed from the
-    // Settings window rotates out on schedule — plan 015's review
+    // Settings window rotates out on schedule — 's review
     // follow-up — by construction now, not convention).
     engine.accept(event, true).await.map_err(|e| e.to_string())
 }
 
-/// On-the-go news search (plan 130 Step 3): expands `query` via the SAME
+/// On-the-go news search: expands `query` via the SAME
 /// `rss_poller::expand_topic_url` a configured topic line uses (one
 /// shared path, no fork), fetches it ONCE, dedups against the SAME
 /// `SeenStore` the continuous poller shares (app-managed state — see
@@ -1018,8 +765,7 @@ pub async fn search_news_now(
 #[tauri::command]
 pub async fn get_recent_log_lines(window: tauri::WebviewWindow) -> Result<Vec<String>, String> {
     ensure_settings_window(&window)?;
-    // plan 077: no content-based redaction layer here on purpose —
-    // notifier.rs's token redaction (plan 006, `e.without_url()`) already
+    // no content-based redaction layer here on purpose — logging.rs
     // keeps secrets out of the log file itself, so the file is safe to
     // surface read-only in the settings window.
     crate::logging::read_recent_lines(200).map_err(|e| e.to_string())
@@ -1042,7 +788,7 @@ pub fn set_appearance(
     };
     validate_appearance(&appearance).map_err(|errors| errors.join("; "))?;
 
-    // plan 132: ONE guard held across clone -> disk write -> memory mutate,
+    // ONE guard held across clone -> disk write -> memory mutate,
     // not two separate lock/unlock pairs — two rapid calls could otherwise
     // interleave into a stale disk write (the second call's disk write
     // landing between the first call's write and its memory update).
@@ -1103,7 +849,7 @@ pub async fn clear_history(
     }
 }
 
-// The three Queue-section commands (plan 121): read-only visibility plus
+// The three Queue-section commands: read-only visibility plus
 // clear/skip, none of which need a bespoke Engine method — `engine.read`/
 // `engine.apply` (engine.rs) are already the async-caller door for exactly
 // this shape. Titles/bodies inside `QueueItemSummary` are UNTRUSTED wire
@@ -1159,7 +905,7 @@ pub async fn get_about_info(
     Ok(crate::about::gather_about_info(&app, *started_at.inner()))
 }
 
-/// Plan 143 (v7 ticket 11 of 13, spec §4.6/§8/§10): the Agents section's
+/// the Agents section's
 /// four adapter cards read Adapter Health through this command — a live
 /// [`crate::agents::health::HealthTracker::snapshot`] read, mapped
 /// through the exact same [`crate::agents::board::health_to_view`]
@@ -1193,7 +939,7 @@ pub fn get_agent_health(
         .collect())
 }
 
-/// Plan 143 (spec §4.6's "a test event" adapter-card action; mirrors
+/// (spec §4.6's "a test event" adapter-card action; mirrors
 /// `notchtap-agent test <runtime>`, `src/bin/notchtap_agent.rs`, exactly
 /// — same synthetic non-terminal `completed` schema-v1 event, "turn
 /// completed, agent awaiting input" (spec §2.1's per-turn-Stop rule), not
@@ -1259,13 +1005,13 @@ pub async fn send_agent_test_event(
     let terminal = event.terminal;
     let session_key = event.session_key.clone();
     let summary = event.summary.clone();
-    // Plan 147: clone before `event` moves into `apply_event` below, same
+    // clone before `event` moves into `apply_event` below, same
     // as `http.rs`'s real `/agent/events` handler — mending this call site
     // for the signature change only, no behavioural edit.
     let project_name = event.project.as_ref().and_then(|p| p.name.clone());
     let details = event.details.clone();
 
-    // Plan 143: a test event is exactly the "adapter is delivering"
+    // a test event is exactly the "adapter is delivering"
     // signal Adapter Health's own last-accepted-event field means — the
     // Agents section card should reflect a manual test the same way it
     // would a real hook delivery, not go stale until the next real
@@ -1327,7 +1073,7 @@ mod tests {
         assert!(validate(&Config::default()).is_ok());
     }
 
-    // --- prefix_shortcut (plan 171 slice J) ---
+    // --- prefix_shortcut ---
 
     #[test]
     fn prefix_shortcut_accepts_the_shipped_default_and_the_existing_combo_family() {
@@ -1347,7 +1093,7 @@ mod tests {
         assert!(!is_valid_prefix_shortcut("⇧⌃Space")); // glyphs in the wrong order
     }
 
-    // --- plan 180 (Step 4): the shared whitespace fixture table ---
+    // --- the shared whitespace fixture table ---
     //
     // THIS FUNCTION IS ONE HALF OF A TWO-LANGUAGE TEST. The identical
     // strings run against `isValidPrefixShortcut` in
@@ -1356,7 +1102,7 @@ mod tests {
     // whether the config actually saves. A disagreement shows up as a
     // field that reads "valid" and a save that quietly refuses it.
     //
-    // They did disagree until plan 180: rust's `char::is_whitespace` is
+    // They did disagree until rust's `char::is_whitespace` is
     // Unicode `White_Space`, while JavaScript's `\s` misses U+0085 (NEL)
     // and adds U+FEFF (ZWNBSP). Both of those are in the table below.
     // Change either validator and you must run BOTH tables.
@@ -1487,21 +1233,6 @@ mod tests {
     }
 
     #[test]
-    fn weather_ttl_boundaries() {
-        let mut c = Config {
-            weather_ttl_secs: 0,
-            ..Config::default()
-        };
-        assert!(validate(&c).is_err());
-        c.weather_ttl_secs = 1;
-        assert!(validate(&c).is_ok());
-        c.weather_ttl_secs = 3600;
-        assert!(validate(&c).is_ok());
-        c.weather_ttl_secs = 3601;
-        assert!(validate(&c).is_err());
-    }
-
-    #[test]
     fn agents_stale_after_boundaries() {
         let mut c = Config::default();
         c.agents.stale_after_secs = 0;
@@ -1556,12 +1287,11 @@ mod tests {
         };
         assert!(validate(&c).is_err());
 
-        // duplicate entry (still length 5, but News is missing)
+        // duplicate entry (still length 4, but News is missing)
         c.rotation_order = vec![
             SourceKind::Football,
             SourceKind::Football,
             SourceKind::Manual,
-            SourceKind::Weather,
             SourceKind::Agent,
         ];
         assert!(validate(&c).is_err());
@@ -1571,7 +1301,6 @@ mod tests {
             SourceKind::News,
             SourceKind::Football,
             SourceKind::Agent,
-            SourceKind::Weather,
             SourceKind::Manual,
         ];
         assert!(validate(&c).is_ok());
@@ -1588,41 +1317,6 @@ mod tests {
         assert!(validate(&c).is_ok());
         c.espn_poll_secs = 3601;
         assert!(validate(&c).is_err());
-    }
-
-    #[test]
-    fn weather_field_ranges_validate() {
-        let mut c = Config {
-            weather_lat: 91.0,
-            ..Config::default()
-        };
-        assert!(validate(&c).is_err());
-        c.weather_lat = -90.0;
-        assert!(validate(&c).is_ok());
-        c.weather_lon = 181.0;
-        assert!(validate(&c).is_err());
-        c.weather_lon = -180.0;
-        assert!(validate(&c).is_ok());
-        c.weather_poll_secs = 4;
-        assert!(validate(&c).is_err());
-        c.weather_poll_secs = 900;
-        assert!(validate(&c).is_ok());
-        c.weather_rain_threshold_pct = 101;
-        assert!(validate(&c).is_err());
-        c.weather_rain_threshold_pct = 100;
-        assert!(validate(&c).is_ok());
-        c.weather_rain_lookahead_mins = 4;
-        assert!(validate(&c).is_err());
-        c.weather_rain_lookahead_mins = 121;
-        assert!(validate(&c).is_err());
-        c.weather_rain_lookahead_mins = 30;
-        assert!(validate(&c).is_ok());
-        // cross-field: hot must sit strictly above cold
-        c.weather_temp_hot_c = 14.0;
-        c.weather_temp_cold_c = 14.0;
-        assert!(validate(&c).is_err());
-        c.weather_temp_hot_c = 36.0;
-        assert!(validate(&c).is_ok());
     }
 
     #[test]
@@ -1716,11 +1410,11 @@ mod tests {
         assert_eq!(high.len(), 3);
     }
 
-    // --- appearance-changed payload (plan 085 widened it with resting_state) ---
+    // --- appearance-changed payload ---
 
     #[test]
     fn appearance_changed_payload_carries_resting_state_from_config() {
-        // plan 085: the payload is built from the whole Config, not just
+        // the payload is built from the whole Config, not just
         // Appearance — a pure appearance change (set_appearance) must still
         // report the config's actual resting_state, not a default.
         let mut config = Config {
@@ -1910,24 +1604,6 @@ mod tests {
         assert!(validate(&c).is_ok());
     }
 
-    // --- mask ---
-
-    #[test]
-    fn long_values_mask_to_last_four() {
-        assert_eq!(mask("sk-or-v1-abcda1b2"), "set (…a1b2)");
-    }
-
-    #[test]
-    fn exactly_eight_chars_still_masks() {
-        assert_eq!(mask("abcda1b2"), "set (…a1b2)");
-    }
-
-    #[test]
-    fn short_values_never_leak_their_tail() {
-        assert_eq!(mask("abcdefg"), "set");
-        assert_eq!(mask("x"), "set");
-    }
-
     // --- config round-trip: pins the Serialize derive against drift ---
 
     #[test]
@@ -1956,7 +1632,6 @@ mod tests {
                 crate::event::SourceKind::Manual,
                 crate::event::SourceKind::Agent,
                 crate::event::SourceKind::Football,
-                crate::event::SourceKind::Weather,
             ],
             ..Config::default()
         };
@@ -1964,77 +1639,6 @@ mod tests {
         let serialized = toml::to_string_pretty(&original).unwrap();
         let reparsed = Config::parse(&serialized).unwrap();
         assert_eq!(original, reparsed);
-    }
-
-    // --- secrets merge (pure) ---
-
-    #[test]
-    fn setting_openrouter_preserves_extra_tables() {
-        // a leftover `[telegram]` table (or any other unmodeled table)
-        // must survive untouched through `extra` when a different field
-        // is set — the never-clobber contract (spec §7), now proven
-        // against the generic extra map rather than a modeled telegram
-        // table.
-        let mut extra = toml::Table::new();
-        let mut telegram = toml::Table::new();
-        telegram.insert("bot_token".into(), toml::Value::String("tok".into()));
-        telegram.insert("chat_id".into(), toml::Value::String("42".into()));
-        extra.insert("telegram".into(), toml::Value::Table(telegram));
-
-        let mut doc = SecretsDoc {
-            openrouter: None,
-            extra,
-        };
-        merge_secret(&mut doc, SecretField::OpenrouterApiKey, "sk-or-key1".into());
-        assert_eq!(
-            doc.extra
-                .get("telegram")
-                .and_then(|v| v.get("bot_token"))
-                .and_then(|v| v.as_str()),
-            Some("tok")
-        );
-        assert_eq!(
-            doc.extra
-                .get("telegram")
-                .and_then(|v| v.get("chat_id"))
-                .and_then(|v| v.as_str()),
-            Some("42")
-        );
-        assert_eq!(
-            doc.openrouter.as_ref().unwrap().api_key.as_deref(),
-            Some("sk-or-key1")
-        );
-    }
-
-    #[test]
-    fn secret_field_deserializes_exactly_one_name() {
-        let parsed: SecretField = serde_json::from_str("\"openrouter_api_key\"").unwrap();
-        assert_eq!(parsed, SecretField::OpenrouterApiKey);
-        assert!(serde_json::from_str::<SecretField>("\"detect_path\"").is_err());
-        assert!(serde_json::from_str::<SecretField>("\"telegram_bot_token\"").is_err());
-    }
-
-    #[test]
-    fn secret_values_must_be_nonempty_and_whitespace_free() {
-        assert!(validate_secret_value("").is_err());
-        assert!(validate_secret_value("has space").is_err());
-        assert!(validate_secret_value("has\ttab").is_err());
-        assert!(validate_secret_value("sk-or-v1-fine").is_ok());
-    }
-
-    // --- status masking over the doc ---
-
-    #[test]
-    fn status_reports_per_field_masked_presence() {
-        let doc = SecretsDoc {
-            openrouter: Some(OpenRouterTable {
-                api_key: Some("longtoken1234".into()),
-                ..Default::default()
-            }),
-            ..Default::default()
-        };
-        let status = secret_status(&doc);
-        assert_eq!(status.openrouter_api_key.as_deref(), Some("set (…1234)"));
     }
 
     // --- write paths (temp dirs, never $HOME) ---
@@ -2058,7 +1662,7 @@ mod tests {
         let reparsed = Config::parse(&on_disk).unwrap();
         assert_eq!(reparsed.port, 4242);
 
-        // L-sec1: config.toml is 0600 like secrets.toml, and the shared
+        // L-sec1: config.toml is 0600, and the shared
         // config dir is 0700 like history.rs's HistoryStore — locked down
         // the first time config.toml is written, not only when history is
         // enabled.
@@ -2074,86 +1678,6 @@ mod tests {
         std::fs::remove_dir_all(&dir).ok();
     }
 
-    #[test]
-    fn secrets_write_is_0600_and_re_reads_via_load_secrets_doc() {
-        // the strict per-connector loader (`notifier::load_secrets`) was
-        // removed along with the telegram connector; this test now proves
-        // the write path's round-trip consumer contract through the
-        // generic doc loader instead: what the writer wrote, the reader
-        // reads back, on a 0600 file.
-        use std::os::unix::fs::PermissionsExt;
-        let dir = temp_dir();
-        set_secret_in(&dir, SecretField::OpenrouterApiKey, "sk-or-key12345".into()).unwrap();
-
-        let path = dir.join("secrets.toml");
-        let mode = std::fs::metadata(&path).unwrap().permissions().mode() & 0o777;
-        assert_eq!(mode, 0o600);
-
-        let doc = load_secrets_doc(&dir).unwrap();
-        assert_eq!(
-            doc.openrouter.unwrap().api_key.as_deref(),
-            Some("sk-or-key12345")
-        );
-        assert!(no_tmp_leftovers(&dir));
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn setting_openrouter_preserves_a_leftover_telegram_table_on_disk() {
-        // an operator's secrets.toml may still hold a `[telegram]` table
-        // left over from before the connector was removed — writing a
-        // different field must never clobber it (spec §7's never-clobber
-        // rule, now proven end-to-end through the write path rather than
-        // only against an in-memory doc).
-        use std::os::unix::fs::PermissionsExt;
-        let dir = temp_dir();
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("secrets.toml");
-        std::fs::write(&path, "[telegram]\nbot_token = \"tok12345\"\n").unwrap();
-        std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).unwrap();
-
-        set_secret_in(&dir, SecretField::OpenrouterApiKey, "sk-or-key9".into()).unwrap();
-
-        let doc = load_secrets_doc(&dir).unwrap();
-        assert_eq!(
-            doc.openrouter.unwrap().api_key.as_deref(),
-            Some("sk-or-key9")
-        );
-        assert_eq!(
-            doc.extra
-                .get("telegram")
-                .and_then(|v| v.get("bot_token"))
-                .and_then(|v| v.as_str()),
-            Some("tok12345")
-        );
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn malformed_existing_secrets_error_and_are_never_clobbered() {
-        let dir = temp_dir();
-        std::fs::create_dir_all(&dir).unwrap();
-        let path = dir.join("secrets.toml");
-        let garbage = "this is [not valid toml";
-        std::fs::write(&path, garbage).unwrap();
-
-        let err =
-            set_secret_in(&dir, SecretField::OpenrouterApiKey, "sk-or-key9".into()).unwrap_err();
-        assert!(err.contains("malformed"), "got: {err}");
-        assert_eq!(
-            std::fs::read_to_string(&path).unwrap(),
-            garbage,
-            "a malformed file must survive untouched, never be clobbered"
-        );
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn missing_secrets_file_yields_an_empty_doc() {
-        let dir = temp_dir();
-        assert_eq!(load_secrets_doc(&dir).unwrap(), SecretsDoc::default());
-    }
-
     fn no_tmp_leftovers(dir: &Path) -> bool {
         std::fs::read_dir(dir)
             .map(|entries| {
@@ -2164,96 +1688,7 @@ mod tests {
             .unwrap_or(true)
     }
 
-    // --- 2026-07-17 review round: sentinel leak, unknown-key preservation,
-    // --- trim, detect_path pinning, stale-tmp safety, label gate ---
-
-    #[test]
-    fn malformed_secrets_error_never_echoes_secret_material() {
-        let dir = temp_dir();
-        std::fs::create_dir_all(&dir).unwrap();
-        // malformed line that CONTAINS the secret — toml::de::Error's
-        // Display would echo this source line if formatted
-        std::fs::write(
-            dir.join("secrets.toml"),
-            "[telegram]\nbot_token = \"SENTINEL-hunter2",
-        )
-        .unwrap();
-
-        let err = load_secrets_doc(&dir).unwrap_err();
-        assert!(!err.contains("SENTINEL"), "leaked secret in: {err}");
-        assert!(!err.contains("hunter2"), "leaked secret in: {err}");
-
-        let err2 =
-            set_secret_in(&dir, SecretField::OpenrouterApiKey, "sk-or-new1".into()).unwrap_err();
-        assert!(!err2.contains("SENTINEL"), "leaked secret in: {err2}");
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn unknown_tables_and_fields_survive_a_secret_write() {
-        let dir = temp_dir();
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            dir.join("secrets.toml"),
-            "[telegram]\nbot_token = \"tok12345\"\nwebhook = \"keep-me\"\n\n[future_service]\napi_key = \"also-keep-me\"\n",
-        )
-        .unwrap();
-
-        set_secret_in(&dir, SecretField::OpenrouterApiKey, "sk-or-new1".into()).unwrap();
-
-        let on_disk = std::fs::read_to_string(dir.join("secrets.toml")).unwrap();
-        assert!(
-            on_disk.contains("keep-me"),
-            "unknown telegram field dropped:\n{on_disk}"
-        );
-        assert!(
-            on_disk.contains("future_service"),
-            "unknown table dropped:\n{on_disk}"
-        );
-        assert!(on_disk.contains("also-keep-me"));
-        assert!(on_disk.contains("tok12345"));
-        assert!(on_disk.contains("sk-or-new1"));
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn secret_values_are_trimmed_before_validation_and_storage() {
-        // the trailing newline every clipboard paste carries must not be
-        // rejected as "contains whitespace" — and must not be stored
-        let dir = temp_dir();
-        set_secret_in(&dir, SecretField::OpenrouterApiKey, "sk-or-key9\n".into()).unwrap();
-        let doc = load_secrets_doc(&dir).unwrap();
-        assert_eq!(
-            doc.openrouter.unwrap().api_key.as_deref(),
-            Some("sk-or-key9")
-        );
-        // interior whitespace is still rejected
-        assert!(set_secret_in(&dir, SecretField::OpenrouterApiKey, "bad key".into()).is_err());
-        std::fs::remove_dir_all(&dir).ok();
-    }
-
-    #[test]
-    fn stale_permissive_tmp_files_are_never_written_into() {
-        use std::os::unix::fs::PermissionsExt;
-        let dir = temp_dir();
-        std::fs::create_dir_all(&dir).unwrap();
-        // attacker/leftover file at a plausible fixed temp name, world-readable
-        let stale = dir.join("secrets.toml.tmp");
-        std::fs::write(&stale, "old junk").unwrap();
-        std::fs::set_permissions(&stale, std::fs::Permissions::from_mode(0o644)).unwrap();
-
-        set_secret_in(&dir, SecretField::OpenrouterApiKey, "sk-or-key9".into()).unwrap();
-
-        // the stale file was never touched — no secret ever entered it
-        assert_eq!(std::fs::read_to_string(&stale).unwrap(), "old junk");
-        let mode = std::fs::metadata(dir.join("secrets.toml"))
-            .unwrap()
-            .permissions()
-            .mode()
-            & 0o777;
-        assert_eq!(mode, 0o600);
-        std::fs::remove_dir_all(&dir).ok();
-    }
+    // --- 2026-07-17 review round: detect_path pinning, label gate ---
 
     #[test]
     fn detect_path_is_pinned_to_the_booted_value() {
@@ -2269,33 +1704,6 @@ mod tests {
             "detect_path must not be ipc-editable"
         );
         assert_eq!(pinned.port, 9999, "editable fields must pass through");
-    }
-
-    #[test]
-    fn now_playing_adapter_fields_are_pinned_to_the_booted_value() {
-        // plan 104: same treatment as detect_path — the kill switch and
-        // the adapter dir are config-file-only, never ipc-editable, even
-        // though the settings window doesn't render a control for either.
-        let booted = Config::default();
-        let submitted = Config {
-            now_playing_adapter_enabled: !booted.now_playing_adapter_enabled,
-            now_playing_adapter_dir: PathBuf::from("/tmp/evil-adapter-dir"),
-            now_playing_enabled: true,
-            ..Config::default()
-        };
-        let pinned = pin_uneditable_fields(submitted, &booted);
-        assert_eq!(
-            pinned.now_playing_adapter_enabled, booted.now_playing_adapter_enabled,
-            "now_playing_adapter_enabled must not be ipc-editable"
-        );
-        assert_eq!(
-            pinned.now_playing_adapter_dir, booted.now_playing_adapter_dir,
-            "now_playing_adapter_dir must not be ipc-editable"
-        );
-        assert!(
-            pinned.now_playing_enabled,
-            "now_playing_enabled (the panel-editable toggle) must pass through"
-        );
     }
 
     #[test]
@@ -2382,7 +1790,7 @@ mod tests {
         );
     }
 
-    // --- build_test_event: one test per SourceKind branch (plan 068) ---
+    // --- build_test_event: one test per SourceKind branch ---
     //
     // Guards against the copy-paste failure mode a 5-way match like this
     // is prone to — a branch silently reading a sibling's config field.
@@ -2403,7 +1811,6 @@ mod tests {
             rss_priority: Priority::Low,
             agent_priority: Priority::Low,
             manual_default_priority: Priority::Low,
-            weather_priority: Priority::Low,
             ..Config::default()
         };
         let event = build_test_event(&config, SourceKind::Football);
@@ -2425,7 +1832,6 @@ mod tests {
             espn_priority: Priority::High,
             agent_priority: Priority::High,
             manual_default_priority: Priority::High,
-            weather_priority: Priority::High,
             ..Config::default()
         };
         let event = build_test_event(&config, SourceKind::News);
@@ -2448,7 +1854,6 @@ mod tests {
             espn_priority: Priority::Low,
             rss_priority: Priority::Low,
             manual_default_priority: Priority::Low,
-            weather_priority: Priority::Low,
             ..Config::default()
         };
         let event = build_test_event(&config, SourceKind::Agent);
@@ -2473,7 +1878,6 @@ mod tests {
             espn_priority: Priority::High,
             rss_priority: Priority::High,
             agent_priority: Priority::High,
-            weather_priority: Priority::High,
             ..Config::default()
         };
         let event = build_test_event(&config, SourceKind::Manual);
@@ -2481,32 +1885,6 @@ mod tests {
         assert_eq!(event.priority, Priority::Low);
         assert_eq!(event.rotation, RotationSpec::OneShot { ttl_secs: 99 });
         assert_eq!(event.origin, SourceKind::Manual);
-    }
-
-    #[test]
-    fn build_test_event_weather_uses_weather_priority_and_weather_ttl() {
-        use crate::event::{EventType, Priority, RotationSpec, SourceKind};
-
-        // Weather's priority and ttl are both dedicated fields
-        // (weather_priority / weather_ttl_secs) — the preview must read
-        // the same ttl the real poller applies, not default_ttl.
-        let config = Config {
-            weather_priority: Priority::High,
-            weather_ttl_secs: 77,
-            // pin every sibling to a contrasting value (see Football's
-            // test for why) so a swap onto any of them is caught
-            default_ttl: 3,
-            espn_priority: Priority::Low,
-            rss_priority: Priority::Low,
-            agent_priority: Priority::Low,
-            manual_default_priority: Priority::Low,
-            ..Config::default()
-        };
-        let event = build_test_event(&config, SourceKind::Weather);
-        assert_eq!(event.event_type, EventType::Generic);
-        assert_eq!(event.priority, Priority::High);
-        assert_eq!(event.rotation, RotationSpec::OneShot { ttl_secs: 77 });
-        assert_eq!(event.origin, SourceKind::Weather);
     }
 
     // `get_history`/`clear_history` themselves are untested here by the

@@ -31,7 +31,7 @@ function session(overrides: Partial<AgentSessionView> = {}): AgentSessionView {
   };
 }
 
-// Plan 136 (v7 ticket 4 of 13, spec §6.2 resting): resting render
+// resting render
 // coverage for each of the four+one non-alarming state families, plus
 // the "3+ sessions, never a +N collapse, Rust order preserved" contract.
 describe("AgentBoard resting render", () => {
@@ -40,7 +40,7 @@ describe("AgentBoard resting render", () => {
     expect(container.querySelector('[data-testid="agent-board"]')).toBeNull();
   });
 
-  // Plan 169: the hero now renders through NotificationBody.tsx's shared
+  // the hero now renders through NotificationBody.tsx's shared
   // template — the state drives a prose `.title.headline` (there is no
   // more standalone `.agent-board-runtime`/`.agent-board-state-pill`
   // pair), runtime + project become the subtitle row, summary becomes
@@ -48,7 +48,7 @@ describe("AgentBoard resting render", () => {
   // priority (step 6's mapping) — the NEW `--accent`/Stamp channel on
   // `.card-assembly`, a separate paint channel from the `--agent-accent`
   // one `.agent-waiting` below already drives.
-  // Plan 169 fidelity pass (2026-08-02): title/subtitle are pinned to the
+  // title/subtitle are pinned to the
   // mock's own strings (`prototype/agent-board.html`, proposal section) —
   // per-state prose plus a `runtime · project` subtitle, replacing the
   // old `"Codex — Needs approval"` / bare-project pair.
@@ -122,10 +122,10 @@ describe("AgentBoard resting render", () => {
     expect(container.textContent).not.toMatch(/\+\d/);
   });
 
-  // Plan 169: project is the hero's subtitle row now (`.notif-subtitle-row`,
+  // project is the hero's subtitle row now (`.notif-subtitle-row`,
   // NotificationBody.tsx's shared template) — the old standalone
   // `.agent-board-project` line is gone.
-  // Plan 169 fidelity pass: the subtitle is `runtime · project` and the
+  // the subtitle is `runtime · project` and the
   // row ALWAYS renders for the hero — the runtime name lives only here
   // now (the title is per-state prose), so a session with no project
   // must still say which runtime it is, not drop the row.
@@ -138,7 +138,7 @@ describe("AgentBoard resting render", () => {
     expect(subtitle?.textContent).toBe("Codex");
   });
 
-  // Plan 147 wave 2: state accents (agent-waiting/agent-working/...) and
+  // state accents (agent-waiting/agent-working/...) and
   // runtime identity (src-claude-code/src-kimi/...) are two independent
   // paint channels that must coexist on the same row — never one
   // replacing the other.
@@ -169,7 +169,7 @@ describe("AgentBoard resting render", () => {
     expect(board?.classList.contains("src-claude-code")).toBe(true);
   });
 
-  // Plan 169 fidelity pass (2026-08-02): the board's below-block also
+  // the board's below-block also
   // carries the SHIPPED runtime wash (`agent-origin` — card-chrome.css's
   // corner radial off `--cat-deep`, plus the runtime-coloured hairline),
   // which the mock's hero draws and the board never applied. Paired with
@@ -197,7 +197,7 @@ describe("AgentBoard resting render", () => {
     expect(container.querySelectorAll(".agent-row .agent-runtime-tick")).toHaveLength(1);
   });
 
-  // Plan 169: the old bespoke `.agent-board-primary-head` is gone — the
+  // the old bespoke `.agent-board-primary-head` is gone — the
   // runtime tick glyph now lives in the hero's shared masthead.
   it("renders a runtime tick glyph on the hero's masthead", () => {
     const { container } = render(
@@ -209,7 +209,7 @@ describe("AgentBoard resting render", () => {
   });
 });
 
-// Plan 169: the hero's fact-pill assembly — `session.details` (the same
+// the hero's fact-pill assembly — `session.details` (the same
 // capability-dependent facts `ExpandedAgentRow` already renders) plus a
 // synthesized elapsed-in-state fact for starting/completed/stale (the
 // Target table's "session"/"duration"/"last seen" examples), and the
@@ -309,13 +309,13 @@ describe("AgentBoard hero fact pills (plan 169)", () => {
     expect(getByText("Exit code")).toBeTruthy();
     const pill = container.querySelector(".agent-board-primary .fact-pill");
     expect(pill?.classList.contains("tone-danger")).toBe(true);
-    // Plan 169 fidelity pass: a nonzero exit also earns the mock's
+    // a nonzero exit also earns the mock's
     // `ERROR` tag (`.fp-tag`) on that same pill.
     expect(pill?.querySelector(".fp-tag")?.textContent).toBe("error");
     expect(pill?.textContent).toBe("Exit code1error");
   });
 
-  // Plan 169 fidelity pass: the tag is derived from the DATA, never from
+  // the tag is derived from the DATA, never from
   // the state alone — a failed session reporting a clean exit code (or a
   // non-numeric one) gets no `ERROR` tag.
   it("failed: a zero exit code carries no error tag", () => {
@@ -330,7 +330,7 @@ describe("AgentBoard hero fact pills (plan 169)", () => {
     expect(pill?.querySelector(".fp-tag")).toBeNull();
   });
 
-  // Plan 169 fidelity pass: the mock's `Tool rm DESTRUCTIVE` pill — a
+  // the mock's `Tool rm DESTRUCTIVE` pill — a
   // declared `Risk` detail whose value reads destructive/blocked folds
   // into the `Tool` pill as its tag instead of standing as its own pill.
   it("waiting-for-permission: a destructive Risk detail folds into the Tool pill as a tag", () => {
@@ -377,7 +377,7 @@ describe("AgentBoard hero fact pills (plan 169)", () => {
     expect(container.querySelector(".agent-board-primary .fp-tag")).toBeNull();
   });
 
-  // Plan 169 fidelity pass: every non-danger state's pills are
+  // every non-danger state's pills are
   // `tone-accent` (the mock's own fixtures), not the neutral pill the
   // generic branch uses.
   it("working: declared details (Progress/63%) render as an accent-toned fact pill", () => {
@@ -433,7 +433,7 @@ describe("AgentBoard hero fact pills (plan 169)", () => {
   });
 });
 
-// Plan 142 (v7 ticket 10 of 13, spec §6.2 expanded): the hover-expanded
+// the hover-expanded
 // state's own render coverage — every retained session in the given
 // order, per-row history disclosure, capability-omitted cells, and a
 // bounded scroll container present.
@@ -622,7 +622,7 @@ describe("AgentBoard expanded render", () => {
     expect(container.querySelector(".agent-board-primary")).not.toBeNull();
   });
 
-  // Plan 146 follow-up: richer expanded-row detail — project.cwd (home-
+  // richer expanded-row detail — project.cwd (home-
   // abbreviated, and only when it says more than project.name already
   // does), host.name, and a terminal-only "clears in" retention hint.
   it("renders an abbreviated cwd distinct from the project name", () => {
@@ -707,7 +707,7 @@ describe("AgentBoard expanded render", () => {
     expect(container.querySelector(".agent-expanded-row-meta")).toBeNull();
   });
 
-  // Plan 147 wave 2: expanded rows also carry both paint channels at
+  // expanded rows also carry both paint channels at
   // once (state accent + runtime identity), and get their own runtime
   // tick glyph in the row head.
   it("an expanded row carries both the state class and the runtime class simultaneously", () => {
@@ -730,7 +730,7 @@ describe("AgentBoard expanded render", () => {
     expect(container.querySelector(".agent-expanded-row-head .agent-runtime-tick")).not.toBeNull();
   });
 
-  // Plan 147 wave 2: the subagent meta chip — label preferred, id
+  // the subagent meta chip — label preferred, id
   // fallback, state appended in parens when present, nothing rendered
   // when the session has no active subagent.
   it("renders a subagent chip with label when present", () => {
@@ -769,7 +769,7 @@ describe("AgentBoard expanded render", () => {
   });
 });
 
-// Plan 147 follow-up (operator feedback, 2026-07-27): removal (and by
+// removal (and by
 // symmetry insertion/reorder) of a session row used to pop — the row
 // unmounted instantly and siblings jumped into place. `AgentRow` and the
 // expanded list's per-row wrapper now go through `AnimatePresence` with a
@@ -920,7 +920,7 @@ describe("AgentBoard row removal/insertion/reorder fluidity", () => {
   });
 });
 
-// Plan 149 (motion vitals): the four fixes this plan lands — a BOUNDED
+// the four fixes this plan lands — a BOUNDED
 // dot pulse that restarts on state change, an accent that morphs instead
 // of snapping, a hero that swaps on IDENTITY change only, and a wall-clock
 // tick that adapts to what `elapsedLabel` can actually render. These pin
@@ -938,7 +938,7 @@ describe("AgentBoard motion vitals", () => {
 
   it("the dot's breathe animation is BOUNDED, never infinite (plan-105 precedent)", () => {
     // an `infinite` opacity loop on a `waiting_for_input` session that
-    // persists for hours is the exact always-on pulse plan 105 removed
+    // persists for hours is the exact always-on pulse removed
     // from the status dots. 4 iterations ≈ 8.8s per state change.
     expect(AGENT_BOARD_CSS).toMatch(
       /animation:\s*\n?\s*agent-dot-state-tick[^;]*agent-dot-breathe/,
@@ -989,7 +989,7 @@ describe("AgentBoard motion vitals", () => {
     expect(AGENT_BOARD_CSS).not.toMatch(/var\(--hover-ms/);
   });
 
-  // Plan 169 step 9's mandated follow-up, landed 2026-08-02: the bespoke
+  // the bespoke
   // hero block this file used to hand-roll lost its last .tsx consumer
   // when the hero moved onto the shared `AgentHeroCard` template, leaving
   // six rules that could never match anything.
@@ -1074,7 +1074,7 @@ describe("AgentBoard motion vitals", () => {
       />,
     );
     const heroBefore = container.querySelector(".agent-board-primary");
-    // Plan 169: runtime is folded into the hero's shared template now
+    // runtime is folded into the hero's shared template now
     // (there is no more standalone `.agent-board-runtime`); the fidelity
     // pass moved it specifically into the subtitle row, since the title
     // is per-state prose that never names the runtime.
@@ -1262,6 +1262,8 @@ describe("AgentBoard resting<->expanded morph", () => {
     // block used to be separated.
     expect(swap?.parentElement?.classList.contains("agent-board")).toBe(true);
 
+    // SAFETY: the two-session fixture renders `.agent-board-rows` beneath the
+    // swap wrapper asserted non-null above; the optional cast stays null-safe.
     const resting = container.querySelector(".agent-board-rows") as HTMLElement | null;
     expect(resting?.parentElement).toBe(swap);
     expect(resting?.style.gridArea).toBe("1 / 1");
@@ -1269,6 +1271,8 @@ describe("AgentBoard resting<->expanded morph", () => {
     expect(resting?.style.overflow).toBe("hidden");
 
     rerender(<AgentBoard sessions={twoSessions} capturedAtMs={CAPTURED_AT_MS} expanded />);
+    // SAFETY: rerendering with `expanded` makes AgentBoard mount the
+    // `.agent-board-expanded-list` surface in place of the rows block.
     const expandedList = container.querySelector(
       '[data-testid="agent-board-expanded-list"]',
     ) as HTMLElement | null;

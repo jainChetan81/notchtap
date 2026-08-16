@@ -1,0 +1,10 @@
+/* notchtap-only design tokens.
+ *
+ * shared values stay in @chetanjain/shared-ui/design/tokens.css. This file
+ * loads immediately after that package in both UI entries and owns only
+ * application-specific extensions.
+ */
+
+/* No app-only tokens currently — the media accent (--media-mint) left
+ * with the now-playing vertical. This file stays as the designated home
+ * for future notchtap-only extensions. */

@@ -1,7 +1,7 @@
-// Shared tauri event-channel mock (plan 028): one harness for every
-// test that feeds the overlay listeners. Handlers are kept per event
-// name — the previous per-file copies lumped all listeners into one
-// array and emitted slot-state payloads at every registered handler.
+// Shared tauri event-channel mock: one harness for every test that feeds
+// the overlay listeners. Handlers are kept per event name — the previous
+// per-file copies lumped all listeners into one array and emitted
+// slot-state payloads at every registered handler.
 import { vi } from "vitest";
 
 type Handler = (event: { payload: unknown }) => void;

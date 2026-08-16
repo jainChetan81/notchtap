@@ -3,11 +3,11 @@
 // build.rs's `AppManifest::commands` allowlist, `lib.rs`'s
 // `generate_handler!` registration, and `capabilities/settings.json`'s
 // `allow-<kebab-name>` permission list must all name exactly these
-// seventeen commands (plan 121 added get_queue/clear_queue/skip_current
-// to the original eleven; plan 130 added search_news_now; the About
-// section batch added get_about_info; plan 143 added
-// get_agent_health/send_agent_test_event; the telegram-connector removal
-// dropped get_connector_health). Until now
+// fifteen commands ( added get_queue/clear_queue/skip_current;
+// added search_news_now; the About section batch added
+// get_about_info; added get_agent_health/send_agent_test_event;
+// the telegram-connector removal dropped get_connector_health; the
+// secrets-store removal dropped get_secret_status/set_secret). Until now
 // only convention (plus a CLAUDE.md sentence) held that triple
 // together, and the failure mode is FAIL-OPEN: a command added to
 // `generate_handler!` and forgotten here would silently become
@@ -18,16 +18,16 @@
 // the crate even exists as a build artifact, so it cannot `use` this
 // module. It textually `include!`s this file into its own `fn main()`
 // body instead, which is why:
-//   - this file is written with plain `//` comments throughout, never
-//     `//!`/`///` doc comments — those lex to `#[doc = "..."]` attribute
-//     tokens, and their legality is position-sensitive in a way that a
-//     spliced-into-a-function-body doc comment on a local const risks
-//     tripping over. Plain comments are inert whitespace in any context.
-//   - the `#[cfg(test)] mod tests` block below is dead weight from
-//     build.rs's point of view, not a problem: cargo never compiles
-//     build.rs with `--cfg test`, so the block is stripped before
-//     anything in it (including its `serde_json` use, which is a normal
-//     dependency but NOT a build-dependency) is ever checked.
+// - this file is written with plain `//` comments throughout, never
+// `//!`/`///` doc comments — those lex to `#[doc = "..."]` attribute
+// tokens, and their legality is position-sensitive in a way that a
+// spliced-into-a-function-body doc comment on a local const risks
+// tripping over. Plain comments are inert whitespace in any context.
+// - the `#[cfg(test)] mod tests` block below is dead weight from
+// build.rs's point of view, not a problem: cargo never compiles
+// build.rs with `--cfg test`, so the block is stripped before
+// anything in it (including its `serde_json` use, which is a normal
+// dependency but NOT a build-dependency) is ever checked.
 //
 // Snake_case, exactly as each function is named in `settings.rs` and
 // listed in `lib.rs`'s `generate_handler!`. `capabilities/settings.json`
@@ -59,11 +59,9 @@ pub(crate) const SETTINGS_COMMANDS: &[&str] = &[
     "get_history",
     "get_queue",
     "get_recent_log_lines",
-    "get_secret_status",
     "save_config_and_relaunch",
     "search_news_now",
     "send_agent_test_event",
-    "set_secret",
     "send_test_notification",
     "set_appearance",
     "skip_current",
@@ -78,8 +76,8 @@ mod tests {
     // array literal itself (typo, duplicate, stray removal) doesn't slip
     // by unnoticed alongside the two parity checks below.
     #[test]
-    fn canonical_list_has_the_documented_seventeen_commands() {
-        assert_eq!(SETTINGS_COMMANDS.len(), 17);
+    fn canonical_list_has_the_documented_fifteen_commands() {
+        assert_eq!(SETTINGS_COMMANDS.len(), 15);
         assert!(SETTINGS_COMMANDS.contains(&"get_history"));
         assert!(SETTINGS_COMMANDS.contains(&"clear_history"));
         assert!(SETTINGS_COMMANDS.contains(&"get_queue"));
@@ -92,7 +90,7 @@ mod tests {
     }
 
     // Parity guard #1: capabilities/settings.json's FULL permissions array
-    // (plan 124 R5(a) — not just the entries that happen to start with
+    // — not just the entries that happen to start with
     // "allow-", the previous version's filter) must be exactly the
     // command permissions derived from SETTINGS_COMMANDS plus the two
     // pinned event extras below, nothing missing and nothing extra. The
@@ -152,7 +150,7 @@ mod tests {
         let lib_src = include_str!("lib.rs");
         let marker = "tauri::generate_handler![";
 
-        // plan 124 R5(b): this test's own `.find(marker)` below only ever
+        // this test's own `.find(marker)` below only ever
         // parses the FIRST occurrence — a second, accidental
         // `generate_handler![...]` invocation (e.g. a copy-pasted
         // registration for a future window) could register an
@@ -185,7 +183,7 @@ mod tests {
                 s.strip_prefix("settings::").unwrap_or_else(|| {
                     panic!(
                         "generate_handler![...] entry {s:?} is not a settings:: command — \
-                         every entry in this block is expected to be one of the seventeen \
+                         every entry in this block is expected to be one of the fifteen \
                          settings commands"
                     )
                 })

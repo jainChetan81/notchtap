@@ -6,6 +6,7 @@ import {
   mapBusEvent,
   mapToolExecuteAfter,
   mapToolExecuteBefore,
+  default as NotchtapPluginModule,
   OPENCODE_CAPABILITIES,
   resolvePort,
 } from "./notchtap";
@@ -15,6 +16,13 @@ const ctx: EventContext = { eventId: "event-1", occurredAtMs: 1785067200000, seq
 function fixedCtx(overrides: Partial<EventContext> = {}): EventContext {
   return { ...ctx, ...overrides };
 }
+
+describe("OpenCode plugin module", () => {
+  it("exports the server function required by OpenCode 1.18", () => {
+    expect(NotchtapPluginModule.id).toBe("notchtap");
+    expect(NotchtapPluginModule.server).toBeTypeOf("function");
+  });
+});
 
 describe("mapBusEvent", () => {
   it("maps permission.asked to a waiting_for_permission permission_requested event", () => {

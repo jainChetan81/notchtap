@@ -1,4 +1,4 @@
-// plan 125 (/improve-animations audit — finding #1 HIGH perf, finding #11
+// (/improve-animations audit — finding #1 HIGH perf, finding #11
 // LOW character): pins the idle-cost fix (sparser gaze/blink wakeups, the
 // eyes off the motion spring and onto a self-ending CSS transition) and
 // the character fix (the reveal moved onto the house scale/duration/ease).
@@ -29,19 +29,21 @@ describe("IdleFace (plan 125)", () => {
       const { container } = render(<IdleFace idle={true} />);
       act(() => vi.advanceTimersByTime(REVEAL_DELAY_MS));
 
+      // SAFETY: IdleFace always renders `.idle-face-eyes` for this idle
+      // fixture; the following null-guard protects the cast.
       const eyes = container.querySelector(".idle-face-eyes") as HTMLElement;
       expect(eyes).not.toBeNull();
       const initialTransform = eyes.style.transform;
 
       // both useGazeCycle and useBlink now schedule their first wakeup no
-      // earlier than 6000ms after `visible` flips true (plan 125: was
+      // earlier than 6000ms after `visible` flips true (was
       // 1500/3000ms) — advancing right up to, but not past, that floor
       // must leave the eyes exactly where they started.
       act(() => vi.advanceTimersByTime(5999));
       expect(eyes.style.transform).toBe(initialTransform);
     });
 
-    // plan 129 (T5, deep-review fix): the test above only proves nothing
+    // the test above only proves nothing
     // happens BEFORE the sparser floor — it never actually lets a glance
     // fire, so a gaze cycle that silently stopped scheduling altogether
     // (e.g. a broken cleanup, or `active` read backwards) would still
@@ -55,6 +57,8 @@ describe("IdleFace (plan 125)", () => {
       const { container } = render(<IdleFace idle={true} />);
       act(() => vi.advanceTimersByTime(REVEAL_DELAY_MS));
 
+      // SAFETY: IdleFace always renders `.idle-face-eyes` for this idle
+      // fixture; the following null-guard protects the cast.
       const eyes = container.querySelector(".idle-face-eyes") as HTMLElement;
       expect(eyes).not.toBeNull();
       const initialTransform = eyes.style.transform;
@@ -65,7 +69,7 @@ describe("IdleFace (plan 125)", () => {
   });
 
   describe("eyes: CSS transition, not a motion spring", () => {
-    // plan 129 (C6, deep-review fix): built from the NOTCHTAP_EASE import
+    // built from the NOTCHTAP_EASE import
     // itself, not a hand-typed cubic-bezier echo — the component
     // now builds its own transition string the same way
     // (`NOTCHTAP_EASE.join(", ")`), so this test would silently stop
@@ -75,6 +79,8 @@ describe("IdleFace (plan 125)", () => {
       const { container } = render(<IdleFace idle={true} />);
       act(() => vi.advanceTimersByTime(REVEAL_DELAY_MS));
 
+      // SAFETY: IdleFace always renders `.idle-face-eyes` for this idle
+      // fixture; the following null-guard protects the cast.
       const eyes = container.querySelector(".idle-face-eyes") as HTMLElement;
       expect(eyes).not.toBeNull();
       expect(eyes.style.transition).toContain("transform");
@@ -96,6 +102,8 @@ describe("IdleFace (plan 125)", () => {
       const { container } = render(<IdleFace idle={true} />);
       act(() => vi.advanceTimersByTime(REVEAL_DELAY_MS));
 
+      // SAFETY: IdleFace always renders its `.idle-face` root for the idle
+      // fixture; the following null-guard protects the cast.
       const face = container.querySelector(".idle-face") as HTMLElement;
       expect(face).not.toBeNull();
       // motion applies `initial` synchronously on mount, before any

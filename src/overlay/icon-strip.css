@@ -1,11 +1,10 @@
-/* ==== the tab-notch icon strip (plan 171) ====
+/* ==== the tab-notch icon strip ====
    Hidden entirely at rest (visibility:hidden + opacity:0 + pointer-events:
-   none): the rule that the icons must never paint over the desktop is the single
-   load-bearing rule of this whole feature). Visible only under `.hovered`
-   on the ancestor `.card-assembly` (card-chrome.css), i.e. only once the
-   flank behind it has already started painting #000 — the strip's own
-   opacity fade below is staggered 60ms behind that flank paint so there
-   is never a frame where a glyph is visible against the wallpaper. */
+   none): the icons must never paint over the desktop. Visible only under
+   `.hovered` on the ancestor `.card-assembly` (card-chrome.css), once the
+   flank behind it has started painting #000 — the strip's opacity fade is
+   staggered 60ms behind that flank paint so there is never a frame where a
+   glyph shows against the wallpaper. */
 .card-root .icon-strip {
   display: flex;
   align-items: center;
@@ -63,13 +62,11 @@
     width var(--reveal-ms, 260ms) var(--ease-notchtap),
     margin-left var(--reveal-ms, 260ms) var(--ease-notchtap),
     opacity var(--hover-ms, 160ms) var(--ease-notchtap),
-    /* Animation lock-down (2026-08-03): the press (`:active { scale(0.9) }`
-       below) rides THIS leg. At 260ms on an overshoot curve a tap mushes
-       going down and bounces past 1.0 coming back. 160ms matches the two
-       press affordances this repo already got right (`.mr-btn:active`,
-       `.batch-nav button:active`). The presence reveal shares the leg and
-       still reads correctly at 160ms — its opacity partner is already
-       160ms. */
+    /* Press (`:active { scale(0.9) }`) rides THIS leg. At 260ms on an
+       overshoot curve a tap mushes down and bounces past 1.0 coming back;
+       160ms matches the two press affordances that already exist
+       (`.mr-btn:active`, `.batch-nav button:active`). The presence reveal
+       shares the leg and still reads correctly at 160ms. */
     transform var(--hover-ms, 160ms) var(--ease-notchtap-pop, cubic-bezier(0.3, 1.36, 0.44, 1));
 }
 /* the glow: a tight core (crisp stroke) plus a wide bloom (the actual
@@ -88,11 +85,11 @@
     filter var(--hover-ms, 160ms) var(--ease-notchtap);
 }
 
-/* plan 175 — LOCKSTEP PAIR: these two numbers are `hover.rs`'s `ICON_BOX`
-   (18) and `ICON_GAP` (8), the 26px pitch the NSEvent click monitor
-   hit-tests each glyph against and the `26 * n` term in card-chrome.css's
-   two strip-visible `--cw` rules. Change one, change all three in the same
-   commit; `src/lib/stripGeometryParity.test.ts` fails loudly otherwise. */
+/* LOCKSTEP PAIR: these numbers are `hover.rs`'s `ICON_BOX` (18) and
+   `ICON_GAP` (8), the 26px pitch the NSEvent click monitor hit-tests each
+   glyph against and the `26 * n` term in card-chrome.css's two strip-visible
+   `--cw` rules. Change one, change all three in the same commit;
+   `src/lib/stripGeometryParity.test.ts` fails loudly otherwise. */
 .card-root .icon.is-present {
   width: 18px;
   margin-left: 8px;
@@ -141,42 +138,32 @@
 }
 
 /* per-source hues — the shipped status-dot/source-identity table, plus
-   the two the strip needed and the dots never had (agent, music). */
+   the one the strip needed and the dots never had (agent). */
 .card-root .icon.agent {
   --hue: var(--overlay-blue);
 }
 .card-root .icon.football {
   --hue: var(--overlay-green);
 }
-.card-root .icon.music {
-  --hue: var(--media-mint);
-}
-.card-root .icon.weather {
-  --hue: var(--overlay-amber);
-}
 .card-root .icon.news {
   --hue: var(--overlay-coral);
 }
 
-/* ---- per-icon character: five distinct motions, five distinct periods
-   (1.9s / 2.8s / 900ms+3.6s / 7.2s / 2.6s), so the strip never lands on a
-   shared downbeat. Every icon animates — there is no "still anchor"
-   icon (spec section 2 decision 3, an explicit operator override of an
-   earlier draft that kept weather still). ---- */
+/* ---- per-icon character: three distinct motions, three distinct
+   periods (1.9s / 2.8s / 2.6s), so the strip never lands on a shared
+   downbeat. Every icon animates — there is no "still anchor" icon (spec
+   section 2 decision 3). ---- */
 
 /* AGENT — a slow ~1.9s breath, blue -> teal and back, glow swelling with
    it. The calmest of the loud ones: an agent session is the longest-
    running source, so anything sharper becomes unbearable over a long
    build. */
-/* Animation lock-down (2026-08-03): every `infinite` loop below is gated
-   on `.card-assembly.hovered`. The strip is hidden at rest with
-   `visibility: hidden`, NOT `display: none` (see the top of this file —
-   that choice is deliberate, spec section 2 decision 2), and a
-   visibility-hidden node's CSS animations keep running. Without this gate
-   five `filter: drop-shadow` re-blurs tick forever in an always-on
-   WKWebView, painting nothing. Same bug class this repo already names in
-   StatusRailCard.tsx's IdleFace note ("timers would run forever for a
-   node that can never be seen"). */
+/* Every `infinite` loop below is gated on `.card-assembly.hovered`. The
+   strip is hidden at rest with `visibility: hidden`, NOT `display: none`,
+   and a visibility-hidden node's CSS animations keep running. Without this
+   gate the `filter: drop-shadow` re-blurs tick forever in an always-on
+   WKWebView, painting nothing (same bug class as StatusRailCard.tsx's
+   IdleFace "timers would run forever" note). */
 .card-root .card-assembly.hovered .icon.agent.is-live svg {
   animation: icon-agent-pulse 1900ms ease-in-out infinite;
 }
@@ -231,60 +218,6 @@
   63% {
     color: var(--overlay-green);
     filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 6px currentColor);
-  }
-}
-
-/* MUSIC — the note bobs on a 900ms clock (the eq bars' own tempo, see
-   eq-bars.css, so the strip and the cutout share a beat) while the hue
-   drifts mint -> teal on a slower 3.6s clock, letting the two phase
-   against each other rather than locking into one mechanical pulse. The
-   bob is a `transform`, compositor-only. */
-.card-root .card-assembly.hovered .icon.music.is-live svg {
-  animation:
-    icon-music-bob 900ms ease-in-out infinite,
-    icon-music-hue 3600ms ease-in-out infinite;
-}
-@keyframes icon-music-bob {
-  0%,
-  100% {
-    transform: translateY(1.5px);
-  }
-  50% {
-    transform: translateY(-1.5px);
-  }
-}
-@keyframes icon-music-hue {
-  0%,
-  100% {
-    color: var(--media-mint);
-    filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 6px currentColor);
-  }
-  50% {
-    color: var(--overlay-teal);
-    filter: drop-shadow(0 0 4px currentColor) drop-shadow(0 0 12px currentColor);
-  }
-}
-
-/* WEATHER — a 7.2s ambient drift: the cloud slides ~1px sideways and
-   tilts under 2 degrees while its halo breathes amber -> pale gold. The
-   slowest, lowest-amplitude motion in the set on purpose — weather is
-   the always-there icon, the one that has to survive being looked at
-   for a long time. Runs whenever the icon is PRESENT, not only "live" —
-   weather has no live state (spec section 6's table). */
-.card-root .card-assembly.hovered .icon.weather.is-present svg {
-  animation: icon-weather-drift 7200ms ease-in-out infinite;
-}
-@keyframes icon-weather-drift {
-  0%,
-  100% {
-    transform: translateX(-1px) rotate(-1.6deg);
-    color: var(--overlay-amber);
-    filter: drop-shadow(0 0 3px currentColor) drop-shadow(0 0 6px currentColor);
-  }
-  50% {
-    transform: translateX(1px) rotate(1.6deg);
-    color: #ffdca0;
-    filter: drop-shadow(0 0 4px currentColor) drop-shadow(0 0 11px currentColor);
   }
 }
 

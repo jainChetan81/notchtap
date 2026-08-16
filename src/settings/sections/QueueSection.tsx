@@ -10,14 +10,12 @@ import { settingsInvoke } from "../ipc";
 import type { QueueItemSummary } from "../types";
 import { PRIORITY_LABELS } from "../types";
 
-// plan 126: `get_queue` returns plain summaries with no id, and a refresh
-// wholesale-replaces the array — so the only stable identity available is
-// the row's own content. `occurrenceIndex` disambiguates duplicate
-// identical summaries (same priority/source/title waiting twice) so two
-// such rows don't collide on the same React key; a running Map keeps it
-// deterministic across a refetch that returns the same list (so those rows
-// don't remount, which is what lets AnimatePresence tell "still here" from
-// "this one left").
+// `get_queue` returns summaries with no id and a refresh replaces the
+// whole array — row content is the only stable identity. `occurrenceIndex`
+// disambiguates duplicate identical summaries (same priority/source/title)
+// so rows keep distinct React keys; the running Map stays deterministic
+// across an identical refetch, so rows don't remount and AnimatePresence
+// can tell "still here" from "left".
 function withQueueRowKeys(
   items: QueueItemSummary[],
 ): Array<{ item: QueueItemSummary; rowKey: string }> {
@@ -30,17 +28,13 @@ function withQueueRowKeys(
   });
 }
 
-// plan 121: read-only visibility into the WAITING items behind the
-// visible card (the queue_total/queue_done dots on the overlay are the
-// only prior visibility into this — no list, no way to act on it), plus
-// two controls: Skip current (dismiss the visible card now, promoting
-// the next waiting item — routes through skip_visible's existing
-// semantics) and Clear queue (drop every waiting item; the visible card
-// is untouched and finishes its normal ttl/rotation). Same fetch-on-open
-// + manual Refresh shape as DiagnosticsSection. Titles are UNTRUSTED
-// wire data — rendered as plain text only, same rule as History's
-// link-as-literal-text precedent (no dangerouslySetInnerHTML, no <a
-// href>, no markdown rendering).
+// Read-only view of the WAITING items behind the visible card (the overlay
+// only exposes queue_total/queue_done dots) plus two controls: Skip current
+// (dismiss visible card, promote next waiting item — via skip_visible's
+// semantics) and Clear queue (drop every waiting item; visible card
+// finishes its normal ttl/rotation). Fetch-on-open + manual Refresh, same
+// as DiagnosticsSection. Titles are UNTRUSTED wire data — plain text only:
+// no dangerouslySetInnerHTML, no <a href>, no markdown rendering.
 export function QueueSection() {
   const [items, setItems] = useState<QueueItemSummary[] | null>(null);
   const loadStatus = useActionStatus("queue-load");
@@ -88,13 +82,9 @@ export function QueueSection() {
     >
       <ActionStatus status={loadStatus.status} className="queue-load-status" showPending={false} />
       {items === null ? (
-        // plan 124 (F6): a failed mount fetch used to leave `items` at
-        // `null` forever, so "Loading…" rendered underneath the sticky
-        // ActionStatus error above it with no way to tell the two apart at
-        // a glance. `loadStatus.status.state` is the same signal the
-        // ActionStatus banner above already reads — reusing it here (not a
-        // second error flag) means this can never disagree with the
-        // banner about whether the last attempt failed.
+        // Reuses `loadStatus.status.state` — the same signal the ActionStatus
+        // banner above reads — so this never disagrees with the banner
+        // about whether the last attempt failed.
         loadStatus.status.state === "error" ? (
           <p className="queue-empty m-0 py-3 text-fs-body text-muted-foreground">
             Couldn't load the queue — Refresh to retry.
@@ -104,31 +94,22 @@ export function QueueSection() {
         )
       ) : (
         <>
-          {/* plan 129 (K1): sibling of the <ul> below, not a replacement
-              for it — see the AnimatePresence comment inside the <ul> for
-              why the two can no longer share a ternary branch. */}
+          {/* Sibling of the <ul> below, not a replacement — see the
+              AnimatePresence comment inside the <ul>. */}
           {items.length === 0 && (
             <p className="queue-empty m-0 py-3 text-fs-body text-muted-foreground">
               Queue is empty.
             </p>
           )}
           <ul className={cn("queue-list flex flex-col", items.length > 0 && "py-1 pb-[11px]")}>
-            {/* plan 126: initial={false} means the section's own first mount
-                (and a wholesale Refresh swap that happens to return the same
-                rows, since they keep their keys) never cascades — only a row
-                genuinely appearing or leaving animates, so Skip current reads
-                as "that one row left" and Clear collapses the rows it
-                removes. plan 129 (K1): the <ul> + AnimatePresence themselves
-                now stay mounted even once `items` is empty — the prior
-                `items.length === 0 ? <p> : <ul>…` ternary unmounted the
-                whole list (AnimatePresence included) synchronously the
-                instant the array emptied, so nothing exited on a wholesale
-                Clear (the exact parent-level-conditional bug plan 127 Step
-                2 fixed for the peek). The empty-state <p> is now the
-                sibling above, gated on `items.length === 0` directly, so it
-                can appear immediately while the last row(s) still exit.
-                The `py-1 pb-[11px]` vertical padding is likewise gated on
-                `items.length > 0` so an empty <ul> contributes no gap. */}
+            {/* initial={false}: first mount and an unchanged Refresh swap
+                (rows keep their keys) never cascade — only rows genuinely
+                appearing/leaving animate; Skip reads as "that one row left",
+                Clear collapses removed rows. <ul> + AnimatePresence stay
+                mounted while empty; the empty-state <p> is the sibling
+                above, gated on `items.length === 0` directly, so it appears
+                while last rows still exit. `py-1 pb-[11px]` gated on
+                `items.length > 0` so an empty <ul> adds no gap. */}
             <AnimatePresence initial={false}>
               {withQueueRowKeys(items).map(({ item, rowKey }) => (
                 <motion.li
@@ -152,13 +133,9 @@ export function QueueSection() {
           </ul>
         </>
       )}
-      {/* plan 124 (F1): the control this section's own top-of-file comment
-          ("fetch-on-open + manual Refresh") always claimed but never
-          rendered — `refresh(announce)` already existed, this just wires
-          a button to it, following DiagnosticsSection's own Refresh row
-          (`../sections/DiagnosticsSection.tsx`) exactly: `refresh(true)`
-          (announced — the plan-108 user-initiated rule), never a static
-          prop. The mount-time fetch above stays `refresh(false)`. */}
+      {/* Refresh announces (`refresh(true)`), exactly like
+          DiagnosticsSection's Refresh row; the mount-time fetch stays
+          `refresh(false)`. */}
       <div className={CONTROL_ROW}>
         <ControlCopy
           htmlFor="refresh-queue"

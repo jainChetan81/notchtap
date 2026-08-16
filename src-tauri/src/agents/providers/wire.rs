@@ -1,67 +1,52 @@
-//! Plan 138: the provider-neutral intermediate shape every provider
-//! parser (`claude_code.rs`, and future 139/140 Codex/Kimi parsers)
-//! produces, plus the schema-v1 (spec §3.1) JSON body builder that turns
-//! one into the exact `POST /agent/events` wire shape
-//! `agents::adapter::parse_wire_event` accepts.
+//! Provider-neutral intermediate shape every provider parser produces,
+//! plus the schema-v1 JSON body builder that turns one into the exact
+//! `POST /agent/events` wire shape `agents::adapter::parse_wire_event`
+//! accepts.
 //!
-//! This module is pure — no HTTP, no clock read, no randomness.
-//! `eventId`/`occurredAtMs` are supplied by the caller (`delivery.rs`'s
-//! caller, `src/bin/notchtap_agent.rs`) precisely because generating
-//! them (uuid, `SystemTime::now()`) is impure and doesn't belong in a
-//! "pure per-provider parser" (spec §4.1) or in this shared builder.
+//! Pure — no HTTP, no clock read, no randomness. `eventId`/
+//! `occurredAtMs` are supplied by the caller
+//! (`src/bin/notchtap_agent.rs`) because generating them is impure.
 
 use serde_json::{json, Value};
 
-/// One normalized Agent Event, provider-agnostic. A provider parser
-/// (e.g. [`super::claude_code::normalize`]) builds this from a native
-/// hook payload; [`build_wire_body`] turns it into the schema-v1 JSON
-/// body. Field values here are ALREADY the wire strings (e.g. `kind:
-/// "informational"`, not an enum) — this module has no dependency on
-/// `agents::model`/`agents::adapter`'s Rust types on purpose, so the
-/// same shape can serialize identically regardless of which crate
-/// target (this lib, or a future standalone adapter binary) builds it.
+/// One normalized Agent Event, provider-agnostic. Field values are
+/// ALREADY the wire strings (e.g. `kind: "informational"`, not an enum)
+/// — deliberately no dependency on `agents::model`/`agents::adapter`
+/// types, so any crate target serializes the same shape identically.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct NormalizedEvent {
     pub session_id: String,
-    /// The provider's own event name (e.g. `"PostToolUse"`), recorded
-    /// for the `nativeEvent` wire field and §10's `agent.native_event`
-    /// structured log — diagnostics only, no mapping branches outside
-    /// the parser that produced it.
+    /// The provider's own event name (e.g. `"PostToolUse"`) —
+    /// diagnostics only; never branch on it outside the parser that
+    /// produced it.
     pub native_event: String,
-    /// One of schema v1's five `kind` strings (spec §3.1):
-    /// `permission_requested` / `input_required` / `completed` /
-    /// `failed` / `informational`.
+    /// One of schema v1's five `kind` strings: `permission_requested` /
+    /// `input_required` / `completed` / `failed` / `informational`.
     pub kind: &'static str,
     /// One of schema v1's seven `state` strings — validated by the
-    /// endpoint but NOT authoritative (the registry alone derives
-    /// session state from `kind` + `terminal`, see
-    /// `agents::registry::next_state`'s doc) — sent anyway so the wire
-    /// event is self-describing for logs/debugging.
+    /// endpoint but NOT authoritative: the registry alone derives
+    /// session state from `kind` + `terminal`
+    /// (`agents::registry::next_state`).
     pub state: &'static str,
     pub terminal: bool,
     pub summary: Option<String>,
     /// `(label, value)` pairs — already sanitized by the parser (safe
-    /// tool name, basename-only paths; never raw command lines/secrets,
-    /// spec §3.2).
+    /// tool name, basename-only paths; never raw command lines or
+    /// secrets).
     pub details: Vec<(String, String)>,
     pub project_name: Option<String>,
     pub project_cwd: Option<String>,
     /// `(id, label, state)`.
     pub subagent: Option<(String, Option<String>, Option<String>)>,
-    /// The provider's declared capability set (spec §1's matrix row),
-    /// sent on every event this provider emits — see
-    /// `claude_code::CAPABILITIES`'s doc for why it's the same constant
-    /// set every time rather than computed per-event.
+    /// The provider's declared capability set — the same constant set on
+    /// every event, never computed per-event.
     pub capabilities: Vec<&'static str>,
 }
 
-/// Builds the schema-v1 (spec §3.1) `POST /agent/events` JSON body from
-/// a [`NormalizedEvent`]. `event_id`/`occurred_at_ms` are caller-supplied
-/// (impure inputs, kept out of this pure module — see this file's top
-/// doc). `sequence` is `None` for every current provider (Claude Code's
-/// hook payloads carry no monotonic counter — spec §4.2/this ticket's
-/// instructions: "sequence if the payload offers a monotonic value,
-/// else omit").
+/// Builds the schema-v1 `POST /agent/events` JSON body from a
+/// [`NormalizedEvent`]. `event_id`/`occurred_at_ms` are caller-supplied
+/// (impure inputs stay out of this pure module). `sequence` is `None`
+/// unless the provider payload offers a monotonic value.
 pub fn build_wire_body(
     runtime: &str,
     event: &NormalizedEvent,

@@ -1,37 +1,18 @@
 import { cn } from "@/lib/utils";
 import { CONTROL_ROW, ControlCopy } from "./controls";
 
-// plan 119: the ONE segmented control. Replaces the three near-identical
-// implementations SettingsApp.tsx grew (PriorityToggle, UnitsToggle,
-// SegmentedControl — the 2026-07-23 review's triplication finding).
-//
-// Two rendered forms, discriminated by whether `id` is present — exactly
-// the split the three originals had:
-//
-// - labelled (id + help given; the old PriorityToggle/UnitsToggle form):
-//   ControlCopy renders the visible name, and the fieldset carries
-//   id + aria-labelledby back to it (plan 109 semantics — fieldset isn't
-//   a labelable element, so <label for> alone can't associate).
-// - bare (no id; the old SegmentedControl form, Appearance's
-//   Scale/Radius/Opacity rows): a plain span renders the name (no
-//   orphaned <label for>), the sr-only legend alone names the group, and
-//   the fieldset is the wider 180px variant.
-//
-// The class-name tokens (`priority-toggle`/`segmented-control`, and the
-// matching *-button tokens) are kept per-form so rendered markup at every
-// existing call site is unchanged.
+// The one segmented control, in two forms discriminated by `id`: labelled
+// (ControlCopy renders the name; the fieldset points aria-labelledby back at
+// it, since fieldset isn't labelable) and bare (span + sr-only legend, 180px).
 type SegmentedOption<T extends string | number> = { label: string; value: T };
 
 // Tailwind only generates utilities it can see as literals — a computed
-// `grid-cols-${n}` template would silently produce no CSS. The one
-// authorized visual fix in plan 119 lives here: column count derives from
-// the option count (the old UnitsToggle hardcoded grid-cols-3 around 2
-// options, leaving a dead third column).
-const GRID_COLS: Record<number, string> = {
+// `grid-cols-${n}` template would silently produce no CSS.
+const GRID_COLS = {
   2: "grid-cols-2",
   3: "grid-cols-3",
   4: "grid-cols-4",
-};
+} satisfies Record<number, string>;
 
 export function Segmented<T extends string | number>({
   id,
@@ -51,24 +32,16 @@ export function Segmented<T extends string | number>({
   value: T;
   onChange: (value: T) => void;
   /**
-   * Optional per-value override for the SELECTED segment's color, keyed by
-   * option value. Each entry is a literal Tailwind class string (e.g.
-   * `"bg-overlay-teal/20 text-overlay-teal"`) substituted for the default
-   * `bg-accent text-foreground` selected treatment — Tailwind v4's content
-   * scanner only picks up literal class substrings, so callers must pass
-   * whole class strings here rather than building them from a color name at
-   * runtime (see the GRID_COLS comment above for the same constraint).
-   *
-   * Deliberately generic — this is a coloring hook, not priority-specific
-   * knowledge. Segmented itself has no notion of "low/medium/high"; callers
-   * that render priority pickers pass `PRIORITY_TONES` (types.ts), every
-   * other caller (Units, Appearance's Scale/Radius/Opacity rows) passes
-   * nothing and keeps today's flat neutral selected state unchanged.
+   * Per-value override for the SELECTED segment's color. Must be literal
+   * Tailwind class strings — the content scanner can't see runtime-built
+   * names (same constraint as GRID_COLS). Generic coloring hook, not
+   * priority-specific; omit for the default neutral selected state.
    */
   optionTones?: Partial<Record<T, string>>;
 }) {
   const labelled = id !== undefined;
-  const cols = GRID_COLS[options.length] ?? "grid-cols-3";
+  // SAFETY: `options.length` (2 or 3) is a known grid key — the `as keyof` narrows the numeric index after the literal check.
+  const cols = GRID_COLS[options.length as keyof typeof GRID_COLS] ?? "grid-cols-3";
   const buttonClass = labelled ? "priority-toggle-button" : "segmented-control-button";
   return (
     <div className={CONTROL_ROW}>
@@ -76,19 +49,17 @@ export function Segmented<T extends string | number>({
         <ControlCopy htmlFor={id} name={name} help={help} />
       ) : (
         <div className="control-copy min-w-0">
-          {/* not a form-control label (the fieldset/legend below supplies
-              the group's accessible name) — a plain span avoids an
-              orphaned <label for="…">. */}
+          {/* the fieldset/legend below supplies the group's accessible name —
+              a plain span avoids an orphaned <label for>. */}
           <span className="control-name block text-fs-body leading-[1.3] font-[590] text-foreground">
             {name}
           </span>
         </div>
       )}
       <fieldset
-        // plan 115: rounded-[7px] is intentionally off-scale (sits
-        // between --radius-sm/6px and --radius-md/8px, no scale rung
-        // matches) — left as a literal arbitrary value; snapping either
-        // way would visibly shift this control's corner radius.
+        // rounded-[7px] is intentionally off-scale (between --radius-sm/6px
+        // and --radius-md/8px); snapping either way would visibly shift the
+        // corner radius.
         className={
           labelled
             ? `priority-toggle grid h-[31px] w-36 min-w-0 flex-none ${cols} gap-0.5 rounded-[7px] border border-input bg-input/20 p-[3px]`
@@ -105,48 +76,21 @@ export function Segmented<T extends string | number>({
             key={option.value}
             type="button"
             className={cn(
-              // plan 115: rounded-[4px] is intentionally off-scale (no
-              // --radius-* rung is 4px; --radius-sm is 6px) — left as a
-              // literal arbitrary value rather than shifting the
-              // visible corner radius.
+              // rounded-[4px] is intentionally off-scale (no --radius-* rung
+              // is 4px) — a scale rung would shift the visible corner radius.
               buttonClass,
-              // S3 consistency fix: was a hard, opaque 2px
-              // `shadow-[0_0_0_2px_var(--ring)]` ring — the only focus
-              // treatment in the settings window that didn't match the
-              // soft 3px/50%-opacity ring every shadcn primitive
-              // (button.tsx, switch.tsx, input/textarea) uses via
-              // `focus-visible:border-ring focus-visible:ring-3
-              // focus-visible:ring-ring/50`. Same vocabulary here so
-              // keyboard-tabbing reads as one consistent focus style
-              // across the whole window.
-              // 2026-08-02 (operator press-feedback pass, matching
-              // button.tsx/switch.tsx): added the same inset press shadow
-              // those two now carry, so all three pressable primitives in
-              // the settings window feel like one consistent depth
-              // vocabulary. `box-shadow` was already in this transition
-              // list, so no change needed there. Note this can momentarily
-              // out-cascade the selected pill's own resting
-              // `shadow-[var(--shadow-selected)]` below while pressed —
-              // intentional: a selected pill being pressed should still
-              // read as depressing.
-              // CodeRabbit review (PR #11): `transform` swapped for `scale`
-              // (Tailwind v4's `scale-*` utility sets the standalone
-              // `scale` property, not `transform` — see button.tsx's same
-              // fix), and the press shadow now references the shared
-              // `--shadow-pressed` token instead of a third hand-copied
-              // literal.
+              // Focus ring and press shadow match button.tsx/switch.tsx, so
+              // every pressable primitive shares one focus/depth vocabulary.
+              // While pressed, --shadow-pressed can out-cascade the selected
+              // pill's resting shadow — intentional: it should read as depressing.
               "rounded-[4px] border border-transparent bg-transparent px-1.5 py-px font-mono text-fs-secondary font-[620] tracking-[0.03em] text-muted-foreground outline-none transition-[color,background-color,border-color,box-shadow,scale] duration-[140ms] ease-notchtap focus-visible:border-ring focus-visible:ring-3 focus-visible:ring-ring/50 active:scale-[0.97] active:shadow-[var(--shadow-pressed)]",
               value === option.value
                 ? cn(
                     "is-selected shadow-[var(--shadow-selected)]",
                     optionTones?.[option.value] ?? "bg-accent text-foreground",
                   )
-                : // CodeRabbit review (PR #11): hover used to be unconditional
-                  // on the base class above, so hovering a SELECTED tone pill
-                  // (e.g. a colored priority segment) overrode its
-                  // `optionTones` background/text with the plain neutral
-                  // hover treatment. Scoped to the unselected case only —
-                  // a selected pill keeps its own tone color on hover now.
+                : // Hover is scoped to the unselected case so a selected tone
+                  // pill keeps its own color on hover.
                   "hover:bg-accent hover:text-foreground",
             )}
             aria-pressed={value === option.value}
