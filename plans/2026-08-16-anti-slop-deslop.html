@@ -50,8 +50,8 @@
   <strong>TL;DR</strong>
   <ul>
     <li>The repo is ~75,600 lines of code plus ~73,100 lines of docs and plans. The app is healthy; the weight is history, narration, and two underperforming features.</li>
-    <li>This run deletes roughly: <strong>~12,600 comment lines</strong> (history narration), <strong>~69,000 doc/plan lines</strong> (replaced by a lean current-state set + one plans index), <strong>~6,500 feature lines + 4.2 MB vendored code</strong> (weather, media, dead stores), and <strong>~2.6 MB dead files</strong>.</li>
-    <li>Also: 368 lint findings fixed in the survivors, 3 real defects fixed, linter gated in CI, and the never-run core verification checklist finally executed.</li>
+    <li>This run deletes roughly: <strong>~12,600 comment lines</strong> (history narration), <strong>~69,000 doc/plan lines</strong> (replaced by a lean current-state set + one plans index), <strong>~6,500 feature lines + 4.2 MB vendored code</strong> (weather, media, dead stores), and <strong>~0.8 MB dead files</strong>.</li>
+    <li>Also: 369 lint findings (368 errors + 1 warning) fixed in the survivors, 3 real defects fixed, linter gated in CI, and the never-run core verification checklist finally executed.</li>
     <li>Behavior is unchanged except the named defect fixes. Git keeps every deleted line recoverable.</li>
   </ul>
 </div>
@@ -63,7 +63,7 @@
     <li><span class="ok">✓ Notch (MacBook) mode:</span> keep, untouched. Removal is more task than value.</li>
     <li><span class="ok">✓ Features — remove:</span> Weather, Media/now-playing, the dead secrets store, the zero-member connector framework (which also retires the parked Tavily-connector plan).</li>
     <li><span class="ok">✓ Features — keep:</span> Agents, Football, News, the icon strip/tabs/prefix system, Silence, History/Queue/Diagnostics, and the <code>notchtap run</code> CLI (owner: useful for testing).</li>
-    <li><span class="ok">✓ Review logs:</span> delete all 22 (7,074 lines). Shipped spec docs: delete after merging their few live sections into ARCHITECTURE.</li>
+    <li><span class="ok">✓ Review logs:</span> delete the whole folder. Shipped spec docs: delete after merging their few live sections into ARCHITECTURE.</li>
     <li><span class="ok">✓ Old plans:</span> restructured, not parked — all 188 plan files collapse into ONE index file (<code>plans/INDEX.md</code>): a few lines per past plan saying what it was and what it did. Individual files deleted (git keeps them). Future plans continue the numbering after the index.</li>
     <li><span class="ok">✓ Skills folder:</span> keep as-is.</li>
     <li><span class="ok">✓ Lint tuning D1–D3:</span> all approved (checker-function exemption, test-only module-mock exception after fixing the two replaceable mocks, adapter line rewrite + pinning test).</li>
@@ -90,7 +90,7 @@
 <h2>4 · Workstream C — dead weight (verified)</h2>
 <table>
   <tr><th>Item</th><th>What</th><th>Risk</th></tr>
-  <tr><td>Brand images</td><td>Delete 9 unreferenced PNGs (~1.4 MB); keep the used 128px mark + the 1024px master</td><td class="ok">none</td></tr>
+  <tr><td>Brand images</td><td>Delete 9 unreferenced PNGs (~630 KB); keep the used 128px mark + the 1024px master</td><td class="ok">none</td></tr>
   <tr><td><code>unified.html</code></td><td>88 KB orphan page from another project</td><td class="ok">none</td></tr>
   <tr><td><code>hooks/</code> folder</td><td>Superseded by the agent binary</td><td class="ok">low</td></tr>
   <tr><td>npm/UI dead code</td><td>jest-dom package, shadcn CLI package (verify its one CSS import first), 2 dead scripts, Separator component, CardAction/CardFooter</td><td class="ok">none</td></tr>
@@ -101,21 +101,21 @@
 
 <h2>5 · Workstream D — feature removals (weather + media + dead stores)</h2>
 <ul>
-  <li>Weather: ~1,450 Rust lines + poller (already never spawns), settings section, weather art, most of the idle hover peek, weather tab. Media: ~914 Rust lines, below-block UI, EQ bars, media tab, the 4.2 MB vendored MediaRemote tree, the <code>build-media-adapter</code> manual build step, 2 tokio features. Secrets store + connector framework: ~430 lines + 2 settings commands.</li>
+  <li>Weather: ~1,450 Rust lines + poller (off by default; spawns only when enabled in settings), settings section, weather art, most of the idle hover peek, weather tab. Media: ~914 Rust lines, below-block UI, EQ bars, media tab, the 4.2 MB vendored MediaRemote tree, the <code>build-media-adapter</code> manual build step, 2 tokio features. Secrets store + connector framework: ~430 lines + 2 settings commands.</li>
   <li>Tab system shrinks 5 → 3 tabs (agent, football, news) — touches the tab enum ORDER, prefix digit mapping, icon strip order, and the 4-file parity test in one coordinated commit.</li>
-  <li>Settings command allowlist shrinks (17 → 14: <code>set_secret</code>, <code>get_secret_status</code>, and media's surface go) — 4 files + the count assertion in one commit.</li>
+  <li>Settings command allowlist shrinks 17 → 15 (<code>set_secret</code> and <code>get_secret_status</code> go; media has no command of its own) — 4 files + the count assertion in one commit.</li>
   <li>~100 Rust tests and ~60 web tests retire with their features. Cascade: their comments, lint findings, and glossary entries go automatically.</li>
 </ul>
 
 <h2>6 · Workstream E — lint cleanup (on survivors)</h2>
 <ul>
-  <li>368 findings today; fewer after removals. Fixes: two ~40-line helpers, many one-line rewrites, ~8 justified SAFETY notes, zero behavior change.</li>
+  <li>369 findings today (368 errors + 1 documented warning); fewer after removals. Fixes: two ~40-line helpers, many one-line rewrites, ~8 justified SAFETY notes, zero behavior change.</li>
   <li>Ends at 0 errors with the linter wired into CI and <code>just check-web</code> so slop can't return.</li>
 </ul>
 
 <h2>7 · Defects fixed in this run</h2>
 <ul>
-  <li>The <code>enter</code>/<code>o</code> prefix key no-op (expand flag never driven) — fixed.</li>
+  <li>The <code>enter</code>/<code>o</code> prefix key: the whole chain WORKS (Rust key handling → queue → wire → card CSS class — verified hop by hop). The only gap: the agent-board surface ignores the expand flag — App.tsx passes hover-only instead of the flag. <strong>Fix is ONE line on the board's expand prop; touch nothing else in that chain.</strong></li>
   <li>Two lookup tables vulnerable to junk keys like <code>"toString"</code> — made prototype-safe. (One is in the OpenCode adapter, which stays since agents stay.)</li>
 </ul>
 
@@ -130,7 +130,7 @@
   <li>Docs rewrite + plans/INDEX.md build + delete old plan files and review logs.</li>
   <li>Gates: oxlint into CI + justfile; <code>brew install just</code>; full <code>just test-all</code> (recorded as never yet run end-to-end).</li>
   <li>Manual verification on the Mini, together (~1–2 hrs): queue under load, pause/resume, hotkeys, Spaces/fullscreen, Save &amp; Relaunch, overlay-denied-commands security check.</li>
-  <li>Final branch review → merge.</li>
+  <li>Raise a PR on GitHub — the PR agents review it there; merge after review.</li>
 </ol>
 
 <h2>9 · Done means</h2>
@@ -143,7 +143,7 @@
 <div class="panel">
   <strong>Also found (no action unless asked)</strong>
   <ul class="small">
-    <li>PR-bot config pins a promo-priced model with a "before this promo ends" note — say the word and it's updated.</li>
+    <li>PR-bot config pins two promo-priced models with a "before this promo ends" note — say the word and it's updated.</li>
     <li>Rust is 54% test code — why the crate reads big; not bloat.</li>
     <li><code>cargo clean</code> reclaims 22 GB of local build cache (not in git).</li>
     <li>The hand-maintained <code>prototype/</code> mirror has no drift guard — kept per repo rules, flagged for later.</li>
