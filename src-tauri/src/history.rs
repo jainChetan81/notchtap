@@ -1,8 +1,8 @@
 //! append-only JSONL notification history, gated behind the
 //! opt-in `history_enabled` config flag (default `false`, see
 //! `config.rs`). The only writer is `Engine::accept`; the settings
-//! window's `get_history`/`clear_history` invoke commands (,
-//! `settings.rs`) are the read/clear surface.
+//! window's `get_history`/`clear_history` invoke commands
+//! (`settings.rs`) are the read/clear surface.
 //!
 //! DELIBERATE DIVERGENCE from `logging.rs`'s `SizeRotatingAppender`: this
 //! store stats the file on every `append` instead of caching an open file
@@ -178,8 +178,7 @@ impl HistoryStore {
     /// is success, not an error.
     ///
     /// Backs the settings window's "Clear history" control via the
-    /// `clear_history` invoke command (, `settings.rs`; plan
-    /// 059 decision #2).
+    /// `clear_history` invoke command (`settings.rs`).
     pub fn clear(&self) -> io::Result<()> {
         // poison-tolerant, same rationale as `append` above.
         let _guard = self.lock.lock().unwrap_or_else(|e| e.into_inner());

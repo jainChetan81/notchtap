@@ -183,7 +183,7 @@ mod tests {
                 s.strip_prefix("settings::").unwrap_or_else(|| {
                     panic!(
                         "generate_handler![...] entry {s:?} is not a settings:: command — \
-                         every entry in this block is expected to be one of the seventeen \
+                         every entry in this block is expected to be one of the fifteen \
                          settings commands"
                     )
                 })
