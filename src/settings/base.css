@@ -106,24 +106,6 @@
    equivalent turns out to be needed once shadcn primitives are actually
    used in JSX, add it then, scoped, not as a document-wide reset. */
 
-/* plan 112 Step 1: reduced-motion is ported verbatim from the old
-   settings.css (see git history) so Tailwind/shadcn's own CSS
-   transitions and keyframes are flattened the same way settings.css's
-   bespoke transitions always were. This does NOT replace React Motion's
-   own `MotionConfig reducedMotion="user"` (SettingsApp.tsx) — that
-   still governs AnimatePresence state transitions; this rule only
-   covers plain CSS animation/transition properties. */
-@media (prefers-reduced-motion: reduce) {
-  *,
-  *::before,
-  *::after {
-    scroll-behavior: auto !important;
-    animation-duration: 0.01ms !important;
-    animation-iteration-count: 1 !important;
-    transition-duration: 0.01ms !important;
-  }
-}
-
 /* plan 112 Step 3: settings-scoped type floor (Plan 109 contract) —
    preserved verbatim from the old settings.css `:root` (values
    unchanged: 9px/10px/11px/19px). Defined once, here, so both this

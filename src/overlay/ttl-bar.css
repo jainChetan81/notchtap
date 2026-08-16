@@ -184,14 +184,3 @@
   background: color-mix(in srgb, var(--accent) 95%, transparent);
 }
 
-@media (prefers-reduced-motion: reduce) {
-  /* belt-and-braces: the rAF loop itself is gated off in JS under
-     reduced-motion (TtlBar.tsx renders a static, un-scaled fill and
-     never arms the loop), but a CSS transition would still animate a
-     later transform change if one were ever added here — keep it
-     inert. */
-  .card-root .ttl-fill {
-    transition: none;
-  }
-}
-

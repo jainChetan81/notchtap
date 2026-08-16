@@ -914,7 +914,7 @@
 /* plan 147: the static per-runtime identity wash — same corner-radial
    gradient idiom as `.news-shade::before` above, deliberately WITHOUT
    that rule's `shade-drift` animation or motion of any kind: no
-   animation, no reduced-motion variant, permanent non-goal for this
+   animation at all, permanent non-goal for this
    feature (unlike news's shade, which the operator explicitly asked to
    keep animated). Safe to also claim `.below-block`'s `::before` slot —
    `.news-shade` and `.agent-origin` never co-occur on the same card (see

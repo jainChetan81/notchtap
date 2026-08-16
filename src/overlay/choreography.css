@@ -1,6 +1,6 @@
 /* hover no longer scales the shell (operator removal, 2026-08-02): the
    old plan-087/127 "breathe" (`.card-assembly.hovered { transform:
-   scale(1.02) }`, plus plan 162's reduced-motion override for it) is
+   scale(1.02) }`) is
    deleted — the zoom read as the shell DETACHING from the notch top on
    every hover. Nothing replaced it here; there is no hover transform on
    this shell anymore. `.hovered` itself is very much alive and still
@@ -238,12 +238,6 @@
   }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .card-root .cele-ripple span {
-    animation: none;
-  }
-}
-
 /* signature moment #2 — Red Card: a sharp two-pulse alert strobe,
    different register from Goal's celebration — urgent, not festive. */
 .card-root .card-assembly.pulse-red {
@@ -271,17 +265,6 @@
       0 14px 32px rgba(0, 0, 0, 0.32),
       0 0 0 2px var(--overlay-coral),
       0 0 26px 4px color-mix(in srgb, var(--overlay-coral) 65%, transparent);
-  }
-}
-
-/* the two pulses above are plain CSS and were never covered by any
-   reduced-motion mechanism — they need this override in their own right. */
-@media (prefers-reduced-motion: reduce) {
-  .card-root .card-assembly.pulse-goal,
-  .card-root .card-assembly.pulse-goal::before,
-  .card-root .card-assembly.pulse-goal::after,
-  .card-root .card-assembly.pulse-red {
-    animation: none;
   }
 }
 

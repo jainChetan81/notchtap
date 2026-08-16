@@ -332,7 +332,7 @@ export function SettingsApp() {
   const currentSection = sectionCopy[activeSection];
 
   return (
-    <MotionConfig reducedMotion="user" transition={{ duration: 0.16, ease: NOTCHTAP_EASE }}>
+    <MotionConfig transition={{ duration: 0.16, ease: NOTCHTAP_EASE }}>
       <main
         className="settings-window grid h-full w-full grid-cols-[140px_minmax(0,1fr)] grid-rows-[minmax(0,1fr)] overflow-hidden bg-background max-[430px]:grid-cols-[122px_minmax(0,1fr)]"
         aria-labelledby="section-title"

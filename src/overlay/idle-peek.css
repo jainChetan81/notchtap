@@ -185,12 +185,3 @@
     box-shadow: none;
   }
 }
-
-@media (prefers-reduced-motion: reduce) {
-  .card-root .card-assembly.cele-goal,
-  .card-root .card-assembly.cele-goal::after,
-  .card-root .card-assembly.cele-yc::after,
-  .card-root .card-assembly.cele-rc {
-    animation: none;
-  }
-}

@@ -1423,7 +1423,6 @@ describe("StatusRailCard", () => {
       const variant = contentExitVariants.exit({
         isRotation: true,
         isInterrupt: false,
-        reduceMotion: false,
       }) as {
         transition: { duration: number; ease: unknown };
       };
@@ -1435,7 +1434,6 @@ describe("StatusRailCard", () => {
       const variant = contentExitVariants.exit({
         isRotation: false,
         isInterrupt: false,
-        reduceMotion: false,
       }) as {
         transition: { duration: number; ease: unknown };
       };
@@ -1456,7 +1454,6 @@ describe("StatusRailCard", () => {
       const variant = contentExitVariants.exit({
         isRotation: true,
         isInterrupt: true,
-        reduceMotion: false,
       }) as {
         opacity: number;
         transform: string;
@@ -1469,29 +1466,6 @@ describe("StatusRailCard", () => {
       expect(variant.opacity).toBe(0);
       expect(variant.transform).toContain("translateY(8px)");
       expect(variant.transform).toContain("scale(0.96)");
-    });
-
-    // review fix (/review-animations, fresh-agent pass): motion-dom's own
-    // reduced-motion gate (MotionConfig reducedMotion="user") keys off
-    // `positionalKeys` (x/y/scale/…) and never matches a raw `transform`
-    // STRING target — confirmed by reading motion-dom's source directly —
-    // so this codebase has to branch explicitly instead of relying on the
-    // library. Pins that the interrupt leg drops `transform` entirely
-    // under reduced motion, keeping only the opacity fade.
-    it("the interrupt exit under reduceMotion drops the transform yank entirely, keeping only the opacity fade", () => {
-      const variant = contentExitVariants.exit({
-        isRotation: true,
-        isInterrupt: true,
-        reduceMotion: true,
-      }) as {
-        opacity: number;
-        transform?: string;
-        transition: { duration: number; ease: unknown };
-      };
-      expect(variant.transition.duration).toBe(INTERRUPT_EXIT_MS / 1000);
-      expect(variant.transition.ease).toEqual(INTERRUPT_EASE);
-      expect(variant.opacity).toBe(0);
-      expect(variant.transform).toBeUndefined();
     });
   });
 

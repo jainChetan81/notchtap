@@ -26,28 +26,13 @@ function fillScalePercent(container: HTMLElement): number {
   return Number(match?.[1]) * 100;
 }
 
-function mockReducedMotion(matches: boolean) {
-  vi.stubGlobal("matchMedia", (query: string) => ({
-    matches,
-    media: query,
-    addEventListener: () => {},
-    removeEventListener: () => {},
-    addListener: () => {},
-    removeListener: () => {},
-    onchange: null,
-    dispatchEvent: () => false,
-  }));
-}
-
 describe("TtlBar (plan 081)", () => {
   beforeEach(() => {
     vi.useFakeTimers({ toFake: ["requestAnimationFrame", "cancelAnimationFrame", "performance"] });
-    mockReducedMotion(false);
   });
 
   afterEach(() => {
     vi.useRealTimers();
-    vi.unstubAllGlobals();
   });
 
   it("renders the ttl-bar/ttl-fill DOM nodes", () => {
@@ -115,22 +100,6 @@ describe("TtlBar (plan 081)", () => {
       vi.advanceTimersByTime(16);
     });
     expect(fillScalePercent(container)).toBeGreaterThan(90);
-  });
-
-  it("renders a static, un-scaled fill and skips the rAF loop under prefers-reduced-motion", () => {
-    mockReducedMotion(true);
-    const rafSpy = vi.spyOn(window, "requestAnimationFrame");
-    const { container } = render(<TtlBar slotId="n1" ttlMs={8000} remainingMs={4000} />);
-
-    expect(fillScalePercent(container)).toBe(100);
-    expect(rafSpy).not.toHaveBeenCalled();
-
-    // advancing time must not start ticking it down either — the loop was
-    // never armed (idle-CPU discipline, plans 015/018), not merely paused.
-    act(() => {
-      vi.advanceTimersByTime(5000);
-    });
-    expect(fillScalePercent(container)).toBe(100);
   });
 
   it("cancels the rAF loop on unmount", () => {

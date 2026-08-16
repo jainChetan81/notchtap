@@ -78,17 +78,11 @@ the settings window, and CSS transitions/keyframes in the overlay path;
 per-event-type variety stays data (a table/stylesheet keyed by event
 type), never a new render path.
 
-**reduce-motion fallback**: the two signature celebration moments —
-the goal confetti burst + ring and the red-card strobe — are suppressed
-entirely under `prefers-reduced-motion: reduce`; the fallback is
-deliberately nothing, not a static substitute. the card, accent, stamp,
-and copy still render and announce via the `aria-live` region. this is
-why the celebrations are authored as CSS pseudo-elements rather than a
-JS-driven player: a css rule can be turned off by the media query. the
-`motion` components elsewhere are covered by
-`<MotionConfig reducedMotion="user">` in `App.tsx`. (the tab-notch
-pull feature, §11, deliberately carries no reduced-motion variants —
-a standing project rule for that surface.)
+**reduce-motion**: deliberately not handled, anywhere — no
+`prefers-reduced-motion` media queries, no `MotionConfig
+reducedMotion`, no JS gates. a standing app-wide non-goal (operator
+decree, 2026-08-16): this is a personal overlay for one operator's own
+machines, and its motion always plays.
 
 ## 3. cross-device behaviour
 
@@ -526,10 +520,10 @@ the shipped implementation under `src/` is authoritative.
   *unregister* is not. never register these outside a live armed
   window.
 - **hard non-goals**, standing project rules rather than oversights: no
-  `prefers-reduced-motion` handling and no accessibility variants in
-  this feature; HUD-mode/mac-mini scope, with real notch-hardware
-  verification operator-owed; no breaking-news interrupts (news stays
-  pure pull).
+  `prefers-reduced-motion` handling (an app-wide non-goal, §2) and no
+  accessibility variants in this feature; HUD-mode/mac-mini scope, with
+  real notch-hardware verification operator-owed; no breaking-news
+  interrupts (news stays pure pull).
 
 ## 12. logging & observability
 

@@ -7,7 +7,7 @@
 // compact news card (110's single `.notif-time-inline` timestamp).
 //
 // Deliberately OUT (per the plan's own scoping note): idle rail / idle
-// hover-peek / bare notch / reduced-motion. Those are window-level
+// hover-peek / bare notch. Those are window-level
 // overlay states (idle clock, hover-driven peek reveal, the notchless-
 // vs-notch shell paint) that the preview frame — a static per-sample
 // `.preview-stage` box, never the real overlay window, never hover-

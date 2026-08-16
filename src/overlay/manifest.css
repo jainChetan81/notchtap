@@ -29,12 +29,6 @@
   min-height: 0;
 }
 
-@media (prefers-reduced-motion: reduce) {
-  .card-root .manifest-wrap {
-    transition: none;
-  }
-}
-
 .card-root .manifest {
   overflow: hidden;
   border-top: 1px solid rgba(255, 255, 255, 0.1);

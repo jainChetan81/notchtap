@@ -1,5 +1,4 @@
 import { useEffect, useRef } from "react";
-import { prefersReducedMotion } from "../prefersReducedMotion";
 
 // stories merge (2026-07-24): the two thin strips a compact card
 // used to carry — this bar (rotation countdown) and Track.tsx's separate
@@ -106,12 +105,10 @@ export function TtlBar({
       return;
     }
 
-    // Idle-CPU discipline (plans 015/018): under prefers-reduced-motion, a
-    // CSS rule alone can't stop a rAF loop, so the loop itself is gated in
-    // JS — render a static, un-scaled fill and never arm the loop.
-    const reducedMotion = prefersReducedMotion();
-
-    if (reducedMotion || ttlMs <= 0) {
+    // Idle-CPU discipline (plans 015/018): a non-positive ttl means there
+    // is nothing to count down — render a static, un-scaled fill and never
+    // arm the loop.
+    if (ttlMs <= 0) {
       fill.style.transform = "scaleX(1)";
       resumeRef.current = null;
       return;
@@ -143,7 +140,7 @@ export function TtlBar({
     // no `requestAnimationFrame` call, so no more per-frame work at all
     // until the pause-edge effect above calls `resumeRef.current()`.
     // Also stops permanently once `remaining` reaches 0 (expired), same
-    // idle-CPU discipline as the reduced-motion early return above.
+    // idle-CPU discipline as the ttlMs <= 0 early return above.
     function tick() {
       if (cancelled) {
         return;
