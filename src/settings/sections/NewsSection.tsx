@@ -2,6 +2,7 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { MetaChip } from "@/components/ui/meta-chip";
+import { isString } from "@/lib/guards";
 import { SOURCE_CATEGORY_COLORS, type SourceCategoryToken } from "@/lib/sourceColors";
 import { ActionStatus, useActionStatus } from "../actionStatus";
 import {
@@ -63,8 +64,7 @@ function SearchNowRow() {
     await run(() => settingsInvoke("search_news_now", { query: trimmed }), {
       announce: true,
       okMessage: (count) => `${count} ${count === 1 ? "story" : "stories"} queued`,
-      errorMessage: (reason) =>
-        typeof reason === "string" ? reason : "search could not be completed",
+      errorMessage: (reason) => (isString(reason) ? reason : "search could not be completed"),
     }).then((count) => {
       // The input clears only on success — `run` resolves `undefined` on
       // a caught rejection, so a failed search leaves the typed query in

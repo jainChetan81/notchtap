@@ -1,5 +1,6 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
+import { isNonNegativeInteger, isNullableString } from "./lib/guards";
 
 // The Agent Board's `agent-state` channel — same delivery discipline as
 // slot-state/status-state: runtime-validated payload, dead-listener
@@ -102,22 +103,15 @@ function emptyAgentState(): ResolvedAgentState {
   };
 }
 
-function isNonNegativeInteger(v: unknown): v is number {
-  return typeof v === "number" && Number.isInteger(v) && v >= 0;
-}
-
-function isNullableString(v: unknown): v is string | null {
-  return v === null || typeof v === "string";
-}
-
 function isDetailArray(v: unknown): v is AgentDetail[] {
   return (
     Array.isArray(v) &&
     v.every((d) => {
-      if (typeof d !== "object" || d === null) {
+      if (typeof d !== "object" || d === null || !("label" in d) || !("value" in d)) {
         return false;
       }
-      const pair = d as Record<string, unknown>;
+      // SAFETY: "label" and "value" in d narrows to { label: unknown, value: unknown }.
+      const pair = d as { label: unknown; value: unknown };
       return typeof pair.label === "string" && typeof pair.value === "string";
     })
   );
@@ -127,10 +121,11 @@ function isValidProject(v: unknown): v is AgentProject {
   if (v === null) {
     return true;
   }
-  if (typeof v !== "object") {
+  if (typeof v !== "object" || v === null || !("name" in v) || !("cwd" in v)) {
     return false;
   }
-  const o = v as Record<string, unknown>;
+  // SAFETY: "name" and "cwd" in v narrows to { name: unknown, cwd: unknown }.
+  const o = v as { name: unknown; cwd: unknown };
   return isNullableString(o.name) && isNullableString(o.cwd);
 }
 
@@ -138,10 +133,11 @@ function isValidHost(v: unknown): v is AgentHost {
   if (v === null) {
     return true;
   }
-  if (typeof v !== "object") {
+  if (typeof v !== "object" || v === null || !("name" in v) || !("bundleId" in v)) {
     return false;
   }
-  const o = v as Record<string, unknown>;
+  // SAFETY: "name" and "bundleId" in v narrows to { name: unknown, bundleId: unknown }.
+  const o = v as { name: unknown; bundleId: unknown };
   return isNullableString(o.name) && isNullableString(o.bundleId);
 }
 
@@ -151,54 +147,83 @@ function isValidSubagent(v: unknown): v is AgentSubagent {
   if (v === null) {
     return true;
   }
-  if (typeof v !== "object") {
+  if (typeof v !== "object" || v === null || !("id" in v) || !("label" in v) || !("state" in v)) {
     return false;
   }
-  const o = v as Record<string, unknown>;
+  // SAFETY: "id", "label", "state" in v narrows to { id: unknown, label: unknown, state: unknown }.
+  const o = v as { id: unknown; label: unknown; state: unknown };
   return typeof o.id === "string" && isNullableString(o.label) && isNullableString(o.state);
 }
 
 function isValidTransition(v: unknown): v is AgentTransition {
-  if (typeof v !== "object" || v === null) {
+  if (typeof v !== "object" || v === null || !("state" in v) || !("elapsedMs" in v)) {
     return false;
   }
-  const o = v as Record<string, unknown>;
-  return (
-    AGENT_SESSION_STATES.includes(o.state as AgentSessionState) && isNonNegativeInteger(o.elapsedMs)
-  );
+  // SAFETY: "state" and "elapsedMs" in v narrows to { state: unknown, elapsedMs: unknown }.
+  const o = v as { state: unknown; elapsedMs: unknown };
+  return AGENT_SESSION_STATES.some((s) => s === o.state) && isNonNegativeInteger(o.elapsedMs);
 }
 
 function isValidSession(v: unknown): v is AgentSessionView {
   if (typeof v !== "object" || v === null) {
     return false;
   }
-  const o = v as Record<string, unknown>;
+  if (
+    !("id" in v) ||
+    !("runtime" in v) ||
+    !("state" in v) ||
+    !("capabilities" in v) ||
+    !("summary" in v) ||
+    !("details" in v) ||
+    !("elapsedMs" in v)
+  ) {
+    return false;
+  }
+  // SAFETY: "id", "runtime", "state", "capabilities", "summary", "details", "elapsedMs" in v narrows to required shape.
+  const o = v as {
+    id: unknown;
+    runtime: unknown;
+    state: unknown;
+    capabilities: unknown;
+    summary: unknown;
+    details: unknown;
+    project: unknown;
+    host: unknown;
+    subagent: unknown;
+    elapsedMs: unknown;
+    retentionRemainingMs: unknown;
+    history: unknown;
+  };
   return (
     typeof o.id === "string" &&
-    AGENT_RUNTIMES.includes(o.runtime as AgentRuntime) &&
-    AGENT_SESSION_STATES.includes(o.state as AgentSessionState) &&
+    AGENT_RUNTIMES.some((r) => r === o.runtime) &&
+    AGENT_SESSION_STATES.some((s) => s === o.state) &&
     Array.isArray(o.capabilities) &&
-    (o.capabilities as unknown[]).every((c) => AGENT_CAPABILITIES.includes(c as AgentCapability)) &&
+    // SAFETY: Array.isArray check above guarantees capabilities is array; widen to unknown[] for element predicate check.
+    (o.capabilities as unknown[]).every((c) => AGENT_CAPABILITIES.some((a) => a === c)) &&
     isNullableString(o.summary) &&
     isDetailArray(o.details) &&
-    (o.project === undefined || isValidProject(o.project)) &&
-    (o.host === undefined || isValidHost(o.host)) &&
+    (!("project" in v) || o.project === undefined || isValidProject(o.project)) &&
+    (!("host" in v) || o.host === undefined || isValidHost(o.host)) &&
     // Absent/null-tolerant like project/host — older payloads without
     // `subagent` must not drop the session.
-    (o.subagent === undefined || isValidSubagent(o.subagent)) &&
+    (!("subagent" in v) || o.subagent === undefined || isValidSubagent(o.subagent)) &&
     isNonNegativeInteger(o.elapsedMs) &&
     (o.retentionRemainingMs === null || isNonNegativeInteger(o.retentionRemainingMs)) &&
     // Optional at validation time (defaults to `[]` below) — older
     // payloads without it must not drop the session.
-    (o.history === undefined || (Array.isArray(o.history) && o.history.every(isValidTransition)))
+    (!("history" in v) ||
+      o.history === undefined ||
+      (Array.isArray(o.history) && o.history.every(isValidTransition)))
   );
 }
 
 function isValidAdapterHealth(v: unknown): v is AdapterHealthView {
-  if (typeof v !== "object" || v === null) {
+  if (typeof v !== "object" || v === null || !("runtime" in v) || !("status" in v)) {
     return false;
   }
-  const o = v as Record<string, unknown>;
+  // SAFETY: "runtime" and "status" in v narrows to { runtime: unknown, status: unknown }.
+  const o = v as { runtime: unknown; status: unknown };
   return typeof o.runtime === "string" && typeof o.status === "string";
 }
 
@@ -209,7 +234,22 @@ export function isValidAgentState(v: unknown): v is AgentState {
   if (typeof v !== "object" || v === null) {
     return false;
   }
-  const o = v as Record<string, unknown>;
+  if (
+    !("revision" in v) ||
+    !("capturedAtMs" in v) ||
+    !("sessions" in v) ||
+    !("adapterHealth" in v)
+  ) {
+    return false;
+  }
+  // SAFETY: "revision", "capturedAtMs", "sessions", "adapterHealth" in v narrows to required shape.
+  const o = v as {
+    revision: unknown;
+    capturedAtMs: unknown;
+    sessions: unknown;
+    tabSessions: unknown;
+    adapterHealth: unknown;
+  };
   return (
     isNonNegativeInteger(o.revision) &&
     isNonNegativeInteger(o.capturedAtMs) &&
@@ -217,8 +257,9 @@ export function isValidAgentState(v: unknown): v is AgentState {
     // Absent tolerated (older payloads); present-and-not-an-array rejects
     // the whole payload, like `sessions`. Per-session validation happens
     // in the sanitizer via `isValidSession`.
-    (o.tabSessions === undefined || Array.isArray(o.tabSessions)) &&
+    (!("tabSessions" in v) || o.tabSessions === undefined || Array.isArray(o.tabSessions)) &&
     Array.isArray(o.adapterHealth) &&
+    // SAFETY: Array.isArray check above guarantees adapterHealth is array; widen to unknown[] for element check.
     (o.adapterHealth as unknown[]).every(isValidAdapterHealth)
   );
 }

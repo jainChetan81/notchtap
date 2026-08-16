@@ -1,18 +1,5 @@
 <!doctype html>
-<!-- Static visual mock of the shipped Settings window's About section,
-     specifically its "System" stat-tile card (App memory / System memory /
-     Disk / Platform / Bundle size / Uptime). Mirrors
-     src/settings/sections/AboutSection.tsx, src/settings/SettingsApp.tsx
-     (sidebar/header shell), src/settings/controls/controls.tsx
-     (SettingsGroup card chrome), src/components/ui/meta-chip.tsx, and the
-     shared design tokens in vendor/shared-ui/design/tokens.css, as of
-     2026-07-30. Sample stat values below are illustrative, hand-picked to
-     match the real formatting helpers in src/settings/byteFormat.ts
-     (formatBytes/formatBytePair/formatUptime) and src-tauri/src/about.rs's
-     AboutInfo fields — not a live capture.
-
-     Not wired into the build (no bundler, no framework) — this is a static
-     HTML/CSS approximation for design reference, kept in sync by hand. -->
+<!-- System stats — static mock of the shipped Settings window. -->
 <html lang="en">
 <head>
 <meta charset="utf-8" />

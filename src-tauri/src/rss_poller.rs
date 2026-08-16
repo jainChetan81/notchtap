@@ -15,7 +15,7 @@ use crate::poller::Backoff;
 
 const TITLE_MAX_CHARS: usize = 120;
 const BODY_MAX_CHARS: usize = 240;
-// plan 130: matches http.rs's SUBTITLE_MAX_CHARS (same fixed-window
+// matches http.rs's SUBTITLE_MAX_CHARS (same fixed-window
 // display-safety rationale) — the topic label rides the same subtitle
 // slot a `/notify` caller's rich-relay subtitle uses.
 const TOPIC_SUBTITLE_MAX_CHARS: usize = 120;
@@ -26,7 +26,7 @@ const CATEGORY_KEYWORDS: &[(&str, &str)] = &[
     ("parliament", "politics"),
     ("tech", "tech"),
     ("gadget", "tech"),
-    // plan 147: science gets its own category (cat-science, --cat: #f2a2c8)
+    // science gets its own category (cat-science, --cat: #f2a2c8)
     // instead of falling under tech — retargeted from ("science", "tech").
     ("science", "science"),
     ("physics", "science"),
@@ -88,7 +88,7 @@ impl SeenStore {
 }
 
 /// Expands a plain-language topic ("aston villa transfers") into a
-/// Google News query-feed URL (plan 130 Step 1). The `hl`/`gl`/`ceid`
+/// Google News query-feed URL. The `hl`/`gl`/`ceid`
 /// triple is required, not decorative: Google News's RSS search
 /// endpoint is a documented quirk here — omitting any of the three
 /// yields empty or inconsistent results. Shared verbatim by the
@@ -117,7 +117,7 @@ pub(crate) struct PollSource {
 }
 
 /// Merges configured feeds with topic-expanded query feeds into ONE
-/// poll list (plan 130 Step 1): feeds first, then topics in configured
+/// poll list: feeds first, then topics in configured
 /// order — an operator reading their own config top-to-bottom sees the
 /// same order reflected in poll sequence. Each topic line is trimmed;
 /// an empty (or whitespace-only) line is skipped rather than expanding
@@ -404,7 +404,7 @@ fn derive_source(configured_source: Option<&str>, feed: &feed_rs::model::Feed) -
 /// Pure set-difference and event-building heart of the RSS poller. All new
 /// keys enter the shared store before baseline/display filtering, so skipped
 /// or rate-limited stories cannot replay on a later tick.
-// 9 args (plan 130 added `topic`) trips clippy 1.97's too_many_arguments —
+// 9 args trips clippy 1.97's too_many_arguments —
 // this is the pure, exhaustively-tested core and every argument is a
 // distinct test axis; bundling them would only obscure the test call
 // sites.
@@ -418,7 +418,7 @@ pub fn diff_feed(
     ttl_secs: u64,
     priority: Priority,
     now: Instant,
-    // plan 130: `Some(label)` for a topic-expanded source — stamped onto
+    // `Some(label)` for a topic-expanded source — stamped onto
     // every event's `meta.subtitle`. `None` for a plain configured feed,
     // which keeps the pre-130 no-subtitle behavior byte-identical.
     topic: Option<&str>,
@@ -497,15 +497,15 @@ pub fn diff_feed(
                 category,
                 published_at_ms: published,
                 link: link.map(str::to_string),
-                // plan 035: rss items carry no details. plan 130: a
+                // rss items carry no details. a
                 // topic-derived item's subtitle carries the topic label
                 // that produced it; a plain configured feed still has
                 // none.
                 subtitle: topic.map(|label| sanitize(label, TOPIC_SUBTITLE_MAX_CHARS)),
                 details: Vec::new(),
-                // plan 083: espn-only field; rss never populates it.
+                // espn-only field; rss never populates it.
                 espn: None,
-                // plan 135: agent-only field; rss never populates it.
+                // agent-only field; rss never populates it.
                 agent: None,
             },
             origin: SourceKind::News,
@@ -609,11 +609,11 @@ fn feed_log_ref(config: &RssFeedConfig) -> String {
         .unwrap_or_else(|| "<unparseable feed url>".to_string())
 }
 
-// plan 037: ingest goes through `Engine::accept`, same as the espn
+// ingest goes through `Engine::accept`, same as the espn
 // poller — rss's deliberately offer-less inline loop is subsumed by
 // accept's origin gate (News events are never offered to connectors).
 //
-// plan 130: `topics` merges with `feeds` (via `merge_feed_sources`) into
+// `topics` merges with `feeds` (via `merge_feed_sources`) into
 // ONE poll list — same SeenStore, same TTL/priority/max-per-poll, same
 // News tier as a configured feed. `app_handle` reaches the
 // `StdMutex<SeenStore>` tauri manages as app state (`lib.rs`'s
@@ -656,7 +656,7 @@ pub fn spawn_rss_poller(
 
         loop {
             interval.tick().await;
-            // Plan 171 (news_charge.rs's own placement doc): the PREVIOUS
+            // the PREVIOUS
             // cycle ends at this tick boundary — evaluate the charge edge
             // BEFORE this pass lands anything new.
             tab_wire
@@ -713,7 +713,7 @@ pub fn spawn_rss_poller(
                 for event in events {
                     match engine.accept(event, false).await {
                         Ok(()) => {
-                            // Plan 171: one charge unit per item that
+                            // one charge unit per item that
                             // actually landed (accepted, not dropped).
                             tab_wire
                                 .news_charge
@@ -732,7 +732,7 @@ pub fn spawn_rss_poller(
 }
 
 /// One-shot fetch+diff for an ad-hoc search (`settings::search_news_now`,
-/// plan 130 Step 3). The caller is expected to have built `url` via the
+/// Step 3). The caller is expected to have built `url` via the
 /// SAME `expand_topic_url` the continuous poller's topic list uses (one
 /// shared path, no fork — see `search_news_now`'s own body) and to pass
 /// the exact (trimmed) query back in as `topic_label`, stamped onto
@@ -1077,7 +1077,7 @@ mod tests {
 
     #[test]
     fn category_derivation_uses_entry_tag_hit() {
-        // plan 147: science retargeted off tech onto its own category.
+        // science retargeted off tech onto its own category.
         assert_eq!(
             derive_category(&["Science".to_string()], Some("world")),
             Some("science".to_string())
@@ -1136,7 +1136,7 @@ mod tests {
         assert_eq!(derive_source(None, &feed), None);
     }
 
-    // --- plan 130 Step 1: topic expansion + merge ---
+    // --- topic expansion + merge ---
 
     #[test]
     fn expand_topic_url_shape_encodes_the_query_and_carries_the_locale_triple() {
@@ -1723,7 +1723,7 @@ mod tests {
         }
     }
 
-    // --- plan 130 Step 3: search_once's fetch-once/dedup/subtitle
+    // --- search_once's fetch-once/dedup/subtitle
     // contract, same wiremock-not-live-fetch discipline as
     // fetch_feed_tests above. ---
 

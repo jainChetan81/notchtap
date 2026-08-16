@@ -12,7 +12,7 @@ pub struct QueueItem {
     pub enqueued_at: Instant,
     pub promoted_at: Option<Instant>,
     pub extension_secs: u64,
-    /// plan 146b: set only by `try_preempt_visible` at the moment a
+    /// set only by `try_preempt_visible` at the moment a
     /// higher-priority arrival cuts this item's turn short. Holds the
     /// item's WHOLE remaining turn length in seconds (base window,
     /// window-expanded multiplier, and any supersede extension already
@@ -25,7 +25,7 @@ pub struct QueueItem {
 }
 
 /// Read-only wire summary of a single WAITING item — the settings
-/// window's Queue section (plan 121). Deliberately a projection, not
+/// window's Queue section. Deliberately a projection, not
 /// `QueueItem` itself: `QueueItem` carries `Instant`s (not serializable)
 /// and internal bookkeeping the settings window has no business seeing.
 /// `priority`/`source` are plain lowercase strings rather than the
@@ -39,7 +39,7 @@ pub struct QueueItemSummary {
 }
 
 /// `Priority` already derives `Serialize` (`rename_all = "snake_case"`),
-/// but `QueueItemSummary.priority` is a plain `String` field (plan 121),
+/// but `QueueItemSummary.priority` is a plain `String` field,
 /// not the enum itself — an explicit, exhaustive match keeps this in
 /// lockstep with `Priority`'s own wire spelling without round-tripping
 /// through `serde_json` for a three-variant enum. Exhaustive on purpose:
@@ -55,7 +55,7 @@ fn priority_tier_label(priority: Priority) -> String {
 
 /// Same rationale as `priority_tier_label`, for `SourceKind` (event.rs's
 /// `origin` field is the "source-ish field" `QueueItemSummary.source`
-/// derives from — plan 121 step 1).
+/// derives from — step 1).
 fn source_kind_label(source: SourceKind) -> String {
     match source {
         SourceKind::Football => "football",
@@ -78,17 +78,17 @@ fn source_kind_label(source: SourceKind) -> String {
 /// use notchtap_lib::queue::SingleSlotQueue;
 ///
 /// fn event(title: &str, priority: Priority, ttl_secs: u64) -> Event {
-///     Event {
-///         id: uuid::Uuid::new_v4(),
-///         event_type: EventType::Generic,
-///         priority,
-///         rotation: RotationSpec::OneShot { ttl_secs },
-///         topic: None,
-///         payload: EventPayload { title: title.into(), body: "body".into() },
-///         meta: EventMeta::default(),
-///         signal: EventSignal::Generic,
-///         origin: SourceKind::Manual,
-///     }
+/// Event {
+/// id: uuid::Uuid::new_v4(),
+/// event_type: EventType::Generic,
+/// priority,
+/// rotation: RotationSpec::OneShot { ttl_secs },
+/// topic: None,
+/// payload: EventPayload { title: title.into(), body: "body".into() },
+/// meta: EventMeta::default(),
+/// signal: EventSignal::Generic,
+/// origin: SourceKind::Manual,
+/// }
 /// }
 ///
 /// let mut queue = SingleSlotQueue::new(50);
@@ -105,7 +105,7 @@ pub struct SingleSlotQueue {
     waiting: [VecDeque<QueueItem>; 3],
     max_queued_per_tier: usize,
     paused: bool,
-    /// plan 146a: a second, independent gate beside `paused`. While
+    /// a second, independent gate beside `paused`. While
     /// Silenced, `enqueue_new`'s fast path and `pop_highest_priority_
     /// waiting` both refuse to promote Medium/Low — they buffer exactly
     /// as under Paused — but a High arrival still promotes (a
@@ -116,7 +116,7 @@ pub struct SingleSlotQueue {
     /// included, silenced or not.
     silenced: bool,
     /// Render state — what the visible card looks like. Set `true` at every
-    /// promotion (plan 033 expand-all), flipped by the auto-retract and by
+    /// promotion, flipped by the auto-retract and by
     /// manual toggles. Never consulted by rotation arithmetic.
     expanded: bool,
     /// Rotation arithmetic — how long the turn is. `false` at every
@@ -128,7 +128,7 @@ pub struct SingleSlotQueue {
     /// at half the base rotation window while armed. Any manual toggle
     /// press disarms it.
     auto_retract_armed: bool,
-    /// Queue-slider counters (plan 033 decision 4): a batch starts when an
+    /// Queue-slider counters: a batch starts when an
     /// event is accepted while the engine is fully idle; every accepted
     /// enqueue increments `batch_total`, every completion (rotated out,
     /// dismissed, skipped) increments `batch_done` — except a `Recurring`
@@ -143,7 +143,7 @@ pub struct SingleSlotQueue {
     /// so promotion degenerates to plain arrival-order FIFO (today's
     /// behavior). Set via `with_rotation_order`.
     rotation_order: Vec<SourceKind>,
-    /// plan 093: TTL hover-pause. `Some(t)` while the visible item is
+    /// TTL hover-pause. `Some(t)` while the visible item is
     /// currently under the cursor (`t` is when the CURRENT hover session
     /// started); `hover_paused_total` is the cumulative real wall-clock
     /// duration banked from every PAST hover session on this same visible
@@ -174,7 +174,7 @@ pub struct SingleSlotQueue {
     /// design constraint names only "the rotation deadline holds."
     hover_started_at: Option<Instant>,
     hover_paused_total: Duration,
-    /// plan 107 Step C: the ONE queue-owned sample the TTL-restart
+    /// the ONE queue-owned sample the TTL-restart
     /// detector compares each new wire-emission attempt against — see
     /// `TtlEmissionSample`'s own doc and `observe_emission_for_ttl_restart`
     /// for the full mechanism. Deliberately adjacent to `last_emitted`
@@ -184,7 +184,7 @@ pub struct SingleSlotQueue {
     ttl_sample: Option<TtlEmissionSample>,
 }
 
-/// plan 107 Step C: a snapshot of the last observed slot-state wire
+/// a snapshot of the last observed slot-state wire
 /// emission, kept purely so the NEXT emission for the same item can be
 /// checked for a TTL restart (`is_ttl_restart`, below `SingleSlotQueue`'s
 /// impl block) instead of a raw "did it get bigger" comparison, which
@@ -234,7 +234,7 @@ impl SingleSlotQueue {
     // enqueue / supersession
     // ------------------------------------------------------------------
 
-    /// Clock-agnostic (plan 037): `now` comes from the caller — the Engine
+    /// Clock-agnostic: `now` comes from the caller — the Engine
     /// reads `Instant::now()` once per operation; tests pass a simulated
     /// clock. No wall-clock read happens inside the queue.
     pub fn enqueue(&mut self, event: Event, now: Instant) -> Result<(), QueueError> {
@@ -253,7 +253,7 @@ impl SingleSlotQueue {
     // deterministically without real sleeps — `top_up_visible_remaining_time`
     // needs a consistent notion of "now" alongside `promoted_at`, the same
     // way `tick()` already does. Both public entry points above take `now`
-    // at the interface (plan 037 — clock-agnostic queue); this is the shared
+    // at the interface; this is the shared
     // internal path.
     fn enqueue_with_options(
         &mut self,
@@ -275,7 +275,7 @@ impl SingleSlotQueue {
         now: Instant,
         bypass_pause_when_slot_empty: bool,
     ) -> Result<(), QueueError> {
-        // plan 146b: a strictly-higher-priority arrival cuts the current
+        // a strictly-higher-priority arrival cuts the current
         // Visible item's turn short and takes the Slot immediately — see
         // `try_preempt_visible`'s doc for the full contract (equal/lower
         // never preempts, Paused wins unconditionally, and why Silenced
@@ -302,7 +302,7 @@ impl SingleSlotQueue {
         }
 
         let tier = event.priority as usize;
-        // plan 146a: Silenced blocks the fast path for Medium/Low exactly
+        // Silenced blocks the fast path for Medium/Low exactly
         // like Paused does — only a High arrival (a Breakthrough) can
         // promote straight into an empty, fully-idle slot while Silenced.
         // `bypass_pause_when_slot_empty` (the test-enqueue escape hatch)
@@ -315,7 +315,7 @@ impl SingleSlotQueue {
         if !can_promote_now && self.waiting[tier].len() >= self.max_queued_per_tier {
             return Err(QueueError::QueueFull);
         }
-        // plan 033 decision 4: a batch starts when an event is accepted
+        // a batch starts when an event is accepted
         // while the engine is fully idle — counters (re)zero at that
         // moment. (Draining back to idle re-zeroes them too, so this is
         // belt-and-braces for the exact start semantics.)
@@ -341,7 +341,7 @@ impl SingleSlotQueue {
         Ok(())
     }
 
-    /// plan 146b: the preemption check. A strictly-higher-priority
+    /// the preemption check. A strictly-higher-priority
     /// `incoming_priority` than the currently-Visible item's cuts that
     /// item's turn short right now — returns it (NOT yet re-queued
     /// anywhere; the caller pushes it to the HEAD of its own tier) with
@@ -420,7 +420,7 @@ impl SingleSlotQueue {
             if new_tier_idx == tier_idx {
                 apply_fresh_content(&mut self.waiting[tier_idx][pos].event, fresh);
             } else if self.waiting[new_tier_idx].len() >= self.max_queued_per_tier {
-                // destination tier is full — per plan 072's decision, drop
+                // destination tier is full — per 's decision, drop
                 // the fresh content and leave the item in its current tier
                 // rather than evicting something to make room. This
                 // function returns `bool` (whether a Topic match was found
@@ -450,7 +450,7 @@ impl SingleSlotQueue {
         self.reset_batch_if_idle();
     }
 
-    /// plan 033: every promotion starts expanded (render-only — the turn
+    /// every promotion starts expanded (render-only — the turn
     /// length is untouched) and auto-collapses at half the *base* window.
     /// Runs before rotate/promote so a retract and a rotation due at the
     /// same instant collapse-then-rotate in one tick, and so a freshly
@@ -474,7 +474,7 @@ impl SingleSlotQueue {
     }
 
     fn rotate_out_if_elapsed(&mut self, now: Instant) {
-        // plan 093 design constraint: a card must NEVER rotate out while
+        // a card must NEVER rotate out while
         // under the cursor. `hover_started_at.is_some()` means a hover
         // session is currently open on the visible item — elapsed time is
         // frozen for the whole tick, so there is nothing to check.
@@ -498,7 +498,7 @@ impl SingleSlotQueue {
         }
         let mut item = self.visible.take().expect("checked Some above");
         if let RotationSpec::Recurring { .. } = item.event.rotation {
-            // plan 146b: a preemption override only ever covers ONE
+            // a preemption override only ever covers ONE
             // interrupted turn. This item just finished a full turn
             // naturally (whether that was its original window or a
             // preemption's `preempted_remaining_secs`), so the override is
@@ -513,7 +513,7 @@ impl SingleSlotQueue {
     }
 
     // ------------------------------------------------------------------
-    // hover hold (plan 093) — see the `hover_started_at`/
+    // hover hold — see the `hover_started_at`/
     // `hover_paused_total` field doc comments for the full mechanism.
     // ------------------------------------------------------------------
 
@@ -571,7 +571,7 @@ impl SingleSlotQueue {
         }
     }
 
-    /// plan 107 Step C: cumulative hover-held time as of `now` — every
+    /// cumulative hover-held time as of `now` — every
     /// banked past session (`hover_paused_total`) plus the in-flight one
     /// if a session is currently open. Same in-flight computation as
     /// `hover_frozen_rotation_elapsed` above, but returns the total
@@ -600,7 +600,7 @@ impl SingleSlotQueue {
         }
     }
 
-    // plan 033: every promotion starts expanded (render state), with the
+    // every promotion starts expanded (render state), with the
     // base rotation window (auto-expansion never extends the turn — the
     // 3× window is manual-expand-only) and the auto-retract armed. The
     // per-turn reset also means a leftover manual expand/window can never
@@ -609,11 +609,11 @@ impl SingleSlotQueue {
     // enqueue_new's preemption path) so none of the three can drift from
     // the others.
     //
-    // plan 093: the hover-hold fields reset here too, for the same
+    // the hover-hold fields reset here too, for the same
     // reason — a hover session (or banked pause total) from the PREVIOUS
     // visible item must never leak onto the new one's rotation deadline.
     //
-    // plan 146a/146b: NOT every promotion starts expanded anymore. A
+    // NOT every promotion starts expanded anymore. A
     // Low-priority promotion, or ANY promotion landing while the engine is
     // Silenced (a Breakthrough — only a High item can reach this while
     // Silenced; see the gates in `promote_next`'s own guard and
@@ -631,7 +631,7 @@ impl SingleSlotQueue {
         self.hover_paused_total = Duration::ZERO;
     }
 
-    /// plan 146a: while Silenced, only the High tier is eligible to
+    /// while Silenced, only the High tier is eligible to
     /// promote — Medium/Low stay buffered in Waiting exactly as under
     /// Paused. `Priority::High as usize == 2`, the top of the `(0..3)`
     /// range this function otherwise walks, so restricting the range's
@@ -685,7 +685,7 @@ impl SingleSlotQueue {
     // ------------------------------------------------------------------
     // window math — centralizes what used to be
     // `item.event.rotation_window(...) + item.extension_secs` inline at
-    // every call site (plan 146b), so the preemption override
+    // every call site, so the preemption override
     // (`preempted_remaining_secs`) only needs to be threaded through once.
     // ------------------------------------------------------------------
 
@@ -722,9 +722,9 @@ impl SingleSlotQueue {
         let Some(promoted_at) = self.visible.as_ref().and_then(|i| i.promoted_at) else {
             return;
         };
-        // plan 097: the top-up's notion of "remaining" must match the real
+        // the top-up's notion of "remaining" must match the real
         // rotation deadline, which discounts banked and in-flight hover
-        // time (`hover_adjusted_promoted_at` / plan 093) — every OTHER
+        // time (`hover_adjusted_promoted_at` / ) — every OTHER
         // deadline consumer (`next_deadline`, `remaining_ms`) already
         // anchors there. Using raw `now - promoted_at` here over-granted
         // extensions to previously-hovered cards: a card that had banked
@@ -769,7 +769,7 @@ impl SingleSlotQueue {
         self.paused
     }
 
-    /// plan 146a: enters Silenced — Medium/Low buffer into Waiting exactly
+    /// enters Silenced — Medium/Low buffer into Waiting exactly
     /// like Paused (same 202-style acceptance, per-tier cap, topic
     /// supersede still applies), but a High arrival still promotes
     /// (Breakthrough, always compact). Unlike `pause`, silencing an engine
@@ -829,7 +829,7 @@ impl SingleSlotQueue {
         self.reanchor_wire_if_skip_repromoted_the_last_emitted_item();
     }
 
-    /// plan 124 R1: a skip's re-promotion can land the exact same item id
+    /// a skip's re-promotion can land the exact same item id
     /// that was already the last thing sent over the wire — the only path
     /// is a Recurring item that's the sole occupant of its Priority tier,
     /// so `skip_visible`'s requeue-then-`promote_next` pulls it straight
@@ -855,7 +855,7 @@ impl SingleSlotQueue {
     /// tick against the plan-081 double-emission bug.
     ///
     /// `ttl_sample` is cleared in the same breath, for the ttl-restart
-    /// detector's sake (`observe_emission_for_ttl_restart`, below):  that
+    /// detector's sake (`observe_emission_for_ttl_restart`, below): that
     /// function already treats "no previous sample for this id" as
     /// "nothing to compare, don't warn" — its `_ => false` arm, the same
     /// path a fresh promotion (different id) or an Empty state takes. A
@@ -893,7 +893,7 @@ impl SingleSlotQueue {
             .and_then(|item| item.event.meta.link.as_deref())
     }
 
-    /// plan 033: with expand-all the hotkey always flips. Any press disarms
+    /// with expand-all the hotkey always flips. Any press disarms
     /// the auto-retract; collapse is render-only (the turn length never
     /// changes on collapse); expand sets `window_expanded` — the manual 3×
     /// extension, sticky for the rest of the turn.
@@ -913,7 +913,7 @@ impl SingleSlotQueue {
     }
 
     /// Read-only summary of every WAITING item (never `visible`) for the
-    /// settings window's Queue section (plan 121). Ordered tiers
+    /// settings window's Queue section. Ordered tiers
     /// high -> normal -> low — the same order `pop_highest_priority_waiting`
     /// promotes from — then FIFO (arrival order) within each tier: display
     /// order, not `rotation_order`-aware pick order, since every waiting
@@ -933,7 +933,7 @@ impl SingleSlotQueue {
     }
 
     /// Drops every WAITING item across all three tiers — the settings
-    /// window's "Clear queue" action (plan 121). The visible card is
+    /// window's "Clear queue" action. The visible card is
     /// untouched; it finishes its normal ttl/rotation. Returns the count
     /// dropped.
     ///
@@ -958,7 +958,7 @@ impl SingleSlotQueue {
         dropped
     }
 
-    /// plan 033 decision 4: fully idle (nothing visible, every tier empty)
+    /// fully idle (nothing visible, every tier empty)
     /// resets the batch counters for the next batch. Checked after every
     /// mutation that can drain the engine (tick, dismiss, skip); an
     /// accepted enqueue can never *reach* idle, so its batch-start zeroing
@@ -972,14 +972,14 @@ impl SingleSlotQueue {
 
     /// The next Instant at which time alone changes state: the earlier of
     /// the visible item's auto-retract deadline (half the base window,
-    /// while armed — plan 033) and its rotation deadline (plan 015). `None`
+    /// while armed — ) and its rotation deadline. `None`
     /// when nothing is visible — promotion of waiting items is driven by
     /// mutations, which wake the heartbeat directly, not by a deadline this
     /// method could return. The deadline is returned regardless of
     /// `paused`: paused items still age out (`rotate_out_if_elapsed`
     /// doesn't check `paused`), Paused only disables `promote_next`.
     ///
-    /// plan 093: the ROTATION half is also `None` while a hover session is
+    /// the ROTATION half is also `None` while a hover session is
     /// open (`hover_started_at.is_some()`) — nothing about rotation
     /// elapsed time changes purely from time passing while frozen, so
     /// there is genuinely nothing to schedule a wake for; the eventual
@@ -1016,10 +1016,10 @@ impl SingleSlotQueue {
     // ------------------------------------------------------------------
 
     /// Emits only when the state has meaningfully changed, per
-    /// `SlotState::dedup_eq` (plan 081) — NOT the derived `PartialEq`. The
+    /// `SlotState::dedup_eq` — NOT the derived `PartialEq`. The
     /// derived equality would compare `remaining_ms` too, which is a pure
     /// function of `Instant::now()` and so is never stable between two
-    /// calls even milliseconds apart; using it here reintroduces plan 081
+    /// calls even milliseconds apart; using it here reintroduces 
     /// attempt 1's double-emission bug (the rotation loop's post-wake
     /// recheck always seeing "changed"). See `SlotState::dedup_eq`'s doc
     /// for the full mechanism.
@@ -1031,7 +1031,7 @@ impl SingleSlotQueue {
         };
         if changed {
             self.last_emitted = Some(current.clone());
-            // plan 107 Step C: every gated emission feeds the TTL-restart
+            // every gated emission feeds the TTL-restart
             // sampler too — see `observe_emission_for_ttl_restart`'s doc
             // for why this needs to cover BOTH this path and the
             // unconditional one (`current_slot_state_for_emission`).
@@ -1042,7 +1042,7 @@ impl SingleSlotQueue {
         }
     }
 
-    /// plan 107 Step C: the webview-reload re-emit's own door into
+    /// the webview-reload re-emit's own door into
     /// `current_slot_state` — identical output, but ALSO feeds the
     /// TTL-restart sampler, so the one wire-emission route that bypasses
     /// `slot_state_if_changed`'s dedup gate entirely
@@ -1058,7 +1058,7 @@ impl SingleSlotQueue {
         current
     }
 
-    /// plan 107 Step C: the boundary half of the TTL-restart detector —
+    /// the boundary half of the TTL-restart detector —
     /// the decision itself is the pure `is_ttl_restart` function below
     /// (module scope, after this `impl` block); this half gathers the
     /// queue-owned state (the previous sample, hover accounting) the
@@ -1153,7 +1153,7 @@ impl SingleSlotQueue {
         match &self.visible {
             None => SlotState::Empty,
             Some(item) => {
-                // Queue-slider position (plan 033): `total` never dips below
+                // Queue-slider position: `total` never dips below
                 // 1 (a visible item is always at least its own segment) and
                 // `done` never reaches `total` while an item is visible
                 // (the current segment stays bright) — defensive: no known
@@ -1164,7 +1164,7 @@ impl SingleSlotQueue {
                     .unwrap_or(u32::MAX)
                     .min(queue_total - 1);
 
-                // Timing (plan 081): the same window math `next_deadline`
+                // Timing: the same window math `next_deadline`
                 // uses, expressed as wire-friendly milliseconds. `ttl_ms` is
                 // time-free (a pure function of the rotation spec,
                 // `window_expanded`, and `extension_secs`); `remaining_ms`
@@ -1172,7 +1172,7 @@ impl SingleSlotQueue {
                 // emission time — the frontend anchors its own countdown
                 // from it on receipt.
                 //
-                // plan 093: `remaining_ms` freezes while a hover session is
+                // `remaining_ms` freezes while a hover session is
                 // open — `reference_now` pins to `hover_started_at` instead
                 // of the real `Instant::now()`, so this reads the same
                 // value on every call for the whole session's duration
@@ -1244,13 +1244,13 @@ fn apply_fresh_content(existing: &mut Event, fresh: &Event) {
 const MIN_REMAINING_ON_SUPERSEDE_SECS: u64 = 2;
 const MAX_EXTENSION_ON_SUPERSEDE_SECS: u64 = 6;
 
-/// plan 107 Step C: scheduling-jitter slack for the TTL-restart detector
+/// scheduling-jitter slack for the TTL-restart detector
 /// (`is_ttl_restart`) — real wake-ups never land on the exact millisecond,
 /// so a few hundred ms of "remaining_ms is a bit higher than the elapsed-
 /// adjusted expectation" is normal noise, not a restart.
 const TTL_RESTART_SLACK_MS: u64 = 500;
 
-/// plan 107 Step C: pure decision half of the TTL-restart detector — see
+/// pure decision half of the TTL-restart detector — see
 /// `SingleSlotQueue::observe_emission_for_ttl_restart` for the boundary
 /// half (queue-owned state, `tracing::warn!`) that calls this. Same
 /// pure-decision/boundary split this codebase already uses for
@@ -1526,7 +1526,7 @@ mod tests {
         assert_eq!(visible_title(&q), Some("news-high"));
     }
 
-    // plan 146b: the old contract ("a Priority arrival never interrupts
+    // the old contract ("a Priority arrival never interrupts
     // the currently-Visible item") is DELETED — a strictly-higher-priority
     // arrival now preempts immediately. See the `preemption` test module
     // below for the full suite (chained preemption, head-of-tier requeue,
@@ -1567,7 +1567,7 @@ mod tests {
 
     #[test]
     fn recurring_requeues_not_to_front_or_different_tier() {
-        // plan 146b: a High enqueue now PREEMPTS a Visible Low item
+        // a High enqueue now PREEMPTS a Visible Low item
         // immediately rather than waiting out its turn — see the
         // dedicated `preemption` test module for the full contract. The
         // preempted "recur" lands at the HEAD of its own tier (ahead of
@@ -1623,7 +1623,7 @@ mod tests {
     #[test]
     fn visible_supersede_updates_content_priority_rotation() {
         // fully simulated clock — enqueue takes `now` at the interface
-        // (plan 037), so no real sleeps and no hidden wall-clock read
+        //, so no real sleeps and no hidden wall-clock read
         // inside the top-up calculation.
         let mut q = SingleSlotQueue::new(50);
         let t0 = Instant::now();
@@ -1708,7 +1708,7 @@ mod tests {
         assert!(extension <= MAX_EXTENSION_ON_SUPERSEDE_SECS);
     }
 
-    // plan 097: the top-up's "remaining" must be computed against the
+    // the top-up's "remaining" must be computed against the
     // hover-adjusted elapsed time, not raw `now - promoted_at` — otherwise
     // a card that banked hover-pause time looks closer to expiry than it
     // really is and gets an extension it doesn't need.
@@ -1742,7 +1742,7 @@ mod tests {
         );
     }
 
-    // plan 097: the unhovered path (no hover session ever opened) must
+    // the unhovered path (no hover session ever opened) must
     // behave exactly as before the hover-adjusted-elapsed change — this
     // replicates the below-the-floor half of
     // `visible_supersede_grants_extension_only_when_below_floor` as an
@@ -1993,7 +1993,7 @@ mod tests {
             t0,
         )
         .unwrap();
-        // plan 146b: a High enqueue now preempts a Visible Medium item —
+        // a High enqueue now preempts a Visible Medium item —
         // irrelevant to what THIS test is pinning (cross-tier supersede
         // dropping fresh content when the destination tier is full), so
         // pause first to keep "visible" pinned in the Slot and "match-a"
@@ -2232,7 +2232,7 @@ mod tests {
         assert_eq!(waiting_titles(&q, Priority::Medium as usize), vec!["recur"]);
     }
 
-    // plan 124 R1: skipping the sole Recurring item in its tier requeues
+    // skipping the sole Recurring item in its tier requeues
     // it then immediately re-promotes it (`promote_next` has nothing else
     // to pick) — the exact re-anchor scenario
     // `reanchor_wire_if_skip_repromoted_the_last_emitted_item` exists for.
@@ -2282,7 +2282,7 @@ mod tests {
         );
     }
 
-    // plan 124 R1: the ttl-restart detector must stay silent for exactly
+    // the ttl-restart detector must stay silent for exactly
     // this intentional case — the restart it would otherwise see is skip's
     // own doing, not a backend-wire bug.
     #[test]
@@ -2321,7 +2321,7 @@ mod tests {
         );
     }
 
-    // plan 124 R1: proves the reset above is scoped to the skip site only —
+    // proves the reset above is scoped to the skip site only —
     // a genuine backend-wire restart of the SAME item id, with no skip in
     // between, must still warn.
     #[test]
@@ -2427,7 +2427,7 @@ mod tests {
         assert!(second.is_none());
     }
 
-    // plan 081: `slot_state_if_changed` must dedupe across a real
+    // `slot_state_if_changed` must dedupe across a real
     // wall-clock gap in which only `remaining_ms` moves. This is a direct,
     // deterministic complement to the engine-level regression test
     // (`engine.rs`'s
@@ -2478,7 +2478,7 @@ mod tests {
             .unwrap();
         q.slot_state_if_changed();
 
-        // plan 033: every promotion starts expanded, so the first press
+        // every promotion starts expanded, so the first press
         // collapses — the point here is that a toggle emits, whichever
         // way it flips.
         q.toggle_expanded();
@@ -2492,7 +2492,7 @@ mod tests {
 
     #[test]
     fn expanded_increases_rotation_window() {
-        // plan 033: the 3× window is manual-expand-only. The promotion
+        // the 3× window is manual-expand-only. The promotion
         // starts auto-expanded with the *base* window; the auto-retract
         // collapses it at half that window, and a manual expand from
         // there extends the turn 3×.
@@ -2523,9 +2523,9 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // plan 008's expanded-semantics cases, rewritten for plan 033, then
-    // again for plan 146b: Medium/High auto-expand, Low ALWAYS promotes
-    // compact (plan 146b decision — "Low cards promote compact
+    // 's expanded-semantics cases, rewritten for , then
+    // again for Medium/High auto-expand, Low ALWAYS promotes
+    // compact ( decision — "Low cards promote compact
     // everywhere"), half-window auto-retract, manual-only window
     // extension, per-item reset, idle no-op.
     // ------------------------------------------------------------------
@@ -2559,7 +2559,7 @@ mod tests {
         // A Medium item occupies the slot, so the Low item queues behind
         // it. Ticking past the Medium item's window drives promote_next,
         // not the enqueue fast path — and a Low promotion must start
-        // compact regardless of which promotion path it took (plan 146b).
+        // compact regardless of which promotion path it took.
         let mut q = SingleSlotQueue::new(50);
         q.enqueue(event("medium", Priority::Medium, 1), Instant::now())
             .unwrap();
@@ -2581,7 +2581,7 @@ mod tests {
 
     #[test]
     fn expanded_resets_when_next_item_promotes() {
-        // plan 033 keeps plan 008's per-item reset, but the reset target
+        // keeps 's per-item reset, but the reset target
         // flipped: the next item now starts *expanded* (with the base
         // window and a freshly armed retract), never inheriting the
         // previous item's manual expand/window.
@@ -2622,7 +2622,7 @@ mod tests {
 
     #[test]
     fn auto_expanded_item_keeps_base_rotation_window() {
-        // plan 008's auto_expanded_high_uses_expanded_rotation_window,
+        // 's auto_expanded_high_uses_expanded_rotation_window,
         // rewritten: auto-expansion is display-only and free — the turn
         // length stays the configured ttl even though the card promoted
         // expanded.
@@ -2655,7 +2655,7 @@ mod tests {
 
         q.enqueue(event("a", Priority::Medium, 8), Instant::now())
             .unwrap();
-        // the promotion auto-expands (plan 033) — that's the default, not
+        // the promotion auto-expands — that's the default, not
         // a leak. What the idle press must not leak is the manual 3×
         // window, and the retract must still come armed from the
         // promotion itself.
@@ -2671,7 +2671,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // plan 033: auto-retract at half the base window
+    // auto-retract at half the base window
     // ------------------------------------------------------------------
 
     #[test]
@@ -2755,7 +2755,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // plan 015: next_deadline (plan 033: min of armed retract + rotation)
+    // next_deadline
     // ------------------------------------------------------------------
 
     #[test]
@@ -2801,7 +2801,7 @@ mod tests {
         let mut q = SingleSlotQueue::new(50);
         let t0 = Instant::now();
         q.enqueue(event("a", Priority::Medium, 8), t0).unwrap();
-        // plan 033: a promotion starts auto-expanded with the *base*
+        // a promotion starts auto-expanded with the *base*
         // window — a manual expand (the only 3× path) first needs the
         // auto-retract to have collapsed the card.
         q.tick(t0 + Duration::from_secs(5));
@@ -2854,7 +2854,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // plan 033: batch counters behind the queue slider (decision 4)
+    // batch counters behind the queue slider (decision 4)
     // ------------------------------------------------------------------
 
     fn queue_progress(q: &SingleSlotQueue) -> (u32, u32) {
@@ -2876,7 +2876,7 @@ mod tests {
         assert_eq!(queue_progress(&q), (1, 0));
     }
 
-    // plan 035: the rich-relay fields ride on EventMeta, so a visible
+    // the rich-relay fields ride on EventMeta, so a visible
     // item's subtitle/details must surface in current_slot_state — the one
     // passthrough the frontend renders as manifest cells.
     #[test]
@@ -2910,7 +2910,7 @@ mod tests {
         }
     }
 
-    // plan 147: agent_runtime mirrors item.event.meta.agent.runtime onto the
+    // agent_runtime mirrors item.event.meta.agent.runtime onto the
     // wire — an agent-originated item's SlotState carries the runtime
     // token, and every other item leaves it None.
     #[test]
@@ -2945,7 +2945,7 @@ mod tests {
         }
     }
 
-    // plan 081: current_slot_state's timing fields. No clock-injection
+    // current_slot_state's timing fields. No clock-injection
     // harness exists for this method (it deliberately consults real
     // `Instant::now()` at emission time, per the doc comment on
     // `remaining_ms`) — so unlike the `next_deadline` tests above (which
@@ -2976,7 +2976,7 @@ mod tests {
         }
     }
 
-    // plan 081: a supersede top-up (queue.rs:338-348) grows extension_secs,
+    // a supersede top-up (queue.rs:338-348) grows extension_secs,
     // which must show up in ttl_ms — the whole point of keeping ttl_ms in
     // the emission is that the bar re-anchors to the real, possibly-
     // extended deadline. Mirrors
@@ -3003,7 +3003,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // plan 093: TTL hover-pause — the two design constraints named in the
+    // TTL hover-pause — the two design constraints named in the
     // plan (never rotates while held; repeated hover cycles never grant
     // more total time than ttl+extension already allows), plus focused
     // mechanics tests for hover_enter/hover_exit themselves.
@@ -3051,7 +3051,7 @@ mod tests {
         assert!(q.hover_started_at.is_none());
     }
 
-    // plan 093 design constraint 1, deterministic case: a card whose
+    // a card whose
     // rotation window has already fully elapsed in wall-clock time must
     // still be visible if a hover session opened before the deadline and
     // is still open.
@@ -3071,7 +3071,7 @@ mod tests {
         }
     }
 
-    // plan 093 design constraint 1: re-anchors with the remaining time it
+    // re-anchors with the remaining time it
     // had at entry — after hover exits, the item rotates out only once
     // its full (unpaused) window has actually elapsed, not immediately.
     #[test]
@@ -3097,7 +3097,7 @@ mod tests {
         assert_eq!(q.current_slot_state(), SlotState::Empty);
     }
 
-    // plan 132: a visible item with a missing `promoted_at` must degrade
+    // a visible item with a missing `promoted_at` must degrade
     // to a skipped rotation check (logged), never a panic — mirrors
     // `current_slot_state`'s existing graceful posture for the same
     // invariant. Constructed directly (bypassing `enqueue`/`promote_next`,
@@ -3126,7 +3126,7 @@ mod tests {
         }
     }
 
-    // plan 097: `dismiss_visible` (and `skip_visible`) promote the next
+    // `dismiss_visible` (and `skip_visible`) promote the next
     // waiting item via `promote_next`, which resets the new item's hover
     // fields (`set_expanded_for_promotion`) — but that's a queue-internal
     // fact. The bug this guards against lived one layer up, in lib.rs's
@@ -3180,7 +3180,7 @@ mod tests {
         );
     }
 
-    // plan 093: `remaining_ms` freezes for the whole hover session — the
+    // `remaining_ms` freezes for the whole hover session — the
     // TTL bar's rust-side data source must never appear to keep
     // decrementing while the cursor holds it.
     //
@@ -3243,7 +3243,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // plan 107 Step C: TTL-restart instrumentation. Pure predicate cases
+    // TTL-restart instrumentation. Pure predicate cases
     // (a)-(e) below are the plan's own lettered list; case (f) (a new
     // item id resets the sample without warning) is queue-driven — the
     // pure `is_ttl_restart` function has no id concept, that reset is
@@ -3666,7 +3666,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // plan 121: waiting_summaries / clear_waiting (settings window Queue
+    // waiting_summaries / clear_waiting (settings window Queue
     // section)
     // ------------------------------------------------------------------
 
@@ -3696,7 +3696,7 @@ mod tests {
         assert!(summaries.iter().all(|s| s.source == "manual"));
     }
 
-    // plan 124 R3: `source_kind_label` (used by `waiting_summaries`'
+    // `source_kind_label` (used by `waiting_summaries`'
     // `source` field) has four variants — until now only "manual" was
     // pinned by name (the assertion above). `types.ts` claims this
     // four-string union as a typed wire contract, so every spelling needs
@@ -3736,7 +3736,7 @@ mod tests {
         assert_eq!(by_title.get("a"), Some(&"agent"));
     }
 
-    // plan 124 R4(b): the settings window's Queue section shows WAITING
+    // the settings window's Queue section shows WAITING
     // items via `waiting_summaries` — a skipped Recurring item must stay
     // visible there (requeued, not dropped), last in its own tier. Before
     // this test the UI mock only encoded the OneShot intuition (skip =
@@ -3779,7 +3779,7 @@ mod tests {
         let t0 = Instant::now();
         q.enqueue(event("visible", Priority::Medium, 8), t0)
             .unwrap();
-        // plan 146b: pause first — a High enqueue would otherwise preempt
+        // pause first — a High enqueue would otherwise preempt
         // "visible" immediately, which is irrelevant to what this test
         // pins (clear_waiting emptying every waiting tier without
         // touching the Visible card).
@@ -3826,7 +3826,7 @@ mod tests {
         assert_eq!(visible_title(&q), Some("b")); // untouched
         assert_eq!(queue_progress(&q), (2, 1)); // done never reaches total
 
-        // plan 124 R4(a): a fresh enqueue AFTER the clear must not read the
+        // a fresh enqueue AFTER the clear must not read the
         // pinned `batch_total` from `clear_waiting` as though it were
         // permanent bookkeeping — it's a one-shot pin for the
         // already-cleared state, and a genuinely new item queued behind
@@ -3862,7 +3862,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // plan 146a: Silenced gate
+    // Silenced gate
     // ------------------------------------------------------------------
 
     #[test]
@@ -3985,7 +3985,7 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
-    // plan 146b: Priority preemption
+    // Priority preemption
     // ------------------------------------------------------------------
 
     #[test]
@@ -4319,7 +4319,7 @@ mod proptest_queue {
         ToggleExpanded,
         Pause,
         Resume,
-        // plan 146a: one variant per new state-mutating pub fn, same rule
+        // one variant per new state-mutating pub fn, same rule
         // this enum's own doc states above.
         Silence,
         Unsilence,
@@ -4448,7 +4448,7 @@ mod proptest_queue {
     // comparison, so a rank tie keeps the earliest (lowest-index) item,
     // and an origin absent from rotation_order (or an empty order) ranks
     // last via `unwrap_or(rotation_order.len())`.
-    // plan 146a: `min_tier` restricts the scan to `Priority::High as usize`
+    // `min_tier` restricts the scan to `Priority::High as usize`
     // (2) while Silenced — mirrors production `pop_highest_priority_
     // waiting`'s own `min_tier` gate. `0` (every tier) otherwise.
     fn predict_promoted(
@@ -4490,7 +4490,7 @@ mod proptest_queue {
         origin: SourceKind,
     }
 
-    // plan 146b: mirrors production `SingleSlotQueue::full_window_secs`
+    // mirrors production `SingleSlotQueue::full_window_secs`
     // independently (this module already mirrors `best_index_in_tier` the
     // same way) — a preempted item's `preempted_remaining_secs` override
     // substitutes for the plain rotation-spec window.
@@ -4533,7 +4533,7 @@ mod proptest_queue {
         skipped_oneshot_dropped: u64,
         // invariant 7 probe state
         last_some_state: Option<SlotState>,
-        // plan 124 R1: set by `apply_skip` when Skip re-anchors the SAME
+        // set by `apply_skip` when Skip re-anchors the SAME
         // visible item id (the `reanchor_wire_if_skip_repromoted_the_last_
         // emitted_item` case) — see invariant 7's own comment for why this
         // narrowly exempts exactly that step from the "never repeats"
@@ -4603,7 +4603,7 @@ mod proptest_queue {
             self.check_blanket_invariants();
         }
 
-        // plan 146a/146b: `min_tier` for `predict_promoted` — restricted to
+        // `min_tier` for `predict_promoted` — restricted to
         // `Priority::High as usize` while Silenced, mirroring production
         // `pop_highest_priority_waiting`'s own gate.
         fn predict_min_tier(&self) -> usize {
@@ -4625,7 +4625,7 @@ mod proptest_queue {
                 .as_ref()
                 .map(|v| (v.event.id, v.event.priority));
             let paused = self.q.is_paused();
-            // plan 146b: a strictly-higher-priority arrival preempts the
+            // a strictly-higher-priority arrival preempts the
             // Visible item — unless Paused (absolute), and while Silenced
             // only a High arrival may preempt (the silence-onset window
             // can leave a Medium/Low Visible; anything below High must
@@ -4659,7 +4659,7 @@ mod proptest_queue {
             if promoted {
                 self.assert_expanded_at_promotion(Some(event_id));
                 if should_preempt {
-                    // invariant P1 (plan 146b): the interrupted item must
+                    // invariant P1: the interrupted item must
                     // land at the HEAD of its own tier, carrying its
                     // remaining turn — checked precisely (remaining-time
                     // restoration) by the dedicated preemption test suite;
@@ -4800,7 +4800,7 @@ mod proptest_queue {
                 }
             }
             let after_id = current_vis_id(&self.q);
-            // plan 124 R1: Skip re-anchoring the SAME id (a lone Recurring
+            // Skip re-anchoring the SAME id (a lone Recurring
             // item requeued then immediately re-promoted, nothing else
             // waiting to take its place) is the one case
             // `reanchor_wire_if_skip_repromoted_the_last_emitted_item`

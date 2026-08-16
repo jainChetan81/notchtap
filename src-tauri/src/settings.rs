@@ -29,7 +29,7 @@ use tauri::Manager;
 // validation (pure, unit-tested — spec §3)
 // ---------------------------------------------------------------------------
 
-/// Normalized match key for a feed url (plan 021 — mirrors the frontend's
+/// Normalized match key for a feed url ( — mirrors the frontend's
 /// `feedKey` in `SettingsApp.tsx`): clear the fragment and trim a single
 /// trailing slash so a cosmetic variant (trailing "/", a `#anchor`) is
 /// recognized as the same feed for duplicate rejection. Falls back to the
@@ -229,7 +229,7 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
     {
         // Duplicate feeds double the poll's network work per tick even
         // though the SeenStore hides the duplicate notifications — reject
-        // rather than silently pay that cost (plan 021).
+        // rather than silently pay that cost.
         let mut seen_keys = std::collections::HashSet::new();
         for feed in &c.rss_feeds {
             if !seen_keys.insert(feed_key(&feed.url)) {
@@ -262,7 +262,7 @@ pub fn validate(c: &Config) -> Result<(), Vec<String>> {
         errors.append(&mut appearance_errors);
     }
 
-    // plan 171 slice J (spec §9): `prefix_shortcut`'s doc comment
+    // `prefix_shortcut`'s doc comment
     // (config.rs) has the full rationale — this is the save-time
     // backstop, mirroring the frontend's own inline
     // `isValidPrefixShortcut` (ShortcutsSection.tsx), which must stay in
@@ -296,7 +296,7 @@ fn is_valid_prefix_shortcut(value: &str) -> bool {
     }
 }
 
-// plan 097: ranges live in `config::CARD_*_RANGE` so this save-path check
+// ranges live in `config::CARD_*_RANGE` so this save-path check
 // and `Config::parse`'s load-path self-heal can never drift apart.
 pub fn validate_appearance(a: &Appearance) -> Result<(), Vec<String>> {
     let mut errors = Vec::new();
@@ -426,7 +426,7 @@ fn ensure_settings_window<R: tauri::Runtime>(
 /// appearance channel. The field names stay camelCase-free; the frontend's
 /// listener mirrors this shape directly.
 ///
-/// plan 085: `resting_state` widened this beyond pure card styling — it's a
+/// `resting_state` widened this beyond pure card styling — it's a
 /// top-level `Config` field, not part of `Appearance`, so this payload is
 /// always built from the whole `Config` (`from_config`), never from
 /// `Appearance` alone. That matters even for a pure appearance-only change
@@ -524,7 +524,7 @@ fn build_test_event(config: &Config, source: SourceKind) -> Event {
             signal: EventSignal::Generic,
             origin: SourceKind::Manual,
         },
-        // plan 137 (spec §7): the flat `agent_priority`/`agent_ttl_secs`
+        // the flat `agent_priority`/`agent_ttl_secs`
         // config now exists (the one-release migration target for the
         // former `cmux_priority`/`cmux_ttl_secs`) — this preview arm reads
         // them directly, same role the removed `Cmux` arm's
@@ -547,7 +547,7 @@ fn build_test_event(config: &Config, source: SourceKind) -> Event {
                 body: "This is how agent notifications look".into(),
             },
             // preview mirrors what a real claude-code completion carries
-            // since plan 147.
+                        //
             meta: EventMeta {
                 subtitle: Some("notchtap".into()),
                 details: vec![DetailItem {
@@ -585,7 +585,7 @@ pub fn get_config(
 }
 
 /// Serves Config::default() so the frontend never mirrors defaults
-/// (plan 020) — the "Reset to defaults" source of truth is config.rs.
+/// — the "Reset to defaults" source of truth is config.rs.
 #[tauri::command]
 pub fn get_default_config<R: tauri::Runtime>(
     window: tauri::WebviewWindow<R>,
@@ -605,7 +605,7 @@ pub fn pin_uneditable_fields(mut submitted: Config, booted: &Config) -> Config {
     submitted
 }
 
-/// Best-effort pre-flight (plan 021): the relaunched app `exit(1)`s on a
+/// Best-effort pre-flight: the relaunched app `exit(1)`s on a
 /// taken port with no UI — catch the common collision before writing. A
 /// race remains possible (port taken between check and relaunch); this
 /// narrows the window, it doesn't close it — accepted. The `new != booted`
@@ -627,7 +627,7 @@ pub fn preflight_port(new: u16, booted: u16) -> Result<(), String> {
 /// before a reply could matter.
 ///
 /// C9: ONE guard held across clone(booted) -> validate -> preflight ->
-/// disk write -> memory mutate, matching `set_appearance`'s (plan 132)
+/// disk write -> memory mutate, matching `set_appearance`'s
 /// discipline — two separate lock/unlock pairs let a concurrent
 /// `set_appearance` call (which already holds the lock across its own
 /// clone->write->mutate) interleave between this command's read of
@@ -675,14 +675,14 @@ pub async fn send_test_notification(
         .unwrap_or_else(|e| e.into_inner())
         .clone();
     let event = build_test_event(&config, source);
-    // plan 037: Engine::accept performs the enqueue with the one
+    // Engine::accept performs the enqueue with the one
     // mutate→wake→emit protocol (a test notification pushed from the
-    // Settings window rotates out on schedule — plan 015's review
+    // Settings window rotates out on schedule — 's review
     // follow-up — by construction now, not convention).
     engine.accept(event, true).await.map_err(|e| e.to_string())
 }
 
-/// On-the-go news search (plan 130 Step 3): expands `query` via the SAME
+/// On-the-go news search: expands `query` via the SAME
 /// `rss_poller::expand_topic_url` a configured topic line uses (one
 /// shared path, no fork), fetches it ONCE, dedups against the SAME
 /// `SeenStore` the continuous poller shares (app-managed state — see
@@ -765,8 +765,8 @@ pub async fn search_news_now(
 #[tauri::command]
 pub async fn get_recent_log_lines(window: tauri::WebviewWindow) -> Result<Vec<String>, String> {
     ensure_settings_window(&window)?;
-    // plan 077: no content-based redaction layer here on purpose —
-    // notifier.rs's token redaction (plan 006, `e.without_url()`) already
+    // no content-based redaction layer here on purpose —
+    // notifier.rs's token redaction`) already
     // keeps secrets out of the log file itself, so the file is safe to
     // surface read-only in the settings window.
     crate::logging::read_recent_lines(200).map_err(|e| e.to_string())
@@ -789,7 +789,7 @@ pub fn set_appearance(
     };
     validate_appearance(&appearance).map_err(|errors| errors.join("; "))?;
 
-    // plan 132: ONE guard held across clone -> disk write -> memory mutate,
+    // ONE guard held across clone -> disk write -> memory mutate,
     // not two separate lock/unlock pairs — two rapid calls could otherwise
     // interleave into a stale disk write (the second call's disk write
     // landing between the first call's write and its memory update).
@@ -850,7 +850,7 @@ pub async fn clear_history(
     }
 }
 
-// The three Queue-section commands (plan 121): read-only visibility plus
+// The three Queue-section commands: read-only visibility plus
 // clear/skip, none of which need a bespoke Engine method — `engine.read`/
 // `engine.apply` (engine.rs) are already the async-caller door for exactly
 // this shape. Titles/bodies inside `QueueItemSummary` are UNTRUSTED wire
@@ -906,7 +906,7 @@ pub async fn get_about_info(
     Ok(crate::about::gather_about_info(&app, *started_at.inner()))
 }
 
-/// Plan 143 (v7 ticket 11 of 13, spec §4.6/§8/§10): the Agents section's
+/// the Agents section's
 /// four adapter cards read Adapter Health through this command — a live
 /// [`crate::agents::health::HealthTracker::snapshot`] read, mapped
 /// through the exact same [`crate::agents::board::health_to_view`]
@@ -940,7 +940,7 @@ pub fn get_agent_health(
         .collect())
 }
 
-/// Plan 143 (spec §4.6's "a test event" adapter-card action; mirrors
+/// (spec §4.6's "a test event" adapter-card action; mirrors
 /// `notchtap-agent test <runtime>`, `src/bin/notchtap_agent.rs`, exactly
 /// — same synthetic non-terminal `completed` schema-v1 event, "turn
 /// completed, agent awaiting input" (spec §2.1's per-turn-Stop rule), not
@@ -1006,13 +1006,13 @@ pub async fn send_agent_test_event(
     let terminal = event.terminal;
     let session_key = event.session_key.clone();
     let summary = event.summary.clone();
-    // Plan 147: clone before `event` moves into `apply_event` below, same
+    // clone before `event` moves into `apply_event` below, same
     // as `http.rs`'s real `/agent/events` handler — mending this call site
     // for the signature change only, no behavioural edit.
     let project_name = event.project.as_ref().and_then(|p| p.name.clone());
     let details = event.details.clone();
 
-    // Plan 143: a test event is exactly the "adapter is delivering"
+    // a test event is exactly the "adapter is delivering"
     // signal Adapter Health's own last-accepted-event field means — the
     // Agents section card should reflect a manual test the same way it
     // would a real hook delivery, not go stale until the next real
@@ -1074,7 +1074,7 @@ mod tests {
         assert!(validate(&Config::default()).is_ok());
     }
 
-    // --- prefix_shortcut (plan 171 slice J) ---
+    // --- prefix_shortcut ---
 
     #[test]
     fn prefix_shortcut_accepts_the_shipped_default_and_the_existing_combo_family() {
@@ -1094,16 +1094,16 @@ mod tests {
         assert!(!is_valid_prefix_shortcut("⇧⌃Space")); // glyphs in the wrong order
     }
 
-    // --- plan 180 (Step 4): the shared whitespace fixture table ---
-    //
+    // --- the shared whitespace fixture table ---
+        //
     // THIS FUNCTION IS ONE HALF OF A TWO-LANGUAGE TEST. The identical
     // strings run against `isValidPrefixShortcut` in
     // `src/settings/sections/ShortcutsSection.test.ts`; that TS mirror
     // decides whether the Settings field looks valid, this one decides
     // whether the config actually saves. A disagreement shows up as a
     // field that reads "valid" and a save that quietly refuses it.
-    //
-    // They did disagree until plan 180: rust's `char::is_whitespace` is
+        //
+    // They did disagree until rust's `char::is_whitespace` is
     // Unicode `White_Space`, while JavaScript's `\s` misses U+0085 (NEL)
     // and adds U+FEFF (ZWNBSP). Both of those are in the table below.
     // Change either validator and you must run BOTH tables.
@@ -1411,11 +1411,11 @@ mod tests {
         assert_eq!(high.len(), 3);
     }
 
-    // --- appearance-changed payload (plan 085 widened it with resting_state) ---
+    // --- appearance-changed payload ---
 
     #[test]
     fn appearance_changed_payload_carries_resting_state_from_config() {
-        // plan 085: the payload is built from the whole Config, not just
+        // the payload is built from the whole Config, not just
         // Appearance — a pure appearance change (set_appearance) must still
         // report the config's actual resting_state, not a default.
         let mut config = Config {
@@ -1791,8 +1791,8 @@ mod tests {
         );
     }
 
-    // --- build_test_event: one test per SourceKind branch (plan 068) ---
-    //
+    // --- build_test_event: one test per SourceKind branch ---
+        //
     // Guards against the copy-paste failure mode a 5-way match like this
     // is prone to — a branch silently reading a sibling's config field.
     // NOTE for future editors: if a 6th SourceKind is ever added,

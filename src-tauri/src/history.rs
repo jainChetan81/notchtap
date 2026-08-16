@@ -1,7 +1,7 @@
-//! Plan 088: append-only JSONL notification history, gated behind the
+//! append-only JSONL notification history, gated behind the
 //! opt-in `history_enabled` config flag (default `false`, see
 //! `config.rs`). The only writer is `Engine::accept`; the settings
-//! window's `get_history`/`clear_history` invoke commands (plan 089,
+//! window's `get_history`/`clear_history` invoke commands (,
 //! `settings.rs`) are the read/clear surface.
 //!
 //! DELIBERATE DIVERGENCE from `logging.rs`'s `SizeRotatingAppender`: this
@@ -153,7 +153,7 @@ impl HistoryStore {
     /// `read_recent_lines`.
     ///
     /// Called by the settings window's `get_history` invoke command
-    /// (plan 089, `settings.rs`); also exercised directly by this
+    ///; also exercised directly by this
     /// module's own tests and `engine.rs`'s history-hook tests.
     pub fn read_recent(&self, n: usize) -> io::Result<Vec<HistoryEntry>> {
         // poison-tolerant, same rationale as `append` above.
@@ -178,7 +178,7 @@ impl HistoryStore {
     /// is success, not an error.
     ///
     /// Backs the settings window's "Clear history" control via the
-    /// `clear_history` invoke command (plan 089, `settings.rs`; plan
+    /// `clear_history` invoke command (, `settings.rs`; plan
     /// 059 decision #2).
     pub fn clear(&self) -> io::Result<()> {
         // poison-tolerant, same rationale as `append` above.

@@ -159,12 +159,18 @@ describe("useSlotState", () => {
     // live event payloads must run through the same validator the global
     // path uses — an incomplete object falls back to empty, not undefined
     // fields (regression guard for the previously-unvalidated live path).
+    // SAFETY: this payload is intentionally incomplete (missing every field
+    // beyond id) so the live-path validator must reject it — the cast only
+    // satisfies the compile-time SlotState shape; no field is ever read.
     emit({ state: "showing", id: "x" } as unknown as SlotState);
     expect(result.current).toEqual({ state: "empty" });
   });
 
   it("ignores a showing payload with an out-of-range enum delivered via the event", async () => {
     const { result } = await renderReady();
+    // SAFETY: `confetti` is outside the closed `signal` union, delivered
+    // deliberately so the validator rejects it — the cast only sidesteps the
+    // compile-time type; the runtime value is what the test exercises.
     emit({ ...SHOWING_N1, signal: "confetti" } as unknown as SlotState);
     expect(result.current).toEqual({ state: "empty" });
   });
@@ -174,7 +180,7 @@ describe("useSlotState", () => {
     expect(() => unmount()).not.toThrow();
   });
 
-  // --- startup race shield (2026-07-17 review, mirrors the mode-delivery hook removed in plan 019 (see git history)) ---
+  // --- startup race shield (2026-07-17 review, mirrors the mode-delivery hook removed in (see git history)) ---
 
   it("reads the eval-planted global as initial state (late-mount side of the race shield)", () => {
     window.__NOTCHTAP_SLOT_STATE__ = SHOWING_N1;
@@ -226,9 +232,9 @@ describe("useSlotState", () => {
     expect(result.current).toEqual({ state: "empty" });
   });
 
-  // plan 096: `origin` — a closed five-value union, same rejection
+  // `origin` — a closed five-value union, same rejection
   // discipline as every other enum on this wire (signal/eventType/priority
-  // above). plan 137: "cmux" replaced by "agent" — the wire never sends
+  // above). "cmux" replaced by "agent" — the wire never sends
   // "cmux" anymore (event.rs's `SourceKind` dropped the variant).
   it("accepts a showing payload with each recognized origin value", () => {
     for (const origin of ["football", "news", "manual", "agent"] as const) {
@@ -250,7 +256,7 @@ describe("useSlotState", () => {
     expect(renderHook(() => useSlotState()).result.current).toEqual({ state: "empty" });
   });
 
-  // plan 147: `agentRuntime` — nullable closed-set field mirroring
+  // `agentRuntime` — nullable closed-set field mirroring
   // useAgentState.ts's own `AgentRuntime` wire tokens. Always present
   // (never optional): null on every non-agent origin, and null/token on
   // an agent-origin item.
@@ -279,7 +285,7 @@ describe("useSlotState", () => {
     expect(renderHook(() => useSlotState()).result.current).toEqual({ state: "empty" });
   });
 
-  // plan 033: the queue-slider fields ride the same payload — the slider
+  // the queue-slider fields ride the same payload — the slider
   // does arithmetic on them, so the validator must reject anything but
   // non-negative integers (missing, fractional, negative, wrong type).
   it("accepts a showing payload with a queue-slider position", () => {
@@ -303,7 +309,7 @@ describe("useSlotState", () => {
     expect(renderHook(() => useSlotState()).result.current).toEqual({ state: "empty" });
   });
 
-  // plan 081: ttlMs/remainingMs (the TTL-bar timing fields) ride the same
+  // ttlMs/remainingMs (the TTL-bar timing fields) ride the same
   // payload as queueTotal/queueDone and are validated with the same
   // discipline (non-negative integer, no fractional/negative/missing).
   it("accepts a showing payload with ttl/remaining timing fields", () => {
@@ -327,7 +333,7 @@ describe("useSlotState", () => {
     expect(renderHook(() => useSlotState()).result.current).toEqual({ state: "empty" });
   });
 
-  // plan 035: subtitle is null-or-string, details an array of {label, value}
+  // subtitle is null-or-string, details an array of {label, value}
   // string pairs — the pairs come from untrusted hook input, so a malformed
   // details (non-array, or an item missing a string label/value) is rejected.
   it("accepts a showing payload carrying a subtitle and detail pairs", () => {
@@ -400,7 +406,7 @@ describe("useSlotState", () => {
     expect(result.current).toEqual(SHOWING_N1);
   });
 
-  // plan 083: the structured `espn` block — absent (the common case, and
+  // the structured `espn` block — absent (the common case, and
   // every non-football payload), present-and-valid, and present-but-
   // malformed (must fall back like every other field).
 
@@ -411,7 +417,11 @@ describe("useSlotState", () => {
     homeScore: 1,
     awayScore: 1,
     clock: "45'",
+    // SAFETY: the espn tuple type is [number, number]; these fixtures hold
+    // exactly two numbers, so the narrower tuple typing is preserved.
     homeCards: [2, 0] as [number, number],
+    // SAFETY: the espn tuple type is [number, number]; these fixtures hold
+    // exactly two numbers, so the narrower tuple typing is preserved.
     awayCards: [4, 0] as [number, number],
     homeCrest: "/home/u/.config/notchtap/crests/160.png",
     awayCrest: null,

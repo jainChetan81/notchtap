@@ -1,4 +1,4 @@
-//! Idle source-status rail (plan 034): one combined `status-state` event
+//! Idle source-status rail: one combined `status-state` event
 //! answering the idle card's "what's happening / what's next" — the boot
 //! source gates, the queue depth behind the empty slot, and the one live
 //! watched football match. Delivery duplicates the slot-state pattern
@@ -21,7 +21,7 @@ pub const STATUS_STATE_EVENT: &str = "status-state";
 pub struct StatusState {
     pub paused: bool,
     pub waiting: usize,
-    /// Plan 171 (tab-notch): live Agent Session count, sourced from the
+    /// live Agent Session count, sourced from the
     /// Agent Board publisher's own recompute (an `AtomicUsize` mirror —
     /// see `AgentBoardPublisher::publish_if_changed`), NOT a second
     /// registry read. Drives the agent icon's present/live tiers.
@@ -30,7 +30,7 @@ pub struct StatusState {
     pub news: NewsStatus,
 }
 
-/// Plan 171: the agent icon's presence source. One field for now —
+/// the agent icon's presence source. One field for now —
 /// present iff `active_sessions > 0` (an agent icon has no separate
 /// "present but idle" tier: a registered live session IS liveness).
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -63,7 +63,7 @@ pub struct LiveMatchSummary {
 #[serde(rename_all = "camelCase")]
 pub struct NewsStatus {
     pub enabled: bool,
-    /// Plan 171 (tab-notch, spec §8): the news-charge cycle, sourced
+    /// the news-charge cycle, sourced
     /// from `news_charge.rs`'s state machine (owned by `lib.rs`, fed by
     /// `rss_poller.rs`). `charge_fraction` is `fill()` (0..=1),
     /// `charge_count` is items waiting, `is_charged` is the edge-held
@@ -82,9 +82,9 @@ pub struct StatusInputs {
     pub live: Option<LiveMatchSummary>,
     pub espn_enabled: bool,
     pub rss_enabled: bool,
-    /// Plan 171: live Agent Session count (Agent Board's atomic mirror).
+    /// live Agent Session count (Agent Board's atomic mirror).
     pub agent_sessions: usize,
-    /// Plan 171: the news-charge snapshot `(fill, count, is_charged)`,
+    /// the news-charge snapshot `(fill, count, is_charged)`,
     /// read from `news_charge.rs` under its own lock by the caller.
     pub news_charge: (f32, usize, bool),
 }
@@ -117,7 +117,7 @@ impl StatusState {
 /// The change-guard. Unlike `slot_state_if_changed` (queue-owned), the
 /// previous state is a `last_status` local in the heartbeat task — the
 /// heartbeat is the sole emitter, so there is exactly one guard and no
-/// second writer can desync it (plan 034 step 3).
+/// second writer can desync it.
 pub fn status_state_if_changed(
     last: &mut Option<StatusState>,
     next: StatusState,
@@ -133,7 +133,7 @@ pub fn status_state_if_changed(
 /// The single emit path, mirroring `emit_slot_state`: emit failure is
 /// logged, never propagated — by this point the state has already changed,
 /// so failing the caller would misreport the underlying mutation.
-/// Plan 171 §0: `tab-selection-changed`, `{ selected: "agent" | … |
+/// `tab-selection-changed`, `{ selected: "agent" | … |
 /// "news" | null }`, emitted on actual transitions only (`last` is the
 /// last value actually put on the wire, not the last computed). Called
 /// from every path that can move the selection: the click monitor, the

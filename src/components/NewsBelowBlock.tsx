@@ -3,12 +3,12 @@
 // `.below-block`, the same scope as `AgentBelowBlock.tsx`.
 //
 // Composes three pieces per the tab-notch design:
-//   1. `NewsBatchHeader` — "N fresh · cycle ended Xm ago" + prev/next.
-//   2. the shipped news card content (masthead+category dot, real `Wire`
-//      Stamp, headline, category chip, relative age, over `.news-shade`) —
-//      REBUILT here rather than imported (see below for why).
-//   3. `PositionBar` (shared: news's floor strip is implemented identically
-//      to agent's — see `NewsBatchHeader.tsx`).
+// 1. `NewsBatchHeader` — "N fresh · cycle ended Xm ago" + prev/next.
+// 2. the shipped news card content (masthead+category dot, real `Wire`
+// Stamp, headline, category chip, relative age, over `.news-shade`) —
+// REBUILT here rather than imported (see below for why).
+// 3. `PositionBar` (shared: news's floor strip is implemented identically
+// to agent's — see `NewsBatchHeader.tsx`).
 // Plus the already-shipped `<Manifest>` disclosure (prefix+enter opens the
 // existing summary manifest — reused as-is).
 //

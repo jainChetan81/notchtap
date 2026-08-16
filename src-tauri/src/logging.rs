@@ -42,7 +42,7 @@ fn log_dir() -> anyhow::Result<PathBuf> {
 }
 
 /// Read the last `n` lines of the active log file (`{log_dir}/notchtap.log`;
-/// rotated backups stay out of scope, plan 077). Full-file read plus a
+/// rotated backups stay out of scope, ). Full-file read plus a
 /// tail-slice — the 10MB rotation cap already bounds the worst-case file
 /// size, so a seek-from-end tail reader would be complexity without payoff
 /// at this size. A file that doesn't exist yet (fresh install, nothing

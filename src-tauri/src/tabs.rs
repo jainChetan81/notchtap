@@ -1,9 +1,9 @@
-//! Plan 171 (tab-notch redesign, slice A): the icon-strip SELECTION state
+//! the icon-strip SELECTION state
 //! machine — pure, no AppKit types, no lock, no I/O, same discipline
 //! `hover.rs` follows (`docs/TESTING_STRATEGY.md` §4.4).
 //!
 //! Wired (2026-08-03, on-hardware hand-off): `click.rs`'s NSEvent local
-//! monitor is the click path (plan 171 slice A item 2's mechanism (a) —
+//! monitor is the click path —
 //! required regardless of what the webview sees, because the overlay is
 //! receive-only: the frontend has no invoke/emit capability with which
 //! to tell rust about a click, so rust must observe the mouseDown
@@ -95,7 +95,7 @@ impl TabSelection {
 }
 
 impl Tab {
-    /// The wire token `tab-selection-changed` carries (plan 171 §0 pins
+    /// The wire token `tab-selection-changed` carries ( §0 pins
     /// the closed set: `"agent" | "football" | "news"`).
     pub fn wire_label(self) -> &'static str {
         match self {
@@ -158,13 +158,13 @@ pub struct TabWire {
     pub news_charge: std::sync::Mutex<crate::news_charge::NewsCharge>,
     /// Selection + emission + presence — see [`TabState`].
     pub tabs: TabState,
-    /// Plan 171 slice D: the prefix keymap's arm/disarm state machine
+    /// the prefix keymap's arm/disarm state machine
     /// (`prefix.rs`) plus the generation counter its cancellable disarm
     /// timer checks — a timer only acts if no later arm/consume bumped
     /// the generation out from under it.
     pub prefix: std::sync::Mutex<crate::prefix::PrefixState>,
     pub prefix_generation: std::sync::atomic::AtomicU64,
-    /// Plan 178: when the NEWEST arm happened. The watchdog stays
+    /// when the NEWEST arm happened. The watchdog stays
     /// generation-BLIND by design (see `followups_registered` below), so
     /// this instant — not the generation counter — is what tells an older
     /// watchdog "a newer legitimate window is still inside its own budget,
@@ -185,7 +185,7 @@ pub struct TabWire {
     /// `tokio::sync::Notify` pattern `engine.rs`'s own rotation loop
     /// already uses for "sleep until deadline, wake early on mutation."
     pub session_advanced: tokio::sync::Notify,
-    /// Plan 171 slice D (PAL consensus 2026-08-03, both models): TRUE
+    /// TRUE
     /// whenever the eleven bare follow-up keys are currently grabbed
     /// system-wide. The watchdog reads ONLY this — never the generation
     /// counter — so a wedged runtime, a lost timer, or a panic that

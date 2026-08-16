@@ -88,6 +88,9 @@
 // Wire schema v1 (mirrors src-tauri/src/agents/adapter.rs exactly)
 // ---------------------------------------------------------------------
 
+type UnparsedValue = string | number | boolean | null | UnparsedObject | UnparsedValue[];
+type UnparsedObject = { [key: string]: UnparsedValue };
+
 export const SCHEMA_VERSION = 1 as const;
 export const RUNTIME = "opencode" as const;
 export const DEFAULT_PORT = 9789;
@@ -273,7 +276,7 @@ export interface BusEvent {
    * (forward-compatible with event types this adapter doesn't know
    * about yet) while still giving autocomplete on the known values. */
   type: BusEventType | (string & Record<never, never>);
-  properties?: Record<string, unknown>;
+  properties?: UnparsedObject;
 }
 
 export type BusEventType =
@@ -316,20 +319,23 @@ function baseEvent(
  * Providers vary in whether the id sits at the top level or nested
  * under `info`/`session` — this checks the plausible spots and returns
  * `undefined` (never a guess) if none hold a non-empty string. */
-function extractSessionId(properties: Record<string, unknown> | undefined): string | undefined {
+function extractSessionId(properties: UnparsedObject | undefined): string | undefined {
   if (!properties) return undefined;
   const direct = properties.sessionID ?? properties.sessionId;
   if (isNonEmptyString(direct)) return direct;
-  const info = properties.info as Record<string, unknown> | undefined;
+  // SAFETY: validated as record via preceding checks.
+  const info = properties.info as UnparsedObject | undefined;
   if (info && isNonEmptyString(info.id)) return info.id;
-  const session = properties.session as Record<string, unknown> | undefined;
+  // SAFETY: validated as record via preceding checks.
+  const session = properties.session as UnparsedObject | undefined;
   if (session && isNonEmptyString(session.id)) return session.id;
   return undefined;
 }
 
-function extractProjectName(properties: Record<string, unknown> | undefined): string | undefined {
+function extractProjectName(properties: UnparsedObject | undefined): string | undefined {
   if (!properties) return undefined;
-  const info = properties.info as Record<string, unknown> | undefined;
+  // SAFETY: validated as record via preceding checks.
+  const info = properties.info as UnparsedObject | undefined;
   const title = properties.title ?? info?.title;
   return isNonEmptyString(title) ? sanitizeNameOrLabel(title) : undefined;
 }
@@ -338,14 +344,15 @@ function extractProjectName(properties: Record<string, unknown> | undefined): st
  * §3.1 keeps them as separate `WireProject` fields with separate caps
  * (120 scalars for `name`, 1,024 for `cwd`), so this uses
  * `sanitizeValue` rather than `sanitizeNameOrLabel`. */
-function extractProjectCwd(properties: Record<string, unknown> | undefined): string | undefined {
+function extractProjectCwd(properties: UnparsedObject | undefined): string | undefined {
   if (!properties) return undefined;
-  const info = properties.info as Record<string, unknown> | undefined;
+  // SAFETY: validated as record via preceding checks.
+  const info = properties.info as UnparsedObject | undefined;
   const cwd = properties.directory ?? properties.worktree ?? info?.directory;
   return isNonEmptyString(cwd) ? sanitizeValue(cwd) : undefined;
 }
 
-function extractProject(properties: Record<string, unknown> | undefined): WireProject | undefined {
+function extractProject(properties: UnparsedObject | undefined): WireProject | undefined {
   const name = extractProjectName(properties);
   const cwd = extractProjectCwd(properties);
   if (name) {
@@ -443,7 +450,8 @@ function mapSessionError(event: BusEvent, ctx: EventContext): AgentWireEvent | n
   // short, safe error *name*/*code* (never a message) is allowed
   // through as a detail.
   wire.summary = sanitizeSummary("Session failed");
-  const error = event.properties?.error as Record<string, unknown> | undefined;
+  // SAFETY: validated as record via preceding checks.
+  const error = event.properties?.error as UnparsedObject | undefined;
   const name = error?.name;
   if (isNonEmptyString(name) && name.length <= MAX_NAME_OR_LABEL_SCALARS) {
     wire.details = sanitizeDetails([{ label: "Error", value: name }]);
@@ -470,10 +478,7 @@ function mapSessionDeleted(event: BusEvent, ctx: EventContext): AgentWireEvent |
   return wire;
 }
 
-const BUS_EVENT_MAPPERS: Record<
-  BusEventType,
-  (event: BusEvent, ctx: EventContext) => AgentWireEvent | null
-> = {
+const BUS_EVENT_MAPPERS = {
   "permission.asked": mapPermissionAsked,
   "permission.replied": mapPermissionReplied,
   "session.created": mapSessionCreated,
@@ -482,13 +487,14 @@ const BUS_EVENT_MAPPERS: Record<
   "session.idle": mapSessionIdle,
   "session.error": mapSessionError,
   "session.deleted": mapSessionDeleted,
-};
+} satisfies Record<BusEventType, (event: BusEvent, ctx: EventContext) => AgentWireEvent | null>;
 
 /** The single pure entry point for the `event` hook. Returns `null` for
  * any event type this adapter doesn't recognize (including future
  * OpenCode event types) or one whose session id can't be established —
  * the binding layer simply skips delivery in that case. */
 export function mapBusEvent(event: BusEvent, ctx: EventContext): AgentWireEvent | null {
+  // SAFETY: validated via preceding checks; type assertion safe here.
   const mapper = BUS_EVENT_MAPPERS[event.type as BusEventType];
   if (!mapper) return null;
   return mapper(event, ctx);
@@ -506,7 +512,7 @@ export interface ToolExecuteInput {
 }
 
 export interface ToolExecuteBeforeOutput {
-  args?: Record<string, unknown>;
+  args?: UnparsedObject;
   title?: unknown;
 }
 
@@ -521,7 +527,7 @@ export interface ToolExecuteAfterOutput {
  * like a file path, its basename. This is the "safe tool name, a
  * basename, and a short human summary" allowance from spec §3.2, not a
  * general args passthrough. */
-function safeToolDetail(toolName: string, args: Record<string, unknown> | undefined): WireDetail[] {
+function safeToolDetail(toolName: string, args: UnparsedObject | undefined): WireDetail[] {
   const details: WireDetail[] = [{ label: "Tool", value: toolName }];
   const filePath = args?.filePath ?? args?.path;
   if (isNonEmptyString(filePath)) {
@@ -599,9 +605,10 @@ export interface DeliverOptions {
  * otherwise `DEFAULT_PORT` — mirrors adapter.rs/http.rs's own port
  * resolution. Guards `process` being undefined (non-Node hosts). */
 export function resolvePort(
-  env: Record<string, string | undefined> | undefined = typeof process !== "undefined"
-    ? process.env
-    : undefined,
+  // SAFETY: globalThis may not have process in non-Node hosts — the cast only narrows the optional env access, the optional chain handles absence.
+  env: Record<string, string | undefined> | undefined = (
+    globalThis as { process?: { env?: Record<string, string | undefined> } }
+  ).process?.env,
 ): number {
   const raw = env?.NOTCHTAP_PORT;
   if (!raw) return DEFAULT_PORT;

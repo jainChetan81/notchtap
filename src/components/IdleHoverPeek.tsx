@@ -47,6 +47,7 @@ function PeekTimeline() {
   return (
     <span
       className="idle-peek-timeline"
+      // SAFETY: CSS custom property valid for this component; React.CSSProperties lacks index signature.
       style={{ "--day-progress": `${dayProgress}%` } as React.CSSProperties}
       aria-hidden="true"
     />

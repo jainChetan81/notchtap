@@ -1,6 +1,10 @@
 import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useRef, useState } from "react";
+import { type ActionError, describeActionError } from "@/lib/error";
+import { isFunction } from "@/lib/guards";
 import { cn } from "@/lib/utils";
+
+export { type ActionError, describeActionError };
 
 // Shared visible-outcome mechanism: every operation that can silently fail
 // reports through one instance of this hook. `announce`/`showPending` are
@@ -27,16 +31,10 @@ export interface RunOptions<T = unknown> {
   /** whether to surface a pending status at all while the action is in flight (default true). */
   showPending?: boolean;
   /** derive the user-facing message from the rejection reason; defaults to describeActionError. */
-  errorMessage?: (reason: unknown) => string;
+  errorMessage?: (reason: ActionError) => string;
 }
 
 const DEFAULT_OK_CLEAR_MS = 2500;
-
-export function describeActionError(reason: unknown): string {
-  if (Array.isArray(reason)) return reason.map(String).join(", ");
-  if (typeof reason === "string") return reason;
-  return "Something went wrong";
-}
 
 // `label` is a debug/test seam: a genuine state transition (not a deduped
 // repeat) logs once via console.debug, making transition-only behavior
@@ -88,7 +86,8 @@ export function useActionStatus(label?: string) {
     if (showPending) applyStatus({ state: "pending", announce });
     try {
       const result = await action();
-      const message = typeof okMessage === "function" ? okMessage(result) : okMessage;
+      // SAFETY: isFunction is the runtime check that okMessage is callable — the cast only narrows the generic signature after that check.
+      const message = isFunction(okMessage) ? (okMessage as (r: T) => string)(result) : okMessage;
       if (message) {
         applyStatus({ state: "ok", message, announce });
         clearTimerRef.current = window.setTimeout(() => {
@@ -98,8 +97,11 @@ export function useActionStatus(label?: string) {
         applyStatus({ state: "idle", announce: false });
       }
       return result;
-    } catch (reason) {
-      const message = errorMessage ? errorMessage(reason) : describeActionError(reason);
+    } catch (reason: unknown) {
+      // SAFETY: catch variable is unknown — narrowed via ActionError checks inside describeActionError/errorMessage.
+      const message = errorMessage
+        ? errorMessage(reason as ActionError)
+        : describeActionError(reason as ActionError);
       applyStatus({ state: "error", message, announce });
       return undefined;
     }

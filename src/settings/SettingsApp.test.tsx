@@ -19,7 +19,7 @@ import {
 } from "./SettingsApp";
 import type { AdapterHealthDto } from "./types";
 
-// plan 112 Step 4: jsdom has no ResizeObserver; the shadcn Switch
+// jsdom has no ResizeObserver; the shadcn Switch
 // (radix-ui's useSize hook, used to size its thumb) reads one on mount.
 // A no-op stub is enough — nothing in this suite asserts on a resize
 // callback, only on rendered DOM/ARIA state.
@@ -46,7 +46,7 @@ async function flush(times = 6) {
   }
 }
 
-// plan 112 Step 4: the Switch contract change (native checkbox ->
+// the Switch contract change (native checkbox ->
 // shadcn/radix Switch) moves the on/off signal from
 // `HTMLInputElement.checked` to `aria-checked` on a real `<button
 // role="switch">` — this reads that attribute instead, everywhere a
@@ -113,7 +113,7 @@ const config: Config = {
 };
 
 // Mirrors src-tauri/src/config.rs::Config::default() (served over IPC by
-// get_default_config, plan 020) — the fixture the "Reset to defaults" test
+// get_default_config, ) — the fixture the "Reset to defaults" test
 // asserts concrete values against (port 9789, ttl 8, tier cap 50, ...).
 const rustConfigDefaults: Config = {
   port: 9789,
@@ -171,7 +171,7 @@ const rustConfigDefaults: Config = {
   prefix_shortcut: "⌃⇧Space",
 };
 
-// get_history's wire shape (plan 089) — snake_case throughout, including
+// get_history's wire shape — snake_case throughout, including
 // `meta`; pinned against a live serde_json print of a real HistoryEntry
 // rather than derived from the SlotState (camelCase) convention. 088's
 // read_recent returns oldest -> newest; these two fixtures are ordered
@@ -221,7 +221,7 @@ const historyEntryNewer: HistoryEntry = {
   },
 };
 
-// plan 110 (Step A): every optional field populated, to exercise the
+// every optional field populated, to exercise the
 // metadata chips + the expandable <details> block together.
 const historyEntryFullMeta: HistoryEntry = {
   recorded_at_ms: 1700000200000,
@@ -267,7 +267,7 @@ function mockLoads() {
 afterEach(() => {
   cleanup();
   clearMocks();
-  // defensive: a test that enables fake timers (plan 108's auto-clear
+  // defensive: a test that enables fake timers ('s auto-clear
   // tests) always restores real timers itself, but this guards against a
   // leak into later tests if one fails mid-test.
   vi.useRealTimers();
@@ -282,8 +282,8 @@ describe("SettingsApp", () => {
     expect(screen.getByRole("button", { name: "General" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Football" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "News" })).toBeTruthy();
-    // plan 137 (spec §7/§12): the Cmux tab is gone — the cmux relay is
-    // superseded by the v7 Agent Adapter layer; plan 143 replaces it
+    // the Cmux tab is gone — the cmux relay is
+    // superseded by the v7 Agent Adapter layer; replaces it
     // with the Agents section asserted below.
     expect(screen.queryByRole("button", { name: "Cmux" })).toBeNull();
     expect(screen.getByRole("button", { name: "Agents" })).toBeTruthy();
@@ -340,7 +340,7 @@ describe("SettingsApp", () => {
     expect(await screen.findByText("Red card (High priority, football)")).toBeTruthy();
     expect(await screen.findByText("Generic alert (High priority, agent)")).toBeTruthy();
     expect(await screen.findByText("News headline (Low priority)")).toBeTruthy();
-    // plan 111 Step 3: the four states the old four-sample gallery could
+    // the four states the old four-sample gallery could
     // never show — the ones most sensitive to CSS drift.
     expect(await screen.findByText("Compact (collapsed manifest, medium priority)")).toBeTruthy();
     expect(await screen.findByText("Live match (recurring scorecard, football)")).toBeTruthy();
@@ -349,7 +349,7 @@ describe("SettingsApp", () => {
     expect(
       await screen.findByText("Parliament passes the landmark digital rights bill"),
     ).toBeTruthy();
-    // the agent sample's body carries inline markdown (plan 032 step 6) —
+    // the agent sample's body carries inline markdown —
     // the command must render as <code> elements, not literal backticks.
     // it shows twice on the expanded sample: compact .body + manifest
     // Message cell both run renderInlineMarkdown.
@@ -367,7 +367,7 @@ describe("SettingsApp", () => {
     ).toBeTruthy();
   });
 
-  // plan 111 Step 3's own verify clause: the compact fixture renders
+  // the compact fixture renders
   // `.compact` (the collapsed-manifest state), and the live fixture
   // renders its `.chip-live` (proof `espn` meta reached the recurring
   // scorecard branch, not the generic compact/manifest branch).
@@ -397,7 +397,7 @@ describe("SettingsApp", () => {
       ".preview-row",
     ) as HTMLElement;
     expect(liveRow.querySelector(".chip-live")).not.toBeNull();
-    // plan 170: `.notif-block` is gone — the live card renders through
+    // `.notif-block` is gone — the live card renders through
     // `FootballHeroCard`'s shared template now, with the score-row kept
     // as an additive block (`.score-row`) rather than the old bespoke
     // wrapper.
@@ -440,7 +440,7 @@ describe("SettingsApp", () => {
     expect(screen.getByDisplayValue("14")).toBeTruthy();
     expect(screen.getByDisplayValue("75")).toBeTruthy();
     expect(isChecked(screen.getByLabelText("Start paused"))).toBe(true);
-    // plan 085: the toggle reflects the loaded config's resting_state
+    // the toggle reflects the loaded config's resting_state
     // ("notch" in this fixture) — checked means "hidden while idle".
     expect(isChecked(screen.getByLabelText("Hide overlay when idle"))).toBe(true);
     expect(
@@ -448,13 +448,13 @@ describe("SettingsApp", () => {
         "Waiting items promote high → medium → low. A strictly-higher-priority arrival interrupts the visible item immediately; equal priority never preempts.",
       ),
     ).toBeTruthy();
-    // plan 146a: the Silenced group's toggle/window reflect the loaded
+    // the Silenced group's toggle/window reflect the loaded
     // config fixture (enabled: true, window: "00:00-10:00").
     expect(isChecked(screen.getByLabelText("Enable silent period"))).toBe(true);
     expect(screen.getByDisplayValue("00:00-10:00")).toBeTruthy();
   });
 
-  // plan 085: the hide-when-idle toggle patches resting_state and it rides
+  // the hide-when-idle toggle patches resting_state and it rides
   // the same Save & Relaunch path as every other General-section field —
   // the toggle's help text says so, and this test pins that it's true.
   it("toggling Hide overlay when idle patches resting_state into the saved config", async () => {
@@ -482,7 +482,7 @@ describe("SettingsApp", () => {
     expect(savedConfig!.resting_state).toBe("rail");
   });
 
-  // plan 146a: the Silenced group's toggle and window field both round-trip
+  // the Silenced group's toggle and window field both round-trip
   // into the saved `[silence]` config block, same Save & Relaunch path as
   // every other General-section field.
   it("toggling Silent period and editing the window both patch config.silence in the saved payload", async () => {
@@ -512,7 +512,7 @@ describe("SettingsApp", () => {
     expect(savedConfig!.silence).toEqual({ enabled: false, window: "23:00-07:30" });
   });
 
-  // plan 146a: an in-progress invalid window string must NOT reach
+  // an in-progress invalid window string must NOT reach
   // patchConfig (the last valid value stays committed) and must surface an
   // inline error — the client-side mirror of `Window::parse`'s rules, ahead
   // of the server-side ErrorPanel round-trip.
@@ -540,7 +540,7 @@ describe("SettingsApp", () => {
     expect(savedConfig!.silence.window).toBe("00:00-10:00");
   });
 
-  // plan 171 slice J: the prefix keybinding field, in the Shortcuts
+  // the prefix keybinding field, in the Shortcuts
   // section, round-trips into config.prefix_shortcut through the same
   // Save & Relaunch path as every other Settings field.
   it("editing the prefix keybinding patches config.prefix_shortcut in the saved payload", async () => {
@@ -566,7 +566,7 @@ describe("SettingsApp", () => {
     expect(savedConfig!.prefix_shortcut).toBe("⌃⇧X");
   });
 
-  // plan 171 slice J: an in-progress invalid prefix string must NOT reach
+  // an in-progress invalid prefix string must NOT reach
   // patchConfig (the last valid value stays committed) and must surface
   // an inline error — the client-side mirror of
   // `settings::is_valid_prefix_shortcut`'s rules, ahead of the
@@ -767,7 +767,7 @@ describe("SettingsApp", () => {
     expect(selectedPriorityLabel(rssToggle)).toBe("High");
   });
 
-  // plan 137 (spec §7/§12): the Cmux tab (and its Priority/Rotation
+  // the Cmux tab (and its Priority/Rotation
   // seconds controls for what's now `agent_priority`/`agent_ttl_secs`) is
   // gone — no replacement UI exists until ticket 143's Agents section, so
   // there is no settings-window surface left to exercise here.
@@ -843,7 +843,7 @@ describe("SettingsApp", () => {
     ]);
   });
 
-  // --- plan 130: Topics textarea (merges with Feeds, not either/or) ---
+  // --- Topics textarea (merges with Feeds, not either/or) ---
 
   it("loads Topics from config and saves edited lines back, trimmed and empty lines dropped", async () => {
     let savedConfig: Config | null = null;
@@ -872,7 +872,7 @@ describe("SettingsApp", () => {
     expect(savedConfig!.rss_topics).toEqual(["formula 1", "nvidia earnings"]);
   });
 
-  // --- plan 130 Step 3: on-the-go search (search_news_now) ---
+  // --- on-the-go search (search_news_now) ---
 
   describe("Search now (plan 130 Step 3)", () => {
     async function openNews() {
@@ -970,7 +970,7 @@ describe("SettingsApp", () => {
     });
   });
 
-  // Plan 147 wave 2: a read-only legend of every SOURCE_CATEGORY_COLORS
+  // a read-only legend of every SOURCE_CATEGORY_COLORS
   // token, rendered as one MetaChip per category with a capitalized
   // label — restrained, no interactivity, so this just checks it's
   // there and coloured, not that it can be clicked.
@@ -1074,7 +1074,7 @@ describe("SettingsApp", () => {
 
     const titles = screen
       .getAllByText(/notification$/)
-      // plan 112 Step 4: history-title now carries utility classes
+      // history-title now carries utility classes
       // alongside its stable "history-title" hook class, so an exact
       // className match no longer isolates it — check for the token
       // instead (classList.contains), same selection intent.
@@ -1083,7 +1083,7 @@ describe("SettingsApp", () => {
     expect(titles).toEqual(["Second notification", "First notification"]);
   });
 
-  // Plan 147 wave 2: the origin span picks up its colour from
+  // the origin span picks up its colour from
   // SOURCE_ORIGIN_COLORS — a recognized origin (manual) carries the
   // matching inline `color`, an origin with no entry in that table
   // (news, which is coloured by category instead) carries no inline
@@ -1184,7 +1184,7 @@ describe("SettingsApp", () => {
     await waitFor(() => expect(clearHistory).toHaveBeenCalledTimes(1));
   });
 
-  // plan 129 (K1): same fix, same test shape as QueueSection's own K1 test
+  // same fix, same test shape as QueueSection's own K1 test
   // above — HistorySection carried the identical parent-level-conditional
   // bug (`entries.length === 0 ? <p> : <ul>…`), so Clear history's own
   // outgoing row never got to exit-animate either.
@@ -1225,7 +1225,7 @@ describe("SettingsApp", () => {
     });
   });
 
-  // plan 110 (Step A): history richness — the metadata row + expandable
+  // history richness — the metadata row + expandable
   // details.
   describe("history richness (plan 110)", () => {
     function mockHistory(entries: HistoryEntry[]) {
@@ -1424,7 +1424,7 @@ describe("SettingsApp", () => {
     expect(savedConfig!.history_enabled).toBe(true);
   });
 
-  // plan 121: settings-window queue visibility + clear/skip.
+  // settings-window queue visibility + clear/skip.
   describe("Queue section (plan 121)", () => {
     const waitingHigh: QueueItemSummary = {
       title: "High priority waiting item",
@@ -1462,7 +1462,7 @@ describe("SettingsApp", () => {
         .getAllByText(/waiting item$/)
         .filter((el) => el.classList.contains("queue-title"));
       expect(rows).toHaveLength(2);
-      // plan 124 (F5a): pin the tag CONTENT, not just the row count — a tag
+      // pin the tag CONTENT, not just the row count — a tag
       // that silently rendered the same label for every priority (or the
       // raw enum value instead of PRIORITY_LABELS) would still pass the
       // count-only assertion above.
@@ -1529,7 +1529,7 @@ describe("SettingsApp", () => {
       await waitFor(() => expect(screen.getByText("Queue is empty.")).toBeTruthy());
     });
 
-    // plan 129 (K1): the actual choreography fix, pinned directly. Before
+    // the actual choreography fix, pinned directly. Before
     // this plan, `items.length === 0 ? <p> : <ul>…` unmounted the whole
     // `<ul>` (AnimatePresence included) the instant Clear emptied the
     // array, so the outgoing row's own exit animation never got a chance
@@ -1583,7 +1583,7 @@ describe("SettingsApp", () => {
       await openQueue();
 
       expect(await screen.findByText("Couldn't load the queue")).toBeTruthy();
-      // plan 124 (F6): before this fix, a failed mount fetch left `items`
+      // before this fix, a failed mount fetch left `items`
       // at `null` forever, so "Loading…" rendered underneath the sticky
       // ActionStatus error above it — the load never resolves into either
       // an error-aware or an empty state. Assert it's actually gone, not
@@ -1592,7 +1592,7 @@ describe("SettingsApp", () => {
       expect(screen.getByText(/Couldn't load the queue — Refresh to retry/)).toBeTruthy();
     });
 
-    // plan 124 (F1): the manual Refresh control — following
+    // the manual Refresh control — following
     // DiagnosticsSection's own Refresh-button test precedent
     // ("Diagnostics Refresh-button failure is announced..." below), a
     // user-initiated call is `announce: true`, unlike the passive mount
@@ -1619,7 +1619,7 @@ describe("SettingsApp", () => {
       expect(getQueue).toHaveBeenCalledTimes(2);
     });
 
-    // plan 126: the row key used to be `${index}:${item.title}` — stable
+    // the row key used to be `${index}:${item.title}` — stable
     // only as long as the list never reorders, which a refetch that lands
     // duplicate/reordered summaries could violate. The
     // priority:source:title:occurrenceIndex key stays stable across a
@@ -1629,7 +1629,7 @@ describe("SettingsApp", () => {
     // identity (not just equal content) is the proof: a remount would
     // produce a brand-new element.
     //
-    // plan 129 (T2, deep-review fix): the ORIGINAL version of this test
+    // the ORIGINAL version of this test
     // refetched the exact same two-item list unchanged — a case where a
     // positional `${index}:${item.title}` key and the content-based key
     // above compute the IDENTICAL string for every row (nothing shifted
@@ -1677,10 +1677,10 @@ describe("SettingsApp", () => {
       expect(rowAfter).toBe(rowBefore);
     });
 
-    // plan 124 (F5b): the section's own top-of-file comment cites this
+    // the section's own top-of-file comment cites this
     // exact rule — titles are UNTRUSTED wire data, rendered as plain text
     // only. History precedent: "renders markup-like feed text literally"
-    // (above, plan 110 Step A).
+    // (above, Step A).
     it("renders a markup-like title literally — no img/script element ever created, no HTML injection", async () => {
       const markupTitle = '<img src=x onerror="alert(1)">';
       mockQueue([{ ...waitingHigh, title: markupTitle }]);
@@ -1693,7 +1693,7 @@ describe("SettingsApp", () => {
       expect(row.querySelector("img")).toBeNull();
     });
 
-    // plan 124 (F5b): mirrors History's own "300-char unbroken-token body"
+    // mirrors History's own "300-char unbroken-token body"
     // pin (`SettingsApp.test.tsx`'s History describe block) — jsdom can't
     // measure the CSS effect, only that `.queue-title` still carries the
     // `[overflow-wrap:anywhere]` utility for a title with no natural break
@@ -1780,7 +1780,7 @@ describe("SettingsApp", () => {
     });
   });
 
-  // Agents section (plan 143, v7 ticket 11 of 13): global/priority
+  // Agents section: global/priority
   // controls bind config.agents.*, four adapter cards read a mocked
   // get_agent_health, and the test-event button invokes
   // send_agent_test_event.
@@ -1896,7 +1896,7 @@ describe("SettingsApp", () => {
       expect(within(previewGroup).getByText("Multiple independent sessions")).toBeTruthy();
     });
 
-    // Plan 147 wave 2: each adapter card header carries a runtime-colour
+    // each adapter card header carries a runtime-colour
     // swatch dot (SOURCE_RUNTIME_COLORS[wireRuntime]) alongside its label.
     it("renders a runtime-colour swatch dot on each adapter card header", async () => {
       mockAgents();
@@ -1934,7 +1934,7 @@ describe("SettingsApp", () => {
 
       await screen.findAllByText("Claude Code");
       const claudeCard = findAdapterCard("Claude Code");
-      // Plan 143 restyle (Handy "Models"-page reference): cards start
+      // cards start
       // collapsed, and the setup snippet's Copy/Send-test buttons only
       // mount once expanded — click the header/name button to expand it
       // first (CodeRabbit review, PR #11: this comment previously said
@@ -1945,7 +1945,7 @@ describe("SettingsApp", () => {
       await waitFor(() => expect(sentRuntime).toBe("claude-code"));
     });
 
-    // Plan 143 restyle: each adapter tile is collapsed by default (a
+    // each adapter tile is collapsed by default (a
     // compact identity/health/toggle row, matching Handy's Models-page
     // "compact by default, click to reveal detail" pattern) — the
     // capabilities list, last-seen/status detail, and setup snippet only
@@ -2124,7 +2124,7 @@ describe("SettingsApp", () => {
   });
 });
 
-// Plan 108: resets hot-apply the live overlay, and every operation that can
+// resets hot-apply the live overlay, and every operation that can
 // silently fail now reports its outcome through the shared ActionStatus
 // mechanism. Each of the seven operations gets independent coverage below.
 describe("SettingsApp — action status (plan 108)", () => {
@@ -2318,7 +2318,7 @@ describe("SettingsApp — action status (plan 108)", () => {
   });
 
   it("Send test success message auto-clears", async () => {
-    // No fake timers here (plan 126): ActionStatus's ok-clear now unmounts
+    // No fake timers here: ActionStatus's ok-clear now unmounts
     // through an AnimatePresence exit fade, which runs on real
     // requestAnimationFrame ticks. A faked setTimeout clock, even one
     // later swapped back to real, leaves any in-flight animation that
@@ -2466,7 +2466,7 @@ describe("SettingsApp — action status (plan 108)", () => {
   });
 });
 
-// plan 109: the emulated role="group"/"list"/"table" markup (and its
+// the emulated role="group"/"list"/"table" markup (and its
 // lint suppressions) is gone — these pin the *native* element
 // relationships (fieldset/legend, ul/li, table/thead/tbody/th/td, and
 // label-to-control) that replaced it, not just that the ARIA roles still
@@ -2493,7 +2493,7 @@ describe("SettingsApp — native semantic markup (plan 109)", () => {
     render(<SettingsApp />);
 
     await screen.findByRole("heading", { level: 1, name: "General" });
-    // plan 137: this used to navigate to the (now-removed) Cmux tab —
+    // this used to navigate to the (now-removed) Cmux tab —
     // any section's Priority `Segmented` fieldset exercises the same
     // native-markup contract, so Football's stands in for it.
     fireEvent.click(screen.getByRole("button", { name: "Football" }));
@@ -2565,7 +2565,7 @@ describe("SettingsApp — native semantic markup (plan 109)", () => {
   });
 });
 
-// plan 112 Step 4: the shadcn Switch contract, in two parts —
+// the shadcn Switch contract, in two parts —
 // (a) through the app's own ToggleControl call sites (accessible name,
 // checked-state reflection — already covered by the isChecked() round-
 // trip tests above); (b) here, direct primitive-level coverage of the

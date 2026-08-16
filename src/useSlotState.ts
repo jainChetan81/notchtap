@@ -1,6 +1,10 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
+import { isNonNegativeInteger } from "./lib/guards";
 import type { AgentRuntime } from "./useAgentState";
+
+type UnparsedValue = string | number | boolean | null | UnparsedObject | UnparsedValue[];
+type UnparsedObject = { [key: string]: UnparsedValue };
 
 // Local copy of useAgentState.ts's closed runtime tokens — keep in sync by
 // hand if a fifth runtime ever ships.
@@ -110,7 +114,8 @@ function isValidSlotState(v: unknown): v is SlotState {
   if (typeof v !== "object" || v === null || !("state" in v)) {
     return false;
   }
-  const obj = v as Record<string, unknown>;
+  // SAFETY: validated as record via preceding checks.
+  const obj = v as UnparsedObject;
   if (obj.state === "empty") {
     return true;
   }
@@ -120,13 +125,19 @@ function isValidSlotState(v: unknown): v is SlotState {
     typeof obj.title === "string" &&
     typeof obj.body === "string" &&
     typeof obj.expanded === "boolean" &&
+    // SAFETY: the enclosing EVENT_TYPES.includes() membership test is the runtime check that obj.eventType is a known EventType — the cast only narrows the lookup operand.
     EVENT_TYPES.includes(obj.eventType as EventType) &&
+    // SAFETY: the enclosing PRIORITIES.includes() membership test is the runtime check that obj.priority is a known Priority — the cast only narrows the lookup operand.
     PRIORITIES.includes(obj.priority as Priority) &&
+    // SAFETY: the enclosing EVENT_SIGNALS.includes() membership test is the runtime check that obj.signal is a known EventSignal — the cast only narrows the lookup operand.
     EVENT_SIGNALS.includes(obj.signal as EventSignal) &&
+    // SAFETY: the enclosing SOURCE_KINDS.includes() membership test is the runtime check that obj.origin is a known SourceKind — the cast only narrows the lookup operand.
     SOURCE_KINDS.includes(obj.origin as SourceKind) &&
     // Nullable closed-set field — mirrors `source`/`category`, not
     // `origin`'s non-nullable `.includes` check.
-    (obj.agentRuntime === null || AGENT_RUNTIMES.includes(obj.agentRuntime as AgentRuntime)) &&
+    (obj.agentRuntime === null ||
+      // SAFETY: AGENT_RUNTIMES.includes is the runtime check that obj.agentRuntime is a known AgentRuntime — the cast only narrows the lookup operand after the null check.
+      AGENT_RUNTIMES.includes(obj.agentRuntime as AgentRuntime)) &&
     (obj.source === null || typeof obj.source === "string") &&
     (obj.category === null || typeof obj.category === "string") &&
     (obj.publishedAtMs === null || typeof obj.publishedAtMs === "number") &&
@@ -148,7 +159,8 @@ function isValidEspnMeta(v: unknown): v is EspnMeta {
   if (typeof v !== "object" || v === null) {
     return false;
   }
-  const o = v as Record<string, unknown>;
+  // SAFETY: validated as record via preceding checks.
+  const o = v as UnparsedObject;
   return (
     typeof o.league === "string" &&
     typeof o.homeAbbrev === "string" &&
@@ -176,16 +188,11 @@ function isDetailArray(v: unknown): v is { label: string; value: string }[] {
       if (typeof d !== "object" || d === null) {
         return false;
       }
-      const pair = d as Record<string, unknown>;
+      // SAFETY: validated as record via preceding checks.
+      const pair = d as UnparsedObject;
       return typeof pair.label === "string" && typeof pair.value === "string";
     })
   );
-}
-
-// Slider arithmetic needs non-negative integers — fractional or negative
-// would render a nonsense segment.
-function isNonNegativeInteger(v: unknown): v is number {
-  return typeof v === "number" && Number.isInteger(v) && v >= 0;
 }
 
 function initialSlotState(): SlotState {

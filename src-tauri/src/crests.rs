@@ -1,4 +1,4 @@
-//! plan 083 workstream a: club crest fetch + on-disk cache.
+//! club crest fetch + on-disk cache.
 //!
 //! **Legal/scope rule (hard, not a style preference)**: crest PNGs are
 //! runtime-cached by rust, NEVER committed to git — trademarked club
@@ -10,18 +10,18 @@
 //! tree — it lives under `~/.config/notchtap/crests/`, alongside
 //! `config.toml`/`secrets.toml` (`Config::dir_from_home`).
 //!
-//! Cache policy (deliberately v1-minimal, per plan 083's scope):
+//! Cache policy (deliberately v1-minimal, per 
 //! - fetch on cache miss only; a cache hit (on-disk PNG, which persists
-//!   across restarts) never re-fetches.
+//! across restarts) never re-fetches.
 //! - one fetch ATTEMPT per team per process lifetime — `should_fetch`
-//!   marks a team "attempted" the first time it's asked about, whether
-//!   the fetch that follows succeeds or fails, so a failing team isn't
-//!   retried every poll; a restart clears the attempted-set and tries
-//!   again.
+//! marks a team "attempted" the first time it's asked about, whether
+//! the fetch that follows succeeds or fails, so a failing team isn't
+//! retried every poll; a restart clears the attempted-set and tries
+//! again.
 //! - failures are silent-with-fallback (the caller sees `None` and the
-//!   frontend renders the text-abbrev fallback) — never poller-fatal.
+//! frontend renders the text-abbrev fallback) — never poller-fatal.
 //! - no eviction: ESPN's watched leagues bound the team count to a
-//!   couple dozen, trivial by any cache's standard.
+//! couple dozen, trivial by any cache's standard.
 
 use std::collections::HashSet;
 use std::path::{Path, PathBuf};

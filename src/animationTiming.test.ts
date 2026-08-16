@@ -23,12 +23,12 @@ import {
 } from "./animationTiming";
 import { applyAnimationTiming } from "./applyAnimationTiming";
 
-// plan 117: pins the single-sourced duration constant to the exact value
+// pins the single-sourced duration constant to the exact value
 // every existing consumer/test already assumed (StatusRailCard's
 // useDelayedSwap window) — a regression here is exactly the kind of
 // silent drift this plan exists to prevent.
 //
-// plan 12x (wave 3, operator-feedback polish pass): 220 -> 175 (~20%
+// 220 -> 175 (~20%
 // quicker) — this pin moves WITH the constant, same as
 // StatusRailCard.test.tsx's "compact->idle geometry" describe block
 // (which steps fake timers against this same value); the assertion's
@@ -39,9 +39,9 @@ describe("animationTiming (plan 117)", () => {
     expect(SWAP_EXIT_MS).toBe(175);
   });
 
-  // plan 148: the four tokens that replaced hand-typed literals in
+  // the four tokens that replaced hand-typed literals in
   // App.tsx / IdleHoverPeek.tsx / IdleFace.tsx. Pinned to the exact
-  // values those literals carried — plan 148 was tokenization, NOT a
+  // values those literals carried — was tokenization, NOT a
   // retune, so a diff here means someone changed the feel.
   it("SURFACE_SWAP_MS matches App.tsx's previous 0.18s board<->rail crossfade", () => {
     expect(SURFACE_SWAP_MS).toBe(180);
@@ -56,7 +56,7 @@ describe("animationTiming (plan 117)", () => {
     expect(DISCLOSURE_SPRING).toEqual({ type: "spring", stiffness: 480, damping: 37 });
   });
 
-  // plan 148 regression guard. The four hand-copied call sites this
+  // regression guard. The four hand-copied call sites this
   // spring replaced each carried a separate `opacity: { duration: 0.15 }`
   // per-property override, which ran on its own clock and so desynced
   // from the spring whenever a hover flip interrupted it mid-open —
@@ -93,16 +93,16 @@ describe("animationTiming (plan 117)", () => {
     expect(setProperty).toHaveBeenCalledWith("--swap-exit-ms", `${SWAP_EXIT_MS}ms`);
     expect(setProperty).toHaveBeenCalledWith("--content-exit-ms", `${CONTENT_EXIT_MS}ms`);
     expect(setProperty).toHaveBeenCalledWith("--expand-ms", `${EXPAND_MS}ms`);
-    // plan 127 (Step 1): the four new timing tokens, same injection
+    // the four new timing tokens, same injection
     // discipline as the three above.
     expect(setProperty).toHaveBeenCalledWith("--reveal-ms", `${REVEAL_MS}ms`);
     expect(setProperty).toHaveBeenCalledWith("--hover-ms", `${HOVER_MS}ms`);
     expect(setProperty).toHaveBeenCalledWith("--rotation-exit-ms", `${ROTATION_EXIT_MS}ms`);
     expect(setProperty).toHaveBeenCalledWith("--rotation-enter-ms", `${ROTATION_ENTER_MS}ms`);
-    // plan 146b: the interrupt-exit timing token, same injection
+    // the interrupt-exit timing token, same injection
     // discipline as the two rotation tokens above.
     expect(setProperty).toHaveBeenCalledWith("--interrupt-exit-ms", `${INTERRUPT_EXIT_MS}ms`);
-    // plan 171 (tab-notch redesign): the icon strip's own two tokens,
+    // the icon strip's own two tokens,
     // same injection discipline as every token above.
     expect(setProperty).toHaveBeenCalledWith(
       "--icon-strip-stagger-ms",
@@ -132,9 +132,9 @@ describe("animationTiming (plan 117)", () => {
     expect(tokenValues).toEqual([...NOTCHTAP_EASE]);
   });
 
-  // plan 174 review follow-up (Standards axis): the curve actually has
+  // the curve actually has
   // THREE copies, and the third — styles.css's `:root` redeclaration
-  // (plan 163's defense-in-depth twin, required because Tailwind's
+  // ('s defense-in-depth twin, required because Tailwind's
   // `@theme` scoping never reaches the overlay bundle) — was the only
   // unguarded one; the 174 retune touched it by hand with nothing
   // failing if it hadn't. Same parse-and-compare treatment as the
@@ -212,7 +212,7 @@ describe("overlay CSS timing-parity (item 6): every transition duration is var(-
   // carry its own justification comment; an unjustified addition here
   // defeats the point of this test.
   const ALLOWLISTED_TRANSITIONS: ReadonlySet<string> = new Set([
-    // Plan 171 (tab-notch redesign, icon-strip.css): each entry below is
+    // each entry below is
     // a full multi-leg `transition:` value where the opacity/transform
     // legs are already var(--*-ms, ...)-sourced (real animation-timing
     // choices, including the reveal stagger — icon-strip-stagger-ms) and

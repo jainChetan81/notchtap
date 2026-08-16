@@ -190,6 +190,7 @@ export function TtlBar({
       // segment count is data, not theme — same `--queue-n` custom
       // property Track.tsx fed its grid template with, so overlay-card.css
       // stays static.
+      // SAFETY: --queue-n is a valid CSS custom property for this component's grid; React.CSSProperties lacks index signature for custom props.
       style={{ "--queue-n": segmentCount } as React.CSSProperties}
     >
       {Array.from({ length: segmentCount }, (_, i) => (

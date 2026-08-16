@@ -18,6 +18,7 @@ import "./styles.css";
 // fallback. Required at BOTH entry points (here and settings/main.tsx).
 applyAnimationTiming();
 
+// SAFETY: index.html statically mounts `<div id="root">`, so getElementById returns it.
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <App />

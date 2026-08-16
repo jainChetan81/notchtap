@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Label } from "@/components/ui/label";
 import { MetaChip } from "@/components/ui/meta-chip";
 import { Switch } from "@/components/ui/switch";
+import { isString } from "@/lib/guards";
 import { SOURCE_RUNTIME_COLORS } from "@/lib/sourceColors";
 import { cn } from "@/lib/utils";
 import { ActionStatus, useActionStatus } from "../actionStatus";
@@ -253,8 +254,7 @@ function AdapterCard({
     await runTest(() => settingsInvoke("send_agent_test_event", { runtime: copy.wireRuntime }), {
       announce: true,
       okMessage: "Sent",
-      errorMessage: (reason) =>
-        typeof reason === "string" ? reason : "couldn't send a test event",
+      errorMessage: (reason) => (isString(reason) ? reason : "couldn't send a test event"),
     });
   }
 

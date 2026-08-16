@@ -26,9 +26,9 @@ check-rust:
 test-web:
     npx vitest run
 
-# lint/format + typecheck (biome from plan 016, then tsc — CI order)
+# lint/format + typecheck (biome, oxlint, then tsc — CI order)
 check-web:
-    npx biome ci . && npx tsc --noEmit
+    npx biome ci . && npx oxlint && npx tsc --noEmit
 
 audit-web:
     npm audit --audit-level=high

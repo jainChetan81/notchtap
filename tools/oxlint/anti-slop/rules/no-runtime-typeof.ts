@@ -16,7 +16,9 @@ function isInsideTypeGuard(node: ESTree.Node): boolean {
 	let current: ESTree.Node | null = node.parent;
 	while (current !== null && current.type !== "Program") {
 		if (isRuntimeFunction(current)) {
-			return current.returnType?.typeAnnotation.type === "TSTypePredicate";
+			if (current.returnType?.typeAnnotation.type === "TSTypePredicate") {
+				return true;
+			}
 		}
 		current = current.parent;
 	}

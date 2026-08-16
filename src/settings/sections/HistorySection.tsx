@@ -2,6 +2,7 @@ import { AnimatePresence, motion } from "motion/react";
 import { useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { MetaChip } from "@/components/ui/meta-chip";
+import { isString } from "@/lib/guards";
 import { SOURCE_ORIGIN_COLORS, type SourceOriginToken } from "@/lib/sourceColors";
 import { cn } from "@/lib/utils";
 import { NOTCHTAP_EASE } from "../../animationTiming";
@@ -15,19 +16,19 @@ import { PRIORITY_LABELS } from "../types";
 // Row formatting helpers — deliberately duplicated rather than imported
 // from lib/presentation.ts: history is a plain scannable list, not a
 // card renderer.
-const HISTORY_EVENT_TYPE_LABELS: Record<string, string> = {
-  generic: "Generic",
-  score_update: "Score update",
-  match_state: "Match state",
-  news_item: "News item",
-};
+const HISTORY_EVENT_TYPE_LABELS = new Map<string, string>([
+  ["generic", "Generic"],
+  ["score_update", "Score update"],
+  ["match_state", "Match state"],
+  ["news_item", "News item"],
+]);
 
 // event_type is a plain wire string here (HistoryEvent.event_type),
 // unlike rust's closed `EventType` enum — an unrecognized value (a future
 // type landing on one side before the other) falls back to the raw
 // string rather than throwing.
 function historyEventTypeLabel(eventType: string): string {
-  return HISTORY_EVENT_TYPE_LABELS[eventType] ?? eventType;
+  return HISTORY_EVENT_TYPE_LABELS.get(eventType) ?? eventType;
 }
 
 // `event.priority` crosses the tauri IPC boundary as untyped JSON
@@ -38,6 +39,7 @@ function historyEventTypeLabel(eventType: string): string {
 // renders as nothing). Falls back to the raw wire value, same "total
 // lookup" shape as `historyEventTypeLabel` just above.
 function historyPriorityLabel(priority: string): string {
+  // SAFETY: PRIORITY_LABELS is a statically-known const object of string labels; the cast only widens its index to an untrusted wire string, and the `?? priority` fallback returns the raw value on a miss — no shape of the wire value is assumed.
   return (PRIORITY_LABELS as Record<string, string>)[priority] ?? priority;
 }
 
@@ -54,8 +56,9 @@ function historyRotationLabel(rotation: HistoryRotationSpec): string {
   // actual malformed/future payload isn't guaranteed to match either
   // member. Read the field back off `unknown` rather than crash or
   // render nothing.
-  const raw = rotation as unknown as { kind?: unknown };
-  return typeof raw.kind === "string" ? raw.kind : "unknown rotation";
+  // SAFETY: the cast intentionally widens a statically-`never` union to an unknown-shaped read; the cast doesn't assert the union — the following isString check is what establishes `kind` before use.
+  const raw = rotation as { kind?: unknown };
+  return isString(raw.kind) ? raw.kind : "unknown rotation";
 }
 
 // Text only, no crest artwork — compact one-line score/clock/cards
@@ -77,6 +80,7 @@ function historyEspnSummary(espn: HistoryEspnMeta): string {
 // manual/football/agent/news have a colour; an unrecognized origin
 // (hand-edited history file only) renders with no inline style.
 function historyOriginColor(origin: string): string | undefined {
+  // SAFETY: SOURCE_ORIGIN_COLORS is a statically-known const object; the casts only widen the index/wire-string to that lookup, and an unknown origin (miss) returns undefined, gated by the caller's `? { color: ... } : undefined` — no wire shape is assumed.
   return (SOURCE_ORIGIN_COLORS as Record<string, string>)[origin as SourceOriginToken];
 }
 

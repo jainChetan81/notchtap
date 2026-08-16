@@ -25,7 +25,7 @@ const emitStatus = (paused: boolean) =>
     }),
   );
 
-// plan 180 (Step 2): an agent session on the UNGATED tab list only —
+// an agent session on the UNGATED tab list only —
 // `sessions` stays empty so `presentationMode` keeps the idle rail (not
 // the Agent Board) mounted, while the agent tab's below-block has real
 // content to render. The seam test needs content to distinguish "the
@@ -125,10 +125,10 @@ describe("App", () => {
       remainingMs: 8000,
     });
     expect(await screen.findByText("GOAL")).toBeTruthy();
-    // plan 078: the collapsed manifest stays mounted (aria-hidden), so the
+    // the collapsed manifest stays mounted (aria-hidden), so the
     // body text also appears in its Message cell — assert on the compact
     // view's copy specifically.
-    // plan 092: the generic branch's body class renamed `.body` ->
+    // the generic branch's body class renamed `.body` ->
     // `.notif-body` (header/subtitle/body restructure).
     expect(container.querySelector(".compact .notif-body")?.textContent).toBe("1-0");
     expect(container.querySelector(".card-assembly.high")).not.toBeNull();
@@ -227,7 +227,7 @@ describe("App", () => {
     // the outer card's "idle" class flips synchronously with the state
     // change, but the old title/body only leave the DOM once their exit
     // animation finishes — wait for that too, not just the class.
-    // plan 092: the generic branch's title/body classes renamed
+    // the generic branch's title/body classes renamed
     // `.title`/`.body` -> `.notif-title`/`.notif-body`.
     await vi.waitFor(() => {
       expect(card?.classList.contains("idle")).toBe(true);
@@ -237,14 +237,14 @@ describe("App", () => {
     expect(container.querySelector(".notif-body")).toBeNull();
   });
 
-  // plan 085: the resting-state render choice rides the same appearance
+  // the resting-state render choice rides the same appearance
   // channel as scale/radius/opacity — seeded at boot, hot-updated live.
   describe("resting_state (plan 085)", () => {
     afterEach(() => {
       delete window.__NOTCHTAP_APPEARANCE__;
     });
 
-    // plan 105 (Step C, fixing the plan-085 bug): the shell still mounts
+    // the shell still mounts
     // (bare) so it stays hoverable — see StatusRailCard.test.tsx's own
     // "resting_state: notch" suite for the full behavior contract. This
     // pin only checks the wiring from the boot seed through to the bare
@@ -281,7 +281,7 @@ describe("App", () => {
           resting_state: "notch",
         }),
       );
-      // plan 105 (Step C): bare, not absent — see the boot-seed test above.
+      // bare, not absent — see the boot-seed test above.
       await vi.waitFor(() => {
         expect(container.querySelector(".card-assembly.bare")).not.toBeNull();
       });
@@ -301,7 +301,7 @@ describe("App", () => {
     });
   });
 
-  // plan 091: the HUD synthetic cutout vars — a notchless mac gets no
+  // the HUD synthetic cutout vars — a notchless mac gets no
   // measured cutout from rust (mode is "hud", width/height read null),
   // so App.tsx now falls through to the fixed HUD_CUTOUT_WIDTH_PX/
   // HUD_CUTOUT_HEIGHT_PX constants instead of leaving the CSS vars unset
@@ -359,7 +359,7 @@ describe("App", () => {
     });
   });
 
-  // Plan 136 (v7 ticket 4 of 13, spec §6.1): the presentation precedence
+  // the presentation precedence
   // machine's own integration coverage — App.tsx is `presentationMode`'s
   // one call site, so this is where "slot-occupied hides the board",
   // "board over idle", and "empty registry falls back to idle" actually
@@ -444,6 +444,8 @@ describe("App", () => {
     describe("surface swap (2026-08-02 animation audit)", () => {
       it("stacks both surfaces in one grid cell so an overlap never pushes either one down", async () => {
         const { container } = render(<App />);
+        // SAFETY: App always renders the `.surface-stack` wrapper; the
+        // null-guard on the next line protects the optional cast.
         const stack = container.querySelector(".surface-stack") as HTMLElement | null;
         expect(stack).not.toBeNull();
         // the wrapper is the layout mechanism — a single-cell grid, so an
@@ -491,6 +493,9 @@ describe("App", () => {
         expect(RAIL_SURFACE_MOTION.initial).toEqual({ opacity: 0 });
         expect(RAIL_SURFACE_MOTION.animate).toEqual({ opacity: 1 });
         // no transform-family key anywhere in the board's three legs.
+        // SAFETY: each BOARD_SURFACE_MOTION leg is an object of known animation
+        // props, so the array cast to Record<string, unknown>[] is a safe
+        // widening the property check below reads through.
         for (const leg of [
           BOARD_SURFACE_MOTION.initial,
           BOARD_SURFACE_MOTION.animate,
@@ -534,7 +539,7 @@ describe("App", () => {
     });
   });
 
-  // Plan 180 (Step 2): `useTabSelection`'s ONE production call site.
+  // `useTabSelection`'s ONE production call site.
   // `useTabSelection.test.ts` proves the hook validates and stores; this
   // proves App.tsx actually subscribes to the right channel and threads
   // the result down to `StatusRailCard`'s `selectedTab` prop. Neither of

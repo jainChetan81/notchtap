@@ -17,6 +17,7 @@ import "../overlay-card.css";
 // entry (main.tsx).
 applyAnimationTiming();
 
+// SAFETY: settings.html statically mounts `<div id="root">`, so getElementById returns it.
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
   <React.StrictMode>
     <SettingsApp />

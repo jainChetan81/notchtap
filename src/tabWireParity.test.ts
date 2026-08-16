@@ -1,18 +1,18 @@
-// Plan 180 (Step 3): the cross-language pin for plan 171's three-tab
+// the cross-language pin for 's three-tab
 // identity set. That set is hand-written in SIX places, three of them in
 // one rust file and three spread across two languages:
 //
-//   1. `src-tauri/src/tabs.rs` — `Tab::ORDER` (the strip's left-to-right
-//      order, which the click hit-test zips against `hover.rs`'s rects)
-//   2. `src-tauri/src/tabs.rs` — `Tab::from_prefix_digit` (`prefix+1..3`)
-//   3. `src-tauri/src/tabs.rs` — `Tab::wire_label` (the `tab-selection-
-//      changed` tokens)
-//   4. `src/components/IconStrip.tsx` — the `Tab` union and `TAB_ORDER`
-//   5. `src-tauri/src/lib.rs` — `PREFIX_FOLLOWUPS`' `Digit1..Digit3` rows
-//   6. `src/lib/iconPresence.ts` — the `IconPresence` record's keys
+// 1. `src-tauri/src/tabs.rs` — `Tab::ORDER` (the strip's left-to-right
+// order, which the click hit-test zips against `hover.rs`'s rects)
+// 2. `src-tauri/src/tabs.rs` — `Tab::from_prefix_digit` (`prefix+1..3`)
+// 3. `src-tauri/src/tabs.rs` — `Tab::wire_label` (the `tab-selection-
+// changed` tokens)
+// 4. `src/components/IconStrip.tsx` — the `Tab` union and `TAB_ORDER`
+// 5. `src-tauri/src/lib.rs` — `PREFIX_FOLLOWUPS`' `Digit1..Digit3` rows
+// 6. `src/lib/iconPresence.ts` — the `IconPresence` record's keys
 //
 // (A seventh site, `icon-strip.css`'s per-tab selectors, is deliberately
-// NOT pinned here — plan 175's own geometry pin already covers it, and
+// NOT pinned here — 's own geometry pin already covers it, and
 // double-pinning would mean two tests failing for one edit.)
 //
 // **Why this needs a test at all: the drift is silent, and it fails in
@@ -67,7 +67,7 @@ function pairs(text: string, pattern: RegExp): [string, string][] {
   return [...text.matchAll(pattern)].map((match) => [match[1], match[2]]);
 }
 
-// `"\n    }"` — the 4-space-indented closing brace — is the end of an
+// `"\n }"` — the 4-space-indented closing brace — is the end of an
 // `impl` method: every brace INSIDE these two bodies (the `match`'s own)
 // closes at 8 spaces, so this marker cannot land early. `Tab::ORDER` and
 // `PREFIX_FOLLOWUPS` are plain array consts and end at `];`, exactly as

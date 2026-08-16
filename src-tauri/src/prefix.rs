@@ -1,4 +1,4 @@
-//! Plan 171 (tab-notch redesign, slice D): the tmux-style prefix keymap's
+//! the tmux-style prefix keymap's
 //! ARM/DISARM state machine — pure, no AppKit types, no
 //! `tauri_plugin_global_shortcut` dependency, same discipline `tabs.rs`
 //! follows (`docs/TESTING_STRATEGY.md` §4.4). Spec
@@ -67,7 +67,7 @@ pub enum PrefixKey {
 }
 
 /// What the caller should DO in response to a consumed key — this slice
-/// documents which EXISTING mechanism each maps to (plan's own §0 ask);
+/// documents which EXISTING mechanism each maps to;
 /// the caller (lib.rs, once wired) is what actually calls it.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PrefixAction {

@@ -15,15 +15,19 @@ declare global {
   }
 }
 
-export function presentationFacts(): {
+export type PresentationFacts = {
   mode: PresentationMode;
   cutoutWidth: number | null;
   cutoutHeight: number | null;
-} {
+};
+
+import { isPositiveFiniteNumber } from "./guards";
+
+export function presentationFacts(): PresentationFacts {
   const mode: PresentationMode = window.__NOTCHTAP_MODE__ === "notch" ? "notch" : "hud";
   const w = window.__NOTCHTAP_CUTOUT_WIDTH__;
-  const cutoutWidth = typeof w === "number" && Number.isFinite(w) && w > 0 ? w : null;
+  const cutoutWidth = isPositiveFiniteNumber(w) ? w : null;
   const h = window.__NOTCHTAP_CUTOUT_HEIGHT__;
-  const cutoutHeight = typeof h === "number" && Number.isFinite(h) && h > 0 ? h : null;
+  const cutoutHeight = isPositiveFiniteNumber(h) ? h : null;
   return { mode, cutoutWidth, cutoutHeight };
 }

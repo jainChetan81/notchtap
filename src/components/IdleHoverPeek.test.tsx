@@ -31,9 +31,9 @@ describe("IdleHoverPeek (plan 093)", () => {
     expect(container.querySelector(".idle-peek")).toBeNull();
   });
 
-  // plan 093 constraint 2: hover is NOT CSS `:hover` — the peek is driven
+  // hover is NOT CSS `:hover` — the peek is driven
   // entirely by the prop, with no dependency on any CSS pseudo-class.
-  // plan 12x: mount is now owned by `motion`'s `AnimatePresence`, which
+  // mount is now owned by `motion`'s `AnimatePresence`, which
   // renders the node synchronously in jsdom — no `.open`/`.closing`
   // classes anymore, just DOM presence.
   it("opens (mounts a .below-block.idle-peek) when hovered is true", () => {
@@ -67,7 +67,7 @@ describe("IdleHoverPeek (plan 093)", () => {
     expect(container.querySelector(".idle-peek-timeline")).not.toBeNull();
   });
 
-  // plan 171 (tab-notch redesign, slice K): the `prefer` prop. §11 ("this
+  // the `prefer` prop. §11 ("this
   // peek's mechanism is untouched") means the football TAB selection
   // reaches this component rather than a second copy of it — `prefer` is
   // how the caller says so. Every case with `prefer` omitted must stay

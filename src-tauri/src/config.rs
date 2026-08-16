@@ -24,12 +24,12 @@ pub struct Config {
     /// v6: previously football silently reused `default_ttl` — now has its
     /// own rotation window like `rss_ttl_secs` already does for news.
     pub espn_ttl_secs: u64,
-    /// plan 039: opt-in live-match card. default false — today's
+    /// opt-in live-match card. default false — today's
     /// burst-of-one-shot-cards stays the default; when on, one live match
     /// collapses to a single updating card (Topic `espn:{league}:{match_id}`,
     /// `Recurring` while in play, `OneShot` full-time on the same Topic).
     pub espn_live_card: bool,
-    /// plan 083 workstream c: opt-in richer match events (foul, offside,
+    /// opt-in richer match events (foul, offside,
     /// VAR check, substitution) via ESPN's `summary`/`plays` endpoints —
     /// default false, mirroring `espn_live_card`'s opt-in-gated pattern
     /// exactly. This is materially more per-match polling than the
@@ -47,7 +47,7 @@ pub struct Config {
     /// category = "politics"
     /// ```
     pub rss_feeds: Vec<RssFeedConfig>,
-    /// plan 130: plain-language search topics ("aston villa transfers"),
+    /// plain-language search topics ("aston villa transfers"),
     /// one per configured line — MERGED with `rss_feeds` (not an
     /// either/or mode) into one poll list at poller-spawn time. Each
     /// entry expands to a Google News query-feed URL
@@ -66,7 +66,7 @@ pub struct Config {
     /// (was the hardcoded `Priority::Medium` in `http.rs`). A request that
     /// sets `priority` explicitly still overrides this.
     pub manual_default_priority: Priority,
-    /// plan 137 (spec §7): renamed from v6.1's `cmux_priority` — the cmux
+    /// renamed from v6.1's `cmux_priority` — the cmux
     /// relay and its `/notify` self-declared `source: "cmux"` are gone
     /// (superseded by the v7 Agent Adapter layer), but the flat field
     /// itself survives as the one-release migration target: `cmux_priority`
@@ -80,7 +80,7 @@ pub struct Config {
     /// today, it exists purely so an upgrading install's customized
     /// `cmux_priority` value is never silently dropped on the floor.
     pub agent_priority: Priority,
-    /// plan 137 (spec §7): renamed from v6.1's `cmux_ttl_secs` — same
+    /// renamed from v6.1's `cmux_ttl_secs` — same
     /// migration story as `agent_priority` above, but this one DOES have a
     /// live consumer: it's the one-shot rotation window `http.rs`'s
     /// `agent_events_handler` passes to
@@ -88,7 +88,7 @@ pub struct Config {
     /// Agent Notification, exactly the role `cmux_ttl_secs` played for a
     /// cmux-originated `/notify` push.
     pub agent_ttl_secs: u64,
-    /// plan 137 (spec §7): the v7 `[agents]` config block — global
+    /// the v7 `[agents]` config block — global
     /// enable, registry retention/staleness, the informational-card
     /// toggle, four per-kind Notification priorities, and four
     /// per-runtime enable flags. See [`AgentsConfig`].
@@ -108,15 +108,15 @@ pub struct Config {
     )]
     pub rotation_order: Vec<SourceKind>,
     pub appearance: Appearance,
-    /// plan 085: the overlay's RESTING (idle) render choice — the cheap
-    /// half of plan 079 item 17. `Rail` (default) is today's time+dots
+    /// the overlay's RESTING (idle) render choice — the cheap
+    /// half of item 17. `Rail` (default) is today's time+dots
     /// idle rail, zero behavior change. `Notch` renders nothing while
     /// idle (the bare native notch) — a render choice only, no hover
     /// detection; every `showing` path (promotions, rotation, expand,
     /// TTL) is unaffected either way.
     #[serde(default = "default_resting_state")]
     pub resting_state: RestingState,
-    /// plan 088 (from plan 059's operator decision): persist accepted
+    /// persist accepted
     /// one-shot notifications to `~/.config/notchtap/history.jsonl` for
     /// later browsing. Defaults to `false` like every other opt-in surface
     /// here (`rss_enabled`, `espn_live_card`,
@@ -125,13 +125,13 @@ pub struct Config {
     /// off-by-default is load-bearing, not stylistic.
     #[serde(default = "default_history_enabled")]
     pub history_enabled: bool,
-    /// plan 146a: the `[silence]` block — the daily Silent Period
+    /// the `[silence]` block — the daily Silent Period
     /// (`CONTEXT.md`'s Silenced/Silent Period entries). Queue-level gate,
     /// evaluated beside `start_paused`/the tray Pause toggle (Paused wins
     /// unconditionally over Silenced). See [`SilenceConfig`].
     #[serde(default)]
     pub silence: SilenceConfig,
-    /// plan 171 (tab-notch redesign, slice J; spec §9's keyboard model):
+    /// 
     /// the configurable tmux-style prefix that arms `prefix.rs`'s
     /// `PrefixState` 2-second follow-up window. Format mirrors this app's
     /// own shipped `⌃⇧`-combo family (`ShortcutsSection.tsx`'s
@@ -159,7 +159,7 @@ pub enum RestingState {
     Notch,
 }
 
-/// plan 097: shared bounds for the `[appearance]` fields, so the save path
+/// shared bounds for the `[appearance]` fields, so the save path
 /// (`settings::validate_appearance`) and the load path (`Config::parse`'s
 /// self-heal, below) can never drift apart.
 pub const CARD_SCALE_RANGE: std::ops::RangeInclusive<f64> = 0.8..=1.4;
@@ -441,7 +441,7 @@ where
 }
 
 fn default_rotation_order() -> Vec<SourceKind> {
-    // v6.1 review fix (superseded by plan 137's cmux→Agent migration,
+    // v6.1 review fix (superseded by 's cmux→Agent migration,
     // spec §7): Manual ranks ahead of Agent — at default priorities
     // (Football/Agent both High, Manual Medium, News Low) this never
     // actually breaks a tie, since Agent and Manual don't share a tier
@@ -533,7 +533,7 @@ impl Default for Config {
     }
 }
 
-/// `[silence]` — plan 146a's daily Silent Period schedule
+/// `[silence]` — 's daily Silent Period schedule
 /// (`CONTEXT.md`'s Silenced/Silent Period glossary entries).
 /// `enabled`/`window` feed `silence::SilenceController::new` at boot
 /// (`lib.rs`'s wiring); Skip and Timed Mutes are session-only tray state,
@@ -596,16 +596,16 @@ impl Config {
         // defaulted them to) lets us inherit the file's effective
         // default_ttl exactly where the old shared-field behavior would
         // have applied it.
-        //
-        // plan 101: the espn arm is conditional on the file ALSO having
+                //
+        // the espn arm is conditional on the file ALSO having
         // customized default_ttl — the inherit exists only for configs
         // that customized the old shared default_ttl; a config that never
         // touched it gets espn's own default (15) instead of silently
         // re-inheriting the generic default. The agent arm stays
         // unconditional (its default intentionally tracks default_ttl),
         // same as the cmux arm it replaces.
-        //
-        // plan 137 (spec §7): `cmux_priority`/`cmux_ttl_secs` are the
+                //
+        // `cmux_priority`/`cmux_ttl_secs` are the
         // one-release migration aliases for `agent_priority`/
         // `agent_ttl_secs` — consulted ONLY when the new key is absent
         // from the file (a config carrying both, however unlikely, lets
@@ -674,7 +674,7 @@ impl Config {
                 config.rotation_order.push(source);
             }
         }
-        // plan 097: the load-path twin of `settings::validate_appearance`,
+        // the load-path twin of `settings::validate_appearance`,
         // which only guards the settings-save path. A hand-edited
         // `config.toml` (e.g. `card_scale = 0.0`) would otherwise boot
         // unclamped, silently producing a degenerate hover rect plus
@@ -782,7 +782,7 @@ mod tests {
 
     #[test]
     fn prefix_shortcut_round_trips_through_parse() {
-        // plan 171 slice J: a config file that already customized this
+        // a config file that already customized this
         // field keeps that value, not the default — same round-trip
         // guarantee every other plain-string field in this struct gets
         // (e.g. `detect_path`, an `espn_leagues` entry).
@@ -840,7 +840,7 @@ mod tests {
 
     #[test]
     fn espn_rich_events_defaults_to_false_and_is_overridable() {
-        // plan 083 workstream c: mirrors espn_live_card's opt-in pattern —
+        // mirrors espn_live_card's opt-in pattern —
         // default off, this heavier per-match feed must not turn on for
         // an install that hasn't opted in.
         let default = Config::parse("").unwrap();
@@ -852,7 +852,7 @@ mod tests {
 
     #[test]
     fn resting_state_defaults_to_rail_and_is_overridable() {
-        // plan 085: a config file predating this field (or one that simply
+        // a config file predating this field (or one that simply
         // never sets it) heals to `rail` — zero behavior change by default.
         let healed = Config::parse("").unwrap();
         assert_eq!(healed.resting_state, RestingState::Rail);
@@ -866,7 +866,7 @@ mod tests {
 
     #[test]
     fn history_enabled_defaults_to_false_and_is_overridable() {
-        // plan 088: a config file predating this field (or one that simply
+        // a config file predating this field (or one that simply
         // never sets it) heals to `false` — off-by-default, matching every
         // other opt-in surface, since this one writes notification CONTENT
         // to disk.
@@ -1040,7 +1040,7 @@ url = "https://example.com/without-meta"
     fn absent_default_ttl_still_yields_the_shared_default_of_eight() {
         // no default_ttl in the file at all: default_ttl resolves to its
         // own default (8), and agent inherits that same resolved value —
-        // identical to today's fresh-install behavior. plan 101: espn no
+        // identical to today's fresh-install behavior. espn no
         // longer inherits here — with default_ttl untouched, espn gets
         // its own default (15) instead.
         let c = Config::parse("").unwrap();
@@ -1049,7 +1049,7 @@ url = "https://example.com/without-meta"
         assert_eq!(c.agent_ttl_secs, 8);
     }
 
-    // --- plan 137 (spec §7): cmux-era config migration ---
+    // --- cmux-era config migration ---
 
     #[test]
     fn legacy_cmux_priority_and_ttl_alias_to_agent_fields_when_new_keys_absent() {
@@ -1060,7 +1060,7 @@ url = "https://example.com/without-meta"
 
     #[test]
     fn new_agent_keys_win_over_legacy_cmux_keys_when_both_present() {
-        // spec §7 / plan 137: "aliases to the new keys only when the new
+        // spec §7 / "aliases to the new keys only when the new
         // key is absent" — both present in the same file must never error
         // and must resolve to the NEW key's value, not the legacy one.
         let c = Config::parse(
@@ -1131,7 +1131,7 @@ url = "https://example.com/without-meta"
 
     #[test]
     fn espn_ttl_defaults_to_15_when_default_ttl_untouched() {
-        // plan 101: espn's own default (15) applies when the file never
+        // espn's own default (15) applies when the file never
         // customized default_ttl — the generic default itself must not
         // have moved.
         let c = Config::parse("").unwrap();
@@ -1158,7 +1158,7 @@ url = "https://example.com/without-meta"
         );
     }
 
-    // plan 137 (spec §7): the legacy "cmux" literal must still deserialize
+    // the legacy "cmux" literal must still deserialize
     // in a `rotation_order` array (via `SourceKind`'s `#[serde(alias =
     // "cmux")]`), rewritten in place to `Agent` — exercised here through
     // the same "missing a source"/"duplicate" heal paths the two tests
@@ -1261,7 +1261,7 @@ url = "https://example.com/without-meta"
         // names — see the removed-origin compat tests above.
     }
 
-    // plan 097: `validate_appearance` (settings.rs) only guards the
+    // `validate_appearance` (settings.rs) only guards the
     // settings-save path — a hand-edited `config.toml` bypasses it
     // entirely. `Config::parse` must clamp out-of-range appearance values
     // at load time too, or a degenerate `card_scale = 0.0` boots a broken
@@ -1277,7 +1277,7 @@ url = "https://example.com/without-meta"
         assert_eq!(c.appearance.card_opacity, *CARD_OPACITY_RANGE.end());
     }
 
-    // plan 097: a non-finite value can't be expressed through the settings
+    // a non-finite value can't be expressed through the settings
     // UI (only a hand-edited TOML can write `nan`), and clamping a NaN is
     // a no-op in IEEE 754 (`NaN.clamp(lo, hi)` stays NaN) — so non-finite
     // values fall back to the field's own default instead.
@@ -1298,7 +1298,7 @@ url = "https://example.com/without-meta"
         assert_eq!(c.appearance.card_opacity, 0.75);
     }
 
-    // ---- [silence] (plan 146a) ----
+    // ---- [silence] ----
 
     #[test]
     fn default_silence_window_parses() {

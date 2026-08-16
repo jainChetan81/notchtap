@@ -8,11 +8,11 @@ type SegmentedOption<T extends string | number> = { label: string; value: T };
 
 // Tailwind only generates utilities it can see as literals — a computed
 // `grid-cols-${n}` template would silently produce no CSS.
-const GRID_COLS: Record<number, string> = {
+const GRID_COLS = {
   2: "grid-cols-2",
   3: "grid-cols-3",
   4: "grid-cols-4",
-};
+} satisfies Record<number, string>;
 
 export function Segmented<T extends string | number>({
   id,
@@ -40,7 +40,8 @@ export function Segmented<T extends string | number>({
   optionTones?: Partial<Record<T, string>>;
 }) {
   const labelled = id !== undefined;
-  const cols = GRID_COLS[options.length] ?? "grid-cols-3";
+  // SAFETY: `options.length` (2 or 3) is a known grid key — the `as keyof` narrows the numeric index after the literal check.
+  const cols = GRID_COLS[options.length as keyof typeof GRID_COLS] ?? "grid-cols-3";
   const buttonClass = labelled ? "priority-toggle-button" : "segmented-control-button";
   return (
     <div className={CONTROL_ROW}>

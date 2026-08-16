@@ -1,4 +1,4 @@
-//! Plan 171 (tab-notch redesign, slice A item 2): the click-detection
+//! the click-detection
 //! mechanism, resolved on real hardware 2026-08-03 as **mechanism (a), a
 //! native `NSEvent` LOCAL monitor** — and not merely by preference:
 //! mechanism (b) (a plain webview `onClick`) can never satisfy the
@@ -17,7 +17,7 @@
 //! to us — which requires `set_ignore_cursor_events(false)`, toggled by
 //! `lib.rs`'s hover transition handler exactly while the icon strip is
 //! the live hover target (spec §10's narrow click-through carve-out).
-//! The shipped board-expand scroll path (plan 142) already proved
+//! The shipped board-expand scroll path already proved
 //! NSEvents reach this NonactivatingPanel while it is never key.
 //!
 //! Split per the house rule (`CLAUDE.md`, `presentation_mode`): the

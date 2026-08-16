@@ -1,4 +1,4 @@
-//! Plan 171 (tab-notch redesign, slice B): the news icon's CHARGE state
+//! the news icon's CHARGE state
 //! machine — pure, no I/O, same discipline `tabs.rs` follows
 //! (`docs/TESTING_STRATEGY.md` §4.4). Tracks how many items have landed
 //! since the news icon was last visited and whether a full batch has

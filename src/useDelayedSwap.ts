@@ -1,15 +1,15 @@
 import { useLayoutEffect, useRef, useState } from "react";
 
+type SwapKey = string | number | symbol | null | undefined;
+
 // Stand-in for `AnimatePresence mode="wait"` (see styles.css for the CSS
 // half). Freezes `value` at its last snapshot while `key` changed but the
 // exit animation hasn't finished; same-key updates sync immediately, in
 // place, with no timer or replay.
-export function useDelayedSwap<T>(
-  value: T,
-  key: unknown,
-  exitDurationMs: number,
-): { value: T; exiting: boolean } {
-  const [shown, setShown] = useState<{ key: unknown; value: T }>({ key, value });
+export type DelayedSwap<T> = { value: T; exiting: boolean };
+
+export function useDelayedSwap<T>(value: T, key: SwapKey, exitDurationMs: number): DelayedSwap<T> {
+  const [shown, setShown] = useState<{ key: SwapKey; value: T }>({ key, value });
   const [exiting, setExiting] = useState(false);
 
   // `lastLiveValueRef` mirrors `value` on every render where `key` matches
@@ -23,7 +23,7 @@ export function useDelayedSwap<T>(
   // Mirrors the latest (key, value) unconditionally, so a pending exit
   // timer lands on the newest value, not the one from the render that
   // scheduled it.
-  const incomingRef = useRef<{ key: unknown; value: T }>({ key, value });
+  const incomingRef = useRef<{ key: SwapKey; value: T }>({ key, value });
   incomingRef.current = { key, value };
 
   // Only a `key` change (re)starts the exit timer; same-key updates sync

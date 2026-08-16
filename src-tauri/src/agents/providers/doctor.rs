@@ -876,8 +876,8 @@ mod tests {
         assert!(!setup_ok(&nothing));
 
         // 3. Listener up, one partial install (8/10) + three missing
-        //    configs -> healthy. A partial install is still an install,
-        //    and a runtime the user doesn't use must never fail this.
+        // configs -> healthy. A partial install is still an install,
+        // and a runtime the user doesn't use must never fail this.
         let mut partial = nothing.clone();
         partial.runtimes[2].install = AdapterInstall::Inspected {
             wired: KIMI_HOOK_EVENTS[..8]
@@ -894,7 +894,7 @@ mod tests {
         assert!(setup_ok(&partial));
 
         // 4. Listener up, only the OpenCode plugin file present ->
-        //    healthy.
+        // healthy.
         let mut plugin_only = nothing.clone();
         plugin_only.runtimes[1].install = AdapterInstall::ConfigMissing;
         plugin_only.runtimes[3].install = AdapterInstall::PluginFile { present: true };

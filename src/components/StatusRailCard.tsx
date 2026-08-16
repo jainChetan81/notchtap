@@ -598,6 +598,7 @@ export function StatusRailCard({
       // flank snap. Harmless in every non-strip state: no other `--cw`
       // formula references it. Same `as React.CSSProperties` custom-property
       // idiom PositionBar/IdleHoverPeek use.
+      // SAFETY: CSS custom property valid for this component; React.CSSProperties lacks index signature.
       style={{ "--present-icons": presentIconCount } as React.CSSProperties}
       onAnimationEnd={clearPulseWhenItsAnimationEnds}
     >

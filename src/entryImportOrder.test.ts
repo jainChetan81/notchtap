@@ -1,4 +1,4 @@
-// plan 111 Step 1.2: the shared card-shape stylesheet must load BEFORE
+// the shared card-shape stylesheet must load BEFORE
 // each window's own residue, at both real entry points, so context-only
 // declarations win any specificity tie by source order (same discipline
 // the old single-file styles.css/preview-overlay.css pair relied on
@@ -6,7 +6,7 @@
 // instruction) — the ordering lives in these two TypeScript entry files
 // instead, so it's pinned here by reading their literal source text: a
 // jsdom/vitest run doesn't otherwise observe CSS load order at all.
-// plan 112: @types/node is now a devDependency (Step 1), so these two
+// @types/node is now a devDependency (Step 1), so these two
 // Node imports typecheck directly — no @ts-expect-error needed. Node's
 // own `URL` is still imported explicitly (not the ambient global)
 // because jsdom's global `URL` shadow resolves a relative path against a
@@ -37,7 +37,7 @@ describe("entry-file CSS import order (plan 111)", () => {
     expect(overlayIdx).toBeLessThan(stylesIdx);
   });
 
-  // plan 114: the overlay window must import shared-ui's design tokens
+  // the overlay window must import shared-ui's design tokens
   // (--font-sans/--font-mono/--ease-notchtap, etc.) before overlay-card.css
   // so the token-consuming declarations in that file resolve — same
   // discipline settings/base.css already follows for the settings window.
@@ -65,7 +65,7 @@ describe("entry-file CSS import order (plan 111)", () => {
     expect(local.includes("--media-mint:")).toBe(false);
   });
 
-  // plan 112 Step 5: settings.css is gone (its rules relocated into
+  // settings.css is gone (its rules relocated into
   // base.css); the load-bearing pair is now base.css (establishes
   // @layer theme/utilities before any plain CSS) then overlay-card.css
   // (unlayered, so it still wins any specificity tie by source order).

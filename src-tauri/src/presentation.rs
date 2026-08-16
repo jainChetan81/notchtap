@@ -21,7 +21,7 @@ pub fn presentation_mode(safe_area_top_inset: f64) -> Mode {
     }
 }
 
-/// the notch cutout's horizontal bounds (plan §3.5), reported by the swift
+/// the notch cutout's horizontal bounds, reported by the swift
 /// shim alongside the safe-area inset. only meaningful when `width > 0.0` —
 /// see [`DetectOutput::cutout`].
 #[derive(Debug, Clone, Copy, PartialEq)]

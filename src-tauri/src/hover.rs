@@ -50,13 +50,13 @@ const BELOW_BLOCK_EXPANDED_H: f64 = 240.0; // conservative estimate, expanded (m
 // Icon-strip geometry — LOCKSTEP PAIRS with real CSS. All three twins
 // MUST change in the same commit as any change here
 // (`src/lib/stripGeometryParity.test.ts` is the tripwire):
-//   * `ICON_BOX` / `ICON_GAP` <-> `src/overlay/icon-strip.css`'s
-//     `.icon.is-present { width: 18px; margin-left: 8px }` — together
-//     the 26px pitch every rect laid out below assumes.
-//   * `FLANK_INSET` <-> `src/overlay/card-chrome.css`'s flank
-//     `padding-right: 16px` (`.flank-right`).
-//   * `hovered_right_flank_width` (below) <-> the `--cw` growth term
-//     `(26 * var(--present-icons, 0) + 16)` in card-chrome.css.
+// * `ICON_BOX` / `ICON_GAP` <-> `src/overlay/icon-strip.css`'s
+// `.icon.is-present { width: 18px; margin-left: 8px }` — together
+// the 26px pitch every rect laid out below assumes.
+// * `FLANK_INSET` <-> `src/overlay/card-chrome.css`'s flank
+// `padding-right: 16px` (`.flank-right`).
+// * `hovered_right_flank_width` (below) <-> the `--cw` growth term
+// `(26 * var(--present-icons, 0) + 16)` in card-chrome.css.
 // The rail floor reuses `FLANK_IDLE` (85.0) above. Real caller of all
 // three: `click.rs`'s hit-test, via `icon_strip_rects` below.
 const ICON_BOX: f64 = 18.0;
@@ -300,7 +300,7 @@ pub fn active_card_rect(
     }
 }
 
-// plan 142 (v7 ticket 10 of 13, spec §6.2): the Agent Board's RESTING
+// the Agent Board's RESTING
 // hover-detection rect — a card conservatively estimated the same way
 // every other formula above is, but sized off the board's own shape
 // (`AgentBoard.tsx`'s permanent `.card-assembly.expanded` class, plus
@@ -390,7 +390,7 @@ pub fn board_rect(
 mod tests {
     use super::*;
 
-    // --- active_card_rect: plan 091's three state formulas, HUD mode
+    // --- active_card_rect: 's three state formulas, HUD mode
     // (effective cutout = HUD_CUTOUT_W, always — the `cutout_width`
     // argument is irrelevant in this mode, pinned below), at scale 1.0 ---
 
@@ -415,7 +415,7 @@ mod tests {
         assert_eq!(r.x_max - r.x_min, BASE_EXPANDED);
     }
 
-    // plan 091: HUD mode always resolves the cutout term to
+    // HUD mode always resolves the cutout term to
     // `HUD_CUTOUT_W` — the `cutout_width` argument passed in is simply
     // never consulted in this mode (lib.rs's caller happens to send
     // 0.0 for hud today; this test proves the result doesn't depend on
@@ -470,7 +470,7 @@ mod tests {
         );
     }
 
-    // plan 091: a real, useful invariant this exposes — BASE_EXPANDED
+    // a real, useful invariant this exposes — BASE_EXPANDED
     // (500) equals WINDOW_WIDTH (500) exactly, so the expanded state
     // hits its window cap at any scale above 1.0, in EITHER mode (a
     // user with `card_scale` > 1.0 always gets a full-window expanded
@@ -489,7 +489,7 @@ mod tests {
 
     #[test]
     fn notch_idle_is_measured_cutout_plus_two_flanks_at_scale_1() {
-        // plan 063's own fixture (`src-tauri/src/lib.rs`'s
+        // 's own fixture (`src-tauri/src/lib.rs`'s
         // cutout_width_js_value test) — a realistic measured width.
         let r = active_card_rect(Mode::Notch, 319.0, 32.0, 1.0, false, false, false, false);
         assert_eq!(r.x_max - r.x_min, 319.0 + 2.0 * FLANK_IDLE);
@@ -512,7 +512,7 @@ mod tests {
         assert_eq!(r.x_max - r.x_min, BASE_EXPANDED);
     }
 
-    // plan 091: the cutout term stays unscaled in notch mode too — but
+    // the cutout term stays unscaled in notch mode too — but
     // unlike the old design (where the whole notch-mode rect was
     // scale-invariant, since flanks never scaled there at all), the
     // FLANK term now scales in every mode (Decision 6). This isolates
@@ -603,12 +603,12 @@ mod tests {
     // MIN_FLANK_SHOWING + BASE_SHOWING/BASE_EXPANDED), and App.tsx's HUD
     // synthetic constants (HUD_CUTOUT_W/HUD_CUTOUT_H) — a NAMED-constant
     // assertion, not a live CSS parse (spike §6's explicit
-    // simplification, carried forward by plan 091). If a future edit
+    // simplification, carried forward by ). If a future edit
     // changes one of these numbers in styles.css or App.tsx without
     // updating the constants at the top of this file, this test does NOT
     // catch it by itself (it only asserts internal self-consistency) —
     // it exists so a reviewer diffing this file sees the citations and
-    // checks both sides. plan 091: replaces the old BASE_WIDTH/
+    // checks both sides. replaces the old BASE_WIDTH/
     // EXPANDED_WIDTH/IDLE_WIDTH/IDLE_STATUS_WIDTH/NOTCH_CLAMP_MIN/
     // NOTCH_CLAMP_MAX set (see the constants' own doc comments for why
     // each was removed).
@@ -620,7 +620,7 @@ mod tests {
         assert_eq!(BASE_EXPANDED, 500.0);
         assert_eq!(HUD_CUTOUT_W, 200.0);
         assert_eq!(HUD_CUTOUT_H, 32.0);
-        // plan 093: IDLE_PEEK_BELOW_BLOCK_H is a real duplicated-constant
+        // IDLE_PEEK_BELOW_BLOCK_H is a real duplicated-constant
         // (styles.css's `.idle-peek` fixed height) — see its own doc
         // comment for why BELOW_BLOCK_SHOWING_H/BELOW_BLOCK_EXPANDED_H
         // are deliberately NOT asserted here (they're estimates, not a
@@ -661,7 +661,7 @@ mod tests {
         assert_eq!(high, WINDOW_HEIGHT);
     }
 
-    // plan 093: was `active_card_rect_y_span_is_the_full_window_height`,
+    // was `active_card_rect_y_span_is_the_full_window_height`,
     // pinning the pre-093 "always the whole window" behavior — UPDATED,
     // not deleted, per the plan's explicit instruction. Idle, peek
     // closed: the y-span is now the cutout row's height alone, nowhere
@@ -677,7 +677,7 @@ mod tests {
         );
     }
 
-    // --- plan 093: the y-span's height term, one case per assembly state ---
+    // --- the y-span's height term, one case per assembly state ---
 
     #[test]
     fn idle_peek_open_y_span_adds_the_peek_below_block_height() {
@@ -838,7 +838,7 @@ mod tests {
         assert!(point_in_rect(&grown, flank_x, grown.y_max - 1.0));
     }
 
-    // --- plan 142: board_rect ---
+    // --- board_rect ---
 
     #[test]
     fn board_rect_width_matches_the_expanded_formula() {
@@ -957,7 +957,7 @@ mod tests {
         assert!(!point_in_rect(&r, WINDOW_WIDTH / 2.0, old_rect_midpoint_y));
     }
 
-    // --- plan 171 (tab-notch redesign): icon_strip_rects ---
+    // --- icon_strip_rects ---
 
     #[test]
     fn icon_strip_rects_returns_empty_for_zero_present() {
@@ -982,7 +982,7 @@ mod tests {
         // 2 icons: strip_w = (18+8)*2 + 16 = 68, which loses to the 85px
         // rail floor at scale 1 — the SAME "2 icons -> 85px rail floor
         // wins" case the spec table states explicitly. (Inset 16, not the
-        // mock's old 14, since plan 175 — the floor wins either way, so
+        // mock's old 14, since — the floor wins either way, so
         // this case's own numbers are unchanged.)
         let rects = icon_strip_rects(Mode::Hud, 0.0, 0.0, 1.0, 2, WINDOW_HEIGHT);
         let flank_w = hovered_right_flank_width(2, 1.0);
@@ -1011,7 +1011,7 @@ mod tests {
 
     #[test]
     fn hovered_right_flank_width_pins_the_whole_icon_count_curve() {
-        // Plan 175's lockstep pin: `max(85, 26n + 16)` at scale 1, the
+        // `max(85, 26n + 16)` at scale 1, the
         // exact curve card-chrome.css's two strip-visible `--cw` rules
         // now compute as `max(85px * var(--card-scale), (26 *
         // var(--present-icons, 0) + 16) * 1px)`. The floor wins at n<=2;

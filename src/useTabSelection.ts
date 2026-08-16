@@ -3,6 +3,9 @@ import { useEffect, useState } from "react";
 import type { Tab } from "./components/IconStrip";
 import { TAB_ORDER } from "./components/IconStrip";
 
+type UnparsedValue = string | number | boolean | null | UnparsedObject | UnparsedValue[];
+type UnparsedObject = { [key: string]: UnparsedValue };
+
 // The frontend half of the `tab-selection-changed` channel. Duplicates
 // `useStatusState.ts`'s delivery discipline exactly — a strict validator,
 // a listener, a dead-listener `console.error` — on a third, listen-only
@@ -38,7 +41,8 @@ export function isValidTabSelection(v: unknown): v is TabSelectionPayload {
   if (typeof v !== "object" || v === null) {
     return false;
   }
-  const obj = v as Record<string, unknown>;
+  // SAFETY: validated as record via preceding checks.
+  const obj = v as UnparsedObject;
   if (obj.selected === null) {
     return true;
   }

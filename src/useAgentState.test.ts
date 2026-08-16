@@ -55,7 +55,7 @@ describe("useAgentState", () => {
       revision: 1,
       capturedAtMs: 1_000,
       sessions: [session()],
-      // plan 177: the hook always resolves this field, so a fixture
+      // the hook always resolves this field, so a fixture
       // compared with `toEqual` has to carry it too.
       tabSessions: [],
       adapterHealth: [],
@@ -78,6 +78,8 @@ describe("useAgentState", () => {
     emit({
       revision: 1,
       capturedAtMs: 1_000,
+      // SAFETY: `cursor` is outside the runtime union — `as never` lets this bogus
+      // value compile; the hook is asserted to drop that runtime sibling.
       sessions: [session({ id: "bad", runtime: "cursor" as never }), session({ id: "good" })],
       adapterHealth: [],
     });
@@ -89,6 +91,8 @@ describe("useAgentState", () => {
     emit({
       revision: 1,
       capturedAtMs: 1_000,
+      // SAFETY: `made_up` is outside the session-state union — `as never` lets it
+      // compile; the hook drops the session.
       sessions: [session({ id: "bad", state: "made_up" as never })],
       adapterHealth: [],
     });
@@ -118,7 +122,7 @@ describe("useAgentState", () => {
     expect(result.current.sessions).toHaveLength(1);
   });
 
-  // Plan 142 (v7 ticket 10 of 13, spec §6.2 expanded): the wire view's
+  // the wire view's
   // new `history` field — optional at validation time (an older cached
   // payload without it must not drop the session), sanitized down to an
   // empty array rather than left `undefined`.
@@ -131,7 +135,7 @@ describe("useAgentState", () => {
     expect(result.current.sessions[0].history).toEqual([]);
   });
 
-  // Plan 147 wave 2: `subagent` follows the exact absent/null-tolerant
+  // `subagent` follows the exact absent/null-tolerant
   // idiom `project`/`host` already established above.
   it("accepts a session with a full subagent object", async () => {
     const { result } = await renderReady();
@@ -187,13 +191,15 @@ describe("useAgentState", () => {
     emit({
       revision: 1,
       capturedAtMs: 1_000,
+      // SAFETY: the subagent object deliberately omits its required id — `as
+      // never` lets it compile; the hook rejects the session.
       sessions: [session({ subagent: { label: "Reviewer", state: "working" } as never })],
       adapterHealth: [],
     });
     expect(result.current.sessions).toEqual([]);
   });
 
-  // Plan 177: `tabSessions` — the ungated list the pulled agent tab
+  // `tabSessions` — the ungated list the pulled agent tab
   // renders, alongside the gated `sessions` the Board renders.
   it("parses a payload carrying tabSessions alongside a gated-empty sessions list", async () => {
     const { result } = await renderReady();
@@ -221,6 +227,8 @@ describe("useAgentState", () => {
       revision: 1,
       capturedAtMs: 1_000,
       sessions: [],
+      // SAFETY: `cursor` is outside the runtime union — `as never` lets this bogus
+      // value compile; the hook drops that tabSessions sibling.
       tabSessions: [session({ id: "bad", runtime: "cursor" as never }), session({ id: "good" })],
       adapterHealth: [],
     });
@@ -255,6 +263,8 @@ describe("useAgentState", () => {
       sessions: [
         session({
           id: "bad",
+          // SAFETY: `made_up` is outside the history-state union — `as never` lets it
+          // compile; the hook drops the history entry.
           history: [{ state: "made_up" as never, elapsedMs: 1 }],
         }),
       ],

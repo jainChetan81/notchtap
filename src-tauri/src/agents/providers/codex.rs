@@ -492,7 +492,7 @@ mod tests {
     }
 
     // --- declared gap: Codex never emits InputRequired --------------------
-    //
+        //
     // Structural proof, not just "we didn't write a branch for it": every
     // supported native event's mapped `kind`/`state` is asserted to never
     // be `input_required`/`waiting_for_input`, AND the one event name a

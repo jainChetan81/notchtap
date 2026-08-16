@@ -73,7 +73,7 @@ describe("iconPresenceFor (plan 171, spec §6's presence/liveness table)", () =>
     });
   });
 
-  // plan 180: the early return at the top of `iconPresenceFor` — the one
+  // the early return at the top of `iconPresenceFor` — the one
   // branch the fixtures above never reach. It is not a defensive
   // afterthought: the settings-window Appearance preview and most
   // component tests render `StatusRailCard` with no status wire at all,

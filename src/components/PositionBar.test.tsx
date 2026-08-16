@@ -63,6 +63,8 @@ describe("PositionBar (plan 171, spec section 8)", () => {
 
   it("hands the segment count to the grid via the --queue-n custom property", () => {
     const { container } = render(<PositionBar total={4} current={0} />);
+    // SAFETY: PositionBar always renders its `.ttl-bar` container for this
+    // total/current fixture, so the match to read --queue-n is non-null.
     const bar = container.querySelector(".ttl-bar") as HTMLElement;
     expect(bar.style.getPropertyValue("--queue-n")).toBe("4");
   });

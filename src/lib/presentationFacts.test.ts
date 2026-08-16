@@ -50,7 +50,7 @@ describe("presentationFacts", () => {
     expect(presentationFacts().cutoutWidth).toBeNull();
   });
 
-  // plan 091: cutoutHeight validates identically to cutoutWidth — same
+  // cutoutHeight validates identically to cutoutWidth — same
   // reject list, same rule (finite, positive number only).
   it("rejects zero, negative, non-number, and missing cutout heights", () => {
     window.__NOTCHTAP_MODE__ = "notch";

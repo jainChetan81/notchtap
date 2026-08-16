@@ -14,11 +14,15 @@ import {
 import { AnimatePresence, MotionConfig, motion } from "motion/react";
 import { type FormEvent, useEffect, useState } from "react";
 import { Button } from "@/components/ui/button";
+import { isString } from "@/lib/guards";
 import { cn } from "@/lib/utils";
 import brandMark from "../../assets/branding/notchtap-mark-128.png";
 import { NOTCHTAP_EASE } from "../animationTiming";
 import { ActionStatus, useActionStatus } from "./actionStatus";
 import { settingsInvoke } from "./ipc";
+
+type ActionError = string | string[] | Error;
+
 import { AboutSection } from "./sections/AboutSection";
 import { AgentsSection } from "./sections/AgentsSection";
 import { AppearanceSection } from "./sections/AppearanceSection";
@@ -162,11 +166,11 @@ function feedKey(url: string): string {
   }
 }
 
-function errorList(error: unknown): string[] {
+function errorList(error: ActionError): string[] {
   if (Array.isArray(error)) {
     return error.map(String);
   }
-  return [typeof error === "string" ? error : "settings could not be saved"];
+  return [isString(error) ? error : "settings could not be saved"];
 }
 
 function ErrorPanel({ errors }: { errors: string[] }) {
@@ -239,7 +243,7 @@ export function SettingsApp() {
           applyForm(loaded);
         }
       })
-      .catch((reason: unknown) => {
+      .catch((reason: ActionError) => {
         if (active) setErrors(errorList(reason));
       });
     // Defaults are advisory (Reset-to-defaults only) — isolate their failure
@@ -301,8 +305,9 @@ export function SettingsApp() {
     setErrors([]);
     try {
       await settingsInvoke("save_config_and_relaunch", { config: submittedConfig });
-    } catch (reason) {
-      setErrors(errorList(reason));
+    } catch (reason: unknown) {
+      // SAFETY: catch variable is unknown — errorList narrows it via ActionError checks.
+      setErrors(errorList(reason as ActionError));
       setSaving(false);
     }
   }

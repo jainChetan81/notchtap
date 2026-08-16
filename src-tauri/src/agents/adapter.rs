@@ -1,4 +1,4 @@
-//! Plan 134 (v7 ticket 2 of 13, `docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`
+//! (v7 ticket 2 of 13, `docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`
 //! §3): provider-neutral wire parsing of the schema-v1 `POST
 //! /agent/events` body into [`registry::AgentEvent`], and the ONE place
 //! spec §3.2's hard caps table lives.
@@ -28,7 +28,7 @@
 //! | retained transitions per session | 50 | [`registry::MAX_TRANSITIONS_PER_SESSION`] (re-exported below) |
 //! | remembered event IDs (LRU) | 2,048 | [`registry::MAX_REMEMBERED_EVENT_IDS`] (re-exported below) |
 //!
-//! The last two rows are *defined* in `registry.rs` (plan 133 landed
+//! The last two rows are *defined* in `registry.rs` ( landed
 //! them there, since they bound the registry's own bookkeeping —
 //! `AgentSession::push_history`'s eviction and
 //! `AgentRegistry::remember_event_id`'s LRU — and moving them would be a
@@ -169,7 +169,7 @@ struct WireSubagent {
 /// [`AgentEvent`] is what `AgentRegistry::apply_event` consumes;
 /// `native_event` is kept alongside it ONLY for the §10
 /// `agent.native_event` structured log field (`http.rs`'s handler) —
-/// the registry itself has no field for it (plan 133's `AgentEvent`
+/// the registry itself has no field for it ('s `AgentEvent`
 /// doesn't carry it, and doesn't need to: it's a diagnostics label, not
 /// registry state).
 #[derive(Debug, Clone)]
@@ -318,7 +318,7 @@ fn parse_state(s: &str) -> Result<AgentSessionState, AdapterError> {
 /// Inverse of [`parse_runtime`] — the exact wire token an adapter itself
 /// would send for `runtime` (spec §3.1), NOT a display label (that's
 /// `agents::notification`'s own `runtime_display_name`, a Settings/card
-/// concern this parsing module has no business owning). Plan 135's
+/// concern this parsing module has no business owning). 's
 /// `AgentSignal.runtime` (`event.rs`) is this function's one caller
 /// outside this module's own round-trip test.
 pub fn runtime_wire_label(runtime: AgentRuntime) -> &'static str {
@@ -976,7 +976,7 @@ mod tests {
         assert_eq!(parsed.event.sequence, Some(42));
     }
 
-    // --- plan 135: `runtime_wire_label`/`kind_wire_label` round-trip
+    // --- `runtime_wire_label`/`kind_wire_label` round-trip
     // exactly against `parse_runtime`/`parse_kind` — used by
     // `agents::notification`'s `AgentSignal` to emit the same wire token
     // an adapter itself would send, never a display label. ---
@@ -1008,7 +1008,7 @@ mod tests {
         }
     }
 
-    // --- plan 136: `state_wire_label`/`capability_wire_label` round-trip
+    // --- `state_wire_label`/`capability_wire_label` round-trip
     // exactly against `parse_state`/`parse_capability` — used by
     // `agents::board`'s `agent-state` IPC snapshot, same "wire token, not
     // a display label" discipline the two round-trip tests above already

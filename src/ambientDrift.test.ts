@@ -1,16 +1,16 @@
-// plan 151 (item D): the two ambient background loops — the news card's
+// the two ambient background loops — the news card's
 // category shade and the snow texture — are pure CSS with no JS side at
 // all, so the only thing worth guarding is the ONE invariant in each that
 // a later edit could silently undo, and that no reviewer would catch by
 // eye in jsdom (which has neither a layout nor an animation engine):
 //
-//   1. `shade-drift` must have intermediate stops. A two-stop keyframe
-//      with `alternate` retraces the identical straight rail — the
-//      pendulum this item existed to fix.
-//   2. the snow fall and the snow sway must animate DIFFERENT CSS
-//      properties (`translate` vs `transform`). Two animations on the
-//      same property do not compose — the later one just wins, and the
-//      sway would vanish with no error anywhere.
+// 1. `shade-drift` must have intermediate stops. A two-stop keyframe
+// with `alternate` retraces the identical straight rail — the
+// pendulum this item existed to fix.
+// 2. the snow fall and the snow sway must animate DIFFERENT CSS
+// properties (`translate` vs `transform`). Two animations on the
+// same property do not compose — the later one just wins, and the
+// sway would vanish with no error anywhere.
 //
 // Deliberately string-level against the real stylesheet source, the same
 // register as celebrationStacking.test.tsx's own pins.

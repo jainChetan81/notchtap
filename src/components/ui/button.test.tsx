@@ -7,7 +7,7 @@ import { Button } from "./button";
 // auto-cleanup (which hooks a global `afterEach`) never registers.
 afterEach(cleanup);
 
-// plan 126 (finding #10): the bare `transition-all` this component used to
+// the bare `transition-all` this component used to
 // carry animated every property change, including ones with no visual
 // transition author ever intended (a broad, imprecise wildcard). Swapping
 // it for an explicit property list must keep `translate`/`scale` in that
@@ -35,11 +35,11 @@ describe("Button — transition-property (plan 126)", () => {
   });
 });
 
-// plan 129 (T8, deep-review fix): Badge (unlike Button above) never
+// Badge (unlike Button above) never
 // carried a broad `transition-all` wildcard to begin with — this is a
 // one-line regression guard, next to the Button pin above since they're
 // the same class of finding, not a claim that Badge was ever touched by
-// plan 126 itself.
+// itself.
 it("Badge keeps the narrow transition-colors utility, never the transition-all wildcard", () => {
   render(<Badge>New</Badge>);
   const badge = screen.getByText("New");

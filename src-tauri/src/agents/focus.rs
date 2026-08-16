@@ -1,15 +1,15 @@
 //! The `⌃⇧A` Open/Focus Session shortcut. Security invariants:
 //!
 //! - supported Host bundle IDs and activation strategies are owned by
-//!   notchtap code, keyed by the [`Host`] enum — never read off the
-//!   wire;
+//! notchtap code, keyed by the [`Host`] enum — never read off the
+//! wire;
 //! - unknown Host metadata is advisory text only, never actionable;
 //! - a provider-native deep link is allowed only from the code-owned
-//!   [`DEEP_LINK_ALLOWLIST`] and only when it matches the session's
-//!   provider;
+//! [`DEEP_LINK_ALLOWLIST`] and only when it matches the session's
+//! provider;
 //! - no `sh -c`, arbitrary executable path, or adapter-provided
-//!   argument ever reaches an exec boundary — [`activate`] takes the
-//!   [`Host`] enum, not a string, so the signature enforces this;
+//! argument ever reaches an exec boundary — [`activate`] takes the
+//! [`Host`] enum, not a string, so the signature enforces this;
 //! - failure is logged as a quiet status, never a shell fallback.
 //!
 //! Pure decision ([`decide_focus`]) is separated from the activation
@@ -25,8 +25,8 @@ use super::model::{AgentHost, AgentRuntime, AgentState};
 /// it is deliberately NOT a variant yet:
 ///
 /// ```ignore
-/// // T3Code, // TODO(plan 144 follow-up): add once a real bundle id is
-///            // verified — do not guess one in.
+/// // T3Code, // TODO: add once a real bundle id is
+/// // verified — do not guess one in.
 /// ```
 ///
 /// Adding a variant means adding a REAL bundle id plus updating

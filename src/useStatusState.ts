@@ -1,5 +1,9 @@
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useEffect, useState } from "react";
+import { isNonNegativeInteger } from "./lib/guards";
+
+type UnparsedValue = string | number | boolean | null | UnparsedObject | UnparsedValue[];
+type UnparsedObject = { [key: string]: UnparsedValue };
 
 // Idle source-status rail — same delivery discipline as useSlotState.ts
 // (validator + eval-planted global seed + listener + dead-listener
@@ -43,17 +47,12 @@ const FALLBACK_STATUS: StatusState = {
   news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
 };
 
-// The rail renders "N queued" straight off this — reject anything but a
-// non-negative integer.
-function isNonNegativeInteger(v: unknown): v is number {
-  return typeof v === "number" && Number.isInteger(v) && v >= 0;
-}
-
 function isValidLiveMatch(v: unknown): v is LiveMatchSummary {
   if (typeof v !== "object" || v === null) {
     return false;
   }
-  const obj = v as Record<string, unknown>;
+  // SAFETY: validated as record via preceding checks.
+  const obj = v as UnparsedObject;
   return typeof obj.label === "string" && typeof obj.minute === "string";
 }
 
@@ -63,7 +62,8 @@ function isValidStatusState(v: unknown): v is StatusState {
   if (typeof v !== "object" || v === null) {
     return false;
   }
-  const obj = v as Record<string, unknown>;
+  // SAFETY: validated as record via preceding checks.
+  const obj = v as UnparsedObject;
   if (typeof obj.agent !== "object" || obj.agent === null) {
     return false;
   }
@@ -73,9 +73,12 @@ function isValidStatusState(v: unknown): v is StatusState {
   if (typeof obj.news !== "object" || obj.news === null) {
     return false;
   }
-  const agent = obj.agent as Record<string, unknown>;
-  const football = obj.football as Record<string, unknown>;
-  const news = obj.news as Record<string, unknown>;
+  // SAFETY: validated as record via preceding checks.
+  const agent = obj.agent as UnparsedObject;
+  // SAFETY: validated as record via preceding checks.
+  const football = obj.football as UnparsedObject;
+  // SAFETY: validated as record via preceding checks.
+  const news = obj.news as UnparsedObject;
   return (
     typeof obj.paused === "boolean" &&
     isNonNegativeInteger(obj.waiting) &&

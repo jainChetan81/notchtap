@@ -41,11 +41,11 @@ const PREFIX_GLYPHS = "⌃⇧";
 // `White_Space`, 25 code points. JavaScript's `\s` is a DIFFERENT set,
 // and the two disagree in both directions:
 //
-//   - U+0085 (NEL) is `White_Space` but is NOT matched by `\s` — rust
-//     rejected `⌃⇧K<NEL>`, the UI accepted it, so the field said "valid"
-//     and the save then failed at the boundary.
-//   - U+FEFF (ZWNBSP/BOM) IS matched by `\s` but is not `White_Space` —
-//     the mirror image: the UI refused a value rust would have taken.
+// - U+0085 (NEL) is `White_Space` but is NOT matched by `\s` — rust
+// rejected `⌃⇧K<NEL>`, the UI accepted it, so the field said "valid"
+// and the save then failed at the boundary.
+// - U+FEFF (ZWNBSP/BOM) IS matched by `\s` but is not `White_Space` —
+// the mirror image: the UI refused a value rust would have taken.
 //
 // The 25 code points, as ranges: U+0009-U+000D (`\t\n\v\f\r`), U+0020,
 // U+0085, U+00A0, U+1680, U+2000-U+200A, U+2028, U+2029, U+202F, U+205F,

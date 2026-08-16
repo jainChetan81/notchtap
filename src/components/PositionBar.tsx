@@ -1,4 +1,4 @@
-// Plan 171 (tab-notch redesign, slice F/§8): the "pulled-view position
+// the "pulled-view position
 // indicator" spec section 8 defines — a floor strip with no drain,
 // shared verbatim between the agent tab's session bar (slice F) and the
 // news tab's batch position strip (slice I, spec's own explicit default:
@@ -30,11 +30,13 @@ const MAX_SEGMENTS = 10;
 // Exported separately from the component so the proportional-mapping
 // math is directly unit-testable without a DOM render, same reasoning
 // TtlBar.tsx's own segment math earns dedicated tests for.
+export type SegmentForResult = { segmentCount: number; segmentIndex: number };
+
 export function segmentFor(
   current: number,
   total: number,
   maxSegments: number = MAX_SEGMENTS,
-): { segmentCount: number; segmentIndex: number } {
+): SegmentForResult {
   const segmentCount = Math.min(Math.max(total, 1), maxSegments);
   const rawIndex = total > maxSegments ? Math.floor((current * maxSegments) / total) : current;
   const segmentIndex = Math.min(Math.max(rawIndex, 0), segmentCount - 1);
@@ -58,6 +60,7 @@ export function PositionBar({ total, current }: { total: number; current: number
   const { segmentCount, segmentIndex } = segmentFor(current, total);
 
   return (
+    // SAFETY: CSS custom property valid for this component; React.CSSProperties lacks index signature.
     <div className="ttl-bar" style={{ "--queue-n": segmentCount } as React.CSSProperties}>
       {Array.from({ length: segmentCount }, (_, i) => (
         // biome-ignore lint/suspicious/noArrayIndexKey: anonymous positional segment slots (0..n), same reasoning TtlBar.tsx's own segment row documents — index is the only identity there is, and the sequence is always rendered fresh.

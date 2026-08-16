@@ -1,6 +1,6 @@
 import { Fragment, type ReactNode } from "react";
 
-// Inline-only markdown for card bodies (plan 032, decision 4): `code`,
+// Inline-only markdown for card bodies: `code`,
 // **bold**, *italic*, and line breaks. This is a tokenizer, never
 // regex-into-HTML — the raw input is only ever emitted as React text
 // children (escaped by construction), so there is no

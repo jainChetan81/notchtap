@@ -9,6 +9,9 @@ import type {
   TestSource,
 } from "./types";
 
+type UnparsedValue = string | number | boolean | null | UnparsedObject | UnparsedValue[];
+type UnparsedObject = { [key: string]: UnparsedValue };
+
 // Typed mirror of the rust command allowlist (src-tauri/build.rs +
 // capabilities/settings.json): the settings window is the only invoker; the
 // overlay is receive-only. This map grants nothing — it only types the allowlist.
@@ -36,6 +39,7 @@ export function settingsInvoke<C extends keyof SettingsCommands>(
 ): Promise<SettingsCommands[C]["result"]> {
   return invoke<SettingsCommands[C]["result"]>(
     command,
-    args[0] as Record<string, unknown> | undefined,
+    // SAFETY: args[0] is a statically-typed SettingsCommands arg — already proven to hold its allowlist shape; the cast restores the dictionary view invoke expects.
+    args[0] as UnparsedObject | undefined,
   );
 }

@@ -91,7 +91,11 @@ describe("NewsBelowBlock (plan 171, slice I)", () => {
         onNext={onNext}
       />,
     );
+    // SAFETY: NewsBelowBlock always renders the previous-story nav button
+    // (fixture supplies stories + handlers), so the match is non-null.
     fireEvent.click(container.querySelector('[aria-label="previous story"]') as HTMLButtonElement);
+    // SAFETY: NewsBelowBlock always renders the next-story nav button
+    // (fixture supplies stories + handlers), so the match is non-null.
     fireEvent.click(container.querySelector('[aria-label="next story"]') as HTMLButtonElement);
     expect(onPrevious).toHaveBeenCalledTimes(1);
     expect(onNext).toHaveBeenCalledTimes(1);

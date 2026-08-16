@@ -32,13 +32,13 @@ function presentAndLive(live: boolean): IconVisualState {
 /// "nothing is happening", which is exactly `useStatusState`'s own
 /// all-gates-off FALLBACK_STATUS — so the two always agree without this
 /// file keeping a second copy of that literal.
-export function iconPresenceFor(status: StatusState | undefined): IconPresence {
+export function iconPresenceFor(status: StatusState | undefined) {
   if (status === undefined) {
     return {
       agent: "hidden",
       football: "hidden",
       news: "present",
-    };
+    } satisfies IconPresence;
   }
   return {
     // present iff at least one Agent Session is registered; for agent,
@@ -55,5 +55,5 @@ export function iconPresenceFor(status: StatusState | undefined): IconPresence {
     // fill and badge are a SEPARATE axis IconStrip takes as their own
     // props (`newsCharge`/`newsCount`), not part of this tier.
     news: status.news.isCharged ? "live" : "present",
-  };
+  } satisfies IconPresence;
 }

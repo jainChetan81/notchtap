@@ -69,7 +69,7 @@ describe("StatusDots", () => {
     expect(news.classList.contains("dim")).toBe(true);
   });
 
-  // plan 034's live-match text is old rail furniture — the
+  // 's live-match text is old rail furniture — the
   // dots carry no text content at all, only color/glow state.
   it("carries no text content (dots only, no labels)", () => {
     const { container } = render(<StatusDots status={ALL_ON} />);
@@ -87,7 +87,7 @@ describe("StatusDots", () => {
     }
   });
 
-  // plan 092 (item 11): the paused indicator — every dot forces `dim`
+  // the paused indicator — every dot forces `dim`
   // (never `active`) while paused, even for sources that are otherwise
   // enabled, plus a static two-bar glyph renders beside the dot row.
   describe("paused (plan 092)", () => {
@@ -129,7 +129,7 @@ describe("StatusDots", () => {
     });
   });
 
-  // plan 110 (Step D): each dot is `role="img"` + a truthful `aria-label`,
+  // each dot is `role="img"` + a truthful `aria-label`,
   // and carries a non-color shape class independent of active/dim.
   describe("accessible names + non-color shapes (plan 110)", () => {
     it("names every dot 'enabled' and shapes it filled when every source is enabled", () => {
@@ -209,7 +209,7 @@ describe("StatusDots", () => {
     });
   });
 
-  // plan 129 (T6, deep-review fix): jsdom can't compute cascade from
+  // jsdom can't compute cascade from
   // stylesheets (no layout/paint engine), so these are pinned at the
   // STRING level against the real shared stylesheet — same technique as
   // celebrationStacking.test.tsx's own `ruleBody` helper (this is a

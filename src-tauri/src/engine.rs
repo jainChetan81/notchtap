@@ -5,7 +5,7 @@
 //! that protocol structural rather than conventional: the queue, the
 //! wake, and the live-match handle are all private, so a mutation that
 //! skips the protocol does not compile, because nothing outside this
-//! module can reach the queue (plan 037).
+//! module can reach the queue.
 
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::{Duration, Instant};
@@ -23,7 +23,7 @@ use crate::status::{
 /// A single ambient status side-channel: an `Arc<Mutex<Option<T>>>` plus
 /// the compare-then-store-then-wake-only-on-change update shape and the
 /// read/clone/drop snapshot shape, both previously hand-duplicated once
-/// per channel (plan 073 generalization — see `update_live_match`'s doc
+/// per channel ( generalization — see `update_live_match`'s doc
 /// comment for the history this replaces). Parameterized by the summary
 /// type so `live` (and any future ambient channel) share one
 /// implementation instead of copying the ~10-line lock/compare/store/wake
@@ -84,8 +84,8 @@ impl<T: Clone + PartialEq> AmbientSlot<T> {
     }
 }
 
-/// Owns the queue, the heartbeat wake, the app handle, and (plan 034's
-/// territory, folded into plan 037) the live-match handle and
+/// Owns the queue, the heartbeat wake, the app handle, and ('s
+/// territory, folded into ) the live-match handle and
 /// source-enabled flags the rotation loop needs to also be the sole
 /// StatusState emitter — all private. Nothing outside this module can
 /// lock the queue or touch the wake, so the mutate→wake→emit protocol is
@@ -97,14 +97,14 @@ pub struct Engine<R: tauri::Runtime = tauri::Wry> {
     live: AmbientSlot<LiveMatchSummary>,
     espn_enabled: bool,
     rss_enabled: bool,
-    /// plan 088: `None` when history is disabled (the default) — the
+    /// `None` when history is disabled (the default) — the
     /// `accept` hook is then a no-op and behavior is byte-identical to
     /// pre-088. `Some` when the operator opted in and the store opened
     /// successfully. Injected rather than constructed here so the hook is
     /// testable against a temp dir instead of the operator's real config
     /// directory.
     history: Option<Arc<HistoryStore>>,
-    /// Plan 171: the shared tab-notch wire bundle — see `tabs::TabWire`.
+    /// the shared tab-notch wire bundle — see `tabs::TabWire`.
     tab_wire: Arc<crate::tabs::TabWire>,
 }
 
@@ -130,7 +130,7 @@ impl<R: tauri::Runtime> Engine<R> {
     /// live-match handle internally — by construction, no code outside
     /// this module can ever hold the queue Arc, the wake, or the
     /// live-match handle: there is nothing to alias.
-    // plan 088 pushed this to 8 positional params (over clippy's default
+    // pushed this to 8 positional params (over clippy's default
     // 7-arg threshold) by adding `history` as the last one. A named-field
     // params struct (the fix `StatusInputs` used for a similar overflow,
     // plans 047/048) is a bigger surface change than this plan's scope —
@@ -291,7 +291,7 @@ impl<R: tauri::Runtime> Engine<R> {
                 emit_slot_state(&self.app, state);
             }
         }
-        // plan 088: best-effort history append. ONE-SHOT ONLY —
+        // best-effort history append. ONE-SHOT ONLY —
         // `Recurring` is the ambient live-scoreboard card, which
         // topic-supersedes on every poll cycle; recording it would bury
         // the discrete notifications this feature exists to recover under
@@ -310,9 +310,9 @@ impl<R: tauri::Runtime> Engine<R> {
     }
 
     /// Replaces the espn poller's direct `live.lock().unwrap()` +
-    /// `wake.notify_waiters()` dance (poller.rs, plan 034): compares to
+    /// `wake.notify_waiters()` dance (poller.rs, compares to
     /// the new summary, stores it, and wakes the rotation loop ONLY if it
-    /// changed — via the shared `AmbientSlot::update` (plan 073). Not
+    /// changed — via the shared `AmbientSlot::update`. Not
     /// `apply`/`accept`: it never touches the queue.
     pub fn update_live_match(&self, summary: Option<LiveMatchSummary>) {
         self.live.update(summary, &self.wake);
@@ -325,12 +325,12 @@ impl<R: tauri::Runtime> Engine<R> {
     /// sleep/await; NO notify from this path — running it through
     /// `apply` would wake the loop itself every iteration and spin).
     ///
-    /// Deadline-based (plan 015): sleeps until the visible item's
+    /// Deadline-based: sleeps until the visible item's
     /// rotation deadline (or forever when idle) and is woken by any
     /// queue mutation. A small grace addition avoids sub-ms re-loops at
-    /// the edge. plan 036: the wake waiter is armed *while holding the
+    /// the edge. the wake waiter is armed *while holding the
     /// queue lock* (`Notified::enable`), so a wake landing between
-    /// unlock and park can never be lost. plan 034: the loop is also the
+    /// unlock and park can never be lost. the loop is also the
     /// SOLE status-state emitter — every mutation already reaches it, so
     /// each pass recomputes the StatusState under the same queue lock as
     /// the slot-state tick and emits only when it differs from the
@@ -354,7 +354,7 @@ impl<R: tauri::Runtime> Engine<R> {
                 let notified = wake.notified();
                 tokio::pin!(notified);
                 let deadline = {
-                    // plan 034 lock discipline: read/clone/drop the
+                    // read/clone/drop the
                     // live-match handle BEFORE locking the queue — nobody
                     // holds both at the same time.
                     let live_summary = live.snapshot();
@@ -386,7 +386,7 @@ impl<R: tauri::Runtime> Engine<R> {
                             news_charge,
                         },
                     );
-                    // Plan 171: presence + liveness-clearing ride the same
+                    // presence + liveness-clearing ride the same
                     // pass that computes the StatusState the strip renders
                     // from — one derivation, both sides (spec §2 dec. 4/5).
                     let present = crate::tabs::present_tabs(&status);
@@ -438,7 +438,7 @@ impl<R: tauri::Runtime> Engine<R> {
     /// the boot-shield gap where a webview that mounts between an
     /// unconditional emit and the global assignment reads `undefined`
     /// (see `emit_current_blocking`'s doc for the emit half). Still routes
-    /// through `current_slot_state_for_emission` (plan 107 Step C), not
+    /// through `current_slot_state_for_emission`, not
     /// the plain `current_slot_state`, so this counts as a real emission
     /// for the TTL-restart sampler even though the actual `app.emit` call
     /// now happens separately, at the caller's chosen moment. No wake:
@@ -473,12 +473,12 @@ impl<R: tauri::Runtime> Engine<R> {
 
     /// Non-emitting read of the current `StatusState` — same inputs as
     /// `emit_current_status_blocking`, no wire event. Originally added
-    /// for plan 087's hover tracking-area handler (`lib.rs`), which
+    /// for 's hover tracking-area handler (`lib.rs`), which
     /// needed this on every mouse-move to derive
     /// `hover::status_rail_active`, the idle-card WIDTH formula's
-    /// `has_status_chips` input — that need went away when plan 091
+    /// `has_status_chips` input — that need went away when 
     /// collapsed the idle/idle-status width split (there is no wider
-    /// idle variant to pick anymore), and plan 093's y-span rect no
+    /// idle variant to pick anymore), and 's y-span rect no
     /// longer needs `StatusState` either (its `idle_peek_open` input is
     /// hover hysteresis, not ambient-data availability — see
     /// `hover::active_card_rect`'s doc). This non-emitting shape (no
@@ -568,7 +568,7 @@ mod tests {
     #[tokio::test]
     async fn apply_wakes_and_emits() {
         // Generalized port of http.rs's old wake regression test
-        // (plan 015 review follow-up): registering the waiter *before* the
+        //: registering the waiter *before* the
         // call via `enable()` proves the wake fires — `notify_waiters()`
         // only wakes tasks already parked, it never queues a permit for a
         // future `.notified()` call.
@@ -643,7 +643,7 @@ mod tests {
 
     #[tokio::test]
     async fn rotation_loop_parked_idle_wakes_on_accept() {
-        // plan 036 regression, ported from lib.rs's
+        // regression, ported from lib.rs's
         // heartbeat_parked_idle_wakes_on_enqueue_and_rotates_out: with the
         // queue empty the rotation loop parks with no fallback timer, so an
         // accept's `notify_waiters()` is its ONLY chance to learn about the
@@ -683,7 +683,7 @@ mod tests {
 
     #[tokio::test]
     async fn rotation_loop_rotates_out_via_deadline_sleep_not_polling() {
-        // plan 015, ported from lib.rs's
+        // , ported from lib.rs's
         // heartbeat_rotates_out_via_deadline_sleep_not_polling: the rotation
         // loop sleeps until the visible item's rotation deadline (or forever
         // when idle) instead of polling a fixed 250ms interval — this proves
@@ -720,7 +720,7 @@ mod tests {
         );
     }
 
-    // plan 081 REQUIRED regression test — the tripwire for attempt 1's
+    // REQUIRED regression test — the tripwire for attempt 1's
     // finding. The rotation loop above (the `loop` in `spawn_rotation`) is
     // woken by `notify_waiters()` after EVERY mutation, then independently
     // re-locks the queue and calls `q.tick` + `q.slot_state_if_changed()` a
@@ -734,11 +734,11 @@ mod tests {
     // event.rs) existed. With the dedup split in place, this must be
     // exactly 1: the rotation loop's recheck sees an unchanged `ttl_ms` and
     // no other differing field, so it dedupes and does not re-emit.
-    //
+        //
     // If a future change makes this assert !=1 again, it means either the
     // dedup split broke, or a new non-deduping emitter was introduced
     // elsewhere — do not "fix" this test by loosening the assertion.
-    //
+        //
     // Ordering note: `accept()` runs BEFORE `spawn_rotation()` here,
     // deliberately — `tauri::async_runtime::spawn` schedules onto Tauri's
     // own (real, separate) async runtime, not this test's `#[tokio::test]`
@@ -867,7 +867,7 @@ mod tests {
 
     #[test]
     fn emit_current_status_returns_and_emits() {
-        // StatusState twin of emit_current_returns_and_emits (plan 034's
+        // StatusState twin of emit_current_returns_and_emits ('s
         // second on_page_load re-emit block): same bypass, over the
         // Engine's own live/flags.
         let app = tauri::test::mock_app();
@@ -938,7 +938,7 @@ mod tests {
             .expect("a changed summary must wake again");
     }
 
-    // plan 088: history hook tests. `with_limits` in a fresh temp dir per
+    // history hook tests. `with_limits` in a fresh temp dir per
     // test — never the real config dir (see history.rs's own temp_dir()
     // helper for why a shared dir is unsafe here too).
     fn history_temp_dir() -> std::path::PathBuf {
@@ -1080,7 +1080,7 @@ mod tests {
         assert!(engine.history_store().is_none());
     }
 
-    // plan 121: settings-window Queue section — `clear_waiting`, called
+    // settings-window Queue section — `clear_waiting`, called
     // through `apply` (no bespoke Engine method needed; see `apply`'s own
     // doc comment above), must reach the overlay as a fresh slot-state
     // emit so the visible card's progress dots update. This is

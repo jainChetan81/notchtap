@@ -140,7 +140,7 @@ describe("useStatusState", () => {
     expect(renderHook(() => useStatusState()).result.current).toEqual(FALLBACK);
   });
 
-  // --- plan 180: the wire fields plan 171 added to the validator ---
+  // --- the wire fields added to the validator ---
   //
   // The four clauses below (`agent.activeSessions`, `news.chargeFraction`
   // with its `[0, 1]` range, `news.chargeCount`, `news.isCharged`) shipped

@@ -1,4 +1,4 @@
-//! Plan 143 (v7 ticket 11 of 13, `docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`
+//! (v7 ticket 11 of 13, `docs/V7_AGENT_INTEGRATIONS_TECHNICAL_SPEC.md`
 //! §4.6/§8/§10): per-runtime Adapter Health.
 //!
 //! Two halves, same split this crate already uses elsewhere
@@ -6,16 +6,16 @@
 //! separate from that subprocess call"):
 //!
 //! - pure derivation ([`declared_capabilities`], [`availability_for`],
-//!   [`compatibility_message`], [`build_adapter_health`]) — unit-tested
-//!   directly, no clock/subprocess/lock involved;
+//! [`compatibility_message`], [`build_adapter_health`]) — unit-tested
+//! directly, no clock/subprocess/lock involved;
 //! - [`HealthTracker`], the impure, shared bookkeeping [`http.rs`]'s
-//!   `/agent/events` handler updates on every accepted/rejected event
-//!   (last-accepted-event time, last bounded error category) and that
-//!   caches the one genuinely impure input this module needs — Kimi's
-//!   `kimi --version` hook-support probe (`providers::kimi_version`) —
-//!   so a live health read (the `agent-state` publish path, and the
-//!   Settings `get_agent_health` command) never shells out more than
-//!   once per [`KIMI_PROBE_CACHE_TTL`].
+//! `/agent/events` handler updates on every accepted/rejected event
+//! (last-accepted-event time, last bounded error category) and that
+//! caches the one genuinely impure input this module needs — Kimi's
+//! `kimi --version` hook-support probe (`providers::kimi_version`) —
+//! so a live health read (the `agent-state` publish path, and the
+//! Settings `get_agent_health` command) never shells out more than
+//! once per [`KIMI_PROBE_CACHE_TTL`].
 //!
 //! Spec §10's five Adapter Health fields land as [`AdapterHealth`]'s five
 //! non-runtime fields: availability, declared capabilities, last

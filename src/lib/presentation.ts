@@ -297,10 +297,7 @@ const AGENT_STATE_PRESENTATION = {
   working: { label: "Working", className: "agent-working", pulse: true },
   starting: { label: "Starting", className: "agent-working", pulse: true },
   completed: { label: "Completed", className: "agent-completed", pulse: false },
-} satisfies Record<
-  AgentSessionState,
-  { label: string; className: string; pulse: boolean }
->;
+} satisfies Record<AgentSessionState, { label: string; className: string; pulse: boolean }>;
 
 // Mirrors rust's `agents::notification::runtime_display_name` exactly —
 // the Agent Board's own display-label table (never the wire token

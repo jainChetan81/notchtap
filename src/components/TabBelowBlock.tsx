@@ -70,7 +70,7 @@ export function TabBelowBlock({
   nowMs?: number;
   /// `prefix-[`/`prefix-]` cycles this (spec section 9), and
   /// `AgentBelowBlock.cycleSessionIndex` is the pure wraparound that
-  /// moves it. Live end to end as of plan 184: rust owns the cursor and
+  /// moves it. Live end to end as of rust owns the cursor and
   /// emits `agent-viewed-session-changed` (written by both the prefix
   /// follow-ups and the auto-advance timer), `useAgentViewedSession`
   /// listens for it in App.tsx, and `StatusRailCard` threads the value

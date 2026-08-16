@@ -197,11 +197,7 @@ function heroFactTags(state: AgentSessionState, details: Detail[]): Fact[] {
 // own resting-hero primary AND the tab-notch below-block's "viewed
 // session" hero (a DIFFERENT session) both call this, so the identical
 // props can't drift into a second copy of the logic.
-export function agentHeroPropsFor(
-  session: AgentSessionView,
-  capturedAtMs: number,
-  nowMs: number,
-): {
+export type AgentHeroProps = {
   dotKey: string;
   pulse: boolean;
   title: string;
@@ -210,7 +206,13 @@ export function agentHeroPropsFor(
   priority: Priority;
   facts: Fact[];
   factsTone: FactTone;
-} {
+};
+
+export function agentHeroPropsFor(
+  session: AgentSessionView,
+  capturedAtMs: number,
+  nowMs: number,
+): AgentHeroProps {
   const presentation = agentStatePresentationFor(session.state);
   const projectName = session.project?.name ?? null;
   const elapsed = elapsedLabel(liveElapsedMs(session, capturedAtMs, nowMs));

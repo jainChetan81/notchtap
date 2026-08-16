@@ -38,6 +38,7 @@ export function AppearanceSection({
     updateAppearance({ card_opacity: next });
   }
 
+  // SAFETY: the cast only lets literals with fixed CSS custom-property keys (--card-scale/radius/opacity, all consumed by the preview's own stylesheet) pass as React.CSSProperties, which lacks an index signature; no runtime shape of untrusted data is asserted.
   const previewStyle: CSSProperties = {
     "--card-scale": scale,
     "--card-radius": `${radius}px`,
