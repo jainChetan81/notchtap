@@ -3,9 +3,6 @@
   "version": "0.4.0",
   "private": true,
   "type": "module",
-  "scripts": {
-    "verify:tokens": "node scripts/verify-tokens.mjs"
-  },
   "exports": {
     "./design/tokens.css": "./design/tokens.css"
   }
