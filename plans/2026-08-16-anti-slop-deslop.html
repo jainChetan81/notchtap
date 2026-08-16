@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>The Big Cleanup — notchtap</title>
+<style>
+  :root {
+    --bg: #0f1115; --panel: #171a21; --ink: #e8eaf0; --muted: #9aa3b2;
+    --accent: #4fd1a5; --warn: #f0b429; --risk: #ef6a6a; --line: #262b36;
+    --chip: #222835;
+  }
+  @media (prefers-color-scheme: light) {
+    :root { --bg:#f7f8fa; --panel:#ffffff; --ink:#1c2330; --muted:#5b6577;
+      --accent:#0e8a63; --warn:#9a6b00; --risk:#c0392b; --line:#e3e7ee; --chip:#eef1f6; }
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink);
+    font: 16px/1.6 -apple-system, "SF Pro Text", Segoe UI, Roboto, sans-serif; }
+  main { max-width: 920px; margin: 0 auto; padding: 40px 24px 80px; }
+  h1 { font-size: 30px; line-height:1.2; margin: 0 0 4px; }
+  h2 { font-size: 21px; margin: 44px 0 12px; border-bottom: 1px solid var(--line); padding-bottom: 8px; }
+  h3 { font-size: 16.5px; margin: 26px 0 8px; }
+  .sub { color: var(--muted); margin-bottom: 28px; }
+  .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 18px 20px; margin: 16px 0; }
+  .tldr { border-left: 4px solid var(--accent); }
+  .decision { border-left: 4px solid var(--warn); }
+  .caution { border-left: 4px solid var(--risk); }
+  .ok { color: var(--accent); font-weight: 600; }
+  .warn { color: var(--warn); font-weight: 600; }
+  .risk { color: var(--risk); font-weight: 600; }
+  table { width:100%; border-collapse: collapse; margin: 12px 0; font-size: 14.5px; }
+  th, td { text-align:left; padding: 8px 10px; border-bottom: 1px solid var(--line); vertical-align: top; }
+  th { color: var(--muted); font-weight: 600; font-size: 13px; text-transform: uppercase; letter-spacing: .04em; }
+  code { background: var(--chip); border-radius: 5px; padding: 1px 6px; font: 13.5px/1.5 "SF Mono", ui-monospace, Menlo, monospace; }
+  ul, ol { padding-left: 22px; } li { margin: 5px 0; }
+  .num { font-variant-numeric: tabular-nums; white-space: nowrap; }
+  .small { font-size: 13.5px; color: var(--muted); }
+  details { margin: 10px 0; }
+  summary { cursor: pointer; color: var(--muted); font-size: 14px; }
+  details .panel { margin-top: 10px; }
+  .big { font-size: 22px; font-weight: 700; }
+</style>
+</head>
+<body>
+<main>
+
+<h1>The Big Cleanup</h1>
+<p class="sub">One plan, one run: strip notchtap to a lean, verified, readable base · branch <code>chore/anti-slop-cleanup</code> · <strong>draft 3 — complete</strong> · 2026-08-16 · six audits, all finished</p>
+
+<div class="panel tldr">
+  <strong>TL;DR — the whole picture</strong>
+  <ul>
+    <li>The repo is ~75,600 lines of code plus ~73,100 lines of docs and plan files. The app itself is healthy; the weight is history, narration, and side features.</li>
+    <li><span class="big">Roughly half of everything can go</span> with zero change to how the app behaves.</li>
+    <li>The four big cuts: <strong>historical comments</strong> (~12,600 of 19,700 comment lines — 64%), <strong>docs</strong> (~16,700 lines), <strong>feature verticals you pick</strong> (up to ~49,000 lines), and <strong>dead files/assets</strong> (~2.6 MB).</li>
+    <li>Plus: fix 368 "trust me" lint findings in whatever survives, fix 3 real defects found along the way, then run the never-run verification checklist so the base is provably working.</li>
+    <li>Everything is one ordered run on this branch, one commit per step, tests green after every step. Git keeps all history — nothing is truly lost.</li>
+  </ul>
+</div>
+
+<h2>1 · Your decisions</h2>
+<p>Answer these and the run starts. Shorthand is fine: e.g. "all recommendations, but keep football".</p>
+
+<div class="panel decision">
+  <strong>R1 — Reduced motion: remove?</strong> <span class="ok">Recommend yes.</span> An accessibility mode you never enable. ~270 lines, 18 files, low risk.
+</div>
+<div class="panel decision">
+  <strong>R2 — Notch (MacBook) mode: remove?</strong> <span class="risk">Recommend no — keep.</span> Untouched-for-months code; removal risks styling and click targets on the Mini; your docs still name a MacBook target. Middle path available: strip only the frontend's mode-awareness (~80 lines, near-zero risk). Say "R2 middle" for that.
+</div>
+<div class="panel decision">
+  <strong>R3 — Feature verticals: which go?</strong> The sizes: Agents ~21% of the repo · Football ~7% · News ~5% · Weather ~4% · Media ~2.5% · Icon strip ~4% (goes last, or stays if any source stays).
+  <ul>
+    <li><span class="ok">Recommend remove:</span> Weather (already off by default — its checker never runs) and Media (cleanest cut; also deletes a 4.2 MB vendored framework, a manual build step, and buttons that animate but do nothing).</li>
+    <li><span class="ok">Recommend keep:</span> Agents — it's the feature this app exists for, and you use it daily.</li>
+    <li><span class="warn">Pure taste, your call:</span> Football and News. Say keep or cut for each.</li>
+    <li>Also removed regardless (near-zero risk): the dead secrets store, the zero-member connector framework, the <code>notchtap run</code> CLI extra, and the Silence system stays (deferred — it's useful for a notification app).</li>
+  </ul>
+</div>
+<div class="panel decision">
+  <strong>B1 — Old plans and review logs: how far?</strong> You said keep the old plans, so: the <code>plans/</code> folder stays parked and untouched (default). But I <span class="ok">recommend deleting</span> <code>docs/review-logs/</code> (7,074 lines of old AI review transcripts — session junk, not docs) and the three shipped spec documents (~2,400 lines) whose few live sections get merged into ARCHITECTURE first. Git recovers all of it anytime. Say "B1 yes" to approve, or "B1 also plans" if you change your mind on archiving plans too (~52,000 more lines).
+</div>
+<div class="panel decision">
+  <strong>B2 — The checked-in skills folder (<code>.claude/skills/</code>): keep or evict?</strong> 800 KB, 128 files, 57 skills — mostly your generic cross-project toolkit (article editing, design skills) living inside this app's repo. It's your stated convention, so I default to <span class="ok">keep</span>; say "B2 evict" to move it out of the repo.
+</div>
+<div class="panel decision">
+  <strong>D1–D3 — Lint-rule tuning (from draft 1):</strong> allow hand-written data checkers in one rule (yes) · keep the good Tauri event test fake, exempt tests from one rule (yes) · clean rewrite of one adapter line + a pinning test (yes; moot if News of it lives in a removed vertical). Recommend yes to all three.
+</div>
+
+<h2>2 · Workstream A — the comment purge <span class="small">(your "90% comments" complaint, measured)</span></h2>
+<ul>
+  <li>You were close: <code>src/App.tsx</code> is 54% comments; the worst file is 94%. Repo-wide, 28% of all non-blank lines are comments, and CSS is over half comments.</li>
+  <li><strong>~12,600 of 19,700 comment lines are deletable</strong>: plan numbers, dates, "what this used to be" stories, and comments restating the next line.</li>
+  <li>What survives, rewritten short and in present tense: real warnings ("never do X, it breaks Y"), cross-file couplings, security boundaries, and API descriptions. About 290 tool-directive comments are kept untouched.</li>
+  <li>Verified safe: <strong>no test asserts on comment text</strong>. Ten tests parse source files; each has a named guard rule in the runbook (e.g. never write certain literal strings inside comments).</li>
+  <li>Execution: 8 passes, lowest-risk first (CSS → web → tests → Rust, the two giant Rust files last, each alone in its own commit). A diff check proves each pass touched only comments.</li>
+  <li>Pass 0 rewrites the comment convention in CLAUDE.md first — otherwise the next AI change just re-adds the style.</li>
+</ul>
+
+<h2>3 · Workstream B — docs to "current product only"</h2>
+<ul>
+  <li>Doc surface today: ~73,100 lines. A lean set describing only what exists: ~3,000 lines.</li>
+  <li>CLAUDE.md: 133 → ~65 lines. Keeps the glossary (halved — entries for removed features go), drops all archaeology, gains the new rule: <strong>"present tense only; no plan numbers, no dates; history lives in git."</strong></li>
+  <li>Kept whole: ARCHITECTURE.md (decisions), a slimmed TESTING_STRATEGY, README (trimmed), plus 4 small docs that code comments genuinely point at.</li>
+  <li>Deleted (per B1): review logs, shipped specs, 10 unreferenced design docs, finished implementation-plan phases (the one live checklist section moves first).</li>
+  <li>Housekeeping: 5 doc links in code are already broken today; they get fixed or inlined (one Rust file's external-API notes get inlined before their source doc goes).</li>
+</ul>
+
+<h2>4 · Workstream C — dead weight <span class="small">(all verified, not tool guesses)</span></h2>
+<table>
+  <tr><th>Item</th><th>What</th><th>Risk</th></tr>
+  <tr><td>Brand images</td><td>10 of 11 PNGs referenced by nothing. Keep the used one + the 1024 master; delete 9 (~1.4 MB, the largest byte win in the repo)</td><td class="ok">none</td></tr>
+  <tr><td><code>unified.html</code></td><td>88 KB orphan research page copied from another project, with paths that only work on one machine</td><td class="ok">none</td></tr>
+  <tr><td><code>hooks/</code> folder</td><td>Old shell hook fully replaced by the agent binary</td><td class="ok">low</td></tr>
+  <tr><td>Dead npm bits</td><td>1 unused test package, 1 unused CLI package (one CSS import to verify first), 2 unused scripts, 1 dead UI component + 2 dead card parts</td><td class="ok">none</td></tr>
+  <tr><td>Windows icon + bundle targets</td><td>macOS-only app builds "all" targets and ships a .ico</td><td class="ok">low</td></tr>
+  <tr><td>Copied Rust security code</td><td>~120 lines duplicated identically across 3 agent-provider files → one shared module (kills a 3-way drift hazard)</td><td class="warn">low-med</td></tr>
+</table>
+<p class="small">Also verified clean, no action: zero dead CSS (272/272 classes used), zero unused Rust packages, <code>dist/</code> was never committed. The three tool false-positives that would have broken the settings window are documented so nobody "fixes" them later.</p>
+
+<h2>5 · Workstream D — feature removals (per your R3 answers)</h2>
+<ul>
+  <li>One vertical per commit, full test run after each: poller/module out → status fields out → settings section out → tabs shrink → shared enums shrink → boot code slims.</li>
+  <li>Five cross-cutting tripwires are documented for the executor (rotation-order permutation check, status-shape mirrors, the 5-name tab parity test, the 17-command allowlist count, engine enable-flags). Any command removal touches 4 files + a count assertion in ONE commit.</li>
+  <li>Removing weather+media alone: roughly −2,700 Rust lines, −1,600 TS lines, −4.2 MB vendored code, one manual build step gone, ~100 tests retired.</li>
+  <li>Cascade bonus: each removed vertical also deletes its share of comments, lint findings, glossary entries, and hover features automatically.</li>
+</ul>
+
+<h2>6 · Workstream E — the lint cleanup (de-slop)</h2>
+<ul>
+  <li>368 places where code says "trust me about this data" instead of proving it. After removals, the survivor count is lower (each cut vertical takes its findings with it).</li>
+  <li>Fixes: two ~40-line helpers, many one-line rewrites, ~8 justified "safe because…" notes, two latent junk-key bugs fixed. Zero behavior change.</li>
+  <li>End state: linter at 0 errors and added to CI + <code>just check-web</code>, so slop can't return. (An audit flagged the linter as currently enforcing nothing — correct; wiring it into CI is deliberately the last step, after the code is clean.)</li>
+</ul>
+
+<h2>7 · Defects fixed along the way</h2>
+<ul>
+  <li>The <code>enter</code>/<code>o</code> prefix key is a silent no-op (its expand flag is never driven) — the one real base-level defect. Gets fixed in this run.</li>
+  <li>Two lookup tables could match JavaScript's built-in junk keys (like <code>"toString"</code>) and return garbage — both become prototype-safe.</li>
+</ul>
+
+<h2>8 · The run, in order</h2>
+<ol>
+  <li><strong>You approve</strong> (answers to §1) → conventions commit: CLAUDE.md new rules + this plan file committed.</li>
+  <li><strong>Dead weight</strong> (Workstream C quick wins) — one commit.</li>
+  <li><strong>Feature removals</strong> per R3, one vertical per commit.</li>
+  <li><strong>Reduced motion</strong> removal (R1) + notch decision (R2).</li>
+  <li><strong>Comment purge</strong>, 8 passes on the survivors.</li>
+  <li><strong>Lint cleanup</strong> phases on the survivors, then Rust provider consolidation.</li>
+  <li><strong>Docs rewrite</strong> (Workstream B) — docs describe the final product only.</li>
+  <li><strong>Gates</strong>: linter into CI + justfile; full local CI-mirror run (installing <code>just</code> via <code>brew install just</code> — recorded as never yet run end-to-end).</li>
+  <li><strong>Manual verification</strong>: the never-executed core checklist, together on the Mini (~1–2 hrs): queue under load, pause/resume, hotkeys, Spaces/fullscreen survival, Save &amp; Relaunch, the security check that the overlay window is denied settings commands.</li>
+  <li><strong>Your final branch review → merge.</strong></li>
+</ol>
+
+<h2>9 · Done means</h2>
+<ul>
+  <li>All gates clean: cargo test, vitest, tsc, biome, vite build, oxlint 0 errors, CI green.</li>
+  <li>Repo roughly half its current size; comment share down from 28% to ~12%; docs down ~96% (or minus plans/, per B1).</li>
+  <li>Every removal recoverable from git; behavior identical except the named defect fixes.</li>
+  <li>The manual checklist signed off — the base is <em>verified</em> working, not assumed.</li>
+</ul>
+
+<div class="panel">
+  <strong>Also found (no action unless you say so)</strong>
+  <ul class="small">
+    <li>A PR-bot config pins a model at a "50%-off promo price" with a note to re-check "before this promo ends" — a little time bomb; happy to remove or update.</li>
+    <li>Rust is 54% test code (that's why the crate reads huge — it's really a 19k-line app with 22k lines of tests). Not bloat; just explains the size.</li>
+    <li>3 small components have no test file; 22 GB of local Rust build cache is reclaimable with <code>cargo clean</code> (not in git).</li>
+    <li>The hand-maintained <code>prototype/</code> mirror has drifting sync dates and no drift guard — kept per your repo rules, flagged for later.</li>
+  </ul>
+</div>
+
+<details><summary>Appendix 1 — comment-purge execution rules (for the executing agent)</summary>
+<div class="panel small">
+DELETE lines matching: plan \d+, ISO dates, formerly/previously/used to/no longer/now deleted/renamed/superseded/review fix/audit finding/FEEL-CHECK…HISTORY/pre-plan; and comments reconstructable from the code below them. COMPRESS load-bearing blocks to ≤3 present-tense lines, preserving by name: hover.rs↔icon-strip.css / FLANK_INSET↔card-chrome.css / hovered_right_flank_width↔--cw couplings with stripGeometryParity.test.ts as tripwire; the dedup_eq rule; "receive-only, no invoke"; poison-tolerant lock; "read ambient handles before locking the queue". KEEP VERBATIM: 38 biome-ignore (3 say "see comment above" — inline the reason when deleting the block), 3 @ts-expect-error, #[allow] trailing justifications, 14 rust doctest fences, ALLOWLISTED_TRANSITIONS justifications in animationTiming.test.ts. NEVER write in a comment: <code>tauri::generate_handler![</code>, <code>];</code> inside doctor.rs's hook-events region, backtick-semicolon inside AgentsSection's snippet const, unbalanced braces in CSS rule bodies. Pass order: CSS(19f) → web-root(22f) → web-components(27f) → web-settings+adapters(23f) → web-tests(42f) → rust-agents(19f) → rust-core small(28f) → queue.rs and lib.rs each alone. Gate after each pass: full CI mirror; plus read diffs of the 10 source-parsing tests. Purity check per pass: <code>git diff -U0 | grep '^+' | grep -v '^+++' | grep -vE '^\+\s*(//|/\*|\*|$)'</code> must be empty for deletion passes. Test describe/it names embedding plan numbers are a separate later pass (safe, but keeps diffs reviewable).
+</div>
+</details>
+
+<details><summary>Appendix 2 — feature-removal tripwires</summary>
+<div class="panel small">
+Sequencing: verticals → shrink SourceKind/StatusState/Tab → icon strip → lib.rs boot slimming. rotation_order config validates as a permutation of ALL SourceKind variants; StatusState fields mirror into useStatusState.ts, iconPresence.ts, StatusDots.tsx, IconStrip.tsx; Engine::new takes one enable-bool per vertical; tabWireParity.test.ts pins 5 tab names across 4 files; SETTINGS_COMMANDS asserts len()==17 and is checked against build.rs + capabilities/settings.json + generate_handler! — command removals edit all 4 + the count in one commit. News extras: TabWire::new(rss_max_per_poll) constructor arg; engine.rs News preemption carve-out. Media: tokio process/io-util features become droppable; keep TtlBar hover-pause (not media-tied). Weather kills most of IdleHoverPeek; football kills scorecard/celebration branches in StatusRailCard/NotificationBody (braided — do carefully). Keep History/Queue/Diagnostics sections as engine-inspection surfaces.
+</div>
+</details>
+
+<details><summary>Appendix 3 — lint-cleanup phase detail (from draft 1)</summary>
+<div class="panel small">
+Phase 0: D1 rule tweak (mirror allowInTypeGuards onto no-unknown-parameters), D2 test-only no-module-mocking override AFTER fixing the two convertFileSrc mocks that have first-party replacements, D3 adapter line (globalThis.process?.env + port-resolution test). Phase 1: hook validators — in-operator narrowing replaces as-casts; membership predicates (.some(===)) replace .includes casts; six absent-tolerant fields keep the !("k" in v)|| form (tests cover degrade-don't-crash). Phase 2: satisfies on 26 widened tables; HistorySection Map fix (prototype-safe, called out in commit); error-path cause renames + isErrorMessageString predicate; CSS-variable casts get SAFETY notes; named return types for 5 inline annotations. Phase 3: src/test-support/domQuery.ts (mustQuery/mustClosest/mustBe) → ~122 mechanical conversions, revives 3 dead assertions. Phase 4: argsFor typed extractor over SettingsCommands (15→1), WirePayload type in tauriEventMock (kills as-unknown-as fixtures), fixture typing wins (Extract-typed fixtures, EspnMeta tuples, satisfies for exhaustiveness tables). Phase 5: adapter UnparsedValue/UnparsedObject pair + Map for BUS_EVENT_MAPPERS (latent bug fix); conditional-spread → build-then-assign (JSON key order changes; serde+toEqual are order-independent). Phase 6: oxlint into check-web + ci.yml.
+</div>
+</details>
+
+</main>
+</body>
+</html>
