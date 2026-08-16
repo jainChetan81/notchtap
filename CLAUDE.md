@@ -2,6 +2,10 @@
 
 Canon guide, every agent + maintainer working this repo.
 
+## writing rules (comments + docs)
+
+Code comments and docs describe the CURRENT product only, present tense. Never write plan numbers, dates, review citations, or "what this used to be" — history lives in git. Keep only: invariants code can't express ("never X, it breaks Y"), cross-file couplings named explicitly, security boundaries, and short API doc comments. One rejected alternative may keep one clause max. Tool directives (biome-ignore, @ts-expect-error, SAFETY:, #[allow] justifications) stay verbatim.
+
 ## project state
 
 Scaffolded, shipping v6. Per-plan history NOT duplicated here — read `plans/done/` (one file per plan) + `git log` for what landed when. Notes below only things those sources don't tell you.
