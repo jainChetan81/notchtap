@@ -95,8 +95,8 @@ impl TabSelection {
 }
 
 impl Tab {
-    /// The wire token `tab-selection-changed` carries ( §0 pins
-    /// the closed set: `"agent" | "football" | "news"`).
+    /// The wire token `tab-selection-changed` carries — the closed set:
+    /// `"agent" | "football" | "news"`.
     pub fn wire_label(self) -> &'static str {
         match self {
             Tab::Agent => "agent",

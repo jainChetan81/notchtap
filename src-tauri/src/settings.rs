@@ -765,8 +765,7 @@ pub async fn search_news_now(
 #[tauri::command]
 pub async fn get_recent_log_lines(window: tauri::WebviewWindow) -> Result<Vec<String>, String> {
     ensure_settings_window(&window)?;
-    // no content-based redaction layer here on purpose —
-    // notifier.rs's token redaction`) already
+    // no content-based redaction layer here on purpose — logging.rs
     // keeps secrets out of the log file itself, so the file is safe to
     // surface read-only in the settings window.
     crate::logging::read_recent_lines(200).map_err(|e| e.to_string())

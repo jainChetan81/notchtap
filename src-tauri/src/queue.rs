@@ -724,7 +724,7 @@ impl SingleSlotQueue {
         };
         // the top-up's notion of "remaining" must match the real
         // rotation deadline, which discounts banked and in-flight hover
-        // time (`hover_adjusted_promoted_at` / ) — every OTHER
+        // time (`hover_adjusted_promoted_at`) — every OTHER
         // deadline consumer (`next_deadline`, `remaining_ms`) already
         // anchors there. Using raw `now - promoted_at` here over-granted
         // extensions to previously-hovered cards: a card that had banked

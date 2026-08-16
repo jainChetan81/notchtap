@@ -441,8 +441,7 @@ where
 }
 
 fn default_rotation_order() -> Vec<SourceKind> {
-    // v6.1 review fix (superseded by 's cmux→Agent migration,
-    // spec §7): Manual ranks ahead of Agent — at default priorities
+    // Manual ranks ahead of Agent — at default priorities
     // (Football/Agent both High, Manual Medium, News Low) this never
     // actually breaks a tie, since Agent and Manual don't share a tier
     // unless the user manually equalizes their priorities. Still, an

@@ -21,7 +21,6 @@ const emitStatus = (paused: boolean) =>
       agent: { activeSessions: 0 },
       football: { enabled: false, live: null },
       news: { enabled: false, chargeFraction: 0, chargeCount: 0, isCharged: false },
-      weather: { enabled: false, current: null },
     }),
   );
 

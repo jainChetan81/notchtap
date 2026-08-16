@@ -78,9 +78,8 @@ pub enum SourceKind {
     Football,
     News,
     Manual,
-    /// v7: the provider-neutral Agent Adapter
-    /// origin, and — as of — the sole successor to the removed
-    /// `Cmux` variant. `#[serde(alias = "cmux")]` is the one-release
+    /// The provider-neutral Agent Adapter origin, the sole successor to
+    /// the removed `Cmux` variant. `#[serde(alias = "cmux")]` is the one-release
     /// migration path spec §7 requires ("legacy `"cmux"` deserializes as
     /// `Agent` for one release"): it accepts the old wire/TOML/history
     /// literal `"cmux"` as an alternate spelling of this variant on
@@ -117,7 +116,7 @@ pub enum RotationSpec {
 /// ```
 ///
 /// Sources that can't know a specific signal (the CLI, the Agent Adapter
-/// layer — superseded in v7's cmux relay, ) omit the field on the
+/// layer) omit the field on the
 /// wire and get `Generic` via `#[serde(default)]` on the containing
 /// struct — see `http.rs`'s `NotifyRequest`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]

@@ -1,10 +1,10 @@
-/* ==== plan 147: source-identity colours ====
+/* ==== source-identity colours ====
    The paint-channel law: every class below rides the existing
    `--cat`/`--cat-deep`/`--cat-pill` triple (same derivation idiom as
    news-category.css:6-11 — color-mix ~15%/13% for var()-backed
    entries, hand-computed rgba for literal hex) — NEVER `--accent`.
    These classes give each notification SOURCE (agent runtime,
-   football, weather, manual/CLI) its own identity colour, distinct
+   football, manual/CLI) its own identity colour, distinct
    from news's per-CATEGORY colour system in news-category.css — a
    card is only ever painted by one of the two systems at a time
    (`sourceClass` in presentation.ts is explicit that news is not its

@@ -40,6 +40,7 @@ function historyEventTypeLabel(eventType: string): string {
 // lookup" shape as `historyEventTypeLabel` just above.
 function historyPriorityLabel(priority: string): string {
   // SAFETY: hasOwn is the runtime check that priority is a known PriorityLevel — the cast only narrows the lookup after that check.
+  // biome-ignore lint/suspicious/noPrototypeBuiltins: Object.hasOwn needs ES2022 lib; tsconfig targets ES2020.
   return Object.prototype.hasOwnProperty.call(PRIORITY_LABELS, priority)
     ? PRIORITY_LABELS[priority as keyof typeof PRIORITY_LABELS]
     : priority;
@@ -83,6 +84,7 @@ function historyEspnSummary(espn: HistoryEspnMeta): string {
 // (hand-edited history file only) renders with no inline style.
 function historyOriginColor(origin: string): string | undefined {
   // SAFETY: hasOwn is the runtime check that origin is a known SourceOriginToken — the cast only narrows the lookup after that check.
+  // biome-ignore lint/suspicious/noPrototypeBuiltins: Object.hasOwn needs ES2022 lib; tsconfig targets ES2020.
   return Object.prototype.hasOwnProperty.call(SOURCE_ORIGIN_COLORS, origin)
     ? SOURCE_ORIGIN_COLORS[origin as SourceOriginToken]
     : undefined;
